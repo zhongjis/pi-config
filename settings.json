@@ -2,8 +2,8 @@
   "defaultProvider": "anthropic",
   "defaultModel": "claude-sonnet-4-6",
   "defaultThinkingLevel": "high",
-  "theme": "dark",
-  "quietStartup": false,
+  "theme": "ghostty-sync-6c1158ac",
+  "quietStartup": true,
   "doubleEscapeAction": "tree",
   "compaction": {
     "enabled": true,
@@ -16,7 +16,7 @@
     "baseDelayMs": 2000,
     "maxDelayMs": 60000
   },
-  "enabledModels": ["claude-*"],
+  "enabledModels": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
   "packages": [
     "pi-mcp-adapter",
     "pi-web-access",
