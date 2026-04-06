@@ -1,0 +1,34 @@
+{
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-6",
+  "defaultThinkingLevel": "high",
+  "theme": "dark",
+  "quietStartup": false,
+  "doubleEscapeAction": "tree",
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000,
+    "maxDelayMs": 60000
+  },
+  "enabledModels": [
+    "claude-*",
+    "gpt-4o",
+    "gemini-2*"
+  ],
+  "packages": [
+    "pi-mcp-adapter",
+    "pi-web-access",
+    "taskplane",
+    "pi-subagents",
+    "npm:pi-mcp-adapter",
+    "npm:pi-web-access",
+    "npm:taskplane",
+    "npm:pi-subagents"
+  ]
+}
