@@ -16,19 +16,14 @@
     "baseDelayMs": 2000,
     "maxDelayMs": 60000
   },
-  "enabledModels": [
-    "claude-*",
-    "gpt-4o",
-    "gemini-2*"
-  ],
+  "enabledModels": ["claude-*"],
   "packages": [
     "pi-mcp-adapter",
     "pi-web-access",
-    "taskplane",
     "pi-subagents",
     "npm:pi-mcp-adapter",
     "npm:pi-web-access",
-    "npm:taskplane",
     "npm:pi-subagents"
-  ]
+  ],
+  "lastChangelogVersion": "0.65.2"
 }
