@@ -16,16 +16,29 @@
     "baseDelayMs": 2000,
     "maxDelayMs": 60000
   },
-  "enabledModels": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+  "enabledModels": [
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5"
+  ],
   "lastChangelogVersion": "0.65.2",
-  "npmCommand": ["nix", "shell", "nixpkgs#nodejs", "-c", "npm"],
+  "npmCommand": [
+    "nix",
+    "shell",
+    "nixpkgs#nodejs",
+    "-c",
+    "npm"
+  ],
   "packages": [
     "git:github.com/nicobailon/pi-mcp-adapter",
     {
       "source": "git:github.com/yofriadi/pi-extensions",
-      "extensions": ["packages/lsp/src/index.ts"]
+      "extensions": [
+        "packages/lsp/src/index.ts"
+      ]
     },
     "git:github.com/RimuruW/pi-hashline-edit"
   ],
-  "permissionLevel": "high"
+  "permissionLevel": "high",
+  "powerline": "ascii"
 }

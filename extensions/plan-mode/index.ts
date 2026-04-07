@@ -35,11 +35,16 @@ const PLANNER_DELEGATION_MODE = "spawn";
 const PLANNER_RECENT_TOOL_LIMIT = 3;
 const PLANNER_OUTPUT_MAX_LINES = 12;
 const PLANNER_OUTPUT_MAX_CHARS = 1400;
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const PLANNER_SPINNER_INTERVAL_MS = 250;
+const EXECUTION_HEARTBEAT_INTERVAL_MS = 1000;
 const HIDDEN_PLAN_MESSAGE_TYPES = new Set([
 	"plan-mode-context",
 	"plan-planner-status",
 	"plan-planner-progress",
 	"plan-planner-output",
+	"plan-planner-error",
+	"plan-extraction-warning",
 	"plan-todo-list",
 	"plan-complete",
 ]);
@@ -67,6 +72,9 @@ function getTextContent(message: AssistantMessage): string {
 }
 
 function getUserText(message: AgentMessage): string {
+	if (!("content" in message)) {
+		return "";
+	}
 	if (typeof message.content === "string") {
 		return message.content;
 	}
@@ -185,10 +193,17 @@ function buildPlannerOutputPreview(text: string): string {
 
 	const lines = trimmed.split("\n").map((line) => line.trimEnd());
 	const previewLines = lines.slice(-PLANNER_OUTPUT_MAX_LINES);
-	let preview = previewLines.join("\n");
-	if (lines.length > previewLines.length) preview = `...\n${preview}`;
+	const previewBody = previewLines.join("\n");
+	const hiddenLineCount = lines.length - previewLines.length;
+	const prefix =
+		hiddenLineCount > 0
+			? `⋯ ${hiddenLineCount} more line${hiddenLineCount === 1 ? "" : "s"}\n`
+			: "";
+	let preview = `${prefix}${previewBody}`;
 	if (preview.length > PLANNER_OUTPUT_MAX_CHARS) {
-		preview = `...${preview.slice(-(PLANNER_OUTPUT_MAX_CHARS - 3))}`;
+		const available = PLANNER_OUTPUT_MAX_CHARS - prefix.length - 3;
+		if (available <= 0) return prefix.trimEnd();
+		preview = `${prefix}...${previewBody.slice(-available)}`;
 	}
 	return preview;
 }
@@ -224,6 +239,99 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let plannerPhase = "";
 	let plannerRecentToolCalls: string[] = [];
 	let plannerLiveOutput = "";
+	let plannerIdleStatus = "";
+	let plannerInfoLines: string[] = [];
+	let plannerSpinnerInterval: ReturnType<typeof setInterval> | null = null;
+	let plannerSpinnerFrame = 0;
+	let executionHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
+	let executionHeartbeatStartedAt = 0;
+	let executionSpinnerFrame = 0;
+	let executionResumeMessage = "";
+
+	function clearPlannerSpinner(): void {
+		if (plannerSpinnerInterval !== null) {
+			clearInterval(plannerSpinnerInterval);
+			plannerSpinnerInterval = null;
+		}
+	}
+
+	function clearExecutionHeartbeat(): void {
+		if (executionHeartbeatInterval !== null) {
+			clearInterval(executionHeartbeatInterval);
+			executionHeartbeatInterval = null;
+		}
+		executionHeartbeatStartedAt = 0;
+		executionSpinnerFrame = 0;
+	}
+
+	function setPlannerIdleState(status: string, infoLines: string[] = []): void {
+		plannerIdleStatus = status;
+		plannerInfoLines = infoLines;
+	}
+
+	function clearPlannerIdleState(): void {
+		plannerIdleStatus = "";
+		plannerInfoLines = [];
+		executionResumeMessage = "";
+	}
+
+	function getCompletedTodoCount(): number {
+		return todoItems.filter((item) => item.completed).length;
+	}
+
+	function getNextTodoItem(): TodoItem | undefined {
+		return todoItems.find((item) => !item.completed);
+	}
+
+	function getElapsedSeconds(startedAt: number): number {
+		return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+	}
+
+	function reportPlannerMessage(customType: string, content: string): void {
+		pi.sendMessage({ customType, content, display: true }, { triggerTurn: false });
+	}
+
+	function reportPlannerFailure(ctx: ExtensionContext, message: string, cause = ""): void {
+		const phase = plannerPhase || "starting";
+		const lines = [`✗ Planner failed during ${phase}: ${message}`];
+		if (cause) lines.push(`Cause: ${cause}`);
+		const detail = lines.join("\n");
+		ctx.ui.notify(detail, "error");
+		reportPlannerMessage("plan-planner-error", detail);
+	}
+
+	function startPlannerSpinner(ctx: ExtensionContext): void {
+		clearPlannerSpinner();
+		plannerSpinnerFrame = 0;
+		plannerPhase = `${SPINNER_FRAMES[plannerSpinnerFrame]} Analyzing…`;
+		updateStatus(ctx);
+		plannerSpinnerInterval = setInterval(() => {
+			if (!planningInFlight) {
+				clearPlannerSpinner();
+				return;
+			}
+			plannerSpinnerFrame = (plannerSpinnerFrame + 1) % SPINNER_FRAMES.length;
+			plannerPhase = `${SPINNER_FRAMES[plannerSpinnerFrame]} Analyzing…`;
+			updateStatus(ctx);
+		}, PLANNER_SPINNER_INTERVAL_MS);
+	}
+
+	function startExecutionHeartbeat(ctx: ExtensionContext): void {
+		if (!executionMode || todoItems.length === 0) return;
+		clearExecutionHeartbeat();
+		executionResumeMessage = "";
+		executionHeartbeatStartedAt = Date.now();
+		executionSpinnerFrame = 0;
+		updateStatus(ctx);
+		executionHeartbeatInterval = setInterval(() => {
+			if (!executionMode || todoItems.length === 0) {
+				clearExecutionHeartbeat();
+				return;
+			}
+			executionSpinnerFrame = (executionSpinnerFrame + 1) % SPINNER_FRAMES.length;
+			updateStatus(ctx);
+		}, EXECUTION_HEARTBEAT_INTERVAL_MS);
+	}
 
 	function updatePlannerLiveState(result: SingleResult): boolean {
 		const displayItems = getVisibleDisplayItems(result);
@@ -268,16 +376,19 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	}
 
 	function resetPlannerLiveState(): void {
+		clearPlannerSpinner();
 		plannerPhase = "";
 		plannerRecentToolCalls = [];
 		plannerLiveOutput = "";
 	}
 
 	function resetPlanState(): void {
+		clearExecutionHeartbeat();
 		executionMode = false;
 		planningInFlight = false;
 		todoItems = [];
 		lastPlanText = "";
+		clearPlannerIdleState();
 		resetPlannerLiveState();
 	}
 
@@ -350,11 +461,38 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			return plannerLines;
 		}
 
+		if (executionMode && todoItems.length > 0) {
+			const nextItem = getNextTodoItem();
+			if (!nextItem) return undefined;
+			const elapsed =
+				executionHeartbeatStartedAt > 0 ? ` (${getElapsedSeconds(executionHeartbeatStartedAt)}s)` : "";
+			const spinner = SPINNER_FRAMES[executionSpinnerFrame] ?? SPINNER_FRAMES[0];
+			const status = executionHeartbeatStartedAt > 0
+				? `${spinner} Running step ${nextItem.step}/${todoItems.length}…${elapsed}`
+				: `Next step ${nextItem.step}/${todoItems.length}`;
+			const lines = [
+				ctx.ui.theme.fg("accent", "Execution"),
+				ctx.ui.theme.fg("muted", status),
+			];
+			if (executionResumeMessage) {
+				lines.push(ctx.ui.theme.fg("dim", executionResumeMessage));
+			}
+			lines.push(ctx.ui.theme.fg("dim", nextItem.text));
+			return lines;
+		}
+
 		if (planModeEnabled && lastPlanRequest.trim()) {
-			return [
+			const lines = [
 				ctx.ui.theme.fg("accent", `Planner: ${plannerAgent}`),
 				ctx.ui.theme.fg("muted", shortenRequest(lastPlanRequest)),
 			];
+			if (plannerIdleStatus) {
+				lines.push(ctx.ui.theme.fg("muted", `Status: ${plannerIdleStatus}`));
+			}
+			for (const line of plannerInfoLines) {
+				lines.push(ctx.ui.theme.fg("dim", line));
+			}
+			return lines;
 		}
 
 		return undefined;
@@ -364,8 +502,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		if (planningInFlight) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `🧠 ${plannerAgent}`));
 		} else if (executionMode && todoItems.length > 0) {
-			const completed = todoItems.filter((t) => t.completed).length;
-			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}`));
+			const completed = getCompletedTodoCount();
+			const elapsed = executionHeartbeatStartedAt > 0 ? ` · ${getElapsedSeconds(executionHeartbeatStartedAt)}s` : "";
+			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `📋 ${completed}/${todoItems.length}${elapsed}`));
 		} else if (planModeEnabled) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("warning", "⏸ plan"));
 		} else {
@@ -447,17 +586,36 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		const questions = extractNeedMoreDetailQuestions(lastPlanText);
 		if (questions.length === 0) {
 			const refinement = await ctx.ui.editor("Add more detail for the planner:", lastPlanRequest);
-			return refinement?.trim() ? refinement.trim() : null;
+			if (!refinement?.trim()) return null;
+			setPlannerIdleState("◐ Replanning with your input…", [
+				`✓ Answered: ${shortenRequest(refinement.trim(), 96)}`,
+			]);
+			updateStatus(ctx);
+			return refinement.trim();
 		}
 
 		ctx.ui.notify(`Answer ${questions.length} planner question${questions.length === 1 ? "" : "s"} one by one.`, "info");
+		setPlannerIdleState(`Waiting for answer 1/${questions.length}`);
+		updateStatus(ctx);
+
 		const answers: Array<{ question: string; answer: string }> = [];
 		for (let i = 0; i < questions.length; i++) {
 			const question = questions[i];
 			const answer = await ctx.ui.editor(`Planner question ${i + 1}/${questions.length}:\n\n${question}`, "");
 			if (!answer?.trim()) return null;
 			answers.push({ question, answer: answer.trim() });
+			setPlannerIdleState(
+				`Collected ${answers.length}/${questions.length} answers`,
+				answers.map((item) => `✓ Answered: ${shortenRequest(item.answer, 96)}`),
+			);
+			updateStatus(ctx);
 		}
+
+		setPlannerIdleState(
+			"◐ Replanning with your input…",
+			answers.map((item) => `✓ Answered: ${shortenRequest(item.answer, 96)}`),
+		);
+		updateStatus(ctx);
 
 		const lines = [lastPlanRequest.trim(), "", "Additional detail:"];
 		for (const item of answers) {
@@ -473,15 +631,11 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		lastPlanRequest = request.trim();
 		plannerAgent = PLANNER_AGENT_NAME;
 		planningInFlight = true;
-		updateStatus(ctx);
+		startPlannerSpinner(ctx);
 		persistState();
-		pi.sendMessage(
-			{
-				customType: "plan-planner-status",
-				content: `**Planning with ${plannerAgent}...**\n\n${shortenRequest(lastPlanRequest, 160)}`,
-				display: true,
-			},
-			{ triggerTurn: false },
+		reportPlannerMessage(
+			"plan-planner-status",
+			`**Planning with ${plannerAgent}...**\n\n${shortenRequest(lastPlanRequest, 160)}`,
 		);
 		ctx.ui.notify(`Planning with ${plannerAgent}...`, "info");
 
@@ -490,7 +644,9 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			planningInFlight = false;
 			updateStatus(ctx);
 			persistState();
-			ctx.ui.notify(`Planner agent \"${plannerAgent}\" not found. Add agents/${plannerAgent}.md first.`, "error");
+			const message = `Planner agent \"${plannerAgent}\" not found. Add agents/${plannerAgent}.md first.`;
+			ctx.ui.notify(message, "error");
+			reportPlannerMessage("plan-planner-error", `✗ ${message}`);
 			return;
 		}
 
@@ -511,6 +667,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				onUpdate: (partial) => {
 					const liveResult = partial.details?.results[0];
 					if (!liveResult) return;
+					clearPlannerSpinner();
 					if (!updatePlannerLiveState(liveResult)) return;
 					updateStatus(ctx);
 				},
@@ -520,35 +677,56 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			updateStatus(ctx);
 			persistState();
 			const message = error instanceof Error ? error.message : String(error);
-			ctx.ui.notify(`${plannerAgent} failed: ${message}`, "error");
+			const cause =
+				error instanceof Error && error.cause !== undefined
+					? error.cause instanceof Error
+						? error.cause.message
+						: String(error.cause)
+					: "";
+			reportPlannerFailure(ctx, message, cause);
 			return;
 		}
 
 		planningInFlight = false;
+		clearPlannerSpinner();
 		updatePlannerLiveState(result);
 		updateStatus(ctx);
 		const planText = getResultSummaryText(result).trim();
 		if (isResultError(result)) {
-			updateStatus(ctx);
 			persistState();
-			ctx.ui.notify(`${plannerAgent} failed: ${planText}`, "error");
+			reportPlannerFailure(ctx, planText || `${plannerAgent} returned an error.`);
 			return;
 		}
 
 		setPlanFromText(planText);
-		pi.sendMessage(
-			{ customType: "plan-planner-output", content: planText || "(no output)", display: true },
-			{ triggerTurn: false },
-		);
+		reportPlannerMessage("plan-planner-output", planText || "(no output)");
 
 		if (todoItems.length === 0) {
 			const decision = getPlannerDecision(planText);
-			ctx.ui.notify(
-				decision === "needs_more_detail"
-					? `${plannerAgent} needs a more specific request before it can build a plan.`
-					: `${plannerAgent} returned an unrecognized response. Refine the request and try again.`,
-				decision === "needs_more_detail" ? "info" : "warning",
-			);
+			if (decision === "plan") {
+				ctx.ui.notify("Could not extract numbered steps from the planner response.", "warning");
+				reportPlannerMessage(
+					"plan-extraction-warning",
+					["⚠ Could not extract numbered steps from the planner response.", "", "Try: make a concrete plan with numbered steps."].join("\n"),
+				);
+			} else if (decision === "unknown") {
+				const preview = planText.split("\n").slice(0, 6).join("\n").trim() || "(no output)";
+				ctx.ui.notify(`${plannerAgent} returned an unrecognized response. Refine the request and try again.`, "warning");
+				reportPlannerMessage(
+					"plan-extraction-warning",
+					[
+						`⚠ ${plannerAgent} returned an unrecognized response.`,
+						"",
+						"Try: make a concrete plan with numbered steps.",
+						"",
+						"Raw output preview:",
+						preview,
+					].join("\n"),
+				);
+			}
+			if (decision === "needs_more_detail") {
+				ctx.ui.notify(`${plannerAgent} needs a more specific request before it can build a plan.`, "info");
+			}
 		}
 
 		updateStatus(ctx);
@@ -674,7 +852,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		};
 	});
 
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (_event, ctx) => {
 		if (planModeEnabled) {
 			return {
 				message: {
@@ -702,6 +880,7 @@ Do NOT attempt to make changes - just describe what you would do.`,
 		}
 
 		if (executionMode && todoItems.length > 0) {
+			startExecutionHeartbeat(ctx);
 			const remaining = todoItems.filter((t) => !t.completed);
 			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
 			return {
@@ -720,19 +899,25 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		}
 	});
 
+	pi.on("turn_start", async (_event, ctx) => {
+		if (!executionMode || todoItems.length === 0) return;
+		startExecutionHeartbeat(ctx);
+	});
+
 	pi.on("turn_end", async (event, ctx) => {
 		if (!executionMode || todoItems.length === 0) return;
-		if (!isAssistantMessage(event.message)) return;
-
-		const text = getTextContent(event.message);
-		if (markCompletedSteps(text, todoItems) > 0) {
-			updateStatus(ctx);
+		clearExecutionHeartbeat();
+		if (isAssistantMessage(event.message)) {
+			const text = getTextContent(event.message);
+			markCompletedSteps(text, todoItems);
 		}
+		updateStatus(ctx);
 		persistState();
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
 		if (executionMode && todoItems.length > 0) {
+			clearExecutionHeartbeat();
 			if (todoItems.every((t) => t.completed)) {
 				const completedList = todoItems.map((t) => `~~${t.text}~~`).join("\n");
 				pi.sendMessage(
@@ -741,6 +926,7 @@ After completing a step, include a [DONE:n] tag in your response.`,
 				);
 				executionMode = false;
 				todoItems = [];
+				executionResumeMessage = "";
 				updateStatus(ctx);
 				persistState();
 			}
@@ -772,6 +958,11 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		await presentPlanActions(ctx);
 	});
 
+	pi.on("session_shutdown", async () => {
+		clearPlannerSpinner();
+		clearExecutionHeartbeat();
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		if (pi.getFlag("plan") === true) {
 			planModeEnabled = true;
@@ -792,6 +983,8 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			plannerAgent = planModeEntry.data.plannerAgent ?? plannerAgent;
 		}
 		planningInFlight = false;
+		clearPlannerSpinner();
+		clearExecutionHeartbeat();
 
 		const isResume = planModeEntry !== undefined;
 		if (isResume && executionMode && todoItems.length > 0) {
@@ -813,6 +1006,16 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			}
 			const allText = messages.map(getTextContent).join("\n");
 			markCompletedSteps(allText, todoItems);
+			const completed = getCompletedTodoCount();
+			const remaining = todoItems.length - completed;
+			const nextStep = getNextTodoItem();
+			executionResumeMessage = `Resumed plan: ${completed}/${todoItems.length} completed. ${remaining} remaining.`;
+			ctx.ui.notify(
+				nextStep
+					? `${executionResumeMessage} Next: ${nextStep.text}`
+					: executionResumeMessage,
+				"info",
+			);
 		}
 
 		if (planModeEnabled) {
