@@ -13,7 +13,7 @@
  */
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai";
+import type { AssistantMessage, TextContent, ThinkingContent } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
 import { discoverAgents } from "../subagent/agents.js";
@@ -21,11 +21,13 @@ import { getResultSummaryText } from "../subagent/runner-events.js";
 import { runAgent } from "../subagent/runner.js";
 import {
 	getVisibleDisplayItems,
+	getVisibleMessages,
 	getVisibleOutput,
 	isResultError,
 	type DisplayItem,
 	type SingleResult,
 	type SubagentDetails,
+	type UsageStats,
 } from "../subagent/types.js";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
@@ -35,6 +37,8 @@ const PLANNER_DELEGATION_MODE = "spawn";
 const PLANNER_RECENT_TOOL_LIMIT = 3;
 const PLANNER_OUTPUT_MAX_LINES = 12;
 const PLANNER_OUTPUT_MAX_CHARS = 1400;
+const PLANNER_THINKING_MAX_LINES = 3;
+const PLANNER_THINKING_MAX_CHARS = 200;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const PLANNER_SPINNER_INTERVAL_MS = 250;
 const EXECUTION_HEARTBEAT_INTERVAL_MS = 1000;
@@ -208,7 +212,50 @@ function buildPlannerOutputPreview(text: string): string {
 	return preview;
 }
 
-function inferPlannerPhase(toolCalls: string[], liveOutput: string): string {
+function formatPlannerTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	return `${(count / 1000000).toFixed(1)}M`;
+}
+
+function formatPlannerUsage(usage: UsageStats, model: string): string {
+	const parts: string[] = [];
+	if (usage.input) parts.push(`↑${formatPlannerTokens(usage.input)}`);
+	if (usage.output) parts.push(`↓${formatPlannerTokens(usage.output)}`);
+	if (usage.cacheRead) parts.push(`R${formatPlannerTokens(usage.cacheRead)}`);
+	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
+	if (model) parts.push(model);
+	return parts.join(" ");
+}
+
+function phaseToLabel(phase: string): string {
+	if (phase === "starting") return "Analyzing";
+	return phase.charAt(0).toUpperCase() + phase.slice(1);
+}
+
+function getThinkingPreview(result: SingleResult): string {
+	const messages = getVisibleMessages(result);
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== "assistant") continue;
+		for (let j = msg.content.length - 1; j >= 0; j--) {
+			const block = msg.content[j];
+			if (block.type === "thinking") {
+				const tc = block as ThinkingContent;
+				if (tc.redacted || !tc.thinking) continue;
+				const lines = tc.thinking.split("\n").filter((l: string) => l.trim());
+				const preview = lines.slice(-PLANNER_THINKING_MAX_LINES).join("\n");
+				return preview.length > PLANNER_THINKING_MAX_CHARS
+					? `…${preview.slice(-PLANNER_THINKING_MAX_CHARS)}`
+					: preview;
+			}
+		}
+	}
+	return "";
+}
+
+function inferPlannerPhase(toolCalls: string[], liveOutput: string, thinkingPreview: string): string {
 	if (liveOutput) return "responding";
 
 	for (let i = toolCalls.length - 1; i >= 0; i--) {
@@ -224,6 +271,7 @@ function inferPlannerPhase(toolCalls: string[], liveOutput: string): string {
 	}
 
 	if (toolCalls.length > 0) return "using tools";
+	if (thinkingPreview) return "thinking";
 	return "starting";
 }
 
@@ -246,6 +294,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let executionHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
 	let executionHeartbeatStartedAt = 0;
 	let executionSpinnerFrame = 0;
+	let plannerThinkingPreview = "";
+	let plannerUsage: UsageStats | null = null;
+	let plannerModel = "";
+	let plannerPhaseLabel = "Analyzing";
 	let executionResumeMessage = "";
 
 	function clearPlannerSpinner(): void {
@@ -303,7 +355,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	function startPlannerSpinner(ctx: ExtensionContext): void {
 		clearPlannerSpinner();
 		plannerSpinnerFrame = 0;
-		plannerPhase = `${SPINNER_FRAMES[plannerSpinnerFrame]} Analyzing…`;
+		plannerPhaseLabel = "Analyzing";
+		plannerPhase = `${SPINNER_FRAMES[plannerSpinnerFrame]} ${plannerPhaseLabel}…`;
 		updateStatus(ctx);
 		plannerSpinnerInterval = setInterval(() => {
 			if (!planningInFlight) {
@@ -311,7 +364,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				return;
 			}
 			plannerSpinnerFrame = (plannerSpinnerFrame + 1) % SPINNER_FRAMES.length;
-			plannerPhase = `${SPINNER_FRAMES[plannerSpinnerFrame]} Analyzing…`;
+			plannerPhase = `${SPINNER_FRAMES[plannerSpinnerFrame]} ${plannerPhaseLabel}…`;
 			updateStatus(ctx);
 		}, PLANNER_SPINNER_INTERVAL_MS);
 	}
@@ -344,15 +397,22 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		const recentToolCalls = toolCalls.slice(-PLANNER_RECENT_TOOL_LIMIT);
 		const liveOutput = buildPlannerOutputPreview(getVisibleOutput(result));
-		const phase = inferPlannerPhase(recentToolCalls, liveOutput);
+		const thinkingPreview = getThinkingPreview(result);
+		const rawPhase = inferPlannerPhase(recentToolCalls, liveOutput, thinkingPreview);
+		const newLabel = phaseToLabel(rawPhase);
 		const changed =
-			phase !== plannerPhase ||
+			newLabel !== plannerPhaseLabel ||
 			liveOutput !== plannerLiveOutput ||
+			thinkingPreview !== plannerThinkingPreview ||
 			recentToolCalls.join("\n") !== plannerRecentToolCalls.join("\n");
 
-		plannerPhase = phase;
+		plannerPhaseLabel = newLabel;
+		plannerPhase = `${SPINNER_FRAMES[plannerSpinnerFrame]} ${plannerPhaseLabel}…`;
 		plannerRecentToolCalls = recentToolCalls;
 		plannerLiveOutput = liveOutput;
+		plannerThinkingPreview = thinkingPreview;
+		plannerUsage = result.usage;
+		plannerModel = result.model || "";
 		return changed;
 	}
 
@@ -378,8 +438,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	function resetPlannerLiveState(): void {
 		clearPlannerSpinner();
 		plannerPhase = "";
+		plannerPhaseLabel = "Analyzing";
 		plannerRecentToolCalls = [];
 		plannerLiveOutput = "";
+		plannerThinkingPreview = "";
+		plannerUsage = null;
+		plannerModel = "";
 	}
 
 	function resetPlanState(): void {
@@ -446,6 +510,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				ctx.ui.theme.fg("muted", `Status: ${plannerPhase || "starting"}`),
 				ctx.ui.theme.fg("dim", shortenRequest(lastPlanRequest) || "Waiting for request"),
 			];
+			if (plannerThinkingPreview) {
+				plannerLines.push(ctx.ui.theme.fg("muted", "Thinking:"));
+				for (const line of plannerThinkingPreview.split("\n")) {
+					plannerLines.push(ctx.ui.theme.fg("dim", line));
+				}
+			}
 			if (plannerRecentToolCalls.length > 0) {
 				plannerLines.push(ctx.ui.theme.fg("muted", "Tools:"));
 				for (const call of plannerRecentToolCalls) {
@@ -456,6 +526,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				plannerLines.push(ctx.ui.theme.fg("muted", "Live output:"));
 				for (const line of plannerLiveOutput.split("\n")) {
 					plannerLines.push(line);
+				}
+			}
+			if (plannerUsage) {
+				const usageStr = formatPlannerUsage(plannerUsage, plannerModel);
+				if (usageStr) {
+					plannerLines.push(ctx.ui.theme.fg("dim", usageStr));
 				}
 			}
 			return plannerLines;
@@ -491,6 +567,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			}
 			for (const line of plannerInfoLines) {
 				lines.push(ctx.ui.theme.fg("dim", line));
+			}
+			if (plannerUsage) {
+				const usageStr = formatPlannerUsage(plannerUsage, plannerModel);
+				if (usageStr) {
+					lines.push(ctx.ui.theme.fg("dim", usageStr));
+				}
 			}
 			return lines;
 		}
@@ -667,7 +749,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				onUpdate: (partial) => {
 					const liveResult = partial.details?.results[0];
 					if (!liveResult) return;
-					clearPlannerSpinner();
 					if (!updatePlannerLiveState(liveResult)) return;
 					updateStatus(ctx);
 				},
