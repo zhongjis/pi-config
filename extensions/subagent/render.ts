@@ -14,8 +14,8 @@ import {
 	type UsageStats,
 	DEFAULT_DELEGATION_MODE,
 	aggregateUsage,
-	getDisplayItems,
-	getFinalOutput,
+	getVisibleDisplayItems,
+	getVisibleOutput,
 	isResultError,
 	isResultSuccess,
 } from "./types.js";
@@ -217,8 +217,8 @@ function renderSingleResult(
 ): Container | Text {
 	const error = isResultError(r);
 	const icon = statusIcon(r, theme);
-	const displayItems = getDisplayItems(r.messages);
-	const finalOutput = getFinalOutput(r.messages);
+	const displayItems = getVisibleDisplayItems(r);
+	const finalOutput = getVisibleOutput(r);
 
 	if (expanded) {
 		return renderSingleExpanded(
@@ -372,8 +372,8 @@ function renderParallelExpanded(
 
 	for (const r of details.results) {
 		const rIcon = statusIcon(r, theme);
-		const displayItems = getDisplayItems(r.messages);
-		const finalOutput = getFinalOutput(r.messages);
+		const displayItems = getVisibleDisplayItems(r);
+		const finalOutput = getVisibleOutput(r);
 
 		container.addChild(new Spacer(1));
 		container.addChild(new Text(`${theme.fg("muted", "─── ")}${theme.fg("accent", r.agent)} ${rIcon}`, 0, 0));
@@ -419,7 +419,7 @@ function renderParallelCollapsed(
 
 	for (const r of details.results) {
 		const rIcon = statusIcon(r, theme);
-		const displayItems = getDisplayItems(r.messages);
+		const displayItems = getVisibleDisplayItems(r);
 		text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", r.agent)} ${rIcon}`;
 		if (displayItems.length === 0) {
 			text += `\n${theme.fg(r.exitCode === -1 ? "muted" : isResultError(r) ? "error" : "muted", r.exitCode === -1 ? "(running...)" : getResultSummaryText(r))}`;

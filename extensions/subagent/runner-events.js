@@ -75,19 +75,58 @@ function addAssistantMessages(result, messages) {
   return changed;
 }
 
+function setLiveAssistantMessage(result, message) {
+  if (!message || message.role !== "assistant") return false;
+
+  updateAssistantMetadata(result, message);
+
+  const signature = getMessageSignature(message);
+  if (result.__liveMessageSignature === signature) return false;
+
+  result.liveMessage = message;
+  result.__liveMessageSignature = signature;
+  return true;
+}
+
+function clearLiveAssistantMessage(result) {
+  const hadLiveMessage = Boolean(result.liveMessage);
+  result.liveMessage = undefined;
+  result.__liveMessageSignature = undefined;
+  return hadLiveMessage;
+}
+
+function finalizeAssistantMessage(result, message) {
+  const cleared = clearLiveAssistantMessage(result);
+  return addAssistantMessage(result, message) || cleared;
+}
+
+function finalizeAssistantMessages(result, messages) {
+  const cleared = clearLiveAssistantMessage(result);
+  return addAssistantMessages(result, messages) || cleared;
+}
+
 export function processPiEvent(event, result) {
   if (!event || typeof event !== "object") return false;
 
   switch (event.type) {
+    case "message_start":
+      return setLiveAssistantMessage(result, event.message);
+
+    case "message_update":
+      return setLiveAssistantMessage(
+        result,
+        event.message || event.assistantMessageEvent?.partial,
+      );
+
     case "message_end":
-      return addAssistantMessage(result, event.message);
+      return finalizeAssistantMessage(result, event.message);
 
     case "turn_end":
-      return addAssistantMessage(result, event.message);
+      return finalizeAssistantMessage(result, event.message);
 
     case "agent_end":
       result.sawAgentEnd = true;
-      return addAssistantMessages(result, event.messages);
+      return finalizeAssistantMessages(result, event.messages);
 
     default:
       return false;

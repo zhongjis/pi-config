@@ -17,7 +17,7 @@ import {
   type SingleResult,
   type SubagentDetails,
   emptyUsage,
-  getFinalOutput,
+  getVisibleOutput,
   normalizeCompletedResult,
 } from "./types.js";
 
@@ -29,6 +29,7 @@ const SUBAGENT_MAX_DEPTH_ENV = "PI_SUBAGENT_MAX_DEPTH";
 const SUBAGENT_STACK_ENV = "PI_SUBAGENT_STACK";
 const SUBAGENT_PREVENT_CYCLES_ENV = "PI_SUBAGENT_PREVENT_CYCLES";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
+const STREAM_UPDATE_THROTTLE_MS = 100;
 
 type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
@@ -166,7 +167,7 @@ function getModelCandidates(agent: AgentConfig): Array<string | undefined> {
 function shouldRetryWithModelFallback(result: SingleResult): boolean {
   const diagnostic = `${result.errorMessage ?? ""}\n${result.stderr}`.trim();
   if (!diagnostic) return false;
-  if (getFinalOutput(result.messages).trim()) return false;
+  if (getVisibleOutput(result).trim()) return false;
   return MODEL_FALLBACK_PATTERNS.some((pattern) => pattern.test(diagnostic));
 }
 
@@ -204,7 +205,7 @@ async function executePiAttempt(
       content: [
         {
           type: "text",
-          text: getFinalOutput(result.messages) || "(running...)",
+          text: getVisibleOutput(result) || "(running...)",
         },
       ],
       details: makeDetails([result]),
@@ -250,12 +251,56 @@ async function executePiAttempt(
     let settled = false;
     let abortHandler: (() => void) | undefined;
     let semanticCompletionTimer: NodeJS.Timeout | undefined;
+    let lastUpdateAt = 0;
+    let pendingUpdateTimer: NodeJS.Timeout | undefined;
 
     const clearSemanticCompletionTimer = () => {
       if (semanticCompletionTimer) {
         clearTimeout(semanticCompletionTimer);
         semanticCompletionTimer = undefined;
       }
+    };
+
+    const clearPendingUpdateTimer = () => {
+      if (pendingUpdateTimer) {
+        clearTimeout(pendingUpdateTimer);
+        pendingUpdateTimer = undefined;
+      }
+    };
+
+    const emitUpdateNow = () => {
+      clearPendingUpdateTimer();
+      lastUpdateAt = Date.now();
+      onUpdate?.({
+        content: [
+          {
+            type: "text",
+            text: getVisibleOutput(result) || "(running...)",
+          },
+        ],
+        details: makeDetails([result]),
+      });
+    };
+
+    const emitUpdate = (force = false) => {
+      if (!onUpdate) return;
+      if (force) {
+        emitUpdateNow();
+        return;
+      }
+
+      const now = Date.now();
+      const waitMs = STREAM_UPDATE_THROTTLE_MS - (now - lastUpdateAt);
+      if (waitMs <= 0) {
+        emitUpdateNow();
+        return;
+      }
+
+      if (pendingUpdateTimer) return;
+      pendingUpdateTimer = setTimeout(() => {
+        emitUpdateNow();
+      }, waitMs);
+      pendingUpdateTimer.unref();
     };
 
     const terminateChild = () => {
@@ -280,6 +325,8 @@ async function executePiAttempt(
       if (settled) return;
       settled = true;
       clearSemanticCompletionTimer();
+      clearPendingUpdateTimer();
+      emitUpdate(true);
       if (signal && abortHandler) {
         signal.removeEventListener("abort", abortHandler);
       }

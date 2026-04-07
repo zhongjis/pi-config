@@ -19,12 +19,31 @@ import { Key } from "@mariozechner/pi-tui";
 import { discoverAgents } from "../subagent/agents.js";
 import { getResultSummaryText } from "../subagent/runner-events.js";
 import { runAgent } from "../subagent/runner.js";
-import { isResultError, type SingleResult, type SubagentDetails } from "../subagent/types.js";
+import {
+	getVisibleDisplayItems,
+	getVisibleOutput,
+	isResultError,
+	type DisplayItem,
+	type SingleResult,
+	type SubagentDetails,
+} from "../subagent/types.js";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "ask"];
 const PLANNER_AGENT_NAME = "prometheus";
 const PLANNER_DELEGATION_MODE = "spawn";
+const PLANNER_PROGRESS_EMIT_MS = 1200;
+const PLANNER_RECENT_TOOL_LIMIT = 3;
+const PLANNER_DRAFT_MAX_LINES = 8;
+const PLANNER_DRAFT_MAX_CHARS = 700;
+const HIDDEN_PLAN_MESSAGE_TYPES = new Set([
+	"plan-mode-context",
+	"plan-planner-status",
+	"plan-planner-progress",
+	"plan-planner-output",
+	"plan-todo-list",
+	"plan-complete",
+]);
 
 type PlannerDecision = "plan" | "needs_more_detail" | "unknown";
 
@@ -86,6 +105,119 @@ function getPlannerDecision(text: string): PlannerDecision {
 	return "unknown";
 }
 
+function extractNeedMoreDetailQuestions(text: string): string[] {
+	const headerMatch = text.match(/^Need more detail:\s*$/im);
+	if (!headerMatch || headerMatch.index === undefined) return [];
+
+	const section = text.slice(headerMatch.index + headerMatch[0].length);
+	const questions: string[] = [];
+	let sawBullet = false;
+	for (const line of section.split("\n")) {
+		const bulletMatch = line.match(/^\s*(?:[-*]|\d+[.)])\s+(.+)$/);
+		if (bulletMatch) {
+			sawBullet = true;
+			questions.push(bulletMatch[1].trim());
+			continue;
+		}
+		if (sawBullet && line.trim().length > 0) break;
+	}
+	return questions;
+}
+
+function getStringArg(args: Record<string, unknown>, key: string): string {
+	const value = args[key];
+	return typeof value === "string" ? value.trim() : "";
+}
+
+function summarizeToolCall(item: DisplayItem): string | null {
+	if (item.type !== "toolCall") return null;
+
+	const args = item.args;
+	switch (item.name) {
+		case "read": {
+			const path = getStringArg(args, "path");
+			return path ? `read ${path}` : "read";
+		}
+		case "grep": {
+			const pattern = getStringArg(args, "pattern");
+			return pattern ? `grep ${pattern}` : "grep";
+		}
+		case "find": {
+			const pattern = getStringArg(args, "pattern");
+			return pattern ? `find ${pattern}` : "find";
+		}
+		case "ls": {
+			const path = getStringArg(args, "path");
+			return path ? `ls ${path}` : "ls";
+		}
+		case "ask":
+			return "ask for clarification";
+		case "subagent": {
+			const agent = getStringArg(args, "agent");
+			const task = getStringArg(args, "task");
+			if (agent) {
+				return task ? `subagent ${agent}: ${shortenRequest(task, 56)}` : `subagent ${agent}`;
+			}
+
+			const tasks = args["tasks"];
+			if (Array.isArray(tasks)) {
+				const agentNames = tasks
+					.map((taskItem) => {
+						if (!taskItem || typeof taskItem !== "object") return null;
+						const nestedAgent = (taskItem as Record<string, unknown>)["agent"];
+						return typeof nestedAgent === "string" ? nestedAgent.trim() : null;
+					})
+					.filter((name): name is string => Boolean(name));
+				if (agentNames.length > 0) {
+					return `subagent parallel: ${agentNames.join(", ")}`;
+				}
+			}
+
+			return "subagent";
+		}
+		default:
+			return item.name;
+	}
+}
+
+function buildPlannerDraftPreview(text: string): string {
+	const trimmed = text.trim();
+	if (!trimmed) return "";
+
+	const lines = trimmed
+		.split("\n")
+		.map((line) => line.trimEnd())
+		.filter((line) => line.trim().length > 0);
+
+	const previewLines = lines.slice(0, PLANNER_DRAFT_MAX_LINES);
+	let preview = previewLines.join("\n");
+	if (lines.length > previewLines.length) preview += "\n...";
+	if (preview.length > PLANNER_DRAFT_MAX_CHARS) {
+		preview = `${preview.slice(0, PLANNER_DRAFT_MAX_CHARS - 3)}...`;
+	}
+	return preview;
+}
+
+function inferPlannerPhase(toolCalls: string[], draftPreview: string): string {
+	if (draftPreview) return "drafting plan";
+
+	for (let i = toolCalls.length - 1; i >= 0; i--) {
+		const call = toolCalls[i];
+		const subagentMatch = call.match(/^subagent\s+([^:]+?)(?:\:|$)/);
+		if (subagentMatch) {
+			const delegatedAgent = subagentMatch[1]?.trim();
+			if (delegatedAgent && delegatedAgent !== "parallel") {
+				return `consulting ${delegatedAgent}`;
+			}
+			return "delegating research";
+		}
+	}
+
+	if (toolCalls.length > 0) return "inspecting code";
+	return "starting";
+}
+
+
 export default function planModeExtension(pi: ExtensionAPI): void {
 	let planModeEnabled = false;
 	let executionMode = false;
@@ -95,6 +227,69 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let lastPlanRequest = "";
 	let lastPlanText = "";
 	let plannerAgent = PLANNER_AGENT_NAME;
+	let plannerPhase = "";
+	let plannerRecentToolCalls: string[] = [];
+	let plannerDraftPreview = "";
+	let lastPlannerProgressMessage = "";
+	let lastPlannerProgressAt = 0;
+
+	function updatePlannerLiveState(result: SingleResult): boolean {
+		const displayItems = getVisibleDisplayItems(result);
+		const toolCalls: string[] = [];
+		for (const item of displayItems) {
+			const summary = summarizeToolCall(item);
+			if (!summary) continue;
+			if (toolCalls[toolCalls.length - 1] !== summary) toolCalls.push(summary);
+		}
+
+		const recentToolCalls = toolCalls.slice(-PLANNER_RECENT_TOOL_LIMIT);
+		const draftPreview = buildPlannerDraftPreview(getVisibleOutput(result));
+		const phase = inferPlannerPhase(recentToolCalls, draftPreview);
+		const changed =
+			phase !== plannerPhase ||
+			draftPreview !== plannerDraftPreview ||
+			recentToolCalls.join("\n") !== plannerRecentToolCalls.join("\n");
+
+		plannerPhase = phase;
+		plannerRecentToolCalls = recentToolCalls;
+		plannerDraftPreview = draftPreview;
+		return changed;
+	}
+
+	function buildPlannerProgressMessage(): string | null {
+		if (plannerRecentToolCalls.length === 0 && !plannerDraftPreview) return null;
+
+		const lines = [`**Planning with ${plannerAgent}**`, "", `Status: ${plannerPhase || "starting"}`];
+		if (lastPlanRequest.trim()) {
+			lines.push("", `Request: ${shortenRequest(lastPlanRequest, 160)}`);
+		}
+		if (plannerRecentToolCalls.length > 0) {
+			lines.push("", "Recent activity:");
+			for (const call of plannerRecentToolCalls) lines.push(`- ${call}`);
+		}
+		if (plannerDraftPreview) {
+			lines.push("", "Draft:", "```text", plannerDraftPreview, "```");
+		}
+		return lines.join("\n");
+	}
+
+	function maybeEmitPlannerProgress(ctx: ExtensionContext, force = false): void {
+		const message = buildPlannerProgressMessage();
+		if (!message || message === lastPlannerProgressMessage) return;
+
+		const now = Date.now();
+		if (!force && lastPlannerProgressAt > 0 && now - lastPlannerProgressAt < PLANNER_PROGRESS_EMIT_MS) {
+			return;
+		}
+
+		lastPlannerProgressMessage = message;
+		lastPlannerProgressAt = now;
+		updateStatus(ctx);
+		pi.sendMessage(
+			{ customType: "plan-planner-progress", content: message, display: true },
+			{ triggerTurn: false, deliverAs: "followUp" },
+		);
+	}
 
 	pi.registerFlag("plan", {
 		description: "Start in plan mode (read-only exploration)",
@@ -115,11 +310,20 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	function resetPlannerLiveState(): void {
+		plannerPhase = "";
+		plannerRecentToolCalls = [];
+		plannerDraftPreview = "";
+		lastPlannerProgressMessage = "";
+		lastPlannerProgressAt = 0;
+	}
+
 	function resetPlanState(): void {
 		executionMode = false;
 		planningInFlight = false;
 		todoItems = [];
 		lastPlanText = "";
+		resetPlannerLiveState();
 	}
 
 	function enablePlanMode(ctx: ExtensionContext, notify = true): void {
@@ -182,11 +386,13 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 
 		if (planningInFlight) {
-			ctx.ui.setWidget("plan-planner", [
+			const plannerLines = [
 				ctx.ui.theme.fg("accent", `Planner: ${plannerAgent}`),
-				ctx.ui.theme.fg("muted", "Status: generating plan"),
+				ctx.ui.theme.fg("muted", `Status: ${plannerPhase || "starting"}`),
 				ctx.ui.theme.fg("dim", shortenRequest(lastPlanRequest) || "Waiting for request"),
-			]);
+				...plannerRecentToolCalls.map((call) => ctx.ui.theme.fg("dim", `→ ${call}`)),
+			];
+			ctx.ui.setWidget("plan-planner", plannerLines);
 		} else if (planModeEnabled && lastPlanRequest.trim()) {
 			ctx.ui.setWidget("plan-planner", [
 				ctx.ui.theme.fg("accent", `Planner: ${plannerAgent}`),
@@ -228,10 +434,11 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			"Inspect the relevant code before answering.",
 			"You must choose exactly one outcome and make it explicit on the first decision line.",
 			"If the request is specific enough to plan safely, start with `Decision: PLAN` and then output an exact `Plan:` header followed by numbered steps.",
-			"If the request is too vague to plan safely, start with `Decision: NEEDS_MORE_DETAIL` and then output an exact `Need more detail:` header followed by 2-4 short bullet points.",
+			"If the request is too vague to plan safely, start with `Decision: NEEDS_MORE_DETAIL` and then output an exact `Need more detail:` header followed by 1-3 short bullet points.",
 			"Never output both outcomes.",
 			"Do not include code patches or `[DONE:n]` markers.",
 			"If information is missing but you can still proceed safely, make the smallest reasonable assumption and list it briefly before the plan.",
+			"Each NEEDS_MORE_DETAIL bullet must be a single independently answerable clarification question.",
 			"Keep the plan scoped to the request.",
 			"",
 			"Examples:",
@@ -262,6 +469,29 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 
 		return sections.join("\n");
+	}
+
+	async function collectPlannerClarifications(ctx: ExtensionContext): Promise<string | null> {
+		const questions = extractNeedMoreDetailQuestions(lastPlanText);
+		if (questions.length === 0) {
+			const refinement = await ctx.ui.editor("Add more detail for the planner:", lastPlanRequest);
+			return refinement?.trim() ? refinement.trim() : null;
+		}
+
+		ctx.ui.notify(`Answer ${questions.length} planner question${questions.length === 1 ? "" : "s"} one by one.`, "info");
+		const answers: Array<{ question: string; answer: string }> = [];
+		for (let i = 0; i < questions.length; i++) {
+			const question = questions[i];
+			const answer = await ctx.ui.editor(`Planner question ${i + 1}/${questions.length}:\n\n${question}`, "");
+			if (!answer?.trim()) return null;
+			answers.push({ question, answer: answer.trim() });
+		}
+
+		const lines = [lastPlanRequest.trim(), "", "Additional detail:"];
+		for (const item of answers) {
+			lines.push(`- ${item.question}`, `  Answer: ${item.answer}`);
+		}
+		return lines.join("\n").trim();
 	}
 
 	async function runPlanner(request: string, ctx: ExtensionContext, refinement?: string): Promise<void> {
@@ -306,6 +536,12 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 				maxDepth: 3,
 				preventCycles: true,
 				makeDetails: (results) => createSubagentDetails(results, discovery.projectAgentsDir),
+				onUpdate: (partial) => {
+					const liveResult = partial.details?.results[0];
+					if (!liveResult) return;
+					if (!updatePlannerLiveState(liveResult)) return;
+					maybeEmitPlannerProgress(ctx);
+				},
 			});
 		} catch (error) {
 			planningInFlight = false;
@@ -317,6 +553,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 
 		planningInFlight = false;
+		updatePlannerLiveState(result);
+		maybeEmitPlannerProgress(ctx, true);
 		const planText = getResultSummaryText(result).trim();
 		if (isResultError(result)) {
 			updateStatus(ctx);
@@ -365,7 +603,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		const options = todoItems.length > 0
 			? ["Execute the plan (track progress)", "Stay in plan mode", "Refine the plan"]
-			: [needsMoreDetail ? "Answer planner questions" : "Refine the request", "Stay in plan mode"];
+			: [needsMoreDetail ? "Answer planner questions (1 by 1)" : "Refine the request", "Stay in plan mode"];
 		const choice = await ctx.ui.select("Plan mode - what next?", options);
 
 		if (choice?.startsWith("Execute")) {
@@ -385,12 +623,11 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
-		if (choice === "Refine the plan" || choice === "Answer planner questions" || choice === "Refine the request") {
-			const refineRequest = choice === "Answer planner questions" || choice === "Refine the request";
-			const refinement = await ctx.ui.editor(
-				refineRequest ? "Add more detail for the planner:" : "Refine the plan:",
-				refineRequest ? lastPlanRequest : "",
-			);
+		if (choice === "Refine the plan" || choice === "Answer planner questions (1 by 1)" || choice === "Refine the request") {
+			const refineRequest = choice === "Answer planner questions (1 by 1)" || choice === "Refine the request";
+			const refinement = refineRequest
+				? await collectPlannerClarifications(ctx)
+				: await ctx.ui.editor("Refine the plan:", "");
 			if (!refinement?.trim()) return;
 			if (refineRequest) {
 				await runPlanner(refinement.trim(), ctx);
@@ -448,7 +685,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		return {
 			messages: event.messages.filter((m) => {
 				const msg = m as AgentMessage & { customType?: string };
-				if (msg.customType === "plan-mode-context") return false;
+				if (msg.customType && HIDDEN_PLAN_MESSAGE_TYPES.has(msg.customType)) return false;
 				if (msg.role !== "user") return true;
 
 				const content = msg.content;
