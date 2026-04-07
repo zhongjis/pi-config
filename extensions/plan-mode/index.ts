@@ -32,10 +32,9 @@ import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } fr
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "ask"];
 const PLANNER_AGENT_NAME = "prometheus";
 const PLANNER_DELEGATION_MODE = "spawn";
-const PLANNER_PROGRESS_EMIT_MS = 1200;
 const PLANNER_RECENT_TOOL_LIMIT = 3;
-const PLANNER_DRAFT_MAX_LINES = 8;
-const PLANNER_DRAFT_MAX_CHARS = 700;
+const PLANNER_OUTPUT_MAX_LINES = 12;
+const PLANNER_OUTPUT_MAX_CHARS = 1400;
 const HIDDEN_PLAN_MESSAGE_TYPES = new Set([
 	"plan-mode-context",
 	"plan-planner-status",
@@ -180,26 +179,22 @@ function summarizeToolCall(item: DisplayItem): string | null {
 	}
 }
 
-function buildPlannerDraftPreview(text: string): string {
+function buildPlannerOutputPreview(text: string): string {
 	const trimmed = text.trim();
 	if (!trimmed) return "";
 
-	const lines = trimmed
-		.split("\n")
-		.map((line) => line.trimEnd())
-		.filter((line) => line.trim().length > 0);
-
-	const previewLines = lines.slice(0, PLANNER_DRAFT_MAX_LINES);
+	const lines = trimmed.split("\n").map((line) => line.trimEnd());
+	const previewLines = lines.slice(-PLANNER_OUTPUT_MAX_LINES);
 	let preview = previewLines.join("\n");
-	if (lines.length > previewLines.length) preview += "\n...";
-	if (preview.length > PLANNER_DRAFT_MAX_CHARS) {
-		preview = `${preview.slice(0, PLANNER_DRAFT_MAX_CHARS - 3)}...`;
+	if (lines.length > previewLines.length) preview = `...\n${preview}`;
+	if (preview.length > PLANNER_OUTPUT_MAX_CHARS) {
+		preview = `...${preview.slice(-(PLANNER_OUTPUT_MAX_CHARS - 3))}`;
 	}
 	return preview;
 }
 
-function inferPlannerPhase(toolCalls: string[], draftPreview: string): string {
-	if (draftPreview) return "drafting plan";
+function inferPlannerPhase(toolCalls: string[], liveOutput: string): string {
+	if (liveOutput) return "responding";
 
 	for (let i = toolCalls.length - 1; i >= 0; i--) {
 		const call = toolCalls[i];
@@ -213,10 +208,9 @@ function inferPlannerPhase(toolCalls: string[], draftPreview: string): string {
 		}
 	}
 
-	if (toolCalls.length > 0) return "inspecting code";
+	if (toolCalls.length > 0) return "using tools";
 	return "starting";
 }
-
 
 export default function planModeExtension(pi: ExtensionAPI): void {
 	let planModeEnabled = false;
@@ -229,9 +223,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let plannerAgent = PLANNER_AGENT_NAME;
 	let plannerPhase = "";
 	let plannerRecentToolCalls: string[] = [];
-	let plannerDraftPreview = "";
-	let lastPlannerProgressMessage = "";
-	let lastPlannerProgressAt = 0;
+	let plannerLiveOutput = "";
 
 	function updatePlannerLiveState(result: SingleResult): boolean {
 		const displayItems = getVisibleDisplayItems(result);
@@ -243,52 +235,17 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		}
 
 		const recentToolCalls = toolCalls.slice(-PLANNER_RECENT_TOOL_LIMIT);
-		const draftPreview = buildPlannerDraftPreview(getVisibleOutput(result));
-		const phase = inferPlannerPhase(recentToolCalls, draftPreview);
+		const liveOutput = buildPlannerOutputPreview(getVisibleOutput(result));
+		const phase = inferPlannerPhase(recentToolCalls, liveOutput);
 		const changed =
 			phase !== plannerPhase ||
-			draftPreview !== plannerDraftPreview ||
+			liveOutput !== plannerLiveOutput ||
 			recentToolCalls.join("\n") !== plannerRecentToolCalls.join("\n");
 
 		plannerPhase = phase;
 		plannerRecentToolCalls = recentToolCalls;
-		plannerDraftPreview = draftPreview;
+		plannerLiveOutput = liveOutput;
 		return changed;
-	}
-
-	function buildPlannerProgressMessage(): string | null {
-		if (plannerRecentToolCalls.length === 0 && !plannerDraftPreview) return null;
-
-		const lines = [`**Planning with ${plannerAgent}**`, "", `Status: ${plannerPhase || "starting"}`];
-		if (lastPlanRequest.trim()) {
-			lines.push("", `Request: ${shortenRequest(lastPlanRequest, 160)}`);
-		}
-		if (plannerRecentToolCalls.length > 0) {
-			lines.push("", "Recent activity:");
-			for (const call of plannerRecentToolCalls) lines.push(`- ${call}`);
-		}
-		if (plannerDraftPreview) {
-			lines.push("", "Draft:", "```text", plannerDraftPreview, "```");
-		}
-		return lines.join("\n");
-	}
-
-	function maybeEmitPlannerProgress(ctx: ExtensionContext, force = false): void {
-		const message = buildPlannerProgressMessage();
-		if (!message || message === lastPlannerProgressMessage) return;
-
-		const now = Date.now();
-		if (!force && lastPlannerProgressAt > 0 && now - lastPlannerProgressAt < PLANNER_PROGRESS_EMIT_MS) {
-			return;
-		}
-
-		lastPlannerProgressMessage = message;
-		lastPlannerProgressAt = now;
-		updateStatus(ctx);
-		pi.sendMessage(
-			{ customType: "plan-planner-progress", content: message, display: true },
-			{ triggerTurn: false, deliverAs: "followUp" },
-		);
 	}
 
 	pi.registerFlag("plan", {
@@ -313,9 +270,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	function resetPlannerLiveState(): void {
 		plannerPhase = "";
 		plannerRecentToolCalls = [];
-		plannerDraftPreview = "";
-		lastPlannerProgressMessage = "";
-		lastPlannerProgressAt = 0;
+		plannerLiveOutput = "";
 	}
 
 	function resetPlanState(): void {
@@ -373,6 +328,38 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		} satisfies PlanModeStateData);
 	}
 
+	function buildPlannerWidgetLines(ctx: ExtensionContext): string[] | undefined {
+		if (planningInFlight) {
+			const plannerLines = [
+				ctx.ui.theme.fg("accent", `Planner: ${plannerAgent}`),
+				ctx.ui.theme.fg("muted", `Status: ${plannerPhase || "starting"}`),
+				ctx.ui.theme.fg("dim", shortenRequest(lastPlanRequest) || "Waiting for request"),
+			];
+			if (plannerRecentToolCalls.length > 0) {
+				plannerLines.push(ctx.ui.theme.fg("muted", "Tools:"));
+				for (const call of plannerRecentToolCalls) {
+					plannerLines.push(ctx.ui.theme.fg("dim", `→ ${call}`));
+				}
+			}
+			if (plannerLiveOutput) {
+				plannerLines.push(ctx.ui.theme.fg("muted", "Live output:"));
+				for (const line of plannerLiveOutput.split("\n")) {
+					plannerLines.push(line);
+				}
+			}
+			return plannerLines;
+		}
+
+		if (planModeEnabled && lastPlanRequest.trim()) {
+			return [
+				ctx.ui.theme.fg("accent", `Planner: ${plannerAgent}`),
+				ctx.ui.theme.fg("muted", shortenRequest(lastPlanRequest)),
+			];
+		}
+
+		return undefined;
+	}
+
 	function updateStatus(ctx: ExtensionContext): void {
 		if (planningInFlight) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `🧠 ${plannerAgent}`));
@@ -385,22 +372,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			ctx.ui.setStatus("plan-mode", undefined);
 		}
 
-		if (planningInFlight) {
-			const plannerLines = [
-				ctx.ui.theme.fg("accent", `Planner: ${plannerAgent}`),
-				ctx.ui.theme.fg("muted", `Status: ${plannerPhase || "starting"}`),
-				ctx.ui.theme.fg("dim", shortenRequest(lastPlanRequest) || "Waiting for request"),
-				...plannerRecentToolCalls.map((call) => ctx.ui.theme.fg("dim", `→ ${call}`)),
-			];
-			ctx.ui.setWidget("plan-planner", plannerLines);
-		} else if (planModeEnabled && lastPlanRequest.trim()) {
-			ctx.ui.setWidget("plan-planner", [
-				ctx.ui.theme.fg("accent", `Planner: ${plannerAgent}`),
-				ctx.ui.theme.fg("muted", shortenRequest(lastPlanRequest)),
-			]);
-		} else {
-			ctx.ui.setWidget("plan-planner", undefined);
-		}
+		ctx.ui.setWidget("plan-planner", buildPlannerWidgetLines(ctx));
 
 		if (executionMode && todoItems.length > 0) {
 			const lines = todoItems.map((item) => {
@@ -540,7 +512,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 					const liveResult = partial.details?.results[0];
 					if (!liveResult) return;
 					if (!updatePlannerLiveState(liveResult)) return;
-					maybeEmitPlannerProgress(ctx);
+					updateStatus(ctx);
 				},
 			});
 		} catch (error) {
@@ -554,7 +526,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 		planningInFlight = false;
 		updatePlannerLiveState(result);
-		maybeEmitPlannerProgress(ctx, true);
+		updateStatus(ctx);
 		const planText = getResultSummaryText(result).trim();
 		if (isResultError(result)) {
 			updateStatus(ctx);
