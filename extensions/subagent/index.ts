@@ -14,6 +14,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { randomUUID } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { type AgentConfig, discoverAgents } from "./agents.js";
 import { renderCall, renderResult } from "./render.js";
@@ -29,6 +30,26 @@ import {
   isResultSuccess,
 } from "./types.js";
 
+// ---------------------------------------------------------------------------
+// Viewer store bridge (optional — only active when subagent-viewer is loaded)
+// ---------------------------------------------------------------------------
+
+interface ViewerStoreAPI {
+  createSession(data: {
+    id: string;
+    agent: string;
+    agentSource: string;
+    task: string;
+    delegationMode: string;
+    startedAt: number;
+  }): void;
+  updateSession(id: string, result: Record<string, unknown>): void;
+  completeSession(id: string, result: Record<string, unknown>): void;
+}
+
+function getViewerStore(): ViewerStoreAPI | undefined {
+  return (globalThis as any).__piSubagentViewerStore;
+}
 // ---------------------------------------------------------------------------
 // Limits
 // ---------------------------------------------------------------------------
@@ -665,6 +686,29 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
     onUpdate: ((partial: any) => void) | undefined,
     makeDetails: ReturnType<typeof makeDetailsFactory>,
   ) {
+    // Bridge: create viewer session for real-time tracking
+    const viewerStore = getViewerStore();
+    const sessionId = randomUUID();
+    const startedAt = Date.now();
+    const agentConfig = agents.find((a) => a.name === agentName);
+    viewerStore?.createSession({
+      id: sessionId,
+      agent: agentName,
+      agentSource: agentConfig?.source ?? "unknown",
+      task,
+      delegationMode,
+      startedAt,
+    });
+
+    // Wrap onUpdate to also push to viewer store
+    const wrappedOnUpdate = (partial: any) => {
+      onUpdate?.(partial);
+      const partialResult = partial.details?.results?.[0];
+      if (viewerStore && partialResult) {
+        viewerStore.updateSession(sessionId, partialResult);
+      }
+    };
+
     const result = await runAgent({
       cwd: defaultCwd,
       agents,
@@ -678,8 +722,29 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
       maxDepth,
       preventCycles,
       signal,
-      onUpdate,
+      onUpdate: wrappedOnUpdate,
       makeDetails: makeDetails("single"),
+    });
+
+    // Bridge: complete viewer session
+    viewerStore?.completeSession(sessionId, result);
+
+    // Persist for fork/timeline support
+    pi.appendEntry("subagent-session", {
+      id: sessionId,
+      agent: result.agent,
+      agentSource: result.agentSource,
+      task: result.task,
+      delegationMode,
+      startedAt,
+      completedAt: Date.now(),
+      messages: result.messages,
+      usage: result.usage,
+      model: result.model,
+      exitCode: result.exitCode,
+      stopReason: result.stopReason,
+      errorMessage: result.errorMessage,
+      status: isResultError(result) ? "error" : "completed",
     });
 
     if (isResultError(result)) {
@@ -726,6 +791,23 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
         details: makeDetails("parallel")([]),
       };
     }
+
+    // Bridge: create viewer sessions for each parallel task
+    const viewerStore = getViewerStore();
+    const startedAt = Date.now();
+    const sessionIds: string[] = tasks.map((t) => {
+      const sessionId = randomUUID();
+      const agentConfig = agents.find((a) => a.name === t.agent);
+      viewerStore?.createSession({
+        id: sessionId,
+        agent: t.agent,
+        agentSource: agentConfig?.source ?? "unknown",
+        task: t.task,
+        delegationMode,
+        startedAt,
+      });
+      return sessionId;
+    });
 
     // Initialize placeholder results for streaming
     const allResults: SingleResult[] = tasks.map((t) => ({
@@ -783,18 +865,40 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
             onUpdate: (partial) => {
               if (partial.details?.results[0]) {
                 allResults[index] = partial.details.results[0];
+                viewerStore?.updateSession(sessionIds[index], partial.details.results[0]);
                 emitProgress();
               }
             },
             makeDetails: makeDetails("parallel"),
           });
           allResults[index] = result;
+          viewerStore?.completeSession(sessionIds[index], result);
           emitProgress();
           return result;
         },
       );
     } finally {
       if (heartbeat) clearInterval(heartbeat);
+    }
+
+    // Persist each result for fork/timeline support
+    for (let i = 0; i < results.length; i++) {
+      pi.appendEntry("subagent-session", {
+        id: sessionIds[i],
+        agent: results[i].agent,
+        agentSource: results[i].agentSource,
+        task: results[i].task,
+        delegationMode,
+        startedAt,
+        completedAt: Date.now(),
+        messages: results[i].messages,
+        usage: results[i].usage,
+        model: results[i].model,
+        exitCode: results[i].exitCode,
+        stopReason: results[i].stopReason,
+        errorMessage: results[i].errorMessage,
+        status: isResultError(results[i]) ? "error" : "completed",
+      });
     }
 
     const successCount = results.filter((r) => isResultSuccess(r)).length;
