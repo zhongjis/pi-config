@@ -3,3 +3,5 @@ sessions/
 *.local
 
 skills
+git
+/mcp-cache.json
