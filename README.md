@@ -12,11 +12,11 @@ ln -sfn "$(pwd)" ~/.pi/agent
 
 ## Structure
 
-| File | Purpose |
-|------|---------|
-| `settings.json` | Global settings (model, theme, packages) |
-| `AGENTS.md` | Global coding conventions loaded in every session |
-| `mcp.json` | MCP server configuration (used by pi-mcp-adapter) |
+| File            | Purpose                                           |
+| --------------- | ------------------------------------------------- |
+| `settings.json` | Global settings (model, theme, packages)          |
+| `AGENTS.md`     | Global coding conventions loaded in every session |
+| `mcp.json`      | MCP server configuration (used by pi-mcp-adapter) |
 
 ## Installed Packages
 
