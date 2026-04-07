@@ -24,7 +24,8 @@
     {
       "source": "git:github.com/yofriadi/pi-extensions",
       "extensions": ["packages/lsp/src/index.ts"]
-    }
+    },
+    "git:github.com/RimuruW/pi-hashline-edit"
   ],
   "permissionLevel": "high"
 }
