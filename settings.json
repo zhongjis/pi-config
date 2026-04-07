@@ -22,11 +22,9 @@
   "packages": [
     "git:github.com/nicobailon/pi-mcp-adapter",
     {
-      "source": "git:github.com/prateekmedia/pi-hooks",
-      "extensions": [
-        "+lsp/lsp.ts",
-        "+lsp/lsp-tool.ts"
-      ]
+      "source": "git:github.com/yofriadi/pi-extensions",
+      "extensions": ["packages/lsp/src/index.ts"]
     }
-  ]
+  ],
+  "permissionLevel": "high"
 }
