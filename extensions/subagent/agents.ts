@@ -22,6 +22,7 @@ export interface AgentConfig {
 	description: string;
 	tools?: string[];
 	model?: string;
+	preferredModels?: string[];
 	thinking?: string;
 	systemPrompt: string;
 	source: "user" | "project";
@@ -58,6 +59,33 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 	}
 }
 
+
+function parseStringListField(
+	value: unknown,
+	filePath: string,
+	fieldName: string,
+): string[] | undefined {
+	if (typeof value === "string") {
+		const items = value
+			.split(",")
+			.map((item) => item.trim())
+			.filter(Boolean);
+		return items.length > 0 ? items : undefined;
+	}
+	if (Array.isArray(value)) {
+		const items = value
+			.filter((item): item is string => typeof item === "string")
+			.map((item) => item.trim())
+			.filter(Boolean);
+		return items.length > 0 ? items : undefined;
+	}
+	if (value !== undefined) {
+		console.warn(
+			`[pi-subagent] Ignoring invalid ${fieldName} field in "${filePath}". Expected a comma-separated string or string array.`,
+		);
+	}
+	return undefined;
+}
 /** Parse a single agent markdown file into an AgentConfig. Returns null on skip. */
 function parseAgentFile(filePath: string, source: "user" | "project"): AgentConfig | null {
 	let content: string;
@@ -98,11 +126,19 @@ function parseAgentFile(filePath: string, source: "user" | "project"): AgentConf
 		);
 	}
 
+	const model = typeof frontmatter.model === "string" ? frontmatter.model.trim() : undefined;
+	const preferredModels = parseStringListField(frontmatter.preferredModels, filePath, "preferredModels");
+	const modelFallbacks = parseStringListField(frontmatter.modelFallbacks, filePath, "modelFallbacks");
+	const mergedPreferredModels = (preferredModels ?? [model, ...(modelFallbacks ?? [])])
+		.filter((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0)
+		.map((candidate) => candidate.trim());
+
 	return {
 		name,
 		description,
 		tools,
-		model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
+		model: model ?? mergedPreferredModels[0],
+		preferredModels: mergedPreferredModels.length > 0 ? mergedPreferredModels : undefined,
 		thinking: typeof frontmatter.thinking === "string" ? frontmatter.thinking : undefined,
 		systemPrompt: body,
 		source,

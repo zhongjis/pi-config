@@ -89,8 +89,27 @@ function cleanupTempDir(dir: string | null): void {
 
 const inheritedCliArgs = parseInheritedCliArgs(process.argv);
 
+const MODEL_FALLBACK_PATTERNS = [
+  /the requested model is not supported/i,
+  /model .* not supported/i,
+  /model .* not found/i,
+  /unknown model/i,
+  /provider .* not configured/i,
+  /unknown provider/i,
+  /missing credentials/i,
+  /failed to resolve credentials/i,
+  /not logged in/i,
+  /login required/i,
+  /authentication/i,
+  /unauthori[sz]ed/i,
+  /forbidden/i,
+  /api key/i,
+  /oauth/i,
+];
+
 function buildPiArgs(
   agent: AgentConfig,
+  model: string | undefined,
   systemPromptPath: string | null,
   task: string,
   delegationMode: DelegationMode,
@@ -110,7 +129,6 @@ function buildPiArgs(
     args.push("--session", forkSessionPath);
   }
 
-  const model = agent.model ?? inheritedCliArgs.fallbackModel;
   if (model) args.push("--model", model);
 
   const thinking = agent.thinking ?? inheritedCliArgs.fallbackThinking;
@@ -129,6 +147,211 @@ function buildPiArgs(
   if (systemPromptPath) args.push("--append-system-prompt", systemPromptPath);
   args.push(`Task: ${task}`);
   return args;
+}
+
+function getModelCandidates(agent: AgentConfig): Array<string | undefined> {
+  const configuredModels = agent.preferredModels?.length
+    ? agent.preferredModels
+    : agent.model
+      ? [agent.model]
+      : [];
+  const candidates = configuredModels.length > 0
+    ? configuredModels
+    : inheritedCliArgs.fallbackModel
+      ? [inheritedCliArgs.fallbackModel]
+      : [undefined];
+  return Array.from(new Set(candidates));
+}
+
+function shouldRetryWithModelFallback(result: SingleResult): boolean {
+  const diagnostic = `${result.errorMessage ?? ""}\n${result.stderr}`.trim();
+  if (!diagnostic) return false;
+  if (getFinalOutput(result.messages).trim()) return false;
+  return MODEL_FALLBACK_PATTERNS.some((pattern) => pattern.test(diagnostic));
+}
+
+async function executePiAttempt(
+  agent: AgentConfig,
+  model: string | undefined,
+  systemPromptPath: string | null,
+  task: string,
+  delegationMode: DelegationMode,
+  forkSessionPath: string | null,
+  cwd: string,
+  taskCwd: string | undefined,
+  parentDepth: number,
+  parentAgentStack: string[],
+  maxDepth: number,
+  preventCycles: boolean,
+  signal: AbortSignal | undefined,
+  onUpdate: OnUpdateCallback | undefined,
+  makeDetails: (results: SingleResult[]) => SubagentDetails,
+  agentName: string,
+): Promise<SingleResult> {
+  const result: SingleResult = {
+    agent: agentName,
+    agentSource: agent.source,
+    task,
+    exitCode: -1,
+    messages: [],
+    stderr: "",
+    usage: emptyUsage(),
+    model,
+  };
+
+  const emitUpdate = () => {
+    onUpdate?.({
+      content: [
+        {
+          type: "text",
+          text: getFinalOutput(result.messages) || "(running...)",
+        },
+      ],
+      details: makeDetails([result]),
+    });
+  };
+
+  const piArgs = buildPiArgs(
+    agent,
+    model,
+    systemPromptPath,
+    task,
+    delegationMode,
+    forkSessionPath,
+  );
+  let wasAborted = false;
+
+  const exitCode = await new Promise<number>((resolve) => {
+    const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
+    const propagatedMaxDepth = Math.max(0, Math.floor(maxDepth));
+    const propagatedStack = [...parentAgentStack, agentName];
+    const { command, prefixArgs } = resolvePiSpawn();
+    const proc = spawn(command, [...prefixArgs, ...piArgs], {
+      cwd: taskCwd ?? cwd,
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        [SUBAGENT_DEPTH_ENV]: String(nextDepth),
+        [SUBAGENT_MAX_DEPTH_ENV]: String(propagatedMaxDepth),
+        [SUBAGENT_STACK_ENV]: JSON.stringify(propagatedStack),
+        [SUBAGENT_PREVENT_CYCLES_ENV]: preventCycles ? "1" : "0",
+        [PI_OFFLINE_ENV]: "1",
+      },
+    });
+
+    proc.stdin.on("error", () => {
+      /* ignore broken pipe on fast exits */
+    });
+    proc.stdin.end();
+
+    let buffer = "";
+    let didClose = false;
+    let settled = false;
+    let abortHandler: (() => void) | undefined;
+    let semanticCompletionTimer: NodeJS.Timeout | undefined;
+
+    const clearSemanticCompletionTimer = () => {
+      if (semanticCompletionTimer) {
+        clearTimeout(semanticCompletionTimer);
+        semanticCompletionTimer = undefined;
+      }
+    };
+
+    const terminateChild = () => {
+      if (isWindows) {
+        if (proc.pid !== undefined) {
+          const killer = spawn("taskkill", ["/T", "/F", "/PID", String(proc.pid)], {
+            stdio: "ignore",
+          });
+          killer.unref();
+        }
+        return;
+      }
+
+      proc.kill("SIGTERM");
+      const sigkillTimer = setTimeout(() => {
+        if (!didClose) proc.kill("SIGKILL");
+      }, SIGKILL_TIMEOUT_MS);
+      sigkillTimer.unref();
+    };
+
+    const finish = (code: number) => {
+      if (settled) return;
+      settled = true;
+      clearSemanticCompletionTimer();
+      if (signal && abortHandler) {
+        signal.removeEventListener("abort", abortHandler);
+      }
+      resolve(code);
+    };
+
+    const flushLine = (line: string) => {
+      if (processPiJsonLine(line, result)) emitUpdate();
+      maybeFinishFromAgentEnd();
+    };
+
+    const flushBufferedLines = (text: string) => {
+      for (const line of text.split(/\r?\n/)) {
+        if (line.trim()) flushLine(line);
+      }
+    };
+
+    const maybeFinishFromAgentEnd = () => {
+      if (!result.sawAgentEnd || didClose || settled) return;
+      clearSemanticCompletionTimer();
+      semanticCompletionTimer = setTimeout(() => {
+        if (didClose || settled || !result.sawAgentEnd) return;
+        if (buffer.trim()) {
+          flushBufferedLines(buffer);
+          buffer = "";
+        }
+        proc.stdout.removeListener("data", onStdoutData);
+        proc.stderr.removeListener("data", onStderrData);
+        finish(0);
+        terminateChild();
+      }, AGENT_END_GRACE_MS);
+      semanticCompletionTimer.unref();
+    };
+
+    const onStdoutData = (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+      for (const line of lines) flushLine(line);
+    };
+
+    const onStderrData = (chunk: Buffer) => {
+      result.stderr += chunk.toString();
+    };
+
+    proc.stdout.on("data", onStdoutData);
+    proc.stderr.on("data", onStderrData);
+
+    proc.on("close", (code) => {
+      didClose = true;
+      if (buffer.trim()) flushBufferedLines(buffer);
+      finish(code ?? 0);
+    });
+
+    proc.on("error", (err) => {
+      if (!result.stderr.trim()) result.stderr = err.message;
+      finish(1);
+    });
+
+    if (signal) {
+      abortHandler = () => {
+        if (didClose || settled) return;
+        wasAborted = true;
+        terminateChild();
+      };
+      if (signal.aborted) abortHandler();
+      else signal.addEventListener("abort", abortHandler, { once: true });
+    }
+  });
+
+  result.exitCode = exitCode;
+  return normalizeCompletedResult(result, wasAborted);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,35 +439,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       stderr:
         "Cannot run in fork mode: missing parent session snapshot context.",
       usage: emptyUsage(),
-      model: agent.model,
+      model: getModelCandidates(agent)[0],
       stopReason: "error",
       errorMessage:
         "Cannot run in fork mode: missing parent session snapshot context.",
     };
   }
 
-  const result: SingleResult = {
-    agent: agentName,
-    agentSource: agent.source,
-    task,
-    exitCode: -1,
-    messages: [],
-    stderr: "",
-    usage: emptyUsage(),
-    model: agent.model,
-  };
-
-  const emitUpdate = () => {
-    onUpdate?.({
-      content: [
-        {
-          type: "text",
-          text: getFinalOutput(result.messages) || "(running...)",
-        },
-      ],
-      details: makeDetails([result]),
-    });
-  };
+  const modelCandidates = getModelCandidates(agent);
 
   // Write system prompt to temp file if needed
   let promptTmpDir: string | null = null;
@@ -265,147 +467,48 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
   }
 
   try {
-    const piArgs = buildPiArgs(
-      agent,
-      promptTmpPath,
-      task,
-      delegationMode,
-      forkSessionTmpPath,
-    );
-    let wasAborted = false;
+    let lastResult: SingleResult | undefined;
 
-    const exitCode = await new Promise<number>((resolve) => {
-      const nextDepth = Math.max(0, Math.floor(parentDepth)) + 1;
-      const propagatedMaxDepth = Math.max(0, Math.floor(maxDepth));
-      const propagatedStack = [...parentAgentStack, agentName];
-      const { command, prefixArgs } = resolvePiSpawn();
-      const proc = spawn(command, [...prefixArgs, ...piArgs], {
-        cwd: taskCwd ?? cwd,
-        shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          [SUBAGENT_DEPTH_ENV]: String(nextDepth),
-          [SUBAGENT_MAX_DEPTH_ENV]: String(propagatedMaxDepth),
-          [SUBAGENT_STACK_ENV]: JSON.stringify(propagatedStack),
-          [SUBAGENT_PREVENT_CYCLES_ENV]: preventCycles ? "1" : "0",
-          [PI_OFFLINE_ENV]: "1",
-        },
-      });
+    for (let i = 0; i < modelCandidates.length; i++) {
+      const model = modelCandidates[i];
+      const result = await executePiAttempt(
+        agent,
+        model,
+        promptTmpPath,
+        task,
+        delegationMode,
+        forkSessionTmpPath,
+        cwd,
+        taskCwd,
+        parentDepth,
+        parentAgentStack,
+        maxDepth,
+        preventCycles,
+        signal,
+        onUpdate,
+        makeDetails,
+        agentName,
+      );
+      lastResult = result;
 
-      proc.stdin.on("error", () => {
-        /* ignore broken pipe on fast exits */
-      });
-      proc.stdin.end();
-
-      let buffer = "";
-      let didClose = false;
-      let settled = false;
-      let abortHandler: (() => void) | undefined;
-      let semanticCompletionTimer: NodeJS.Timeout | undefined;
-
-      const clearSemanticCompletionTimer = () => {
-        if (semanticCompletionTimer) {
-          clearTimeout(semanticCompletionTimer);
-          semanticCompletionTimer = undefined;
-        }
-      };
-
-      const terminateChild = () => {
-        if (isWindows) {
-          if (proc.pid !== undefined) {
-            const killer = spawn("taskkill", ["/T", "/F", "/PID", String(proc.pid)], {
-              stdio: "ignore",
-            });
-            killer.unref();
-          }
-          return;
-        }
-
-        proc.kill("SIGTERM");
-        const sigkillTimer = setTimeout(() => {
-          if (!didClose) proc.kill("SIGKILL");
-        }, SIGKILL_TIMEOUT_MS);
-        sigkillTimer.unref();
-      };
-
-      const finish = (code: number) => {
-        if (settled) return;
-        settled = true;
-        clearSemanticCompletionTimer();
-        if (signal && abortHandler) {
-          signal.removeEventListener("abort", abortHandler);
-        }
-        resolve(code);
-      };
-
-      const flushLine = (line: string) => {
-        if (processPiJsonLine(line, result)) emitUpdate();
-        maybeFinishFromAgentEnd();
-      };
-
-      const flushBufferedLines = (text: string) => {
-        for (const line of text.split(/\r?\n/)) {
-          if (line.trim()) flushLine(line);
-        }
-      };
-
-      const maybeFinishFromAgentEnd = () => {
-        if (!result.sawAgentEnd || didClose || settled) return;
-        clearSemanticCompletionTimer();
-        semanticCompletionTimer = setTimeout(() => {
-          if (didClose || settled || !result.sawAgentEnd) return;
-          if (buffer.trim()) {
-            flushBufferedLines(buffer);
-            buffer = "";
-          }
-          proc.stdout.removeListener("data", onStdoutData);
-          proc.stderr.removeListener("data", onStderrData);
-          finish(0);
-          terminateChild();
-        }, AGENT_END_GRACE_MS);
-        semanticCompletionTimer.unref();
-      };
-
-      const onStdoutData = (chunk: Buffer) => {
-        buffer += chunk.toString();
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() || "";
-        for (const line of lines) flushLine(line);
-      };
-
-      const onStderrData = (chunk: Buffer) => {
-        result.stderr += chunk.toString();
-      };
-
-      proc.stdout.on("data", onStdoutData);
-      proc.stderr.on("data", onStderrData);
-
-      proc.on("close", (code) => {
-        didClose = true;
-        if (buffer.trim()) flushBufferedLines(buffer);
-        finish(code ?? 0);
-      });
-
-      proc.on("error", (err) => {
-        if (!result.stderr.trim()) result.stderr = err.message;
-        finish(1);
-      });
-
-      // Abort handling
-      if (signal) {
-        abortHandler = () => {
-          if (didClose || settled) return;
-          wasAborted = true;
-          terminateChild();
-        };
-        if (signal.aborted) abortHandler();
-        else signal.addEventListener("abort", abortHandler, { once: true });
+      const hasMoreModels = i < modelCandidates.length - 1;
+      if (!hasMoreModels || !shouldRetryWithModelFallback(result)) {
+        return result;
       }
-    });
+    }
 
-    result.exitCode = exitCode;
-    return normalizeCompletedResult(result, wasAborted);
+    return lastResult ?? {
+      agent: agentName,
+      agentSource: agent.source,
+      task,
+      exitCode: 1,
+      messages: [],
+      stderr: "Failed to run subagent.",
+      usage: emptyUsage(),
+      model: modelCandidates[0],
+      stopReason: "error",
+      errorMessage: "Failed to run subagent.",
+    };
   } finally {
     cleanupTempDir(promptTmpDir);
     cleanupTempDir(forkSessionTmpDir);

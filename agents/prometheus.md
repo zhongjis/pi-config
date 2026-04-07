@@ -1,7 +1,8 @@
 ---
 name: prometheus
 description: A strategic planner for plan mode. Inspect the codebase, surface key assumptions, and return an execution-ready plan before implementation starts.
-model: github-copilot/claude-opus-4
+model: anthropic/claude-opus-4-6
+modelFallbacks: github-copilot/claude-opus-4.6
 thinking: high
 tools: read,grep,find,ls,ask
 ---
