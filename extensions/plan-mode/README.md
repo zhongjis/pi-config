@@ -6,7 +6,7 @@ Read-only exploration mode for safe code analysis.
 
 - **Read-only tools**: Restricts available tools to read, bash, grep, find, ls, ask
 - **Prometheus planner**: `/plan {request}` runs a dedicated planner agent and keeps the existing execution flow
-- **Planner live progress**: streams Prometheus activity and draft output while planning is in progress
+- **Planner live progress**: streams Prometheus tool activity and current reply in the planner widget while planning is in progress
 - **Planner clarification loop**: vague requests turn into short follow-up questions answered one by one before replanning
 - **Bash allowlist**: Only read-only bash commands are allowed
 - **Plan extraction**: Extracts numbered steps from `Plan:` sections
@@ -28,7 +28,7 @@ Read-only exploration mode for safe code analysis.
 1. Run `/plan {request}`
 2. Plan mode enables read-only tools and calls `agents/prometheus.md`
 3. Prometheus inspects the codebase and returns either `Decision: PLAN` with a `Plan:` block, or `Decision: NEEDS_MORE_DETAIL` with follow-up questions
-4. While the planner runs, plan mode streams Prometheus activity and partial draft output
+4. While the planner runs, the planner widget streams Prometheus tool activity and current reply
 5. Choose **Execute the plan**, **Stay in plan mode**, or **Refine the plan**
 6. During execution, the agent marks steps complete with `[DONE:n]` tags
 
@@ -52,7 +52,7 @@ Plan:
 ### Plan Mode (Read-Only)
 - Only read-only tools available
 - Bash commands filtered through allowlist
-- `/plan {request}` calls the Prometheus planner directly
+- `/plan {request}` calls the Prometheus planner directly and shows its live progress in the planner widget
 - Bare `/plan` keeps the original manual read-only planning mode
 
 ### Execution Mode
