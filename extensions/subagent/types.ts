@@ -29,6 +29,7 @@ export interface SingleResult {
 	task: string;
 	exitCode: number;
 	messages: Message[];
+	liveMessage?: Message;
 	stderr: string;
 	usage: UsageStats;
 	model?: string;
@@ -133,6 +134,21 @@ export function normalizeCompletedResult(result: SingleResult, wasAborted: boole
 /** Extract the last assistant text from a message history. */
 export function getFinalOutput(messages: Message[]): string {
 	return getFinalAssistantText(messages);
+}
+
+export function getVisibleMessages(result: Pick<SingleResult, "messages" | "liveMessage">): Message[] {
+	if (!result.liveMessage) return result.messages;
+	return [...result.messages, result.liveMessage];
+}
+
+export function getVisibleOutput(result: Pick<SingleResult, "messages" | "liveMessage">): string {
+	return getFinalOutput(getVisibleMessages(result));
+}
+
+export function getVisibleDisplayItems(
+	result: Pick<SingleResult, "messages" | "liveMessage">,
+): DisplayItem[] {
+	return getDisplayItems(getVisibleMessages(result));
 }
 
 /** Extract all display-worthy items from a message history. */
