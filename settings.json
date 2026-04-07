@@ -1,6 +1,6 @@
 {
-  "defaultProvider": "github-copilot",
-  "defaultModel": "claude-opus-4.6",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.4",
   "defaultThinkingLevel": "high",
   "theme": "ghostty-sync-6c1158ac",
   "quietStartup": true,
@@ -16,10 +16,8 @@
     "baseDelayMs": 2000,
     "maxDelayMs": 60000
   },
-  "enabledModels": [
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5"
-  ],
-  "lastChangelogVersion": "0.65.2"
+  "enabledModels": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+  "lastChangelogVersion": "0.65.2",
+  "npmCommand": ["nix", "shell", "nixpkgs#nodejs", "-c", "npm"],
+  "packages": ["git:github.com/nicobailon/pi-mcp-adapter"]
 }
