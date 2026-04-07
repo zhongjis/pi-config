@@ -15,6 +15,9 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, TextContent, ThinkingContent } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { Key } from "@mariozechner/pi-tui";
 import { discoverAgents } from "../subagent/agents.js";
 import { getResultSummaryText } from "../subagent/runner-events.js";
@@ -51,6 +54,7 @@ const HIDDEN_PLAN_MESSAGE_TYPES = new Set([
 	"plan-extraction-warning",
 	"plan-todo-list",
 	"plan-complete",
+	"plan-execution-context",
 ]);
 
 type PlannerDecision = "plan" | "needs_more_detail" | "unknown";
@@ -62,6 +66,8 @@ interface PlanModeStateData {
 	lastPlanRequest?: string;
 	lastPlanText?: string;
 	plannerAgent?: string;
+	planFilePath?: string;
+	planTitle?: string;
 }
 
 function isAssistantMessage(m: AgentMessage): m is AssistantMessage {
@@ -163,6 +169,10 @@ function summarizeToolCall(item: DisplayItem): string | null {
 		}
 		case "ask":
 			return "ask for clarification";
+		case "exit_plan_mode": {
+			const title = getStringArg(args, "title");
+			return title ? `exit_plan_mode: ${title}` : "exit_plan_mode";
+		}
 		case "subagent": {
 			const agent = getStringArg(args, "agent");
 			const task = getStringArg(args, "task");
@@ -299,6 +309,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let plannerModel = "";
 	let plannerPhaseLabel = "Analyzing";
 	let executionResumeMessage = "";
+	let planFilePath = "";
+	let planTitle = "";
 
 	function clearPlannerSpinner(): void {
 		if (plannerSpinnerInterval !== null) {
@@ -350,6 +362,32 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		const detail = lines.join("\n");
 		ctx.ui.notify(detail, "error");
 		reportPlannerMessage("plan-planner-error", detail);
+	}
+
+	function getAllAssistantText(result: SingleResult): string {
+		const parts: string[] = [];
+		for (const msg of getVisibleMessages(result)) {
+			if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+			for (const block of msg.content) {
+				if (block.type === "text" && (block as TextContent).text) {
+					parts.push((block as TextContent).text);
+				}
+			}
+		}
+		return parts.join("\n\n");
+	}
+
+	function writePlanFile(ctx: ExtensionContext, text: string): string {
+		try {
+			const sessionDir = ctx.sessionManager.getSessionDir();
+			const sessionId = ctx.sessionManager.getSessionId();
+			const filePath = path.join(sessionDir, `${sessionId}-PLAN.md`);
+			fs.writeFileSync(filePath, text, "utf-8");
+			return filePath;
+		} catch (err) {
+			ctx.ui.notify(`Failed to write plan file: ${err instanceof Error ? err.message : String(err)}`, "warning");
+			return "";
+		}
 	}
 
 	function startPlannerSpinner(ctx: ExtensionContext): void {
@@ -422,6 +460,22 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		default: false,
 	});
 
+	pi.registerTool({
+		name: "exit_plan_mode",
+		label: "Exit Plan Mode",
+		description:
+			"Signal that the plan is complete. Call this when you have finished writing your plan to a Plan: header with numbered steps. Provide a short descriptive title.",
+		parameters: Type.Object({
+			title: Type.String({ description: "Short descriptive title for the plan (e.g. 'AUTH_MIGRATION')" }),
+		}),
+		async execute(_toolCallId, params) {
+			const title = typeof params.title === "string" ? params.title.trim() : "";
+			return {
+				content: [{ type: "text" as const, text: `Plan complete. Title: ${title || "(untitled)"}` }],
+			};
+		},
+	});
+
 	function rememberActiveTools(): void {
 		if (previousActiveTools === null) {
 			previousActiveTools = pi.getActiveTools();
@@ -452,6 +506,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		planningInFlight = false;
 		todoItems = [];
 		lastPlanText = "";
+		planFilePath = "";
+		planTitle = "";
 		clearPlannerIdleState();
 		resetPlannerLiveState();
 	}
@@ -500,6 +556,8 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			lastPlanRequest,
 			lastPlanText,
 			plannerAgent,
+			planFilePath,
+			planTitle,
 		} satisfies PlanModeStateData);
 	}
 
@@ -625,14 +683,24 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		const sections = [
 			"Create a read-only implementation plan for this repository.",
 			"Inspect the relevant code before answering.",
-			"You must choose exactly one outcome and make it explicit on the first decision line.",
-			"If the request is specific enough to plan safely, start with `Decision: PLAN` and then output an exact `Plan:` header followed by numbered steps.",
+			"You must choose exactly one outcome.",
+			"",
+			"OUTCOME 1 — PLAN:",
+			"If the request is specific enough to plan safely:",
+			"1. Output your plan with an exact `Plan:` header followed by numbered steps.",
+			"2. When done, call the `exit_plan_mode` tool with a short descriptive title.",
+			"IMPORTANT: Call `exit_plan_mode` to signal completion. Do NOT write `Decision: PLAN`.",
+			"",
+			"OUTCOME 2 — NEEDS_MORE_DETAIL:",
 			"If the request is too vague to plan safely, start with `Decision: NEEDS_MORE_DETAIL` and then output an exact `Need more detail:` header followed by 1-3 short bullet points.",
-			"Never output both outcomes.",
-			"Do not include code patches or `[DONE:n]` markers.",
-			"If information is missing but you can still proceed safely, make the smallest reasonable assumption and list it briefly before the plan.",
-			"Each NEEDS_MORE_DETAIL bullet must be a single independently answerable clarification question.",
-			"Keep the plan scoped to the request.",
+			"Each bullet must be a single independently answerable clarification question.",
+			"Do NOT call `exit_plan_mode` in this case.",
+			"",
+			"General rules:",
+			"- Never output both outcomes.",
+			"- Do not include code patches or `[DONE:n]` markers.",
+			"- If information is missing but you can still proceed safely, make the smallest reasonable assumption and list it briefly before the plan.",
+			"- Keep the plan scoped to the request.",
 			"",
 			"Examples:",
 			"Input: test",
@@ -643,15 +711,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 			"- Which files, module, or feature area are involved?",
 			"",
 			"Input: add planner status while /plan is running in extensions/plan-mode/index.ts",
-			"Decision: PLAN",
-			"",
-			"Plan:",
-			"1. Review the current planner status flow in extensions/plan-mode/index.ts.",
-			"2. Add a visible planner-running indicator for /plan invocations.",
-			"3. Verify the execution flow still works after planning completes.",
+			"(Agent outputs plan with Plan: header and numbered steps, then calls exit_plan_mode with title 'ADD_PLANNER_STATUS')",
 			"",
 			"User request:",
-			request,
+			 request,
 		];
 
 		if (currentPlanText.trim()) {
@@ -772,7 +835,23 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		clearPlannerSpinner();
 		updatePlannerLiveState(result);
 		updateStatus(ctx);
-		const planText = getResultSummaryText(result).trim();
+
+		// Detect exit_plan_mode tool call (Priority 3)
+		const displayItems = getVisibleDisplayItems(result);
+		const exitToolCall = displayItems.find(
+			(item) => item.type === "toolCall" && item.name === "exit_plan_mode",
+		);
+		let planText: string;
+		if (exitToolCall) {
+			// Agent signaled completion via tool — use all assistant text as plan
+			planTitle = getStringArg(exitToolCall.args ?? {}, "title");
+			planText = getAllAssistantText(result).trim();
+		} else {
+			// Fallback: parse from last assistant message (backward compat)
+			planTitle = "";
+			planText = getResultSummaryText(result).trim();
+		}
+
 		if (isResultError(result)) {
 			persistState();
 			reportPlannerFailure(ctx, planText || `${plannerAgent} returned an error.`);
@@ -782,8 +861,13 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		setPlanFromText(planText);
 		reportPlannerMessage("plan-planner-output", planText || "(no output)");
 
+		// Write plan to file (Priority 1)
+		if (todoItems.length > 0 && planText) {
+			planFilePath = writePlanFile(ctx, planText);
+		}
+
 		if (todoItems.length === 0) {
-			const decision = getPlannerDecision(planText);
+			const decision = exitToolCall ? "plan" : getPlannerDecision(planText);
 			if (decision === "plan") {
 				ctx.ui.notify("Could not extract numbered steps from the planner response.", "warning");
 				reportPlannerMessage(
@@ -913,6 +997,19 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	pi.on("context", async (event) => {
 		if (planModeEnabled) return;
 
+		// Priority 2: Aggressively trim planning messages during execution
+		if (executionMode && todoItems.length > 0) {
+			const executeIdx = event.messages.findIndex((m) => {
+				const msg = m as AgentMessage & { customType?: string };
+				return msg.customType === "plan-mode-execute";
+			});
+			if (executeIdx >= 0) {
+				// Keep only messages from the execution trigger onward
+				return { messages: event.messages.slice(executeIdx) };
+			}
+		}
+
+		// Default: filter hidden plan message types
 		return {
 			messages: event.messages.filter((m) => {
 				const msg = m as AgentMessage & { customType?: string };
@@ -964,10 +1061,11 @@ Do NOT attempt to make changes - just describe what you would do.`,
 			startExecutionHeartbeat(ctx);
 			const remaining = todoItems.filter((t) => !t.completed);
 			const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
+			const planFileRef = planFilePath ? `\nFull plan file: ${planFilePath}\nUse the read tool to review the full plan if needed.` : "";
 			return {
 				message: {
 					customType: "plan-execution-context",
-					content: `[EXECUTING PLAN - Full tool access enabled]
+					content: `[EXECUTING PLAN - Full tool access enabled]${planFileRef}
 
 Remaining steps:
 ${todoList}
@@ -1062,6 +1160,8 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			lastPlanRequest = planModeEntry.data.lastPlanRequest ?? lastPlanRequest;
 			lastPlanText = planModeEntry.data.lastPlanText ?? lastPlanText;
 			plannerAgent = planModeEntry.data.plannerAgent ?? plannerAgent;
+			planFilePath = planModeEntry.data.planFilePath ?? planFilePath;
+			planTitle = planModeEntry.data.planTitle ?? planTitle;
 		}
 		planningInFlight = false;
 		clearPlannerSpinner();
