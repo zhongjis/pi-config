@@ -56,6 +56,7 @@ export default function agentModes(pi: ExtensionAPI) {
   let modes: Record<ModeName, ModeDefinition>;
   let activeMode: AgentModeState = "off";
   let currentCtx: ExtensionContext | undefined;
+  let pendingMode: AgentModeState | null = null;
 
   // Baseline model/thinking state -- captured before entering a mode with
   // model or thinking overrides. Restored when switching to a non-overriding
@@ -258,7 +259,10 @@ export default function agentModes(pi: ExtensionAPI) {
       },
       async setMode(mode: AgentModeState, options?: { notify?: boolean }): Promise<boolean> {
         const ctx = currentCtx;
-        if (!ctx) return false;
+        if (!ctx) {
+          pendingMode = mode;
+          return true;
+        }
 
         if (mode === "off") {
           await turnOff(ctx);
@@ -278,6 +282,8 @@ export default function agentModes(pi: ExtensionAPI) {
       },
     } satisfies AgentModesApi;
   }
+
+  publishApi();
 
   // ------------------------------------------------------------------
   // Mode selector UI
@@ -630,6 +636,16 @@ export default function agentModes(pi: ExtensionAPI) {
     modes = loadModes(ctx.cwd);
     publishApi();
 
+    if (pendingMode !== null) {
+      const mode = pendingMode;
+      pendingMode = null;
+      if (mode === "off") {
+        await turnOff(ctx);
+      } else if (isModeName(mode)) {
+        await applyMode(mode, ctx);
+      }
+    }
+
     // Check CLI flag first
     const flagValue = pi.getFlag("agent-mode");
     if (typeof flagValue === "string" && flagValue) {
@@ -642,11 +658,6 @@ export default function agentModes(pi: ExtensionAPI) {
       ctx.ui.notify(`Unknown mode "${flagValue}". Available: ${MODE_NAMES.join(", ")}`, "warning");
     }
 
-    if (pi.getFlag("plan") === true) {
-      await applyMode("plan", ctx);
-      ctx.ui.notify(`Started in ${modes.plan.name} mode`, "info");
-      return;
-    }
 
     // Restore persisted state
     const entries = ctx.sessionManager.getEntries();
