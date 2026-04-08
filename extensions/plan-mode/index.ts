@@ -1,12 +1,11 @@
 /**
  * Plan Mode Extension
  *
- * Read-only exploration mode for safe code analysis.
- * When enabled, only read-only tools are available.
+ * Read-only planning workflow that runs inside shared `agent-modes` plan mode.
  *
  * Features:
- * - /plan toggles read-only mode; /plan {request} runs the Prometheus planner
- * - Bash restricted to allowlisted read-only commands
+ * - /agent-mode plan enters shared read-only planning mode
+ * - /plan {request} runs the Prometheus planner inside that mode
  * - Extracts numbered plan steps from "Plan:" sections
  * - [DONE:n] markers to complete steps during execution
  * - Progress tracking widget during execution
@@ -18,7 +17,6 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@sinclair/typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Key } from "@mariozechner/pi-tui";
 import { discoverAgents } from "../subagent/agents.js";
 import { getResultSummaryText } from "../subagent/runner-events.js";
 import { runAgent } from "../subagent/runner.js";
@@ -71,9 +69,22 @@ interface PlanModeStateData {
 
 type SharedAgentMode = "code" | "plan" | "architect" | "debug" | "ask" | "review" | "off";
 
+interface SharedPlanState {
+	phase: "waiting" | "planning" | "ready" | "executing";
+	plannerAgent: string;
+	request: string;
+	title: string;
+	todoTotal: number;
+	todoCompleted: number;
+	nextStep: string;
+	status: string;
+}
+
 interface SharedAgentModesApi {
 	getMode(): SharedAgentMode;
 	setMode(mode: SharedAgentMode, options?: { notify?: boolean }): Promise<boolean>;
+	getPlanState(): SharedPlanState | null;
+	setPlanState(state: SharedPlanState | null): void;
 }
 
 type SharedAgentModesGlobalScope = typeof globalThis & {
@@ -638,6 +649,70 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		return undefined;
 	}
 
+	function buildSharedPlanState(): SharedPlanState | null {
+		const completed = getCompletedTodoCount();
+		const nextStep = getNextTodoItem()?.text ?? "";
+		const request = lastPlanRequest.trim();
+		const title = planTitle.trim();
+
+		if (planningInFlight) {
+			return {
+				phase: "planning",
+				plannerAgent,
+				request,
+				title,
+				todoTotal: todoItems.length,
+				todoCompleted: completed,
+				nextStep,
+				status: `Planning with ${plannerAgent}`,
+			};
+		}
+
+		if (executionMode && todoItems.length > 0) {
+			return {
+				phase: "executing",
+				plannerAgent,
+				request,
+				title,
+				todoTotal: todoItems.length,
+				todoCompleted: completed,
+				nextStep,
+				status: `Executing ${completed}/${todoItems.length}`,
+			};
+		}
+
+		if (todoItems.length > 0) {
+			return {
+				phase: "ready",
+				plannerAgent,
+				request,
+				title,
+				todoTotal: todoItems.length,
+				todoCompleted: completed,
+				nextStep,
+				status: `Plan ready · ${completed}/${todoItems.length} complete`,
+			};
+		}
+
+		if (!planModeEnabled) return null;
+
+		return {
+			phase: "waiting",
+			plannerAgent,
+			request,
+			title,
+			todoTotal: 0,
+			todoCompleted: 0,
+			nextStep: "",
+			status: plannerIdleStatus || (request ? "Ready to rerun /plan" : "Ready for /plan"),
+		};
+	}
+
+	function syncSharedPlanState(): void {
+		getSharedAgentModesApi()?.setPlanState(buildSharedPlanState());
+	}
+
+
 	function updateStatus(ctx: ExtensionContext): void {
 		if (planningInFlight) {
 			ctx.ui.setStatus("plan-mode", ctx.ui.theme.fg("accent", `🧠 ${plannerAgent}`));
@@ -666,6 +741,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		} else {
 			ctx.ui.setWidget("plan-todos", undefined);
 		}
+		syncSharedPlanState();
 	}
 
 	function setPlanFromText(planText: string): void {
@@ -989,6 +1065,13 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	});
 
 
+	pi.events.on("agent-mode:api-ready", () => {
+		if (!currentCtx) return;
+		syncPlanModeFromSharedAgentModes();
+		updateStatus(currentCtx);
+	});
+
+
 	pi.on("context", async (event) => {
 		if (planModeEnabled) return;
 
@@ -1136,6 +1219,7 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		currentCtx = undefined;
 		clearPlannerSpinner();
 		clearExecutionHeartbeat();
+		getSharedAgentModesApi()?.setPlanState(null);
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
