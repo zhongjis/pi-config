@@ -43,9 +43,22 @@ import {
 
 type AgentModeState = ModeName | "off";
 
+interface SharedPlanState {
+  phase: "waiting" | "planning" | "ready" | "executing";
+  plannerAgent: string;
+  request: string;
+  title: string;
+  todoTotal: number;
+  todoCompleted: number;
+  nextStep: string;
+  status: string;
+}
+
 interface AgentModesApi {
   getMode(): AgentModeState;
   setMode(mode: AgentModeState, options?: { notify?: boolean }): Promise<boolean>;
+  getPlanState(): SharedPlanState | null;
+  setPlanState(state: SharedPlanState | null): void;
 }
 
 type GlobalScope = typeof globalThis & {
@@ -57,6 +70,7 @@ export default function agentModes(pi: ExtensionAPI) {
   let activeMode: AgentModeState = "off";
   let currentCtx: ExtensionContext | undefined;
   let pendingMode: AgentModeState | null = null;
+  let sharedPlanState: SharedPlanState | null = null;
 
   // Baseline model/thinking state -- captured before entering a mode with
   // model or thinking overrides. Restored when switching to a non-overriding
@@ -88,6 +102,14 @@ export default function agentModes(pi: ExtensionAPI) {
   function emitModeChanged(previousMode: AgentModeState): void {
     if (previousMode === activeMode) return;
     pi.events.emit("agent-mode:changed", { mode: activeMode, previousMode });
+  }
+
+  function samePlanState(a: SharedPlanState | null, b: SharedPlanState | null): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  function emitPlanStateChanged(): void {
+    pi.events.emit("agent-mode:plan-state-changed", { plan: sharedPlanState });
   }
 
   // Built-in tool names -- these are the only ones modes restrict
@@ -165,13 +187,21 @@ export default function agentModes(pi: ExtensionAPI) {
     return t.fg("dim", `[${modes[name].name.toLowerCase()}]`);
   }
 
+  function getModeDescription(mode: ModeDefinition): string {
+    if (activeMode === "plan" && sharedPlanState?.status) {
+      return sharedPlanState.status;
+    }
+    return mode.description;
+  }
+
+
   function updateModeTabs(ctx: ExtensionContext, mode: ModeDefinition): void {
     const t = ctx.ui.theme;
     const tabs = MODE_NAMES.map((name) => renderModeTab(ctx, name)).join(" ");
     const restrictions = buildRestrictionSummary(ctx, mode);
     ctx.ui.setWidget("agent-mode-tabs", [
       tabs,
-      t.fg("dim", mode.description),
+      t.fg("dim", getModeDescription(mode)),
       `${restrictions}${t.fg("dim", " · /agent-mode · ctrl+shift+m")}`,
     ]);
   }
@@ -280,7 +310,19 @@ export default function agentModes(pi: ExtensionAPI) {
         if (options?.notify) ctx.ui.notify(`Switched to ${modes[mode].name} mode`, "info");
         return true;
       },
+      getPlanState(): SharedPlanState | null {
+        return sharedPlanState;
+      },
+      setPlanState(state: SharedPlanState | null): void {
+        if (samePlanState(sharedPlanState, state)) return;
+        sharedPlanState = state;
+        if (currentCtx && activeMode !== "off") {
+          updateStatus(currentCtx);
+        }
+        emitPlanStateChanged();
+      },
     } satisfies AgentModesApi;
+    pi.events.emit("agent-mode:api-ready", {});
   }
 
   publishApi();
@@ -679,5 +721,7 @@ export default function agentModes(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     currentCtx = undefined;
+    sharedPlanState = null;
+    emitPlanStateChanged();
   });
 }

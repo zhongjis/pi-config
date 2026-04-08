@@ -13,7 +13,7 @@ Read-only exploration mode for safe code analysis.
 - **Progress tracking**: Widget shows completion status during execution
 - **[DONE:n] markers**: Explicit step completion tracking
 - **Session persistence**: State survives session resume
-- **Shared mode integration**: Enter plan mode with `/agent-mode plan`; `/plan` now only runs the planner inside that mode
+- **Shared mode integration**: Enter plan mode with `/agent-mode plan`; `/plan` now only runs the planner inside that mode, and plan status is published back to the shared `agent-modes` bridge
 - **Requires `agent-modes`**: This extension now expects the vendored `extensions/agent-modes/` runtime to be loaded
 
 ## Commands
@@ -52,6 +52,7 @@ Plan:
 - Shared `agent-modes` owns read-only tool restrictions and bash policy
 - `/plan {request}` runs the Prometheus planner and shows its live progress in the planner widget
 - Entering plan mode happens via `/agent-mode plan` only
+- Planner phase/progress is published through the shared agent-mode bridge so `agent-modes` can reflect current plan status
 
 ### Execution Mode
 - Full tool access restored

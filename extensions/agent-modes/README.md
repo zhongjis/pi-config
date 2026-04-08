@@ -1,6 +1,6 @@
 # @danchamorro/pi-agent-modes
 
-Agent modes for [pi](https://github.com/badlogic/pi-mono). This vendored copy adds a shared `plan` mode, a tab-style widget above the editor, and a small runtime API/events bridge so `extensions/plan-mode/` can reuse the same mode state.
+Agent modes for [pi](https://github.com/badlogic/pi-mono). This vendored copy adds a shared `plan` mode, a tab-style widget above the editor, and a richer runtime API/events bridge so `extensions/plan-mode/` can reuse the same mode state and publish planner progress.
 
 ## Modes
 
@@ -23,7 +23,7 @@ The active mode displays a tab-style widget in the UI:
 
 ```
 [code]  PLAN  [architect] [debug] [ask] [review]
-Read-only planning with shared planner workflow
+Planning status from `extensions/plan-mode/` replaces the generic description while plan mode is active.
 bash:read-only | edit:off · /agent-mode · ctrl+shift+m
 ```
 
@@ -78,7 +78,7 @@ Enforcement is layered, not just prompt guidance:
 3. **File restrictions:** In architect mode, edit and write are restricted to markdown files (`.md`, `.mdx`). Other file types are blocked at the `tool_call` level.
 4. **Prompt injection:** Each mode appends a behavioral prompt to the system prompt via `before_agent_start`, setting the agent's persona and custom instructions.
 
-This vendored copy also publishes `globalThis.__piAgentModesApi` and emits `agent-mode:changed` on `pi.events`, so other local extensions can switch or observe the active mode without duplicating restriction logic.
+This vendored copy also publishes `globalThis.__piAgentModesApi`, including shared `getMode()` / `setMode()` and `getPlanState()` / `setPlanState()` methods, emits `agent-mode:changed`, and emits `agent-mode:plan-state-changed` on `pi.events`, so other local extensions can switch modes or observe planner progress without duplicating restriction logic.
 
 ## Model setup
 
