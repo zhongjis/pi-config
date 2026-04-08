@@ -13,6 +13,7 @@ Read-only exploration mode for safe code analysis.
 - **Progress tracking**: Widget shows completion status during execution
 - **[DONE:n] markers**: Explicit step completion tracking
 - **Session persistence**: State survives session resume
+- **Shared mode integration**: When `agent-modes` is loaded, `/plan` and `/agent-mode plan` share the same mode state and restrictions
 
 ## Commands
 
