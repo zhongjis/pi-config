@@ -361,13 +361,25 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	for (const mode of MODES) {
 		pi.registerCommand(`mode:${mode}`, {
 			description: `Switch to ${mode} mode`,
-			handler: async (_args, ctx) => switchMode(mode, ctx),
+			handler: async (args, ctx) => {
+				switchMode(mode, ctx);
+				const prompt = args?.trim();
+				if (prompt) {
+					pi.sendUserMessage(prompt);
+				}
+			},
 		});
 	}
 	for (const [alias, target] of Object.entries(MODE_ALIASES)) {
 		pi.registerCommand(`mode:${alias}`, {
 			description: `Switch to ${target} mode`,
-			handler: async (_args, ctx) => switchMode(target, ctx),
+			handler: async (args, ctx) => {
+				switchMode(target, ctx);
+				const prompt = args?.trim();
+				if (prompt) {
+					pi.sendUserMessage(prompt);
+				}
+			},
 		});
 	}
 
