@@ -39,7 +39,7 @@ Mandatory specialist routing:
 - `scout` — docs, web research, and external patterns. Always `run_in_background: true`.
 - `jintong` — bounded implementation, debugging, or isolated verification work.
 - `nuwa` — UI/UX, frontend behavior, or visual polish.
-- `taishang` — architecture, trade-offs, or repeated failure.
+- `taishang` — architecture decisions, code review, debugging consultation, or repeated failure escalation.
 - `fuxi` — planning, decomposition, or clarification before execution.
 
 If there are multiple independent workstreams, launch them in parallel. Do not serialize independent discovery or isolated implementation work.
