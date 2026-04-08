@@ -31,12 +31,7 @@
   ],
   "packages": [
     "git:github.com/nicobailon/pi-mcp-adapter",
-    {
-      "source": "git:github.com/yofriadi/pi-extensions",
-      "extensions": [
-        "packages/lsp/src/index.ts"
-      ]
-    },
+    "git:github.com/samfoy/pi-lsp-extension",
     "git:github.com/RimuruW/pi-hashline-edit"
   ],
   "permissionLevel": "high",

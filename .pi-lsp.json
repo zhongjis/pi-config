@@ -1,0 +1,41 @@
+{
+  "servers": {
+    "bash": {
+      "command": "/nix/store/cci77cq2j7mh6cp593fksy5l04rl1ymv-bash-language-server-5.6.0/bin/bash-language-server",
+      "args": ["start"]
+    },
+    "lua": {
+      "command": "/nix/store/9b0r07albwcis7r0kdlwgikbm8bbv02r-emmylua_ls-0.21.0/bin/emmylua_ls"
+    },
+    "java": {
+      "command": "/nix/store/1pv1xwgiwl6j032zzi1flw6g7fcxf5d0-jdt-language-server-1.57.0/bin/jdtls"
+    },
+    "json": {
+      "command": "/nix/store/7zz14khlcs6zgw3ca5qibb4wr6cbkxdp-vscode-langservers-extracted-4.10.0/bin/vscode-json-language-server",
+      "args": ["--stdio"]
+    },
+    "scala": {
+      "command": "/nix/store/36p8fdc7xi52w3m0fl6nfr8v2x05b7y2-metals-1.6.6/bin/metals"
+    },
+    "python": {
+      "command": "/nix/store/ny91a0dkix183p42ag59ng3ar7wpvd0b-basedpyright-1.38.2/bin/basedpyright-langserver",
+      "args": ["--stdio"]
+    },
+    "typescript": {
+      "command": "/nix/store/jn9wngbhqmijdw4m2czilnhl4pw4jcdp-typescript-language-server-5.1.3/bin/typescript-language-server",
+      "args": ["--stdio"]
+    },
+    "javascript": {
+      "command": "/nix/store/jn9wngbhqmijdw4m2czilnhl4pw4jcdp-typescript-language-server-5.1.3/bin/typescript-language-server",
+      "args": ["--stdio"]
+    },
+    "typescriptreact": {
+      "command": "/nix/store/jn9wngbhqmijdw4m2czilnhl4pw4jcdp-typescript-language-server-5.1.3/bin/typescript-language-server",
+      "args": ["--stdio"]
+    },
+    "javascriptreact": {
+      "command": "/nix/store/jn9wngbhqmijdw4m2czilnhl4pw4jcdp-typescript-language-server-5.1.3/bin/typescript-language-server",
+      "args": ["--stdio"]
+    }
+  }
+}
