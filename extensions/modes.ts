@@ -214,15 +214,10 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	}
 
 	function switchMode(mode: Mode, ctx: ExtensionContext): void {
-		const previous = currentMode;
 		currentMode = mode;
 		cachedConfigs = {}; // force reload on switch
 		applyMode(ctx);
 		persistState();
-
-		if (previous !== mode) {
-			ctx.ui.notify(`Mode: ${colored(mode, mode)}`, "info");
-		}
 	}
 
 	// -----------------------------------------------------------------------
