@@ -45,6 +45,7 @@ interface ViewerStoreAPI {
   }): void;
   updateSession(id: string, result: Record<string, unknown>): void;
   completeSession(id: string, result: Record<string, unknown>): void;
+  isViewerOpen(): boolean;
 }
 
 function getViewerStore(): ViewerStoreAPI | undefined {
@@ -701,8 +702,11 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
     });
 
     // Wrap onUpdate to also push to viewer store
+    // Suppress parent view updates while the viewer is open to prevent render fighting
     const wrappedOnUpdate = (partial: any) => {
-      onUpdate?.(partial);
+      if (!viewerStore?.isViewerOpen()) {
+        onUpdate?.(partial);
+      }
       const partialResult = partial.details?.results?.[0];
       if (viewerStore && partialResult) {
         viewerStore.updateSession(sessionId, partialResult);
@@ -821,7 +825,7 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
     }));
 
     const emitProgress = () => {
-      if (!onUpdate) return;
+      if (!onUpdate || viewerStore?.isViewerOpen()) return;
       const running = allResults.filter((r) => r.exitCode === -1).length;
       const done = allResults.filter((r) => r.exitCode !== -1).length;
       onUpdate({

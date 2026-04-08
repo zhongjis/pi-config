@@ -86,6 +86,7 @@ export interface ViewerStoreAPI {
 		errorMessage?: string;
 		stderr?: string;
 	}): void;
+	isViewerOpen(): boolean;
 }
 
 const GLOBAL_KEY = "__piSubagentViewerStore";
@@ -99,9 +100,18 @@ export class SubagentSessionStore implements ViewerStoreAPI {
 	private ordering: string[] = [];
 	private listeners = new Set<() => void>();
 	private _version = 0;
+	private _viewerOpen = false;
 
 	get version(): number {
 		return this._version;
+	}
+
+	set viewerOpen(value: boolean) {
+		this._viewerOpen = value;
+	}
+
+	isViewerOpen(): boolean {
+		return this._viewerOpen;
 	}
 
 	// ── Mutations (called by subagent extension via globalThis) ──

@@ -132,6 +132,7 @@ export class SubagentViewerComponent {
 	private selectedIndex = 0;
 	private scrollOffset = 0;
 	private sessions: ViewerSession[] = [];
+	private createdAt = 0;
 
 	private tui: Tui;
 	private theme: ViewerTheme;
@@ -159,6 +160,7 @@ export class SubagentViewerComponent {
 		this.store = store;
 		this.onClose = onClose;
 		this.mdTheme = getMarkdownTheme();
+		this.createdAt = Date.now();
 		this.sessions = store.getAll();
 
 		// Subscribe to store updates (throttled re-render)
@@ -251,9 +253,15 @@ export class SubagentViewerComponent {
 					this.scrollOffset = Number.MAX_SAFE_INTEGER;
 				}
 			}
-		} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("x"))) {
+		} else if (matchesKey(data, Key.escape)) {
 			this.dispose();
 			this.onClose();
+		} else if (matchesKey(data, Key.ctrl("x"))) {
+			// Guard: ignore the Ctrl+X that opened the viewer (key leak from shortcut)
+			if (Date.now() - this.createdAt > 300) {
+				this.dispose();
+				this.onClose();
+			}
 		}
 	}
 
@@ -266,9 +274,14 @@ export class SubagentViewerComponent {
 			this.scrollOffset = Number.MAX_SAFE_INTEGER;
 		} else if (data === "g") {
 			this.scrollOffset = 0;
-		} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.left) || matchesKey(data, Key.ctrl("x"))) {
+		} else if (matchesKey(data, Key.escape) || matchesKey(data, Key.left)) {
 			this.mode = "list";
 			this.scrollOffset = 0;
+		} else if (matchesKey(data, Key.ctrl("x"))) {
+			if (Date.now() - this.createdAt > 300) {
+				this.mode = "list";
+				this.scrollOffset = 0;
+			}
 		}
 	}
 
@@ -360,12 +373,10 @@ export class SubagentViewerComponent {
 		];
 
 		// Fixed footer
-		const usageStr = formatUsage(session.usage, session.model);
 		const footerLines = [
 			fg("border", "─".repeat(width)),
 			truncateToWidth(
-				` ${fg("dim", usageStr || "—")}` +
-				`    ${fg("dim", "↑/↓ scroll  ← back  Esc close")}`,
+				` ${fg("dim", "↑/↓ scroll  ← back  Esc close")}`,
 				width,
 			),
 		];
@@ -383,13 +394,11 @@ export class SubagentViewerComponent {
 		const visible = contentLines.slice(this.scrollOffset, this.scrollOffset + contentHeight);
 		while (visible.length < contentHeight) visible.push("");
 
-		// Add scroll position indicator to footer
+		// Scroll indicator in footer
 		if (contentLines.length > contentHeight) {
 			const pos = `${this.scrollOffset + 1}–${Math.min(this.scrollOffset + contentHeight, contentLines.length)}/${contentLines.length}`;
 			footerLines[1] = truncateToWidth(
-				` ${fg("dim", usageStr || "—")}` +
-				`  ${fg("muted", pos)}` +
-				`    ${fg("dim", "↑/↓ scroll  ← back  Esc close")}`,
+				` ${fg("muted", pos)}  ${fg("dim", "↑/↓ scroll  ← back  Esc close")}`,
 				width,
 			);
 		}
@@ -401,49 +410,55 @@ export class SubagentViewerComponent {
 		const fg = this.theme.fg.bind(this.theme);
 		const lines: string[] = [];
 
-		// Task section
+		// ── Task section (matches render.ts renderSingleExpanded) ──
 		lines.push("");
-		lines.push(fg("muted", " ─── Task ───"));
+		lines.push(fg("muted", "─── Task ───"));
 		for (const line of session.task.split("\n")) {
-			lines.push(truncateToWidth(` ${fg("dim", line)}`, width));
+			lines.push(truncateToWidth(fg("dim", line), width));
 		}
 
-		// Messages
+		// ── Output section ──
+		lines.push("");
+		lines.push(fg("muted", "─── Output ───"));
+
+		// Collect all display items and final output from all messages
 		const messages = getVisibleMessages(session);
-		let turnNum = 0;
+		const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+		let finalOutput = "";
 
 		for (const msg of messages) {
 			if (!msg || msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
-			turnNum++;
-
-			lines.push("");
-			lines.push(fg("muted", ` ─── Turn ${turnNum} ───`));
-
-			// Collect tool calls and text from this message
 			for (const part of msg.content) {
 				if (!part) continue;
-
 				if (part.type === "toolCall" && part.name) {
-					const callStr = formatToolCall(
-						part.name,
-						part.arguments ?? {},
-						fg,
-					);
-					lines.push(truncateToWidth(` ${fg("muted", "→ ")}${callStr}`, width));
+					toolCalls.push({ name: part.name, args: part.arguments ?? {} });
 				} else if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
-					lines.push("");
-					// Render markdown for assistant text
-					try {
-						const md = new Markdown(part.text.trim(), 1, 1, this.mdTheme);
-						const mdLines = md.render(Math.max(20, width - 2));
-						for (const ml of mdLines) {
-							lines.push(truncateToWidth(ml, width));
-						}
-					} catch {
-						// Fallback to plain text if markdown rendering fails
-						for (const textLine of part.text.trim().split("\n")) {
-							lines.push(truncateToWidth(` ${textLine}`, width));
-						}
+					finalOutput = part.text;
+				}
+			}
+		}
+
+		if (toolCalls.length === 0 && !finalOutput.trim()) {
+			lines.push(fg("muted", "(no output)"));
+		} else {
+			// All tool calls first
+			for (const tc of toolCalls) {
+				const callStr = formatToolCall(tc.name, tc.args, fg);
+				lines.push(truncateToWidth(fg("muted", "→ ") + callStr, width));
+			}
+
+			// Then final markdown output
+			if (finalOutput.trim()) {
+				lines.push("");
+				try {
+					const md = new Markdown(finalOutput.trim(), 0, 0, this.mdTheme);
+					const mdLines = md.render(width);
+					for (const ml of mdLines) {
+						lines.push(truncateToWidth(ml, width));
+					}
+				} catch {
+					for (const textLine of finalOutput.trim().split("\n")) {
+						lines.push(truncateToWidth(textLine, width));
 					}
 				}
 			}
@@ -452,12 +467,17 @@ export class SubagentViewerComponent {
 		// Error info
 		if (session.errorMessage) {
 			lines.push("");
-			lines.push(fg("error", ` Error: ${session.errorMessage}`));
+			lines.push(fg("error", `Error: ${session.errorMessage}`));
 		}
 
-		// Final spacer
-		lines.push("");
+		// Usage (matches render.ts footer)
+		const usageStr = formatUsage(session.usage, session.model);
+		if (usageStr) {
+			lines.push("");
+			lines.push(fg("dim", usageStr));
+		}
 
+		lines.push("");
 		return lines;
 	}
 }

@@ -22,7 +22,7 @@ export default function (pi: ExtensionAPI) {
 	store.registerGlobal();
 
 	let latestCtx: ExtensionContext | undefined;
-
+	let viewerOpen = false;
 	// ── Status indicator ──
 
 	function updateStatus(ctx: ExtensionContext): void {
@@ -48,11 +48,11 @@ export default function (pi: ExtensionAPI) {
 	// Subscribe to store changes for status updates (throttled)
 	let statusPending = false;
 	store.subscribe(() => {
-		if (latestCtx && !statusPending) {
+		if (latestCtx && !statusPending && !viewerOpen) {
 			statusPending = true;
 			setTimeout(() => {
 				statusPending = false;
-				if (latestCtx) updateStatus(latestCtx);
+				if (latestCtx && !viewerOpen) updateStatus(latestCtx);
 			}, 500);
 		}
 	});
@@ -102,16 +102,24 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			await ctx.ui.custom(
-				(tui, theme, _kb, done) => {
-					return new SubagentViewerComponent(
-						tui,
-						theme,
-						store,
-						() => done(undefined),
-					);
-				},
-			);
+			viewerOpen = true;
+			store.viewerOpen = true;
+			try {
+				await ctx.ui.custom(
+					(tui, theme, _kb, done) => {
+						return new SubagentViewerComponent(
+							tui,
+							theme,
+							store,
+							() => done(undefined),
+						);
+					},
+				);
+			} finally {
+				viewerOpen = false;
+				store.viewerOpen = false;
+				if (latestCtx) updateStatus(latestCtx);
+			}
 		},
 	});
 }
