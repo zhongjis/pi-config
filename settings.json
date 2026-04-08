@@ -32,7 +32,8 @@
   "packages": [
     "git:github.com/nicobailon/pi-mcp-adapter",
     "git:github.com/samfoy/pi-lsp-extension",
-    "git:github.com/RimuruW/pi-hashline-edit"
+    "git:github.com/RimuruW/pi-hashline-edit",
+    "git:github.com/nicobailon/pi-web-access"
   ],
   "permissionLevel": "high",
   "powerline": "ascii"

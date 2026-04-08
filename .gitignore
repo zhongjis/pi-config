@@ -6,3 +6,4 @@ skills
 git
 /mcp-cache.json
 /.pi/tasks
+node_modules/
