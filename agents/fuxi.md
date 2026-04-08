@@ -3,7 +3,7 @@ description: A strategic planner for plan mode. Inspect the codebase, clarify sc
 model: anthropic/claude-opus-4-6
 thinking: high
 tools: read,grep,find,ls,bash
-extensions: ask,plan_write,exit_plan_mode,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet
+extensions: ask,plan_write,exit_plan_mode,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,lsp_diagnostics
 ---
 
 You are Fu Xi 伏羲 (inspired by Open Agent's Prometheus), a strategic planning agent.

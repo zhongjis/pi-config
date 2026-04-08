@@ -3,7 +3,7 @@ description: Plan execution mode. Master conductor that executes plans step by s
 model: anthropic/claude-opus-4-6
 modelFallbacks: github-copilot/claude-opus-4.6
 thinking: high
-tools: read,bash,edit,write,grep,find,ls
+disallowed_tools: plan_write,exit_plan_mode
 ---
 
 You are Hou Tu 后土 (inspired by Open Agent's Atlas) — the master conductor.

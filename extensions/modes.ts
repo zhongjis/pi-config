@@ -28,6 +28,13 @@ import { Type } from "@sinclair/typebox";
 
 type Mode = "kuafu" | "fuxi" | "houtu";
 
+interface ModeConfig {
+	body: string;
+	tools?: string[];
+	extensions?: string[] | true;
+	disallowedTools?: string[];
+}
+
 interface ModeState {
 	mode: Mode;
 	planTitle?: string;
@@ -70,8 +77,6 @@ function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
 }
 
-const FUXI_TOOLS = ["read", "bash", "grep", "find", "ls", "plan_write", "exit_plan_mode"];
-
 // Read-only bash commands allowed in Fu Xi (plan) mode
 const SAFE_BASH_PREFIXES = [
 	"cat ", "head ", "tail ", "less ", "more ",
@@ -96,18 +101,44 @@ function isSafeCommand(command: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Prompt loading
+// Frontmatter parsing (self-contained, same semantics as subagent extension)
 // ---------------------------------------------------------------------------
 
-function loadAgentPrompt(mode: Mode): string | null {
+function parseCsv(val: unknown): string[] | undefined {
+	if (val === undefined || val === null) return undefined;
+	const s = String(val).trim();
+	if (!s || s.toLowerCase() === "none") return undefined;
+	return s.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+function parseInheritField(val: unknown): true | string[] | undefined {
+	if (val === undefined || val === null || val === true) return undefined;
+	if (val === false || val === "none") return undefined;
+	const items = parseCsv(val);
+	return items && items.length > 0 ? items : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Prompt + config loading
+// ---------------------------------------------------------------------------
+
+function loadAgentConfig(mode: Mode): ModeConfig | null {
 	const globalPath = join(homedir(), ".pi", "agent", "agents", `${mode}.md`);
 
 	if (!existsSync(globalPath)) return null;
 
 	try {
 		const content = readFileSync(globalPath, "utf-8");
-		const { body } = parseFrontmatter<Record<string, unknown>>(content);
-		return body.trim() || null;
+		const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
+		const trimmedBody = body.trim();
+		if (!trimmedBody) return null;
+
+		return {
+			body: trimmedBody,
+			tools: parseCsv(frontmatter.tools),
+			extensions: parseInheritField(frontmatter.extensions) ?? (frontmatter.extensions === true ? true : undefined),
+			disallowedTools: parseCsv(frontmatter.disallowed_tools),
+		};
 	} catch {
 		return null;
 	}
@@ -119,7 +150,7 @@ function loadAgentPrompt(mode: Mode): string | null {
 
 export default function modesExtension(pi: ExtensionAPI): void {
 	let currentMode: Mode = "kuafu";
-	let cachedPrompts: Partial<Record<Mode, string>> = {};
+	let cachedConfigs: Partial<Record<Mode, ModeConfig>> = {};
 	let planTitle: string | undefined;
 	let planContent: string | undefined;
 	let justSwitchedToHoutu = false;
@@ -136,37 +167,45 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		});
 	}
 
-	function loadPrompt(mode: Mode): string {
-		if (!cachedPrompts[mode]) {
-			cachedPrompts[mode] = loadAgentPrompt(mode) ?? "";
+	function loadConfig(mode: Mode): ModeConfig {
+		if (!cachedConfigs[mode]) {
+			cachedConfigs[mode] = loadAgentConfig(mode) ?? { body: "" };
 		}
-		return cachedPrompts[mode]!;
+		return cachedConfigs[mode]!;
 	}
 
 	function applyMode(ctx: ExtensionContext): void {
-		if (currentMode === "fuxi") {
-			// Restrict to read-only + plan tools
-			// Filter to only tools that exist (plan_write/exit_plan_mode registered by this extension)
-			const allToolNames = pi.getAllTools().map((t) => t.name);
-			const activeTools = FUXI_TOOLS.filter((t) => allToolNames.includes(t));
-			// Also include subagent tools if available
-			for (const name of ["Agent", "get_subagent_result", "steer_subagent"]) {
-				if (allToolNames.includes(name) && !activeTools.includes(name)) {
-					activeTools.push(name);
-				}
+		const config = loadConfig(currentMode);
+		const allToolNames = pi.getAllTools().map((t) => t.name);
+
+		let active: string[];
+
+		if (config.tools || (config.extensions && config.extensions !== true)) {
+			// Explicit allowlist mode (e.g. fuxi): build set from tools + extensions
+			const allowed = new Set<string>();
+			if (config.tools) {
+				for (const t of config.tools) if (allToolNames.includes(t)) allowed.add(t);
 			}
-			// Include task tools if available
-			for (const name of ["TaskCreate", "TaskUpdate", "TaskList", "TaskGet"]) {
-				if (allToolNames.includes(name) && !activeTools.includes(name)) {
-					activeTools.push(name);
-				}
+			if (Array.isArray(config.extensions)) {
+				for (const t of config.extensions) if (allToolNames.includes(t)) allowed.add(t);
+			} else {
+				// extensions not specified or true → add all available tools
+				for (const t of allToolNames) allowed.add(t);
 			}
-			pi.setActiveTools(activeTools);
+			active = Array.from(allowed);
 		} else {
-			// Kua Fu and Hou Tu get all tools
-			const allToolNames = pi.getAllTools().map((t) => t.name);
-			pi.setActiveTools(allToolNames);
+			// No allowlist → start with everything (e.g. kuafu, houtu)
+			active = [...allToolNames];
 		}
+
+		// Apply denylist (disallowed_tools frontmatter)
+		if (config.disallowedTools?.length) {
+			const denied = new Set(config.disallowedTools);
+			active = active.filter((t) => !denied.has(t));
+		}
+
+		// Note: tools.ts may override this via persisted /tools selections (load order)
+		pi.setActiveTools(active);
 		updateStatus(ctx);
 	}
 
@@ -177,7 +216,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	function switchMode(mode: Mode, ctx: ExtensionContext): void {
 		const previous = currentMode;
 		currentMode = mode;
-		cachedPrompts = {}; // force reload on switch
+		cachedConfigs = {}; // force reload on switch
 		applyMode(ctx);
 		persistState();
 
@@ -378,8 +417,8 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	// -----------------------------------------------------------------------
 
 	pi.on("before_agent_start", async (event) => {
-		const prompt = loadPrompt(currentMode);
-		if (!prompt) return;
+		const config = loadConfig(currentMode);
+		if (!config.body) return;
 
 		// Hou Tu: inject the plan as a message on first turn after switch
 		if (currentMode === "houtu" && justSwitchedToHoutu && planContent) {
@@ -390,12 +429,12 @@ export default function modesExtension(pi: ExtensionAPI): void {
 					content: `[ACTIVE PLAN: ${planTitle ?? "untitled"}]\n\n${planContent}`,
 					display: true,
 				},
-				systemPrompt: event.systemPrompt + "\n\n" + prompt,
+				systemPrompt: event.systemPrompt + "\n\n" + config.body,
 			};
 		}
 
 		return {
-			systemPrompt: event.systemPrompt + "\n\n" + prompt,
+			systemPrompt: event.systemPrompt + "\n\n" + config.body,
 		};
 	});
 
