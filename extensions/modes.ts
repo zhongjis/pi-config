@@ -52,6 +52,12 @@ const MODE_ALIASES: Record<string, Mode> = {
 	execute: "houtu",
 };
 
+const MODE_META: Record<Mode, { alias: string; label: string }> = {
+	kuafu: { alias: "build", label: "kuafu (build)" },
+	fuxi: { alias: "plan", label: "fuxi (plan)" },
+	houtu: { alias: "execute", label: "houtu (execute)" },
+};
+
 // Color scheme (24-bit ANSI)
 const MODE_COLORS: Record<Mode, string> = {
 	kuafu: "\x1b[38;2;0;206;209m",   // #00CED1 — dark turquoise (夸父)
@@ -282,19 +288,19 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("mode", {
 		description: "Switch agent mode (kuafu/fuxi/houtu)",
 		getArgumentCompletions: (prefix) => {
-			const all = [...MODES, ...Object.keys(MODE_ALIASES)];
-			const filtered = all
-				.filter((m) => m.startsWith(prefix))
-				.map((m) => ({ value: m, label: m }));
+			const query = prefix.trim().toLowerCase();
+			const filtered = MODES
+				.filter((mode) => !query || mode.startsWith(query) || MODE_META[mode].alias.startsWith(query))
+				.map((mode) => ({ value: mode, label: MODE_META[mode].label }));
 			return filtered.length > 0 ? filtered : null;
 		},
 		handler: async (args, ctx) => {
 			if (!args?.trim()) {
 				// Show selector
-			const items = MODES.map((m) => {
-				const active = m === currentMode ? " (active)" : "";
-				return `${colored(m, m)}${active}`;
-			});
+				const items = MODES.map((m) => {
+					const active = m === currentMode ? " (active)" : "";
+					return `${colored(m, MODE_META[m].label)}${active}`;
+				});
 				const choice = await ctx.ui.select("Agent Mode", items);
 				if (!choice) return;
 				const selected = MODES.find((m) => choice.includes(m));
