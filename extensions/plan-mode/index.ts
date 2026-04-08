@@ -32,9 +32,8 @@ import {
 	type SubagentDetails,
 	type UsageStats,
 } from "../subagent/types.js";
-import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
+import { extractTodoItems, markCompletedSteps, type TodoItem } from "./utils.js";
 
-const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "ask"];
 const PLANNER_AGENT_NAME = "prometheus";
 const PLANNER_DELEGATION_MODE = "spawn";
 const PLANNER_RECENT_TOOL_LIMIT = 3;
@@ -305,7 +304,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let executionMode = false;
 	let planningInFlight = false;
 	let todoItems: TodoItem[] = [];
-	let previousActiveTools: string[] | null = null;
 	let lastPlanRequest = "";
 	let lastPlanText = "";
 	let plannerAgent = PLANNER_AGENT_NAME;
@@ -328,15 +326,10 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	let planTitle = "";
 	let currentCtx: ExtensionContext | undefined;
 
-	function hasSharedAgentModes(): boolean {
-		return getSharedAgentModesApi() !== undefined;
-	}
 
 	function syncPlanModeFromSharedAgentModes(): void {
 		const sharedMode = getSharedAgentModesApi()?.getMode();
-		if (sharedMode) {
-			planModeEnabled = sharedMode === "plan";
-		}
+		planModeEnabled = sharedMode === "plan";
 	}
 
 	async function setSharedAgentMode(
@@ -345,12 +338,17 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		notify = false,
 	): Promise<boolean> {
 		const api = getSharedAgentModesApi();
-		if (!api) return false;
-		const changed = await api.setMode(mode, { notify });
-		if (changed) {
-			syncPlanModeFromSharedAgentModes();
+		if (!api) {
+			if (notify) {
+				ctx.ui.notify("Shared plan mode unavailable. Load extensions/agent-modes first.", "error");
+			}
+			planModeEnabled = false;
 			updateStatus(ctx);
+			return false;
 		}
+		const changed = await api.setMode(mode, { notify });
+		syncPlanModeFromSharedAgentModes();
+		updateStatus(ctx);
 		return changed;
 	}
 
@@ -496,11 +494,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		return changed;
 	}
 
-	pi.registerFlag("plan", {
-		description: "Start in plan mode (read-only exploration)",
-		type: "boolean",
-		default: false,
-	});
 
 	pi.registerTool({
 		name: "exit_plan_mode",
@@ -518,18 +511,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	function rememberActiveTools(): void {
-		if (previousActiveTools === null) {
-			previousActiveTools = pi.getActiveTools();
-		}
-	}
-
-	function restoreActiveTools(): void {
-		if (previousActiveTools !== null) {
-			pi.setActiveTools(previousActiveTools);
-			previousActiveTools = null;
-		}
-	}
 
 	function resetPlannerLiveState(): void {
 		clearPlannerSpinner();
@@ -554,55 +535,18 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		resetPlannerLiveState();
 	}
 
-	async function enablePlanMode(ctx: ExtensionContext, notify = true): Promise<void> {
-		if (hasSharedAgentModes()) {
-			await setSharedAgentMode("plan", ctx, notify);
-			return;
-		}
-
-		if (!planModeEnabled) {
-			planModeEnabled = true;
-			rememberActiveTools();
-			pi.setActiveTools(PLAN_MODE_TOOLS);
-			if (notify) {
-				ctx.ui.notify(`Plan mode enabled. Tools: ${PLAN_MODE_TOOLS.join(", ")}`);
-			}
-		}
+	async function enablePlanMode(ctx: ExtensionContext, notify = true): Promise<boolean> {
+		return setSharedAgentMode("plan", ctx, notify);
 	}
 
 	async function disablePlanMode(
 		ctx: ExtensionContext,
 		notify = true,
 		targetMode: SharedAgentMode = "off",
-	): Promise<void> {
-		if (hasSharedAgentModes()) {
-			await setSharedAgentMode(targetMode, ctx, notify);
-			return;
-		}
-
-		if (!planModeEnabled) return;
-		planModeEnabled = false;
-		restoreActiveTools();
-		if (notify) {
-			ctx.ui.notify("Plan mode disabled. Full access restored.");
-		}
+	): Promise<boolean> {
+		return setSharedAgentMode(targetMode, ctx, notify);
 	}
 
-	async function togglePlanMode(ctx: ExtensionContext): Promise<void> {
-		if (planModeEnabled) {
-			await disablePlanMode(ctx);
-			resetPlanState();
-			lastPlanRequest = "";
-			plannerAgent = PLANNER_AGENT_NAME;
-		} else {
-			resetPlanState();
-			lastPlanRequest = "";
-			plannerAgent = PLANNER_AGENT_NAME;
-			await enablePlanMode(ctx);
-		}
-		updateStatus(ctx);
-		persistState();
-	}
 
 	function persistState(): void {
 		pi.appendEntry("plan-mode", {
@@ -827,7 +771,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 
 	async function runPlanner(request: string, ctx: ExtensionContext, refinement?: string): Promise<void> {
 		const currentPlanText = lastPlanText;
-		await enablePlanMode(ctx, false);
+		if (!(await enablePlanMode(ctx, false))) return;
 		resetPlanState();
 		lastPlanRequest = request.trim();
 		plannerAgent = PLANNER_AGENT_NAME;
@@ -1010,13 +954,14 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 	}
 
 	pi.registerCommand("plan", {
-		description: "Toggle plan mode, or run /plan {request} with the Prometheus planner",
+		description: "Run the Prometheus planner while already in /agent-mode plan",
 		handler: async (args, ctx) => {
-			const request = args.trim();
-			if (!request) {
-				await togglePlanMode(ctx);
+			if (!planModeEnabled) {
+				ctx.ui.notify("Enter plan mode first with /agent-mode plan.", "info");
 				return;
 			}
+			const request = args.trim() || (await ctx.ui.editor("Plan request:", lastPlanRequest)).trim();
+			if (!request) return;
 			await runPlanner(request, ctx);
 		},
 	});
@@ -1025,7 +970,7 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		description: "Show current plan todo list",
 		handler: async (_args, ctx) => {
 			if (todoItems.length === 0) {
-				ctx.ui.notify("No todos. Create a plan first with /plan", "info");
+				ctx.ui.notify("No todos. Enter /agent-mode plan, then run /plan.", "info");
 				return;
 			}
 			const list = todoItems.map((item, i) => `${i + 1}. ${item.completed ? "✓" : "○"} ${item.text}`).join("\n");
@@ -1033,10 +978,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerShortcut(Key.ctrlAlt("p"), {
-		description: "Toggle plan mode",
-		handler: async (ctx) => togglePlanMode(ctx),
-	});
 
 	pi.events.on("agent-mode:changed", (data) => {
 		const payload = data as { mode?: SharedAgentMode };
@@ -1047,17 +988,6 @@ export default function planModeExtension(pi: ExtensionAPI): void {
 		persistState();
 	});
 
-	pi.on("tool_call", async (event) => {
-		if (!planModeEnabled || event.toolName !== "bash" || hasSharedAgentModes()) return;
-
-		const command = event.input.command as string;
-		if (!isSafeCommand(command)) {
-			return {
-				block: true,
-				reason: `Plan mode: command blocked (not allowlisted). Use /plan to disable plan mode first.\nCommand: ${command}`,
-			};
-		}
-	});
 
 	pi.on("context", async (event) => {
 		if (planModeEnabled) return;
@@ -1210,13 +1140,6 @@ After completing a step, include a [DONE:n] tag in your response.`,
 
 	pi.on("session_start", async (_event, ctx) => {
 		currentCtx = ctx;
-		if (pi.getFlag("plan") === true) {
-			if (hasSharedAgentModes()) {
-				await setSharedAgentMode("plan", ctx, false);
-			} else {
-				planModeEnabled = true;
-			}
-		}
 
 		const entries = ctx.sessionManager.getEntries();
 
@@ -1225,7 +1148,7 @@ After completing a step, include a [DONE:n] tag in your response.`,
 			.pop() as { data?: PlanModeStateData } | undefined;
 
 		if (planModeEntry?.data) {
-			planModeEnabled = planModeEntry.data.enabled ?? planModeEnabled;
+			syncPlanModeFromSharedAgentModes();
 			todoItems = planModeEntry.data.todos ?? todoItems;
 			executionMode = planModeEntry.data.executing ?? executionMode;
 			lastPlanRequest = planModeEntry.data.lastPlanRequest ?? lastPlanRequest;
@@ -1271,10 +1194,6 @@ After completing a step, include a [DONE:n] tag in your response.`,
 		}
 
 		syncPlanModeFromSharedAgentModes();
-		if (planModeEnabled && !hasSharedAgentModes()) {
-			rememberActiveTools();
-			pi.setActiveTools(PLAN_MODE_TOOLS);
-		}
 		updateStatus(ctx);
 	});
 }

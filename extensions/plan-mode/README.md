@@ -4,30 +4,28 @@ Read-only exploration mode for safe code analysis.
 
 ## Features
 
-- **Read-only tools**: Restricts available tools to read, bash, grep, find, ls, ask
+- **Read-only tools**: Shared `agent-modes` plan mode now owns the restriction layer
 - **Prometheus planner**: `/plan {request}` runs a dedicated planner agent and keeps the existing execution flow
 - **Planner live progress**: streams Prometheus tool activity and current reply in the planner widget while planning is in progress
 - **Planner clarification loop**: vague requests turn into short follow-up questions answered one by one before replanning
-- **Bash allowlist**: Only read-only bash commands are allowed
+- **Bash allowlist**: Enforced by the shared `agent-modes` plan mode
 - **Plan extraction**: Extracts numbered steps from `Plan:` sections
 - **Progress tracking**: Widget shows completion status during execution
 - **[DONE:n] markers**: Explicit step completion tracking
 - **Session persistence**: State survives session resume
-- **Shared mode integration**: When `agent-modes` is loaded, `/plan` and `/agent-mode plan` share the same mode state and restrictions
+- **Shared mode integration**: Enter plan mode with `/agent-mode plan`; `/plan` now only runs the planner inside that mode
+- **Requires `agent-modes`**: This extension now expects the vendored `extensions/agent-modes/` runtime to be loaded
 
 ## Commands
-
-- `/plan` - Toggle plan mode
-- `/plan {request}` - Enable plan mode and run the Prometheus planner immediately
+- `/plan {request}` - Run the Prometheus planner while already in plan mode
 - `/todos` - Show current plan progress
-- `Ctrl+Alt+P` - Toggle plan mode (shortcut)
 
 ## Usage
 
 ### Fast path
 
-1. Run `/plan {request}`
-2. Plan mode enables read-only tools and calls `agents/prometheus.md`
+1. Run `/agent-mode plan`
+2. Run `/plan {request}`
 3. Prometheus inspects the codebase and returns either `Decision: PLAN` with a `Plan:` block, or `Decision: NEEDS_MORE_DETAIL` with follow-up questions
 4. While the planner runs, the planner widget streams Prometheus tool activity and current reply
 5. Choose **Execute the plan**, **Stay in plan mode**, or **Refine the plan**
@@ -42,19 +40,18 @@ Plan:
 
 ### Manual path
 
-1. Enable plan mode with `/plan` or `--plan`
-2. Ask the agent to analyze code and create a plan
-3. The agent should return a numbered plan under a `Plan:` header
-4. If the request is too vague, the planner asks for targeted follow-up questions instead of inventing a plan
+1. Enter plan mode with `/agent-mode plan`
+2. Run `/plan {request}` to start the planner
+3. The planner returns a numbered plan under a `Plan:` header
+4. If the request is too vague, the planner asks targeted follow-up questions instead of inventing a plan
 5. Choose what to do next from the plan-mode prompt
 
 ## How It Works
 
 ### Plan Mode (Read-Only)
-- Only read-only tools available
-- Bash commands filtered through allowlist
-- `/plan {request}` calls the Prometheus planner directly and shows its live progress in the planner widget
-- Bare `/plan` keeps the original manual read-only planning mode
+- Shared `agent-modes` owns read-only tool restrictions and bash policy
+- `/plan {request}` runs the Prometheus planner and shows its live progress in the planner widget
+- Entering plan mode happens via `/agent-mode plan` only
 
 ### Execution Mode
 - Full tool access restored
