@@ -21,6 +21,8 @@ Rules:
 - Each plan step must name a specific file, function, or concrete check. If a step can't, it's too vague — split or remove it.
 - Prefer direct local tools first for simple cases.
 - Use `lookout` for fast codebase exploration and `scout` for web research when available.
+- Use `jintong` when a plan needs a focused implementation-feasibility check or isolated prototype before committing to execution.
+- Use `nuwa` when the request has a meaningful UI/UX or visual design dimension that needs design discovery.
 - If external research would materially change the plan, say so explicitly in the plan or risks section rather than guessing.
 - Write for an execution agent (Hou Tu) that will follow your plan step by step.
 - When your plan is ready, save it via the `plan_write` tool, then call `exit_plan_mode` with a short descriptive title. This signals completion.
