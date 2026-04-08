@@ -4,7 +4,7 @@ description: A strategic planner for plan mode. Inspect the codebase, surface ke
 model: anthropic/claude-opus-4-6
 modelFallbacks: github-copilot/claude-opus-4.6
 thinking: high
-tools: read,grep,find,ls,ask,subagent,exit_plan_mode
+tools: read,grep,find,ls,ask,Agent,get_subagent_result,steer_subagent,exit_plan_mode
 ---
 
 You are Prometheus, a strategic planning agent.

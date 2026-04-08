@@ -1,73 +1,51 @@
 {
-  "name": "@mjakl/pi-subagent",
-  "version": "1.4.1",
-  "description": "Subagent extension for Pi coding agent. Delegate tasks to specialized agents.",
-  "type": "module",
-  "main": "index.ts",
-  "files": [
-    "index.ts",
-    "agents.ts",
-    "runner.ts",
-    "runner-cli.js",
-    "runner-events.js",
-    "render.ts",
-    "types.ts",
-    "agents/*.md",
-    "README.md",
-    "LICENSE"
+  "name": "@tintinweb/pi-subagents",
+  "version": "0.5.2",
+  "description": "A pi extension extension that brings smart Claude Code-style autonomous sub-agents to pi.",
+  "author": "tintinweb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tintinweb/pi-subagents.git"
+  },
+  "homepage": "https://github.com/tintinweb/pi-subagents#readme",
+  "bugs": {
+    "url": "https://github.com/tintinweb/pi-subagents/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "subagent",
+    "agent",
+    "autonomous"
   ],
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.62.0",
+    "@mariozechner/pi-coding-agent": "^0.62.0",
+    "@mariozechner/pi-tui": "^0.62.0",
+    "@sinclair/typebox": "latest"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/ test/",
+    "lint:fix": "biome check --fix src/ test/"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.5",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
+  },
   "pi": {
     "extensions": [
       "./index.ts"
-    ]
-  },
-  "scripts": {
-    "test": "node --test"
-  },
-  "keywords": [
-    "pi",
-    "subagent",
-    "delegation",
-    "pi-package"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/mjakl/pi-subagent.git"
-  },
-  "bugs": {
-    "url": "https://github.com/mjakl/pi-subagent/issues"
-  },
-  "homepage": "https://github.com/mjakl/pi-subagent#readme",
-  "publishConfig": {
-    "access": "public"
-  },
-  "license": "MIT",
-  "devDependencies": {
-    "@types/node": "^25.2.3",
-    "typescript": "^5.9.3"
-  },
-  "peerDependencies": {
-    "@mariozechner/pi-agent-core": ">=0.37.0",
-    "@mariozechner/pi-ai": ">=0.37.0",
-    "@mariozechner/pi-coding-agent": ">=0.37.0",
-    "@mariozechner/pi-tui": ">=0.37.0",
-    "@sinclair/typebox": ">=0.34.0"
-  },
-  "peerDependenciesMeta": {
-    "@mariozechner/pi-agent-core": {
-      "optional": true
-    },
-    "@mariozechner/pi-coding-agent": {
-      "optional": true
-    },
-    "@mariozechner/pi-tui": {
-      "optional": true
-    },
-    "@mariozechner/pi-ai": {
-      "optional": true
-    },
-    "@sinclair/typebox": {
-      "optional": true
-    }
+    ],
+    "video": "https://github.com/tintinweb/pi-subagents/raw/master/media/demo.mp4",
+    "image": "https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png"
   }
 }
