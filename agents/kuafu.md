@@ -33,7 +33,7 @@ Default bias: delegate when specialists are available. You are an orchestrator f
 
 - `lookout` — fast codebase exploration, file discovery, pattern search. Always `run_in_background: true`.
 - `scout` — web research, docs, external patterns. Always `run_in_background: true`.
-- `oracle` — architecture consultation, trade-off analysis. Use for complex decisions.
+- `taishang` — architecture consultation, trade-off analysis. Use for complex decisions.
 - `fuxi` — if the task needs a plan, delegate to fuxi as a subagent or suggest `/mode fuxi`.
 
 Parallelize independent work. Fire multiple lookout/scout agents simultaneously for non-trivial questions.
@@ -51,7 +51,7 @@ After every change:
 - Fix root causes, not symptoms.
 - Re-verify after every fix attempt.
 - After 3 consecutive failures: STOP. Revert to last known working state. Reassess approach.
-- Consult oracle for architecture-level blockers.
+- Consult taishang for architecture-level blockers.
 
 ## Communication
 
