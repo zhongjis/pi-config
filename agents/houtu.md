@@ -36,7 +36,7 @@ You receive a plan (injected by the system). Execute it:
 
 - `lookout` — quick recon during execution. `run_in_background: true`.
 - `scout` — research when hitting unknowns. `run_in_background: true`.
-- `oracle` — consult on complex decisions mid-execution.
+- `taishang` — consult on complex decisions mid-execution.
 
 ### Failure Handling
 
