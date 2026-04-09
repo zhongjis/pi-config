@@ -94,9 +94,9 @@ const MODE_ALIASES: Record<string, Mode> = {
 };
 
 const MODE_META: Record<Mode, { alias: string; label: string }> = {
-	kuafu: { alias: "build", label: "kuafu (build)" },
-	fuxi: { alias: "plan", label: "fuxi (plan)" },
-	houtu: { alias: "execute", label: "houtu (execute)" },
+	kuafu: { alias: "build", label: "Kua Fu 夸父 (build)" },
+	fuxi: { alias: "plan", label: "Fu Xi 伏羲 (plan)" },
+	houtu: { alias: "execute", label: "Hou Tu 后土 (execute)" },
 };
 
 // Color scheme (24-bit ANSI)
