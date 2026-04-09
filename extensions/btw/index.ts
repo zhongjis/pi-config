@@ -11,7 +11,7 @@ import {
   type AssistantMessage,
   type Message,
 } from "@mariozechner/pi-ai";
-import { Container, Markdown, Spacer, Text, matchesKey } from "@mariozechner/pi-tui";
+import { Container, Markdown, Spacer, Text, matchesKey, type TUI } from "@mariozechner/pi-tui";
 
 const BTW_WIDGET_KEY = "btw";
 const BTW_SYSTEM_PROMPT = [
@@ -76,42 +76,36 @@ function buildFooter(theme: ExtensionContext["ui"]["theme"], status: BtwStatus):
   }
 }
 
-function renderWidget(ctx: ExtensionContext, state: BtwWidgetState | undefined): void {
-  if (!ctx.hasUI) return;
+function buildWidgetComponent(
+  theme: ExtensionContext["ui"]["theme"],
+  state: BtwWidgetState,
+ ): Container {
+  const container = new Container();
+  const title = theme.fg("muted", "Side answer");
+  const question = `${theme.fg("dim", theme.bold("Question"))} ${theme.fg("muted", state.question)}`;
 
-  if (!state) {
-    ctx.ui.setWidget(BTW_WIDGET_KEY, undefined);
-    return;
+  container.addChild(new DynamicBorder((text: string) => theme.fg("borderMuted", text)));
+  container.addChild(new Spacer(1));
+  container.addChild(new Text(title, 1, 0));
+  container.addChild(new Text(question, 1, 0));
+  container.addChild(new Spacer(1));
+
+  if (state.status === "error") {
+    container.addChild(
+      new Text(theme.fg("error", state.errorMessage ?? "BTW request failed."), 1, 0),
+    );
+  } else if (!state.answer.trim()) {
+    const waitingText =
+      state.status === "aborted" ? "Request cancelled." : "Waiting for response…";
+    container.addChild(new Text(theme.fg("dim", waitingText), 1, 0));
+  } else {
+    container.addChild(new Markdown(state.answer, 1, 0, getMarkdownTheme()));
   }
 
-  ctx.ui.setWidget(BTW_WIDGET_KEY, (_tui, theme) => {
-    const container = new Container();
-    const title = theme.fg("muted", "Side answer");
-    const question = `${theme.fg("dim", theme.bold("Question"))} ${theme.fg("muted", state.question)}`;
-
-    container.addChild(new DynamicBorder((text: string) => theme.fg("borderMuted", text)));
-    container.addChild(new Spacer(1));
-    container.addChild(new Text(title, 1, 0));
-    container.addChild(new Text(question, 1, 0));
-    container.addChild(new Spacer(1));
-
-    if (state.status === "error") {
-      container.addChild(
-        new Text(theme.fg("error", state.errorMessage ?? "BTW request failed."), 1, 0),
-      );
-    } else if (!state.answer.trim()) {
-      const waitingText =
-        state.status === "aborted" ? "Request cancelled." : "Waiting for response…";
-      container.addChild(new Text(theme.fg("dim", waitingText), 1, 0));
-    } else {
-      container.addChild(new Markdown(state.answer, 1, 0, getMarkdownTheme()));
-    }
-
-    container.addChild(new Spacer(1));
-    container.addChild(new Text(buildFooter(theme, state.status), 1, 0));
-    container.addChild(new Spacer(1));
-    return container;
-  });
+  container.addChild(new Spacer(1));
+  container.addChild(new Text(buildFooter(theme, state.status), 1, 0));
+  container.addChild(new Spacer(1));
+  return container;
 }
 
 export default function btwExtension(pi: ExtensionAPI): void {
@@ -120,6 +114,24 @@ export default function btwExtension(pi: ExtensionAPI): void {
   let lastUiContext: ExtensionContext | undefined;
   let visibleState: BtwWidgetState | undefined;
   let removeTerminalListener: (() => void) | undefined;
+  let widgetTui: TUI | undefined;
+
+  function renderWidget(ctx: ExtensionContext, state: BtwWidgetState | undefined): void {
+    if (!ctx.hasUI) return;
+
+    if (!state) {
+      const tui = widgetTui;
+      ctx.ui.setWidget(BTW_WIDGET_KEY, undefined);
+      widgetTui = undefined;
+      tui?.requestRender(true);
+      return;
+    }
+
+    ctx.ui.setWidget(BTW_WIDGET_KEY, (tui, theme) => {
+      widgetTui = tui;
+      return buildWidgetComponent(theme, state);
+    });
+  }
 
   function clearWidget(ctx?: ExtensionContext): void {
     visibleState = undefined;
