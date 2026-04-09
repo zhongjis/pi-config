@@ -18,8 +18,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
-import { Key } from "@mariozechner/pi-tui";
+import { CustomEditor, parseFrontmatter } from "@mariozechner/pi-coding-agent";
+import { Key, matchesKey } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 // ---------------------------------------------------------------------------
@@ -756,15 +756,10 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	});
 
 	// -----------------------------------------------------------------------
-	// Shortcut: Tab or Ctrl+Shift+M to cycle
+	// Shortcut: Tab (empty editor only) via custom editor in session_start
+	// (registerShortcut always consumes the key, breaking autocomplete)
+	// Ctrl+Shift+M always cycles regardless of editor state
 	// -----------------------------------------------------------------------
-
-	pi.registerShortcut(Key.tab, {
-		description: "Cycle agent mode (Tab)",
-		handler: async (ctx) => {
-			cycleMode(ctx);
-		},
-	});
 
 	pi.registerShortcut(Key.ctrlShift("m"), {
 		description: "Cycle agent mode (Ctrl+Shift+M)",
@@ -850,6 +845,22 @@ export default function modesExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		activeCtx = ctx;
+
+		// Tab on empty editor → cycle mode; otherwise pass through to autocomplete
+		if (ctx.hasUI) {
+			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+				class ModeEditor extends CustomEditor {
+					handleInput(data: string): void {
+						if (matchesKey(data, Key.tab) && !this.getText().trim()) {
+							if (activeCtx) cycleMode(activeCtx);
+							return;
+						}
+						super.handleInput(data);
+					}
+				}
+				return new ModeEditor(tui, theme, keybindings);
+			});
+		}
 		// Check --mode flag
 		const flagValue = pi.getFlag("mode");
 		if (typeof flagValue === "string" && flagValue && flagValue !== "kuafu") {
