@@ -2,7 +2,7 @@
  * Agent Modes Extension
  *
  * Three personas — Kua Fu 夸父 (build), Fu Xi 伏羲 (plan), Hou Tu 后土 (execute).
- * Default: Kua Fu. Switch via /mode, --mode flag, or Ctrl+Shift+M.
+ * Default: Kua Fu. Switch via /mode, --mode flag, Tab, or Ctrl+Shift+M.
  *
  * Each mode reads its prompt from agents/<mode>.md (same files used by subagent).
  * AGENTS.md global rules stay active in all modes.
@@ -265,6 +265,12 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		cachedConfigs = {}; // force reload on switch
 		applyMode(ctx);
 		persistState();
+	}
+
+	function cycleMode(ctx: ExtensionContext): void {
+		const idx = MODES.indexOf(currentMode);
+		const next = MODES[(idx + 1) % MODES.length];
+		switchMode(next, ctx);
 	}
 	function resetPlanReviewState(): void {
 		pendingPlanReviewId = undefined;
@@ -638,15 +644,20 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	});
 
 	// -----------------------------------------------------------------------
-	// Shortcut: Ctrl+Shift+M to cycle
+	// Shortcut: Tab or Ctrl+Shift+M to cycle
 	// -----------------------------------------------------------------------
 
-	pi.registerShortcut(Key.ctrlShift("m"), {
-		description: "Cycle agent mode",
+	pi.registerShortcut(Key.tab, {
+		description: "Cycle agent mode (Tab)",
 		handler: async (ctx) => {
-			const idx = MODES.indexOf(currentMode);
-			const next = MODES[(idx + 1) % MODES.length];
-			switchMode(next, ctx);
+			cycleMode(ctx);
+		},
+	});
+
+	pi.registerShortcut(Key.ctrlShift("m"), {
+		description: "Cycle agent mode (Ctrl+Shift+M)",
+		handler: async (ctx) => {
+			cycleMode(ctx);
 		},
 	});
 
