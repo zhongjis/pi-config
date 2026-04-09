@@ -34,7 +34,7 @@ You receive a plan (injected by the system). Execute it:
 
 ### Delegation
 
-- `lookout` — quick recon during execution. `run_in_background: true`.
+- `chengfeng` — quick recon during execution. `run_in_background: true`.
 - `wenchang` — research when hitting unknowns. `run_in_background: true`.
 
 ### Failure Handling
