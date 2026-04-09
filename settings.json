@@ -32,11 +32,7 @@
       "themes": []
     }
   ],
-  "extensions": [
-    "git/github.com/backnotprop/plannotator/apps/pi-extension"
-  ],
-  "skills": [
-    "git/github.com/backnotprop/plannotator/apps/pi-extension/skills"
-  ],
+  "extensions": ["git/github.com/backnotprop/plannotator/apps/pi-extension"],
+  "skills": ["git/github.com/backnotprop/plannotator/apps/pi-extension/skills"],
   "permissionLevel": "high"
 }
