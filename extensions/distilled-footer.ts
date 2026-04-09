@@ -91,16 +91,17 @@ function getCostSegment(
   return theme.fg("dim", label);
 }
 
-function getPathLine(ctx: Pick<ExtensionContext, "cwd" | "sessionManager">, branch: string | null): string {
-  const parts = [branch ? basename(ctx.cwd) : shortenPath(ctx.cwd)];
-  if (branch) parts.push(branch);
+function getPathLine(ctx: Pick<ExtensionContext, "cwd" | "sessionManager">, branch: string | null, theme: ExtensionContext["ui"]["theme"]): string {
+  const sep = theme.fg("dim", " \u00b7 ");
+  const parts = [theme.fg("muted", branch ? basename(ctx.cwd) : shortenPath(ctx.cwd))];
+  if (branch) parts.push(theme.fg("accent", branch));
 
   const sessionName = ctx.sessionManager.getSessionName();
-  if (sessionName) parts.push(sessionName);
+  if (sessionName) parts.push(theme.fg("muted", sessionName));
 
-  parts.push(ctx.sessionManager.getSessionId().slice(0, 8));
-
-  return parts.join(" · ");
+  const main = parts.join(sep);
+  const sessionId = ctx.sessionManager.getSessionId().slice(0, 8);
+  return `${main} ${theme.fg("dim", sessionId)}`;
 }
 
 function getModelSegment(ctx: Pick<ExtensionContext, "model">, thinkingLevel: string): string {
@@ -136,7 +137,7 @@ export default function (pi: ExtensionAPI) {
         render(width: number): string[] {
           const branch = footerData.getGitBranch();
           const pathLine = truncateToWidth(
-            theme.fg("dim", getPathLine(ctx, branch)),
+            getPathLine(ctx, branch, theme),
             width,
             theme.fg("dim", "..."),
           );
@@ -146,20 +147,30 @@ export default function (pi: ExtensionAPI) {
 
           const statsSegments = [
             getContextSegment(ctx, theme),
-            theme.fg("dim", getModelSegment(ctx, pi.getThinkingLevel())),
+            theme.fg("muted", getModelSegment(ctx, pi.getThinkingLevel())),
           ];
 
           if (totals.cost || usingSubscription) {
             statsSegments.push(getCostSegment(totals.cost, usingSubscription, theme));
           }
+          let tokenRight = "";
           if (totals.input || totals.output) {
-            statsSegments.push(theme.fg("dim", `↑${formatTokens(totals.input)} ↓${formatTokens(totals.output)}`));
+            let tokenParts = theme.fg("success", "\u2191") + theme.fg("dim", formatTokens(totals.input));
+            tokenParts += " " + theme.fg("muted", "\u2193") + theme.fg("dim", formatTokens(totals.output));
+            if (totals.cacheRead) tokenParts += theme.fg("dim", ` cR${formatTokens(totals.cacheRead)}`);
+            if (totals.cacheWrite) tokenParts += theme.fg("dim", ` cW${formatTokens(totals.cacheWrite)}`);
+            tokenRight = tokenParts;
           }
-          if (totals.cacheRead) {
-            statsSegments.push(theme.fg("dim", `cR${formatTokens(totals.cacheRead)}`));
-          }
-          if (totals.cacheWrite) {
-            statsSegments.push(theme.fg("dim", `cW${formatTokens(totals.cacheWrite)}`));
+
+          const lines = [pathLine];
+          const statsLeft = fitSegments(statsSegments, width);
+          if (tokenRight) {
+            const leftWidth = visibleWidth(statsLeft);
+            const rightWidth = visibleWidth(tokenRight);
+            const gap = Math.max(2, width - leftWidth - rightWidth);
+            lines.push(truncateToWidth(statsLeft + " ".repeat(gap) + tokenRight, width, theme.fg("dim", "...")));
+          } else {
+            lines.push(statsLeft);
           }
 
           const statusEntries = Array.from(footerData.getExtensionStatuses().entries())
@@ -168,22 +179,31 @@ export default function (pi: ExtensionAPI) {
             .map(([key, text]) => key === "agent-mode" ? text : simplifyStatusText(text))
             .filter(Boolean);
 
-          const mcpStatus = statuses.find((status) => /^MCP\b/.test(status));
-          if (mcpStatus) {
-            statsSegments.push(theme.fg("dim", mcpStatus));
-          }
+          // Infrastructure statuses (MCP, LSP, etc.) go far-right on line 3
+          const infraPattern = /^(MCP|LSP)\b/;
+          const infraStatuses = statuses.filter((s) => infraPattern.test(stripAnsi(s)));
+          const infraRight = infraStatuses.map((s) => theme.fg("muted", s)).join(theme.fg("dim", " \u00b7 "));
 
-          const lines = [pathLine, fitSegments(statsSegments, width)];
           const extraEntries = statusEntries.filter(([, text]) => {
             const cleaned = simplifyStatusText(text);
-            return cleaned && cleaned !== mcpStatus;
+            return cleaned && !infraPattern.test(cleaned);
           });
-          if (extraEntries.length > 0) {
+          if (extraEntries.length > 0 || infraRight) {
             const styledEntries = extraEntries.map(([key, text]) =>
               key === "agent-mode" ? text : theme.fg("dim", simplifyStatusText(text))
-            );
-            const statusLine = styledEntries.join(theme.fg("dim", " · "));
-            lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+            ).filter(Boolean);
+            const left = styledEntries.join(theme.fg("dim", " \u00b7 "));
+            if (left && infraRight) {
+              const leftWidth = visibleWidth(left);
+              const rightWidth = visibleWidth(infraRight);
+              const gap = Math.max(2, width - leftWidth - rightWidth);
+              lines.push(truncateToWidth(left + " ".repeat(gap) + infraRight, width, theme.fg("dim", "...")));
+            } else if (left) {
+              lines.push(truncateToWidth(left, width, theme.fg("dim", "...")));
+            } else if (infraRight) {
+              const pad = Math.max(0, width - visibleWidth(infraRight));
+              lines.push(" ".repeat(pad) + infraRight);
+            }
           }
 
           return lines;
