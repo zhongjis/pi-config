@@ -8,10 +8,10 @@
  * AGENTS.md global rules stay active in all modes.
  *
  * Plan flow:
- *   Fu Xi writes plan via plan_write tool → session entry
- *   exit_plan_mode finalizes → user picks Execute/Refine/Stay
+ *   Fu Xi drafts plan with Di Renjie gap review before save
+ *   exit_plan_mode finalizes + returns the post-plan action menu
+ *   Optional Plannotator refine and optional Yanluo high-accuracy review stay user-driven
  *   Execute → Hou Tu mode, plan injected via before_agent_start
- *   context event strips Fu Xi noise for Hou Tu
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -43,6 +43,9 @@ interface ModeState {
 	planReviewPending?: boolean;
 	planReviewApproved?: boolean;
 	planReviewFeedback?: string;
+	highAccuracyReviewPending?: boolean;
+	highAccuracyReviewApproved?: boolean;
+	highAccuracyReviewFeedback?: string;
 	planActionPending?: boolean;
 }
 
@@ -54,7 +57,6 @@ interface PlanEntry {
 
 interface PlannotatorPlanReviewPayload {
 	planContent: string;
-	planFilePath?: string;
 	origin?: string;
 }
 
@@ -192,6 +194,9 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	let planReviewPending = false;
 	let planReviewApproved = false;
 	let planReviewFeedback: string | undefined;
+	let highAccuracyReviewPending = false;
+	let highAccuracyReviewApproved = false;
+	let highAccuracyReviewFeedback: string | undefined;
 	let planActionPending = false;
 	let justSwitchedToHoutu = false;
 	let activeCtx: ExtensionContext | undefined;
@@ -209,6 +214,9 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			planReviewPending,
 			planReviewApproved,
 			planReviewFeedback,
+			highAccuracyReviewPending,
+			highAccuracyReviewApproved,
+			highAccuracyReviewFeedback,
 			planActionPending,
 		});
 	}
@@ -272,19 +280,30 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		const next = MODES[(idx + 1) % MODES.length];
 		switchMode(next, ctx);
 	}
+	function hasPendingReview(): boolean {
+		return planReviewPending || highAccuracyReviewPending;
+	}
+
 	function resetPlanReviewState(): void {
 		pendingPlanReviewId = undefined;
 		planReviewPending = false;
 		planReviewApproved = false;
 		planReviewFeedback = undefined;
+		highAccuracyReviewPending = false;
+		highAccuracyReviewApproved = false;
+		highAccuracyReviewFeedback = undefined;
 		planActionPending = false;
 	}
 
 	function buildPlanContextContent(): string {
 		if (!planContent) return "";
-		const notes = planReviewFeedback?.trim();
-		return notes
-			? `[ACTIVE PLAN: ${planTitle ?? "untitled"}]\n\n${planContent}\n\n[REVIEWER NOTES]\n${notes}`
+		const notes: string[] = [];
+		const plannotatorNotes = planReviewApproved ? planReviewFeedback?.trim() : undefined;
+		const highAccuracyNotes = highAccuracyReviewApproved ? highAccuracyReviewFeedback?.trim() : undefined;
+		if (plannotatorNotes) notes.push(`[PLANNOTATOR NOTES]\n${plannotatorNotes}`);
+		if (highAccuracyNotes) notes.push(`[HIGH ACCURACY REVIEW NOTES]\n${highAccuracyNotes}`);
+		return notes.length > 0
+			? `[ACTIVE PLAN: ${planTitle ?? "untitled"}]\n\n${planContent}\n\n${notes.join("\n\n")}`
 			: `[ACTIVE PLAN: ${planTitle ?? "untitled"}]\n\n${planContent}`;
 	}
 
@@ -294,6 +313,22 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			return `Plannotator review feedback:\n${feedback}\n\nPlease revise the current plan and resubmit it.`;
 		}
 		return "Please revise the current plan based on the Plannotator review feedback and resubmit it.";
+	}
+
+	function buildHighAccuracyReviewMessage(): string {
+		if (!planContent) {
+			return "High accuracy review could not start because no saved plan is available. Return to the post-plan menu.";
+		}
+		const planText = planTitle ? `# Plan: ${planTitle}\n\n${planContent}` : planContent;
+		return `Run High accuracy review on the current saved plan. Use the Agent tool to spawn \`yanluo\` with ONLY the plan text below as the prompt and \`inherit_context: false\`. Do not pass the planning transcript or reviewer chatter. When the review completes, call \`high_accuracy_review_complete\` with approved=true/false and the full feedback text. Do not call \`exit_plan_mode\`. Do not execute the plan. Do not rerun the review automatically.\n\n${planText}`;
+	}
+
+	function buildHighAccuracyRefinementMessage(): string {
+		const feedback = highAccuracyReviewFeedback?.trim();
+		if (feedback) {
+			return `Yanluo high accuracy review feedback:\n${feedback}\n\nPlease revise the current plan in chat, then resave it before requesting another high accuracy review.`;
+		}
+		return "Yanluo requested revisions. Please revise the current plan in chat, then resave it before requesting another high accuracy review.";
 	}
 
 	async function requestPlannotator<T>(
@@ -325,16 +360,22 @@ export default function modesExtension(pi: ExtensionAPI): void {
 
 	async function promptPostPlanAction(ctx: ExtensionContext): Promise<void> {
 		if (currentMode !== "fuxi" || !ctx.hasUI) return;
-		if (!planContent || !planTitle || !planReviewApproved || !planActionPending) return;
+		if (!planContent || !planTitle || !planActionPending || hasPendingReview()) return;
 
-		const choice = await ctx.ui.select(`Plan "${planTitle}" ready. What next?`, [
-			"Execute the plan (switch to Hou Tu)",
-			"Stay in plan mode",
-			"Refine the plan",
-		]);
+		const choices = [
+			"Execute",
+			"Refine in Plannotator",
+			"Refine in chat",
+		];
+		if (!highAccuracyReviewApproved) {
+			choices.push("High accuracy review");
+		}
+		choices.push("Stay");
+
+		const choice = await ctx.ui.select(`Plan "${planTitle}" ready. What next?`, choices);
 		if (!choice) return;
 
-		if (choice.startsWith("Execute")) {
+		if (choice === "Execute") {
 			planActionPending = false;
 			persistState();
 			justSwitchedToHoutu = true;
@@ -343,10 +384,22 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
-		if (choice.startsWith("Refine")) {
-			const refinement = await ctx.ui.editor("Refine the plan:", planReviewFeedback ?? "");
+		if (choice === "Refine in Plannotator") {
+			planActionPending = false;
+			persistState();
+			const reviewMessage = await startPlanReview(ctx);
+			if (ctx.hasUI) {
+				ctx.ui.notify(reviewMessage, planReviewPending ? "info" : "warning");
+			}
+			if (!planReviewPending) {
+				await promptPostPlanAction(ctx);
+			}
+			return;
+		}
+
+		if (choice === "Refine in chat") {
+			const refinement = await ctx.ui.editor("Refine the plan in chat:", highAccuracyReviewFeedback ?? planReviewFeedback ?? "");
 			if (refinement?.trim()) {
-				planReviewApproved = false;
 				planActionPending = false;
 				persistState();
 				pi.sendUserMessage(refinement.trim());
@@ -354,6 +407,16 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			}
 			planActionPending = true;
 			persistState();
+			return;
+		}
+
+		if (choice === "High accuracy review") {
+			highAccuracyReviewPending = true;
+			highAccuracyReviewApproved = false;
+			highAccuracyReviewFeedback = undefined;
+			planActionPending = false;
+			persistState();
+			pi.sendUserMessage(buildHighAccuracyReviewMessage(), { deliverAs: "followUp" });
 			return;
 		}
 
@@ -399,7 +462,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 
 		const response = await requestPlannotator<PlannotatorPlanReviewStartResult>("plan-review", {
 			planContent,
-			origin: "fuxi",
+			origin: "fuxi-explicit-refine",
 		} satisfies PlannotatorPlanReviewPayload);
 
 		if (response.status === "handled" && response.result.status === "pending") {
@@ -409,21 +472,21 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			planReviewFeedback = undefined;
 			planActionPending = false;
 			persistState();
-			return `Plan "${planTitle}" finalized and sent to Plannotator for review.`;
+			return `Plan "${planTitle}" sent to Plannotator for refinement review.`;
 		}
 
 		pendingPlanReviewId = undefined;
 		planReviewPending = false;
-		planReviewApproved = true;
+		planReviewApproved = false;
 		planReviewFeedback = undefined;
 		planActionPending = true;
 		persistState();
 
-		const reason = response.status === "handled" ? undefined : response.error;
+		const reason = response.status === "handled" ? "Plannotator review could not be started." : response.error;
 		if (reason && ctx.hasUI) {
-			ctx.ui.notify(`${reason} Falling back to the built-in plan prompt.`, "warning");
+			ctx.ui.notify(`${reason} Returning to the post-plan menu.`, "warning");
 		}
-		return `Plan "${planTitle}" finalized and ready for review.`;
+		return `Plannotator review could not be started for plan "${planTitle}". Returning to the post-plan menu.`;
 	}
 
 	async function recoverPlanReview(ctx: ExtensionContext): Promise<void> {
@@ -445,14 +508,14 @@ export default function modesExtension(pi: ExtensionAPI): void {
 
 		pendingPlanReviewId = undefined;
 		planReviewPending = false;
-		planReviewApproved = true;
+		planReviewApproved = false;
 		planReviewFeedback = undefined;
 		planActionPending = true;
 		persistState();
 
 		const reason = response.status === "handled" ? "Plannotator review state could not be recovered." : response.error;
 		if (reason && ctx.hasUI) {
-			ctx.ui.notify(`${reason} Falling back to the built-in plan prompt.`, "warning");
+			ctx.ui.notify(`${reason} Returning to the post-plan menu.`, "warning");
 		}
 	}
 
@@ -521,12 +584,61 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			}
 
 			planTitle = trimmed;
+			planActionPending = true;
 			pi.appendEntry<PlanEntry>("plan", { title: trimmed, content: planContent, draft: false });
-
-			const reviewMessage = await startPlanReview(ctx);
+			persistState();
 			return {
-				content: [{ type: "text", text: reviewMessage }],
-				details: { title: trimmed, reviewPending: planReviewPending, reviewId: pendingPlanReviewId },
+				content: [{ type: "text", text: `Plan "${trimmed}" saved. Choose what to do next.` }],
+				details: { title: trimmed, planActionPending },
+			};
+		},
+	});
+
+ 	pi.registerTool({
+		name: "high_accuracy_review_complete",
+		label: "HighAccuracyReviewComplete",
+		description: "Record the result of an explicit Yanluo high accuracy review for the current saved plan.",
+		parameters: Type.Object({
+			approved: Type.Boolean({ description: "Whether Yanluo approved the current saved plan" }),
+			feedback: Type.Optional(Type.String({ description: "Yanluo review feedback or notes" })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (!planContent || !planTitle) {
+				return {
+					content: [{ type: "text", text: "Error: No saved plan found." }],
+					details: {},
+					isError: true,
+				};
+			}
+
+			highAccuracyReviewPending = false;
+			highAccuracyReviewApproved = params.approved;
+			highAccuracyReviewFeedback = params.feedback?.trim() || undefined;
+
+			if (params.approved) {
+				planActionPending = true;
+				persistState();
+				if (ctx.hasUI) {
+					ctx.ui.notify(`Plan "${planTitle}" approved in high accuracy review.`, "info");
+				}
+				await promptPostPlanAction(ctx);
+				return {
+					content: [{ type: "text", text: `High accuracy review approved for plan "${planTitle}".` }],
+					details: { approved: true },
+				};
+			}
+
+			planActionPending = false;
+			persistState();
+			if (ctx.hasUI) {
+				ctx.ui.notify(`Plan "${planTitle}" needs revision after high accuracy review.`, "warning");
+			}
+			if (currentMode === "fuxi") {
+				pi.sendUserMessage(buildHighAccuracyRefinementMessage());
+			}
+			return {
+				content: [{ type: "text", text: `High accuracy review feedback recorded for plan "${planTitle}".` }],
+				details: { approved: false },
 			};
 		},
 	});
@@ -728,7 +840,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	pi.on("agent_end", async (_event, ctx) => {
 		activeCtx = ctx;
 		if (currentMode !== "fuxi" || !ctx.hasUI) return;
-		if (planReviewPending) return;
+		if (hasPendingReview()) return;
 		await promptPostPlanAction(ctx);
 	});
 
@@ -762,6 +874,9 @@ export default function modesExtension(pi: ExtensionAPI): void {
 				planReviewPending = modeEntry.data.planReviewPending ?? false;
 				planReviewApproved = modeEntry.data.planReviewApproved ?? false;
 				planReviewFeedback = modeEntry.data.planReviewFeedback;
+				highAccuracyReviewPending = modeEntry.data.highAccuracyReviewPending ?? false;
+				highAccuracyReviewApproved = modeEntry.data.highAccuracyReviewApproved ?? false;
+				highAccuracyReviewFeedback = modeEntry.data.highAccuracyReviewFeedback;
 				planActionPending = modeEntry.data.planActionPending ?? false;
 			}
 		}
@@ -783,8 +898,18 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			}
 		}
 
+
+		if (highAccuracyReviewPending) {
+			highAccuracyReviewPending = false;
+			planActionPending = true;
+			if (ctx.hasUI) {
+				ctx.ui.notify("Pending high accuracy review could not be recovered. Returning to the post-plan menu.", "warning");
+			}
+		}
+
 		applyMode(ctx);
 		await recoverPlanReview(ctx);
+		persistState();
 		await promptPostPlanAction(ctx);
 	});
 }
