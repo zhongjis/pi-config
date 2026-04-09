@@ -2,6 +2,7 @@ import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { homedir } from "node:os";
+import { basename } from "node:path";
 
 const ANSI_ESCAPE_REGEX = /\u001B\[[0-9;]*m/g;
 
@@ -83,7 +84,7 @@ function getCostSegment(
   theme: ExtensionContext["ui"]["theme"],
 ): string {
   const costText = `$${cost.toFixed(3)}`;
-  const label = usingSubscription ? `${costText} sub` : costText;
+  const label = usingSubscription ? `${costText} (sub)` : costText;
 
   if (cost >= 10) return theme.fg("error", label);
   if (cost >= 1) return theme.fg("warning", label);
@@ -91,7 +92,7 @@ function getCostSegment(
 }
 
 function getPathLine(ctx: Pick<ExtensionContext, "cwd" | "sessionManager">, branch: string | null): string {
-  const parts = [shortenPath(ctx.cwd)];
+  const parts = [branch ? basename(ctx.cwd) : shortenPath(ctx.cwd)];
   if (branch) parts.push(branch);
 
   const sessionName = ctx.sessionManager.getSessionName();
@@ -155,15 +156,16 @@ export default function (pi: ExtensionAPI) {
             statsSegments.push(theme.fg("dim", `↑${formatTokens(totals.input)} ↓${formatTokens(totals.output)}`));
           }
           if (totals.cacheRead) {
-            statsSegments.push(theme.fg("dim", `R${formatTokens(totals.cacheRead)}`));
+            statsSegments.push(theme.fg("dim", `cR${formatTokens(totals.cacheRead)}`));
           }
           if (totals.cacheWrite) {
-            statsSegments.push(theme.fg("dim", `W${formatTokens(totals.cacheWrite)}`));
+            statsSegments.push(theme.fg("dim", `cW${formatTokens(totals.cacheWrite)}`));
           }
 
-          const statuses = Array.from(footerData.getExtensionStatuses().entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([, text]) => simplifyStatusText(text))
+          const statusEntries = Array.from(footerData.getExtensionStatuses().entries())
+            .sort(([a], [b]) => a.localeCompare(b));
+          const statuses = statusEntries
+            .map(([key, text]) => key === "agent-mode" ? text : simplifyStatusText(text))
             .filter(Boolean);
 
           const mcpStatus = statuses.find((status) => /^MCP\b/.test(status));
@@ -172,11 +174,16 @@ export default function (pi: ExtensionAPI) {
           }
 
           const lines = [pathLine, fitSegments(statsSegments, width)];
-          const extraStatuses = statuses.filter((status) => status !== mcpStatus);
-          if (extraStatuses.length > 0) {
-            const statusLine = extraStatuses.join(theme.fg("dim", " · "));
-
-            lines.push(truncateToWidth(theme.fg("dim", statusLine), width, theme.fg("dim", "...")));
+          const extraEntries = statusEntries.filter(([, text]) => {
+            const cleaned = simplifyStatusText(text);
+            return cleaned && cleaned !== mcpStatus;
+          });
+          if (extraEntries.length > 0) {
+            const styledEntries = extraEntries.map(([key, text]) =>
+              key === "agent-mode" ? text : theme.fg("dim", simplifyStatusText(text))
+            );
+            const statusLine = styledEntries.join(theme.fg("dim", " · "));
+            lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
           }
 
           return lines;

@@ -210,7 +210,8 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	}
 
 	function updateStatus(ctx: ExtensionContext): void {
-		ctx.ui.setStatus("agent-mode", colored(currentMode, currentMode));
+		const alias = MODE_META[currentMode].alias;
+		ctx.ui.setStatus("agent-mode", `${colored(currentMode, currentMode)} \x1b[2m(${alias})\x1b[0m`);
 	}
 
 	function switchMode(mode: Mode, ctx: ExtensionContext): void {
