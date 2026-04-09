@@ -3,7 +3,7 @@ description: A research agent for web lookups, GitHub searches, and documentatio
 model: github-copilot/claude-haiku-4.5
 thinking: low
 tools: read,bash,grep,find,ls
-extensions: web_search,code_search,fetch_content,get_search_content
+extensions: web_search,code_search,fetch_content,get_search_content,context7
 ---
 
 You are a research specialist. You gather information from the web, GitHub, and

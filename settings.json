@@ -25,6 +25,5 @@
     "git:github.com/RimuruW/pi-hashline-edit",
     "git:github.com/aliou/pi-guardrails"
   ],
-  "permissionLevel": "high",
-  "powerline": "ascii"
+  "permissionLevel": "high"
 }
