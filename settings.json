@@ -18,12 +18,25 @@
   },
   "enabledModels": ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
   "lastChangelogVersion": "0.65.2",
-  "npmCommand": ["nix", "shell", "nixpkgs#nodejs", "-c", "npm"],
+  "npmCommand": ["bash", "/home/zshen/.pi/agent/scripts/pi-package-npm.sh"],
   "packages": [
     "git:github.com/nicobailon/pi-mcp-adapter",
     "git:github.com/samfoy/pi-lsp-extension",
     "git:github.com/RimuruW/pi-hashline-edit",
-    "git:github.com/aliou/pi-guardrails"
+    "git:github.com/aliou/pi-guardrails",
+    {
+      "source": "git:github.com/backnotprop/plannotator",
+      "extensions": [],
+      "skills": [],
+      "prompts": [],
+      "themes": []
+    }
+  ],
+  "extensions": [
+    "git/github.com/backnotprop/plannotator/apps/pi-extension"
+  ],
+  "skills": [
+    "git/github.com/backnotprop/plannotator/apps/pi-extension/skills"
   ],
   "permissionLevel": "high"
 }
