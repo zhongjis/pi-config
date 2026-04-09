@@ -39,6 +39,11 @@ interface ModeState {
 	mode: Mode;
 	planTitle?: string;
 	planContent?: string;
+	planReviewId?: string;
+	planReviewPending?: boolean;
+	planReviewApproved?: boolean;
+	planReviewFeedback?: string;
+	planActionPending?: boolean;
 }
 
 interface PlanEntry {
@@ -46,6 +51,33 @@ interface PlanEntry {
 	content: string;
 	draft: boolean;
 }
+
+interface PlannotatorPlanReviewPayload {
+	planContent: string;
+	planFilePath?: string;
+	origin?: string;
+}
+
+interface PlannotatorPlanReviewStartResult {
+	status: "pending";
+	reviewId: string;
+}
+
+interface PlannotatorReviewResultEvent {
+	reviewId: string;
+	approved: boolean;
+	feedback?: string;
+}
+
+type PlannotatorReviewStatusResult =
+	| { status: "pending" }
+	| ({ status: "completed" } & PlannotatorReviewResultEvent)
+	| { status: "missing" };
+
+type PlannotatorResponse<T> =
+	| { status: "handled"; result: T }
+	| { status: "unavailable"; error?: string }
+	| { status: "error"; error: string };
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -72,6 +104,9 @@ const MODE_COLORS: Record<Mode, string> = {
 	houtu: "\x1b[38;2;16;185;129m",
 };
 const RESET = "\x1b[0m";
+const PLANNOTATOR_REQUEST_CHANNEL = "plannotator:request";
+const PLANNOTATOR_REVIEW_RESULT_CHANNEL = "plannotator:review-result";
+const PLANNOTATOR_TIMEOUT_MS = 5000;
 
 function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
@@ -153,7 +188,13 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	let cachedConfigs: Partial<Record<Mode, ModeConfig>> = {};
 	let planTitle: string | undefined;
 	let planContent: string | undefined;
+	let pendingPlanReviewId: string | undefined;
+	let planReviewPending = false;
+	let planReviewApproved = false;
+	let planReviewFeedback: string | undefined;
+	let planActionPending = false;
 	let justSwitchedToHoutu = false;
+	let activeCtx: ExtensionContext | undefined;
 
 	// -----------------------------------------------------------------------
 	// State helpers
@@ -164,6 +205,11 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			mode: currentMode,
 			planTitle,
 			planContent,
+			planReviewId: pendingPlanReviewId,
+			planReviewPending,
+			planReviewApproved,
+			planReviewFeedback,
+			planActionPending,
 		});
 	}
 
@@ -220,6 +266,203 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		applyMode(ctx);
 		persistState();
 	}
+	function resetPlanReviewState(): void {
+		pendingPlanReviewId = undefined;
+		planReviewPending = false;
+		planReviewApproved = false;
+		planReviewFeedback = undefined;
+		planActionPending = false;
+	}
+
+	function buildPlanContextContent(): string {
+		if (!planContent) return "";
+		const notes = planReviewFeedback?.trim();
+		return notes
+			? `[ACTIVE PLAN: ${planTitle ?? "untitled"}]\n\n${planContent}\n\n[REVIEWER NOTES]\n${notes}`
+			: `[ACTIVE PLAN: ${planTitle ?? "untitled"}]\n\n${planContent}`;
+	}
+
+	function buildRefinementMessage(): string {
+		const feedback = planReviewFeedback?.trim();
+		if (feedback) {
+			return `Plannotator review feedback:\n${feedback}\n\nPlease revise the current plan and resubmit it.`;
+		}
+		return "Please revise the current plan based on the Plannotator review feedback and resubmit it.";
+	}
+
+	async function requestPlannotator<T>(
+		action: "plan-review" | "review-status",
+		payload: Record<string, unknown>,
+	): Promise<PlannotatorResponse<T>> {
+		const requestId = `${action}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		return await new Promise<PlannotatorResponse<T>>((resolve) => {
+			let settled = false;
+			const timeoutId = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				resolve({ status: "unavailable", error: "Plannotator request timed out." });
+			}, PLANNOTATOR_TIMEOUT_MS);
+
+			pi.events.emit(PLANNOTATOR_REQUEST_CHANNEL, {
+				requestId,
+				action,
+				payload,
+				respond: (response: PlannotatorResponse<T>) => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timeoutId);
+					resolve(response);
+				},
+			});
+		});
+	}
+
+	async function promptPostPlanAction(ctx: ExtensionContext): Promise<void> {
+		if (currentMode !== "fuxi" || !ctx.hasUI) return;
+		if (!planContent || !planTitle || !planReviewApproved || !planActionPending) return;
+
+		const choice = await ctx.ui.select(`Plan "${planTitle}" ready. What next?`, [
+			"Execute the plan (switch to Hou Tu)",
+			"Stay in plan mode",
+			"Refine the plan",
+		]);
+		if (!choice) return;
+
+		if (choice.startsWith("Execute")) {
+			planActionPending = false;
+			persistState();
+			justSwitchedToHoutu = true;
+			switchMode("houtu", ctx);
+			pi.sendUserMessage(`Execute the plan: ${planTitle}`, { deliverAs: "followUp" });
+			return;
+		}
+
+		if (choice.startsWith("Refine")) {
+			const refinement = await ctx.ui.editor("Refine the plan:", planReviewFeedback ?? "");
+			if (refinement?.trim()) {
+				planReviewApproved = false;
+				planActionPending = false;
+				persistState();
+				pi.sendUserMessage(refinement.trim());
+				return;
+			}
+			planActionPending = true;
+			persistState();
+			return;
+		}
+
+		planActionPending = false;
+		persistState();
+	}
+
+	async function handlePlanReviewResult(result: PlannotatorReviewResultEvent, ctx?: ExtensionContext): Promise<void> {
+		if (!pendingPlanReviewId || result.reviewId !== pendingPlanReviewId) return;
+
+		pendingPlanReviewId = undefined;
+		planReviewPending = false;
+		planReviewFeedback = result.feedback?.trim() || undefined;
+
+		if (result.approved) {
+			planReviewApproved = true;
+			planActionPending = true;
+			persistState();
+			if (ctx?.hasUI) {
+				ctx.ui.notify(`Plan "${planTitle ?? "untitled"}" approved in Plannotator.`, "info");
+			}
+			if (ctx) {
+				await promptPostPlanAction(ctx);
+			}
+			return;
+		}
+
+		planReviewApproved = false;
+		planActionPending = false;
+		persistState();
+		if (ctx?.hasUI) {
+			ctx.ui.notify(`Plan "${planTitle ?? "untitled"}" needs refinement in Plannotator.`, "warning");
+		}
+		if (currentMode === "fuxi") {
+			pi.sendUserMessage(buildRefinementMessage());
+		}
+	}
+
+	async function startPlanReview(ctx: ExtensionContext): Promise<string> {
+		if (!planContent || !planTitle) {
+			return "Error: No plan found. Call plan_write first.";
+		}
+
+		const response = await requestPlannotator<PlannotatorPlanReviewStartResult>("plan-review", {
+			planContent,
+			origin: "fuxi",
+		} satisfies PlannotatorPlanReviewPayload);
+
+		if (response.status === "handled" && response.result.status === "pending") {
+			pendingPlanReviewId = response.result.reviewId;
+			planReviewPending = true;
+			planReviewApproved = false;
+			planReviewFeedback = undefined;
+			planActionPending = false;
+			persistState();
+			return `Plan "${planTitle}" finalized and sent to Plannotator for review.`;
+		}
+
+		pendingPlanReviewId = undefined;
+		planReviewPending = false;
+		planReviewApproved = true;
+		planReviewFeedback = undefined;
+		planActionPending = true;
+		persistState();
+
+		const reason = response.status === "handled" ? undefined : response.error;
+		if (reason && ctx.hasUI) {
+			ctx.ui.notify(`${reason} Falling back to the built-in plan prompt.`, "warning");
+		}
+		return `Plan "${planTitle}" finalized and ready for review.`;
+	}
+
+	async function recoverPlanReview(ctx: ExtensionContext): Promise<void> {
+		if (!pendingPlanReviewId) return;
+
+		const response = await requestPlannotator<PlannotatorReviewStatusResult>("review-status", {
+			reviewId: pendingPlanReviewId,
+		});
+
+		if (response.status === "handled") {
+			if (response.result.status === "completed") {
+				await handlePlanReviewResult(response.result, ctx);
+				return;
+			}
+			if (response.result.status === "pending") {
+				return;
+			}
+		}
+
+		pendingPlanReviewId = undefined;
+		planReviewPending = false;
+		planReviewApproved = true;
+		planReviewFeedback = undefined;
+		planActionPending = true;
+		persistState();
+
+		const reason = response.status === "handled" ? "Plannotator review state could not be recovered." : response.error;
+		if (reason && ctx.hasUI) {
+			ctx.ui.notify(`${reason} Falling back to the built-in plan prompt.`, "warning");
+		}
+	}
+
+	pi.events.on(PLANNOTATOR_REVIEW_RESULT_CHANNEL, async (data) => {
+		const result = data as Partial<PlannotatorReviewResultEvent> | null;
+		if (!result || typeof result.reviewId !== "string" || typeof result.approved !== "boolean") return;
+		await handlePlanReviewResult({
+			reviewId: result.reviewId,
+			approved: result.approved,
+			feedback: typeof result.feedback === "string" ? result.feedback : undefined,
+		}, activeCtx);
+	});
+
+	pi.on("session_shutdown", async () => {
+		activeCtx = undefined;
+	});
 
 	// -----------------------------------------------------------------------
 	// Plan tools
@@ -235,6 +478,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		async execute(_toolCallId, params) {
 			planContent = params.content;
 			planTitle = undefined; // draft until exit_plan_mode
+			resetPlanReviewState();
 			pi.appendEntry<PlanEntry>("plan", { content: params.content, draft: true });
 
 			return {
@@ -273,9 +517,10 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			planTitle = trimmed;
 			pi.appendEntry<PlanEntry>("plan", { title: trimmed, content: planContent, draft: false });
 
+			const reviewMessage = await startPlanReview(ctx);
 			return {
-				content: [{ type: "text", text: `Plan "${trimmed}" finalized and ready for review.` }],
-				details: { title: trimmed },
+				content: [{ type: "text", text: reviewMessage }],
+				details: { title: trimmed, reviewPending: planReviewPending, reviewId: pendingPlanReviewId },
 			};
 		},
 	});
@@ -434,7 +679,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			return {
 				message: {
 					customType: "plan-context",
-					content: `[ACTIVE PLAN: ${planTitle ?? "untitled"}]\n\n${planContent}`,
+					content: buildPlanContextContent(),
 					display: true,
 				},
 				systemPrompt: event.systemPrompt + "\n\n" + config.body,
@@ -470,26 +715,10 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	// -----------------------------------------------------------------------
 
 	pi.on("agent_end", async (_event, ctx) => {
+		activeCtx = ctx;
 		if (currentMode !== "fuxi" || !ctx.hasUI) return;
-		if (!planContent || !planTitle) return;
-
-		const choice = await ctx.ui.select(`Plan "${planTitle}" ready. What next?`, [
-			"Execute the plan (switch to Hou Tu)",
-			"Stay in plan mode",
-			"Refine the plan",
-		]);
-
-		if (choice?.startsWith("Execute")) {
-			justSwitchedToHoutu = true;
-			switchMode("houtu", ctx);
-			pi.sendUserMessage(`Execute the plan: ${planTitle}`, { deliverAs: "followUp" });
-		} else if (choice?.startsWith("Refine")) {
-			const refinement = await ctx.ui.editor("Refine the plan:", "");
-			if (refinement?.trim()) {
-				pi.sendUserMessage(refinement.trim());
-			}
-		}
-		// "Stay" → do nothing
+		if (planReviewPending) return;
+		await promptPostPlanAction(ctx);
 	});
 
 	// -----------------------------------------------------------------------
@@ -497,6 +726,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	// -----------------------------------------------------------------------
 
 	pi.on("session_start", async (_event, ctx) => {
+		activeCtx = ctx;
 		// Check --mode flag
 		const flagValue = pi.getFlag("mode");
 		if (typeof flagValue === "string" && flagValue && flagValue !== "kuafu") {
@@ -517,7 +747,16 @@ export default function modesExtension(pi: ExtensionAPI): void {
 				currentMode = modeEntry.data.mode ?? currentMode;
 				planTitle = modeEntry.data.planTitle;
 				planContent = modeEntry.data.planContent;
+				pendingPlanReviewId = modeEntry.data.planReviewId;
+				planReviewPending = modeEntry.data.planReviewPending ?? false;
+				planReviewApproved = modeEntry.data.planReviewApproved ?? false;
+				planReviewFeedback = modeEntry.data.planReviewFeedback;
+				planActionPending = modeEntry.data.planActionPending ?? false;
 			}
+		}
+
+		if (!pendingPlanReviewId) {
+			planReviewPending = false;
 		}
 
 		// Restore plan content from plan entries if not in mode state
@@ -534,5 +773,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		}
 
 		applyMode(ctx);
+		await recoverPlanReview(ctx);
+		await promptPostPlanAction(ctx);
 	});
 }
