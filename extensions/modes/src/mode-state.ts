@@ -1,0 +1,119 @@
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { MODES, MODE_META } from "./constants.js";
+import { loadAgentConfig } from "./config-loader.js";
+import { colored } from "./utils.js";
+import type { Mode, ModeConfig, ModeState } from "./types.js";
+
+export class ModeStateManager {
+	private pi: ExtensionAPI;
+
+	currentMode: Mode = "kuafu";
+	cachedConfigs: Partial<Record<Mode, ModeConfig>> = {};
+	planTitle: string | undefined;
+	planContent: string | undefined;
+	pendingPlanReviewId: string | undefined;
+	planReviewPending = false;
+	planReviewApproved = false;
+	planReviewFeedback: string | undefined;
+	highAccuracyReviewPending = false;
+	highAccuracyReviewApproved = false;
+	highAccuracyReviewFeedback: string | undefined;
+	planActionPending = false;
+	justSwitchedToHoutu = false;
+	activeCtx: ExtensionContext | undefined;
+
+	constructor(pi: ExtensionAPI) {
+		this.pi = pi;
+	}
+
+	persistState(): void {
+		this.pi.appendEntry<ModeState>("agent-mode", {
+			mode: this.currentMode,
+			planTitle: this.planTitle,
+			planContent: this.planContent,
+			planReviewId: this.pendingPlanReviewId,
+			planReviewPending: this.planReviewPending,
+			planReviewApproved: this.planReviewApproved,
+			planReviewFeedback: this.planReviewFeedback,
+			highAccuracyReviewPending: this.highAccuracyReviewPending,
+			highAccuracyReviewApproved: this.highAccuracyReviewApproved,
+			highAccuracyReviewFeedback: this.highAccuracyReviewFeedback,
+			planActionPending: this.planActionPending,
+		});
+	}
+
+	loadConfig(mode: Mode): ModeConfig {
+		if (!this.cachedConfigs[mode]) {
+			this.cachedConfigs[mode] = loadAgentConfig(mode) ?? { body: "" };
+		}
+		return this.cachedConfigs[mode]!;
+	}
+
+	applyMode(ctx: ExtensionContext): void {
+		const config = this.loadConfig(this.currentMode);
+		const allToolNames = this.pi.getAllTools().map((t) => t.name);
+
+		let active: string[];
+
+		if (config.tools || (config.extensions && config.extensions !== true)) {
+			// Explicit allowlist mode (e.g. fuxi): build set from tools + extensions
+			const allowed = new Set<string>();
+			if (config.tools) {
+				for (const t of config.tools) if (allToolNames.includes(t)) allowed.add(t);
+			}
+			if (Array.isArray(config.extensions)) {
+				for (const t of config.extensions) if (allToolNames.includes(t)) allowed.add(t);
+			} else {
+				// extensions not specified or true → add all available tools
+				for (const t of allToolNames) allowed.add(t);
+			}
+			active = Array.from(allowed);
+		} else {
+			// No allowlist → start with everything (e.g. kuafu, houtu)
+			active = [...allToolNames];
+		}
+
+		// Apply denylist (disallowed_tools frontmatter)
+		if (config.disallowedTools?.length) {
+			const denied = new Set(config.disallowedTools);
+			active = active.filter((t) => !denied.has(t));
+		}
+
+		// Note: tools.ts may override this via persisted /tools selections (load order)
+		this.pi.setActiveTools(active);
+		this.updateStatus(ctx);
+	}
+
+	updateStatus(ctx: ExtensionContext): void {
+		const meta = MODE_META[this.currentMode];
+		ctx.ui.setStatus("agent-mode", colored(this.currentMode, meta.label));
+	}
+
+	switchMode(mode: Mode, ctx: ExtensionContext): void {
+		this.currentMode = mode;
+		this.cachedConfigs = {}; // force reload on switch
+		this.applyMode(ctx);
+		this.persistState();
+	}
+
+	cycleMode(ctx: ExtensionContext): void {
+		const idx = MODES.indexOf(this.currentMode);
+		const next = MODES[(idx + 1) % MODES.length];
+		this.switchMode(next, ctx);
+	}
+
+	hasPendingReview(): boolean {
+		return this.planReviewPending || this.highAccuracyReviewPending;
+	}
+
+	resetPlanReviewState(): void {
+		this.pendingPlanReviewId = undefined;
+		this.planReviewPending = false;
+		this.planReviewApproved = false;
+		this.planReviewFeedback = undefined;
+		this.highAccuracyReviewPending = false;
+		this.highAccuracyReviewApproved = false;
+		this.highAccuracyReviewFeedback = undefined;
+		this.planActionPending = false;
+	}
+}
