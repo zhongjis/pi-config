@@ -37,6 +37,8 @@ interface SpawnOptions {
   isBackground?: boolean;
   /** Isolation mode — "worktree" creates a temp git worktree for the agent. */
   isolation?: IsolationMode;
+  /** Resolved provider/model label for widget display. */
+  modelLabel?: string;
   /** Called on tool start/end with activity info (for streaming progress to UI). */
   onToolActivity?: (activity: ToolActivity) => void;
   /** Called on streaming text deltas from the assistant response. */
@@ -98,6 +100,7 @@ export class AgentManager {
       status: options.isBackground ? "queued" : "running",
       toolUses: 0,
       startedAt: Date.now(),
+      modelLabel: options.modelLabel,
       abortController,
     };
     this.agents.set(id, record);

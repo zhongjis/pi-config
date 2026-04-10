@@ -539,12 +539,23 @@ export default function (pi: ExtensionAPI) {
     ].join("\n");
   };
 
+  function stripModelDateSuffix(modelId: string): string {
+    return modelId.replace(/-\d{8}$/, "");
+  }
+
   /** Derive a short model label from a model string. */
   function getModelLabelFromConfig(model: string): string {
     // Strip provider prefix (e.g. "anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6")
     const name = model.includes("/") ? model.split("/").pop()! : model;
-    // Strip trailing date suffix (e.g. "claude-haiku-4-5-20251001" → "claude-haiku-4-5")
-    return name.replace(/-\d{8}$/, "");
+    return stripModelDateSuffix(name);
+  }
+
+  /** Format the resolved runtime model as provider/model for widget display. */
+  function getResolvedModelLabel(model?: { provider?: string; id?: string }): string | undefined {
+    if (!model?.id) return undefined;
+    return model.provider
+      ? `${model.provider}/${stripModelDateSuffix(model.id)}`
+      : stripModelDateSuffix(model.id);
   }
 
   const typeListText = buildTypeListText();
@@ -777,6 +788,7 @@ Guidelines:
       const agentModelName = effectiveModelId && effectiveModelId !== parentModelId
         ? (model?.name ?? effectiveModelId).replace(/^Claude\s+/i, "").toLowerCase()
         : undefined;
+      const agentModelLabel = getResolvedModelLabel(model);
       const agentTags: string[] = [];
       const modeLabel = getPromptModeLabel(subagentType);
       if (modeLabel) agentTags.push(modeLabel);
@@ -832,6 +844,7 @@ Guidelines:
         id = manager.spawn(pi, ctx, subagentType, params.prompt, {
           description: params.description,
           model,
+          modelLabel: agentModelLabel,
           maxTurns: effectiveMaxTurns,
           isolated,
           inheritContext,
@@ -940,6 +953,7 @@ Guidelines:
       const record = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
         description: params.description,
         model,
+        modelLabel: agentModelLabel,
         maxTurns: effectiveMaxTurns,
         isolated,
         inheritContext,

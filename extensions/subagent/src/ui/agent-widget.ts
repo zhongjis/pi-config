@@ -227,7 +227,7 @@ export class AgentWidget {
   }
 
   /** Render a finished agent line. */
-  private renderFinishedLine(a: { id: string; type: SubagentType; status: string; description: string; toolUses: number; startedAt: number; completedAt?: number; error?: string }, theme: Theme): string {
+  private renderFinishedLine(a: { id: string; type: SubagentType; status: string; description: string; toolUses: number; startedAt: number; completedAt?: number; error?: string; modelLabel?: string }, theme: Theme): string {
     const name = getDisplayName(a.type);
     const modeLabel = getPromptModeLabel(a.type);
     const duration = formatMs((a.completedAt ?? Date.now()) - a.startedAt);
@@ -254,6 +254,7 @@ export class AgentWidget {
     }
 
     const parts: string[] = [];
+    if (a.modelLabel) parts.push(a.modelLabel);
     const activity = this.agentActivity.get(a.id);
     if (activity) parts.push(formatTurns(activity.turnCount, activity.maxTurns));
     if (a.toolUses > 0) parts.push(`${a.toolUses} tool use${a.toolUses === 1 ? "" : "s"}`);
@@ -261,6 +262,16 @@ export class AgentWidget {
 
     const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
     return `${icon} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
+  }
+
+  /** Render a queued agent line. */
+  private renderQueuedLine(a: { type: SubagentType; description: string; modelLabel?: string }, theme: Theme): string {
+    const name = getDisplayName(a.type);
+    const modeLabel = getPromptModeLabel(a.type);
+    const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
+    const parts = ["queued"];
+    if (a.modelLabel) parts.push(a.modelLabel);
+    return `${theme.fg("muted", "◦")} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}`;
   }
 
   /**
@@ -293,7 +304,7 @@ export class AgentWidget {
 
     const finishedLines: string[] = [];
     for (const a of finished) {
-      finishedLines.push(truncate(theme.fg("dim", "├─") + " " + this.renderFinishedLine(a, theme)));
+      finishedLines.push(truncate(`${theme.fg("dim", "├─")} ${this.renderFinishedLine(a, theme)}`));
     }
 
     const runningLines: string[][] = []; // each entry is [header, activity]
@@ -311,6 +322,7 @@ export class AgentWidget {
       }
 
       const parts: string[] = [];
+      if (a.modelLabel) parts.push(a.modelLabel);
       if (bg) parts.push(formatTurns(bg.turnCount, bg.maxTurns));
       if (toolUses > 0) parts.push(`${toolUses} tool use${toolUses === 1 ? "" : "s"}`);
       if (tokenText) parts.push(tokenText);
@@ -320,35 +332,33 @@ export class AgentWidget {
       const activity = bg ? describeActivity(bg.activeTools, bg.responseText) : "thinking…";
 
       runningLines.push([
-        truncate(theme.fg("dim", "├─") + ` ${theme.fg("accent", frame)} ${theme.bold(name)}${modeTag}  ${theme.fg("muted", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", statsText)}`),
-        truncate(theme.fg("dim", "│  ") + theme.fg("dim", `  ⎿  ${activity}`)),
+        truncate(`${theme.fg("dim", "├─")} ${theme.fg("accent", frame)} ${theme.bold(name)}${modeTag}  ${theme.fg("muted", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", statsText)}`),
+        truncate(`${theme.fg("dim", "│  ")}${theme.fg("dim", `  ⎿  ${activity}`)}`),
       ]);
     }
 
-    const queuedLine = queued.length > 0
-      ? truncate(theme.fg("dim", "├─") + ` ${theme.fg("muted", "◦")} ${theme.fg("dim", `${queued.length} queued`)}`)
-      : undefined;
+    const queuedLines = queued.map(a =>
+      truncate(`${theme.fg("dim", "├─")} ${this.renderQueuedLine(a, theme)}`),
+    );
 
     // Assemble with overflow cap (heading + overflow indicator = 2 reserved lines).
     const maxBody = MAX_WIDGET_LINES - 1; // heading takes 1 line
-    const totalBody = finishedLines.length + runningLines.length * 2 + (queuedLine ? 1 : 0);
+    const totalBody = finishedLines.length + runningLines.length * 2 + queuedLines.length;
 
-    const lines: string[] = [truncate(theme.fg(headingColor, headingIcon) + " " + theme.fg(headingColor, "Agents"))];
+    const lines: string[] = [truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, "Agents")}`)];
 
     if (totalBody <= maxBody) {
       // Everything fits — add all lines and fix up connectors for the last item.
       lines.push(...finishedLines);
       for (const pair of runningLines) lines.push(...pair);
-      if (queuedLine) lines.push(queuedLine);
+      lines.push(...queuedLines);
 
       // Fix last connector: swap ├─ → └─ and │ → space for activity lines.
       if (lines.length > 1) {
         const last = lines.length - 1;
         lines[last] = lines[last].replace("├─", "└─");
-        // If last item is a running agent activity line, fix indent of that line
-        // and fix the header line above it.
-        if (runningLines.length > 0 && !queuedLine) {
-          // The last two lines are the last running agent's header + activity.
+        // If the last item is a running agent activity line, fix its indent too.
+        if (runningLines.length > 0 && queuedLines.length === 0) {
           if (last >= 2) {
             lines[last - 1] = lines[last - 1].replace("├─", "└─");
             lines[last] = lines[last].replace("│  ", "   ");
@@ -360,6 +370,7 @@ export class AgentWidget {
       // Reserve 1 line for overflow indicator.
       let budget = maxBody - 1;
       let hiddenRunning = 0;
+      let hiddenQueued = 0;
       let hiddenFinished = 0;
 
       // 1. Running agents (2 lines each)
@@ -372,10 +383,14 @@ export class AgentWidget {
         }
       }
 
-      // 2. Queued line
-      if (queuedLine && budget >= 1) {
-        lines.push(queuedLine);
-        budget--;
+      // 2. Queued agents
+      for (const queuedLine of queuedLines) {
+        if (budget >= 1) {
+          lines.push(queuedLine);
+          budget--;
+        } else {
+          hiddenQueued++;
+        }
       }
 
       // 3. Finished agents
@@ -391,10 +406,10 @@ export class AgentWidget {
       // Overflow summary
       const overflowParts: string[] = [];
       if (hiddenRunning > 0) overflowParts.push(`${hiddenRunning} running`);
+      if (hiddenQueued > 0) overflowParts.push(`${hiddenQueued} queued`);
       if (hiddenFinished > 0) overflowParts.push(`${hiddenFinished} finished`);
       const overflowText = overflowParts.join(", ");
-      lines.push(truncate(theme.fg("dim", "└─") + ` ${theme.fg("dim", `+${hiddenRunning + hiddenFinished} more (${overflowText})`)}`)
-      );
+      lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", `+${hiddenRunning + hiddenQueued + hiddenFinished} more (${overflowText})`)}`));
     }
 
     return lines;
