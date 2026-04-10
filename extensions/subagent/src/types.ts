@@ -79,6 +79,8 @@ export interface AgentRecord {
   modelLabel?: string;
   /** Set when result was already consumed via get_subagent_result — suppresses completion notification. */
   resultConsumed?: boolean;
+  /** Number of active get_subagent_result waiters currently supervising this agent. */
+  waitingConsumers?: number;
   /** Steering messages queued before the session was ready. */
   pendingSteers?: string[];
   /** Worktree info if the agent is running in an isolated worktree. */
@@ -95,6 +97,12 @@ export interface AgentRecord {
   externalAbortCleanup?: () => void;
   /** Suppress completion/failure follow-up notifications for this record. */
   suppressNotification?: boolean;
+  /** True when the agent was launched in background mode. */
+  isBackground?: boolean;
+  /** Last time background supervision auto-steered this agent for idleness. */
+  lastSupervisionSteerAt?: number;
+  /** Last time background supervision auto-aborted this agent for idleness. */
+  lastSupervisionAbortAt?: number;
 }
 
 /** Details attached to custom notification messages for visual rendering. */

@@ -12,6 +12,7 @@ import type { AgentSession, ExtensionAPI, ExtensionContext } from "@mariozechner
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import type { AgentRecord, IsolationMode, SubagentType, ThinkingLevel } from "./types.js";
 import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js";
+import { getRecoveredResultText } from "./result-recovery.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
@@ -103,6 +104,7 @@ export class AgentManager {
       startedAt: Date.now(),
       abortController,
       modelLabel: options.modelLabel,
+      isBackground: options.isBackground,
     };
     this.agents.set(id, record);
 
@@ -181,8 +183,8 @@ export class AgentManager {
         if (record.status !== "stopped") {
           record.status = aborted ? "aborted" : steered ? "steered" : "completed";
         }
-        record.result = responseText;
         record.session = session;
+        record.result = responseText.trim() || getRecoveredResultText(record);
         record.completedAt ??= Date.now();
 
         // Final flush of streaming output file
@@ -229,6 +231,7 @@ export class AgentManager {
             record.worktreeResult = wtResult;
           } catch { /* ignore cleanup errors */ }
         }
+        record.result = getRecoveredResultText(record);
 
         if (options.isBackground) {
           this.runningBackground--;
@@ -256,12 +259,14 @@ export class AgentManager {
         this.queue = this.queue.filter(q => q.id !== record.id);
         record.status = "stopped";
         record.completedAt ??= Date.now();
+        record.error = record.error ?? "Parent tool signal aborted before the queued agent could start.";
         return;
       }
       if (record.status !== "running") return;
       record.abortController?.abort();
       record.status = "stopped";
       record.completedAt ??= Date.now();
+      record.error = record.error ?? "Parent tool signal aborted while the agent was running.";
     };
 
     if (signal.aborted) {
@@ -325,11 +330,12 @@ export class AgentManager {
         signal,
       });
       record.status = "completed";
-      record.result = responseText;
+      record.result = responseText.trim() || getRecoveredResultText(record);
       record.completedAt = Date.now();
     } catch (err) {
       record.status = "error";
       record.error = err instanceof Error ? err.message : String(err);
+      record.result = getRecoveredResultText(record);
       record.completedAt = Date.now();
     }
 
@@ -355,6 +361,7 @@ export class AgentManager {
       this.queue = this.queue.filter(q => q.id !== id);
       record.status = "stopped";
       record.completedAt = Date.now();
+      record.error = record.error ?? "Agent was stopped before it started running.";
       return true;
     }
 
@@ -362,6 +369,7 @@ export class AgentManager {
     record.abortController?.abort();
     record.status = "stopped";
     record.completedAt = Date.now();
+    record.error = record.error ?? "Agent was stopped while running.";
     return true;
   }
 
@@ -412,6 +420,7 @@ export class AgentManager {
       if (record) {
         record.status = "stopped";
         record.completedAt = Date.now();
+        record.error = record.error ?? "Agent was stopped before it started running.";
         count++;
       }
     }
@@ -422,6 +431,7 @@ export class AgentManager {
         record.abortController?.abort();
         record.status = "stopped";
         record.completedAt = Date.now();
+        record.error = record.error ?? "Agent was stopped while running.";
         count++;
       }
     }

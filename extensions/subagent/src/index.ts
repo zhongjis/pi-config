@@ -25,6 +25,13 @@ import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { type ModelRegistry, resolveModel } from "./model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
+import { getRecoveredResultText } from "./result-recovery.js";
+import {
+  BACKGROUND_STALE_STEER_AFTER_MS,
+  BACKGROUND_SUPERVISION_INTERVAL_MS,
+  getBackgroundSupervisionAction,
+  getLastProgressAt,
+} from "./background-supervision.js";
 import { type AgentConfig, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType } from "./types.js";
 import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "./delegation-policy.js";
 import {
@@ -60,7 +67,22 @@ function safeFormatTokens(session: { getSessionStats(): { tokens: { total: numbe
  * Used by both foreground and background paths to avoid duplication.
  */
 function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
-  const state: AgentActivity = { activeTools: new Map(), toolUses: 0, turnCount: 1, maxTurns, tokens: "", responseText: "", session: undefined };
+  const state: AgentActivity = {
+    activeTools: new Map(),
+    toolUses: 0,
+    turnCount: 1,
+    maxTurns,
+    tokens: "",
+    responseText: "",
+    session: undefined,
+    lastProgressAt: Date.now(),
+  };
+
+  const markProgress = () => {
+    state.lastProgressAt = Date.now();
+    state.tokens = safeFormatTokens(state.session);
+    onStreamUpdate?.();
+  };
 
   const callbacks = {
     onToolActivity: (activity: { type: "start" | "end"; toolName: string }) => {
@@ -72,19 +94,19 @@ function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
         }
         state.toolUses++;
       }
-      state.tokens = safeFormatTokens(state.session);
-      onStreamUpdate?.();
+      markProgress();
     },
     onTextDelta: (_delta: string, fullText: string) => {
       state.responseText = fullText;
-      onStreamUpdate?.();
+      markProgress();
     },
     onTurnEnd: (turnCount: number) => {
       state.turnCount = turnCount;
-      onStreamUpdate?.();
+      markProgress();
     },
     onSessionCreated: (session: any) => {
       state.session = session;
+      markProgress();
     },
   };
 
@@ -129,11 +151,10 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
     }
   } catch { /* session stats unavailable */ }
 
-  const resultPreview = record.result
-    ? record.result.length > resultMaxLen
-      ? record.result.slice(0, resultMaxLen) + "\n...(truncated, use get_subagent_result for full output)"
-      : record.result
-    : "No output.";
+  const recoveredResult = getRecoveredResultText(record);
+  const resultPreview = recoveredResult.length > resultMaxLen
+    ? recoveredResult.slice(0, resultMaxLen) + "\n...(truncated, use get_subagent_result for full output)"
+    : recoveredResult;
 
   return [
     `<task-notification>`,
@@ -187,11 +208,12 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
     durationMs: record.completedAt ? record.completedAt - record.startedAt : 0,
     outputFile: record.outputFile,
     error: record.error,
-    resultPreview: record.result
-      ? record.result.length > resultMaxLen
-        ? record.result.slice(0, resultMaxLen) + "…"
-        : record.result
-      : "No output.",
+    resultPreview: (() => {
+      const recoveredResult = getRecoveredResultText(record);
+      return recoveredResult.length > resultMaxLen
+        ? recoveredResult.slice(0, resultMaxLen) + "…"
+        : recoveredResult;
+    })(),
   };
 }
 
@@ -279,6 +301,10 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
+  function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   // ---- Individual nudge helper (async join mode) ----
   function emitIndividualNudge(record: AgentRecord) {
     if (record.resultConsumed) return;  // re-check at send time
@@ -299,6 +325,22 @@ export default function (pi: ExtensionAPI) {
     widget.markFinished(record.id);
     scheduleNudge(record.id, () => emitIndividualNudge(record));
     widget.update();
+  }
+
+  function sendStaleAgentReminder(record: AgentRecord, idleMs: number, action: "steer" | "abort") {
+    if (record.resultConsumed || record.suppressNotification) return;
+    const activity = agentActivity.get(record.id);
+    const idleSeconds = Math.round(idleMs / 1000);
+    const currentActivity = activity ? describeActivity(activity.activeTools, activity.responseText) : "waiting";
+    const transcript = record.outputFile ? `\nTranscript: ${record.outputFile}` : "";
+    const actionText = action === "abort"
+      ? "The agent was auto-stopped after prolonged inactivity."
+      : "The agent was auto-steered to wrap up because it appears idle.";
+    pi.sendMessage({
+      customType: "subagent-notification",
+      content: `Background agent may be stalled.\n\nAgent ID: ${record.id}\nType: ${getDisplayName(record.type)}\nDescription: ${record.description}\nIdle: ${idleSeconds}s\nCurrent activity: ${currentActivity}\n${actionText}${transcript}\n\nUse get_subagent_result to inspect the latest result, or steer_subagent to send explicit instructions.`,
+      display: true,
+    }, { deliverAs: "followUp", triggerTurn: true });
   }
 
   // ---- Group join manager ----
@@ -380,8 +422,8 @@ export default function (pi: ExtensionAPI) {
       startedAt: record.startedAt, completedAt: record.completedAt,
     });
 
-    // Skip notification if result was already consumed or intentionally suppressed
-    if (record.resultConsumed || record.suppressNotification) {
+    // Skip notification if result was already consumed, is being synchronously waited on, or intentionally suppressed
+    if (record.resultConsumed || record.suppressNotification || (record.waitingConsumers ?? 0) > 0) {
       agentActivity.delete(record.id);
       widget.markFinished(record.id);
       widget.update();
@@ -433,6 +475,39 @@ export default function (pi: ExtensionAPI) {
     turnAbortSignals.add(signal);
   }
 
+  async function superviseBackgroundAgents() {
+    const now = Date.now();
+    for (const record of manager.listAgents()) {
+      const activity = agentActivity.get(record.id);
+      const { action, idleMs } = getBackgroundSupervisionAction({
+        record,
+        activity,
+        now,
+      });
+      if (action === "none") continue;
+
+      if (action === "steer") {
+        record.lastSupervisionSteerAt = now;
+        if (record.session) {
+          try {
+            await steerAgent(record.session, `You appear idle after ${Math.round(idleMs / 1000)}s. Wrap up with your best current answer now, or explicitly state what is blocking completion.`);
+          } catch { /* ignore steering failures */ }
+        }
+        sendStaleAgentReminder(record, idleMs, "steer");
+        continue;
+      }
+
+      record.lastSupervisionAbortAt = now;
+      record.error = record.error ?? `Auto-stopped after ${Math.round(idleMs / 1000)}s of inactivity.`;
+      manager.abort(record.id);
+      sendStaleAgentReminder(record, idleMs, "abort");
+    }
+  }
+
+  const backgroundSupervisionTimer = setInterval(() => {
+    void superviseBackgroundAgents();
+  }, BACKGROUND_SUPERVISION_INTERVAL_MS);
+
   // Expose manager via Symbol.for() global registry for cross-package access.
   // Standard Node.js pattern for cross-package singletons (used by OpenTelemetry, etc.).
   const MANAGER_KEY = Symbol.for("pi-subagents:manager");
@@ -481,6 +556,7 @@ export default function (pi: ExtensionAPI) {
     manager.abortAll();
     for (const timer of pendingNudges.values()) clearTimeout(timer);
     pendingNudges.clear();
+    clearInterval(backgroundSupervisionTimer);
     manager.dispose();
   });
 
@@ -586,6 +662,28 @@ export default function (pi: ExtensionAPI) {
   }
 
   const typeListText = buildTypeListText();
+
+  async function waitForAgentCompletionWithSupervision(record: AgentRecord, signal?: AbortSignal) {
+    let idleWrapUpSent = false;
+    while (record.status === "running" && record.promise) {
+      if (signal?.aborted) return;
+
+      const activity = agentActivity.get(record.id);
+      const idleMs = Date.now() - getLastProgressAt(activity, record.startedAt);
+      if (!idleWrapUpSent && idleMs >= BACKGROUND_STALE_STEER_AFTER_MS && record.session) {
+        try {
+          await steerAgent(record.session, `You appear idle after ${Math.round(idleMs / 1000)}s. Wrap up now with your best available answer, or explicitly state what is blocking completion.`);
+          idleWrapUpSent = true;
+        } catch { /* ignore steering failures during supervised wait */ }
+      }
+
+      const settled = await Promise.race([
+        record.promise.then(() => true, () => true),
+        delay(1000).then(() => false),
+      ]);
+      if (settled) return;
+    }
+  }
 
   // ---- Agent tool ----
 
@@ -848,7 +946,7 @@ Guidelines:
           return textResult(`Failed to resume agent "${params.resume}".`);
         }
         return textResult(
-          record.result?.trim() || record.error?.trim() || "No output.",
+          getRecoveredResultText(record),
           buildDetails(detailBase, record),
         );
       }
@@ -1011,7 +1109,7 @@ Guidelines:
         : "";
 
       if (record.status === "error") {
-        return textResult(`${fallbackNote}Agent failed: ${record.error}`, details);
+        return textResult(`${fallbackNote}Agent failed.\n\n${getRecoveredResultText(record)}`, details);
       }
 
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
@@ -1019,7 +1117,7 @@ Guidelines:
       if (tokenText) statsParts.push(tokenText);
       return textResult(
         `${fallbackNote}Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.\n\n` +
-        (record.result?.trim() || "No output."),
+        getRecoveredResultText(record),
         details,
       );
     },
@@ -1053,14 +1151,18 @@ Guidelines:
         return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
       }
 
-      // Wait for completion if requested.
-      // Pre-mark resultConsumed BEFORE awaiting: onComplete fires inside .then()
-      // (attached earlier at spawn time) and always runs before this await resumes.
-      // Setting the flag here prevents a redundant follow-up notification.
+      // Wait for completion if requested, but keep a supervision window instead of a blind block.
       if (params.wait && record.status === "running" && record.promise) {
-        record.resultConsumed = true;
+        record.waitingConsumers = (record.waitingConsumers ?? 0) + 1;
         cancelNudge(params.agent_id);
-        await record.promise;
+        try {
+          await waitForAgentCompletionWithSupervision(record, _signal);
+        } finally {
+          record.waitingConsumers = Math.max(0, (record.waitingConsumers ?? 1) - 1);
+          if ((record.waitingConsumers ?? 0) === 0 && record.completedAt && !record.resultConsumed && !record.suppressNotification) {
+            sendIndividualNudge(record);
+          }
+        }
       }
 
       const displayName = getDisplayName(record.type);
@@ -1099,13 +1201,11 @@ Guidelines:
         output += "Agent is queued and has not started yet. Use wait: true or check back later.";
       } else if (record.status === "running") {
         output += "Agent is still running. Use wait: true or check back later.";
-      } else if (record.status === "error") {
-        output += `Error: ${record.error}`;
       } else {
-        output += record.result?.trim() || "No output.";
+        output += getRecoveredResultText(record);
       }
 
-      // Mark result as consumed — suppresses the completion notification
+      // Mark result as consumed only after a terminal result is actually returned here.
       if (record.status !== "running" && record.status !== "queued") {
         record.resultConsumed = true;
         cancelNudge(params.agent_id);

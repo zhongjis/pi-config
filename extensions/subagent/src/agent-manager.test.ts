@@ -6,6 +6,7 @@ const resumeAgentMock = vi.fn();
 vi.mock("./agent-runner.js", () => ({
   runAgent: (...args: any[]) => runAgentMock(...args),
   resumeAgent: (...args: any[]) => resumeAgentMock(...args),
+  getAgentConversation: () => "",
 }));
 
 const { AgentManager } = await import("./agent-manager.js");

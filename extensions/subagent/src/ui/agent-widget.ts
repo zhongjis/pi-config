@@ -59,6 +59,8 @@ export interface AgentActivity {
   turnCount: number;
   /** Effective max turns for this agent (undefined = unlimited). */
   maxTurns?: number;
+  /** Timestamp of the last observed progress signal for stale-agent supervision. */
+  lastProgressAt: number;
 }
 
 /** Metadata attached to Agent tool results for custom rendering. */
