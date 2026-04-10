@@ -1,3 +1,4 @@
+import { normalizeThinkingLevel } from "./thinking-level.js";
 /**
  * custom-agents.ts — Load user-defined agents from project (.pi/agents/) and global (~/.pi/agent/agents/) locations.
  */
@@ -7,7 +8,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
 import { BUILTIN_TOOL_NAMES } from "./agent-types.js";
-import type { AgentConfig, MemoryScope, ThinkingLevel } from "./types.js";
+import type { AgentConfig, MemoryScope } from "./types.js";
 
 /**
  * Scan for custom agent .md files from multiple locations.
@@ -62,7 +63,7 @@ function loadFromDir(dir: string, agents: Map<string, AgentConfig>, source: "pro
       extensions: inheritField(fm.extensions ?? fm.inherit_extensions),
       skills: inheritField(fm.skills ?? fm.inherit_skills),
       model: str(fm.model),
-      thinking: str(fm.thinking) as ThinkingLevel | undefined,
+      thinking: normalizeThinkingLevel(str(fm.thinking)),
       maxTurns: nonNegativeInt(fm.max_turns),
       systemPrompt: body.trim(),
       promptMode: fm.prompt_mode === "append" ? "append" : "replace",

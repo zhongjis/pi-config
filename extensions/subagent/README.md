@@ -163,7 +163,7 @@ All fields are optional — sensible defaults for everything.
 | `disallow_delegation_to` | — | Comma-separated agent types this agent may not delegate to via `Agent` |
 | `isolation` | — | Set to `worktree` to run in an isolated git worktree |
 | `model` | inherit parent | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`) |
-| `thinking` | inherit | off, minimal, low, medium, high, xhigh |
+| `thinking` | inherit | none, minimal, low, medium, high, xhigh |
 | `max_turns` | unlimited | Max agentic turns before graceful shutdown. `0` or omit for unlimited |
 | `prompt_mode` | `replace` | `replace`: body is the full system prompt. `append`: body appended to parent's prompt (agent acts as a `parent twin` with optional extra instructions) |
 | `inherit_context` | `false` | Fork parent conversation into agent |
@@ -188,7 +188,7 @@ Launch a sub-agent.
 | `description` | string | yes | Short 3-5 word summary (shown in UI) |
 | `subagent_type` | string | yes | Agent type (built-in or custom) |
 | `model` | string | no | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`) |
-| `thinking` | string | no | Thinking level: off, minimal, low, medium, high, xhigh |
+| `thinking` | string | no | Thinking level: none, minimal, low, medium, high, xhigh |
 | `max_turns` | number | no | Max agentic turns. Omit for unlimited (default) |
 | `run_in_background` | boolean | no | Run without blocking |
 | `resume` | string | no | Agent ID to resume a previous session |
