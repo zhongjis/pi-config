@@ -3,33 +3,64 @@ set -e
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$HOME/.pi/agent"
-SKILLS_SOURCE="$HOME/.omp/agent/skills"
-SKILLS_TARGET="$TARGET/skills"
 
-mkdir -p "$(dirname "$TARGET")"
+# Nix-managed files — do NOT symlink these (handled by Home Manager)
+NIX_MANAGED=(
+  "AGENTS.md"
+  "settings.json"
+  "skills"
+)
 
-if [ -d "$TARGET" ] && [ ! -L "$TARGET" ]; then
-  BROKEN_TARGET="$TARGET/$(basename "$REPO_DIR")"
+is_nix_managed() {
+  local name="$1"
+  for managed in "${NIX_MANAGED[@]}"; do
+    if [ "$name" = "$managed" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
-  if [ -L "$BROKEN_TARGET" ] && [ "$(readlink "$BROKEN_TARGET")" = "$REPO_DIR" ]; then
-    rm "$BROKEN_TARGET"
+# If ~/.pi/agent is a symlink to this repo (old install), remove it
+if [ -L "$TARGET" ]; then
+  echo "Removing old whole-directory symlink: $TARGET -> $(readlink "$TARGET")"
+  rm "$TARGET"
+fi
+
+mkdir -p "$TARGET"
+
+# Symlink each top-level item from the repo into ~/.pi/agent/,
+# skipping Nix-managed files, hidden files, and install.sh itself
+for item in "$REPO_DIR"/*; do
+  name="$(basename "$item")"
+
+  # Skip Nix-managed items
+  if is_nix_managed "$name"; then
+    echo "Skipping (Nix-managed): $name"
+    continue
   fi
 
-  rmdir "$TARGET" 2>/dev/null || {
-    echo "Refusing to replace non-empty directory at $TARGET" >&2
-    exit 1
-  }
-fi
+  # Skip install.sh itself
+  if [ "$name" = "install.sh" ]; then
+    continue
+  fi
 
-ln -sfnT "$REPO_DIR" "$TARGET"
-echo "Linked $REPO_DIR -> $TARGET"
+  # Create or update the symlink
+  ln -sfn "$item" "$TARGET/$name"
+  echo "Linked $name"
+done
 
-if [ -d "$SKILLS_TARGET" ] && [ ! -L "$SKILLS_TARGET" ]; then
-  rmdir "$SKILLS_TARGET" 2>/dev/null || {
-    echo "Refusing to replace non-empty directory at $SKILLS_TARGET" >&2
-    exit 1
-  }
-fi
+# Also symlink dotfiles that aren't .git or .gitignore
+for item in "$REPO_DIR"/.*; do
+  name="$(basename "$item")"
 
-ln -sfnT "$SKILLS_SOURCE" "$SKILLS_TARGET"
-echo "Linked $SKILLS_SOURCE -> $SKILLS_TARGET"
+  # Skip . .. .git .gitignore .pi
+  case "$name" in
+    .|..|.git|.gitignore|.pi) continue ;;
+  esac
+
+  ln -sfn "$item" "$TARGET/$name"
+  echo "Linked $name"
+done
+
+echo "Done. Nix manages: ${NIX_MANAGED[*]}"
