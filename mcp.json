@@ -5,7 +5,8 @@
       "headers": {
         "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
       },
-      "directTools": true
+      "directTools": true,
+      "lifecycle": "lazy"
     },
     "nixos": {
       "command": "nix",
@@ -14,7 +15,8 @@
         "github:utensils/mcp-nixos",
         "--"
       ],
-      "directTools": true
+      "directTools": true,
+      "lifecycle": "lazy"
     }
   }
 }
