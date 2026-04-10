@@ -10,15 +10,15 @@ import type {
 	PlannotatorReviewStatusResult,
 } from "./types.js";
 
-const HANDOFF_TASK_CLEANUP_CHANNEL = "tasks:rpc:clear-completed";
+const HANDOFF_TASK_CLEANUP_CHANNEL = "tasks:rpc:clear-planning-tasks";
 const HANDOFF_TASK_CLEANUP_TIMEOUT_MS = 1_500;
 
-type ClearCompletedReply = {
+type ClearPlanningTasksReply = {
 	success?: boolean;
 	data?: {
-		status?: "cleared" | "already_clean" | "skipped";
-		cleared?: number;
-		reason?: "shared_store";
+		status?: "cleared" | "already_clean";
+		removed?: number;
+		removedIncomplete?: number;
 	};
 	error?: string;
 };
@@ -56,11 +56,11 @@ export async function requestPlannotator<T>(
 	});
 }
 
-async function clearCompletedTasksForHandoff(pi: ExtensionAPI): Promise<HandoffCleanupNotification> {
-	const requestId = `clear-completed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string): Promise<HandoffCleanupNotification> {
+	const requestId = `clear-planning-tasks-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 	const replyChannel = `${HANDOFF_TASK_CLEANUP_CHANNEL}:reply:${requestId}`;
 	const fallback: HandoffCleanupNotification = {
-		message: "Switched to Hou Tu. Task cleanup unavailable.",
+		message: "Switched to Hou Tu. Planning-task cleanup unavailable.",
 		level: "warning",
 	};
 
@@ -77,15 +77,22 @@ async function clearCompletedTasksForHandoff(pi: ExtensionAPI): Promise<HandoffC
 		const timeoutId = setTimeout(() => finish(fallback), HANDOFF_TASK_CLEANUP_TIMEOUT_MS);
 
 		unsubscribe = pi.events.on(replyChannel, (raw: unknown) => {
-			const reply = raw as ClearCompletedReply | null;
+			const reply = raw as ClearPlanningTasksReply | null;
 			if (!reply || reply.success !== true || !reply.data) {
 				finish(fallback);
 				return;
 			}
 
-			if (reply.data.status === "cleared" && typeof reply.data.cleared === "number") {
+			if (
+				reply.data.status === "cleared" &&
+				typeof reply.data.removed === "number" &&
+				typeof reply.data.removedIncomplete === "number"
+			) {
+				const message = reply.data.removedIncomplete > 0
+					? `Cleared ${reply.data.removed} planning tasks (${reply.data.removedIncomplete} incomplete) and switched to Hou Tu.`
+					: `Cleared ${reply.data.removed} planning tasks and switched to Hou Tu.`;
 				finish({
-					message: `Cleared ${reply.data.cleared} completed tasks and switched to Hou Tu.`,
+					message,
 					level: "info",
 				});
 				return;
@@ -93,15 +100,7 @@ async function clearCompletedTasksForHandoff(pi: ExtensionAPI): Promise<HandoffC
 
 			if (reply.data.status === "already_clean") {
 				finish({
-					message: "Switched to Hou Tu. Task list already clean.",
-					level: "info",
-				});
-				return;
-			}
-
-			if (reply.data.status === "skipped" && reply.data.reason === "shared_store") {
-				finish({
-					message: "Switched to Hou Tu. Auto-cleanup skipped for shared task store.",
+					message: "Switched to Hou Tu. No planning tasks to clean.",
 					level: "info",
 				});
 				return;
@@ -114,6 +113,7 @@ async function clearCompletedTasksForHandoff(pi: ExtensionAPI): Promise<HandoffC
 			pi.events.emit(HANDOFF_TASK_CLEANUP_CHANNEL, {
 				requestId,
 				source: "plan-execute-handoff",
+				sessionId,
 			});
 		} catch {
 			finish(fallback);
@@ -139,7 +139,7 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	if (choice === "Execute in Hou Tu") {
 		state.planActionPending = false;
 		state.persistState();
-		const cleanupNotification = await clearCompletedTasksForHandoff(pi);
+		const cleanupNotification = await clearPlanningTasksForHandoff(pi, ctx.sessionManager.getSessionId());
 		state.justSwitchedToHoutu = true;
 		state.switchMode("houtu", ctx);
 		ctx.ui.notify(cleanupNotification.message, cleanupNotification.level);

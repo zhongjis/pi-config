@@ -21,6 +21,7 @@ import { Type } from "@sinclair/typebox";
 import { AutoClearManager } from "./auto-clear.js";
 import { ProcessTracker } from "./process-tracker.js";
 import { TaskStore } from "./task-store.js";
+import type { Task } from "./types.js";
 import { loadTasksConfig } from "./tasks-config.js";
 import { openSettingsMenu } from "./ui/settings-menu.js";
 import { TaskWidget, type UICtx } from "./ui/task-widget.js";
@@ -46,6 +47,73 @@ const REMINDER_INTERVAL = 4;
 
 /** How many turns completed tasks linger before auto-clearing. */
 const AUTO_CLEAR_DELAY = 4;
+
+type SessionStateContext = {
+  sessionManager: {
+    getEntries(): Array<{ type?: string; customType?: string; data?: { mode?: unknown } }>;
+    getSessionId(): string;
+  };
+};
+
+const PI_WORKFLOW_PHASE_KEY = "_piWorkflowPhase";
+const PI_ORIGIN_MODE_KEY = "_piOriginMode";
+const PI_ORIGIN_SESSION_ID_KEY = "_piOriginSessionId";
+const RESERVED_PROVENANCE_KEYS = new Set([
+  PI_WORKFLOW_PHASE_KEY,
+  PI_ORIGIN_MODE_KEY,
+  PI_ORIGIN_SESSION_ID_KEY,
+]);
+
+function getCurrentMode(ctx?: SessionStateContext): string | undefined {
+  const entries = ctx?.sessionManager.getEntries() ?? [];
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type !== "custom" || entry.customType !== "agent-mode") continue;
+    if (typeof entry.data?.mode === "string" && entry.data.mode.trim()) {
+      return entry.data.mode;
+    }
+  }
+  return undefined;
+}
+
+function sanitizeUserMetadata(metadata?: Record<string, any>): { metadata?: Record<string, any>; ignoredKeys: string[] } {
+  if (!metadata) return { metadata: undefined, ignoredKeys: [] };
+
+  const cleanMetadata: Record<string, any> = {};
+  const ignoredKeys: string[] = [];
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (RESERVED_PROVENANCE_KEYS.has(key)) {
+      ignoredKeys.push(key);
+      continue;
+    }
+    cleanMetadata[key] = value;
+  }
+
+  return {
+    metadata: Object.keys(cleanMetadata).length > 0 ? cleanMetadata : undefined,
+    ignoredKeys,
+  };
+}
+
+function buildTaskMetadata(
+  metadata: Record<string, any> | undefined,
+  ctx?: SessionStateContext,
+): { metadata?: Record<string, any>; ignoredKeys: string[] } {
+  const { metadata: cleanMetadata, ignoredKeys } = sanitizeUserMetadata(metadata);
+  const nextMetadata = cleanMetadata ? { ...cleanMetadata } : {};
+
+  if (ctx && getCurrentMode(ctx) === "fuxi") {
+    nextMetadata[PI_WORKFLOW_PHASE_KEY] = "planning";
+    nextMetadata[PI_ORIGIN_MODE_KEY] = "fuxi";
+    nextMetadata[PI_ORIGIN_SESSION_ID_KEY] = ctx.sessionManager.getSessionId();
+  }
+
+  return {
+    metadata: Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined,
+    ignoredKeys,
+  };
+}
 
 const SYSTEM_REMINDER = `<system-reminder>
 The task tools haven't been used recently. If you're working on tasks that would benefit from tracking progress, consider using TaskCreate to add new tasks and TaskUpdate to update task status (set to in_progress when starting, completed when done). Also consider cleaning up the task list if it has become stale. Only use these if relevant to the current work. This is just a gentle reminder - ignore if not applicable. Make sure that you NEVER mention this reminder to the user
@@ -135,22 +203,61 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  type ClearCompletedReply =
-    | { status: "cleared"; cleared: number }
-    | { status: "already_clean"; cleared: 0 }
-    | { status: "skipped"; reason: "shared_store" };
+  type ClearPlanningTasksReply =
+    | { status: "cleared"; removed: number; removedIncomplete: number }
+    | { status: "already_clean"; removed: 0; removedIncomplete: 0 };
 
-  function clearCompletedForHandoff(): ClearCompletedReply {
-    if (taskScope === "project" || (piTasks !== undefined && piTasks !== "off")) {
-      return { status: "skipped", reason: "shared_store" };
+  function isPlanningTaskForSession(task: Task, sessionId: string): boolean {
+    return task.metadata?.[PI_WORKFLOW_PHASE_KEY] === "planning" &&
+      task.metadata?.[PI_ORIGIN_MODE_KEY] === "fuxi" &&
+      task.metadata?.[PI_ORIGIN_SESSION_ID_KEY] === sessionId;
+  }
+
+  function getBoundAgentId(task: Task): string | undefined {
+    if (typeof task.metadata?.agentId === "string" && task.metadata.agentId) {
+      return task.metadata.agentId;
     }
 
-    const cleared = store.clearCompleted();
+    for (const [agentId, taskId] of agentTaskMap) {
+      if (taskId === task.id) return agentId;
+    }
+
+    return undefined;
+  }
+
+  async function retirePlanningTaskBindings(task: Task): Promise<void> {
+    if (task.status !== "in_progress") return;
+
+    const agentId = getBoundAgentId(task);
+    if (agentId) {
+      agentTaskMap.delete(agentId);
+      await stopSubagent(agentId);
+    }
+
+    widget.setActiveTask(task.id, false);
+  }
+
+  async function clearPlanningTasksForHandoff(sessionId: string): Promise<ClearPlanningTasksReply> {
+    const planningTasks = store.list().filter(task => isPlanningTaskForSession(task, sessionId));
+    if (planningTasks.length === 0) {
+      widget.update();
+      return { status: "already_clean", removed: 0, removedIncomplete: 0 };
+    }
+
+    let removed = 0;
+    let removedIncomplete = 0;
+
+    for (const task of planningTasks) {
+      if (task.status !== "completed") removedIncomplete++;
+      await retirePlanningTaskBindings(task);
+      if (store.delete(task.id)) removed++;
+    }
+
     if (taskScope === "session") store.deleteFileIfEmpty();
     widget.update();
 
-    if (cleared > 0) return { status: "cleared", cleared };
-    return { status: "already_clean", cleared: 0 };
+    if (removed > 0) return { status: "cleared", removed, removedIncomplete };
+    return { status: "already_clean", removed: 0, removedIncomplete: 0 };
   }
 
   /** Spawn a subagent via pi.events RPC (requires @tintinweb/pi-subagents extension). */
@@ -208,9 +315,9 @@ export default function (pi: ExtensionAPI) {
 
   const autoClear = new AutoClearManager(() => store, () => cfg.autoClearCompleted ?? "on_list_complete", AUTO_CLEAR_DELAY);
 
-  handleRpc<{ requestId: string; source: "plan-execute-handoff" }, ClearCompletedReply>(
-    "tasks:rpc:clear-completed",
-    () => clearCompletedForHandoff(),
+  handleRpc<{ requestId: string; source: "plan-execute-handoff"; sessionId: string }, ClearPlanningTasksReply>(
+    "tasks:rpc:clear-planning-tasks",
+    ({ sessionId }) => clearPlanningTasksForHandoff(sessionId),
   );
 
   // ── Subagent completion listener ──
@@ -474,9 +581,13 @@ All tasks are created with status \`pending\`.
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       autoClear.resetBatchCountdown();
-      const meta = params.metadata ?? {};
-      if (params.agentType) meta.agentType = params.agentType;
-      const task = store.create(params.subject, params.description, params.activeForm, Object.keys(meta).length > 0 ? meta : undefined);
+      const baseMetadata = params.metadata ? { ...params.metadata } : {};
+      if (params.agentType) baseMetadata.agentType = params.agentType;
+      const { metadata } = buildTaskMetadata(
+        Object.keys(baseMetadata).length > 0 ? baseMetadata : undefined,
+        (_ctx ?? latestCtx) as SessionStateContext | undefined,
+      );
+      const task = store.create(params.subject, params.description, params.activeForm, metadata);
       widget.update();
       return Promise.resolve(textResult(`Task #${task.id} created successfully: ${task.subject}`));
     },
@@ -724,7 +835,20 @@ Set up task dependencies:
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { taskId, ...fields } = params;
-      const { task, changedFields, warnings } = store.update(taskId, fields);
+      const nextFields = { ...fields };
+      const ignoredMetadataKeys: string[] = [];
+
+      if (fields.metadata !== undefined) {
+        const sanitized = sanitizeUserMetadata(fields.metadata);
+        nextFields.metadata = sanitized.metadata;
+        ignoredMetadataKeys.push(...sanitized.ignoredKeys);
+      }
+
+      const { task, changedFields, warnings } = store.update(taskId, nextFields);
+
+      if (ignoredMetadataKeys.length > 0) {
+        warnings.push(`reserved metadata keys ignored: ${ignoredMetadataKeys.join(", ")}`);
+      }
 
       if (changedFields.length === 0 && !task) {
         return Promise.resolve(textResult(`Task #${taskId} not found`));
@@ -1107,7 +1231,8 @@ Set up task dependencies:
         const description = await ui.input("Task description");
         if (!description) return mainMenu();
 
-        store.create(subject, description);
+        const { metadata } = buildTaskMetadata(undefined, ctx as SessionStateContext);
+        store.create(subject, description, undefined, metadata);
         widget.update();
         return mainMenu();
       };
