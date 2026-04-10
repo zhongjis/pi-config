@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { MODES, MODE_META } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
-import { colored } from "./utils.js";
+import { colored, resolveModelFromStr } from "./utils.js";
 import type { Mode, ModeConfig, ModeState } from "./types.js";
 
 export class ModeStateManager {
@@ -85,6 +85,15 @@ export class ModeStateManager {
 
 		// Note: tools.ts may override this via persisted /tools selections (load order)
 		this.pi.setActiveTools(active);
+
+		// Apply mode model if configured
+		if (config.model) {
+			const resolved = resolveModelFromStr(config.model, ctx.modelRegistry);
+			if (resolved) {
+				void this.pi.setModel(resolved);
+			}
+		}
+
 		this.updateStatus(ctx);
 	}
 

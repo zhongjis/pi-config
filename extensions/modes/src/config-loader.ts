@@ -26,6 +26,7 @@ export function loadAgentConfig(mode: Mode): ModeConfig | null {
 			disallowedTools: parseCsv(frontmatter.disallowed_tools),
 			allowDelegationTo: parseCsv(frontmatter.allow_delegation_to),
 			disallowDelegationTo: parseCsv(frontmatter.disallow_delegation_to),
+			model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
 		};
 	} catch {
 		return null;

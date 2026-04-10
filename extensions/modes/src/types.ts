@@ -7,6 +7,7 @@ export interface ModeConfig {
 	disallowedTools?: string[];
 	allowDelegationTo?: string[];
 	disallowDelegationTo?: string[];
+	model?: string;
 }
 
 export interface ModeState {
