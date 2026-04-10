@@ -114,6 +114,45 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  /** Wire a scoped request/reply RPC handler on the event bus. */
+  function handleRpc<P extends { requestId: string }, T = void>(
+    channel: string,
+    fn: (params: P) => T | Promise<T>,
+  ): () => void {
+    return pi.events.on(channel, async (raw: unknown) => {
+      const params = raw as P;
+      try {
+        const data = await fn(params);
+        const reply: RpcReply<T> = { success: true };
+        if (data !== undefined) reply.data = data;
+        pi.events.emit(`${channel}:reply:${params.requestId}`, reply);
+      } catch (err: any) {
+        pi.events.emit(`${channel}:reply:${params.requestId}`, {
+          success: false,
+          error: err?.message ?? String(err),
+        } satisfies RpcReply<T>);
+      }
+    });
+  }
+
+  type ClearCompletedReply =
+    | { status: "cleared"; cleared: number }
+    | { status: "already_clean"; cleared: 0 }
+    | { status: "skipped"; reason: "shared_store" };
+
+  function clearCompletedForHandoff(): ClearCompletedReply {
+    if (taskScope === "project" || (piTasks !== undefined && piTasks !== "off")) {
+      return { status: "skipped", reason: "shared_store" };
+    }
+
+    const cleared = store.clearCompleted();
+    if (taskScope === "session") store.deleteFileIfEmpty();
+    widget.update();
+
+    if (cleared > 0) return { status: "cleared", cleared };
+    return { status: "already_clean", cleared: 0 };
+  }
+
   /** Spawn a subagent via pi.events RPC (requires @tintinweb/pi-subagents extension). */
   function spawnSubagent(type: string, prompt: string, options?: any): Promise<string> {
     debug("spawn:call", { type, options: { ...options, prompt: undefined } });
@@ -168,6 +207,11 @@ export default function (pi: ExtensionAPI) {
   }
 
   const autoClear = new AutoClearManager(() => store, () => cfg.autoClearCompleted ?? "on_list_complete", AUTO_CLEAR_DELAY);
+
+  handleRpc<{ requestId: string; source: "plan-execute-handoff" }, ClearCompletedReply>(
+    "tasks:rpc:clear-completed",
+    () => clearCompletedForHandoff(),
+  );
 
   // ── Subagent completion listener ──
   // Listens for subagent lifecycle events to update task status and optionally cascade.

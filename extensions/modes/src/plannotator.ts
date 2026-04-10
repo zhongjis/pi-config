@@ -10,6 +10,24 @@ import type {
 	PlannotatorReviewStatusResult,
 } from "./types.js";
 
+const HANDOFF_TASK_CLEANUP_CHANNEL = "tasks:rpc:clear-completed";
+const HANDOFF_TASK_CLEANUP_TIMEOUT_MS = 1_500;
+
+type ClearCompletedReply = {
+	success?: boolean;
+	data?: {
+		status?: "cleared" | "already_clean" | "skipped";
+		cleared?: number;
+		reason?: "shared_store";
+	};
+	error?: string;
+};
+
+type HandoffCleanupNotification = {
+	message: string;
+	level: "info" | "warning";
+};
+
 export async function requestPlannotator<T>(
 	pi: ExtensionAPI,
 	action: "plan-review" | "review-status",
@@ -38,11 +56,76 @@ export async function requestPlannotator<T>(
 	});
 }
 
+async function clearCompletedTasksForHandoff(pi: ExtensionAPI): Promise<HandoffCleanupNotification> {
+	const requestId = `clear-completed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	const replyChannel = `${HANDOFF_TASK_CLEANUP_CHANNEL}:reply:${requestId}`;
+	const fallback: HandoffCleanupNotification = {
+		message: "Switched to Hou Tu. Task cleanup unavailable.",
+		level: "warning",
+	};
+
+	return await new Promise<HandoffCleanupNotification>((resolve) => {
+		let settled = false;
+		let unsubscribe = () => {};
+		const finish = (notification: HandoffCleanupNotification) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeoutId);
+			unsubscribe();
+			resolve(notification);
+		};
+		const timeoutId = setTimeout(() => finish(fallback), HANDOFF_TASK_CLEANUP_TIMEOUT_MS);
+
+		unsubscribe = pi.events.on(replyChannel, (raw: unknown) => {
+			const reply = raw as ClearCompletedReply | null;
+			if (!reply || reply.success !== true || !reply.data) {
+				finish(fallback);
+				return;
+			}
+
+			if (reply.data.status === "cleared" && typeof reply.data.cleared === "number") {
+				finish({
+					message: `Cleared ${reply.data.cleared} completed tasks and switched to Hou Tu.`,
+					level: "info",
+				});
+				return;
+			}
+
+			if (reply.data.status === "already_clean") {
+				finish({
+					message: "Switched to Hou Tu. Task list already clean.",
+					level: "info",
+				});
+				return;
+			}
+
+			if (reply.data.status === "skipped" && reply.data.reason === "shared_store") {
+				finish({
+					message: "Switched to Hou Tu. Auto-cleanup skipped for shared task store.",
+					level: "info",
+				});
+				return;
+			}
+
+			finish(fallback);
+		});
+
+		try {
+			pi.events.emit(HANDOFF_TASK_CLEANUP_CHANNEL, {
+				requestId,
+				source: "plan-execute-handoff",
+			});
+		} catch {
+			finish(fallback);
+		}
+	});
+}
+
 export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
 	if (state.currentMode !== "fuxi" || !ctx.hasUI) return;
 	if (!state.planContent || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
-	const choices: string[] = ["Execute"];
+	const choices: string[] = ["Execute in Hou Tu"];
 	if (!state.planReviewApproved) {
 		choices.push("Refine in Plannotator");
 	}
@@ -53,11 +136,13 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	const choice = await ctx.ui.select(`Plan "${state.planTitle}" ready. What next?`, choices);
 	if (!choice) return;
 
-	if (choice === "Execute") {
+	if (choice === "Execute in Hou Tu") {
 		state.planActionPending = false;
 		state.persistState();
+		const cleanupNotification = await clearCompletedTasksForHandoff(pi);
 		state.justSwitchedToHoutu = true;
 		state.switchMode("houtu", ctx);
+		ctx.ui.notify(cleanupNotification.message, cleanupNotification.level);
 		// Defer to next event-loop tick so finishRun() clears isStreaming before
 		// the message is sent. Without this, sendUserMessage sees isStreaming=true
 		// (still inside agent_end), queues a follow-up that the already-exited
