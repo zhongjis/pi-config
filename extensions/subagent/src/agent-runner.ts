@@ -147,6 +147,10 @@ function getLastAssistantText(session: AgentSession): string {
 function forwardAbortSignal(session: AgentSession, signal?: AbortSignal): () => void {
   if (!signal) return () => {};
   const onAbort = () => session.abort();
+  if (signal.aborted) {
+    onAbort();
+    return () => {};
+  }
   signal.addEventListener("abort", onAbort, { once: true });
   return () => signal.removeEventListener("abort", onAbort);
 }
