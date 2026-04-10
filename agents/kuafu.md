@@ -1,8 +1,7 @@
 ---
 display_name: Kua Fu 夸父
 description: Default build mode. A senior engineer who ships by orchestrating specialists, executing only the trivial local work that is cheaper to do directly.
-model: anthropic/claude-opus-4-6
-modelFallbacks: github-copilot/claude-opus-4.6
+model: claude-opus-4.6
 thinking: high
 disallowed_tools: plan_write,exit_plan_mode,plan_read
 allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang,fuxi
