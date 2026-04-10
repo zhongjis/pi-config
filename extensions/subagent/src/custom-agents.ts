@@ -57,6 +57,8 @@ function loadFromDir(dir: string, agents: Map<string, AgentConfig>, source: "pro
       description: str(fm.description) ?? name,
       builtinToolNames: csvList(fm.tools, BUILTIN_TOOL_NAMES),
       disallowedTools: csvListOptional(fm.disallowed_tools),
+      allowDelegationTo: csvListOptional(fm.allow_delegation_to),
+      disallowDelegationTo: csvListOptional(fm.disallow_delegation_to),
       extensions: inheritField(fm.extensions ?? fm.inherit_extensions),
       skills: inheritField(fm.skills ?? fm.inherit_skills),
       model: str(fm.model),

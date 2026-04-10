@@ -159,18 +159,22 @@ All fields are optional — sensible defaults for everything.
 | `skills` | `true` | Inherit skills from parent. Can be a comma-separated list of skill names to preload from `.pi/skills/` |
 | `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |
 | `disallowed_tools` | — | Comma-separated tools to deny even if extensions provide them |
+| `allow_delegation_to` | — | Comma-separated agent types this agent may delegate to via `Agent` |
+| `disallow_delegation_to` | — | Comma-separated agent types this agent may not delegate to via `Agent` |
 | `isolation` | — | Set to `worktree` to run in an isolated git worktree |
 | `model` | inherit parent | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`) |
 | `thinking` | inherit | off, minimal, low, medium, high, xhigh |
 | `max_turns` | unlimited | Max agentic turns before graceful shutdown. `0` or omit for unlimited |
-| `prompt_mode` | `replace` | `replace`: body is the full system prompt. `append`: body appended to parent's prompt (agent acts as a "parent twin" with optional extra instructions) |
+| `prompt_mode` | `replace` | `replace`: body is the full system prompt. `append`: body appended to parent's prompt (agent acts as a `parent twin` with optional extra instructions) |
 | `inherit_context` | `false` | Fork parent conversation into agent |
 | `run_in_background` | `false` | Run in background by default |
 | `isolation` | — | `worktree`: run in a temporary git worktree for full repo isolation |
 | `isolated` | `false` | No extension/MCP tools, only built-in |
 | `enabled` | `true` | Set to `false` to disable an agent (useful for hiding a default agent per-project) |
 
-Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
+Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, `isolation`, `allow_delegation_to`, or `disallow_delegation_to`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
+
+If both delegation fields are present, `allow_delegation_to` is applied first and `disallow_delegation_to` removes targets from that set. These fields only matter for agents that can call `Agent`.
 
 ## Tools
 

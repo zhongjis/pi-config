@@ -5,6 +5,8 @@ export interface ModeConfig {
 	tools?: string[];
 	extensions?: string[] | true;
 	disallowedTools?: string[];
+	allowDelegationTo?: string[];
+	disallowDelegationTo?: string[];
 }
 
 export interface ModeState {
