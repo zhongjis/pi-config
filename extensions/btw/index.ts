@@ -13,6 +13,10 @@ import {
 } from "@mariozechner/pi-ai";
 import { Container, Markdown, Spacer, Text, matchesKey, type TUI } from "@mariozechner/pi-tui";
 
+function normalizeReasoningLevel(level: string): string {
+  return level === "off" ? "none" : level;
+}
+
 const BTW_WIDGET_KEY = "btw";
 const BTW_SYSTEM_PROMPT = [
   "You are answering a short side question about the user's current session.",
@@ -216,7 +220,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
         },
         {
           signal: request.abortController.signal,
-          reasoning: pi.getThinkingLevel(),
+          reasoning: normalizeReasoningLevel(pi.getThinkingLevel()),
           apiKey: auth.apiKey,
           headers: auth.headers,
         },

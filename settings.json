@@ -1,7 +1,7 @@
 {
   "defaultProvider": "github-copilot",
   "defaultModel": "gpt-5.4",
-  "defaultThinkingLevel": "high",
+  "defaultThinkingLevel": "none",
   "theme": "ghostty-sync-6c1158ac",
   "quietStartup": true,
   "doubleEscapeAction": "tree",
