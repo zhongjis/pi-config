@@ -1,8 +1,7 @@
 ---
 display_name: Yan Luo 阎罗
 description: Plan reviewer — validates plans against clarity, verifiability, and completeness standards.
-model: anthropic/claude-opus-4-6
-modelFallbacks: openai/gpt-5.4
+model: claude-opus-4.6
 thinking: high
 tools: read,grep,find,ls
 extensions: none

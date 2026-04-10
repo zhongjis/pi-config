@@ -1,6 +1,7 @@
 ---
 display_name: Nuwa 女娲
 description: A UI/UX designer for visual direction, interaction quality, and practical frontend design improvements.
+model: gemini-3.1-pro-preview
 thinking: high
 tools: read,bash,edit,write,grep,find,ls
 disallowed_tools: plan_write,exit_plan_mode,plan_read,Agent,get_subagent_result,steer_subagent
