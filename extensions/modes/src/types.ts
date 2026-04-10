@@ -11,6 +11,8 @@ export interface ModeState {
 	mode: Mode;
 	planTitle?: string;
 	planContent?: string;
+	gapReviewApproved?: boolean;
+	gapReviewFeedback?: string;
 	planReviewId?: string;
 	planReviewPending?: boolean;
 	planReviewApproved?: boolean;

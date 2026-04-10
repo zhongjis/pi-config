@@ -11,6 +11,8 @@ export class ModeStateManager {
 	cachedConfigs: Partial<Record<Mode, ModeConfig>> = {};
 	planTitle: string | undefined;
 	planContent: string | undefined;
+	gapReviewApproved = false;
+	gapReviewFeedback: string | undefined;
 	pendingPlanReviewId: string | undefined;
 	planReviewPending = false;
 	planReviewApproved = false;
@@ -31,6 +33,8 @@ export class ModeStateManager {
 			mode: this.currentMode,
 			planTitle: this.planTitle,
 			planContent: this.planContent,
+			gapReviewApproved: this.gapReviewApproved,
+			gapReviewFeedback: this.gapReviewFeedback,
 			planReviewId: this.pendingPlanReviewId,
 			planReviewPending: this.planReviewPending,
 			planReviewApproved: this.planReviewApproved,
@@ -107,6 +111,8 @@ export class ModeStateManager {
 	}
 
 	resetPlanReviewState(): void {
+		this.gapReviewApproved = false;
+		this.gapReviewFeedback = undefined;
 		this.pendingPlanReviewId = undefined;
 		this.planReviewPending = false;
 		this.planReviewApproved = false;
