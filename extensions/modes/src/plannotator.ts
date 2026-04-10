@@ -42,15 +42,13 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	if (state.currentMode !== "fuxi" || !ctx.hasUI) return;
 	if (!state.planContent || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
-	const choices = [
-		"Execute",
-		"Refine in Plannotator",
-		"Refine in chat",
-	];
+	const choices: string[] = ["Execute"];
+	if (!state.planReviewApproved) {
+		choices.push("Refine in Plannotator");
+	}
 	if (!state.highAccuracyReviewApproved) {
 		choices.push("High accuracy review");
 	}
-	choices.push("Stay");
 
 	const choice = await ctx.ui.select(`Plan "${state.planTitle}" ready. What next?`, choices);
 	if (!choice) return;
@@ -60,7 +58,11 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		state.persistState();
 		state.justSwitchedToHoutu = true;
 		state.switchMode("houtu", ctx);
-		pi.sendUserMessage(`Execute the plan: ${state.planTitle}`, { deliverAs: "followUp" });
+		// Defer to next event-loop tick so finishRun() clears isStreaming before
+		// the message is sent. Without this, sendUserMessage sees isStreaming=true
+		// (still inside agent_end), queues a follow-up that the already-exited
+		// agent loop never drains — the turn silently never starts.
+		setTimeout(() => pi.sendUserMessage(`Execute the plan: ${state.planTitle}`), 0);
 		return;
 	}
 
@@ -77,31 +79,15 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		return;
 	}
 
-	if (choice === "Refine in chat") {
-		const refinement = await ctx.ui.editor("Refine the plan in chat:", state.highAccuracyReviewFeedback ?? state.planReviewFeedback ?? "");
-		if (refinement?.trim()) {
-			state.planActionPending = false;
-			state.persistState();
-			pi.sendUserMessage(refinement.trim());
-			return;
-		}
-		state.planActionPending = true;
-		state.persistState();
-		return;
-	}
-
 	if (choice === "High accuracy review") {
 		state.highAccuracyReviewPending = true;
 		state.highAccuracyReviewApproved = false;
 		state.highAccuracyReviewFeedback = undefined;
 		state.planActionPending = false;
 		state.persistState();
-		pi.sendUserMessage(buildHighAccuracyReviewMessage(state), { deliverAs: "followUp" });
+		setTimeout(() => pi.sendUserMessage(buildHighAccuracyReviewMessage(state)), 0);
 		return;
 	}
-
-	state.planActionPending = false;
-	state.persistState();
 }
 
 export async function handlePlanReviewResult(
