@@ -47,6 +47,7 @@ function mockPi() {
         };
       },
     },
+    sendMessage: vi.fn(),
     sendUserMessage: vi.fn(),
   };
 
@@ -74,15 +75,21 @@ function mockPi() {
 }
 
 /** Minimal mock ExtensionContext. */
-function mockCtx() {
+function mockCtx(overrides: Record<string, any> = {}) {
   return {
     model: { id: "test-model", name: "Test" },
     modelRegistry: {},
+    sessionManager: {
+      getSessionId: () => "session-1",
+      getEntries: () => [],
+    },
     ui: {
       setWidget: vi.fn(),
       setStatus: vi.fn(),
       notify: vi.fn(),
     },
+    hasPendingMessages: () => false,
+    ...overrides,
   };
 }
 
@@ -730,6 +737,73 @@ function installVersionedMock(pi: { events: MockEventBus }, version?: number) {
   pi.events.emit("subagents:ready", {});
   return { unsub() { unsubPing(); } };
 }
+
+describe("Task continuation reminder", () => {
+  async function runAgentTurn(mock: ReturnType<typeof mockPi>, ctx: any, stopReason = "stop") {
+    await mock.fireLifecycle("agent_start", {}, ctx);
+    await mock.fireLifecycle("turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
+    await mock.fireLifecycle("turn_end", {
+      turnIndex: 1,
+      message: { role: "assistant", usage: { input: 1, output: 1 } },
+      toolResults: [],
+    }, ctx);
+    await mock.fireLifecycle("agent_end", { messages: [{ role: "assistant", stopReason }] }, ctx);
+  }
+
+  it("sends a follow-up continuation reminder when incomplete tasks remain", async () => {
+    const mock = mockPi();
+    initExtension(mock.pi as any);
+
+    await mock.executeTool("TaskCreate", { subject: "Pending", description: "desc" });
+
+    const ctx = mockCtx();
+    await runAgentTurn(mock, ctx);
+
+    expect(mock.pi.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customType: "task-continuation-reminder",
+        content: expect.stringContaining("Incomplete tasks remain in your task list"),
+        display: true,
+        details: { incompleteTaskIds: ["1"] },
+      }),
+      expect.objectContaining({ deliverAs: "followUp", triggerTurn: true }),
+    );
+  });
+
+  it("stops sending the reminder after three repeated single-turn follow-ups with unchanged tasks", async () => {
+    const mock = mockPi();
+    initExtension(mock.pi as any);
+
+    await mock.executeTool("TaskCreate", { subject: "Pending", description: "desc" });
+
+    const ctx = mockCtx();
+
+    await runAgentTurn(mock, ctx);
+    expect(mock.pi.sendMessage).toHaveBeenCalledTimes(1);
+
+    await runAgentTurn(mock, ctx);
+    expect(mock.pi.sendMessage).toHaveBeenCalledTimes(2);
+
+    await runAgentTurn(mock, ctx);
+    expect(mock.pi.sendMessage).toHaveBeenCalledTimes(3);
+
+    await runAgentTurn(mock, ctx);
+    expect(mock.pi.sendMessage).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not send the continuation reminder when all tasks are completed", async () => {
+    const mock = mockPi();
+    initExtension(mock.pi as any);
+
+    await mock.executeTool("TaskCreate", { subject: "Done", description: "desc" });
+    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
+
+    const ctx = mockCtx();
+    await runAgentTurn(mock, ctx);
+
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+  });
+});
 
 describe("Protocol version mismatch", () => {
   it("matching version — no warning", async () => {

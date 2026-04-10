@@ -119,6 +119,18 @@ const SYSTEM_REMINDER = `<system-reminder>
 The task tools haven't been used recently. If you're working on tasks that would benefit from tracking progress, consider using TaskCreate to add new tasks and TaskUpdate to update task status (set to in_progress when starting, completed when done). Also consider cleaning up the task list if it has become stale. Only use these if relevant to the current work. This is just a gentle reminder - ignore if not applicable. Make sure that you NEVER mention this reminder to the user
 </system-reminder>`;
 
+const TASK_CONTINUATION_REMINDER = `<system-reminder>
+Incomplete tasks remain in your task list. Continue working on the next pending task.
+
+- Proceed without asking for permission
+- Mark each task complete when finished
+- Do not stop until all tasks are done
+- If you believe the work is already complete, critically re-check each incomplete task and update the task list accordingly
+- NEVER mention this reminder to the user
+</system-reminder>`;
+
+const MAX_SINGLE_TURN_TASK_REMINDER_REPEATS = 3;
+
 export default function (pi: ExtensionAPI) {
   // Initialize store and config
   const cfg = loadTasksConfig();
@@ -422,10 +434,33 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  // ── Turn tracking for system-reminder injection ──
+  function getIncompleteTasks(): Task[] {
+    return store.list().filter(task => task.status !== "completed");
+  }
+
+  function getIncompleteTaskSignature(tasks: Task[]): string {
+    return tasks
+      .map(task => `${task.id}:${task.status}:${task.updatedAt}`)
+      .join("|");
+  }
+
+  function getLastAssistantStopReason(messages: Array<{ role?: string; stopReason?: string }>): string | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message?.role === "assistant") return message.stopReason;
+    }
+    return undefined;
+  }
+
+  // ── Turn tracking for reminders and continuation follow-ups ──
   let currentTurn = 0;
   let lastTaskToolUseTurn = 0;
   let reminderInjectedThisCycle = false;
+  let activeAgentTurnCount = 0;
+  let taskReminderFollowUpPending = false;
+  let activeAgentStartedFromTaskReminder = false;
+  let taskReminderStagnationCount = 0;
+  let lastReminderIncompleteSignature: string | undefined;
 
   pi.on("turn_start", async (_event, ctx) => {
     currentTurn++;
@@ -435,13 +470,72 @@ export default function (pi: ExtensionAPI) {
     if (autoClear.onTurnStart(currentTurn)) widget.update();
   });
 
-  // ── Token usage tracking ──
+  // ── Agent/turn tracking ──
+  pi.on("agent_start", async () => {
+    activeAgentTurnCount = 0;
+    activeAgentStartedFromTaskReminder = taskReminderFollowUpPending;
+    taskReminderFollowUpPending = false;
+  });
+
   // Feed per-turn token counts from assistant messages into the widget.
   pi.on("turn_end", async (event) => {
+    activeAgentTurnCount++;
     const msg = event.message as any;
     if (msg?.role === "assistant" && msg.usage) {
       widget.addTokenUsage(msg.usage.input ?? 0, msg.usage.output ?? 0);
     }
+  });
+
+  pi.on("agent_end", async (event, ctx) => {
+    latestCtx = ctx;
+    widget.setUICtx(ctx.ui as UICtx);
+    upgradeStoreIfNeeded(ctx);
+
+    const stopReason = getLastAssistantStopReason(event.messages as Array<{ role?: string; stopReason?: string }>);
+    if (stopReason === "aborted" || stopReason === "error") {
+      taskReminderFollowUpPending = false;
+      activeAgentStartedFromTaskReminder = false;
+      taskReminderStagnationCount = 0;
+      lastReminderIncompleteSignature = undefined;
+      return;
+    }
+
+    if (ctx.hasPendingMessages()) return;
+
+    const incompleteTasks = getIncompleteTasks();
+    if (incompleteTasks.length === 0) {
+      taskReminderFollowUpPending = false;
+      activeAgentStartedFromTaskReminder = false;
+      taskReminderStagnationCount = 0;
+      lastReminderIncompleteSignature = undefined;
+      return;
+    }
+
+    const incompleteSignature = getIncompleteTaskSignature(incompleteTasks);
+    if (activeAgentStartedFromTaskReminder) {
+      const stalled = activeAgentTurnCount <= 1 && incompleteSignature === lastReminderIncompleteSignature;
+      taskReminderStagnationCount = stalled ? taskReminderStagnationCount + 1 : 0;
+    } else {
+      taskReminderStagnationCount = 0;
+    }
+
+    activeAgentStartedFromTaskReminder = false;
+    if (taskReminderStagnationCount >= MAX_SINGLE_TURN_TASK_REMINDER_REPEATS) {
+      taskReminderFollowUpPending = false;
+      return;
+    }
+
+    lastReminderIncompleteSignature = incompleteSignature;
+    taskReminderFollowUpPending = true;
+    pi.sendMessage({
+      customType: "task-continuation-reminder",
+      content: TASK_CONTINUATION_REMINDER,
+      display: true,
+      details: { incompleteTaskIds: incompleteTasks.map(task => task.id) },
+    }, {
+      deliverAs: "followUp",
+      triggerTurn: true,
+    });
   });
 
   // ── System-reminder injection via tool_result event ──
@@ -499,6 +593,11 @@ export default function (pi: ExtensionAPI) {
     currentTurn = 0;
     lastTaskToolUseTurn = 0;
     reminderInjectedThisCycle = false;
+    activeAgentTurnCount = 0;
+    taskReminderFollowUpPending = false;
+    activeAgentStartedFromTaskReminder = false;
+    taskReminderStagnationCount = 0;
+    lastReminderIncompleteSignature = undefined;
     autoClear.reset();
 
     // Memory mode has no file-backed store to switch — clear explicitly on /new
