@@ -380,8 +380,8 @@ export default function (pi: ExtensionAPI) {
       startedAt: record.startedAt, completedAt: record.completedAt,
     });
 
-    // Skip notification if result was already consumed via get_subagent_result
-    if (record.resultConsumed) {
+    // Skip notification if result was already consumed or intentionally suppressed
+    if (record.resultConsumed || record.suppressNotification) {
       agentActivity.delete(record.id);
       widget.markFinished(record.id);
       widget.update();
@@ -411,6 +411,28 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
+  const turnAbortSignals = new WeakSet<AbortSignal>();
+
+  function getAbortSignal(ctx: ExtensionContext): AbortSignal | undefined {
+    return (ctx as ExtensionContext & { signal?: AbortSignal }).signal;
+  }
+
+  function bindTurnAbortSignal(signal?: AbortSignal) {
+    if (!signal || turnAbortSignals.has(signal)) return;
+
+    const onAbort = () => {
+      for (const record of manager.listAgents()) {
+        if (record.status !== "running" && record.status !== "queued") continue;
+        record.suppressNotification = true;
+        cancelNudge(record.id);
+      }
+      manager.abortAll();
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    turnAbortSignals.add(signal);
+  }
+
   // Expose manager via Symbol.for() global registry for cross-package access.
   // Standard Node.js pattern for cross-package singletons (used by OpenTelemetry, etc.).
   const MANAGER_KEY = Symbol.for("pi-subagents:manager");
@@ -433,6 +455,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_switch", () => { manager.clearCompleted(); });
 
+
   const { unsubPing: unsubPingRpc, unsubSpawn: unsubSpawnRpc, unsubStop: unsubStopRpc } = registerRpcHandlers({
     events: pi.events,
     pi,
@@ -442,6 +465,10 @@ export default function (pi: ExtensionAPI) {
 
   // Broadcast readiness so extensions loaded after us can discover us
   pi.events.emit("subagents:ready", {});
+
+  pi.on("agent_start", async (_event, ctx) => {
+    bindTurnAbortSignal(getAbortSignal(ctx));
+  });
 
   // On shutdown, abort all agents immediately and clean up.
   // If the session is going down, there's nothing left to consume agent results.
@@ -735,6 +762,8 @@ Guidelines:
     execute: async (toolCallId, params, signal, onUpdate, ctx) => {
       // Ensure we have UI context for widget rendering
       widget.setUICtx(ctx.ui as UICtx);
+      const parentSignal = getAbortSignal(ctx) ?? signal;
+      bindTurnAbortSignal(parentSignal);
 
       // Reload custom agents so new .pi/agents/*.md files are picked up without restart
       reloadCustomAgents();
@@ -814,7 +843,7 @@ Guidelines:
         if (!existing.session) {
           return textResult(`Agent "${params.resume}" has no active session to resume.`);
         }
-        const record = await manager.resume(params.resume, params.prompt, signal);
+        const record = await manager.resume(params.resume, params.prompt, parentSignal);
         if (!record) {
           return textResult(`Failed to resume agent "${params.resume}".`);
         }
@@ -846,6 +875,7 @@ Guidelines:
           model,
           modelLabel: agentModelLabel,
           maxTurns: effectiveMaxTurns,
+          signal: parentSignal,
           isolated,
           inheritContext,
           thinkingLevel: thinking,
@@ -955,6 +985,7 @@ Guidelines:
         model,
         modelLabel: agentModelLabel,
         maxTurns: effectiveMaxTurns,
+        signal: parentSignal,
         isolated,
         inheritContext,
         thinkingLevel: thinking,

@@ -31,6 +31,7 @@ interface SpawnOptions {
   description: string;
   model?: Model<any>;
   maxTurns?: number;
+  signal?: AbortSignal;
   isolated?: boolean;
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
@@ -100,8 +101,8 @@ export class AgentManager {
       status: options.isBackground ? "queued" : "running",
       toolUses: 0,
       startedAt: Date.now(),
-      modelLabel: options.modelLabel,
       abortController,
+      modelLabel: options.modelLabel,
     };
     this.agents.set(id, record);
 
@@ -110,6 +111,13 @@ export class AgentManager {
     if (options.isBackground && this.runningBackground >= this.maxConcurrent) {
       // Queue it — will be started when a running agent completes
       this.queue.push({ id, args });
+      record.externalAbortCleanup = this.bindExternalAbortSignal(record, options.signal);
+      return id;
+    }
+
+    record.externalAbortCleanup = this.bindExternalAbortSignal(record, options.signal);
+    if (record.status === "stopped") {
+      record.promise = Promise.resolve("");
       return id;
     }
 
@@ -123,6 +131,7 @@ export class AgentManager {
     record.startedAt = Date.now();
     if (options.isBackground) this.runningBackground++;
     this.onStart?.(record);
+
 
     // Worktree isolation: create a temporary git worktree if requested
     let worktreeCwd: string | undefined;
@@ -227,9 +236,41 @@ export class AgentManager {
           this.drainQueue();
         }
         return "";
+      })
+      .finally(() => {
+        if (record.externalAbortCleanup) {
+          record.externalAbortCleanup();
+          record.externalAbortCleanup = undefined;
+        }
       });
 
     record.promise = promise;
+  }
+
+  /** Forward an outer tool abort signal into this agent's internal abort controller. */
+  private bindExternalAbortSignal(record: AgentRecord, signal?: AbortSignal): () => void {
+    if (!signal) return () => {};
+
+    const onAbort = () => {
+      if (record.status === "queued") {
+        this.queue = this.queue.filter(q => q.id !== record.id);
+        record.status = "stopped";
+        record.completedAt ??= Date.now();
+        return;
+      }
+      if (record.status !== "running") return;
+      record.abortController?.abort();
+      record.status = "stopped";
+      record.completedAt ??= Date.now();
+    };
+
+    if (signal.aborted) {
+      onAbort();
+      return () => {};
+    }
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    return () => signal.removeEventListener("abort", onAbort);
   }
 
   /** Start queued agents up to the concurrency limit. */
@@ -326,6 +367,10 @@ export class AgentManager {
 
   /** Dispose a record's session and remove it from the map. */
   private removeRecord(id: string, record: AgentRecord): void {
+    if (record.externalAbortCleanup) {
+      record.externalAbortCleanup();
+      record.externalAbortCleanup = undefined;
+    }
     record.session?.dispose?.();
     record.session = undefined;
     this.agents.delete(id);
@@ -403,6 +448,10 @@ export class AgentManager {
     // Clear queue
     this.queue = [];
     for (const record of this.agents.values()) {
+      if (record.externalAbortCleanup) {
+        record.externalAbortCleanup();
+        record.externalAbortCleanup = undefined;
+      }
       record.session?.dispose();
     }
     this.agents.clear();

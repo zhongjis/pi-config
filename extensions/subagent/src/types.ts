@@ -91,6 +91,10 @@ export interface AgentRecord {
   outputFile?: string;
   /** Cleanup function for the output file stream subscription. */
   outputCleanup?: () => void;
+  /** Cleanup function for any externally bound abort signal listener. */
+  externalAbortCleanup?: () => void;
+  /** Suppress completion/failure follow-up notifications for this record. */
+  suppressNotification?: boolean;
 }
 
 /** Details attached to custom notification messages for visual rendering. */
