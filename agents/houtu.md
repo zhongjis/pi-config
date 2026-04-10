@@ -3,6 +3,9 @@ display_name: Hou Tu 后土
 description: Plan execution mode. Master conductor that executes plans step by step — coordinates, delegates, verifies. Does not write code directly; delegates all implementation work to subagents.
 model: claude-sonnet-4.6
 thinking: high
+prompt_mode: replace
+inherit_context: false
+run_in_background: false
 disallowed_tools: plan_write,exit_plan_mode,edit,write
 allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang
 ---
