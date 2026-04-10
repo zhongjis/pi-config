@@ -8,6 +8,7 @@ import {
   streamSimpleAnthropic,
 } from "@mariozechner/pi-ai";
 import { type ExtensionAPI, getAgentDir } from "@mariozechner/pi-coding-agent";
+import { execSync } from "child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 
@@ -16,10 +17,10 @@ import { join } from "path";
 // ---------------------------------------------------------------------------
 
 const ANTHROPIC_TO_BEDROCK: Record<string, string> = {
-  "claude-sonnet-4-6":         "anthropic.claude-sonnet-4-6",
-  "claude-opus-4-6":           "anthropic.claude-opus-4-6-v1",
-  "claude-haiku-4-5":          "anthropic.claude-haiku-4-5-20251001-v1:0",
-  "claude-haiku-4-5-20251001": "anthropic.claude-haiku-4-5-20251001-v1:0",
+  "claude-sonnet-4-6":         "us.anthropic.claude-sonnet-4-6",
+  "claude-opus-4-6":           "us.anthropic.claude-opus-4-6-v1",
+  "claude-haiku-4-5":          "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "claude-haiku-4-5-20251001": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
 };
 
 function toBedrockModelId(anthropicId: string): string | null {
@@ -30,23 +31,36 @@ function toBedrockModelId(anthropicId: string): string | null {
 // Quota error detection
 // ---------------------------------------------------------------------------
 
+function getErrorText(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const parts = [
+    "errorMessage" in err && typeof (err as any).errorMessage === "string" ? (err as any).errorMessage : "",
+    "message" in err && typeof (err as any).message === "string" ? (err as any).message : "",
+    "error" in err && (err as any).error && typeof (err as any).error === "object" && typeof (err as any).error.errorMessage === "string"
+      ? (err as any).error.errorMessage
+      : "",
+    "error" in err && (err as any).error && typeof (err as any).error === "object" && typeof (err as any).error.message === "string"
+      ? (err as any).error.message
+      : "",
+  ];
+  return parts.join(" ").toLowerCase();
+}
+
 function isQuotaError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-  // Check .status === 402 (Anthropic SDK APIStatusError)
+  const msg = getErrorText(err);
+
   if ("status" in err && (err as any).status === 402) return true;
-  // Check .errorMessage (AssistantMessage from stream error event)
-  if ("errorMessage" in err && typeof (err as any).errorMessage === "string") {
-    const msg = (err as any).errorMessage.toLowerCase();
-    return msg.includes("billing") || msg.includes("credit")
-        || msg.includes("spend limit") || msg.includes("quota");
-  }
-  // Check Error.message
-  if (err instanceof Error) {
-    const msg = err.message.toLowerCase();
-    return msg.includes("billing") || msg.includes("credit")
-        || msg.includes("spend limit") || msg.includes("quota");
-  }
-  return false;
+
+  return msg.includes("billing") || msg.includes("credit")
+      || msg.includes("spend limit") || msg.includes("quota");
+}
+
+function isOauthRateLimitFallback(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const msg = getErrorText(err);
+  return ("status" in err && (err as any).status === 429)
+      || msg.includes("rate limit") || msg.includes("too many requests");
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +105,26 @@ function clearCache(): void {
   } catch {
     // file may not exist — ignore
   }
+}
+
+function getAwsProfiles(): string[] {
+  try {
+    const credsPath = join(process.env.HOME || "", ".aws", "credentials");
+    const credsFile = readFileSync(credsPath, "utf-8");
+    return [...credsFile.matchAll(/^\[(.+)\]$/gm)].map((m) => m[1]);
+  } catch {
+    return [];
+  }
+}
+
+function getPreferredAwsProfile(): string | undefined {
+  const envProfile = process.env.AWS_PROFILE?.trim();
+  if (envProfile) return envProfile;
+
+  const profiles = getAwsProfiles();
+  if (profiles.includes("default")) return undefined;
+  if (profiles.length === 1) return profiles[0];
+  return profiles[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -139,18 +173,20 @@ function streamWithFallback(
     }
 
     // Normal path: try Anthropic first
-    let hasContent = false;
+    let hasResponseContent = false;
+    let pendingStart: any = null;
     try {
       const anthropicStream = streamSimpleAnthropic(model, context, options);
       for await (const event of anthropicStream) {
         if (event.type === "start") {
-          hasContent = true;
+          pendingStart = event;
+          continue;
         }
 
         if (
           event.type === "error" &&
-          !hasContent &&
-          isQuotaError((event as any).error ?? event)
+          !hasResponseContent &&
+          (isQuotaError((event as any).error ?? event) || isOauthRateLimitFallback((event as any).error ?? event))
         ) {
           fallbackActive = true;
           writeCache(
@@ -163,16 +199,29 @@ function streamWithFallback(
             return;
           }
           // No mapping — forward the error as-is
+          if (pendingStart) {
+            stream.push(pendingStart);
+            pendingStart = null;
+          }
           stream.push(event);
           stream.end();
           return;
         }
 
+        if (pendingStart) {
+          stream.push(pendingStart);
+          pendingStart = null;
+        }
+
+        hasResponseContent = true;
         stream.push(event);
+      }
+      if (pendingStart) {
+        stream.push(pendingStart);
       }
       stream.end();
     } catch (err) {
-      if (isQuotaError(err) && bedrockId && !hasContent) {
+      if ((isQuotaError(err) || isOauthRateLimitFallback(err)) && bedrockId && !hasResponseContent) {
         fallbackActive = true;
         writeCache(
           (err instanceof Error ? err.message : "quota exhausted"),
@@ -180,6 +229,9 @@ function streamWithFallback(
         pendingNotification = "quota_exhausted";
         await streamViaBedrock(model, bedrockId, context, options, stream);
         return;
+      }
+      if (pendingStart) {
+        stream.push(pendingStart);
       }
       stream.push({ type: "error", error: err });
       stream.end();
@@ -206,21 +258,37 @@ async function streamViaBedrock(
     api: "bedrock-converse-stream" as Api,
   };
 
+  const profile = getPreferredAwsProfile();
+  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+
+  if (profile && !process.env.AWS_PROFILE) {
+    process.env.AWS_PROFILE = profile;
+  }
+  if (region && !process.env.AWS_REGION && !process.env.AWS_DEFAULT_REGION) {
+    process.env.AWS_REGION = region;
+  }
+
   try {
     const bedrockStream = streamSimple(bedrockModel, context, {
       ...options,
       apiKey: undefined,
+      profile,
+      region,
     });
     for await (const event of bedrockStream) {
       stream.push(event);
     }
     stream.end();
   } catch (bedrockErr) {
+    const suffix = [
+      profile ? `AWS profile: ${profile}` : "",
+      region ? `region: ${region}` : "",
+    ].filter(Boolean).join(", ");
     stream.push({
       type: "error",
       error: new Error(
         `Bedrock fallback also failed: ${bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr)}. ` +
-        `Original provider (Anthropic) quota was exhausted.`,
+        `Original provider (Anthropic) quota/rate-limit was exhausted.${suffix ? ` (${suffix})` : ""}` ,
       ),
     });
     stream.end();
@@ -242,9 +310,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     sessionNotified = false;
     if (fallbackActive) {
-      ctx.ui.setStatus("provider-fallback", "🔶 Bedrock (fallback)");
+      ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("warning", "[x]") + " Bedrock (fallback)");
     } else {
-      ctx.ui.setStatus("provider-fallback", "🟢 Anthropic");
+      ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("success", "[x]") + " Anthropic");
     }
   });
 
@@ -252,15 +320,15 @@ export default function (pi: ExtensionAPI) {
   pi.on("turn_end", async (_event, ctx) => {
     if (pendingNotification === "quota_exhausted") {
       ctx.ui.notify(
-        "⚠️ Anthropic quota exhausted — switched to Bedrock",
+        ctx.ui.theme.fg("warning", "[-]") + " Anthropic quota exhausted — switched to Bedrock",
         "warning",
       );
-      ctx.ui.setStatus("provider-fallback", "🔶 Bedrock (fallback)");
+      ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("warning", "[x]") + " Bedrock (fallback)");
       sessionNotified = true;
       pendingNotification = null;
     } else if (pendingNotification === "using_cached_fallback") {
       ctx.ui.notify(
-        "ℹ️ Using Bedrock (Anthropic quota previously exhausted). /fallback reset to retry.",
+        "[i] Using Bedrock (Anthropic quota previously exhausted). /fallback reset to retry.",
         "info",
       );
       sessionNotified = true;
@@ -270,7 +338,7 @@ export default function (pi: ExtensionAPI) {
 
   // 4. /fallback command
   pi.registerCommand("fallback", {
-    description: "Manage Anthropic ↔ Bedrock fallback (status | reset | bedrock)",
+    description: "Manage Anthropic ↔ Bedrock fallback (status | reset | bedrock | health)",
     handler: async (args, ctx) => {
       const action = (args || "").trim().toLowerCase() || "status";
 
@@ -278,16 +346,160 @@ export default function (pi: ExtensionAPI) {
         clearCache();
         fallbackActive = false;
         sessionNotified = false;
-        ctx.ui.setStatus("provider-fallback", "🟢 Anthropic");
-        ctx.ui.notify("✅ Fallback cleared — next request will use Anthropic", "info");
+        ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("success", "[x]") + " Anthropic");
+        ctx.ui.notify(ctx.ui.theme.fg("success", "[x]") + " Fallback cleared — next request will use Anthropic", "info");
         return;
       }
 
       if (action === "bedrock") {
         fallbackActive = true;
         writeCache("manually forced via /fallback bedrock");
-        ctx.ui.setStatus("provider-fallback", "🔶 Bedrock (forced)");
-        ctx.ui.notify("🔶 Forced Bedrock mode — use /fallback reset to return to Anthropic", "info");
+        ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("warning", "[x]") + " Bedrock (forced)");
+        ctx.ui.notify(ctx.ui.theme.fg("warning", "[x]") + " Forced Bedrock mode — use /fallback reset to return to Anthropic", "info");
+        return;
+      }
+
+      if (action === "health") {
+        ctx.ui.notify("[~] Running health checks\u2026", "info");
+        const t = ctx.ui.theme;
+        const lines: string[] = [];
+
+        // --- Anthropic check ---
+        try {
+          const authPath = join(getAgentDir(), "auth.json");
+          const auth = JSON.parse(readFileSync(authPath, "utf-8"));
+          const cred = auth.anthropic;
+
+          if (!cred?.access) {
+            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "Anthropic")} \u2014 No credentials (run /login anthropic)`);
+          } else if (cred.expires && Date.now() > cred.expires) {
+            lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 OAuth token expired (run /login anthropic)`);
+          } else {
+            const resp = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "anthropic-version": "2023-06-01",
+                "x-api-key": cred.access,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "claude-haiku-4-5-20251001",
+                max_tokens: 1,
+                messages: [{ role: "user", content: "." }],
+              }),
+            });
+
+            const tokensLeft = resp.headers.get("anthropic-ratelimit-tokens-remaining");
+            const tokensReset = resp.headers.get("anthropic-ratelimit-tokens-reset");
+            const requestsLeft = resp.headers.get("anthropic-ratelimit-requests-remaining");
+
+            if (resp.ok) {
+              const parts: string[] = [];
+              if (tokensLeft) parts.push(`${Number(tokensLeft).toLocaleString()} tokens left`);
+              if (requestsLeft) parts.push(`${Number(requestsLeft).toLocaleString()} requests left`);
+              if (tokensReset) parts.push(`resets ${tokensReset}`);
+              const detail = parts.length ? parts.join(", ") : "no usage data available";
+              lines.push(`${t.fg("success", "[x]")} ${t.fg("accent", "Anthropic")} \u2014 Quota available (${detail})`);
+            } else if (resp.status === 402) {
+              lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "Anthropic")} \u2014 Quota exhausted (402 billing error)`);
+            } else if (resp.status === 401) {
+              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 Token invalid (run /login anthropic)`);
+            } else if (resp.status === 429) {
+              const resetInfo = tokensReset ? `, resets ${tokensReset}` : "";
+              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 Rate limited${resetInfo}`);
+            } else {
+              const body = await resp.text().catch(() => "");
+              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 HTTP ${resp.status}${body ? `: ${body.slice(0, 100)}` : ""}`);
+            }
+          }
+        } catch (err) {
+          lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "Anthropic")} \u2014 ${err instanceof Error ? err.message : String(err)}`);
+        }
+
+        // --- AWS / Bedrock check ---
+        try {
+          try {
+            execSync("which aws", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+          } catch {
+            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 aws CLI not found (install awscli)`);
+            throw new Error("__skip__");
+          }
+
+          let profiles: string[] = [];
+          try {
+            const credsPath = join(process.env.HOME || "", ".aws", "credentials");
+            const credsFile = readFileSync(credsPath, "utf-8");
+            profiles = [...credsFile.matchAll(/^\[(.+)\]$/gm)].map(m => m[1]);
+          } catch {
+            // no credentials file
+          }
+
+          const envProfile = process.env.AWS_PROFILE;
+          const hasEnvKeys = !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+
+          const profilesToTry = ["default", ...profiles.filter(p => p !== "default")];
+          if (envProfile && !profilesToTry.includes(envProfile)) {
+            profilesToTry.unshift(envProfile);
+          }
+
+          let anyValid = false;
+          for (const profile of profilesToTry) {
+            try {
+              const profileArg = profile === "default" && !profiles.includes("default") ? "" : `--profile ${profile}`;
+              const output = execSync(
+                `aws sts get-caller-identity --output json ${profileArg}`.trim(),
+                { encoding: "utf-8", timeout: 10000, stdio: ["pipe", "pipe", "pipe"] },
+              );
+              const identity = JSON.parse(output);
+              lines.push(`${t.fg("success", "[x]")} ${t.fg("accent", "AWS")} \u2014 Profile [${profile}], Account: ${identity.Account}`);
+              anyValid = true;
+            } catch (profileErr) {
+              const msg = profileErr instanceof Error ? profileErr.message : String(profileErr);
+              if (msg.includes("expired")) {
+                lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "AWS")} \u2014 Profile [${profile}] credentials expired`);
+              } else if (msg.includes("Unable to locate")) {
+                // skip non-existent default profile silently
+              } else {
+                lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 Profile [${profile}] invalid`);
+              }
+            }
+          }
+
+          if (hasEnvKeys) {
+            try {
+              const output = execSync(
+                "aws sts get-caller-identity --output json",
+                { encoding: "utf-8", timeout: 10000, stdio: ["pipe", "pipe", "pipe"],
+                  env: { ...process.env } },
+              );
+              const identity = JSON.parse(output);
+              lines.push(`${t.fg("success", "[x]")} ${t.fg("accent", "AWS")} \u2014 Env vars, Account: ${identity.Account}`);
+              anyValid = true;
+            } catch {
+              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "AWS")} \u2014 Env vars set but credentials invalid`);
+            }
+          }
+
+          if (!anyValid && profiles.length === 0 && !hasEnvKeys) {
+            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 No credentials configured`);
+          } else if (!anyValid) {
+            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 No valid credentials found`);
+          }
+        } catch (err) {
+          if (!(err instanceof Error && err.message === "__skip__")) {
+            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+
+        // --- Fallback state ---
+        const cached = readCache();
+        if (fallbackActive) {
+          lines.push(`${t.fg("warning", "[x]")} ${t.fg("accent", "Fallback")} \u2014 Active since ${cached?.since ?? "this session"}`);
+        } else {
+          lines.push(`${t.fg("dim", "[ ]")} ${t.fg("accent", "Fallback")} \u2014 Not active`);
+        }
+
+        ctx.ui.notify(lines.join("\n"), "info");
         return;
       }
 
@@ -295,12 +507,12 @@ export default function (pi: ExtensionAPI) {
       const cached = readCache();
       if (fallbackActive) {
         ctx.ui.notify(
-          `🔶 Bedrock fallback ACTIVE since ${cached?.since ?? "this session"}` +
-          (cached?.reason ? ` — ${cached.reason}` : ""),
+          ctx.ui.theme.fg("warning", "[-]") + ` Bedrock fallback ACTIVE since ${cached?.since ?? "this session"}` +
+          (cached?.reason ? ` \u2014 ${cached.reason}` : ""),
           "info",
         );
       } else {
-        ctx.ui.notify("🟢 Anthropic is the active provider", "info");
+        ctx.ui.notify(ctx.ui.theme.fg("success", "[x]") + " Anthropic is the active provider", "info");
       }
     },
   });
