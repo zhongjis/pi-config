@@ -1022,13 +1022,37 @@ Guidelines:
       const duration = formatDuration(record.startedAt, record.completedAt);
       const tokens = safeFormatTokens(record.session);
       const toolStats = tokens ? `Tool uses: ${record.toolUses} | ${tokens}` : `Tool uses: ${record.toolUses}`;
+      const runtimeActivity = agentActivity.get(record.id);
+      const maxTurns = runtimeActivity?.maxTurns;
+      const turnCount = record.status === "queued" ? 0 : runtimeActivity?.turnCount;
+      const turnSummary = turnCount != null
+        ? ` | Turns: ${maxTurns != null ? `${turnCount}/${maxTurns}` : turnCount}`
+        : "";
+      const currentActivity = record.status === "queued"
+        ? "waiting for an available background slot"
+        : runtimeActivity
+          ? describeActivity(runtimeActivity.activeTools, runtimeActivity.responseText)
+          : undefined;
 
       let output =
         `Agent: ${record.id}\n` +
-        `Type: ${displayName} | Status: ${record.status} | ${toolStats} | Duration: ${duration}\n` +
-        `Description: ${record.description}\n\n`;
+        `Type: ${displayName} | Status: ${record.status}${turnSummary} | ${toolStats} | Duration: ${duration}\n` +
+        `Description: ${record.description}\n`;
 
-      if (record.status === "running") {
+      if (record.status === "running" || record.status === "queued") {
+        const liveLines = [
+          turnCount != null ? `Turns: ${turnCount}` : undefined,
+          `Max turns: ${maxTurns != null ? maxTurns : "unlimited"}`,
+          currentActivity ? `Current activity: ${currentActivity}` : undefined,
+        ].filter(Boolean);
+        output += `\n${liveLines.join("\n")}\n\n`;
+      } else {
+        output += "\n";
+      }
+
+      if (record.status === "queued") {
+        output += "Agent is queued and has not started yet. Use wait: true or check back later.";
+      } else if (record.status === "running") {
         output += "Agent is still running. Use wait: true or check back later.";
       } else if (record.status === "error") {
         output += `Error: ${record.error}`;
