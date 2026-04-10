@@ -107,6 +107,8 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 				state.currentMode = modeEntry.data.mode ?? state.currentMode;
 				state.planTitle = modeEntry.data.planTitle;
 				state.planContent = modeEntry.data.planContent;
+				state.gapReviewApproved = modeEntry.data.gapReviewApproved ?? false;
+				state.gapReviewFeedback = modeEntry.data.gapReviewFeedback;
 				state.pendingPlanReviewId = modeEntry.data.planReviewId;
 				state.planReviewPending = modeEntry.data.planReviewPending ?? false;
 				state.planReviewApproved = modeEntry.data.planReviewApproved ?? false;

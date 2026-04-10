@@ -9,19 +9,64 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 	pi.registerTool({
 		name: "plan_write",
 		label: "PlanWrite",
-		description: "Save a plan to the session. Use in Fu Xi (plan) mode to store the plan before calling exit_plan_mode.",
+		description: "Persist plan markdown and metadata to session state. Use in Fu Xi mode for draft checkpoints and final pre-exit saves.",
 		parameters: Type.Object({
 			content: Type.String({ description: "Full plan content in markdown" }),
+			name: Type.Optional(Type.String({ description: "Optional short plan name/title to persist with this save" })),
+			isDraft: Type.Optional(Type.Boolean({ description: "Whether this save is a draft checkpoint. Defaults to true." })),
 		}),
 		async execute(_toolCallId, params) {
+			const isDraft = params.isDraft ?? true;
+			const rawName = typeof params.name === "string" ? params.name.trim().replace(/\.md$/i, "") : "";
+			if (rawName && /[/\\]/.test(rawName)) {
+				return {
+					content: [{ type: "text", text: "Error: Name must not contain path separators." }],
+					details: {},
+					isError: true,
+				};
+			}
+
 			state.planContent = params.content;
-			state.planTitle = undefined; // draft until exit_plan_mode
+			state.planTitle = rawName || state.planTitle;
 			state.resetPlanReviewState();
-			pi.appendEntry<PlanEntry>("plan", { content: params.content, draft: true });
+			pi.appendEntry<PlanEntry>("plan", {
+				title: state.planTitle,
+				content: params.content,
+				draft: isDraft,
+			});
 
 			return {
-				content: [{ type: "text", text: "Plan saved to session. Call exit_plan_mode with a title when ready." }],
-				details: {},
+				content: [{ type: "text", text: isDraft ? `Draft${state.planTitle ? ` \"${state.planTitle}\"` : ""} saved to session state. Re-run Di Renjie gap review on the latest saved draft before exit_plan_mode.` : `Plan${state.planTitle ? ` \"${state.planTitle}\"` : ""} saved to session state. Call exit_plan_mode when you are ready for the post-plan action menu.` }],
+				details: { title: state.planTitle, draft: isDraft },
+			};
+		},
+	});
+
+
+	pi.registerTool({
+		name: "gap_review_complete",
+		label: "GapReviewComplete",
+		description: "Record the result of the latest Di Renjie gap review for the current saved draft.",
+		parameters: Type.Object({
+			approved: Type.Boolean({ description: "Whether Di Renjie cleared the latest saved draft for finalize" }),
+			feedback: Type.Optional(Type.String({ description: "Di Renjie review feedback or watchouts" })),
+		}),
+		async execute(_toolCallId, params) {
+			if (!state.planContent) {
+				return {
+					content: [{ type: "text", text: "Error: No saved draft found. Call plan_write first." }],
+					details: {},
+					isError: true,
+				};
+			}
+
+			state.gapReviewApproved = params.approved;
+			state.gapReviewFeedback = params.feedback?.trim() || undefined;
+			state.persistState();
+
+			return {
+				content: [{ type: "text", text: params.approved ? "Gap review cleared for the latest saved draft." : "Gap review feedback recorded for the latest saved draft." }],
+				details: { approved: params.approved },
 			};
 		},
 	});
@@ -30,11 +75,11 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 		name: "exit_plan_mode",
 		label: "ExitPlanMode",
 		description:
-			"Finalize the plan and signal completion. You MUST call plan_write first. Provide a short title for the plan.",
+			"Finalize the plan and signal completion. You MUST call plan_write first, then clear the latest saved draft through gap_review_complete before exiting plan mode. Provide a short title here, or persist one earlier with plan_write(name=...).",
 		parameters: Type.Object({
-			title: Type.String({ description: "Short plan title, e.g. AUTH_REFACTOR" }),
+			title: Type.Optional(Type.String({ description: "Optional short plan title. If omitted, the latest saved plan_write name is used." })),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			if (!state.planContent) {
 				return {
 					content: [{ type: "text", text: "Error: No plan found. Call plan_write first." }],
@@ -43,10 +88,18 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 				};
 			}
 
-			const trimmed = params.title.trim().replace(/\.md$/i, "");
+			if (!state.gapReviewApproved) {
+				return {
+					content: [{ type: "text", text: "Error: Di Renjie has not cleared the latest saved draft. Run gap_review_complete with approved=true after reviewing the current saved draft." }],
+					details: {},
+					isError: true,
+				};
+			}
+
+			const trimmed = typeof params.title === "string" ? params.title.trim().replace(/\.md$/i, "") : (state.planTitle ?? "");
 			if (!trimmed || /[/\\]/.test(trimmed)) {
 				return {
-					content: [{ type: "text", text: "Error: Title must be non-empty without path separators." }],
+					content: [{ type: "text", text: "Error: Title must be non-empty without path separators. Pass title to exit_plan_mode or persist one earlier with plan_write(name=...)." }],
 					details: {},
 					isError: true,
 				};
@@ -63,7 +116,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 		},
 	});
 
- 	pi.registerTool({
+	pi.registerTool({
 		name: "high_accuracy_review_complete",
 		label: "HighAccuracyReviewComplete",
 		description: "Record the result of an explicit Yanluo high accuracy review for the current saved plan.",
