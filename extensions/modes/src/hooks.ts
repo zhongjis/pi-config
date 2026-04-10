@@ -5,12 +5,28 @@ import { MODES, MODE_ALIASES } from "./constants.js";
 import { buildPlanContextContent } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { promptPostPlanAction, recoverPlanReview } from "./plannotator.js";
-import { isSafeCommand } from "./utils.js";
+import { isDelegationAllowed, isSafeCommand } from "./utils.js";
 import type { Mode, ModeState, PlanEntry } from "./types.js";
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
-	// Block destructive bash in Fu Xi (plan) mode
+	// Block invalid delegations and destructive bash in mode-specific contexts
 	pi.on("tool_call", async (event) => {
+		const config = state.loadConfig(state.currentMode);
+
+		if (event.toolName === "Agent") {
+			const requestedType = (event.input as { subagent_type?: string }).subagent_type ?? "";
+			const delegation = isDelegationAllowed(config, requestedType);
+			if (!delegation.allowed) {
+				const allowedText = delegation.permittedTargets?.length
+					? delegation.permittedTargets.join(", ")
+					: "all except targets blocked by disallow_delegation_to";
+				return {
+					block: true,
+					reason: `Mode ${state.currentMode}: delegation to "${requestedType}" is blocked by frontmatter policy. Allowed targets: ${allowedText}`,
+				};
+			}
+		}
+
 		if (state.currentMode !== "fuxi" || event.toolName !== "bash") return;
 		const command = (event.input as { command?: string }).command ?? "";
 		if (!isSafeCommand(command)) {

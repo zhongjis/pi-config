@@ -27,6 +27,10 @@ export interface AgentConfig {
   builtinToolNames?: string[];
   /** Tool denylist — these tools are removed even if `builtinToolNames` or extensions include them. */
   disallowedTools?: string[];
+  /** Agent allowlist — only these subagents may be delegated to. */
+  allowDelegationTo?: string[];
+  /** Agent denylist — these subagents may not be delegated to. */
+  disallowDelegationTo?: string[];
   /** true = inherit all, string[] = only listed, false = none */
   extensions: true | string[] | false;
   /** true = inherit all, string[] = only listed, false = none */

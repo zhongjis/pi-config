@@ -26,6 +26,7 @@ import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-conf
 import { type ModelRegistry, resolveModel } from "./model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import { type AgentConfig, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType } from "./types.js";
+import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "./delegation-policy.js";
 import {
   type AgentActivity,
   type AgentDetails,
@@ -737,6 +738,19 @@ Guidelines:
       // Get agent config (if any)
       const customConfig = getAgentConfig(subagentType);
 
+      const currentDelegatorType = getCurrentDelegatorType(ctx.sessionManager.getEntries() as Array<{ type?: string; customType?: string; data?: { mode?: unknown } }>);
+      if (currentDelegatorType) {
+        const delegatorConfig = getAgentConfig(currentDelegatorType);
+        if (delegatorConfig && hasDelegationPolicy(delegatorConfig)) {
+          const delegation = resolveDelegationRequest(delegatorConfig, subagentType, getAvailableTypes());
+          if (!delegation.allowed) {
+            return textResult(
+              buildDelegationBlockedMessage(currentDelegatorType, rawType, delegation.requestedType, delegation.permittedTypes),
+            );
+          }
+        }
+      }
+
       const resolvedConfig = resolveAgentInvocationConfig(customConfig, params);
 
       // Resolve model from agent config first; tool-call params only fill gaps.
@@ -1351,6 +1365,8 @@ Guidelines:
     if (cfg.skills === false) fmFields.push("skills: false");
     else if (Array.isArray(cfg.skills)) fmFields.push(`skills: ${cfg.skills.join(", ")}`);
     if (cfg.disallowedTools?.length) fmFields.push(`disallowed_tools: ${cfg.disallowedTools.join(", ")}`);
+    if (cfg.allowDelegationTo?.length) fmFields.push(`allow_delegation_to: ${cfg.allowDelegationTo.join(", ")}`);
+    if (cfg.disallowDelegationTo?.length) fmFields.push(`disallow_delegation_to: ${cfg.disallowDelegationTo.join(", ")}`);
     if (cfg.inheritContext) fmFields.push("inherit_context: true");
     if (cfg.runInBackground) fmFields.push("run_in_background: true");
     if (cfg.isolated) fmFields.push("isolated: true");
@@ -1477,6 +1493,8 @@ prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is ap
 extensions: <true (inherit all MCP/extension tools), false (none), or comma-separated names. Default: true>
 skills: <true (inherit all), false (none), or comma-separated skill names to preload into prompt. Default: true>
 disallowed_tools: <comma-separated tool names to block, even if otherwise available. Omit for none>
+allow_delegation_to: <comma-separated agent names this agent may delegate to via Agent. Omit for unrestricted delegation>
+disallow_delegation_to: <comma-separated agent names this agent may not delegate to via Agent. Omit for none>
 inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>
 run_in_background: <true to run in background by default. Default: false>
 isolated: <true for no extension/MCP tools, only built-in tools. Default: false>
@@ -1494,6 +1512,7 @@ Guidelines for choosing settings:
 - Use prompt_mode: replace for fully custom agents with their own personality/instructions
 - Set inherit_context: true if the agent needs to know what was discussed in the parent conversation
 - Set isolated: true if the agent should NOT have access to MCP servers or other extensions
+- Use allow_delegation_to and disallow_delegation_to to restrict which other agents this agent may spawn via Agent; the allowlist is applied first, then the denylist removes from that set
 - Only include frontmatter fields that differ from defaults — omit fields where the default is fine
 
 Write the file using the write tool. Only write the file, nothing else.`;
@@ -1577,14 +1596,27 @@ Write the file using the write tool. Only write the file, nothing else.`;
     let thinkingLine = "";
     if (thinkingChoice !== "inherit") thinkingLine = `\nthinking: ${thinkingChoice}`;
 
-    // 6. System prompt
+    // 6. Delegation policy
+    const allowDelegationTo = await ctx.ui.input("Allow delegation to (comma-separated, optional)", "");
+    if (allowDelegationTo === undefined) return;
+    const disallowDelegationTo = await ctx.ui.input("Disallow delegation to (comma-separated, optional)", "");
+    if (disallowDelegationTo === undefined) return;
+
+    const allowDelegationLine = allowDelegationTo.trim()
+      ? `\nallow_delegation_to: ${allowDelegationTo.trim()}`
+      : "";
+    const disallowDelegationLine = disallowDelegationTo.trim()
+      ? `\ndisallow_delegation_to: ${disallowDelegationTo.trim()}`
+      : "";
+
+    // 7. System prompt
     const systemPrompt = await ctx.ui.editor("System prompt", "");
     if (systemPrompt === undefined) return;
 
     // Build the file
     const content = `---
 description: ${description}
-tools: ${tools}${modelLine}${thinkingLine}
+tools: ${tools}${modelLine}${thinkingLine}${allowDelegationLine}${disallowDelegationLine}
 prompt_mode: replace
 ---
 
