@@ -3,6 +3,8 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$HOME/.pi/agent"
+EXTENSIONS_TARGET="$TARGET/extensions"
+REPO_EXTENSIONS_DIR="$REPO_DIR/extensions"
 
 # Nix-managed files — do NOT symlink these (handled by Home Manager)
 NIX_MANAGED=(
@@ -11,9 +13,15 @@ NIX_MANAGED=(
     "skills"
 )
 
+# Nix-managed extension entries — do NOT symlink these
+NIX_MANAGED_EXTENSIONS=(
+    "rtk.ts"
+)
+
 # Repo items that should never be installed into ~/.pi/agent
 EXCLUDED_ITEMS=(
     "install.sh"
+    "extensions"
     "self-improvements"
     "QUICKFIX.md"
 )
@@ -32,6 +40,10 @@ contains_item() {
 
 is_nix_managed() {
     contains_item "$1" "${NIX_MANAGED[@]}"
+}
+
+is_nix_managed_extension() {
+    contains_item "$1" "${NIX_MANAGED_EXTENSIONS[@]}"
 }
 
 is_excluded_item() {
@@ -54,6 +66,30 @@ remove_repo_symlink_if_present() {
         rm "$target_path"
         echo "Removed stale symlink: $name"
     fi
+}
+
+sync_repo_extensions() {
+    local item
+    local name
+    local target_path
+
+    mkdir -p "$EXTENSIONS_TARGET"
+
+    for item in "$REPO_EXTENSIONS_DIR"/*; do
+        [ -e "$item" ] || continue
+
+        name="$(basename "$item")"
+
+        if is_nix_managed_extension "$name"; then
+            echo "Skipping extension (Nix-managed): $name"
+            continue
+        fi
+
+        target_path="$EXTENSIONS_TARGET/$name"
+        rm -rf "$target_path"
+        ln -s "$item" "$target_path"
+        echo "Linked extension $name"
+    done
 }
 
 install_git_package_deps() {
@@ -136,6 +172,7 @@ for item in "$REPO_DIR"/.*; do
     echo "Linked $name"
 done
 
+sync_repo_extensions
 install_git_package_deps
 
-echo "Done. Nix manages: ${NIX_MANAGED[*]}; excluded: ${EXCLUDED_ITEMS[*]}"
+echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; excluded: ${EXCLUDED_ITEMS[*]}"
