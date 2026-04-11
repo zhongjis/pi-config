@@ -367,7 +367,7 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		// the message is sent. Without this, sendUserMessage sees isStreaming=true
 		// (still inside agent_end), queues a follow-up that the already-exited
 		// agent loop never drains — the turn silently never starts.
-		setTimeout(() => pi.sendUserMessage(handoffResult.kickoffPrompt), 0);
+		setTimeout(() => pi.sendUserMessage(handoffResult.kickoffPrompt, { deliverAs: "followUp" }), 0);
 		return;
 	}
 
@@ -397,7 +397,7 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		state.highAccuracyReviewFeedback = undefined;
 		state.planActionPending = false;
 		state.persistState();
-		setTimeout(() => pi.sendUserMessage(buildHighAccuracyReviewMessage(state)), 0);
+		setTimeout(() => pi.sendUserMessage(buildHighAccuracyReviewMessage(state), { deliverAs: "followUp" }), 0);
 		return;
 	}
 }
@@ -438,7 +438,7 @@ export async function handlePlanReviewResult(
 		ctx.ui.notify(`Plan "${state.planTitle ?? "untitled"}" needs refinement in Plannotator.`, "warning");
 	}
 	if (state.currentMode === "fuxi") {
-		pi.sendUserMessage(buildRefinementMessage(state));
+		pi.sendUserMessage(buildRefinementMessage(state), { deliverAs: "followUp" });
 	}
 }
 

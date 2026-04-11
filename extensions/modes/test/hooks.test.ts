@@ -177,7 +177,10 @@ describe("modes Hou Tu kickoff flow", () => {
 		await sessionStart;
 		await vi.runAllTimersAsync();
 
-		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(`${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}handoff-1`);
+		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
+			`${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}handoff-1`,
+			{ deliverAs: "followUp" },
+		);
 		expect(state.currentMode).toBe("houtu");
 		vi.useRealTimers();
 	});

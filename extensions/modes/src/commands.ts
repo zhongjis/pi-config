@@ -55,7 +55,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				state.switchMode(mode, ctx);
 				const prompt = args?.trim();
 				if (prompt) {
-					pi.sendUserMessage(prompt);
+					pi.sendUserMessage(prompt, { deliverAs: "followUp" });
 				}
 			},
 		});
@@ -67,7 +67,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				state.switchMode(target, ctx);
 				const prompt = args?.trim();
 				if (prompt) {
-					pi.sendUserMessage(prompt);
+					pi.sendUserMessage(prompt, { deliverAs: "followUp" });
 				}
 			},
 		});

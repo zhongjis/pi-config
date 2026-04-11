@@ -172,7 +172,10 @@ describe("plannotator Execute in Hou Tu flow", () => {
 		expect(state.pendingExecutionHandoffId).toBe(prepareEnvelope?.payload.handoffId);
 		expect(state.executionKickoffQueued).toBe(true);
 		expect(state.justSwitchedToHoutu).toBe(true);
-		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(prepareEnvelope?.payload.kickoffPrompt);
+		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
+			prepareEnvelope?.payload.kickoffPrompt,
+			{ deliverAs: "followUp" },
+		);
 		expect(ui.notify).toHaveBeenCalledTimes(1);
 		expect(ui.notify.mock.calls[0]?.[0]).toContain(
 			"Planning-task cleanup: cleared 2 planning tasks (1 incomplete).",

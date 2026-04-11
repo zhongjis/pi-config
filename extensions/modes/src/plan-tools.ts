@@ -287,7 +287,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 				ctx.ui.notify(`Plan \"${state.planTitle}\" needs revision after high accuracy review.`, "warning");
 			}
 			if (state.currentMode === "fuxi") {
-				pi.sendUserMessage(buildHighAccuracyRefinementMessage(state));
+				pi.sendUserMessage(buildHighAccuracyRefinementMessage(state), { deliverAs: "followUp" });
 			}
 			return {
 				content: [{ type: "text", text: `High accuracy review feedback recorded for plan \"${state.planTitle}\".` }],

@@ -313,7 +313,7 @@ async function maybeReplayQueuedExecutionKickoff(
 
 	const readiness = await waitForSettledHandoffReadiness(pi);
 	if (readiness?.ready && readiness.handoffId === pendingHandoffId) {
-		setTimeout(() => pi.sendUserMessage(`${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}${pendingHandoffId}`), 0);
+		setTimeout(() => pi.sendUserMessage(`${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}${pendingHandoffId}`, { deliverAs: "followUp" }), 0);
 		return true;
 	}
 
