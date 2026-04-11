@@ -8,6 +8,7 @@ import {
   streamSimpleAnthropic,
 } from "@mariozechner/pi-ai";
 import { type ExtensionAPI, getAgentDir } from "@mariozechner/pi-coding-agent";
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { execSync } from "child_process";
 import { readFileSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
@@ -23,8 +24,24 @@ const ANTHROPIC_TO_BEDROCK: Record<string, string> = {
   "claude-haiku-4-5-20251001": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
 };
 
+// Reverse map: Bedrock ID (with and without region prefix) → Anthropic ID
+const BEDROCK_TO_ANTHROPIC: Record<string, string> = {};
+for (const [anthropicId, bedrockId] of Object.entries(ANTHROPIC_TO_BEDROCK)) {
+  BEDROCK_TO_ANTHROPIC[bedrockId] = anthropicId;
+  // Also map the non-region-prefixed variant (e.g., "anthropic.claude-opus-4-6-v1")
+  const noRegion = bedrockId.replace(/^us\./, "");
+  if (noRegion !== bedrockId) {
+    BEDROCK_TO_ANTHROPIC[noRegion] = anthropicId;
+  }
+}
+
 function toBedrockModelId(anthropicId: string): string | null {
   return ANTHROPIC_TO_BEDROCK[anthropicId] ?? null;
+}
+
+/** If a Bedrock-style model ID leaked into pi state, recover the Anthropic ID. */
+function normalizeModelId(id: string): string {
+  return BEDROCK_TO_ANTHROPIC[id] ?? id;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +91,7 @@ interface FallbackCache {
 }
 
 function getCachePath(): string {
-  return join(getAgentDir(), "anthropic-fallback-state.json");
+  return join(getAgentDir(), "clauderock-state.json");
 }
 
 function readCache(): FallbackCache | null {
@@ -147,6 +164,12 @@ function streamWithFallback(
   const stream = createAssistantMessageEventStream();
 
   (async () => {
+    // Normalize model ID — if a Bedrock-style ID leaked into pi state
+    // (e.g., after a mode switch), recover the clean Anthropic ID.
+    const normalizedId = normalizeModelId(model.id);
+    if (normalizedId !== model.id) {
+      model = { ...model, id: normalizedId };
+    }
     const bedrockId = toBedrockModelId(model.id);
 
     // Fast path: fallback already active
@@ -276,7 +299,19 @@ async function streamViaBedrock(
       region,
     });
     for await (const event of bedrockStream) {
-      stream.push(event);
+      // Rewrite model references so pi never sees the Bedrock model ID.
+      // This prevents Bedrock IDs from leaking into pi state and breaking
+      // subsequent requests (e.g., after a mode switch).
+      if (event.type === "start") {
+        const patched: any = { ...event };
+        if (patched.model) patched.model = originalModel.id;
+        if (patched.message?.model) {
+          patched.message = { ...patched.message, model: originalModel.id };
+        }
+        stream.push(patched);
+      } else {
+        stream.push(event);
+      }
     }
     stream.end();
   } catch (bedrockErr) {
@@ -287,8 +322,8 @@ async function streamViaBedrock(
     stream.push({
       type: "error",
       error: new Error(
-        `Bedrock fallback also failed: ${bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr)}. ` +
-        `Original provider (Anthropic) quota/rate-limit was exhausted.${suffix ? ` (${suffix})` : ""}` ,
+        `Clauderock fallback failed: ${bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr)}. ` +
+        `Claude API quota/rate-limit was exhausted.${suffix ? ` (${suffix})` : ""}` ,
       ),
     });
     stream.end();
@@ -310,9 +345,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     sessionNotified = false;
     if (fallbackActive) {
-      ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("warning", "[x]") + " Bedrock (fallback)");
+      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("warning", "● Clauderock"));
     } else {
-      ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("success", "[x]") + " Anthropic");
+      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Claude"));
     }
   });
 
@@ -320,15 +355,15 @@ export default function (pi: ExtensionAPI) {
   pi.on("turn_end", async (_event, ctx) => {
     if (pendingNotification === "quota_exhausted") {
       ctx.ui.notify(
-        ctx.ui.theme.fg("warning", "[-]") + " Anthropic quota exhausted — switched to Bedrock",
+        ctx.ui.theme.fg("warning", "⚠ Claude rate limit hit") + " — switching to Clauderock",
         "warning",
       );
-      ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("warning", "[x]") + " Bedrock (fallback)");
+      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("warning", "● Clauderock"));
       sessionNotified = true;
       pendingNotification = null;
     } else if (pendingNotification === "using_cached_fallback") {
       ctx.ui.notify(
-        "[i] Using Bedrock (Anthropic quota previously exhausted). /fallback reset to retry.",
+        "Using Clauderock — Claude API was previously rate-limited. Run " + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
         "info",
       );
       sessionNotified = true;
@@ -336,44 +371,54 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // 4. /fallback command
-  pi.registerCommand("fallback", {
-    description: "Manage Anthropic ↔ Bedrock fallback (status | reset | bedrock | health)",
+  // 4. /clauderock command
+  pi.registerCommand("clauderock", {
+    description: "Claude ↔ Bedrock routing (status | on | off | health)",
+    getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+      const items: AutocompleteItem[] = [
+        { value: "status", label: "status  — show current routing and connection state" },
+        { value: "on", label: "on      — route all requests through AWS Bedrock" },
+        { value: "off", label: "off     — switch back to Claude direct API" },
+        { value: "health", label: "health  — check Claude API & AWS credentials" },
+      ];
+      const filtered = items.filter((i) => i.value.startsWith(prefix));
+      return filtered.length > 0 ? filtered : null;
+    },
     handler: async (args, ctx) => {
       const action = (args || "").trim().toLowerCase() || "status";
 
-      if (action === "reset") {
+      if (action === "off") {
         clearCache();
         fallbackActive = false;
         sessionNotified = false;
-        ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("success", "[x]") + " Anthropic");
-        ctx.ui.notify(ctx.ui.theme.fg("success", "[x]") + " Fallback cleared — next request will use Anthropic", "info");
+        ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Claude"));
+        ctx.ui.notify(ctx.ui.theme.fg("success", "✓ Switched to Claude direct API") + " — Clauderock disabled", "info");
         return;
       }
 
-      if (action === "bedrock") {
+      if (action === "on") {
         fallbackActive = true;
-        writeCache("manually forced via /fallback bedrock");
-        ctx.ui.setStatus("provider-fallback", ctx.ui.theme.fg("warning", "[x]") + " Bedrock (forced)");
-        ctx.ui.notify(ctx.ui.theme.fg("warning", "[x]") + " Forced Bedrock mode — use /fallback reset to return to Anthropic", "info");
+        writeCache("manually forced via /clauderock on");
+        ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("warning", "● Clauderock"));
+        ctx.ui.notify(ctx.ui.theme.fg("warning", "● Switched to Clauderock") + " — run " + ctx.ui.theme.fg("accent", "/clauderock off") + " for direct API", "info");
         return;
       }
 
       if (action === "health") {
-        ctx.ui.notify("[~] Running health checks\u2026", "info");
+        ctx.ui.notify("Running Clauderock health checks\u2026", "info");
         const t = ctx.ui.theme;
         const lines: string[] = [];
 
-        // --- Anthropic check ---
+        // --- Claude API check ---
         try {
           const authPath = join(getAgentDir(), "auth.json");
           const auth = JSON.parse(readFileSync(authPath, "utf-8"));
           const cred = auth.anthropic;
 
           if (!cred?.access) {
-            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "Anthropic")} \u2014 No credentials (run /login anthropic)`);
+            lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "Claude API")} \u2014 No credentials (run /login anthropic)`);
           } else if (cred.expires && Date.now() > cred.expires) {
-            lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 OAuth token expired (run /login anthropic)`);
+            lines.push(`${t.fg("warning", "!")} ${t.fg("accent", "Claude API")} \u2014 OAuth token expired (run /login anthropic)`);
           } else {
             const resp = await fetch("https://api.anthropic.com/v1/messages", {
               method: "POST",
@@ -399,21 +444,21 @@ export default function (pi: ExtensionAPI) {
               if (requestsLeft) parts.push(`${Number(requestsLeft).toLocaleString()} requests left`);
               if (tokensReset) parts.push(`resets ${tokensReset}`);
               const detail = parts.length ? parts.join(", ") : "no usage data available";
-              lines.push(`${t.fg("success", "[x]")} ${t.fg("accent", "Anthropic")} \u2014 Quota available (${detail})`);
+              lines.push(`${t.fg("success", "✓")} ${t.fg("accent", "Claude API")} \u2014 Quota available (${detail})`);
             } else if (resp.status === 402) {
-              lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "Anthropic")} \u2014 Quota exhausted (402 billing error)`);
+              lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "Claude API")} \u2014 Quota exhausted (402 billing error)`);
             } else if (resp.status === 401) {
-              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 Token invalid (run /login anthropic)`);
+              lines.push(`${t.fg("warning", "!")} ${t.fg("accent", "Claude API")} \u2014 Token invalid (run /login anthropic)`);
             } else if (resp.status === 429) {
               const resetInfo = tokensReset ? `, resets ${tokensReset}` : "";
-              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 Rate limited${resetInfo}`);
+              lines.push(`${t.fg("warning", "!")} ${t.fg("accent", "Claude API")} \u2014 Rate limited${resetInfo}`);
             } else {
               const body = await resp.text().catch(() => "");
-              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "Anthropic")} \u2014 HTTP ${resp.status}${body ? `: ${body.slice(0, 100)}` : ""}`);
+              lines.push(`${t.fg("warning", "!")} ${t.fg("accent", "Claude API")} \u2014 HTTP ${resp.status}${body ? `: ${body.slice(0, 100)}` : ""}`);
             }
           }
         } catch (err) {
-          lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "Anthropic")} \u2014 ${err instanceof Error ? err.message : String(err)}`);
+          lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "Claude API")} \u2014 ${err instanceof Error ? err.message : String(err)}`);
         }
 
         // --- AWS / Bedrock check ---
@@ -421,7 +466,7 @@ export default function (pi: ExtensionAPI) {
           try {
             execSync("which aws", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
           } catch {
-            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 aws CLI not found (install awscli)`);
+            lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "AWS Bedrock")} \u2014 aws CLI not found (install awscli)`);
             throw new Error("__skip__");
           }
 
@@ -451,16 +496,16 @@ export default function (pi: ExtensionAPI) {
                 { encoding: "utf-8", timeout: 10000, stdio: ["pipe", "pipe", "pipe"] },
               );
               const identity = JSON.parse(output);
-              lines.push(`${t.fg("success", "[x]")} ${t.fg("accent", "AWS")} \u2014 Profile [${profile}], Account: ${identity.Account}`);
+              lines.push(`${t.fg("success", "✓")} ${t.fg("accent", "AWS Bedrock")} \u2014 Profile [${profile}], Account: ${identity.Account}`);
               anyValid = true;
             } catch (profileErr) {
               const msg = profileErr instanceof Error ? profileErr.message : String(profileErr);
               if (msg.includes("expired")) {
-                lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "AWS")} \u2014 Profile [${profile}] credentials expired`);
+                lines.push(`${t.fg("warning", "!")} ${t.fg("accent", "AWS Bedrock")} \u2014 Profile [${profile}] credentials expired`);
               } else if (msg.includes("Unable to locate")) {
                 // skip non-existent default profile silently
               } else {
-                lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 Profile [${profile}] invalid`);
+                lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "AWS Bedrock")} \u2014 Profile [${profile}] invalid`);
               }
             }
           }
@@ -473,30 +518,30 @@ export default function (pi: ExtensionAPI) {
                   env: { ...process.env } },
               );
               const identity = JSON.parse(output);
-              lines.push(`${t.fg("success", "[x]")} ${t.fg("accent", "AWS")} \u2014 Env vars, Account: ${identity.Account}`);
+              lines.push(`${t.fg("success", "✓")} ${t.fg("accent", "AWS Bedrock")} \u2014 Env vars, Account: ${identity.Account}`);
               anyValid = true;
             } catch {
-              lines.push(`${t.fg("warning", "[-]")} ${t.fg("accent", "AWS")} \u2014 Env vars set but credentials invalid`);
+              lines.push(`${t.fg("warning", "!")} ${t.fg("accent", "AWS Bedrock")} \u2014 Env vars set but credentials invalid`);
             }
           }
 
           if (!anyValid && profiles.length === 0 && !hasEnvKeys) {
-            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 No credentials configured`);
+            lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "AWS Bedrock")} \u2014 No credentials configured`);
           } else if (!anyValid) {
-            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 No valid credentials found`);
+            lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "AWS Bedrock")} \u2014 No valid credentials found`);
           }
         } catch (err) {
           if (!(err instanceof Error && err.message === "__skip__")) {
-            lines.push(`${t.fg("error", "[ ]")} ${t.fg("accent", "AWS")} \u2014 ${err instanceof Error ? err.message : String(err)}`);
+            lines.push(`${t.fg("error", "✗")} ${t.fg("accent", "AWS Bedrock")} \u2014 ${err instanceof Error ? err.message : String(err)}`);
           }
         }
 
-        // --- Fallback state ---
+        // --- Clauderock state ---
         const cached = readCache();
         if (fallbackActive) {
-          lines.push(`${t.fg("warning", "[x]")} ${t.fg("accent", "Fallback")} \u2014 Active since ${cached?.since ?? "this session"}`);
+          lines.push(`${t.fg("warning", "●")} ${t.fg("accent", "Clauderock")} \u2014 Active since ${cached?.since ?? "this session"}`);
         } else {
-          lines.push(`${t.fg("dim", "[ ]")} ${t.fg("accent", "Fallback")} \u2014 Not active`);
+          lines.push(`${t.fg("dim", "○")} ${t.fg("accent", "Clauderock")} \u2014 Standby (using Claude direct API)`);
         }
 
         ctx.ui.notify(lines.join("\n"), "info");
@@ -507,12 +552,12 @@ export default function (pi: ExtensionAPI) {
       const cached = readCache();
       if (fallbackActive) {
         ctx.ui.notify(
-          ctx.ui.theme.fg("warning", "[-]") + ` Bedrock fallback ACTIVE since ${cached?.since ?? "this session"}` +
+          ctx.ui.theme.fg("warning", "● Clauderock") + ` active since ${cached?.since ?? "this session"}` +
           (cached?.reason ? ` \u2014 ${cached.reason}` : ""),
           "info",
         );
       } else {
-        ctx.ui.notify(ctx.ui.theme.fg("success", "[x]") + " Anthropic is the active provider", "info");
+        ctx.ui.notify(ctx.ui.theme.fg("success", "● Claude") + " direct API active. Clauderock on standby.", "info");
       }
     },
   });
