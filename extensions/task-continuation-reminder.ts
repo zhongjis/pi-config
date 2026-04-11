@@ -1,7 +1,10 @@
 // @ts-nocheck
 
 import { join, resolve } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@mariozechner/pi-coding-agent";
 import { TaskStore } from "./pi-tasks/src/task-store.js";
 import { loadTasksConfig } from "./pi-tasks/src/tasks-config.js";
 import type { Task } from "./pi-tasks/src/types.js";
@@ -45,17 +48,21 @@ export default function (pi: ExtensionAPI) {
   }
 
   function getIncompleteTasks(ctx: ExtensionContext): Task[] {
-    const store = new TaskStore(resolveStorePath(ctx.sessionManager.getSessionId()));
-    return store.list().filter(task => task.status !== "completed");
+    const store = new TaskStore(
+      resolveStorePath(ctx.sessionManager.getSessionId()),
+    );
+    return store.list().filter((task) => task.status !== "completed");
   }
 
   function getIncompleteTaskSignature(tasks: Task[]): string {
     return tasks
-      .map(task => `${task.id}:${task.status}:${task.updatedAt}`)
+      .map((task) => `${task.id}:${task.status}:${task.updatedAt}`)
       .join("|");
   }
 
-  function getLastAssistantStopReason(messages: AssistantMessageLike[]): string | undefined {
+  function getLastAssistantStopReason(
+    messages: AssistantMessageLike[],
+  ): string | undefined {
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
       if (message?.role === "assistant") return message.stopReason;
@@ -81,7 +88,9 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_end", async (event, ctx) => {
-    const stopReason = getLastAssistantStopReason(event.messages as AssistantMessageLike[]);
+    const stopReason = getLastAssistantStopReason(
+      event.messages as AssistantMessageLike[],
+    );
     if (stopReason === "aborted" || stopReason === "error") {
       resetReminderState();
       return;
@@ -97,8 +106,12 @@ export default function (pi: ExtensionAPI) {
 
     const incompleteSignature = getIncompleteTaskSignature(incompleteTasks);
     if (activeAgentStartedFromTaskReminder) {
-      const stalled = activeAgentTurnCount <= 1 && incompleteSignature === lastReminderIncompleteSignature;
-      taskReminderStagnationCount = stalled ? taskReminderStagnationCount + 1 : 0;
+      const stalled =
+        activeAgentTurnCount <= 1 &&
+        incompleteSignature === lastReminderIncompleteSignature;
+      taskReminderStagnationCount = stalled
+        ? taskReminderStagnationCount + 1
+        : 0;
     } else {
       taskReminderStagnationCount = 0;
     }
@@ -111,15 +124,18 @@ export default function (pi: ExtensionAPI) {
 
     lastReminderIncompleteSignature = incompleteSignature;
     taskReminderFollowUpPending = true;
-    pi.sendMessage({
-      customType: "task-continuation-reminder",
-      content: TASK_CONTINUATION_REMINDER,
-      display: true,
-      details: { incompleteTaskIds: incompleteTasks.map(task => task.id) },
-    }, {
-      deliverAs: "followUp",
-      triggerTurn: true,
-    });
+    pi.sendMessage(
+      {
+        customType: "task-continuation-reminder",
+        content: TASK_CONTINUATION_REMINDER,
+        display: true,
+        details: { incompleteTaskIds: incompleteTasks.map((task) => task.id) },
+      },
+      {
+        deliverAs: "followUp",
+        triggerTurn: true,
+      },
+    );
   });
 
   pi.on("session_switch" as any, async () => {
