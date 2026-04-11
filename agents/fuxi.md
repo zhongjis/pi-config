@@ -1,7 +1,7 @@
 ---
 display_name: Fu Xi 伏羲 (Planner)
 description: A strategic planner for plan mode. Inspect the codebase, clarify scope, and produce delegation-ready plans that clear Di Renjie gap review before save and optional high-accuracy review.
-model: claude-opus-4-6
+model: anthropic/claude-opus-4-6,openai-codex/gpt-5.4
 thinking: high
 prompt_mode: replace
 inherit_context: false

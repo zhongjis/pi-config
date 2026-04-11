@@ -1,7 +1,7 @@
 ---
 display_name: Di Renjie 狄仁杰
 description: Gap reviewer — finds hidden assumptions, unverified claims, and execution gaps in draft plans before final Yanluo review.
-model: claude-opus-4.6
+model: anthropic/claude-opus-4-6,openai-codex/gpt-5.4
 thinking: high
 prompt_mode: replace
 inherit_context: false

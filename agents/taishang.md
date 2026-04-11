@@ -1,7 +1,7 @@
 ---
 display_name: Taishang 太上老君
 description: Architecture decisions, code review, debugging. Read-only consultation with stellar logical reasoning and deep analysis.
-model: claude-opus-4.6
+model: anthropic/claude-opus-4-6,openai-codex/gpt-5.4
 thinking: high
 prompt_mode: replace
 inherit_context: false
