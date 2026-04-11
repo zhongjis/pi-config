@@ -422,6 +422,7 @@ export default function (pi: ExtensionAPI) {
     pi.events.emit(HANDOFF_READY_EVENT, createReadyEvent(await getReadiness()));
   };
 
+
   const replySuccess = <T>(channel: string, requestId: string, data?: T) => {
     pi.events.emit(createReplyChannel(channel, requestId), createSuccessReply(data));
   };
@@ -587,6 +588,12 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  const wireRpcHandlers = () => {
+    if (eventUnsubscribers.length > 0) {
+      handlersReady = true;
+      return;
+    }
+
   addEventHandler(HANDOFF_PING_CHANNEL, async (raw: unknown) => {
     if (!hasRequestId(raw)) {
       return;
@@ -701,12 +708,16 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  handlersReady = true;
+    handlersReady = true;
+  };
+
+  wireRpcHandlers();
   void emitReady();
 
   pi.on("session_start", async (_event, ctx: ExtensionContext) => {
     sessionCtx = ctx as ExtensionContext & HandoffStorageContext;
     shutDown = false;
+    wireRpcHandlers();
     await emitReady();
   });
 

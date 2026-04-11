@@ -279,6 +279,45 @@ describe("handoff RPC extension", () => {
     expect(mock.getHandlerCount(HANDOFF_CLEAR_CHANNEL)).toBe(0);
   });
 
+  it("re-registers RPC handlers after shutdown when the session starts again", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+
+    const firstCtx = createSessionContext("session-1");
+    await mock.fireLifecycle("session_start", firstCtx);
+    await mock.fireLifecycle("session_shutdown", firstCtx);
+
+    expect(mock.getHandlerCount(HANDOFF_PING_CHANNEL)).toBe(0);
+    expect(mock.getHandlerCount(HANDOFF_PREPARE_CHANNEL)).toBe(0);
+    expect(mock.getHandlerCount(HANDOFF_GET_CHANNEL)).toBe(0);
+    expect(mock.getHandlerCount(HANDOFF_MARK_CONSUMED_CHANNEL)).toBe(0);
+    expect(mock.getHandlerCount(HANDOFF_CLEAR_CHANNEL)).toBe(0);
+
+    const restartedCtx = createSessionContext("session-2");
+    await mock.fireLifecycle("session_start", restartedCtx);
+
+    expect(mock.getHandlerCount(HANDOFF_PING_CHANNEL)).toBe(1);
+    expect(mock.getHandlerCount(HANDOFF_PREPARE_CHANNEL)).toBe(1);
+    expect(mock.getHandlerCount(HANDOFF_GET_CHANNEL)).toBe(1);
+    expect(mock.getHandlerCount(HANDOFF_MARK_CONSUMED_CHANNEL)).toBe(1);
+    expect(mock.getHandlerCount(HANDOFF_CLEAR_CHANNEL)).toBe(1);
+
+    const pingReply = await callRpc<{
+      success: true;
+      data: { readiness: { state: string; missingResource?: string } };
+    }>(mock, HANDOFF_PING_CHANNEL, {});
+
+    expect(pingReply).toMatchObject({
+      success: true,
+      data: {
+        readiness: {
+          state: "missing",
+          missingResource: "handoff-authority",
+        },
+      },
+    });
+  });
+
   it("prepares and retrieves handoff artifacts from session-local storage", async () => {
     const ctx = createSessionContext();
     const mock = createMockPi();
