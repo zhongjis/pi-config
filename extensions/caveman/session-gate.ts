@@ -21,24 +21,22 @@ export function isTopLevelPersistedSession(
 function readPersistedSignal(
   ctx: CavemanSessionPersistenceContextLike,
 ): boolean | undefined {
-  const isPersisted = ctx.sessionManager.isPersisted;
-  if (typeof isPersisted !== "function") {
+  if (typeof ctx.sessionManager.isPersisted !== "function") {
     return undefined;
   }
 
-  const persisted = isPersisted();
+  const persisted = ctx.sessionManager.isPersisted();
   return typeof persisted === "boolean" ? persisted : undefined;
 }
 
 function readSessionFileSignal(
   ctx: CavemanSessionPersistenceContextLike,
 ): boolean | undefined {
-  const getSessionFile = ctx.sessionManager.getSessionFile;
-  if (typeof getSessionFile !== "function") {
+  if (typeof ctx.sessionManager.getSessionFile !== "function") {
     return undefined;
   }
 
-  const sessionFile = getSessionFile();
+  const sessionFile = ctx.sessionManager.getSessionFile();
   if (sessionFile == null) {
     return false;
   }
