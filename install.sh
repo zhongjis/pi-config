@@ -1,3 +1,5 @@
+# Native npm modules like node-pty may fall back to local compilation in the install shell.
+# Keep a small shared toolchain available for all Node package-manager installs.
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -24,6 +26,15 @@ EXCLUDED_ITEMS=(
     "extensions"
     "self-improvements"
     "QUICKFIX.md"
+)
+
+NODE_BUILD_SHELL=(
+    nix shell
+    nixpkgs#nodejs
+    nixpkgs#python3
+    nixpkgs#gnumake
+    nixpkgs#gcc
+    nixpkgs#pkg-config
 )
 
 contains_item() {
@@ -109,18 +120,18 @@ install_git_package_deps() {
 
         if [ -f "$repo_dir/pnpm-lock.yaml" ]; then
             echo "Installing pnpm dependencies in $repo_dir"
-            nix shell nixpkgs#nodejs nixpkgs#pnpm -c bash -lc "cd '$repo_dir' && pnpm install"
+            "${NODE_BUILD_SHELL[@]}" nixpkgs#pnpm -c bash -lc "cd '$repo_dir' && pnpm install"
         elif [ -f "$repo_dir/bun.lock" ] || [ -f "$repo_dir/bun.lockb" ]; then
             echo "Installing bun dependencies in $repo_dir"
-            nix shell nixpkgs#nodejs nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun install"
+            "${NODE_BUILD_SHELL[@]}" nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun install"
         else
             echo "Installing npm dependencies in $repo_dir"
-            nix shell nixpkgs#nodejs -c bash -lc "cd '$repo_dir' && npm install"
+            "${NODE_BUILD_SHELL[@]}" -c bash -lc "cd '$repo_dir' && npm install"
         fi
 
         if grep -q '"build:pi"' "$package_json"; then
             echo "Running build:pi in $repo_dir"
-            nix shell nixpkgs#nodejs nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun run build:pi"
+            "${NODE_BUILD_SHELL[@]}" nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun run build:pi"
         fi
     done
 }
