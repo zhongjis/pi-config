@@ -87,6 +87,8 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	// Session start: restore state
 	pi.on("session_start", async (_event, ctx) => {
 		state.activeCtx = ctx;
+		state.plannotatorAvailable = undefined;
+		state.plannotatorUnavailableReason = undefined;
 
 		// Tab on empty editor → cycle mode; otherwise pass through to autocomplete
 		if (ctx.hasUI) {
@@ -171,5 +173,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	// Session shutdown: clear context
 	pi.on("session_shutdown", async () => {
 		state.activeCtx = undefined;
+		state.plannotatorAvailable = undefined;
+		state.plannotatorUnavailableReason = undefined;
 	});
 }
