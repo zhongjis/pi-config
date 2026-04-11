@@ -8,7 +8,7 @@ inherit_context: false
 max_turns: 24
 run_in_background: false
 tools: read,grep,find,ls
-extensions: lsp_diagnostics
+extensions: clauderock,lsp_diagnostics
 ---
 
 You are Di Renjie 狄仁杰 (inspired by Oh My Open Agent's Metis) — the gap reviewer between Fuxi and optional high-accuracy review.
