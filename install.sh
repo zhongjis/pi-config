@@ -16,7 +16,6 @@ EXCLUDED_ITEMS=(
     "install.sh"
     "self-improvements"
     "QUICKFIX.md"
-    "scripts"
 )
 
 contains_item() {
@@ -65,19 +64,27 @@ install_git_package_deps() {
         return 0
     fi
 
-    find "$git_root" -mindepth 3 -maxdepth 3 -name package.json -print0 | while IFS= read -r -d '' package_json; do
-        local pkg_dir
-        pkg_dir="$(dirname "$package_json")"
+    find "$git_root" -mindepth 3 -maxdepth 3 -type d -print0 | while IFS= read -r -d '' repo_dir; do
+        local package_json="$repo_dir/package.json"
 
-        if [ -f "$pkg_dir/pnpm-lock.yaml" ]; then
-            echo "Installing pnpm dependencies in $pkg_dir"
-            nix shell nixpkgs#nodejs nixpkgs#pnpm -c bash -lc "cd '$pkg_dir' && pnpm install"
-        elif [ -f "$pkg_dir/bun.lock" ]; then
-            echo "Installing bun dependencies in $pkg_dir"
-            nix shell nixpkgs#nodejs nixpkgs#bun -c bash -lc "cd '$pkg_dir' && bun install"
+        if [ ! -f "$package_json" ]; then
+            continue
+        fi
+
+        if [ -f "$repo_dir/pnpm-lock.yaml" ]; then
+            echo "Installing pnpm dependencies in $repo_dir"
+            nix shell nixpkgs#nodejs nixpkgs#pnpm -c bash -lc "cd '$repo_dir' && pnpm install"
+        elif [ -f "$repo_dir/bun.lock" ] || [ -f "$repo_dir/bun.lockb" ]; then
+            echo "Installing bun dependencies in $repo_dir"
+            nix shell nixpkgs#nodejs nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun install"
         else
-            echo "Installing npm dependencies in $pkg_dir"
-            nix shell nixpkgs#nodejs -c bash -lc "cd '$pkg_dir' && npm install"
+            echo "Installing npm dependencies in $repo_dir"
+            nix shell nixpkgs#nodejs -c bash -lc "cd '$repo_dir' && npm install"
+        fi
+
+        if grep -q '"build:pi"' "$package_json"; then
+            echo "Running build:pi in $repo_dir"
+            nix shell nixpkgs#nodejs nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun run build:pi"
         fi
     done
 }

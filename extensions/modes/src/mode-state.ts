@@ -23,6 +23,8 @@ export class ModeStateManager {
 	planActionPending = false;
 	justSwitchedToHoutu = false;
 	activeCtx: ExtensionContext | undefined;
+	plannotatorAvailable: boolean | undefined;
+	plannotatorUnavailableReason: string | undefined;
 
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;

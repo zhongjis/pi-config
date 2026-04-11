@@ -12,6 +12,7 @@ import type {
 
 const HANDOFF_TASK_CLEANUP_CHANNEL = "tasks:rpc:clear-planning-tasks";
 const HANDOFF_TASK_CLEANUP_TIMEOUT_MS = 1_500;
+const PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID = "__plannotator_health_check__";
 
 type ClearPlanningTasksReply = {
 	success?: boolean;
@@ -54,6 +55,33 @@ export async function requestPlannotator<T>(
 			},
 		});
 	});
+}
+
+async function checkPlannotatorAvailability(
+	pi: ExtensionAPI,
+	state: ModeStateManager,
+): Promise<{ available: boolean; reason?: string }> {
+	if (typeof state.plannotatorAvailable === "boolean") {
+		return {
+			available: state.plannotatorAvailable,
+			reason: state.plannotatorUnavailableReason,
+		};
+	}
+
+	const response = await requestPlannotator<PlannotatorReviewStatusResult>(pi, "review-status", {
+		reviewId: PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID,
+	});
+
+	if (response.status === "handled") {
+		state.plannotatorAvailable = true;
+		state.plannotatorUnavailableReason = undefined;
+		return { available: true };
+	}
+
+	const reason = response.status === "unavailable" ? response.error : response.error;
+	state.plannotatorAvailable = false;
+	state.plannotatorUnavailableReason = reason ?? "Plannotator is unavailable.";
+	return { available: false, reason: state.plannotatorUnavailableReason };
 }
 
 async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string): Promise<HandoffCleanupNotification> {
@@ -127,7 +155,10 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 
 	const choices: string[] = ["Execute in Hou Tu"];
 	if (!state.planReviewApproved) {
-		choices.push("Refine in Plannotator");
+		const plannotator = await checkPlannotatorAvailability(pi, state);
+		if (plannotator.available) {
+			choices.push("Refine in Plannotator");
+		}
 	}
 	if (!state.highAccuracyReviewApproved) {
 		choices.push("High accuracy review");
@@ -227,6 +258,8 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 		state.planReviewApproved = false;
 		state.planReviewFeedback = undefined;
 		state.planActionPending = false;
+		state.plannotatorAvailable = true;
+		state.plannotatorUnavailableReason = undefined;
 		state.persistState();
 		return `Plan "${state.planTitle}" sent to Plannotator for refinement review.`;
 	}
@@ -237,6 +270,8 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 	state.planReviewFeedback = undefined;
 	state.planActionPending = true;
 	state.persistState();
+	state.plannotatorAvailable = false;
+	state.plannotatorUnavailableReason = response.status === "handled" ? "Plannotator review could not be started." : response.error;
 
 	const reason = response.status === "handled" ? "Plannotator review could not be started." : response.error;
 	if (reason && ctx.hasUI) {
