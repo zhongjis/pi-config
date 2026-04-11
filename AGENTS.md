@@ -52,5 +52,4 @@ Agents use Chinese mythology names with specific roles:
 ## References
 
 - Quick fixes for known issues: @QUICKFIX.md
-- Planning follow-ups: @plans/agent-modes-followups.md
 - Self-improvement design: @self-improvements/design.md
