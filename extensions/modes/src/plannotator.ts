@@ -11,6 +11,18 @@ import type {
 	PlannotatorReviewStatusResult,
 } from "./types.js";
 
+const PLANNOTATOR_AVAILABLE_LABEL = "Refine in Plannotator";
+const PLANNOTATOR_UNAVAILABLE_LABEL = "Refine in Plannotator (Unavailable)";
+
+function getPlannotatorUnavailableReason(reason?: string): string {
+	const trimmed = reason?.trim();
+	return trimmed || "Plannotator is unavailable.";
+}
+
+function logPlannotatorUnavailable(scope: string, reason?: string): void {
+	console.error(`[modes/plannotator] ${scope}: ${getPlannotatorUnavailableReason(reason)}`);
+}
+
 const HANDOFF_TASK_CLEANUP_CHANNEL = "tasks:rpc:clear-planning-tasks";
 const HANDOFF_TASK_CLEANUP_TIMEOUT_MS = 1_500;
 const PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID = "__plannotator_health_check__";
@@ -81,7 +93,8 @@ async function checkPlannotatorAvailability(
 
 	const reason = response.status === "unavailable" ? response.error : response.error;
 	state.plannotatorAvailable = false;
-	state.plannotatorUnavailableReason = reason ?? "Plannotator is unavailable.";
+	state.plannotatorUnavailableReason = getPlannotatorUnavailableReason(reason);
+	logPlannotatorUnavailable("availability check failed", state.plannotatorUnavailableReason);
 	return { available: false, reason: state.plannotatorUnavailableReason };
 }
 
@@ -158,9 +171,7 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	const choices: string[] = ["Execute in Hou Tu"];
 	if (!state.planReviewApproved) {
 		const plannotator = await checkPlannotatorAvailability(pi, state);
-		if (plannotator.available) {
-			choices.push("Refine in Plannotator");
-		}
+		choices.push(plannotator.available ? PLANNOTATOR_AVAILABLE_LABEL : PLANNOTATOR_UNAVAILABLE_LABEL);
 	}
 	if (!state.highAccuracyReviewApproved) {
 		choices.push("High accuracy review");
@@ -184,7 +195,7 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		return;
 	}
 
-	if (choice === "Refine in Plannotator") {
+	if (choice === PLANNOTATOR_AVAILABLE_LABEL) {
 		state.planActionPending = false;
 		state.persistState();
 		const reviewMessage = await startPlanReview(pi, state, ctx);
@@ -194,6 +205,13 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		if (!state.planReviewPending) {
 			await promptPostPlanAction(pi, state, ctx);
 		}
+		return;
+	}
+
+	if (choice === PLANNOTATOR_UNAVAILABLE_LABEL) {
+		const reason = getPlannotatorUnavailableReason(state.plannotatorUnavailableReason);
+		ctx.ui.notify(`Plannotator unavailable: ${reason}`, "warning");
+		await promptPostPlanAction(pi, state, ctx);
 		return;
 	}
 
@@ -278,11 +296,14 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 	state.planActionPending = true;
 	state.persistState();
 	state.plannotatorAvailable = false;
-	state.plannotatorUnavailableReason = response.status === "handled" ? "Plannotator review could not be started." : response.error;
+	state.plannotatorUnavailableReason = getPlannotatorUnavailableReason(
+		response.status === "handled" ? "Plannotator review could not be started." : response.error,
+	);
 
-	const reason = response.status === "handled" ? "Plannotator review could not be started." : response.error;
-	if (reason && ctx.hasUI) {
-		ctx.ui.notify(`${reason} Returning to the post-plan menu.`, "warning");
+	logPlannotatorUnavailable(`review start failed for plan \"${state.planTitle}\"`, state.plannotatorUnavailableReason);
+
+	if (ctx.hasUI) {
+		ctx.ui.notify(`${state.plannotatorUnavailableReason} Returning to the post-plan menu.`, "warning");
 	}
 	return `Plannotator review could not be started for plan "${state.planTitle}". Returning to the post-plan menu.`;
 }
@@ -292,8 +313,9 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 
 	await hydratePlanState(ctx, state);
 
+	const reviewId = state.pendingPlanReviewId;
 	const response = await requestPlannotator<PlannotatorReviewStatusResult>(pi, "review-status", {
-		reviewId: state.pendingPlanReviewId,
+		reviewId,
 	});
 
 	if (response.status === "handled") {
@@ -313,8 +335,11 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 	state.planActionPending = true;
 	state.persistState();
 
-	const reason = response.status === "handled" ? "Plannotator review state could not be recovered." : response.error;
-	if (reason && ctx.hasUI) {
+	const reason = getPlannotatorUnavailableReason(
+		response.status === "handled" ? "Plannotator review state could not be recovered." : response.error,
+	);
+	logPlannotatorUnavailable(`review recovery failed for review ${reviewId}`, reason);
+	if (ctx.hasUI) {
 		ctx.ui.notify(`${reason} Returning to the post-plan menu.`, "warning");
 	}
 }
