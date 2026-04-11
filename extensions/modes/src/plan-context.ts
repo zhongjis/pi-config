@@ -1,4 +1,5 @@
 import type { ModeStateManager } from "./mode-state.js";
+import { formatPlanDisplay } from "./plan-storage.js";
 
 export function buildPlanContextContent(state: ModeStateManager): string {
 	if (!state.planContent) return "";
@@ -24,7 +25,7 @@ export function buildHighAccuracyReviewMessage(state: ModeStateManager): string 
 	if (!state.planContent) {
 		return "High accuracy review could not start because no saved plan is available. Return to the post-plan menu.";
 	}
-	const planText = state.planTitle ? `# Plan: ${state.planTitle}\n\n${state.planContent}` : state.planContent;
+	const planText = formatPlanDisplay({ title: state.planTitle, content: state.planContent });
 	return `Run High accuracy review on the current saved plan. Use the Agent tool to spawn \`yanluo\` with ONLY the plan text below as the prompt and \`inherit_context: false\`. Do not pass the planning transcript or reviewer chatter. When the review completes, call \`high_accuracy_review_complete\` with approved=true/false and the full feedback text. Do not call \`exit_plan_mode\`. Do not execute the plan. Do not rerun the review automatically.\n\n${planText}`;
 }
 

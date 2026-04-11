@@ -10,9 +10,12 @@ export interface ModeConfig {
 	model?: string;
 }
 
+export type PlanTitleSource = "content-h1" | "compat-name" | "explicit-exit" | "legacy-entry" | "cached-state";
+
 export interface ModeState {
 	mode: Mode;
 	planTitle?: string;
+	planTitleSource?: PlanTitleSource;
 	planContent?: string;
 	gapReviewApproved?: boolean;
 	gapReviewFeedback?: string;

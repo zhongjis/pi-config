@@ -4,9 +4,55 @@ import { Key, matchesKey } from "@mariozechner/pi-tui";
 import { MODES, MODE_ALIASES } from "./constants.js";
 import { buildPlanContextContent } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
+import { derivePlanTitleFromMarkdown, hydratePlanState, LOCAL_PLAN_URI } from "./plan-storage.js";
 import { promptPostPlanAction, recoverPlanReview } from "./plannotator.js";
+import type { Mode, ModeState } from "./types.js";
 import { isDelegationAllowed, isSafeCommand } from "./utils.js";
-import type { Mode, ModeState, PlanEntry } from "./types.js";
+import { getPlanPath, readPlanFile } from "../../local-plan-tools/storage.js";
+
+const LOCAL_URI_PREFIX = "local://";
+
+function isLocalWriteTarget(input: unknown): boolean {
+	const path = (input as { path?: unknown })?.path;
+	return typeof path === "string" && path.startsWith(LOCAL_URI_PREFIX);
+}
+
+function getString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function isSuccessfulPlanMutationResult(event: {
+	toolName: string;
+	input?: unknown;
+	details?: unknown;
+	isError?: boolean;
+}, planPath: string): boolean {
+	if (event.isError || (event.toolName !== "write" && event.toolName !== "edit")) {
+		return false;
+	}
+
+	const details = event.details && typeof event.details === "object" ? (event.details as Record<string, unknown>) : undefined;
+	const localPath = getString(details?.localPath);
+	if (localPath) {
+		return localPath === LOCAL_PLAN_URI;
+	}
+
+	const backingPath = getString(details?.backingPath) ?? getString(details?.resolvedPath);
+	if (backingPath) {
+		return backingPath === planPath;
+	}
+
+	const inputPath = getString((event.input as { path?: unknown } | undefined)?.path);
+	return inputPath === planPath;
+}
+
+async function refreshPlanStateFromLocalPlan(ctx: Parameters<typeof readPlanFile>[0], state: ModeStateManager): Promise<void> {
+	const content = await readPlanFile(ctx);
+	const title = derivePlanTitleFromMarkdown(content);
+	state.planContent = content;
+	state.planTitle = title;
+	state.planTitleSource = title ? "content-h1" : undefined;
+}
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
 	// Block invalid delegations and destructive bash in mode-specific contexts
@@ -27,7 +73,21 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 			}
 		}
 
-		if (state.currentMode !== "fuxi" || event.toolName !== "bash") return;
+		if (state.currentMode !== "fuxi") return;
+
+		if (event.toolName === "write" || event.toolName === "edit") {
+			if (!isLocalWriteTarget(event.input)) {
+				const path = (event.input as { path?: unknown })?.path;
+				const target = typeof path === "string" && path ? path : "<missing path>";
+				return {
+					block: true,
+					reason: `Plan mode: ${event.toolName} is restricted to local:// targets. Use path="local://PLAN.md" for plan authoring. Target: ${target}`,
+				};
+			}
+			return;
+		}
+
+		if (event.toolName !== "bash") return;
 		const command = (event.input as { command?: string }).command ?? "";
 		if (!isSafeCommand(command)) {
 			return {
@@ -37,27 +97,40 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		}
 	});
 
+	pi.on("tool_result", async (event, ctx) => {
+		if (state.currentMode !== "fuxi") return;
+
+		const planPath = getPlanPath(ctx);
+		if (!isSuccessfulPlanMutationResult(event, planPath)) return;
+
+		await refreshPlanStateFromLocalPlan(ctx, state);
+		state.resetPlanReviewState();
+		state.persistState();
+	});
+
 	// Prompt injection via before_agent_start
-	pi.on("before_agent_start", async (event) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		const config = state.loadConfig(state.currentMode);
-		if (!config.body) return;
+		const systemPrompt = config.body ? `${event.systemPrompt}\n\n${config.body}` : event.systemPrompt;
 
 		// Hou Tu: inject the plan as a message on first turn after switch
-		if (state.currentMode === "houtu" && state.justSwitchedToHoutu && state.planContent) {
+		if (state.currentMode === "houtu" && state.justSwitchedToHoutu) {
+			await hydratePlanState(ctx, state);
 			state.justSwitchedToHoutu = false;
-			return {
-				message: {
-					customType: "plan-context",
-					content: buildPlanContextContent(state),
-					display: true,
-				},
-				systemPrompt: event.systemPrompt + "\n\n" + config.body,
-			};
+			if (state.planContent) {
+				return {
+					message: {
+						customType: "plan-context",
+						content: buildPlanContextContent(state),
+						display: true,
+					},
+					systemPrompt,
+				};
+			}
 		}
 
-		return {
-			systemPrompt: event.systemPrompt + "\n\n" + config.body,
-		};
+		if (!config.body) return;
+		return { systemPrompt };
 	});
 
 	// Context: strip stale Fu Xi noise when in Hou Tu mode
@@ -93,7 +166,11 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		// Tab on empty editor → cycle mode; otherwise pass through to autocomplete
 		if (ctx.hasUI) {
 			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
-				class ModeEditor extends CustomEditor {
+				const BaseEditor = CustomEditor as unknown as new (...args: unknown[]) => {
+					handleInput(data: string): void;
+					getText(): string;
+				};
+				class ModeEditor extends BaseEditor {
 					handleInput(data: string): void {
 						if (matchesKey(data, Key.tab) && !this.getText().trim()) {
 							if (state.activeCtx) state.cycleMode(state.activeCtx);
@@ -105,6 +182,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 				return new ModeEditor(tui, theme, keybindings);
 			});
 		}
+
 		// Check --mode flag
 		const flagValue = pi.getFlag("mode");
 		if (typeof flagValue === "string" && flagValue && flagValue !== "kuafu") {
@@ -124,6 +202,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 			if (modeEntry?.data) {
 				state.currentMode = modeEntry.data.mode ?? state.currentMode;
 				state.planTitle = modeEntry.data.planTitle;
+				state.planTitleSource = modeEntry.data.planTitleSource;
 				state.planContent = modeEntry.data.planContent;
 				state.gapReviewApproved = modeEntry.data.gapReviewApproved ?? false;
 				state.gapReviewFeedback = modeEntry.data.gapReviewFeedback;
@@ -137,24 +216,9 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 				state.planActionPending = modeEntry.data.planActionPending ?? false;
 			}
 		}
-
 		if (!state.pendingPlanReviewId) {
 			state.planReviewPending = false;
 		}
-
-		// Restore plan content from plan entries if not in mode state
-		if (!state.planContent) {
-			const entries = ctx.sessionManager.getEntries();
-			const planEntry = entries
-				.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "plan")
-				.pop() as { data?: PlanEntry } | undefined;
-
-			if (planEntry?.data?.content) {
-				state.planContent = planEntry.data.content;
-				state.planTitle = planEntry.data.title ?? state.planTitle;
-			}
-		}
-
 
 		if (state.highAccuracyReviewPending) {
 			state.highAccuracyReviewPending = false;
@@ -163,6 +227,8 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 				ctx.ui.notify("Pending high accuracy review could not be recovered. Returning to the post-plan menu.", "warning");
 			}
 		}
+
+		await hydratePlanState(ctx, state);
 
 		state.applyMode(ctx);
 		await recoverPlanReview(pi, state, ctx);
