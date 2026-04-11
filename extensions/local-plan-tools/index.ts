@@ -5,7 +5,6 @@ const { Type } = require("@sinclair/typebox") as {
     Integer(options?: Record<string, unknown>): unknown;
     Object(properties: Record<string, unknown>): unknown;
     Optional(schema: unknown): unknown;
-    String(options?: Record<string, unknown>): unknown;
   };
 };
 const { createHash } = require("crypto") as {
@@ -28,7 +27,15 @@ const { readdir, writeFile } = require("fs/promises") as {
 const { resolve } = require("path") as {
   resolve: (...parts: string[]) => string;
 };
-
+const {
+  createEditTool,
+  createReadTool,
+  createWriteTool,
+} = require("@mariozechner/pi-coding-agent") as {
+  createEditTool: (cwd: string) => ToolDefinition;
+  createReadTool: (cwd: string) => ToolDefinition;
+  createWriteTool: (cwd: string) => ToolDefinition;
+};
 import {
   ensureSessionLocalRootDirectory,
   getPlanPath,
@@ -37,29 +44,31 @@ import {
   isLocalPathTarget,
   readPlanFile,
   resolveSessionLocalTarget,
-  writePlanFile,
   type SessionPlanContext,
   LOCAL_URI_PREFIX,
 } from "./storage.js";
 
+interface ToolDefinition {
+  name: string;
+  label: string;
+  description: string;
+  parameters: unknown;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+  prepareArguments?: (input: unknown) => unknown;
+  execute: (
+    toolCallId: string,
+    params: Record<string, unknown>,
+    signal: AbortSignal,
+    onUpdate: ((update: unknown) => void) | undefined,
+    ctx: SessionPlanContext,
+  ) => Promise<ToolResult>;
+  renderCall?: (...args: any[]) => unknown;
+  renderResult?: (...args: any[]) => unknown;
+}
+
 interface ExtensionAPI {
-  registerTool(definition: {
-    name: string;
-    label: string;
-    description: string;
-    parameters: unknown;
-    promptSnippet?: string;
-    promptGuidelines?: string[];
-    prepareArguments?: (input: unknown) => unknown;
-    execute: (
-      toolCallId: string,
-      params: Record<string, unknown>,
-      signal: AbortSignal,
-      onUpdate: ((update: unknown) => void) | undefined,
-      ctx: SessionPlanContext,
-    ) => Promise<ToolResult>;
-  }): void;
-  on(eventName: string, handler: (event: any, ctx: SessionPlanContext) => Promise<unknown> | unknown): void;
+  registerTool(definition: ToolDefinition): void;
 }
 
 interface ToolResult {
@@ -68,7 +77,7 @@ interface ToolResult {
   isError?: boolean;
 }
 
-interface PendingLocalResolution {
+interface LocalResolution {
   localPath: string;
   resolvedPath: string;
   targetKind: "path" | "root";
@@ -79,11 +88,8 @@ interface PendingLocalResolution {
 const DEFAULT_READ_LIMIT = 2000;
 const PLAN_FILE_NAME = "PLAN.md";
 const PLAN_LOCAL_URI = `${LOCAL_URI_PREFIX}${PLAN_FILE_NAME}`;
-const WRAPPER_MODE = "hook-based local:// resolution for built-in read/write/edit with session-local storage";
+const WRAPPER_MODE = "direct local:// resolution via built-in read/write/edit wrappers with session-local storage";
 const LOCAL_ROOT_LISTING_FILE = ".local-root-listing.md";
-const LOCAL_TOOL_NAMES = new Set(["read", "write", "edit"]);
-
-const pendingLocalResolutions = new Map<string, PendingLocalResolution>();
 
 function buildToolResult(text: string, details: Record<string, unknown>, isError = false): ToolResult {
   return {
@@ -132,72 +138,6 @@ function formatAnchoredRead(content: string, fileName: string, offset = 1, limit
     .join("\n");
 }
 
-function countOccurrences(content: string, searchText: string): { count: number; firstIndex: number } {
-  let count = 0;
-  let firstIndex = -1;
-  let cursor = 0;
-
-  while (cursor <= content.length) {
-    const nextIndex = content.indexOf(searchText, cursor);
-    if (nextIndex === -1) {
-      break;
-    }
-
-    if (firstIndex === -1) {
-      firstIndex = nextIndex;
-    }
-
-    count += 1;
-    cursor = nextIndex + 1;
-  }
-
-  return { count, firstIndex };
-}
-
-function getStartLine(content: string, index: number): number {
-  if (index <= 0) {
-    return 1;
-  }
-
-  let lineNumber = 1;
-  for (let cursor = 0; cursor < index; cursor += 1) {
-    if (content[cursor] === "\n") {
-      lineNumber += 1;
-    }
-  }
-
-  return lineNumber;
-}
-
-function countVisibleLines(content: string): number {
-  return splitDisplayLines(content).length;
-}
-
-function buildDiff(oldText: string, newText: string, startLine: number, fileName: string): string {
-  const oldLines = splitDisplayLines(oldText);
-  const newLines = splitDisplayLines(newText);
-  const diffLines = [
-    `--- ${fileName}`,
-    `+++ ${fileName}`,
-    `@@ -${startLine},${oldLines.length} +${startLine},${newLines.length} @@`,
-    ...oldLines.map((line) => `-${line}`),
-    ...newLines.map((line) => `+${line}`),
-  ];
-
-  return diffLines.join("\n");
-}
-
-function buildUpdatedAnchors(updatedContent: string, startLine: number, newText: string, fileName: string): string {
-  const updatedLines = splitDisplayLines(updatedContent);
-  if (updatedLines.length === 0) {
-    return `Updated anchors:\nFile is empty: ${fileName}`;
-  }
-
-  const replacementLineCount = Math.max(1, countVisibleLines(newText));
-  const anchorLine = Math.min(Math.max(1, startLine), updatedLines.length);
-  return ["Updated anchors:", formatAnchoredRead(updatedContent, fileName, anchorLine, replacementLineCount)].join("\n");
-}
-
 function normalizePositiveInteger(value: unknown, fallbackValue: number, fieldName: string): number {
   if (value === undefined) {
     return fallbackValue;
@@ -216,15 +156,6 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error);
-}
-
-function getErrorCode(error: unknown): string | undefined {
-  if (!error || typeof error !== "object") {
-    return undefined;
-  }
-
-  const maybeCode = (error as { code?: unknown }).code;
-  return typeof maybeCode === "string" ? maybeCode : undefined;
 }
 
 function getRequestedPath(params: Record<string, unknown>): string | undefined {
@@ -250,7 +181,7 @@ function appendResolutionNote(
   content: ToolResult["content"],
   localPath: string,
   resolvedPath: string,
-  targetKind: PendingLocalResolution["targetKind"],
+  targetKind: LocalResolution["targetKind"],
   sessionRoot?: string,
 ): ToolResult["content"] {
   const rootSuffix = targetKind === "root" && sessionRoot ? ` (session root: ${sessionRoot})` : "";
@@ -269,22 +200,34 @@ function appendResolutionNote(
   return noteAdded ? updatedContent : [{ type: "text", text: note }, ...updatedContent];
 }
 
-function rememberLocalResolution(toolCallId: unknown, resolution: PendingLocalResolution): void {
-  if (typeof toolCallId !== "string" || toolCallId.length === 0) {
-    return;
-  }
-
-  pendingLocalResolutions.set(toolCallId, resolution);
+function finalizeLocalResult(result: ToolResult, resolution: LocalResolution): ToolResult {
+  const existingDetails = result.details && typeof result.details === "object" ? result.details : {};
+  return {
+    ...result,
+    details: buildLocalDetails(resolution.localPath, resolution.resolvedPath, {
+      ...existingDetails,
+      targetKind: resolution.targetKind,
+      ...(resolution.sessionRoot ? { sessionRoot: resolution.sessionRoot } : {}),
+      ...(resolution.entryCount !== undefined ? { entryCount: resolution.entryCount } : {}),
+    }),
+    ...(result.isError
+      ? {}
+      : {
+          content: appendResolutionNote(
+            result.content,
+            resolution.localPath,
+            resolution.resolvedPath,
+            resolution.targetKind,
+            resolution.sessionRoot,
+          ),
+        }),
+  };
 }
 
-function takeLocalResolution(toolCallId: unknown): PendingLocalResolution | undefined {
-  if (typeof toolCallId !== "string" || toolCallId.length === 0) {
-    return undefined;
-  }
-
-  const resolution = pendingLocalResolutions.get(toolCallId);
-  pendingLocalResolutions.delete(toolCallId);
-  return resolution;
+function formatLocalErrorMessage(action: string, localPath: string, resolvedPath: string, error: unknown): string {
+  const rawMessage = getErrorMessage(error);
+  const rewrittenMessage = resolvedPath ? rawMessage.split(resolvedPath).join(localPath) : rawMessage;
+  return `Error ${action} ${localPath}: ${rewrittenMessage}`;
 }
 
 async function readPlanOrError(
@@ -295,7 +238,7 @@ async function readPlanOrError(
   try {
     return { content: await readPlanFile(ctx), planPath };
   } catch (error) {
-    const errorCode = getErrorCode(error);
+    const errorCode = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
     if (errorCode === "ENOENT") {
       return {
         planPath,
@@ -386,84 +329,122 @@ async function buildLocalRootListingFile(
 }
 
 export default function localPlanTools(pi: ExtensionAPI): void {
-  pi.on("tool_call", async (event, ctx) => {
-    if (!LOCAL_TOOL_NAMES.has(event.toolName)) {
-      return undefined;
-    }
+  const cwd = require("process").cwd() as string;
+  const builtInRead = createReadTool(cwd);
+  const builtInWrite = createWriteTool(cwd);
+  const builtInEdit = createEditTool(cwd);
 
-    const input = event.input as Record<string, unknown> | undefined;
-    if (!input) {
-      return undefined;
-    }
-
-    const requestedPath = getRequestedPath(input);
-    if (!requestedPath || !isLocalPathTarget(requestedPath)) {
-      return undefined;
-    }
-
-    if (isLocalListingTarget(requestedPath)) {
-      if (event.toolName !== "read") {
-        return {
-          block: true,
-          reason: `Error: ${event.toolName} does not support ${LOCAL_URI_PREFIX} root targets. Use read path=\"local://\" to inspect the session-local root.`,
-        };
+  pi.registerTool({
+    ...builtInRead,
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const requestedPath = getRequestedPath(params);
+      if (!requestedPath || !isLocalPathTarget(requestedPath)) {
+        return builtInRead.execute(toolCallId, params, signal, onUpdate, ctx);
       }
 
-      const { listingPath, sessionRoot, entryCount } = await buildLocalRootListingFile(ctx, requestedPath);
-      input.path = listingPath;
-      rememberLocalResolution(event.toolCallId, {
-        localPath: requestedPath,
-        resolvedPath: listingPath,
-        targetKind: "root",
-        sessionRoot,
-        entryCount,
-      });
-      return undefined;
-    }
+      if (isLocalListingTarget(requestedPath)) {
+        try {
+          const { listingPath, sessionRoot, entryCount } = await buildLocalRootListingFile(ctx, requestedPath);
+          const result = await builtInRead.execute(toolCallId, { ...params, path: listingPath }, signal, onUpdate, ctx);
+          return finalizeLocalResult(result as ToolResult, {
+            localPath: requestedPath,
+            resolvedPath: listingPath,
+            targetKind: "root",
+            sessionRoot,
+            entryCount,
+          });
+        } catch (error) {
+          return buildToolResult(`Error reading ${requestedPath}: ${getErrorMessage(error)}`, {
+            localPath: requestedPath,
+            wrapperMode: WRAPPER_MODE,
+          }, true);
+        }
+      }
 
-    const resolvedPath = await resolveSessionLocalTarget(ctx, requestedPath);
-    input.path = resolvedPath;
-    rememberLocalResolution(event.toolCallId, {
-      localPath: requestedPath,
-      resolvedPath,
-      targetKind: "path",
-    });
-
-    return undefined;
+      const resolvedPath = await resolveSessionLocalTarget(ctx, requestedPath);
+      try {
+        const result = await builtInRead.execute(toolCallId, { ...params, path: resolvedPath }, signal, onUpdate, ctx);
+        return finalizeLocalResult(result as ToolResult, {
+          localPath: requestedPath,
+          resolvedPath,
+          targetKind: "path",
+        });
+      } catch (error) {
+        return buildToolResult(formatLocalErrorMessage("reading", requestedPath, resolvedPath, error), {
+          ...buildLocalDetails(requestedPath, resolvedPath),
+        }, true);
+      }
+    },
   });
 
-  pi.on("tool_result", async (event) => {
-    if (!LOCAL_TOOL_NAMES.has(event.toolName)) {
-      return undefined;
-    }
+  pi.registerTool({
+    ...builtInWrite,
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const requestedPath = getRequestedPath(params);
+      if (!requestedPath || !isLocalPathTarget(requestedPath)) {
+        return builtInWrite.execute(toolCallId, params, signal, onUpdate, ctx);
+      }
 
-    const resolution = takeLocalResolution(event.toolCallId);
-    if (!resolution) {
-      return undefined;
-    }
+      if (isLocalListingTarget(requestedPath)) {
+        return buildToolResult(
+          `Error: write does not support ${LOCAL_URI_PREFIX} root targets. Use read path="local://" to inspect the session-local root.`,
+          {
+            localPath: requestedPath,
+            wrapperMode: WRAPPER_MODE,
+          },
+          true,
+        );
+      }
 
-    const existingDetails = event.details && typeof event.details === "object" ? event.details : {};
-    const mergedDetails = buildLocalDetails(resolution.localPath, resolution.resolvedPath, {
-      ...existingDetails,
-      targetKind: resolution.targetKind,
-      ...(resolution.sessionRoot ? { sessionRoot: resolution.sessionRoot } : {}),
-      ...(resolution.entryCount !== undefined ? { entryCount: resolution.entryCount } : {}),
-    });
+      const resolvedPath = await resolveSessionLocalTarget(ctx, requestedPath);
+      try {
+        const result = await builtInWrite.execute(toolCallId, { ...params, path: resolvedPath }, signal, onUpdate, ctx);
+        return finalizeLocalResult(result as ToolResult, {
+          localPath: requestedPath,
+          resolvedPath,
+          targetKind: "path",
+        });
+      } catch (error) {
+        return buildToolResult(formatLocalErrorMessage("writing", requestedPath, resolvedPath, error), {
+          ...buildLocalDetails(requestedPath, resolvedPath),
+        }, true);
+      }
+    },
+  });
 
-    return {
-      details: mergedDetails,
-      ...(event.isError
-        ? {}
-        : {
-            content: appendResolutionNote(
-              event.content,
-              resolution.localPath,
-              resolution.resolvedPath,
-              resolution.targetKind,
-              resolution.sessionRoot,
-            ),
-          }),
-    };
+  pi.registerTool({
+    ...builtInEdit,
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const requestedPath = getRequestedPath(params);
+      if (!requestedPath || !isLocalPathTarget(requestedPath)) {
+        return builtInEdit.execute(toolCallId, params, signal, onUpdate, ctx);
+      }
+
+      if (isLocalListingTarget(requestedPath)) {
+        return buildToolResult(
+          `Error: edit does not support ${LOCAL_URI_PREFIX} root targets. Use read path="local://" to inspect the session-local root.`,
+          {
+            localPath: requestedPath,
+            wrapperMode: WRAPPER_MODE,
+          },
+          true,
+        );
+      }
+
+      const resolvedPath = await resolveSessionLocalTarget(ctx, requestedPath);
+      try {
+        const result = await builtInEdit.execute(toolCallId, { ...params, path: resolvedPath }, signal, onUpdate, ctx);
+        return finalizeLocalResult(result as ToolResult, {
+          localPath: requestedPath,
+          resolvedPath,
+          targetKind: "path",
+        });
+      } catch (error) {
+        return buildToolResult(formatLocalErrorMessage("editing", requestedPath, resolvedPath, error), {
+          ...buildLocalDetails(requestedPath, resolvedPath),
+        }, true);
+      }
+    },
   });
 
   pi.registerTool({
@@ -496,117 +477,6 @@ export default function localPlanTools(pi: ExtensionAPI): void {
           localPath: PLAN_LOCAL_URI,
           wrapperMode: WRAPPER_MODE,
           compatibilityAlias: "read_plan",
-        }, true);
-      }
-    },
-  });
-
-  pi.registerTool({
-    name: "write_plan",
-    label: "WritePlan",
-    description: "Replace the entire session-scoped PLAN.md backing file for the current session.",
-    parameters: Type.Object({
-      content: Type.String({ description: "Full markdown content for the session PLAN.md backing file." }),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      try {
-        const content = typeof params.content === "string" ? params.content : "";
-        const planPath = await writePlanFile(ctx, content);
-        return buildToolResult(
-          `Wrote ${PLAN_FILE_NAME} for the current session.\nResolved local backing path: ${planPath}`,
-          {
-            ...buildLocalDetails(PLAN_LOCAL_URI, planPath),
-            bytes: content.length,
-            compatibilityAlias: "write_plan",
-          },
-        );
-      } catch (error) {
-        return buildToolResult(`Error writing ${PLAN_FILE_NAME}: ${getErrorMessage(error)}`, {
-          localPath: PLAN_LOCAL_URI,
-          wrapperMode: WRAPPER_MODE,
-          compatibilityAlias: "write_plan",
-        }, true);
-      }
-    },
-  });
-
-  pi.registerTool({
-    name: "edit_plan",
-    label: "EditPlan",
-    description: "Perform a single exact replacement inside the current session-scoped PLAN.md backing file.",
-    parameters: Type.Object({
-      oldText: Type.String({ description: "Exact existing text to replace. Must match exactly once." }),
-      newText: Type.String({ description: "Replacement text." }),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      try {
-        const oldText = typeof params.oldText === "string" ? params.oldText : "";
-        const newText = typeof params.newText === "string" ? params.newText : "";
-
-        if (!oldText) {
-          return buildToolResult("Error: oldText must be non-empty.", {
-            localPath: PLAN_LOCAL_URI,
-            wrapperMode: WRAPPER_MODE,
-            compatibilityAlias: "edit_plan",
-          }, true);
-        }
-
-        if (oldText === newText) {
-          return buildToolResult("Error: replacement is identical to existing text.", {
-            localPath: PLAN_LOCAL_URI,
-            wrapperMode: WRAPPER_MODE,
-            compatibilityAlias: "edit_plan",
-          }, true);
-        }
-
-        const result = await readPlanOrError(ctx);
-        if (result.error || result.content === undefined) {
-          return result.error as ToolResult;
-        }
-
-        const match = countOccurrences(result.content, oldText);
-        if (match.count === 0 || match.firstIndex === -1) {
-          return buildToolResult(`Error: oldText was not found in ${PLAN_FILE_NAME}.`, {
-            ...buildLocalDetails(PLAN_LOCAL_URI, result.planPath),
-            compatibilityAlias: "edit_plan",
-          }, true);
-        }
-
-        if (match.count > 1) {
-          return buildToolResult(
-            `Error: oldText matched ${match.count} times in ${PLAN_FILE_NAME}. Provide a more specific exact match.`,
-            {
-              ...buildLocalDetails(PLAN_LOCAL_URI, result.planPath),
-              matches: match.count,
-              compatibilityAlias: "edit_plan",
-            },
-            true,
-          );
-        }
-
-        const startLine = getStartLine(result.content, match.firstIndex);
-        const updatedContent = `${result.content.slice(0, match.firstIndex)}${newText}${result.content.slice(
-          match.firstIndex + oldText.length,
-        )}`;
-        await writePlanFile(ctx, updatedContent);
-
-        const responseText = [
-          `Applied exact replacement in ${PLAN_FILE_NAME}.`,
-          `Resolved local backing path: ${result.planPath}`,
-          buildDiff(oldText, newText, startLine, PLAN_FILE_NAME),
-          buildUpdatedAnchors(updatedContent, startLine, newText, PLAN_FILE_NAME),
-        ].join("\n\n");
-
-        return buildToolResult(responseText, {
-          ...buildLocalDetails(PLAN_LOCAL_URI, result.planPath),
-          startLine,
-          compatibilityAlias: "edit_plan",
-        });
-      } catch (error) {
-        return buildToolResult(`Error editing ${PLAN_FILE_NAME}: ${getErrorMessage(error)}`, {
-          localPath: PLAN_LOCAL_URI,
-          wrapperMode: WRAPPER_MODE,
-          compatibilityAlias: "edit_plan",
         }, true);
       }
     },
