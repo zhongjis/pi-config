@@ -10,11 +10,9 @@ import type { Mode, ModeState } from "./types.js";
 import { isDelegationAllowed, isSafeCommand } from "./utils.js";
 import { getPlanPath, readPlanFile } from "../../local-plan-tools/storage.js";
 
-const LOCAL_URI_PREFIX = "local://";
-
-function isLocalWriteTarget(input: unknown): boolean {
+function isPlanWriteTarget(input: unknown, planPath: string): boolean {
 	const path = (input as { path?: unknown })?.path;
-	return typeof path === "string" && path.startsWith(LOCAL_URI_PREFIX);
+	return typeof path === "string" && (path === LOCAL_PLAN_URI || path === planPath);
 }
 
 function getString(value: unknown): string | undefined {
@@ -56,7 +54,7 @@ async function refreshPlanStateFromLocalPlan(ctx: Parameters<typeof readPlanFile
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
 	// Block invalid delegations and destructive bash in mode-specific contexts
-	pi.on("tool_call", async (event) => {
+	pi.on("tool_call", async (event, ctx) => {
 		const config = state.loadConfig(state.currentMode);
 
 		if (event.toolName === "Agent") {
@@ -76,12 +74,13 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		if (state.currentMode !== "fuxi") return;
 
 		if (event.toolName === "write" || event.toolName === "edit") {
-			if (!isLocalWriteTarget(event.input)) {
+			const planPath = getPlanPath(ctx);
+			if (!isPlanWriteTarget(event.input, planPath)) {
 				const path = (event.input as { path?: unknown })?.path;
 				const target = typeof path === "string" && path ? path : "<missing path>";
 				return {
 					block: true,
-					reason: `Plan mode: ${event.toolName} is restricted to local:// targets. Use path="local://PLAN.md" for plan authoring. Target: ${target}`,
+					reason: `Plan mode: ${event.toolName} is restricted to ${LOCAL_PLAN_URI}. Target: ${target}`,
 				};
 			}
 			return;
