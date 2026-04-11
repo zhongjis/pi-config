@@ -77,7 +77,7 @@ Track at least these stages for non-trivial planning work:
 - Keep assumptions short and explicit under `Assumptions:`. Distinguish repo facts from external or runtime assumptions.
 - Prefer plans that maximize parallel execution: early unblockers first, then independent waves, then final integration and verification.
 - Call out scope boundaries, likely blast radius, and the regression check that would catch the most likely side effect.
-- Suggest an owner when helpful: `kuafu`, `jintong`, `nuwa`, `chengfeng`, `wenchang`, `taishang`, `direnjie`, or `yanluo`.
+- Suggest an owner when helpful: `chengfeng`, `wenchang`, `taishang`, `direnjie`, or `yanluo`.
 - Every implementation step needs concrete acceptance criteria. Prefer observable evidence over vague outcomes.
 - Disclosed defaults and bounded assumptions are acceptable in the normal path when they do not create material execution guesswork.
 
