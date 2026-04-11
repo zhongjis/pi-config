@@ -118,23 +118,56 @@ export default function btwExtension(pi: ExtensionAPI): void {
   let lastUiContext: ExtensionContext | undefined;
   let visibleState: BtwWidgetState | undefined;
   let removeTerminalListener: (() => void) | undefined;
+  let widgetRegistered = false;
   let widgetTui: TUI | undefined;
+  let widgetContext: ExtensionContext | undefined;
+
+  function syncUiContext(ctx: ExtensionContext): void {
+    lastUiContext = ctx;
+    if (widgetContext === ctx) return;
+    if (widgetContext?.hasUI && widgetRegistered) {
+      widgetContext.ui.setWidget(BTW_WIDGET_KEY, undefined);
+    }
+    widgetContext = ctx;
+    widgetRegistered = false;
+    widgetTui = undefined;
+  }
 
   function renderWidget(ctx: ExtensionContext, state: BtwWidgetState | undefined): void {
     if (!ctx.hasUI) return;
+    syncUiContext(ctx);
 
     if (!state) {
       const tui = widgetTui;
-      ctx.ui.setWidget(BTW_WIDGET_KEY, undefined);
+      if (widgetRegistered) {
+        ctx.ui.setWidget(BTW_WIDGET_KEY, undefined);
+      }
+      widgetRegistered = false;
       widgetTui = undefined;
-      tui?.requestRender(true);
+      tui?.requestRender();
       return;
     }
 
-    ctx.ui.setWidget(BTW_WIDGET_KEY, (tui, theme) => {
-      widgetTui = tui;
-      return buildWidgetComponent(theme, state);
-    });
+    if (!widgetRegistered) {
+      ctx.ui.setWidget(BTW_WIDGET_KEY, (tui, theme) => {
+        widgetTui = tui;
+        return {
+          render: (width: number) => {
+            const currentState = visibleState;
+            if (!currentState) return [];
+            return buildWidgetComponent(theme, currentState).render(width);
+          },
+          invalidate: () => {
+            widgetRegistered = false;
+            widgetTui = undefined;
+          },
+        };
+      });
+      widgetRegistered = true;
+      return;
+    }
+
+    widgetTui?.requestRender();
   }
 
   function clearWidget(ctx?: ExtensionContext): void {
@@ -196,7 +229,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    lastUiContext = ctx;
+    syncUiContext(ctx);
     abortActiveRequest();
 
     const request: ActiveBtwRequest = {
@@ -233,14 +266,14 @@ export default function btwExtension(pi: ExtensionAPI): void {
 
         if (event.type === "text_delta") {
           request.state.answer += event.delta;
-          updateWidget(request.state);
+          updateWidget(request.state, ctx);
           continue;
         }
 
         if (event.type === "done") {
           request.state.answer = extractAssistantText(event.message);
           request.state.status = "complete";
-          updateWidget(request.state);
+          updateWidget(request.state, ctx);
           return;
         }
 
@@ -250,7 +283,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
           if (!request.state.answer.trim()) {
             request.state.answer = extractAssistantText(event.error);
           }
-          updateWidget(request.state);
+          updateWidget(request.state, ctx);
           return;
         }
       }
@@ -261,7 +294,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
 
       request.state.status = request.abortController.signal.aborted ? "aborted" : "error";
       request.state.errorMessage = error instanceof Error ? error.message : String(error);
-      updateWidget(request.state);
+      updateWidget(request.state, ctx);
     } finally {
       if (activeRequest?.id === request.id && request.state.status !== "running") {
         activeRequest = undefined;
@@ -288,13 +321,14 @@ export default function btwExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    lastUiContext = ctx;
+    syncUiContext(ctx);
     bindTerminalListener(ctx);
     resetState(ctx);
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    lastUiContext = ctx;
+    syncUiContext(ctx);
+    bindTerminalListener(ctx);
     resetState(ctx);
   });
 
