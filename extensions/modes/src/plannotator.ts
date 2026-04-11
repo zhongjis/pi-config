@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
 import { buildHighAccuracyReviewMessage, buildRefinementMessage } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
+import { hydratePlanState, LOCAL_PLAN_URI } from "./plan-storage.js";
 import type {
 	PlannotatorPlanReviewPayload,
 	PlannotatorPlanReviewStartResult,
@@ -151,7 +152,8 @@ async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string)
 
 export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
 	if (state.currentMode !== "fuxi" || !ctx.hasUI) return;
-	if (!state.planContent || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
+	const snapshot = await hydratePlanState(ctx, state);
+	if (!snapshot || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
 	const choices: string[] = ["Execute in Hou Tu"];
 	if (!state.planReviewApproved) {
@@ -214,6 +216,10 @@ export async function handlePlanReviewResult(
 ): Promise<void> {
 	if (!state.pendingPlanReviewId || result.reviewId !== state.pendingPlanReviewId) return;
 
+	if (ctx) {
+		await hydratePlanState(ctx, state);
+	}
+
 	state.pendingPlanReviewId = undefined;
 	state.planReviewPending = false;
 	state.planReviewFeedback = result.feedback?.trim() || undefined;
@@ -243,12 +249,13 @@ export async function handlePlanReviewResult(
 }
 
 export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<string> {
-	if (!state.planContent || !state.planTitle) {
-		return "Error: No plan found. Call plan_write first.";
+	const snapshot = await hydratePlanState(ctx, state);
+	if (!snapshot || !state.planTitle) {
+		return `Error: No plan found in ${LOCAL_PLAN_URI}. Write or save the plan to ${LOCAL_PLAN_URI} first.`;
 	}
 
 	const response = await requestPlannotator<PlannotatorPlanReviewStartResult>(pi, "plan-review", {
-		planContent: state.planContent,
+		planContent: snapshot.content,
 		origin: "fuxi-explicit-refine",
 	} satisfies PlannotatorPlanReviewPayload);
 
@@ -282,6 +289,8 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 
 export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
 	if (!state.pendingPlanReviewId) return;
+
+	await hydratePlanState(ctx, state);
 
 	const response = await requestPlannotator<PlannotatorReviewStatusResult>(pi, "review-status", {
 		reviewId: state.pendingPlanReviewId,

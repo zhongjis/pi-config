@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { MODES, MODE_META } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
+import type { Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
 import { colored, resolveModelFromStr } from "./utils.js";
-import type { Mode, ModeConfig, ModeState } from "./types.js";
 
 export class ModeStateManager {
 	private pi: ExtensionAPI;
@@ -10,6 +10,7 @@ export class ModeStateManager {
 	currentMode: Mode = "kuafu";
 	cachedConfigs: Partial<Record<Mode, ModeConfig>> = {};
 	planTitle: string | undefined;
+	planTitleSource: PlanTitleSource | undefined;
 	planContent: string | undefined;
 	gapReviewApproved = false;
 	gapReviewFeedback: string | undefined;
@@ -34,6 +35,7 @@ export class ModeStateManager {
 		this.pi.appendEntry<ModeState>("agent-mode", {
 			mode: this.currentMode,
 			planTitle: this.planTitle,
+			planTitleSource: this.planTitleSource,
 			planContent: this.planContent,
 			gapReviewApproved: this.gapReviewApproved,
 			gapReviewFeedback: this.gapReviewFeedback,
