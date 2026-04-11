@@ -1,16 +1,18 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { SessionLocalContext } from "../../session-local/storage.js";
-import { readLocalPlanFile, writeLocalPlanFile } from "./plan-local.js";
+import { PLAN_FILE_NAME, readLocalPlanFile, writeLocalPlanFile } from "./plan-local.js";
 import type { ModeStateManager } from "./mode-state.js";
 import type { PlanEntry, PlanTitleSource } from "./types.js";
 
 interface PlanStorageContext extends SessionLocalContext {
+	cwd?: string;
 	sessionManager: SessionLocalContext["sessionManager"] & {
 		getEntries(): Array<{ type: string; customType?: string; data?: PlanEntry }>;
 	};
 }
 
-
-type PlanSnapshotSource = "local" | "legacy-entry";
+type PlanSnapshotSource = "local" | "cwd-legacy-local-path" | "legacy-entry";
 
 export interface HydratedPlanSnapshot {
 	content: string;
@@ -69,29 +71,56 @@ export function formatPlanDisplay(plan: { content: string; title?: string }): st
 	return plan.title ? `# Plan: ${plan.title}\n\n${plan.content}` : plan.content;
 }
 
+function buildContentBackedSnapshot(
+	content: string,
+	source: Exclude<PlanSnapshotSource, "legacy-entry">,
+	state: PlanStateLike,
+): HydratedPlanSnapshot {
+	const headingTitle = derivePlanTitleFromMarkdown(content);
+	const preserveExplicitTitle = shouldPreserveExplicitTitle(state);
+	const title = preserveExplicitTitle ? state.planTitle : (headingTitle ?? state.planTitle);
+	const titleSource = preserveExplicitTitle
+		? state.planTitleSource
+		: (headingTitle ? "content-h1" : state.planTitle ? (state.planTitleSource ?? "cached-state") : undefined);
+
+	return {
+		content,
+		title,
+		titleSource,
+		source,
+	};
+}
+
+async function readLegacyLiteralLocalPlanFile(ctx: PlanStorageContext): Promise<string | undefined> {
+	const cwd = typeof ctx.cwd === "string" ? ctx.cwd.trim() : "";
+	if (!cwd) return undefined;
+
+	try {
+		return await readFile(resolve(cwd, "local:", PLAN_FILE_NAME), "utf8");
+	} catch (error) {
+		if (getErrorCode(error) === "ENOENT") {
+			return undefined;
+		}
+		throw error;
+	}
+}
+
 export async function readHydratedPlanSnapshot(
 	ctx: PlanStorageContext,
 	state: PlanStateLike,
 ): Promise<HydratedPlanSnapshot | undefined> {
 	try {
 		const content = await readLocalPlanFile(ctx);
-		const headingTitle = derivePlanTitleFromMarkdown(content);
-		const preserveExplicitTitle = shouldPreserveExplicitTitle(state);
-		const title = preserveExplicitTitle ? state.planTitle : (headingTitle ?? state.planTitle);
-		const titleSource = preserveExplicitTitle
-			? state.planTitleSource
-			: (headingTitle ? "content-h1" : state.planTitle ? (state.planTitleSource ?? "cached-state") : undefined);
-
-		return {
-			content,
-			title,
-			titleSource,
-			source: "local",
-		};
+		return buildContentBackedSnapshot(content, "local", state);
 	} catch (error) {
 		if (getErrorCode(error) !== "ENOENT") {
 			throw error;
 		}
+	}
+
+	const literalLocalContent = await readLegacyLiteralLocalPlanFile(ctx);
+	if (literalLocalContent !== undefined) {
+		return buildContentBackedSnapshot(literalLocalContent, "cwd-legacy-local-path", state);
 	}
 
 	const legacyPlan = getLatestPlanEntry(ctx);
@@ -103,7 +132,6 @@ export async function readHydratedPlanSnapshot(
 			source: "legacy-entry",
 		};
 	}
-
 
 	return undefined;
 }
@@ -145,12 +173,12 @@ export function resolveExitPlanTitle(
 		return { title: explicitTitle, titleSource: "explicit-exit" };
 	}
 
-	const headingTitle = snapshot.source === "local" ? derivePlanTitleFromMarkdown(snapshot.content) : undefined;
+	const headingTitle = snapshot.source !== "legacy-entry" ? derivePlanTitleFromMarkdown(snapshot.content) : undefined;
 	if (headingTitle) {
 		return { title: headingTitle, titleSource: "content-h1" };
 	}
 
-	if (snapshot.source !== "local" && snapshot.title) {
+	if (snapshot.source === "legacy-entry" && snapshot.title) {
 		return { title: snapshot.title, titleSource: snapshot.titleSource ?? "legacy-entry" };
 	}
 

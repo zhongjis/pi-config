@@ -27,6 +27,8 @@ export interface ModeState {
 	highAccuracyReviewApproved?: boolean;
 	highAccuracyReviewFeedback?: string;
 	planActionPending?: boolean;
+	pendingExecutionHandoffId?: string;
+	executionKickoffQueued?: boolean;
 }
 
 export interface PlanEntry {

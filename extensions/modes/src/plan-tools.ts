@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { buildHighAccuracyRefinementMessage } from "./plan-context.js";
-import { getLocalPlanPath, LOCAL_PLAN_URI, readLocalPlanFile } from "./plan-local.js";
+import { getLocalPlanPath, LOCAL_PLAN_URI } from "./plan-local.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { formatPlanDisplay, hydratePlanState, resolveExitPlanTitle, writeLocalPlanSnapshot } from "./plan-storage.js";
 import { promptPostPlanAction } from "./plannotator.js";
@@ -51,12 +51,6 @@ function normalizePositiveInteger(value: unknown, fallbackValue: number, fieldNa
 	return value as number;
 }
 
-function getErrorCode(error: unknown): string | undefined {
-	if (!error || typeof error !== "object") return undefined;
-	const maybeCode = (error as { code?: unknown }).code;
-	return typeof maybeCode === "string" ? maybeCode : undefined;
-}
-
 function getErrorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -75,33 +69,36 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 			try {
 				const offset = normalizePositiveInteger(params.offset, 1, "offset");
 				const limit = normalizePositiveInteger(params.limit, DEFAULT_READ_LIMIT, "limit");
-				const content = await readLocalPlanFile(ctx);
-				return {
-					content: [{ type: "text", text: formatAnchoredRead(content, "PLAN.md", offset, limit) }],
-					details: {
-						localPath: LOCAL_PLAN_URI,
-						path: planPath,
-						resolvedPath: planPath,
-						backingPath: planPath,
-						offset,
-						limit,
-						compatibilityAlias: "read_plan",
-					},
-				};
-			} catch (error) {
-				if (getErrorCode(error) === "ENOENT") {
+				const snapshot = await hydratePlanState(ctx, state);
+				if (!snapshot) {
 					return {
 						content: [{ type: "text", text: "Error: PLAN.md does not exist for this session yet." }],
 						details: {
 							localPath: LOCAL_PLAN_URI,
-							path: planPath,
-							resolvedPath: planPath,
-							backingPath: planPath,
 							compatibilityAlias: "read_plan",
 						},
 						isError: true,
 					};
 				}
+
+				return {
+					content: [{ type: "text", text: formatAnchoredRead(snapshot.content, "PLAN.md", offset, limit) }],
+					details: {
+						localPath: LOCAL_PLAN_URI,
+						...(snapshot.source === "local"
+							? {
+								path: planPath,
+								resolvedPath: planPath,
+								backingPath: planPath,
+							}
+							: {}),
+						offset,
+						limit,
+						compatibilityAlias: "read_plan",
+						source: snapshot.source,
+					},
+				};
+			} catch (error) {
 				return {
 					content: [{ type: "text", text: `Error reading PLAN.md: ${getErrorMessage(error)}` }],
 					details: {
@@ -239,6 +236,9 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 			state.planActionPending = true;
 			pi.appendEntry<PlanEntry>("plan", { title: resolvedTitle.title, content: snapshot.content, draft: false });
 			state.persistState();
+			if (ctx.hasUI) {
+				await promptPostPlanAction(pi, state, ctx);
+			}
 			return {
 				content: [{ type: "text", text: `Plan \"${resolvedTitle.title}\" saved. Choose what to do next.` }],
 				details: { title: resolvedTitle.title, planActionPending: state.planActionPending, source: snapshot.source },

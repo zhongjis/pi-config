@@ -1,4 +1,11 @@
+import { randomUUID } from "crypto";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import {
+	createRequestEnvelope,
+	HANDOFF_PREPARE_CHANNEL,
+	HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX,
+} from "../../handoff/src/protocol.js";
+import type { HandoffPrepareData, HandoffPreparePayload, HandoffRpcReply } from "../../handoff/src/types.js";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
 import { buildHighAccuracyReviewMessage, buildRefinementMessage } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
@@ -24,8 +31,68 @@ function logPlannotatorUnavailable(scope: string, reason?: string): void {
 	console.error(`[modes/plannotator] ${scope}: ${getPlannotatorUnavailableReason(reason)}`);
 }
 
+function ensureSentence(value: string): string {
+	return /[.!?]$/u.test(value) ? value : `${value}.`;
+}
+
+function buildExecutionHandoffBriefing(state: ModeStateManager, cleanup: HandoffCleanupResult): string {
+	const planTitle = state.planTitle ?? "untitled";
+	const sections = [
+		`Execute the approved plan "${planTitle}" in Hou Tu.`,
+		"",
+		"## Plan",
+		`- Title: ${planTitle}`,
+		`- Reference: ${LOCAL_PLAN_URI}`,
+		"",
+		"## Review context",
+		`- Gap review: ${state.gapReviewApproved ? "approved" : "not recorded"}`,
+		`- Plannotator review: ${state.planReviewApproved ? "approved" : "not requested"}`,
+		`- High accuracy review: ${state.highAccuracyReviewApproved ? "approved" : "not requested"}`,
+	];
+
+	const gapFeedback = state.gapReviewFeedback?.trim();
+	if (gapFeedback) {
+		sections.push("", "### Gap review feedback", gapFeedback);
+	}
+
+	const plannotatorFeedback = state.planReviewApproved ? state.planReviewFeedback?.trim() : undefined;
+	if (plannotatorFeedback) {
+		sections.push("", "### Plannotator notes", plannotatorFeedback);
+	}
+
+	const highAccuracyFeedback = state.highAccuracyReviewApproved ? state.highAccuracyReviewFeedback?.trim() : undefined;
+	if (highAccuracyFeedback) {
+		sections.push("", "### High accuracy review notes", highAccuracyFeedback);
+	}
+
+	sections.push("", "## Cleanup context", `- Planning-task cleanup: ${ensureSentence(cleanup.summary)}`);
+	return sections.join("\n");
+}
+
+function buildExecutionHandoffNotification(
+	cleanup: HandoffCleanupResult,
+	handoff: HandoffPreparationResult,
+): { message: string; level: "info" | "warning" } {
+	const parts = [`Planning-task cleanup: ${ensureSentence(cleanup.summary)}`];
+	if (handoff.success) {
+		parts.push(ensureSentence(handoff.summary));
+		return {
+			message: parts.join(" "),
+			level: cleanup.level === "info" ? "info" : "warning",
+		};
+	}
+
+	parts.push(ensureSentence(handoff.summary));
+	parts.push("Stayed in Fu Xi so you can retry from the post-plan menu.");
+	return {
+		message: parts.join(" "),
+		level: "warning",
+	};
+}
+
 const HANDOFF_TASK_CLEANUP_CHANNEL = "tasks:rpc:clear-planning-tasks";
 const HANDOFF_TASK_CLEANUP_TIMEOUT_MS = 1_500;
+const HANDOFF_PREPARE_TIMEOUT_MS = 1_500;
 const PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID = "__plannotator_health_check__";
 
 type ClearPlanningTasksReply = {
@@ -38,10 +105,25 @@ type ClearPlanningTasksReply = {
 	error?: string;
 };
 
-type HandoffCleanupNotification = {
-	message: string;
+type HandoffCleanupResult = {
+	status: "cleared" | "already_clean" | "unavailable";
+	summary: string;
 	level: "info" | "warning";
 };
+
+type HandoffPreparationResult =
+	| {
+		success: true;
+		handoffId: string;
+		kickoffPrompt: string;
+		summary: string;
+		level: "info";
+	  }
+	| {
+		success: false;
+		summary: string;
+		level: "warning";
+	  };
 
 export async function requestPlannotator<T>(
 	pi: ExtensionAPI,
@@ -99,23 +181,24 @@ async function checkPlannotatorAvailability(
 	return { available: false, reason: state.plannotatorUnavailableReason };
 }
 
-async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string): Promise<HandoffCleanupNotification> {
+async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string): Promise<HandoffCleanupResult> {
 	const requestId = `clear-planning-tasks-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 	const replyChannel = `${HANDOFF_TASK_CLEANUP_CHANNEL}:reply:${requestId}`;
-	const fallback: HandoffCleanupNotification = {
-		message: "Switched to Hou Tu. Planning-task cleanup unavailable.",
+	const fallback: HandoffCleanupResult = {
+		status: "unavailable",
+		summary: "planning-task cleanup unavailable",
 		level: "warning",
 	};
 
-	return await new Promise<HandoffCleanupNotification>((resolve) => {
+	return await new Promise<HandoffCleanupResult>((resolve) => {
 		let settled = false;
 		let unsubscribe = () => {};
-		const finish = (notification: HandoffCleanupNotification) => {
+		const finish = (result: HandoffCleanupResult) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeoutId);
 			unsubscribe();
-			resolve(notification);
+			resolve(result);
 		};
 		const timeoutId = setTimeout(() => finish(fallback), HANDOFF_TASK_CLEANUP_TIMEOUT_MS);
 
@@ -131,11 +214,12 @@ async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string)
 				typeof reply.data.removed === "number" &&
 				typeof reply.data.removedIncomplete === "number"
 			) {
-				const message = reply.data.removedIncomplete > 0
-					? `Cleared ${reply.data.removed} planning tasks (${reply.data.removedIncomplete} incomplete) and switched to Hou Tu.`
-					: `Cleared ${reply.data.removed} planning tasks and switched to Hou Tu.`;
 				finish({
-					message,
+					status: "cleared",
+					summary:
+						reply.data.removedIncomplete > 0
+							? `cleared ${reply.data.removed} planning tasks (${reply.data.removedIncomplete} incomplete)`
+							: `cleared ${reply.data.removed} planning tasks`,
 					level: "info",
 				});
 				return;
@@ -143,7 +227,8 @@ async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string)
 
 			if (reply.data.status === "already_clean") {
 				finish({
-					message: "Switched to Hou Tu. No planning tasks to clean.",
+					status: "already_clean",
+					summary: "no planning tasks needed cleanup",
 					level: "info",
 				});
 				return;
@@ -160,6 +245,80 @@ async function clearPlanningTasksForHandoff(pi: ExtensionAPI, sessionId: string)
 			});
 		} catch {
 			finish(fallback);
+		}
+	});
+}
+
+async function prepareExecutionHandoff(
+	pi: ExtensionAPI,
+	state: ModeStateManager,
+	cleanup: HandoffCleanupResult,
+): Promise<HandoffPreparationResult> {
+	const handoffId = randomUUID();
+	const kickoffPrompt = `${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}${handoffId}`;
+	const requestId = `handoff-prepare-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	const replyChannel = `${HANDOFF_PREPARE_CHANNEL}:reply:${requestId}`;
+	const payload: HandoffPreparePayload = {
+		handoffId,
+		briefing: buildExecutionHandoffBriefing(state, cleanup),
+		producerMode: "fuxi",
+		targetMode: "houtu",
+		kickoffPrompt,
+		createdAt: new Date().toISOString(),
+	};
+	const fallback: HandoffPreparationResult = {
+		success: false,
+		summary: "Execution handoff could not be prepared because the handoff service did not respond",
+		level: "warning",
+	};
+
+	return await new Promise<HandoffPreparationResult>((resolve) => {
+		let settled = false;
+		let unsubscribe = () => {};
+		const finish = (result: HandoffPreparationResult) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeoutId);
+			unsubscribe();
+			resolve(result);
+		};
+		const timeoutId = setTimeout(() => finish(fallback), HANDOFF_PREPARE_TIMEOUT_MS);
+
+		unsubscribe = pi.events.on(replyChannel, (raw: unknown) => {
+			const reply = raw as HandoffRpcReply<HandoffPrepareData> | null;
+			if (!reply) {
+				finish(fallback);
+				return;
+			}
+
+			if (reply.success !== true || !reply.data?.authority?.handoffId || !reply.data.authority.kickoffPrompt) {
+				const reason = reply.success === false ? reply.error?.trim() : undefined;
+				finish({
+					success: false,
+					summary: reason ? `Execution handoff could not be prepared: ${reason}` : "Execution handoff could not be prepared",
+					level: "warning",
+				});
+				return;
+			}
+
+			finish({
+				success: true,
+				handoffId: reply.data.authority.handoffId,
+				kickoffPrompt: reply.data.authority.kickoffPrompt,
+				summary: `Execution handoff prepared for Hou Tu (handoff ${reply.data.authority.handoffId})`,
+				level: "info",
+			});
+		});
+
+		try {
+			pi.events.emit(HANDOFF_PREPARE_CHANNEL, createRequestEnvelope(requestId, payload, "plan-execute-handoff"));
+		} catch (error) {
+			const message = error instanceof Error ? error.message.trim() : String(error);
+			finish({
+				success: false,
+				summary: message ? `Execution handoff could not be prepared: ${message}` : "Execution handoff could not be prepared",
+				level: "warning",
+			});
 		}
 	});
 }
@@ -183,16 +342,32 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 
 	if (choice === "Execute in Hou Tu") {
 		state.planActionPending = false;
+		state.resetExecutionHandoffState();
 		state.persistState();
-		const cleanupNotification = await clearPlanningTasksForHandoff(pi, ctx.sessionManager.getSessionId());
+
+		const cleanupResult = await clearPlanningTasksForHandoff(pi, ctx.sessionManager.getSessionId());
+		const handoffResult = await prepareExecutionHandoff(pi, state, cleanupResult);
+		const notification = buildExecutionHandoffNotification(cleanupResult, handoffResult);
+
+		if (!handoffResult.success) {
+			state.planActionPending = true;
+			state.persistState();
+			ctx.ui.notify(notification.message, notification.level);
+			await promptPostPlanAction(pi, state, ctx);
+			return;
+		}
+
+		state.pendingExecutionHandoffId = handoffResult.handoffId;
+		state.executionKickoffQueued = true;
+		state.persistState();
 		state.justSwitchedToHoutu = true;
 		state.switchMode("houtu", ctx);
-		ctx.ui.notify(cleanupNotification.message, cleanupNotification.level);
+		ctx.ui.notify(notification.message, notification.level);
 		// Defer to next event-loop tick so finishRun() clears isStreaming before
 		// the message is sent. Without this, sendUserMessage sees isStreaming=true
 		// (still inside agent_end), queues a follow-up that the already-exited
 		// agent loop never drains — the turn silently never starts.
-		setTimeout(() => pi.sendUserMessage(`Execute the plan: ${state.planTitle}`), 0);
+		setTimeout(() => pi.sendUserMessage(handoffResult.kickoffPrompt), 0);
 		return;
 	}
 

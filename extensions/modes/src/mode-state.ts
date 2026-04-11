@@ -22,7 +22,11 @@ export class ModeStateManager {
 	highAccuracyReviewApproved = false;
 	highAccuracyReviewFeedback: string | undefined;
 	planActionPending = false;
+	pendingExecutionHandoffId: string | undefined;
+	executionKickoffQueued = false;
 	justSwitchedToHoutu = false;
+	activeKickoffHandoffId: string | undefined;
+	activeInjectedHandoffId: string | undefined;
 	activeCtx: ExtensionContext | undefined;
 	plannotatorAvailable: boolean | undefined;
 	plannotatorUnavailableReason: string | undefined;
@@ -47,6 +51,8 @@ export class ModeStateManager {
 			highAccuracyReviewApproved: this.highAccuracyReviewApproved,
 			highAccuracyReviewFeedback: this.highAccuracyReviewFeedback,
 			planActionPending: this.planActionPending,
+			pendingExecutionHandoffId: this.pendingExecutionHandoffId,
+			executionKickoffQueued: this.executionKickoffQueued,
 		});
 	}
 
@@ -123,6 +129,17 @@ export class ModeStateManager {
 		return this.planReviewPending || this.highAccuracyReviewPending;
 	}
 
+	clearRuntimeExecutionHandoffState(): void {
+		this.activeKickoffHandoffId = undefined;
+		this.activeInjectedHandoffId = undefined;
+	}
+
+	resetExecutionHandoffState(): void {
+		this.pendingExecutionHandoffId = undefined;
+		this.executionKickoffQueued = false;
+		this.clearRuntimeExecutionHandoffState();
+	}
+
 	resetPlanReviewState(): void {
 		this.gapReviewApproved = false;
 		this.gapReviewFeedback = undefined;
@@ -134,5 +151,6 @@ export class ModeStateManager {
 		this.highAccuracyReviewApproved = false;
 		this.highAccuracyReviewFeedback = undefined;
 		this.planActionPending = false;
+		this.resetExecutionHandoffState();
 	}
 }
