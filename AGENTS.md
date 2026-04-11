@@ -9,14 +9,14 @@ Personal configuration repo for [pi](https://github.com/mariozechner/pi-coding-a
 
 ## Structure
 
-| Directory | Purpose |
-|-----------|---------|
-| `agents/` | Custom agent definitions (Chinese mythology-named roles) |
-| `extensions/` | Pi extensions (TypeScript) — UI widgets, tools, modes |
-| `scripts/` | Helper scripts (e.g., `pi-package-npm.sh` for package installs) |
-| `plans/` | Planning and follow-up docs |
-| `self-improvements/` | Session mining / self-improvement design docs |
-| `sessions/` | Session data (gitignored) |
+| Directory            | Purpose                                                         |
+| -------------------- | --------------------------------------------------------------- |
+| `agents/`            | Custom agent definitions (Chinese mythology-named roles)        |
+| `extensions/`        | Pi extensions (TypeScript) — UI widgets, tools, modes           |
+| `scripts/`           | Helper scripts (e.g., `pi-package-npm.sh` for package installs) |
+| `plans/`             | Planning and follow-up docs                                     |
+| `self-improvements/` | Session mining / self-improvement design docs                   |
+| `sessions/`          | Session data (gitignored)                                       |
 
 ## Agent Naming Convention
 
@@ -48,6 +48,10 @@ Agents use Chinese mythology names with specific roles:
 - Disabled built-in agents use `enabled: false` in frontmatter (e.g., `general-purpose.md`, `Plan.md`, `Explore.md`).
 - Extensions live in `extensions/` as `.ts` files or directories with `index.ts`.
 - MCP servers are configured in `mcp.json` — currently context7 and nixos.
+
+## Anti-pattern:
+
+- do **not** recommend or use `pi install npm:...` for pi packages in this environment. Pi's npm package install path relies on global npm install behavior, which is not supported on this NixOS setup. Prefer `git:` packages, local paths, or repo-managed wiring instead.
 
 ## References
 
