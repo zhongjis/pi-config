@@ -153,6 +153,23 @@ let pendingNotification: "quota_exhausted" | "using_cached_fallback" | null = nu
 let sessionNotified = false;
 
 // ---------------------------------------------------------------------------
+// Status bar
+// ---------------------------------------------------------------------------
+
+let isAnthropicProvider = false;
+
+function updateStatusBar(ctx: { ui: { setStatus(key: string, text: string | undefined): void; theme: { fg(color: string, text: string): string } } }): void {
+  if (!isAnthropicProvider) {
+    ctx.ui.setStatus("clauderock", undefined);
+    return;
+  }
+  const t = ctx.ui.theme;
+  const dot = fallbackActive ? t.fg("success", "●") : t.fg("dim", "●");
+  const label = fallbackActive ? t.fg("success", " Clauderock") : t.fg("dim", " Clauderock");
+  ctx.ui.setStatus("clauderock", dot + label);
+}
+
+// ---------------------------------------------------------------------------
 // Stream wrapper
 // ---------------------------------------------------------------------------
 
@@ -344,11 +361,14 @@ export default function (pi: ExtensionAPI) {
   // 2. Session start — update status bar and reset per-session flag
   pi.on("session_start", async (_event, ctx) => {
     sessionNotified = false;
-    if (fallbackActive) {
-      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Clauderock"));
-    } else {
-      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Claude"));
-    }
+    isAnthropicProvider = ctx.model?.provider === "anthropic";
+    updateStatusBar(ctx);
+  });
+
+  // 2b. Track model provider changes — show status only for Anthropic models
+  pi.on("model_select", async (event, ctx) => {
+    isAnthropicProvider = (event as any).model?.provider === "anthropic";
+    updateStatusBar(ctx);
   });
 
   // 3. Turn end — deliver queued notifications
@@ -358,7 +378,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.theme.fg("warning", "⚠ Claude rate limit hit") + " — switching to Clauderock",
         "warning",
       );
-      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Clauderock"));
+      updateStatusBar(ctx);
       sessionNotified = true;
       pendingNotification = null;
     } else if (pendingNotification === "using_cached_fallback") {
@@ -366,6 +386,7 @@ export default function (pi: ExtensionAPI) {
         "Using Clauderock — Claude API was previously rate-limited. Run " + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
         "info",
       );
+      updateStatusBar(ctx);
       sessionNotified = true;
       pendingNotification = null;
     }
@@ -391,7 +412,7 @@ export default function (pi: ExtensionAPI) {
         clearCache();
         fallbackActive = false;
         sessionNotified = false;
-        ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Claude"));
+        updateStatusBar(ctx);
         ctx.ui.notify(ctx.ui.theme.fg("success", "✓ Switched to Claude direct API") + " — Clauderock disabled", "info");
         return;
       }
@@ -399,7 +420,7 @@ export default function (pi: ExtensionAPI) {
       if (action === "on") {
         fallbackActive = true;
         writeCache("manually forced via /clauderock on");
-        ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Clauderock"));
+        updateStatusBar(ctx);
         ctx.ui.notify(ctx.ui.theme.fg("warning", "● Switched to Clauderock") + " — run " + ctx.ui.theme.fg("accent", "/clauderock off") + " for direct API", "info");
         return;
       }
