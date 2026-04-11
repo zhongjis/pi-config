@@ -1,9 +1,14 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { readPlanFile, writePlanFile } from "../../local-plan-tools/storage.js";
+import type { SessionLocalContext } from "../../session-local/storage.js";
+import { readLocalPlanFile, writeLocalPlanFile } from "./plan-local.js";
 import type { ModeStateManager } from "./mode-state.js";
 import type { PlanEntry, PlanTitleSource } from "./types.js";
 
-export const LOCAL_PLAN_URI = "local://PLAN.md";
+interface PlanStorageContext extends SessionLocalContext {
+	sessionManager: SessionLocalContext["sessionManager"] & {
+		getEntries(): Array<{ type: string; customType?: string; data?: PlanEntry }>;
+	};
+}
+
 
 type PlanSnapshotSource = "local" | "legacy-entry";
 
@@ -41,7 +46,7 @@ function shouldPreserveExplicitTitle(state: PlanStateLike): boolean {
 	);
 }
 
-function getLatestPlanEntry(ctx: ExtensionContext): PlanEntry | undefined {
+function getLatestPlanEntry(ctx: PlanStorageContext): PlanEntry | undefined {
 	const entries = ctx.sessionManager.getEntries();
 	const planEntry = entries
 		.filter((entry: { type: string; customType?: string }) => entry.type === "custom" && entry.customType === "plan")
@@ -65,11 +70,11 @@ export function formatPlanDisplay(plan: { content: string; title?: string }): st
 }
 
 export async function readHydratedPlanSnapshot(
-	ctx: ExtensionContext,
+	ctx: PlanStorageContext,
 	state: PlanStateLike,
 ): Promise<HydratedPlanSnapshot | undefined> {
 	try {
-		const content = await readPlanFile(ctx);
+		const content = await readLocalPlanFile(ctx);
 		const headingTitle = derivePlanTitleFromMarkdown(content);
 		const preserveExplicitTitle = shouldPreserveExplicitTitle(state);
 		const title = preserveExplicitTitle ? state.planTitle : (headingTitle ?? state.planTitle);
@@ -104,7 +109,7 @@ export async function readHydratedPlanSnapshot(
 }
 
 export async function hydratePlanState(
-	ctx: ExtensionContext,
+	ctx: PlanStorageContext,
 	state: ModeStateManager,
 ): Promise<HydratedPlanSnapshot | undefined> {
 	const snapshot = await readHydratedPlanSnapshot(ctx, state);
@@ -121,8 +126,8 @@ export async function hydratePlanState(
 	return snapshot;
 }
 
-export async function writeLocalPlanSnapshot(ctx: ExtensionContext, content: string): Promise<HydratedPlanSnapshot> {
-	await writePlanFile(ctx, content);
+export async function writeLocalPlanSnapshot(ctx: PlanStorageContext, content: string): Promise<HydratedPlanSnapshot> {
+	await writeLocalPlanFile(ctx, content);
 	const title = derivePlanTitleFromMarkdown(content);
 	return {
 		content,

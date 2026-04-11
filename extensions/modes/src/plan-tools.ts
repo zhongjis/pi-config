@@ -1,12 +1,121 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { buildHighAccuracyRefinementMessage } from "./plan-context.js";
+import { getLocalPlanPath, LOCAL_PLAN_URI, readLocalPlanFile } from "./plan-local.js";
 import type { ModeStateManager } from "./mode-state.js";
-import { formatPlanDisplay, hydratePlanState, LOCAL_PLAN_URI, resolveExitPlanTitle, writeLocalPlanSnapshot } from "./plan-storage.js";
+import { formatPlanDisplay, hydratePlanState, resolveExitPlanTitle, writeLocalPlanSnapshot } from "./plan-storage.js";
 import { promptPostPlanAction } from "./plannotator.js";
 import type { PlanEntry } from "./types.js";
 
+const DEFAULT_READ_LIMIT = 2000;
+
+function splitDisplayLines(content: string): string[] {
+	if (content.length === 0) return [];
+	const lines = content.split("\n");
+	if (lines[lines.length - 1] === "") lines.pop();
+	return lines;
+}
+
+function getLineAnchor(lineNumber: number, line: string): string {
+	let hash = 0;
+	const input = `${lineNumber}:${line}`;
+	for (let index = 0; index < input.length; index += 1) {
+		hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	const first = alphabet[hash % alphabet.length] ?? "X";
+	const second = alphabet[Math.floor(hash / alphabet.length) % alphabet.length] ?? "X";
+	return `${first}${second}`;
+}
+
+function formatAnchoredRead(content: string, fileName: string, offset = 1, limit = DEFAULT_READ_LIMIT): string {
+	const lines = splitDisplayLines(content);
+	if (lines.length === 0) return `File is empty: ${fileName}`;
+	if (offset > lines.length) return `Start line ${offset} exceeds file length ${lines.length} for ${fileName}.`;
+
+	const startIndex = Math.max(0, offset - 1);
+	return lines
+		.slice(startIndex, startIndex + limit)
+		.map((line, index) => {
+			const lineNumber = startIndex + index + 1;
+			return `${lineNumber}#${getLineAnchor(lineNumber, line)}:${line}`;
+		})
+		.join("\n");
+}
+
+function normalizePositiveInteger(value: unknown, fallbackValue: number, fieldName: string): number {
+	if (value === undefined) return fallbackValue;
+	if (!Number.isInteger(value) || (value as number) < 1) {
+		throw new Error(`${fieldName} must be a positive integer.`);
+	}
+	return value as number;
+}
+
+function getErrorCode(error: unknown): string | undefined {
+	if (!error || typeof error !== "object") return undefined;
+	const maybeCode = (error as { code?: unknown }).code;
+	return typeof maybeCode === "string" ? maybeCode : undefined;
+}
+
+function getErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): void {
+	pi.registerTool({
+		name: "read_plan",
+		label: "ReadPlan",
+		description: `Compatibility read: inspect the current saved plan from ${LOCAL_PLAN_URI}. Prefer built-in read on ${LOCAL_PLAN_URI} in new sessions.`,
+		parameters: Type.Object({
+			offset: Type.Optional(Type.Integer({ minimum: 1, description: "1-indexed line number to start reading from." })),
+			limit: Type.Optional(Type.Integer({ minimum: 1, description: `Maximum number of lines to return. Defaults to ${DEFAULT_READ_LIMIT}.` })),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const planPath = getLocalPlanPath(ctx);
+			try {
+				const offset = normalizePositiveInteger(params.offset, 1, "offset");
+				const limit = normalizePositiveInteger(params.limit, DEFAULT_READ_LIMIT, "limit");
+				const content = await readLocalPlanFile(ctx);
+				return {
+					content: [{ type: "text", text: formatAnchoredRead(content, "PLAN.md", offset, limit) }],
+					details: {
+						localPath: LOCAL_PLAN_URI,
+						path: planPath,
+						resolvedPath: planPath,
+						backingPath: planPath,
+						offset,
+						limit,
+						compatibilityAlias: "read_plan",
+					},
+				};
+			} catch (error) {
+				if (getErrorCode(error) === "ENOENT") {
+					return {
+						content: [{ type: "text", text: "Error: PLAN.md does not exist for this session yet." }],
+						details: {
+							localPath: LOCAL_PLAN_URI,
+							path: planPath,
+							resolvedPath: planPath,
+							backingPath: planPath,
+							compatibilityAlias: "read_plan",
+						},
+						isError: true,
+					};
+				}
+				return {
+					content: [{ type: "text", text: `Error reading PLAN.md: ${getErrorMessage(error)}` }],
+					details: {
+						localPath: LOCAL_PLAN_URI,
+						path: planPath,
+						resolvedPath: planPath,
+						backingPath: planPath,
+						compatibilityAlias: "read_plan",
+					},
+					isError: true,
+				};
+			}
+		},
+	});
 	pi.registerTool({
 		name: "plan_write",
 		label: "PlanWrite",

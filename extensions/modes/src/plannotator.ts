@@ -2,7 +2,8 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
 import { buildHighAccuracyReviewMessage, buildRefinementMessage } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
-import { hydratePlanState, LOCAL_PLAN_URI } from "./plan-storage.js";
+import { LOCAL_PLAN_URI } from "./plan-local.js";
+import { hydratePlanState } from "./plan-storage.js";
 import type {
 	PlannotatorPlanReviewPayload,
 	PlannotatorPlanReviewStartResult,

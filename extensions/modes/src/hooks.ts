@@ -4,11 +4,11 @@ import { Key, matchesKey } from "@mariozechner/pi-tui";
 import { MODES, MODE_ALIASES } from "./constants.js";
 import { buildPlanContextContent } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
-import { derivePlanTitleFromMarkdown, hydratePlanState, LOCAL_PLAN_URI } from "./plan-storage.js";
+import { derivePlanTitleFromMarkdown, hydratePlanState } from "./plan-storage.js";
 import { promptPostPlanAction, recoverPlanReview } from "./plannotator.js";
 import type { Mode, ModeState } from "./types.js";
 import { isDelegationAllowed, isSafeCommand } from "./utils.js";
-import { getPlanPath, readPlanFile } from "../../local-plan-tools/storage.js";
+import { getLocalPlanPath, LOCAL_PLAN_URI, readLocalPlanFile } from "./plan-local.js";
 
 function isPlanWriteTarget(input: unknown, planPath: string): boolean {
 	const path = (input as { path?: unknown })?.path;
@@ -44,8 +44,8 @@ function isSuccessfulPlanMutationResult(event: {
 	return inputPath === planPath;
 }
 
-async function refreshPlanStateFromLocalPlan(ctx: Parameters<typeof readPlanFile>[0], state: ModeStateManager): Promise<void> {
-	const content = await readPlanFile(ctx);
+async function refreshPlanStateFromLocalPlan(ctx: Parameters<typeof readLocalPlanFile>[0], state: ModeStateManager): Promise<void> {
+	const content = await readLocalPlanFile(ctx);
 	const title = derivePlanTitleFromMarkdown(content);
 	state.planContent = content;
 	state.planTitle = title;
@@ -74,7 +74,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		if (state.currentMode !== "fuxi") return;
 
 		if (event.toolName === "write" || event.toolName === "edit") {
-			const planPath = getPlanPath(ctx);
+			const planPath = getLocalPlanPath(ctx);
 			if (!isPlanWriteTarget(event.input, planPath)) {
 				const path = (event.input as { path?: unknown })?.path;
 				const target = typeof path === "string" && path ? path : "<missing path>";
@@ -99,7 +99,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	pi.on("tool_result", async (event, ctx) => {
 		if (state.currentMode !== "fuxi") return;
 
-		const planPath = getPlanPath(ctx);
+		const planPath = getLocalPlanPath(ctx);
 		if (!isSuccessfulPlanMutationResult(event, planPath)) return;
 
 		await refreshPlanStateFromLocalPlan(ctx, state);

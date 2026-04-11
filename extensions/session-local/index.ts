@@ -1,18 +1,5 @@
 declare function require(id: string): any;
 
-const { Type } = require("@sinclair/typebox") as {
-  Type: {
-    Integer(options?: Record<string, unknown>): unknown;
-    Object(properties: Record<string, unknown>): unknown;
-    Optional(schema: unknown): unknown;
-  };
-};
-const { createHash } = require("crypto") as {
-  createHash: (algorithm: string) => {
-    update(input: string): { digest(encoding: string): string };
-    digest(encoding: string): string;
-  };
-};
 const { readdir, writeFile } = require("fs/promises") as {
   readdir: (
     path: string,
@@ -27,26 +14,12 @@ const { readdir, writeFile } = require("fs/promises") as {
 const { resolve } = require("path") as {
   resolve: (...parts: string[]) => string;
 };
-const {
-  createEditTool,
-  createReadTool,
-  createWriteTool,
-} = require("@mariozechner/pi-coding-agent") as {
-  createEditTool: (cwd: string) => ToolDefinition;
-  createReadTool: (cwd: string) => ToolDefinition;
-  createWriteTool: (cwd: string) => ToolDefinition;
-};
-import {
-  ensureSessionLocalRootDirectory,
-  getPlanPath,
-  getSessionLocalPath,
-  isLocalListingTarget,
-  isLocalPathTarget,
-  readPlanFile,
-  resolveSessionLocalTarget,
-  type SessionPlanContext,
-  LOCAL_URI_PREFIX,
-} from "./storage.js";
+
+interface ToolResult {
+  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
+  details: Record<string, unknown> | undefined;
+  isError?: boolean;
+}
 
 interface ToolDefinition {
   name: string;
@@ -61,20 +34,34 @@ interface ToolDefinition {
     params: Record<string, unknown>,
     signal: AbortSignal,
     onUpdate: ((update: unknown) => void) | undefined,
-    ctx: SessionPlanContext,
+    ctx: import("./storage.js").SessionLocalContext,
   ) => Promise<ToolResult>;
   renderCall?: (...args: any[]) => unknown;
   renderResult?: (...args: any[]) => unknown;
 }
 
+const {
+  createEditTool,
+  createReadTool,
+  createWriteTool,
+} = require("@mariozechner/pi-coding-agent") as {
+  createEditTool: (cwd: string) => ToolDefinition;
+  createReadTool: (cwd: string) => ToolDefinition;
+  createWriteTool: (cwd: string) => ToolDefinition;
+};
+
+import {
+  ensureSessionLocalRootDirectory,
+  getSessionLocalPath,
+  isLocalListingTarget,
+  isLocalPathTarget,
+  resolveSessionLocalTarget,
+  type SessionLocalContext,
+  LOCAL_URI_PREFIX,
+} from "./storage.js";
+
 interface ExtensionAPI {
   registerTool(definition: ToolDefinition): void;
-}
-
-interface ToolResult {
-  content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
-  details: Record<string, unknown> | undefined;
-  isError?: boolean;
 }
 
 interface LocalResolution {
@@ -85,9 +72,6 @@ interface LocalResolution {
   entryCount?: number;
 }
 
-const DEFAULT_READ_LIMIT = 2000;
-const PLAN_FILE_NAME = "PLAN.md";
-const PLAN_LOCAL_URI = `${LOCAL_URI_PREFIX}${PLAN_FILE_NAME}`;
 const WRAPPER_MODE = "direct local:// resolution via built-in read/write/edit wrappers with session-local storage";
 const LOCAL_ROOT_LISTING_FILE = ".local-root-listing.md";
 
@@ -97,57 +81,6 @@ function buildToolResult(text: string, details: Record<string, unknown>, isError
     details,
     ...(isError ? { isError: true } : {}),
   };
-}
-
-function splitDisplayLines(content: string): string[] {
-  if (content.length === 0) {
-    return [];
-  }
-
-  const lines = content.split("\n");
-  if (lines[lines.length - 1] === "") {
-    lines.pop();
-  }
-
-  return lines;
-}
-
-function getLineAnchor(lineNumber: number, line: string): string {
-  const digest = createHash("sha1").update(`${lineNumber}:${line}`).digest("base64");
-  const lettersOnly = digest.replace(/[^A-Za-z]/g, "").toUpperCase();
-  return (lettersOnly.slice(0, 2) || "XX").padEnd(2, "X");
-}
-
-function formatAnchoredRead(content: string, fileName: string, offset = 1, limit = DEFAULT_READ_LIMIT): string {
-  const lines = splitDisplayLines(content);
-  if (lines.length === 0) {
-    return `File is empty: ${fileName}`;
-  }
-
-  if (offset > lines.length) {
-    return `Start line ${offset} exceeds file length ${lines.length} for ${fileName}.`;
-  }
-
-  const startIndex = Math.max(0, offset - 1);
-  const selectedLines = lines.slice(startIndex, startIndex + limit);
-  return selectedLines
-    .map((line, index) => {
-      const lineNumber = startIndex + index + 1;
-      return `${lineNumber}#${getLineAnchor(lineNumber, line)}:${line}`;
-    })
-    .join("\n");
-}
-
-function normalizePositiveInteger(value: unknown, fallbackValue: number, fieldName: string): number {
-  if (value === undefined) {
-    return fallbackValue;
-  }
-
-  if (!Number.isInteger(value) || (value as number) < 1) {
-    throw new Error(`${fieldName} must be a positive integer.`);
-  }
-
-  return value as number;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -230,33 +163,6 @@ function formatLocalErrorMessage(action: string, localPath: string, resolvedPath
   return `Error ${action} ${localPath}: ${rewrittenMessage}`;
 }
 
-async function readPlanOrError(
-  ctx: SessionPlanContext,
-): Promise<{ content?: string; planPath: string; error?: ToolResult }> {
-  const planPath = getPlanPath(ctx);
-
-  try {
-    return { content: await readPlanFile(ctx), planPath };
-  } catch (error) {
-    const errorCode = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
-    if (errorCode === "ENOENT") {
-      return {
-        planPath,
-        error: buildToolResult(`Error: ${PLAN_FILE_NAME} does not exist for this session yet.`, {
-          ...buildLocalDetails(PLAN_LOCAL_URI, planPath),
-        }, true),
-      };
-    }
-
-    return {
-      planPath,
-      error: buildToolResult(`Error reading ${PLAN_FILE_NAME}: ${getErrorMessage(error)}`, {
-        ...buildLocalDetails(PLAN_LOCAL_URI, planPath),
-      }, true),
-    };
-  }
-}
-
 async function buildLocalRootListing(requestedPath: string, sessionRoot: string): Promise<{ text: string; entryCount: number }> {
   const lines: string[] = [
     "# local://",
@@ -299,6 +205,10 @@ async function buildLocalRootTreeLines(directoryPath: string, depth: number): Pr
   const lines: string[] = [];
 
   for (const entry of sortedEntries) {
+    if (entry.name === LOCAL_ROOT_LISTING_FILE) {
+      continue;
+    }
+
     const isDirectory = entry.isDirectory();
     const isSymbolicLink = entry.isSymbolicLink();
     const suffix = isDirectory ? "/" : isSymbolicLink ? "@" : "";
@@ -313,7 +223,7 @@ async function buildLocalRootTreeLines(directoryPath: string, depth: number): Pr
 }
 
 async function buildLocalRootListingFile(
-  ctx: SessionPlanContext,
+  ctx: SessionLocalContext,
   requestedPath: string,
 ): Promise<{ listingPath: string; sessionRoot: string; entryCount: number }> {
   const sessionRoot = await ensureSessionLocalRootDirectory(ctx);
@@ -328,7 +238,7 @@ async function buildLocalRootListingFile(
   };
 }
 
-export default function localPlanTools(pi: ExtensionAPI): void {
+export default function sessionLocalTools(pi: ExtensionAPI): void {
   const cwd = require("process").cwd() as string;
   const builtInRead = createReadTool(cwd);
   const builtInWrite = createWriteTool(cwd);
@@ -442,41 +352,6 @@ export default function localPlanTools(pi: ExtensionAPI): void {
       } catch (error) {
         return buildToolResult(formatLocalErrorMessage("editing", requestedPath, resolvedPath, error), {
           ...buildLocalDetails(requestedPath, resolvedPath),
-        }, true);
-      }
-    },
-  });
-
-  pi.registerTool({
-    name: "read_plan",
-    label: "ReadPlan",
-    description: "Read the session-scoped PLAN.md backing file from ~/.pi/agent/local/<sessionId>/PLAN.md.",
-    parameters: Type.Object({
-      offset: Type.Optional(Type.Integer({ minimum: 1, description: "1-indexed line number to start reading from." })),
-      limit: Type.Optional(
-        Type.Integer({ minimum: 1, description: `Maximum number of lines to return. Defaults to ${DEFAULT_READ_LIMIT}.` }),
-      ),
-    }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      try {
-        const offset = normalizePositiveInteger(params.offset, 1, "offset");
-        const limit = normalizePositiveInteger(params.limit, DEFAULT_READ_LIMIT, "limit");
-        const result = await readPlanOrError(ctx);
-        if (result.error || result.content === undefined) {
-          return result.error as ToolResult;
-        }
-
-        return buildToolResult(formatAnchoredRead(result.content, PLAN_FILE_NAME, offset, limit), {
-          ...buildLocalDetails(PLAN_LOCAL_URI, result.planPath),
-          offset,
-          limit,
-          compatibilityAlias: "read_plan",
-        });
-      } catch (error) {
-        return buildToolResult(`Error reading ${PLAN_FILE_NAME}: ${getErrorMessage(error)}`, {
-          localPath: PLAN_LOCAL_URI,
-          wrapperMode: WRAPPER_MODE,
-          compatibilityAlias: "read_plan",
         }, true);
       }
     },
