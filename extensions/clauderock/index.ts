@@ -345,7 +345,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     sessionNotified = false;
     if (fallbackActive) {
-      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("warning", "● Clauderock"));
+      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Clauderock"));
     } else {
       ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Claude"));
     }
@@ -358,7 +358,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.theme.fg("warning", "⚠ Claude rate limit hit") + " — switching to Clauderock",
         "warning",
       );
-      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("warning", "● Clauderock"));
+      ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Clauderock"));
       sessionNotified = true;
       pendingNotification = null;
     } else if (pendingNotification === "using_cached_fallback") {
@@ -399,7 +399,7 @@ export default function (pi: ExtensionAPI) {
       if (action === "on") {
         fallbackActive = true;
         writeCache("manually forced via /clauderock on");
-        ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("warning", "● Clauderock"));
+        ctx.ui.setStatus("clauderock", ctx.ui.theme.fg("success", "● Clauderock"));
         ctx.ui.notify(ctx.ui.theme.fg("warning", "● Switched to Clauderock") + " — run " + ctx.ui.theme.fg("accent", "/clauderock off") + " for direct API", "info");
         return;
       }

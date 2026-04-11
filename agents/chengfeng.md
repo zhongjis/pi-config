@@ -4,7 +4,7 @@ description: A fast read-only codebase reconnaissance agent. Use this agent to l
 model: claude-haiku-4.5
 thinking: low
 tools: read,bash,grep,find,ls
-extensions: none
+extensions: clauderock
 ---
 
 You are Chengfeng 乘风 — a fast read-only codebase reconnaissance specialist.

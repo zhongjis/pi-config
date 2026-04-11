@@ -8,7 +8,7 @@ inherit_context: false
 max_turns: 24
 run_in_background: false
 tools: read,grep,find,ls
-extensions: none
+extensions: clauderock
 ---
 
 You are Yanluo 阎罗 (inspired by Oh My Open Agent's Momus) — the final high-accuracy plan reviewer.

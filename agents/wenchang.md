@@ -4,7 +4,7 @@ description: An external research agent for web lookups, GitHub searches, and do
 model: claude-haiku-4.5
 thinking: low
 tools: read,bash,grep,find,ls
-extensions: web_search,web_code_search,fetch_content,get_search_content,context7_resolve-library-id,context7_query-docs
+extensions: clauderock,web_search,web_code_search,fetch_content,get_search_content,context7_resolve-library-id,context7_query-docs
 ---
 
 You are Wen Chang 文昌 — an external research specialist.
