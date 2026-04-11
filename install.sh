@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$HOME/.pi/agent"
@@ -11,14 +11,75 @@ NIX_MANAGED=(
     "skills"
 )
 
-is_nix_managed() {
+# Repo items that should never be installed into ~/.pi/agent
+EXCLUDED_ITEMS=(
+    "install.sh"
+    "self-improvements"
+    "QUICKFIX.md"
+    "scripts"
+)
+
+contains_item() {
     local name="$1"
-    for managed in "${NIX_MANAGED[@]}"; do
-        if [ "$name" = "$managed" ]; then
+    shift
+    local item
+    for item in "$@"; do
+        if [ "$name" = "$item" ]; then
             return 0
         fi
     done
     return 1
+}
+
+is_nix_managed() {
+    contains_item "$1" "${NIX_MANAGED[@]}"
+}
+
+is_excluded_item() {
+    contains_item "$1" "${EXCLUDED_ITEMS[@]}"
+}
+
+remove_repo_symlink_if_present() {
+    local name="$1"
+    local target_path="$TARGET/$name"
+    local expected_source="$REPO_DIR/$name"
+
+    if [ ! -L "$target_path" ]; then
+        return 0
+    fi
+
+    local link_target
+    link_target="$(readlink "$target_path")"
+
+    if [ "$link_target" = "$expected_source" ]; then
+        rm "$target_path"
+        echo "Removed stale symlink: $name"
+    fi
+}
+
+install_git_package_deps() {
+    local git_root="$TARGET/git"
+
+    if [ ! -d "$git_root" ]; then
+        echo "No git package directory found at $git_root"
+        return 0
+    fi
+
+    find "$git_root" -mindepth 3 -maxdepth 3 -name package.json -print0 | while IFS= read -r -d '' package_json; do
+        local pkg_dir
+        pkg_dir="$(dirname "$package_json")"
+
+        if [ -f "$pkg_dir/pnpm-lock.yaml" ]; then
+            echo "Installing pnpm dependencies in $pkg_dir"
+            nix shell nixpkgs#nodejs nixpkgs#pnpm -c bash -lc "cd '$pkg_dir' && pnpm install"
+        elif [ -f "$pkg_dir/bun.lock" ]; then
+            echo "Installing bun dependencies in $pkg_dir"
+            nix shell nixpkgs#nodejs nixpkgs#bun -c bash -lc "cd '$pkg_dir' && bun install"
+        else
+            echo "Installing npm dependencies in $pkg_dir"
+            nix shell nixpkgs#nodejs -c bash -lc "cd '$pkg_dir' && npm install"
+        fi
+    done
 }
 
 # If ~/.pi/agent is a symlink to this repo (old install), remove it
@@ -29,8 +90,12 @@ fi
 
 mkdir -p "$TARGET"
 
+for name in "${NIX_MANAGED[@]}" "${EXCLUDED_ITEMS[@]}"; do
+    remove_repo_symlink_if_present "$name"
+done
+
 # Symlink each top-level item from the repo into ~/.pi/agent/,
-# skipping Nix-managed files, hidden files, and install.sh itself
+# skipping Nix-managed files, excluded repo items, and hidden files
 for item in "$REPO_DIR"/*; do
     name="$(basename "$item")"
 
@@ -40,8 +105,9 @@ for item in "$REPO_DIR"/*; do
         continue
     fi
 
-    # Skip install.sh and self-improvements/
-    if [ "$name" = "install.sh" ] || [ "$name" = "self-improvements" ]; then
+    # Skip repo items that should not be installed
+    if is_excluded_item "$name"; then
+        echo "Skipping (excluded): $name"
         continue
     fi
 
@@ -63,4 +129,6 @@ for item in "$REPO_DIR"/.*; do
     echo "Linked $name"
 done
 
-echo "Done. Nix manages: ${NIX_MANAGED[*]}"
+install_git_package_deps
+
+echo "Done. Nix manages: ${NIX_MANAGED[*]}; excluded: ${EXCLUDED_ITEMS[*]}"
