@@ -6,11 +6,7 @@ import {
   type ExtensionCommandContext,
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import {
-  streamSimple,
-  type AssistantMessage,
-  type Message,
-} from "@mariozechner/pi-ai";
+import { complete, type Message } from "@mariozechner/pi-ai";
 import { Container, Markdown, Spacer, Text, matchesKey, type TUI } from "@mariozechner/pi-tui";
 
 function normalizeReasoningLevel(level: string): string {
@@ -40,13 +36,33 @@ interface BtwWidgetState {
 interface ActiveBtwRequest {
   id: number;
   abortController: AbortController;
-  state: BtwWidgetState;
 }
 
-function extractAssistantText(message: AssistantMessage): string {
-  return message.content
-    .filter((block): block is Extract<AssistantMessage["content"][number], { type: "text" }> => block.type === "text")
-    .map((block) => block.text)
+interface BtwSessionRuntime {
+  key: string;
+  nextRequestId: number;
+  activeRequest?: ActiveBtwRequest;
+  visibleState?: BtwWidgetState;
+  widgetRegistered: boolean;
+  widgetTui?: TUI;
+}
+
+function getSessionKey(ctx: ExtensionContext): string {
+  return ctx.sessionManager.getSessionFile();
+}
+
+function extractResponseText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      const value = part as Record<string, unknown>;
+      if (typeof value.text === "string") return value.text;
+      if (typeof value.refusal === "string") return value.refusal;
+      return "";
+    })
+    .filter((text) => text.trim().length > 0)
     .join("\n")
     .trim();
 }
@@ -83,7 +99,7 @@ function buildFooter(theme: ExtensionContext["ui"]["theme"], status: BtwStatus):
 function buildWidgetComponent(
   theme: ExtensionContext["ui"]["theme"],
   state: BtwWidgetState,
- ): Container {
+): Container {
   const container = new Container();
   const title = theme.fg("muted", "Side answer");
   const question = `${theme.fg("dim", theme.bold("Question"))} ${theme.fg("muted", state.question)}`;
@@ -113,96 +129,150 @@ function buildWidgetComponent(
 }
 
 export default function btwExtension(pi: ExtensionAPI): void {
-  let activeRequest: ActiveBtwRequest | undefined;
-  let nextRequestId = 1;
+  const runtimes = new Map<string, BtwSessionRuntime>();
+  let activeSessionKey: string | undefined;
   let lastUiContext: ExtensionContext | undefined;
-  let visibleState: BtwWidgetState | undefined;
   let removeTerminalListener: (() => void) | undefined;
-  let widgetRegistered = false;
-  let widgetTui: TUI | undefined;
-  let widgetContext: ExtensionContext | undefined;
+  let mountedRuntimeKey: string | undefined;
 
-  function syncUiContext(ctx: ExtensionContext): void {
-    lastUiContext = ctx;
-    if (widgetContext === ctx) return;
-    if (widgetContext?.hasUI && widgetRegistered) {
-      widgetContext.ui.setWidget(BTW_WIDGET_KEY, undefined);
+  function getOrCreateRuntime(key: string): BtwSessionRuntime {
+    let runtime = runtimes.get(key);
+    if (!runtime) {
+      runtime = {
+        key,
+        nextRequestId: 1,
+        widgetRegistered: false,
+      };
+      runtimes.set(key, runtime);
     }
-    widgetContext = ctx;
-    widgetRegistered = false;
-    widgetTui = undefined;
+    return runtime;
   }
 
-  function renderWidget(ctx: ExtensionContext, state: BtwWidgetState | undefined): void {
+  function getActiveRuntime(): BtwSessionRuntime | undefined {
+    if (!activeSessionKey) return undefined;
+    return runtimes.get(activeSessionKey);
+  }
+
+  function setActiveSession(ctx: ExtensionContext): void {
+    activeSessionKey = getSessionKey(ctx);
+    if (ctx.hasUI) {
+      lastUiContext = ctx;
+      bindTerminalListener(ctx);
+    }
+  }
+
+  function unmountWidget(ctx?: ExtensionContext): void {
+    const activeCtx = ctx ?? lastUiContext;
+    const runtimeKey = mountedRuntimeKey;
+    if (!runtimeKey) return;
+
+    if (activeCtx?.hasUI) {
+      activeCtx.ui.setWidget(BTW_WIDGET_KEY, undefined);
+    }
+
+    const runtime = runtimes.get(runtimeKey);
+    if (runtime) {
+      runtime.widgetRegistered = false;
+      runtime.widgetTui = undefined;
+    }
+    mountedRuntimeKey = undefined;
+  }
+
+  function ensureWidgetMounted(ctx: ExtensionContext, runtime: BtwSessionRuntime): void {
     if (!ctx.hasUI) return;
-    syncUiContext(ctx);
+    if (mountedRuntimeKey === runtime.key && runtime.widgetRegistered) return;
 
-    if (!state) {
-      const tui = widgetTui;
-      if (widgetRegistered) {
-        ctx.ui.setWidget(BTW_WIDGET_KEY, undefined);
+    if (mountedRuntimeKey && mountedRuntimeKey !== runtime.key) {
+      unmountWidget(ctx);
+    }
+
+    ctx.ui.setWidget(BTW_WIDGET_KEY, (tui, theme) => {
+      runtime.widgetTui = tui;
+      runtime.widgetRegistered = true;
+      mountedRuntimeKey = runtime.key;
+
+      return {
+        render: (width: number) => {
+          const state = runtime.visibleState;
+          if (!state) return [];
+          return buildWidgetComponent(theme, state).render(width);
+        },
+        invalidate: () => {
+          runtime.widgetRegistered = false;
+          runtime.widgetTui = undefined;
+          if (mountedRuntimeKey === runtime.key) {
+            mountedRuntimeKey = undefined;
+          }
+        },
+      };
+    });
+
+    runtime.widgetRegistered = true;
+    mountedRuntimeKey = runtime.key;
+  }
+
+  function renderRuntime(runtime: BtwSessionRuntime, ctx?: ExtensionContext): void {
+    const activeCtx = ctx ?? lastUiContext;
+    if (!activeCtx?.hasUI) return;
+    if (activeSessionKey !== runtime.key) return;
+
+    if (!runtime.visibleState) {
+      if (mountedRuntimeKey === runtime.key) {
+        const tui = runtime.widgetTui;
+        unmountWidget(activeCtx);
+        tui?.requestRender();
       }
-      widgetRegistered = false;
-      widgetTui = undefined;
-      tui?.requestRender();
       return;
     }
 
-    if (!widgetRegistered) {
-      ctx.ui.setWidget(BTW_WIDGET_KEY, (tui, theme) => {
-        widgetTui = tui;
-        return {
-          render: (width: number) => {
-            const currentState = visibleState;
-            if (!currentState) return [];
-            return buildWidgetComponent(theme, currentState).render(width);
-          },
-          invalidate: () => {
-            widgetRegistered = false;
-            widgetTui = undefined;
-          },
-        };
-      });
-      widgetRegistered = true;
-      return;
-    }
-
-    widgetTui?.requestRender();
+    ensureWidgetMounted(activeCtx, runtime);
+    runtime.widgetTui?.requestRender();
   }
 
-  function clearWidget(ctx?: ExtensionContext): void {
-    visibleState = undefined;
-    const activeCtx = ctx ?? lastUiContext;
-    if (!activeCtx?.hasUI) return;
-    renderWidget(activeCtx, undefined);
+  function updateRuntimeState(
+    runtime: BtwSessionRuntime,
+    state: BtwWidgetState | undefined,
+    ctx?: ExtensionContext,
+  ): void {
+    runtime.visibleState = state;
+    renderRuntime(runtime, ctx);
   }
 
-  function updateWidget(state: BtwWidgetState, ctx?: ExtensionContext): void {
-    visibleState = state;
-    const activeCtx = ctx ?? lastUiContext;
-    if (!activeCtx?.hasUI) return;
-    renderWidget(activeCtx, state);
+  function abortRuntime(runtime: BtwSessionRuntime): void {
+    if (!runtime.activeRequest) return;
+    const { abortController } = runtime.activeRequest;
+    runtime.activeRequest = undefined;
+    abortController.abort();
+  }
+
+  function clearRuntime(runtime: BtwSessionRuntime, ctx?: ExtensionContext): void {
+    abortRuntime(runtime);
+    updateRuntimeState(runtime, undefined, ctx);
   }
 
   function bindTerminalListener(ctx: ExtensionContext): void {
     removeTerminalListener?.();
     removeTerminalListener = ctx.ui.onTerminalInput((data) => {
-      if (!visibleState) return undefined;
       if (!matchesKey(data, "escape")) return undefined;
-      resetState(ctx);
+
+      const runtime = getActiveRuntime();
+      if (!runtime?.visibleState) return undefined;
+
+      clearRuntime(runtime, ctx);
       return { consume: true };
     });
   }
 
-  function abortActiveRequest(): void {
-    if (!activeRequest) return;
-    activeRequest.abortController.abort();
-    activeRequest = undefined;
-  }
+  function restoreVisibleRuntime(ctx: ExtensionContext): void {
+    setActiveSession(ctx);
 
-  function resetState(ctx?: ExtensionContext): void {
-    abortActiveRequest();
-    clearWidget(ctx);
+    const runtime = getActiveRuntime();
+    if (runtime?.visibleState) {
+      renderRuntime(runtime, ctx);
+      return;
+    }
+
+    unmountWidget(ctx);
   }
 
   async function runBtw(question: string, ctx: ExtensionCommandContext): Promise<void> {
@@ -229,23 +299,25 @@ export default function btwExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    syncUiContext(ctx);
-    abortActiveRequest();
+    setActiveSession(ctx);
+    const runtime = getOrCreateRuntime(getSessionKey(ctx));
+    abortRuntime(runtime);
 
     const request: ActiveBtwRequest = {
-      id: nextRequestId++,
+      id: runtime.nextRequestId++,
       abortController: new AbortController(),
-      state: {
-        question: trimmedQuestion,
-        answer: "",
-        status: "running",
-      },
     };
-    activeRequest = request;
-    updateWidget(request.state, ctx);
+    const state: BtwWidgetState = {
+      question: trimmedQuestion,
+      answer: "",
+      status: "running",
+    };
+
+    runtime.activeRequest = request;
+    updateRuntimeState(runtime, state, ctx);
 
     try {
-      const stream = streamSimple(
+      const response = await complete(
         model,
         {
           systemPrompt: `${ctx.getSystemPrompt()}\n\n${BTW_SYSTEM_PROMPT}`,
@@ -259,45 +331,36 @@ export default function btwExtension(pi: ExtensionAPI): void {
         },
       );
 
-      for await (const event of stream) {
-        if (activeRequest?.id !== request.id) {
-          return;
-        }
-
-        if (event.type === "text_delta") {
-          request.state.answer += event.delta;
-          updateWidget(request.state, ctx);
-          continue;
-        }
-
-        if (event.type === "done") {
-          request.state.answer = extractAssistantText(event.message);
-          request.state.status = "complete";
-          updateWidget(request.state, ctx);
-          return;
-        }
-
-        if (event.type === "error") {
-          request.state.status = event.reason === "aborted" ? "aborted" : "error";
-          request.state.errorMessage = event.error.errorMessage ?? "BTW request failed.";
-          if (!request.state.answer.trim()) {
-            request.state.answer = extractAssistantText(event.error);
-          }
-          updateWidget(request.state, ctx);
-          return;
-        }
-      }
-    } catch (error) {
-      if (activeRequest?.id !== request.id) {
+      if (runtime.activeRequest?.id !== request.id) {
         return;
       }
 
-      request.state.status = request.abortController.signal.aborted ? "aborted" : "error";
-      request.state.errorMessage = error instanceof Error ? error.message : String(error);
-      updateWidget(request.state, ctx);
+      const answer = extractResponseText(response.content);
+      if (response.stopReason === "aborted") {
+        state.status = "aborted";
+        state.answer = answer;
+      } else if (!answer) {
+        state.status = "error";
+        state.errorMessage = "BTW request returned an empty response.";
+      } else {
+        state.status = "complete";
+        state.answer = answer;
+      }
+
+      updateRuntimeState(runtime, state, ctx);
+    } catch (error) {
+      if (runtime.activeRequest?.id !== request.id) {
+        return;
+      }
+
+      state.status = request.abortController.signal.aborted ? "aborted" : "error";
+      if (state.status === "error") {
+        state.errorMessage = error instanceof Error ? error.message : String(error);
+      }
+      updateRuntimeState(runtime, state, ctx);
     } finally {
-      if (activeRequest?.id === request.id && request.state.status !== "running") {
-        activeRequest = undefined;
+      if (runtime.activeRequest?.id === request.id) {
+        runtime.activeRequest = undefined;
       }
     }
   }
@@ -315,26 +378,33 @@ export default function btwExtension(pi: ExtensionAPI): void {
   pi.registerCommand("btw:clear", {
     description: "Clear the BTW widget",
     handler: async (_args, ctx) => {
-      resetState(ctx);
-      ctx.ui.notify("Cleared BTW widget.", "info");
+      setActiveSession(ctx);
+      clearRuntime(getOrCreateRuntime(getSessionKey(ctx)), ctx);
+      if (ctx.hasUI) {
+        ctx.ui.notify("Cleared BTW widget.", "info");
+      }
     },
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    syncUiContext(ctx);
-    bindTerminalListener(ctx);
-    resetState(ctx);
+    restoreVisibleRuntime(ctx);
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    syncUiContext(ctx);
-    bindTerminalListener(ctx);
-    resetState(ctx);
+    restoreVisibleRuntime(ctx);
   });
 
   pi.on("session_shutdown", async () => {
     removeTerminalListener?.();
     removeTerminalListener = undefined;
-    resetState();
+    for (const runtime of runtimes.values()) {
+      abortRuntime(runtime);
+      runtime.visibleState = undefined;
+      runtime.widgetRegistered = false;
+      runtime.widgetTui = undefined;
+    }
+    mountedRuntimeKey = undefined;
+    activeSessionKey = undefined;
+    lastUiContext = undefined;
   });
 }
