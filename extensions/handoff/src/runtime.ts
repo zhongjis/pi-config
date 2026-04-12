@@ -5,12 +5,29 @@ import { loadHandoffConfig, updateHandoffConfig } from "./config.js";
 
 export type HandoffMode = "kuafu" | "fuxi" | "houtu";
 type HandoffModeState = { mode?: HandoffMode };
-
+type PendingPreparedHandoff = { sessionFile: string; args: ParsedHandoffArgs; source?: string };
+type PendingPreparedHandoffsGlobal = Map<string, PendingPreparedHandoff>;
 type SummaryModelChoice = { value: string; model: any };
 type SetupSessionManager = {
   appendCustomEntry?: (customType: string, data?: unknown) => unknown;
 };
 
+export interface DirectHandoffBridgeRequest {
+  sessionFile: string;
+  goal: string;
+  mode: HandoffMode;
+  summarize: boolean;
+  source?: string;
+}
+
+export type DirectHandoffBridgeReply =
+  | { success: true; data: { command: string; sessionFile: string; source?: string } }
+  | { success: false; error: string };
+
+const PENDING_PREPARED_HANDOFFS_GLOBAL_KEY = Symbol.for("pi-config-handoff-prepared");
+const DIRECT_HANDOFF_BRIDGE_CHANNEL = "handoff:rpc:prepare";
+const DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS = 1000;
+const DIRECT_HANDOFF_COMMAND = "/handoff:continue";
 const HANDOFF_MODES: HandoffMode[] = ["kuafu", "fuxi", "houtu"];
 const HANDOFF_MODE_ALIASES: Record<string, HandoffMode> = {
   build: "kuafu",
@@ -47,6 +64,100 @@ export interface ParsedHandoffArgs {
 
 export function getHandoffUsage(): string {
   return "Usage: /handoff [-mode <name>] [-no-summarize] <goal>";
+}
+
+export function getPreparedHandoffCommand(): string {
+  return DIRECT_HANDOFF_COMMAND;
+}
+
+export async function requestDirectHandoffBridge(
+  pi: ExtensionAPI,
+  request: DirectHandoffBridgeRequest,
+ ): Promise<DirectHandoffBridgeReply> {
+  const requestId = `handoff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  return await new Promise<DirectHandoffBridgeReply>((resolve) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const replyChannel = `${DIRECT_HANDOFF_BRIDGE_CHANNEL}:reply:${requestId}`;
+    const unsubscribe = pi.events.on(replyChannel, (raw: unknown) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      unsubscribe();
+
+      const response = raw as DirectHandoffBridgeReply | null;
+      if (!response || typeof response !== "object") {
+        resolve({ success: false, error: "Invalid handoff bridge response." });
+        return;
+      }
+
+      resolve(response);
+    });
+
+    timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      unsubscribe();
+      resolve({ success: false, error: "Handoff bridge timed out." });
+    }, DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS);
+
+    pi.events.emit(DIRECT_HANDOFF_BRIDGE_CHANNEL, { requestId, request });
+  });
+}
+
+export function registerDirectHandoffBridge(pi: ExtensionAPI): () => void {
+  return pi.events.on(DIRECT_HANDOFF_BRIDGE_CHANNEL, (raw: unknown) => {
+    const params = raw as { requestId?: string; request?: DirectHandoffBridgeRequest } | null;
+    if (!params || typeof params.requestId !== "string") {
+      return;
+    }
+
+    const replyChannel = `${DIRECT_HANDOFF_BRIDGE_CHANNEL}:reply:${params.requestId}`;
+
+    try {
+      const pending = normalizeDirectHandoffBridgeRequest(params.request);
+      setPendingPreparedHandoff(pending);
+      pi.events.emit(replyChannel, {
+        success: true,
+        data: {
+          command: DIRECT_HANDOFF_COMMAND,
+          sessionFile: pending.sessionFile,
+          ...(pending.source ? { source: pending.source } : {}),
+        },
+      } satisfies DirectHandoffBridgeReply);
+    } catch (error) {
+      pi.events.emit(replyChannel, {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      } satisfies DirectHandoffBridgeReply);
+    }
+  });
+}
+
+export async function runPreparedHandoffCommand(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+ ): Promise<string | undefined> {
+  const currentSessionFile = ctx.sessionManager.getSessionFile();
+  if (!currentSessionFile) {
+    return "Current session file is unavailable for prepared handoff.";
+  }
+
+  const pending = getPendingPreparedHandoff(currentSessionFile);
+  if (!pending) {
+    return `No prepared handoff found for this session. Prepare Hou Tu handoff first, then run ${DIRECT_HANDOFF_COMMAND}.`;
+  }
+
+  return await runHandoffCommand(pi, ctx, pending.args);
 }
 
 export function parseHandoffArgs(args: string): { ok: true; value: ParsedHandoffArgs } | { ok: false; error: string } {
@@ -142,6 +253,10 @@ export async function runHandoffCommand(
     return `Handoff failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
+  if (currentSessionFile) {
+    clearPendingPreparedHandoff(currentSessionFile);
+  }
+
   return undefined;
 }
 
@@ -159,6 +274,65 @@ export function buildPlanExecutionGoal(planPath: string): string {
 }
 
 
+function getPendingPreparedHandoffsGlobal(): PendingPreparedHandoffsGlobal {
+  const existing = (globalThis as Record<PropertyKey, unknown>)[PENDING_PREPARED_HANDOFFS_GLOBAL_KEY];
+  if (existing instanceof Map) {
+    return existing as PendingPreparedHandoffsGlobal;
+  }
+
+  const prepared = new Map<string, PendingPreparedHandoff>();
+  (globalThis as Record<PropertyKey, unknown>)[PENDING_PREPARED_HANDOFFS_GLOBAL_KEY] = prepared;
+  return prepared;
+}
+
+function getPendingPreparedHandoff(sessionFile: string): PendingPreparedHandoff | null {
+  return getPendingPreparedHandoffsGlobal().get(sessionFile) ?? null;
+}
+
+function setPendingPreparedHandoff(pending: PendingPreparedHandoff): void {
+  getPendingPreparedHandoffsGlobal().set(pending.sessionFile, pending);
+}
+
+function clearPendingPreparedHandoff(sessionFile: string): void {
+  const prepared = getPendingPreparedHandoffsGlobal();
+  prepared.delete(sessionFile);
+  if (prepared.size === 0) {
+    delete (globalThis as Record<PropertyKey, unknown>)[PENDING_PREPARED_HANDOFFS_GLOBAL_KEY];
+  }
+}
+
+function normalizeDirectHandoffBridgeRequest(request?: DirectHandoffBridgeRequest): PendingPreparedHandoff {
+  if (!request) {
+    throw new Error("Missing handoff bridge request.");
+  }
+
+  const sessionFile = typeof request.sessionFile === "string" ? request.sessionFile.trim() : "";
+  if (!sessionFile) {
+    throw new Error("Missing handoff bridge session file.");
+  }
+
+  const goal = stripMatchingQuotes(typeof request.goal === "string" ? request.goal.trim() : "");
+  if (!goal) {
+    throw new Error("Missing handoff goal.");
+  }
+
+  const mode = resolveMode(request.mode);
+  if (!mode) {
+    throw new Error(`Unknown mode: "${String(request.mode)}". Available: ${HANDOFF_MODES.join(", ")}`);
+  }
+
+  if (typeof request.summarize !== "boolean") {
+    throw new Error("Handoff summarize must be boolean.");
+  }
+
+  const source = typeof request.source === "string" ? request.source.trim() || undefined : undefined;
+  return {
+    sessionFile,
+    args: { goal, mode, summarize: request.summarize },
+    source,
+  };
+}
+
 function stripMatchingQuotes(value: string): string {
   if (value.startsWith('"') && value.endsWith('"')) {
     try {
@@ -174,7 +348,7 @@ function stripMatchingQuotes(value: string): string {
   return value;
 }
 
-function resolveMode(value?: string): HandoffMode | null {
+function resolveMode(value?: string | HandoffMode): HandoffMode | null {
   if (!value) {
     return "kuafu";
   }
