@@ -286,7 +286,23 @@ export default function btwExtension(pi: ExtensionAPI): void {
 
   function clearRuntime(runtime: BtwSessionRuntime, ctx?: ExtensionContext): void {
     abortRuntime(runtime);
-    updateRuntimeState(runtime, undefined, ctx);
+    stopSpinner(runtime);
+    runtime.visibleState = undefined;
+
+    const activeCtx = ctx ?? lastUiContext;
+    if (!activeCtx?.hasUI) return;
+    if (activeSessionKey !== runtime.key) return;
+
+    const tui = runtime.widgetTui;
+    if (runtime.widgetRegistered) {
+      activeCtx.ui.setWidget(BTW_WIDGET_KEY, undefined);
+    }
+    runtime.widgetRegistered = false;
+    runtime.widgetTui = undefined;
+    if (mountedRuntimeKey === runtime.key) {
+      mountedRuntimeKey = undefined;
+    }
+    tui?.requestRender();
   }
 
   function bindTerminalListener(ctx: ExtensionContext): void {
