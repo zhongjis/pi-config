@@ -6,13 +6,11 @@ import { loadHandoffConfig, updateHandoffConfig } from "./config.js";
 export type HandoffMode = "kuafu" | "fuxi" | "houtu";
 type HandoffModeState = { mode?: HandoffMode };
 
-type PendingHandoffGlobal = { prompt: string } | null;
 type SummaryModelChoice = { value: string; model: any };
 type SetupSessionManager = {
   appendCustomEntry?: (customType: string, data?: unknown) => unknown;
 };
 
-const PENDING_HANDOFF_GLOBAL_KEY = Symbol.for("pi-config-handoff-pending");
 const HANDOFF_MODES: HandoffMode[] = ["kuafu", "fuxi", "houtu"];
 const HANDOFF_MODE_ALIASES: Record<string, HandoffMode> = {
   build: "kuafu",
@@ -98,6 +96,7 @@ export function parseHandoffArgs(args: string): { ok: true; value: ParsedHandoff
 }
 
 export async function runHandoffCommand(
+  pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: ParsedHandoffArgs,
 ): Promise<string | undefined> {
@@ -125,7 +124,6 @@ export async function runHandoffCommand(
     finalPrompt = buildDeterministicPrompt(args.goal, currentSessionFile);
   }
 
-  setPendingHandoffGlobal({ prompt: finalPrompt });
   try {
     await ctx.waitForIdle();
     const result = await ctx.newSession({
@@ -136,31 +134,15 @@ export async function runHandoffCommand(
     });
 
     if (result.cancelled) {
-      setPendingHandoffGlobal(null);
       return "New session cancelled.";
     }
+
+    pi.sendUserMessage(finalPrompt);
   } catch (error) {
-    setPendingHandoffGlobal(null);
     return `Handoff failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
   return undefined;
-}
-
-export function maybeSendPendingHandoff(pi: ExtensionAPI, event: { reason?: string }): void {
-  if (event.reason !== "new") {
-    return;
-  }
-
-  const pending = getPendingHandoffGlobal();
-  if (!pending) {
-    return;
-  }
-
-  setPendingHandoffGlobal(null);
-  setTimeout(() => {
-    pi.sendUserMessage(pending.prompt);
-  }, 0);
 }
 
 export function buildPlanExecutionGoal(planPath: string): string {
@@ -176,17 +158,6 @@ export function buildPlanExecutionGoal(planPath: string): string {
   ].join("\n");
 }
 
-function getPendingHandoffGlobal(): PendingHandoffGlobal {
-  return ((globalThis as Record<PropertyKey, unknown>)[PENDING_HANDOFF_GLOBAL_KEY] as PendingHandoffGlobal) ?? null;
-}
-
-function setPendingHandoffGlobal(data: PendingHandoffGlobal): void {
-  if (data) {
-    (globalThis as Record<PropertyKey, unknown>)[PENDING_HANDOFF_GLOBAL_KEY] = data;
-    return;
-  }
-  delete (globalThis as Record<PropertyKey, unknown>)[PENDING_HANDOFF_GLOBAL_KEY];
-}
 
 function stripMatchingQuotes(value: string): string {
   if (value.startsWith('"') && value.endsWith('"')) {

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { getHandoffUsage, maybeSendPendingHandoff, parseHandoffArgs, runHandoffCommand } from "./runtime.js";
+import { getHandoffUsage, parseHandoffArgs, runHandoffCommand } from "./runtime.js";
 
 export { buildPlanExecutionGoal, getHandoffUsage, parseHandoffArgs, runHandoffCommand, type HandoffMode, type ParsedHandoffArgs } from "./runtime.js";
 
@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const error = await runHandoffCommand(ctx as ExtensionCommandContext, parsed.value);
+      const error = await runHandoffCommand(pi, ctx as ExtensionCommandContext, parsed.value);
       if (!error) {
         return;
       }
@@ -21,9 +21,5 @@ export default function (pi: ExtensionAPI) {
       const level = error === "Handoff cancelled." || error === "New session cancelled." ? "info" : "error";
       ctx.ui.notify(error, level);
     },
-  });
-
-  pi.on("session_start", async (event: any) => {
-    maybeSendPendingHandoff(pi, event as { reason?: string });
   });
 }

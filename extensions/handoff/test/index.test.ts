@@ -144,12 +144,26 @@ describe("handoff extension", () => {
     expect(ctx.newSession).toHaveBeenCalledTimes(1);
     expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);
 
-    await mock.fireLifecycle("session_start", { reason: "new" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
     expect(mock.sendUserMessage).toHaveBeenCalledTimes(1);
     expect(mock.sendUserMessage.mock.calls[0][0]).toContain("ship feature");
     expect(mock.sendUserMessage.mock.calls[0][0]).toContain("Parent session");
+    expect(mock.sendUserMessage.mock.invocationCallOrder[0]).toBeGreaterThan(ctx.newSession.mock.invocationCallOrder[0]);
+  });
+
+  it("does not auto-send prompt when new session creation is cancelled", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const { ctx, ui } = createCommandContext();
+
+    ctx.newSession = vi.fn(async ({ setup }: { setup?: (sessionManager: unknown) => Promise<void> }) => {
+      await setup?.({ appendCustomEntry: vi.fn() });
+      return { cancelled: true };
+    });
+
+    await mock.executeCommand("handoff", '-no-summarize "ship feature"', ctx);
+
+    expect(mock.sendUserMessage).not.toHaveBeenCalled();
+    expect(ui.notify).toHaveBeenCalledWith("New session cancelled.", "info");
   });
 
   it("summarizes with selected model and remembers the last summary model", async () => {
