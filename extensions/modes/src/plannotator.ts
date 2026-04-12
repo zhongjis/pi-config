@@ -33,7 +33,11 @@ function buildPreparedHandoffCommand(planPath: string): string {
 }
 
 function buildPreparedHandoffMessage(title: string): string {
-	return `Prepared Hou Tu handoff command for plan "${title}". Submit the command when ready.`;
+	return `Starting Hou Tu handoff for plan "${title}" in a new session.`;
+}
+
+function queuePreparedHandoffCommand(pi: ExtensionAPI, command: string): void {
+	setTimeout(() => pi.sendUserMessage(command, { deliverAs: "followUp" }), 0);
 }
 
 export async function requestPlannotator<T>(
@@ -93,7 +97,7 @@ async function checkPlannotatorAvailability(
 }
 
 export async function prepareApprovedPlanHandoff(
-	_pi: ExtensionAPI,
+	pi: ExtensionAPI,
 	state: ModeStateManager,
 	ctx: ExtensionContext,
 ): Promise<{ success: boolean; message: string; level: "info" | "warning"; details?: Record<string, unknown> }> {
@@ -112,9 +116,9 @@ export async function prepareApprovedPlanHandoff(
 	const planPath = getLocalPlanPath(ctx);
 	const command = buildPreparedHandoffCommand(planPath);
 	const message = buildPreparedHandoffMessage(state.planTitle);
+	queuePreparedHandoffCommand(pi, command);
 
 	if (ctx.hasUI) {
-		ctx.ui.setEditorText(command);
 		ctx.ui.notify(message, "info");
 	}
 
@@ -138,8 +142,8 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	if (!snapshot || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
 	const approvalLabel = state.planApproved || state.planReviewApproved || state.highAccuracyReviewApproved
-		? "Prepare Hou Tu handoff command"
-		: "Approve and prepare Hou Tu handoff command";
+		? "Start Hou Tu handoff"
+		: "Approve and start Hou Tu handoff";
 	const choices: string[] = [approvalLabel, VIEW_FULL_PLAN_LABEL];
 	if (!state.planReviewApproved) {
 		const plannotator = await checkPlannotatorAvailability(pi, state);

@@ -51,35 +51,49 @@ function createCtx(selectResult: string | null = null) {
 }
 
 describe("plannotator handoff prep", () => {
-  it("prepares a generic /handoff command instead of RPC handoff artifacts", async () => {
-    const mock = createMockPi();
-    const state = new ModeStateManager(mock.pi as never);
-    state.planTitle = "Ship feature";
-    state.planActionPending = true;
+  it("queues a generic /handoff command via follow-up instead of prefilling the editor", async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockPi();
+      const state = new ModeStateManager(mock.pi as never);
+      state.planTitle = "Ship feature";
+      state.planActionPending = true;
 
-    const ctx = createCtx();
-    const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);
+      const ctx = createCtx();
+      const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);
+      await vi.runAllTimersAsync();
 
-    expect(result.success).toBe(true);
-    expect(result.details).toMatchObject({ mode: "houtu", planPath: "/tmp/PLAN.md" });
-    expect(result.details?.command).toContain("/handoff -mode houtu -no-summarize");
-    expect(result.details?.command).toContain("/tmp/PLAN.md");
-    expect(ctx.ui.setEditorText).toHaveBeenCalledWith(result.details?.command);
+      expect(result.success).toBe(true);
+      expect(result.details).toMatchObject({ mode: "houtu", planPath: "/tmp/PLAN.md" });
+      expect(result.details?.command).toContain("/handoff -mode houtu -no-summarize");
+      expect(result.details?.command).toContain("/tmp/PLAN.md");
+      expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(result.details?.command, { deliverAs: "followUp" });
+      expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("approval menu prepares Hou Tu handoff command in editor", async () => {
-    const mock = createMockPi();
-    const state = new ModeStateManager(mock.pi as never);
-    state.currentMode = "fuxi";
-    state.planTitle = "Ship feature";
-    state.planApproved = true;
-    state.planActionPending = true;
-    state.planReviewApproved = true;
+  it("approval menu starts Hou Tu handoff automatically", async () => {
+    vi.useFakeTimers();
+    try {
+      const mock = createMockPi();
+      const state = new ModeStateManager(mock.pi as never);
+      state.currentMode = "fuxi";
+      state.planTitle = "Ship feature";
+      state.planApproved = true;
+      state.planActionPending = true;
+      state.planReviewApproved = true;
 
-    const ctx = createCtx("Prepare Hou Tu handoff command");
-    await promptPostPlanAction(mock.pi as never, state, ctx as never);
+      const ctx = createCtx("Start Hou Tu handoff");
+      await promptPostPlanAction(mock.pi as never, state, ctx as never);
+      await vi.runAllTimersAsync();
 
-    expect(ctx.ui.setEditorText).toHaveBeenCalledTimes(1);
-    expect(String(ctx.ui.setEditorText.mock.calls[0][0])).toContain("/handoff -mode houtu -no-summarize");
+      expect(mock.pi.sendUserMessage).toHaveBeenCalledTimes(1);
+      expect(String(mock.pi.sendUserMessage.mock.calls[0][0])).toContain("/handoff -mode houtu -no-summarize");
+      expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
