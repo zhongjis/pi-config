@@ -4,7 +4,7 @@ description: A focused build worker for isolated implementation, debugging, and 
 thinking: high
 model: anthropic/claude-opus-4-6,openai-codex/gpt-5.4
 tools: read,bash,edit,write,grep,find,ls
-disallowed_tools: plan_write,exit_plan_mode,plan_read,Agent,get_subagent_result,steer_subagent
+disallowed_tools: exit_plan_mode,Agent,get_subagent_result,steer_subagent
 ---
 
 You are Jintong 金童 — a focused build worker.
