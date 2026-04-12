@@ -38,14 +38,9 @@ vi.mock("../src/plannotator.js", () => ({
 }));
 
 import {
-	createPingData,
-	createReadyEvent,
 	createSuccessReply,
 	HANDOFF_GET_CHANNEL,
 	HANDOFF_MARK_CONSUMED_CHANNEL,
-	HANDOFF_PING_CHANNEL,
-	HANDOFF_READY_EVENT,
-	HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX,
 } from "../../handoff/src/protocol.js";
 import type { HandoffReadiness } from "../../handoff/src/types.js";
 import { registerModeHooks } from "../src/hooks.js";
@@ -140,49 +135,9 @@ function createReadyReadiness(handoffId: string): HandoffReadiness {
 	};
 }
 
-describe("modes Hou Tu kickoff flow", () => {
+describe("modes Hou Tu handoff flow", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-	});
-
-	it("replays a queued Hou Tu kickoff once the handoff service becomes ready", async () => {
-		vi.useFakeTimers();
-		const mock = createMockPi("houtu");
-		const ctx = createCtx();
-		const state = new ModeStateManager(mock.pi as never);
-		state.cachedConfigs.houtu = { body: "" };
-		state.currentMode = "houtu";
-		state.pendingExecutionHandoffId = "handoff-1";
-		state.executionKickoffQueued = true;
-		registerModeHooks(mock.pi as never, state);
-
-		let pingCount = 0;
-		mock.onEvent(HANDOFF_PING_CHANNEL, (raw) => {
-			const { requestId } = raw as { requestId: string };
-			pingCount += 1;
-			const readiness: HandoffReadiness = pingCount === 1
-				? {
-					state: "not-ready",
-					ready: false,
-					startupStatus: "bootstrapping",
-					reason: "Handoff extension is still bootstrapping.",
-				  }
-				: createReadyReadiness("handoff-1");
-			mock.emitEvent(`${HANDOFF_PING_CHANNEL}:reply:${requestId}`, createSuccessReply(createPingData(readiness)));
-		});
-
-		const sessionStart = mock.fireLifecycle("session_start", {}, ctx);
-		await Promise.resolve();
-		mock.emitEvent(HANDOFF_READY_EVENT, createReadyEvent(createReadyReadiness("handoff-1")));
-		await sessionStart;
-		await vi.runAllTimersAsync();
-
-		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
-			`${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}handoff-1`,
-			{ deliverAs: "followUp" },
-		);
-		expect(state.currentMode).toBe("houtu");
-		vi.useRealTimers();
 	});
 
 	it("replaces stale mode prompt content when the target mode uses prompt_mode=replace", async () => {
@@ -210,7 +165,6 @@ describe("modes Hou Tu kickoff flow", () => {
 		state.cachedConfigs.houtu = { body: "" };
 		state.currentMode = "houtu";
 		state.pendingExecutionHandoffId = "handoff-2";
-		state.activeKickoffHandoffId = "handoff-2";
 		registerModeHooks(mock.pi as never, state);
 
 		let consumedCalls = 0;
@@ -224,7 +178,7 @@ describe("modes Hou Tu kickoff flow", () => {
 						status: "pending",
 						producerMode: "fuxi",
 						targetMode: "houtu",
-						kickoffPrompt: `${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}handoff-2`,
+						kickoffPrompt: "unused",
 						createdAt: "2026-04-11T00:00:00.000Z",
 						planHash: "plan-hash",
 						planTitle: "Plan",
@@ -289,18 +243,53 @@ describe("modes Hou Tu kickoff flow", () => {
 		await mock.fireLifecycle("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] }, ctx);
 		expect(consumedCalls).toBe(1);
 		expect(state.pendingExecutionHandoffId).toBeUndefined();
-		expect(state.activeKickoffHandoffId).toBeUndefined();
 		expect(state.activeInjectedHandoffId).toBeUndefined();
 	});
 
-	it("does not consume a kickoff handoff after an aborted terminal turn", async () => {
+	it("switches back to Fu Xi when pending handoff is invalid", async () => {
+		const mock = createMockPi();
+		const ctx = createCtx();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs.houtu = { body: "" };
+		state.cachedConfigs.fuxi = { body: "Fu Xi prompt", promptMode: "replace" };
+		state.currentMode = "houtu";
+		state.pendingExecutionHandoffId = "handoff-bad";
+		registerModeHooks(mock.pi as never, state);
+
+		mock.onEvent(HANDOFF_GET_CHANNEL, (raw) => {
+			const { requestId } = raw as { requestId: string };
+			mock.emitEvent(
+				`${HANDOFF_GET_CHANNEL}:reply:${requestId}`,
+				createSuccessReply({
+					authority: undefined,
+					readiness: {
+						state: "missing",
+						ready: false,
+						reason: "Execution handoff handoff-bad no longer has persisted authority.",
+						handoffId: "handoff-bad",
+					},
+				}),
+			);
+		});
+
+		const results = await mock.fireLifecycle("before_agent_start", { systemPrompt: "system" }, ctx);
+		expect(state.currentMode).toBe("fuxi");
+		expect(state.planActionPending).toBe(true);
+		expect(state.pendingExecutionHandoffId).toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			"Execution handoff handoff-bad no longer has persisted authority. Switched back to Fu Xi. Retry Hou Tu handoff from latest finalized plan.",
+			"warning",
+		);
+		expect(results[0]).toBeUndefined();
+	});
+
+	it("does not consume a handoff after an aborted terminal turn", async () => {
 		const mock = createMockPi();
 		const ctx = createCtx();
 		const state = new ModeStateManager(mock.pi as never);
 		state.cachedConfigs.houtu = { body: "" };
 		state.currentMode = "houtu";
 		state.pendingExecutionHandoffId = "handoff-3";
-		state.activeKickoffHandoffId = "handoff-3";
 		state.activeInjectedHandoffId = "handoff-3";
 		registerModeHooks(mock.pi as never, state);
 
@@ -312,30 +301,27 @@ describe("modes Hou Tu kickoff flow", () => {
 		await mock.fireLifecycle("agent_end", { messages: [{ role: "assistant", stopReason: "aborted" }] }, ctx);
 		expect(consumedCalls).toBe(0);
 		expect(state.pendingExecutionHandoffId).toBe("handoff-3");
-		expect(state.activeKickoffHandoffId).toBeUndefined();
 		expect(state.activeInjectedHandoffId).toBeUndefined();
 	});
 
-it("does not consume a kickoff handoff after an errored terminal turn", async () => {
-	const mock = createMockPi();
-	const ctx = createCtx();
-	const state = new ModeStateManager(mock.pi as never);
-	state.cachedConfigs.houtu = { body: "" };
-	state.currentMode = "houtu";
-	state.pendingExecutionHandoffId = "handoff-4";
-	state.activeKickoffHandoffId = "handoff-4";
-	state.activeInjectedHandoffId = "handoff-4";
-	registerModeHooks(mock.pi as never, state);
+	it("does not consume a handoff after an errored terminal turn", async () => {
+		const mock = createMockPi();
+		const ctx = createCtx();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs.houtu = { body: "" };
+		state.currentMode = "houtu";
+		state.pendingExecutionHandoffId = "handoff-4";
+		state.activeInjectedHandoffId = "handoff-4";
+		registerModeHooks(mock.pi as never, state);
 
-	let consumedCalls = 0;
-	mock.onEvent(HANDOFF_MARK_CONSUMED_CHANNEL, () => {
-		consumedCalls += 1;
+		let consumedCalls = 0;
+		mock.onEvent(HANDOFF_MARK_CONSUMED_CHANNEL, () => {
+			consumedCalls += 1;
+		});
+
+		await mock.fireLifecycle("agent_end", { messages: [{ role: "assistant", stopReason: "error" }] }, ctx);
+		expect(consumedCalls).toBe(0);
+		expect(state.pendingExecutionHandoffId).toBe("handoff-4");
+		expect(state.activeInjectedHandoffId).toBeUndefined();
 	});
-
-	await mock.fireLifecycle("agent_end", { messages: [{ role: "assistant", stopReason: "error" }] }, ctx);
-	expect(consumedCalls).toBe(0);
-	expect(state.pendingExecutionHandoffId).toBe("handoff-4");
-	expect(state.activeKickoffHandoffId).toBeUndefined();
-	expect(state.activeInjectedHandoffId).toBeUndefined();
-});
 });

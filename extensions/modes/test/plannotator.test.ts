@@ -20,7 +20,6 @@ import {
 	createErrorReply,
 	createSuccessReply,
 	HANDOFF_PREPARE_CHANNEL,
-	HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX,
 } from "../../handoff/src/protocol.js";
 import { ModeStateManager } from "../src/mode-state.js";
 import { promptPostPlanAction } from "../src/plannotator.js";
@@ -93,16 +92,14 @@ function createState(pi: ReturnType<typeof createMockPi>["pi"]) {
 	state.currentMode = "fuxi";
 	state.planTitle = "Approved Plan";
 	state.planActionPending = true;
-	state.planReviewApproved = true;
-	state.highAccuracyReviewApproved = true;
 	state.gapReviewApproved = true;
+	state.plannotatorAvailable = true;
 	return state;
 }
 
-describe("plannotator Execute in Hou Tu flow", () => {
+describe("plannotator Hou Tu handoff flow", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.useFakeTimers();
 		mocks.hydratePlanState.mockResolvedValue({ content: "# Approved Plan\n\n- Ship it\n" });
 	});
 
@@ -110,9 +107,9 @@ describe("plannotator Execute in Hou Tu flow", () => {
 		vi.useRealTimers();
 	});
 
-	it("switches to Hou Tu, keeps cleanup context, and queues the kickoff sentinel on success", async () => {
+	it("prepares Hou Tu handoff after direct approval without starting execution", async () => {
 		const mock = createMockPi();
-		const { ctx, ui } = createCtx(["Execute in Hou Tu"]);
+		const { ctx, ui } = createCtx(["Approve and hand off to Hou Tu"]);
 		const state = createState(mock.pi);
 		let cleanupRequest: { requestId: string; source: string; sessionId: string } | undefined;
 		let prepareEnvelope:
@@ -150,9 +147,11 @@ describe("plannotator Execute in Hou Tu flow", () => {
 		});
 
 		await promptPostPlanAction(mock.pi as never, state, ctx as never);
-		await vi.runAllTimersAsync();
 
-		expect(ui.select).toHaveBeenCalledWith(`Plan "Approved Plan" ready. What next?`, ["Execute in Hou Tu"]);
+		expect(ui.select).toHaveBeenCalledWith(
+			`Plan "Approved Plan" finalized. Choose approval path.`,
+			["Approve and hand off to Hou Tu", "Refine in Plannotator", "High accuracy review"],
+		);
 		expect(cleanupRequest).toMatchObject({
 			source: "plan-execute-handoff",
 			sessionId: "session-1",
@@ -160,24 +159,17 @@ describe("plannotator Execute in Hou Tu flow", () => {
 		expect(prepareEnvelope?.source).toBe("plan-execute-handoff");
 		expect(prepareEnvelope?.payload.producerMode).toBe("fuxi");
 		expect(prepareEnvelope?.payload.targetMode).toBe("houtu");
-		expect(prepareEnvelope?.payload.kickoffPrompt).toMatch(
-			new RegExp(`^${HOUTU_EXECUTION_HANDOFF_SENTINEL_PREFIX}`),
-		);
 		expect(prepareEnvelope?.payload.briefing).toContain("## Cleanup context");
 		expect(prepareEnvelope?.payload.briefing).toContain(
 			"Planning-task cleanup: cleared 2 planning tasks (1 incomplete).",
 		);
 		expect(state.currentMode).toBe("houtu");
+		expect(state.planApproved).toBe(true);
+		expect(state.planApprovalSource).toBe("user");
 		expect(state.planActionPending).toBe(false);
 		expect(state.pendingExecutionHandoffId).toBe(prepareEnvelope?.payload.handoffId);
-		expect(state.executionKickoffQueued).toBe(true);
-		expect(state.justSwitchedToHoutu).toBe(true);
-		expect(state.activeKickoffHandoffId).toBe(prepareEnvelope?.payload.handoffId);
 		expect(state.activeInjectedHandoffId).toBeUndefined();
-		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
-			prepareEnvelope?.payload.kickoffPrompt,
-			{ deliverAs: "followUp" },
-		);
+		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
 		expect(ui.notify).toHaveBeenCalledTimes(1);
 		expect(ui.notify.mock.calls[0]?.[0]).toContain(
 			"Planning-task cleanup: cleared 2 planning tasks (1 incomplete).",
@@ -185,12 +177,13 @@ describe("plannotator Execute in Hou Tu flow", () => {
 		expect(ui.notify.mock.calls[0]?.[0]).toContain(
 			`Execution handoff prepared for Hou Tu (handoff ${prepareEnvelope?.payload.handoffId}).`,
 		);
+		expect(ui.notify.mock.calls[0]?.[0]).toContain("Plan mode complete. Hou Tu handoff is ready.");
 		expect(ui.notify.mock.calls[0]?.[1]).toBe("info");
 	});
 
-	it("stays in Fu Xi and reopens the post-plan menu when prepare fails", async () => {
+	it("stays in Fu Xi and reopens approval menu when handoff preparation fails", async () => {
 		const mock = createMockPi();
-		const { ctx, ui } = createCtx(["Execute in Hou Tu", undefined]);
+		const { ctx, ui } = createCtx(["Approve and hand off to Hou Tu", undefined]);
 		const state = createState(mock.pi);
 		let prepareEnvelope:
 			| {
@@ -215,20 +208,20 @@ describe("plannotator Execute in Hou Tu flow", () => {
 		});
 
 		await promptPostPlanAction(mock.pi as never, state, ctx as never);
-		await vi.runAllTimersAsync();
 
 		expect(prepareEnvelope?.payload.briefing).toContain("Planning-task cleanup: no planning tasks needed cleanup.");
 		expect(state.currentMode).toBe("fuxi");
+		expect(state.planApproved).toBe(true);
+		expect(state.planApprovalSource).toBe("user");
 		expect(state.planActionPending).toBe(true);
 		expect(state.pendingExecutionHandoffId).toBeUndefined();
-		expect(state.executionKickoffQueued).toBe(false);
 		expect(mock.pi.setActiveTools).not.toHaveBeenCalled();
 		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
 		expect(ui.select).toHaveBeenCalledTimes(2);
 		expect(ui.notify).toHaveBeenCalledTimes(1);
 		expect(ui.notify.mock.calls[0]?.[0]).toContain("Planning-task cleanup: no planning tasks needed cleanup.");
 		expect(ui.notify.mock.calls[0]?.[0]).toContain("Execution handoff could not be prepared: prepare exploded.");
-		expect(ui.notify.mock.calls[0]?.[0]).toContain("Stayed in Fu Xi so you can retry from the post-plan menu.");
+		expect(ui.notify.mock.calls[0]?.[0]).toContain("Stayed in Fu Xi so you can retry handoff preparation.");
 		expect(ui.notify.mock.calls[0]?.[1]).toBe("warning");
 	});
 });

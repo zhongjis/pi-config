@@ -76,6 +76,7 @@ function buildExecutionHandoffNotification(
 	const parts = [`Planning-task cleanup: ${ensureSentence(cleanup.summary)}`];
 	if (handoff.success) {
 		parts.push(ensureSentence(handoff.summary));
+		parts.push("Plan mode complete. Hou Tu handoff is ready.");
 		return {
 			message: parts.join(" "),
 			level: cleanup.level === "info" ? "info" : "warning",
@@ -83,7 +84,7 @@ function buildExecutionHandoffNotification(
 	}
 
 	parts.push(ensureSentence(handoff.summary));
-	parts.push("Stayed in Fu Xi so you can retry from the post-plan menu.");
+	parts.push("Stayed in Fu Xi so you can retry handoff preparation.");
 	return {
 		message: parts.join(" "),
 		level: "warning",
@@ -323,12 +324,57 @@ async function prepareExecutionHandoff(
 	});
 }
 
+export async function prepareApprovedPlanHandoff(
+	pi: ExtensionAPI,
+	state: ModeStateManager,
+	ctx: ExtensionContext,
+	options: { reopenApprovalMenuOnFailure?: boolean } = {},
+): Promise<{ success: boolean; message: string; level: "info" | "warning"; details?: Record<string, unknown> }> {
+	state.planActionPending = false;
+	state.resetExecutionHandoffState();
+	state.persistState();
+
+	const cleanupResult = await clearPlanningTasksForHandoff(pi, ctx.sessionManager.getSessionId());
+	const handoffResult = await prepareExecutionHandoff(pi, state, cleanupResult);
+	const notification = buildExecutionHandoffNotification(cleanupResult, handoffResult);
+
+	if (!handoffResult.success) {
+		state.planActionPending = true;
+		state.persistState();
+		if (ctx.hasUI) {
+			ctx.ui.notify(notification.message, notification.level);
+		}
+		if (options.reopenApprovalMenuOnFailure !== false) {
+			await promptPostPlanAction(pi, state, ctx);
+		}
+		return { success: false, message: notification.message, level: notification.level };
+	}
+
+	state.pendingExecutionHandoffId = handoffResult.handoffId;
+	state.clearRuntimeExecutionHandoffState();
+	state.persistState();
+	state.switchMode("houtu", ctx);
+	if (ctx.hasUI) {
+		ctx.ui.notify(notification.message, notification.level);
+	}
+
+	return {
+		success: true,
+		message: notification.message,
+		level: notification.level,
+		details: { handoffId: handoffResult.handoffId, planTitle: state.planTitle },
+	};
+}
+
 export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
 	if (state.currentMode !== "fuxi" || !ctx.hasUI) return;
 	const snapshot = await hydratePlanState(ctx, state);
 	if (!snapshot || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
-	const choices: string[] = ["Execute in Hou Tu"];
+	const approvalLabel = state.planApproved || state.planReviewApproved || state.highAccuracyReviewApproved
+		? "Hand off to Hou Tu"
+		: "Approve and hand off to Hou Tu";
+	const choices: string[] = [approvalLabel];
 	if (!state.planReviewApproved) {
 		const plannotator = await checkPlannotatorAvailability(pi, state);
 		choices.push(plannotator.available ? PLANNOTATOR_AVAILABLE_LABEL : PLANNOTATOR_UNAVAILABLE_LABEL);
@@ -337,43 +383,22 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		choices.push("High accuracy review");
 	}
 
-	const choice = await ctx.ui.select(`Plan "${state.planTitle}" ready. What next?`, choices);
+	const choice = await ctx.ui.select(`Plan "${state.planTitle}" finalized. Choose approval path.`, choices);
 	if (!choice) return;
 
-	if (choice === "Execute in Hou Tu") {
-		state.planActionPending = false;
-		state.resetExecutionHandoffState();
-		state.persistState();
-
-		const cleanupResult = await clearPlanningTasksForHandoff(pi, ctx.sessionManager.getSessionId());
-		const handoffResult = await prepareExecutionHandoff(pi, state, cleanupResult);
-		const notification = buildExecutionHandoffNotification(cleanupResult, handoffResult);
-
-		if (!handoffResult.success) {
-			state.planActionPending = true;
-			state.persistState();
-			ctx.ui.notify(notification.message, notification.level);
-			await promptPostPlanAction(pi, state, ctx);
-			return;
+	if (choice === approvalLabel) {
+		if (!state.planReviewApproved && !state.highAccuracyReviewApproved) {
+			state.planApproved = true;
+			state.planApprovalSource = "user";
 		}
-
-		state.pendingExecutionHandoffId = handoffResult.handoffId;
-		state.activeKickoffHandoffId = handoffResult.handoffId;
-		state.activeInjectedHandoffId = undefined;
-		state.executionKickoffQueued = true;
 		state.persistState();
-		state.justSwitchedToHoutu = true;
-		state.switchMode("houtu", ctx);
-		ctx.ui.notify(notification.message, notification.level);
-		// Defer to next event-loop tick so finishRun() clears isStreaming before
-		// the message is sent. Without this, sendUserMessage sees isStreaming=true
-		// (still inside agent_end), queues a follow-up that the already-exited
-		// agent loop never drains — the turn silently never starts.
-		setTimeout(() => pi.sendUserMessage(handoffResult.kickoffPrompt, { deliverAs: "followUp" }), 0);
+		await prepareApprovedPlanHandoff(pi, state, ctx);
 		return;
 	}
 
 	if (choice === PLANNOTATOR_AVAILABLE_LABEL) {
+		state.planApproved = false;
+		state.planApprovalSource = undefined;
 		state.planActionPending = false;
 		state.persistState();
 		const reviewMessage = await startPlanReview(pi, state, ctx);
@@ -394,6 +419,8 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	}
 
 	if (choice === "High accuracy review") {
+		state.planApproved = false;
+		state.planApprovalSource = undefined;
 		state.highAccuracyReviewPending = true;
 		state.highAccuracyReviewApproved = false;
 		state.highAccuracyReviewFeedback = undefined;
@@ -422,18 +449,22 @@ export async function handlePlanReviewResult(
 
 	if (result.approved) {
 		state.planReviewApproved = true;
+		state.planApproved = true;
+		state.planApprovalSource = "plannotator";
 		state.planActionPending = true;
 		state.persistState();
 		if (ctx?.hasUI) {
 			ctx.ui.notify(`Plan "${state.planTitle ?? "untitled"}" approved in Plannotator.`, "info");
 		}
 		if (ctx) {
-			await promptPostPlanAction(pi, state, ctx);
+			await prepareApprovedPlanHandoff(pi, state, ctx);
 		}
 		return;
 	}
 
 	state.planReviewApproved = false;
+	state.planApproved = false;
+	state.planApprovalSource = undefined;
 	state.planActionPending = false;
 	state.persistState();
 	if (ctx?.hasUI) {
@@ -460,6 +491,8 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 		state.planReviewPending = true;
 		state.planReviewApproved = false;
 		state.planReviewFeedback = undefined;
+		state.planApproved = false;
+		state.planApprovalSource = undefined;
 		state.planActionPending = false;
 		state.plannotatorAvailable = true;
 		state.plannotatorUnavailableReason = undefined;
@@ -471,6 +504,8 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 	state.planReviewPending = false;
 	state.planReviewApproved = false;
 	state.planReviewFeedback = undefined;
+	state.planApproved = false;
+	state.planApprovalSource = undefined;
 	state.planActionPending = true;
 	state.persistState();
 	state.plannotatorAvailable = false;
@@ -481,9 +516,9 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 	logPlannotatorUnavailable(`review start failed for plan \"${state.planTitle}\"`, state.plannotatorUnavailableReason);
 
 	if (ctx.hasUI) {
-		ctx.ui.notify(`${state.plannotatorUnavailableReason} Returning to the post-plan menu.`, "warning");
+		ctx.ui.notify(`${state.plannotatorUnavailableReason} Returning to the approval menu.`, "warning");
 	}
-	return `Plannotator review could not be started for plan "${state.planTitle}". Returning to the post-plan menu.`;
+	return `Plannotator review could not be started for plan "${state.planTitle}". Returning to the approval menu.`;
 }
 
 export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
@@ -510,6 +545,8 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 	state.planReviewPending = false;
 	state.planReviewApproved = false;
 	state.planReviewFeedback = undefined;
+	state.planApproved = false;
+	state.planApprovalSource = undefined;
 	state.planActionPending = true;
 	state.persistState();
 
@@ -518,6 +555,6 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 	);
 	logPlannotatorUnavailable(`review recovery failed for review ${reviewId}`, reason);
 	if (ctx.hasUI) {
-		ctx.ui.notify(`${reason} Returning to the post-plan menu.`, "warning");
+		ctx.ui.notify(`${reason} Returning to the approval menu.`, "warning");
 	}
 }

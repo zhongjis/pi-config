@@ -15,6 +15,8 @@ export interface ModeConfig {
 
 export type PlanTitleSource = "content-h1" | "compat-name" | "explicit-exit" | "legacy-entry" | "cached-state";
 
+export type PlanApprovalSource = "user" | "plannotator" | "high-accuracy";
+
 export interface ModeState {
 	mode: Mode;
 	planTitle?: string;
@@ -30,8 +32,9 @@ export interface ModeState {
 	highAccuracyReviewApproved?: boolean;
 	highAccuracyReviewFeedback?: string;
 	planActionPending?: boolean;
+	planApproved?: boolean;
+	planApprovalSource?: PlanApprovalSource;
 	pendingExecutionHandoffId?: string;
-	executionKickoffQueued?: boolean;
 }
 
 export interface PlanEntry {

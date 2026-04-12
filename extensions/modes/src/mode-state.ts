@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { MODES, MODE_META } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
-import type { Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
+import type { Mode, ModeConfig, ModeState, PlanApprovalSource, PlanTitleSource } from "./types.js";
 import { colored, resolveModelFromStr } from "./utils.js";
 
 export class ModeStateManager {
@@ -22,10 +22,9 @@ export class ModeStateManager {
 	highAccuracyReviewApproved = false;
 	highAccuracyReviewFeedback: string | undefined;
 	planActionPending = false;
+	planApproved = false;
+	planApprovalSource: PlanApprovalSource | undefined;
 	pendingExecutionHandoffId: string | undefined;
-	executionKickoffQueued = false;
-	justSwitchedToHoutu = false;
-	activeKickoffHandoffId: string | undefined;
 	activeInjectedHandoffId: string | undefined;
 	activeCtx: ExtensionContext | undefined;
 	plannotatorAvailable: boolean | undefined;
@@ -51,8 +50,9 @@ export class ModeStateManager {
 			highAccuracyReviewApproved: this.highAccuracyReviewApproved,
 			highAccuracyReviewFeedback: this.highAccuracyReviewFeedback,
 			planActionPending: this.planActionPending,
+			planApproved: this.planApproved,
+			planApprovalSource: this.planApprovalSource,
 			pendingExecutionHandoffId: this.pendingExecutionHandoffId,
-			executionKickoffQueued: this.executionKickoffQueued,
 		});
 	}
 
@@ -130,13 +130,11 @@ export class ModeStateManager {
 	}
 
 	clearRuntimeExecutionHandoffState(): void {
-		this.activeKickoffHandoffId = undefined;
 		this.activeInjectedHandoffId = undefined;
 	}
 
 	resetExecutionHandoffState(): void {
 		this.pendingExecutionHandoffId = undefined;
-		this.executionKickoffQueued = false;
 		this.clearRuntimeExecutionHandoffState();
 	}
 
@@ -151,6 +149,8 @@ export class ModeStateManager {
 		this.highAccuracyReviewApproved = false;
 		this.highAccuracyReviewFeedback = undefined;
 		this.planActionPending = false;
+		this.planApproved = false;
+		this.planApprovalSource = undefined;
 		this.resetExecutionHandoffState();
 	}
 }

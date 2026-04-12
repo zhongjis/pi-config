@@ -8,10 +8,10 @@
  * AGENTS.md global rules stay active in all modes.
  *
  * Plan flow:
- *   Fu Xi drafts plan with Di Renjie gap review before save
- *   exit_plan_mode finalizes + returns the post-plan action menu
- *   Optional Plannotator refine and optional Yanluo high-accuracy review stay user-driven
- *   Execute → Hou Tu mode, plan injected via before_agent_start
+ *   Fu Xi drafts plan with Di Renjie gap review before finalize
+ *   finalize_plan enters approval flow
+ *   Direct approval, Plannotator approval, or high-accuracy approval prepare Hou Tu handoff
+ *   Plan mode ends once Hou Tu handoff is prepared; execution begins later in Hou Tu mode
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
