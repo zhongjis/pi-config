@@ -277,6 +277,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
     runtime.visibleState = state;
     syncSpinner(runtime);
     renderRuntime(runtime, ctx);
+  }
 
   function abortRuntime(runtime: BtwSessionRuntime): void {
     if (!runtime.activeRequest) return;
