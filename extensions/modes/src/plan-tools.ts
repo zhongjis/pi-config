@@ -8,9 +8,6 @@ import { prepareApprovedPlanHandoff, promptPostPlanAction } from "./plannotator.
 import type { PlanEntry } from "./types.js";
 
 function buildFinalizeStatusMessage(title: string, state: ModeStateManager): string {
-	if (state.currentMode === "houtu" && state.pendingExecutionHandoffId) {
-		return `Plan \"${title}\" finalized. Hou Tu starting now.`;
-	}
 	if (state.planReviewPending) {
 		return `Plan \"${title}\" finalized. Sent to Plannotator for refinement review.`;
 	}
@@ -34,7 +31,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 			feedback: Type.Optional(Type.String({ description: "Di Renjie review feedback or watchouts" })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const snapshot = await hydratePlanState(ctx, state);
+			const snapshot = await hydratePlanState(ctx as any, state);
 			if (!snapshot) {
 				return {
 					content: [{ type: "text", text: `Error: No saved draft found in ${LOCAL_PLAN_URI}. Write or save the plan to ${LOCAL_PLAN_URI} first.` }],
@@ -63,7 +60,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 			title: Type.Optional(Type.String({ description: `Optional short plan title. If omitted, the first markdown H1 in ${LOCAL_PLAN_URI} is used.` })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const snapshot = await hydratePlanState(ctx, state);
+			const snapshot = await hydratePlanState(ctx as any, state);
 			if (!snapshot) {
 				return {
 					content: [{ type: "text", text: `Error: No plan found in ${LOCAL_PLAN_URI}. Write or save the plan to ${LOCAL_PLAN_URI} first.` }],
@@ -104,7 +101,6 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 			state.planActionPending = true;
 			state.planApproved = false;
 			state.planApprovalSource = undefined;
-			state.resetExecutionHandoffState();
 			pi.appendEntry<PlanEntry>("plan", { title: resolvedTitle.title, content: snapshot.content, draft: false });
 			state.persistState();
 			if (ctx.hasUI) {
@@ -124,7 +120,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 		description: `Prepare Hou Tu handoff for the current approved finalized plan from ${LOCAL_PLAN_URI} and leave plan mode. Does not start execution.`,
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-			const snapshot = await hydratePlanState(ctx, state);
+			const snapshot = await hydratePlanState(ctx as any, state);
 			if (!snapshot || !state.planTitle) {
 				return {
 					content: [{ type: "text", text: `Error: No finalized plan found in ${LOCAL_PLAN_URI}. Finalize the plan first.` }],
@@ -142,7 +138,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 				};
 			}
 
-			const result = await prepareApprovedPlanHandoff(pi, state, ctx, { reopenApprovalMenuOnFailure: false });
+			const result = await prepareApprovedPlanHandoff(pi, state, ctx);
 			return {
 				content: [{ type: "text", text: result.message }],
 				details: result.details,
@@ -160,7 +156,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 			feedback: Type.Optional(Type.String({ description: "Yanluo review feedback or notes" })),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const snapshot = await hydratePlanState(ctx, state);
+			const snapshot = await hydratePlanState(ctx as any, state);
 			if (!snapshot || !state.planTitle) {
 				return {
 					content: [{ type: "text", text: `Error: No saved plan found in ${LOCAL_PLAN_URI}. Write or save the plan to ${LOCAL_PLAN_URI} first.` }],
