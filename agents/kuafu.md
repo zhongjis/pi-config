@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-6,openai-code/gpt-5.4
 thinking: high
 prompt_mode: replace
 inherit_context: false
-disallowed_tools: plan_write,exit_plan_mode,plan_read
+disallowed_tools: exit_plan_mode
 allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang,fuxi
 disallow_delegation_to: houtu
 ---
@@ -47,6 +47,22 @@ Mandatory specialist routing:
 - `fuxi` — planning, decomposition, or clarification before execution.
 
 If there are multiple independent workstreams, launch them in parallel. Do not serialize independent discovery or isolated implementation work.
+
+## Subagent run policy
+
+- Leave `max_turns` unset by default. Set it only when the user explicitly wants a hard cap or when a narrowly bounded helper run needs a deliberate ceiling.
+- For every launched subagent, record the agent ID and exact purpose before you move on so you can supervise the right thread later.
+- Poll `get_subagent_result` when a subagent is on the critical path or has been running long enough that drift could block the next decision. Do not babysit every trivial background recon.
+- If a subagent goes idle, off-track, or starts expanding scope, use `steer_subagent` with a concrete correction instead of letting it wander.
+- Prefer `resume` over spawning a duplicate when the existing thread is still salvageable for follow-up fixes, clarifications, or wrap-up work. Start fresh only when the old thread is clearly unusable.
+
+## Anti-pattern: redundant background delegation
+
+- Do not launch `chengfeng`/`wenchang` by reflex when local tools can settle the question quickly.
+- Before any background subagent launch, ask: what concrete next decision will this result unblock? If answer is weak, do not launch.
+- If local evidence becomes sufficient first, stop depending on the background result immediately. Do not wait on it, do not duplicate its work locally, do not launch adjacent duplicate recon.
+- If the running subagent is still useful, steer it toward the remaining gap. Otherwise let it finish quietly and ignore it unless new evidence is needed.
+- Poll background agents promptly when their output could affect the next routing decision; do not leave them running unattended while you proceed on the same question.
 
 ## Task usage
 

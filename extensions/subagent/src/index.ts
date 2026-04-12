@@ -699,14 +699,14 @@ ${typeListText}
 
 Guidelines:
 - For parallel work, use run_in_background: true on each agent. Foreground calls run sequentially — only one executes at a time.
+- Leave max_turns unset unless you need an explicit cap. Unset is the normal unlimited-by-default behavior.
+- Background agents require active supervision: check progress with get_subagent_result, use steer_subagent for mid-run course correction, and use resume to continue the same agent instead of starting duplicate work.
+- If a background agent is still useful, keep supervising it rather than launching overlapping duplicate work or leaving it unattended for long periods.
 - Use Explore for codebase searches and code understanding.
 - Use Plan for architecture and implementation planning.
 - Use general-purpose for complex tasks that need file editing.
 - Provide clear, detailed prompts so the agent can work autonomously.
-- Agent results are returned as text — summarize them for the user.
-- Use run_in_background for work you don't need immediately. You will be notified when it completes.
-- Use resume with an agent ID to continue a previous agent's work.
-- Use steer_subagent to send mid-run messages to a running background agent.
+- Agent results are returned as text; summarize them for the user.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
 - Use thinking to control extended thinking level.
 - Use inherit_context if the agent needs the parent conversation history.
@@ -734,18 +734,18 @@ Guidelines:
       ),
       max_turns: Type.Optional(
         Type.Number({
-          description: "Maximum number of agentic turns before stopping. Omit for unlimited (default).",
+          description: "Optional explicit cap on agentic turns before wrap-up/stop. Leave unset for unlimited-by-default behavior.",
           minimum: 1,
         }),
       ),
       run_in_background: Type.Optional(
         Type.Boolean({
-          description: "Set to true to run in background. Returns agent ID immediately. You will be notified on completion.",
+          description: "Set to true to run in background. Returns agent ID immediately; actively supervise longer work with get_subagent_result and steer_subagent.",
         }),
       ),
       resume: Type.Optional(
         Type.String({
-          description: "Optional agent ID to resume from. Continues from previous context.",
+          description: "Optional agent ID to continue. Prefer resuming an existing agent over starting duplicate follow-up work.",
         }),
       ),
       isolated: Type.Optional(
@@ -1025,8 +1025,8 @@ Guidelines:
           (record?.outputFile ? `Output file: ${record.outputFile}\n` : "") +
           (isQueued ? `Position: queued (max ${manager.getMaxConcurrent()} concurrent)\n` : "") +
           `\nYou will be notified when this agent completes.\n` +
-          `Use get_subagent_result to retrieve full results, or steer_subagent to send it messages.\n` +
-          `Do not duplicate this agent's work.`,
+          `Actively supervise it with get_subagent_result, steer_subagent, and resume as needed.\n` +
+          `Do not duplicate this agent's work or leave it unattended for long.`,
           { ...detailBase, toolUses: 0, tokens: "", durationMs: 0, status: "background" as const, agentId: id },
         );
       }
@@ -1129,7 +1129,7 @@ Guidelines:
     name: "get_subagent_result",
     label: "Get Agent Result",
     description:
-      "Check status and retrieve results from a background agent. Use the agent ID returned by Agent with run_in_background.",
+      "Check status and retrieve results from a background agent. Use it to actively supervise long-running work started by Agent.",
     parameters: Type.Object({
       agent_id: Type.String({
         description: "The agent ID to check.",
@@ -1230,7 +1230,7 @@ Guidelines:
     label: "Steer Agent",
     description:
       "Send a steering message to a running agent. The message will interrupt the agent after its current tool execution " +
-      "and be injected into its conversation, allowing you to redirect its work mid-run. Only works on running agents.",
+      "and be injected into its conversation, allowing you to redirect its work mid-run while actively supervising background work. Only works on running agents.",
     parameters: Type.Object({
       agent_id: Type.String({
         description: "The agent ID to steer (must be currently running).",
@@ -1688,7 +1688,6 @@ Write the file using the write tool. Only write the file, nothing else.`;
 
     const record = await manager.spawnAndWait(pi, ctx, "general-purpose", generatePrompt, {
       description: `Generate ${name} agent`,
-      maxTurns: 5,
     });
 
     if (record.status === "error") {

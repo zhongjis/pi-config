@@ -19,7 +19,7 @@ https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
 - **Custom agent types** — define agents in `.pi/agents/<name>.md` with YAML frontmatter: custom system prompts, model selection, thinking levels, tool restrictions
 - **Mid-run steering** — inject messages into running agents to redirect their work without restarting
 - **Session resume** — pick up where an agent left off, preserving full conversation context
-- **Graceful turn limits** — agents get a "wrap up" warning before hard abort, producing clean partial results instead of cut-off output
+- **Optional turn caps with graceful wrap-up** — if you set a `max_turns` cap, agents get a "wrap up" warning before hard abort, producing clean partial results instead of cut-off output
 - **Case-insensitive agent types** — `"explore"`, `"Explore"`, `"EXPLORE"` all work. Unknown types fall back to general-purpose with a note
 - **Fuzzy model selection** — specify models by name (`"haiku"`, `"sonnet"`) instead of full IDs, with automatic filtering to only available/configured models
 - **Context inheritance** — optionally fork the parent conversation into a sub-agent so it knows what's been discussed
@@ -58,6 +58,7 @@ Agent({
 
 Foreground agents block until complete and return results inline. Background agents return an ID immediately and notify you on completion.
 
+Leave `max_turns` unset unless you want an explicit cap. When a background agent is running, actively supervise it with `get_subagent_result`, send course corrections with `steer_subagent`, and use `resume` to continue the same agent later instead of spawning duplicate work.
 ## UI
 
 The extension renders a persistent widget above the editor showing all active agents:
@@ -70,6 +71,8 @@ The extension renders a persistent widget above the editor showing all active ag
 │    ⎿  searching…
 └─ 2 queued
 ```
+
+Turn counters only show `≤N` when you explicitly set `max_turns`; unlimited runs show only the current turn count.
 
 Individual agent results render Claude Code-style in the conversation:
 
@@ -128,7 +131,7 @@ description: Security Code Reviewer
 tools: read, grep, find, bash
 model: anthropic/claude-opus-4-6
 thinking: high
-max_turns: 30
+max_turns: 30  # Optional explicit cap for this agent
 ---
 
 You are a security auditor. Review code for vulnerabilities including:
@@ -164,7 +167,7 @@ All fields are optional — sensible defaults for everything.
 | `isolation` | — | Set to `worktree` to run in an isolated git worktree |
 | `model` | inherit parent | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`) |
 | `thinking` | inherit | none, minimal, low, medium, high, xhigh |
-| `max_turns` | unlimited | Max agentic turns before graceful shutdown. `0` or omit for unlimited |
+| `max_turns` | unlimited | Optional explicit cap on agentic turns before graceful shutdown. `0` or omit for unlimited |
 | `prompt_mode` | `replace` | `replace`: body is the full system prompt. `append`: body appended to parent's prompt (agent acts as a `parent twin` with optional extra instructions) |
 | `inherit_context` | `false` | Fork parent conversation into agent |
 | `run_in_background` | `false` | Run in background by default |
@@ -189,16 +192,18 @@ Launch a sub-agent.
 | `subagent_type` | string | yes | Agent type (built-in or custom) |
 | `model` | string | no | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`) |
 | `thinking` | string | no | Thinking level: none, minimal, low, medium, high, xhigh |
-| `max_turns` | number | no | Max agentic turns. Omit for unlimited (default) |
-| `run_in_background` | boolean | no | Run without blocking |
-| `resume` | string | no | Agent ID to resume a previous session |
+| `max_turns` | number | no | Optional explicit cap on agentic turns. Omit for the normal unlimited-by-default behavior |
+| `run_in_background` | boolean | no | Run without blocking. Actively supervise longer work with `get_subagent_result` / `steer_subagent` |
+| `resume` | string | no | Agent ID to continue a previous session instead of spawning duplicate follow-up work |
 | `isolated` | boolean | no | No extension/MCP tools |
 | `isolation` | `"worktree"` | no | Run in an isolated git worktree |
 | `inherit_context` | boolean | no | Fork parent conversation into agent |
 
+Default guidance is to omit `max_turns`. Set it only when you want an explicit cap for a particular call or agent configuration; otherwise let the agent run unlimited and supervise background work with `get_subagent_result`, `steer_subagent`, and `resume`.
+
 ### `get_subagent_result`
 
-Check status and retrieve results from a background agent.
+Check status and retrieve results from a background agent. Use it to actively supervise long-running work.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -208,7 +213,7 @@ Check status and retrieve results from a background agent.
 
 ### `steer_subagent`
 
-Send a steering message to a running agent. The message interrupts after the current tool execution.
+Send a steering message to a running agent. The message interrupts after the current tool execution and is the main way to redirect or wrap up background work mid-run.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -227,7 +232,7 @@ The `/agents` command opens an interactive menu:
 Running agents (2) — 1 running, 1 done     ← only shown when agents exist
 Agent types (6)                             ← unified list: defaults + custom
 Create new agent                            ← manual wizard or AI-generated
-Settings                                    ← max concurrency, max turns, grace turns, join mode
+Settings                                    ← max concurrency, optional default max turns, grace turns, join mode
 ```
 
 - **Agent types** — unified list with source indicators: `•` (project), `◦` (global), `✕` (disabled). Select an agent to manage it:
@@ -238,11 +243,11 @@ Settings                                    ← max concurrency, max turns, grac
 - **Eject** — writes the embedded default config as a `.md` file to project or personal location, so you can customize it
 - **Disable/Enable** — toggle agent availability. Disabled agents stay visible in the list (marked `✕`) and can be re-enabled
 - **Create new agent** — choose project/personal location, then manual wizard (step-by-step prompts for name, tools, model, thinking, system prompt) or AI-generated (describe what the agent should do and a sub-agent writes the `.md` file). Any name is allowed, including default agent names (overrides them)
-- **Settings** — configure max concurrency, default max turns, grace turns, and join mode at runtime
+- **Settings** — configure max concurrency, optional default max turns, grace turns, and join mode at runtime
 
 ## Graceful Max Turns
 
-Instead of hard-aborting at the turn limit, agents get a graceful shutdown:
+If you set an explicit `max_turns` cap — per call, in agent frontmatter, or via the optional runtime default in Settings — agents get a graceful shutdown instead of an immediate hard abort. Background agents also have idle supervision: stalled runs are nudged to wrap up and can be auto-stopped after prolonged inactivity.
 
 1. At `max_turns` — steering message: *"Wrap up immediately — provide your final answer now."*
 2. Up to 5 grace turns to finish cleanly

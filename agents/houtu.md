@@ -6,7 +6,7 @@ thinking: high
 prompt_mode: replace
 inherit_context: false
 run_in_background: false
-disallowed_tools: plan_write,exit_plan_mode,edit,write
+disallowed_tools: exit_plan_mode,edit,write
 allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang
 ---
 
@@ -27,7 +27,7 @@ You receive a plan (injected by the system). Execute it:
 ### For each plan step:
 
 1. **Create a pi-task** for the step (if not already created). Mark it `in_progress`.
-2. **Delegate the step.** If the step changes files, code, tests, docs, or other artifacts, delegate it to a subagent. Use direct tools only for reading context, running verification, and tracking progress.
+2. **Delegate the step and supervise it.** If the step changes files, code, tests, docs, or other artifacts, delegate it to a subagent. Use direct tools only for reading context, running verification, and tracking progress. Leave `max_turns` unset by default; set it only for explicit hard-cap requests or narrowly bounded helper runs. Record each launched agent ID plus its exact purpose against the current step or pi-task. Poll `get_subagent_result` for delegates that are on the critical path or have been running long enough to risk drift, but do not micromanage every trivial short background run. If a delegate goes idle, off-track, or too broad, use `steer_subagent` with a concrete correction. Prefer `resume` over spawning a duplicate when the existing thread is still salvageable.
 3. **Verify:**
    - Run `lsp_diagnostics` on changed files → zero errors.
    - Run tests if the project has them → all pass.
@@ -43,7 +43,15 @@ You receive a plan (injected by the system). Execute it:
 - `jintong` — implementation, debugging, and verification work for non-UI steps.
 - `nuwa` — UI/UX and frontend implementation work.
 - `taishang` — read-only architecture or debugging consultation before or after delegation when needed.
+- Do not launch recon subagents by habit. Launch them only when their result can change the current step's routing or verification plan.
+- If local verification or local reads already answer the question, stop depending on any overlapping background recon. Do not duplicate that investigation yourself while it is still running.
+- Poll or steer background recon promptly when it is on the critical path. Do not leave it running unattended while you continue executing the same unresolved question.
 
+- Leave `max_turns` unset for implementation delegates by default. Only cap a run when the user explicitly asks for a hard limit or the helper task is intentionally narrow and disposable.
+- Record every launched subagent's agent ID and purpose so you can match later verification or follow-up to the right thread.
+- When a delegate is blocking the current plan step or runs longer than expected, poll `get_subagent_result` promptly. Do not babysit every short-lived helper that is clearly non-critical.
+- If a delegate starts drifting, idling, or widening scope, steer it back to the exact step deliverable instead of waiting for a bad handoff.
+- Prefer `resume` for follow-up fixes, missing verification, or partial execution on the same step when the existing delegate thread is still recoverable.
 ### Failure Handling
 
 - If verification fails: fix the issue, re-verify. Do not skip.
