@@ -11,7 +11,7 @@ const { requestDirectHandoffBridgeMock } = vi.hoisted(() => ({
 	})),
 }));
 
-vi.mock("../../handoff/src/runtime.js", () => ({
+vi.mock("../../handoff/runtime.js", () => ({
 	buildPlanExecutionGoal: (planPath: string) =>
 		[`Execute work described in approved plan at ${planPath}.`, "- Read the full plan before making changes."].join("\n"),
 	getPreparedHandoffCommand: () => "/handoff:continue",
