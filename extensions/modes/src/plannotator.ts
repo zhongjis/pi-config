@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { buildPlanExecutionGoal } from "../../handoff/src/runtime.js";
+import { buildPlanExecutionGoal, getPreparedHandoffCommand, requestDirectHandoffBridge } from "../../handoff/src/runtime.js";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
 import { buildHighAccuracyReviewMessage, buildRefinementMessage } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
@@ -27,18 +27,16 @@ function logPlannotatorUnavailable(scope: string, reason?: string): void {
 	console.error(`[modes/plannotator] ${scope}: ${getPlannotatorUnavailableReason(reason)}`);
 }
 
-function buildPreparedHandoffCommand(planPath: string): string {
-	const goal = buildPlanExecutionGoal(planPath);
+function buildManualHandoffCommand(goal: string): string {
 	return `/handoff -mode houtu -no-summarize ${JSON.stringify(goal)}`;
 }
 
-function buildPreparedHandoffMessage(title: string): string {
-	return `Starting Hou Tu handoff for plan "${title}" in a new session.`;
+function buildPreparedHandoffMessage(title: string, command: string, hasUI: boolean): string {
+	return hasUI
+		? `Hou Tu handoff prepared for plan "${title}". Review ${command} in editor, then submit to open a new session.`
+		: `Hou Tu handoff prepared for plan "${title}". Run ${command} to open a new session.`;
 }
 
-function queuePreparedHandoffCommand(pi: ExtensionAPI, command: string): void {
-	setTimeout(() => pi.sendUserMessage(command, { deliverAs: "followUp" }), 0);
-}
 
 export async function requestPlannotator<T>(
 	pi: ExtensionAPI,
@@ -114,11 +112,57 @@ export async function prepareApprovedPlanHandoff(
 	}
 
 	const planPath = getLocalPlanPath(ctx);
-	const command = buildPreparedHandoffCommand(planPath);
-	const message = buildPreparedHandoffMessage(state.planTitle);
-	queuePreparedHandoffCommand(pi, command);
+	const goal = buildPlanExecutionGoal(planPath);
+	const manualCommand = buildManualHandoffCommand(goal);
+	const bridgeCommand = getPreparedHandoffCommand();
+	const sessionFile = ctx.sessionManager.getSessionFile();
+	if (!sessionFile) {
+		return {
+			success: false,
+			message: `Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: current session file is unavailable.`,
+			level: "warning",
+			details: {
+				bridgeCommand,
+				command: manualCommand,
+				goal,
+				mode: "houtu",
+				planPath,
+				planTitle: state.planTitle,
+				source: snapshot.source,
+			},
+		};
+	}
+
+	const bridge = await requestDirectHandoffBridge(pi, {
+		sessionFile,
+		goal,
+		mode: "houtu",
+		summarize: false,
+		source: "modes",
+	});
+
+	if (!bridge.success) {
+		return {
+			success: false,
+			message: `Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: ${bridge.error}`,
+			level: "warning",
+			details: {
+				bridgeCommand,
+				command: manualCommand,
+				goal,
+				mode: "houtu",
+				planPath,
+				planTitle: state.planTitle,
+				source: snapshot.source,
+			},
+		};
+	}
+
+	const command = bridge.data?.command || bridgeCommand;
+	const message = buildPreparedHandoffMessage(state.planTitle, command, ctx.hasUI);
 
 	if (ctx.hasUI) {
+		ctx.ui.setEditorText(command);
 		ctx.ui.notify(message, "info");
 	}
 
@@ -127,7 +171,9 @@ export async function prepareApprovedPlanHandoff(
 		message,
 		level: "info",
 		details: {
-			command,
+			bridgeCommand: command,
+			command: manualCommand,
+			goal,
 			mode: "houtu",
 			planPath,
 			planTitle: state.planTitle,
@@ -142,8 +188,8 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	if (!snapshot || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
 	const approvalLabel = state.planApproved || state.planReviewApproved || state.highAccuracyReviewApproved
-		? "Start Hou Tu handoff"
-		: "Approve and start Hou Tu handoff";
+		? "Prepare Hou Tu handoff"
+		: "Approve and prepare Hou Tu handoff";
 	const choices: string[] = [approvalLabel, VIEW_FULL_PLAN_LABEL];
 	if (!state.planReviewApproved) {
 		const plannotator = await checkPlannotatorAvailability(pi, state);

@@ -1,99 +1,130 @@
 import { describe, expect, it, vi } from "vitest";
 
+const { requestDirectHandoffBridgeMock } = vi.hoisted(() => ({
+	requestDirectHandoffBridgeMock: vi.fn(async () => ({
+		success: true as const,
+		data: {
+			command: "/handoff:continue",
+			sessionFile: "/tmp/session.jsonl",
+			source: "modes",
+		},
+	})),
+}));
+
 vi.mock("../../handoff/src/runtime.js", () => ({
-  buildPlanExecutionGoal: (planPath: string) => [`Execute work described in approved plan at ${planPath}.`, "- Read the full plan before making changes."].join("\n"),
+	buildPlanExecutionGoal: (planPath: string) =>
+		[`Execute work described in approved plan at ${planPath}.`, "- Read the full plan before making changes."].join("\n"),
+	getPreparedHandoffCommand: () => "/handoff:continue",
+	requestDirectHandoffBridge: requestDirectHandoffBridgeMock,
 }));
 
 vi.mock("../src/plan-storage.js", () => ({
-  hydratePlanState: vi.fn(async () => ({
-    content: "# Plan\n\n- ship feature",
-    title: "Plan",
-    source: "local",
-  })),
+	hydratePlanState: vi.fn(async () => ({
+		content: "# Plan\n\n- ship feature",
+		title: "Plan",
+		source: "local",
+	})),
 }));
 
 vi.mock("../src/plan-local.js", () => ({
-  LOCAL_PLAN_URI: "local://PLAN.md",
-  getLocalPlanPath: () => "/tmp/PLAN.md",
+	LOCAL_PLAN_URI: "local://PLAN.md",
+	getLocalPlanPath: () => "/tmp/PLAN.md",
 }));
 
 vi.mock("../src/config-loader.js", () => ({
-  loadAgentConfig: () => ({ body: "" }),
+	loadAgentConfig: () => ({ body: "" }),
 }));
-
 
 import { ModeStateManager } from "../src/mode-state.js";
 import { prepareApprovedPlanHandoff, promptPostPlanAction } from "../src/plannotator.js";
 
 function createMockPi() {
-  return {
-    pi: {
-      appendEntry: vi.fn(),
-      getAllTools: () => [],
-      setActiveTools: vi.fn(),
-      setModel: vi.fn(),
-      events: { emit: vi.fn() },
-      sendUserMessage: vi.fn(),
-    },
-  };
+	return {
+		pi: {
+			appendEntry: vi.fn(),
+			getAllTools: () => [],
+			setActiveTools: vi.fn(),
+			setModel: vi.fn(),
+			events: { emit: vi.fn() },
+			sendUserMessage: vi.fn(),
+		},
+	};
 }
 
 function createCtx(selectResult: string | null = null) {
-  return {
-    hasUI: true,
-    ui: {
-      notify: vi.fn(),
-      setEditorText: vi.fn(),
-      select: vi.fn(async () => selectResult),
-      editor: vi.fn(async () => undefined),
-    },
-  };
+	return {
+		hasUI: true,
+		sessionManager: {
+			getSessionFile: () => "/tmp/session.jsonl",
+		},
+		ui: {
+			notify: vi.fn(),
+			setEditorText: vi.fn(),
+			select: vi.fn(async () => selectResult),
+			editor: vi.fn(async () => undefined),
+		},
+	};
 }
 
 describe("plannotator handoff prep", () => {
-  it("queues a generic /handoff command via follow-up instead of prefilling the editor", async () => {
-    vi.useFakeTimers();
-    try {
-      const mock = createMockPi();
-      const state = new ModeStateManager(mock.pi as never);
-      state.planTitle = "Ship feature";
-      state.planActionPending = true;
 
-      const ctx = createCtx();
-      const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);
-      await vi.runAllTimersAsync();
+	it("prepares direct handoff bridge and prefills /handoff:continue instead of queuing /handoff text", async () => {
+		requestDirectHandoffBridgeMock.mockClear();
+		requestDirectHandoffBridgeMock.mockResolvedValue({
+			success: true,
+			data: {
+				command: "/handoff:continue",
+				sessionFile: "/tmp/session.jsonl",
+				source: "modes",
+			},
+		});
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.planTitle = "Ship feature";
+		state.planActionPending = true;
 
-      expect(result.success).toBe(true);
-      expect(result.details).toMatchObject({ mode: "houtu", planPath: "/tmp/PLAN.md" });
-      expect(result.details?.command).toContain("/handoff -mode houtu -no-summarize");
-      expect(result.details?.command).toContain("/tmp/PLAN.md");
-      expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(result.details?.command, { deliverAs: "followUp" });
-      expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+		const ctx = createCtx();
+		const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);
 
-  it("approval menu starts Hou Tu handoff automatically", async () => {
-    vi.useFakeTimers();
-    try {
-      const mock = createMockPi();
-      const state = new ModeStateManager(mock.pi as never);
-      state.currentMode = "fuxi";
-      state.planTitle = "Ship feature";
-      state.planApproved = true;
-      state.planActionPending = true;
-      state.planReviewApproved = true;
+		expect(result.success).toBe(true);
+		expect(result.details).toMatchObject({
+			bridgeCommand: "/handoff:continue",
+			mode: "houtu",
+			planPath: "/tmp/PLAN.md",
+		});
+		expect(requestDirectHandoffBridgeMock).toHaveBeenCalledWith(mock.pi, {
+			sessionFile: "/tmp/session.jsonl",
+			goal: expect.stringContaining("/tmp/PLAN.md"),
+			mode: "houtu",
+			summarize: false,
+			source: "modes",
+		});
+		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
+		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:continue");
+	});
 
-      const ctx = createCtx("Start Hou Tu handoff");
-      await promptPostPlanAction(mock.pi as never, state, ctx as never);
-      await vi.runAllTimersAsync();
+	it("approval menu prepares Hou Tu handoff without auto-sending follow-up text", async () => {
+		requestDirectHandoffBridgeMock.mockClear();
+		requestDirectHandoffBridgeMock.mockResolvedValue({
+			success: true,
+			data: {
+				command: "/handoff:continue",
+				sessionFile: "/tmp/session.jsonl",
+				source: "modes",
+			},
+		});
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
+		state.planTitle = "Ship feature";
+		state.planApproved = true;
+		state.planActionPending = true;
+		state.planReviewApproved = true;
 
-      expect(mock.pi.sendUserMessage).toHaveBeenCalledTimes(1);
-      expect(String(mock.pi.sendUserMessage.mock.calls[0][0])).toContain("/handoff -mode houtu -no-summarize");
-      expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+		const ctx = createCtx("Prepare Hou Tu handoff");
+		await promptPostPlanAction(mock.pi as never, state, ctx as never);
+
+		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
+		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:continue");
+	});
 });
