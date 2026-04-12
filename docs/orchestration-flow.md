@@ -112,7 +112,7 @@ Hou Tu side:
 - consume handoff after successful execution turn
 - bounce back to Fu Xi if stored handoff is invalid or stale
 
-### `extensions/handoff/src/*`
+### `extensions/handoff/*`
 
 Persistent handoff authority.
 
