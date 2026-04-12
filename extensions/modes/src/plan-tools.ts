@@ -117,7 +117,7 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 	pi.registerTool({
 		name: "exit_plan_mode",
 		label: "ExitPlanMode",
-		description: `Start Hou Tu handoff for the current approved finalized plan from ${LOCAL_PLAN_URI} through the safe /handoff command path.`,
+		description: `Prepare Hou Tu handoff for the current approved finalized plan from ${LOCAL_PLAN_URI}. In interactive sessions this prefills /handoff:continue for manual submission.`,
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			const snapshot = await hydratePlanState(ctx as any, state);
