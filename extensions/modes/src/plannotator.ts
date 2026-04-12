@@ -358,6 +358,8 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		}
 
 		state.pendingExecutionHandoffId = handoffResult.handoffId;
+		state.activeKickoffHandoffId = handoffResult.handoffId;
+		state.activeInjectedHandoffId = undefined;
 		state.executionKickoffQueued = true;
 		state.persistState();
 		state.justSwitchedToHoutu = true;

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
-import type { Mode, ModeConfig } from "./types.js";
+import type { Mode, ModeConfig, ModePromptMode } from "./types.js";
 import { parseCsv, parseInheritField } from "./utils.js";
 
 export function loadAgentConfig(mode: Mode): ModeConfig | null {
@@ -17,8 +17,13 @@ export function loadAgentConfig(mode: Mode): ModeConfig | null {
 		const trimmedBody = body.trim();
 		if (!trimmedBody) return null;
 
+		const promptMode = frontmatter.prompt_mode === "replace" || frontmatter.prompt_mode === "append"
+			? (frontmatter.prompt_mode as ModePromptMode)
+			: undefined;
+
 		return {
 			body: trimmedBody,
+			promptMode,
 			tools: parseCsv(frontmatter.tools),
 			extensions:
 				parseInheritField(frontmatter.extensions) ??

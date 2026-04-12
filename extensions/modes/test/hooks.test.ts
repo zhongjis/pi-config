@@ -160,7 +160,7 @@ describe("modes Hou Tu kickoff flow", () => {
 		mock.onEvent(HANDOFF_PING_CHANNEL, (raw) => {
 			const { requestId } = raw as { requestId: string };
 			pingCount += 1;
-			const readiness = pingCount === 1
+			const readiness: HandoffReadiness = pingCount === 1
 				? {
 					state: "not-ready",
 					ready: false,
@@ -183,6 +183,24 @@ describe("modes Hou Tu kickoff flow", () => {
 		);
 		expect(state.currentMode).toBe("houtu");
 		vi.useRealTimers();
+	});
+
+	it("replaces stale mode prompt content when the target mode uses prompt_mode=replace", async () => {
+		const mock = createMockPi();
+		const ctx = createCtx();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs.kuafu = { body: "Kua Fu prompt", promptMode: "replace" };
+		state.cachedConfigs.houtu = { body: "Hou Tu prompt", promptMode: "replace" };
+		state.currentMode = "houtu";
+		registerModeHooks(mock.pi as never, state);
+
+		const results = await mock.fireLifecycle(
+			"before_agent_start",
+			{ systemPrompt: "base instructions\n\nKua Fu prompt\n\nKua Fu prompt" },
+			ctx,
+		);
+
+		expect(results[0]).toEqual({ systemPrompt: "base instructions\n\nHou Tu prompt" });
 	});
 
 	it("injects handoff context exactly once, preserves execution context, and consumes on success", async () => {

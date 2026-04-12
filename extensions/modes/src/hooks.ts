@@ -272,6 +272,43 @@ function restoreFuXiAfterInvalidKickoff(state: ModeStateManager, ctx: Parameters
 	state.switchMode("fuxi", ctx);
 }
 
+function stripModeBodiesFromSystemPrompt(systemPrompt: string, state: ModeStateManager): string {
+	let stripped = systemPrompt;
+
+	for (const mode of MODES) {
+		const body = state.loadConfig(mode).body.trim();
+		if (!body) continue;
+
+		const prefixedBody = `\n\n${body}`;
+		while (stripped.includes(prefixedBody)) {
+			stripped = stripped.replace(prefixedBody, "");
+		}
+
+		if (stripped === body) {
+			stripped = "";
+		}
+	}
+
+	return stripped;
+}
+
+function buildModeSystemPrompt(
+	systemPrompt: string,
+	state: ModeStateManager,
+	config: ReturnType<ModeStateManager["loadConfig"]>,
+): string {
+	if (!config.body) {
+		return systemPrompt;
+	}
+
+	if (config.promptMode === "replace") {
+		const strippedBasePrompt = stripModeBodiesFromSystemPrompt(systemPrompt, state).trimEnd();
+		return strippedBasePrompt ? `${strippedBasePrompt}\n\n${config.body}` : config.body;
+	}
+
+	return `${systemPrompt}\n\n${config.body}`;
+}
+
 function applyExecutionKickoffSync(state: ModeStateManager, event: HandoffExecutionKickoffEvent): void {
 	if (event.status === "accepted") {
 		if (state.pendingExecutionHandoffId !== event.handoffId || !state.executionKickoffQueued) return;
@@ -424,7 +461,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	pi.on("before_agent_start", async (event, ctx) => {
 		state.activeCtx = ctx;
 		const config = state.loadConfig(state.currentMode);
-		const systemPrompt = config.body ? `${event.systemPrompt}\n\n${config.body}` : event.systemPrompt;
+		const systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
 
 		const activeKickoffHandoffId = state.activeKickoffHandoffId;
 		if (

@@ -172,6 +172,8 @@ describe("plannotator Execute in Hou Tu flow", () => {
 		expect(state.pendingExecutionHandoffId).toBe(prepareEnvelope?.payload.handoffId);
 		expect(state.executionKickoffQueued).toBe(true);
 		expect(state.justSwitchedToHoutu).toBe(true);
+		expect(state.activeKickoffHandoffId).toBe(prepareEnvelope?.payload.handoffId);
+		expect(state.activeInjectedHandoffId).toBeUndefined();
 		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
 			prepareEnvelope?.payload.kickoffPrompt,
 			{ deliverAs: "followUp" },

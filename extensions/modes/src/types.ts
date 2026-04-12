@@ -1,7 +1,10 @@
 export type Mode = "kuafu" | "fuxi" | "houtu";
 
+export type ModePromptMode = "append" | "replace";
+
 export interface ModeConfig {
 	body: string;
+	promptMode?: ModePromptMode;
 	tools?: string[];
 	extensions?: string[] | true;
 	disallowedTools?: string[];
