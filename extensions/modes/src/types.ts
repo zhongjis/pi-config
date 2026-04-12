@@ -34,7 +34,6 @@ export interface ModeState {
 	planActionPending?: boolean;
 	planApproved?: boolean;
 	planApprovalSource?: PlanApprovalSource;
-	pendingExecutionHandoffId?: string;
 }
 
 export interface PlanEntry {

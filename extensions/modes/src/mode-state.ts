@@ -24,8 +24,6 @@ export class ModeStateManager {
 	planActionPending = false;
 	planApproved = false;
 	planApprovalSource: PlanApprovalSource | undefined;
-	pendingExecutionHandoffId: string | undefined;
-	activeInjectedHandoffId: string | undefined;
 	activeCtx: ExtensionContext | undefined;
 	plannotatorAvailable: boolean | undefined;
 	plannotatorUnavailableReason: string | undefined;
@@ -52,7 +50,6 @@ export class ModeStateManager {
 			planActionPending: this.planActionPending,
 			planApproved: this.planApproved,
 			planApprovalSource: this.planApprovalSource,
-			pendingExecutionHandoffId: this.pendingExecutionHandoffId,
 		});
 	}
 
@@ -70,7 +67,6 @@ export class ModeStateManager {
 		let active: string[];
 
 		if (config.tools || (config.extensions && config.extensions !== true)) {
-			// Explicit allowlist mode (e.g. fuxi): build set from tools + extensions
 			const allowed = new Set<string>();
 			if (config.tools) {
 				for (const t of config.tools) if (allToolNames.includes(t)) allowed.add(t);
@@ -78,25 +74,20 @@ export class ModeStateManager {
 			if (Array.isArray(config.extensions)) {
 				for (const t of config.extensions) if (allToolNames.includes(t)) allowed.add(t);
 			} else {
-				// extensions not specified or true → add all available tools
 				for (const t of allToolNames) allowed.add(t);
 			}
 			active = Array.from(allowed);
 		} else {
-			// No allowlist → start with everything (e.g. kuafu, houtu)
 			active = [...allToolNames];
 		}
 
-		// Apply denylist (disallowed_tools frontmatter)
 		if (config.disallowedTools?.length) {
 			const denied = new Set(config.disallowedTools);
 			active = active.filter((t) => !denied.has(t));
 		}
 
-		// Note: tools.ts may override this via persisted /tools selections (load order)
 		this.pi.setActiveTools(active);
 
-		// Apply mode model if configured
 		if (config.model) {
 			const resolved = resolveModelFromStr(config.model, ctx.modelRegistry);
 			if (resolved) {
@@ -114,7 +105,7 @@ export class ModeStateManager {
 
 	switchMode(mode: Mode, ctx: ExtensionContext): void {
 		this.currentMode = mode;
-		this.cachedConfigs = {}; // force reload on switch
+		this.cachedConfigs = {};
 		this.applyMode(ctx);
 		this.persistState();
 	}
@@ -127,15 +118,6 @@ export class ModeStateManager {
 
 	hasPendingReview(): boolean {
 		return this.planReviewPending || this.highAccuracyReviewPending;
-	}
-
-	clearRuntimeExecutionHandoffState(): void {
-		this.activeInjectedHandoffId = undefined;
-	}
-
-	resetExecutionHandoffState(): void {
-		this.pendingExecutionHandoffId = undefined;
-		this.clearRuntimeExecutionHandoffState();
 	}
 
 	resetPlanReviewState(): void {
@@ -151,6 +133,5 @@ export class ModeStateManager {
 		this.planActionPending = false;
 		this.planApproved = false;
 		this.planApprovalSource = undefined;
-		this.resetExecutionHandoffState();
 	}
 }

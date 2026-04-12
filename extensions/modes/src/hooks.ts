@@ -1,19 +1,6 @@
-import { randomUUID } from "crypto";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey } from "@mariozechner/pi-tui";
-import {
-	createRequestEnvelope,
-	HANDOFF_GET_CHANNEL,
-	HANDOFF_MARK_CONSUMED_CHANNEL,
-} from "../../handoff/src/protocol.js";
-import type {
-	HandoffAuthorityRecord,
-	HandoffGetData,
-	HandoffMarkConsumedData,
-	HandoffReadiness,
-	HandoffRpcReply,
-} from "../../handoff/src/types.js";
 import { MODES, MODE_ALIASES } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { derivePlanTitleFromMarkdown, hydratePlanState } from "./plan-storage.js";
@@ -21,23 +8,6 @@ import { promptPostPlanAction, recoverPlanReview } from "./plannotator.js";
 import type { Mode, ModeState } from "./types.js";
 import { isDelegationAllowed, isSafeCommand } from "./utils.js";
 import { getLocalPlanPath, LOCAL_PLAN_URI, readLocalPlanFile } from "./plan-local.js";
-
-const HANDOFF_RPC_TIMEOUT_MS = 1_500;
-const HANDOFF_REPLAY_RECOVERY_NOTE = "Switched back to Fu Xi. Retry Hou Tu handoff from latest finalized plan.";
-
-type AssistantMessageLike = { role?: string; stopReason?: string };
-type PendingExecutionHandoffResult =
-	| {
-		ok: true;
-		authority: HandoffAuthorityRecord;
-		briefing: string;
-		readiness: HandoffReadiness;
-	  }
-	| {
-		ok: false;
-		reason: string;
-		readiness?: HandoffReadiness;
-	  };
 
 function isPlanWriteTarget(input: unknown, planPath: string): boolean {
 	const path = (input as { path?: unknown })?.path;
@@ -81,150 +51,6 @@ async function refreshPlanStateFromLocalPlan(ctx: Parameters<typeof readLocalPla
 	state.planTitleSource = title ? "content-h1" : undefined;
 }
 
-function getLastAssistantStopReason(messages: AssistantMessageLike[] | undefined): string | undefined {
-	if (!Array.isArray(messages)) {
-		return undefined;
-	}
-
-	for (let index = messages.length - 1; index >= 0; index -= 1) {
-		const message = messages[index];
-		if (message?.role === "assistant") {
-			return message.stopReason;
-		}
-	}
-
-	return undefined;
-}
-
-
-function getReplyReadiness<T>(reply: HandoffRpcReply<T> | undefined): HandoffReadiness | undefined {
-	if (!reply) {
-		return undefined;
-	}
-
-	if (reply.success === true) {
-		const data = reply.data as { readiness?: HandoffReadiness } | undefined;
-		return data?.readiness;
-	}
-
-	return reply.readiness;
-}
-
-async function requestHandoffRpc<T>(
-	pi: ExtensionAPI,
-	channel: string,
-	payload: Record<string, unknown>,
-	timeoutMs = HANDOFF_RPC_TIMEOUT_MS,
-): Promise<HandoffRpcReply<T> | undefined> {
-	const requestId = `modes-handoff-${randomUUID()}`;
-	const replyChannel = `${channel}:reply:${requestId}`;
-
-	return await new Promise<HandoffRpcReply<T> | undefined>((resolve) => {
-		let settled = false;
-		let unsubscribe = () => {};
-		const finish = (reply: HandoffRpcReply<T> | undefined) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeoutId);
-			unsubscribe();
-			resolve(reply);
-		};
-		const timeoutId = setTimeout(() => finish(undefined), timeoutMs);
-
-		unsubscribe = pi.events.on(replyChannel, (raw: unknown) => {
-			finish(raw as HandoffRpcReply<T>);
-		});
-
-		try {
-			pi.events.emit(channel, createRequestEnvelope(requestId, payload, "modes-houtu-runtime"));
-		} catch {
-			finish(undefined);
-		}
-	});
-}
-
-
-async function loadPendingExecutionHandoff(
-	pi: ExtensionAPI,
-	expectedHandoffId: string,
-): Promise<PendingExecutionHandoffResult> {
-	const reply = await requestHandoffRpc<HandoffGetData>(pi, HANDOFF_GET_CHANNEL, {});
-	const readiness = getReplyReadiness(reply);
-	if (!reply) {
-		return {
-			ok: false,
-			reason: `Execution handoff ${expectedHandoffId} could not be loaded because the handoff service did not respond.`,
-		};
-	}
-
-	if (reply.success !== true) {
-		return {
-			ok: false,
-			reason: reply.error?.trim() || `Execution handoff ${expectedHandoffId} could not be loaded.`,
-			readiness,
-		};
-	}
-
-	const authority = reply.data?.authority;
-	if (!authority) {
-		return {
-			ok: false,
-			reason: readiness?.reason ?? `Execution handoff ${expectedHandoffId} no longer has persisted authority.`,
-			readiness,
-		};
-	}
-
-	if (authority.handoffId !== expectedHandoffId) {
-		return {
-			ok: false,
-			reason: `Execution handoff ${expectedHandoffId} no longer matches the current pending handoff.`,
-			readiness,
-		};
-	}
-
-	if (authority.status !== "pending") {
-		return {
-			ok: false,
-			reason: readiness?.reason ?? `Execution handoff ${expectedHandoffId} is ${authority.status}.`,
-			readiness,
-		};
-	}
-
-	if (!readiness?.ready) {
-		return {
-			ok: false,
-			reason: readiness?.reason ?? `Execution handoff ${expectedHandoffId} is not ready.`,
-			readiness,
-		};
-	}
-
-	const briefing = reply.data?.briefing?.trim();
-	if (!briefing) {
-		return {
-			ok: false,
-			reason: readiness.reason ?? `Execution handoff ${expectedHandoffId} briefing is missing.`,
-			readiness,
-		};
-	}
-
-	return {
-		ok: true,
-		authority,
-		briefing,
-		readiness,
-	};
-}
-
-function buildExecutionRecoveryMessage(reason: string): string {
-	return `${reason} ${HANDOFF_REPLAY_RECOVERY_NOTE}`;
-}
-
-function restoreFuXiAfterInvalidHandoff(state: ModeStateManager, ctx: Parameters<ModeStateManager["switchMode"]>[1]): void {
-	state.resetExecutionHandoffState();
-	state.planActionPending = true;
-	state.switchMode("fuxi", ctx);
-}
-
 function stripModeBodiesFromSystemPrompt(systemPrompt: string, state: ModeStateManager): string {
 	let stripped = systemPrompt;
 
@@ -262,48 +88,7 @@ function buildModeSystemPrompt(
 	return `${systemPrompt}\n\n${config.body}`;
 }
 
-function filterHoutuContextMessages(messages: unknown[]): unknown[] {
-	const handoffIndex = messages.findIndex((message) => (message as { customType?: unknown } | null)?.customType === "handoff-context");
-	return messages.filter((message, index) => {
-		const customType = (message as { customType?: unknown } | null)?.customType;
-		if (customType === "plan-mode-context") return false;
-		if (handoffIndex < 0) return true;
-		return index >= handoffIndex;
-	});
-}
-
-async function maybeFinalizeInjectedHandoff(
-	pi: ExtensionAPI,
-	state: ModeStateManager,
-	event: { messages?: AssistantMessageLike[] },
-): Promise<void> {
-	const handoffId = state.activeInjectedHandoffId;
-	if (!handoffId) {
-		return;
-	}
-
-	const stopReason = getLastAssistantStopReason(event.messages);
-	state.clearRuntimeExecutionHandoffState();
-
-	// agent_end currently exposes the last assistant stopReason but not richer terminal
-	// status metadata here. To avoid consuming a handoff on ambiguous outcomes, only mark
-	// it consumed when an assistant message exists and the turn did not end with abort/error.
-	if (!stopReason || stopReason === "aborted" || stopReason === "error") {
-		return;
-	}
-
-	const reply = await requestHandoffRpc<HandoffMarkConsumedData>(pi, HANDOFF_MARK_CONSUMED_CHANNEL, {
-		consumedAt: new Date().toISOString(),
-	});
-	if (reply?.success === true && reply.data?.authority?.handoffId === handoffId && state.pendingExecutionHandoffId === handoffId) {
-		state.pendingExecutionHandoffId = undefined;
-		state.persistState();
-	}
-}
-
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
-
-	// Block invalid delegations and destructive bash in mode-specific contexts
 	pi.on("tool_call", async (event, ctx) => {
 		const config = state.loadConfig(state.currentMode);
 
@@ -357,65 +142,26 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		state.persistState();
 	});
 
-	// Prompt injection via before_agent_start
 	pi.on("before_agent_start", async (event, ctx) => {
 		state.activeCtx = ctx;
-		let config = state.loadConfig(state.currentMode);
-		let systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
-
-		const pendingExecutionHandoffId = state.pendingExecutionHandoffId;
-		if (state.currentMode === "houtu" && pendingExecutionHandoffId && state.activeInjectedHandoffId !== pendingExecutionHandoffId) {
-			const pendingHandoff = await loadPendingExecutionHandoff(pi, pendingExecutionHandoffId);
-			if (pendingHandoff.ok) {
-				state.activeInjectedHandoffId = pendingExecutionHandoffId;
-				return {
-					message: {
-						customType: "handoff-context",
-						content: pendingHandoff.briefing,
-						display: true,
-					},
-					systemPrompt,
-				};
-			}
-
-			restoreFuXiAfterInvalidHandoff(state, ctx);
-			if (ctx.hasUI) {
-				ctx.ui.notify(buildExecutionRecoveryMessage(pendingHandoff.reason), "warning");
-			}
-			config = state.loadConfig(state.currentMode);
-			systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
-		}
-
+		const config = state.loadConfig(state.currentMode);
+		const systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
 		if (!config.body) return;
 		return { systemPrompt };
 	});
 
-	// Context: keep the execution handoff and messages that follow it
-	pi.on("context", async (event) => {
-		if (state.currentMode !== "houtu") return;
-
-		return {
-			messages: filterHoutuContextMessages(event.messages),
-		};
-	});
-
-	// Approval prompt: after Fu Xi finishes, ask what's next. Consume injected handoffs only after a successful Hou Tu terminal turn.
-	pi.on("agent_end", async (event, ctx) => {
+	pi.on("agent_end", async (_event, ctx) => {
 		state.activeCtx = ctx;
-		await maybeFinalizeInjectedHandoff(pi, state, event as { messages?: AssistantMessageLike[] });
 		if (state.currentMode !== "fuxi" || !ctx.hasUI) return;
 		if (state.hasPendingReview()) return;
 		await promptPostPlanAction(pi, state, ctx);
 	});
 
-	// Session start: restore state
 	pi.on("session_start", async (_event, ctx) => {
 		state.activeCtx = ctx;
 		state.plannotatorAvailable = undefined;
 		state.plannotatorUnavailableReason = undefined;
-		state.clearRuntimeExecutionHandoffState();
 
-		// Tab on empty editor → cycle mode; otherwise pass through to autocomplete
 		if (ctx.hasUI) {
 			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 				const BaseEditor = CustomEditor as unknown as new (...args: unknown[]) => {
@@ -431,11 +177,10 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 						super.handleInput(data);
 					}
 				}
-				return new ModeEditor(tui, theme, keybindings);
+				return new ModeEditor(tui, theme, keybindings) as any;
 			});
 		}
 
-		// Check --mode flag
 		const flagValue = pi.getFlag("mode");
 		if (typeof flagValue === "string" && flagValue && flagValue !== "kuafu") {
 			const resolved = MODE_ALIASES[flagValue] ?? (MODES.includes(flagValue as Mode) ? (flagValue as Mode) : null);
@@ -444,7 +189,6 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 			}
 		}
 
-		// Restore persisted state (unless flag overrode)
 		if (!flagValue || flagValue === "kuafu") {
 			const entries = ctx.sessionManager.getEntries();
 			const modeEntry = entries
@@ -468,7 +212,6 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 				state.planActionPending = modeEntry.data.planActionPending ?? false;
 				state.planApproved = modeEntry.data.planApproved ?? false;
 				state.planApprovalSource = modeEntry.data.planApprovalSource;
-				state.pendingExecutionHandoffId = modeEntry.data.pendingExecutionHandoffId;
 			}
 		}
 		if (!state.pendingPlanReviewId) {
@@ -483,19 +226,16 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 			}
 		}
 
-		await hydratePlanState(ctx, state);
-
+		await hydratePlanState(ctx as any, state);
 		state.applyMode(ctx);
 		await recoverPlanReview(pi, state, ctx);
 		state.persistState();
 		await promptPostPlanAction(pi, state, ctx);
 	});
 
-	// Session shutdown: clear context
 	pi.on("session_shutdown", async () => {
 		state.activeCtx = undefined;
 		state.plannotatorAvailable = undefined;
 		state.plannotatorUnavailableReason = undefined;
-		state.clearRuntimeExecutionHandoffState();
 	});
 }
