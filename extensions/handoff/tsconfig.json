@@ -20,5 +20,5 @@
       ]
     }
   },
-  "include": ["index.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": ["index.ts", "config.ts", "runtime.ts", "test/**/*.ts"]
 }

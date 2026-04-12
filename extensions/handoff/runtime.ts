@@ -73,7 +73,7 @@ export function getPreparedHandoffCommand(): string {
 export async function requestDirectHandoffBridge(
   pi: ExtensionAPI,
   request: DirectHandoffBridgeRequest,
- ): Promise<DirectHandoffBridgeReply> {
+): Promise<DirectHandoffBridgeReply> {
   const requestId = `handoff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   return await new Promise<DirectHandoffBridgeReply>((resolve) => {
@@ -146,7 +146,7 @@ export function registerDirectHandoffBridge(pi: ExtensionAPI): () => void {
 export async function runPreparedHandoffCommand(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
- ): Promise<string | undefined> {
+): Promise<string | undefined> {
   const currentSessionFile = ctx.sessionManager.getSessionFile();
   if (!currentSessionFile) {
     return "Current session file is unavailable for prepared handoff.";
@@ -272,7 +272,6 @@ export function buildPlanExecutionGoal(planPath: string): string {
     "- Execute step by step until complete or truly blocked.",
   ].join("\n");
 }
-
 
 function getPendingPreparedHandoffsGlobal(): PendingPreparedHandoffsGlobal {
   const existing = (globalThis as Record<PropertyKey, unknown>)[PENDING_PREPARED_HANDOFFS_GLOBAL_KEY];
