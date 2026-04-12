@@ -10,7 +10,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   serializeConversation: () => "[]",
 }));
 
-import { buildPlanExecutionGoal, parseHandoffArgs } from "../src/runtime.js";
+import { buildPlanExecutionGoal, parseHandoffArgs } from "../runtime.js";
 
 describe("handoff argument parsing", () => {
   it("parses named flags and defaults", () => {

@@ -8,7 +8,7 @@ const originalHome = process.env.HOME;
 
 async function loadConfigModule() {
   vi.resetModules();
-  return await import("../src/config.js");
+  return await import("../config.js");
 }
 
 describe("handoff config persistence", () => {

@@ -131,7 +131,7 @@ function createCommandContext(options: {
 
 async function initExtension(mock: ReturnType<typeof createMockPi>) {
 	vi.resetModules();
-	const { default: init } = await import("../src/index.js");
+	const { default: init } = await import("../index.js");
 	init(mock.pi as never);
 }
 
@@ -174,7 +174,7 @@ describe("handoff extension", () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();
 			await initExtension(mock);
-			const runtime = await import("../src/runtime.js");
+			const runtime = await import("../runtime.js");
 			const { ctx, appendedCustomEntries } = createCommandContext({ sessionFile: "/repo/.pi/sessions/plan.jsonl" });
 
 			const reply = await runtime.requestDirectHandoffBridge(mock.pi as never, {
