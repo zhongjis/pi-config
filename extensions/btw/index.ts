@@ -94,10 +94,8 @@ function buildFooter(
   spinnerFrame: number,
  ): string {
   switch (status) {
-    case "running": {
-      const frame = SPINNER_FRAMES[spinnerFrame] ?? SPINNER_FRAMES[0];
-      return theme.fg("warning", `${frame} Running… ${DISMISS_HINT}`);
-    }
+    case "running":
+      return theme.fg("muted", DISMISS_HINT);
     case "complete":
       return theme.fg("muted", `Done. ${DISMISS_HINT}`);
     case "aborted":
