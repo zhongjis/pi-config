@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { buildPlanExecutionGoal, getPreparedHandoffCommand, requestDirectHandoffBridge } from "../../handoff/src/runtime.js";
+import { buildPlanExecutionGoal, getPreparedHandoffCommand, requestDirectHandoffBridge } from "../../handoff/runtime.js";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
 import { buildHighAccuracyReviewMessage, buildRefinementMessage } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";

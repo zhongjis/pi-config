@@ -1,4 +1,4 @@
-import { getPreparedHandoffCommand } from "../../handoff/src/runtime.js";
+import { getPreparedHandoffCommand } from "../../handoff/runtime.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { formatPlanDisplay } from "./plan-storage.js";
 
