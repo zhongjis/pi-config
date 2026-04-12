@@ -522,15 +522,6 @@ export default function (pi: ExtensionAPI) {
   // --- Cross-extension RPC via pi.events ---
   let currentCtx: ExtensionContext | undefined;
 
-  // Capture ctx from session_start for RPC spawn handler
-  pi.on("session_start", async (_event, ctx) => {
-    currentCtx = ctx;
-    manager.clearCompleted();           // preserve existing behavior
-  });
-
-  pi.on("session_switch", () => { manager.clearCompleted(); });
-
-
   const { unsubPing: unsubPingRpc, unsubSpawn: unsubSpawnRpc, unsubStop: unsubStopRpc } = registerRpcHandlers({
     events: pi.events,
     pi,
@@ -562,6 +553,24 @@ export default function (pi: ExtensionAPI) {
 
   // Live widget: show running agents above editor
   const widget = new AgentWidget(manager, agentActivity);
+
+  function syncSessionContext(ctx: ExtensionContext | undefined) {
+    currentCtx = ctx;
+    if (!ctx?.hasUI) return;
+    widget.setUICtx(ctx.ui as UICtx);
+    widget.update();
+  }
+
+  // Rebind session-local UI/state before any auto-started follow-up runs in the new session.
+  pi.on("session_start", async (_event, ctx) => {
+    manager.clearCompleted();           // preserve existing behavior
+    syncSessionContext(ctx);
+  });
+
+  pi.on("session_switch", async (_event, ctx) => {
+    manager.clearCompleted();
+    syncSessionContext(ctx);
+  });
 
   // ---- Join mode configuration ----
   let defaultJoinMode: JoinMode = 'smart';
@@ -613,6 +622,7 @@ export default function (pi: ExtensionAPI) {
 
   // Grab UI context from first tool execution + clear lingering widget on new turn
   pi.on("tool_execution_start", async (_event, ctx) => {
+    currentCtx = ctx;
     widget.setUICtx(ctx.ui as UICtx);
     widget.onTurnStart();
   });
