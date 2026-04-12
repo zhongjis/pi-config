@@ -1,5 +1,20 @@
 # Orchestration Flow Design
 
+```mermaid
+flowchart TD
+    A[Drafting] --> B[Gap review]
+    B --> C[Finalized]
+    C --> D{Approval path}
+    D -->|Direct user approval| E[Approved]
+    D -->|Plannotator approval| E
+    D -->|High-accuracy review| E
+    E --> F[Handoff prepared]
+    F --> G[Hou Tu active]
+    G --> H[Handoff injected]
+    H --> I[Execution runs]
+    I --> J[Handoff consumed]
+```
+
 ## Goal
 
 Keep planning, approval, handoff, and execution responsibilities separate.
@@ -47,6 +62,7 @@ Plan mode must end at **handoff prepared**. It must not start execution.
 ## Ownership by module
 
 ### `extensions/modes/src/plan-tools.ts`
+
 Plan lifecycle tool surface.
 
 - `gap_review_complete`
@@ -55,34 +71,41 @@ Plan lifecycle tool surface.
 - `high_accuracy_review_complete`
 
 Rules:
+
 - `finalize_plan` does **not** hand off.
 - `exit_plan_mode` does **not** finalize or review.
 - `exit_plan_mode` only prepares approved Hou Tu handoff and leaves plan mode.
 
 ### `extensions/modes/src/plannotator.ts`
+
 Approval-flow controller.
 
 Owns:
+
 - approval menu
 - Plannotator review start/result handling
 - high-accuracy review launch
 - approved-plan handoff preparation helper
 
 Does not own:
+
 - Hou Tu execution kickoff
 - execution replay
 - handoff consumption
 
 ### `extensions/modes/src/hooks.ts`
+
 Mode enforcement and runtime bridge.
 
 Fu Xi side:
+
 - plan-mode tool restrictions
 - read-only bash restrictions
 - plan-write invalidation of approvals
 - review recovery
 
 Hou Tu side:
+
 - load pending handoff on next execute turn
 - inject `handoff-context`
 - trim old planning context
@@ -90,9 +113,11 @@ Hou Tu side:
 - bounce back to Fu Xi if stored handoff is invalid or stale
 
 ### `extensions/handoff/src/*`
+
 Persistent handoff authority.
 
 Owns:
+
 - authority record
 - stored briefing
 - readiness checks
@@ -102,24 +127,31 @@ Owns:
 ## Stage notes
 
 ### Drafting
+
 Any successful write/edit to `local://PLAN.md` resets approval and handoff state.
 
 ### Gap review
+
 Gap review is required before `finalize_plan`.
 
 ### Finalized
+
 `finalize_plan` records title + plan snapshot and opens approval flow.
 It is the boundary between drafting and approval.
 
 ### Approval pending
+
 Approval is a single stage with multiple mechanisms.
 Approval sources:
+
 - `user`
 - `plannotator`
 - `high-accuracy`
 
 ### Handoff prepared
+
 A prepared handoff means:
+
 - persisted handoff authority exists
 - briefing exists
 - Hou Tu mode is active
