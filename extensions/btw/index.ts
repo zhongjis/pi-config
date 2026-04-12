@@ -286,20 +286,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
 
   function clearRuntime(runtime: BtwSessionRuntime, ctx?: ExtensionContext): void {
     abortRuntime(runtime);
-    stopSpinner(runtime);
-    runtime.visibleState = undefined;
-
-    const activeCtx = ctx ?? lastUiContext;
-    if (!activeCtx?.hasUI) return;
-
-    if (mountedRuntimeKey !== runtime.key) {
-      renderRuntime(runtime, activeCtx);
-      return;
-    }
-
-    const tui = runtime.widgetTui;
-    unmountWidget(activeCtx);
-    tui?.requestRender();
+    updateRuntimeState(runtime, undefined, ctx);
   }
 
   function bindTerminalListener(ctx: ExtensionContext): void {
