@@ -219,7 +219,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
           }
         },
       };
-    }, { placement: "belowEditor" });
+    });
 
     runtime.widgetRegistered = true;
     mountedRuntimeKey = runtime.key;
