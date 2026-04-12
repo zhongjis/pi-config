@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@mariozechner/pi-coding-agent": [
+        "/nix/store/jfggnpjyqgv4pw68a3acyvj1aq43fm2d-home-manager-path/lib/node_modules/@mariozechner/pi-coding-agent"
+      ],
+      "@mariozechner/pi-tui": [
+        "/nix/store/jfggnpjyqgv4pw68a3acyvj1aq43fm2d-home-manager-path/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-tui"
+      ],
+      "@sinclair/typebox": [
+        "/nix/store/jfggnpjyqgv4pw68a3acyvj1aq43fm2d-home-manager-path/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@sinclair/typebox"
+      ]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}
