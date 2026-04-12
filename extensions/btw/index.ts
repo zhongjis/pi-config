@@ -24,6 +24,9 @@ const BTW_SYSTEM_PROMPT = [
 
 const DISMISS_HINT = "Esc dismiss";
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const SPINNER_INTERVAL_MS = 120;
+
 type BtwStatus = "running" | "complete" | "aborted" | "error";
 
 interface BtwWidgetState {
@@ -45,6 +48,8 @@ interface BtwSessionRuntime {
   visibleState?: BtwWidgetState;
   widgetRegistered: boolean;
   widgetTui?: TUI;
+  spinnerFrame: number;
+  spinnerTimer?: ReturnType<typeof setInterval>;
 }
 
 function getSessionKey(ctx: ExtensionContext): string {
@@ -83,10 +88,16 @@ function buildBtwMessages(ctx: ExtensionContext, question: string): Message[] {
   ];
 }
 
-function buildFooter(theme: ExtensionContext["ui"]["theme"], status: BtwStatus): string {
+function buildFooter(
+  theme: ExtensionContext["ui"]["theme"],
+  status: BtwStatus,
+  spinnerFrame: number,
+ ): string {
   switch (status) {
-    case "running":
-      return theme.fg("muted", `Running… ${DISMISS_HINT}`);
+    case "running": {
+      const frame = SPINNER_FRAMES[spinnerFrame] ?? SPINNER_FRAMES[0];
+      return theme.fg("warning", `${frame} Running… ${DISMISS_HINT}`);
+    }
     case "complete":
       return theme.fg("muted", `Done. ${DISMISS_HINT}`);
     case "aborted":
@@ -99,7 +110,8 @@ function buildFooter(theme: ExtensionContext["ui"]["theme"], status: BtwStatus):
 function buildWidgetComponent(
   theme: ExtensionContext["ui"]["theme"],
   state: BtwWidgetState,
-): Container {
+  spinnerFrame: number,
+ ): Container {
   const container = new Container();
   const title = theme.fg("muted", "Side answer");
   const question = `${theme.fg("dim", theme.bold("Question"))} ${theme.fg("muted", state.question)}`;
@@ -116,14 +128,17 @@ function buildWidgetComponent(
     );
   } else if (!state.answer.trim()) {
     const waitingText =
-      state.status === "aborted" ? "Request cancelled." : "Waiting for response…";
-    container.addChild(new Text(theme.fg("dim", waitingText), 1, 0));
+      state.status === "aborted"
+        ? "Request cancelled."
+        : `${SPINNER_FRAMES[spinnerFrame] ?? SPINNER_FRAMES[0]} Waiting for response…`;
+    const waitingTone = state.status === "running" ? "warning" : "dim";
+    container.addChild(new Text(theme.fg(waitingTone, waitingText), 1, 0));
   } else {
     container.addChild(new Markdown(state.answer, 1, 0, getMarkdownTheme()));
   }
 
   container.addChild(new Spacer(1));
-  container.addChild(new Text(buildFooter(theme, state.status), 1, 0));
+  container.addChild(new Text(buildFooter(theme, state.status, spinnerFrame), 1, 0));
   container.addChild(new Spacer(1));
   return container;
 }
@@ -142,6 +157,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
         key,
         nextRequestId: 1,
         widgetRegistered: false,
+        spinnerFrame: 0,
       };
       runtimes.set(key, runtime);
     }
@@ -195,7 +211,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
         render: (width: number) => {
           const state = runtime.visibleState;
           if (!state) return [];
-          return buildWidgetComponent(theme, state).render(width);
+          return buildWidgetComponent(theme, state, runtime.spinnerFrame).render(width);
         },
         invalidate: () => {
           runtime.widgetRegistered = false;
@@ -229,14 +245,38 @@ export default function btwExtension(pi: ExtensionAPI): void {
     runtime.widgetTui?.requestRender();
   }
 
+  function stopSpinner(runtime: BtwSessionRuntime): void {
+    if (runtime.spinnerTimer) {
+      clearInterval(runtime.spinnerTimer);
+      runtime.spinnerTimer = undefined;
+    }
+    runtime.spinnerFrame = 0;
+  }
+
+  function syncSpinner(runtime: BtwSessionRuntime): void {
+    if (runtime.visibleState?.status !== "running") {
+      stopSpinner(runtime);
+      return;
+    }
+
+    if (runtime.spinnerTimer) return;
+
+    runtime.spinnerTimer = setInterval(() => {
+      runtime.spinnerFrame = (runtime.spinnerFrame + 1) % SPINNER_FRAMES.length;
+      if (activeSessionKey === runtime.key) {
+        runtime.widgetTui?.requestRender();
+      }
+    }, SPINNER_INTERVAL_MS);
+  }
+
   function updateRuntimeState(
     runtime: BtwSessionRuntime,
     state: BtwWidgetState | undefined,
     ctx?: ExtensionContext,
   ): void {
     runtime.visibleState = state;
+    syncSpinner(runtime);
     renderRuntime(runtime, ctx);
-  }
 
   function abortRuntime(runtime: BtwSessionRuntime): void {
     if (!runtime.activeRequest) return;
@@ -399,6 +439,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
     removeTerminalListener = undefined;
     for (const runtime of runtimes.values()) {
       abortRuntime(runtime);
+      stopSpinner(runtime);
       runtime.visibleState = undefined;
       runtime.widgetRegistered = false;
       runtime.widgetTui = undefined;
