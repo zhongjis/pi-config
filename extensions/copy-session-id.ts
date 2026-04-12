@@ -20,14 +20,20 @@ interface ClipboardCommand {
   args: string[];
 }
 
-function formatSessionMetadata(sessionId: string, sessionLogPath?: string): string {
+function formatSessionMetadata(
+  sessionId: string,
+  sessionLogPath?: string,
+): string {
   return [
+    `use pi-jsonl-logs skill to analyze the following session log based on user request`,
     `session-id: ${JSON.stringify(sessionId)}`,
     `session-log-path: ${sessionLogPath ? JSON.stringify(sessionLogPath) : "null"}`,
   ].join("\n");
 }
 
-function uniqueClipboardCommands(commands: ClipboardCommand[]): ClipboardCommand[] {
+function uniqueClipboardCommands(
+  commands: ClipboardCommand[],
+): ClipboardCommand[] {
   const seen = new Set<string>();
   return commands.filter((command) => {
     const key = `${command.command}\u0000${command.args.join("\u0000")}`;
@@ -42,7 +48,8 @@ function getClipboardCommands(): ClipboardCommand[] {
   const isTermux = Boolean(process.env.TERMUX_VERSION);
   const isWsl = Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
   const isWayland =
-    Boolean(process.env.WAYLAND_DISPLAY) || process.env.XDG_SESSION_TYPE === "wayland";
+    Boolean(process.env.WAYLAND_DISPLAY) ||
+    process.env.XDG_SESSION_TYPE === "wayland";
 
   if (isTermux) {
     commands.push({ command: "termux-clipboard-set", args: [] });
@@ -71,7 +78,10 @@ function getClipboardCommands(): ClipboardCommand[] {
   return uniqueClipboardCommands(commands);
 }
 
-async function runClipboardCommand(command: ClipboardCommand, text: string): Promise<void> {
+async function runClipboardCommand(
+  command: ClipboardCommand,
+  text: string,
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command.command, command.args, {
       stdio: ["pipe", "ignore", "pipe"],
@@ -89,7 +99,13 @@ async function runClipboardCommand(command: ClipboardCommand, text: string): Pro
         return;
       }
       const detail = stderr.trim();
-      reject(new Error(detail ? `${command.command}: ${detail}` : `${command.command} exited with code ${code}`));
+      reject(
+        new Error(
+          detail
+            ? `${command.command}: ${detail}`
+            : `${command.command} exited with code ${code}`,
+        ),
+      );
     });
 
     child.stdin.end(text);
@@ -117,7 +133,7 @@ async function copyToClipboard(text: string): Promise<string> {
 }
 
 export default function copySessionIdExtension(pi: ExtensionAPI): void {
-  pi.registerCommand("copy-session-id", {
+  pi.registerCommand("session:copy-id", {
     description: "Copy current session ID and session log path to clipboard",
     handler: async (_args: string, ctx: any) => {
       const sessionId = ctx.sessionManager.getSessionId();
@@ -126,7 +142,10 @@ export default function copySessionIdExtension(pi: ExtensionAPI): void {
 
       try {
         const backend = await copyToClipboard(payload);
-        ctx.ui.notify(`Copied session metadata to clipboard via ${backend}`, "success");
+        ctx.ui.notify(
+          `Copied session metadata to clipboard via ${backend}`,
+          "success",
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         process.stdout.write(`${payload}\n`);
