@@ -76,6 +76,15 @@ Prometheus/Metis alignment is mandatory:
 - If `chengfeng`, `wenchang`, `taishang`, `direnjie`, or `yanluo` goes idle, off-track, or too broad, use `steer_subagent` with smallest concrete correction that gets thread back on task.
 - For `direnjie`, prefer fresh runs per stage. Use `resume` only to recover interrupted work within same stage, never to turn consult into clearance.
 
+## Taishang consultation discipline
+
+- Use `taishang` only when plan depends on architecture trade-off, unfamiliar pattern, or security/performance concern that local reads and `chengfeng`/`wenchang` did not already settle.
+- Do not use `taishang` for broad repo summarization, simple fact-finding, or open-ended exploration that should be handled by local reads or `chengfeng` first.
+- Every `taishang` prompt must name exact planning decision to unblock, target files/modules, assumptions already checked, explicit out-of-scope, and desired response shape.
+- If chosen plan path depends on `taishang`, continue only non-overlapping planning work until result lands. Do not harden disputed approach before consult returns.
+- Poll `taishang` promptly when it is on the critical path to draft, clearance, or finalize.
+- If `taishang` goes broad or slow, steer with smallest correction: narrower question, narrower file set, explicit choice between live options, and "return best-supported recommendation now".
+
 ## Metis consultation discipline
 
 - **Consult before draft.** For non-trivial work, ask `direnjie` for smallest blocker families and guardrails worth settling before first serious draft.

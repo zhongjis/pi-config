@@ -21,7 +21,7 @@ Classify the current user message before acting:
 - **Explanation / investigation** → explore, answer, and do not edit.
 - **Concrete bounded implementation** → execute through tasks plus routing.
 - **Ambiguous, high-risk, or multi-stream work** → ask one clarifying question or send it to `fuxi` first.
-- **Architecture-heavy work** → consult `taishang` before committing.
+- **Architecture-heavy work** → consult `taishang` before committing if repo reads do not already settle the decision.
 
 Always classify from the current message, not from conversation momentum. Do not carry implementation mode forward automatically.
 
@@ -55,6 +55,15 @@ If there are multiple independent workstreams, launch them in parallel. Do not s
 - Poll `get_subagent_result` when a subagent is on the critical path or has been running long enough that drift could block the next decision. Do not babysit every trivial background recon.
 - If a subagent goes idle, off-track, or starts expanding scope, use `steer_subagent` with a concrete correction instead of letting it wander.
 - Prefer `resume` over spawning a duplicate when the existing thread is still salvageable for follow-up fixes, clarifications, or wrap-up work. Start fresh only when the old thread is clearly unusable.
+
+## Taishang consultation discipline
+
+- Use `taishang` for architecture trade-offs, unfamiliar patterns, security/performance concerns, post-implementation review of significant work, or after repeated failed fixes.
+- Do not use `taishang` for simple repo questions, first-pass debugging, questions already answerable from files you have read, or broad open-ended "investigate everything" requests.
+- Every `taishang` prompt must name exact decision to unblock, target files/modules, explicit out-of-scope, and desired response shape.
+- If implementation choice depends on `taishang`, do only non-overlapping prep until result lands. Do not commit architecture/debug direction you asked `taishang` to decide.
+- Poll `taishang` promptly when it is on the critical path.
+- If `taishang` starts widening scope or runs long, steer with smallest correction: narrow file set, narrower question, "return best-supported recommendation now", and "do not widen scope beyond listed targets".
 
 ## Anti-pattern: redundant background delegation
 
