@@ -21,6 +21,8 @@ import type {
 
 const PLANNOTATOR_AVAILABLE_LABEL = "Refine in Plannotator";
 const PLANNOTATOR_UNAVAILABLE_LABEL = "Refine in Plannotator (Unavailable)";
+const VIEW_FULL_PLAN_LABEL = "View full plan here";
+const HOUTU_AUTO_START_MESSAGE = `Start executing approved plan now. Use injected handoff context from ${LOCAL_PLAN_URI}. Do not restate the full plan in chat.`;
 
 function getPlannotatorUnavailableReason(reason?: string): string {
 	const trimmed = reason?.trim();
@@ -76,7 +78,7 @@ function buildExecutionHandoffNotification(
 	const parts = [`Planning-task cleanup: ${ensureSentence(cleanup.summary)}`];
 	if (handoff.success) {
 		parts.push(ensureSentence(handoff.summary));
-		parts.push("Plan mode complete. Hou Tu handoff is ready.");
+		parts.push("Plan mode complete. Hou Tu handoff is ready. Hou Tu starting now.");
 		return {
 			message: parts.join(" "),
 			level: cleanup.level === "info" ? "info" : "warning",
@@ -357,12 +359,16 @@ export async function prepareApprovedPlanHandoff(
 	if (ctx.hasUI) {
 		ctx.ui.notify(notification.message, notification.level);
 	}
+	setTimeout(() => {
+		pi.sendUserMessage(HOUTU_AUTO_START_MESSAGE, { deliverAs: "followUp" });
+		ctx.abort?.();
+	}, 0);
 
 	return {
 		success: true,
 		message: notification.message,
 		level: notification.level,
-		details: { handoffId: handoffResult.handoffId, planTitle: state.planTitle },
+		details: { handoffId: handoffResult.handoffId, planTitle: state.planTitle, autoStartQueued: true },
 	};
 }
 
@@ -374,7 +380,7 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	const approvalLabel = state.planApproved || state.planReviewApproved || state.highAccuracyReviewApproved
 		? "Hand off to Hou Tu"
 		: "Approve and hand off to Hou Tu";
-	const choices: string[] = [approvalLabel];
+	const choices: string[] = [approvalLabel, VIEW_FULL_PLAN_LABEL];
 	if (!state.planReviewApproved) {
 		const plannotator = await checkPlannotatorAvailability(pi, state);
 		choices.push(plannotator.available ? PLANNOTATOR_AVAILABLE_LABEL : PLANNOTATOR_UNAVAILABLE_LABEL);
@@ -393,6 +399,12 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		}
 		state.persistState();
 		await prepareApprovedPlanHandoff(pi, state, ctx);
+		return;
+	}
+
+	if (choice === VIEW_FULL_PLAN_LABEL) {
+		await ctx.ui.editor(`View full plan here — ${state.planTitle}`, snapshot.content);
+		await promptPostPlanAction(pi, state, ctx);
 		return;
 	}
 

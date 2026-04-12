@@ -67,23 +67,28 @@ function createMockPi() {
 
 function createCtx(selectResults: Array<string | undefined>) {
 	const select = vi.fn(async () => selectResults.shift());
+	const editor = vi.fn(async () => undefined);
 	const notify = vi.fn();
 	const setStatus = vi.fn();
+	const abort = vi.fn();
 
 	return {
 		ctx: {
 			hasUI: true,
+			abort,
 			modelRegistry: { find: () => undefined, getAll: () => [] },
 			sessionManager: {
 				getSessionId: () => "session-1",
 			},
 			ui: {
 				select,
+				editor,
 				notify,
 				setStatus,
 			},
 		},
-		ui: { select, notify, setStatus },
+		ui: { select, editor, notify, setStatus },
+		abort,
 	};
 }
 
@@ -107,9 +112,9 @@ describe("plannotator Hou Tu handoff flow", () => {
 		vi.useRealTimers();
 	});
 
-	it("prepares Hou Tu handoff after direct approval without starting execution", async () => {
+	it("prepares Hou Tu handoff after direct approval and queues auto-start", async () => {
 		const mock = createMockPi();
-		const { ctx, ui } = createCtx(["Approve and hand off to Hou Tu"]);
+		const { ctx, ui, abort } = createCtx(["Approve and hand off to Hou Tu"]);
 		const state = createState(mock.pi);
 		let cleanupRequest: { requestId: string; source: string; sessionId: string } | undefined;
 		let prepareEnvelope:
@@ -147,10 +152,11 @@ describe("plannotator Hou Tu handoff flow", () => {
 		});
 
 		await promptPostPlanAction(mock.pi as never, state, ctx as never);
+		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		expect(ui.select).toHaveBeenCalledWith(
 			`Plan "Approved Plan" finalized. Choose approval path.`,
-			["Approve and hand off to Hou Tu", "Refine in Plannotator", "High accuracy review"],
+			["Approve and hand off to Hou Tu", "View full plan here", "Refine in Plannotator", "High accuracy review"],
 		);
 		expect(cleanupRequest).toMatchObject({
 			source: "plan-execute-handoff",
@@ -169,7 +175,11 @@ describe("plannotator Hou Tu handoff flow", () => {
 		expect(state.planActionPending).toBe(false);
 		expect(state.pendingExecutionHandoffId).toBe(prepareEnvelope?.payload.handoffId);
 		expect(state.activeInjectedHandoffId).toBeUndefined();
-		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
+		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
+			"Start executing approved plan now. Use injected handoff context from local://PLAN.md. Do not restate the full plan in chat.",
+			{ deliverAs: "followUp" },
+		);
+		expect(abort).toHaveBeenCalledTimes(1);
 		expect(ui.notify).toHaveBeenCalledTimes(1);
 		expect(ui.notify.mock.calls[0]?.[0]).toContain(
 			"Planning-task cleanup: cleared 2 planning tasks (1 incomplete).",
@@ -177,7 +187,7 @@ describe("plannotator Hou Tu handoff flow", () => {
 		expect(ui.notify.mock.calls[0]?.[0]).toContain(
 			`Execution handoff prepared for Hou Tu (handoff ${prepareEnvelope?.payload.handoffId}).`,
 		);
-		expect(ui.notify.mock.calls[0]?.[0]).toContain("Plan mode complete. Hou Tu handoff is ready.");
+		expect(ui.notify.mock.calls[0]?.[0]).toContain("Plan mode complete. Hou Tu handoff is ready. Hou Tu starting now.");
 		expect(ui.notify.mock.calls[0]?.[1]).toBe("info");
 	});
 
@@ -223,5 +233,20 @@ describe("plannotator Hou Tu handoff flow", () => {
 		expect(ui.notify.mock.calls[0]?.[0]).toContain("Execution handoff could not be prepared: prepare exploded.");
 		expect(ui.notify.mock.calls[0]?.[0]).toContain("Stayed in Fu Xi so you can retry handoff preparation.");
 		expect(ui.notify.mock.calls[0]?.[1]).toBe("warning");
+	});
+
+	it("shows exact saved plan in popup and then returns to approval menu", async () => {
+		const mock = createMockPi();
+		const { ctx, ui } = createCtx(["View full plan here", undefined]);
+		const state = createState(mock.pi);
+
+		await promptPostPlanAction(mock.pi as never, state, ctx as never);
+
+		expect(ui.editor).toHaveBeenCalledWith(
+			"View full plan here — Approved Plan",
+			"# Approved Plan\n\n- Ship it\n",
+		);
+		expect(ui.select).toHaveBeenCalledTimes(2);
+		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
 	});
 });
