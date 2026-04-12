@@ -7,6 +7,23 @@ import { hydratePlanState, resolveExitPlanTitle } from "./plan-storage.js";
 import { prepareApprovedPlanHandoff, promptPostPlanAction } from "./plannotator.js";
 import type { PlanEntry } from "./types.js";
 
+function buildFinalizeStatusMessage(title: string, state: ModeStateManager): string {
+	if (state.currentMode === "houtu" && state.pendingExecutionHandoffId) {
+		return `Plan \"${title}\" finalized. Hou Tu starting now.`;
+	}
+	if (state.planReviewPending) {
+		return `Plan \"${title}\" finalized. Sent to Plannotator for refinement review.`;
+	}
+	if (state.highAccuracyReviewPending) {
+		return `Plan \"${title}\" finalized. High accuracy review queued.`;
+	}
+	if (state.planActionPending) {
+		return `Plan \"${title}\" finalized. Approval menu opened.`;
+	}
+	return `Plan \"${title}\" finalized. Awaiting approval.`;
+}
+
+
 export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): void {
 	pi.registerTool({
 		name: "gap_review_complete",
@@ -93,9 +110,10 @@ export function registerPlanTools(pi: ExtensionAPI, state: ModeStateManager): vo
 			if (ctx.hasUI) {
 				await promptPostPlanAction(pi, state, ctx);
 			}
+			const statusMessage = buildFinalizeStatusMessage(resolvedTitle.title, state);
 			return {
-				content: [{ type: "text", text: `Plan \"${resolvedTitle.title}\" finalized. Awaiting approval.` }],
-				details: { title: resolvedTitle.title, planActionPending: state.planActionPending, source: snapshot.source },
+				content: [{ type: "text", text: statusMessage }],
+				details: { title: resolvedTitle.title, planActionPending: state.planActionPending, source: snapshot.source, mode: state.currentMode },
 			};
 		},
 	});
