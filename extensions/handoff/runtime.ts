@@ -216,6 +216,9 @@ export async function runHandoffCommand(
   }
 
   const currentSessionFile = ctx.sessionManager.getSessionFile();
+  if (!currentSessionFile) {
+    return "Handoff requires a persisted session (in-memory sessions are not supported).";
+  }
   const messages = collectConversationMessages(ctx.sessionManager.getBranch());
 
   let finalPrompt: string;
@@ -248,7 +251,15 @@ export async function runHandoffCommand(
       return "New session cancelled.";
     }
 
-    pi.sendUserMessage(finalPrompt);
+    // After newSession(), the command handler is still active so ctx.isIdle()
+    // returns false. Without deliverAs, sendUserMessage throws when the agent
+    // is non-idle. Use deliverAs:"followUp" to queue delivery after the handler
+    // completes — matching the pattern from default-anton/pi-handoff.
+    if (ctx.isIdle()) {
+      pi.sendUserMessage(finalPrompt);
+    } else {
+      pi.sendUserMessage(finalPrompt, { deliverAs: "followUp" });
+    }
   } catch (error) {
     return `Handoff failed: ${error instanceof Error ? error.message : String(error)}`;
   }
