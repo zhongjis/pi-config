@@ -1,0 +1,58 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "recommended": false
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noControlCharactersInRegex": "off",
+        "noConfusingVoidType": "off",
+        "noUselessEscapeInString": "off",
+        "noImplicitAnyLet": "off",
+        "noGlobalIsNan": "off"
+      },
+      "complexity": {
+        "noUselessConstructor": "off",
+        "useOptionalChain": "off",
+        "noBannedTypes": "off",
+        "noUselessContinue": "off"
+      },
+      "correctness": {
+        "noUnusedFunctionParameters": "off",
+        "noUnusedVariables": "off",
+        "noUnusedImports": "off"
+      }
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "off"
+      }
+    }
+  },
+  "files": {
+    "includes": [
+      "AGENTS.md",
+      "extensions/**/*.ts",
+      "!extensions/pi-tasks",
+      "test/**/*.ts",
+      "package.json",
+      "pnpm-workspace.yaml",
+      "tsconfig.json",
+      "vitest.config.ts"
+    ]
+  }
+}
