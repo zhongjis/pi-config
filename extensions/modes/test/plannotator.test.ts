@@ -1,22 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { requestDirectHandoffBridgeMock } = vi.hoisted(() => ({
-	requestDirectHandoffBridgeMock: vi.fn(async () => ({
-		success: true as const,
-		data: {
-			command: "/handoff:continue",
-			sessionFile: "/tmp/session.jsonl",
-			source: "modes",
-		},
-	})),
-}));
-
-vi.mock("../../handoff/runtime.js", () => ({
-	buildPlanExecutionGoal: (planPath: string) =>
-		[`Execute work described in approved plan at ${planPath}.`, "- Read the full plan before making changes."].join("\n"),
-	getPreparedHandoffCommand: () => "/handoff:continue",
-	requestDirectHandoffBridge: requestDirectHandoffBridgeMock,
-}));
+vi.mock("../../handoff/runtime.js", () => ({}));
 
 vi.mock("../src/plan-storage.js", () => ({
 	hydratePlanState: vi.fn(async () => ({
@@ -51,7 +35,7 @@ function createMockPi() {
 	};
 }
 
-function createCtx(confirmResult = true, selectResult: string | null = null) {
+function createCtx(selectResult: string | null = null) {
 	return {
 		hasUI: true,
 		sessionManager: {
@@ -60,7 +44,6 @@ function createCtx(confirmResult = true, selectResult: string | null = null) {
 		ui: {
 			notify: vi.fn(),
 			setEditorText: vi.fn(),
-			confirm: vi.fn(async () => confirmResult),
 			select: vi.fn(async () => selectResult),
 			editor: vi.fn(async () => undefined),
 		},
@@ -69,16 +52,7 @@ function createCtx(confirmResult = true, selectResult: string | null = null) {
 
 describe("plannotator handoff prep", () => {
 
-	it("prepares direct handoff bridge and prefills /handoff:continue instead of queuing /handoff text", async () => {
-		requestDirectHandoffBridgeMock.mockClear();
-		requestDirectHandoffBridgeMock.mockResolvedValue({
-			success: true,
-			data: {
-				command: "/handoff:continue",
-				sessionFile: "/tmp/session.jsonl",
-				source: "modes",
-			},
-		});
+	it("prepareApprovedPlanHandoff sets editor text to /handoff:start-work and returns success message", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.planTitle = "Ship feature";
@@ -88,32 +62,18 @@ describe("plannotator handoff prep", () => {
 		const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);
 
 		expect(result.success).toBe(true);
+		expect(result.message).toContain("Planning finished");
+		expect(result.message).toContain("/handoff:start-work");
 		expect(result.details).toMatchObject({
-			bridgeCommand: "/handoff:continue",
 			mode: "houtu",
 			planPath: "/tmp/PLAN.md",
 		});
-		expect(requestDirectHandoffBridgeMock).toHaveBeenCalledWith(mock.pi, {
-			sessionFile: "/tmp/session.jsonl",
-			goal: expect.stringContaining("/tmp/PLAN.md"),
-			mode: "houtu",
-			summarize: false,
-			source: "modes",
-		});
+		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:start-work");
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Planning finished"), "info");
 		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
-		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:continue");
 	});
 
-	it("confirm=true auto-dispatches /handoff:continue via sendUserMessage", async () => {
-		requestDirectHandoffBridgeMock.mockClear();
-		requestDirectHandoffBridgeMock.mockResolvedValue({
-			success: true,
-			data: {
-				command: "/handoff:continue",
-				sessionFile: "/tmp/session.jsonl",
-				source: "modes",
-			},
-		});
+	it("promptPostPlanAction select → Approve sets editor text and sends followUp", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
@@ -121,37 +81,55 @@ describe("plannotator handoff prep", () => {
 		state.planApproved = true;
 		state.planActionPending = true;
 		state.planReviewApproved = true;
+		state.plannotatorAvailable = true;  // skip availability network call
 
-		const ctx = createCtx(true);
+		const ctx = createCtx("Approve");
 		await promptPostPlanAction(mock.pi as never, state, ctx as never);
 
-		expect(ctx.ui.confirm).toHaveBeenCalled();
-		expect(requestDirectHandoffBridgeMock).toHaveBeenCalledWith(
-			mock.pi,
-			expect.objectContaining({ mode: "houtu", summarize: false }),
-		);
+		expect(ctx.ui.select).toHaveBeenCalled();
+		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:start-work");
 		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
-			"/handoff:continue",
+			expect.stringContaining("Planning finished"),
 			expect.objectContaining({ deliverAs: "followUp" }),
 		);
-		expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
 	});
 
-	it("confirm=false shows secondary options menu and does not dispatch", async () => {
-		requestDirectHandoffBridgeMock.mockClear();
+	it("promptPostPlanAction select → null (escape) does nothing", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
 		state.planTitle = "Ship feature";
 		state.planActionPending = true;
-		state.planReviewApproved = true;  // skip Plannotator availability check
+		state.planReviewApproved = true;
+		state.plannotatorAvailable = true;  // skip availability network call
 
-		const ctx = createCtx(false, null);
+		const ctx = createCtx(null);
 		await promptPostPlanAction(mock.pi as never, state, ctx as never);
 
-		expect(ctx.ui.confirm).toHaveBeenCalled();
 		expect(ctx.ui.select).toHaveBeenCalled();
+		expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
 		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
-		expect(requestDirectHandoffBridgeMock).not.toHaveBeenCalled();
+	});
+
+	it("promptPostPlanAction select → High accuracy review sets pending state and sends message", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
+		state.planTitle = "Ship feature";
+		state.planActionPending = true;
+		state.planReviewApproved = true;
+		state.plannotatorAvailable = true;  // skip availability network call
+
+		const ctx = createCtx("High accuracy review");
+		await promptPostPlanAction(mock.pi as never, state, ctx as never);
+
+		expect(ctx.ui.select).toHaveBeenCalled();
+		expect(state.highAccuracyReviewPending).toBe(true);
+		// sendUserMessage is called via setTimeout; allow microtasks to flush
+		await new Promise((r) => setTimeout(r, 10));
+		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ deliverAs: "followUp" }),
+		);
 	});
 });

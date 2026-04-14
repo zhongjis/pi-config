@@ -1,5 +1,5 @@
+import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { buildPlanExecutionGoal, getPreparedHandoffCommand, requestDirectHandoffBridge } from "../../handoff/runtime.js";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
 import { buildHighAccuracyReviewMessage, buildRefinementMessage } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
@@ -14,8 +14,7 @@ import type {
 } from "./types.js";
 
 const PLANNOTATOR_AVAILABLE_LABEL = "Refine in Plannotator";
-const PLANNOTATOR_UNAVAILABLE_LABEL = "Refine in Plannotator (Unavailable)";
-const VIEW_FULL_PLAN_LABEL = "View full plan here";
+const PLANNOTATOR_UNAVAILABLE_LABEL = "Refine in Plannotator (unavailable)";
 const PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID = "__plannotator_health_check__";
 
 function getPlannotatorUnavailableReason(reason?: string): string {
@@ -27,60 +26,9 @@ function logPlannotatorUnavailable(scope: string, reason?: string): void {
 	console.error(`[modes/plannotator] ${scope}: ${getPlannotatorUnavailableReason(reason)}`);
 }
 
-function buildManualHandoffCommand(goal: string): string {
-	return `/handoff -mode houtu -no-summarize ${JSON.stringify(goal)}`;
+function buildCompletionMessage(title: string): string {
+	return `Planning finished for "${title}", you can start work now by sending /handoff:start-work`;
 }
-
-function buildPreparedHandoffMessage(title: string, command: string, hasUI: boolean): string {
-	return hasUI
-		? `Hou Tu handoff prepared for plan "${title}". Review ${command} in editor, then submit to open a new session.`
-		: `Hou Tu handoff prepared for plan "${title}". Run ${command} to open a new session.`;
-}
-
-async function launchHandoff(
-	pi: ExtensionAPI,
-	state: ModeStateManager,
-	ctx: ExtensionContext,
-): Promise<void> {
-	state.planActionPending = false;
-	state.persistState();
-
-	const snapshot = await hydratePlanState(ctx as any, state);
-	if (!snapshot || !state.planTitle) {
-		ctx.ui.notify(`No finalized plan found in ${LOCAL_PLAN_URI}. Finalize the plan first.`, "warning");
-		return;
-	}
-
-	const planPath = getLocalPlanPath(ctx);
-	const goal = buildPlanExecutionGoal(planPath);
-	const sessionFile = ctx.sessionManager.getSessionFile();
-
-	if (!sessionFile) {
-		const manualCommand = buildManualHandoffCommand(goal);
-		ctx.ui.notify(`Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: current session file is unavailable.`, "warning");
-		return;
-	}
-
-	const bridge = await requestDirectHandoffBridge(pi, {
-		sessionFile,
-		goal,
-		mode: "houtu",
-		summarize: false,
-		source: "modes",
-	});
-
-	if (!bridge.success) {
-		const manualCommand = buildManualHandoffCommand(goal);
-		ctx.ui.notify(`Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: ${bridge.error}`, "warning");
-		return;
-	}
-
-	// Auto-dispatch the prepared handoff command.
-	// pi.sendUserMessage with a slash-command string dispatches it as a slash command
-	// (not sent to LLM) — confirmed by pi SDK reload-runtime example.
-	pi.sendUserMessage("/handoff:continue", { deliverAs: "followUp" });
-}
-
 
 export async function requestPlannotator<T>(
 	pi: ExtensionAPI,
@@ -139,15 +87,14 @@ async function checkPlannotatorAvailability(
 }
 
 export async function prepareApprovedPlanHandoff(
-	pi: ExtensionAPI,
+	_pi: ExtensionAPI,
 	state: ModeStateManager,
 	ctx: ExtensionContext,
 ): Promise<{ success: boolean; message: string; level: "info" | "warning"; details?: Record<string, unknown> }> {
 	state.planActionPending = false;
 	state.persistState();
 
-	const snapshot = await hydratePlanState(ctx as any, state);
-	if (!snapshot || !state.planTitle) {
+	if (!state.planTitle) {
 		return {
 			success: false,
 			message: `No finalized plan found in ${LOCAL_PLAN_URI}. Finalize the plan first.`,
@@ -156,72 +103,21 @@ export async function prepareApprovedPlanHandoff(
 	}
 
 	const planPath = getLocalPlanPath(ctx);
-	const goal = buildPlanExecutionGoal(planPath);
-	const manualCommand = buildManualHandoffCommand(goal);
-	const bridgeCommand = getPreparedHandoffCommand();
-	const sessionFile = ctx.sessionManager.getSessionFile();
-	if (!sessionFile) {
-		return {
-			success: false,
-			message: `Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: current session file is unavailable.`,
-			level: "warning",
-			details: {
-				bridgeCommand,
-				command: manualCommand,
-				goal,
-				mode: "houtu",
-				planPath,
-				planTitle: state.planTitle,
-				source: snapshot.source,
-			},
-		};
-	}
-
-	const bridge = await requestDirectHandoffBridge(pi, {
-		sessionFile,
-		goal,
-		mode: "houtu",
-		summarize: false,
-		source: "modes",
-	});
-
-	if (!bridge.success) {
-		return {
-			success: false,
-			message: `Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: ${bridge.error}`,
-			level: "warning",
-			details: {
-				bridgeCommand,
-				command: manualCommand,
-				goal,
-				mode: "houtu",
-				planPath,
-				planTitle: state.planTitle,
-				source: snapshot.source,
-			},
-		};
-	}
-
-	const command = bridge.data?.command || bridgeCommand;
-	const message = buildPreparedHandoffMessage(state.planTitle, command, ctx.hasUI);
+	const completionMessage = buildCompletionMessage(state.planTitle);
 
 	if (ctx.hasUI) {
-		ctx.ui.setEditorText(command);
-		ctx.ui.notify(message, "info");
+		ctx.ui.setEditorText("/handoff:start-work");
+		ctx.ui.notify(completionMessage, "info");
 	}
 
 	return {
 		success: true,
-		message,
+		message: completionMessage,
 		level: "info",
 		details: {
-			bridgeCommand: command,
-			command: manualCommand,
-			goal,
-			mode: "houtu",
-			planPath,
 			planTitle: state.planTitle,
-			source: snapshot.source,
+			planPath,
+			mode: "houtu",
 		},
 	};
 }
@@ -231,38 +127,37 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	const snapshot = await hydratePlanState(ctx as any, state);
 	if (!snapshot || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
-	// Primary: confirm dialog for immediate launch
-	const alreadyApproved = state.planApproved || state.planReviewApproved || state.highAccuracyReviewApproved;
-	const confirmMessage = alreadyApproved
-		? `Plan "${state.planTitle}" is ready. Launch Hou Tu executor?`
-		: `Plan "${state.planTitle}" finalized. Approve and launch Hou Tu executor?`;
-	const confirmed = await ctx.ui.confirm("Launch Hou Tu executor?", confirmMessage);
+	const title = state.planTitle;
+	const plannotator = await checkPlannotatorAvailability(pi, state);
+	const plannotatorLabel = plannotator.available ? PLANNOTATOR_AVAILABLE_LABEL : PLANNOTATOR_UNAVAILABLE_LABEL;
 
-	if (confirmed) {
-		if (!state.planReviewApproved && !state.highAccuracyReviewApproved) {
-			state.planApproved = true;
-			state.planApprovalSource = "user";
-			state.persistState();
-		}
-		await launchHandoff(pi, state, ctx);  // resets planActionPending + persists
+	const choices = [
+		"Approve",
+		"Refine in System Editor ($EDITOR)",
+		plannotatorLabel,
+		"High accuracy review",
+	];
+
+	const choice = await ctx.ui.select(`Plan "${title}" finalized — choose an action:`, choices);
+	if (!choice) return;
+
+	if (choice === "Approve") {
+		state.planApproved = true;
+		state.planApprovalSource = "user";
+		state.planActionPending = false;
+		state.persistState();
+		ctx.ui.setEditorText("/handoff:start-work");
+		pi.sendUserMessage(buildCompletionMessage(title), { deliverAs: "followUp" });
 		return;
 	}
 
-	// Secondary: review options on No
-	const choices: string[] = [VIEW_FULL_PLAN_LABEL];
-	if (!state.planReviewApproved) {
-		const plannotator = await checkPlannotatorAvailability(pi, state);
-		choices.push(plannotator.available ? PLANNOTATOR_AVAILABLE_LABEL : PLANNOTATOR_UNAVAILABLE_LABEL);
-	}
-	if (!state.highAccuracyReviewApproved) {
-		choices.push("High accuracy review");
-	}
-
-	const choice = await ctx.ui.select(`Options for plan "${state.planTitle}"`, choices);
-	if (!choice) return;
-
-	if (choice === VIEW_FULL_PLAN_LABEL) {
-		await ctx.ui.editor(`View full plan here — ${state.planTitle}`, snapshot.content);
+	if (choice === "Refine in System Editor ($EDITOR)") {
+		const editor = process.env.VISUAL || process.env.EDITOR || "vi";
+		const planPath = getLocalPlanPath(ctx);
+		const result = spawnSync(editor, [planPath], { stdio: "inherit" });
+		if (result.status !== 0 && result.error) {
+			ctx.ui.notify(`Editor failed to open: ${result.error.message}`, "warning");
+		}
 		await promptPostPlanAction(pi, state, ctx);
 		return;
 	}
@@ -323,12 +218,17 @@ export async function handlePlanReviewResult(
 		state.planApprovalSource = "plannotator";
 		state.planActionPending = true;
 		state.persistState();
-		if (ctx?.hasUI) {
-			ctx.ui.notify(`Plan "${state.planTitle ?? "untitled"}" approved in Plannotator.`, "info");
-			await launchHandoff(pi, state, ctx);
-		} else if (ctx) {
-			await prepareApprovedPlanHandoff(pi, state, ctx);
+
+		let completionMessage: string;
+		if (ctx) {
+			const handoffResult = await prepareApprovedPlanHandoff(pi, state, ctx);
+			completionMessage = handoffResult.message;
+		} else {
+			state.planActionPending = false;
+			state.persistState();
+			completionMessage = buildCompletionMessage(state.planTitle ?? "untitled");
 		}
+		pi.sendUserMessage(completionMessage, { deliverAs: "followUp" });
 		return;
 	}
 
