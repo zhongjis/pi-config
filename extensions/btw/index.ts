@@ -7,10 +7,40 @@ import {
   type ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
 import { complete, type Message } from "@mariozechner/pi-ai";
+import { appendFileSync } from "fs";
+import { randomUUID } from "crypto";
 import { Container, Markdown, Spacer, Text, matchesKey, type TUI } from "@mariozechner/pi-tui";
 
 function normalizeReasoningLevel(level: string): string {
   return level === "off" ? "none" : level;
+}
+
+// ---------------------------------------------------------------------------
+// Session debug logging
+// ---------------------------------------------------------------------------
+
+/**
+ * Append a debug entry directly to the session JSONL file.
+ * Bypasses ReadonlySessionManager intentionally — we write the raw entry so
+ * pi's in-memory session state is not disturbed (no leaf advancement).
+ * Entries are invisible to the LLM (custom type) but readable via jq/pi-jsonl-logs.
+ */
+function debugLog(ctx: ExtensionContext, event: string, data?: unknown): void {
+  const sessionFile = ctx.sessionManager.getSessionFile();
+  if (!sessionFile) return;
+  const entry = {
+    type: "custom" as const,
+    customType: "btw:debug",
+    id: randomUUID(),
+    parentId: ctx.sessionManager.getLeafId(),
+    timestamp: new Date().toISOString(),
+    data: { event, ...( data !== undefined && { detail: data }) },
+  };
+  try {
+    appendFileSync(sessionFile, JSON.stringify(entry) + "\n");
+  } catch {
+    // best-effort — never throw from debug logging
+  }
 }
 
 const BTW_WIDGET_KEY = "btw";
@@ -358,6 +388,14 @@ export default function btwExtension(pi: ExtensionAPI): void {
     const runtime = getOrCreateRuntime(getSessionKey(ctx));
     abortRuntime(runtime);
 
+    debugLog(ctx, "request_start", {
+      question: trimmedQuestion,
+      model: `${model.provider}/${model.id}`,
+      hasApiKey: !!auth.apiKey,
+      hasHeaders: !!auth.headers && Object.keys(auth.headers).length > 0,
+      headerKeys: auth.headers ? Object.keys(auth.headers) : [],
+    });
+
     const request: ActiveBtwRequest = {
       id: runtime.nextRequestId++,
       abortController: new AbortController(),
@@ -386,20 +424,34 @@ export default function btwExtension(pi: ExtensionAPI): void {
         },
       );
 
+      debugLog(ctx, "complete_resolved", {
+        isError: response instanceof Error,
+        errorMessage: response instanceof Error ? response.message : undefined,
+        stopReason: response instanceof Error ? undefined : (response as any).stopReason,
+        contentLength: response instanceof Error ? undefined : JSON.stringify((response as any).content ?? []).length,
+      });
+
       if (runtime.activeRequest?.id !== request.id) {
         return;
       }
 
-      const answer = extractResponseText(response.content);
-      if (response.stopReason === "aborted") {
-        state.status = "aborted";
-        state.answer = answer;
-      } else if (!answer) {
+      if (response instanceof Error) {
         state.status = "error";
-        state.errorMessage = "BTW request returned an empty response.";
+        state.errorMessage = response.message || "BTW request failed.";
+        debugLog(ctx, "error_from_stream", { message: response.message });
       } else {
-        state.status = "complete";
-        state.answer = answer;
+        const answer = extractResponseText(response.content);
+        if (response.stopReason === "aborted") {
+          state.status = "aborted";
+          state.answer = answer;
+        } else if (!answer) {
+          state.status = "error";
+          state.errorMessage = "BTW request returned an empty response.";
+          debugLog(ctx, "empty_response", { stopReason: response.stopReason, contentRaw: response.content });
+        } else {
+          state.status = "complete";
+          state.answer = answer;
+        }
       }
 
       updateRuntimeState(runtime, state, ctx);
@@ -411,6 +463,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
       state.status = request.abortController.signal.aborted ? "aborted" : "error";
       if (state.status === "error") {
         state.errorMessage = error instanceof Error ? error.message : String(error);
+        debugLog(ctx, "thrown_error", { message: state.errorMessage, stack: error instanceof Error ? error.stack : undefined });
       }
       updateRuntimeState(runtime, state, ctx);
     } finally {
