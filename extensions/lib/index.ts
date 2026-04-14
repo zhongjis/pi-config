@@ -31,3 +31,11 @@ export function initLib(pi: ExtensionAPI): void {
   applyDebugFlag(pi);
   registerDebugCommand(pi);
 }
+/**
+ * No-op extension entry point.
+ * Pi discovers lib/index.ts as a potential extension; this default export
+ * satisfies the factory function check without registering anything.
+ * Extensions that use the library call initLib(pi) explicitly.
+ */
+export default function _libNoop(_pi: ExtensionAPI): void {}
+
