@@ -170,7 +170,7 @@ describe("handoff extension", () => {
 		});
 	});
 
-	it("bridges prepared handoff requests into handoff:continue without duplicate attempts", async () => {
+	it("bridges prepared handoff requests into handoff:start-work without duplicate attempts", async () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();
 			await initExtension(mock);
@@ -188,13 +188,13 @@ describe("handoff extension", () => {
 			expect(reply).toEqual({
 				success: true,
 				data: {
-					command: "/handoff:continue",
+					command: "/handoff:start-work",
 					sessionFile: "/repo/.pi/sessions/plan.jsonl",
 					source: "modes",
 				},
 			});
 
-			await mock.executeCommand("handoff:continue", "", ctx);
+			await mock.executeCommand("handoff:start-work", "", ctx);
 
 			expect(ctx.newSession).toHaveBeenCalledTimes(1);
 			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);

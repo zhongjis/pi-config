@@ -46,8 +46,8 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("handoff:continue", {
-    description: `Start prepared handoff for current session (${getPreparedHandoffCommand()})`,
+  pi.registerCommand("handoff:start-work", {
+    description: `After planning mode finishes planning, run this to hand off the plan to an execution agent in a new session (${getPreparedHandoffCommand()})`,
     handler: async (_args: string, ctx: any) => {
       const error = await runPreparedHandoffCommand(pi, ctx as ExtensionCommandContext);
       if (!error) {

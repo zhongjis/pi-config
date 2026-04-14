@@ -33,7 +33,7 @@ const PENDING_PREPARED_HANDOFFS_GLOBAL_KEY = Symbol.for("pi-config-handoff-prepa
 const HANDOFF_STARTUP_PROMPT_KEY = Symbol.for("pi-config-handoff-startup-prompt");
 const DIRECT_HANDOFF_BRIDGE_CHANNEL = "handoff:rpc:prepare";
 const DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS = 1000;
-const DIRECT_HANDOFF_COMMAND = "/handoff:continue";
+const DIRECT_HANDOFF_COMMAND = "/handoff:start-work";
 const HANDOFF_MODES: HandoffMode[] = ["kuafu", "fuxi", "houtu"];
 const HANDOFF_MODE_ALIASES: Record<string, HandoffMode> = {
   build: "kuafu",
