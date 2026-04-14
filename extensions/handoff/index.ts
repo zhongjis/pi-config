@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import {
+  consumeHandoffStartupPrompt,
   getHandoffUsage,
   getPreparedHandoffCommand,
   parseHandoffArgs,
@@ -60,5 +61,15 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", () => {
     unsubscribeBridge();
+  });
+
+  // session_start fires on the NEW extension instance after ctx.newSession().
+  // The old pi.sendUserMessage() routes to the disposed old AgentSession, so we
+  // pass the prompt through globalThis and send it here with the valid new pi.
+  pi.on("session_start", (event) => {
+    if (event.reason !== "new") return;
+    const prompt = consumeHandoffStartupPrompt();
+    if (!prompt) return;
+    pi.sendUserMessage(prompt);
   });
 }

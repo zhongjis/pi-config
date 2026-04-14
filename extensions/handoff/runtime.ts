@@ -25,6 +25,12 @@ export type DirectHandoffBridgeReply =
   | { success: false; error: string };
 
 const PENDING_PREPARED_HANDOFFS_GLOBAL_KEY = Symbol.for("pi-config-handoff-prepared");
+// Stores the handoff startup prompt across the session switch boundary.
+// pi.sendUserMessage() after ctx.newSession() routes to the OLD (disposed)
+// AgentSession — each extension loading gets its own runtime closure. Instead,
+// we stash the prompt here and the NEW session's session_start handler picks
+// it up via consumeHandoffStartupPrompt() on the fresh pi instance.
+const HANDOFF_STARTUP_PROMPT_KEY = Symbol.for("pi-config-handoff-startup-prompt");
 const DIRECT_HANDOFF_BRIDGE_CHANNEL = "handoff:rpc:prepare";
 const DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS = 1000;
 const DIRECT_HANDOFF_COMMAND = "/handoff:continue";
@@ -66,8 +72,29 @@ export function getHandoffUsage(): string {
   return "Usage: /handoff [-mode <name>] [-no-summarize] <goal>";
 }
 
+
 export function getPreparedHandoffCommand(): string {
   return DIRECT_HANDOFF_COMMAND;
+}
+
+// ---------------------------------------------------------------------------
+// Handoff startup prompt — crosses session switch boundary via globalThis.
+// The NEW extension's session_start handler consumes this.
+// ---------------------------------------------------------------------------
+
+export function consumeHandoffStartupPrompt(): string | null {
+  const raw = (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY];
+  delete (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY];
+  if (typeof raw !== "string" || !raw) return null;
+  return raw;
+}
+
+function setHandoffStartupPrompt(prompt: string): void {
+  (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY] = prompt;
+}
+
+function clearHandoffStartupPrompt(): void {
+  delete (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY];
 }
 
 export async function requestDirectHandoffBridge(
@@ -238,6 +265,12 @@ export async function runHandoffCommand(
     finalPrompt = buildDeterministicPrompt(args.goal, currentSessionFile);
   }
 
+  // Store the prompt in globalThis BEFORE switching sessions.
+  // After ctx.newSession(), the old pi.sendUserMessage() routes to the OLD disposed
+  // AgentSession (each extension load gets its own runtime closure). The new
+  // session_start handler on the fresh extension instance picks this up instead.
+  setHandoffStartupPrompt(finalPrompt);
+
   try {
     await ctx.waitForIdle();
     const result = await ctx.newSession({
@@ -248,19 +281,12 @@ export async function runHandoffCommand(
     });
 
     if (result.cancelled) {
+      clearHandoffStartupPrompt();
       return "New session cancelled.";
     }
-
-    // After newSession(), the command handler is still active so ctx.isIdle()
-    // returns false. Without deliverAs, sendUserMessage throws when the agent
-    // is non-idle. Use deliverAs:"followUp" to queue delivery after the handler
-    // completes — matching the pattern from default-anton/pi-handoff.
-    if (ctx.isIdle()) {
-      pi.sendUserMessage(finalPrompt);
-    } else {
-      pi.sendUserMessage(finalPrompt, { deliverAs: "followUp" });
-    }
+    // Prompt delivery is handled by session_start on the new extension instance.
   } catch (error) {
+    clearHandoffStartupPrompt();
     return `Handoff failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
