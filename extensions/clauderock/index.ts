@@ -312,13 +312,19 @@ async function streamViaBedrock(
     const bedrockStream = streamSimple(bedrockModel, context, {
       ...options,
       apiKey: undefined,
+      headers: undefined,  // clear Anthropic auth headers — they'd override AWS SigV4
+      reasoning: undefined, // Bedrock Converse doesn't accept a freeform reasoning param
       profile,
       region,
     });
+    let completionSeen = false;
     for await (const event of bedrockStream) {
       // Rewrite model references so pi never sees the Bedrock model ID.
       // This prevents Bedrock IDs from leaking into pi state and breaking
       // subsequent requests (e.g., after a mode switch).
+      if (event.type === "done" || event.type === "error") {
+        completionSeen = true;
+      }
       if (event.type === "start") {
         const patched: any = { ...event };
         if (patched.model) patched.model = originalModel.id;
@@ -329,6 +335,11 @@ async function streamViaBedrock(
       } else {
         stream.push(event);
       }
+    }
+    if (!completionSeen) {
+      // Bedrock stream closed without emitting a done/error event — push an error
+      // so finalResultPromise resolves instead of hanging forever.
+      stream.push({ type: "error", error: new Error("Bedrock stream ended without a completion event") });
     }
     stream.end();
   } catch (bedrockErr) {
