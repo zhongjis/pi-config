@@ -37,6 +37,50 @@ function buildPreparedHandoffMessage(title: string, command: string, hasUI: bool
 		: `Hou Tu handoff prepared for plan "${title}". Run ${command} to open a new session.`;
 }
 
+async function launchHandoff(
+	pi: ExtensionAPI,
+	state: ModeStateManager,
+	ctx: ExtensionContext,
+): Promise<void> {
+	state.planActionPending = false;
+	state.persistState();
+
+	const snapshot = await hydratePlanState(ctx as any, state);
+	if (!snapshot || !state.planTitle) {
+		ctx.ui.notify(`No finalized plan found in ${LOCAL_PLAN_URI}. Finalize the plan first.`, "warning");
+		return;
+	}
+
+	const planPath = getLocalPlanPath(ctx);
+	const goal = buildPlanExecutionGoal(planPath);
+	const sessionFile = ctx.sessionManager.getSessionFile();
+
+	if (!sessionFile) {
+		const manualCommand = buildManualHandoffCommand(goal);
+		ctx.ui.notify(`Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: current session file is unavailable.`, "warning");
+		return;
+	}
+
+	const bridge = await requestDirectHandoffBridge(pi, {
+		sessionFile,
+		goal,
+		mode: "houtu",
+		summarize: false,
+		source: "modes",
+	});
+
+	if (!bridge.success) {
+		const manualCommand = buildManualHandoffCommand(goal);
+		ctx.ui.notify(`Hou Tu handoff bridge unavailable. Run ${manualCommand} manually. Reason: ${bridge.error}`, "warning");
+		return;
+	}
+
+	// Auto-dispatch the prepared handoff command.
+	// pi.sendUserMessage with a slash-command string dispatches it as a slash command
+	// (not sent to LLM) — confirmed by pi SDK reload-runtime example.
+	pi.sendUserMessage("/handoff:continue", { deliverAs: "followUp" });
+}
+
 
 export async function requestPlannotator<T>(
 	pi: ExtensionAPI,
@@ -187,10 +231,25 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 	const snapshot = await hydratePlanState(ctx as any, state);
 	if (!snapshot || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
 
-	const approvalLabel = state.planApproved || state.planReviewApproved || state.highAccuracyReviewApproved
-		? "Prepare Hou Tu handoff"
-		: "Approve and prepare Hou Tu handoff";
-	const choices: string[] = [approvalLabel, VIEW_FULL_PLAN_LABEL];
+	// Primary: confirm dialog for immediate launch
+	const alreadyApproved = state.planApproved || state.planReviewApproved || state.highAccuracyReviewApproved;
+	const confirmMessage = alreadyApproved
+		? `Plan "${state.planTitle}" is ready. Launch Hou Tu executor?`
+		: `Plan "${state.planTitle}" finalized. Approve and launch Hou Tu executor?`;
+	const confirmed = await ctx.ui.confirm("Launch Hou Tu executor?", confirmMessage);
+
+	if (confirmed) {
+		if (!state.planReviewApproved && !state.highAccuracyReviewApproved) {
+			state.planApproved = true;
+			state.planApprovalSource = "user";
+			state.persistState();
+		}
+		await launchHandoff(pi, state, ctx);  // resets planActionPending + persists
+		return;
+	}
+
+	// Secondary: review options on No
+	const choices: string[] = [VIEW_FULL_PLAN_LABEL];
 	if (!state.planReviewApproved) {
 		const plannotator = await checkPlannotatorAvailability(pi, state);
 		choices.push(plannotator.available ? PLANNOTATOR_AVAILABLE_LABEL : PLANNOTATOR_UNAVAILABLE_LABEL);
@@ -199,18 +258,8 @@ export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateMan
 		choices.push("High accuracy review");
 	}
 
-	const choice = await ctx.ui.select(`Plan "${state.planTitle}" finalized. Choose approval path.`, choices);
+	const choice = await ctx.ui.select(`Options for plan "${state.planTitle}"`, choices);
 	if (!choice) return;
-
-	if (choice === approvalLabel) {
-		if (!state.planReviewApproved && !state.highAccuracyReviewApproved) {
-			state.planApproved = true;
-			state.planApprovalSource = "user";
-		}
-		state.persistState();
-		await prepareApprovedPlanHandoff(pi, state, ctx);
-		return;
-	}
 
 	if (choice === VIEW_FULL_PLAN_LABEL) {
 		await ctx.ui.editor(`View full plan here — ${state.planTitle}`, snapshot.content);
@@ -276,8 +325,8 @@ export async function handlePlanReviewResult(
 		state.persistState();
 		if (ctx?.hasUI) {
 			ctx.ui.notify(`Plan "${state.planTitle ?? "untitled"}" approved in Plannotator.`, "info");
-		}
-		if (ctx) {
+			await launchHandoff(pi, state, ctx);
+		} else if (ctx) {
 			await prepareApprovedPlanHandoff(pi, state, ctx);
 		}
 		return;

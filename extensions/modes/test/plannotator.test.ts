@@ -51,7 +51,7 @@ function createMockPi() {
 	};
 }
 
-function createCtx(selectResult: string | null = null) {
+function createCtx(confirmResult = true, selectResult: string | null = null) {
 	return {
 		hasUI: true,
 		sessionManager: {
@@ -60,6 +60,7 @@ function createCtx(selectResult: string | null = null) {
 		ui: {
 			notify: vi.fn(),
 			setEditorText: vi.fn(),
+			confirm: vi.fn(async () => confirmResult),
 			select: vi.fn(async () => selectResult),
 			editor: vi.fn(async () => undefined),
 		},
@@ -103,7 +104,7 @@ describe("plannotator handoff prep", () => {
 		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:continue");
 	});
 
-	it("approval menu prepares Hou Tu handoff without auto-sending follow-up text", async () => {
+	it("confirm=true auto-dispatches /handoff:continue via sendUserMessage", async () => {
 		requestDirectHandoffBridgeMock.mockClear();
 		requestDirectHandoffBridgeMock.mockResolvedValue({
 			success: true,
@@ -121,10 +122,36 @@ describe("plannotator handoff prep", () => {
 		state.planActionPending = true;
 		state.planReviewApproved = true;
 
-		const ctx = createCtx("Prepare Hou Tu handoff");
+		const ctx = createCtx(true);
 		await promptPostPlanAction(mock.pi as never, state, ctx as never);
 
+		expect(ctx.ui.confirm).toHaveBeenCalled();
+		expect(requestDirectHandoffBridgeMock).toHaveBeenCalledWith(
+			mock.pi,
+			expect.objectContaining({ mode: "houtu", summarize: false }),
+		);
+		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(
+			"/handoff:continue",
+			expect.objectContaining({ deliverAs: "followUp" }),
+		);
+		expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
+	});
+
+	it("confirm=false shows secondary options menu and does not dispatch", async () => {
+		requestDirectHandoffBridgeMock.mockClear();
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
+		state.planTitle = "Ship feature";
+		state.planActionPending = true;
+		state.planReviewApproved = true;  // skip Plannotator availability check
+
+		const ctx = createCtx(false, null);
+		await promptPostPlanAction(mock.pi as never, state, ctx as never);
+
+		expect(ctx.ui.confirm).toHaveBeenCalled();
+		expect(ctx.ui.select).toHaveBeenCalled();
 		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
-		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:continue");
+		expect(requestDirectHandoffBridgeMock).not.toHaveBeenCalled();
 	});
 });
