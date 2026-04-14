@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "types": ["node", "vitest/globals"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "@mariozechner/pi-ai": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-ai"],
+      "@mariozechner/pi-agent-core": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-agent-core"],
+      "@mariozechner/pi-coding-agent": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-coding-agent"],
+      "@mariozechner/pi-coding-agent/*": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-coding-agent/*"],
+      "@mariozechner/pi-tui": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-tui"]
+    }
+  },
+  "include": ["test/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules"]
+}
