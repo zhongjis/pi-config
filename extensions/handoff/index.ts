@@ -70,6 +70,6 @@ export default function (pi: ExtensionAPI) {
     if (event.reason !== "new") return;
     const prompt = consumeHandoffStartupPrompt();
     if (!prompt) return;
-    pi.sendUserMessage(prompt);
+    setTimeout(() => pi.sendUserMessage(prompt), 0);
   });
 }
