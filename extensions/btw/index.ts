@@ -9,7 +9,14 @@ import {
 import { complete, type Message } from "@mariozechner/pi-ai";
 import { appendFileSync } from "fs";
 import { randomUUID } from "crypto";
-import { Container, Markdown, Spacer, Text, matchesKey, type TUI } from "@mariozechner/pi-tui";
+import {
+  Container,
+  Markdown,
+  Spacer,
+  Text,
+  matchesKey,
+  type TUI,
+} from "@mariozechner/pi-tui";
 
 function normalizeReasoningLevel(level: string): string {
   return level === "off" ? "none" : level;
@@ -34,7 +41,7 @@ function debugLog(ctx: ExtensionContext, event: string, data?: unknown): void {
     id: randomUUID(),
     parentId: ctx.sessionManager.getLeafId(),
     timestamp: new Date().toISOString(),
-    data: { event, ...( data !== undefined && { detail: data }) },
+    data: { event, ...(data !== undefined && { detail: data }) },
   };
   try {
     appendFileSync(sessionFile, JSON.stringify(entry) + "\n");
@@ -54,7 +61,18 @@ const BTW_SYSTEM_PROMPT = [
 
 const DISMISS_HINT = "Esc dismiss";
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+const SPINNER_FRAMES = [
+  "⠋",
+  "⠙",
+  "⠹",
+  "⠸",
+  "⠼",
+  "⠴",
+  "⠦",
+  "⠧",
+  "⠇",
+  "⠏",
+] as const;
 const SPINNER_INTERVAL_MS = 120;
 
 type BtwStatus = "running" | "complete" | "aborted" | "error";
@@ -84,6 +102,27 @@ interface BtwSessionRuntime {
 
 function getSessionKey(ctx: ExtensionContext): string {
   return ctx.sessionManager.getSessionFile();
+}
+
+function stopReasonMessage(stopReason: string | undefined): string {
+  switch (stopReason) {
+    case "error":
+      return "API returned an error (empty response, stopReason: error).";
+    case "max_tokens":
+      return "Response cut off — model hit the token limit.";
+    case "length":
+      return "Response cut off — context length exceeded.";
+    case "content_filter":
+      return "Response blocked by content filter.";
+    case "tool_use":
+      return "Model stopped to use a tool but no content was returned.";
+    case "end_turn":
+      return "Model finished but returned no text content.";
+    default:
+      return stopReason
+        ? `BTW request returned an empty response (stopReason: ${stopReason}).`
+        : "BTW request returned an empty response.";
+  }
 }
 
 function extractResponseText(content: unknown): string {
@@ -122,7 +161,7 @@ function buildFooter(
   theme: ExtensionContext["ui"]["theme"],
   status: BtwStatus,
   spinnerFrame: number,
- ): string {
+): string {
   switch (status) {
     case "running":
       return theme.fg("muted", DISMISS_HINT);
@@ -139,12 +178,14 @@ function buildWidgetComponent(
   theme: ExtensionContext["ui"]["theme"],
   state: BtwWidgetState,
   spinnerFrame: number,
- ): Container {
+): Container {
   const container = new Container();
   const title = theme.fg("muted", "Side answer");
   const question = `${theme.fg("dim", theme.bold("Question"))} ${theme.fg("muted", state.question)}`;
 
-  container.addChild(new DynamicBorder((text: string) => theme.fg("borderMuted", text)));
+  container.addChild(
+    new DynamicBorder((text: string) => theme.fg("borderMuted", text)),
+  );
   container.addChild(new Spacer(1));
   container.addChild(new Text(title, 1, 0));
   container.addChild(new Text(question, 1, 0));
@@ -152,7 +193,11 @@ function buildWidgetComponent(
 
   if (state.status === "error") {
     container.addChild(
-      new Text(theme.fg("error", state.errorMessage ?? "BTW request failed."), 1, 0),
+      new Text(
+        theme.fg("error", state.errorMessage ?? "BTW request failed."),
+        1,
+        0,
+      ),
     );
   } else if (!state.answer.trim()) {
     const waitingText =
@@ -166,7 +211,9 @@ function buildWidgetComponent(
   }
 
   container.addChild(new Spacer(1));
-  container.addChild(new Text(buildFooter(theme, state.status, spinnerFrame), 1, 0));
+  container.addChild(
+    new Text(buildFooter(theme, state.status, spinnerFrame), 1, 0),
+  );
   container.addChild(new Spacer(1));
   return container;
 }
@@ -222,7 +269,10 @@ export default function btwExtension(pi: ExtensionAPI): void {
     mountedRuntimeKey = undefined;
   }
 
-  function ensureWidgetMounted(ctx: ExtensionContext, runtime: BtwSessionRuntime): void {
+  function ensureWidgetMounted(
+    ctx: ExtensionContext,
+    runtime: BtwSessionRuntime,
+  ): void {
     if (!ctx.hasUI) return;
     if (mountedRuntimeKey === runtime.key && runtime.widgetRegistered) return;
 
@@ -239,7 +289,11 @@ export default function btwExtension(pi: ExtensionAPI): void {
         render: (width: number) => {
           const state = runtime.visibleState;
           if (!state) return [];
-          return buildWidgetComponent(theme, state, runtime.spinnerFrame).render(width);
+          return buildWidgetComponent(
+            theme,
+            state,
+            runtime.spinnerFrame,
+          ).render(width);
         },
         invalidate: () => {
           runtime.widgetRegistered = false;
@@ -255,7 +309,10 @@ export default function btwExtension(pi: ExtensionAPI): void {
     mountedRuntimeKey = runtime.key;
   }
 
-  function renderRuntime(runtime: BtwSessionRuntime, ctx?: ExtensionContext): void {
+  function renderRuntime(
+    runtime: BtwSessionRuntime,
+    ctx?: ExtensionContext,
+  ): void {
     const activeCtx = ctx ?? lastUiContext;
     if (!activeCtx?.hasUI) return;
     if (activeSessionKey !== runtime.key) return;
@@ -314,7 +371,10 @@ export default function btwExtension(pi: ExtensionAPI): void {
     abortController.abort();
   }
 
-  function clearRuntime(runtime: BtwSessionRuntime, ctx?: ExtensionContext): void {
+  function clearRuntime(
+    runtime: BtwSessionRuntime,
+    ctx?: ExtensionContext,
+  ): void {
     abortRuntime(runtime);
     stopSpinner(runtime);
     runtime.visibleState = undefined;
@@ -360,7 +420,10 @@ export default function btwExtension(pi: ExtensionAPI): void {
     unmountWidget(ctx);
   }
 
-  async function runBtw(question: string, ctx: ExtensionCommandContext): Promise<void> {
+  async function runBtw(
+    question: string,
+    ctx: ExtensionCommandContext,
+  ): Promise<void> {
     const trimmedQuestion = question.trim();
     if (!trimmedQuestion) {
       ctx.ui.notify("Usage: /btw <question>", "warning");
@@ -427,8 +490,12 @@ export default function btwExtension(pi: ExtensionAPI): void {
       debugLog(ctx, "complete_resolved", {
         isError: response instanceof Error,
         errorMessage: response instanceof Error ? response.message : undefined,
-        stopReason: response instanceof Error ? undefined : (response as any).stopReason,
-        contentLength: response instanceof Error ? undefined : JSON.stringify((response as any).content ?? []).length,
+        stopReason:
+          response instanceof Error ? undefined : (response as any).stopReason,
+        contentLength:
+          response instanceof Error
+            ? undefined
+            : JSON.stringify((response as any).content ?? []).length,
       });
 
       if (runtime.activeRequest?.id !== request.id) {
@@ -446,8 +513,12 @@ export default function btwExtension(pi: ExtensionAPI): void {
           state.answer = answer;
         } else if (!answer) {
           state.status = "error";
-          state.errorMessage = "BTW request returned an empty response.";
-          debugLog(ctx, "empty_response", { stopReason: response.stopReason, contentRaw: response.content });
+          const stopReason = response.stopReason as string | undefined;
+          state.errorMessage = stopReasonMessage(stopReason);
+          debugLog(ctx, "empty_response", {
+            stopReason: response.stopReason,
+            contentRaw: response.content,
+          });
         } else {
           state.status = "complete";
           state.answer = answer;
@@ -460,10 +531,16 @@ export default function btwExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      state.status = request.abortController.signal.aborted ? "aborted" : "error";
+      state.status = request.abortController.signal.aborted
+        ? "aborted"
+        : "error";
       if (state.status === "error") {
-        state.errorMessage = error instanceof Error ? error.message : String(error);
-        debugLog(ctx, "thrown_error", { message: state.errorMessage, stack: error instanceof Error ? error.stack : undefined });
+        state.errorMessage =
+          error instanceof Error ? error.message : String(error);
+        debugLog(ctx, "thrown_error", {
+          message: state.errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+        });
       }
       updateRuntimeState(runtime, state, ctx);
     } finally {
