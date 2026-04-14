@@ -35,6 +35,15 @@ for (const [anthropicId, bedrockId] of Object.entries(ANTHROPIC_TO_BEDROCK)) {
   }
 }
 
+// Bare on-demand Bedrock ID → cross-region inference profile ID
+// Derived from ANTHROPIC_TO_BEDROCK: strips "us." to get the bare form.
+// e.g. "anthropic.claude-haiku-4-5-20251001-v1:0" → "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+const BARE_TO_PROFILE: Record<string, string> = {};
+for (const bedrockId of Object.values(ANTHROPIC_TO_BEDROCK)) {
+  if (bedrockId.startsWith("us.")) {
+    BARE_TO_PROFILE[bedrockId.slice(3)] = bedrockId;
+  }
+}
 function toBedrockModelId(anthropicId: string): string | null {
   return ANTHROPIC_TO_BEDROCK[anthropicId] ?? null;
 }
@@ -348,8 +357,37 @@ async function streamViaBedrock(
 }
 
 // ---------------------------------------------------------------------------
-// Extension entry point
+// Bedrock provider wrapper — rewrites bare on-demand IDs to inference profiles
 // ---------------------------------------------------------------------------
+
+/**
+ * Used as the amazon-bedrock provider's streamSimple override.
+ *
+ * When a bare on-demand model ID slips through (e.g. subagent whose model
+ * resolved to the amazon-bedrock provider directly instead of going through
+ * the anthropic override), rewrite it to the cross-region inference profile
+ * before forwarding. IDs that are already profiles pass through unchanged.
+ *
+ * This covers the case where `claude-haiku-4.5` (dot notation, github-copilot
+ * alias in pi’s registry) falls back to the amazon-bedrock provider and arrives
+ * with the bare ID `anthropic.claude-haiku-4-5-20251001-v1:0`.
+ */
+function streamBedrockWithProfileRewrite(
+  model: Model<any>,
+  context: Context,
+  options?: SimpleStreamOptions,
+) {
+  const stream = createAssistantMessageEventStream();
+  const profileId = BARE_TO_PROFILE[model.id] ?? model.id;
+  streamViaBedrock(model, profileId, context, options, stream).catch((err) => {
+    stream.push({ type: "error", error: err });
+    stream.end();
+  });
+  return stream;
+}
+
+// ---------------------------------------------------------------------------
+// Extension entry point
 
 export default function (pi: ExtensionAPI) {
   // 1. Initialize fallback state from cache
@@ -583,9 +621,18 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // 5. Override anthropic provider
+  // 5. Override anthropic provider — quota/rate-limit fallback to Bedrock
   pi.registerProvider("anthropic", {
     api: "anthropic-messages",
     streamSimple: streamWithFallback,
+  });
+
+  // 6. Override amazon-bedrock provider — rewrite bare on-demand IDs to inference profiles.
+  //    Subagents may resolve their model to the amazon-bedrock provider directly (bypassing
+  //    the anthropic override above). This catches those calls and ensures the correct
+  //    cross-region inference profile ARN is used instead of the bare model ID.
+  pi.registerProvider("amazon-bedrock", {
+    api: "bedrock-converse-stream",
+    streamSimple: streamBedrockWithProfileRewrite,
   });
 }
