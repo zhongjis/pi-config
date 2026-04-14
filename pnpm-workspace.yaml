@@ -1,0 +1,4 @@
+packages:
+  - extensions/pi-tasks
+  - extensions/pi-web-access
+  - extensions/subagent
