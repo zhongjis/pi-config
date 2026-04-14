@@ -34,7 +34,7 @@ export interface CavemanConfig {
 }
 
 export const DEFAULT_CAVEMAN_CONFIG: CavemanConfig = {
-  defaultLevel: "off",
+  defaultLevel: "ultra",
   statusVisibility: "active",
 };
 
