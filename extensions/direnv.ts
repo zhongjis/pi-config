@@ -21,6 +21,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { debounce } from "./lib/utils.js";
 
 /** Debounce before reloading after a file-system event (ms). */
 const RELOAD_DEBOUNCE_MS = 300;
@@ -29,7 +30,6 @@ type Status = "on" | "blocked" | "error" | "off";
 
 export default function (pi: ExtensionAPI) {
   let watchers: FSWatcher[] = [];
-  let reloadTimer: ReturnType<typeof setTimeout> | null = null;
   let latestCtx: ExtensionContext | null = null;
 
   function updateStatus(ctx: ExtensionContext, status: Status): void {
@@ -81,13 +81,13 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  const debouncedReload = debounce(() => {
+    if (latestCtx) loadDirenv(latestCtx.cwd, latestCtx);
+  }, RELOAD_DEBOUNCE_MS);
+
   function scheduleReload(): void {
     if (!latestCtx) return;
-    if (reloadTimer) clearTimeout(reloadTimer);
-    reloadTimer = setTimeout(() => {
-      reloadTimer = null;
-      if (latestCtx) loadDirenv(latestCtx.cwd, latestCtx);
-    }, RELOAD_DEBOUNCE_MS);
+    debouncedReload();
   }
 
   function startWatchers(cwd: string): void {
@@ -121,10 +121,7 @@ export default function (pi: ExtensionAPI) {
       }
     }
     watchers = [];
-    if (reloadTimer) {
-      clearTimeout(reloadTimer);
-      reloadTimer = null;
-    }
+    debouncedReload.cancel();
   }
 
   pi.on("session_start", async (_event, ctx) => {

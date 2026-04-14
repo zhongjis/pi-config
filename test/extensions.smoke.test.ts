@@ -27,6 +27,10 @@ function discoverExtensionEntries(): string[] {
       continue;
     }
 
+    if (name === "lib") {
+      continue; // shared utility library, not an extension
+    }
+
     const fullPath = join(extensionsDir, name);
     const stats = statSync(fullPath);
 
