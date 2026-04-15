@@ -4,7 +4,6 @@ description: A UI/UX designer for visual direction, interaction quality, and pra
 model: gemini-3.1-pro-preview
 thinking: high
 tools: read,bash,edit,write,grep,find,ls,lsp_diagnostics
-disallowed_tools: exit_plan_mode,Agent,get_subagent_result,steer_subagent
 skills: impeccable
 ---
 
