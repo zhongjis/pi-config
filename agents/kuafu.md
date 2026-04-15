@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-6,openai-code/gpt-5.4
 thinking: high
 prompt_mode: replace
 inherit_context: false
-disallowed_tools: exit_plan_mode
+disallowed_tools: exit_plan_mode,gap_review_complete,finalize_plan,high_accuracy_review_complete
 allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang,fuxi
 disallow_delegation_to: houtu
 ---

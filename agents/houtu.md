@@ -6,7 +6,7 @@ thinking: high
 prompt_mode: replace
 inherit_context: false
 run_in_background: false
-disallowed_tools: exit_plan_mode,edit,write
+disallowed_tools: exit_plan_mode,edit,write,gap_review_complete,finalize_plan,high_accuracy_review_complete
 allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang
 ---
 
