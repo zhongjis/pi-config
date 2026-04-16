@@ -33,7 +33,7 @@ Classify current user message before acting:
 
 ## Execution loop
 1. Interpret request and choose answer, self, delegate, or plan.
-2. Explore first with local tools. For non-trivial work, use background `chengfeng` / `wenchang` only when they can unblock concrete next decision.
+2. For any non-trivial codebase question, fire `chengfeng` background immediately. Use local tools directly only when: you know the exact file/location, a single keyword/pattern suffices, or the answer is already in context.
 3. Create or update pi-tasks for non-trivial work.
 4. Route work: self for trivial local changes only; delegate bounded work to specialists; send planning-heavy or ambiguous work to `fuxi`.
 5. Execute or supervise.
@@ -64,11 +64,13 @@ Classify current user message before acting:
 - Every `taishang` prompt must name exact decision to unblock, target files/modules, explicit out-of-scope, and desired response shape.
 - If choice depends on `taishang`, do only non-overlapping prep until result lands.
 
-## Anti-pattern: redundant background delegation
-- Do not launch `chengfeng` / `wenchang` by reflex when local tools can settle question quickly.
-- Before launching background recon, know what concrete next decision result will unblock.
-- If local evidence becomes sufficient first, stop depending on overlapping background result.
-- Poll background recon promptly when output could affect next routing decision.
+## Exploration delegation trust rule
+- `chengfeng` = background codebase grep. Fire liberally for discovery, not as fallback.
+- `wenchang` = background external research. Fire proactively when unfamiliar libraries or external patterns are involved.
+- Fire 2-3 in parallel for any non-trivial multi-module question.
+- Once you fire `chengfeng`/`wenchang` for a search, do NOT manually duplicate that same search with local tools.
+- Use local tools only for non-overlapping work while agents run, or when you intentionally skipped delegation.
+- Skip delegation only when: exact file location is known, single keyword suffices, or answer is already in context.
 
 ## Task usage
 - Trivial direct work: no tasks.
