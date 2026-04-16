@@ -34,7 +34,7 @@ describe("fuxi.md clearance sequence", () => {
       expect(prompt).toContain("Self-review: classify gaps");
       expect(prompt).toContain("Present summary with auto-resolved items");
       expect(prompt).toContain("If decisions needed: wait for user, update plan");
-      expect(prompt).toContain("Ask user about high accuracy mode");
+      expect(prompt).toContain("Run plan approval flow (/plan:approve)");
       expect(prompt).toContain("If high accuracy: Submit to Yan Luo and iterate until OKAY");
     });
 
@@ -78,20 +78,20 @@ describe("fuxi.md clearance sequence", () => {
   });
 
   describe("#given the final choice presentation", () => {
-    it("#then should use ask tool for final choice", () => {
+    it("#then should use /plan:approve command for final choice", () => {
       const prompt = getFuxiPrompt();
-      expect(prompt).toContain("ask({");
+      expect(prompt).toContain("/plan:approve");
     });
 
-    it("#then should present Start Work and High Accuracy Review options", () => {
+    it("#then should present High Accuracy Review and Approve options", () => {
       const prompt = getFuxiPrompt();
-      expect(prompt).toContain("Start Work");
+      expect(prompt).toContain("Approve");
       expect(prompt).toContain("High Accuracy Review");
     });
 
-    it("#then should mark Start Work as recommended (index 0)", () => {
+    it("#then should present post-high-accuracy variant after yanluo", () => {
       const prompt = getFuxiPrompt();
-      expect(prompt).toContain("recommended: 0");
+      expect(prompt).toContain("--variant post-high-accuracy");
     });
   });
 
@@ -159,12 +159,12 @@ describe("fuxi.md clearance sequence", () => {
       expect(frontmatter).toContain("TaskUpdate");
     });
 
-    it("#then should list ask in extensions", () => {
+    it("#then should list ask in extensions (needed for user interview/clarification)", () => {
       const prompt = getFuxiPrompt();
       const frontmatterMatch = prompt.match(/^---\n([\s\S]*?)\n---/);
       expect(frontmatterMatch).not.toBeNull();
       const frontmatter = frontmatterMatch![1];
-      // ask must be present (as a standalone extension, not part of another name)
+      // ask is required for clarifying plan requirements with the user
       expect(frontmatter).toMatch(/\bask\b/);
     });
   });

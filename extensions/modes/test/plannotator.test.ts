@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../handoff/runtime.js", () => ({}));
+vi.mock("../../handoff/runtime.js", () => ({
+	buildPlanExecutionGoal: vi.fn((path: string) => `Execute plan at ${path}.`),
+	requestDirectHandoffBridge: vi.fn(async () => ({
+		success: true,
+		data: { command: "/handoff:start-work", sessionFile: "/tmp/session.jsonl" },
+	})),
+}));
 
 vi.mock("../src/mode-planning/plan-storage.js", () => ({
 	hydratePlanState: vi.fn(async () => ({
@@ -13,6 +19,8 @@ vi.mock("../src/mode-planning/plan-storage.js", () => ({
 vi.mock("../src/mode-planning/plan-local.js", () => ({
 	LOCAL_PLAN_URI: "local://PLAN.md",
 	getLocalPlanPath: () => "/tmp/PLAN.md",
+	readLocalPlanFile: vi.fn(async () => "# Plan\n\n- ship feature"),
+	writeLocalPlanFile: vi.fn(async () => {}),
 }));
 
 vi.mock("../src/mode/config-loader.js", () => ({

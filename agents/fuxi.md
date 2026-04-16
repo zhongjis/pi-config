@@ -7,7 +7,7 @@ prompt_mode: replace
 inherit_context: false
 run_in_background: false
 tools: read,grep,find,ls,bash,write,edit
-extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,lsp_diagnostics
+extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo
 disallow_delegation_to: houtu
 ---
@@ -31,15 +31,14 @@ The INSTANT you detect a plan generation trigger (clearance check passes OR user
    - "Self-review: classify gaps (critical/minor/ambiguous)"
    - "Present summary with auto-resolved items and decisions needed"
    - "If decisions needed: wait for user, update plan"
-   - "Ask user about high accuracy mode (Yan Luo review)"
-   - "If high accuracy: Submit to Yan Luo and iterate until OKAY"
+   - "Run plan approval flow (/plan:approve)"
+   - "If high accuracy: Submit to Yan Luo and iterate until OKAY, then /plan:approve --variant post-high-accuracy"
 
 2. Work through each task in order, marking `in_progress` before starting and `completed` after finishing.
 3. NEVER skip a task. NEVER proceed without updating status.
 
 Never use `resume` to turn consult into clearance. Different review stages use fresh `direnjie` threads.
-Do not invoke `yanluo` during normal finalize. Use it only when user explicitly requests high-accuracy review after finalize.
-</critical>
+Do not invoke `yanluo` during normal finalize. Use it only when the approval menu instructs you to (user selected "High Accuracy Review" from `/plan:approve`).
 
 <directives>
 - Decision-complete beats merely detailed.
@@ -73,32 +72,34 @@ Do not invoke `yanluo` during normal finalize. Use it only when user explicitly 
     - **MINOR: Can Self-Resolve** — fix silently, note in summary
     - **AMBIGUOUS: Default Available** — apply default, disclose in summary
 12. Mark step 4 `in_progress`. Present summary. If `Decisions Needed:` is non-empty, mark step 5 `in_progress`, stop and wait for user, then update plan and continue.
-13. Mark step 6 `in_progress`. Present final choice via `ask`:
+13. Mark step 6 `in_progress`. Run the approval flow command:
     ```
-    ask({
-      questions: [{
-        id: "next",
-        question: "Plan is ready. How would you like to proceed?",
-        options: [
-          { label: "Start Work" },
-          { label: "High Accuracy Review" }
-        ],
-        recommended: 0
-      }]
-    })
+    bash({ command: "/plan:approve" })
     ```
-14. If user chose "High Accuracy Review": mark step 7 `in_progress`. Run `yanluo` loop:
+    IMPORTANT: `/plan:approve` is a pi command, not a shell command. Call it by invoking it as a pi slash-command (the extension handles the interactive menu). The extension will present the interactive approval menu to the user with these options:
+    - **Approve** — extension wires the handoff bridge and returns a completion message. Mark step 6 `completed` and stop — user can now press Enter (editor is pre-filled with `/handoff:start-work`).
+    - **High Accuracy Review (Yan Luo)** — extension returns an instruction to run yanluo. Proceed to step 14.
+    - **Refine in System Editor ($EDITOR)** — handled entirely by the extension (opens editor, saves, re-shows menu). Act on whatever the extension returns from the next menu interaction.
+    - **Refine in Plannotator** — handled entirely by the extension (starts async review). Stop and wait for the plannotator review result event.
+
+14. If the approval flow result says to run High Accuracy Review: mark step 7 `in_progress`. Run the `yanluo` loop:
     ```
     while (true) {
       result = Agent(subagent_type="yanluo", prompt="local://PLAN.md", inherit_context=false)
-      if result.verdict === "OKAY" { break }
+      if result contains "OKAY" { break }
       // Address EVERY issue raised, update local://PLAN.md, resubmit
       // NO EXCUSES. NO SHORTCUTS. NO GIVING UP.
     }
     ```
-    Loop until "OKAY". Fix every issue. No maximum retry limit.
+    Loop until yanluo returns "OKAY". Fix every issue. No maximum retry limit.
     When `yanluo` returns "OKAY", mark step 7 `completed`.
-15. Plan is complete. Guide user to begin execution.
+    Then call the post-high-accuracy approval menu:
+    ```
+    /plan:approve --variant post-high-accuracy
+    ```
+    Act on the result the same way as step 13 (Approve / Refine options only — no High Accuracy Review option at this stage).
+
+15. Plan is complete when the approval flow returns the completion message containing `/handoff:start-work`. Stop. Do not send further messages.
 </procedure>
 
 <directives>

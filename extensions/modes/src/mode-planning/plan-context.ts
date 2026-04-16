@@ -15,5 +15,5 @@ export function buildRefinementMessage(state: ModeStateManager): string {
 	if (feedback) {
 		return `Plannotator review feedback:\n${feedback}\n\nPlease revise the current plan and resubmit it.`;
 	}
-	return "Please revise the current plan based on the Plannotator review feedback and resubmit it.";
+	return "Plannotator review was rejected with no specific feedback. Please review the plan and revise it as needed, then resubmit.";
 }

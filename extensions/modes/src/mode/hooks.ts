@@ -139,6 +139,9 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 		await refreshPlanStateFromLocalPlan(ctx, state);
 		state.resetPlanReviewState();
+		// Reset availability cache so the approval menu re-probes plannotator
+		state.plannotatorAvailable = undefined;
+		state.plannotatorUnavailableReason = undefined;
 		state.persistState();
 	});
 
