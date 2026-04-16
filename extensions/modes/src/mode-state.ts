@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { MODES, MODE_META } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
-import type { Mode, ModeConfig, ModeState, PlanApprovalSource, PlanTitleSource } from "./types.js";
+import type { Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
 import { colored, resolveModelFromStr } from "./utils.js";
 
 export class ModeStateManager {
@@ -12,18 +12,10 @@ export class ModeStateManager {
 	planTitle: string | undefined;
 	planTitleSource: PlanTitleSource | undefined;
 	planContent: string | undefined;
-	gapReviewApproved = false;
-	gapReviewFeedback: string | undefined;
 	pendingPlanReviewId: string | undefined;
 	planReviewPending = false;
 	planReviewApproved = false;
 	planReviewFeedback: string | undefined;
-	highAccuracyReviewPending = false;
-	highAccuracyReviewApproved = false;
-	highAccuracyReviewFeedback: string | undefined;
-	planActionPending = false;
-	planApproved = false;
-	planApprovalSource: PlanApprovalSource | undefined;
 	activeCtx: ExtensionContext | undefined;
 	plannotatorAvailable: boolean | undefined;
 	plannotatorUnavailableReason: string | undefined;
@@ -38,18 +30,10 @@ export class ModeStateManager {
 			planTitle: this.planTitle,
 			planTitleSource: this.planTitleSource,
 			planContent: this.planContent,
-			gapReviewApproved: this.gapReviewApproved,
-			gapReviewFeedback: this.gapReviewFeedback,
 			planReviewId: this.pendingPlanReviewId,
 			planReviewPending: this.planReviewPending,
 			planReviewApproved: this.planReviewApproved,
 			planReviewFeedback: this.planReviewFeedback,
-			highAccuracyReviewPending: this.highAccuracyReviewPending,
-			highAccuracyReviewApproved: this.highAccuracyReviewApproved,
-			highAccuracyReviewFeedback: this.highAccuracyReviewFeedback,
-			planActionPending: this.planActionPending,
-			planApproved: this.planApproved,
-			planApprovalSource: this.planApprovalSource,
 		});
 	}
 
@@ -117,21 +101,13 @@ export class ModeStateManager {
 	}
 
 	hasPendingReview(): boolean {
-		return this.planReviewPending || this.highAccuracyReviewPending;
+		return this.planReviewPending;
 	}
 
 	resetPlanReviewState(): void {
-		this.gapReviewApproved = false;
-		this.gapReviewFeedback = undefined;
 		this.pendingPlanReviewId = undefined;
 		this.planReviewPending = false;
 		this.planReviewApproved = false;
 		this.planReviewFeedback = undefined;
-		this.highAccuracyReviewPending = false;
-		this.highAccuracyReviewApproved = false;
-		this.highAccuracyReviewFeedback = undefined;
-		this.planActionPending = false;
-		this.planApproved = false;
-		this.planApprovalSource = undefined;
 	}
 }

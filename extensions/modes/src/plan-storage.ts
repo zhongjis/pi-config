@@ -24,12 +24,10 @@ export interface HydratedPlanSnapshot {
 type PlanStateLike = Pick<
 	ModeStateManager,
 	| "currentMode"
-	| "planActionPending"
 	| "planContent"
 	| "planTitle"
 	| "planTitleSource"
 	| "planReviewPending"
-	| "highAccuracyReviewPending"
 >;
 
 function getErrorCode(error: unknown): string | undefined {
@@ -44,7 +42,7 @@ function getErrorCode(error: unknown): string | undefined {
 function shouldPreserveExplicitTitle(state: PlanStateLike): boolean {
 	return (
 		state.planTitleSource === "explicit-exit" &&
-		(state.currentMode !== "fuxi" || state.planActionPending || state.planReviewPending || state.highAccuracyReviewPending)
+		(state.currentMode !== "fuxi" || state.planReviewPending)
 	);
 }
 
@@ -163,24 +161,4 @@ export async function writeLocalPlanSnapshot(ctx: PlanStorageContext, content: s
 		titleSource: title ? "content-h1" : undefined,
 		source: "local",
 	};
-}
-
-export function resolveExitPlanTitle(
-	snapshot: HydratedPlanSnapshot,
-	explicitTitle?: string,
-): { title?: string; titleSource?: PlanTitleSource } {
-	if (explicitTitle) {
-		return { title: explicitTitle, titleSource: "explicit-exit" };
-	}
-
-	const headingTitle = snapshot.source !== "legacy-entry" ? derivePlanTitleFromMarkdown(snapshot.content) : undefined;
-	if (headingTitle) {
-		return { title: headingTitle, titleSource: "content-h1" };
-	}
-
-	if (snapshot.source === "legacy-entry" && snapshot.title) {
-		return { title: snapshot.title, titleSource: snapshot.titleSource ?? "legacy-entry" };
-	}
-
-	return {};
 }

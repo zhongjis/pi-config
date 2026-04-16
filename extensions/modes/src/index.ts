@@ -7,20 +7,18 @@
  * Each mode reads its prompt from agents/<mode>.md (same files used by subagent).
  * AGENTS.md global rules stay active in all modes.
  *
- * Plan flow:
- *   Fu Xi drafts plan with Di Renjie gap review before finalize
- *   finalize_plan enters approval flow
- *   Direct approval, Plannotator approval, or high-accuracy approval prepare Hou Tu handoff
- *   Plan mode ends once Hou Tu handoff is prepared; execution begins later in Hou Tu mode
+ * Plan flow (OMO-style):
+ *   Fu Xi drafts plan with Di Renjie gap review
+ *   Agent-driven ask presents Start Work vs High Accuracy Review choice
+ *   Approved plan prepares Hou Tu handoff via /handoff:start-work
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./constants.js";
 import { registerModeCommands } from "./commands.js";
+import { handlePlanReviewResult } from "./plannotator.js";
 import { registerModeHooks } from "./hooks.js";
 import { ModeStateManager } from "./mode-state.js";
-import { registerPlanTools } from "./plan-tools.js";
-import { handlePlanReviewResult } from "./plannotator.js";
 import type { PlannotatorReviewResultEvent } from "./types.js";
 
 export default function modesExtension(pi: ExtensionAPI): void {
@@ -37,7 +35,6 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		}, state.activeCtx);
 	});
 
-	registerPlanTools(pi, state);
 	registerModeCommands(pi, state);
 	registerModeHooks(pi, state);
 }

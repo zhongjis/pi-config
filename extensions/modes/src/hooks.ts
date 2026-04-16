@@ -4,7 +4,7 @@ import { Key, matchesKey } from "@mariozechner/pi-tui";
 import { MODES, MODE_ALIASES } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { derivePlanTitleFromMarkdown, hydratePlanState } from "./plan-storage.js";
-import { promptPostPlanAction, recoverPlanReview } from "./plannotator.js";
+import { recoverPlanReview } from "./plannotator.js";
 import type { Mode, ModeState } from "./types.js";
 import { isDelegationAllowed, isSafeCommand } from "./utils.js";
 import { getLocalPlanPath, LOCAL_PLAN_URI, readLocalPlanFile } from "./plan-local.js";
@@ -152,9 +152,6 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 	pi.on("agent_end", async (_event, ctx) => {
 		state.activeCtx = ctx;
-		if (state.currentMode !== "fuxi" || !ctx.hasUI) return;
-		if (state.hasPendingReview()) return;
-		await promptPostPlanAction(pi, state, ctx);
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -200,37 +197,20 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 				state.planTitle = modeEntry.data.planTitle;
 				state.planTitleSource = modeEntry.data.planTitleSource;
 				state.planContent = modeEntry.data.planContent;
-				state.gapReviewApproved = modeEntry.data.gapReviewApproved ?? false;
-				state.gapReviewFeedback = modeEntry.data.gapReviewFeedback;
 				state.pendingPlanReviewId = modeEntry.data.planReviewId;
 				state.planReviewPending = modeEntry.data.planReviewPending ?? false;
 				state.planReviewApproved = modeEntry.data.planReviewApproved ?? false;
 				state.planReviewFeedback = modeEntry.data.planReviewFeedback;
-				state.highAccuracyReviewPending = modeEntry.data.highAccuracyReviewPending ?? false;
-				state.highAccuracyReviewApproved = modeEntry.data.highAccuracyReviewApproved ?? false;
-				state.highAccuracyReviewFeedback = modeEntry.data.highAccuracyReviewFeedback;
-				state.planActionPending = modeEntry.data.planActionPending ?? false;
-				state.planApproved = modeEntry.data.planApproved ?? false;
-				state.planApprovalSource = modeEntry.data.planApprovalSource;
 			}
 		}
 		if (!state.pendingPlanReviewId) {
 			state.planReviewPending = false;
 		}
 
-		if (state.highAccuracyReviewPending) {
-			state.highAccuracyReviewPending = false;
-			state.planActionPending = true;
-			if (ctx.hasUI) {
-				ctx.ui.notify("Pending high accuracy review could not be recovered. Returning to the approval menu.", "warning");
-			}
-		}
-
 		await hydratePlanState(ctx as any, state);
 		state.applyMode(ctx);
 		await recoverPlanReview(pi, state, ctx);
 		state.persistState();
-		await promptPostPlanAction(pi, state, ctx);
 	});
 
 	pi.on("session_shutdown", async () => {

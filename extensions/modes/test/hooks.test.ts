@@ -18,7 +18,6 @@ vi.mock("../src/config-loader.js", () => ({
 }));
 
 vi.mock("../src/plannotator.js", () => ({
-  promptPostPlanAction: vi.fn(async () => {}),
   recoverPlanReview: vi.fn(async () => {}),
 }));
 

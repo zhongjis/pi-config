@@ -1,7 +1,6 @@
-import { spawnSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
-import { buildHighAccuracyReviewMessage, buildRefinementMessage } from "./plan-context.js";
+import { buildRefinementMessage } from "./plan-context.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { getLocalPlanPath, LOCAL_PLAN_URI } from "./plan-local.js";
 import { hydratePlanState } from "./plan-storage.js";
@@ -13,8 +12,6 @@ import type {
 	PlannotatorReviewStatusResult,
 } from "./types.js";
 
-const PLANNOTATOR_AVAILABLE_LABEL = "Refine in Plannotator";
-const PLANNOTATOR_UNAVAILABLE_LABEL = "Refine in Plannotator (unavailable)";
 const PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID = "__plannotator_health_check__";
 
 function getPlannotatorUnavailableReason(reason?: string): string {
@@ -91,7 +88,6 @@ export async function prepareApprovedPlanHandoff(
 	state: ModeStateManager,
 	ctx: ExtensionContext,
 ): Promise<{ success: boolean; message: string; level: "info" | "warning"; details?: Record<string, unknown> }> {
-	state.planActionPending = false;
 	state.persistState();
 
 	if (!state.planTitle) {
@@ -122,80 +118,6 @@ export async function prepareApprovedPlanHandoff(
 	};
 }
 
-export async function promptPostPlanAction(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
-	if (state.currentMode !== "fuxi" || !ctx.hasUI) return;
-	const snapshot = await hydratePlanState(ctx as any, state);
-	if (!snapshot || !state.planTitle || !state.planActionPending || state.hasPendingReview()) return;
-
-	const title = state.planTitle;
-	const plannotator = await checkPlannotatorAvailability(pi, state);
-	const plannotatorLabel = plannotator.available ? PLANNOTATOR_AVAILABLE_LABEL : PLANNOTATOR_UNAVAILABLE_LABEL;
-
-	const choices = [
-		"Approve",
-		"Refine in System Editor ($EDITOR)",
-		plannotatorLabel,
-		"High accuracy review",
-	];
-
-	const choice = await ctx.ui.select(`Plan "${title}" finalized — choose an action:`, choices);
-	if (!choice) return;
-
-	if (choice === "Approve") {
-		state.planApproved = true;
-		state.planApprovalSource = "user";
-		state.planActionPending = false;
-		state.persistState();
-		ctx.ui.setEditorText("/handoff:start-work");
-		pi.sendUserMessage(buildCompletionMessage(title), { deliverAs: "followUp" });
-		return;
-	}
-
-	if (choice === "Refine in System Editor ($EDITOR)") {
-		const editor = process.env.VISUAL || process.env.EDITOR || "vi";
-		const planPath = getLocalPlanPath(ctx);
-		const result = spawnSync(editor, [planPath], { stdio: "inherit" });
-		if (result.status !== 0 && result.error) {
-			ctx.ui.notify(`Editor failed to open: ${result.error.message}`, "warning");
-		}
-		await promptPostPlanAction(pi, state, ctx);
-		return;
-	}
-
-	if (choice === PLANNOTATOR_AVAILABLE_LABEL) {
-		state.planApproved = false;
-		state.planApprovalSource = undefined;
-		state.planActionPending = false;
-		state.persistState();
-		const reviewMessage = await startPlanReview(pi, state, ctx);
-		if (ctx.hasUI) {
-			ctx.ui.notify(reviewMessage, state.planReviewPending ? "info" : "warning");
-		}
-		if (!state.planReviewPending) {
-			await promptPostPlanAction(pi, state, ctx);
-		}
-		return;
-	}
-
-	if (choice === PLANNOTATOR_UNAVAILABLE_LABEL) {
-		const reason = getPlannotatorUnavailableReason(state.plannotatorUnavailableReason);
-		ctx.ui.notify(`Plannotator unavailable: ${reason}`, "warning");
-		await promptPostPlanAction(pi, state, ctx);
-		return;
-	}
-
-	if (choice === "High accuracy review") {
-		state.planApproved = false;
-		state.planApprovalSource = undefined;
-		state.highAccuracyReviewPending = true;
-		state.highAccuracyReviewApproved = false;
-		state.highAccuracyReviewFeedback = undefined;
-		state.planActionPending = false;
-		state.persistState();
-		setTimeout(() => pi.sendUserMessage(buildHighAccuracyReviewMessage(state), { deliverAs: "followUp" }), 0);
-	}
-}
-
 export async function handlePlanReviewResult(
 	pi: ExtensionAPI,
 	state: ModeStateManager,
@@ -214,9 +136,6 @@ export async function handlePlanReviewResult(
 
 	if (result.approved) {
 		state.planReviewApproved = true;
-		state.planApproved = true;
-		state.planApprovalSource = "plannotator";
-		state.planActionPending = true;
 		state.persistState();
 
 		let completionMessage: string;
@@ -224,7 +143,6 @@ export async function handlePlanReviewResult(
 			const handoffResult = await prepareApprovedPlanHandoff(pi, state, ctx);
 			completionMessage = handoffResult.message;
 		} else {
-			state.planActionPending = false;
 			state.persistState();
 			completionMessage = buildCompletionMessage(state.planTitle ?? "untitled");
 		}
@@ -233,9 +151,6 @@ export async function handlePlanReviewResult(
 	}
 
 	state.planReviewApproved = false;
-	state.planApproved = false;
-	state.planApprovalSource = undefined;
-	state.planActionPending = false;
 	state.persistState();
 	if (ctx?.hasUI) {
 		ctx.ui.notify(`Plan "${state.planTitle ?? "untitled"}" needs refinement in Plannotator.`, "warning");
@@ -261,9 +176,6 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 		state.planReviewPending = true;
 		state.planReviewApproved = false;
 		state.planReviewFeedback = undefined;
-		state.planApproved = false;
-		state.planApprovalSource = undefined;
-		state.planActionPending = false;
 		state.plannotatorAvailable = true;
 		state.plannotatorUnavailableReason = undefined;
 		state.persistState();
@@ -274,16 +186,13 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 	state.planReviewPending = false;
 	state.planReviewApproved = false;
 	state.planReviewFeedback = undefined;
-	state.planApproved = false;
-	state.planApprovalSource = undefined;
-	state.planActionPending = true;
 	state.persistState();
 	state.plannotatorAvailable = false;
 	state.plannotatorUnavailableReason = getPlannotatorUnavailableReason(
 		response.status === "handled" ? "Plannotator review could not be started." : response.error,
 	);
 
-	logPlannotatorUnavailable(`review start failed for plan \"${state.planTitle}\"`, state.plannotatorUnavailableReason);
+	logPlannotatorUnavailable(`review start failed for plan "${state.planTitle}"`, state.plannotatorUnavailableReason);
 
 	if (ctx.hasUI) {
 		ctx.ui.notify(`${state.plannotatorUnavailableReason} Returning to the approval menu.`, "warning");
@@ -315,9 +224,6 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 	state.planReviewPending = false;
 	state.planReviewApproved = false;
 	state.planReviewFeedback = undefined;
-	state.planApproved = false;
-	state.planApprovalSource = undefined;
-	state.planActionPending = true;
 	state.persistState();
 
 	const reason = getPlannotatorUnavailableReason(
@@ -327,4 +233,16 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 	if (ctx.hasUI) {
 		ctx.ui.notify(`${reason} Returning to the approval menu.`, "warning");
 	}
+}
+
+export async function checkAndStartPlannotatorReview(
+	pi: ExtensionAPI,
+	state: ModeStateManager,
+	ctx: ExtensionContext,
+): Promise<string> {
+	const availability = await checkPlannotatorAvailability(pi, state);
+	if (!availability.available) {
+		return `Plannotator unavailable: ${getPlannotatorUnavailableReason(availability.reason)}`;
+	}
+	return startPlanReview(pi, state, ctx);
 }
