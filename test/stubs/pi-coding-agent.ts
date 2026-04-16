@@ -56,6 +56,10 @@ export function createBashTool() {
   return {};
 }
 
+
+export function createBashToolDefinition(_cwd?: string) {
+  return {};
+}
 export function createEditTool() {
   return {};
 }
