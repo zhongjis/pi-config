@@ -151,6 +151,7 @@ function getPreferredAwsProfile(): string | undefined {
 let fallbackActive = false;
 let pendingNotification: "quota_exhausted" | "using_cached_fallback" | null = null;
 let sessionNotified = false;
+let agentStarted = false; // true only after agent_start fires; guards against history-replay message_start
 
 // ---------------------------------------------------------------------------
 // Status bar
@@ -368,9 +369,10 @@ export default function (pi: ExtensionAPI) {
     fallbackActive = true;
   }
 
-  // 2. Session start — update status bar and reset per-session flag
+  // 2. Session start — update status bar and reset per-session flags
   pi.on("session_start", async (_event, ctx) => {
     sessionNotified = false;
+    agentStarted = false;
     isAnthropicProvider = ctx.model?.provider === "anthropic";
     updateStatusBar(ctx);
   });
@@ -381,7 +383,27 @@ export default function (pi: ExtensionAPI) {
     updateStatusBar(ctx);
   });
 
-  // 3. Turn end — deliver queued notifications
+  // 2c. agent_start — marks that a real agent loop is running (not history replay)
+  pi.on("agent_start", async (_event, _ctx) => {
+    agentStarted = true;
+  });
+
+  // 3. message_start (user role, live turn only) — fires when user message enters the view.
+  //    Guard with agentStarted to skip history-replay messages on session load.
+  pi.on("message_start", async (event, ctx) => {
+    if ((event as any).message?.role !== "user") return;
+    if (!agentStarted) return;
+    if (fallbackActive && !sessionNotified && isAnthropicProvider) {
+      ctx.ui.notify(
+        "Using Clauderock — Claude API was previously rate-limited. Run " + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
+        "info",
+      );
+      updateStatusBar(ctx);
+      sessionNotified = true;
+    }
+  });
+
+  // 3b. Turn end — deliver quota_exhausted notification (fires after Bedrock stream completes)
   pi.on("turn_end", async (_event, ctx) => {
     if (pendingNotification === "quota_exhausted") {
       ctx.ui.notify(
@@ -392,6 +414,7 @@ export default function (pi: ExtensionAPI) {
       sessionNotified = true;
       pendingNotification = null;
     } else if (pendingNotification === "using_cached_fallback") {
+      // Fallback: if before_agent_start somehow missed it, deliver here
       ctx.ui.notify(
         "Using Clauderock — Claude API was previously rate-limited. Run " + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
         "info",

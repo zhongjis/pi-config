@@ -685,23 +685,88 @@ describe("fallback already active from cache", () => {
     expect(piAiConfig.bedrockCallArgs.length).toBe(1);
   });
 
-  it("queues using_cached_fallback notification on first use when cache is active", async () => {
+  it("sends using_cached_fallback notification on message_start (user role) — right after user message", async () => {
     const { mockPi, ctx } = await setup({
       preSeedCache: { exhausted: true, reason: "quota exceeded" },
     });
 
-    piAiConfig.bedrockEvents = [doneEvent()];
-    const provider = mockPi.providers.get("anthropic") as any;
-    await collectStream(provider.streamSimple(SONNET_MODEL, CTX));
+    await mockPi.fireLifecycle(
+      "session_start",
+      { reason: "startup" },
+      { ...ctx, model: { provider: "anthropic", id: "claude-sonnet-4-6" } },
+    );
 
     const notifyMsgs: string[] = [];
     (ctx.ui.notify as any) = (msg: string) => notifyMsgs.push(msg);
 
-    await mockPi.fireLifecycle("turn_end", {}, ctx);
+    // agent_start must fire first (marks live turn, not history replay)
+    await mockPi.fireLifecycle("agent_start", {}, ctx);
+    await mockPi.fireLifecycle("message_start", { message: { role: "user", content: [] } }, ctx);
 
     expect(
       notifyMsgs.some((m) => m.includes("Clauderock") || m.includes("rate-limited") || m.includes("clauderock")),
     ).toBe(true);
+  });
+
+  it("does NOT notify on message_start for non-user roles", async () => {
+    const { mockPi, ctx } = await setup({
+      preSeedCache: { exhausted: true, reason: "quota exceeded" },
+    });
+
+    await mockPi.fireLifecycle(
+      "session_start",
+      { reason: "startup" },
+      { ...ctx, model: { provider: "anthropic", id: "claude-sonnet-4-6" } },
+    );
+
+    const notifyMsgs: string[] = [];
+    (ctx.ui.notify as any) = (msg: string) => notifyMsgs.push(msg);
+
+    await mockPi.fireLifecycle("agent_start", {}, ctx);
+    await mockPi.fireLifecycle("message_start", { message: { role: "assistant", content: [] } }, ctx);
+
+    expect(notifyMsgs.length).toBe(0);
+  });
+
+  it("does NOT notify on message_start before agent_start (history replay suppression)", async () => {
+    const { mockPi, ctx } = await setup({
+      preSeedCache: { exhausted: true, reason: "quota exceeded" },
+    });
+
+    await mockPi.fireLifecycle(
+      "session_start",
+      { reason: "startup" },
+      { ...ctx, model: { provider: "anthropic", id: "claude-sonnet-4-6" } },
+    );
+
+    const notifyMsgs: string[] = [];
+    (ctx.ui.notify as any) = (msg: string) => notifyMsgs.push(msg);
+
+    // No agent_start — simulates history replay on session load
+    await mockPi.fireLifecycle("message_start", { message: { role: "user", content: [] } }, ctx);
+
+    expect(notifyMsgs.length).toBe(0);
+  });
+
+  it("does NOT send cached_fallback notification again on second user message_start", async () => {
+    const { mockPi, ctx } = await setup({
+      preSeedCache: { exhausted: true, reason: "quota exceeded" },
+    });
+
+    await mockPi.fireLifecycle(
+      "session_start",
+      { reason: "startup" },
+      { ...ctx, model: { provider: "anthropic", id: "claude-sonnet-4-6" } },
+    );
+
+    const notifyMsgs: string[] = [];
+    (ctx.ui.notify as any) = (msg: string) => notifyMsgs.push(msg);
+
+    await mockPi.fireLifecycle("agent_start", {}, ctx);
+    await mockPi.fireLifecycle("message_start", { message: { role: "user", content: [] } }, ctx);
+    await mockPi.fireLifecycle("message_start", { message: { role: "user", content: [] } }, ctx);
+
+    expect(notifyMsgs.filter((m) => m.includes("Clauderock") || m.includes("rate-limited")).length).toBe(1);
   });
 
   it("calls Anthropic directly for unmapped model even when fallback is active", async () => {
