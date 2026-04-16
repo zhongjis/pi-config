@@ -13,7 +13,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -383,7 +383,13 @@ export default function ask(pi: ExtensionAPI) {
 
           // Question text + progress indicator
           const progress = isMultiQ ? theme.fg("dim", ` (${qIdx + 1}/${questions.length})`) : "";
-          add(` ${theme.fg("text", q.question)}${progress}`);
+          // Question text — word-wrap long/multi-line questions
+          const questionStyled = theme.fg("text", q.question);
+          const wrappedQuestion = wrapTextWithAnsi(questionStyled, width - 1);
+          for (let wi = 0; wi < wrappedQuestion.length; wi++) {
+            const suffix = wi === 0 ? progress : "";
+            add(` ${wrappedQuestion[wi]}${suffix}`);
+          }
           lines.push("");
 
           for (let i = 0; i < opts.length; i++) {
