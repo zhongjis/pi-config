@@ -2,16 +2,17 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { CustomEditor } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey } from "@mariozechner/pi-tui";
 import { derivePlanTitleFromMarkdown, hydratePlanState } from "../mode-planning/plan-storage.js";
-import { getLocalPlanPath, LOCAL_PLAN_URI, readLocalPlanFile } from "../mode-planning/plan-local.js";
+import { getLocalDraftPath, getLocalPlanPath, LOCAL_DRAFT_URI, LOCAL_PLAN_URI, readLocalPlanFile } from "../mode-planning/plan-local.js";
 import { recoverPlanReview } from "../mode-planning/plannotator.js";
 import { MODES, MODE_ALIASES } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
 import type { Mode, ModeState } from "./types.js";
 import { isDelegationAllowed, isSafeCommand } from "./utils.js";
 
-function isPlanWriteTarget(input: unknown, planPath: string): boolean {
+function isPlanWriteTarget(input: unknown, planPath: string, draftPath: string): boolean {
 	const path = (input as { path?: unknown })?.path;
-	return typeof path === "string" && (path === LOCAL_PLAN_URI || path === planPath);
+	if (typeof path !== "string") return false;
+	return path === LOCAL_PLAN_URI || path === planPath || path === LOCAL_DRAFT_URI || path === draftPath;
 }
 
 function getString(value: unknown): string | undefined {
@@ -110,12 +111,13 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 		if (event.toolName === "write" || event.toolName === "edit") {
 			const planPath = getLocalPlanPath(ctx);
-			if (!isPlanWriteTarget(event.input, planPath)) {
+			const draftPath = getLocalDraftPath(ctx);
+			if (!isPlanWriteTarget(event.input, planPath, draftPath)) {
 				const path = (event.input as { path?: unknown })?.path;
 				const target = typeof path === "string" && path ? path : "<missing path>";
 				return {
 					block: true,
-					reason: `Plan mode: ${event.toolName} is restricted to ${LOCAL_PLAN_URI}. Target: ${target}`,
+					reason: `Plan mode: ${event.toolName} is restricted to ${LOCAL_PLAN_URI} or ${LOCAL_DRAFT_URI}. Target: ${target}`,
 				};
 			}
 			return;

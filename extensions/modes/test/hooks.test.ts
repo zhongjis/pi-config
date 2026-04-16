@@ -25,7 +25,9 @@ vi.mock("../src/mode-planning/plannotator.js", () => ({
 
 vi.mock("../src/mode-planning/plan-local.js", () => ({
 	LOCAL_PLAN_URI: "local://PLAN.md",
+	LOCAL_DRAFT_URI: "local://DRAFT.md",
 	getLocalPlanPath: () => "/tmp/PLAN.md",
+	getLocalDraftPath: () => "/tmp/DRAFT.md",
 	readLocalPlanFile: vi.fn(async () => "# Plan\n\n- item"),
 }));
 
