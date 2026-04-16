@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../handoff/runtime.js", () => ({}));
 
-vi.mock("../src/plan-storage.js", () => ({
+vi.mock("../src/mode-planning/plan-storage.js", () => ({
 	hydratePlanState: vi.fn(async () => ({
 		content: "# Plan\n\n- ship feature",
 		title: "Plan",
@@ -10,17 +10,17 @@ vi.mock("../src/plan-storage.js", () => ({
 	})),
 }));
 
-vi.mock("../src/plan-local.js", () => ({
+vi.mock("../src/mode-planning/plan-local.js", () => ({
 	LOCAL_PLAN_URI: "local://PLAN.md",
 	getLocalPlanPath: () => "/tmp/PLAN.md",
 }));
 
-vi.mock("../src/config-loader.js", () => ({
+vi.mock("../src/mode/config-loader.js", () => ({
 	loadAgentConfig: () => ({ body: "" }),
 }));
 
-import { ModeStateManager } from "../src/mode-state.js";
-import { prepareApprovedPlanHandoff } from "../src/plannotator.js";
+import { ModeStateManager } from "../src/mode/mode-state.js";
+import { prepareApprovedPlanHandoff } from "../src/mode-planning/plannotator.js";
 
 function createMockPi() {
 	return {
@@ -51,7 +51,6 @@ function createCtx() {
 }
 
 describe("plannotator handoff prep", () => {
-
 	it("prepareApprovedPlanHandoff sets editor text to /handoff:start-work and returns success message", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
