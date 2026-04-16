@@ -32,7 +32,9 @@ export default function betterBashTool(pi: ExtensionAPI): void {
     parameters: bashWithCwdSchema,
 
     promptGuidelines: [
-      "Use the cwd parameter instead of 'cd dir && command' when you need to run a command in a different directory.",
+      "NEVER use 'cd dir && command' — always use the cwd parameter instead. 'cd dir && command' silently continues in wrong directory if cd fails; cwd parameter fails explicitly with a clear error.",
+      "BAD: bash({command: 'cd /foo && npm install'}). GOOD: bash({command: 'npm install', cwd: '/foo'})",
+      "BAD: bash({command: 'cd /repo && git status && cd /other && git log'}). GOOD: two separate bash calls each with the correct cwd parameter.",
       "Reserve bash for git, build/test runners, package managers, ssh, curl, and process management.",
       "Prefer native tools (read, find, grep, edit, write) over shell commands when available.",
     ],
