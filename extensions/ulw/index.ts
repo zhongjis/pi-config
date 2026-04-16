@@ -243,7 +243,6 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     const stripped = stripUlwKeyword(raw);
 
     if (ctx.hasUI) {
-      ctx.ui.notify("⚡ ULTRAWORK MODE — directive armed for this turn.", "info");
       ctx.ui.setStatus("ulw", "⚡ ULW");
     }
 
