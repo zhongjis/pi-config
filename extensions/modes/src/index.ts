@@ -14,12 +14,12 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./constants.js";
-import { registerModeCommands } from "./commands.js";
-import { handlePlanReviewResult } from "./plannotator.js";
-import { registerModeHooks } from "./hooks.js";
-import { ModeStateManager } from "./mode-state.js";
-import type { PlannotatorReviewResultEvent } from "./types.js";
+import { registerModeCommands } from "./mode/commands.js";
+import { registerModeHooks } from "./mode/hooks.js";
+import { ModeStateManager } from "./mode/mode-state.js";
+import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./mode-planning/constants.js";
+import { handlePlanReviewResult } from "./mode-planning/plannotator.js";
+import type { PlannotatorReviewResultEvent } from "./mode-planning/types.js";
 
 export default function modesExtension(pi: ExtensionAPI): void {
 	const state = new ModeStateManager(pi);
