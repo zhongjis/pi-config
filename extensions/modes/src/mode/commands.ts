@@ -1,6 +1,5 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
-import { runPlanApprovalFlow } from "../mode-planning/plannotator.js";
 import { MODES, MODE_ALIASES, MODE_META } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { colored } from "./utils.js";
@@ -89,19 +88,6 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 		description: "Cycle agent mode (Ctrl+Shift+M)",
 		handler: async (ctx) => {
 			await state.cycleMode(ctx);
-		},
-	});
-	// /plan:approve — run by fuxi agent after planning is complete
-	pi.registerCommand("plan:approve", {
-		description: "Present the plan approval menu (Approve / High Accuracy Review / Refine in Editor / Refine in Plannotator)",
-		handler: async (args: string, ctx: any) => {
-			const rawVariant = args?.trim().replace(/^--variant\s+/u, "");
-			const variant =
-				rawVariant === "post-high-accuracy"
-					? ("post-high-accuracy" as const)
-					: ("post-gap-review" as const);
-			const result = await runPlanApprovalFlow(pi, state, ctx, variant);
-			pi.sendUserMessage(result, { deliverAs: "followUp" });
 		},
 	});
 }

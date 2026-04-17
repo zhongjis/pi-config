@@ -417,7 +417,7 @@ export async function runPlanApprovalFlow(
 			`Plan approval: user selected High Accuracy Review.`,
 			`Run yanluo as a subagent with the plan content from ${LOCAL_PLAN_URI}.`,
 			`Loop until yanluo returns OKAY. Fix every issue raised. No maximum retry limit.`,
-			`After yanluo returns OKAY, call /plan:approve --variant post-high-accuracy to show the post-review approval menu.`,
+			`After yanluo returns OKAY, call the plan_approve tool with variant "post-high-accuracy" to show the post-review approval menu.`,
 		].join("\n");
 	}
 

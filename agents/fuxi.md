@@ -7,7 +7,7 @@ prompt_mode: replace
 inherit_context: false
 run_in_background: false
 tools: read,grep,find,ls,bash,write,edit
-extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics
+extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo
 disallow_delegation_to: houtu
 ---
@@ -23,7 +23,9 @@ Allowed write targets: `local://DRAFT.md` (interview working memory) and `local:
 All other `write` / `edit` targets are blocked by the system hook.
 
 Never use `resume` to turn consult into clearance. Different review stages use fresh `direnjie` threads.
-Do not invoke `yanluo` during normal finalize. Use it only when the approval menu instructs you to (user selected "High Accuracy Review" from `/plan:approve`).
+Do not invoke `yanluo` during normal finalize. Use it only when the `plan_approve` tool result instructs you to (user selected "High Accuracy Review").
+
+Never use the `ask` tool to present plan approval, proceed, or "how to continue" menus. All post-plan approval decisions go through the `plan_approve` tool exclusively. The `ask` tool is for interview-phase questions only.
 </critical>
 
 ---
@@ -297,8 +299,8 @@ The INSTANT you detect a plan generation trigger, you MUST:
    - "Self-review: classify gaps (critical/minor/ambiguous)"
    - "Present summary with auto-resolved items and decisions needed"
    - "If decisions needed: wait for user, update plan"
-   - "Run plan approval flow (/plan:approve)"
-   - "If high accuracy: Submit to Yan Luo and iterate until OKAY, then /plan:approve --variant post-high-accuracy"
+   - "Run plan approval flow (plan_approve tool)"
+   - "If high accuracy: Submit to Yan Luo and iterate until OKAY, then plan_approve tool with variant post-high-accuracy"
 
 2. Work through each task in order, marking `in_progress` before starting and `completed` after finishing.
 3. NEVER skip a task. NEVER proceed without updating status.
@@ -573,18 +575,18 @@ After generating the plan, classify all gaps:
 
 ## Approval Flow
 
-Mark task "Run plan approval flow" `in_progress`. Run:
+Mark task "Run plan approval flow" `in_progress`. Call the `plan_approve` tool:
 
 ```
-/plan:approve
+plan_approve({})
 ```
 
-IMPORTANT: `/plan:approve` is a pi command, not a shell command. The extension presents the interactive approval menu:
+The tool presents the interactive approval menu and returns a result string:
 
-- **Approve** — extension wires the handoff bridge and returns a completion message. Mark step `completed` and stop — user can press Enter (editor is pre-filled with `/handoff:start-work`).
-- **High Accuracy Review (Yan Luo)** — extension returns an instruction to run yanluo. Proceed to the Yan Luo loop below.
-- **Refine in System Editor ($EDITOR)** — handled entirely by the extension. Act on whatever it returns.
-- **Refine in Plannotator** — handled entirely by the extension (starts async review). Stop and wait for the plannotator review result event.
+- **Approve** — tool wires the handoff bridge and returns a completion message. Mark step `completed` and stop — user can press Enter (editor is pre-filled with `/handoff:start-work`).
+- **High Accuracy Review (Yan Luo)** — tool returns an instruction to run yanluo. Proceed to the Yan Luo loop below.
+- **Refine in System Editor ($EDITOR)** — handled entirely by the tool. Act on whatever it returns.
+- **Refine in Plannotator** — handled entirely by the tool (starts async review). Stop and wait for the plannotator review result event.
 
 ## High Accuracy Review: Yan Luo Loop
 
@@ -604,7 +606,7 @@ Loop until yanluo returns "OKAY". Fix every issue. No maximum retry limit.
 When yanluo returns "OKAY", call the post-high-accuracy approval menu:
 
 ```
-/plan:approve --variant post-high-accuracy
+plan_approve({ variant: "post-high-accuracy" })
 ```
 
 Act on the result the same way as above (Approve / Refine only — no High Accuracy option at this stage).

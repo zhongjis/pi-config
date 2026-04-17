@@ -9,13 +9,14 @@
  *
  * Plan flow (OMO-style):
  *   Fu Xi drafts plan with Di Renjie gap review
- *   Agent-driven ask presents Start Work vs High Accuracy Review choice
+ *   plan_approve tool presents Approve / High Accuracy Review / Refine choices
  *   Approved plan prepares Hou Tu handoff via /handoff:start-work
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerModeCommands } from "./mode/commands.js";
 import { registerModeHooks } from "./mode/hooks.js";
+import { registerModeTools } from "./mode/tools.js";
 import { ModeStateManager } from "./mode/mode-state.js";
 import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./mode-planning/constants.js";
 import { handlePlanReviewResult } from "./mode-planning/plannotator.js";
@@ -36,5 +37,6 @@ export default function modesExtension(pi: ExtensionAPI): void {
 	});
 
 	registerModeCommands(pi, state);
+	registerModeTools(pi, state);
 	registerModeHooks(pi, state);
 }
