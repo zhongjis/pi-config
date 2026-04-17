@@ -1,4 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { buildPlanExecutionGoal, requestDirectHandoffBridge } from "../../../handoff/runtime.js";
 import type { ModeStateManager } from "../mode/mode-state.js";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
@@ -314,27 +318,72 @@ export async function checkAndStartPlannotatorReview(
 // ─── Plan Approval Flow ───────────────────────────────────────────────────────
 
 /**
- * Open the plan file in $VISUAL / $EDITOR via ctx.ui.editor().
- * Returns the updated content, or undefined if the user cancelled / no change.
+ * Open the plan file directly in $VISUAL / $EDITOR.
+ * Uses ctx.ui.custom() to obtain the tui handle, suspends the TUI,
+ * spawns the editor with stdio inherited, then resumes.
  */
 async function refineInSystemEditor(
 	state: ModeStateManager,
 	ctx: ExtensionContext,
-): Promise<"edited" | "cancelled" | "no-ui"> {
+): Promise<"edited" | "cancelled" | "no-ui" | "no-editor"> {
 	if (!ctx.hasUI) return "no-ui";
 
+	const editorCmd = process.env.VISUAL || process.env.EDITOR;
+	if (!editorCmd) return "no-editor";
+
 	const currentContent = state.planContent ?? "";
-	const updated = await ctx.ui.editor("Edit plan (Ctrl+G for $EDITOR, Enter to submit)", currentContent);
-	if (updated === undefined || updated.trim() === currentContent.trim()) {
+	const tmpFile = path.join(os.tmpdir(), `pi-plan-edit-${Date.now()}.md`);
+
+	try {
+		fs.writeFileSync(tmpFile, currentContent, "utf-8");
+
+		// Use ctx.ui.custom() to get the tui handle for stop/start
+		const editResult = await ctx.ui.custom<"edited" | "cancelled">((tui, _theme, _keybindings, done) => {
+			// Immediately suspend TUI and launch external editor
+			setImmediate(() => {
+				try {
+					tui.stop();
+					const [editor, ...editorArgs] = editorCmd.split(" ");
+					const result = spawnSync(editor, [...editorArgs, tmpFile], {
+						stdio: "inherit",
+						shell: process.platform === "win32",
+					});
+
+					if (result.status === 0) {
+						const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
+						if (newContent.trim() !== currentContent.trim()) {
+							done("edited");
+						} else {
+							done("cancelled");
+						}
+					} else {
+						done("cancelled");
+					}
+				} catch {
+					done("cancelled");
+				} finally {
+					tui.start();
+					tui.requestRender(true);
+				}
+			});
+
+			// Return a minimal placeholder component (never visible — TUI is stopped immediately)
+			return { width: 0, height: 0, draw() {} } as any;
+		});
+
+		if (editResult === "edited") {
+			const updated = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
+			await writeLocalPlanFile(ctx as any, updated);
+			await hydratePlanState(ctx as any, state);
+			state.persistState();
+			return "edited";
+		}
 		return "cancelled";
+	} finally {
+		try { fs.unlinkSync(tmpFile); } catch { /* ignore cleanup errors */ }
+	}
 	}
 
-	// Persist the edited content to local://PLAN.md
-	await writeLocalPlanFile(ctx as any, updated);
-	await hydratePlanState(ctx as any, state);
-	state.persistState();
-	return "edited";
-}
 
 type ApprovalMenuVariant =
 	| "post-gap-review"    // after gap review: Refine in Editor | Refine in Plannotator | High Accuracy Review | Approve
@@ -430,6 +479,12 @@ export async function runPlanApprovalFlow(
 		}
 		if (editorResult === "no-ui") {
 			return "Cannot open editor in non-interactive mode.";
+		}
+		if (editorResult === "no-editor") {
+			if (ctx.hasUI) {
+				ctx.ui.notify("No $VISUAL or $EDITOR set. Set one in your shell profile.", "warning");
+			}
+			return runPlanApprovalFlow(pi, state, ctx, variant);
 		}
 		// Plan updated — re-show the same menu with the updated content
 		if (ctx.hasUI) {
