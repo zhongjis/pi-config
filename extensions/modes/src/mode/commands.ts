@@ -34,7 +34,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				const choice = await ctx.ui.select("Agent Mode", items);
 				if (!choice) return;
 				const selected = MODES.find((m) => choice.includes(m));
-				if (selected) state.switchMode(selected, ctx);
+				if (selected) await state.switchMode(selected, ctx);
 				return;
 			}
 
@@ -44,7 +44,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				ctx.ui.notify(`Unknown mode: "${name}". Available: ${MODES.join(", ")}`, "error");
 				return;
 			}
-			state.switchMode(resolved, ctx);
+			await state.switchMode(resolved, ctx);
 		},
 	});
 
@@ -53,7 +53,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 		pi.registerCommand(`mode:${mode}`, {
 			description: `Switch to ${mode} mode`,
 			handler: async (args, ctx) => {
-				state.switchMode(mode, ctx);
+				await state.switchMode(mode, ctx);
 				const prompt = args?.trim();
 				if (prompt) {
 					pi.sendUserMessage(prompt, { deliverAs: "followUp" });
@@ -65,7 +65,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 		pi.registerCommand(`mode:${alias}`, {
 			description: `Switch to ${target} mode`,
 			handler: async (args, ctx) => {
-				state.switchMode(target, ctx);
+				await state.switchMode(target, ctx);
 				const prompt = args?.trim();
 				if (prompt) {
 					pi.sendUserMessage(prompt, { deliverAs: "followUp" });
@@ -88,7 +88,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 	pi.registerShortcut(Key.ctrlShift("m"), {
 		description: "Cycle agent mode (Ctrl+Shift+M)",
 		handler: async (ctx) => {
-			state.cycleMode(ctx);
+			await state.cycleMode(ctx);
 		},
 	});
 	// /plan:approve — run by fuxi agent after planning is complete

@@ -7,7 +7,7 @@ import { recoverPlanReview } from "../mode-planning/plannotator.js";
 import { MODES, MODE_ALIASES } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
 import type { Mode, ModeState } from "./types.js";
-import { isDelegationAllowed, isSafeCommand } from "./utils.js";
+import { isDelegationAllowed, isSafeCommand, resolveModelFromStr } from "./utils.js";
 
 function isPlanWriteTarget(input: unknown, planPath: string, draftPath: string): boolean {
 	const path = (input as { path?: unknown })?.path;
@@ -150,6 +150,14 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	pi.on("before_agent_start", async (event, ctx) => {
 		state.activeCtx = ctx;
 		const config = state.loadConfig(state.currentMode);
+
+		if (config.model) {
+			const resolved = resolveModelFromStr(config.model, ctx.modelRegistry);
+			if (resolved) {
+				await pi.setModel(resolved);
+			}
+		}
+
 		const systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
 		if (!config.body) return;
 		return { systemPrompt };
@@ -213,7 +221,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		}
 
 		await hydratePlanState(ctx as any, state);
-		state.applyMode(ctx);
+		await state.applyMode(ctx);
 		await recoverPlanReview(pi, state, ctx);
 		state.persistState();
 	});

@@ -44,7 +44,7 @@ export class ModeStateManager {
 		return this.cachedConfigs[mode]!;
 	}
 
-	applyMode(ctx: ExtensionContext): void {
+	async applyMode(ctx: ExtensionContext): Promise<void> {
 		const config = this.loadConfig(this.currentMode);
 		const allToolNames = this.pi.getAllTools().map((t) => t.name);
 
@@ -75,7 +75,7 @@ export class ModeStateManager {
 		if (config.model) {
 			const resolved = resolveModelFromStr(config.model, ctx.modelRegistry);
 			if (resolved) {
-				void this.pi.setModel(resolved);
+				await this.pi.setModel(resolved);
 			}
 		}
 
@@ -87,17 +87,17 @@ export class ModeStateManager {
 		ctx.ui.setStatus("agent-mode", colored(this.currentMode, meta.label));
 	}
 
-	switchMode(mode: Mode, ctx: ExtensionContext): void {
+	async switchMode(mode: Mode, ctx: ExtensionContext): Promise<void> {
 		this.currentMode = mode;
 		this.cachedConfigs = {};
-		this.applyMode(ctx);
+		await this.applyMode(ctx);
 		this.persistState();
 	}
 
-	cycleMode(ctx: ExtensionContext): void {
+	async cycleMode(ctx: ExtensionContext): Promise<void> {
 		const idx = MODES.indexOf(this.currentMode);
 		const next = MODES[(idx + 1) % MODES.length];
-		this.switchMode(next, ctx);
+		await this.switchMode(next, ctx);
 	}
 
 	hasPendingReview(): boolean {
