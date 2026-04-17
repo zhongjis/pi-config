@@ -325,11 +325,10 @@ export async function checkAndStartPlannotatorReview(
 async function refineInSystemEditor(
 	state: ModeStateManager,
 	ctx: ExtensionContext,
-): Promise<"edited" | "cancelled" | "no-ui" | "no-editor"> {
+): Promise<"edited" | "cancelled" | "no-ui"> {
 	if (!ctx.hasUI) return "no-ui";
 
-	const editorCmd = process.env.VISUAL || process.env.EDITOR;
-	if (!editorCmd) return "no-editor";
+	const editorCmd = process.env.VISUAL || process.env.EDITOR || "vi";
 
 	const currentContent = state.planContent ?? "";
 	const tmpFile = path.join(os.tmpdir(), `pi-plan-edit-${Date.now()}.md`);
@@ -419,12 +418,9 @@ export async function runPlanApprovalFlow(
 		? "Refine in Plannotator"
 		: `Refine in Plannotator (unavailable: ${getPlannotatorUnavailableReason(plannotatorAvail.reason)})`;
 
-	// Resolve editor label from $VISUAL / $EDITOR
-	const editorCmd = process.env.VISUAL || process.env.EDITOR;
-	const editorName = editorCmd ? path.basename(editorCmd.split(" ")[0]) : undefined;
-	const editorLabel = editorName
-		? `Refine in System Editor (${editorName})`
-		: "Refine in System Editor (no $EDITOR set)";
+	const editorCmd = process.env.VISUAL || process.env.EDITOR || "vi";
+	const editorName = path.basename(editorCmd.split(" ")[0]);
+	const editorLabel = `Refine in System Editor (${editorName})`;
 
 	// Build option list
 	const OPTIONS_POST_GAP = [
@@ -487,12 +483,6 @@ export async function runPlanApprovalFlow(
 		}
 		if (editorResult === "no-ui") {
 			return "Cannot open editor in non-interactive mode.";
-		}
-		if (editorResult === "no-editor") {
-			if (ctx.hasUI) {
-				ctx.ui.notify("No $VISUAL or $EDITOR set. Set one in your shell profile.", "warning");
-			}
-			return runPlanApprovalFlow(pi, state, ctx, variant);
 		}
 		// Plan updated — re-show the same menu with the updated content
 		if (ctx.hasUI) {
