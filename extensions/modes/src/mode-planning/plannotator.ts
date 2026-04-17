@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildPlanExecutionGoal, requestDirectHandoffBridge } from "../../../handoff/runtime.js";
+import { buildPlanExecutionGoal } from "../../../handoff/runtime.js";
 import type { ModeStateManager } from "../mode/mode-state.js";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } from "./constants.js";
 import { buildRefinementMessage } from "./plan-context.js";
@@ -95,38 +95,7 @@ async function checkPlannotatorAvailability(
 }
 
 /**
- * Wire up the pending prepared handoff bridge so that `/handoff:start-work`
- * will succeed when the user (or agent) triggers it.
- * Returns an error string on failure, undefined on success.
- */
-async function wireHandoffBridge(
-	pi: ExtensionAPI,
-	state: ModeStateManager,
-	ctx: ExtensionContext,
-): Promise<string | undefined> {
-	const sessionFile = ctx.sessionManager.getSessionFile?.() ?? "";
-	if (!sessionFile) {
-		return "Current session file is unavailable — cannot prepare handoff.";
-	}
-
-	const planPath = getLocalPlanPath(ctx);
-	const goal = buildPlanExecutionGoal(planPath);
-
-	const reply = await requestDirectHandoffBridge(pi, {
-		sessionFile,
-		goal,
-		mode: "houtu",
-		summarize: true,
-	});
-
-	if (!reply.success) {
-		return reply.error;
-	}
-	return undefined;
-}
-
-/**
- * Prepare the approved plan handoff: wire the bridge, set editor text, notify.
+ * Prepare the approved plan handoff: set editor text and notify.
  * Single persist at the end — callers must NOT persist before calling this.
  */
 export async function prepareApprovedPlanHandoff(
@@ -144,14 +113,6 @@ export async function prepareApprovedPlanHandoff(
 	}
 
 	const planPath = getLocalPlanPath(ctx);
-
-	// Wire the bridge so /handoff:start-work actually works
-	const bridgeError = await wireHandoffBridge(pi, state, ctx);
-	if (bridgeError) {
-		console.error(`[modes/plannotator] wireHandoffBridge failed: ${bridgeError}`);
-		// Still proceed — user can manually run /handoff
-	}
-
 	const completionMessage = buildCompletionMessage(state.planTitle);
 
 	if (ctx.hasUI) {

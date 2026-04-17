@@ -24,6 +24,22 @@ export type DirectHandoffBridgeReply =
   | { success: true; data: { command: string; sessionFile: string; source?: string } }
   | { success: false; error: string };
 
+
+export type PreparedHandoffArgsResolver = (ctx: ExtensionCommandContext) => ParsedHandoffArgs | null;
+const PREPARED_HANDOFF_RESOLVER_KEY = Symbol.for("pi-config-handoff-args-resolver");
+
+export function setPreparedHandoffArgsResolver(resolver: PreparedHandoffArgsResolver | null): void {
+  if (resolver) {
+    (globalThis as Record<PropertyKey, unknown>)[PREPARED_HANDOFF_RESOLVER_KEY] = resolver;
+  } else {
+    delete (globalThis as Record<PropertyKey, unknown>)[PREPARED_HANDOFF_RESOLVER_KEY];
+  }
+}
+
+function getPreparedHandoffArgsResolver(): PreparedHandoffArgsResolver | null {
+  const resolver = (globalThis as Record<PropertyKey, unknown>)[PREPARED_HANDOFF_RESOLVER_KEY];
+  return typeof resolver === "function" ? resolver as PreparedHandoffArgsResolver : null;
+}
 const PENDING_PREPARED_HANDOFFS_GLOBAL_KEY = Symbol.for("pi-config-handoff-prepared");
 // Stores the handoff startup prompt across the session switch boundary.
 // pi.sendUserMessage() after ctx.newSession() routes to the OLD (disposed)
@@ -180,11 +196,12 @@ export async function runPreparedHandoffCommand(
   }
 
   const pending = getPendingPreparedHandoff(currentSessionFile);
-  if (!pending) {
+  const args = pending?.args ?? getPreparedHandoffArgsResolver()?.(ctx);
+  if (!args) {
     return `No prepared handoff found for this session. Prepare Hou Tu handoff first, then run ${DIRECT_HANDOFF_COMMAND}.`;
   }
 
-  return await runHandoffCommand(pi, ctx, pending.args);
+  return await runHandoffCommand(pi, ctx, args);
 }
 
 export function parseHandoffArgs(args: string): { ok: true; value: ParsedHandoffArgs } | { ok: false; error: string } {

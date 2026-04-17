@@ -14,12 +14,14 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../handoff/runtime.js";
 import { registerModeCommands } from "./mode/commands.js";
 import { registerModeHooks } from "./mode/hooks.js";
 import { registerModeTools } from "./mode/tools.js";
 import { ModeStateManager } from "./mode/mode-state.js";
 import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./mode-planning/constants.js";
 import { handlePlanReviewResult } from "./mode-planning/plannotator.js";
+import { getLocalPlanPath } from "./mode-planning/plan-local.js";
 import type { PlannotatorReviewResultEvent } from "./mode-planning/types.js";
 
 export default function modesExtension(pi: ExtensionAPI): void {
@@ -34,6 +36,20 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			approved: result.approved,
 			feedback: typeof result.feedback === "string" ? result.feedback : undefined,
 		}, state.activeCtx);
+	});
+
+	// Register fallback args resolver so /handoff:start-work can derive
+	// handoff args from persisted mode state (survives pi restart).
+	setPreparedHandoffArgsResolver((ctx) => {
+		if (state.currentMode !== "fuxi" || !state.planReviewApproved || !state.planTitle) {
+			return null;
+		}
+		const planPath = getLocalPlanPath(ctx as any);
+		return {
+			goal: buildPlanExecutionGoal(planPath),
+			mode: "houtu",
+			summarize: false,
+		};
 	});
 
 	registerModeCommands(pi, state);

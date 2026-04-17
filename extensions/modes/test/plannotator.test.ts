@@ -2,10 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../handoff/runtime.js", () => ({
 	buildPlanExecutionGoal: vi.fn((path: string) => `Execute plan at ${path}.`),
-	requestDirectHandoffBridge: vi.fn(async () => ({
-		success: true,
-		data: { command: "/handoff:start-work", sessionFile: "/tmp/session.jsonl" },
-	})),
 }));
 
 vi.mock("../src/mode-planning/plan-storage.js", () => ({

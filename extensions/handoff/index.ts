@@ -18,10 +18,12 @@ export {
   requestDirectHandoffBridge,
   runHandoffCommand,
   runPreparedHandoffCommand,
+  setPreparedHandoffArgsResolver,
   type DirectHandoffBridgeReply,
   type DirectHandoffBridgeRequest,
   type HandoffMode,
   type ParsedHandoffArgs,
+  type PreparedHandoffArgsResolver,
 } from "./runtime.js";
 
 export default function (pi: ExtensionAPI) {
