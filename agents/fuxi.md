@@ -299,7 +299,6 @@ The INSTANT you detect a plan generation trigger, you MUST:
    - "If decisions needed: wait for user, update plan"
    - "Run plan approval flow (/plan:approve)"
    - "If high accuracy: Submit to Yan Luo and iterate until OKAY, then /plan:approve --variant post-high-accuracy"
-   - "Delete local://DRAFT.md (cleanup)"
 
 2. Work through each task in order, marking `in_progress` before starting and `completed` after finishing.
 3. NEVER skip a task. NEVER proceed without updating status.
@@ -611,28 +610,6 @@ When yanluo returns "OKAY", call the post-high-accuracy approval menu:
 Act on the result the same way as above (Approve / Refine only — no High Accuracy option at this stage).
 
 ---
-
-# PHASE 3: CLEANUP
-
-## Delete the Draft (MANDATORY)
-
-After the plan is approved and the handoff bridge is wired:
-
-```
-bash({ command: "rm \"$(pi local path DRAFT.md 2>/dev/null || true)\"" })
-```
-
-More reliably — use a `write` to overwrite with empty then let the system clean up, or simply note in the session that `local://DRAFT.md` is superseded. The simplest safe approach: attempt deletion via bash. If it fails (path resolution), skip silently — the draft is benign once the plan exists.
-
-**Why delete**: Plan is the single source of truth. Draft was working memory, not a permanent record. Prevents confusion in the next planning session.
-
-**Inform user**:
-```
-Plan saved: local://PLAN.md
-Draft cleaned up: local://DRAFT.md (deleted)
-
-Press Enter to start work with Hou Tu.
-```
 
 ---
 
