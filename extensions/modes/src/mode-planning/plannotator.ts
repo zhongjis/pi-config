@@ -339,35 +339,36 @@ async function refineInSystemEditor(
 
 		// Use ctx.ui.custom() to get the tui handle for stop/start
 		const editResult = await ctx.ui.custom<"edited" | "cancelled">((tui, _theme, _keybindings, done) => {
-			// Immediately suspend TUI and launch external editor
-			setImmediate(() => {
-				try {
-					tui.stop();
-					const [editor, ...editorArgs] = editorCmd.split(" ");
-					const result = spawnSync(editor, [...editorArgs, tmpFile], {
-						stdio: "inherit",
-						shell: process.platform === "win32",
-					});
+			// Synchronous: suspend TUI, launch editor, resume — no deferral
+			let outcome: "edited" | "cancelled" = "cancelled";
+			try {
+				tui.stop();
+				// Enter alternate screen so editor output doesn't pollute scrollback
+				process.stdout.write("\x1b[?1049h");
+				const [editor, ...editorArgs] = editorCmd.split(" ");
+				const result = spawnSync(editor, [...editorArgs, tmpFile], {
+					stdio: "inherit",
+					shell: process.platform === "win32",
+				});
 
-					if (result.status === 0) {
-						const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
-						if (newContent.trim() !== currentContent.trim()) {
-							done("edited");
-						} else {
-							done("cancelled");
-						}
-					} else {
-						done("cancelled");
+				if (result.status === 0) {
+					const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
+					if (newContent.trim() !== currentContent.trim()) {
+						outcome = "edited";
 					}
-				} catch {
-					done("cancelled");
-				} finally {
-					tui.start();
-					tui.requestRender(true);
 				}
-			});
+			} catch {
+				// editor failed — treat as cancelled
+			} finally {
+				// Exit alternate screen — restores pre-editor terminal content
+				process.stdout.write("\x1b[?1049l");
+				tui.start();
+				tui.requestRender(true);
+			}
+			// Resolve after TUI is fully restored — avoids "Working..." flash
+			done(outcome);
 
-			// Return a minimal placeholder component (never visible — TUI is stopped immediately)
+			// Placeholder component (never visible — TUI is stopped synchronously)
 			return { width: 0, height: 0, draw() {} } as any;
 		});
 
@@ -418,16 +419,23 @@ export async function runPlanApprovalFlow(
 		? "Refine in Plannotator"
 		: `Refine in Plannotator (unavailable: ${getPlannotatorUnavailableReason(plannotatorAvail.reason)})`;
 
+	// Resolve editor label from $VISUAL / $EDITOR
+	const editorCmd = process.env.VISUAL || process.env.EDITOR;
+	const editorName = editorCmd ? path.basename(editorCmd.split(" ")[0]) : undefined;
+	const editorLabel = editorName
+		? `Refine in System Editor (${editorName})`
+		: "Refine in System Editor (no $EDITOR set)";
+
 	// Build option list
 	const OPTIONS_POST_GAP = [
-		"Refine in System Editor ($EDITOR)",
+		editorLabel,
 		plannotatorLabel,
 		"High Accuracy Review (Yan Luo)",
 		"Approve",
 	] as const;
 
 	const OPTIONS_POST_HIGH_ACCURACY = [
-		"Refine in System Editor ($EDITOR)",
+		editorLabel,
 		plannotatorLabel,
 		"Approve",
 	] as const;
@@ -471,7 +479,7 @@ export async function runPlanApprovalFlow(
 	}
 
 	// ── Refine in System Editor ───────────────────────────────────────────────
-	if (selected === "Refine in System Editor ($EDITOR)") {
+	if (selected.startsWith("Refine in System Editor")) {
 		const editorResult = await refineInSystemEditor(state, ctx);
 		if (editorResult === "cancelled") {
 			// Re-show the same menu after cancellation
