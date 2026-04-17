@@ -5,9 +5,9 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { TaskStore } from "./pi-tasks/src/task-store.js";
-import { loadTasksConfig } from "./pi-tasks/src/tasks-config.js";
-import type { Task } from "./pi-tasks/src/types.js";
+import { TaskStore } from "../pi-tasks/src/task-store.js";
+import { loadTasksConfig } from "../pi-tasks/src/tasks-config.js";
+import type { Task } from "../pi-tasks/src/types.js";
 
 const TASK_CONTINUATION_REMINDER = `<system-reminder>
 Incomplete tasks remain in your task list. Continue working on the next pending task.
@@ -33,6 +33,7 @@ export default function (pi: ExtensionAPI) {
   let activeAgentStartedFromTaskReminder = false;
   let taskReminderStagnationCount = 0;
   let lastReminderIncompleteSignature: string | undefined;
+  let userPromptedInCurrentRun = false;
 
   function resolveStorePath(sessionId?: string): string | undefined {
     if (piTasks === "off") return undefined;
@@ -79,8 +80,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("agent_start", async () => {
     activeAgentTurnCount = 0;
+    userPromptedInCurrentRun = false;
     activeAgentStartedFromTaskReminder = taskReminderFollowUpPending;
     taskReminderFollowUpPending = false;
+  });
+
+  pi.events.on("user-prompted", () => {
+    userPromptedInCurrentRun = true;
   });
 
   pi.on("turn_end", async () => {
@@ -97,6 +103,8 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (ctx.hasPendingMessages()) return;
+
+    if (userPromptedInCurrentRun) return;
 
     const incompleteTasks = getIncompleteTasks(ctx);
     if (incompleteTasks.length === 0) {

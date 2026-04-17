@@ -116,6 +116,7 @@ export default function ask(pi: ExtensionAPI) {
       const questions = params.questions;
       const isMultiQ = questions.length > 1;
 
+      pi.events.emit("user-prompted", { tool: "ask" });
       const outcome = await ctx.ui.custom<AskOutcome>((tui, theme, _kb, done) => {
         // ── Persisted state (one slot per question) ───────────────────────────
         const saved: (QuestionResult | undefined)[] = Array.from({ length: questions.length });

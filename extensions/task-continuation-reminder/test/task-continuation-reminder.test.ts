@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import initTasksExtension from "../src/index.js";
-import initTaskContinuationReminder from "../../task-continuation-reminder.js";
+import initTasksExtension from "../../pi-tasks/src/index.js";
+import initTaskContinuationReminder from "../index.js";
 
 type MockEventBus = {
   on: (channel: string, handler: (data: unknown) => void) => () => void;
@@ -97,6 +97,17 @@ describe("task-continuation-reminder extension", () => {
     }, ctx);
     await mock.fireLifecycle("agent_end", { messages: [{ role: "assistant", stopReason }] }, ctx);
   }
+  async function runAgentTurnWithUserPrompt(mock: ReturnType<typeof mockPi>, ctx: any, stopReason = "stop") {
+    await mock.fireLifecycle("agent_start", {}, ctx);
+    await mock.fireLifecycle("turn_start", { turnIndex: 1, timestamp: Date.now() }, ctx);
+    mock.pi.events.emit("user-prompted", { tool: "ask" });
+    await mock.fireLifecycle("turn_end", {
+      turnIndex: 1,
+      message: { role: "assistant", usage: { input: 1, output: 1 } },
+      toolResults: [],
+    }, ctx);
+    await mock.fireLifecycle("agent_end", { messages: [{ role: "assistant", stopReason }] }, ctx);
+  }
 
   it("sends a visible follow-up continuation reminder when incomplete tasks remain", async () => {
     const mock = mockPi();
@@ -151,6 +162,19 @@ describe("task-continuation-reminder extension", () => {
 
     const ctx = mockCtx();
     await runAgentTurn(mock, ctx);
+
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not send reminders when user-prompted event was emitted during the agent run", async () => {
+    const mock = mockPi();
+    initTasksExtension(mock.pi as any);
+    initTaskContinuationReminder(mock.pi as any);
+
+    await mock.executeTool("TaskCreate", { subject: "Pending", description: "desc" });
+
+    const ctx = mockCtx();
+    await runAgentTurnWithUserPrompt(mock, ctx);
 
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
   });
