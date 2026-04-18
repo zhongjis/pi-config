@@ -14,15 +14,15 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../handoff/runtime.js";
-import { registerModeCommands } from "./mode/commands.js";
-import { registerModeHooks } from "./mode/hooks.js";
-import { registerModeTools } from "./mode/tools.js";
-import { ModeStateManager } from "./mode/mode-state.js";
-import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./mode-planning/constants.js";
-import { handlePlanReviewResult } from "./mode-planning/plannotator.js";
-import { getLocalPlanPath } from "./mode-planning/plan-local.js";
-import type { PlannotatorReviewResultEvent } from "./mode-planning/types.js";
+import { registerModeCommands } from "./commands.js";
+import { registerModeHooks } from "./hooks.js";
+import { ModeStateManager } from "./mode-state.js";
+import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./constants.js";
+import { handlePlanReviewResult, runPlanApprovalFlow } from "./plannotator.js";
+import { getLocalPlanPath } from "./plan-storage.js";
+import type { PlannotatorReviewResultEvent } from "./types.js";
 
 export default function modesExtension(pi: ExtensionAPI): void {
 	const state = new ModeStateManager(pi);
@@ -52,7 +52,32 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		};
 	});
 
+	// plan_approve tool (absorbed from tools.ts)
+	pi.registerTool({
+		name: "plan_approve",
+		label: "Plan Approve",
+		description:
+			"Present the plan approval menu after plan generation is complete. " +
+			"Shows interactive options: Approve, High Accuracy Review (Yan Luo), Refine in Editor, Refine in Plannotator. " +
+			"Use variant 'post-gap-review' (default) after Di Renjie gap review, or 'post-high-accuracy' after Yan Luo returns OKAY.",
+		parameters: Type.Object({
+			variant: Type.Optional(
+				Type.Union([Type.Literal("post-gap-review"), Type.Literal("post-high-accuracy")], {
+					description:
+						'Approval menu variant. "post-gap-review" (default) includes High Accuracy Review option. ' +
+						'"post-high-accuracy" omits it (used after Yan Luo already approved).',
+				}),
+			),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const variant = params.variant === "post-high-accuracy" ? "post-high-accuracy" as const : "post-gap-review" as const;
+			const result = await runPlanApprovalFlow(pi, state, ctx, variant);
+			return {
+				content: [{ type: "text" as const, text: result }],
+			};
+		},
+	});
+
 	registerModeCommands(pi, state);
-	registerModeTools(pi, state);
 	registerModeHooks(pi, state);
 }
