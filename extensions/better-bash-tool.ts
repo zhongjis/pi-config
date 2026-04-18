@@ -28,7 +28,8 @@ export default function betterBashTool(pi: ExtensionAPI): void {
   const nativeDef = createBashToolDefinition(process.cwd());
 
   pi.registerTool({
-    ...nativeDef,               // inherits name ("bash"), label, description
+    ...nativeDef,               // inherits name ("bash"), label
+    description: "Execute a bash command in a specified or default working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Use the `cwd` parameter to set the working directory instead of 'cd dir && command'. Optionally provide a timeout in seconds.",
     parameters: bashWithCwdSchema,
 
     promptGuidelines: [
