@@ -21,7 +21,7 @@ NIX_MANAGED_EXTENSIONS=(
 )
 
 # Top-level items to symlink into ~/.pi/agent (allowlist).
-# Everything else (test infra, build config, node_modules, etc.) stays in repo only.
+# Everything else (test infra, build config, node_modules, runtime state, etc.) stays out of repo-managed symlinks.
 ALLOWED_ITEMS=(
     "agents"
     "docs"
@@ -31,7 +31,6 @@ ALLOWED_ITEMS=(
     "plans"
     "README.md"
     "scripts"
-    "sessions"
     "themes"
 )
 
@@ -68,12 +67,52 @@ is_allowed_item() {
     contains_item "$1" "${ALLOWED_ITEMS[@]}"
 }
 
+remove_legacy_nested_symlink() {
+    local path="$1"
+    local expected_target="$2"
+    local label="$3"
+
+    if [ -L "$path" ] && [ "$(readlink "$path")" = "$expected_target" ]; then
+        rm "$path"
+        echo "Removed legacy nested symlink: $label"
+    fi
+}
+
+migrate_repo_sessions_to_target() {
+    local repo_sessions="$REPO_DIR/sessions"
+    local target_sessions="$TARGET/sessions"
+
+    mkdir -p "$target_sessions"
+    remove_legacy_nested_symlink "$target_sessions/sessions" "$repo_sessions" "sessions/sessions"
+
+    if [ -d "$repo_sessions" ]; then
+        cp -a "$repo_sessions"/. "$target_sessions"/
+        rm -rf "$repo_sessions"
+        echo "Migrated repo-local session data into $target_sessions"
+    fi
+}
+
 sync_repo_extensions() {
     local item
     local name
     local target_path
+    local link_target
 
     mkdir -p "$EXTENSIONS_TARGET"
+
+    find "$EXTENSIONS_TARGET" -mindepth 1 -maxdepth 1 -type l -print0 | while IFS= read -r -d '' item; do
+        name="$(basename "$item")"
+        link_target="$(readlink "$item")"
+
+        case "$link_target" in
+        "$REPO_EXTENSIONS_DIR"/*)
+            if [ ! -e "$REPO_EXTENSIONS_DIR/$name" ] || is_nix_managed_extension "$name"; then
+                rm "$item"
+                echo "Removed stale extension symlink: $name"
+            fi
+            ;;
+        esac
+    done
 
     for item in "$REPO_EXTENSIONS_DIR"/*; do
         [ -e "$item" ] || continue
@@ -133,23 +172,30 @@ fi
 
 mkdir -p "$TARGET"
 
-# Clean up stale symlinks for items no longer in allowlist
+# Clean up stale symlinks for items no longer in allowlist or no longer present in repo
 # (e.g., items that were previously symlinked under the old exclude-list approach)
-for item in "$TARGET"/*; do
-    [ -L "$item" ] || continue
+find "$TARGET" -mindepth 1 -maxdepth 1 -type l -print0 | while IFS= read -r -d '' item; do
     name="$(basename "$item")"
     link_target="$(readlink "$item")"
 
     # Only clean up symlinks pointing back to this repo
     case "$link_target" in
     "$REPO_DIR"/*)
-        if ! is_allowed_item "$name" && ! is_nix_managed "$name"; then
+        if is_allowed_item "$name"; then
+            if [ ! -e "$REPO_DIR/$name" ]; then
+                rm "$item"
+                echo "Removed stale missing-item symlink: $name"
+            fi
+        elif ! is_nix_managed "$name"; then
             rm "$item"
             echo "Removed stale symlink: $name"
         fi
         ;;
     esac
 done
+
+migrate_repo_sessions_to_target
+
 
 # Symlink only allowlisted items from repo into ~/.pi/agent/
 for name in "${ALLOWED_ITEMS[@]}"; do
