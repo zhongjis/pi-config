@@ -172,6 +172,65 @@ grep -l "function_name" ~/.pi/agent/sessions/**/*.jsonl 2>/dev/null
 | Include base64 image data | `select(.type != "image")` |
 | Process multiple sessions in one `read` | Loop with `jq` extracts |
 
+
+## Reusable Scripts
+
+The `scripts/` directory has ready-to-run bash scripts for common analysis patterns. Use these instead of writing jq one-liners from scratch — they handle edge cases (string-vs-object args, content type guards, timestamp math) that are easy to get wrong.
+
+All scripts: `<skill-dir>/scripts/<name>.sh <session.jsonl> [flags]`
+
+### pi-session-overview.sh — One-shot session summary
+The universal first step. Outputs entry types, roles, tool frequency, cost/tokens, model, duration.
+```bash
+scripts/pi-session-overview.sh /path/to/session.jsonl
+```
+
+### pi-session-subagents.sh — Agent delegation extraction
+Extracts all Agent tool calls with type, description, bg flag, max_turns, prompt preview.
+```bash
+# All subagent calls
+scripts/pi-session-subagents.sh session.jsonl
+# Filter by type, show more prompt
+scripts/pi-session-subagents.sh session.jsonl --type fuxi --prompt-len 500
+# Hide prompts
+scripts/pi-session-subagents.sh session.jsonl --prompt-len 0
+```
+
+### pi-session-thread.sh — Conversation timeline
+Compact thread with timestamps. Supports pagination and tool call inclusion.
+```bash
+# First 10 messages
+scripts/pi-session-thread.sh session.jsonl --head 10
+# Last 5, including tool calls/results
+scripts/pi-session-thread.sh session.jsonl --tail 5 --tools
+# Wider truncation
+scripts/pi-session-thread.sh session.jsonl --max-chars 500
+```
+
+### pi-session-timing.sh — Measure time between events
+Match by text pattern, tool name, or tool args. Finds first match for each endpoint.
+```bash
+# Tool arg match → text match (e.g., fuxi call to user cancel)
+scripts/pi-session-timing.sh session.jsonl --from-tool-arg 'Agent:fuxi' --to 'skip fuxi'
+# Tool to tool
+scripts/pi-session-timing.sh session.jsonl --from-tool Agent --to-tool get_subagent_result
+# Text to text
+scripts/pi-session-timing.sh session.jsonl --from 'fix the bug' --to 'looks good'
+```
+
+### pi-session-toolcalls.sh — Filter and extract tool calls
+Filter by tool name (regex), extract specific arg fields. Handles string/object arg ambiguity.
+```bash
+# All bash commands (compact, just the command text)
+scripts/pi-session-toolcalls.sh session.jsonl --tool bash --field command --compact
+# Files touched by read/write/edit
+scripts/pi-session-toolcalls.sh session.jsonl --tool 'read|write|edit' --field path
+# Agent calls with subagent type
+scripts/pi-session-toolcalls.sh session.jsonl --tool Agent --field subagent_type --compact
+# All tools, verbose
+scripts/pi-session-toolcalls.sh session.jsonl
+```
+
 ## Reference
 
 For full schema, field definitions, and advanced patterns (tree traversal, multi-session diffs, extension entries):
