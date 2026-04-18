@@ -119,3 +119,35 @@ export function safeUsage(ctx: ExtensionContext): ReturnType<ExtensionContext["g
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// computeLineDiff
+// ---------------------------------------------------------------------------
+
+/**
+ * Produces a minimal line diff between two strings.
+ * Lines only in `oldContent` get a `-` prefix; lines only in `newContent` get a `+` prefix.
+ * Returns an empty string when both inputs are identical.
+ */
+export function computeLineDiff(oldContent: string, newContent: string): string {
+	if (oldContent === newContent) return "";
+
+	const oldLines = oldContent.split("\n");
+	const newLines = newContent.split("\n");
+	const result: string[] = [];
+
+	const maxLen = Math.max(oldLines.length, newLines.length);
+	for (let i = 0; i < maxLen; i++) {
+		const oldLine = i < oldLines.length ? oldLines[i] : undefined;
+		const newLine = i < newLines.length ? newLines[i] : undefined;
+
+		if (oldLine === newLine) {
+			result.push(` ${oldLine}`);
+		} else {
+			if (oldLine !== undefined) result.push(`-${oldLine}`);
+			if (newLine !== undefined) result.push(`+${newLine}`);
+		}
+	}
+
+	return result.join("\n");
+}
