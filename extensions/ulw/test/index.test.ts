@@ -83,9 +83,12 @@ describe("ulw extension — unit tests", () => {
 		expect(result?.action).toBe("transform");
 	});
 
-	it("does NOT detect keyword mid-sentence", async () => {
+	it("detects keyword mid-sentence", async () => {
 		const result = await fireInput(mock, "please use ulw mode");
-		expect(result).toEqual({ action: "continue" });
+		expect(result?.action).toBe("transform");
+		const text = (result as any).text as string;
+		expect(text).toContain("<ultrawork-mode>");
+		expect(text).toContain("please use mode");
 	});
 
 	// ── Code-block protection ───────────────────────────────────
@@ -98,6 +101,31 @@ describe("ulw extension — unit tests", () => {
 	it("does NOT trigger on keyword inside inline code", async () => {
 		const result = await fireInput(mock, "`ulw` fix this");
 		expect(result).toEqual({ action: "continue" });
+	});
+
+	// ── @-reference protection ──────────────────────────────────
+
+	it("does NOT trigger on @ulw file reference", async () => {
+		const result = await fireInput(mock, "@ulw is not working");
+		expect(result).toEqual({ action: "continue" });
+	});
+
+	it("does NOT trigger on @extensions/ulw/ reference", async () => {
+		const result = await fireInput(mock, "@extensions/ulw/ is broken");
+		expect(result).toEqual({ action: "continue" });
+	});
+
+	it("does NOT trigger on @extensions/ulw/index.ts reference", async () => {
+		const result = await fireInput(mock, "check @extensions/ulw/index.ts for bugs");
+		expect(result).toEqual({ action: "continue" });
+	});
+
+	it("strips only first keyword occurrence", async () => {
+		const result = await fireInput(mock, "ulw fix the ulw bug");
+		expect(result?.action).toBe("transform");
+		const text = (result as any).text as string;
+		const afterSep = text.split("---").pop()!;
+		expect(afterSep.trim()).toBe("fix the ulw bug");
 	});
 
 	// ── Message-level injection ─────────────────────────────────

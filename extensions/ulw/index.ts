@@ -5,7 +5,7 @@
  * Source: https://github.com/code-yeongyu/oh-my-openagent
  *
  * Behaviour:
- *   - User starts a message with "ultrawork" or "ulw" (case-insensitive)
+ *   - User message contains "ultrawork" or "ulw" anywhere (case-insensitive)
  *   - Extension strips the keyword and prepends the ultrawork prompt to
  *     the user message text (message-level injection, like OmO)
  *   - Notification shown on activation
@@ -26,18 +26,34 @@ import { ULTRAWORK_PROMPT } from "./prompt.js";
 const CODE_BLOCK_RE = /```[\s\S]*?```/g;
 const INLINE_CODE_RE = /`[^`]+`/g;
 
-/** Keyword anchored to start of input — this is a command prefix, not global search. */
-const ULW_PREFIX_RE = /^\s*(ultrawork|ulw)\b\s*/i;
+/**
+ * Matches @-prefixed references that should NOT trigger detection.
+ * Covers: @ulw, @extensions/ulw, @extensions/ulw/, @extensions/ulw/index.ts, etc.
+ * Pi passes @file references as raw text in event.text.
+ */
+const AT_REF_RE = /@(?:extensions\/)?ulw\b[^\s]*/gi;
 
-function hasUlwKeyword(text: string): boolean {
-  // Strip code blocks before detection to avoid false positives
-  // when discussing the extension itself or pasting code containing the keyword.
-  const clean = text.replace(CODE_BLOCK_RE, "").replace(INLINE_CODE_RE, "");
-  return ULW_PREFIX_RE.test(clean);
+/** Keyword anywhere in text (word-boundary, case-insensitive). */
+const ULW_KEYWORD_RE = /\b(ultrawork|ulw)\b/i;
+
+/**
+ * Sanitize text before keyword detection: strip code blocks, inline code,
+ * and @-prefixed file references to avoid false positives.
+ */
+function sanitize(text: string): string {
+  return text
+    .replace(CODE_BLOCK_RE, "")
+    .replace(INLINE_CODE_RE, "")
+    .replace(AT_REF_RE, "");
 }
 
+function hasUlwKeyword(text: string): boolean {
+  return ULW_KEYWORD_RE.test(sanitize(text));
+}
+
+/** Strip only the first occurrence of the keyword from the raw text. */
 function stripUlwKeyword(text: string): string {
-  return text.replace(ULW_PREFIX_RE, "").trim();
+  return text.replace(ULW_KEYWORD_RE, "").replace(/  +/g, " ").trim();
 }
 
 // ---------------------------------------------------------------------------
