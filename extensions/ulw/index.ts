@@ -28,6 +28,12 @@ const CODE_BLOCK_RE = /```[\s\S]*?```/g;
 const INLINE_CODE_RE = /`[^`]+`/g;
 
 /**
+ * Matches the ultrawork prompt block itself — prevents the prompt content
+ * (which contains "ultrawork") from re-triggering keyword detection.
+ */
+const ULTRAWORK_BLOCK_RE = /<ultrawork-mode>[\s\S]*?<\/ultrawork-mode>/gi;
+
+/**
  * Matches @-prefixed references that should NOT trigger detection.
  * Covers: @ulw, @extensions/ulw, @extensions/ulw/, @extensions/ulw/index.ts, etc.
  * Pi passes @file references as raw text in event.text.
@@ -38,11 +44,13 @@ const AT_REF_RE = /@(?:extensions\/)?ulw\b[^\s]*/gi;
 const ULW_KEYWORD_RE = /\b(ultrawork|ulw)\b/i;
 
 /**
- * Sanitize text before keyword detection: strip code blocks, inline code,
- * and @-prefixed file references to avoid false positives.
+ * Sanitize text before keyword detection: strip ultrawork prompt blocks,
+ * code blocks, inline code, and @-prefixed file references to avoid
+ * false positives.
  */
 function sanitize(text: string): string {
   return text
+    .replace(ULTRAWORK_BLOCK_RE, "")
     .replace(CODE_BLOCK_RE, "")
     .replace(INLINE_CODE_RE, "")
     .replace(AT_REF_RE, "");

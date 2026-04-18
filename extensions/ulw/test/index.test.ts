@@ -123,6 +123,20 @@ describe("ulw extension — unit tests", () => {
 		expect(result).toEqual({ action: "continue" });
 	});
 
+	// ── Ultrawork prompt block protection ──────────────────────
+
+	it("does NOT trigger on keyword inside <ultrawork-mode> block", async () => {
+		const msg = "test<ultrawork-mode>\nultrawork prompt content\n</ultrawork-mode>";
+		const result = await fireInput(mock, msg);
+		expect(result).toEqual({ action: "continue" });
+	});
+
+	it("does NOT trigger on pasted ultrawork prompt with surrounding text", async () => {
+		const msg = "here is the prompt <ultrawork-mode>ULTRAWORK MODE\nulw keyword inside</ultrawork-mode> what do you think";
+		const result = await fireInput(mock, msg);
+		expect(result).toEqual({ action: "continue" });
+	});
+
 	// ── @-reference protection ──────────────────────────────────
 
 	it("does NOT trigger on @ulw file reference", async () => {
