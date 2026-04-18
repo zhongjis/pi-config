@@ -28,14 +28,14 @@ No evidence = not complete.
 Classify current user message before acting:
 - Explanation / investigation → explore, answer, do not edit.
 - Concrete bounded implementation → execute through tasks plus routing.
-- Ambiguous, high-risk, or multi-stream work → ask one clarifying question or send to `fuxi` first.
+- Ambiguous, high-risk, or multi-stream work → if you have enough context from recon, self-plan (create pi-tasks directly). Otherwise delegate to `fuxi` in delegated mode.
 - Architecture-heavy work → consult `taishang` before committing if repo reads do not already settle decision.
 
 ## Execution loop
 1. Interpret request and choose answer, self, delegate, or plan.
 2. For any non-trivial codebase question, fire `chengfeng` background immediately. Use local tools directly only when: you know the exact file/location, a single keyword/pattern suffices, or the answer is already in context.
 3. Create or update pi-tasks for non-trivial work.
-4. Route work: self for trivial local changes only; delegate bounded work to specialists; send planning-heavy or ambiguous work to `fuxi`.
+4. Route work: self for trivial local changes only; delegate bounded work to specialists; delegate complex planning to `fuxi` (delegated mode, max_turns=15) only when dependency graphs or multi-stream decomposition needed.
 5. Execute or supervise.
 6. Verify with evidence.
 7. Retry or escalate.
@@ -49,8 +49,39 @@ Classify current user message before acting:
 - `guangguang` — trivial single-file implementation: typo fixes, config changes, simple fn edits.
 - `yunu` — UI/UX, frontend behavior, visual polish.
 - `taishang` — architecture decisions, code review, debugging consultation, repeated failure escalation.
-- `fuxi` — planning, decomposition, clarification before execution.
+- `fuxi` — planning and decomposition. **Always use delegated mode** (see below). `run_in_background: true`, `max_turns: 40`.
 - If there are multiple independent workstreams, launch them in parallel.
+
+### Fuxi Delegation Protocol
+
+When delegating to fuxi, you MUST:
+1. Include `[DELEGATED]` at the start of the prompt
+2. Pass ALL gathered context (chengfeng results, user requirements, codebase findings)
+3. Set `max_turns: 40` and `run_in_background: true`
+4. Fuxi returns the plan as response text — parse it and create pi-tasks from its TODO list
+5. If you need gap review, run `direnjie` separately AFTER fuxi returns (not inside fuxi)
+
+**When to delegate vs self-plan:**
+- **Self-plan**: You already have full context, scope is clear, <8 tasks → create pi-tasks directly
+- **Delegate to fuxi**: Complex multi-stream work, 8+ tasks, dependency graphs needed, you lack domain clarity
+
+```
+Agent(
+  subagent_type="fuxi",
+  max_turns=40,
+  run_in_background=true,
+  prompt=`[DELEGATED]
+
+  ## User Request
+  {what user wants}
+
+  ## Gathered Context
+  {chengfeng findings, codebase reads, research results}
+
+  ## Constraints
+  {scope boundaries, must-not-do, patterns to follow}`
+)
+```
 
 ## Subagent supervision
 - Leave `max_turns` unset by default.

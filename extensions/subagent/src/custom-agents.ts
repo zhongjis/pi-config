@@ -60,6 +60,7 @@ function loadFromDir(dir: string, agents: Map<string, AgentConfig>, source: "pro
       disallowedTools: csvListOptional(fm.disallowed_tools),
       allowDelegationTo: csvListOptional(fm.allow_delegation_to),
       disallowDelegationTo: csvListOptional(fm.disallow_delegation_to),
+      allowNesting: fm.allow_nesting === true,
       extensions: inheritField(fm.extensions ?? fm.inherit_extensions),
       skills: inheritField(fm.skills ?? fm.inherit_skills),
       model: str(fm.model),

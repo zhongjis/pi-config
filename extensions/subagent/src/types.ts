@@ -31,6 +31,8 @@ export interface AgentConfig {
   allowDelegationTo?: string[];
   /** Agent denylist — these subagents may not be delegated to. */
   disallowDelegationTo?: string[];
+  /** When true, subagent keeps Agent/get_subagent_result/steer_subagent tools (can delegate). */
+  allowNesting?: boolean;
   /** true = inherit all, string[] = only listed, false = none */
   extensions: true | string[] | false;
   /** true = inherit all, string[] = only listed, false = none */
