@@ -141,7 +141,7 @@ Pick the simplest tier that fits:
 |------|-----------|-------------|----------|
 | **Bare file** | `extensions/foo.ts` | Single-file, self-contained, no internal modules or tests | `exit.ts`, `direnv.ts`, `context.ts` |
 | **Directory** | `extensions/foo/index.ts` + siblings | Multi-file but flat — helpers, config, or types alongside entrypoint | `caveman/`, `handoff/`, `btw/` |
-| **Directory + `src/`** | `extensions/foo/index.ts` re-exports `./src/index.js` | Complex extension with internal module boundary; `src/` for impl, `test/` for unit tests | `modes/`, `pi-tasks/`, `subagent/` |
+| **Directory + `src/`** | `extensions/foo/index.ts` re-exports `./src/index.js` | Complex extension with internal module boundary; `src/` for impl, `test/` for unit tests | `modes/`, `tasks/`, `subagent/` |
 
 Rules:
 - Entrypoint is always `extensions/foo.ts` or `extensions/foo/index.ts` — the smoke harness auto-discovers these two shapes only.
