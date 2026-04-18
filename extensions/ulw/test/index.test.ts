@@ -8,6 +8,11 @@ type InputResult =
 	| { action: "handled" }
 	| undefined;
 
+type BeforeAgentStartResult = {
+	message?: { customType: string; content: string; display: boolean };
+	systemPrompt?: string;
+} | undefined;
+
 /**
  * Helper: call the extension's input handler directly and return result.
  * mock-pi stores lifecycle handlers by event name; we grab the "input" handler.
@@ -21,6 +26,19 @@ async function fireInput(
 	expect(handlers.length).toBeGreaterThan(0);
 	const handler = handlers[0];
 	return (await handler({ text }, ctx ?? createMockContext())) as InputResult;
+}
+
+/**
+ * Helper: call the extension's before_agent_start handler and return result.
+ */
+async function fireBeforeAgentStart(
+	mock: ReturnType<typeof createMockPi>,
+	ctx?: ReturnType<typeof createMockContext>,
+): Promise<BeforeAgentStartResult> {
+	const handlers = mock.lifecycleHandlers.get("before_agent_start") ?? [];
+	if (handlers.length === 0) return undefined;
+	const handler = handlers[0];
+	return (await handler({ prompt: "", images: [], systemPrompt: "" }, ctx ?? createMockContext())) as BeforeAgentStartResult;
 }
 
 /** Create a mock context whose sessionManager.getEntries returns custom mode entries. */
@@ -43,9 +61,11 @@ describe("ulw extension — unit tests", () => {
 
 	// ── Registration ────────────────────────────────────────────
 
-	it("registers an input handler", () => {
+	it("registers an input handler and a before_agent_start handler", () => {
 		expect(mock.lifecycleHandlers.has("input")).toBe(true);
 		expect(mock.lifecycleHandlers.get("input")!.length).toBe(1);
+		expect(mock.lifecycleHandlers.has("before_agent_start")).toBe(true);
+		expect(mock.lifecycleHandlers.get("before_agent_start")!.length).toBe(1);
 	});
 
 	// ── Keyword detection ───────────────────────────────────────
@@ -63,8 +83,9 @@ describe("ulw extension — unit tests", () => {
 	it("detects 'ulw' at start of message", async () => {
 		const result = await fireInput(mock, "ulw fix the bug");
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toContain("fix the bug");
-		expect((result as any).text).toContain("<ultrawork-mode>");
+		expect((result as any).text).toBe("fix the bug");
+		// Prompt is NOT in user message — it's injected via before_agent_start
+		expect((result as any).text).not.toContain("<ultrawork-mode>");
 	});
 
 	it("detects 'ultrawork' at start of message", async () => {
@@ -86,9 +107,8 @@ describe("ulw extension — unit tests", () => {
 	it("detects keyword mid-sentence", async () => {
 		const result = await fireInput(mock, "please use ulw mode");
 		expect(result?.action).toBe("transform");
-		const text = (result as any).text as string;
-		expect(text).toContain("<ultrawork-mode>");
-		expect(text).toContain("please use mode");
+		expect((result as any).text).toBe("please use mode");
+		expect((result as any).text).not.toContain("<ultrawork-mode>");
 	});
 
 	// ── Code-block protection ───────────────────────────────────
@@ -123,38 +143,42 @@ describe("ulw extension — unit tests", () => {
 	it("strips only first keyword occurrence", async () => {
 		const result = await fireInput(mock, "ulw fix the ulw bug");
 		expect(result?.action).toBe("transform");
-		const text = (result as any).text as string;
-		const afterSep = text.split("---").pop()!;
-		expect(afterSep.trim()).toBe("fix the ulw bug");
+		expect((result as any).text).toBe("fix the ulw bug");
 	});
 
-	// ── Message-level injection ─────────────────────────────────
+	// ── Message injection via before_agent_start ───────────────
 
-	it("prepends ultrawork prompt to user message", async () => {
-		const result = await fireInput(mock, "ulw fix the bug");
-		expect(result?.action).toBe("transform");
-		const text = (result as any).text as string;
-		// Prompt comes first, then separator, then user message
-		const sepIdx = text.indexOf("---");
-		const userMsgIdx = text.indexOf("fix the bug");
-		expect(sepIdx).toBeGreaterThan(0);
-		expect(userMsgIdx).toBeGreaterThan(sepIdx);
+	it("injects ultrawork prompt as collapsed message via before_agent_start", async () => {
+		await fireInput(mock, "ulw fix the bug");
+		const result = await fireBeforeAgentStart(mock);
+		expect(result?.message).toBeDefined();
+		expect(result!.message!.customType).toBe("ultrawork");
+		expect(result!.message!.content).toContain("<ultrawork-mode>");
+		expect(result!.message!.display).toBe(false);
 	});
 
-	it("strips keyword from user message in output", async () => {
-		const result = await fireInput(mock, "ulw fix the bug");
-		const text = (result as any).text as string;
-		// After the separator, the message should not contain "ulw"
-		const afterSep = text.split("---").pop()!;
-		expect(afterSep.trim()).toBe("fix the bug");
+	it("does NOT inject prompt on before_agent_start without prior keyword", async () => {
+		await fireInput(mock, "fix the bug");
+		const result = await fireBeforeAgentStart(mock);
+		expect(result).toBeUndefined();
+	});
+
+	it("clears pending flag after before_agent_start fires", async () => {
+		await fireInput(mock, "ulw fix it");
+		await fireBeforeAgentStart(mock); // consumes flag
+		const result = await fireBeforeAgentStart(mock); // should be empty
+		expect(result).toBeUndefined();
 	});
 
 	it("handles bare keyword with no task", async () => {
 		const result = await fireInput(mock, "ulw");
 		expect(result?.action).toBe("transform");
 		const text = (result as any).text as string;
-		expect(text).toContain("<ultrawork-mode>");
 		expect(text).toContain("What task should I work on?");
+		// Prompt still injected via before_agent_start, not in user message
+		expect(text).not.toContain("<ultrawork-mode>");
+		const bas = await fireBeforeAgentStart(mock);
+		expect(bas?.message?.content).toContain("<ultrawork-mode>");
 	});
 
 	// ── Mode gating ─────────────────────────────────────────────
@@ -162,7 +186,9 @@ describe("ulw extension — unit tests", () => {
 	it("activates in kuafu mode (default)", async () => {
 		const result = await fireInput(mock, "ulw fix it");
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toContain("<ultrawork-mode>");
+		expect((result as any).text).toBe("fix it");
+		const bas = await fireBeforeAgentStart(mock);
+		expect(bas?.message?.content).toContain("<ultrawork-mode>");
 	});
 
 	it("activates when no mode entry exists (defaults to kuafu)", async () => {
@@ -170,7 +196,8 @@ describe("ulw extension — unit tests", () => {
 		// getEntries returns empty — no mode set
 		const result = await fireInput(mock, "ulw fix it", ctx);
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toContain("<ultrawork-mode>");
+		const bas = await fireBeforeAgentStart(mock);
+		expect(bas?.message?.content).toContain("<ultrawork-mode>");
 	});
 
 	it("skips injection in fuxi mode", async () => {
@@ -196,13 +223,21 @@ describe("ulw extension — unit tests", () => {
 		expect(result).toEqual({ action: "continue" });
 	});
 
+	it("does NOT set pending flag in non-kuafu mode", async () => {
+		const ctx = createCtxWithMode("fuxi");
+		await fireInput(mock, "ulw fix it", ctx);
+		const bas = await fireBeforeAgentStart(mock);
+		expect(bas).toBeUndefined();
+	});
+
 	it("handles broken sessionManager gracefully", async () => {
 		const ctx = createMockContext();
 		(ctx.sessionManager as any).getEntries = () => { throw new Error("boom"); };
 		// Should fall back to kuafu and still activate
 		const result = await fireInput(mock, "ulw fix it", ctx);
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toContain("<ultrawork-mode>");
+		const bas = await fireBeforeAgentStart(mock);
+		expect(bas?.message?.content).toContain("<ultrawork-mode>");
 	});
 
 	// ── Notification ────────────────────────────────────────────

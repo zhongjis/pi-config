@@ -6,8 +6,9 @@
  *
  * Behaviour:
  *   - User message contains "ultrawork" or "ulw" anywhere (case-insensitive)
- *   - Extension strips the keyword and prepends the ultrawork prompt to
- *     the user message text (message-level injection, like OmO)
+ *   - Extension strips the keyword from user text and injects the ultrawork
+ *     prompt as a separate context message via before_agent_start (collapsed,
+ *     not visible in user message — similar to how skills inject context)
  *   - Notification shown on activation
  *
  * Pi-native adaptation:
@@ -77,14 +78,16 @@ function getCurrentMode(ctx: ExtensionContext): string {
 // ---------------------------------------------------------------------------
 // Extension entry
 // ---------------------------------------------------------------------------
-// NOTE: This handler participates in pi's input transform chain.
-// Other extensions (modes, smart-sessions) also register input handlers.
-// Transforms chain in registration order; "handled" would short-circuit.
-// This handler returns "continue" for non-matching input and "transform"
-// for keyword matches, allowing downstream handlers to further process.
+// Two-phase approach:
+//   1. input handler: detect keyword, strip it, set pending flag
+//   2. before_agent_start handler: inject ultrawork prompt as collapsed message
+// This keeps the ultrawork prompt out of the user message (cleaner context).
 // Ultrawork only activates in kuafu mode — other modes have their own flow.
 
 export default function ulwExtension(pi: ExtensionAPI): void {
+  // Flag: ultrawork was triggered for the current input, pending injection
+  let pendingUltrawork = false;
+
   pi.on("input", async (event, ctx) => {
     const raw = event.text ?? "";
     if (!hasUlwKeyword(raw)) {
@@ -108,18 +111,30 @@ export default function ulwExtension(pi: ExtensionAPI): void {
       ctx.ui.notify("⚡ Ultrawork Mode Activated", "success");
     }
 
+    // Set flag for before_agent_start to inject the prompt
+    pendingUltrawork = true;
+
     if (!stripped) {
-      // Keyword only, no task — inject prompt as the message
+      // Keyword only, no task
       return {
         action: "transform",
-        text: `${ULTRAWORK_PROMPT}\n\n---\n\nUltrawork mode is now active. What task should I work on?`,
+        text: "Ultrawork mode is now active. What task should I work on?",
       };
     }
 
-    // Prepend ultrawork prompt to user message (message-level injection)
+    return { action: "transform", text: stripped };
+  });
+
+  pi.on("before_agent_start", async (event) => {
+    if (!pendingUltrawork) return;
+    pendingUltrawork = false;
+
     return {
-      action: "transform",
-      text: `${ULTRAWORK_PROMPT}\n\n---\n\n${stripped}`,
+      message: {
+        customType: "ultrawork",
+        content: ULTRAWORK_PROMPT,
+        display: false,
+      },
     };
   });
 }
