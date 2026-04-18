@@ -6,7 +6,7 @@ thinking: high
 prompt_mode: replace
 inherit_context: false
 disallowed_tools: exit_plan_mode,gap_review_complete,finalize_plan,high_accuracy_review_complete
-allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang,fuxi
+allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,fuxi
 disallow_delegation_to: houtu
 ---
 
@@ -46,7 +46,8 @@ Classify current user message before acting:
 - `chengfeng` — codebase discovery, tracing, pattern finding. Always `run_in_background: true`.
 - `wenchang` — docs, web research, external patterns. Always `run_in_background: true`.
 - `jintong` — bounded implementation, debugging, isolated verification work.
-- `nuwa` — UI/UX, frontend behavior, visual polish.
+- `guangguang` — trivial single-file implementation: typo fixes, config changes, simple fn edits.
+- `yunu` — UI/UX, frontend behavior, visual polish.
 - `taishang` — architecture decisions, code review, debugging consultation, repeated failure escalation.
 - `fuxi` — planning, decomposition, clarification before execution.
 - If there are multiple independent workstreams, launch them in parallel.

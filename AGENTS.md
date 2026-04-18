@@ -33,7 +33,8 @@ Agents use Chinese mythology names with specific roles:
 - **Cheng Feng 乘风** — Fast read-only codebase reconnaissance (Haiku, low thinking)
 - **Wen Chang 文昌** — External research agent (Haiku, low thinking)
 - **Taishang 太上老君** — Architecture decisions and code review (read-only)
-- **Nuwa 女娲** — UI/UX designer
+- **Yùnǚ 玉女** — UI/UX designer
+- **Guāngguāng 光光** — Fast lightweight build worker for trivial tasks
 - **Di Renjie 狄仁杰** — Gap reviewer for draft plans
 - **Yan Luo 阎罗** — Plan reviewer for clarity and completeness
 

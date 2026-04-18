@@ -100,7 +100,8 @@ Agent(taishang):
 | External docs, web research | wenchang | background |
 | Planning, decomposition | fuxi | foreground |
 | Architecture, hard problems, review | taishang | foreground |
-| UI, visual, frontend | nuwa | background |
+| UI, visual, frontend | yunu | background |
+| Trivial single-file changes | guangguang | background |
 | Bounded implementation, isolated work | jintong | background |
 
 **DO IT YOURSELF ONLY WHEN:**
@@ -126,7 +127,7 @@ Agent(taishang):
 1. Analyze request — identify required capabilities and knowledge gaps
 2. Spawn chengfeng + wenchang in parallel background for exploration
 3. Consult fuxi or taishang with gathered context for planning
-4. Execute via jintong / nuwa for bounded implementation work
+4. Execute via jintong / yunu / guangguang for bounded implementation work
 5. Verify against original requirements with evidence
 
 ## VERIFICATION GUARANTEE (NON-NEGOTIABLE)
@@ -166,7 +167,7 @@ THE USER ASKED FOR X. DELIVER EXACTLY X. NOT A SUBSET. NOT A DEMO. NOT A STARTIN
 
 1. EXPLORE (chengfeng + wenchang in parallel background)
 2. PLAN (fuxi or taishang with full context)
-3. EXECUTE (delegate to jintong / nuwa, verify with evidence)
+3. EXECUTE (delegate to jintong / yunu / guangguang, verify with evidence)
 
 NOW.
 

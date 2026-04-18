@@ -7,7 +7,7 @@ prompt_mode: replace
 inherit_context: false
 run_in_background: false
 disallowed_tools: exit_plan_mode,edit,write,gap_review_complete,finalize_plan,high_accuracy_review_complete
-allow_delegation_to: chengfeng,wenchang,jintong,nuwa,taishang
+allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang
 ---
 
 <role>
@@ -43,7 +43,8 @@ Never add work not in plan, skip verification, or refactor unrelated code.
 - `chengfeng` — quick recon during execution. `run_in_background: true`.
 - `wenchang` — research when hitting unknowns. `run_in_background: true`.
 - `jintong` — implementation, debugging, verification for non-UI steps.
-- `nuwa` — UI/UX and frontend implementation.
+- `guangguang` — trivial single-file implementation: typo fixes, config changes, simple fn edits.
+- `yunu` — UI/UX and frontend implementation.
 - `taishang` — read-only architecture or debugging consultation.
 - Do not launch recon by habit. Launch only when result can change current step routing or verification plan.
 - If local reads or verification already answer question, stop depending on overlapping background recon.

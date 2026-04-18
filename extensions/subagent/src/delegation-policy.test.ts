@@ -12,7 +12,8 @@ describe("delegation-policy", () => {
 		"chengfeng",
 		"wenchang",
 		"jintong",
-		"nuwa",
+		"yunu",
+		"guangguang",
 		"taishang",
 	];
 
@@ -43,11 +44,11 @@ describe("delegation-policy", () => {
 		expect(
 			getPermittedDelegationTypes(
 				{
-					disallowDelegationTo: ["jintong", "NUWA"],
+					disallowDelegationTo: ["jintong", "YUNU"],
 				},
 				availableTypes,
 			),
-		).toEqual(["chengfeng", "wenchang", "taishang"]);
+		).toEqual(["chengfeng", "wenchang", "guangguang", "taishang"]);
 	});
 
 	it("checks requested types case-insensitively", () => {
