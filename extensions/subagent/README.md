@@ -65,9 +65,9 @@ The extension renders a persistent widget above the editor showing all active ag
 
 ```
 ● Agents
-├─ ⠹ Agent  Refactor auth module · ⟳5≤30 · 5 tool uses · 33.8k token · 12.3s
+├─ ‹ Agent  Refactor auth module · ⟳ 5≤30 · 󱁤 5 · 󰾆 33.8k · 12.3s
 │    ⎿  editing 2 files…
-├─ ⠹ Explore  Find auth files · ⟳3 · 3 tool uses · 12.4k token · 4.1s
+├─ ‹ Explore  Find auth files · ⟳ 3 · 󱁤 3 · 󰾆 12.4k · 4.1s
 │    ⎿  searching…
 └─ 2 queued
 ```
@@ -78,12 +78,12 @@ Individual agent results render Claude Code-style in the conversation:
 
 | State | Example |
 |-------|---------|
-| **Running** | `⠹ ⟳3≤30 · 3 tool uses · 12.4k token` / `⎿ searching, reading 3 files…` |
-| **Completed** | `✓ ⟳8 · 5 tool uses · 33.8k token · 12.3s` / `⎿ Done` |
-| **Wrapped up** | `✓ ⟳50≤50 · 50 tool uses · 89.1k token · 45.2s` / `⎿ Wrapped up (turn limit)` |
-| **Stopped** | `■ ⟳3 · 3 tool uses · 12.4k token` / `⎿ Stopped` |
-| **Error** | `✗ ⟳3 · 3 tool uses · 12.4k token` / `⎿ Error: timeout` |
-| **Aborted** | `✗ ⟳55≤50 · 55 tool uses · 102.3k token` / `⎿ Aborted (max turns exceeded)` |
+| **Running** | `‹ ⟳ 3≤30 · 󱁤 3 · 󰾆 12.4k` / `⎿ searching, reading 3 files…` |
+| **Completed** | `✓ ⟳ 8 · 󱁤 5 · 󰾆 33.8k · 12.3s` / `⎿ Done` |
+| **Wrapped up** | `✓ ⟳ 50≤50 · 󱁤 50 · 󰾆 89.1k · 45.2s` / `⎿ Wrapped up (turn limit)` |
+| **Stopped** | `■ ⟳ 3 · 󱁤 3 · 󰾆 12.4k` / `⎿ Stopped` |
+| **Error** | `✗ ⟳ 3 · 󱁤 3 · 󰾆 12.4k` / `⎿ Error: timeout` |
+| **Aborted** | `✗ ⟳ 55≤50 · 󱁤 55 · 󰾆 102.3k` / `⎿ Aborted (max turns exceeded)` |
 
 Completed results can be expanded (ctrl+o in pi) to show the full agent output inline.
 
@@ -91,7 +91,7 @@ Background agent completion notifications render as styled boxes:
 
 ```
 ✓ Find auth files completed
-  ⟳3 · 3 tool uses · 12.4k token · 4.1s
+  ⟳ 3 · 󱁤 3 · 󰾆 12.4k · 4.1s
   ⎿  Found 5 files related to authentication...
   transcript: .pi/output/agent-abc123.jsonl
 ```

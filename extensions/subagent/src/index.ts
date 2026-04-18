@@ -238,7 +238,7 @@ export default function (pi: ExtensionAPI) {
         // Line 2: stats
         const parts: string[] = [];
         if (d.turnCount > 0) parts.push(formatTurns(d.turnCount, d.maxTurns));
-        if (d.toolUses > 0) parts.push(`${d.toolUses} tool use${d.toolUses === 1 ? "" : "s"}`);
+        if (d.toolUses > 0) parts.push(`󱁤 ${d.toolUses}`);
         if (d.totalTokens > 0) parts.push(formatTokens(d.totalTokens));
         if (d.durationMs > 0) parts.push(formatMs(d.durationMs));
         if (parts.length) {
@@ -790,7 +790,7 @@ Guidelines:
         return new Text(text, 0, 0);
       }
 
-      // Helper: build "haiku · thinking: high · ⟳5≤30 · 3 tool uses · 33.8k tokens" stats string
+      // Helper: build "haiku · thinking: high · ⟳ 5≤30 · 󱁤 3 · 󰾆 33.8k" stats string
       const stats = (d: AgentDetails) => {
         const parts: string[] = [];
         if (d.modelName) parts.push(d.modelName);
@@ -798,7 +798,7 @@ Guidelines:
         if (d.turnCount != null && d.turnCount > 0) {
           parts.push(formatTurns(d.turnCount, d.maxTurns));
         }
-        if (d.toolUses > 0) parts.push(`${d.toolUses} tool use${d.toolUses === 1 ? "" : "s"}`);
+        if (d.toolUses > 0) parts.push(`󱁤 ${d.toolUses}`);
         if (d.tokens) parts.push(d.tokens);
         return parts.map(p => theme.fg("dim", p)).join(" " + theme.fg("dim", "·") + " ");
       };
