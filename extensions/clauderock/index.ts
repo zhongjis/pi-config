@@ -308,7 +308,16 @@ async function streamViaBedrock(
   }
 
   try {
-    const bedrockStream = streamSimple(bedrockModel, context, {
+    // Filter non-standard message roles (branchSummary, compactionSummary,
+    // bashExecution, custom, etc.) — Bedrock Converse rejects unknown roles
+    // with "Unknown message role" while Anthropic silently skips them.
+    const filteredContext: Context = {
+      ...context,
+      messages: (context.messages ?? []).filter((m) =>
+        m.role === "user" || m.role === "assistant" || m.role === "toolResult",
+      ),
+    };
+    const bedrockStream = streamSimple(bedrockModel, filteredContext, {
       ...options,
       apiKey: undefined,
       headers: undefined,  // clear Anthropic auth headers — they'd override AWS SigV4

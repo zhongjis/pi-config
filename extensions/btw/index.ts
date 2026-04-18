@@ -147,8 +147,63 @@ function buildBtwMessages(ctx: ExtensionContext, question: string): Message[] {
     ctx.sessionManager.getLeafId(),
   );
 
+  // Filter to standard pi-ai roles only — buildSessionContext returns AgentMessage[]
+  // which may include branchSummary, compactionSummary, bashExecution, custom roles.
+  // Anthropic silently skips these, but Bedrock rejects with "Unknown message role".
+  const validRoles = new Set(["user", "assistant", "toolResult"]);
+  const filtered = sessionContext.messages.filter(
+    (m: { role: string }) => validRoles.has(m.role),
+  );
+
+  // Convert tool interactions to text summaries so the message stream is clean
+  // for any provider (Bedrock requires toolConfig when toolUse/toolResult blocks
+  // are present, but btw never passes tools). This preserves context about what
+  // tools were used and what they returned, as readable text.
+  const MAX_TOOL_RESULT_CHARS = 300;
+  const converted: Message[] = [];
+  for (const msg of filtered as Array<Record<string, unknown>>) {
+    if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      const newContent: Array<Record<string, unknown>> = [];
+      for (const block of msg.content as Array<Record<string, unknown>>) {
+        if (block.type === "toolCall") {
+          const name = block.name ?? "unknown";
+          const args = block.arguments
+            ? JSON.stringify(block.arguments).slice(0, 120)
+            : "";
+          newContent.push({ type: "text", text: `[Tool: ${name}${args ? " — " + args : ""}]` });
+        } else {
+          newContent.push(block);
+        }
+      }
+      if (newContent.length > 0) {
+        converted.push({ ...msg, content: newContent } as Message);
+      }
+    } else if (msg.role === "toolResult") {
+      const toolName = (msg.toolName as string) || "tool";
+      const isError = msg.isError === true;
+      const parts = Array.isArray(msg.content)
+        ? (msg.content as Array<Record<string, unknown>>)
+            .filter((p) => typeof p.text === "string")
+            .map((p) => p.text as string)
+            .join("\n")
+        : String(msg.content ?? "");
+      const truncated =
+        parts.length > MAX_TOOL_RESULT_CHARS
+          ? parts.slice(0, MAX_TOOL_RESULT_CHARS) + "…"
+          : parts;
+      const label = isError ? `${toolName} error` : `${toolName} result`;
+      converted.push({
+        role: "user",
+        content: `[${label}: ${truncated}]`,
+        timestamp: (msg.timestamp as number) ?? Date.now(),
+      } as Message);
+    } else {
+      converted.push(msg as Message);
+    }
+  }
+
   return [
-    ...sessionContext.messages,
+    ...converted,
     {
       role: "user",
       content: `Side question about the current session:\n\n${question}`,
@@ -451,12 +506,16 @@ export default function btwExtension(pi: ExtensionAPI): void {
     const runtime = getOrCreateRuntime(getSessionKey(ctx));
     abortRuntime(runtime);
 
+    const messages = buildBtwMessages(ctx, trimmedQuestion);
     debugLog(ctx, "request_start", {
       question: trimmedQuestion,
       model: `${model.provider}/${model.id}`,
+      modelApi: model.api,
       hasApiKey: !!auth.apiKey,
       hasHeaders: !!auth.headers && Object.keys(auth.headers).length > 0,
       headerKeys: auth.headers ? Object.keys(auth.headers) : [],
+      messageCount: messages.length,
+      estimatedBytes: JSON.stringify(messages).length,
     });
 
     const request: ActiveBtwRequest = {
@@ -477,7 +536,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
         model,
         {
           systemPrompt: `${ctx.getSystemPrompt()}\n\n${BTW_SYSTEM_PROMPT}`,
-          messages: buildBtwMessages(ctx, trimmedQuestion),
+          messages,
         },
         {
           signal: request.abortController.signal,
@@ -496,6 +555,10 @@ export default function btwExtension(pi: ExtensionAPI): void {
           response instanceof Error
             ? undefined
             : JSON.stringify((response as any).content ?? []).length,
+        responseModel: response instanceof Error ? undefined : (response as any).model,
+        responseSnippet: response instanceof Error
+          ? undefined
+          : JSON.stringify(response).slice(0, 500),
       });
 
       if (runtime.activeRequest?.id !== request.id) {
