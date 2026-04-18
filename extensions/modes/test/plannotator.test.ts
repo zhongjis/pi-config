@@ -29,7 +29,8 @@ vi.mock("../src/config-loader.js", () => ({
 }));
 
 import { ModeStateManager } from "../src/mode-state.js";
-import { prepareApprovedPlanHandoff, buildEditorRefinementMessage } from "../src/plannotator.js";
+import { prepareApprovedPlanHandoff } from "../src/plannotator.js";
+import { buildEditorRefinementMessage } from "../src/plan-approval.js";
 import { computeLineDiff } from "../../lib/utils.js";
 
 function createMockPi() {

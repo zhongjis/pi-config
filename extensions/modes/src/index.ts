@@ -20,7 +20,8 @@ import { registerModeCommands } from "./commands.js";
 import { registerModeHooks } from "./hooks.js";
 import { ModeStateManager } from "./mode-state.js";
 import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./constants.js";
-import { handlePlanReviewResult, runPlanApprovalFlow } from "./plannotator.js";
+import { handlePlanReviewResult } from "./plannotator.js";
+import { runPlanApprovalFlow } from "./plan-approval.js";
 import { getLocalPlanPath } from "./plan-storage.js";
 import type { PlannotatorReviewResultEvent } from "./types.js";
 
