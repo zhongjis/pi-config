@@ -19,27 +19,12 @@ import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../ha
 import { registerModeCommands } from "./commands.js";
 import { registerModeHooks } from "./hooks.js";
 import { ModeStateManager } from "./mode-state.js";
-import { PLANNOTATOR_REVIEW_RESULT_CHANNEL } from "./constants.js";
-import { handlePlanReviewResult } from "./plannotator.js";
 import { runPlanApprovalFlow } from "./plan-approval.js";
 import { getLocalPlanPath } from "./plan-storage.js";
-import type { PlannotatorReviewResultEvent } from "./types.js";
-
 export default function modesExtension(pi: ExtensionAPI): void {
 	const state = new ModeStateManager(pi);
 
-	// Plannotator review result listener — reads state.activeCtx at event time
-	pi.events.on(PLANNOTATOR_REVIEW_RESULT_CHANNEL, async (data) => {
-		const result = data as Partial<PlannotatorReviewResultEvent> | null;
-		if (!result || typeof result.reviewId !== "string" || typeof result.approved !== "boolean") return;
-		await handlePlanReviewResult(pi, state, {
-			reviewId: result.reviewId,
-			approved: result.approved,
-			feedback: typeof result.feedback === "string" ? result.feedback : undefined,
-		}, state.activeCtx);
-	});
-
-	// Register fallback args resolver so /handoff:start-work can derive
+	// Fallback args resolver so /handoff:start-work can derive
 	// handoff args from persisted mode state (survives pi restart).
 	setPreparedHandoffArgsResolver((ctx) => {
 		if (state.currentMode !== "fuxi" || !state.planReviewApproved || !state.planTitle) {

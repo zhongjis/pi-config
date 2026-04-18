@@ -261,11 +261,14 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		if (!isSuccessfulPlanMutationResult(event, planPath)) return;
 
 		await refreshPlanStateFromLocalPlan(ctx, state);
-		state.resetPlanReviewState();
+		// Only reset review state if no review is actively pending — a plan write
+		// during an active browser review should NOT nuke the pending review.
+		if (!state.planReviewPending) {
+			state.resetPlanReviewState();
+		}
 		// Reset availability cache so the approval menu re-probes plannotator
 		state.plannotatorAvailable = undefined;
 		state.plannotatorUnavailableReason = undefined;
-		state.persistState();
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {

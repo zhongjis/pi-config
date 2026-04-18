@@ -1,17 +1,21 @@
+/**
+ * Plannotator integration — direct browser review without IPC.
+ *
+ * Calls startPlanReviewBrowserSession directly from the installed plannotator
+ * git package instead of emitting events through a channel.  This eliminates
+ * the 5-second timeout race and the dependency on plannotator's session_start
+ * listener being registered first.
+ */
+
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { requestDirectHandoffBridge, buildPlanExecutionGoal } from "../../handoff/runtime.js";
 import type { ModeStateManager } from "./mode-state.js";
-import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS, LOCAL_PLAN_URI } from "./constants.js";
-import { getLocalPlanPath, readLocalPlanFile, hydratePlanState } from "./plan-storage.js";
-import type {
-	PlannotatorPlanReviewPayload,
-	PlannotatorPlanReviewStartResult,
-	PlannotatorResponse,
-	PlannotatorReviewResultEvent,
-	PlannotatorReviewStatusResult,
-} from "./types.js";
+import { LOCAL_PLAN_URI } from "./constants.js";
+import { getLocalPlanPath, hydratePlanState } from "./plan-storage.js";
+import { isPlannotatorAvailable, startDirectPlanReview, resetPlannotatorCache } from "./plannotator-direct.js";
+import type { PlannotatorReviewResultEvent } from "./types.js";
 
-const PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID = "__plannotator_health_check__";
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 export function getPlannotatorUnavailableReason(reason?: string): string {
 	const trimmed = reason?.trim();
@@ -34,42 +38,14 @@ function buildRefinementMessage(state: ModeStateManager): string {
 	return "Plannotator review was rejected with no specific feedback. Please review the plan and revise it as needed, then resubmit.";
 }
 
-
-export async function requestPlannotator<T>(
-	pi: ExtensionAPI,
-	action: "plan-review" | "review-status",
-	payload: Record<string, unknown>,
-): Promise<PlannotatorResponse<T>> {
-	const requestId = `${action}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-	return await new Promise<PlannotatorResponse<T>>((resolve) => {
-		let settled = false;
-		const timeoutId = setTimeout(() => {
-			if (settled) return;
-			settled = true;
-			resolve({ status: "unavailable", error: "Plannotator request timed out." });
-		}, PLANNOTATOR_TIMEOUT_MS);
-
-		pi.events.emit(PLANNOTATOR_REQUEST_CHANNEL, {
-			requestId,
-			action,
-			payload,
-			respond: (response: PlannotatorResponse<T>) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(timeoutId);
-				resolve(response);
-			},
-		});
-	});
-}
+// ── Availability check (direct, no IPC) ─────────────────────────────────────
 
 /**
- * Check plannotator availability. Pass `forceProbe: true` to re-probe even
- * when availability was already cached as false (e.g., after a failed attempt
- * within the same session so the user can retry after fixing plannotator).
+ * Check plannotator availability via direct import probe.
+ * Pass `forceProbe: true` to re-probe even when cached as unavailable.
  */
 export async function checkPlannotatorAvailability(
-	pi: ExtensionAPI,
+	_pi: ExtensionAPI,
 	state: ModeStateManager,
 	forceProbe = false,
 ): Promise<{ available: boolean; reason?: string }> {
@@ -80,22 +56,22 @@ export async function checkPlannotatorAvailability(
 		};
 	}
 
-	const response = await requestPlannotator<PlannotatorReviewStatusResult>(pi, "review-status", {
-		reviewId: PLANNOTATOR_HEALTH_SENTINEL_REVIEW_ID,
-	});
-
-	if (response.status === "handled") {
-		state.plannotatorAvailable = true;
-		state.plannotatorUnavailableReason = undefined;
-		return { available: true };
+	if (forceProbe) {
+		resetPlannotatorCache();
 	}
 
-	const reason = response.error;
-	state.plannotatorAvailable = false;
-	state.plannotatorUnavailableReason = getPlannotatorUnavailableReason(reason);
-	logPlannotatorUnavailable("availability check failed", state.plannotatorUnavailableReason);
-	return { available: false, reason: state.plannotatorUnavailableReason };
+	const result = await isPlannotatorAvailable();
+
+	state.plannotatorAvailable = result.available;
+	state.plannotatorUnavailableReason = result.available ? undefined : getPlannotatorUnavailableReason(result.reason);
+
+	if (!result.available) {
+		logPlannotatorUnavailable("availability check", state.plannotatorUnavailableReason);
+	}
+	return result;
 }
+
+// ── Approved plan handoff ───────────────────────────────────────────────────
 
 /**
  * Prepare the approved plan handoff: set editor text and notify.
@@ -153,6 +129,8 @@ export async function prepareApprovedPlanHandoff(
 	};
 }
 
+// ── Handle review result (from onDecision callback) ─────────────────────────
+
 export async function handlePlanReviewResult(
 	pi: ExtensionAPI,
 	state: ModeStateManager,
@@ -197,78 +175,63 @@ export async function handlePlanReviewResult(
 	}
 }
 
+// ── Start plan review (direct browser session) ─────────────────────────────
+
 export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<string> {
 	const snapshot = await hydratePlanState(ctx as any, state);
 	if (!snapshot || !state.planTitle) {
 		return `Error: No plan found in ${LOCAL_PLAN_URI}. Write or save the plan to ${LOCAL_PLAN_URI} first.`;
 	}
 
-	const response = await requestPlannotator<PlannotatorPlanReviewStartResult>(pi, "plan-review", {
-		planContent: snapshot.content,
-		origin: "fuxi-explicit-refine",
-	} satisfies PlannotatorPlanReviewPayload);
+	try {
+		const session = await startDirectPlanReview(ctx, snapshot.content);
 
-	if (response.status === "handled" && response.result.status === "pending") {
-		state.pendingPlanReviewId = response.result.reviewId;
+		state.pendingPlanReviewId = session.reviewId;
 		state.planReviewPending = true;
 		state.planReviewApproved = false;
 		state.planReviewFeedback = undefined;
 		state.plannotatorAvailable = true;
 		state.plannotatorUnavailableReason = undefined;
 		state.persistState();
+
+		// Wire the onDecision callback → handlePlanReviewResult
+		session.onDecision(async (decision) => {
+			await handlePlanReviewResult(pi, state, {
+				reviewId: session.reviewId,
+				approved: decision.approved,
+				feedback: decision.feedback,
+			}, state.activeCtx);
+		});
+
 		return `Plan "${state.planTitle}" sent to Plannotator for refinement review.`;
-	}
-
-	state.pendingPlanReviewId = undefined;
-	state.planReviewPending = false;
-	state.planReviewApproved = false;
-	state.planReviewFeedback = undefined;
-	state.plannotatorAvailable = false;
-	state.plannotatorUnavailableReason = getPlannotatorUnavailableReason(
-		response.status === "handled" ? "Plannotator review could not be started." : response.error,
-	);
-	state.persistState();
-
-	logPlannotatorUnavailable(`review start failed for plan "${state.planTitle}"`, state.plannotatorUnavailableReason);
-
-	if (ctx.hasUI) {
-		ctx.ui.notify(`${state.plannotatorUnavailableReason} Returning to the approval menu.`, "warning");
-	}
-	return `Plannotator review could not be started for plan "${state.planTitle}". Returning to the approval menu.`;
-}
-
-export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
-	if (!state.pendingPlanReviewId) return;
-
-	await hydratePlanState(ctx as any, state);
-
-	const reviewId = state.pendingPlanReviewId;
-	const response = await requestPlannotator<PlannotatorReviewStatusResult>(pi, "review-status", {
-		reviewId,
-	});
-
-	if (response.status === "handled") {
-		if (response.result.status === "completed") {
-			await handlePlanReviewResult(pi, state, response.result, ctx);
-			return;
-		}
-		if (response.result.status === "pending") {
-			return;
-		}
-		// status === "missing": the review no longer exists in plannotator (expired/restart)
-		// Plannotator itself is fine — just clear our stale review state.
+	} catch (err) {
+		const reason = err instanceof Error ? err.message : String(err);
 		state.pendingPlanReviewId = undefined;
 		state.planReviewPending = false;
 		state.planReviewApproved = false;
 		state.planReviewFeedback = undefined;
+		state.plannotatorAvailable = false;
+		state.plannotatorUnavailableReason = getPlannotatorUnavailableReason(reason);
 		state.persistState();
-		const missingMsg = "The pending Plannotator review no longer exists (it may have expired or plannotator was restarted). Returning to the approval menu.";
-		console.warn(`[modes/plannotator] review recovery: review ${reviewId} is missing`);
+
+		logPlannotatorUnavailable(`review start failed for plan "${state.planTitle}"`, reason);
+
 		if (ctx.hasUI) {
-			ctx.ui.notify(missingMsg, "warning");
+			ctx.ui.notify(`${state.plannotatorUnavailableReason} Returning to the approval menu.`, "warning");
 		}
-		return;
+		return `Plannotator review could not be started for plan "${state.planTitle}". Returning to the approval menu.`;
 	}
+}
+
+// ── Recover pending review on session restart ───────────────────────────────
+
+export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
+	if (!state.pendingPlanReviewId) return;
+
+	// On session restart, any pending browser review is lost (server stopped).
+	// Clear stale review state so user can start fresh.
+	const reviewId = state.pendingPlanReviewId;
+	console.warn(`[modes/plannotator] review recovery: clearing stale review ${reviewId} (browser session lost on restart)`);
 
 	state.pendingPlanReviewId = undefined;
 	state.planReviewPending = false;
@@ -276,12 +239,12 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 	state.planReviewFeedback = undefined;
 	state.persistState();
 
-	const reason = getPlannotatorUnavailableReason(response.error);
-	logPlannotatorUnavailable(`review recovery failed for review ${reviewId}`, reason);
 	if (ctx.hasUI) {
-		ctx.ui.notify(`${reason} Returning to the approval menu.`, "warning");
+		ctx.ui.notify("Previous Plannotator review session was lost (session restarted). You can start a new review from the approval menu.", "warning");
 	}
 }
+
+// ── Convenience: check + start ──────────────────────────────────────────────
 
 export async function checkAndStartPlannotatorReview(
 	pi: ExtensionAPI,
