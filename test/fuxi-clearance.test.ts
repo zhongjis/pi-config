@@ -34,7 +34,7 @@ describe("fuxi.md clearance sequence", () => {
       expect(prompt).toContain("Self-review: classify gaps");
       expect(prompt).toContain("Present summary with auto-resolved items");
       expect(prompt).toContain("If decisions needed: wait for user, update plan");
-      expect(prompt).toContain("Run plan approval flow (/plan:approve)");
+      expect(prompt).toContain("Run plan approval flow (plan_approve tool)");
       expect(prompt).toContain("If high accuracy: Submit to Yan Luo and iterate until OKAY");
     });
 
@@ -80,7 +80,7 @@ describe("fuxi.md clearance sequence", () => {
   describe("#given the final choice presentation", () => {
     it("#then should use /plan:approve command for final choice", () => {
       const prompt = getFuxiPrompt();
-      expect(prompt).toContain("/plan:approve");
+      expect(prompt).toContain("plan_approve");
     });
 
     it("#then should present High Accuracy Review and Approve options", () => {
@@ -91,7 +91,7 @@ describe("fuxi.md clearance sequence", () => {
 
     it("#then should present post-high-accuracy variant after yanluo", () => {
       const prompt = getFuxiPrompt();
-      expect(prompt).toContain("--variant post-high-accuracy");
+      expect(prompt).toContain("variant: \"post-high-accuracy\"");
     });
   });
 
