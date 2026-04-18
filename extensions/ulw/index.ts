@@ -107,6 +107,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     if (mode !== "kuafu") {
       if (ctx.hasUI) {
         ctx.ui.notify(`⚡ Ultrawork skipped — active mode is ${mode}`, "warning");
+        ctx.ui.setStatus("ultrawork", undefined);
       }
       // Strip keyword but don't inject prompt
       const stripped = stripUlwKeyword(raw);
@@ -117,6 +118,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
 
     if (ctx.hasUI) {
       ctx.ui.notify("⚡ Ultrawork Mode Activated", "success");
+      ctx.ui.setStatus("ultrawork", "⚡ Ultrawork");
     }
 
     // Set flag for before_agent_start to inject the prompt

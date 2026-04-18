@@ -256,23 +256,31 @@ describe("ulw extension — unit tests", () => {
 
 	// ── Notification ────────────────────────────────────────────
 
-	it("calls notify on activation", async () => {
+	it("calls notify and setStatus on activation", async () => {
 		const ctx = createMockContext();
-		const calls: Array<{ text: string; level: string }> = [];
-		ctx.ui.notify = ((text: string, level: string) => { calls.push({ text, level }); }) as any;
+		const notifyCalls: Array<{ text: string; level: string }> = [];
+		const statusCalls: Array<{ id: string; text: string | undefined }> = [];
+		ctx.ui.notify = ((text: string, level: string) => { notifyCalls.push({ text, level }); }) as any;
+		ctx.ui.setStatus = ((id: string, text: string | undefined) => { statusCalls.push({ id, text }); }) as any;
 		await fireInput(mock, "ulw fix it", ctx);
-		expect(calls).toHaveLength(1);
-		expect(calls[0].text).toContain("Ultrawork Mode Activated");
-		expect(calls[0].level).toBe("success");
+		expect(notifyCalls).toHaveLength(1);
+		expect(notifyCalls[0].text).toContain("Ultrawork Mode Activated");
+		expect(notifyCalls[0].level).toBe("success");
+		expect(statusCalls).toHaveLength(1);
+		expect(statusCalls[0]).toEqual({ id: "ultrawork", text: "⚡ Ultrawork" });
 	});
 
-	it("calls notify with warning when skipped in non-kuafu mode", async () => {
+	it("calls notify with warning and clears status when skipped in non-kuafu mode", async () => {
 		const ctx = createCtxWithMode("fuxi");
-		const calls: Array<{ text: string; level: string }> = [];
-		ctx.ui.notify = ((text: string, level: string) => { calls.push({ text, level }); }) as any;
+		const notifyCalls: Array<{ text: string; level: string }> = [];
+		const statusCalls: Array<{ id: string; text: string | undefined }> = [];
+		ctx.ui.notify = ((text: string, level: string) => { notifyCalls.push({ text, level }); }) as any;
+		ctx.ui.setStatus = ((id: string, text: string | undefined) => { statusCalls.push({ id, text }); }) as any;
 		await fireInput(mock, "ulw fix it", ctx);
-		expect(calls).toHaveLength(1);
-		expect(calls[0].text).toContain("skipped");
-		expect(calls[0].level).toBe("warning");
+		expect(notifyCalls).toHaveLength(1);
+		expect(notifyCalls[0].text).toContain("skipped");
+		expect(notifyCalls[0].level).toBe("warning");
+		expect(statusCalls).toHaveLength(1);
+		expect(statusCalls[0]).toEqual({ id: "ultrawork", text: undefined });
 	});
 });
