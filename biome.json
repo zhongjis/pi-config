@@ -47,7 +47,7 @@
     "includes": [
       "AGENTS.md",
       "extensions/**/*.ts",
-      "!extensions/pi-tasks",
+      "!extensions/tasks",
       "test/**/*.ts",
       "package.json",
       "pnpm-workspace.yaml",

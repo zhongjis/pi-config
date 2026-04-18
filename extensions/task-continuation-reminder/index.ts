@@ -5,9 +5,9 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { TaskStore } from "../pi-tasks/src/task-store.js";
-import { loadTasksConfig } from "../pi-tasks/src/tasks-config.js";
-import type { Task } from "../pi-tasks/src/types.js";
+import { TaskStore } from "../tasks/src/task-store.js";
+import { loadTasksConfig } from "../tasks/src/tasks-config.js";
+import type { Task } from "../tasks/src/types.js";
 
 const TASK_CONTINUATION_REMINDER = `<system-reminder>
 Incomplete tasks remain in your task list. Continue working on the next pending task.
