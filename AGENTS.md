@@ -23,7 +23,6 @@ Personal configuration repo for [pi](https://github.com/mariozechner/pi-coding-a
 | `scripts/`           | Helper scripts (e.g., `pi-package-npm.sh` for package installs) |
 | `plans/`             | Planning and follow-up docs                                     |
 | `self-improvements/` | Session mining / self-improvement design docs                   |
-| `sessions/`          | Session data (gitignored)                                       |
 
 ## Agent Naming Convention
 
@@ -43,12 +42,12 @@ Agents use Chinese mythology names with specific roles:
 
 ## Gotchas
 
-- `install.sh` uses an **allowlist** — only `agents/`, `docs/`, `git/`, `lsp.json`, `mcp.json`, `plans/`, `README.md`, `sessions/`, `themes/` are symlinked. Test infra, build config, and node_modules stay in repo only.
+- `install.sh` uses an **allowlist** — only `agents/`, `docs/`, `git/`, `lsp.json`, `mcp.json`, `plans/`, `README.md`, `scripts/`, and `themes/` are symlinked. Runtime state like `~/.pi/agent/sessions/`, `local/`, and extension cache/data stay outside repo-managed top-level symlinks. Test infra, build config, and node_modules stay in repo only.
 - `install.sh` skips `AGENTS.md`, `settings.json`, and `skills` — these are Nix-managed via Home Manager symlinks. Editing them here has no effect on `~/.pi/agent/`.
 - The `skills` symlink in the repo points to `/home/zshen/.omp/agent/skills` — it is not the active skills directory.
 - Extensions are TypeScript files loaded directly by pi — no build step needed.
 - Extension testing has two tiers: unit tests (stubs) in `extensions/*/test/` and integration tests (real pi runtime) in `test/integration/`. See [testing docs](docs/testing/README.md).
-- `sessions/` and `auth.json` are gitignored. Do not commit them.
+- Session logs live under `~/.pi/agent/sessions/`; `auth.json` is gitignored. Do not commit runtime state.
 - Plannotator package requires a manual build after install/update — see `QUICKFIX.md`.
 - Git packages with `package.json` get their deps installed automatically by `install.sh` (detects pnpm/bun/npm).
 - No GitHub workflow automation is in scope for Panda Harness right now.
