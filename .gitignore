@@ -2,10 +2,11 @@ auth.json
 sessions/
 *.local
 
-skills
+/skills
 git
 /mcp-cache.json
 /.pi/tasks
+/.pi/skills/
 node_modules/
 
 .omx
