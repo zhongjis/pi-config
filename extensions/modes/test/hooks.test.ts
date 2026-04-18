@@ -15,24 +15,29 @@ vi.mock("@mariozechner/pi-tui", () => ({
 	matchesKey: () => false,
 }));
 
-vi.mock("../src/mode/config-loader.js", () => ({
+vi.mock("../src/config-loader.js", () => ({
 	loadAgentConfig: () => ({ body: "" }),
 }));
 
-vi.mock("../src/mode-planning/plannotator.js", () => ({
+vi.mock("../src/plannotator.js", () => ({
 	recoverPlanReview: vi.fn(async () => {}),
 }));
 
-vi.mock("../src/mode-planning/plan-local.js", () => ({
+vi.mock("../src/plan-storage.js", () => ({
 	LOCAL_PLAN_URI: "local://PLAN.md",
 	LOCAL_DRAFT_URI: "local://DRAFT.md",
 	getLocalPlanPath: () => "/tmp/PLAN.md",
 	getLocalDraftPath: () => "/tmp/DRAFT.md",
 	readLocalPlanFile: vi.fn(async () => "# Plan\n\n- item"),
+	derivePlanTitleFromMarkdown: vi.fn((content: string) => {
+		const match = content.match(/^\s{0,3}#\s+(.+?)\s*$/mu);
+		return match ? match[1].trim() : undefined;
+	}),
+	hydratePlanState: vi.fn(async () => undefined),
 }));
 
-import { registerModeHooks } from "../src/mode/hooks.js";
-import { ModeStateManager } from "../src/mode/mode-state.js";
+import { registerModeHooks } from "../src/hooks.js";
+import { ModeStateManager } from "../src/mode-state.js";
 
 function createMockPi() {
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>>>();
@@ -62,7 +67,7 @@ function createMockPi() {
 }
 
 describe("mode hooks", () => {
-	it("appends mode prompt during before_agent_start", async () => {
+	it("appends mode prompt with HTML markers during before_agent_start", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
@@ -71,7 +76,9 @@ describe("mode hooks", () => {
 		registerModeHooks(mock.pi as never, state);
 
 		const [result] = await mock.fire("before_agent_start", { systemPrompt: "Base prompt" }, { hasUI: false });
-		expect(result).toEqual({ systemPrompt: "Base prompt\n\nFu Xi prompt" });
+		expect(result).toEqual({
+			systemPrompt: "Base prompt\n\n<!-- mode:fuxi -->\nFu Xi prompt\n<!-- /mode:fuxi -->",
+		});
 	});
 
 	it("blocks plan-mode writes outside local://PLAN.md", async () => {
@@ -92,5 +99,112 @@ describe("mode hooks", () => {
 			block: true,
 			reason: expect.stringContaining("local://PLAN.md"),
 		});
+	});
+
+	it("blocks unsafe bash commands in plan mode", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
+		state.cachedConfigs.fuxi = { body: "" };
+
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire(
+			"tool_call",
+			{ toolName: "bash", input: { command: "npm install express" } },
+			{},
+		);
+
+		expect(result).toMatchObject({
+			block: true,
+			reason: expect.stringContaining("not read-only"),
+		});
+	});
+
+	it("allows safe bash commands in plan mode", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
+		state.cachedConfigs.fuxi = { body: "" };
+
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire(
+			"tool_call",
+			{ toolName: "bash", input: { command: "cat README.md" } },
+			{},
+		);
+
+		expect(result).toBeUndefined();
+	});
+
+	it("blocks delegation when frontmatter disallows target", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.cachedConfigs.kuafu = {
+			body: "build prompt",
+			allowDelegationTo: ["jintong", "chengfeng"],
+		};
+
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire(
+			"tool_call",
+			{ toolName: "Agent", input: { subagent_type: "taishang" } },
+			{},
+		);
+
+		expect(result).toMatchObject({
+			block: true,
+			reason: expect.stringContaining("delegation to \"taishang\" is blocked"),
+		});
+	});
+
+	it("allows delegation when target is in allow list", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.cachedConfigs.kuafu = {
+			body: "build prompt",
+			allowDelegationTo: ["jintong", "chengfeng"],
+		};
+
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire(
+			"tool_call",
+			{ toolName: "Agent", input: { subagent_type: "jintong" } },
+			{},
+		);
+
+		expect(result).toBeUndefined();
+	});
+
+	it("HTML marker round-trip: strips mode A body when switching to mode B", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
+		state.cachedConfigs.fuxi = { body: "Fu Xi planning prompt", promptMode: "replace" };
+		state.cachedConfigs.kuafu = { body: "Kua Fu build prompt", promptMode: "replace" };
+
+		registerModeHooks(mock.pi as never, state);
+
+		// First call injects fuxi body
+		const [result1] = await mock.fire("before_agent_start", { systemPrompt: "Base" }, { hasUI: false });
+		const systemPromptAfterFuxi = (result1 as { systemPrompt: string }).systemPrompt;
+		expect(systemPromptAfterFuxi).toContain("<!-- mode:fuxi -->");
+		expect(systemPromptAfterFuxi).toContain("Fu Xi planning prompt");
+
+		// Switch to kuafu — should strip fuxi body and inject kuafu body
+		state.currentMode = "kuafu";
+		const [result2] = await mock.fire("before_agent_start", { systemPrompt: systemPromptAfterFuxi }, { hasUI: false });
+		const systemPromptAfterKuafu = (result2 as { systemPrompt: string }).systemPrompt;
+
+		expect(systemPromptAfterKuafu).not.toContain("<!-- mode:fuxi -->");
+		expect(systemPromptAfterKuafu).not.toContain("Fu Xi planning prompt");
+		expect(systemPromptAfterKuafu).toContain("<!-- mode:kuafu -->");
+		expect(systemPromptAfterKuafu).toContain("Kua Fu build prompt");
+		expect(systemPromptAfterKuafu).toContain("Base");
 	});
 });

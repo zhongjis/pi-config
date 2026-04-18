@@ -4,27 +4,31 @@ vi.mock("../../handoff/runtime.js", () => ({
 	buildPlanExecutionGoal: vi.fn((path: string) => `Execute plan at ${path}.`),
 }));
 
-vi.mock("../src/mode-planning/plan-storage.js", () => ({
+vi.mock("../src/plan-storage.js", () => ({
 	hydratePlanState: vi.fn(async () => ({
 		content: "# Plan\n\n- ship feature",
 		title: "Plan",
 		source: "local",
 	})),
-}));
-
-vi.mock("../src/mode-planning/plan-local.js", () => ({
-	LOCAL_PLAN_URI: "local://PLAN.md",
 	getLocalPlanPath: () => "/tmp/PLAN.md",
 	readLocalPlanFile: vi.fn(async () => "# Plan\n\n- ship feature"),
 	writeLocalPlanFile: vi.fn(async () => {}),
 }));
 
-vi.mock("../src/mode/config-loader.js", () => ({
+vi.mock("../src/constants.js", async (importOriginal) => {
+	const original = await importOriginal() as Record<string, unknown>;
+	return {
+		...original,
+		LOCAL_PLAN_URI: "local://PLAN.md",
+	};
+});
+
+vi.mock("../src/config-loader.js", () => ({
 	loadAgentConfig: () => ({ body: "" }),
 }));
 
-import { ModeStateManager } from "../src/mode/mode-state.js";
-import { prepareApprovedPlanHandoff } from "../src/mode-planning/plannotator.js";
+import { ModeStateManager } from "../src/mode-state.js";
+import { prepareApprovedPlanHandoff } from "../src/plannotator.js";
 
 function createMockPi() {
 	return {
