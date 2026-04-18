@@ -65,9 +65,14 @@ jq -rs '
 ' "$SESSION"
 echo ""
 
-# Model
 echo "--- Model ---"
-jq -r 'select(.type=="message" and .message.role=="assistant") | .message.model // empty' "$SESSION" | sort | uniq -c | sort -rn | sed 's/^/  /'
+MODEL_FROM_MSG=$(jq -r 'select(.type=="message" and .message.role=="assistant") | .message.model // empty' "$SESSION" 2>/dev/null | sort | uniq -c | sort -rn)
+if [[ -n "$MODEL_FROM_MSG" ]]; then
+  echo "$MODEL_FROM_MSG" | sed 's/^/  /'
+else
+  # Fallback: model_change entries
+  jq -r 'select(.type=="model_change") | "  \(.modelId // .model // "unknown") (provider: \(.provider // "?"))"' "$SESSION" 2>/dev/null
+fi
 echo ""
 
 # Duration (first timestamp → last timestamp)

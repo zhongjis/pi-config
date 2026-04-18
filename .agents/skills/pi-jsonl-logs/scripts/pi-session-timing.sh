@@ -94,14 +94,10 @@ fi
 echo "from: $FROM_TS"
 echo "to:   $TO_TS"
 
-# Calculate duration
-python3 -c "
-from datetime import datetime
-fmt = '%Y-%m-%dT%H:%M:%S'
-t1 = datetime.strptime('${FROM_TS}'.split('.')[0], fmt)
-t2 = datetime.strptime('${TO_TS}'.split('.')[0], fmt)
-d = t2 - t1
-mins = int(d.total_seconds()) // 60
-secs = int(d.total_seconds()) % 60
-print(f'duration: {mins}m {secs}s ({int(d.total_seconds())}s)')
-"
+# Calculate duration using jq (no python3 dependency)
+jq -rn --arg from "$FROM_TS" --arg to "$TO_TS" '
+  ($from | split(".")[0] | strptime("%Y-%m-%dT%H:%M:%S") | mktime) as $start |
+  ($to   | split(".")[0] | strptime("%Y-%m-%dT%H:%M:%S") | mktime) as $end |
+  ($end - $start) |
+  "duration: \(. / 60 | floor)m \(. % 60)s (\(.)s)"
+'

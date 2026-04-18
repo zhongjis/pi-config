@@ -7,6 +7,8 @@
 #   --head N        Show first N messages only
 #   --tail N        Show last N messages only
 #   --tools         Include tool calls and results (default: user+assistant text only)
+#
+# Each message is collapsed to a single line, so --head/--tail count messages.
 
 set -euo pipefail
 
@@ -34,35 +36,43 @@ if [[ ! -f "$SESSION" ]]; then
   exit 1
 fi
 
-# Build role filter
-if [[ "$SHOW_TOOLS" == "true" ]]; then
-  ROLE_FILTER='select(.type=="message")'
-else
-  ROLE_FILTER='select(.type=="message" and (.message.role=="user" or .message.role=="assistant"))'
-fi
+# Use --argjson to pass max_chars; use --arg to pass show_tools flag
+# All messages collapsed to single lines so head/tail = message count
+OUTPUT=$(jq -r --argjson max "$MAX_CHARS" --arg tools "$SHOW_TOOLS" '
+  def collapse: gsub("\n"; " ");
+  def trunc: .[:$max];
 
-OUTPUT=$(jq -r "
-  ${ROLE_FILTER} |
-  if .message.role==\"user\" then
-    \"\(.timestamp) | USER | \" +
+  select(.type=="message") |
+
+  # Role filter
+  if $tools == "true" then .
+  elif .message.role == "user" or .message.role == "assistant" or .message.role == "bashExecution" then .
+  else empty end |
+
+  if .message.role == "user" then
+    "\(.timestamp) | USER | " +
     (.message.content |
-      if type==\"string\" then .[:${MAX_CHARS}]
-      else (map(select(.type==\"text\") | .text) | join(\"\"))[:${MAX_CHARS}]
-      end)
-  elif .message.role==\"assistant\" then
-    \"\(.timestamp) | ASST | \" +
-    ([.message.content[] |
-      if .type==\"text\" then .text
-      elif .type==\"toolCall\" then \"[TOOL:\(.name)]\"
+      if type == "string" then trunc
+      else (map(select(.type=="text") | .text) | join("")) | trunc
+      end | collapse)
+  elif .message.role == "assistant" then
+    "\(.timestamp) | ASST | " +
+    (([.message.content[] |
+      if .type == "text" then .text
+      elif .type == "toolCall" then "[TOOL:\(.name)]"
       else empty end
-    ] | join(\" \"))[:${MAX_CHARS}]
-  elif .message.role==\"toolResult\" then
-    \"\(.timestamp) | RESULT:\(.message.toolName) err=\(.message.isError) | \" +
-    ([.message.content[] | select(.type==\"text\") | .text] | join(\"\"))[:${MAX_CHARS}]
+    ] | join(" ")) | trunc | collapse)
+  elif .message.role == "toolResult" then
+    "\(.timestamp) | RESULT:\(.message.toolName) err=\(.message.isError) | " +
+    (([.message.content[] | select(.type=="text") | .text] | join("")) | trunc | collapse)
+  elif .message.role == "bashExecution" then
+    "\(.timestamp) | BASH | " +
+    ((.message.command // "?") | trunc | collapse) +
+    (if .message.exitCode != null and .message.exitCode > 0 then " [exit \(.message.exitCode)]" else "" end)
   else empty end
-" "$SESSION" 2>/dev/null)
+' "$SESSION" 2>/dev/null)
 
-# Apply head/tail
+# Apply head/tail (each message = one line, so head/tail count messages)
 if [[ -n "$HEAD" ]]; then
   echo "$OUTPUT" | head -"$HEAD"
 elif [[ -n "$TAIL" ]]; then
