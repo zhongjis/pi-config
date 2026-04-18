@@ -20,12 +20,18 @@ NIX_MANAGED_EXTENSIONS=(
     "rtk.ts"
 )
 
-# Repo items that should never be installed into ~/.pi/agent
-EXCLUDED_ITEMS=(
-    "install.sh"
-    "extensions"
-    "self-improvements"
-    "QUICKFIX.md"
+# Top-level items to symlink into ~/.pi/agent (allowlist).
+# Everything else (test infra, build config, node_modules, etc.) stays in repo only.
+ALLOWED_ITEMS=(
+    "agents"
+    "docs"
+    "git"
+    "lsp.json"
+    "mcp.json"
+    "plans"
+    "README.md"
+    "sessions"
+    "themes"
 )
 
 NODE_BUILD_SHELL=(
@@ -57,26 +63,8 @@ is_nix_managed_extension() {
     contains_item "$1" "${NIX_MANAGED_EXTENSIONS[@]}"
 }
 
-is_excluded_item() {
-    contains_item "$1" "${EXCLUDED_ITEMS[@]}"
-}
-
-remove_repo_symlink_if_present() {
-    local name="$1"
-    local target_path="$TARGET/$name"
-    local expected_source="$REPO_DIR/$name"
-
-    if [ ! -L "$target_path" ]; then
-        return 0
-    fi
-
-    local link_target
-    link_target="$(readlink "$target_path")"
-
-    if [ "$link_target" = "$expected_source" ]; then
-        rm "$target_path"
-        echo "Removed stale symlink: $name"
-    fi
+is_allowed_item() {
+    contains_item "$1" "${ALLOWED_ITEMS[@]}"
 }
 
 sync_repo_extensions() {
@@ -144,14 +132,33 @@ fi
 
 mkdir -p "$TARGET"
 
-for name in "${NIX_MANAGED[@]}" "${EXCLUDED_ITEMS[@]}"; do
-    remove_repo_symlink_if_present "$name"
+# Clean up stale symlinks for items no longer in allowlist
+# (e.g., items that were previously symlinked under the old exclude-list approach)
+for item in "$TARGET"/*; do
+    [ -L "$item" ] || continue
+    name="$(basename "$item")"
+    link_target="$(readlink "$item")"
+
+    # Only clean up symlinks pointing back to this repo
+    case "$link_target" in
+    "$REPO_DIR"/*)
+        if ! is_allowed_item "$name" && ! is_nix_managed "$name"; then
+            rm "$item"
+            echo "Removed stale symlink: $name"
+        fi
+        ;;
+    esac
 done
 
-# Symlink each top-level item from the repo into ~/.pi/agent/,
-# skipping Nix-managed files, excluded repo items, and hidden files
-for item in "$REPO_DIR"/*; do
-    name="$(basename "$item")"
+# Symlink only allowlisted items from repo into ~/.pi/agent/
+for name in "${ALLOWED_ITEMS[@]}"; do
+    local_path="$REPO_DIR/$name"
+
+    # Skip items that don't exist in the repo
+    if [ ! -e "$local_path" ]; then
+        echo "Skipping (not in repo): $name"
+        continue
+    fi
 
     # Skip Nix-managed items
     if is_nix_managed "$name"; then
@@ -159,31 +166,11 @@ for item in "$REPO_DIR"/*; do
         continue
     fi
 
-    # Skip repo items that should not be installed
-    if is_excluded_item "$name"; then
-        echo "Skipping (excluded): $name"
-        continue
-    fi
-
-    # Create or update the symlink
-    ln -sfn "$item" "$TARGET/$name"
-    echo "Linked $name"
-done
-
-# Also symlink dotfiles that aren't .git or .gitignore
-for item in "$REPO_DIR"/.*; do
-    name="$(basename "$item")"
-
-    # Skip . .. .git .gitignore .pi
-    case "$name" in
-    . | .. | .git | .gitignore | .pi) continue ;;
-    esac
-
-    ln -sfn "$item" "$TARGET/$name"
+    ln -sfn "$local_path" "$TARGET/$name"
     echo "Linked $name"
 done
 
 sync_repo_extensions
 install_git_package_deps
 
-echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; excluded: ${EXCLUDED_ITEMS[*]}"
+echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; allowed: ${ALLOWED_ITEMS[*]}"

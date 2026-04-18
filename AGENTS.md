@@ -4,11 +4,12 @@ Personal configuration repo for [pi](https://github.com/mariozechner/pi-coding-a
 
 ## Commands
 
-- `bash install.sh` — Symlink repo contents into `~/.pi/agent/`, skipping Nix-managed files
+- `bash install.sh` — Symlink allowlisted repo items into `~/.pi/agent/`, skipping Nix-managed files
 - `direnv allow && direnv reload` — Load the Panda Harness development shell
-- `pnpm test:extensions` — Run the standardized extension test flow
+- `pnpm test` — Run all tests (unit + integration)
+- `pnpm test:extensions` — Run unit tests only (extensions + smoke)
+- `pnpm test:integration` — Run integration tests only (pi-test-harness)
 - `pnpm lint:typecheck` — Run repo lint/typecheck flow
-- Nix-managed files (AGENTS.md, settings.json, skills) are handled by Home Manager — **do not** create these manually in `~/.pi/agent/`
 
 ## Structure
 
@@ -16,7 +17,9 @@ Personal configuration repo for [pi](https://github.com/mariozechner/pi-coding-a
 | -------------------- | --------------------------------------------------------------- |
 | `agents/`            | Custom agent definitions (Chinese mythology-named roles)        |
 | `extensions/`        | Pi extensions (TypeScript) — UI widgets, tools, modes           |
-| `test/`              | Root-level extension smoke tests and shared test stubs          |
+| `test/`              | Unit test stubs, fixtures, smoke test                           |
+| `test/integration/`  | Integration tests (pi-test-harness, real pi runtime)            |
+| `docs/`              | Testing docs, extension docs, architecture docs                 |
 | `scripts/`           | Helper scripts (e.g., `pi-package-npm.sh` for package installs) |
 | `plans/`             | Planning and follow-up docs                                     |
 | `self-improvements/` | Session mining / self-improvement design docs                   |
@@ -40,10 +43,11 @@ Agents use Chinese mythology names with specific roles:
 
 ## Gotchas
 
+- `install.sh` uses an **allowlist** — only `agents/`, `docs/`, `git/`, `lsp.json`, `mcp.json`, `plans/`, `README.md`, `sessions/`, `themes/` are symlinked. Test infra, build config, and node_modules stay in repo only.
 - `install.sh` skips `AGENTS.md`, `settings.json`, and `skills` — these are Nix-managed via Home Manager symlinks. Editing them here has no effect on `~/.pi/agent/`.
 - The `skills` symlink in the repo points to `/home/zshen/.omp/agent/skills` — it is not the active skills directory.
 - Extensions are TypeScript files loaded directly by pi — no build step needed.
-- Extension testing is standardized from the repo root via `pnpm test:extensions`, even if some extensions also keep local tests.
+- Extension testing has two tiers: unit tests (stubs) in `extensions/*/test/` and integration tests (real pi runtime) in `test/integration/`. See [testing docs](docs/testing/README.md).
 - `sessions/` and `auth.json` are gitignored. Do not commit them.
 - Plannotator package requires a manual build after install/update — see `QUICKFIX.md`.
 - Git packages with `package.json` get their deps installed automatically by `install.sh` (detects pnpm/bun/npm).
@@ -66,5 +70,8 @@ Agents use Chinese mythology names with specific roles:
 
 ## References
 
+- Testing overview: @docs/testing/README.md
+- Unit testing guide: @docs/testing/unit-test.md
+- Integration testing guide: @docs/testing/integration-test.md
 - Quick fixes for known issues: @QUICKFIX.md
 - Self-improvement design: @self-improvements/design.md
