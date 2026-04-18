@@ -160,14 +160,12 @@ let agentStarted = false; // true only after agent_start fires; guards against h
 let isAnthropicProvider = false;
 
 function updateStatusBar(ctx: { ui: { setStatus(key: string, text: string | undefined): void; theme: { fg(color: string, text: string): string } } }): void {
-  if (!isAnthropicProvider) {
+  if (!isAnthropicProvider || !fallbackActive) {
     ctx.ui.setStatus("clauderock", undefined);
     return;
   }
   const t = ctx.ui.theme;
-  const dot = fallbackActive ? t.fg("success", "●") : t.fg("dim", "●");
-  const label = fallbackActive ? t.fg("success", " Clauderock") : t.fg("dim", " Clauderock");
-  ctx.ui.setStatus("clauderock", dot + label);
+  ctx.ui.setStatus("clauderock", t.fg("warning", "● Clauderock"));
 }
 
 // ---------------------------------------------------------------------------
