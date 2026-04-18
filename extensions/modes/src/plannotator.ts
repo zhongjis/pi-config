@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { computeLineDiff } from "../../lib/utils.js";
+import { requestDirectHandoffBridge, buildPlanExecutionGoal } from "../../handoff/runtime.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS, LOCAL_PLAN_URI } from "./constants.js";
 import { getLocalPlanPath, readLocalPlanFile, writeLocalPlanFile, hydratePlanState } from "./plan-storage.js";
@@ -35,6 +37,22 @@ function buildRefinementMessage(state: ModeStateManager): string {
 		return `Plannotator review feedback:\n${feedback}\n\nPlease revise the current plan and resubmit it.`;
 	}
 	return "Plannotator review was rejected with no specific feedback. Please review the plan and revise it as needed, then resubmit.";
+}
+
+export function buildEditorRefinementMessage(diff: string): string {
+	if (!diff) {
+		return "User opened the editor but made no meaningful changes. Ask if they need help refining the plan.";
+	}
+	return [
+		"User refined the plan in their editor. Here are the changes:",
+		"",
+		"```diff",
+		diff,
+		"```",
+		"",
+		'Review the changes. If they added comments or feedback (e.g., lines starting with "//" or "<!--"), interpret them as revision requests.',
+		`Update ${LOCAL_PLAN_URI} to address the feedback, then call the \`plan_approve\` tool again.`,
+	].join("\n");
 }
 
 export async function requestPlannotator<T>(
@@ -126,10 +144,27 @@ export async function prepareApprovedPlanHandoff(
 	}
 
 	state.persistState();
+
+	// Register prepared handoff via direct bridge so /handoff:start-work
+	// finds it even if in-memory resolver state is stale.
+	const sessionFile = ctx.sessionManager?.getSessionFile?.();
+	if (sessionFile) {
+		const bridgeResult = await requestDirectHandoffBridge(pi, {
+			sessionFile,
+			goal: buildPlanExecutionGoal(planPath),
+			mode: "houtu",
+			summarize: false,
+			source: "prepareApprovedPlanHandoff",
+		});
+		if (!bridgeResult.success) {
+			console.error("[modes/plannotator] Handoff bridge registration failed:", bridgeResult.error);
+		}
+	}
+
 	return {
 		success: true,
 		message: completionMessage,
-		level: "info",
+		level: "info" as const,
 		details: {
 			planTitle: state.planTitle,
 			planPath,
@@ -442,6 +477,7 @@ export async function runPlanApprovalFlow(
 
 	// ── Refine in System Editor ───────────────────────────────────────────────
 	if (selected.startsWith("Refine in System Editor")) {
+		const oldContent = state.planContent ?? "";
 		const editorResult = await refineInSystemEditor(state, ctx);
 		if (editorResult === "cancelled") {
 			// Re-show the same menu after cancellation
@@ -450,11 +486,11 @@ export async function runPlanApprovalFlow(
 		if (editorResult === "no-ui") {
 			return "Cannot open editor in non-interactive mode.";
 		}
-		// Plan updated — re-show the same menu with the updated content
-		if (ctx.hasUI) {
-			ctx.ui.notify(`Plan "${state.planTitle}" updated. Returning to approval menu.`, "info");
-		}
-		return runPlanApprovalFlow(pi, state, ctx, variant);
+		// Plan updated — send diff as agent feedback instead of recursing to menu
+		const newContent = state.planContent ?? "";
+		const diff = computeLineDiff(oldContent, newContent);
+		pi.sendUserMessage(buildEditorRefinementMessage(diff), { deliverAs: "followUp" });
+		return `Plan "${state.planTitle}" updated via editor. Refinement feedback sent.`;
 	}
 
 	// ── Refine in Plannotator ─────────────────────────────────────────────────
