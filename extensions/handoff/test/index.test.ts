@@ -89,6 +89,7 @@ function createCommandContext(options: {
 	const appendedCustomEntries: Array<{ customType: string; data: unknown }> = [];
 	const ui = {
 		notify: vi.fn(),
+		setEditorText: vi.fn(),
 		select: vi.fn(async () => options.summaryChoice ?? null),
 		custom: vi.fn(async (factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: string | null) => void) => unknown) => {
 			return await new Promise<string | null>((resolve) => {
@@ -160,26 +161,24 @@ describe("handoff extension", () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
-		// Clear any stale handoff prompt that wasn't consumed (e.g. when session_start
-		// fired with reason !== "new" so consumeHandoffStartupPrompt was never called).
-		delete (globalThis as Record<PropertyKey, unknown>)[Symbol.for("pi-config-handoff-startup-prompt")];
 	});
 
-	it("creates a child session and sends deterministic prompt when summarization is disabled", async () => {
+	it("creates a child session and populates editor with deterministic prompt when summarization is disabled", async () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();
 			await initExtension(mock);
-			const { ctx, appendedCustomEntries } = createCommandContext();
+			const { ctx, ui, appendedCustomEntries } = createCommandContext();
 
 			await mock.executeCommand("handoff", '-mode houtu -no-summarize "ship feature"', ctx);
-			await mock.fireLifecycle("session_start", { reason: "new" });
-			vi.runAllTimers();
 
 			expect(ctx.newSession).toHaveBeenCalledTimes(1);
 			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);
-			expect(mock.sendUserMessage).toHaveBeenCalledTimes(1);
-			expect(mock.sendUserMessage.mock.calls[0][0]).toContain("ship feature");
-			expect(mock.sendUserMessage.mock.calls[0][0]).toContain("Parent session");
+			expect(ui.setEditorText).toHaveBeenCalledTimes(1);
+			expect(ui.setEditorText.mock.calls[0][0]).toContain("ship feature");
+			expect(ui.setEditorText.mock.calls[0][0]).toContain("Parent session");
+			expect(ui.notify).toHaveBeenCalledWith("Handoff ready. Press Enter to start.", "info");
+			// sendUserMessage no longer used for prompt delivery
+			expect(mock.sendUserMessage).not.toHaveBeenCalled();
 		});
 	});
 
@@ -208,13 +207,13 @@ describe("handoff extension", () => {
 			});
 
 			await mock.executeCommand("handoff:start-work", "", ctx);
-			await mock.fireLifecycle("session_start", { reason: "new" });
-			vi.runAllTimers();
 
 			expect(ctx.newSession).toHaveBeenCalledTimes(1);
 			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);
-			expect(mock.sendUserMessage).toHaveBeenCalledTimes(1);
-			expect(mock.sendUserMessage.mock.calls[0][0]).toContain("ship feature");
+			expect(ctx.ui.setEditorText).toHaveBeenCalledTimes(1);
+			expect(ctx.ui.setEditorText.mock.calls[0][0]).toContain("ship feature");
+			// sendUserMessage no longer used for prompt delivery
+			expect(mock.sendUserMessage).not.toHaveBeenCalled();
 		});
 	});
 
@@ -234,51 +233,30 @@ describe("handoff extension", () => {
 		});
 	});
 
-	it("defers sendUserMessage to a macrotask so agent_start fires after subscribeToAgent", async () => {
+	it("does not call setEditorText when ctx.hasUI is false", async () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();
 			await initExtension(mock);
-			const { ctx } = createCommandContext();
+			const { ctx, ui } = createCommandContext();
+			(ctx as any).hasUI = false;
 
 			await mock.executeCommand("handoff", '-mode kuafu -no-summarize "fix auth"', ctx);
-			await mock.fireLifecycle("session_start", { reason: "new" });
 
-			// Prompt must NOT be sent synchronously during session_start —
-			// it is deferred via setTimeout(0) so subscribeToAgent() runs first.
-			expect(mock.sendUserMessage).not.toHaveBeenCalled();
-
-			// After the macrotask queue drains the prompt is delivered.
-			vi.runAllTimers();
-			expect(mock.sendUserMessage).toHaveBeenCalledTimes(1);
-			expect(mock.sendUserMessage.mock.calls[0][0]).toContain("fix auth");
+			// hasUI is false → handoff should return early with error
+			expect(ui.setEditorText).not.toHaveBeenCalled();
 		});
 	});
 
-	it("does not send prompt when session_start reason is not 'new'", async () => {
+	it("does not call setEditorText when newSession is cancelled", async () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();
 			await initExtension(mock);
-			const { ctx } = createCommandContext();
+			const { ctx, ui } = createCommandContext();
+			ctx.newSession = vi.fn(async () => ({ cancelled: true }));
 
 			await mock.executeCommand("handoff", '-mode kuafu -no-summarize "fix auth"', ctx);
-			// Fire session_start with a reason other than "new" (e.g. reload/startup)
-			await mock.fireLifecycle("session_start", { reason: "startup" });
-			vi.runAllTimers();
 
-			expect(mock.sendUserMessage).not.toHaveBeenCalled();
-		});
-	});
-
-	it("does not send prompt when there is no stored handoff prompt", async () => {
-		await withTempHome(async () => {
-			const mock = createMockPi();
-			await initExtension(mock);
-
-			// Fire session_start without any prior handoff command
-			await mock.fireLifecycle("session_start", { reason: "new" });
-			vi.runAllTimers();
-
-			expect(mock.sendUserMessage).not.toHaveBeenCalled();
+			expect(ui.setEditorText).not.toHaveBeenCalled();
 		});
 	});
 });

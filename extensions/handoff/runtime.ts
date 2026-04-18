@@ -282,11 +282,6 @@ export async function runHandoffCommand(
     finalPrompt = buildDeterministicPrompt(args.goal, currentSessionFile);
   }
 
-  // Store the prompt in globalThis BEFORE switching sessions.
-  // After ctx.newSession(), the old pi.sendUserMessage() routes to the OLD disposed
-  // AgentSession (each extension load gets its own runtime closure). The new
-  // session_start handler on the fresh extension instance picks this up instead.
-  setHandoffStartupPrompt(finalPrompt);
 
   try {
     await ctx.waitForIdle();
@@ -298,12 +293,16 @@ export async function runHandoffCommand(
     });
 
     if (result.cancelled) {
-      clearHandoffStartupPrompt();
       return "New session cancelled.";
     }
-    // Prompt delivery is handled by session_start on the new extension instance.
+
+    // After newSession(), ctx.ui points to the NEW session's editor.
+    // Populate editor — user reviews and presses Enter for full TUI control.
+    if (ctx.hasUI) {
+      ctx.ui.setEditorText(finalPrompt);
+      ctx.ui.notify("Handoff ready. Press Enter to start.", "info");
+    }
   } catch (error) {
-    clearHandoffStartupPrompt();
     return `Handoff failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 
