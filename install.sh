@@ -30,6 +30,7 @@ ALLOWED_ITEMS=(
     "mcp.json"
     "plans"
     "README.md"
+    "scripts"
     "sessions"
     "themes"
 )
@@ -108,7 +109,7 @@ install_git_package_deps() {
 
         if [ -f "$repo_dir/pnpm-lock.yaml" ]; then
             echo "Installing pnpm dependencies in $repo_dir"
-            "${NODE_BUILD_SHELL[@]}" nixpkgs#pnpm -c bash -lc "cd '$repo_dir' && pnpm install"
+            "${NODE_BUILD_SHELL[@]}" nixpkgs#pnpm -c bash -lc "cd '$repo_dir' && pnpm install --ignore-workspace"
         elif [ -f "$repo_dir/bun.lock" ] || [ -f "$repo_dir/bun.lockb" ]; then
             echo "Installing bun dependencies in $repo_dir"
             "${NODE_BUILD_SHELL[@]}" nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun install"
