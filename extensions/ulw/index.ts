@@ -46,11 +46,16 @@ function stripUlwKeyword(text: string): string {
 
 /** Read current mode from session entries (persisted by modes extension). */
 function getCurrentMode(ctx: ExtensionContext): string {
-  const entries = ctx.sessionManager.getEntries();
-  const modeEntry = entries
-    .filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "agent-mode")
-    .pop() as { data?: { mode?: string } } | undefined;
-  return modeEntry?.data?.mode ?? "kuafu";
+  try {
+    const entries = ctx.sessionManager.getEntries();
+    const modeEntry = entries
+      .filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "agent-mode")
+      .pop() as { data?: { mode?: string } } | undefined;
+    return modeEntry?.data?.mode ?? "kuafu";
+  } catch {
+    // Defensive: if sessionManager or getEntries() unavailable, default to kuafu
+    return "kuafu";
+  }
 }
 
 // ---------------------------------------------------------------------------
