@@ -8,6 +8,10 @@
  * to work; when the import fails we degrade gracefully.
  */
 
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 // ── Types mirrored from plannotator-browser.ts ──────────────────────────────
@@ -30,22 +34,40 @@ export interface PlanReviewBrowserSession {
 
 // ── Lazy-loaded plannotator functions ────────────────────────────────────────
 
+const THIS_DIR = dirname(fileURLToPath(import.meta.url));
+const PLANNOTATOR_MODULE_CANDIDATES = [
+	resolve(THIS_DIR, "../../../git/github.com/backnotprop/plannotator/apps/pi-extension/plannotator-browser.ts"),
+	resolve(THIS_DIR, "../../../git/github.com/backnotprop/plannotator/apps/pi-extension/plannotator-browser.js"),
+	join(homedir(), ".pi", "agent", "git", "github.com", "backnotprop", "plannotator", "apps", "pi-extension", "plannotator-browser.ts"),
+	join(homedir(), ".pi", "agent", "git", "github.com", "backnotprop", "plannotator", "apps", "pi-extension", "plannotator-browser.js"),
+];
+
+function findPlannotatorModulePath(): string | undefined {
+	for (const candidate of PLANNOTATOR_MODULE_CANDIDATES) {
+		if (existsSync(candidate)) return candidate;
+	}
+	return undefined;
+}
+
 let _resolved = false;
 let _startSession: ((ctx: ExtensionContext, planContent: string) => Promise<PlanReviewBrowserSession>) | undefined;
 let _hasPlanHtml: (() => boolean) | undefined;
 let _loadError: string | undefined;
 
 /**
- * Attempt to import plannotator-browser from the installed git package.
- * Caches the result — only tries once per process.
+ * Attempt to import plannotator-browser from installed git package.
+ * Caches result — only tries once per process.
  */
 async function resolvePlannotator(): Promise<void> {
 	if (_resolved) return;
 	_resolved = true;
 	try {
-		// Dynamic import — path is relative from this file to the git package.
-		// Pi's jiti loader resolves .ts imports at runtime.
-		const mod = await import("../../../git/github.com/backnotprop/plannotator/apps/pi-extension/plannotator-browser.js");
+		const modulePath = findPlannotatorModulePath();
+		if (!modulePath) {
+			_loadError = "plannotator-browser module not found under ~/.pi/agent/git/github.com/backnotprop/plannotator/apps/pi-extension.";
+			return;
+		}
+		const mod = await import(pathToFileURL(modulePath).href);
 		if (typeof mod.startPlanReviewBrowserSession === "function") {
 			_startSession = mod.startPlanReviewBrowserSession;
 		}
