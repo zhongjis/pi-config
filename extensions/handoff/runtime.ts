@@ -1,11 +1,24 @@
 import { complete, type Message } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, SessionEntry } from "@mariozechner/pi-coding-agent";
-import { BorderedLoader, convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+  SessionEntry,
+} from "@mariozechner/pi-coding-agent";
+import {
+  BorderedLoader,
+  convertToLlm,
+  serializeConversation,
+} from "@mariozechner/pi-coding-agent";
 import { loadHandoffConfig, updateHandoffConfig } from "./config.js";
 
 export type HandoffMode = "kuafu" | "fuxi" | "houtu";
 type HandoffModeState = { mode?: HandoffMode };
-type PendingPreparedHandoff = { sessionFile: string; args: ParsedHandoffArgs; source?: string };
+type PendingPreparedHandoff = {
+  sessionFile: string;
+  args: ParsedHandoffArgs;
+  source?: string;
+};
 type PendingPreparedHandoffsGlobal = Map<string, PendingPreparedHandoff>;
 type SummaryModelChoice = { value: string; model: any };
 type SetupSessionManager = {
@@ -21,32 +34,52 @@ export interface DirectHandoffBridgeRequest {
 }
 
 export type DirectHandoffBridgeReply =
-  | { success: true; data: { command: string; sessionFile: string; source?: string } }
+  | {
+      success: true;
+      data: { command: string; sessionFile: string; source?: string };
+    }
   | { success: false; error: string };
 
+export type PreparedHandoffArgsResolver = (
+  ctx: ExtensionCommandContext,
+) => ParsedHandoffArgs | null;
+const PREPARED_HANDOFF_RESOLVER_KEY = Symbol.for(
+  "pi-config-handoff-args-resolver",
+);
 
-export type PreparedHandoffArgsResolver = (ctx: ExtensionCommandContext) => ParsedHandoffArgs | null;
-const PREPARED_HANDOFF_RESOLVER_KEY = Symbol.for("pi-config-handoff-args-resolver");
-
-export function setPreparedHandoffArgsResolver(resolver: PreparedHandoffArgsResolver | null): void {
+export function setPreparedHandoffArgsResolver(
+  resolver: PreparedHandoffArgsResolver | null,
+): void {
   if (resolver) {
-    (globalThis as Record<PropertyKey, unknown>)[PREPARED_HANDOFF_RESOLVER_KEY] = resolver;
+    (globalThis as Record<PropertyKey, unknown>)[
+      PREPARED_HANDOFF_RESOLVER_KEY
+    ] = resolver;
   } else {
-    delete (globalThis as Record<PropertyKey, unknown>)[PREPARED_HANDOFF_RESOLVER_KEY];
+    delete (globalThis as Record<PropertyKey, unknown>)[
+      PREPARED_HANDOFF_RESOLVER_KEY
+    ];
   }
 }
 
 function getPreparedHandoffArgsResolver(): PreparedHandoffArgsResolver | null {
-  const resolver = (globalThis as Record<PropertyKey, unknown>)[PREPARED_HANDOFF_RESOLVER_KEY];
-  return typeof resolver === "function" ? resolver as PreparedHandoffArgsResolver : null;
+  const resolver = (globalThis as Record<PropertyKey, unknown>)[
+    PREPARED_HANDOFF_RESOLVER_KEY
+  ];
+  return typeof resolver === "function"
+    ? (resolver as PreparedHandoffArgsResolver)
+    : null;
 }
-const PENDING_PREPARED_HANDOFFS_GLOBAL_KEY = Symbol.for("pi-config-handoff-prepared");
+const PENDING_PREPARED_HANDOFFS_GLOBAL_KEY = Symbol.for(
+  "pi-config-handoff-prepared",
+);
 // Stores the handoff startup prompt across the session switch boundary.
 // pi.sendUserMessage() after ctx.newSession() routes to the OLD (disposed)
 // AgentSession — each extension loading gets its own runtime closure. Instead,
 // we stash the prompt here and the NEW session's session_start handler picks
 // it up via consumeHandoffStartupPrompt() on the fresh pi instance.
-const HANDOFF_STARTUP_PROMPT_KEY = Symbol.for("pi-config-handoff-startup-prompt");
+const HANDOFF_STARTUP_PROMPT_KEY = Symbol.for(
+  "pi-config-handoff-startup-prompt",
+);
 const DIRECT_HANDOFF_BRIDGE_CHANNEL = "handoff:rpc:prepare";
 const DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS = 1000;
 const DIRECT_HANDOFF_COMMAND = "/handoff:start-work";
@@ -88,7 +121,6 @@ export function getHandoffUsage(): string {
   return "Usage: /handoff [-mode <name>] [-no-summarize] <goal>";
 }
 
-
 export function getPreparedHandoffCommand(): string {
   return DIRECT_HANDOFF_COMMAND;
 }
@@ -99,18 +131,25 @@ export function getPreparedHandoffCommand(): string {
 // ---------------------------------------------------------------------------
 
 export function consumeHandoffStartupPrompt(): string | null {
-  const raw = (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY];
-  delete (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY];
+  const raw = (globalThis as Record<PropertyKey, unknown>)[
+    HANDOFF_STARTUP_PROMPT_KEY
+  ];
+  delete (globalThis as Record<PropertyKey, unknown>)[
+    HANDOFF_STARTUP_PROMPT_KEY
+  ];
   if (typeof raw !== "string" || !raw) return null;
   return raw;
 }
 
 function setHandoffStartupPrompt(prompt: string): void {
-  (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY] = prompt;
+  (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY] =
+    prompt;
 }
 
 function clearHandoffStartupPrompt(): void {
-  delete (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY];
+  delete (globalThis as Record<PropertyKey, unknown>)[
+    HANDOFF_STARTUP_PROMPT_KEY
+  ];
 }
 
 export async function requestDirectHandoffBridge(
@@ -159,7 +198,10 @@ export async function requestDirectHandoffBridge(
 
 export function registerDirectHandoffBridge(pi: ExtensionAPI): () => void {
   return pi.events.on(DIRECT_HANDOFF_BRIDGE_CHANNEL, (raw: unknown) => {
-    const params = raw as { requestId?: string; request?: DirectHandoffBridgeRequest } | null;
+    const params = raw as {
+      requestId?: string;
+      request?: DirectHandoffBridgeRequest;
+    } | null;
     if (!params || typeof params.requestId !== "string") {
       return;
     }
@@ -204,7 +246,9 @@ export async function runPreparedHandoffCommand(
   return await runHandoffCommand(pi, ctx, args);
 }
 
-export function parseHandoffArgs(args: string): { ok: true; value: ParsedHandoffArgs } | { ok: false; error: string } {
+export function parseHandoffArgs(
+  args: string,
+): { ok: true; value: ParsedHandoffArgs } | { ok: false; error: string } {
   let remaining = args.trim();
   let summarize = true;
   let modeInput: string | undefined;
@@ -221,7 +265,9 @@ export function parseHandoffArgs(args: string): { ok: true; value: ParsedHandoff
     remaining = remaining.replace(noSummarizeMatch[0], " ");
   }
 
-  const summarizeValueMatch = remaining.match(/(?:^|\s)-(?:summarize|shouldSummarize)\s+(true|false)(?=\s|$)/iu);
+  const summarizeValueMatch = remaining.match(
+    /(?:^|\s)-(?:summarize|shouldSummarize)\s+(true|false)(?=\s|$)/iu,
+  );
   if (summarizeValueMatch) {
     summarize = summarizeValueMatch[1].toLowerCase() === "true";
     remaining = remaining.replace(summarizeValueMatch[0], " ");
@@ -272,7 +318,12 @@ export async function runHandoffCommand(
       return "Handoff cancelled.";
     }
 
-    const summary = await generateContextSummaryWithUi(ctx, summaryModel, messages, args.goal);
+    const summary = await generateContextSummaryWithUi(
+      ctx,
+      summaryModel,
+      messages,
+      args.goal,
+    );
     if (summary === null) {
       return "Handoff cancelled.";
     }
@@ -281,7 +332,6 @@ export async function runHandoffCommand(
   } else {
     finalPrompt = buildDeterministicPrompt(args.goal, currentSessionFile);
   }
-
 
   try {
     await ctx.waitForIdle();
@@ -327,17 +377,23 @@ export function buildPlanExecutionGoal(planPath: string): string {
 }
 
 function getPendingPreparedHandoffsGlobal(): PendingPreparedHandoffsGlobal {
-  const existing = (globalThis as Record<PropertyKey, unknown>)[PENDING_PREPARED_HANDOFFS_GLOBAL_KEY];
+  const existing = (globalThis as Record<PropertyKey, unknown>)[
+    PENDING_PREPARED_HANDOFFS_GLOBAL_KEY
+  ];
   if (existing instanceof Map) {
     return existing as PendingPreparedHandoffsGlobal;
   }
 
   const prepared = new Map<string, PendingPreparedHandoff>();
-  (globalThis as Record<PropertyKey, unknown>)[PENDING_PREPARED_HANDOFFS_GLOBAL_KEY] = prepared;
+  (globalThis as Record<PropertyKey, unknown>)[
+    PENDING_PREPARED_HANDOFFS_GLOBAL_KEY
+  ] = prepared;
   return prepared;
 }
 
-function getPendingPreparedHandoff(sessionFile: string): PendingPreparedHandoff | null {
+function getPendingPreparedHandoff(
+  sessionFile: string,
+): PendingPreparedHandoff | null {
   return getPendingPreparedHandoffsGlobal().get(sessionFile) ?? null;
 }
 
@@ -349,35 +405,47 @@ function clearPendingPreparedHandoff(sessionFile: string): void {
   const prepared = getPendingPreparedHandoffsGlobal();
   prepared.delete(sessionFile);
   if (prepared.size === 0) {
-    delete (globalThis as Record<PropertyKey, unknown>)[PENDING_PREPARED_HANDOFFS_GLOBAL_KEY];
+    delete (globalThis as Record<PropertyKey, unknown>)[
+      PENDING_PREPARED_HANDOFFS_GLOBAL_KEY
+    ];
   }
 }
 
-function normalizeDirectHandoffBridgeRequest(request?: DirectHandoffBridgeRequest): PendingPreparedHandoff {
+function normalizeDirectHandoffBridgeRequest(
+  request?: DirectHandoffBridgeRequest,
+): PendingPreparedHandoff {
   if (!request) {
     throw new Error("Missing handoff bridge request.");
   }
 
-  const sessionFile = typeof request.sessionFile === "string" ? request.sessionFile.trim() : "";
+  const sessionFile =
+    typeof request.sessionFile === "string" ? request.sessionFile.trim() : "";
   if (!sessionFile) {
     throw new Error("Missing handoff bridge session file.");
   }
 
-  const goal = stripMatchingQuotes(typeof request.goal === "string" ? request.goal.trim() : "");
+  const goal = stripMatchingQuotes(
+    typeof request.goal === "string" ? request.goal.trim() : "",
+  );
   if (!goal) {
     throw new Error("Missing handoff goal.");
   }
 
   const mode = resolveMode(request.mode);
   if (!mode) {
-    throw new Error(`Unknown mode: "${String(request.mode)}". Available: ${HANDOFF_MODES.join(", ")}`);
+    throw new Error(
+      `Unknown mode: "${String(request.mode)}". Available: ${HANDOFF_MODES.join(", ")}`,
+    );
   }
 
   if (typeof request.summarize !== "boolean") {
     throw new Error("Handoff summarize must be boolean.");
   }
 
-  const source = typeof request.source === "string" ? request.source.trim() || undefined : undefined;
+  const source =
+    typeof request.source === "string"
+      ? request.source.trim() || undefined
+      : undefined;
   return {
     sessionFile,
     args: { goal, mode, summarize: request.summarize },
@@ -389,7 +457,9 @@ function stripMatchingQuotes(value: string): string {
   if (value.startsWith('"') && value.endsWith('"')) {
     try {
       const parsed = JSON.parse(value);
-      return typeof parsed === "string" ? parsed.trim() : value.slice(1, -1).trim();
+      return typeof parsed === "string"
+        ? parsed.trim()
+        : value.slice(1, -1).trim();
     } catch {
       return value.slice(1, -1).trim();
     }
@@ -406,18 +476,32 @@ function resolveMode(value?: string | HandoffMode): HandoffMode | null {
   }
 
   const normalized = value.trim().toLowerCase();
-  return HANDOFF_MODE_ALIASES[normalized] ?? (HANDOFF_MODES.includes(normalized as HandoffMode) ? (normalized as HandoffMode) : null);
+  return (
+    HANDOFF_MODE_ALIASES[normalized] ??
+    (HANDOFF_MODES.includes(normalized as HandoffMode)
+      ? (normalized as HandoffMode)
+      : null)
+  );
 }
 
-function collectConversationMessages(entries: SessionEntry[]): Array<SessionEntry & { type: "message" }> {
-  return entries.filter((entry): entry is SessionEntry & { type: "message" } => entry.type === "message");
+function collectConversationMessages(
+  entries: SessionEntry[],
+): Array<SessionEntry & { type: "message" }> {
+  return entries.filter(
+    (entry): entry is SessionEntry & { type: "message" } =>
+      entry.type === "message",
+  );
 }
 
-async function resolveSummaryModelChoice(ctx: ExtensionContext): Promise<SummaryModelChoice | null> {
+async function resolveSummaryModelChoice(
+  ctx: ExtensionContext,
+): Promise<SummaryModelChoice | null> {
   const currentModelValue = getCurrentModelValue(ctx);
   const remembered = loadHandoffConfig().lastSummaryModel;
   const models = collectSummaryModels(ctx);
-  const preferred = findAvailableModelChoice(remembered, models) ?? findAvailableModelChoice(currentModelValue, models);
+  const preferred =
+    findAvailableModelChoice(remembered, models) ??
+    findAvailableModelChoice(currentModelValue, models);
 
   if (preferred) {
     return preferred;
@@ -427,7 +511,10 @@ async function resolveSummaryModelChoice(ctx: ExtensionContext): Promise<Summary
     throw new Error("No summary model is available.");
   }
 
-  const selectedValue = await ctx.ui.select("Summary model", models.map(({ value }) => value));
+  const selectedValue = await ctx.ui.select(
+    "Summary model",
+    models.map(({ value }) => value),
+  );
   if (!selectedValue) {
     return null;
   }
@@ -440,7 +527,10 @@ async function resolveSummaryModelChoice(ctx: ExtensionContext): Promise<Summary
   return selected;
 }
 
-function findAvailableModelChoice(value: string | null | undefined, models: SummaryModelChoice[]): SummaryModelChoice | undefined {
+function findAvailableModelChoice(
+  value: string | null | undefined,
+  models: SummaryModelChoice[],
+): SummaryModelChoice | undefined {
   if (!value) {
     return undefined;
   }
@@ -452,7 +542,11 @@ function collectSummaryModels(ctx: ExtensionContext): SummaryModelChoice[] {
   const models: SummaryModelChoice[] = [];
 
   const add = (model: any) => {
-    if (!model || typeof model.provider !== "string" || typeof model.id !== "string") {
+    if (
+      !model ||
+      typeof model.provider !== "string" ||
+      typeof model.id !== "string"
+    ) {
       return;
     }
 
@@ -481,7 +575,11 @@ function collectSummaryModels(ctx: ExtensionContext): SummaryModelChoice[] {
 }
 
 function getCurrentModelValue(ctx: ExtensionContext): string | null {
-  if (!ctx.model || typeof ctx.model.provider !== "string" || typeof ctx.model.id !== "string") {
+  if (
+    !ctx.model ||
+    typeof ctx.model.provider !== "string" ||
+    typeof ctx.model.id !== "string"
+  ) {
     return null;
   }
   return `${ctx.model.provider}/${ctx.model.id}`;
@@ -493,40 +591,55 @@ async function generateContextSummaryWithUi(
   messages: Array<SessionEntry & { type: "message" }>,
   goal: string,
 ): Promise<string | null> {
-  return await ctx.ui.custom<string | null>((tui: any, theme: any, _keybindings: any, done: (value: string | null) => void) => {
-    const loader = new BorderedLoader(tui, theme, `Generating handoff prompt with ${summaryModel.value}...`);
-    loader.onAbort = () => done(null);
+  return await ctx.ui.custom<string | null>(
+    (
+      tui: any,
+      theme: any,
+      _keybindings: any,
+      done: (value: string | null) => void,
+    ) => {
+      const loader = new BorderedLoader(
+        tui,
+        theme,
+        `Generating handoff prompt with ${summaryModel.value}...`,
+      );
+      loader.onAbort = () => done(null);
 
-    const run = async () => {
-      try {
-        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(summaryModel.model);
-        if (!auth.ok) {
-          throw new Error(auth.error || `No auth available for ${summaryModel.value}`);
+      const run = async () => {
+        try {
+          const auth = await ctx.modelRegistry.getApiKeyAndHeaders(
+            summaryModel.model,
+          );
+          if (!auth.ok) {
+            throw new Error(
+              auth.error || `No auth available for ${summaryModel.value}`,
+            );
+          }
+
+          const summary = await generateContextSummary(
+            summaryModel.model,
+            auth.apiKey,
+            auth.headers,
+            messages,
+            goal,
+            loader.signal,
+          );
+
+          if (summary && summary.trim().length > 0) {
+            updateHandoffConfig({ lastSummaryModel: summaryModel.value });
+          }
+
+          done(summary);
+        } catch (error) {
+          console.error("Handoff generation failed:", error);
+          done(null);
         }
+      };
 
-        const summary = await generateContextSummary(
-          summaryModel.model,
-          auth.apiKey,
-          auth.headers,
-          messages,
-          goal,
-          loader.signal,
-        );
-
-        if (summary && summary.trim().length > 0) {
-          updateHandoffConfig({ lastSummaryModel: summaryModel.value });
-        }
-
-        done(summary);
-      } catch (error) {
-        console.error("Handoff generation failed:", error);
-        done(null);
-      }
-    };
-
-    void run();
-    return loader;
-  });
+      void run();
+      return loader;
+    },
+  );
 }
 
 async function generateContextSummary(
@@ -537,7 +650,9 @@ async function generateContextSummary(
   goal: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const conversationText = serializeConversation(convertToLlm(messages.map((entry) => entry.message)));
+  const conversationText = serializeConversation(
+    convertToLlm(messages.map((entry) => entry.message)),
+  );
   const userMessage: Message = {
     role: "user",
     content: [
@@ -560,13 +675,20 @@ async function generateContextSummary(
   }
 
   return response.content
-    .filter((block: any): block is { type: "text"; text: string } => block.type === "text")
+    .filter(
+      (block: any): block is { type: "text"; text: string } =>
+        block.type === "text",
+    )
     .map((block: { text: string }) => block.text)
     .join("\n")
     .trim();
 }
 
-function buildSummarizedPrompt(goal: string, parentSession: string | undefined, summary: string): string {
+function buildSummarizedPrompt(
+  goal: string,
+  parentSession: string | undefined,
+  summary: string,
+): string {
   const sections = [goal, ""];
   if (parentSession) {
     sections.push(`**Parent session:** \`${parentSession}\``, "");
@@ -575,13 +697,11 @@ function buildSummarizedPrompt(goal: string, parentSession: string | undefined, 
   return sections.join("\n");
 }
 
-function buildDeterministicPrompt(goal: string, parentSession: string | undefined): string {
-  const sections = [
-    "Continue this work in a new child session.",
-    "",
-    "## Goal",
-    goal,
-  ];
+function buildDeterministicPrompt(
+  goal: string,
+  parentSession: string | undefined,
+): string {
+  const sections = ["## Goal", goal];
 
   if (parentSession) {
     sections.push("", "## Context", `- Parent session: \`${parentSession}\``);
@@ -598,6 +718,11 @@ function buildDeterministicPrompt(goal: string, parentSession: string | undefine
   return sections.join("\n");
 }
 
-function seedChildSessionMode(sessionManager: SetupSessionManager, mode: HandoffMode): void {
-  sessionManager.appendCustomEntry?.("agent-mode", { mode } satisfies HandoffModeState);
+function seedChildSessionMode(
+  sessionManager: SetupSessionManager,
+  mode: HandoffMode,
+): void {
+  sessionManager.appendCustomEntry?.("agent-mode", {
+    mode,
+  } satisfies HandoffModeState);
 }
