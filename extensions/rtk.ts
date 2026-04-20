@@ -1,1 +1,0 @@
-/nix/store/vgpxx5sgw99lyn9m9631nz6djgp3apnk-home-manager-files/.pi/agent/extensions/rtk.ts
