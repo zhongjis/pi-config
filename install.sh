@@ -28,6 +28,7 @@ ALLOWED_ITEMS=(
     "git"
     "lsp.json"
     "mcp.json"
+    "caveman.json"
     "plans"
     "README.md"
     "scripts"
