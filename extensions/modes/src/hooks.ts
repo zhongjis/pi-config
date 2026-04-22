@@ -199,12 +199,14 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 			state.planContent = modeEntry.data.planContent;
 			state.pendingPlanReviewId = modeEntry.data.planReviewId;
 			state.planReviewPending = modeEntry.data.planReviewPending ?? false;
+			state.awaitingUserAction = modeEntry.data.awaitingUserAction;
 			state.planReviewApproved = modeEntry.data.planReviewApproved ?? false;
 			state.planReviewFeedback = modeEntry.data.planReviewFeedback;
 		}
 	}
 	if (!state.pendingPlanReviewId) {
 		state.planReviewPending = false;
+		state.clearAwaitingUserAction("plannotator-review");
 	}
 }
 

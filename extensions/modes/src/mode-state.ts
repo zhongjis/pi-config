@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
-import type { Mode, ModeConfig, ModeState, PlanReviewState, PlanTitleSource } from "./types.js";
+import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
 
 function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
@@ -57,6 +57,7 @@ export class ModeStateManager {
 	planContent: string | undefined;
 	pendingPlanReviewId: string | undefined;
 	planReviewPending = false;
+	awaitingUserAction: AwaitingUserActionState | undefined;
 	planReviewApproved = false;
 	planReviewFeedback: string | undefined;
 	activeCtx: ExtensionContext | undefined;
@@ -75,6 +76,7 @@ export class ModeStateManager {
 			planContent: this.planContent,
 			planReviewId: this.pendingPlanReviewId,
 			planReviewPending: this.planReviewPending,
+			awaitingUserAction: this.awaitingUserAction,
 			planReviewApproved: this.planReviewApproved,
 			planReviewFeedback: this.planReviewFeedback,
 		});
@@ -147,9 +149,20 @@ export class ModeStateManager {
 		return this.planReviewPending;
 	}
 
+	setAwaitingUserAction(awaitingUserAction: AwaitingUserActionState | undefined): void {
+		this.awaitingUserAction = awaitingUserAction;
+	}
+
+	clearAwaitingUserAction(kind?: string): void {
+		if (!kind || this.awaitingUserAction?.kind === kind) {
+			this.awaitingUserAction = undefined;
+		}
+	}
+
 	resetPlanReviewState(): void {
 		this.pendingPlanReviewId = undefined;
 		this.planReviewPending = false;
+		this.clearAwaitingUserAction("plannotator-review");
 		this.planReviewApproved = false;
 		this.planReviewFeedback = undefined;
 	}

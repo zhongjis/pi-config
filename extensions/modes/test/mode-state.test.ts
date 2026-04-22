@@ -130,6 +130,10 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.pendingPlanReviewId = "review-123";
 		state.planReviewPending = true;
+		state.awaitingUserAction = {
+			kind: "plannotator-review",
+			suppressContinuationReminder: true,
+		};
 		state.planReviewApproved = true;
 		state.planReviewFeedback = "some feedback";
 
@@ -137,6 +141,7 @@ describe("ModeStateManager", () => {
 
 		expect(state.pendingPlanReviewId).toBeUndefined();
 		expect(state.planReviewPending).toBe(false);
+		expect(state.awaitingUserAction).toBeUndefined();
 		expect(state.planReviewApproved).toBe(false);
 		expect(state.planReviewFeedback).toBeUndefined();
 	});

@@ -15,6 +15,11 @@ export interface ModeConfig {
 
 export type PlanTitleSource = "content-h1" | "explicit-exit" | "cached-state";
 
+export interface AwaitingUserActionState {
+	kind: string;
+	suppressContinuationReminder?: boolean;
+}
+
 export interface ModeState {
 	mode: Mode;
 	planTitle?: string;
@@ -22,6 +27,7 @@ export interface ModeState {
 	planContent?: string;
 	planReviewId?: string;
 	planReviewPending?: boolean;
+	awaitingUserAction?: AwaitingUserActionState;
 	planReviewApproved?: boolean;
 	planReviewFeedback?: string;
 }
