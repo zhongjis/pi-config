@@ -16,7 +16,7 @@ vi.mock("../src/plan-storage.js", () => ({
 	writeLocalPlanFile: vi.fn(async () => {}),
 }));
 
-vi.mock("../src/constants.js", async (importOriginal) => {
+vi.mock("../src/constants.js", async (importOriginal: any) => {
 	const original = await importOriginal() as Record<string, unknown>;
 	return {
 		...original,
@@ -28,8 +28,21 @@ vi.mock("../src/config-loader.js", () => ({
 	loadAgentConfig: () => ({ body: "" }),
 }));
 
+const plannotatorDirectMocks = vi.hoisted(() => ({
+	startDirectPlanReview: vi.fn(async () => ({
+		reviewId: "review-1",
+		onDecision: vi.fn(),
+	})),
+}));
+
+vi.mock("../src/plannotator-direct.js", () => ({
+	isPlannotatorAvailable: vi.fn(async () => ({ available: true })),
+	startDirectPlanReview: plannotatorDirectMocks.startDirectPlanReview,
+	resetPlannotatorCache: vi.fn(),
+}));
+
 import { ModeStateManager } from "../src/mode-state.js";
-import { prepareApprovedPlanHandoff } from "../src/plannotator.js";
+import { prepareApprovedPlanHandoff, startPlanReview } from "../src/plannotator.js";
 import { buildEditorRefinementMessage } from "../src/plan-approval.js";
 import { computeLineDiff } from "../../lib/utils.js";
 
@@ -92,6 +105,28 @@ describe("plannotator handoff prep", () => {
 		expect(result.success).toBe(false);
 		expect(result.level).toBe("warning");
 		expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
+	});
+});
+
+describe("startPlanReview", () => {
+	it("returns minimal wait message and persists generic awaiting-user-action state", async () => {
+		plannotatorDirectMocks.startDirectPlanReview.mockClear();
+
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.planTitle = "Ship feature";
+
+		const ctx = createCtx();
+		const result = await startPlanReview(mock.pi as never, state, ctx as never);
+
+		expect(result).toBe("Got it, waiting on response from user");
+		expect(plannotatorDirectMocks.startDirectPlanReview).toHaveBeenCalledTimes(1);
+		expect(state.pendingPlanReviewId).toBe("review-1");
+		expect(state.planReviewPending).toBe(true);
+		expect(state.awaitingUserAction).toEqual({
+			kind: "plannotator-review",
+			suppressContinuationReminder: true,
+		});
 	});
 });
 
@@ -194,7 +229,6 @@ describe("prepareApprovedPlanHandoff bridge registration", () => {
 
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
-		// planTitle not set
 
 		const ctx = createCtx();
 		const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);

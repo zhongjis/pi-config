@@ -147,6 +147,7 @@ export async function handlePlanReviewResult(
 
 	state.pendingPlanReviewId = undefined;
 	state.planReviewPending = false;
+	state.clearAwaitingUserAction("plannotator-review");
 	state.planReviewFeedback = result.feedback?.trim() || undefined;
 
 	if (result.approved) {
@@ -188,6 +189,10 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 
 		state.pendingPlanReviewId = session.reviewId;
 		state.planReviewPending = true;
+		state.setAwaitingUserAction({
+			kind: "plannotator-review",
+			suppressContinuationReminder: true,
+		});
 		state.planReviewApproved = false;
 		state.planReviewFeedback = undefined;
 		state.plannotatorAvailable = true;
@@ -203,11 +208,12 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 			}, state.activeCtx);
 		});
 
-		return `Plan "${state.planTitle}" sent to Plannotator for refinement review.`;
+		return "Got it, waiting on response from user";
 	} catch (err) {
 		const reason = err instanceof Error ? err.message : String(err);
 		state.pendingPlanReviewId = undefined;
 		state.planReviewPending = false;
+		state.clearAwaitingUserAction("plannotator-review");
 		state.planReviewApproved = false;
 		state.planReviewFeedback = undefined;
 		state.plannotatorAvailable = false;
@@ -235,6 +241,7 @@ export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManage
 
 	state.pendingPlanReviewId = undefined;
 	state.planReviewPending = false;
+	state.clearAwaitingUserAction("plannotator-review");
 	state.planReviewApproved = false;
 	state.planReviewFeedback = undefined;
 	state.persistState();
