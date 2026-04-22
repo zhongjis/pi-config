@@ -71,6 +71,23 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   }
 
+  function shouldSuppressForAwaitingUserAction(ctx: ExtensionContext): boolean {
+    const entries = ctx.sessionManager.getEntries() as Array<{
+      type?: string;
+      customType?: string;
+      data?: {
+        awaitingUserAction?: { suppressContinuationReminder?: unknown };
+        planReviewPending?: unknown;
+      };
+    }>;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry?.type !== "custom" || entry?.customType !== "agent-mode") continue;
+      return entry.data?.awaitingUserAction?.suppressContinuationReminder === true || entry.data?.planReviewPending === true;
+    }
+    return false;
+  }
+
   function resetReminderState() {
     taskReminderFollowUpPending = false;
     activeAgentStartedFromTaskReminder = false;
@@ -105,6 +122,11 @@ export default function (pi: ExtensionAPI) {
     if (ctx.hasPendingMessages()) return;
 
     if (userPromptedInCurrentRun) return;
+
+    if (shouldSuppressForAwaitingUserAction(ctx)) {
+      resetReminderState();
+      return;
+    }
 
     const incompleteTasks = getIncompleteTasks(ctx);
     if (incompleteTasks.length === 0) {

@@ -178,4 +178,33 @@ describe("task-continuation-reminder extension", () => {
 
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
   });
+
+  it("does not send reminders while a generic awaiting-user-action requests suppression", async () => {
+    const mock = mockPi();
+    initTasksExtension(mock.pi as any);
+    initTaskContinuationReminder(mock.pi as any);
+
+    await mock.executeTool("TaskCreate", { subject: "Pending", description: "desc" });
+
+    const ctx = mockCtx({
+      sessionManager: {
+        getSessionId: () => "session-1",
+        getEntries: () => [
+          {
+            type: "custom",
+            customType: "agent-mode",
+            data: {
+              awaitingUserAction: {
+                kind: "plannotator-review",
+                suppressContinuationReminder: true,
+              },
+            },
+          },
+        ],
+      },
+    });
+    await runAgentTurn(mock, ctx);
+
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+  });
 });
