@@ -144,6 +144,68 @@ function getPreferredAwsProfile(): string | undefined {
   return profiles[0];
 }
 
+interface AwsProfileCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+}
+
+function readAwsProfileCredentials(profile: string): AwsProfileCredentials | null {
+  try {
+    const credsPath = join(process.env.HOME || "", ".aws", "credentials");
+    const credsFile = readFileSync(credsPath, "utf-8");
+    let currentSection: string | null = null;
+    const fields: Record<string, string> = {};
+
+    for (const rawLine of credsFile.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#") || line.startsWith(";")) continue;
+
+      const sectionMatch = line.match(/^\[(.+)\]$/);
+      if (sectionMatch) {
+        currentSection = sectionMatch[1].trim();
+        continue;
+      }
+
+      if (currentSection !== profile) continue;
+
+      const separatorIndex = line.indexOf("=");
+      if (separatorIndex === -1) continue;
+
+      const key = line.slice(0, separatorIndex).trim().toLowerCase();
+      const value = line.slice(separatorIndex + 1).trim();
+      if (value) fields[key] = value;
+    }
+
+    if (!fields.aws_access_key_id || !fields.aws_secret_access_key) {
+      return null;
+    }
+
+    return {
+      accessKeyId: fields.aws_access_key_id,
+      secretAccessKey: fields.aws_secret_access_key,
+      sessionToken: fields.aws_session_token || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function syncAwsCredentialsFromProfile(profile: string | undefined): void {
+  const resolvedProfile = profile ?? "default";
+  const credentials = readAwsProfileCredentials(resolvedProfile);
+  if (!credentials) return;
+
+  process.env.AWS_ACCESS_KEY_ID = credentials.accessKeyId;
+  process.env.AWS_SECRET_ACCESS_KEY = credentials.secretAccessKey;
+
+  if (credentials.sessionToken) {
+    process.env.AWS_SESSION_TOKEN = credentials.sessionToken;
+  } else {
+    delete process.env.AWS_SESSION_TOKEN;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Module-level state
 // ---------------------------------------------------------------------------
@@ -307,6 +369,7 @@ async function streamViaBedrock(
     process.env.AWS_REGION = region;
   }
 
+  syncAwsCredentialsFromProfile(profile);
   try {
     // Filter non-standard message roles (branchSummary, compactionSummary,
     // bashExecution, custom, etc.) — Bedrock Converse rejects unknown roles

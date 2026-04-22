@@ -187,17 +187,43 @@ vi.mock("@mariozechner/pi-ai", () => ({
 // Test lifecycle
 // ---------------------------------------------------------------------------
 let tempHome = "";
+const originalEnv = {
+  HOME: process.env.HOME,
+  AWS_PROFILE: process.env.AWS_PROFILE,
+  AWS_REGION: process.env.AWS_REGION,
+  AWS_DEFAULT_REGION: process.env.AWS_DEFAULT_REGION,
+  AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+  AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+  AWS_SESSION_TOKEN: process.env.AWS_SESSION_TOKEN,
+};
 
 beforeAll(async () => {
   tempHome = await mkdtemp(join(tmpdir(), "clauderock-test-"));
   mkdirSync(join(tempHome, ".pi", "agent"), { recursive: true });
+  mkdirSync(join(tempHome, ".aws"), { recursive: true });
+  process.env.HOME = tempHome;
 });
 
 afterAll(async () => {
   if (tempHome) await rm(tempHome, { force: true, recursive: true });
+  process.env.HOME = originalEnv.HOME;
+  process.env.AWS_PROFILE = originalEnv.AWS_PROFILE;
+  process.env.AWS_REGION = originalEnv.AWS_REGION;
+  process.env.AWS_DEFAULT_REGION = originalEnv.AWS_DEFAULT_REGION;
+  process.env.AWS_ACCESS_KEY_ID = originalEnv.AWS_ACCESS_KEY_ID;
+  process.env.AWS_SECRET_ACCESS_KEY = originalEnv.AWS_SECRET_ACCESS_KEY;
+  process.env.AWS_SESSION_TOKEN = originalEnv.AWS_SESSION_TOKEN;
 });
 
 beforeEach(() => {
+  process.env.HOME = tempHome;
+  delete process.env.AWS_PROFILE;
+  delete process.env.AWS_REGION;
+  delete process.env.AWS_DEFAULT_REGION;
+  delete process.env.AWS_ACCESS_KEY_ID;
+  delete process.env.AWS_SECRET_ACCESS_KEY;
+  delete process.env.AWS_SESSION_TOKEN;
+
   // Reset mock config
   piAiConfig.anthropicEvents = [];
   piAiConfig.anthropicThrows = null;
@@ -210,6 +236,12 @@ beforeEach(() => {
   // Clear any persisted cache
   try {
     unlinkSync(join(tempHome, ".pi", "agent", "clauderock-state.json"));
+  } catch {
+    // ignore: file may not exist
+  }
+
+  try {
+    unlinkSync(join(tempHome, ".aws", "credentials"));
   } catch {
     // ignore: file may not exist
   }
@@ -253,6 +285,10 @@ async function setup(opts: SetupOptions = {}) {
   const streamFn: (model: any, context?: any, options?: any) => any = provider.streamSimple;
 
   return { mod, mockPi, ctx, streamFn };
+}
+
+function writeAwsCredentialsFile(content: string): void {
+  writeFileSync(join(tempHome, ".aws", "credentials"), content);
 }
 
 // Known model with a Bedrock mapping
@@ -823,6 +859,56 @@ describe("Bedrock model construction", () => {
 
     const bedrockOptions = piAiConfig.bedrockCallArgs[0][2];
     expect(bedrockOptions?.apiKey).toBeUndefined();
+  });
+});
+
+describe("Bedrock AWS credential sync", () => {
+  it("loads AWS env credentials from the default profile file before Bedrock requests", async () => {
+    writeAwsCredentialsFile([
+      "[default]",
+      "aws_access_key_id = old-key",
+      "aws_secret_access_key = old-secret",
+      "aws_session_token = old-token",
+      "",
+    ].join("\n"));
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup({ preSeedCache: { exhausted: true, reason: "quota exceeded" } });
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    expect(process.env.AWS_ACCESS_KEY_ID).toBe("old-key");
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBe("old-secret");
+    expect(process.env.AWS_SESSION_TOKEN).toBe("old-token");
+  });
+
+  it("re-reads refreshed AWS profile file on the next Bedrock request", async () => {
+    writeAwsCredentialsFile([
+      "[default]",
+      "aws_access_key_id = old-key",
+      "aws_secret_access_key = old-secret",
+      "aws_session_token = old-token",
+      "",
+    ].join("\n"));
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup({ preSeedCache: { exhausted: true, reason: "quota exceeded" } });
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    writeAwsCredentialsFile([
+      "[default]",
+      "aws_access_key_id = new-key",
+      "aws_secret_access_key = new-secret",
+      "",
+    ].join("\n"));
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    expect(process.env.AWS_ACCESS_KEY_ID).toBe("new-key");
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBe("new-secret");
+    expect(process.env.AWS_SESSION_TOKEN).toBeUndefined();
   });
 });
 
