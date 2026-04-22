@@ -57,6 +57,7 @@ Agents use Chinese mythology names with specific roles:
 - Agent frontmatter uses `display_name`, `description`, `model`, and `thinking` fields.
 - Disabled built-in agents use `enabled: false` in frontmatter (e.g., `general-purpose.md`, `Plan.md`, `Explore.md`).
 - Extension layout tiers and file structure rules are in the `pi-extensions` skill — see its Panda Harness Layout Tiers section.
+- Extension event publishing standard lives in `extensions/CONVENTIONS.md`. When adding or changing `pi.events` usage, follow this split: `user-prompted` for same-run blocking LLM tool prompts, `awaitingUserAction.suppressContinuationReminder` for persisted waiting state, `<namespace>:<event>` for lifecycle broadcasts, `<namespace>:rpc:<method>` + `:reply:${requestId}` for RPC.
 - MCP servers are configured in `mcp.json` — currently context7 and nixos.
 - Keep this repo personal in scope; do not broaden it into a general shared harness unless explicitly asked.
 - For extension maintenance, prefer behavior-preserving changes. Small localized refactors are okay only when needed to fit the standard test flow.
