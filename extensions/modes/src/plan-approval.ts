@@ -153,6 +153,7 @@ export async function runPlanApprovalFlow(
 		return handoffResult.message;
 	}
 
+	pi.events.emit("user-prompted", { tool: "plan_approve" });
 	const selected = await ctx.ui.select(
 		`Plan: "${state.planTitle}" — How would you like to proceed?`,
 		[...options],
