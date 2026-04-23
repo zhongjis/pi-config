@@ -188,9 +188,9 @@ edit({ path: "local://DRAFT.md", ... })
 
 **Research first** (background, parallel):
 ```
-Agent(subagent_type="chengfeng", prompt="[CONTEXT] Refactoring [target]. [GOAL] Map full impact scope. [DOWNSTREAM] Build safe refactoring plan. [REQUEST] Find all usages via lsp_references — call sites, return value consumption, type flow, patterns that would break on signature change. Also check for dynamic access lsp_references may miss. Return: file path, usage pattern, risk level per call site.", run_in_background=true)
+Agent(subagent_type="chengfeng", description="Map refactor impact", prompt="[CONTEXT] Refactoring [target]. [GOAL] Map full impact scope. [DOWNSTREAM] Build safe refactoring plan. [REQUEST] Find all usages via lsp_references — call sites, return value consumption, type flow, patterns that would break on signature change. Also check for dynamic access lsp_references may miss. Return: file path, usage pattern, risk level per call site.", run_in_background=true)
 
-Agent(subagent_type="chengfeng", prompt="[CONTEXT] About to modify [affected code]. [GOAL] Understand test coverage for behavior preservation. [DOWNSTREAM] Decide whether to add tests first. [REQUEST] Find all test files exercising this code — what each asserts, inputs used, public API vs internals. Identify coverage gaps: behaviors used in production but untested. Return a coverage map: tested vs untested behaviors.", run_in_background=true)
+Agent(subagent_type="chengfeng", description="Audit test coverage", prompt="[CONTEXT] About to modify [affected code]. [GOAL] Understand test coverage for behavior preservation. [DOWNSTREAM] Decide whether to add tests first. [REQUEST] Find all test files exercising this code — what each asserts, inputs used, public API vs internals. Identify coverage gaps: behaviors used in production but untested. Return a coverage map: tested vs untested behaviors.", run_in_background=true)
 ```
 
 **Interview focus** (after research):
@@ -207,9 +207,9 @@ Agent(subagent_type="chengfeng", prompt="[CONTEXT] About to modify [affected cod
 
 **Research first** (background, parallel):
 ```
-Agent(subagent_type="chengfeng", prompt="[CONTEXT] Building new [feature] from scratch. [GOAL] Match existing codebase conventions exactly. [DOWNSTREAM] Copy right file structure and patterns. [REQUEST] Find 2-3 most similar implementations — document: directory structure, naming pattern, public API exports, shared utilities used, error handling, and registration/wiring steps. Return concrete file paths and patterns, not abstract descriptions.", run_in_background=true)
+Agent(subagent_type="chengfeng", description="Find similar patterns", prompt="[CONTEXT] Building new [feature] from scratch. [GOAL] Match existing codebase conventions exactly. [DOWNSTREAM] Copy right file structure and patterns. [REQUEST] Find 2-3 most similar implementations — document: directory structure, naming pattern, public API exports, shared utilities used, error handling, and registration/wiring steps. Return concrete file paths and patterns, not abstract descriptions.", run_in_background=true)
 
-Agent(subagent_type="wenchang", prompt="[CONTEXT] Implementing [technology] in production. [GOAL] Avoid common mistakes on first try. [DOWNSTREAM] Setup and configuration decisions. [REQUEST] Find official docs: setup, project structure, API reference, pitfalls, migration gotchas. Also find 1-2 production-quality OSS examples (not tutorials). Skip beginner guides — production patterns only.", run_in_background=true)
+Agent(subagent_type="wenchang", description="Research production docs", prompt="[CONTEXT] Implementing [technology] in production. [GOAL] Avoid common mistakes on first try. [DOWNSTREAM] Setup and configuration decisions. [REQUEST] Find official docs: setup, project structure, API reference, pitfalls, migration gotchas. Also find 1-2 production-quality OSS examples (not tutorials). Skip beginner guides — production patterns only.", run_in_background=true)
 ```
 
 **Interview focus** (after research):
@@ -226,7 +226,7 @@ For all Build and Refactor intents, assess test infrastructure before finalizing
 
 **Step 1**: Detect test infrastructure:
 ```
-Agent(subagent_type="chengfeng", prompt="[CONTEXT] Assessing test infrastructure before planning. [GOAL] Decide whether to include test setup tasks. [REQUEST] Find: 1) Test framework — package.json scripts, config files (jest/vitest/bun/pytest), test dependencies. 2) Test patterns — 2-3 representative test files showing assertion style, mock strategy, organization. 3) Coverage config and test-to-source ratio. 4) CI integration — test commands in .github/workflows. Return structured report: YES/NO per capability with examples.", run_in_background=true)
+Agent(subagent_type="chengfeng", description="Assess test setup", prompt="[CONTEXT] Assessing test infrastructure before planning. [GOAL] Decide whether to include test setup tasks. [REQUEST] Find: 1) Test framework — package.json scripts, config files (jest/vitest/bun/pytest), test dependencies. 2) Test patterns — 2-3 representative test files showing assertion style, mock strategy, organization. 3) Coverage config and test-to-source ratio. 4) CI integration — test commands in .github/workflows. Return structured report: YES/NO per capability with examples.", run_in_background=true)
 ```
 
 **Step 2**: Ask the test question. If infrastructure exists:
@@ -266,14 +266,14 @@ If infrastructure doesn't exist:
 
 **Research first**:
 ```
-Agent(subagent_type="chengfeng", prompt="[CONTEXT] Planning architectural changes. [GOAL] Identify safe-to-change vs load-bearing boundaries. [REQUEST] Find: module boundaries (imports), dependency direction, data flow patterns, key abstractions (interfaces, base classes), any ADRs. Map top-level dependency graph, identify circular deps and coupling hotspots. Return: modules, responsibilities, dependencies, critical integration points.", run_in_background=true)
+Agent(subagent_type="chengfeng", description="Map architecture boundaries", prompt="[CONTEXT] Planning architectural changes. [GOAL] Identify safe-to-change vs load-bearing boundaries. [REQUEST] Find: module boundaries (imports), dependency direction, data flow patterns, key abstractions (interfaces, base classes), any ADRs. Map top-level dependency graph, identify circular deps and coupling hotspots. Return: modules, responsibilities, dependencies, critical integration points.", run_in_background=true)
 
-Agent(subagent_type="wenchang", prompt="[CONTEXT] Designing architecture for [domain]. [GOAL] Evaluate trade-offs before committing. [REQUEST] Find architectural best practices for [domain]: proven patterns, scalability trade-offs, common failure modes, real-world case studies. Look at engineering blogs (Netflix/Stripe-level) and architecture guides. Skip generic pattern catalogs — domain-specific guidance only.", run_in_background=true)
+Agent(subagent_type="wenchang", description="Research architecture tradeoffs", prompt="[CONTEXT] Designing architecture for [domain]. [GOAL] Evaluate trade-offs before committing. [REQUEST] Find architectural best practices for [domain]: proven patterns, scalability trade-offs, common failure modes, real-world case studies. Look at engineering blogs (Netflix/Stripe-level) and architecture guides. Skip generic pattern catalogs — domain-specific guidance only.", run_in_background=true)
 ```
 
 **Taishang consultation** (required when stakes are high):
 ```
-Agent(subagent_type="taishang", prompt="Architecture consultation needed: [context, decision, options, trade-offs]")
+Agent(subagent_type="taishang", description="Review architecture options", prompt="Architecture consultation needed: [context, decision, options, trade-offs]")
 ```
 
 ---
@@ -284,9 +284,9 @@ Agent(subagent_type="taishang", prompt="Architecture consultation needed: [conte
 
 **Parallel investigation**:
 ```
-Agent(subagent_type="chengfeng", prompt="[CONTEXT] Researching [feature] to decide whether to extend or replace current approach. [GOAL] Recommend a strategy. [REQUEST] Find how [X] is currently handled — full path from entry to result: core files, edge cases handled, error scenarios, known limitations (TODOs/FIXMEs), whether this area is actively evolving (git blame). Return: what works, what's fragile, what's missing.", run_in_background=true)
+Agent(subagent_type="chengfeng", description="Audit current handling", prompt="[CONTEXT] Researching [feature] to decide whether to extend or replace current approach. [GOAL] Recommend a strategy. [REQUEST] Find how [X] is currently handled — full path from entry to result: core files, edge cases handled, error scenarios, known limitations (TODOs/FIXMEs), whether this area is actively evolving (git blame). Return: what works, what's fragile, what's missing.", run_in_background=true)
 
-Agent(subagent_type="wenchang", prompt="[CONTEXT] Implementing [Y]. [GOAL] Correct API choices on first try. [REQUEST] Find official docs: API reference, config options with defaults, recommended patterns. Check for 'common mistakes' sections and GitHub issues for gotchas. Return: key API signatures, recommended config, pitfalls.", run_in_background=true)
+Agent(subagent_type="wenchang", description="Research API pitfalls", prompt="[CONTEXT] Implementing [Y]. [GOAL] Correct API choices on first try. [REQUEST] Find official docs: API reference, config options with defaults, recommended patterns. Check for 'common mistakes' sections and GitHub issues for gotchas. Return: key API signatures, recommended config, pitfalls.", run_in_background=true)
 ```
 
 ---
@@ -374,6 +374,7 @@ Read `local://DRAFT.md` and pass its full content to a fresh `direnjie` run:
 ```
 Agent(
   subagent_type="direnjie",
+  description="Review planning gaps",
   inherit_context=false,
   prompt=`Review this planning session before I generate the work plan.
 
@@ -652,7 +653,7 @@ If the approval flow instructs you to run High Accuracy Review:
 
 ```
 while (true) {
-  result = Agent(subagent_type="yanluo", prompt="local://PLAN.md", inherit_context=false)
+  result = Agent(subagent_type="yanluo", description="Review final plan", prompt="local://PLAN.md", inherit_context=false)
   if result contains "OKAY" { break }
   // Address EVERY issue raised, update local://PLAN.md, resubmit
   // NO EXCUSES. NO SHORTCUTS. NO GIVING UP.

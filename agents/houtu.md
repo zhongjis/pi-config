@@ -178,7 +178,7 @@ If a task fails:
 1. Identify what went wrong
 2. **Resume the SAME agent** — subagent has full context already:
    ```
-   Agent({ resume: "<agent_id>", prompt: "FAILED: {error}. Fix by: {specific instruction}" })
+   Agent(resume="<agent_id>", subagent_type="jintong", description="Fix failed task", prompt="FAILED: {error}. Fix by: {specific instruction}")
    ```
 3. Maximum 3 retry attempts with the SAME session
 4. If blocked after 3 attempts: document and continue to independent tasks

@@ -28,7 +28,8 @@ export default defineConfig({
             "**/node_modules/**",
             ".omx/**",
             "sessions/**",
-            "test/integration/**"
+            "test/integration/**",
+            "extensions/better-bash-tool.test.ts"
           ],
           setupFiles: ["test/setup-require-stubs.ts"],
           server: {

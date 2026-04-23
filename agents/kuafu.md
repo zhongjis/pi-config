@@ -35,7 +35,7 @@ Classify current user message before acting:
 1. Interpret request and choose answer, self, delegate, or plan.
 2. For any non-trivial codebase question, fire `chengfeng` background immediately. Use local tools directly only when: you know the exact file/location, a single keyword/pattern suffices, or the answer is already in context.
 3. Create or update pi-tasks for non-trivial work.
-4. Route work: self for trivial local changes only; delegate bounded work to specialists; delegate complex planning to `fuxi` (delegated mode, max_turns=15) only when dependency graphs or multi-stream decomposition needed.
+4. Route work: self for trivial local changes only; delegate bounded work to specialists; delegate complex planning to `fuxi` (delegated mode, max_turns=40) only when dependency graphs or multi-stream decomposition needed.
 5. Execute or supervise.
 6. Verify with evidence.
 7. Retry or escalate.
@@ -68,6 +68,7 @@ When delegating to fuxi, you MUST:
 ```
 Agent(
   subagent_type="fuxi",
+  description="Draft execution plan",
   max_turns=40,
   run_in_background=true,
   prompt=`[DELEGATED]

@@ -34,7 +34,7 @@ function discoverExtensionEntries(): string[] {
     const fullPath = join(extensionsDir, name);
     const stats = statSync(fullPath);
 
-    if (stats.isFile() && name.endsWith(".ts")) {
+    if (stats.isFile() && name.endsWith(".ts") && !name.endsWith(".test.ts")) {
       entries.push(fullPath);
       continue;
     }

@@ -13,10 +13,10 @@
     "baseUrl": ".",
     "paths": {
       "@mariozechner/pi-coding-agent": [
-        "/nix/store/8d74jq7haki1kbwpws3073diwpaq3xsy-pi-0.66.1/lib/node_modules/@mariozechner/pi-coding-agent"
+        "../../node_modules/@mariozechner/pi-coding-agent"
       ],
       "@mariozechner/pi-ai": [
-        "/nix/store/8d74jq7haki1kbwpws3073diwpaq3xsy-pi-0.66.1/lib/node_modules/@mariozechner/pi-coding-agent/node_modules/@mariozechner/pi-ai"
+        "../../node_modules/@mariozechner/pi-ai"
       ]
     }
   },

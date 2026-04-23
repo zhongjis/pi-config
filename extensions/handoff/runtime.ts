@@ -610,7 +610,7 @@ async function generateContextSummaryWithUi(
           const auth = await ctx.modelRegistry.getApiKeyAndHeaders(
             summaryModel.model,
           );
-          if (!auth.ok) {
+          if ("error" in auth) {
             throw new Error(
               auth.error || `No auth available for ${summaryModel.value}`,
             );

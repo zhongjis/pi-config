@@ -11,11 +11,24 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "paths": {
-      "@mariozechner/pi-ai": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-ai"],
-      "@mariozechner/pi-agent-core": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-agent-core"],
-      "@mariozechner/pi-coding-agent": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-coding-agent"],
-      "@mariozechner/pi-coding-agent/*": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-coding-agent/*"],
-      "@mariozechner/pi-tui": ["./node_modules/.pnpm/node_modules/@mariozechner/pi-tui"]
+      "@marcfargas/pi-test-harness": [
+        "./node_modules/@marcfargas/pi-test-harness/src/index.ts"
+      ],
+      "@mariozechner/pi-ai": [
+        "./node_modules/@mariozechner/pi-ai"
+      ],
+      "@mariozechner/pi-agent-core": [
+        "./node_modules/@mariozechner/pi-agent-core"
+      ],
+      "@mariozechner/pi-coding-agent": [
+        "./node_modules/@mariozechner/pi-coding-agent"
+      ],
+      "@mariozechner/pi-coding-agent/*": [
+        "./node_modules/@mariozechner/pi-coding-agent/*"
+      ],
+      "@mariozechner/pi-tui": [
+        "./node_modules/.pnpm/node_modules/@mariozechner/pi-tui"
+      ]
     }
   },
   "include": ["test/**/*.ts", "vitest.config.ts"],

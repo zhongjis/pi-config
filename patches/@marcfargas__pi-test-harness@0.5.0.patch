@@ -1,0 +1,22 @@
+diff --git a/src/session.ts b/src/session.ts
+--- a/src/session.ts
++++ b/src/session.ts
+@@ -75,6 +75,9 @@ export async function createTestSession(options: TestSessionOptions = {}): Promise<TestSession> {
+ 	if (origModelRegistry) {
+ 		origModelRegistry.getApiKey = async () => "test-key";
+ 		origModelRegistry.getApiKeyForProvider = async () => "test-key";
++		origModelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test-key", headers: undefined });
++		origModelRegistry.hasConfiguredAuth = () => true;
++		origModelRegistry.isUsingOAuth = () => false;
+ 	}
+ 
+ 	// Check for extension load errors
+@@ -186,7 +189,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promise<TestSession> {
+ 				propagateErrors,
+ 				runner,
+ 			);
+-			(session.agent as any).setTools(interceptedTools);
++			(session.agent as any).state.tools = interceptedTools;
+ 
+ 			// Run each turn
+ 			for (const turn of turns) {
