@@ -44,17 +44,17 @@ export default function betterBashTool(pi: ExtensionAPI): void {
     renderCall(args: { command?: string; timeout?: number; cwd?: string }, theme: Theme, _context: unknown) {
       const homedir = getHomedir();
       const command = typeof args.command === "string" ? args.command : "";
-      let text = theme.fg("toolTitle", theme.bold(`$ ${command}`));
-      if (args.cwd) {
+      const cmdLine = theme.fg("toolTitle", theme.bold("$ ")) + theme.fg("accent", command);
+      const timeoutSuffix = args.timeout ? theme.fg("dim", ` (timeout ${args.timeout}s)`) : "";
+
+      if (args.cwd && resolve(args.cwd) !== process.cwd()) {
         const displayCwd = args.cwd.startsWith(homedir)
           ? "~" + args.cwd.slice(homedir.length)
           : args.cwd;
-        text += theme.fg("muted", ` (cwd: ${displayCwd})`);
+        const cwdLine = theme.fg("muted", displayCwd);
+        return new Text(cwdLine + "\n" + cmdLine + timeoutSuffix, 0, 0);
       }
-      if (args.timeout) {
-        text += theme.fg("muted", ` (timeout ${args.timeout}s)`);
-      }
-      return new Text(text, 0, 0);
+      return new Text(cmdLine + timeoutSuffix, 0, 0);
     },
 
     // 4-arg signature — _context unused, typed as unknown
@@ -66,16 +66,36 @@ export default function betterBashTool(pi: ExtensionAPI): void {
     ) {
       const box = new Box(0, 0);
       const output = getTextOutput(result).trim();
+      const lineCount = output ? output.split("\n").length : 0;
+      const exitMatch = output.match(/exit code: (\d+)/);
+      const exitCode = exitMatch ? parseInt(exitMatch[1], 10) : 0;
+
+      // Status line
+      let statusText = "";
+      if (exitCode === 0) {
+        statusText = theme.fg("success", "✓");
+      } else {
+        statusText = theme.fg("error", `✗ exit ${exitCode}`);
+      }
+      statusText += theme.fg("dim", `  (${lineCount} lines)`);
+      box.addChild(new Text(statusText, 0, 0));
 
       if (output) {
-        const styledOutput = output
-          .split("\n")
-          .map((line) => theme.fg("toolOutput", line))
-          .join("\n");
-
         if (options.expanded) {
-          box.addChild(new Text("\n" + styledOutput, 0, 0));
+          const lines = output.split("\n");
+          const shownLines = lines.slice(0, 20);
+          const styledShown = shownLines.map((line) => theme.fg("toolOutput", line)).join("\n");
+          box.addChild(new Text("\n" + styledShown, 0, 0));
+          if (lines.length > 20) {
+            box.addChild(new Text("\n" + theme.fg("muted", `... (${lines.length - 20} more lines)`), 0, 0));
+          }
         } else {
+          // Collapsed: last 5 visual lines
+          const styledOutput = output
+            .split("\n")
+            .map((line) => theme.fg("toolOutput", line))
+            .join("\n");
+
           const cachedState: {
             width: number | undefined;
             lines: string[] | undefined;
@@ -107,6 +127,7 @@ export default function betterBashTool(pi: ExtensionAPI): void {
         }
       }
 
+      // Truncation/fullOutputPath warnings
       const details = result.details;
       const truncation = details?.truncation;
       const fullOutputPath = details?.fullOutputPath;
