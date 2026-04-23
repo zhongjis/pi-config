@@ -26,8 +26,17 @@ function logPlannotatorUnavailable(scope: string, reason?: string): void {
 	console.error(`[modes/plannotator] ${scope}: ${getPlannotatorUnavailableReason(reason)}`);
 }
 
-function buildCompletionMessage(title: string): string {
-	return `Planning finished for "${title}", you can start work now by sending /handoff:start-work`;
+function buildCompletionNotification(title: string): string {
+	return `Plan "${title}" approved! Press Enter to start execution via /handoff:start-work`;
+}
+
+function buildCompletionAgentMessage(title: string): string {
+	return [
+		`Plan "${title}" has been approved.`,
+		`The editor is pre-loaded with /handoff:start-work for the user to trigger a new Hou Tu execution session.`,
+		`Do NOT start implementation, create tasks, or write code. Execution happens in a separate session.`,
+		`Wait for the user.`,
+	].join("\n");
 }
 
 function buildRefinementMessage(state: ModeStateManager): string {
@@ -92,11 +101,12 @@ export async function prepareApprovedPlanHandoff(
 	}
 
 	const planPath = getLocalPlanPath(ctx);
-	const completionMessage = buildCompletionMessage(state.planTitle);
+	const uiNotification = buildCompletionNotification(state.planTitle);
+	const agentMessage = buildCompletionAgentMessage(state.planTitle);
 
 	if (ctx.hasUI) {
 		ctx.ui.setEditorText("/handoff:start-work");
-		ctx.ui.notify(completionMessage, "info");
+		ctx.ui.notify(uiNotification, "info");
 	}
 
 	state.persistState();
@@ -119,7 +129,7 @@ export async function prepareApprovedPlanHandoff(
 
 	return {
 		success: true,
-		message: completionMessage,
+		message: agentMessage,
 		level: "info" as const,
 		details: {
 			planTitle: state.planTitle,
@@ -154,15 +164,15 @@ export async function handlePlanReviewResult(
 		state.planReviewApproved = true;
 		// Do NOT persist here — prepareApprovedPlanHandoff persists at the end
 
-		let completionMessage: string;
+		let agentMessage: string;
 		if (resolvedCtx) {
 			const handoffResult = await prepareApprovedPlanHandoff(pi, state, resolvedCtx);
-			completionMessage = handoffResult.message;
+			agentMessage = handoffResult.message;
 		} else {
-			completionMessage = buildCompletionMessage(state.planTitle ?? "untitled");
+			agentMessage = buildCompletionAgentMessage(state.planTitle ?? "untitled");
 			state.persistState();
 		}
-		pi.sendUserMessage(completionMessage, { deliverAs: "followUp" });
+		pi.sendUserMessage(agentMessage, { deliverAs: "followUp" });
 		return;
 	}
 
