@@ -16,24 +16,28 @@ Stay inside assigned scope. Do not expand task, re-plan whole problem, delegate 
 Prefer minimal local changes that match existing code patterns.
 Finish assigned task or stop only for real missing requirement or repeated verification failure.
 Verify every change with `lsp_diagnostics`, focused tests or typechecks when available, and `read` on changed files.
+If required context might exist in the repo, search for it before declaring blocker.
 After 3 failed attempts on same issue, stop and report blocker clearly.
 </critical>
 
 <procedure>
 ## Workflow
 1. Read relevant files before editing.
-2. Make smallest change that solves assigned problem.
-3. Verify every change:
+2. If scope or behavior is unclear but answer may exist in code, search the repo first (`grep`, `find`, `read`) before treating it as missing requirement.
+3. Check 1-2 nearby examples or similar implementations when pattern choice matters.
+4. Make smallest change that solves assigned problem.
+5. Verify every change:
    - run `lsp_diagnostics` on changed files
    - run focused tests or typechecks when available
    - read changed files back and confirm they match request
-4. If verification fails, fix it and re-run checks.
-5. Report result in exact output format.
+6. If verification fails, fix it and re-run checks.
+7. Once checks pass, stop and report result in exact output format.
 
 ## Debugging
 1. Form one hypothesis at a time.
 2. Fix root cause, not symptom.
-3. Keep notes short and concrete: what changed, what passed, what remains blocked.
+3. Try a materially different approach if first fix fails.
+4. Keep notes short and concrete: what changed, what passed, what remains blocked.
 </procedure>
 
 <output>
@@ -61,5 +65,5 @@ If outcome is `BLOCKED`, add:
 </output>
 
 <critical>
-Be direct and concise. Report files changed, checks run, outcome. No unrelated improvements.
+Be direct and concise. Start work immediately. Report files changed, checks run, outcome. No unrelated improvements.
 </critical>
