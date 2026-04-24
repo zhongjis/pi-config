@@ -162,12 +162,12 @@ describe("subagent session UI rebinding", () => {
     expect(widgetInstances[0]?.update).toHaveBeenCalledTimes(1);
   });
 
-  it("rebinds the widget to the active session on session_switch", async () => {
+  it("rebinds the widget to the active session on session_start resume", async () => {
     const mock = createMockPi();
     await initExtension(mock);
     const ctx = createCtx();
 
-    await mock.fire("session_switch", { reason: "new" }, ctx);
+    await mock.fire("session_start", { reason: "resume" }, ctx);
 
     expect(managerInstances[0]?.clearCompleted).toHaveBeenCalledTimes(1);
     expect(widgetInstances[0]?.setUICtx).toHaveBeenCalledWith(ctx.ui);

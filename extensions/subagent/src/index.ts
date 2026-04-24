@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { AgentManager } from "./agent-manager.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, setDefaultMaxTurns, setGraceTurns, steerAgent } from "./agent-runner.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, getDefaultAgentNames, getUserAgentNames, registerAgents, resolveType } from "./agent-types.js";
@@ -561,14 +561,11 @@ export default function (pi: ExtensionAPI) {
     widget.update();
   }
 
-  // Rebind session-local UI/state before any auto-started follow-up runs in the new session.
+  // Rebind session-local UI/state before any auto-started follow-up runs in the current session.
+  // Pi 0.70 folds session replacement notifications into session_start reasons
+  // (startup/reload/new/resume/fork), so this covers the old switch path too.
   pi.on("session_start", async (_event, ctx) => {
     manager.clearCompleted();           // preserve existing behavior
-    syncSessionContext(ctx);
-  });
-
-  pi.on("session_switch", async (_event, ctx) => {
-    manager.clearCompleted();
     syncSessionContext(ctx);
   });
 
@@ -697,7 +694,7 @@ export default function (pi: ExtensionAPI) {
 
   // ---- Agent tool ----
 
-  pi.registerTool<any, AgentDetails>({
+  pi.registerTool({
     name: "Agent",
     label: "Agent",
     description: `Launch a new agent to handle complex, multi-step tasks autonomously.
