@@ -615,7 +615,10 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Running raw Bedrock ConverseStream test…", "info");
         const t = ctx.ui.theme;
         try {
-          const { BedrockRuntimeClient, ConverseStreamCommand } = await import("@aws-sdk/client-bedrock-runtime");
+          // Resolve from pi-ai's context since jiti can't find it from extension dir
+          const { createRequire } = await import("module");
+          const piRequire = createRequire(require.resolve("@mariozechner/pi-ai"));
+          const { BedrockRuntimeClient, ConverseStreamCommand } = piRequire("@aws-sdk/client-bedrock-runtime");
           const profile = getPreferredAwsProfile();
           const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
           const envHasCreds = !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
