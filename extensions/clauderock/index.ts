@@ -465,6 +465,24 @@ async function streamViaBedrock(
       } else if (event.type === "error") {
         // Enrich opaque Bedrock error events with diagnostic details
         const errObj = (event as any).error ?? event;
+        // Dump raw error for diagnostics — helps trace opaque "Unknown: UnknownError"
+        try {
+          const keys = errObj && typeof errObj === "object" ? Object.keys(errObj) : [];
+          console.error("[clauderock] Bedrock stream error event:", {
+            type: errObj?.constructor?.name,
+            keys,
+            errorMessage: errObj?.errorMessage,
+            message: errObj?.message,
+            stopReason: errObj?.stopReason,
+            name: errObj?.name,
+            code: errObj?.Code ?? errObj?.code,
+            $metadata: errObj?.$metadata,
+            $fault: errObj?.$fault,
+            api: errObj?.api,
+            provider: errObj?.provider,
+            model: errObj?.model,
+          });
+        } catch { /* ignore logging errors */ }
         const diagnostic = formatBedrockError(errObj);
         const enriched = {
           ...event,
@@ -482,6 +500,18 @@ async function streamViaBedrock(
     }
     stream.end();
   } catch (bedrockErr) {
+    // Dump raw thrown error for diagnostics
+    try {
+      console.error("[clauderock] Bedrock thrown error:", {
+        type: bedrockErr?.constructor?.name,
+        name: (bedrockErr as any)?.name,
+        message: (bedrockErr as any)?.message,
+        code: (bedrockErr as any)?.Code ?? (bedrockErr as any)?.code,
+        $metadata: (bedrockErr as any)?.$metadata,
+        $fault: (bedrockErr as any)?.$fault,
+        stack: (bedrockErr as any)?.stack?.split("\n").slice(0, 5).join("\n"),
+      });
+    } catch { /* ignore logging errors */ }
     const diagnostic = formatBedrockError(bedrockErr);
     const suffix = [
       profile ? `AWS profile: ${profile}` : "",
@@ -566,19 +596,106 @@ export default function (pi: ExtensionAPI) {
 
   // 4. /clauderock command
   pi.registerCommand("clauderock", {
-    description: "Claude ↔ Bedrock routing (status | on | off | health)",
+    description: "Claude ↔ Bedrock routing (status | on | off | health | test)",
     getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
       const items: AutocompleteItem[] = [
         { value: "status", label: "status  — show current routing and connection state" },
         { value: "on", label: "on      — route all requests through AWS Bedrock" },
         { value: "off", label: "off     — switch back to Claude direct API" },
         { value: "health", label: "health  — check Claude API & AWS credentials" },
+        { value: "test", label: "test    — make a raw SDK ConverseStream call to diagnose failures" },
       ];
       const filtered = items.filter((i) => i.value.startsWith(prefix));
       return filtered.length > 0 ? filtered : null;
     },
     handler: async (args, ctx) => {
       const action = (args || "").trim().toLowerCase() || "status";
+
+      if (action === "test") {
+        ctx.ui.notify("Running raw Bedrock ConverseStream test…", "info");
+        const t = ctx.ui.theme;
+        try {
+          const { BedrockRuntimeClient, ConverseStreamCommand } = await import("@aws-sdk/client-bedrock-runtime");
+          const profile = getPreferredAwsProfile();
+          const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+          const envHasCreds = !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+
+          // Build config same way pi-ai does
+          const config: Record<string, any> = {};
+          if (region) config.region = region;
+          // Deliberately do NOT set profile when static creds exist
+          if (!envHasCreds && profile) config.profile = profile;
+
+          const testModelId = "us.anthropic.claude-opus-4-6-v1";
+          ctx.ui.notify(`Config: ${JSON.stringify(config)} | Model: ${testModelId} | Creds: ${envHasCreds ? "static env" : profile ? "profile " + profile : "default chain"}`, "info");
+
+          const client = new BedrockRuntimeClient(config);
+          const cmd = new ConverseStreamCommand({
+            modelId: testModelId,
+            messages: [{ role: "user", content: [{ text: "hi" }] }],
+            inferenceConfig: { maxTokens: 1 },
+          });
+          const res = await client.send(cmd);
+          let gotContent = false;
+          for await (const item of res.stream!) {
+            if (item.contentBlockDelta) gotContent = true;
+            if (item.messageStop) break;
+          }
+          if (gotContent) {
+            ctx.ui.notify(`${t.fg("success", "✓")} Raw SDK ConverseStream succeeded — Bedrock is reachable`, "info");
+          } else {
+            ctx.ui.notify(`${t.fg("warning", "!")} Stream completed but no content received`, "warning");
+          }
+
+          // Now test through pi-ai's streamSimple
+          ctx.ui.notify("Testing through pi-ai streamSimple…", "info");
+          const testModel: Model<any> = {
+            id: testModelId,
+            provider: "bedrock",
+            api: "bedrock-converse-stream" as Api,
+            name: "test",
+            maxTokens: 1,
+          };
+          const testCtx: Context = {
+            systemPrompt: "Reply with one word.",
+            messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+          };
+          const piStream = streamSimple(testModel, testCtx, {
+            maxTokens: 1,
+            profile: envHasCreds ? undefined : profile,
+            region,
+          } as any);
+          let piGotContent = false;
+          let piError: string | null = null;
+          for await (const event of piStream) {
+            if (event.type === "done") piGotContent = true;
+            if (event.type === "error") {
+              const errObj = (event as any).error ?? event;
+              piError = errObj?.errorMessage ?? errObj?.message ?? JSON.stringify(errObj);
+              // Dump full error object
+              console.error("[clauderock test] pi-ai streamSimple error:", JSON.stringify(errObj, null, 2));
+            }
+          }
+          if (piGotContent && !piError) {
+            ctx.ui.notify(`${t.fg("success", "✓")} pi-ai streamSimple succeeded — full pipeline works`, "info");
+          } else if (piError) {
+            ctx.ui.notify(`${t.fg("error", "✗")} pi-ai streamSimple failed: ${piError}`, "error");
+          } else {
+            ctx.ui.notify(`${t.fg("warning", "!")} pi-ai streamSimple returned no content or error`, "warning");
+          }
+        } catch (err) {
+          const e = err as any;
+          const detail = [
+            e?.name, e?.message,
+            e?.$metadata ? `HTTP ${e.$metadata.httpStatusCode}` : "",
+            e?.Code ?? e?.code,
+            e?.$fault,
+          ].filter(Boolean).join(" | ");
+          ctx.ui.notify(`${ctx.ui.theme.fg("error", "✗")} Raw SDK test failed: ${detail}`, "error");
+          console.error("[clauderock test] Full error:", e);
+        }
+        return;
+      }
 
       if (action === "off") {
         clearCache();
