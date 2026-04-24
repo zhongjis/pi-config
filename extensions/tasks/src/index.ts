@@ -17,7 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { AutoClearManager } from "./auto-clear.js";
 import { ProcessTracker } from "./process-tracker.js";
 import { TaskStore } from "./task-store.js";
