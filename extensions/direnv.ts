@@ -30,14 +30,22 @@ type Status = "on" | "blocked" | "error" | "off";
 
 export default function (pi: ExtensionAPI) {
   let watchers: FSWatcher[] = [];
-  let latestCtx: ExtensionContext | null = null;
+  let activeCtx: ExtensionContext | null = null;
+  let activeCwd: string | null = null;
+  let sessionVersion = 0;
+  let reloadVersion = 0;
 
-  function updateStatus(ctx: ExtensionContext, status: Status): void {
-    if (!ctx.hasUI) return;
+  function updateStatus(status: Status, version: number): void {
+    if (version !== sessionVersion) return;
+
+    const ctx = activeCtx;
+    if (!ctx?.hasUI) return;
+
     if (status === "on" || status === "off") {
       ctx.ui.setStatus("direnv", undefined);
       return;
     }
+
     const text =
       status === "blocked"
         ? ctx.ui.theme.fg("warning", "direnv:blocked")
@@ -45,27 +53,38 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("direnv", text);
   }
 
-  function loadDirenv(cwd: string, ctx: ExtensionContext): void {
+  function loadDirenv(cwd: string, version: number): void {
+    const requestVersion = ++reloadVersion;
+
     exec("direnv export json", { cwd }, (error, stdout, stderr) => {
+      if (
+        version !== sessionVersion ||
+        requestVersion !== reloadVersion ||
+        cwd !== activeCwd
+      ) {
+        return;
+      }
+
       if (error) {
         const message = (stderr || error.message).toLowerCase();
         updateStatus(
-          ctx,
           /allow|blocked|denied|not allowed/.test(message)
             ? "blocked"
             : "error",
+          version,
         );
         return;
       }
 
       if (!stdout.trim()) {
-        updateStatus(ctx, "off");
+        updateStatus("off", version);
         return;
       }
 
       try {
         const env = JSON.parse(stdout) as Record<string, string | null>;
         let loadedCount = 0;
+
         for (const [key, value] of Object.entries(env)) {
           if (value === null) {
             delete process.env[key];
@@ -74,19 +93,25 @@ export default function (pi: ExtensionAPI) {
             loadedCount++;
           }
         }
-        updateStatus(ctx, loadedCount > 0 ? "on" : "off");
+
+        updateStatus(loadedCount > 0 ? "on" : "off", version);
       } catch {
-        updateStatus(ctx, "error");
+        updateStatus("error", version);
       }
     });
   }
 
+  function reloadCurrent(): void {
+    if (!activeCwd) return;
+    loadDirenv(activeCwd, sessionVersion);
+  }
+
   const debouncedReload = debounce(() => {
-    if (latestCtx) loadDirenv(latestCtx.cwd, latestCtx);
+    reloadCurrent();
   }, RELOAD_DEBOUNCE_MS);
 
   function scheduleReload(): void {
-    if (!latestCtx) return;
+    if (!activeCwd) return;
     debouncedReload();
   }
 
@@ -124,23 +149,41 @@ export default function (pi: ExtensionAPI) {
     debouncedReload.cancel();
   }
 
-  pi.on("session_start", async (_event, ctx) => {
-    latestCtx = ctx;
-    loadDirenv(ctx.cwd, ctx);
+  function activateSession(ctx: ExtensionContext): void {
+    sessionVersion++;
+    activeCtx = ctx;
+    activeCwd = ctx.cwd;
     startWatchers(ctx.cwd);
+    loadDirenv(ctx.cwd, sessionVersion);
+  }
+
+  function deactivateSession(): void {
+    sessionVersion++;
+    stopWatchers();
+    activeCtx = null;
+    activeCwd = null;
+  }
+
+  pi.on("session_start", async (_event, ctx) => {
+    activateSession(ctx);
+  });
+
+  pi.on("session_switch", async (_event, ctx) => {
+    activateSession(ctx);
+  });
+
+  pi.on("session_tree", async (_event, ctx) => {
+    activateSession(ctx);
   });
 
   pi.on("session_shutdown", async () => {
-    stopWatchers();
-    latestCtx = null;
+    deactivateSession();
   });
 
   pi.registerCommand("direnv", {
     description: "Reload direnv environment variables",
     handler: async (_args, ctx) => {
-      latestCtx = ctx;
-      loadDirenv(ctx.cwd, ctx);
-      startWatchers(ctx.cwd);
+      activateSession(ctx);
       if (ctx.hasUI) ctx.ui.notify("direnv reloaded", "info");
     },
   });

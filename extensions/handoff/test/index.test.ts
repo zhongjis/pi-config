@@ -87,15 +87,24 @@ function createCommandContext(options: {
 	sessionFile?: string;
 } = {}) {
 	const appendedCustomEntries: Array<{ customType: string; data: unknown }> = [];
+	let sessionReplaced = false;
 	const ui = {
-		notify: vi.fn(),
-		setEditorText: vi.fn(),
+		notify: vi.fn((..._args: unknown[]) => {
+			if (sessionReplaced) throw new Error("stale ctx notify");
+		}),
+		setEditorText: vi.fn((..._args: unknown[]) => {
+			if (sessionReplaced) throw new Error("stale ctx editor");
+		}),
 		select: vi.fn(async () => options.summaryChoice ?? null),
 		custom: vi.fn(async (factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (value: string | null) => void) => unknown) => {
 			return await new Promise<string | null>((resolve) => {
 				factory({}, {}, {}, resolve);
 			});
 		}),
+	};
+	const replacementUi = {
+		notify: vi.fn(),
+		setEditorText: vi.fn(),
 	};
 
 	const ctx = {
@@ -119,15 +128,23 @@ function createCommandContext(options: {
 			getSessionFile: () => options.sessionFile ?? "/repo/.pi/sessions/parent.jsonl",
 		},
 		waitForIdle: vi.fn(async () => {}),
-		newSession: vi.fn(async ({ setup }: { setup?: (sessionManager: unknown) => Promise<void> }) => {
+		newSession: vi.fn(async ({
+			setup,
+			withSession,
+		}: {
+			setup?: (sessionManager: unknown) => Promise<void>;
+			withSession?: (replacementCtx: unknown) => Promise<void>;
+		}) => {
 			await setup?.({
 				appendCustomEntry: (customType: string, data: unknown) => appendedCustomEntries.push({ customType, data }),
 			});
+			sessionReplaced = true;
+			await withSession?.({ hasUI: true, ui: replacementUi });
 			return { cancelled: false };
 		}),
 	};
 
-	return { ctx, ui, appendedCustomEntries };
+	return { ctx, ui, replacementUi, appendedCustomEntries };
 }
 
 async function initExtension(mock: ReturnType<typeof createMockPi>) {
@@ -167,16 +184,18 @@ describe("handoff extension", () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();
 			await initExtension(mock);
-			const { ctx, ui, appendedCustomEntries } = createCommandContext();
+			const { ctx, ui, replacementUi, appendedCustomEntries } = createCommandContext();
 
 			await mock.executeCommand("handoff", '-mode houtu -no-summarize "ship feature"', ctx);
 
 			expect(ctx.newSession).toHaveBeenCalledTimes(1);
 			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);
-			expect(ui.setEditorText).toHaveBeenCalledTimes(1);
-			expect(ui.setEditorText.mock.calls[0][0]).toContain("ship feature");
-			expect(ui.setEditorText.mock.calls[0][0]).toContain("Parent session");
-			expect(ui.notify).toHaveBeenCalledWith("Handoff ready. Press Enter to start.", "info");
+			expect(ui.setEditorText).not.toHaveBeenCalled();
+			expect(ui.notify).not.toHaveBeenCalled();
+			expect(replacementUi.setEditorText).toHaveBeenCalledTimes(1);
+			expect(replacementUi.setEditorText.mock.calls[0][0]).toContain("ship feature");
+			expect(replacementUi.setEditorText.mock.calls[0][0]).toContain("Parent session");
+			expect(replacementUi.notify).toHaveBeenCalledWith("Handoff ready. Press Enter to start.", "info");
 			// sendUserMessage no longer used for prompt delivery
 			expect(mock.sendUserMessage).not.toHaveBeenCalled();
 		});
@@ -187,7 +206,7 @@ describe("handoff extension", () => {
 			const mock = createMockPi();
 			await initExtension(mock);
 			const runtime = await import("../runtime.js");
-			const { ctx, appendedCustomEntries } = createCommandContext({ sessionFile: "/repo/.pi/sessions/plan.jsonl" });
+			const { ctx, replacementUi, appendedCustomEntries } = createCommandContext({ sessionFile: "/repo/.pi/sessions/plan.jsonl" });
 
 			const reply = await runtime.requestDirectHandoffBridge(mock.pi as never, {
 				sessionFile: "/repo/.pi/sessions/plan.jsonl",
@@ -210,8 +229,8 @@ describe("handoff extension", () => {
 
 			expect(ctx.newSession).toHaveBeenCalledTimes(1);
 			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);
-			expect(ctx.ui.setEditorText).toHaveBeenCalledTimes(1);
-			expect(ctx.ui.setEditorText.mock.calls[0][0]).toContain("ship feature");
+			expect(replacementUi.setEditorText).toHaveBeenCalledTimes(1);
+			expect(replacementUi.setEditorText.mock.calls[0][0]).toContain("ship feature");
 			// sendUserMessage no longer used for prompt delivery
 			expect(mock.sendUserMessage).not.toHaveBeenCalled();
 		});

@@ -1519,7 +1519,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
-		name: "web_code_search",
+		name: "code_search",
 		label: "Code Search",
 		description: "Search for code examples, documentation, and API references. Returns relevant code snippets and docs from GitHub, Stack Overflow, and official documentation. Use for any programming question — API usage, library examples, debugging help.",
 		promptSnippet:
@@ -1542,7 +1542,7 @@ export default function (pi: ExtensionAPI) {
 			const display = !query
 				? "(no query)"
 				: query.length > 70 ? query.slice(0, 67) + "..." : query;
-			return new Text(theme.fg("toolTitle", theme.bold("web_code_search ")) + theme.fg("accent", display), 0, 0);
+			return new Text(theme.fg("toolTitle", theme.bold("code_search ")) + theme.fg("accent", display), 0, 0);
 		},
 
 		renderResult(result, { expanded }, theme) {

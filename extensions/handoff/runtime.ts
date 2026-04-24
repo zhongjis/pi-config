@@ -335,22 +335,20 @@ export async function runHandoffCommand(
 
   try {
     await ctx.waitForIdle();
-    const result = await ctx.newSession({
+    const result = await (ctx.newSession as any)({
       parentSession: currentSessionFile,
       setup: async (sessionManager: SetupSessionManager) => {
         seedChildSessionMode(sessionManager, args.mode);
+      },
+      withSession: async (replacementCtx: ExtensionContext) => {
+        if (!replacementCtx.hasUI) return;
+        replacementCtx.ui.setEditorText(finalPrompt);
+        replacementCtx.ui.notify("Handoff ready. Press Enter to start.", "info");
       },
     });
 
     if (result.cancelled) {
       return "New session cancelled.";
-    }
-
-    // After newSession(), ctx.ui points to the NEW session's editor.
-    // Populate editor — user reviews and presses Enter for full TUI control.
-    if (ctx.hasUI) {
-      ctx.ui.setEditorText(finalPrompt);
-      ctx.ui.notify("Handoff ready. Press Enter to start.", "info");
     }
   } catch (error) {
     return `Handoff failed: ${error instanceof Error ? error.message : String(error)}`;

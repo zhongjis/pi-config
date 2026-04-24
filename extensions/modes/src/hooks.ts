@@ -273,6 +273,12 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		state.plannotatorUnavailableReason = undefined;
 	});
 
+	function bindActiveSessionContext(ctx: ExtensionContext): void {
+		state.activeCtx = ctx;
+		state.plannotatorAvailable = undefined;
+		state.plannotatorUnavailableReason = undefined;
+	}
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		state.activeCtx = ctx;
 		const config = state.loadConfig(state.currentMode);
@@ -294,9 +300,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		state.activeCtx = ctx;
-		state.plannotatorAvailable = undefined;
-		state.plannotatorUnavailableReason = undefined;
+		bindActiveSessionContext(ctx);
 
 		setupModeEditor(ctx, state);
 		resolveInitialMode(pi, state, ctx);
@@ -305,6 +309,14 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		await state.applyMode(ctx);
 		await recoverPlanReview(pi, state, ctx);
 		state.persistState();
+	});
+
+	pi.on("session_switch" as any, async (_event: any, ctx: ExtensionContext) => {
+		bindActiveSessionContext(ctx);
+	});
+
+	pi.on("session_tree" as any, async (_event: any, ctx: ExtensionContext) => {
+		bindActiveSessionContext(ctx);
 	});
 
 	pi.on("session_shutdown", async () => {

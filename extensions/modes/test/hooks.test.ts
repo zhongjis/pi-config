@@ -207,4 +207,20 @@ describe("mode hooks", () => {
 		expect(systemPromptAfterKuafu).toContain("Kua Fu build prompt");
 		expect(systemPromptAfterKuafu).toContain("Base");
 	});
+
+	it("rebinds activeCtx on session_switch and session_tree", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		registerModeHooks(mock.pi as never, state);
+
+		const switchCtx = { sessionManager: { getSessionId: () => "switch" } };
+		const treeCtx = { sessionManager: { getSessionId: () => "tree" } };
+
+		await mock.fire("session_switch", { reason: "new" }, switchCtx);
+		expect(state.activeCtx).toBe(switchCtx as never);
+
+		await mock.fire("session_tree", {}, treeCtx);
+		expect(state.activeCtx).toBe(treeCtx as never);
+	});
+
 });
