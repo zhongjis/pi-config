@@ -444,6 +444,8 @@ async function streamViaBedrock(
       apiKey: undefined,
       headers: undefined,  // clear Anthropic auth headers — they'd override AWS SigV4
       reasoning: undefined, // Bedrock Converse doesn't accept a freeform reasoning param
+      onPayload: undefined, // pi's onPayload is Anthropic-specific — breaks with Bedrock ConverseStream input
+      onResponse: undefined, // pi's onResponse expects Anthropic response shape
       profile: effectiveProfile,
       region,
     });
