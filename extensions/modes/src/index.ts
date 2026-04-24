@@ -14,7 +14,7 @@
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../handoff/runtime.js";
 import { registerModeCommands } from "./commands.js";
 import { registerModeHooks } from "./hooks.js";
@@ -60,6 +60,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 			const result = await runPlanApprovalFlow(pi, state, ctx, variant);
 			return {
 				content: [{ type: "text" as const, text: result }],
+				details: { variant },
 			};
 		},
 	});

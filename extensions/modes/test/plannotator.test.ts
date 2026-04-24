@@ -84,14 +84,14 @@ describe("plannotator handoff prep", () => {
 		const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);
 
 		expect(result.success).toBe(true);
-		expect(result.message).toContain("Planning finished");
+		expect(result.message).toContain("has been approved");
 		expect(result.message).toContain("/handoff:start-work");
 		expect(result.details).toMatchObject({
 			mode: "houtu",
 			planPath: "/tmp/PLAN.md",
 		});
 		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:start-work");
-		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("Planning finished"), "info");
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("approved!"), "info");
 		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
 	});
 
