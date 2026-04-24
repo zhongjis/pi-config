@@ -1146,6 +1146,45 @@ describe("streamViaBedrock: Bedrock error wrapping", () => {
     const errMsg = errEv?.error?.message ?? errEv?.error?.errorMessage ?? String(errEv?.error);
     expect(errMsg).toContain("quota/rate-limit was exhausted");
   });
+
+  it("includes AWS SDK metadata (name, httpStatusCode, fault) in error message for opaque errors", async () => {
+    piAiConfig.anthropicEvents = [errorEvent("quota exceeded")];
+    // Simulate a real AWS SDK UnknownError with $metadata
+    const awsErr = Object.assign(new Error("Unknown: UnknownError"), {
+      name: "UnknownError",
+      $metadata: { httpStatusCode: 403, requestId: "abc-123", attempts: 1 },
+      $fault: "client",
+      Code: "AccessDeniedException",
+    });
+    piAiConfig.bedrockThrows = awsErr;
+
+    const { streamFn } = await setup();
+    const events = await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    const errEv = events.find((e) => e.type === "error");
+    const errMsg = errEv?.error?.message ?? String(errEv?.error);
+    // Should include the enriched details, not just 'Unknown: UnknownError'
+    expect(errMsg).toContain("UnknownError");
+    expect(errMsg).toContain("HTTP 403");
+    expect(errMsg).toContain("AccessDeniedException");
+    expect(errMsg).toContain("fault=client");
+    expect(errMsg).toContain("abc-123");
+  });
+
+  it("enriches error events from Bedrock stream (not just thrown errors)", async () => {
+    piAiConfig.anthropicEvents = [errorEvent("quota exceeded")];
+    // Bedrock stream emits an error event with an opaque message
+    piAiConfig.bedrockEvents = [
+      { type: "error", error: { message: "Unknown: UnknownError", name: "UnknownError", $metadata: { httpStatusCode: 500 } } },
+    ];
+
+    const { streamFn } = await setup();
+    const events = await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    const errEv = events.find((e) => e.type === "error");
+    const errMsg = errEv?.error?.message ?? String(errEv?.error);
+    expect(errMsg).toContain("HTTP 500");
+  });
 });
 
 // ---------------------------------------------------------------------------

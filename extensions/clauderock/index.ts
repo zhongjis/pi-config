@@ -80,6 +80,45 @@ function isOauthRateLimitFallback(err: unknown): boolean {
       || msg.includes("rate limit") || msg.includes("too many requests");
 }
 
+/** Extract actionable diagnostics from AWS SDK errors (which often have opaque messages like 'Unknown: UnknownError'). */
+function formatBedrockError(err: unknown): string {
+  if (!err || typeof err !== "object") return String(err);
+  const e = err as Record<string, any>;
+
+  // Core message — may be useless ('Unknown: UnknownError')
+  const msg = e.message ?? e.errorMessage ?? String(err);
+
+  // AWS SDK v3 metadata: httpStatusCode, requestId, attempts
+  const meta = e.$metadata as Record<string, any> | undefined;
+  const httpStatus = meta?.httpStatusCode;
+  const requestId = meta?.requestId;
+
+  // Error classification from the SDK
+  const name = e.name && e.name !== "Error" ? e.name : undefined;
+  const code = e.Code ?? e.code;
+  const fault = e.$fault;
+
+  // Credential conflict detection (the most common cause of UnknownError)
+  const hasProfile = !!process.env.AWS_PROFILE;
+  const hasStaticCreds = !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+  const credInfo = hasProfile && hasStaticCreds
+    ? " [CONFLICT: both AWS_PROFILE and static creds set]"
+    : hasProfile ? " [creds: AWS_PROFILE]"
+    : hasStaticCreds ? " [creds: static env vars]"
+    : " [creds: none detected]";
+
+  const parts: string[] = [];
+  if (name) parts.push(name);
+  if (code && code !== name) parts.push(`code=${code}`);
+  if (httpStatus) parts.push(`HTTP ${httpStatus}`);
+  if (fault) parts.push(`fault=${fault}`);
+  parts.push(msg);
+  if (requestId) parts.push(`requestId=${requestId}`);
+  parts.push(credInfo);
+
+  return parts.join(" — ");
+}
+
 // ---------------------------------------------------------------------------
 // Cross-session cache
 // ---------------------------------------------------------------------------
@@ -423,6 +462,15 @@ async function streamViaBedrock(
           patched.message = { ...patched.message, model: originalModel.id };
         }
         stream.push(patched);
+      } else if (event.type === "error") {
+        // Enrich opaque Bedrock error events with diagnostic details
+        const errObj = (event as any).error ?? event;
+        const diagnostic = formatBedrockError(errObj);
+        const enriched = {
+          ...event,
+          error: { ...(typeof errObj === "object" ? errObj : {}), message: diagnostic },
+        };
+        stream.push(enriched);
       } else {
         stream.push(event);
       }
@@ -434,6 +482,7 @@ async function streamViaBedrock(
     }
     stream.end();
   } catch (bedrockErr) {
+    const diagnostic = formatBedrockError(bedrockErr);
     const suffix = [
       profile ? `AWS profile: ${profile}` : "",
       region ? `region: ${region}` : "",
@@ -441,8 +490,8 @@ async function streamViaBedrock(
     stream.push({
       type: "error",
       error: new Error(
-        `Clauderock fallback failed: ${bedrockErr instanceof Error ? bedrockErr.message : String(bedrockErr)}. ` +
-        `Claude API quota/rate-limit was exhausted.${suffix ? ` (${suffix})` : ""}` ,
+        `Clauderock fallback failed: ${diagnostic}. ` +
+        `Claude API quota/rate-limit was exhausted.${suffix ? ` (${suffix})` : ""}`,
       ),
     });
     stream.end();
