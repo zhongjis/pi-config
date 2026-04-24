@@ -657,16 +657,27 @@ export default function (pi: ExtensionAPI) {
             provider: "bedrock",
             api: "bedrock-converse-stream" as Api,
             name: "test",
-            maxTokens: 1,
+            maxTokens: 32000,
+            baseUrl: "",
+            reasoning: false,
+            input: ["text"],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 200000,
           };
           const testCtx: Context = {
             systemPrompt: "Reply with one word.",
             messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
           };
+          let payloadReached = false;
           const piStream = streamSimple(testModel, testCtx, {
             maxTokens: 1,
             profile: envHasCreds ? undefined : profile,
             region,
+            onPayload: (payload: any) => {
+              payloadReached = true;
+              console.error("[clauderock test] onPayload reached, modelId:", payload?.modelId);
+              return payload;
+            },
           } as any);
           let piGotContent = false;
           let piError: string | null = null;
@@ -675,8 +686,16 @@ export default function (pi: ExtensionAPI) {
             if (event.type === "error") {
               const errObj = (event as any).error ?? event;
               piError = errObj?.errorMessage ?? errObj?.message ?? JSON.stringify(errObj);
-              // Dump full error object
-              console.error("[clauderock test] pi-ai streamSimple error:", JSON.stringify(errObj, null, 2));
+              // Dump full error + try to get stack from original cause
+              console.error("[clauderock test] pi-ai error:", piError);
+              console.error("[clauderock test] payloadReached:", payloadReached);
+              // Try to find stack in any nested error
+              const possibleStack = errObj?.stack ?? errObj?.cause?.stack;
+              if (possibleStack) console.error("[clauderock test] stack:", possibleStack);
+              // Log all keys
+              if (errObj && typeof errObj === "object") {
+                console.error("[clauderock test] error keys:", Object.keys(errObj));
+              }
             }
           }
           if (piGotContent && !piError) {
