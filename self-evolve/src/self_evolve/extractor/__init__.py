@@ -1,0 +1,45 @@
+"""Extractor package scaffold for Module 1."""
+
+from self_evolve.extractor.models import (
+    SCHEMA_VERSION,
+    ContentBlock,
+    EventStatus,
+    ExtractedSession,
+    ExtractionWarning,
+    LinkedSubagent,
+    NormalizedEvent,
+    SessionMetadata,
+    SessionMetrics,
+    SidechainLink,
+    SidechainMessage,
+    SidechainStatus,
+    SubagentSummary,
+    ToolCallJoin,
+    UsageSummary,
+    WarningCode,
+    WarningScope,
+    WarningSeverity,
+    )
+from self_evolve.extractor.parser import parse_parent_session
+
+__all__ = [
+    "SCHEMA_VERSION",
+    "ContentBlock",
+    "EventStatus",
+    "ExtractedSession",
+    "ExtractionWarning",
+    "LinkedSubagent",
+    "NormalizedEvent",
+    "SessionMetadata",
+    "SessionMetrics",
+    "SidechainLink",
+    "SidechainMessage",
+    "SidechainStatus",
+    "SubagentSummary",
+    "ToolCallJoin",
+    "UsageSummary",
+    "WarningCode",
+    "WarningScope",
+    "WarningSeverity",
+    "parse_parent_session",
+]
