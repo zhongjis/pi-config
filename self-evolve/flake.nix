@@ -3,9 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    llm-agents.url = "github:numtide/llm-agents.nix";
+
   };
 
-  outputs = { self, nixpkgs, ... }:
+  outputs = { self, nixpkgs, llm-agents, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -22,11 +24,13 @@
             ps.jinja2
             ps.pytest
           ]);
+          agent-browser = llm-agents.packages.${system}.agent-browser;
         in {
           default = pkgs.mkShellNoCC {
             packages = [
               python
               pkgs.sqlite
+              agent-browser
             ];
 
             shellHook = ''
