@@ -21,16 +21,16 @@
     "autonomous"
   ],
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.68.1",
-    "@mariozechner/pi-coding-agent": "^0.68.1",
-    "@mariozechner/pi-tui": "^0.68.1",
-    "@sinclair/typebox": "latest"
+    "@mariozechner/pi-ai": "0.70.0",
+    "@mariozechner/pi-coding-agent": "0.70.0",
+    "@mariozechner/pi-tui": "0.70.0",
+    "typebox": "1.1.24"
   },
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --root ../.. extensions/subagent/src",
+    "test:watch": "vitest --root ../.. extensions/subagent/src",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src/ test/",
     "lint:fix": "biome check --fix src/ test/"
