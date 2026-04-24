@@ -912,6 +912,151 @@ describe("Bedrock AWS credential sync", () => {
   });
 });
 
+describe("Bedrock AWS credential source conflict avoidance", () => {
+  it("clears AWS_PROFILE when static credentials are synced from profile file", async () => {
+    writeAwsCredentialsFile([
+      "[myprofile]",
+      "aws_access_key_id = prof-key",
+      "aws_secret_access_key = prof-secret",
+      "",
+    ].join("\n"));
+    process.env.AWS_PROFILE = "myprofile";
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup({ preSeedCache: { exhausted: true, reason: "quota exceeded" } });
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    // Static creds set, AWS_PROFILE cleared → no dual-source conflict
+    expect(process.env.AWS_ACCESS_KEY_ID).toBe("prof-key");
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBe("prof-secret");
+    expect(process.env.AWS_PROFILE).toBeUndefined();
+  });
+
+  it("sets AWS_PROFILE when no creds in file AND no env creds exist", async () => {
+    // No env credentials, empty profile → AWS_PROFILE is last resort
+    delete process.env.AWS_ACCESS_KEY_ID;
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    // Write a credentials file with only a profile name so getPreferredAwsProfile returns it,
+    // but no actual keys so sync fails
+    writeAwsCredentialsFile([
+      "[myprofile]",
+      "# no keys here",
+      "",
+    ].join("\n"));
+
+    // Re-import to pick up the file with profile but no creds
+    vi.resetModules();
+    const mod2 = await import("./index.ts");
+    const mockPi2 = createMockPi();
+    // Pre-seed cache for fallback
+    writeFileSync(
+      join(tempHome, ".pi", "agent", "clauderock-state.json"),
+      JSON.stringify({ exhausted: true, since: new Date().toISOString(), reason: "test" }),
+    );
+    mod2.default(mockPi2.pi as never);
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+    const provider2 = mockPi2.providers.get("anthropic") as any;
+    await collectStream(provider2.streamSimple(SONNET_MODEL, CTX));
+
+    // No static creds, no env creds → AWS_PROFILE should be set as fallback
+    expect(process.env.AWS_PROFILE).toBe("myprofile");
+  });
+
+  it("does NOT set AWS_PROFILE when profile is empty but env creds already exist", async () => {
+    // Env has valid credentials; empty profile in file → don't override with AWS_PROFILE
+    process.env.AWS_ACCESS_KEY_ID = "ASIAV3EXISTING";
+    process.env.AWS_SECRET_ACCESS_KEY = "existing-secret";
+    process.env.AWS_SESSION_TOKEN = "existing-token";
+
+    writeAwsCredentialsFile([
+      "[myprofile]",
+      "# empty profile, no keys",
+      "",
+    ].join("\n"));
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup({ preSeedCache: { exhausted: true, reason: "quota exceeded" } });
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    // Env creds preserved, AWS_PROFILE NOT set
+    expect(process.env.AWS_ACCESS_KEY_ID).toBe("ASIAV3EXISTING");
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBe("existing-secret");
+    expect(process.env.AWS_PROFILE).toBeUndefined();
+  });
+
+  it("never has both AWS_PROFILE and AWS_ACCESS_KEY_ID set after Bedrock request", async () => {
+    writeAwsCredentialsFile([
+      "[default]",
+      "aws_access_key_id = test-key",
+      "aws_secret_access_key = test-secret",
+      "",
+    ].join("\n"));
+    process.env.AWS_PROFILE = "default";
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup({ preSeedCache: { exhausted: true, reason: "quota exceeded" } });
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    // Either static creds OR AWS_PROFILE, never both
+    const hasStaticCreds = !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+    const hasProfile = !!process.env.AWS_PROFILE;
+    expect(hasStaticCreds && hasProfile).toBe(false);
+  });
+
+  it("clears AWS_PROFILE when env already has both AWS_PROFILE AND static creds (sync fails)", async () => {
+    // Simulates SSO tools that set both AWS_PROFILE and static creds
+    process.env.AWS_PROFILE = "sso-profile";
+    process.env.AWS_ACCESS_KEY_ID = "ASIAV3SSOKEY";
+    process.env.AWS_SECRET_ACCESS_KEY = "sso-secret";
+    process.env.AWS_SESSION_TOKEN = "sso-token";
+
+    // No matching profile in credentials file → sync will fail
+    writeAwsCredentialsFile([
+      "[other-profile]",
+      "aws_access_key_id = other-key",
+      "aws_secret_access_key = other-secret",
+      "",
+    ].join("\n"));
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup({ preSeedCache: { exhausted: true, reason: "quota exceeded" } });
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    // Static creds preserved, AWS_PROFILE cleared to prevent dual-source conflict
+    expect(process.env.AWS_ACCESS_KEY_ID).toBe("ASIAV3SSOKEY");
+    expect(process.env.AWS_SECRET_ACCESS_KEY).toBe("sso-secret");
+    expect(process.env.AWS_PROFILE).toBeUndefined();
+  });
+
+  it("does not pass profile to streamSimple when static creds exist in env", async () => {
+    process.env.AWS_ACCESS_KEY_ID = "ASIAV3EXISTING";
+    process.env.AWS_SECRET_ACCESS_KEY = "existing-secret";
+
+    writeAwsCredentialsFile([
+      "[myprofile]",
+      "# empty profile, no keys",
+      "",
+    ].join("\n"));
+
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup({ preSeedCache: { exhausted: true, reason: "quota exceeded" } });
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    // streamSimple (Bedrock) should receive profile: undefined, not a profile name
+    const bedrockOptions = piAiConfig.bedrockCallArgs[0][2];
+    expect(bedrockOptions?.profile).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // streamViaBedrock — start event model ID patching
 // ---------------------------------------------------------------------------

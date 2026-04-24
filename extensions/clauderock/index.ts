@@ -191,10 +191,10 @@ function readAwsProfileCredentials(profile: string): AwsProfileCredentials | nul
   }
 }
 
-function syncAwsCredentialsFromProfile(profile: string | undefined): void {
+function syncAwsCredentialsFromProfile(profile: string | undefined): boolean {
   const resolvedProfile = profile ?? "default";
   const credentials = readAwsProfileCredentials(resolvedProfile);
-  if (!credentials) return;
+  if (!credentials) return false;
 
   process.env.AWS_ACCESS_KEY_ID = credentials.accessKeyId;
   process.env.AWS_SECRET_ACCESS_KEY = credentials.secretAccessKey;
@@ -204,6 +204,12 @@ function syncAwsCredentialsFromProfile(profile: string | undefined): void {
   } else {
     delete process.env.AWS_SESSION_TOKEN;
   }
+
+  // Clear AWS_PROFILE when static credentials are set to avoid the SDK
+  // "Multiple credential sources detected" warning and UnknownError.
+  delete process.env.AWS_PROFILE;
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -362,14 +368,28 @@ async function streamViaBedrock(
   const profile = getPreferredAwsProfile();
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 
-  if (profile && !process.env.AWS_PROFILE) {
+  // Credential resolution priority:
+  //  1. Sync static creds from profile file → use those (AWS_PROFILE cleared)
+  //  2. Env already has AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY → use as-is
+  //  3. Set AWS_PROFILE for SDK credential chain (SSO, credential_process, etc.)
+  // Never set AWS_PROFILE when static creds exist — the SDK warns
+  // "Multiple credential sources detected" and may fail with UnknownError.
+  const synced = syncAwsCredentialsFromProfile(profile);
+  const envHasCreds = !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+
+  // If static creds exist (synced from file or already in env), always clear
+  // AWS_PROFILE to prevent dual-source conflict. Only set AWS_PROFILE as a
+  // last resort when no static creds exist at all.
+  if (envHasCreds) {
+    delete process.env.AWS_PROFILE;
+  } else if (profile && !process.env.AWS_PROFILE) {
     process.env.AWS_PROFILE = profile;
   }
-  if (region && !process.env.AWS_REGION && !process.env.AWS_DEFAULT_REGION) {
-    process.env.AWS_REGION = region;
-  }
 
-  syncAwsCredentialsFromProfile(profile);
+  // Only pass profile to streamSimple when no static creds exist — otherwise
+  // the SDK may internally create a profile-based provider that conflicts with
+  // the env-based static credentials, causing UnknownError.
+  const effectiveProfile = envHasCreds ? undefined : profile;
   try {
     // Filter non-standard message roles (branchSummary, compactionSummary,
     // bashExecution, custom, etc.) — Bedrock Converse rejects unknown roles
@@ -385,7 +405,7 @@ async function streamViaBedrock(
       apiKey: undefined,
       headers: undefined,  // clear Anthropic auth headers — they'd override AWS SigV4
       reasoning: undefined, // Bedrock Converse doesn't accept a freeform reasoning param
-      profile,
+      profile: effectiveProfile,
       region,
     });
     let completionSeen = false;
