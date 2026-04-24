@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMockContext } from "./fixtures/mock-context.js";
-import { createMockPi } from "./fixtures/mock-pi.js";
+import { createMockContext } from "../../../test/fixtures/mock-context.js";
+import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 
 const bashMockState = vi.hoisted(() => ({
   createCalls: [] as string[],
@@ -31,7 +31,7 @@ const createBashToolDefinitionMock = vi.hoisted(() =>
 );
 
 vi.mock("@mariozechner/pi-coding-agent", async () => {
-  const actual = await import("./stubs/pi-coding-agent.js");
+  const actual = await import("../../../test/stubs/pi-coding-agent.js");
 
   return {
     ...actual,
@@ -58,7 +58,7 @@ describe("better-bash-tool", () => {
   });
 
   it("rebinds execution to the resolved cwd without rewriting the command", async () => {
-    const { default: initBetterBashTool } = await import("../extensions/better-bash-tool.js");
+    const { default: initBetterBashTool } = await import("../index.js");
     const mock = createMockPi();
     initBetterBashTool(mock.pi as never);
 
