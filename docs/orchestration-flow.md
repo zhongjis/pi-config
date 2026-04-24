@@ -1,200 +1,135 @@
-# Orchestration Flow Design
+# Orchestration Flow
+
+This document describes the current planning-to-execution lifecycle. It is descriptive, not a stronger guarantee than the runtime implements.
 
 ```mermaid
 flowchart TD
-    A[Drafting] --> B[Gap review]
-    B --> C[Finalized]
-    C --> D{Approval path}
-    D -->|Direct user approval| E[Approved]
-    D -->|Plannotator approval| E
-    D -->|High-accuracy review| E
-    E --> F[Handoff prepared]
-    F --> G[Hou Tu active]
-    G --> H[Handoff injected]
-    H --> I[Execution runs]
-    I --> J[Handoff consumed]
+    A[Fu Xi interviews and writes local://DRAFT.md] --> B[Di Renjie gap review prompt/protocol]
+    B --> C[Fu Xi writes local://PLAN.md]
+    C --> D[plan_approve approval menu]
+    D -->|Approve| E[Prepare handoff bridge]
+    D -->|Refine in editor / Plannotator| C
+    D -->|High Accuracy Review| D
+    E --> F[Preload /handoff:start-work]
+    F --> G[User presses Enter]
+    G --> H[Handoff runtime opens child session]
+    H --> I[Seed agent-mode: houtu]
+    I --> J[Preload deterministic execution prompt]
+    J --> K[User sends prompt]
+    K --> L[Hou Tu executes and verifies]
 ```
 
-## Goal
+## Lifecycle
 
-Keep planning, approval, handoff, and execution responsibilities separate.
+1. **Interview draft**
+   - Fu Xi records the interview and research notes in `local://DRAFT.md`.
+   - Plan-mode hooks restrict writes to `local://DRAFT.md` and `local://PLAN.md`, and restrict bash to read-only commands.
 
-- **Fu Xi / plan mode** owns request clarification, plan drafting, review, approval flow, and Hou Tu handoff preparation.
-- **Hou Tu / execute mode** owns execution after handoff exists.
-- **Handoff runtime** owns persisted handoff authority, validation, stale detection, and consume-on-success behavior.
+2. **Di Renjie gap review**
+   - Di Renjie review is part of Fu Xi's prompt/protocol.
+   - It is not a runtime-enforced gate and does not use a completion tool.
 
-Plan mode must end at **handoff prepared**. It must not start execution.
+3. **Plan write**
+   - Fu Xi writes the execution plan to `local://PLAN.md`.
+   - `local://PLAN.md` is saved in the planning session; the handoff prompt carries the resolved plan file path into the child session.
 
-## High-level lifecycle
+4. **Approval menu**
+   - Fu Xi calls the single approval tool, `plan_approve`.
+   - The tool supports two menu variants:
+     - `post-gap-review`
+     - `post-high-accuracy`
+   - The menu can approve, request editor refinement, request Plannotator refinement, or return instructions for high-accuracy review.
 
-### Plan mode lifecycle
+5. **Approved handoff preparation**
+   - Approval marks the in-session plan review state approved.
+   - The modes extension prepares a handoff bridge for the current session and preloads `/handoff:start-work` into the editor.
+   - The user must press Enter to send that command.
 
-1. **Drafting**
-   - Fu Xi clarifies request and writes `local://PLAN.md`.
-2. **Gap review**
-   - Di Renjie reviews latest saved draft.
-   - Result recorded with `gap_review_complete`.
-3. **Finalized**
-   - `finalize_plan` freezes current approved draft metadata and enters approval flow.
-4. **Approval pending**
-   - User chooses one approval path:
-     - direct approval
-     - Plannotator approval
-     - high-accuracy review
-5. **Approved**
-   - One approval path succeeds.
-6. **Handoff prepared**
-   - `exit_plan_mode` or approval success prepares Hou Tu handoff.
-   - Mode switches to Hou Tu.
-   - Plan mode is done.
+6. **Handoff command**
+   - `/handoff:start-work` asks the handoff runtime for the prepared handoff args.
+   - The runtime opens a new child session.
+   - During child-session setup, it seeds an `agent-mode` entry with `mode: "houtu"`.
+   - It preloads a deterministic execution prompt into the new editor and notifies the user to press Enter.
+   - Execution starts only when the user sends that prompt.
 
-### Execution lifecycle
+7. **Hou Tu execution**
+   - Hou Tu reads the approved plan path from the handoff prompt, creates pi-tasks for execution waves, delegates bounded work to subagents, verifies results, updates plan checkboxes, and continues until complete or blocked.
 
-1. **Hou Tu active**
-   - Hou Tu starts in execute mode.
-2. **Handoff injected**
-   - Next Hou Tu turn loads persisted handoff briefing.
-3. **Execution runs**
-   - Hou Tu executes plan.
-4. **Handoff consumed**
-   - Successful terminal Hou Tu turn marks handoff consumed.
+## Ownership by file
 
-## Ownership by module
+### `extensions/modes/src/index.ts`
 
-### `extensions/modes/src/plan-tools.ts`
+Extension entry point for modes. It wires commands, hooks, the prepared handoff args resolver, and the `plan_approve` tool.
 
-Plan lifecycle tool surface.
+### `extensions/modes/src/plan-approval.ts`
 
-- `gap_review_complete`
-- `finalize_plan`
-- `exit_plan_mode`
-- `high_accuracy_review_complete`
+Approval menu implementation. It owns:
 
-Rules:
-
-- `finalize_plan` does **not** hand off.
-- `exit_plan_mode` does **not** finalize or review.
-- `exit_plan_mode` only prepares approved Hou Tu handoff and leaves plan mode.
+- `post-gap-review` and `post-high-accuracy` menu variants
+- editor refinement flow
+- high-accuracy review instructions
+- approval handoff callout
 
 ### `extensions/modes/src/plannotator.ts`
 
-Approval-flow controller.
+Modes-side Plannotator coordination. It owns:
 
-Owns:
+- Plannotator availability checks
+- starting direct browser reviews
+- handling review decisions through the `onDecision` callback
+- approved-plan handoff preparation
+- restart recovery that clears stale pending browser review state
 
-- approval menu
-- Plannotator review start/result handling
-- high-accuracy review launch
-- approved-plan handoff preparation helper
+### `extensions/modes/src/plannotator-direct.ts`
 
-Does not own:
-
-- Hou Tu execution kickoff
-- execution replay
-- handoff consumption
+Direct Plannotator package integration. It imports the installed browser-review module when available, probes for required functions/assets, starts browser review sessions, and resets its availability cache.
 
 ### `extensions/modes/src/hooks.ts`
 
-Mode enforcement and runtime bridge.
+Mode runtime hooks. It owns:
 
-Fu Xi side:
+- Fu Xi write/edit restrictions
+- Fu Xi read-only bash restrictions
+- delegation allow/block enforcement from mode frontmatter
+- mode prompt injection
+- session mode restoration
+- plan state hydration
+- plan-write review-state reset when no browser review is pending
+- Plannotator review recovery on session start
 
-- plan-mode tool restrictions
-- read-only bash restrictions
-- plan-write invalidation of approvals
-- review recovery
+### `extensions/handoff/index.ts`
 
-Hou Tu side:
+Handoff extension entry point. It registers:
 
-- load pending handoff on next execute turn
-- inject `handoff-context`
-- trim old planning context
-- consume handoff after successful execution turn
-- bounce back to Fu Xi if stored handoff is invalid or stale
+- `/handoff`
+- `/handoff:start-work`
+- the direct handoff bridge listener
 
-### `extensions/handoff/*`
+### `extensions/handoff/runtime.ts`
 
-Persistent handoff authority.
+Handoff runtime. It owns:
 
-Owns:
+- `handoff:rpc:prepare` bridge registration
+- prepared handoff lookup
+- `/handoff:start-work` execution
+- child session creation
+- `agent-mode: houtu` seeding
+- deterministic execution prompt construction
+- optional generic handoff summarization for `/handoff`
 
-- authority record
-- stored briefing
-- readiness checks
-- stale plan detection
-- mark-consumed
+### `agents/fuxi.md`
 
-## Stage notes
+Fu Xi's planning protocol. It defines the interview draft workflow, Di Renjie review expectations, `local://PLAN.md` plan format, and the requirement to use `plan_approve` for post-plan decisions.
 
-### Drafting
+### `agents/houtu.md`
 
-Any successful write/edit to `local://PLAN.md` resets approval and handoff state.
+Hou Tu's execution protocol. It defines conductor behavior: read the plan, create pi-tasks, delegate one bounded task at a time, verify every result, update plan checkboxes, and continue through all waves.
 
-### Gap review
+## Boundary rules
 
-Gap review is required before `finalize_plan`.
-
-### Finalized
-
-`finalize_plan` records title + plan snapshot and opens approval flow.
-It is the boundary between drafting and approval.
-
-### Approval pending
-
-Approval is a single stage with multiple mechanisms.
-Approval sources:
-
-- `user`
-- `plannotator`
-- `high-accuracy`
-
-### Handoff prepared
-
-A prepared handoff means:
-
-- persisted handoff authority exists
-- briefing exists
-- Hou Tu mode is active
-- execution has **not** started yet
-
-## Design rules
-
-1. **No plan-mode execution kickoff**
-   - Plan mode may prepare handoff and switch modes.
-   - It may not auto-start Hou Tu execution.
-2. **Approval before handoff**
-   - Finalized plan must be approved before handoff preparation.
-3. **Plan file remains source of truth**
-   - `local://PLAN.md` remains canonical plan content.
-4. **Handoff must be stale-safe**
-   - If `PLAN.md` changes after handoff preparation, runtime must reject stale handoff.
-5. **Execution context starts at handoff boundary**
-   - Hou Tu should not inherit full planning chatter as execution context.
-
-## Minimal state model
-
-Current implementation still uses a few booleans, but conceptually the lifecycle is:
-
-- `drafting`
-- `gap_reviewed`
-- `finalized`
-- `approval_pending`
-- `approved`
-- `handoff_prepared`
-
-Execution-only runtime states are separate from plan lifecycle.
-
-## Future refactor direction
-
-If lifecycle complexity grows, move from flag-based orchestration to explicit transition handling:
-
-- `draft_saved`
-- `gap_review_recorded`
-- `plan_finalized`
-- `approval_requested`
-- `approval_granted`
-- `handoff_prepared`
-- `handoff_invalidated`
-- `handoff_consumed`
-
-That would keep plan mode and execution mode boundaries strict while preserving current behavior.
+- Plan mode prepares handoff only after approval.
+- Approval does not directly start implementation.
+- `/handoff:start-work` does not itself send the execution prompt; it prepares a child session and waits for the user.
+- Execution begins in the child session only after the user sends the preloaded prompt.
+- Di Renjie gap review is a prompt/protocol requirement, not a runtime state transition.
+- The current flow does not reject later plan edits automatically after approval.

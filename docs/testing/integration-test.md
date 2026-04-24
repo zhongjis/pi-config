@@ -179,7 +179,7 @@ await t.run(
 | Priority | Extension | Why |
 |----------|-----------|-----|
 | High | `modes/` | Complex hook interaction, plan-mode blocking, delegation filtering |
-| High | `handoff/` | Protocol lifecycle, session boundary crossing, bridge IPC |
+| High | `handoff/` | Protocol lifecycle, session boundary crossing, bridge RPC |
 | Medium | `tasks/` | Session state, subagent events, auto-clear logic |
 | Medium | `subagent/` | Background supervision, delegation policy |
 | Low | Simple extensions | Smoke test + unit tests sufficient |
