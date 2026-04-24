@@ -49,7 +49,7 @@ export default function (pi: ExtensionAPI) {
     const text =
       status === "blocked"
         ? ctx.ui.theme.fg("warning", "direnv:blocked")
-        : ctx.ui.theme.fg("danger", "direnv:error");
+        : ctx.ui.theme.fg("error", "direnv:error");
     ctx.ui.setStatus("direnv", text);
   }
 
@@ -168,10 +168,9 @@ export default function (pi: ExtensionAPI) {
     activateSession(ctx);
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
+  pi.on("session_switch" as "session_start", async (_event, ctx) => {
     activateSession(ctx);
   });
-
   pi.on("session_tree", async (_event, ctx) => {
     activateSession(ctx);
   });
