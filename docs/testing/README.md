@@ -6,7 +6,7 @@ Two-tier test architecture: unit tests for isolated logic, integration tests for
 
 | Tier | Location | Pi packages | What it validates | Command |
 |------|----------|-------------|-------------------|---------|
-| **Unit** | `extensions/*/test/`, `test/*.test.ts` | Stubs (fake) | Extension logic in isolation | `pnpm test:extensions` |
+| **Unit** | `extensions/*/test/` for extension-specific tests, `test/*.test.ts` for shared harness tests | Stubs (fake) | Extension logic in isolation | `pnpm test:extensions` |
 | **Integration** | `test/integration/` | Real (via pi-test-harness) | Extensions in real pi runtime | `pnpm test:integration` |
 
 ```bash
@@ -21,6 +21,8 @@ Two vitest projects defined inline in `vitest.config.ts` using the `projects` ar
 
 - **unit** — stubs `@mariozechner/*` via resolve aliases, includes `extensions/**/*.test.ts` + `test/**/*.test.ts`
 - **integration** — real pi packages, includes `test/integration/**/*.test.ts`, 30s timeout
+
+Rule: extension-specific unit tests stay next to their extension under `extensions/foo/test/`. Root `test/` holds shared harness tests, smoke coverage, fixtures, and stubs.
 
 ## Detailed Docs
 

@@ -36,6 +36,7 @@ pnpm lint:typecheck
 - Entrypoint shape: `extensions/foo.ts` or `extensions/foo/index.ts` only.
 - Promote layout gradually: bare file → flat directory → `src/` package. Do not skip straight to deep nesting.
 - For `src/` packages, keep `index.ts` as a re-export shim; implementation lives under `src/`, tests under `test/`.
+- Extension-specific unit tests belong with the extension under `extensions/foo/test/`; root `test/` is for shared smoke, fixtures, stubs, and other harness coverage.
 - Follow `CONVENTIONS.md` exactly for events:
   - `user-prompted` once before first blocking tool UI prompt
   - `awaitingUserAction.suppressContinuationReminder` for persisted waiting state

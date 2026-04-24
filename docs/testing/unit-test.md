@@ -4,10 +4,10 @@ Unit tests validate extension logic in isolation using hand-rolled stubs instead
 
 ## Location
 
-- `extensions/*/test/` — per-extension unit tests
+- `extensions/*/test/` — per-extension unit tests; extension-specific tests belong here, next to the extension
 - `test/extensions.smoke.test.ts` — auto-discovery smoke test for all extensions
 - `test/stubs/` — stub modules for `@mariozechner/pi-ai`, `pi-agent-core`, `pi-coding-agent`, `pi-tui`
-- `test/fixtures/` — `mock-pi.ts`, `mock-context.ts`
+- `test/fixtures/` — `mock-pi.ts`, `mock-context.ts`; root `test/` is for shared harness files, not per-extension specs
 
 ## Running
 
