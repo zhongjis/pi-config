@@ -1,4 +1,9 @@
-import type { AgentToolResult, ExtensionAPI, Theme, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
+import type {
+  AgentToolResult,
+  ExtensionAPI,
+  Theme,
+  ToolRenderResultOptions,
+} from "@mariozechner/pi-coding-agent";
 import {
   createBashToolDefinition,
   DEFAULT_MAX_BYTES,
@@ -16,10 +21,17 @@ import { resolve } from "node:path";
 
 const bashWithCwdSchema = Type.Object({
   command: Type.String({ description: "Bash command to execute" }),
-  timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
-  cwd: Type.Optional(Type.String({
-    description: "Working directory for this command. Prefer this over 'cd dir && command' — fails explicitly when the directory is missing.",
-  })),
+  timeout: Type.Optional(
+    Type.Number({
+      description: "Kill command after this many seconds (no default)",
+    }),
+  ),
+  cwd: Type.Optional(
+    Type.String({
+      description:
+        "Working directory. Resolves relative paths against context cwd. Fails explicitly if directory is missing.",
+    }),
+  ),
 });
 
 // ─── Extension ───────────────────────────────────────────────────────────────
@@ -28,24 +40,32 @@ export default function betterBashTool(pi: ExtensionAPI): void {
   const nativeDef = createBashToolDefinition(process.cwd());
 
   pi.registerTool({
-    ...nativeDef,               // inherits name ("bash"), label
-    description: "Execute a bash command in a specified or default working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Use the `cwd` parameter to set the working directory instead of 'cd dir && command'. Optionally provide a timeout in seconds.",
+    ...nativeDef, // inherits name ("bash"), label
+    description:
+      "Execute a bash command. Returns stdout and stderr, truncated to last 2000 lines or 50KB (whichever is hit first). Full output saved to a temp file when truncated. Set `cwd` to control working directory. Set `timeout` in seconds to limit execution time.",
     parameters: bashWithCwdSchema,
 
     promptGuidelines: [
-      "NEVER use 'cd dir && command' — always use the cwd parameter instead. 'cd dir && command' silently continues in wrong directory if cd fails; cwd parameter fails explicitly with a clear error.",
-      "BAD: bash({command: 'cd /foo && npm install'}). GOOD: bash({command: 'npm install', cwd: '/foo'})",
-      "BAD: bash({command: 'cd /repo && git status && cd /other && git log'}). GOOD: two separate bash calls each with the correct cwd parameter.",
-      "Reserve bash for git, build/test runners, package managers, ssh, curl, and process management.",
-      "Prefer native tools (read, find, grep, edit, write) over shell commands when available.",
+      "ALWAYS set the `cwd` parameter to target a directory. MUST NOT use `cd dir && command` — `cd` silently continues in the wrong directory on failure; `cwd` fails explicitly.",
+      "GOOD: bash({command: 'npm install', cwd: '/foo'}).  BAD: bash({command: 'cd /foo && npm install'}).",
+      "For commands in multiple directories, MUST use separate bash calls each with its own `cwd` — MUST NOT chain `cd` with `&&`.",
+      "SHOULD use native tools (read, find, grep, edit, write) over bash equivalents when available.",
+      "Reserve bash for: git, build/test runners, package managers, ssh, curl, and process management.",
     ],
 
     // 3-arg signature — _context unused, typed as unknown to avoid importing ToolRenderContext
-    renderCall(args: { command?: string; timeout?: number; cwd?: string }, theme: Theme, _context: unknown) {
+    renderCall(
+      args: { command?: string; timeout?: number; cwd?: string },
+      theme: Theme,
+      _context: unknown,
+    ) {
       const homedir = getHomedir();
       const command = typeof args.command === "string" ? args.command : "";
-      const cmdLine = theme.fg("toolTitle", theme.bold("$ ")) + theme.fg("accent", command);
-      const timeoutSuffix = args.timeout ? theme.fg("dim", ` (timeout ${args.timeout}s)`) : "";
+      const cmdLine =
+        theme.fg("toolTitle", theme.bold("$ ")) + theme.fg("accent", command);
+      const timeoutSuffix = args.timeout
+        ? theme.fg("dim", ` (timeout ${args.timeout}s)`)
+        : "";
 
       if (args.cwd && resolve(args.cwd) !== process.cwd()) {
         const displayCwd = args.cwd.startsWith(homedir)
@@ -84,10 +104,19 @@ export default function betterBashTool(pi: ExtensionAPI): void {
         if (options.expanded) {
           const lines = output.split("\n");
           const shownLines = lines.slice(0, 20);
-          const styledShown = shownLines.map((line) => theme.fg("toolOutput", line)).join("\n");
+          const styledShown = shownLines
+            .map((line) => theme.fg("toolOutput", line))
+            .join("\n");
           box.addChild(new Text("\n" + styledShown, 0, 0));
           if (lines.length > 20) {
-            box.addChild(new Text("\n" + theme.fg("muted", `... (${lines.length - 20} more lines)`), 0, 0));
+            box.addChild(
+              new Text(
+                "\n" +
+                  theme.fg("muted", `... (${lines.length - 20} more lines)`),
+                0,
+                0,
+              ),
+            );
           }
         } else {
           // Collapsed: last 5 visual lines
@@ -104,7 +133,10 @@ export default function betterBashTool(pi: ExtensionAPI): void {
 
           box.addChild({
             render: (width: number) => {
-              if (cachedState.lines === undefined || cachedState.width !== width) {
+              if (
+                cachedState.lines === undefined ||
+                cachedState.width !== width
+              ) {
                 const preview = truncateToVisualLines(styledOutput, 5, width);
                 cachedState.lines = preview.visualLines;
                 cachedState.skipped = preview.skippedCount;
@@ -112,9 +144,15 @@ export default function betterBashTool(pi: ExtensionAPI): void {
               }
               if (cachedState.skipped && cachedState.skipped > 0) {
                 const hint =
-                  theme.fg("muted", `... (${cachedState.skipped} earlier lines,`) +
-                  ` ${keyHint("app.tools.expand", "to expand")})`;
-                return ["", truncateToWidth(hint, width, "..."), ...(cachedState.lines ?? [])];
+                  theme.fg(
+                    "muted",
+                    `... (${cachedState.skipped} earlier lines,`,
+                  ) + ` ${keyHint("app.tools.expand", "to expand")})`;
+                return [
+                  "",
+                  truncateToWidth(hint, width, "..."),
+                  ...(cachedState.lines ?? []),
+                ];
               }
               return ["", ...(cachedState.lines ?? [])];
             },
@@ -138,12 +176,22 @@ export default function betterBashTool(pi: ExtensionAPI): void {
         }
         if (truncation?.truncated) {
           if (truncation.truncatedBy === "lines") {
-            warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
+            warnings.push(
+              `Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`,
+            );
           } else {
-            warnings.push(`Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`);
+            warnings.push(
+              `Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+            );
           }
         }
-        box.addChild(new Text("\n" + theme.fg("warning", `[${warnings.join(". ")}]`), 0, 0));
+        box.addChild(
+          new Text(
+            "\n" + theme.fg("warning", `[${warnings.join(". ")}]`),
+            0,
+            0,
+          ),
+        );
       }
 
       return box;
@@ -185,7 +233,9 @@ function sanitizeShellOutput(value: string): string {
 /** Filters type:"text" blocks, sanitizes, joins, and trims. */
 function getTextOutput(result: AgentToolResult<unknown>): string {
   return result.content
-    .filter((block): block is { type: "text"; text: string } => block.type === "text")
+    .filter(
+      (block): block is { type: "text"; text: string } => block.type === "text",
+    )
     .map((block) => sanitizeShellOutput(block.text))
     .join("")
     .trim();
