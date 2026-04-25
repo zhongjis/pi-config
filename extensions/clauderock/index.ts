@@ -68,6 +68,7 @@ function isQuotaError(err: unknown): boolean {
   const msg = getErrorText(err);
 
   if ("status" in err && (err as any).status === 402) return true;
+  if ("statusCode" in err && (err as any).statusCode === 402) return true;
 
   return msg.includes("billing") || msg.includes("credit")
       || msg.includes("spend limit") || msg.includes("quota");
@@ -77,7 +78,9 @@ function isOauthRateLimitFallback(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const msg = getErrorText(err);
   return ("status" in err && (err as any).status === 429)
-      || msg.includes("rate limit") || msg.includes("too many requests");
+      || ("statusCode" in err && (err as any).statusCode === 429)
+      || msg.includes("rate limit") || msg.includes("rate-limit")
+      || msg.includes("rate_limit") || msg.includes("too many requests");
 }
 
 /** Extract actionable diagnostics from AWS SDK errors (which often have opaque messages like 'Unknown: UnknownError'). */
@@ -275,6 +278,32 @@ function updateStatusBar(ctx: { ui: { setStatus(key: string, text: string | unde
   ctx.ui.setStatus("clauderock", t.fg("warning", "● Clauderock"));
 }
 
+function patchMessageModelId<T>(message: T, modelId: string): T {
+  if (!message || typeof message !== "object" || !("model" in message)) return message;
+  return { ...(message as Record<string, unknown>), model: modelId } as T;
+}
+
+function patchBedrockEventModelIds<T>(event: T, modelId: string): T {
+  if (!event || typeof event !== "object") return event;
+
+  const original = event as Record<string, unknown>;
+  let patched: Record<string, unknown> | null = null;
+  const ensurePatched = () => patched ??= { ...original };
+
+  if (typeof original.model === "string") {
+    ensurePatched().model = modelId;
+  }
+
+  for (const key of ["partial", "message", "error"] as const) {
+    const next = patchMessageModelId(original[key], modelId);
+    if (next !== original[key]) {
+      ensurePatched()[key] = next;
+    }
+  }
+
+  return (patched ?? original) as T;
+}
+
 // ---------------------------------------------------------------------------
 // Stream wrapper
 // ---------------------------------------------------------------------------
@@ -397,15 +426,19 @@ async function streamViaBedrock(
   options: SimpleStreamOptions | undefined,
   stream: ReturnType<typeof createAssistantMessageEventStream>,
 ): Promise<void> {
+  const profile = getPreferredAwsProfile();
+  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
   const bedrockModel: Model<any> = {
     ...originalModel,
     id: bedrockId,
     provider: "bedrock",
     api: "bedrock-converse-stream" as Api,
+    // Do not preserve Anthropic's base URL when routing through Bedrock.
+    // pi-ai 0.70 treats a non-empty baseUrl as the Bedrock endpoint; keeping
+    // "https://api.anthropic.com" sends AWS-signed Bedrock requests there and
+    // surfaces as an opaque "Unknown: UnknownError".
+    baseUrl: "",
   };
-
-  const profile = getPreferredAwsProfile();
-  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 
   // Credential resolution priority:
   //  1. Sync static creds from profile file → use those (AWS_PROFILE cleared)
@@ -423,6 +456,10 @@ async function streamViaBedrock(
     delete process.env.AWS_PROFILE;
   } else if (profile && !process.env.AWS_PROFILE) {
     process.env.AWS_PROFILE = profile;
+  }
+
+  if (!process.env.AWS_REGION && region) {
+    process.env.AWS_REGION = region;
   }
 
   // Only pass profile to streamSimple when no static creds exist — otherwise
@@ -451,22 +488,16 @@ async function streamViaBedrock(
     });
     let completionSeen = false;
     for await (const event of bedrockStream) {
+      const patchedEvent = patchBedrockEventModelIds(event, originalModel.id);
       // Rewrite model references so pi never sees the Bedrock model ID.
       // This prevents Bedrock IDs from leaking into pi state and breaking
       // subsequent requests (e.g., after a mode switch).
-      if (event.type === "done" || event.type === "error") {
+      if (patchedEvent.type === "done" || patchedEvent.type === "error") {
         completionSeen = true;
       }
-      if (event.type === "start") {
-        const patched: any = { ...event };
-        if (patched.model) patched.model = originalModel.id;
-        if (patched.message?.model) {
-          patched.message = { ...patched.message, model: originalModel.id };
-        }
-        stream.push(patched);
-      } else if (event.type === "error") {
+      if (patchedEvent.type === "error") {
         // Enrich opaque Bedrock error events with diagnostic details
-        const errObj = (event as any).error ?? event;
+        const errObj = (patchedEvent as any).error ?? patchedEvent;
         // Dump raw error for diagnostics — helps trace opaque "Unknown: UnknownError"
         try {
           const keys = errObj && typeof errObj === "object" ? Object.keys(errObj) : [];
@@ -487,12 +518,12 @@ async function streamViaBedrock(
         } catch { /* ignore logging errors */ }
         const diagnostic = formatBedrockError(errObj);
         const enriched = {
-          ...event,
+          ...patchedEvent,
           error: { ...(typeof errObj === "object" ? errObj : {}), message: diagnostic },
         };
         stream.push(enriched);
       } else {
-        stream.push(event);
+        stream.push(patchedEvent);
       }
     }
     if (!completionSeen) {

@@ -338,6 +338,21 @@ describe("model ID mapping", () => {
     );
   });
 
+  it("clears Anthropic baseUrl when constructing the Bedrock model", async () => {
+    piAiConfig.anthropicEvents = [errorEvent("quota exceeded")];
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup();
+    await collectStream(streamFn({
+      id: "claude-opus-4-6",
+      provider: "anthropic",
+      baseUrl: "https://api.anthropic.com",
+    }, CTX));
+
+    expect(piAiConfig.bedrockCallArgs[0][0].id).toBe("us.anthropic.claude-opus-4-6-v1");
+    expect(piAiConfig.bedrockCallArgs[0][0].baseUrl).toBe("");
+  });
+
   it("does not call Bedrock for unmapped model on quota error — forwards error", async () => {
     piAiConfig.anthropicEvents = [errorEvent("billing limit exceeded")];
 
@@ -399,7 +414,7 @@ describe("quota error detection via event stream", () => {
 });
 
 describe("rate-limit error detection via event stream", () => {
-  for (const keyword of ["rate limit", "too many requests"]) {
+  for (const keyword of ["rate limit", "rate-limit", "rate_limit_error", "too many requests"]) {
     it(`triggers fallback when error.errorMessage contains "${keyword}"`, async () => {
       piAiConfig.anthropicEvents = [errorEvent(`Request failed: ${keyword}`)];
       piAiConfig.bedrockEvents = [doneEvent()];
@@ -441,6 +456,17 @@ describe("quota/rate-limit detection via thrown error", () => {
 
   it("triggers fallback when thrown error has status 429", async () => {
     const err = Object.assign(new Error("too many requests"), { status: 429 });
+    piAiConfig.anthropicThrows = err;
+    piAiConfig.bedrockEvents = [doneEvent()];
+
+    const { streamFn } = await setup();
+    await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    expect(piAiConfig.bedrockCallArgs.length).toBe(1);
+  });
+
+  it("triggers fallback when thrown error has statusCode 429", async () => {
+    const err = Object.assign(new Error("request failed"), { statusCode: 429 });
     piAiConfig.anthropicThrows = err;
     piAiConfig.bedrockEvents = [doneEvent()];
 
@@ -1091,7 +1117,7 @@ describe("streamViaBedrock: start event model ID patching", () => {
     expect(startEv?.message?.other).toBe("data"); // other fields preserved
   });
 
-  it("does NOT patch partial.model in the official start event format", async () => {
+  it("rewrites partial.model in the official start event format", async () => {
     // Official format: { type: "start", partial: AssistantMessage }
     const bedrockStart = startEvent("us.anthropic.claude-sonnet-4-6");
     piAiConfig.anthropicEvents = [errorEvent("quota exceeded")];
@@ -1101,8 +1127,28 @@ describe("streamViaBedrock: start event model ID patching", () => {
     const events = await collectStream(streamFn(SONNET_MODEL, CTX));
 
     const startEv = events.find((e) => e.type === "start");
-    // partial.model is NOT patched (code only patches top-level 'model' and 'message.model')
-    expect(startEv?.partial?.model).toBe("us.anthropic.claude-sonnet-4-6");
+    expect(startEv?.partial?.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("rewrites done message.model to prevent Bedrock ID leaking into session history", async () => {
+    piAiConfig.anthropicEvents = [errorEvent("quota exceeded")];
+    piAiConfig.bedrockEvents = [
+      {
+        type: "done",
+        reason: "stop",
+        message: makeAssistantMessage({
+          api: "bedrock-converse-stream",
+          provider: "bedrock",
+          model: "us.anthropic.claude-sonnet-4-6",
+        }),
+      },
+    ];
+
+    const { streamFn } = await setup();
+    const events = await collectStream(streamFn(SONNET_MODEL, CTX));
+
+    const doneEv = events.find((e) => e.type === "done");
+    expect(doneEv?.message?.model).toBe("claude-sonnet-4-6");
   });
 
   it("forwards non-start events from Bedrock unchanged", async () => {
