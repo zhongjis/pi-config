@@ -35,22 +35,68 @@ export default function (pi: ExtensionAPI) {
   let sessionVersion = 0;
   let reloadVersion = 0;
 
-  function updateStatus(status: Status, version: number): void {
+  function isStaleContextError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /stale/i.test(message) && /(ctx|context)/i.test(message);
+  }
+
+  function deactivateStaleSession(version: number): void {
     if (version !== sessionVersion) return;
+    deactivateSession();
+  }
+
+  function getUsableActiveContext(
+    version: number,
+  ): { ctx: ExtensionContext; hasUI: boolean } | null {
+    if (version !== sessionVersion) return null;
 
     const ctx = activeCtx;
-    if (!ctx?.hasUI) return;
+    if (!ctx) return null;
 
-    if (status === "on" || status === "off") {
-      ctx.ui.setStatus("direnv", undefined);
-      return;
+    try {
+      return { ctx, hasUI: ctx.hasUI };
+    } catch (error) {
+      if (isStaleContextError(error)) {
+        deactivateStaleSession(version);
+        return null;
+      }
+
+      throw error;
     }
+  }
 
-    const text =
-      status === "blocked"
-        ? ctx.ui.theme.fg("warning", "direnv:blocked")
-        : ctx.ui.theme.fg("error", "direnv:error");
-    ctx.ui.setStatus("direnv", text);
+  function withUsableUi(
+    version: number,
+    update: (ctx: ExtensionContext) => void,
+  ): void {
+    const usable = getUsableActiveContext(version);
+    if (!usable?.hasUI) return;
+
+    try {
+      update(usable.ctx);
+    } catch (error) {
+      if (isStaleContextError(error)) {
+        deactivateStaleSession(version);
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  function updateStatus(status: Status, version: number): void {
+    withUsableUi(version, (ctx) => {
+      if (status === "on" || status === "off") {
+        ctx.ui.setStatus("direnv", undefined);
+        return;
+      }
+
+      const text =
+        status === "blocked"
+          ? ctx.ui.theme.fg("warning", "direnv:blocked")
+          : ctx.ui.theme.fg("error", "direnv:error");
+      ctx.ui.setStatus("direnv", text);
+    });
   }
 
   function loadDirenv(cwd: string, version: number): void {
@@ -65,6 +111,8 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
+
+      if (!getUsableActiveContext(version)) return;
       if (error) {
         const message = (stderr || error.message).toLowerCase();
         updateStatus(

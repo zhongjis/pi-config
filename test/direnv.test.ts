@@ -40,11 +40,24 @@ vi.mock("node:fs", async () => {
 
 import initDirenv from "../extensions/direnv.js";
 
-function createSessionContext(cwd: string) {
+type SessionContextOptions = {
+  hasUI?: boolean;
+  staleOnHasUI?: boolean;
+  staleOnStatus?: boolean;
+};
+
+function createSessionContext(
+  cwd: string,
+  options: SessionContextOptions = {},
+) {
   let stale = false;
   const base = createMockContext();
   const notify = vi.fn();
-  const setStatus = vi.fn();
+  const setStatus = vi.fn(() => {
+    if (stale && options.staleOnStatus) {
+      throw new Error(`stale ctx ${cwd}`);
+    }
+  });
 
   return {
     ctx: {
@@ -52,6 +65,13 @@ function createSessionContext(cwd: string) {
       get cwd() {
         if (stale) throw new Error(`stale ctx ${cwd}`);
         return cwd;
+      },
+      get hasUI() {
+        if (stale && options.staleOnHasUI) {
+          throw new Error(`stale ctx ${cwd}`);
+        }
+
+        return options.hasUI ?? true;
       },
       ui: {
         ...base.ui,
@@ -76,12 +96,16 @@ describe("direnv", () => {
     mockState.watcherCloses.length = 0;
     delete process.env.DIRENV_NEW;
     delete process.env.DIRENV_OLD;
+    delete process.env.DIRENV_STALE;
+    delete process.env.DIRENV_HEADLESS;
   });
 
   afterEach(() => {
     vi.useRealTimers();
     delete process.env.DIRENV_NEW;
     delete process.env.DIRENV_OLD;
+    delete process.env.DIRENV_STALE;
+    delete process.env.DIRENV_HEADLESS;
   });
 
   it("cancels pending debounced reloads when tree navigation rebinds session ctx", async () => {
@@ -135,5 +159,61 @@ describe("direnv", () => {
     newCallback?.(null, '{"DIRENV_NEW":"1"}', "");
 
     expect(process.env.DIRENV_NEW).toBe("1");
+  });
+
+  it("ignores in-flight exec callbacks when active ctx becomes stale", async () => {
+    const mock = createMockPi();
+    initDirenv(mock.pi as never);
+
+    const session = createSessionContext("/repo/one", { staleOnHasUI: true });
+
+    await mock.fireLifecycle("session_start", {}, session.ctx);
+    expect(mockState.execCalls).toEqual(["/repo/one"]);
+
+    const callback = mockState.execCallbacks[0];
+    expect(callback).toBeDefined();
+
+    session.markStale();
+
+    expect(() => callback?.(null, '{"DIRENV_STALE":"1"}', "")).not.toThrow();
+    expect(process.env.DIRENV_STALE).toBeUndefined();
+    expect(session.setStatus).not.toHaveBeenCalled();
+  });
+
+  it("ignores stale UI errors while updating status", async () => {
+    const mock = createMockPi();
+    initDirenv(mock.pi as never);
+
+    const session = createSessionContext("/repo/one", { staleOnStatus: true });
+
+    await mock.fireLifecycle("session_start", {}, session.ctx);
+    expect(mockState.execCalls).toEqual(["/repo/one"]);
+
+    const callback = mockState.execCallbacks[0];
+    expect(callback).toBeDefined();
+
+    session.markStale();
+
+    expect(() =>
+      callback?.(new Error("blocked"), "", "direnv blocked by .envrc"),
+    ).not.toThrow();
+  });
+
+  it("loads env without status updates when no UI is available", async () => {
+    const mock = createMockPi();
+    initDirenv(mock.pi as never);
+
+    const session = createSessionContext("/repo/one", { hasUI: false });
+
+    await mock.fireLifecycle("session_start", {}, session.ctx);
+    expect(mockState.execCalls).toEqual(["/repo/one"]);
+
+    const callback = mockState.execCallbacks[0];
+    expect(callback).toBeDefined();
+
+    callback?.(null, '{"DIRENV_HEADLESS":"1"}', "");
+
+    expect(process.env.DIRENV_HEADLESS).toBe("1");
+    expect(session.setStatus).not.toHaveBeenCalled();
   });
 });
