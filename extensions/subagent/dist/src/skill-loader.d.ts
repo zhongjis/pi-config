@@ -1,16 +1,18 @@
 /**
  * skill-loader.ts — Preload specific skill files and inject their content into the system prompt.
  *
- * When skills is a string[], reads each named skill from .pi/skills/ or ~/.pi/skills/
- * and returns their content for injection into the agent's system prompt.
+ * When skills is a string[], reads each named skill from Pi skill locations and
+ * returns their content for injection into the agent's system prompt.
  */
 export interface PreloadedSkill {
     name: string;
     content: string;
+    sourcePath?: string;
+    baseDir?: string;
 }
 /**
  * Attempt to load named skills from project and global skill directories.
- * Looks for: <dir>/<name>.md, <dir>/<name>.txt, <dir>/<name>
+ * Supports Pi directory skills (`<name>/SKILL.md`) plus legacy flat files.
  *
  * @param skillNames  List of skill names to preload.
  * @param cwd         Working directory for project-level skills.

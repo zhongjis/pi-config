@@ -10,6 +10,8 @@ export interface PromptExtras {
     skillBlocks?: {
         name: string;
         content: string;
+        sourcePath?: string;
+        baseDir?: string;
     }[];
 }
 /**

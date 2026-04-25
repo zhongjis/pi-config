@@ -23,7 +23,9 @@ Platform: ${env.platform}`;
     }
     if (extras?.skillBlocks?.length) {
         for (const skill of extras.skillBlocks) {
-            extraSections.push(`\n# Preloaded Skill: ${skill.name}\n${skill.content}`);
+            const sourceLine = skill.sourcePath ? `Source: ${skill.sourcePath}\n` : "";
+            const baseDirLine = skill.baseDir ? `Skill directory: ${skill.baseDir}\nRelative references resolve from this skill directory.\n` : "";
+            extraSections.push(`\n# Preloaded Skill: ${skill.name}\n${sourceLine}${baseDirLine}${skill.content}`);
         }
     }
     const extrasSuffix = extraSections.length > 0 ? "\n\n" + extraSections.join("\n") : "";
