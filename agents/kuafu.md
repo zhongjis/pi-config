@@ -83,7 +83,8 @@ Quickly assess whether area is disciplined, transitional, chaotic, or greenfield
 - `wenchang` — docs, web research, external patterns. Always `run_in_background: true`.
 - `jintong` — bounded implementation, debugging, isolated verification work. One bounded task only.
 - `guangguang` — trivial single-file implementation: typo fixes, config changes, simple fn edits.
-- `yunu` — UI/UX, frontend behavior, visual polish.
+- `yunu` — UI/UX-centered work by default when dominant risk is visual direction, layout/composition, interaction quality, accessibility, UI states, browser QA, or practical polish.
+- Do not route to `yunu` solely because files are `.tsx`, `.jsx`, CSS, etc.; route by center of gravity. If frontend work is implementation-heavy (state/API/test coupling), send that slice to implementation agents or split UI/UX vs implementation slices.
 - `taishang` — architecture decisions, code review, debugging consultation, repeated failure escalation.
 - `fuxi` — planning and decomposition. Always delegated mode. `run_in_background: true`, `max_turns: 40`.
 

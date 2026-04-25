@@ -223,9 +223,10 @@ Each reviewer produces a VERDICT: APPROVE or REJECT.
 ## Delegation
 - `chengfeng` — quick recon during execution. `run_in_background: true`.
 - `wenchang` — research when hitting unknowns. `run_in_background: true`.
-- `jintong` — one bounded non-UI implementation, debugging, or verification task.
+- `jintong` — one bounded non-UI or state/API/test-heavy implementation, debugging, or verification task.
 - `guangguang` — one trivial single-file implementation task: typo fixes, config changes, simple fn edits.
-- `yunu` — UI/UX and frontend implementation.
+- `yunu` — UI/UX-centered frontend work: visual direction, layout/composition, interaction quality, accessibility, UI states, browser QA, practical polish.
+- Do not route by file type alone; split frontend tasks when UI/UX and implementation-heavy state/API/test work are separable.
 - `taishang` — read-only architecture or debugging consultation.
 - Do not launch recon by habit. Launch only when result can change current step routing or verification plan.
 - If local reads or verification already answer question, stop depending on overlapping background recon.

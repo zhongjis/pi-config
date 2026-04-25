@@ -8,7 +8,7 @@ inherit_context: false
 run_in_background: false
 tools: read,grep,find,ls,bash,write,edit
 extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve
-allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo
+allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu
 disallow_delegation_to: houtu
 allow_nesting: true
 ---
@@ -121,6 +121,7 @@ Planning rule:
 - One plan step should map to one bounded execution chunk.
 - If two chunks can run independently, separate them instead of merging for convenience.
 - If work would force one worker to juggle multiple concerns, split it.
+- For frontend/product-surface work, split UI/UX slices for `yunu` from state/API/test-heavy implementation slices for implementation agents.
 ---
 
 ## Draft Management (MANDATORY — Start Immediately)
