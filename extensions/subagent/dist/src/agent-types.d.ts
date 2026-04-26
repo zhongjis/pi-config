@@ -6,7 +6,7 @@
  */
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { AgentConfig } from "./types.js";
-/** All known built-in tool names, derived from the factory registry. */
+/** Default built-in tool names for agents that do not configure `tools`. */
 export declare const BUILTIN_TOOL_NAMES: string[];
 /**
  * Register agents into the unified registry.

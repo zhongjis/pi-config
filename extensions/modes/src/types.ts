@@ -6,7 +6,7 @@ export interface ModeConfig {
 	body: string;
 	promptMode?: ModePromptMode;
 	tools?: string[];
-	extensions?: string[] | true;
+	extensions?: string[] | true | false;
 	disallowedTools?: string[];
 	allowDelegationTo?: string[];
 	disallowDelegationTo?: string[];

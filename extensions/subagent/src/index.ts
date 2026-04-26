@@ -1531,7 +1531,7 @@ Guidelines:
     const fmFields: string[] = [];
     fmFields.push(`description: ${cfg.description}`);
     if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
-    fmFields.push(`tools: ${cfg.builtinToolNames?.join(", ") || "all"}`);
+    fmFields.push(`tools: ${cfg.builtinToolNames?.join(", ") || BUILTIN_TOOL_NAMES.join(", ")}`);
     if (cfg.model) fmFields.push(`model: ${cfg.model}`);
     if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
     if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
@@ -1661,7 +1661,7 @@ The file format is a markdown file with YAML frontmatter and a system prompt bod
 \`\`\`markdown
 ---
 description: <one-line description shown in UI>
-tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no tools. Omit for all tools>
+tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no tools. Omit for default tools: read, bash, edit, write>
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5-20251001". Omit to inherit parent model>
 thinking: <optional thinking level: none, minimal, low, medium, high, xhigh. Omit to inherit>
 max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
@@ -1721,11 +1721,11 @@ Write the file using the write tool. Only write the file, nothing else.`;
     if (!description) return;
 
     // 3. Tools
-    const toolChoice = await ctx.ui.select("Tools", ["all", "none", "read-only (read, bash, grep, find, ls)", "custom..."]);
+    const toolChoice = await ctx.ui.select("Tools", ["default (read, bash, edit, write)", "none", "read-only (read, bash, grep, find, ls)", "custom..."]);
     if (!toolChoice) return;
 
     let tools: string;
-    if (toolChoice === "all") {
+    if (toolChoice.startsWith("default")) {
       tools = BUILTIN_TOOL_NAMES.join(", ");
     } else if (toolChoice === "none") {
       tools = "none";

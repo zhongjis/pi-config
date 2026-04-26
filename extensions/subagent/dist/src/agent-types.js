@@ -15,8 +15,8 @@ const TOOL_FACTORIES = {
     find: (cwd) => createFindTool(cwd),
     ls: (cwd) => createLsTool(cwd),
 };
-/** All known built-in tool names, derived from the factory registry. */
-export const BUILTIN_TOOL_NAMES = Object.keys(TOOL_FACTORIES);
+/** Default built-in tool names for agents that do not configure `tools`. */
+export const BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write"];
 /** Unified runtime registry of all agents (defaults + user-defined). */
 const agents = new Map();
 /**

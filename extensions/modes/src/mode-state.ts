@@ -7,6 +7,12 @@ function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
 }
 
+const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+
+function isExtensionTool(toolName: string): boolean {
+	return !BUILTIN_TOOL_NAMES.has(toolName);
+}
+
 /**
  * Resolve a model string to a Model object.
  * Matching strategies (in order): exact "provider/modelId" → exact modelId → starts-with on modelId.
@@ -92,30 +98,41 @@ export class ModeStateManager {
 	async applyMode(ctx: ExtensionContext): Promise<void> {
 		const config = this.loadConfig(this.currentMode);
 		const allToolNames = this.pi.getAllTools().map((t) => t.name);
+		const activeToolNames = this.pi.getActiveTools().filter((t) => allToolNames.includes(t));
 
-		let active: string[];
+		let active: string[] | undefined;
 
-		if (config.tools || (config.extensions && config.extensions !== true)) {
+		if (config.tools) {
 			const allowed = new Set<string>();
-			if (config.tools) {
-				for (const t of config.tools) if (allToolNames.includes(t)) allowed.add(t);
+			for (const t of config.tools) if (allToolNames.includes(t)) allowed.add(t);
+
+			if (config.extensions !== false) {
+				const extensionTools = Array.isArray(config.extensions)
+					? config.extensions
+					: activeToolNames.filter(isExtensionTool);
+				for (const t of extensionTools) if (allToolNames.includes(t)) allowed.add(t);
 			}
-			if (Array.isArray(config.extensions)) {
-				for (const t of config.extensions) if (allToolNames.includes(t)) allowed.add(t);
-			} else {
-				for (const t of allToolNames) allowed.add(t);
+
+			active = Array.from(allowed);
+		} else if (config.extensions !== undefined) {
+			const allowed = new Set(activeToolNames.filter((t) => BUILTIN_TOOL_NAMES.has(t)));
+			if (config.extensions !== false) {
+				const extensionTools = Array.isArray(config.extensions)
+					? config.extensions
+					: activeToolNames.filter(isExtensionTool);
+				for (const t of extensionTools) if (allToolNames.includes(t)) allowed.add(t);
 			}
 			active = Array.from(allowed);
-		} else {
-			active = [...allToolNames];
+		} else if (config.disallowedTools?.length) {
+			active = activeToolNames;
 		}
 
-		if (config.disallowedTools?.length) {
+		if (active && config.disallowedTools?.length) {
 			const denied = new Set(config.disallowedTools);
 			active = active.filter((t) => !denied.has(t));
 		}
 
-		this.pi.setActiveTools(active);
+		if (active) this.pi.setActiveTools(active);
 
 		if (config.model) {
 			const resolved = resolveModelFromStr(config.model, ctx.modelRegistry);

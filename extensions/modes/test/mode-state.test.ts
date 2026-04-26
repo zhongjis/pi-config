@@ -48,10 +48,11 @@ describe("resolveModelFromStr", () => {
 });
 
 describe("ModeStateManager", () => {
-	function createMockPi() {
+	function createMockPi(activeTools = ["read", "write", "bash"]) {
 		return {
 			appendEntry: vi.fn(),
-			getAllTools: () => [{ name: "read" }, { name: "write" }, { name: "bash" }],
+			getAllTools: () => [{ name: "read" }, { name: "write" }, { name: "bash" }, { name: "grep" }, { name: "find" }, { name: "ls" }, { name: "web_search" }],
+			getActiveTools: () => activeTools,
 			setActiveTools: vi.fn(),
 			setModel: vi.fn(),
 		};
@@ -95,10 +96,10 @@ describe("ModeStateManager", () => {
 		expect(state.currentMode).toBe("kuafu");
 	});
 
-	it("filters tools based on whitelist", async () => {
-		const pi = createMockPi();
+	it("filters tools based on whitelist without enabling extra built-ins", async () => {
+		const pi = createMockPi(["read", "write", "bash", "web_search"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "prompt", tools: ["read", "write"], extensions: [] };
+		state.cachedConfigs.kuafu = { body: "prompt", tools: ["read", "write"] };
 
 		const ctx = {
 			hasUI: false,
@@ -107,11 +108,11 @@ describe("ModeStateManager", () => {
 		};
 
 		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write"]);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
 	});
 
-	it("filters tools based on blacklist", async () => {
-		const pi = createMockPi();
+	it("filters tools based on blacklist from the current active set", async () => {
+		const pi = createMockPi(["read", "write", "bash", "web_search"]);
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs.kuafu = { body: "prompt", disallowedTools: ["bash"] };
 
@@ -122,7 +123,22 @@ describe("ModeStateManager", () => {
 		};
 
 		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write"]);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
+	});
+
+	it("does not change active tools when mode has no tool settings", async () => {
+		const pi = createMockPi(["read", "write", "bash", "web_search"]);
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.kuafu = { body: "prompt" };
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+		};
+
+		await state.applyMode(ctx as never);
+		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 
 	it("resets plan review state", () => {

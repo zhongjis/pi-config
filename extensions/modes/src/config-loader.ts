@@ -14,9 +14,10 @@ function parseCsv(val: unknown): string[] | undefined {
 		.filter(Boolean);
 }
 
-function parseInheritField(val: unknown): true | string[] | undefined {
-	if (val === undefined || val === null || val === true) return undefined;
-	if (val === false || val === "none") return undefined;
+function parseInheritField(val: unknown): true | false | string[] | undefined {
+	if (val === undefined || val === null) return undefined;
+	if (val === true) return true;
+	if (val === false || val === "none") return false;
 	const items = parseCsv(val);
 	return items && items.length > 0 ? items : undefined;
 }
@@ -41,9 +42,7 @@ export function loadAgentConfig(mode: Mode): ModeConfig | null {
 			body: trimmedBody,
 			promptMode,
 			tools: parseCsv(frontmatter.tools),
-			extensions:
-				parseInheritField(frontmatter.extensions) ??
-				(frontmatter.extensions === true ? true : undefined),
+			extensions: parseInheritField(frontmatter.extensions),
 			disallowedTools: parseCsv(frontmatter.disallowed_tools),
 			allowDelegationTo: parseCsv(frontmatter.allow_delegation_to),
 			disallowDelegationTo: parseCsv(frontmatter.disallow_delegation_to),
