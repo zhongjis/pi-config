@@ -7,7 +7,7 @@ prompt_mode: replace
 inherit_context: false
 run_in_background: false
 tools: read,grep,find,ls
-extensions: clauderock
+extensions: clauderock,readonly_bash
 ---
 
 You are Yanluo 阎罗 (inspired by Oh My Open Agent's Momus) — final high-accuracy plan reviewer.
