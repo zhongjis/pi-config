@@ -42,25 +42,33 @@ TaskUpdate({ taskId: "2", addBlockedBy: ["1"] })
 TaskUpdate({ taskId: "3", addBlockedBy: ["2"] })
 ```
 
-## Step 0.5: Initialize Notepad
+## Step 0.5: Initialize Split Notepad
 
-Write `local://NOTEPAD.md` with these section headers:
+Write separate section-scoped local files instead of one combined notepad:
 
 ```md
-## Learnings
+local://NOTEPAD.learnings.md
+# Learnings
+
 Conventions, patterns, and codebase knowledge discovered during execution.
 
-## Decisions
+local://NOTEPAD.decisions.md
+# Decisions
+
 Architectural and implementation choices made (and why).
 
-## Issues
+local://NOTEPAD.issues.md
+# Issues
+
 Problems encountered and how they were resolved.
 
-## Unresolved Blockers
+local://NOTEPAD.blockers.md
+# Unresolved Blockers
+
 Open problems that could not be resolved.
 ```
 
-This is your accumulating wisdom store. It survives across waves and gets passed to every subagent.
+Use `write` once per file during initialization. These files are your accumulating wisdom store. They survive across waves and relevant excerpts get passed to every subagent.
 
 ## Step 1: Analyze Plan
 
@@ -88,7 +96,12 @@ Mark the current wave's pi-task `in_progress`.
 
 Read `local://PLAN.md` to confirm current progress. Count remaining top-level checkboxes. This is your ground truth for what comes next.
 
-Read `local://NOTEPAD.md` for accumulated learnings, decisions, and known issues from prior delegations.
+Read relevant split notepad files before each delegation:
+
+- Always read `local://NOTEPAD.learnings.md` and `local://NOTEPAD.decisions.md`.
+- Also read `local://NOTEPAD.issues.md` when prior failures may affect this task.
+- Also read `local://NOTEPAD.blockers.md` when blockers may affect routing or scope.
+- Synthesize only relevant entries into `ACCUMULATED CONTEXT`; do not dump unrelated history.
 
 Anti-duplication rule:
 - If recon was already delegated for a question, do not repeat the same search yourself unless verification exposed a real gap.
@@ -107,7 +120,7 @@ Every delegation prompt MUST include all 7 sections (under 30 lines = too short)
 4. `MUST DO` — exhaustive requirements
 5. `MUST NOT DO` — forbidden actions
 6. `CONTEXT` — file paths, patterns, constraints
-7. `ACCUMULATED CONTEXT` — relevant entries from notepad (learnings, decisions, known issues that affect this task)
+7. `ACCUMULATED CONTEXT` — relevant entries synthesized from split notepad files (learnings, decisions, known issues, blockers that affect this task)
 
 ### 2.3 Verify (MANDATORY — EVERY SINGLE DELEGATION)
 
@@ -163,14 +176,14 @@ Skip this step only when the task is purely internal (type definitions, refactor
 
 After a task passes verification, edit `local://PLAN.md` to change `- [ ]` to `- [x]` for the completed task. The plan file is the granular source of truth for task-level progress.
 
-### 2.5 Update Notepad
+### 2.5 Update Split Notepad
 
-After each delegation (whether it passed or failed), append any new findings to `local://NOTEPAD.md`:
+After each delegation (whether it passed or failed), append new findings to the section-specific file:
 
-- **Learnings**: codebase conventions, patterns, or file structures discovered
-- **Decisions**: implementation choices made and rationale
-- **Issues**: problems hit and how they were resolved
-- **Unresolved Blockers**: problems that remain open
+- `local://NOTEPAD.learnings.md`: codebase conventions, patterns, or file structures discovered
+- `local://NOTEPAD.decisions.md`: implementation choices made and rationale
+- `local://NOTEPAD.issues.md`: problems hit and how they were resolved
+- `local://NOTEPAD.blockers.md`: problems that remain open
 
 Append only — never overwrite previous entries. Keep entries terse (1-2 lines each).
 
@@ -247,7 +260,7 @@ Each reviewer produces a VERDICT: APPROVE or REJECT.
 - Use `lsp_diagnostics`, `grep`, `find`
 - Manage pi-tasks (wave-level progress tracking)
 - **Edit `local://PLAN.md` to change `- [ ]` to `- [x]` after verified task completion**
-- **Read and append to `local://NOTEPAD.md`** for accumulating execution wisdom
+- **Read and append to split `local://NOTEPAD.*.md` files** for accumulating execution wisdom
 - Coordinate and verify
 
 **YOU DELEGATE**:
@@ -307,7 +320,7 @@ FILES MODIFIED: [list]
 
 **ALWAYS**:
 - Include ALL 7 sections in delegation prompts
-- Read `local://PLAN.md` and `local://NOTEPAD.md` before every delegation
+- Read `local://PLAN.md` plus relevant split `local://NOTEPAD.*.md` files before every delegation
 - Run full QA after every delegation
 - Parallelize independent tasks within a wave
 - Verify with your own tools
