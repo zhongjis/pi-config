@@ -277,6 +277,9 @@ export async function runAgent(
       if (EXCLUDED_TOOL_NAMES.includes(t) && !agentConfig?.allowNesting) return false;
       if (disallowedSet?.has(t)) return false;
       if (builtinToolNames.has(t)) return true;
+      if (t === "readonly_bash") {
+        return Array.isArray(extensions) && extensions.includes("readonly_bash");
+      }
       if (Array.isArray(extensions)) {
         return extensions.some(ext => t.startsWith(ext) || t.includes(ext));
       }
