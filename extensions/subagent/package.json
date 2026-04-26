@@ -32,7 +32,7 @@
     "test": "vitest run --root ../.. extensions/subagent/src",
     "test:watch": "vitest --root ../.. extensions/subagent/src",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src/ test/",
+    "lint": "biome check src",
     "lint:fix": "biome check --fix src/ test/"
   },
   "devDependencies": {
