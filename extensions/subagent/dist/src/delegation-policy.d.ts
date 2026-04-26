@@ -18,4 +18,3 @@ export declare function resolveDelegationRequest(policy: DelegationPolicy, reque
 };
 export declare function buildDelegationBlockedMessage(delegatorType: string, requestedType: string, resolvedType: string, permittedTypes: string[]): string;
 export declare function getCurrentDelegatorType(entries: ModeStateEntryLike[]): string | undefined;
-export {};

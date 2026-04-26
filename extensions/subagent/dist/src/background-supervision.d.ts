@@ -23,4 +23,3 @@ export declare function getBackgroundSupervisionAction(args: {
     action: BackgroundSupervisionAction;
     idleMs: number;
 };
-export {};

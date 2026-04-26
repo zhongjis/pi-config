@@ -19,4 +19,3 @@ export declare function resolveAgentInvocationConfig(agentConfig: AgentConfig | 
     isolation?: IsolationMode;
 };
 export declare function resolveJoinMode(defaultJoinMode: JoinMode, runInBackground: boolean): JoinMode | undefined;
-export {};
