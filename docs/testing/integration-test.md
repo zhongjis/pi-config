@@ -57,7 +57,7 @@ These are in root `devDependencies` (aligned with nix pi version):
 
 ```typescript
 when("Deploy the app", [
-  calls("bash", { command: "npm run build" }),
+  calls("bash", { command: "pnpm run build" }),
   calls("bash", { command: "gcloud run deploy" }),
   says("Deployed successfully."),
 ])
