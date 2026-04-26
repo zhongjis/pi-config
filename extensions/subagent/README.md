@@ -149,7 +149,7 @@ All fields are optional — sensible defaults for everything.
 |-------|---------|-------------|
 | `description` | filename | Agent description shown in tool listings |
 | `display_name` | — | Display name for UI (e.g. widget, agent list) |
-| `tools` | read, bash, edit, write | Comma-separated built-in tools: read, bash, edit, write, grep, find, ls. `none` for no tools |
+| `tools` | read, bash, edit, write | Comma-separated built-in tools: read, bash, edit, write. Use bash with `rg`/`fd`/`ls` for search and listing instead of grep/find/ls tools. `none` for no tools |
 | `extensions` | `true` | Inherit MCP/extension tools. `false` to disable |
 | `skills` | `true` | Inherit skills from parent. Can be a comma-separated list of skill names to preload from `.pi/skills/` |
 | `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |

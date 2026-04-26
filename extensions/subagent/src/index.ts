@@ -1582,7 +1582,7 @@ The file format is a markdown file with YAML frontmatter and a system prompt bod
 \`\`\`markdown
 ---
 description: <one-line description shown in UI>
-tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no tools. Omit for default tools: read, bash, edit, write>
+tools: <comma-separated built-in tools: read, bash, edit, write. Use bash with rg/fd/ls for search/listing instead of grep/find/ls tools. Use "none" for no tools. Omit for default tools: read, bash, edit, write>
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5-20251001". Omit to inherit parent model>
 thinking: <optional thinking level: none, minimal, low, medium, high, xhigh. Omit to inherit>
 max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
@@ -1603,7 +1603,7 @@ isolation: <"worktree" to run in isolated git worktree. Omit for normal>
 \`\`\`
 
 Guidelines for choosing settings:
-- For read-only tasks (review, analysis): tools: read, bash, grep, find, ls
+- For read-only tasks (review, analysis): tools: read, bash; use bash commands rg/fd/ls for search/listing
 - For code modification tasks: include edit, write
 - Use prompt_mode: append if the agent should keep the default system prompt and add specialization on top
 - Use prompt_mode: replace for fully custom agents with their own personality/instructions
@@ -1648,7 +1648,7 @@ Write the file using the write tool. Only write the file, nothing else.`;
     if (!description) return;
 
     // 3. Tools
-    const toolChoice = await ctx.ui.select("Tools", ["default (read, bash, edit, write)", "none", "read-only (read, bash, grep, find, ls)", "custom..."]);
+    const toolChoice = await ctx.ui.select("Tools", ["default (read, bash, edit, write)", "none", "read-only (read, bash; use rg/fd/ls)", "custom..."]);
     if (!toolChoice) return;
 
     let tools: string;
@@ -1657,7 +1657,7 @@ Write the file using the write tool. Only write the file, nothing else.`;
     } else if (toolChoice === "none") {
       tools = "none";
     } else if (toolChoice.startsWith("read-only")) {
-      tools = "read, bash, grep, find, ls";
+      tools = "read, bash";
     } else {
       const customTools = await ctx.ui.input("Tools (comma-separated)", BUILTIN_TOOL_NAMES.join(", "));
       if (!customTools) return;
