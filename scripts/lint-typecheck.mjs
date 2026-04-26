@@ -6,9 +6,10 @@ const rootChecks = [
   ["pnpm", ["exec", "tsc", "--noEmit", "-p", "tsconfig.json"]]
 ];
 
-const packageDirs = [];
+const packageDirs = ["extensions/subagent", "extensions/tasks"];
 
 function run(command, args) {
+  console.log(`\n$ ${command} ${args.join(" ")}`);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: process.cwd(),
