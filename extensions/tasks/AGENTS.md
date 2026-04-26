@@ -18,10 +18,10 @@ Task-tracking extension: Claude Code-style task tools, persistent widget, file-b
 Run from `extensions/tasks/`.
 
 ```bash
-npm run test
-npm run typecheck
-npm run lint
-npm run build
+pnpm run test
+pnpm run typecheck
+pnpm run lint
+pnpm run build
 ```
 
 ## Always
