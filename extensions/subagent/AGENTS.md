@@ -10,7 +10,7 @@ Background/foreground subagent runtime: tool surface, queueing, widget UI, event
 | Execution / resume / max-turn behavior | `src/agent-runner.ts` | Session creation + graceful wrap-up |
 | Queueing / active-state bookkeeping | `src/agent-manager.ts` | Running vs queued agents |
 | Cross-extension RPC | `src/cross-extension-rpc.ts` | `ping`, `spawn`, `stop` handlers |
-| Agent registry / defaults | `src/agent-types.ts`, `src/default-agents.ts`, `src/custom-agents.ts` | Default + user overrides |
+| Agent registry / custom definitions | `src/agent-types.ts`, `src/custom-agents.ts` | Custom agent loading, disabled-agent filtering |
 | Widget / viewer | `src/ui/` | Persistent widget + conversation viewer |
 | Isolation / memory / skill loading | `src/worktree.ts`, `src/memory.ts`, `src/skill-loader.ts` | Side systems with user-visible effects |
 | Regression coverage | `src/*.test.ts` | Keep behavior changes paired with tests |
