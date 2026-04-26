@@ -32,7 +32,7 @@
     "test": "vitest run --root ../.. extensions/tasks/test",
     "test:watch": "vitest --root ../.. extensions/tasks/test",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src/ test/",
+    "lint": "biome check --config-path biome.json src test",
     "lint:fix": "biome check --fix src/ test/"
   },
   "devDependencies": {

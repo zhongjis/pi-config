@@ -21,8 +21,8 @@ import { Type } from "typebox";
 import { AutoClearManager } from "./auto-clear.js";
 import { ProcessTracker } from "./process-tracker.js";
 import { TaskStore } from "./task-store.js";
-import type { Task } from "./types.js";
 import { loadTasksConfig } from "./tasks-config.js";
+import type { Task } from "./types.js";
 import { openSettingsMenu } from "./ui/settings-menu.js";
 import { TaskWidget, type UICtx } from "./ui/task-widget.js";
 
