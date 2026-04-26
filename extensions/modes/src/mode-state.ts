@@ -13,6 +13,14 @@ function isExtensionTool(toolName: string): boolean {
 	return !BUILTIN_TOOL_NAMES.has(toolName);
 }
 
+function configAllowsReadonlyBash(config: ModeConfig): boolean {
+	return Array.isArray(config.extensions) && config.extensions.includes("readonly_bash");
+}
+
+function canAddExtensionTool(toolName: string, config: ModeConfig): boolean {
+	return toolName !== "readonly_bash" || configAllowsReadonlyBash(config);
+}
+
 /**
  * Resolve a model string to a Model object.
  * Matching strategies (in order): exact "provider/modelId" → exact modelId → starts-with on modelId.
@@ -104,13 +112,13 @@ export class ModeStateManager {
 
 		if (config.tools) {
 			const allowed = new Set<string>();
-			for (const t of config.tools) if (allToolNames.includes(t)) allowed.add(t);
+			for (const t of config.tools) if (allToolNames.includes(t) && canAddExtensionTool(t, config)) allowed.add(t);
 
 			if (config.extensions !== false) {
 				const extensionTools = Array.isArray(config.extensions)
 					? config.extensions
 					: activeToolNames.filter(isExtensionTool);
-				for (const t of extensionTools) if (allToolNames.includes(t)) allowed.add(t);
+				for (const t of extensionTools) if (allToolNames.includes(t) && canAddExtensionTool(t, config)) allowed.add(t);
 			}
 
 			active = Array.from(allowed);
@@ -120,7 +128,7 @@ export class ModeStateManager {
 				const extensionTools = Array.isArray(config.extensions)
 					? config.extensions
 					: activeToolNames.filter(isExtensionTool);
-				for (const t of extensionTools) if (allToolNames.includes(t)) allowed.add(t);
+				for (const t of extensionTools) if (allToolNames.includes(t) && canAddExtensionTool(t, config)) allowed.add(t);
 			}
 			active = Array.from(allowed);
 		} else if (config.disallowedTools?.length) {
@@ -130,6 +138,12 @@ export class ModeStateManager {
 		if (active && config.disallowedTools?.length) {
 			const denied = new Set(config.disallowedTools);
 			active = active.filter((t) => !denied.has(t));
+		}
+
+		if (!configAllowsReadonlyBash(config)) {
+			const source = active ?? activeToolNames;
+			const filtered = source.filter((t) => t !== "readonly_bash");
+			if (filtered.length !== source.length) active = filtered;
 		}
 
 		if (active) this.pi.setActiveTools(active);
