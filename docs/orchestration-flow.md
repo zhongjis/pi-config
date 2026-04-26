@@ -23,7 +23,7 @@ flowchart TD
 
 1. **Interview draft**
    - Fu Xi records the interview and research notes in `local://DRAFT.md`.
-   - Plan-mode hooks restrict writes to `local://DRAFT.md` and `local://PLAN.md`, and restrict bash to read-only commands.
+   - Plan-mode hooks restrict writes to `local://DRAFT.md` and `local://PLAN.md`, block built-in `bash`, and leave read-only shell inspection to `readonly_bash` when allowlisted.
 
 2. **Di Renjie gap review**
    - Di Renjie review is part of Fu Xi's prompt/protocol.
@@ -89,7 +89,7 @@ Direct Plannotator package integration. It imports the installed browser-review 
 Mode runtime hooks. It owns:
 
 - Fu Xi write/edit restrictions
-- Fu Xi read-only bash restrictions
+- Fu Xi built-in bash blocking
 - delegation allow/block enforcement from mode frontmatter
 - mode prompt injection
 - session mode restoration

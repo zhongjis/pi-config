@@ -11,7 +11,7 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 | Mode | Alias | Purpose |
 |------|-------|---------|
 | `kuafu` | `build` | Default. General-purpose coding and implementation. |
-| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit limited to `PLAN.md`/`DRAFT.md`, bash limited to read-only commands. |
+| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is blocked and read-only shell inspection uses `readonly_bash` when exactly allowlisted via `extensions: readonly_bash`. |
 | `houtu` | `execute` | Plan execution after handoff. Receives a prepared execution prompt in a child session. |
 
 ---
@@ -66,18 +66,9 @@ When the active mode is `fuxi`, the `tool_call` hook enforces restrictions.
 
 ### Bash Restrictions
 
-`bash` tool calls are blocked unless the command starts with a recognized read-only prefix. Safe prefixes include:
+In Fu Xi, built-in `bash` tool calls are blocked unconditionally. Read-only shell inspection must use the extension-provided `readonly_bash` tool, and that tool is exposed only when the mode frontmatter opts in exactly with `extensions: readonly_bash`.
 
-- File inspection: `cat`, `head`, `tail`, `less`, `more`, `file`, `stat`
-- Search: `grep`, `rg`, `find`, `fd`, `fzf`
-- Directory listing: `ls`, `pwd`, `tree`
-- Git read-only: `git status`, `git log`, `git diff`, `git branch`, `git show`, `git remote`, `git rev-parse`, `git describe`, `git tag`
-- Package info: `npm list/outdated/info/view/ls`, `yarn info/list/why`, `pnpm list/outdated/why`
-- System info: `uname`, `whoami`, `date`, `uptime`, `which`, `command -v`
-- Text processing: `wc`, `sort`, `uniq`, `cut`, `awk`, `sed -n`, `jq`
-- Output: `echo`, `printf`
-- Nix: `nix`, `nh`
-- Disk: `du`, `df`
+Mutable shell work requires switching to build mode.
 
 ### Delegation Restrictions
 
@@ -212,7 +203,7 @@ On session start, if a pending Plannotator review ID exists in restored state, r
 ```
 extensions/modes/src/
   types.ts                Type definitions (Mode, ModeConfig, ModeState, plan/review types)
-  constants.ts            Mode lists, aliases, colors, safe bash prefixes, file names
+  constants.ts            Mode lists, aliases, colors, file names
   config-loader.ts        Reads and parses agents/<mode>.md frontmatter and body
   mode-state.ts           ModeStateManager class — state, persistence, mode switching, tool filtering
   commands.ts             /mode command, /mode:<name> commands, bare word input, Ctrl+Shift+M, Tab, --mode flag
