@@ -157,9 +157,9 @@ describe("modes extension — integration", () => {
 		expect(writeResults).toHaveLength(1);
 	});
 
-	// ── Fu Xi plan mode: bash command filtering ─────────────────
+	// ── Fu Xi plan mode: built-in bash guard ──────────────────────
 
-	it("fuxi mode allows safe bash commands (read-only)", async () => {
+	it("fuxi mode blocks built-in bash even for read-only-looking commands", async () => {
 		t = await createTestSession({
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
@@ -171,19 +171,18 @@ describe("modes extension — integration", () => {
 		await t.run(
 			when("List files", [
 				calls("bash", { command: "cat README.md" }),
-				says("Here are the contents."),
+				says("Blocked."),
 			]),
 		);
 
 		const blocked = t.events.blockedCalls();
-		expect(blocked).toHaveLength(0);
-
-		const bashResults = t.events.toolResultsFor("bash");
-		expect(bashResults).toHaveLength(1);
-		expect(bashResults[0].mocked).toBe(true);
+		expect(blocked).toHaveLength(1);
+		expect(blocked[0].toolName).toBe("bash");
+		expect(blocked[0].blockReason).toContain("full bash is unavailable");
+		expect(blocked[0].blockReason).toContain("readonly_bash");
 	});
 
-	it("fuxi mode blocks unsafe bash commands", async () => {
+	it("fuxi mode blocks destructive built-in bash commands", async () => {
 		t = await createTestSession({
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
@@ -202,11 +201,11 @@ describe("modes extension — integration", () => {
 		const blocked = t.events.blockedCalls();
 		expect(blocked).toHaveLength(1);
 		expect(blocked[0].toolName).toBe("bash");
-		expect(blocked[0].blockReason).toContain("Plan mode");
-		expect(blocked[0].blockReason).toContain("not read-only");
+		expect(blocked[0].blockReason).toContain("full bash is unavailable");
+		expect(blocked[0].blockReason).toContain("switch to build mode");
 	});
 
-	it("fuxi mode allows multiple safe bash prefixes", async () => {
+	it("fuxi mode blocks every built-in bash call", async () => {
 		t = await createTestSession({
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
@@ -225,10 +224,8 @@ describe("modes extension — integration", () => {
 		);
 
 		const blocked = t.events.blockedCalls();
-		expect(blocked).toHaveLength(0);
-
-		const bashResults = t.events.toolResultsFor("bash");
-		expect(bashResults).toHaveLength(3);
+		expect(blocked).toHaveLength(3);
+		expect(blocked.map((call) => call.toolName)).toEqual(["bash", "bash", "bash"]);
 	});
 
 	// ── Mode switching via command ──────────────────────────────

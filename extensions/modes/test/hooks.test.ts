@@ -101,7 +101,7 @@ describe("mode hooks", () => {
 		});
 	});
 
-	it("blocks unsafe bash commands in plan mode", async () => {
+	it("blocks built-in bash commands in plan mode", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
@@ -109,33 +109,19 @@ describe("mode hooks", () => {
 
 		registerModeHooks(mock.pi as never, state);
 
-		const [result] = await mock.fire(
-			"tool_call",
-			{ toolName: "bash", input: { command: "npm install express" } },
-			{},
-		);
+		for (const command of ["cat README.md", "npm install express"]) {
+			const [result] = await mock.fire(
+				"tool_call",
+				{ toolName: "bash", input: { command } },
+				{},
+			);
 
-		expect(result).toMatchObject({
-			block: true,
-			reason: expect.stringContaining("not read-only"),
-		});
-	});
-
-	it("allows safe bash commands in plan mode", async () => {
-		const mock = createMockPi();
-		const state = new ModeStateManager(mock.pi as never);
-		state.currentMode = "fuxi";
-		state.cachedConfigs.fuxi = { body: "" };
-
-		registerModeHooks(mock.pi as never, state);
-
-		const [result] = await mock.fire(
-			"tool_call",
-			{ toolName: "bash", input: { command: "cat README.md" } },
-			{},
-		);
-
-		expect(result).toBeUndefined();
+			expect(result).toMatchObject({
+				block: true,
+				reason: expect.stringContaining("full bash is unavailable"),
+			});
+			expect((result as { reason: string }).reason).toContain("readonly_bash");
+		}
 	});
 
 	it("blocks delegation when frontmatter disallows target", async () => {

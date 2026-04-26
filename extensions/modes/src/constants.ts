@@ -23,23 +23,6 @@ export const MODE_COLORS: Record<Mode, string> = {
 
 export const RESET = "\x1b[0m";
 
-// Read-only bash commands allowed in Fu Xi (plan) mode
-export const SAFE_BASH_PREFIXES = [
-	"cat ", "head ", "tail ", "less ", "more ",
-	"grep ", "rg ", "find ", "fd ", "fzf ",
-	"ls ", "ls\n", "pwd", "tree ", "tree\n",
-	"git status", "git log", "git diff", "git branch", "git show", "git remote",
-	"git rev-parse", "git describe", "git tag",
-	"npm list", "npm outdated", "npm info", "npm view", "npm ls",
-	"yarn info", "yarn list", "yarn why",
-	"pnpm list", "pnpm outdated", "pnpm why",
-	"uname", "whoami", "date", "uptime", "which ", "command -v",
-	"wc ", "sort ", "uniq ", "cut ", "awk ", "sed -n", "jq ",
-	"file ", "stat ", "du ", "df ",
-	"echo ", "printf ",
-	"nix ", "nh ",
-];
-
 // Plan file constants
 export const PLAN_FILE_NAME = "PLAN.md";
 export const LOCAL_PLAN_URI = `local://${PLAN_FILE_NAME}`;

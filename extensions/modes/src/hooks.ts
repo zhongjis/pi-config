@@ -3,19 +3,12 @@ import { CustomEditor } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey } from "@mariozechner/pi-tui";
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
-import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES, SAFE_BASH_PREFIXES } from "./constants.js";
+import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { resolveModelFromStr } from "./mode-state.js";
 import type { Mode, ModeConfig, ModeState } from "./types.js";
 
 // ─── Absorbed helpers ────────────────────────────────────────────────────────
-
-function isSafeCommand(command: string): boolean {
-	const trimmed = command.trim();
-	if (!trimmed) return false;
-	return SAFE_BASH_PREFIXES.some((prefix) => trimmed.startsWith(prefix));
-}
-
 function dedupeCaseInsensitive(values: string[]): string[] {
 	const seen = new Set<string>();
 	const deduped: string[] = [];
@@ -248,12 +241,10 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 		if (event.toolName !== "bash") return;
 		const command = (event.input as { command?: string }).command ?? "";
-		if (!isSafeCommand(command)) {
-			return {
-				block: true,
-				reason: `Plan mode: command blocked (not read-only). Use /mode kuafu to switch to build mode first.\nCommand: ${command}`,
-			};
-		}
+		return {
+			block: true,
+			reason: `Plan mode: full bash is unavailable. Use readonly_bash for read-only commands, or switch to build mode if mutation is needed.\nCommand: ${command}`,
+		};
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
