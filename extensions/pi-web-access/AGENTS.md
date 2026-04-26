@@ -44,4 +44,4 @@ pnpm lint:typecheck
 - This package has no local `scripts`; use repo-root validation.
 - `index.ts` is the integration hub; provider modules are comparatively isolated.
 - YouTube/local frame extraction needs `ffmpeg`; YouTube frame extraction also needs `yt-dlp`. Content analysis can still work without them.
-- `README.md` still shows npm install commands from upstream; repo-level guidance for this harness is stricter than upstream packaging docs.
+- `README.md` still shows upstream package-install commands; repo-level guidance for this harness is stricter than upstream packaging docs.
