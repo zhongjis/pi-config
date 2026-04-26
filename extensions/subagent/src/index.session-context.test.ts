@@ -83,8 +83,6 @@ vi.mock("./agent-types.js", () => ({
   })),
   getAllTypes: vi.fn(() => ["general-purpose"]),
   getAvailableTypes: vi.fn(() => ["general-purpose"]),
-  getDefaultAgentNames: vi.fn(() => ["general-purpose"]),
-  getUserAgentNames: vi.fn(() => []),
   registerAgents: vi.fn(),
   resolveType: vi.fn((type?: string) => type ?? "general-purpose"),
 }));

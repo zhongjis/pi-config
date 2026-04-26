@@ -164,6 +164,7 @@ export async function runAgent(
 ): Promise<RunResult> {
   const config = getConfig(type);
   const agentConfig = getAgentConfig(type);
+  if (!agentConfig) throw new Error(`Unknown or disabled agent type: ${type}`);
 
   // Resolve working directory: worktree override > parent cwd
   const effectiveCwd = options.cwd ?? ctx.cwd;
@@ -214,24 +215,7 @@ export async function runAgent(
   }
 
   // Build system prompt from agent config
-  let systemPrompt: string;
-  if (agentConfig) {
-    systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, parentSystemPrompt, extras);
-  } else {
-    // Unknown type fallback: general-purpose (defensive — unreachable in practice
-    // since index.ts resolves unknown types to "general-purpose" before calling runAgent)
-    systemPrompt = buildAgentPrompt({
-      name: type,
-      description: "General-purpose agent",
-      systemPrompt: "",
-      promptMode: "append",
-      extensions: true,
-      skills: true,
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    }, effectiveCwd, env, parentSystemPrompt, extras);
-  }
+  const systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, parentSystemPrompt, extras);
 
   // When skills is string[], we've already preloaded them into the prompt.
   // Still pass noSkills: true since we don't need the skill loader to load them again.

@@ -18,7 +18,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import { AgentManager } from "./agent-manager.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, setDefaultMaxTurns, setGraceTurns, steerAgent } from "./agent-runner.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, getDefaultAgentNames, getUserAgentNames, registerAgents, resolveType } from "./agent-types.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, isValidType, registerAgents, resolveType } from "./agent-types.js";
 import { registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { GroupJoinManager } from "./group-join.js";
@@ -267,7 +267,7 @@ export default function (pi: ExtensionAPI) {
     }
   );
 
-  /** Reload agents from .pi/agents/*.md and merge with defaults (called on init and each Agent invocation). */
+  /** Reload custom agents from .pi/agents/*.md (called on init and each Agent invocation). */
   const reloadCustomAgents = () => {
     const userAgents = loadCustomAgents(process.cwd());
     registerAgents(userAgents);
@@ -514,10 +514,25 @@ export default function (pi: ExtensionAPI) {
   (globalThis as any)[MANAGER_KEY] = {
     waitForAll: () => manager.waitForAll(),
     hasRunning: () => manager.hasRunning(),
-    spawn: (piRef: any, ctx: any, type: string, prompt: string, options: any) =>
-      manager.spawn(piRef, ctx, type, prompt, options),
+    spawn: (piRef: any, ctx: any, type: string, prompt: string, options: any) => {
+      const resolvedType = requireSpawnableType(type);
+      return manager.spawn(piRef, ctx, resolvedType, prompt, options);
+    },
     getRecord: (id: string) => manager.getRecord(id),
   };
+
+  function formatUnavailableAgentType(type: string): string {
+    const availableTypes = getAvailableTypes();
+    const availableText = availableTypes.length > 0 ? availableTypes.join(", ") : "none";
+    return `Unknown or disabled agent type "${type}". Available types: ${availableText}.`;
+  }
+
+  function requireSpawnableType(type: string): string {
+    reloadCustomAgents();
+    const resolved = resolveType(type);
+    if (!resolved || !isValidType(resolved)) throw new Error(formatUnavailableAgentType(type));
+    return resolved;
+  }
 
   // --- Cross-extension RPC via pi.events ---
   let currentCtx: ExtensionContext | undefined;
@@ -526,7 +541,13 @@ export default function (pi: ExtensionAPI) {
     events: pi.events,
     pi,
     getCtx: () => currentCtx,
-    manager,
+    manager: {
+      spawn: (piRef, ctxRef, type, prompt, options) => {
+        const resolvedType = requireSpawnableType(type);
+        return manager.spawn(piRef as ExtensionAPI, ctxRef as ExtensionContext, resolvedType, prompt, options);
+      },
+      abort: (id) => manager.abort(id),
+    },
   });
 
   // Broadcast readiness so extensions loaded after us can discover us
@@ -624,28 +645,18 @@ export default function (pi: ExtensionAPI) {
     widget.onTurnStart();
   });
 
-  /** Build the full type list text dynamically from the unified registry. */
+  /** Build the full type list text dynamically from the custom-agent registry. */
   const buildTypeListText = () => {
-    const defaultNames = getDefaultAgentNames();
-    const userNames = getUserAgentNames();
-
-    const defaultDescs = defaultNames.map((name) => {
+    const agentDescs = getAvailableTypes().map((name) => {
       const cfg = getAgentConfig(name);
       const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(cfg.model)})` : "";
       return `- ${name}: ${cfg?.description ?? name}${modelSuffix}`;
     });
 
-    const customDescs = userNames.map((name) => {
-      const cfg = getAgentConfig(name);
-      return `- ${name}: ${cfg?.description ?? name}`;
-    });
-
     return [
-      "Default agents:",
-      ...defaultDescs,
-      ...(customDescs.length > 0 ? ["", "Custom agents:", ...customDescs] : []),
+      ...(agentDescs.length > 0 ? agentDescs : ["No custom agents are currently available."]),
       "",
-      "Custom agents can be defined in .pi/agents/<name>.md (project) or ~/.pi/agent/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.",
+      "Custom agents can be defined in .pi/agents/<name>.md (project) or ~/.pi/agent/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones.",
     ].join("\n");
   };
 
@@ -709,9 +720,7 @@ Guidelines:
 - Leave max_turns unset unless you need an explicit cap. Unset is the normal unlimited-by-default behavior.
 - Background agents require active supervision: check progress with get_subagent_result, use steer_subagent for mid-run course correction, and use resume to continue the same agent instead of starting duplicate work.
 - If a background agent is still useful, keep supervising it rather than launching overlapping duplicate work or leaving it unattended for long periods.
-- Use Explore for codebase searches and code understanding.
-- Use Plan for architecture and implementation planning.
-- Use general-purpose for complex tasks that need file editing.
+- Choose an available custom agent whose description matches the task.
 - Provide clear, detailed prompts so the agent can work autonomously.
 - Agent results are returned as text; summarize them for the user.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
@@ -870,17 +879,15 @@ Guidelines:
       const parentSignal = getAbortSignal(ctx) ?? signal;
       bindTurnAbortSignal(parentSignal);
 
-      // Reload custom agents so new .pi/agents/*.md files are picked up without restart
-      reloadCustomAgents();
-
       const rawType = params.subagent_type as SubagentType;
-      const resolved = resolveType(rawType);
-      const subagentType = resolved ?? "general-purpose";
-      const fellBack = resolved === undefined;
-
+      let subagentType: string;
+      try {
+        subagentType = requireSpawnableType(rawType);
+      } catch (err) {
+        return textResult(err instanceof Error ? err.message : String(err));
+      }
       const displayName = getDisplayName(subagentType);
 
-      // Get agent config (if any)
       const customConfig = getAgentConfig(subagentType);
 
       const currentDelegatorType = getCurrentDelegatorType(ctx.sessionManager.getEntries() as Array<{ type?: string; customType?: string; data?: { mode?: unknown } }>);
@@ -1111,19 +1118,16 @@ Guidelines:
 
       const details = buildDetails(detailBase, record, fgState, { tokens: tokenText });
 
-      const fallbackNote = fellBack
-        ? `Note: Unknown agent type "${rawType}" — using general-purpose.\n\n`
-        : "";
 
       if (record.status === "error") {
-        return textResult(`${fallbackNote}Agent failed.\n\n${getRecoveredResultText(record)}`, details);
+        return textResult(`Agent failed.\n\n${getRecoveredResultText(record)}`, details);
       }
 
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
       const statsParts = [`${record.toolUses} tool uses`];
       if (tokenText) statsParts.push(tokenText);
       return textResult(
-        `${fallbackNote}Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.\n\n` +
+        `Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.\n\n` +
         getRecoveredResultText(record),
         details,
       );
@@ -1355,7 +1359,7 @@ Guidelines:
       return;
     }
 
-    // Source indicators: defaults unmarked, custom agents get • (project) or ◦ (global)
+    // Source indicators: custom agents get • (project) or ◦ (global).
     // Disabled agents get ✕ prefix
     const sourceIndicator = (cfg: AgentConfig | undefined) => {
       const disabled = cfg?.enabled === false;
@@ -1376,7 +1380,7 @@ Guidelines:
     });
     const maxPrefix = Math.max(...entries.map(e => e.prefix.length));
 
-    const hasCustom = allNames.some(n => { const c = getAgentConfig(n); return c && !c.isDefault && c.enabled !== false; });
+    const hasCustom = allNames.some(n => { const source = getAgentConfig(n)?.source; return source === "project" || source === "global"; });
     const hasDisabled = allNames.some(n => getAgentConfig(n)?.enabled === false);
     const legendParts: string[] = [];
     if (hasCustom) legendParts.push("• = project  ◦ = global");
@@ -1453,23 +1457,14 @@ Guidelines:
     }
 
     const file = findAgentFile(name);
-    const isDefault = cfg.isDefault === true;
     const disabled = cfg.enabled === false;
 
     let menuOptions: string[];
-    if (disabled && file) {
-      // Disabled agent with a file — offer Enable
-      menuOptions = isDefault
-        ? ["Enable", "Edit", "Reset to default", "Delete", "Back"]
-        : ["Enable", "Edit", "Delete", "Back"];
-    } else if (isDefault && !file) {
-      // Default agent with no .md override
-      menuOptions = ["Eject (export as .md)", "Disable", "Back"];
-    } else if (isDefault && file) {
-      // Default agent with .md override (ejected)
-      menuOptions = ["Edit", "Disable", "Reset to default", "Delete", "Back"];
+    if (!file) {
+      menuOptions = ["Back"];
+    } else if (disabled) {
+      menuOptions = ["Enable", "Edit", "Delete", "Back"];
     } else {
-      // User-defined agent
       menuOptions = ["Edit", "Disable", "Delete", "Back"];
     }
 
@@ -1494,15 +1489,6 @@ Guidelines:
           ctx.ui.notify(`Deleted ${file.path}`, "info");
         }
       }
-    } else if (choice === "Reset to default" && file) {
-      const confirmed = await ctx.ui.confirm("Reset to default", `Delete override ${file.path} and restore embedded default?`);
-      if (confirmed) {
-        unlinkSync(file.path);
-        reloadCustomAgents();
-        ctx.ui.notify(`Restored default ${name}`, "info");
-      }
-    } else if (choice.startsWith("Eject")) {
-      await ejectAgent(ctx, name, cfg);
     } else if (choice === "Disable") {
       await disableAgent(ctx, name);
     } else if (choice === "Enable") {
@@ -1510,54 +1496,8 @@ Guidelines:
     }
   }
 
-  /** Eject a default agent: write its embedded config as a .md file. */
-  async function ejectAgent(ctx: ExtensionCommandContext, name: string, cfg: AgentConfig) {
-    const location = await ctx.ui.select("Choose location", [
-      "Project (.pi/agents/)",
-      "Personal (~/.pi/agent/agents/)",
-    ]);
-    if (!location) return;
 
-    const targetDir = location.startsWith("Project") ? projectAgentsDir() : personalAgentsDir();
-    mkdirSync(targetDir, { recursive: true });
-
-    const targetPath = join(targetDir, `${name}.md`);
-    if (existsSync(targetPath)) {
-      const overwrite = await ctx.ui.confirm("Overwrite", `${targetPath} already exists. Overwrite?`);
-      if (!overwrite) return;
-    }
-
-    // Build the .md file content
-    const fmFields: string[] = [];
-    fmFields.push(`description: ${cfg.description}`);
-    if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
-    fmFields.push(`tools: ${cfg.builtinToolNames?.join(", ") || BUILTIN_TOOL_NAMES.join(", ")}`);
-    if (cfg.model) fmFields.push(`model: ${cfg.model}`);
-    if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
-    if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
-    fmFields.push(`prompt_mode: ${cfg.promptMode}`);
-    if (cfg.extensions === false) fmFields.push("extensions: false");
-    else if (Array.isArray(cfg.extensions)) fmFields.push(`extensions: ${cfg.extensions.join(", ")}`);
-    if (cfg.skills === false) fmFields.push("skills: false");
-    else if (Array.isArray(cfg.skills)) fmFields.push(`skills: ${cfg.skills.join(", ")}`);
-    if (cfg.disallowedTools?.length) fmFields.push(`disallowed_tools: ${cfg.disallowedTools.join(", ")}`);
-    if (cfg.allowDelegationTo?.length) fmFields.push(`allow_delegation_to: ${cfg.allowDelegationTo.join(", ")}`);
-    if (cfg.disallowDelegationTo?.length) fmFields.push(`disallow_delegation_to: ${cfg.disallowDelegationTo.join(", ")}`);
-    if (cfg.inheritContext) fmFields.push("inherit_context: true");
-    if (cfg.runInBackground) fmFields.push("run_in_background: true");
-    if (cfg.isolated) fmFields.push("isolated: true");
-    if (cfg.memory) fmFields.push(`memory: ${cfg.memory}`);
-    if (cfg.isolation) fmFields.push(`isolation: ${cfg.isolation}`);
-
-    const content = `---\n${fmFields.join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
-
-    const { writeFileSync } = await import("node:fs");
-    writeFileSync(targetPath, content, "utf-8");
-    reloadCustomAgents();
-    ctx.ui.notify(`Ejected ${name} to ${targetPath}`, "info");
-  }
-
-  /** Disable an agent: set enabled: false in its .md file, or create a stub for built-in defaults. */
+  /** Disable an agent by setting enabled: false in its .md file. */
   async function disableAgent(ctx: ExtensionCommandContext, name: string) {
     const file = findAgentFile(name);
     if (file) {
@@ -1567,7 +1507,9 @@ Guidelines:
         ctx.ui.notify(`${name} is already disabled.`, "info");
         return;
       }
-      const updated = content.replace(/^---\n/, "---\nenabled: false\n");
+      const updated = content.startsWith("---\n")
+        ? content.replace(/^---\n/, "---\nenabled: false\n")
+        : `---\nenabled: false\n---\n\n${content}`;
       const { writeFileSync } = await import("node:fs");
       writeFileSync(file.path, updated, "utf-8");
       reloadCustomAgents();
@@ -1575,21 +1517,7 @@ Guidelines:
       return;
     }
 
-    // No file (built-in default) — create a stub
-    const location = await ctx.ui.select("Choose location", [
-      "Project (.pi/agents/)",
-      "Personal (~/.pi/agent/agents/)",
-    ]);
-    if (!location) return;
-
-    const targetDir = location.startsWith("Project") ? projectAgentsDir() : personalAgentsDir();
-    mkdirSync(targetDir, { recursive: true });
-
-    const targetPath = join(targetDir, `${name}.md`);
-    const { writeFileSync } = await import("node:fs");
-    writeFileSync(targetPath, "---\nenabled: false\n---\n", "utf-8");
-    reloadCustomAgents();
-    ctx.ui.notify(`Disabled ${name} (${targetPath})`, "info");
+    ctx.ui.notify(`Cannot disable ${name}: no custom agent file found.`, "warning");
   }
 
   /** Enable a disabled agent by removing enabled: false from its frontmatter. */
@@ -1601,16 +1529,9 @@ Guidelines:
     const updated = content.replace(/^(---\n)enabled: false\n/, "$1");
     const { writeFileSync } = await import("node:fs");
 
-    // If the file was just a stub ("---\n---\n"), delete it to restore the built-in default
-    if (updated.trim() === "---\n---" || updated.trim() === "---\n---\n") {
-      unlinkSync(file.path);
-      reloadCustomAgents();
-      ctx.ui.notify(`Enabled ${name} (removed ${file.path})`, "info");
-    } else {
-      writeFileSync(file.path, updated, "utf-8");
-      reloadCustomAgents();
-      ctx.ui.notify(`Enabled ${name} (${file.path})`, "info");
-    }
+    writeFileSync(file.path, updated, "utf-8");
+    reloadCustomAgents();
+    ctx.ui.notify(`Enabled ${name} (${file.path})`, "info");
   }
 
   async function showCreateWizard(ctx: ExtensionCommandContext) {
@@ -1693,7 +1614,13 @@ Guidelines for choosing settings:
 
 Write the file using the write tool. Only write the file, nothing else.`;
 
-    const record = await manager.spawnAndWait(pi, ctx, "general-purpose", generatePrompt, {
+    const generatorType = getAvailableTypes()[0];
+    if (!generatorType) {
+      ctx.ui.notify("Cannot generate an agent: no existing custom agent is available to run the generator.", "warning");
+      return;
+    }
+
+    const record = await manager.spawnAndWait(pi, ctx, generatorType, generatePrompt, {
       description: `Generate ${name} agent`,
     });
 

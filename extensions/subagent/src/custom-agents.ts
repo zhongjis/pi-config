@@ -17,7 +17,6 @@ import type { AgentConfig, MemoryScope } from "./types.js";
  *   2. Global:  ~/.pi/agent/agents/*.md
  *
  * Project-level agents override global ones with the same name.
- * Any name is allowed — names matching defaults (e.g. "Explore") override them.
  */
 export function loadCustomAgents(cwd: string): Map<string, AgentConfig> {
   const globalDir = join(homedir(), ".pi", "agent", "agents");

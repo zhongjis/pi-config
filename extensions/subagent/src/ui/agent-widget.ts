@@ -7,7 +7,7 @@
 
 import { truncateToWidth } from "@mariozechner/pi-tui";
 import type { AgentManager } from "../agent-manager.js";
-import { getConfig } from "../agent-types.js";
+import { getAgentConfig } from "../agent-types.js";
 import type { SubagentType } from "../types.js";
 
 // ---- Constants ----
@@ -113,15 +113,15 @@ export function formatDuration(startedAt: number, completedAt?: number): string 
   return `${formatMs(Date.now() - startedAt)} (running)`;
 }
 
-/** Get display name for any agent type (built-in or custom). */
+/** Get display name for any custom agent type. */
 export function getDisplayName(type: SubagentType): string {
-  return getConfig(type).displayName;
+  return getAgentConfig(type)?.displayName ?? type;
 }
 
 /** Short label for prompt mode: "twin" for append, nothing for replace (the default). */
 export function getPromptModeLabel(type: SubagentType): string | undefined {
-  const config = getConfig(type);
-  return config.promptMode === "append" ? "twin" : undefined;
+  const config = getAgentConfig(type);
+  return config?.promptMode === "append" ? "twin" : undefined;
 }
 
 /** Truncate text to a single line, max `len` chars. */

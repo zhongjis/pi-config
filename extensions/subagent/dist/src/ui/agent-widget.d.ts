@@ -75,7 +75,7 @@ export declare function formatTurns(turnCount: number, maxTurns?: number | null)
 export declare function formatMs(ms: number): string;
 /** Format duration from start/completed timestamps. */
 export declare function formatDuration(startedAt: number, completedAt?: number): string;
-/** Get display name for any agent type (built-in or custom). */
+/** Get display name for any custom agent type. */
 export declare function getDisplayName(type: SubagentType): string;
 /** Short label for prompt mode: "twin" for append, nothing for replace (the default). */
 export declare function getPromptModeLabel(type: SubagentType): string | undefined;

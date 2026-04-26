@@ -5,7 +5,7 @@
  * Uses the callback form of setWidget for themed rendering.
  */
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import { getConfig } from "../agent-types.js";
+import { getAgentConfig } from "../agent-types.js";
 // ---- Constants ----
 /** Maximum number of rendered lines before overflow collapse kicks in. */
 const MAX_WIDGET_LINES = 12;
@@ -46,14 +46,14 @@ export function formatDuration(startedAt, completedAt) {
         return formatMs(completedAt - startedAt);
     return `${formatMs(Date.now() - startedAt)} (running)`;
 }
-/** Get display name for any agent type (built-in or custom). */
+/** Get display name for any custom agent type. */
 export function getDisplayName(type) {
-    return getConfig(type).displayName;
+    return getAgentConfig(type)?.displayName ?? type;
 }
 /** Short label for prompt mode: "twin" for append, nothing for replace (the default). */
 export function getPromptModeLabel(type) {
-    const config = getConfig(type);
-    return config.promptMode === "append" ? "twin" : undefined;
+    const config = getAgentConfig(type);
+    return config?.promptMode === "append" ? "twin" : undefined;
 }
 /** Truncate text to a single line, max `len` chars. */
 function truncateLine(text, len = 60) {
