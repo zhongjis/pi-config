@@ -61,7 +61,7 @@ That root flow combines:
 1. existing extension-local tests where they already exist
 2. root smoke coverage for top-level extension entrypoints
 
-See `docs/testing.md` for the exact maintenance rules.
+See `docs/testing/README.md` for the exact maintenance rules.
 
 ## Repo checks
 
@@ -72,7 +72,7 @@ See `docs/testing.md` for the exact maintenance rules.
 
 - `README.md` — human-facing overview
 - `AGENTS.md` — AI-facing maintenance rules and repo boundaries
-- `docs/testing.md` — extension testing policy
+- `docs/testing/README.md` — extension testing policy
 - `docs/orchestration-flow.md` — orchestration design notes
 
 ## Local workflow preference
