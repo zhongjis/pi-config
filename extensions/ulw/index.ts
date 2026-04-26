@@ -62,7 +62,7 @@ function hasUlwKeyword(text: string): boolean {
 
 /** Strip only the first occurrence of the keyword from the raw text. */
 function stripUlwKeyword(text: string): string {
-  return text.replace(ULW_KEYWORD_RE, "").replace(/  +/g, " ").trim();
+  return text.replace(ULW_KEYWORD_RE, "").replace(/ {2,}/g, " ").trim();
 }
 
 // ---------------------------------------------------------------------------
