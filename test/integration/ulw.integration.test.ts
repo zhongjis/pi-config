@@ -97,7 +97,7 @@ describe("ulw extension — integration", () => {
 		await switchMode(t, "fuxi");
 
 		// In fuxi mode, ulw keyword should be stripped but prompt not injected.
-		// The write should be blocked by fuxi's plan-mode hook (different concern),
+		// Built-in bash is blocked by fuxi's plan-mode hook (different concern),
 		// but the ulw extension should not inject its prompt.
 		await t.run(
 			when("ulw check status", [
@@ -106,9 +106,10 @@ describe("ulw extension — integration", () => {
 			]),
 		);
 
-		// bash should work (git status is safe in fuxi mode)
-		const bashResults = t.events.toolResultsFor("bash");
-		expect(bashResults).toHaveLength(1);
+		const blocked = t.events.blockedCalls();
+		expect(blocked).toHaveLength(1);
+		expect(blocked[0].toolName).toBe("bash");
+		expect(blocked[0].blockReason).toContain("full bash is unavailable");
 	});
 
 	it("activates normally in kuafu mode (with modes extension)", async () => {
