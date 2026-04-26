@@ -63,7 +63,7 @@ const jiti = createJiti(import.meta.url, {
 });
 ```
 
-**Practical implication:** You can use any npm package if you add a `package.json` next to your extension and run `npm install` in that directory.
+**Practical implication:** You can use any npm package if you add a `package.json` next to your extension and run `pnpm install` in that directory.
 
 ### Two-Pass CLI Parsing
 
