@@ -64,7 +64,7 @@ Create a structured task. Used proactively for complex multi-step work.
 | `subject` | string | yes | Brief imperative title |
 | `description` | string | yes | Detailed context and acceptance criteria |
 | `activeForm` | string | no | Present continuous form for spinner (e.g., "Running tests") |
-| `agentType` | string | no | Agent type for subagent execution (e.g., `"general-purpose"`, `"Explore"`) |
+| `agentType` | string | no | Agent type for subagent execution (e.g., `"chengfeng"` or another available custom subagent type) |
 | `metadata` | object | no | Arbitrary key-value pairs |
 
 ```
