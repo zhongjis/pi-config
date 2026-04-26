@@ -19,10 +19,10 @@ Background/foreground subagent runtime: tool surface, queueing, widget UI, event
 Run from `extensions/subagent/`.
 
 ```bash
-npm run test
-npm run typecheck
-npm run lint
-npm run build
+pnpm run test
+pnpm run typecheck
+pnpm run lint
+pnpm run build
 ```
 
 ## Always
