@@ -7,7 +7,7 @@
 
 import { truncateToWidth } from "@mariozechner/pi-tui";
 import type { AgentManager } from "../agent-manager.js";
-import { getAgentConfig } from "../agent-types.js";
+import { getConfig } from "../agent-types.js";
 import type { SubagentType } from "../types.js";
 
 // ---- Constants ----
@@ -90,16 +90,16 @@ export interface AgentDetails {
 
 // ---- Formatting helpers ----
 
-/** Format a token count compactly: "󰾆 33.8k", "󰾆 1.2M". */
+/** Format a token count compactly: "33.8k token", "1.2M token". */
 export function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `󰾆 ${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `󰾆 ${(count / 1_000).toFixed(1)}k`;
-  return `󰾆 ${count}`;
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M token`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k token`;
+  return `${count} token`;
 }
 
-/** Format turn count with optional max limit: "⟳ 5≤30" or "⟳ 5". */
+/** Format turn count with optional max limit: "⟳5≤30" or "⟳5". */
 export function formatTurns(turnCount: number, maxTurns?: number | null): string {
-  return maxTurns != null ? `⟳ ${turnCount}≤${maxTurns}` : `⟳ ${turnCount}`;
+  return maxTurns != null ? `⟳${turnCount}≤${maxTurns}` : `⟳${turnCount}`;
 }
 
 /** Format milliseconds as human-readable duration. */
@@ -113,15 +113,15 @@ export function formatDuration(startedAt: number, completedAt?: number): string 
   return `${formatMs(Date.now() - startedAt)} (running)`;
 }
 
-/** Get display name for any custom agent type. */
+/** Get display name for any agent type (built-in or custom). */
 export function getDisplayName(type: SubagentType): string {
-  return getAgentConfig(type)?.displayName ?? type;
+  return getConfig(type).displayName;
 }
 
 /** Short label for prompt mode: "twin" for append, nothing for replace (the default). */
 export function getPromptModeLabel(type: SubagentType): string | undefined {
-  const config = getAgentConfig(type);
-  return config?.promptMode === "append" ? "twin" : undefined;
+  const config = getConfig(type);
+  return config.promptMode === "append" ? "twin" : undefined;
 }
 
 /** Truncate text to a single line, max `len` chars. */
@@ -259,7 +259,7 @@ export class AgentWidget {
     if (a.modelLabel) parts.push(a.modelLabel);
     const activity = this.agentActivity.get(a.id);
     if (activity) parts.push(formatTurns(activity.turnCount, activity.maxTurns));
-    if (a.toolUses > 0) parts.push(`󱁤 ${a.toolUses}`);
+    if (a.toolUses > 0) parts.push(`${a.toolUses} tool use${a.toolUses === 1 ? "" : "s"}`);
     let tokenText = "";
     if (activity?.session) {
       try { tokenText = formatTokens(activity.session.getSessionStats().tokens.total); } catch { /* */ }
@@ -271,15 +271,6 @@ export class AgentWidget {
     return `${icon} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
   }
 
-  /** Render a queued agent line. */
-  private renderQueuedLine(a: { type: SubagentType; description: string; modelLabel?: string }, theme: Theme): string {
-    const name = getDisplayName(a.type);
-    const modeLabel = getPromptModeLabel(a.type);
-    const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
-    const parts = ["queued"];
-    if (a.modelLabel) parts.push(a.modelLabel);
-    return `${theme.fg("muted", "◦")} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}`;
-  }
 
   /**
    * Render the widget content. Called from the registered widget's render() callback,
@@ -331,7 +322,7 @@ export class AgentWidget {
       const parts: string[] = [];
       if (a.modelLabel) parts.push(a.modelLabel);
       if (bg) parts.push(formatTurns(bg.turnCount, bg.maxTurns));
-      if (toolUses > 0) parts.push(`󱁤 ${toolUses}`);
+      if (toolUses > 0) parts.push(`${toolUses} tool use${toolUses === 1 ? "" : "s"}`);
       if (tokenText) parts.push(tokenText);
       parts.push(elapsed);
       const statsText = parts.join(" · ");
@@ -344,13 +335,13 @@ export class AgentWidget {
       ]);
     }
 
-    const queuedLines = queued.map(a =>
-      truncate(`${theme.fg("dim", "├─")} ${this.renderQueuedLine(a, theme)}`),
-    );
+    const queuedLine = queued.length > 0
+      ? truncate(`${theme.fg("dim", "├─")} ${theme.fg("muted", "◦")} ${theme.fg("dim", `${queued.length} queued`)}`)
+      : undefined;
 
     // Assemble with overflow cap (heading + overflow indicator = 2 reserved lines).
     const maxBody = MAX_WIDGET_LINES - 1; // heading takes 1 line
-    const totalBody = finishedLines.length + runningLines.length * 2 + queuedLines.length;
+    const totalBody = finishedLines.length + runningLines.length * 2 + (queuedLine ? 1 : 0);
 
     const lines: string[] = [truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, "Agents")}`)];
 
@@ -358,14 +349,14 @@ export class AgentWidget {
       // Everything fits — add all lines and fix up connectors for the last item.
       lines.push(...finishedLines);
       for (const pair of runningLines) lines.push(...pair);
-      lines.push(...queuedLines);
+      if (queuedLine) lines.push(queuedLine);
 
       // Fix last connector: swap ├─ → └─ and │ → space for activity lines.
       if (lines.length > 1) {
         const last = lines.length - 1;
         lines[last] = lines[last].replace("├─", "└─");
         // If the last item is a running agent activity line, fix its indent too.
-        if (runningLines.length > 0 && queuedLines.length === 0) {
+        if (runningLines.length > 0 && !queuedLine) {
           if (last >= 2) {
             lines[last - 1] = lines[last - 1].replace("├─", "└─");
             lines[last] = lines[last].replace("│  ", "   ");
@@ -377,7 +368,6 @@ export class AgentWidget {
       // Reserve 1 line for overflow indicator.
       let budget = maxBody - 1;
       let hiddenRunning = 0;
-      let hiddenQueued = 0;
       let hiddenFinished = 0;
 
       // 1. Running agents (2 lines each)
@@ -390,14 +380,10 @@ export class AgentWidget {
         }
       }
 
-      // 2. Queued agents
-      for (const queuedLine of queuedLines) {
-        if (budget >= 1) {
-          lines.push(queuedLine);
-          budget--;
-        } else {
-          hiddenQueued++;
-        }
+      // 2. Queued line
+      if (queuedLine && budget >= 1) {
+        lines.push(queuedLine);
+        budget--;
       }
 
       // 3. Finished agents
@@ -413,10 +399,10 @@ export class AgentWidget {
       // Overflow summary
       const overflowParts: string[] = [];
       if (hiddenRunning > 0) overflowParts.push(`${hiddenRunning} running`);
-      if (hiddenQueued > 0) overflowParts.push(`${hiddenQueued} queued`);
       if (hiddenFinished > 0) overflowParts.push(`${hiddenFinished} finished`);
       const overflowText = overflowParts.join(", ");
-      lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", `+${hiddenRunning + hiddenQueued + hiddenFinished} more (${overflowText})`)}`));
+      lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", `+${hiddenRunning + hiddenFinished} more (${overflowText})`)}`)
+      );
     }
 
     return lines;
