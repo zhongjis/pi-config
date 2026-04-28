@@ -33,8 +33,11 @@ pnpm lint:typecheck
 
 ## Always
 - Entrypoint shape: `extensions/foo/index.ts` only. No bare `.ts` files at the extensions root.
-- Every extension directory must have a `README.md`. See `docs/extensions.md` for the standard.
-- Vendored extensions must document their upstream source in README.md (source URL, version, license, adaptations).
+- Every extension directory must have a `README.md`. Max ~120 lines, concise and factual:
+  - One-paragraph summary, then sections for Tools, Commands, Hooks, Settings, Events as applicable.
+  - No install instructions, badges, screenshots, developer guides, test matrices, or marketing copy.
+  - Vendored extensions must include an Upstream section (source URL, version, license) and a Local Additions section if customized.
+  - Full format spec: `.agents/skills/pi-extension-vendoring/SKILL.md` → README.md requirements.
 - Promote layout gradually: flat directory → `src/` package. Do not skip straight to deep nesting.
 - For `src/` packages, keep `index.ts` as a re-export shim; implementation lives under `src/`, tests under `test/`.
 - Extension-specific unit tests belong with the extension under `extensions/foo/test/`; root `test/` is for shared smoke, fixtures, stubs, and other harness coverage.
