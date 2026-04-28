@@ -145,7 +145,7 @@ ls ~/.pi/agent/sessions/${PROJECT_DIR}/ 2>/dev/null | sort -r | head -10
 find ~/.pi/agent/sessions/${PROJECT_DIR} -name "*.jsonl" 2>/dev/null | sort -r | head -1
 
 # Find sessions mentioning a topic
-grep -rl "your-keyword" ~/.pi/agent/sessions/ 2>/dev/null | head -10
+rg -rl "your-keyword" ~/.pi/agent/sessions/ 2>/dev/null | head -10
 ```
 
 ## Batch Analysis: Across All Sessions
@@ -159,7 +159,7 @@ find ~/.pi/agent/sessions/--Users-zshen-work-my-app-- -name "*.jsonl" | while re
 done | sort -rn
 
 # Search for a function/file mention across sessions
-grep -l "function_name" ~/.pi/agent/sessions/**/*.jsonl 2>/dev/null
+rg -l "function_name" ~/.pi/agent/sessions/**/*.jsonl 2>/dev/null
 ```
 
 ## Inline jq Fallback
@@ -170,8 +170,8 @@ When no script covers what you need, write jq following the patterns in the refe
 # User messages only — smallest possible context
 jq -r 'select(.type=="message" and .message.role=="user") |
   .message.content |
-  if type=="string" then . 
-  else map(select(.type=="text") | .text) | join("") 
+  if type=="string" then .
+  else map(select(.type=="text") | .text) | join("")
   end' "$SESSION"
 
 # Cumulative cost
