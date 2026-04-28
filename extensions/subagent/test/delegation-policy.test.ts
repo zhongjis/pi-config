@@ -5,7 +5,7 @@ import {
 	getPermittedDelegationTypes,
 	hasDelegationPolicy,
 	resolveDelegationRequest,
-} from "./delegation-policy.js";
+} from "../src/delegation-policy.js";
 
 describe("delegation-policy", () => {
 	const availableTypes = [

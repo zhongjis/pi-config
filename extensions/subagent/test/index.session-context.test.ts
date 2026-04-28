@@ -23,7 +23,7 @@ class MockAgentManager {
   getRecord = vi.fn(() => undefined);
 }
 
-vi.mock("./ui/agent-widget.js", () => ({
+vi.mock("../src/ui/agent-widget.js", () => ({
   AgentWidget: class {
     setUICtx = vi.fn();
     update = vi.fn();
@@ -46,7 +46,7 @@ vi.mock("./ui/agent-widget.js", () => ({
   SPINNER: ["⠋"],
 }));
 
-vi.mock("./agent-manager.js", () => ({
+vi.mock("../src/agent-manager.js", () => ({
   AgentManager: class {
     clearCompleted = vi.fn();
     listAgents = vi.fn(() => []);
@@ -63,7 +63,7 @@ vi.mock("./agent-manager.js", () => ({
   },
 }));
 
-vi.mock("./cross-extension-rpc.js", () => ({
+vi.mock("../src/cross-extension-rpc.js", () => ({
   registerRpcHandlers: vi.fn(() => ({
     unsubPing: vi.fn(),
     unsubSpawn: vi.fn(),
@@ -71,11 +71,11 @@ vi.mock("./cross-extension-rpc.js", () => ({
   })),
 }));
 
-vi.mock("./custom-agents.js", () => ({
+vi.mock("../src/custom-agents.js", () => ({
   loadCustomAgents: vi.fn(() => new Map()),
 }));
 
-vi.mock("./agent-types.js", () => ({
+vi.mock("../src/agent-types.js", () => ({
   BUILTIN_TOOL_NAMES: [],
   getAgentConfig: vi.fn(() => ({
     description: "Mock agent",
@@ -83,9 +83,18 @@ vi.mock("./agent-types.js", () => ({
   })),
   getAllTypes: vi.fn(() => ["general-purpose"]),
   getAvailableTypes: vi.fn(() => ["general-purpose"]),
+  getDefaultAgentNames: vi.fn(() => ["general-purpose"]),
+  getUserAgentNames: vi.fn(() => []),
+  isValidType: vi.fn(() => true),
   registerAgents: vi.fn(),
   resolveType: vi.fn((type?: string) => type ?? "general-purpose"),
 }));
+
+vi.mock("@mariozechner/pi-coding-agent", () => ({
+  defineTool: (opts: any) => opts,
+  getAgentDir: vi.fn(() => "/tmp/mock-agent-dir"),
+}));
+
 
 type LifecycleHandler = (event: unknown, ctx: any) => Promise<void> | void;
 
@@ -122,7 +131,7 @@ function createMockPi() {
 
 async function initExtension(mock: ReturnType<typeof createMockPi>) {
   vi.resetModules();
-  const { default: init } = await import("./index.js");
+  const { default: init } = await import("../src/index.js");
   init(mock.pi as never);
 }
 

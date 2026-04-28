@@ -5,7 +5,7 @@ import {
   BACKGROUND_SUPERVISION_COOLDOWN_MS,
   getBackgroundSupervisionAction,
   getLastProgressAt,
-} from "./background-supervision.js";
+} from "../src/background-supervision.js";
 
 describe("background supervision", () => {
   it("uses startedAt when no activity timestamp exists", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getRecoveredResultText } from "./result-recovery.js";
+import { getRecoveredResultText } from "../src/result-recovery.js";
 
 describe("getRecoveredResultText", () => {
   it("returns the existing result when present", () => {

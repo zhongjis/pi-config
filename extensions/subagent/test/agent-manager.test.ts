@@ -3,13 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const runAgentMock = vi.fn();
 const resumeAgentMock = vi.fn();
 
-vi.mock("./agent-runner.js", () => ({
+vi.mock("../src/agent-runner.js", () => ({
   runAgent: (...args: any[]) => runAgentMock(...args),
   resumeAgent: (...args: any[]) => resumeAgentMock(...args),
   getAgentConversation: () => "",
 }));
 
-const { AgentManager } = await import("./agent-manager.js");
+const { AgentManager } = await import("../src/agent-manager.js");
 
 describe("AgentManager", () => {
   afterEach(() => {
