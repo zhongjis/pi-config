@@ -93,6 +93,8 @@ export function createWriteTool() {
 }
 
 export function getAgentDir(): string {
+  const envDir = process.env.PI_CODING_AGENT_DIR;
+  if (envDir) return envDir;
   return `${homedir()}/.pi/agent`;
 }
 
@@ -132,30 +134,46 @@ export function isToolCallEventType(name: string, event: unknown): boolean {
   return Boolean(event && typeof event === "object" && (event as { toolName?: string }).toolName === name);
 }
 
-export function parseFrontmatter(source: string): { attributes: Record<string, string>; body: string } {
+function coerceYamlValue(value: string): unknown {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value === 'null' || value === '~') return null;
+  if (/^-?\d+$/.test(value)) return parseInt(value, 10);
+  if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
+  return value;
+}
+
+export function parseFrontmatter<T extends Record<string, unknown> = Record<string, unknown>>(source: string): { frontmatter: T; body: string } {
   if (!source.startsWith("---\n")) {
-    return { attributes: {}, body: source };
+    return { frontmatter: {} as T, body: source };
   }
 
-  const end = source.indexOf("\n---\n", 4);
+  const end = source.indexOf("\n---", 3);
   if (end === -1) {
-    return { attributes: {}, body: source };
+    return { frontmatter: {} as T, body: source };
   }
 
-  const raw = source.slice(4, end).split("\n");
-  const attributes: Record<string, string> = {};
+  const yamlString = source.slice(4, end);
+  const body = source.slice(end + 4).replace(/^\n/, "").trimEnd();
+
+  if (!yamlString.trim()) {
+    return { frontmatter: {} as T, body: body.trimStart() };
+  }
+
+  const raw = yamlString.split("\n");
+  const frontmatter: Record<string, unknown> = {};
   for (const line of raw) {
     const colon = line.indexOf(":");
     if (colon === -1) continue;
     const key = line.slice(0, colon).trim();
     const value = line.slice(colon + 1).trim();
     if (!key) continue;
-    attributes[key] = value;
+    frontmatter[key] = coerceYamlValue(value);
   }
 
   return {
-    attributes,
-    body: source.slice(end + 5)
+    frontmatter: frontmatter as T,
+    body
   };
 }
 
