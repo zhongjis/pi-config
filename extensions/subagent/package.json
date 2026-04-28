@@ -1,6 +1,6 @@
 {
   "name": "@tintinweb/pi-subagents",
-  "version": "0.5.2",
+  "version": "0.6.3",
   "description": "A pi extension extension that brings smart Claude Code-style autonomous sub-agents to pi.",
   "author": "tintinweb",
   "license": "MIT",
@@ -21,16 +21,16 @@
     "autonomous"
   ],
   "dependencies": {
-    "@mariozechner/pi-ai": "0.70.0",
-    "@mariozechner/pi-coding-agent": "0.70.0",
-    "@mariozechner/pi-tui": "0.70.0",
-    "typebox": "1.1.24"
+    "@mariozechner/pi-ai": "^0.70.5",
+    "@mariozechner/pi-coding-agent": "^0.70.5",
+    "@mariozechner/pi-tui": "^0.70.5",
+    "@sinclair/typebox": "latest"
   },
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build",
-    "test": "vitest run --root ../.. extensions/subagent/src",
-    "test:watch": "vitest --root ../.. extensions/subagent/src",
+    "test": "vitest run --root ../.. extensions/subagent",
+    "test:watch": "vitest --root ../.. extensions/subagent",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src",
     "lint:fix": "biome check --fix src/ test/"
@@ -38,7 +38,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.3.5",
     "@types/node": "^25.5.0",
-    "typescript": "^5.0.0",
+    "typescript": "^6.0.0",
     "vitest": "^4.0.18"
   },
   "pi": {
