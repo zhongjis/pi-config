@@ -6,7 +6,7 @@ thinking: high
 prompt_mode: replace
 inherit_context: false
 run_in_background: false
-tools: read,grep,find,ls,write,edit
+tools: read,write,edit
 extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve,readonly_bash
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu
 disallow_delegation_to: houtu

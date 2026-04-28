@@ -6,7 +6,7 @@ thinking: high
 prompt_mode: replace
 inherit_context: false
 run_in_background: false
-tools: read,grep,find,ls
+tools: read
 extensions: clauderock,lsp_diagnostics,readonly_bash
 ---
 
