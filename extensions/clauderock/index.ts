@@ -59,6 +59,9 @@ function getErrorText(err: unknown): string {
     "error" in err && (err as any).error && typeof (err as any).error === "object" && typeof (err as any).error.message === "string"
       ? (err as any).error.message
       : "",
+    "cause" in err && (err as any).cause && typeof (err as any).cause === "object" && typeof (err as any).cause.message === "string"
+      ? (err as any).cause.message
+      : "",
   ];
   return parts.join(" ").toLowerCase();
 }
@@ -79,6 +82,7 @@ function isOauthRateLimitFallback(err: unknown): boolean {
   const msg = getErrorText(err);
   return ("status" in err && (err as any).status === 429)
       || ("statusCode" in err && (err as any).statusCode === 429)
+      || ("error" in err && typeof (err as any).error?.status === "number" && (err as any).error.status === 429)
       || msg.includes("rate limit") || msg.includes("rate-limit")
       || msg.includes("rate_limit") || msg.includes("too many requests");
 }
@@ -120,6 +124,22 @@ function formatBedrockError(err: unknown): string {
   parts.push(credInfo);
 
   return parts.join(" — ");
+}
+
+/** Short, UI-safe error message — no credentials, requestId, or verbose diagnostics. */
+function getUiErrorMessage(err: unknown): string {
+  if (!err || typeof err !== "object") return String(err);
+  const e = err as Record<string, any>;
+  const meta = e.$metadata as Record<string, any> | undefined;
+  const httpStatus = meta?.httpStatusCode;
+  const name = e.name && e.name !== "Error" ? e.name : undefined;
+  const msg = e.message ?? e.errorMessage ?? "Unknown error";
+  const shortMsg = msg.length > 100 ? msg.slice(0, 97) + "..." : msg;
+  const parts: string[] = ["Bedrock"];
+  if (name) parts.push(name);
+  if (httpStatus) parts.push(`(HTTP ${httpStatus})`);
+  else parts.push(`— ${shortMsg}`);
+  return parts.join(": ");
 }
 
 // ---------------------------------------------------------------------------
@@ -363,21 +383,15 @@ function streamWithFallback(
           !hasResponseContent &&
           (isQuotaError((event as any).error ?? event) || isOauthRateLimitFallback((event as any).error ?? event))
         ) {
-          fallbackActive = true;
-          writeCache(
-            ((event as any).error?.message ?? (event as any).errorMessage ?? "quota exhausted"),
-          );
-          pendingNotification = "quota_exhausted";
-
           if (bedrockId) {
+            fallbackActive = true;
+            writeCache(((event as any).error?.message ?? (event as any).errorMessage ?? "quota exhausted"));
+            pendingNotification = "quota_exhausted";
             await streamViaBedrock(model, bedrockId, context, options, stream);
             return;
           }
-          // No mapping — forward the error as-is
-          if (pendingStart) {
-            stream.push(pendingStart);
-            pendingStart = null;
-          }
+          // No Bedrock mapping — forward error, don't activate fallback
+          if (pendingStart) { stream.push(pendingStart); pendingStart = null; }
           stream.push(event);
           stream.end();
           return;
@@ -480,9 +494,6 @@ async function streamViaBedrock(
       ...options,
       apiKey: undefined,
       headers: undefined,  // clear Anthropic auth headers — they'd override AWS SigV4
-      reasoning: undefined, // Bedrock Converse doesn't accept a freeform reasoning param
-      onPayload: undefined, // pi's onPayload is Anthropic-specific — breaks with Bedrock ConverseStream input
-      onResponse: undefined, // pi's onResponse expects Anthropic response shape
       profile: effectiveProfile,
       region,
     });
@@ -498,30 +509,39 @@ async function streamViaBedrock(
       if (patchedEvent.type === "error") {
         // Enrich opaque Bedrock error events with diagnostic details
         const errObj = (patchedEvent as any).error ?? patchedEvent;
-        // Dump raw error for diagnostics — helps trace opaque "Unknown: UnknownError"
-        try {
-          const keys = errObj && typeof errObj === "object" ? Object.keys(errObj) : [];
-          console.error("[clauderock] Bedrock stream error event:", {
-            type: errObj?.constructor?.name,
-            keys,
-            errorMessage: errObj?.errorMessage,
-            message: errObj?.message,
-            stopReason: errObj?.stopReason,
-            name: errObj?.name,
-            code: errObj?.Code ?? errObj?.code,
-            $metadata: errObj?.$metadata,
-            $fault: errObj?.$fault,
-            api: errObj?.api,
-            provider: errObj?.provider,
-            model: errObj?.model,
-          });
-        } catch { /* ignore logging errors */ }
-        const diagnostic = formatBedrockError(errObj);
-        const enriched = {
-          ...patchedEvent,
-          error: { ...(typeof errObj === "object" ? errObj : {}), message: diagnostic },
-        };
-        stream.push(enriched);
+
+        // Abort: pass through cleanly — no enrichment, no console.error
+        if (
+          (patchedEvent as any).reason === "aborted" ||
+          errObj?.stopReason === "aborted" ||
+          errObj?.errorMessage === "Request was aborted"
+        ) {
+          stream.push(patchedEvent);
+        } else {
+          // Dump raw error for diagnostics — helps trace opaque "Unknown: UnknownError"
+          try {
+            const keys = errObj && typeof errObj === "object" ? Object.keys(errObj) : [];
+            console.error("[clauderock] Bedrock stream error event:", {
+              type: errObj?.constructor?.name,
+              keys,
+              errorMessage: errObj?.errorMessage,
+              message: errObj?.message,
+              stopReason: errObj?.stopReason,
+              name: errObj?.name,
+              code: errObj?.Code ?? errObj?.code,
+              $metadata: errObj?.$metadata,
+              $fault: errObj?.$fault,
+              api: errObj?.api,
+              provider: errObj?.provider,
+              model: errObj?.model,
+            });
+          } catch { /* ignore logging errors */ }
+          const enriched = {
+            ...patchedEvent,
+            error: { ...(typeof errObj === "object" ? errObj : {}), message: getUiErrorMessage(errObj) },
+          };
+          stream.push(enriched);
+        }
       } else {
         stream.push(patchedEvent);
       }
@@ -533,6 +553,12 @@ async function streamViaBedrock(
     }
     stream.end();
   } catch (bedrockErr) {
+    // Abort: clean exit
+    if (bedrockErr instanceof Error && bedrockErr.message === "Request was aborted") {
+      stream.push({ type: "error", reason: "aborted", error: { stopReason: "aborted", errorMessage: "Request was aborted" } });
+      stream.end();
+      return;
+    }
     // Dump raw thrown error for diagnostics
     try {
       console.error("[clauderock] Bedrock thrown error:", {
@@ -545,16 +571,11 @@ async function streamViaBedrock(
         stack: (bedrockErr as any)?.stack?.split("\n").slice(0, 5).join("\n"),
       });
     } catch { /* ignore logging errors */ }
-    const diagnostic = formatBedrockError(bedrockErr);
-    const suffix = [
-      profile ? `AWS profile: ${profile}` : "",
-      region ? `region: ${region}` : "",
-    ].filter(Boolean).join(", ");
+    console.error(`[clauderock] ${formatBedrockError(bedrockErr)}`);
     stream.push({
       type: "error",
       error: new Error(
-        `Clauderock fallback failed: ${diagnostic}. ` +
-        `Claude API quota/rate-limit was exhausted.${suffix ? ` (${suffix})` : ""}`,
+        `Clauderock fallback failed: ${getUiErrorMessage(bedrockErr)}`,
       ),
     });
     stream.end();
