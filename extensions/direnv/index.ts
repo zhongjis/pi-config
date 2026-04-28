@@ -21,7 +21,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { debounce } from "./lib/utils.js";
+import { debounce } from "../lib/utils.js";
 
 /** Debounce before reloading after a file-system event (ms). */
 const RELOAD_DEBOUNCE_MS = 300;

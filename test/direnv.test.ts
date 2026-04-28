@@ -38,7 +38,7 @@ vi.mock("node:fs", async () => {
   };
 });
 
-import initDirenv from "../extensions/direnv.js";
+import initDirenv from "../extensions/direnv/index.js";
 
 type SessionContextOptions = {
   hasUI?: boolean;
