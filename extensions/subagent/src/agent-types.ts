@@ -1,46 +1,33 @@
 /**
- * agent-types.ts — Unified custom agent type registry.
+ * agent-types.ts — Unified agent type registry.
  *
- * Loads user-defined agents from .pi/agents/*.md. Disabled agents are kept but excluded from spawning.
+ * Merges embedded default agents with user-defined agents from .pi/agents/*.md.
+ * User agents override defaults with the same name. Disabled agents are kept but excluded from spawning.
  */
 
-import type { AgentTool } from "@mariozechner/pi-agent-core";
-import {
-  createBashTool,
-  createEditTool,
-  createFindTool,
-  createGrepTool,
-  createLsTool,
-  createReadTool,
-  createWriteTool,
-} from "@mariozechner/pi-coding-agent";
+import { DEFAULT_AGENTS } from "./default-agents.js";
 import type { AgentConfig } from "./types.js";
 
-type ToolFactory = (cwd: string) => AgentTool<any>;
+/** All known built-in tool names. */
+export const BUILTIN_TOOL_NAMES: string[] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
-const TOOL_FACTORIES: Record<string, ToolFactory> = {
-  read: (cwd) => createReadTool(cwd),
-  bash: (cwd) => createBashTool(cwd),
-  edit: (cwd) => createEditTool(cwd),
-  write: (cwd) => createWriteTool(cwd),
-  grep: (cwd) => createGrepTool(cwd),
-  find: (cwd) => createFindTool(cwd),
-  ls: (cwd) => createLsTool(cwd),
-};
-
-/** Default built-in tool names for agents that do not configure `tools`. */
-export const BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write"];
-
-/** Unified runtime registry of user-defined agents. */
+/** Unified runtime registry of all agents (defaults + user-defined). */
 const agents = new Map<string, AgentConfig>();
 
 /**
- * Register user-defined agents into the unified registry.
+ * Register agents into the unified registry.
+ * Starts with DEFAULT_AGENTS, then overlays user agents (overrides defaults with same name).
  * Disabled agents (enabled === false) are kept in the registry but excluded from spawning.
  */
 export function registerAgents(userAgents: Map<string, AgentConfig>): void {
   agents.clear();
 
+  // Start with defaults
+  for (const [name, config] of DEFAULT_AGENTS) {
+    agents.set(name, config);
+  }
+
+  // Overlay user agents (overrides defaults with same name)
   for (const [name, config] of userAgents) {
     agents.set(name, config);
   }
@@ -79,6 +66,19 @@ export function getAllTypes(): string[] {
   return [...agents.keys()];
 }
 
+/** Get names of default agents currently in the registry. */
+export function getDefaultAgentNames(): string[] {
+  return [...agents.entries()]
+    .filter(([_, config]) => config.isDefault === true)
+    .map(([name]) => name);
+}
+
+/** Get names of user-defined agents (non-defaults) currently in the registry. */
+export function getUserAgentNames(): string[] {
+  return [...agents.entries()]
+    .filter(([_, config]) => config.isDefault !== true)
+    .map(([name]) => name);
+}
 
 /** Check if a type is valid and enabled (case-insensitive). */
 export function isValidType(type: string): boolean {
@@ -91,40 +91,32 @@ export function isValidType(type: string): boolean {
 const MEMORY_TOOL_NAMES = ["read", "write", "edit"];
 
 /**
- * Get the tools needed for memory management (read, write, edit).
- * Only returns tools that are NOT already in the provided set.
+ * Get memory tool names (read/write/edit) not already in the provided set.
  */
-export function getMemoryTools(cwd: string, existingToolNames: Set<string>): AgentTool<any>[] {
-  return MEMORY_TOOL_NAMES
-    .filter(n => !existingToolNames.has(n) && n in TOOL_FACTORIES)
-    .map(n => TOOL_FACTORIES[n](cwd));
+export function getMemoryToolNames(existingToolNames: Set<string>): string[] {
+  return MEMORY_TOOL_NAMES.filter(n => !existingToolNames.has(n));
 }
 
 /** Tool names needed for read-only memory access. */
 const READONLY_MEMORY_TOOL_NAMES = ["read"];
 
 /**
- * Get only the read tool for read-only memory access.
- * Only returns tools that are NOT already in the provided set.
+ * Get read-only memory tool names not already in the provided set.
  */
-export function getReadOnlyMemoryTools(cwd: string, existingToolNames: Set<string>): AgentTool<any>[] {
-  return READONLY_MEMORY_TOOL_NAMES
-    .filter(n => !existingToolNames.has(n) && n in TOOL_FACTORIES)
-    .map(n => TOOL_FACTORIES[n](cwd));
+export function getReadOnlyMemoryToolNames(existingToolNames: Set<string>): string[] {
+  return READONLY_MEMORY_TOOL_NAMES.filter(n => !existingToolNames.has(n));
 }
 
-/** Get built-in tools for a type (case-insensitive). */
-export function getToolsForType(type: string, cwd: string): AgentTool<any>[] {
+/** Get built-in tool names for a type (case-insensitive). */
+export function getToolNamesForType(type: string): string[] {
   const key = resolveKey(type);
   const raw = key ? agents.get(key) : undefined;
   const config = raw?.enabled !== false ? raw : undefined;
-  if (!config) throw new Error(`Unknown or disabled agent type: ${type}`);
-
-  const toolNames = config.builtinToolNames?.length ? config.builtinToolNames : BUILTIN_TOOL_NAMES;
-  return toolNames.filter((n) => n in TOOL_FACTORIES).map((n) => TOOL_FACTORIES[n](cwd));
+  const names = config?.builtinToolNames?.length ? config.builtinToolNames : [...BUILTIN_TOOL_NAMES];
+  return names;
 }
 
-/** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). */
+/** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). Falls back to general-purpose. */
 export function getConfig(type: string): {
   displayName: string;
   description: string;
@@ -146,6 +138,27 @@ export function getConfig(type: string): {
     };
   }
 
-  throw new Error(`Unknown or disabled agent type: ${type}`);
+  // Fallback for unknown/disabled types — general-purpose config
+  const gp = agents.get("general-purpose");
+  if (gp && gp.enabled !== false) {
+    return {
+      displayName: gp.displayName ?? gp.name,
+      description: gp.description,
+      builtinToolNames: gp.builtinToolNames ?? BUILTIN_TOOL_NAMES,
+      extensions: gp.extensions,
+      skills: gp.skills,
+      promptMode: gp.promptMode,
+    };
+  }
+
+  // Absolute fallback (should never happen)
+  return {
+    displayName: "Agent",
+    description: "General-purpose agent for complex, multi-step tasks",
+    builtinToolNames: BUILTIN_TOOL_NAMES,
+    extensions: true,
+    skills: true,
+    promptMode: "append",
+  };
 }
 
