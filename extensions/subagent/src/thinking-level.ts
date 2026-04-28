@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "./types.js";
 
 const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
-  "none",
+  "off",
   "minimal",
   "low",
   "medium",
@@ -11,7 +11,7 @@ const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
 
 export function normalizeThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
   if (value == null) return undefined;
-  if (value === "off") return "none";
+  if (value === "none") return "off";
   return VALID_THINKING_LEVELS.has(value as ThinkingLevel)
     ? (value as ThinkingLevel)
     : undefined;
