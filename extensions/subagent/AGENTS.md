@@ -3,6 +3,8 @@
 ## Overview
 Background/foreground subagent runtime: tool surface, queueing, widget UI, eventbus RPC, resume/steer/worktree support.
 
+Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking.
+
 ## Where to Look
 | Task | Location | Notes |
 |------|----------|-------|
@@ -10,10 +12,14 @@ Background/foreground subagent runtime: tool surface, queueing, widget UI, event
 | Execution / resume / max-turn behavior | `src/agent-runner.ts` | Session creation + graceful wrap-up |
 | Queueing / active-state bookkeeping | `src/agent-manager.ts` | Running vs queued agents |
 | Cross-extension RPC | `src/cross-extension-rpc.ts` | `ping`, `spawn`, `stop` handlers |
-| Agent registry / custom definitions | `src/agent-types.ts`, `src/custom-agents.ts` | Custom agent loading, disabled-agent filtering |
+| Agent registry / custom definitions | `src/agent-types.ts`, `src/custom-agents.ts`, `src/default-agents.ts` | Unified registry with embedded defaults |
 | Widget / viewer | `src/ui/` | Persistent widget + conversation viewer |
 | Isolation / memory / skill loading | `src/worktree.ts`, `src/memory.ts`, `src/skill-loader.ts` | Side systems with user-visible effects |
-| Regression coverage | `src/*.test.ts` | Keep behavior changes paired with tests |
+| Persistent settings | `src/settings.ts` | Dual-scope (global + project) settings persistence |
+| Background supervision | `src/background-supervision.ts` | Auto-steer/abort idle agents (local) |
+| Delegation policy | `src/delegation-policy.ts` | Allow/deny agent delegation rules (local) |
+| Result recovery | `src/result-recovery.ts` | Fallback text extraction (local) |
+| Regression coverage | `test/*.test.ts` | Keep behavior changes paired with tests |
 
 ## Commands
 Run from `extensions/subagent/`.
