@@ -13,7 +13,7 @@ Personal Pi harness around `pi`: custom agents, runtime extensions, test harness
 ├── agents/          # custom agent definitions; Chinese mythology naming
 ├── extensions/      # runtime Pi extensions; most active product code
 ├── test/            # root Vitest smoke + integration harness
-├── docs/testing/    # test playbooks for extension work
+├── docs/            # design docs, standards, and reference material
 └── scripts/         # repo helper scripts used by root flows
 ```
 
@@ -43,7 +43,7 @@ bash install.sh
 - Keep root guidance repo-wide only; push extension-only rules into `extensions/AGENTS.md`.
 - Treat root Vitest as two tiers: unit tests use stubs from `test/stubs/`; integration tests in `test/integration/` use the real pi runtime via `pi-test-harness`.
 - Follow `extensions/CONVENTIONS.md` for `pi.events`: `user-prompted` for same-run blocking tool prompts, `awaitingUserAction.suppressContinuationReminder` for persisted waits, `<namespace>:rpc:<method>` plus `:reply:${requestId}` for RPC.
-- Keep extension entrypoints top-level (`extensions/foo.ts` or `extensions/foo/index.ts`); the smoke harness auto-discovers only those shapes.
+- Keep extension entrypoints as directories (`extensions/foo/index.ts`); no bare `.ts` files at the extensions root. Every extension directory must have a `README.md` (see `docs/extensions.md`).
 
 ## Ask First
 - Broadening this repo from personal harness to shared/general-purpose harness.
@@ -64,5 +64,7 @@ bash install.sh
 
 ## References
 - Extension-wide rules: `@extensions/AGENTS.md`
+- Harness design overview: `@docs/README.md`
+- Extension README standard: `@docs/extensions.md`
 - Testing overview: `@docs/testing/README.md`
 - Event conventions: `@extensions/CONVENTIONS.md`

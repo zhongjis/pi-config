@@ -1,26 +1,25 @@
 # extensions
 
 ## Overview
-Runtime Pi extensions. Mixed shapes: single-file entrypoints, flat directories, and `index.ts` → `src/index.ts` packages.
+Runtime Pi extensions. All extensions live in directories with `index.ts` entrypoints. No bare `.ts` files at the top level.
 
 ## Structure
 ```
 extensions/
-├── *.ts                 # simple one-file extensions
+├── <name>/              # each extension in its own directory
+│   ├── index.ts         # entrypoint (required)
+│   └── README.md        # documentation (required, see docs/extensions.md)
+├── lib/                 # shared utilities (not an extension)
 ├── CONVENTIONS.md       # repo-wide event bus contract
-├── subagent/            # background-agent runtime + widget + RPC
-├── tasks/               # task DAG, widget, process/subagent bridge
-├── pi-web-access/       # web search, fetch, curator, GitHub/video handling
-├── modes/               # plan/approval orchestration package
-└── */test/              # unit tests for structured extensions
+└── AGENTS.md            # this file
 ```
 
 ## Where to Look
 | Task | Location | Notes |
 |------|----------|-------|
-| Add simple extension | `extensions/foo.ts` | Small, self-contained only |
-| Add multi-file extension | `extensions/foo/index.ts` + siblings | Flat directory tier |
-| Add complex extension | `extensions/foo/index.ts` + `src/` + `test/` | Re-export-only `index.ts` |
+| Add simple extension | `extensions/foo/index.ts` + `README.md` | Flat directory tier |
+| Add multi-file extension | `extensions/foo/index.ts` + `src/` + `test/` + `README.md` | Structured tier |
+| Add complex extension | `extensions/foo/index.ts` + `src/` + `test/` + `package.json` + `README.md` | Package tier (vendored) |
 | Shared event semantics | `CONVENTIONS.md` | Source of truth for `pi.events` usage |
 | Subagents | `subagent/AGENTS.md` | High-coupling runtime/event surface |
 | Tasks | `tasks/AGENTS.md` | File-backed task store + RPC bridge |
@@ -33,8 +32,10 @@ pnpm lint:typecheck
 ```
 
 ## Always
-- Entrypoint shape: `extensions/foo.ts` or `extensions/foo/index.ts` only.
-- Promote layout gradually: bare file → flat directory → `src/` package. Do not skip straight to deep nesting.
+- Entrypoint shape: `extensions/foo/index.ts` only. No bare `.ts` files at the extensions root.
+- Every extension directory must have a `README.md`. See `docs/extensions.md` for the standard.
+- Vendored extensions must document their upstream source in README.md (source URL, version, license, adaptations).
+- Promote layout gradually: flat directory → `src/` package. Do not skip straight to deep nesting.
 - For `src/` packages, keep `index.ts` as a re-export shim; implementation lives under `src/`, tests under `test/`.
 - Extension-specific unit tests belong with the extension under `extensions/foo/test/`; root `test/` is for shared smoke, fixtures, stubs, and other harness coverage.
 - Follow `CONVENTIONS.md` exactly for events:
