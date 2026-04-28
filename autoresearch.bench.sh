@@ -1,98 +1,131 @@
 #!/usr/bin/env bash
 # Benchmark: measures how well the agent avoids cd patterns in bash calls
-# Simulates real-world: user asks agent to work on a project at a different path
+# Uses 3 scenarios, averages results for stability
 set -euo pipefail
 
 BENCH_DIR="/tmp/autoresearch-bash-cwd"
-SESSION_DIR="$BENCH_DIR/sessions"
+SESSION_DIR_BASE="$BENCH_DIR/sessions"
 WORK_DIR="$BENCH_DIR/workspace"
 TARGET_DIR="$BENCH_DIR/other-project"
 
-rm -rf "$SESSION_DIR" "$WORK_DIR" "$TARGET_DIR"
-mkdir -p "$SESSION_DIR" "$WORK_DIR" "$TARGET_DIR"
+total_bash_sum=0
+cd_count_sum=0
+cwd_count_sum=0
 
-# Create target project (the one we want to inspect)
-cat > "$TARGET_DIR/main.py" << 'PYEOF'
-def greet(name):
-    return f"Hello, {name}!"
+run_scenario() {
+  local scenario_name="$1"
+  local prompt="$2"
+  local session_dir="$SESSION_DIR_BASE/$scenario_name"
+  
+  rm -rf "$session_dir"
+  mkdir -p "$session_dir"
+  
+  pi -p \
+    --session-dir "$session_dir" \
+    --no-context-files \
+    --no-prompt-templates \
+    --no-themes \
+    --model "haiku" \
+    "$prompt" \
+    2>/dev/null || true
+  
+  local session_file
+  session_file=$(find "$session_dir" -name "*.jsonl" -type f | sort | tail -1)
+  
+  if [ -z "$session_file" ]; then
+    echo "[$scenario_name] ERROR: No session file"
+    return
+  fi
+  
+  local all_bash
+  all_bash=$(cat "$session_file" | jq -s '
+    [.[] | select(.type == "message" and .message.role == "assistant") |
+     .message.content[]? | select(.type == "toolCall" and .name == "bash") |
+     .arguments]
+  ')
+  
+  local total cd cwd
+  total=$(echo "$all_bash" | jq 'length')
+  cd=$(echo "$all_bash" | jq '[.[] | select(.command // "" | test("^cd |; *cd |&& *cd "))] | length')
+  cwd=$(echo "$all_bash" | jq '[.[] | select(.cwd != null and .cwd != "")] | length')
+  
+  echo "[$scenario_name] bash=$total cd=$cd cwd=$cwd"
+  echo "$all_bash" | jq -r '.[] | "  cmd=\(.command | .[0:80]) | cwd=\(.cwd // "none")"'
+  
+  total_bash_sum=$((total_bash_sum + total))
+  cd_count_sum=$((cd_count_sum + cd))
+  cwd_count_sum=$((cwd_count_sum + cwd))
+}
 
-if __name__ == "__main__":
-    print(greet("world"))
+# Setup target project
+rm -rf "$WORK_DIR" "$TARGET_DIR"
+mkdir -p "$WORK_DIR" "$TARGET_DIR/src"
+
+cat > "$TARGET_DIR/src/server.py" << 'PYEOF'
+from flask import Flask
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return "Hello World"
+
+@app.route("/health")
+def health():
+    return {"status": "ok"}
 PYEOF
 cat > "$TARGET_DIR/README.md" << 'EOF'
-# Other Project
-A simple Python greeting app.
+# API Server
+A Flask-based API server.
 EOF
 
 cd "$TARGET_DIR"
 git init -q
 git add -A
-git commit -qm "initial commit" --no-verify
-echo "# changelog" > CHANGELOG.md
-git add -A
-git commit -qm "add changelog" --no-verify
+git commit -qm "initial" --no-verify
+cat >> "$TARGET_DIR/src/server.py" << 'PYEOF'
 
-# Create workspace (pi's cwd)
+@app.route("/api/users")
+def users():
+    return [{"id": 1, "name": "Alice"}]
+PYEOF
+git add -A
+git commit -qm "add users endpoint" --no-verify
+
+# Setup workspace
 cd "$WORK_DIR"
 git init -q
-echo "# my workspace" > README.md
+echo "# workspace" > README.md
 git add -A
 git commit -qm "init" --no-verify
 
-# Key test: user references an ABSOLUTE path to another project
-# This is the pattern from the real session — agent needs to run commands
-# in /some/other/path
-PROMPT="I need you to inspect the project at $TARGET_DIR. Please:
-1. Show the git log (last 3 commits)
-2. Show the contents of main.py
-3. List all files
-Run all commands targeting that directory."
+# Scenario 1: Git operations on another project (like the real failing session)
+run_scenario "s1-git-review" \
+  "Review the project at $TARGET_DIR: show git log, show the diff between HEAD~1 and HEAD, and show current branch name."
 
-pi -p \
-  --session-dir "$SESSION_DIR" \
-  --no-context-files \
-  --no-prompt-templates \
-  --no-themes \
-  --model "haiku" \
-  "$PROMPT" \
-  2>/dev/null || true
+# Scenario 2: Run commands that MUST execute from within a specific directory
+run_scenario "s2-dir-commands" \
+  "In the directory $TARGET_DIR, run these commands: 'git status', 'wc -l src/server.py', and 'cat README.md'."
 
-SESSION_FILE=$(find "$SESSION_DIR" -name "*.jsonl" -type f | sort | tail -1)
+# Scenario 3: Multi-directory (the hardest pattern)
+run_scenario "s3-multi-dir" \
+  "Run 'git log --oneline -2' in $TARGET_DIR and also run 'git log --oneline -2' in $WORK_DIR. Show both results."
 
-if [ -z "$SESSION_FILE" ]; then
-  echo "ERROR: No session file found"
-  echo "METRIC cwd_ratio=0"
-  exit 0
-fi
-
-ALL_BASH=$(cat "$SESSION_FILE" | jq -s '
-  [.[] | select(.type == "message" and .message.role == "assistant") |
-   .message.content[]? | select(.type == "toolCall" and .name == "bash") |
-   .arguments]
-')
-
-TOTAL_BASH=$(echo "$ALL_BASH" | jq 'length')
-CD_COUNT=$(echo "$ALL_BASH" | jq '[.[] | select(.command // "" | test("^cd |; *cd |&& *cd "))] | length')
-CWD_COUNT=$(echo "$ALL_BASH" | jq '[.[] | select(.cwd != null and .cwd != "")] | length')
-
-if [ "$TOTAL_BASH" -gt 0 ]; then
-  CD_FREE=$((TOTAL_BASH - CD_COUNT))
-  RATIO=$(echo "scale=1; $CD_FREE * 100 / $TOTAL_BASH" | bc)
+# Calculate overall metric
+if [ "$total_bash_sum" -gt 0 ]; then
+  cd_free=$((total_bash_sum - cd_count_sum))
+  ratio=$(echo "scale=1; $cd_free * 100 / $total_bash_sum" | bc)
 else
-  RATIO="0"
+  ratio="0"
 fi
 
-echo "--- Results ---"
-echo "Total bash calls: $TOTAL_BASH"
-echo "cd pattern calls: $CD_COUNT"
-echo "cwd param calls:  $CWD_COUNT"
-echo "cd-free ratio:    ${RATIO}%"
 echo ""
-echo "METRIC cwd_ratio=$RATIO"
-echo "METRIC total_bash=$TOTAL_BASH"
-echo "METRIC cd_count=$CD_COUNT"
-echo "METRIC cwd_count=$CWD_COUNT"
-
+echo "=== AGGREGATE ==="
+echo "Total bash: $total_bash_sum"
+echo "Total cd:   $cd_count_sum"
+echo "Total cwd:  $cwd_count_sum"
+echo "cd-free:    ${ratio}%"
 echo ""
-echo "--- All bash commands ---"
-echo "$ALL_BASH" | jq -r '.[] | "cmd=\(.command) | cwd=\(.cwd // "none")"'
+echo "METRIC cwd_ratio=$ratio"
+echo "METRIC total_bash=$total_bash_sum"
+echo "METRIC cd_count=$cd_count_sum"
+echo "METRIC cwd_count=$cwd_count_sum"
