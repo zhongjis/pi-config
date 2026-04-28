@@ -141,41 +141,56 @@ When package metadata changes:
 
 ## README.md requirements
 
-Create or adapt `extensions/<name>/README.md` for directory-style extensions. For single-file extensions, add `extensions/<name>.README.md` only if the extension has meaningful config/provenance. Prefer a README over comments for long-term vendor knowledge.
+Create or adapt `extensions/<name>/README.md` for directory-style extensions. READMEs must be concise and factual — useful to future agents and humans, not marketing material.
 
-README must be useful to future users and agents. Include:
+### Format
 
 ```markdown
 # <Extension Name>
 
-## Feature
-What this extension does, user-facing commands/tools/providers, and expected behavior.
+One-paragraph summary: what it does, key capabilities.
 
-## Design
-Entrypoint, key files, data flow, event/RPC channels, storage paths, and why this layout was chosen.
+## Upstream
 
-## Configuration
-Options, env vars, settings files, defaults, and examples. Say "No configuration" if none.
+(Vendored only) Source URL, version/commit, license, local changes summary.
 
-## Dependencies
-Pi/runtime packages used, extra dependencies, why they are needed, and warning notes.
+## Tools
 
-## Upstream provenance
-- Source: <url/package/local path>
-- Version/tag/commit: <sha/version>
-- Original author: <name/org>
-- License: <license>
-- Vendored/adapted on: <date>
-- Local changes: <short bullet list>
+One subsection per registered tool. Parameters in a table or inline list.
 
-## Updating from upstream
-How to fetch upstream again, compare, reapply local adaptations, and rerun validation.
+## Commands
 
-## Validation
-Commands run in this repo and expected pass criteria.
+One line per command with brief description.
+
+## Hooks
+
+Which pi lifecycle hooks the extension uses and why.
+
+## Settings / Configuration
+
+Config file path, key fields, defaults. No full JSON blobs — list fields.
+
+## Events
+
+(If applicable) Lifecycle events emitted or consumed, RPC channels.
+
+## Local Additions
+
+(Vendored only) Features added on top of upstream, not present in the published package.
 ```
 
-If upstream README is noisy, keep the valuable usage/config details and replace generic install instructions with repo-local instructions.
+### Rules
+
+- **Max ~120 lines.** If longer, cut.
+- **No install instructions** — this repo vendors/loads extensions locally.
+- **No badges, screenshots, videos, or marketing copy.**
+- **No developer guides, audit tables, or test matrices** — those belong in AGENTS.md or test files.
+- **No "How It Works" flow diagrams** unless the fallback chain is genuinely useful (e.g., provider selection order).
+- **No "Quick Start" code examples** — the tool parameter tables are the reference.
+- **No "Limitations" or "Future Work" sections.**
+- **No file-listing tables** — put those in AGENTS.md if needed.
+- **Upstream README is noisy?** Replace it entirely. Keep only usage/config substance.
+- **Sections are optional.** Skip any section that doesn't apply (e.g., no Tools section for hook-only extensions).
 
 ## Event and UI adaptation checklist
 
