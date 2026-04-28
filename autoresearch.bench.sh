@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Benchmark: measures how well the agent avoids cd patterns in bash calls
-# Uses 3 scenarios, averages results for stability
+# Uses 3 scenarios with different difficulty levels, tests with sonnet (harder model)
 set -euo pipefail
 
 BENCH_DIR="/tmp/autoresearch-bash-cwd"
 SESSION_DIR_BASE="$BENCH_DIR/sessions"
-WORK_DIR="$BENCH_DIR/workspace"
 TARGET_DIR="$BENCH_DIR/other-project"
+WORK_DIR="$BENCH_DIR/workspace"
+
+# Use sonnet for harder test (more resistant to prompt instructions)
+MODEL="${BENCH_MODEL:-haiku}"
 
 total_bash_sum=0
 cd_count_sum=0
@@ -25,7 +28,7 @@ run_scenario() {
     --no-context-files \
     --no-prompt-templates \
     --no-themes \
-    --model "haiku" \
+    --model "$MODEL" \
     "$prompt" \
     2>/dev/null || true
   
@@ -119,7 +122,7 @@ else
 fi
 
 echo ""
-echo "=== AGGREGATE ==="
+echo "=== AGGREGATE (model=$MODEL) ==="
 echo "Total bash: $total_bash_sum"
 echo "Total cd:   $cd_count_sum"
 echo "Total cwd:  $cwd_count_sum"
