@@ -60,7 +60,30 @@ If target name, source, or intended behavior is unclear, ask before editing.
    - Keep event/RPC names compatible with `extensions/CONVENTIONS.md`.
    - Add/adjust tests only where there is a nearby pattern or high-risk behavior.
 
-5. **Validate**
+5. **Document local tweaks**
+   - Every vendored extension with local modifications MUST have a `## Local Tweaks` section in its `AGENTS.md`.
+   - This manifest is the source of truth for what to preserve on the next upstream sync.
+   - Format: one entry per intentional divergence. Each entry names the file, describes the change, and states why.
+   - Use this template:
+
+   ```markdown
+   ## Local Tweaks
+
+   Intentional divergences from upstream. Preserve these on sync.
+
+   | File | What | Why |
+   |------|------|-----|
+   | `src/types.ts` | Added `allowNesting` field to `AgentConfig` | delegation-policy.ts needs it |
+   | `src/agent-runner.ts` | `allowNesting` gate on EXCLUDED_TOOL_NAMES filter | Allows nested Agent tool when frontmatter opts in |
+   | `src/skill-loader.ts` | Entire file replaced with Pi-aware discovery | Supports SKILL.md, ancestor dirs, frontmatter names |
+   | `src/background-supervision.ts` | Local-only file (not in upstream) | Auto-steer/abort idle background agents |
+   ```
+
+   - Entries should cover: added files, deleted upstream files, modified lines in shared files, changed interfaces/types, kept-but-divergent behavior.
+   - When a file is entirely local-only, say so. When only a few lines differ, name the specific change.
+   - On the next sync, the agent reads this manifest FIRST to know which local modifications to preserve.
+
+6. **Validate**
    - Run `lsp_diagnostics` on changed files.
    - Run `pnpm test:extensions` for extension changes.
    - Run `pnpm lint:typecheck` when package.json, tsconfig, imports, or shared types changed.

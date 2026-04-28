@@ -53,3 +53,29 @@ pnpm run build
 - `src/index.ts` is large because it owns tool registration, widget rendering, notifications, and event emission; many changes fan out from there.
 - `subagents:ready` is the discovery signal for other extensions; breaking or delaying it causes load-order bugs.
 - Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after denylist handling.
+
+## Local Tweaks
+
+Intentional divergences from upstream. Preserve these on sync.
+
+| File | What | Why |
+|------|------|-----|
+| `src/background-supervision.ts` | Local-only file | Auto-steer idle agents after timeout, auto-abort after prolonged inactivity |
+| `src/delegation-policy.ts` | Local-only file | `allow_delegation_to` / `disallow_delegation_to` / `allow_nesting` enforcement |
+| `src/result-recovery.ts` | Local-only file | Fallback text extraction from session history when `record.result` is empty |
+| `src/thinking-level.ts` | Local-only file | Normalizes legacy `"none"` → `"off"` for backward compat with existing agent frontmatter |
+| `src/types.ts` | Added `allowDelegationTo`, `disallowDelegationTo`, `allowNesting` to `AgentConfig` | delegation-policy.ts reads these fields |
+| `src/types.ts` | Kept `modelLabel`, `waitingConsumers`, `isBackground`, `externalAbortCleanup`, `suppressNotification`, `lastSupervisionSteerAt/AbortAt` on `AgentRecord` | Background supervision + abort signal + widget display |
+| `src/agent-runner.ts` | `allowNesting` gate on `EXCLUDED_TOOL_NAMES` filter | Permits nested Agent tool when frontmatter opts in |
+| `src/agent-manager.ts` | External abort signal forwarding (`bindExternalAbortSignal`), `modelLabel`/`isBackground` on record, `getRecoveredResultText` fallback | Clean cancellation, widget display, non-streaming provider recovery |
+| `src/custom-agents.ts` | Parses `allow_delegation_to`, `disallow_delegation_to`, `allow_nesting` from frontmatter; uses `normalizeThinkingLevel` | Delegation policy + thinking level compat |
+| `src/invocation-config.ts` | Uses `normalizeThinkingLevel` instead of raw cast | Thinking level compat |
+| `src/skill-loader.ts` | Entire file replaced | Pi-aware discovery: SKILL.md dir skills, ancestor `.agents/skills/`, frontmatter name matching, `sourcePath`/`baseDir` metadata |
+| `src/prompts.ts` | `skillBlocks` type includes `sourcePath`/`baseDir` | Enhanced skill-loader passes path metadata for relative reference resolution |
+| `src/ui/agent-widget.ts` | Kept `lastProgressAt` on `AgentActivity`, `modelLabel` rendering in running/finished lines | Background supervision progress tracking, model display |
+| `src/index.ts` | Background supervision loop + timer, delegation policy enforcement, abort signal binding, result recovery calls, model label tracking, supervision-aware wait, `suppressNotification`/`waitingConsumers` checks | All local features integrated into the main hub |
+| `index.ts` | Wrapper re-export (`export default from "./src/index.js"`) | Harness convention: entry at `extensions/<name>/index.ts` |
+| `test/background-supervision.test.ts` | Local-only test | Covers supervision logic |
+| `test/delegation-policy.test.ts` | Local-only test | Covers delegation allow/deny |
+| `test/result-recovery.test.ts` | Local-only test | Covers fallback extraction |
+| `test/index.session-context.test.ts` | Local-only test | Covers session context integration |
