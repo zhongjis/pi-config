@@ -20,7 +20,7 @@ import { resolve } from "node:path";
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
 const bashWithCwdSchema = Type.Object({
-  command: Type.String({ description: "Bash command to execute" }),
+  command: Type.String({ description: "Bash command to execute. MUST NOT start with 'cd'. Use cwd parameter instead." }),
   timeout: Type.Optional(
     Type.Number({
       description: "Kill command after this many seconds (no default)",
@@ -29,7 +29,7 @@ const bashWithCwdSchema = Type.Object({
   cwd: Type.Optional(
     Type.String({
       description:
-        "Working directory. Resolves relative paths against context cwd. Fails explicitly if directory is missing.",
+        "Working directory for this command. ALWAYS set this instead of using 'cd' in the command. Resolves relative paths against context cwd. Fails explicitly if directory is missing.",
     }),
   ),
 });
@@ -42,15 +42,16 @@ export default function betterBashTool(pi: ExtensionAPI): void {
   pi.registerTool({
     ...nativeDef, // inherits name ("bash"), label
     description:
-      "Execute a bash command. Returns stdout and stderr, truncated to last 2000 lines or 50KB (whichever is hit first). Full output saved to a temp file when truncated. Set `cwd` to control working directory. Set `timeout` in seconds to limit execution time.",
+      "Execute a bash command in a directory. ALWAYS use `cwd` to set the working directory — NEVER use `cd dir && command` in the command string. Returns stdout and stderr, truncated to last 2000 lines or 50KB. Set `timeout` in seconds to limit execution time.",
     parameters: bashWithCwdSchema,
 
     promptGuidelines: [
-      "ALWAYS set the `cwd` parameter to target a directory. MUST NOT use `cd dir && command` — `cd` silently continues in the wrong directory on failure; `cwd` fails explicitly.",
-      "GOOD: bash({command: 'npm install', cwd: '/foo'}).  BAD: bash({command: 'cd /foo && npm install'}).",
-      "For commands in multiple directories, MUST use separate bash calls each with its own `cwd` — MUST NOT chain `cd` with `&&`.",
-      "SHOULD use native tools (read, find, grep, edit, write) over bash equivalents when available.",
-      "Reserve bash for: git, build/test runners, package managers, ssh, curl, and process management.",
+      "CRITICAL: NEVER write `cd /path && command` or `cd /path; command`. ALWAYS pass the directory as `cwd` and write only the command. This applies to ALL commands including git, npm, make, etc.",
+      "GOOD: bash({command: 'git log --oneline', cwd: '/repo'}).  BAD: bash({command: 'cd /repo && git log --oneline'}).",
+      "GOOD: bash({command: 'git diff HEAD~1', cwd: '/repo'}).  BAD: bash({command: 'cd /repo && git diff HEAD~1'}).",
+      "`cwd` is safer than `cd`: `cd` silently continues in the wrong directory on failure; `cwd` fails explicitly with a clear error.",
+      "For commands in multiple directories, use separate bash calls each with its own `cwd`.",
+      "Prefer native tools (read, edit, write) over bash equivalents when available. Reserve bash for: git, build/test runners, package managers, ssh, curl, and process management.",
     ],
 
     // 3-arg signature — _context unused, typed as unknown to avoid importing ToolRenderContext
