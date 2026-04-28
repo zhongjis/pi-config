@@ -1,0 +1,1 @@
+{"type":"config","name":"Optimize better-bash-tool promptGuidelines to maximize cwd parameter usage over cd && patterns","metricName":"cwd_ratio","metricUnit":"","bestDirection":"higher"}
