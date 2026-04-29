@@ -89,6 +89,10 @@ Configured via `/agents` → Settings. Persisted to `<cwd>/.pi/subagents.json` (
 | Grace turns | 5 | Extra turns after wrap-up warning |
 | Join mode | smart | Completion notification grouping (`async`, `group`, `smart`) |
 
+## UI Formatting
+
+Status widgets, Agent result renderers, and background completion notifications use compact Nerd Font stats: `⟳ 5≤30 · 󱁤 3 · 󰾆 33.8k · 4.1s`. Turn counts include a space after `⟳`; tool uses use the tools icon (`󱁤`); token counts use the chip icon (`󰾆`).
+
 ## Events
 
 Lifecycle events on `pi.events`:
@@ -110,3 +114,4 @@ Features added on top of upstream, not present in the published package:
 - **Enhanced skill loader** (`skill-loader.ts`) — Pi-aware skill discovery: `SKILL.md` directory skills, ancestor `.agents/skills/` traversal, frontmatter name matching, `sourcePath`/`baseDir` metadata for relative path resolution.
 - **Abort signal forwarding** — external tool abort signals propagate into running/queued agents, enabling clean cancellation.
 - **Model label tracking** — resolved `provider/model` label shown in widget for each agent.
+- **Nerd Font UI stats** — widget and Agent renderers intentionally format turns/tokens/tools as `⟳ 5`, `󰾆 33.8k`, and `󱁤 3`; preserve this divergence during upstream syncs.

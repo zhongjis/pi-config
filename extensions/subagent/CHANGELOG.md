@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Restored local Nerd Font UI stat formatting after the v0.6.3 upstream sync: widget rows, Agent result renderers, conversation viewer headers, and completion notifications again show spaced turn counts (`⟳ 5` / `⟳ 5≤30`), tool-use icons (`󱁤 3`), and token chip icons (`󰾆 33.8k`).
+
 ## [0.6.3] - 2026-04-28
 
 ### Fixed
