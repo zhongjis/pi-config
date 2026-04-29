@@ -100,7 +100,7 @@ export class ConversationViewer {
         const headerParts = [duration];
         const toolUses = this.activity?.toolUses ?? this.record.toolUses;
         if (toolUses > 0)
-            headerParts.unshift(`${toolUses} tool${toolUses === 1 ? "" : "s"}`);
+            headerParts.unshift(`󱁤 ${toolUses}`);
         if (this.activity?.session) {
             try {
                 const tokens = this.activity.session.getSessionStats().tokens.total;

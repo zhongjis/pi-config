@@ -75,7 +75,7 @@ export declare function formatTurns(turnCount: number, maxTurns?: number | null)
 export declare function formatMs(ms: number): string;
 /** Format duration from start/completed timestamps. */
 export declare function formatDuration(startedAt: number, completedAt?: number): string;
-/** Get display name for any custom agent type. */
+/** Get display name for any agent type (built-in or custom). */
 export declare function getDisplayName(type: SubagentType): string;
 /** Short label for prompt mode: "twin" for append, nothing for replace (the default). */
 export declare function getPromptModeLabel(type: SubagentType): string | undefined;
@@ -113,8 +113,6 @@ export declare class AgentWidget {
     markFinished(agentId: string): void;
     /** Render a finished agent line. */
     private renderFinishedLine;
-    /** Render a queued agent line. */
-    private renderQueuedLine;
     /**
      * Render the widget content. Called from the registered widget's render() callback,
      * reading live state each time instead of capturing it in a closure.

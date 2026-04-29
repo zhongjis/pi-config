@@ -10,17 +10,18 @@
  *   /agents                 — Interactive agent management menu
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { defineTool, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "typebox";
+import { Type } from "@sinclair/typebox";
 import { AgentManager } from "./agent-manager.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, setDefaultMaxTurns, setGraceTurns, steerAgent } from "./agent-runner.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, isValidType, registerAgents, resolveType } from "./agent-types.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, getDefaultAgentNames, getUserAgentNames, isValidType, registerAgents, resolveType } from "./agent-types.js";
 import { registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
+import { applyAndEmitLoaded, saveAndEmitChanged } from "./settings.js";
 import { resolveModel } from "./model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import { getRecoveredResultText } from "./result-recovery.js";
@@ -527,11 +528,19 @@ export default function (pi) {
         manager.clearCompleted(); // preserve existing behavior
         syncSessionContext(ctx);
     });
+    pi.on("session_before_switch", () => { manager.clearCompleted(); });
     // ---- Join mode configuration ----
     let defaultJoinMode = 'smart';
     function getDefaultJoinMode() { return defaultJoinMode; }
     function setDefaultJoinMode(mode) { defaultJoinMode = mode; }
     // ---- Batch tracking for smart join mode ----
+    // Apply persisted settings on startup and emit `subagents:settings_loaded`.
+    applyAndEmitLoaded({
+        setMaxConcurrent: (n) => manager.setMaxConcurrent(n),
+        setDefaultMaxTurns,
+        setGraceTurns,
+        setDefaultJoinMode,
+    }, (event, payload) => pi.events.emit(event, payload));
     // Collects background agent IDs spawned in the current turn for smart grouping.
     // Uses a debounced timer: each new agent resets the 100ms window so that all
     // parallel tool calls (which may be dispatched across multiple microtasks by the
@@ -581,15 +590,23 @@ export default function (pi) {
     });
     /** Build the full type list text dynamically from the custom-agent registry. */
     const buildTypeListText = () => {
-        const agentDescs = getAvailableTypes().map((name) => {
+        const defaultNames = getDefaultAgentNames();
+        const userNames = getUserAgentNames();
+        const defaultDescs = defaultNames.map((name) => {
             const cfg = getAgentConfig(name);
             const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(cfg.model)})` : "";
             return `- ${name}: ${cfg?.description ?? name}${modelSuffix}`;
         });
+        const customDescs = userNames.map((name) => {
+            const cfg = getAgentConfig(name);
+            return `- ${name}: ${cfg?.description ?? name}`;
+        });
         return [
-            ...(agentDescs.length > 0 ? agentDescs : ["No custom agents are currently available."]),
+            "Default agents:",
+            ...defaultDescs,
+            ...(customDescs.length > 0 ? ["", "Custom agents:", ...customDescs] : []),
             "",
-            "Custom agents can be defined in .pi/agents/<name>.md (project) or ~/.pi/agent/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones.",
+            `Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.`,
         ].join("\n");
     };
     function stripModelDateSuffix(modelId) {
@@ -633,7 +650,7 @@ export default function (pi) {
         }
     }
     // ---- Agent tool ----
-    pi.registerTool({
+    pi.registerTool(defineTool({
         name: "Agent",
         label: "Agent",
         description: `Launch a new agent to handle complex, multi-step tasks autonomously.
@@ -663,13 +680,13 @@ Guidelines:
                 description: "A short (3-5 word) description of the task (shown in UI).",
             }),
             subagent_type: Type.String({
-                description: `The type of specialized agent to use. Available types: ${getAvailableTypes().join(", ")}. Custom agents from .pi/agents/*.md (project) or ~/.pi/agent/agents/*.md (global) are also available.`,
+                description: `The type of specialized agent to use. Available types: ${getAvailableTypes().join(", ")}. Custom agents from .pi/agents/*.md (project) or ${getAgentDir()}/agents/*.md (global) are also available.`,
             }),
             model: Type.Optional(Type.String({
                 description: 'Optional model override. Accepts "provider/modelId" or fuzzy name (e.g. "haiku", "sonnet"). Omit to use the agent type\'s default.',
             })),
             thinking: Type.Optional(Type.String({
-                description: "Thinking level: none, minimal, low, medium, high, xhigh. Overrides agent default.",
+                description: "Thinking level: off, minimal, low, medium, high, xhigh. Overrides agent default.",
             })),
             max_turns: Type.Optional(Type.Number({
                 description: "Optional explicit cap on agentic turns before wrap-up/stop. Leave unset for unlimited-by-default behavior.",
@@ -1004,9 +1021,9 @@ Guidelines:
             return textResult(`Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.\n\n` +
                 getRecoveredResultText(record), details);
         },
-    });
+    }));
     // ---- get_subagent_result tool ----
-    pi.registerTool({
+    pi.registerTool(defineTool({
         name: "get_subagent_result",
         label: "Get Agent Result",
         description: "Check status and retrieve results from a background agent. Use it to actively supervise long-running work started by Agent.",
@@ -1092,9 +1109,9 @@ Guidelines:
             }
             return textResult(output);
         },
-    });
+    }));
     // ---- steer_subagent tool ----
-    pi.registerTool({
+    pi.registerTool(defineTool({
         name: "steer_subagent",
         label: "Steer Agent",
         description: "Send a steering message to a running agent. The message will interrupt the agent after its current tool execution " +
@@ -1132,10 +1149,10 @@ Guidelines:
                 return textResult(`Failed to steer agent: ${err instanceof Error ? err.message : String(err)}`);
             }
         },
-    });
+    }));
     // ---- /agents interactive menu ----
     const projectAgentsDir = () => join(process.cwd(), ".pi", "agents");
-    const personalAgentsDir = () => join(homedir(), ".pi", "agent", "agents");
+    const personalAgentsDir = () => join(getAgentDir(), "agents");
     /** Find the file path of a custom agent by name (project first, then global). */
     function findAgentFile(name) {
         const projectPath = join(projectAgentsDir(), `${name}.md`);
@@ -1232,7 +1249,7 @@ Guidelines:
             return { name, prefix, desc };
         });
         const maxPrefix = Math.max(...entries.map(e => e.prefix.length));
-        const hasCustom = allNames.some(n => { const source = getAgentConfig(n)?.source; return source === "project" || source === "global"; });
+        const hasCustom = allNames.some(n => { const c = getAgentConfig(n); return c && !c.isDefault && c.enabled !== false; });
         const hasDisabled = allNames.some(n => getAgentConfig(n)?.enabled === false);
         const legendParts = [];
         if (hasCustom)
@@ -1297,13 +1314,19 @@ Guidelines:
             return;
         }
         const file = findAgentFile(name);
+        const isDefault = cfg.isDefault === true;
         const disabled = cfg.enabled === false;
         let menuOptions;
-        if (!file) {
-            menuOptions = ["Back"];
+        if (disabled && file) {
+            menuOptions = isDefault
+                ? ["Enable", "Edit", "Reset to default", "Delete", "Back"]
+                : ["Enable", "Edit", "Delete", "Back"];
         }
-        else if (disabled) {
-            menuOptions = ["Enable", "Edit", "Delete", "Back"];
+        else if (isDefault && !file) {
+            menuOptions = ["Eject (export as .md)", "Disable", "Back"];
+        }
+        else if (isDefault && file) {
+            menuOptions = ["Edit", "Disable", "Reset to default", "Delete", "Back"];
         }
         else {
             menuOptions = ["Edit", "Disable", "Delete", "Back"];
@@ -1337,44 +1360,128 @@ Guidelines:
         else if (choice === "Enable") {
             await enableAgent(ctx, name);
         }
+        else if (choice === "Reset to default" && file) {
+            const confirmed = await ctx.ui.confirm("Reset to default", `Delete override ${file.path} and restore embedded default?`);
+            if (confirmed) {
+                unlinkSync(file.path);
+                reloadCustomAgents();
+                ctx.ui.notify(`Restored default ${name}`, "info");
+            }
+        }
+        else if (choice.startsWith("Eject")) {
+            await ejectAgent(ctx, name, cfg);
+        }
     }
     /** Disable an agent by setting enabled: false in its .md file. */
     async function disableAgent(ctx, name) {
         const file = findAgentFile(name);
         if (file) {
-            // Existing file — set enabled: false in frontmatter (idempotent)
             const content = readFileSync(file.path, "utf-8");
-            if (content.includes("\nenabled: false\n")) {
+            if (content.includes("enabled: false")) {
                 ctx.ui.notify(`${name} is already disabled.`, "info");
                 return;
             }
-            const updated = content.startsWith("---\n")
-                ? content.replace(/^---\n/, "---\nenabled: false\n")
-                : `---\nenabled: false\n---\n\n${content}`;
+            const updated = content.replace(/^---\n/, "---\nenabled: false\n");
             const { writeFileSync } = await import("node:fs");
             writeFileSync(file.path, updated, "utf-8");
             reloadCustomAgents();
             ctx.ui.notify(`Disabled ${name} (${file.path})`, "info");
             return;
         }
-        ctx.ui.notify(`Cannot disable ${name}: no custom agent file found.`, "warning");
+        // No file (built-in default) — create a stub
+        const location = await ctx.ui.select("Choose location", [
+            "Project (.pi/agents/)",
+            `Personal (${personalAgentsDir()})`,
+        ]);
+        if (!location)
+            return;
+        const targetDir = location.startsWith("Project") ? projectAgentsDir() : personalAgentsDir();
+        mkdirSync(targetDir, { recursive: true });
+        const targetPath = join(targetDir, `${name}.md`);
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(targetPath, "---\nenabled: false\n---\n", "utf-8");
+        reloadCustomAgents();
+        ctx.ui.notify(`Disabled ${name} (${targetPath})`, "info");
+    }
+    async function ejectAgent(ctx, name, cfg) {
+        const location = await ctx.ui.select("Choose location", [
+            "Project (.pi/agents/)",
+            `Personal (${personalAgentsDir()})`,
+        ]);
+        if (!location)
+            return;
+        const targetDir = location.startsWith("Project") ? projectAgentsDir() : personalAgentsDir();
+        mkdirSync(targetDir, { recursive: true });
+        const targetPath = join(targetDir, `${name}.md`);
+        if (existsSync(targetPath)) {
+            const overwrite = await ctx.ui.confirm("Overwrite", `${targetPath} already exists. Overwrite?`);
+            if (!overwrite)
+                return;
+        }
+        const fmFields = [];
+        fmFields.push(`description: ${cfg.description}`);
+        if (cfg.displayName)
+            fmFields.push(`display_name: ${cfg.displayName}`);
+        fmFields.push(`tools: ${cfg.builtinToolNames?.join(", ") || "all"}`);
+        if (cfg.model)
+            fmFields.push(`model: ${cfg.model}`);
+        if (cfg.thinking)
+            fmFields.push(`thinking: ${cfg.thinking}`);
+        if (cfg.maxTurns)
+            fmFields.push(`max_turns: ${cfg.maxTurns}`);
+        fmFields.push(`prompt_mode: ${cfg.promptMode}`);
+        if (cfg.extensions === false)
+            fmFields.push("extensions: false");
+        else if (Array.isArray(cfg.extensions))
+            fmFields.push(`extensions: ${cfg.extensions.join(", ")}`);
+        if (cfg.skills === false)
+            fmFields.push("skills: false");
+        else if (Array.isArray(cfg.skills))
+            fmFields.push(`skills: ${cfg.skills.join(", ")}`);
+        if (cfg.disallowedTools?.length)
+            fmFields.push(`disallowed_tools: ${cfg.disallowedTools.join(", ")}`);
+        if (cfg.inheritContext)
+            fmFields.push("inherit_context: true");
+        if (cfg.runInBackground)
+            fmFields.push("run_in_background: true");
+        if (cfg.isolated)
+            fmFields.push("isolated: true");
+        if (cfg.memory)
+            fmFields.push(`memory: ${cfg.memory}`);
+        if (cfg.isolation)
+            fmFields.push(`isolation: ${cfg.isolation}`);
+        const content = `---\n${fmFields.join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
+        const { writeFileSync } = await import("node:fs");
+        writeFileSync(targetPath, content, "utf-8");
+        reloadCustomAgents();
+        ctx.ui.notify(`Ejected ${name} to ${targetPath}`, "info");
     }
     /** Enable a disabled agent by removing enabled: false from its frontmatter. */
     async function enableAgent(ctx, name) {
         const file = findAgentFile(name);
-        if (!file)
+        if (!file) {
+            ctx.ui.notify(`Cannot enable ${name}: no agent file found.`, "warning");
             return;
+        }
         const content = readFileSync(file.path, "utf-8");
         const updated = content.replace(/^(---\n)enabled: false\n/, "$1");
         const { writeFileSync } = await import("node:fs");
-        writeFileSync(file.path, updated, "utf-8");
-        reloadCustomAgents();
-        ctx.ui.notify(`Enabled ${name} (${file.path})`, "info");
+        // If the file was just a stub (only "enabled: false"), delete it entirely
+        if (updated.trim() === "---\n---" || updated.trim() === "---\n\n---") {
+            unlinkSync(file.path);
+            reloadCustomAgents();
+            ctx.ui.notify(`Enabled ${name} (removed ${file.path})`, "info");
+        }
+        else {
+            writeFileSync(file.path, updated, "utf-8");
+            reloadCustomAgents();
+            ctx.ui.notify(`Enabled ${name} (${file.path})`, "info");
+        }
     }
     async function showCreateWizard(ctx) {
         const location = await ctx.ui.select("Choose location", [
             "Project (.pi/agents/)",
-            "Personal (~/.pi/agent/agents/)",
+            `Personal (${personalAgentsDir()})`,
         ]);
         if (!location)
             return;
@@ -1447,13 +1554,9 @@ Guidelines for choosing settings:
 - Only include frontmatter fields that differ from defaults — omit fields where the default is fine
 
 Write the file using the write tool. Only write the file, nothing else.`;
-        const generatorType = getAvailableTypes()[0];
-        if (!generatorType) {
-            ctx.ui.notify("Cannot generate an agent: no existing custom agent is available to run the generator.", "warning");
-            return;
-        }
-        const record = await manager.spawnAndWait(pi, ctx, generatorType, generatePrompt, {
+        const record = await manager.spawnAndWait(pi, ctx, "general-purpose", generatePrompt, {
             description: `Generate ${name} agent`,
+            maxTurns: 5,
         });
         if (record.status === "error") {
             ctx.ui.notify(`Generation failed: ${record.error}`, "warning");
@@ -1477,11 +1580,11 @@ Write the file using the write tool. Only write the file, nothing else.`;
         if (!description)
             return;
         // 3. Tools
-        const toolChoice = await ctx.ui.select("Tools", ["default (read, bash, edit, write)", "none", "read-only (read, bash; use rg/fd/ls)", "custom..."]);
+        const toolChoice = await ctx.ui.select("Tools", ["all", "none", "read-only (read, bash; use rg/fd/ls)", "custom..."]);
         if (!toolChoice)
             return;
         let tools;
-        if (toolChoice.startsWith("default")) {
+        if (toolChoice === "all") {
             tools = BUILTIN_TOOL_NAMES.join(", ");
         }
         else if (toolChoice === "none") {
@@ -1521,7 +1624,7 @@ Write the file using the write tool. Only write the file, nothing else.`;
         // 5. Thinking
         const thinkingChoice = await ctx.ui.select("Thinking level", [
             "inherit",
-            "none",
+            "off",
             "minimal",
             "low",
             "medium",
@@ -1571,6 +1674,18 @@ ${systemPrompt}
         reloadCustomAgents();
         ctx.ui.notify(`Created ${targetPath}`, "info");
     }
+    function snapshotSettings() {
+        return {
+            maxConcurrent: manager.getMaxConcurrent(),
+            defaultMaxTurns: getDefaultMaxTurns() ?? 0,
+            graceTurns: getGraceTurns(),
+            defaultJoinMode: getDefaultJoinMode(),
+        };
+    }
+    function notifyApplied(ctx, successMsg) {
+        const { message, level } = saveAndEmitChanged(snapshotSettings(), successMsg, (event, payload) => pi.events.emit(event, payload));
+        ctx.ui.notify(message, level);
+    }
     async function showSettings(ctx) {
         const choice = await ctx.ui.select("Settings", [
             `Max concurrency (current: ${manager.getMaxConcurrent()})`,
@@ -1586,7 +1701,7 @@ ${systemPrompt}
                 const n = parseInt(val, 10);
                 if (n >= 1) {
                     manager.setMaxConcurrent(n);
-                    ctx.ui.notify(`Max concurrency set to ${n}`, "info");
+                    notifyApplied(ctx, `Max concurrency set to ${n}`);
                 }
                 else {
                     ctx.ui.notify("Must be a positive integer.", "warning");
@@ -1599,11 +1714,11 @@ ${systemPrompt}
                 const n = parseInt(val, 10);
                 if (n === 0) {
                     setDefaultMaxTurns(undefined);
-                    ctx.ui.notify("Default max turns set to unlimited", "info");
+                    notifyApplied(ctx, "Default max turns set to unlimited");
                 }
                 else if (n >= 1) {
                     setDefaultMaxTurns(n);
-                    ctx.ui.notify(`Default max turns set to ${n}`, "info");
+                    notifyApplied(ctx, `Default max turns set to ${n}`);
                 }
                 else {
                     ctx.ui.notify("Must be 0 (unlimited) or a positive integer.", "warning");
@@ -1616,7 +1731,7 @@ ${systemPrompt}
                 const n = parseInt(val, 10);
                 if (n >= 1) {
                     setGraceTurns(n);
-                    ctx.ui.notify(`Grace turns set to ${n}`, "info");
+                    notifyApplied(ctx, `Grace turns set to ${n}`);
                 }
                 else {
                     ctx.ui.notify("Must be a positive integer.", "warning");
@@ -1632,7 +1747,7 @@ ${systemPrompt}
             if (val) {
                 const mode = val.split(" ")[0];
                 setDefaultJoinMode(mode);
-                ctx.ui.notify(`Default join mode set to ${mode}`, "info");
+                notifyApplied(ctx, `Default join mode set to ${mode}`);
             }
         }
     }
