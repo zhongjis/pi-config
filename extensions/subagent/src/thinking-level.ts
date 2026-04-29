@@ -16,3 +16,7 @@ export function normalizeThinkingLevel(value: string | undefined): ThinkingLevel
     ? (value as ThinkingLevel)
     : undefined;
 }
+
+export function isValidThinkingLevel(s: string): s is ThinkingLevel {
+  return VALID_THINKING_LEVELS.has(s as ThinkingLevel);
+}

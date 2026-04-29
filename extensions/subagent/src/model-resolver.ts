@@ -1,3 +1,6 @@
+import type { ThinkingLevel } from "./types.js";
+import { isValidThinkingLevel } from "./thinking-level.js";
+
 /**
  * Model resolution: exact match ("provider/modelId") with fuzzy fallback.
  */
@@ -78,4 +81,28 @@ export function resolveModel(
     .sort()
     .join("\n");
   return `Model not found: "${input}".\n\nAvailable models:\n${modelList}`;
+}
+
+export interface ModelCandidate {
+  model: string;
+  thinkingLevel?: ThinkingLevel;
+}
+
+function parseModelPattern(segment: string): ModelCandidate {
+  const colonIdx = segment.lastIndexOf(":");
+  if (colonIdx === -1) return { model: segment };
+  const prefix = segment.slice(0, colonIdx);
+  const suffix = segment.slice(colonIdx + 1);
+  if (isValidThinkingLevel(suffix)) {
+    return { model: prefix, thinkingLevel: suffix };
+  }
+  return { model: segment };
+}
+
+export function parseModelChain(input: string): ModelCandidate[] {
+  return input
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(parseModelPattern);
 }
