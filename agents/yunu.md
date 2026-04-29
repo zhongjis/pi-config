@@ -1,8 +1,7 @@
 ---
 display_name: Yunu 玉女
 description: A UI/UX designer for visual direction, interaction quality, and practical frontend design improvements.
-model: gemini-3.1-pro-preview
-thinking: high
+model: gemini-3.1-pro-preview:high
 tools: read,bash,edit,write,lsp_diagnostics
 disallowed_tools: exit_plan_mode,Agent,get_subagent_result,steer_subagent
 ---

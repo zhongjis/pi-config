@@ -1,8 +1,7 @@
 ---
 display_name: Wen Chang 文昌
 description: An external research agent for web lookups, GitHub searches, and documentation retrieval. Use this agent to find how other projects solve a problem, check library docs, or gather authoritative outside context.
-model: claude-haiku-4-5
-thinking: low
+model: claude-haiku-4-5:low
 tools: read
 extensions: clauderock,web_search,web_code_search,fetch_content,get_search_content,context7_resolve-library-id,context7_query-docs,readonly_bash
 ---

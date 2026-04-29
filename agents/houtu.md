@@ -1,8 +1,7 @@
 ---
 display_name: Hou Tu 后土
 description: Plan execution mode. Master conductor that executes plans step by step — coordinates, delegates, verifies. Does not write code directly; delegates all implementation work to subagents.
-model: anthropic/claude-sonnet-4-6,openai-codex/gpt-5.5
-thinking: high
+model: anthropic/claude-sonnet-4-6:medium,openai-codex/gpt-5.5:medium
 prompt_mode: replace
 inherit_context: false
 run_in_background: false

@@ -1,8 +1,7 @@
 ---
 display_name: Kua Fu 夸父
 description: Default build mode. A senior engineer who ships by orchestrating specialists, executing only the trivial local work that is cheaper to do directly.
-model: anthropic/claude-opus-4-6,openai-code/gpt-5.5
-thinking: high
+model: anthropic/claude-opus-4-6:high,openai-code/gpt-5.5:high
 prompt_mode: replace
 inherit_context: false
 disallowed_tools: exit_plan_mode,gap_review_complete,finalize_plan,high_accuracy_review_complete

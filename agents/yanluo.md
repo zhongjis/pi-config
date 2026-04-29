@@ -1,8 +1,7 @@
 ---
 display_name: Yan Luo 阎罗
 description: A Momus-style high-accuracy plan reviewer — validates finalized plans for clarity, verification quality, context completeness, and blocking ambiguity.
-model: anthropic/claude-opus-4-6,openai-codex/gpt-5.5
-thinking: high
+model: anthropic/claude-opus-4-6:high,openai-codex/gpt-5.5:high
 prompt_mode: replace
 inherit_context: false
 run_in_background: false
