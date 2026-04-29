@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Model fallback chain**: `model` frontmatter field now supports comma-separated
+  model list. First available model is used; subsequent entries are fallbacks.
+  Example: `model: claude-opus-4-6,claude-sonnet-4-6`
+- **Per-model thinking level**: Each model in the chain can specify a thinking level
+  via `:level` suffix. Example: `model: claude-opus-4-6:high,claude-sonnet-4-6:medium`
+- `parseModelChain()` exported from model-resolver for programmatic use.
+- `isValidThinkingLevel()` exported from thinking-level.ts.
+
+### Removed
+- Standalone `thinking` frontmatter field. Thinking level is now specified
+  per-model via the `:level` suffix in the `model` field.
+- `thinking` property from `AgentConfig` type.
+
+### Changed
+- `resolveAgentInvocationConfig()` return type: `modelInput` → `modelCandidates[]`,
+  `thinking` → `thinkingOverride` (from tool param only).
+
+### Migration
+- Before: `model: claude-opus-4-6` + `thinking: high`
+- After:  `model: claude-opus-4-6:high`
+- The tool `thinking` parameter still works as a blanket override.
+
+### ⚠️ Local Vendored Change
+- This change is LOCAL to this repo. Do not override during upstream sync.
+- Original feature in commit cc26eb7, lost in c9266c2 migration, restored here.
+
 ### Fixed
 - Restored local Nerd Font UI stat formatting after the v0.6.3 upstream sync: widget rows, Agent result renderers, conversation viewer headers, and completion notifications again show spaced turn counts (`⟳ 5` / `⟳ 5≤30`), tool-use icons (`󱁤 3`), and token chip icons (`󰾆 33.8k`).
 
