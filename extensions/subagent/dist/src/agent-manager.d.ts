@@ -86,3 +86,4 @@ export declare class AgentManager {
     waitForAll(): Promise<void>;
     dispose(): void;
 }
+export {};

@@ -5,6 +5,13 @@
  * matching Claude Code's task output file format.
  */
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
+/**
+ * Encode a cwd path as a filesystem-safe directory name. Handles:
+ *   - POSIX:   "/home/user/project"        → "home-user-project"
+ *   - Windows: "C:\Users\foo\project"      → "Users-foo-project"
+ *   - UNC:     "\\\\server\\share\\project"  → "server-share-project"
+ */
+export declare function encodeCwd(cwd: string): string;
 /** Create the output file path, ensuring the directory exists.
  *  Mirrors Claude Code's layout: /tmp/{prefix}-{uid}/{encoded-cwd}/{sessionId}/tasks/{agentId}.output */
 export declare function createOutputFilePath(cwd: string, agentId: string, sessionId: string): string;

@@ -2,8 +2,9 @@
  * agent-runner.ts — Core execution engine: creates sessions, runs agents, collects results.
  */
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager, SettingsManager, } from "@mariozechner/pi-coding-agent";
-import { getAgentConfig, getConfig, getMemoryTools, getReadOnlyMemoryTools, getToolsForType } from "./agent-types.js";
+import { getAgentConfig, getConfig, getMemoryToolNames, getReadOnlyMemoryToolNames, getToolNamesForType } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
+import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
 import { buildMemoryBlock, buildReadOnlyMemoryBlock } from "./memory.js";
 import { buildAgentPrompt } from "./prompts.js";
@@ -87,18 +88,12 @@ function forwardAbortSignal(session, signal) {
     if (!signal)
         return () => { };
     const onAbort = () => session.abort();
-    if (signal.aborted) {
-        onAbort();
-        return () => { };
-    }
     signal.addEventListener("abort", onAbort, { once: true });
     return () => signal.removeEventListener("abort", onAbort);
 }
 export async function runAgent(ctx, type, prompt, options) {
     const config = getConfig(type);
     const agentConfig = getAgentConfig(type);
-    if (!agentConfig)
-        throw new Error(`Unknown or disabled agent type: ${type}`);
     // Resolve working directory: worktree override > parent cwd
     const effectiveCwd = options.cwd ?? ctx.cwd;
     const env = await detectEnv(options.pi, effectiveCwd);
@@ -116,60 +111,73 @@ export async function runAgent(ctx, type, prompt, options) {
             extras.skillBlocks = loaded;
         }
     }
-    let tools = getToolsForType(type, effectiveCwd);
+    let toolNames = getToolNamesForType(type);
     // Persistent memory: detect write capability and branch accordingly.
     // Account for disallowedTools — a tool in the base set but on the denylist is not truly available.
     if (agentConfig?.memory) {
-        const existingNames = new Set(tools.map(t => t.name));
+        const existingNames = new Set(toolNames);
         const denied = agentConfig.disallowedTools ? new Set(agentConfig.disallowedTools) : undefined;
         const effectivelyHas = (name) => existingNames.has(name) && !denied?.has(name);
         const hasWriteTools = effectivelyHas("write") || effectivelyHas("edit");
         if (hasWriteTools) {
-            // Read-write memory: add any missing memory tools (read/write/edit)
-            const memTools = getMemoryTools(effectiveCwd, existingNames);
-            if (memTools.length > 0)
-                tools = [...tools, ...memTools];
+            // Read-write memory: add any missing memory tool names (read/write/edit)
+            const extraNames = getMemoryToolNames(existingNames);
+            if (extraNames.length > 0)
+                toolNames = [...toolNames, ...extraNames];
             extras.memoryBlock = buildMemoryBlock(agentConfig.name, agentConfig.memory, effectiveCwd);
         }
         else {
-            // Read-only memory: only add read tool, use read-only prompt
-            if (!existingNames.has("read")) {
-                const readTools = getReadOnlyMemoryTools(effectiveCwd, existingNames);
-                if (readTools.length > 0)
-                    tools = [...tools, ...readTools];
-            }
+            // Read-only memory: only add read tool name, use read-only prompt
+            const extraNames = getReadOnlyMemoryToolNames(existingNames);
+            if (extraNames.length > 0)
+                toolNames = [...toolNames, ...extraNames];
             extras.memoryBlock = buildReadOnlyMemoryBlock(agentConfig.name, agentConfig.memory, effectiveCwd);
         }
     }
     // Build system prompt from agent config
-    const systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, parentSystemPrompt, extras);
+    let systemPrompt;
+    if (agentConfig) {
+        systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, parentSystemPrompt, extras);
+    }
+    else {
+        // Unknown type fallback: spread the canonical general-purpose config (defensive —
+        // unreachable in practice since index.ts resolves unknown types before calling runAgent).
+        const fallback = DEFAULT_AGENTS.get("general-purpose");
+        if (!fallback)
+            throw new Error(`No fallback config available for unknown type "${type}"`);
+        systemPrompt = buildAgentPrompt({ ...fallback, name: type }, effectiveCwd, env, parentSystemPrompt, extras);
+    }
     // When skills is string[], we've already preloaded them into the prompt.
     // Still pass noSkills: true since we don't need the skill loader to load them again.
     const noSkills = skills === false || Array.isArray(skills);
     const agentDir = getAgentDir();
-    const settingsManager = SettingsManager.create(effectiveCwd, agentDir);
-    // Load extensions/skills: true or string[] → load; false → don't
+    // Load extensions/skills: true or string[] → load; false → don't.
+    // Suppress AGENTS.md/CLAUDE.md and APPEND_SYSTEM.md — upstream's
+    // buildSystemPrompt() re-appends both AFTER systemPromptOverride, which
+    // would defeat prompt_mode: replace and isolated: true. Parent context, if
+    // wanted, reaches the subagent via prompt_mode: append (parentSystemPrompt
+    // is embedded in systemPromptOverride) or inherit_context (conversation).
     const loader = new DefaultResourceLoader({
         cwd: effectiveCwd,
         agentDir,
-        settingsManager,
         noExtensions: extensions === false,
         noSkills,
         noPromptTemplates: true,
         noThemes: true,
+        noContextFiles: true,
         systemPromptOverride: () => systemPrompt,
+        appendSystemPromptOverride: () => [],
     });
     await loader.reload();
     // Resolve model: explicit option > config.model > parent model
     const model = options.model ?? resolveDefaultModel(ctx.model, ctx.modelRegistry, agentConfig?.model);
     // Resolve thinking level: explicit option > agent config > undefined (inherit)
     const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking;
-    const toolNames = Array.from(new Set(tools.map((tool) => tool.name)));
     const sessionOpts = {
         cwd: effectiveCwd,
         agentDir,
         sessionManager: SessionManager.inMemory(effectiveCwd),
-        settingsManager,
+        settingsManager: SettingsManager.create(effectiveCwd, agentDir),
         modelRegistry: ctx.modelRegistry,
         model,
         tools: toolNames,
@@ -178,7 +186,6 @@ export async function runAgent(ctx, type, prompt, options) {
     if (thinkingLevel) {
         sessionOpts.thinkingLevel = thinkingLevel;
     }
-    // createAgentSession's type signature may not include thinkingLevel yet
     const { session } = await createAgentSession(sessionOpts);
     // Build disallowed tools set from agent config
     const disallowedSet = agentConfig?.disallowedTools
@@ -187,13 +194,13 @@ export async function runAgent(ctx, type, prompt, options) {
     // Filter active tools: remove our own tools to prevent nesting,
     // apply extension allowlist if specified, and apply disallowedTools denylist
     if (extensions !== false) {
-        const builtinToolNames = new Set(tools.map(t => t.name));
+        const builtinToolNameSet = new Set(toolNames);
         const activeTools = session.getActiveToolNames().filter((t) => {
             if (EXCLUDED_TOOL_NAMES.includes(t) && !agentConfig?.allowNesting)
                 return false;
             if (disallowedSet?.has(t))
                 return false;
-            if (builtinToolNames.has(t))
+            if (builtinToolNameSet.has(t))
                 return true;
             if (Array.isArray(extensions)) {
                 return extensions.some(ext => t.startsWith(ext) || t.includes(ext));

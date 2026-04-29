@@ -1,14 +1,15 @@
 /**
- * agent-types.ts — Unified custom agent type registry.
+ * agent-types.ts — Unified agent type registry.
  *
- * Loads user-defined agents from .pi/agents/*.md. Disabled agents are kept but excluded from spawning.
+ * Merges embedded default agents with user-defined agents from .pi/agents/*.md.
+ * User agents override defaults with the same name. Disabled agents are kept but excluded from spawning.
  */
-import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { AgentConfig } from "./types.js";
-/** Default built-in tool names for agents that do not configure `tools`. */
+/** All known built-in tool names. */
 export declare const BUILTIN_TOOL_NAMES: string[];
 /**
- * Register user-defined agents into the unified registry.
+ * Register agents into the unified registry.
+ * Starts with DEFAULT_AGENTS, then overlays user agents (overrides defaults with same name).
  * Disabled agents (enabled === false) are kept in the registry but excluded from spawning.
  */
 export declare function registerAgents(userAgents: Map<string, AgentConfig>): void;
@@ -20,21 +21,23 @@ export declare function getAgentConfig(name: string): AgentConfig | undefined;
 export declare function getAvailableTypes(): string[];
 /** Get all type names including disabled (for UI listing). */
 export declare function getAllTypes(): string[];
+/** Get names of default agents currently in the registry. */
+export declare function getDefaultAgentNames(): string[];
+/** Get names of user-defined agents (non-defaults) currently in the registry. */
+export declare function getUserAgentNames(): string[];
 /** Check if a type is valid and enabled (case-insensitive). */
 export declare function isValidType(type: string): boolean;
 /**
- * Get the tools needed for memory management (read, write, edit).
- * Only returns tools that are NOT already in the provided set.
+ * Get memory tool names (read/write/edit) not already in the provided set.
  */
-export declare function getMemoryTools(cwd: string, existingToolNames: Set<string>): AgentTool<any>[];
+export declare function getMemoryToolNames(existingToolNames: Set<string>): string[];
 /**
- * Get only the read tool for read-only memory access.
- * Only returns tools that are NOT already in the provided set.
+ * Get read-only memory tool names not already in the provided set.
  */
-export declare function getReadOnlyMemoryTools(cwd: string, existingToolNames: Set<string>): AgentTool<any>[];
-/** Get built-in tools for a type (case-insensitive). */
-export declare function getToolsForType(type: string, cwd: string): AgentTool<any>[];
-/** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). */
+export declare function getReadOnlyMemoryToolNames(existingToolNames: Set<string>): string[];
+/** Get built-in tool names for a type (case-insensitive). */
+export declare function getToolNamesForType(type: string): string[];
+/** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). Falls back to general-purpose. */
 export declare function getConfig(type: string): {
     displayName: string;
     description: string;

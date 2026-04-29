@@ -1,16 +1,18 @@
 /**
  * types.ts — Type definitions for the subagent system.
  */
-import type { ThinkingLevel as CoreThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
-export type ThinkingLevel = CoreThinkingLevel | "none";
-/** Agent type: any custom agent name. */
+export type { ThinkingLevel };
+/** Agent type: any string name (built-in defaults or user-defined). */
 export type SubagentType = string;
+/** Names of the three embedded default agents. */
+export declare const DEFAULT_AGENT_NAMES: readonly ["general-purpose", "Explore", "Plan"];
 /** Memory scope for persistent agent memory. */
 export type MemoryScope = "user" | "project" | "local";
 /** Isolation mode for agent execution. */
 export type IsolationMode = "worktree";
-/** Unified custom agent configuration. */
+/** Unified agent configuration — used for both default and user-defined agents. */
 export interface AgentConfig {
     name: string;
     displayName?: string;
@@ -43,10 +45,12 @@ export interface AgentConfig {
     memory?: MemoryScope;
     /** Isolation mode — "worktree" runs the agent in a temporary git worktree */
     isolation?: IsolationMode;
+    /** true = this is an embedded default agent (informational) */
+    isDefault?: boolean;
     /** false = agent is hidden from the registry */
     enabled?: boolean;
     /** Where this agent was loaded from */
-    source?: "project" | "global";
+    source?: "default" | "project" | "global";
 }
 export type JoinMode = 'async' | 'group' | 'smart';
 export interface AgentRecord {

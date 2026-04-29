@@ -1,5 +1,5 @@
 const VALID_THINKING_LEVELS = new Set([
-    "none",
+    "off",
     "minimal",
     "low",
     "medium",
@@ -9,8 +9,8 @@ const VALID_THINKING_LEVELS = new Set([
 export function normalizeThinkingLevel(value) {
     if (value == null)
         return undefined;
-    if (value === "off")
-        return "none";
+    if (value === "none")
+        return "off";
     return VALID_THINKING_LEVELS.has(value)
         ? value
         : undefined;
