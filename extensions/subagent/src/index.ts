@@ -23,7 +23,7 @@ import { loadCustomAgents } from "./custom-agents.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged } from "./settings.js";
-import { type ModelRegistry, resolveModel } from "./model-resolver.js";
+import { type ModelRegistry, parseModelChain, resolveModel } from "./model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import { getRecoveredResultText } from "./result-recovery.js";
 import {
@@ -665,7 +665,7 @@ export default function (pi: ExtensionAPI) {
 
     const defaultDescs = defaultNames.map((name) => {
       const cfg = getAgentConfig(name);
-      const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(cfg.model)})` : "";
+      const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(parseModelChain(cfg.model)[0]?.model ?? cfg.model)})` : "";
       return `- ${name}: ${cfg?.description ?? name}${modelSuffix}`;
     });
 
@@ -928,19 +928,33 @@ Guidelines:
 
       const resolvedConfig = resolveAgentInvocationConfig(customConfig, params);
 
-      // Resolve model from agent config first; tool-call params only fill gaps.
+      // Resolve model: fallback chain from agent config; tool-call params replace chain.
       let model = ctx.model;
-      if (resolvedConfig.modelInput) {
-        const resolved = resolveModel(resolvedConfig.modelInput, ctx.modelRegistry);
-        if (typeof resolved === "string") {
-          if (resolvedConfig.modelFromParams) return textResult(resolved);
-          // config-specified: silent fallback to parent
+      let effectiveThinking = resolvedConfig.thinkingOverride;
+
+      if (resolvedConfig.modelCandidates.length > 0) {
+        let resolved: any = undefined;
+        for (const candidate of resolvedConfig.modelCandidates) {
+          const result = resolveModel(candidate.model, ctx.modelRegistry);
+          if (typeof result !== "string") {
+            resolved = result;
+            if (!effectiveThinking) effectiveThinking = candidate.thinkingLevel;
+            break;
+          }
+        }
+        if (!resolved) {
+          if (resolvedConfig.modelFromParams) {
+            // All candidates failed from tool params — return error for first candidate
+            const firstError = resolveModel(resolvedConfig.modelCandidates[0].model, ctx.modelRegistry);
+            return textResult(typeof firstError === "string" ? firstError : "Model resolution failed");
+          }
+          // config-specified: silent fallback to parent model
         } else {
           model = resolved;
         }
       }
 
-      const thinking = resolvedConfig.thinking;
+      const thinking = effectiveThinking;
       const inheritContext = resolvedConfig.inheritContext;
       const runInBackground = resolvedConfig.runInBackground;
       const isolated = resolvedConfig.isolated;
@@ -1316,12 +1330,13 @@ Guidelines:
   function getModelLabel(type: string, registry?: ModelRegistry): string {
     const cfg = getAgentConfig(type);
     if (!cfg?.model) return "inherit";
-    // If registry provided, check if the model actually resolves
+    const candidates = parseModelChain(cfg.model);
+    if (candidates.length === 0) return "inherit";
     if (registry) {
-      const resolved = resolveModel(cfg.model, registry);
-      if (typeof resolved === "string") return "inherit"; // model not available
+      const resolved = resolveModel(candidates[0].model, registry);
+      if (typeof resolved === "string") return "inherit";
     }
-    return getModelLabelFromConfig(cfg.model);
+    return getModelLabelFromConfig(candidates[0].model);
   }
 
   async function showAgentsMenu(ctx: ExtensionCommandContext) {
@@ -1589,7 +1604,6 @@ Guidelines:
     if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
     fmFields.push(`tools: ${cfg.builtinToolNames?.join(", ") || "all"}`);
     if (cfg.model) fmFields.push(`model: ${cfg.model}`);
-    if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
     if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
     fmFields.push(`prompt_mode: ${cfg.promptMode}`);
     if (cfg.extensions === false) fmFields.push("extensions: false");

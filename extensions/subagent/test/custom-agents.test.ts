@@ -36,8 +36,7 @@ describe("loadCustomAgents", () => {
     writeAgent("auditor", `---
 description: Security Auditor
 tools: read, grep, find
-model: anthropic/claude-opus-4-6
-thinking: high
+model: anthropic/claude-opus-4-6:high
 max_turns: 30
 prompt_mode: replace
 inherit_context: true
@@ -54,8 +53,7 @@ You are a security auditor.`);
     expect(agent.name).toBe("auditor");
     expect(agent.description).toBe("Security Auditor");
     expect(agent.builtinToolNames).toEqual(["read", "grep", "find"]);
-    expect(agent.model).toBe("anthropic/claude-opus-4-6");
-    expect(agent.thinking).toBe("high");
+    expect(agent.model).toBe("anthropic/claude-opus-4-6:high");
     expect(agent.maxTurns).toBe(30);
     expect(agent.promptMode).toBe("replace");
     expect(agent.inheritContext).toBe(true);

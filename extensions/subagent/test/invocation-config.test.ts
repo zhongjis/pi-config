@@ -23,7 +23,6 @@ describe("resolveAgentInvocationConfig", () => {
     const resolved = resolveAgentInvocationConfig(
       makeConfig({
         model: "provider/config-model",
-        thinking: "high",
         maxTurns: 42,
         inheritContext: false,
         runInBackground: false,
@@ -41,9 +40,9 @@ describe("resolveAgentInvocationConfig", () => {
       },
     );
 
-    expect(resolved.modelInput).toBe("provider/config-model");
+    expect(resolved.modelCandidates[0].model).toBe("provider/config-model");
     expect(resolved.modelFromParams).toBe(false);
-    expect(resolved.thinking).toBe("high");
+    expect(resolved.thinkingOverride).toBe("minimal");
     expect(resolved.maxTurns).toBe(42);
     expect(resolved.inheritContext).toBe(false);
     expect(resolved.runInBackground).toBe(false);
@@ -62,9 +61,9 @@ describe("resolveAgentInvocationConfig", () => {
       isolation: "worktree",
     });
 
-    expect(resolved.modelInput).toBe("provider/param-model");
+    expect(resolved.modelCandidates[0].model).toBe("provider/param-model");
     expect(resolved.modelFromParams).toBe(true);
-    expect(resolved.thinking).toBe("minimal");
+    expect(resolved.thinkingOverride).toBe("minimal");
     expect(resolved.maxTurns).toBe(3);
     expect(resolved.inheritContext).toBe(true);
     expect(resolved.runInBackground).toBe(true);

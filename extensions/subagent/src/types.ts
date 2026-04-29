@@ -38,7 +38,6 @@ export interface AgentConfig {
   /** true = inherit all, string[] = only listed, false = none */
   skills: true | string[] | false;
   model?: string;
-  thinking?: ThinkingLevel;
   maxTurns?: number;
   systemPrompt: string;
   promptMode: "replace" | "append";

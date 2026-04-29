@@ -1,4 +1,5 @@
 import { normalizeThinkingLevel } from "./thinking-level.js";
+import { parseModelChain, type ModelCandidate } from "./model-resolver.js";
 
 import type { AgentConfig, IsolationMode, JoinMode, ThinkingLevel } from "./types.js";
 
@@ -16,19 +17,24 @@ export function resolveAgentInvocationConfig(
   agentConfig: AgentConfig | undefined,
   params: AgentInvocationParams,
 ): {
-  modelInput?: string;
+  modelCandidates: ModelCandidate[];
   modelFromParams: boolean;
-  thinking?: ThinkingLevel;
+  thinkingOverride?: ThinkingLevel;
   maxTurns?: number;
   inheritContext: boolean;
   runInBackground: boolean;
   isolated: boolean;
   isolation?: IsolationMode;
 } {
+  const rawModel = agentConfig?.model ?? params.model;
+  const modelFromParams = agentConfig?.model == null && params.model != null;
+  const modelCandidates = rawModel ? parseModelChain(rawModel) : [];
+  const thinkingOverride = normalizeThinkingLevel(params.thinking);
+
   return {
-    modelInput: agentConfig?.model ?? params.model,
-    modelFromParams: agentConfig?.model == null && params.model != null,
-    thinking: normalizeThinkingLevel(agentConfig?.thinking ?? params.thinking),
+    modelCandidates,
+    modelFromParams,
+    thinkingOverride,
     maxTurns: agentConfig?.maxTurns ?? params.max_turns,
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,
     runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? false,
