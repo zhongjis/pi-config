@@ -44,6 +44,8 @@ const ALLOWED_COMMANDS = new Set([
   "du",
   "df",
   "git",
+  "kubectl",
+  "flux",
 ]);
 
 const READ_ONLY_GIT_SUBCOMMANDS = new Set([
@@ -352,6 +354,151 @@ function validateGit(argv: string[]): string | undefined {
   return undefined;
 }
 
+const KUBECTL_READ_ONLY_SUBCOMMANDS = new Set([
+  "get",
+  "describe",
+  "logs",
+  "explain",
+  "api-resources",
+  "api-versions",
+  "version",
+  "top",
+  "events",
+  "options",
+]);
+
+const MUTABLE_KUBECTL_SUBCOMMANDS = new Set([
+  "apply",
+  "create",
+  "delete",
+  "patch",
+  "replace",
+  "edit",
+  "run",
+  "expose",
+  "scale",
+  "autoscale",
+  "set",
+  "label",
+  "annotate",
+  "taint",
+  "drain",
+  "cordon",
+  "uncordon",
+  "rollout",
+  "exec",
+  "attach",
+  "cp",
+  "port-forward",
+  "proxy",
+  "debug",
+  "auth",
+  "config",
+  "plugin",
+  "krew",
+  "certificate",
+  "wait",
+  "diff",
+]);
+
+const FLUX_READ_ONLY_SUBCOMMANDS = new Set([
+  "get",
+  "logs",
+  "stats",
+  "tree",
+  "trace",
+  "events",
+  "version",
+  "check",
+  "export",
+]);
+
+const MUTABLE_FLUX_SUBCOMMANDS = new Set([
+  "bootstrap",
+  "install",
+  "uninstall",
+  "reconcile",
+  "create",
+  "delete",
+  "suspend",
+  "resume",
+  "push",
+  "build",
+  "pull",
+  "tag",
+  "completion",
+  "mcp",
+]);
+
+const COMMON_KUBERNETES_VALUE_GLOBALS = new Set([
+  "-n",
+  "--namespace",
+  "--context",
+  "--kubeconfig",
+  "--as",
+  "--as-group",
+  "--as-uid",
+  "--cluster",
+  "--user",
+  "--request-timeout",
+]);
+const COMMON_KUBERNETES_BOOLEAN_GLOBALS = new Set(["-A", "--all-namespaces"]);
+
+const KUBECTL_VALUE_GLOBALS = COMMON_KUBERNETES_VALUE_GLOBALS;
+const KUBECTL_BOOLEAN_GLOBALS = COMMON_KUBERNETES_BOOLEAN_GLOBALS;
+
+const FLUX_VALUE_GLOBALS = new Set([
+  ...COMMON_KUBERNETES_VALUE_GLOBALS,
+  "--timeout",
+  "--log-level",
+]);
+const FLUX_BOOLEAN_GLOBALS = COMMON_KUBERNETES_BOOLEAN_GLOBALS;
+
+const KUBECTL_RAW_OPTIONS = new Set(["--raw"]);
+const KUBECTL_PROFILE_OPTIONS = new Set(["--profile", "--profile-output"]);
+const KUBECTL_CACHE_OPTIONS = new Set(["--cache-dir"]);
+const WATCH_FLAGS = new Set([
+  "-w",
+  "-w=true",
+  "--watch",
+  "--watch=true",
+  "--watch-only",
+  "--watch-only=true",
+]);
+const FOLLOW_FLAGS = new Set(["-f", "-f=true", "--follow", "--follow=true"]);
+
+type ReadonlyBashHelpSection = {
+  label: string;
+  commands?: readonly string[];
+  examples: readonly string[];
+};
+
+const READONLY_BASH_GENERIC_HINTS = [
+  "Use one non-mutating command only; no pipes, &&/||, ;, redirection, substitution, or shell escapes.",
+  "readonly_bash will not run mutating or streaming commands; use a different approved workflow for changes.",
+] as const;
+
+const READONLY_BASH_HELP_SECTIONS: readonly ReadonlyBashHelpSection[] = [
+  {
+    label: "Local",
+    examples: ["ls -la", "rg \"pattern\" path", "cat file", "jq . file.json", "git status --short"],
+  },
+  {
+    label: "Kubernetes",
+    commands: ["kubectl"],
+    examples: ["kubectl get pods -A", "kubectl describe pod NAME -n NAMESPACE", "kubectl logs deployment/NAME"],
+  },
+  {
+    label: "Flux",
+    commands: ["flux"],
+    examples: ["flux get kustomizations -A", "flux logs --kind HelmRelease --name NAME", "flux events"],
+  },
+] as const;
+
+type SubcommandParseResult =
+  | { ok: true; subcommand: string; subcommandIndex: number }
+  | { ok: false; reason: string };
+
 function validateNixOrNh(argv: string[]): string | undefined {
   const name = commandName(argv[0] ?? "");
   const subcommand = argv[1]?.toLowerCase();
@@ -360,6 +507,102 @@ function validateNixOrNh(argv: string[]): string | undefined {
   }
   if (name === "nh" && subcommand === "os" && argv[2]?.toLowerCase() === "switch") {
     return "nh os switch is not allowed";
+  }
+  return undefined;
+}
+
+function valueTakingGlobalMode(arg: string, options: Set<string>): "inline" | "separate" | undefined {
+  const equalIndex = arg.indexOf("=");
+  if (equalIndex > 0) {
+    const optionName = arg.slice(0, equalIndex);
+    if (options.has(optionName) && arg.slice(equalIndex + 1).length > 0) return "inline";
+    return undefined;
+  }
+
+  if (options.has(arg)) return "separate";
+  if (options.has("-n") && arg.startsWith("-n") && arg.length > 2) return "inline";
+  return undefined;
+}
+
+function booleanGlobalMatches(arg: string, options: Set<string>): boolean {
+  return options.has(arg) || [...options].some((option) => option.startsWith("--") && arg.startsWith(`${option}=`));
+}
+
+function extractKubernetesSubcommand(
+  argv: string[],
+  cliName: "kubectl" | "flux",
+  valueGlobals: Set<string>,
+  booleanGlobals: Set<string>,
+): SubcommandParseResult {
+  for (let i = 1; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--") return { ok: false, reason: `${cliName} end-of-options marker before subcommand is not allowed` };
+
+    if (arg.startsWith("-")) {
+      if (booleanGlobalMatches(arg, booleanGlobals)) continue;
+      const mode = valueTakingGlobalMode(arg, valueGlobals);
+      if (!mode) return { ok: false, reason: `${cliName} unknown pre-subcommand option ${arg} is not allowed` };
+      if (mode === "separate") {
+        const value = argv[i + 1];
+        if (!value || value.startsWith("-")) {
+          return { ok: false, reason: `${cliName} ${arg} requires a value before subcommand` };
+        }
+        i += 1;
+      }
+      continue;
+    }
+
+    return { ok: true, subcommand: arg.toLowerCase(), subcommandIndex: i };
+  }
+
+  return { ok: false, reason: `${cliName} requires an explicit read-only subcommand` };
+}
+
+function hasOption(args: string[], options: Set<string>): boolean {
+  return args.some((arg) => options.has(arg) || [...options].some((option) => arg.startsWith(`${option}=`)));
+}
+
+function hasFlag(args: string[], flags: Set<string>): boolean {
+  return args.some((arg) => flags.has(arg));
+}
+
+function validateKubectl(argv: string[]): string | undefined {
+  const args = argv.slice(1);
+  if (hasOption(args, KUBECTL_RAW_OPTIONS)) return "kubectl --raw is not allowed";
+  if (hasOption(args, KUBECTL_PROFILE_OPTIONS)) return "kubectl profiling options are not allowed";
+  if (hasOption(args, KUBECTL_CACHE_OPTIONS)) return "kubectl cache-dir options are not allowed";
+
+  const parsed = extractKubernetesSubcommand(argv, "kubectl", KUBECTL_VALUE_GLOBALS, KUBECTL_BOOLEAN_GLOBALS);
+  if (!parsed.ok) return parsed.reason;
+
+  const subcommand = parsed.subcommand;
+  if (MUTABLE_KUBECTL_SUBCOMMANDS.has(subcommand)) return `kubectl ${subcommand} is not allowed`;
+  if (!KUBECTL_READ_ONLY_SUBCOMMANDS.has(subcommand)) {
+    return `kubectl ${subcommand} is outside the read-only allowlist`;
+  }
+
+  if (["get", "events"].includes(subcommand) && hasFlag(args, WATCH_FLAGS)) {
+    return "kubectl watch flags are not allowed";
+  }
+  if (subcommand === "logs" && hasFlag(args, FOLLOW_FLAGS)) {
+    return "kubectl follow flags are not allowed";
+  }
+  return undefined;
+}
+
+function validateFlux(argv: string[]): string | undefined {
+  const args = argv.slice(1);
+  const parsed = extractKubernetesSubcommand(argv, "flux", FLUX_VALUE_GLOBALS, FLUX_BOOLEAN_GLOBALS);
+  if (!parsed.ok) return parsed.reason;
+
+  const subcommand = parsed.subcommand;
+  if (MUTABLE_FLUX_SUBCOMMANDS.has(subcommand)) return `flux ${subcommand} is not allowed`;
+  if (!FLUX_READ_ONLY_SUBCOMMANDS.has(subcommand)) {
+    return `flux ${subcommand} is outside the read-only allowlist`;
+  }
+
+  if (hasFlag(args, WATCH_FLAGS) || hasFlag(args, FOLLOW_FLAGS)) {
+    return "flux watch/follow flags are not allowed";
   }
   return undefined;
 }
@@ -378,6 +621,8 @@ function validateAllowedFamily(argv: string[]): string | undefined {
   if (name === "sed") return validateSed(argv);
   if (name === "awk") return validateAwk(argv);
   if (name === "git") return validateGit(argv);
+  if (name === "kubectl") return validateKubectl(argv);
+  if (name === "flux") return validateFlux(argv);
   return undefined;
 }
 
@@ -398,9 +643,32 @@ export function validateReadonlyBashCommand(command: string): ValidationResult {
   return { ok: true, command: trimmed, argv };
 }
 
+function readonlyBashHelpSections(command: string): readonly ReadonlyBashHelpSection[] {
+  const commandToken = tokenizeReadonlyBashCommand(command.trim())[0] ?? "";
+  const name = commandName(commandToken);
+  const genericSections = READONLY_BASH_HELP_SECTIONS.filter((section) => !section.commands);
+  const commandSections = READONLY_BASH_HELP_SECTIONS.filter((section) => section.commands?.includes(name));
+  return [...genericSections, ...commandSections];
+}
+
+
+function readonlyBashFailureMessage(command: string, reason: string): string {
+  const trimmed = command.trim() || "<empty>";
+  const sections = readonlyBashHelpSections(command);
+  return [
+    `readonly_bash blocked: ${reason}`,
+    "",
+    `Command: ${trimmed}`,
+    "",
+    "How to fix:",
+    ...READONLY_BASH_GENERIC_HINTS.map((hint) => `- ${hint}`),
+    ...sections.map((section) => `- ${section.label} examples: ${section.examples.join("; ")}.`),
+  ].join("\n");
+}
+
 export function assertReadonlyBashCommand(command: string): { command: string; argv: string[] } {
   const result = validateReadonlyBashCommand(command);
-  if (result.ok === false) throw new Error(`readonly_bash blocked: ${result.reason}`);
+  if (result.ok === false) throw new Error(readonlyBashFailureMessage(command, result.reason));
   return { command: result.command, argv: result.argv };
 }
 

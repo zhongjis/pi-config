@@ -131,6 +131,32 @@ describe("readonly-bash validator", () => {
     "git branch --show-current",
     "git rev-parse --show-toplevel",
     'git grep "readonly_bash"',
+    "kubectl get pods",
+    "kubectl get pods -o yaml",
+    "kubectl -A get pods",
+    "kubectl --all-namespaces=true get pods",
+    "kubectl -n kube-system get pods",
+    "kubectl -ndefault events",
+    "kubectl --context prod --namespace=default describe pod web",
+    "kubectl --kubeconfig /tmp/kubeconfig --request-timeout=5s api-resources",
+    "kubectl logs deployment/web",
+    "kubectl explain pods",
+    "kubectl api-versions",
+    "kubectl version",
+    "kubectl top pods",
+    "kubectl options",
+    "flux get kustomizations",
+    "flux get kustomizations -A",
+    "flux --namespace flux-system get sources git",
+    "flux -A get kustomizations",
+    "flux -nflux-system tree kustomization app",
+    "flux --context=prod --kubeconfig /tmp/config logs --kind HelmRelease",
+    "flux --timeout 5s --log-level debug stats",
+    "flux trace pod/web",
+    "flux events",
+    "flux version",
+    "flux check",
+    "flux export source git app",
   ])("allows read-only command: %s", async (command) => {
     const { validateReadonlyBashCommand } = await import("../index.js");
 
@@ -189,6 +215,26 @@ describe("readonly-bash validator", () => {
     ["nix run nixpkgs#hello", "nix run is not allowed"],
     ["nh os switch", "nh os switch is not allowed"],
     ["python -c 'open(\"out\", \"w\").write(\"x\")'", "python is not allowed"],
+    ["kubectl --namespace default apply -f deploy.yaml", "kubectl apply is not allowed"],
+    ["kubectl", "kubectl requires an explicit read-only subcommand"],
+    ["kubectl --bogus get pods", "kubectl unknown pre-subcommand option --bogus is not allowed"],
+    ["kubectl -- get pods", "kubectl end-of-options marker before subcommand is not allowed"],
+    ["kubectl get --raw /api/v1/pods", "kubectl --raw is not allowed"],
+    ["kubectl get --raw=/api/v1/pods", "kubectl --raw is not allowed"],
+    ["kubectl get pods --profile=cpu", "kubectl profiling options are not allowed"],
+    ["kubectl get pods --profile-output out", "kubectl profiling options are not allowed"],
+    ["kubectl get pods --cache-dir=/tmp/cache", "kubectl cache-dir options are not allowed"],
+    ["kubectl get pods -w", "kubectl watch flags are not allowed"],
+    ["kubectl events --watch", "kubectl watch flags are not allowed"],
+    ["kubectl logs pod/web -f", "kubectl follow flags are not allowed"],
+    ["kubectl exec pod/web -- whoami", "kubectl exec is not allowed"],
+    ["flux --namespace flux-system reconcile kustomization app", "flux reconcile is not allowed"],
+    ["flux", "flux requires an explicit read-only subcommand"],
+    ["flux --bogus get sources", "flux unknown pre-subcommand option --bogus is not allowed"],
+    ["flux -- get sources", "flux end-of-options marker before subcommand is not allowed"],
+    ["flux get kustomizations --watch=true", "flux watch/follow flags are not allowed"],
+    ["flux logs --follow", "flux watch/follow flags are not allowed"],
+    ["flux completion bash", "flux completion is not allowed"],
   ])("denies unsafe command: %s", async (command, reason) => {
     const { assertReadonlyBashCommand, validateReadonlyBashCommand } = await import(
       "../index.js",
@@ -196,6 +242,35 @@ describe("readonly-bash validator", () => {
 
     expect(validateReadonlyBashCommand(command)).toEqual({ ok: false, reason });
     expect(() => assertReadonlyBashCommand(command)).toThrow(`readonly_bash blocked: ${reason}`);
+  });
+
+  it("adds actionable guidance to rejected command errors", async () => {
+    const { assertReadonlyBashCommand } = await import("../index.js");
+
+    let error: unknown;
+    try {
+      assertReadonlyBashCommand("kubectl delete pod web");
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain("readonly_bash blocked: kubectl delete is not allowed");
+    expect(message).toContain("Command: kubectl delete pod web");
+    expect(message).toContain("How to fix:");
+    expect(message).toContain("Use one non-mutating command only");
+    expect(message).toContain("Local examples: ls -la");
+    expect(message).toContain("Kubernetes examples: kubectl get pods -A");
+    expect(message).not.toContain("Flux examples:");
+    expect(message).toContain("will not run mutating or streaming commands");
+  });
+
+  it("renders guidance from the matching command family only", async () => {
+    const { assertReadonlyBashCommand } = await import("../index.js");
+
+    expect(() => assertReadonlyBashCommand("flux reconcile kustomization app")).toThrow(/Flux examples: flux get kustomizations -A/);
+    expect(() => assertReadonlyBashCommand("flux reconcile kustomization app")).not.toThrow(/Kubernetes examples:/);
   });
 });
 
