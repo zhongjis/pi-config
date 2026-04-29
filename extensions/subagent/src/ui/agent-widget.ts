@@ -90,16 +90,16 @@ export interface AgentDetails {
 
 // ---- Formatting helpers ----
 
-/** Format a token count compactly: "33.8k token", "1.2M token". */
+/** Format a token count compactly: "󰾆 33.8k", "󰾆 1.2M". */
 export function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M token`;
-  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k token`;
-  return `${count} token`;
+  if (count >= 1_000_000) return `󰾆 ${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `󰾆 ${(count / 1_000).toFixed(1)}k`;
+  return `󰾆 ${count}`;
 }
 
-/** Format turn count with optional max limit: "⟳5≤30" or "⟳5". */
+/** Format turn count with optional max limit: "⟳ 5≤30" or "⟳ 5". */
 export function formatTurns(turnCount: number, maxTurns?: number | null): string {
-  return maxTurns != null ? `⟳${turnCount}≤${maxTurns}` : `⟳${turnCount}`;
+  return maxTurns != null ? `⟳ ${turnCount}≤${maxTurns}` : `⟳ ${turnCount}`;
 }
 
 /** Format milliseconds as human-readable duration. */
@@ -259,7 +259,7 @@ export class AgentWidget {
     if (a.modelLabel) parts.push(a.modelLabel);
     const activity = this.agentActivity.get(a.id);
     if (activity) parts.push(formatTurns(activity.turnCount, activity.maxTurns));
-    if (a.toolUses > 0) parts.push(`${a.toolUses} tool use${a.toolUses === 1 ? "" : "s"}`);
+    if (a.toolUses > 0) parts.push(`󱁤 ${a.toolUses}`);
     let tokenText = "";
     if (activity?.session) {
       try { tokenText = formatTokens(activity.session.getSessionStats().tokens.total); } catch { /* */ }
@@ -322,7 +322,7 @@ export class AgentWidget {
       const parts: string[] = [];
       if (a.modelLabel) parts.push(a.modelLabel);
       if (bg) parts.push(formatTurns(bg.turnCount, bg.maxTurns));
-      if (toolUses > 0) parts.push(`${toolUses} tool use${toolUses === 1 ? "" : "s"}`);
+      if (toolUses > 0) parts.push(`󱁤 ${toolUses}`);
       if (tokenText) parts.push(tokenText);
       parts.push(elapsed);
       const statsText = parts.join(" · ");

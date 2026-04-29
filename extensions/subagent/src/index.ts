@@ -238,7 +238,7 @@ export default function (pi: ExtensionAPI) {
         // Line 2: stats
         const parts: string[] = [];
         if (d.turnCount > 0) parts.push(formatTurns(d.turnCount, d.maxTurns));
-        if (d.toolUses > 0) parts.push(`${d.toolUses} tool use${d.toolUses === 1 ? "" : "s"}`);
+        if (d.toolUses > 0) parts.push(`󱁤 ${d.toolUses}`);
         if (d.totalTokens > 0) parts.push(formatTokens(d.totalTokens));
         if (d.durationMs > 0) parts.push(formatMs(d.durationMs));
         if (parts.length) {
@@ -827,7 +827,7 @@ Guidelines:
         if (d.turnCount != null && d.turnCount > 0) {
           parts.push(formatTurns(d.turnCount, d.maxTurns));
         }
-        if (d.toolUses > 0) parts.push(`${d.toolUses} tool use${d.toolUses === 1 ? "" : "s"}`);
+        if (d.toolUses > 0) parts.push(`󱁤 ${d.toolUses}`);
         if (d.tokens) parts.push(d.tokens);
         return parts.map(p => theme.fg("dim", p)).join(" " + theme.fg("dim", "·") + " ");
       };
