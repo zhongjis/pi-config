@@ -41,11 +41,16 @@ extract_paths() {
 }
 
 if [[ "$UNIQUE" == "true" ]]; then
-  # All unique paths from read/write/edit
+  # All unique paths from read/write/edit/grep/find/ls
   {
     if [[ -z "$OP_FILTER" || "$OP_FILTER" == "read" ]]; then extract_paths "read"; fi
     if [[ -z "$OP_FILTER" || "$OP_FILTER" == "write" ]]; then extract_paths "write"; fi
     if [[ -z "$OP_FILTER" || "$OP_FILTER" == "edit" ]]; then extract_paths "edit"; fi
+    if [[ -z "$OP_FILTER" ]]; then
+      extract_paths "grep"
+      extract_paths "find"
+      extract_paths "ls"
+    fi
   } | sort -u
   exit 0
 fi
@@ -66,13 +71,22 @@ if [[ -z "$OP_FILTER" ]]; then
   show_group "Files Read" "read"
   show_group "Files Written" "write"
   show_group "Files Edited" "edit"
+  show_group "Files Searched (grep)" "grep"
+  show_group "Files Listed (find)" "find"
+  show_group "Files Listed (ls)" "ls"
 elif [[ "$OP_FILTER" == "read" ]]; then
   show_group "Files Read" "read"
 elif [[ "$OP_FILTER" == "write" ]]; then
   show_group "Files Written" "write"
 elif [[ "$OP_FILTER" == "edit" ]]; then
   show_group "Files Edited" "edit"
+elif [[ "$OP_FILTER" == "grep" ]]; then
+  show_group "Files Searched (grep)" "grep"
+elif [[ "$OP_FILTER" == "find" ]]; then
+  show_group "Files Listed (find)" "find"
+elif [[ "$OP_FILTER" == "ls" ]]; then
+  show_group "Files Listed (ls)" "ls"
 else
-  echo "Unknown op: $OP_FILTER (use read, write, or edit)" >&2
+  echo "Unknown op: $OP_FILTER (use read, write, edit, grep, find, or ls)" >&2
   exit 1
 fi

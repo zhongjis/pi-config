@@ -35,7 +35,7 @@ if [[ "$COMPACT" == "true" ]]; then
   jq -r '
     select(.type=="message" and .message.role=="toolResult" and .message.isError==true) |
     "\(.timestamp) | \(.message.toolName) | " +
-    ([.message.content[] | select(.type=="text") | .text] | join(""))[:200]
+    ([.message.content[] | select(.type=="text") | .text] | join("") | gsub("\n"; " "))[:200]
   ' "$SESSION" 2>/dev/null
 else
   jq -r '
@@ -89,3 +89,10 @@ echo "--- Summary ---"
 echo "  tool errors:       $ERROR_COUNT"
 echo "  bash exec errors:  ${BASH_EXEC_COUNT:-0}"
 echo "  bash tool errors:  ${BASH_TOOL_COUNT:-0}"
+
+# Error frequency by tool name
+TOOL_FREQ=$(jq -r 'select(.type=="message" and .message.role=="toolResult" and .message.isError==true) | .message.toolName' "$SESSION" 2>/dev/null | sort | uniq -c | sort -rn)
+if [[ -n "$TOOL_FREQ" ]]; then
+  echo "  by tool:"
+  echo "$TOOL_FREQ" | sed 's/^/    /'
+fi

@@ -39,7 +39,7 @@ All scripts: `bash "$SCRIPTS/<name>.sh" "$SESSION" [flags]`
 
 ### pi-session-overview.sh — One-shot session summary
 
-Start here. Outputs entry types, roles, tool frequency, cost/tokens, model, duration.
+Start here. Outputs entry types, roles, tool frequency, cost/tokens (with per-turn averages), model, thinking stats, duration.
 
 ```bash
 bash "$SCRIPTS/pi-session-overview.sh" "$SESSION"
@@ -56,19 +56,23 @@ bash "$SCRIPTS/pi-session-thread.sh" "$SESSION" --head 10
 bash "$SCRIPTS/pi-session-thread.sh" "$SESSION" --tail 5 --tools
 # Wider truncation (default: 300 chars)
 bash "$SCRIPTS/pi-session-thread.sh" "$SESSION" --max-chars 500
-```
+# Skip empty assistant messages (thinking-only/blank)
+bash "$SCRIPTS/pi-session-thread.sh" "$SESSION" --no-empty
 
 ### pi-session-subagents.sh — Agent delegation extraction
 
-Extracts all Agent tool calls with type, description, background flag, max_turns, prompt preview.
+Extracts all Agent tool calls with type, description, background flag, max_turns, model, inherit_context, and prompt preview.
 
 ```bash
 # All subagent calls
 bash "$SCRIPTS/pi-session-subagents.sh" "$SESSION"
 # Filter by type, show more prompt
+# Filter by type, show more prompt
 bash "$SCRIPTS/pi-session-subagents.sh" "$SESSION" --type fuxi --prompt-len 500
 # Hide prompts
 bash "$SCRIPTS/pi-session-subagents.sh" "$SESSION" --prompt-len 0
+# Full prompt
+bash "$SCRIPTS/pi-session-subagents.sh" "$SESSION" --prompt-len -1
 ```
 
 ### pi-session-toolcalls.sh — Filter and extract tool calls
@@ -82,6 +86,10 @@ bash "$SCRIPTS/pi-session-toolcalls.sh" "$SESSION" --tool bash --field command -
 bash "$SCRIPTS/pi-session-toolcalls.sh" "$SESSION" --tool 'read|write|edit' --field path
 # Agent calls with subagent type
 bash "$SCRIPTS/pi-session-toolcalls.sh" "$SESSION" --tool Agent --field subagent_type --compact
+# Exact tool match (regex): only 'Agent', not 'get_subagent_result'
+bash "$SCRIPTS/pi-session-toolcalls.sh" "$SESSION" --tool '^Agent$' --compact
+# Tool calls with their results
+bash "$SCRIPTS/pi-session-toolcalls.sh" "$SESSION" --tool bash --with-results
 # All tools, verbose
 bash "$SCRIPTS/pi-session-toolcalls.sh" "$SESSION"
 ```
@@ -111,7 +119,7 @@ bash "$SCRIPTS/pi-session-errors.sh" "$SESSION" --compact
 
 ### pi-session-files.sh — Files read, written, and edited
 
-Deduplicated list of all files touched, grouped by operation type.
+Deduplicated list of all files touched, grouped by operation type. Handles read, write, edit, grep, find, and ls tools.
 
 ```bash
 bash "$SCRIPTS/pi-session-files.sh" "$SESSION"
@@ -123,10 +131,25 @@ bash "$SCRIPTS/pi-session-files.sh" "$SESSION" --unique
 
 ### pi-session-tasks.sh — Task lifecycle extraction
 
-Shows TaskCreate, TaskUpdate, and TaskExecute calls — tracks task subjects, status transitions, and completion.
+Shows TaskCreate, TaskUpdate, and TaskExecute calls — tracks task subjects, status transitions, dependency chains (blockedBy/blocks), and completion.
 
 ```bash
 bash "$SCRIPTS/pi-session-tasks.sh" "$SESSION"
+```
+
+### pi-session-custom.sh — Custom/extension entry extraction
+
+Extracts custom and custom_message entries by customType. Shows data keys, content preview, and summary counts.
+
+```bash
+# All custom entries
+bash "$SCRIPTS/pi-session-custom.sh" "$SESSION"
+# Filter by type (regex)
+bash "$SCRIPTS/pi-session-custom.sh" "$SESSION" --type subagents
+# Show full data fields
+bash "$SCRIPTS/pi-session-custom.sh" "$SESSION" --type agent-mode --data
+# Compact (one line per entry)
+bash "$SCRIPTS/pi-session-custom.sh" "$SESSION" --compact
 ```
 
 ---

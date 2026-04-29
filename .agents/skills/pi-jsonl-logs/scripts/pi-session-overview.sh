@@ -43,6 +43,9 @@ TOOLS=$(jq -r 'select(.type=="message" and .message.role=="assistant") |
   sort | uniq -c | sort -rn)
 if [[ -n "$TOOLS" ]]; then
   echo "$TOOLS" | sed 's/^/  /'
+  UNIQUE_TOOLS=$(echo "$TOOLS" | wc -l | tr -d ' ')
+  TOTAL_CALLS=$(echo "$TOOLS" | awk '{s+=$1} END{print s}')
+  echo "  --- $UNIQUE_TOOLS unique tools, $TOTAL_CALLS total calls"
 else
   echo "  (no tool calls)"
 fi
@@ -61,7 +64,7 @@ jq -rs '
     cache_write: (map(.cacheWrite // 0) | add),
     turns: length
   } |
-  "  cost:        $\(.total_cost)\n  tokens:      \(.total_tokens)\n  input:       \(.input_tokens)\n  output:      \(.output_tokens)\n  cache_read:  \(.cache_read)\n  cache_write: \(.cache_write)\n  turns:       \(.turns)"
+  "  cost:        $\(.total_cost * 100 | round / 100)\n  tokens:      \(.total_tokens)\n  input:       \(.input_tokens)\n  output:      \(.output_tokens)\n  cache_read:  \(.cache_read)\n  cache_write: \(.cache_write)\n  turns:       \(.turns)\n  cost/turn:   $\(if .turns > 0 then (.total_cost / .turns * 100 | round / 100) else 0 end)\n  tokens/turn: \(if .turns > 0 then (.total_tokens / .turns | round) else 0 end)"
 ' "$SESSION"
 echo ""
 
@@ -73,6 +76,17 @@ else
   # Fallback: model_change entries
   jq -r 'select(.type=="model_change") | "  \(.modelId // .model // "unknown") (provider: \(.provider // "?"))"' "$SESSION" 2>/dev/null
 fi
+echo ""
+
+# Thinking content stats
+echo "--- Thinking ---"
+jq -rs '
+  [.[] | select(.type=="message" and .message.role=="assistant") |
+   .message.content[] | select(.type=="thinking") | .thinking | length] |
+  if length > 0 then
+    "  thinking_messages: \(length)\n  thinking_chars:    \(add)"
+  else "  (no thinking blocks)" end
+' "$SESSION"
 echo ""
 
 # Duration (first timestamp → last timestamp)

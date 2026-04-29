@@ -61,6 +61,16 @@ ToolCall:         { type: "toolCall", id: string, name: string, arguments: objec
 {"type":"session_info","id":"...","parentId":"...","name":"Refactor auth module"}
 ```
 
+#### Common customType values in real sessions
+
+| customType | Entry type | Data fields | Notes |
+|------------|-----------|-------------|-------|
+| `agent-mode` | custom | `mode`, `planReviewPending`, `planReviewApproved` | Current agent mode (kuafu, plan, etc.) |
+| `subagents:record` | custom | `id`, `type`, `description`, `status`, `result`, `startedAt`, `completedAt` | Full subagent completion record |
+| `web-search-results` | custom | `id`, `timestamp`, `type`, `urls` | Search results metadata |
+| `subagent-notification` | custom_message | XML task notification content | Displayed as agent completion notification |
+| `ultrawork` | custom_message | Activation message content | Hidden (`display: false`) |
+
 ---
 
 ## Advanced jq Patterns

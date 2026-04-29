@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # pi-session-thread.sh — Conversation thread with timestamps
-# Usage: pi-session-thread.sh <session.jsonl> [--max-chars N] [--head N] [--tail N] [--tools]
+# Usage: pi-session-thread.sh <session.jsonl> [--max-chars N] [--head N] [--tail N] [--tools] [--no-empty]
 #
 # Options:
 #   --max-chars N   Truncate each message to N chars (default: 300)
 #   --head N        Show first N messages only
 #   --tail N        Show last N messages only
 #   --tools         Include tool calls and results (default: user+assistant text only)
+#   --no-empty      Skip assistant messages with empty content (thinking-only or blank)
 #
 # Each message is collapsed to a single line, so --head/--tail count messages.
 
@@ -17,6 +18,7 @@ MAX_CHARS=300
 HEAD=""
 TAIL=""
 SHOW_TOOLS=false
+NO_EMPTY=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,21 +26,22 @@ while [[ $# -gt 0 ]]; do
     --head) HEAD="$2"; shift 2 ;;
     --tail) TAIL="$2"; shift 2 ;;
     --tools) SHOW_TOOLS=true; shift ;;
+    --no-empty) NO_EMPTY=true; shift ;;
     -*) echo "Unknown flag: $1" >&2; exit 1 ;;
     *) SESSION="$1"; shift ;;
   esac
 done
 
-: "${SESSION:?Usage: pi-session-thread.sh <session.jsonl> [--max-chars N] [--head N] [--tail N] [--tools]}"
+: "${SESSION:?Usage: pi-session-thread.sh <session.jsonl> [--max-chars N] [--head N] [--tail N] [--tools] [--no-empty]}"
 
 if [[ ! -f "$SESSION" ]]; then
   echo "Error: file not found: $SESSION" >&2
   exit 1
 fi
 
-# Use --argjson to pass max_chars; use --arg to pass show_tools flag
+# Use --argjson to pass max_chars; use --arg to pass show_tools and no_empty flags
 # All messages collapsed to single lines so head/tail = message count
-OUTPUT=$(jq -r --argjson max "$MAX_CHARS" --arg tools "$SHOW_TOOLS" '
+OUTPUT=$(jq -r --argjson max "$MAX_CHARS" --arg tools "$SHOW_TOOLS" --arg noempty "$NO_EMPTY" '
   def collapse: gsub("\n"; " ");
   def trunc: .[:$max];
 
@@ -48,6 +51,10 @@ OUTPUT=$(jq -r --argjson max "$MAX_CHARS" --arg tools "$SHOW_TOOLS" '
   if $tools == "true" then .
   elif .message.role == "user" or .message.role == "assistant" or .message.role == "bashExecution" then .
   else empty end |
+
+  # Empty content filter
+  if $noempty == "true" and .message.role == "assistant" and (.message.content | length == 0) then empty
+  else . end |
 
   if .message.role == "user" then
     "\(.timestamp) | USER | " +

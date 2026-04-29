@@ -34,8 +34,10 @@ jq -r '
   .message.content[] |
   select(.type=="toolCall" and .name=="TaskUpdate") |
   (.arguments | if type=="string" then fromjson else . end) |
-  "[\($ts)] task#\(.taskId) → \(.status // "no status")" +
-  if .subject then " (\(.subject))" else "" end
+  "[\($ts)] task#\(.taskId) \u2192 \(.status // "no status")" +
+  if .subject then " (\(.subject))" else "" end +
+  if .addBlockedBy then " blockedBy=[\(.addBlockedBy | join(","))]" else "" end +
+  if .addBlocks then " blocks=[\(.addBlocks | join(","))]" else "" end
 ' "$SESSION" 2>/dev/null
 
 # Check for TaskExecute

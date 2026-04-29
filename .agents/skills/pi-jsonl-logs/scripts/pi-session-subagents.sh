@@ -58,9 +58,11 @@ jq -r "
     bg: (.run_in_background // false),
     turns: (.max_turns // \"unset\"),
     model: (.model // \"default\"),
+    inherit: (.inherit_context // false),
     prompt_preview: ${PROMPT_EXPR}
   } |
   \"[\(.ts)] \(.type) | \(.desc) | bg=\(.bg) turns=\(.turns) model=\(.model)\" +
+  (if .inherit then \" inherit_context=true\" else \"\" end) +
   if .prompt_preview != \"\" then \"\n  prompt: \(.prompt_preview)\" else \"\" end
 " "$SESSION" 2>/dev/null
 
