@@ -356,7 +356,7 @@ function streamWithFallback(
       }
       // No Bedrock mapping — let Anthropic fail naturally
       try {
-        const anthropicStream = streamSimpleAnthropic(model, context, options);
+        const anthropicStream = streamSimpleAnthropic(model, context, { ...options, maxRetries: 0 });
         for await (const event of anthropicStream) {
           stream.push(event);
         }
@@ -372,7 +372,7 @@ function streamWithFallback(
     let hasResponseContent = false;
     let pendingStart: any = null;
     try {
-      const anthropicStream = streamSimpleAnthropic(model, context, options);
+      const anthropicStream = streamSimpleAnthropic(model, context, { ...options, maxRetries: 0 });
       for await (const event of anthropicStream) {
         if (event.type === "start") {
           pendingStart = event;
