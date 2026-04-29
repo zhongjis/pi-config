@@ -21,10 +21,15 @@
     "todo",
     "coordination"
   ],
-  "dependencies": {
-    "@mariozechner/pi-coding-agent": "0.70.0",
-    "@mariozechner/pi-tui": "0.70.0",
-    "typebox": "1.1.24"
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.70.0",
+    "@mariozechner/pi-tui": "^0.70.0",
+    "typebox": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-coding-agent": { "optional": true },
+    "@mariozechner/pi-tui": { "optional": true },
+    "typebox": { "optional": true }
   },
   "scripts": {
     "build": "tsc",
