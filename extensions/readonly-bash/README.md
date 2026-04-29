@@ -27,6 +27,10 @@ extensions: readonly_bash
 - **Data processing:** `jq`, `wc`, `sort`, `uniq`, `cut`
 - **File info:** `file`, `stat`, `du`, `df`
 - **Git (read-only):** `status`, `log`, `diff`, `show`, `branch`, `rev-parse`, `grep`
+- **Kubernetes (read-only):** `kubectl get`, `describe`, `logs`, `explain`, `api-resources`, `api-versions`, `version`, `top`, `events`, `options`
+- **Flux (read-only):** `flux get`, `logs`, `stats`, `tree`, `trace`, `events`, `version`, `check`, `export`
+
+Read-only cluster commands can still expose Secrets, ConfigMaps, logs, events, node metadata, and any RBAC-visible resources. This extension is not a confidentiality sandbox.
 
 ## Rejected
 
@@ -35,6 +39,8 @@ extensions: readonly_bash
 - `xargs`, `sudo`
 - Mutating commands (`rm`, `mv`, `cp`, `mkdir`, `chmod`, `chown`, `touch`)
 - Mutating git (`add`, `commit`, `push`, `checkout`, `rebase`, `merge`, `reset`)
+- Mutating kubectl (`apply`, `delete`, `patch`, `exec`, `port-forward`, `config`, `auth`)
+- Mutating flux (`bootstrap`, `reconcile`, `create`, `delete`, `suspend`, `resume`)
 - Package managers (`npm`, `pip`, `brew`, `apt`)
 - Nix build/develop/run
 - Script interpreters (`python`, `node`, `bash`, `sh`)
