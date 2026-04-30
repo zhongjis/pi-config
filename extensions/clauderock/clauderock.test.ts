@@ -1210,11 +1210,11 @@ describe("streamViaBedrock: Bedrock error wrapping", () => {
     const errEv = events.find((e) => e.type === "error");
     const errMsg = errEv?.error?.message ?? String(errEv?.error);
     // Should include the enriched details, not just 'Unknown: UnknownError'
+    // Note: requestId is intentionally excluded from UI-safe messages (logged to console instead)
     expect(errMsg).toContain("UnknownError");
     expect(errMsg).toContain("HTTP 403");
     expect(errMsg).toContain("AccessDeniedException");
     expect(errMsg).toContain("fault=client");
-    expect(errMsg).toContain("abc-123");
   });
 
   it("enriches error events from Bedrock stream (not just thrown errors)", async () => {

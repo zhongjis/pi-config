@@ -134,12 +134,16 @@ function getUiErrorMessage(err: unknown): string {
   const meta = e.$metadata as Record<string, any> | undefined;
   const httpStatus = meta?.httpStatusCode;
   const name = e.name && e.name !== "Error" ? e.name : undefined;
+  const code = e.Code ?? e.code;
+  const fault = e.$fault;
   const msg = e.message ?? e.errorMessage ?? "Unknown error";
   const shortMsg = msg.length > 100 ? msg.slice(0, 97) + "..." : msg;
   const parts: string[] = ["Bedrock"];
   if (name) parts.push(name);
+  if (code && code !== name) parts.push(`code=${code}`);
   if (httpStatus) parts.push(`(HTTP ${httpStatus})`);
-  else parts.push(`— ${shortMsg}`);
+  if (fault) parts.push(`fault=${fault}`);
+  if (!httpStatus) parts.push(`— ${shortMsg}`);
   return parts.join(": ");
 }
 
@@ -388,7 +392,10 @@ function streamWithFallback(
             fallbackActive = true;
             writeCache(((event as any).error?.message ?? (event as any).errorMessage ?? "quota exhausted"));
             pendingNotification = "quota_exhausted";
-            await streamViaBedrock(model, bedrockId, context, options, stream);
+            // Push start immediately so UI exits "Working..." before Bedrock connects
+            const hadStart = !!pendingStart;
+            if (pendingStart) { stream.push(pendingStart); pendingStart = null; }
+            await streamViaBedrock(model, bedrockId, context, options, stream, hadStart);
             return;
           }
           // No Bedrock mapping — forward error, don't activate fallback
@@ -417,7 +424,10 @@ function streamWithFallback(
           (err instanceof Error ? err.message : "quota exhausted"),
         );
         pendingNotification = "quota_exhausted";
-        await streamViaBedrock(model, bedrockId, context, options, stream);
+        // Push start immediately so UI exits "Working..." before Bedrock connects
+        const hadStart = !!pendingStart;
+        if (pendingStart) { stream.push(pendingStart); pendingStart = null; }
+        await streamViaBedrock(model, bedrockId, context, options, stream, hadStart);
         return;
       }
       if (pendingStart) {
@@ -440,6 +450,7 @@ async function streamViaBedrock(
   context: Context,
   options: SimpleStreamOptions | undefined,
   stream: ReturnType<typeof createAssistantMessageEventStream>,
+  startAlreadyPushed = false,
 ): Promise<void> {
   const profile = getPreferredAwsProfile();
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
@@ -501,6 +512,8 @@ async function streamViaBedrock(
     let completionSeen = false;
     for await (const event of bedrockStream) {
       const patchedEvent = patchBedrockEventModelIds(event, originalModel.id);
+      // Skip duplicate start event when caller already pushed one
+      if (patchedEvent.type === "start" && startAlreadyPushed) continue;
       // Rewrite model references so pi never sees the Bedrock model ID.
       // This prevents Bedrock IDs from leaking into pi state and breaking
       // subsequent requests (e.g., after a mode switch).
@@ -576,7 +589,7 @@ async function streamViaBedrock(
     stream.push({
       type: "error",
       error: new Error(
-        `Clauderock fallback failed: ${getUiErrorMessage(bedrockErr)}`,
+        `Clauderock fallback failed (Claude API quota/rate-limit was exhausted): ${getUiErrorMessage(bedrockErr)}`,
       ),
     });
     stream.end();
