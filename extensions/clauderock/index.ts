@@ -127,16 +127,53 @@ function formatBedrockError(err: unknown): string {
   return parts.join(" — ");
 }
 
+/**
+ * Translate opaque Bedrock validation errors into actionable messages.
+ * Returns null when the error isn't a known pattern.
+ */
+function humanizeBedrockValidation(msg: string): string | null {
+  // "The text field in the ContentBlock object at messages.6.content.0 is blank"
+  const blankText = msg.match(
+    /text field in the ContentBlock object at messages\.(\d+)\.content\.(\d+) is blank/i,
+  );
+  if (blankText) {
+    const msgIdx = blankText[1];
+    const blockIdx = blankText[2];
+    return (
+      `Bedrock rejected the request: message ${msgIdx}, content block ${blockIdx} has blank text. ` +
+      `This usually means an empty assistant reply or a file reference that resolved to empty content ` +
+      `ended up in the conversation history. Try sending a new message or starting a new session.`
+    );
+  }
+
+  // "The system list must contain at least one system element"
+  if (/system list must contain at least one system element/i.test(msg)) {
+    return "Bedrock rejected the request: system prompt is empty. This is a pi bug — please report it.";
+  }
+
+  // "The conversation must contain at least one message"
+  if (/conversation must contain at least one message/i.test(msg)) {
+    return "Bedrock rejected the request: no messages in conversation. This is a pi bug — please report it.";
+  }
+
+  return null;
+}
+
 /** Short, UI-safe error message — no credentials, requestId, or verbose diagnostics. */
 function getUiErrorMessage(err: unknown): string {
   if (!err || typeof err !== "object") return String(err);
   const e = err as Record<string, any>;
+  const msg = e.message ?? e.errorMessage ?? "Unknown error";
+
+  // Try to humanize known validation errors first
+  const humanized = humanizeBedrockValidation(msg);
+  if (humanized) return humanized;
+
   const meta = e.$metadata as Record<string, any> | undefined;
   const httpStatus = meta?.httpStatusCode;
   const name = e.name && e.name !== "Error" ? e.name : undefined;
   const code = e.Code ?? e.code;
   const fault = e.$fault;
-  const msg = e.message ?? e.errorMessage ?? "Unknown error";
   const shortMsg = msg.length > 100 ? msg.slice(0, 97) + "..." : msg;
   const parts: string[] = ["Bedrock"];
   if (name) parts.push(name);
