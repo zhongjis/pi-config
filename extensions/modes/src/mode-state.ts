@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
+import { parseModelChain, resolveFirstAvailable } from "../../lib/model.js";
 import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
 
 function colored(mode: Mode, text: string): string {
@@ -21,44 +22,11 @@ function canAddExtensionTool(toolName: string, config: ModeConfig): boolean {
 	return toolName !== "readonly_bash" || configAllowsReadonlyBash(config);
 }
 
-/**
- * Resolve a model string to a Model object.
- * Matching strategies (in order): exact "provider/modelId" → exact modelId → starts-with on modelId.
- */
-export function resolveModelFromStr(
-	input: string,
-	registry: { find(provider: string, modelId: string): any; getAvailable?(): any[]; getAll(): any[] },
-): any | undefined {
-	const all = (registry.getAvailable?.() ?? registry.getAll()) as Array<{ id: string; name: string; provider: string }>;
-	const query = input.toLowerCase();
-
-	// 1. Exact "provider/modelId" match
-	const slashIdx = input.indexOf("/");
-	if (slashIdx !== -1) {
-		const provider = input.slice(0, slashIdx);
-		const modelId = input.slice(slashIdx + 1);
-		const match = all.find((m) => `${m.provider}/${m.id}`.toLowerCase() === query);
-		if (match) {
-			const found = registry.find(provider, modelId);
-			if (found) return found;
-		}
-	}
-
-	// 2. Exact modelId match
-	const exactMatch = all.find((m) => m.id.toLowerCase() === query);
-	if (exactMatch) {
-		const found = registry.find(exactMatch.provider, exactMatch.id);
-		if (found) return found;
-	}
-
-	// 3. Starts-with on modelId
-	const prefixMatch = all.find((m) => m.id.toLowerCase().startsWith(query));
-	if (prefixMatch) {
-		const found = registry.find(prefixMatch.provider, prefixMatch.id);
-		if (found) return found;
-	}
-
-	return undefined;
+function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
+	if (a.length !== b.length) return false;
+	const set = new Set(a);
+	for (const t of b) if (!set.has(t)) return false;
+	return true;
 }
 
 export class ModeStateManager {
@@ -77,6 +45,7 @@ export class ModeStateManager {
 	activeCtx: ExtensionContext | undefined;
 	plannotatorAvailable: boolean | undefined;
 	plannotatorUnavailableReason: string | undefined;
+	lastStatusMode: Mode | undefined;
 
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;
@@ -146,21 +115,59 @@ export class ModeStateManager {
 			if (filtered.length !== source.length) active = filtered;
 		}
 
-		if (active) this.pi.setActiveTools(active);
-
-		if (config.model) {
-			const resolved = resolveModelFromStr(config.model, ctx.modelRegistry);
-			if (resolved) {
-				await this.pi.setModel(resolved);
-			}
+		// Guard 1: skip setActiveTools when unchanged — avoids redundant system-prompt rebuild.
+		if (active && !sameToolSet(active, activeToolNames)) {
+			this.pi.setActiveTools(active);
 		}
+
+		await this.applyModelFromConfig(config, ctx);
 
 		this.updateStatus(ctx);
 	}
 
+	/**
+	 * Apply model + thinking level from mode config. Shared by applyMode() and
+	 * the before_agent_start hook.
+	 *
+	 * Guards 2 and 3: skip setModel / setThinkingLevel when unchanged.
+	 * Rationale: setModel() writes to session jsonl, settings file, and awaits
+	 * model_select extension handlers — each of which may call setStatus() and
+	 * force a TUI repaint. The await also splits subsequent UI updates across
+	 * ticks, breaking render coalescing. Skipping no-op calls preserves the same
+	 * observable outcome while eliminating flicker on same-mode re-apply (e.g.
+	 * before_agent_start firing on every user message).
+	 */
+	async applyModelFromConfig(config: ModeConfig, ctx: ExtensionContext): Promise<void> {
+		if (!config.model) return;
+		const candidates = parseModelChain(config.model);
+		const resolved = resolveFirstAvailable(candidates, ctx.modelRegistry);
+		if (!resolved) return;
+
+		// Guard 2: skip setModel if already the active model.
+		const current = ctx.model;
+		const sameModel =
+			current && current.provider === resolved.model.provider && current.id === resolved.model.id;
+		if (!sameModel) {
+			await this.pi.setModel(resolved.model);
+		}
+
+		// Guard 3: skip setThinkingLevel if already at that level.
+		// setModel() internally preserves current level for reasoning-capable models, so
+		// on same-model paths the prior level is retained and this guard short-circuits.
+		if (resolved.thinkingLevel && resolved.thinkingLevel !== this.pi.getThinkingLevel()) {
+			this.pi.setThinkingLevel(resolved.thinkingLevel);
+		}
+	}
+
 	updateStatus(ctx: ExtensionContext): void {
+		// Guard 4: skip setStatus when label unchanged — setStatus forces ui.requestRender().
+		// Label is stable per mode (MODE_META[mode].label + MODE_COLORS[mode]), so comparing
+		// by mode is sufficient. This matters on session_start / before_agent_start paths
+		// where applyMode() is called without a mode change.
+		if (this.lastStatusMode === this.currentMode) return;
 		const meta = MODE_META[this.currentMode];
 		ctx.ui.setStatus("agent-mode", colored(this.currentMode, meta.label));
+		this.lastStatusMode = this.currentMode;
 	}
 
 	async switchMode(mode: Mode, ctx: ExtensionContext): Promise<void> {

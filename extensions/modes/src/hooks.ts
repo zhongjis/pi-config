@@ -5,7 +5,6 @@ import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLo
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
-import { resolveModelFromStr } from "./mode-state.js";
 import type { Mode, ModeConfig, ModeState } from "./types.js";
 
 // ─── Absorbed helpers ────────────────────────────────────────────────────────
@@ -274,12 +273,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		state.activeCtx = ctx;
 		const config = state.loadConfig(state.currentMode);
 
-		if (config.model) {
-			const resolved = resolveModelFromStr(config.model, ctx.modelRegistry);
-			if (resolved) {
-				await pi.setModel(resolved);
-			}
-		}
+		await state.applyModelFromConfig(config, ctx);
 
 		const systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
 		if (!config.body) return;
