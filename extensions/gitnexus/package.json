@@ -1,0 +1,56 @@
+{
+  "name": "pi-gitnexus",
+  "version": "0.6.0",
+  "description": "GitNexus knowledge graph integration for pi — enriches searches with call chains, execution flows, and blast radius",
+  "author": "tintinweb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tintinweb/pi-gitnexus.git"
+  },
+  "homepage": "https://github.com/tintinweb/pi-gitnexus#readme",
+  "bugs": {
+    "url": "https://github.com/tintinweb/pi-gitnexus/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "gitnexus",
+    "knowledge-graph",
+    "code-intelligence",
+    "call-graph",
+    "agent"
+  ],
+  "peerDependencies": {
+    "@mariozechner/pi-ai": ">=0.70",
+    "@mariozechner/pi-coding-agent": ">=0.70",
+    "typebox": ">=1.0"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-ai": { "optional": true },
+    "@mariozechner/pi-coding-agent": { "optional": true },
+    "typebox": { "optional": true }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check --config-path ../../biome.json src",
+    "lint:fix": "biome check --fix --config-path ../../biome.json src"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "image": "https://github.com/tintinweb/pi-gitnexus/raw/master/media/screenshot.png"
+  },
+  "piVendor": {
+    "upstream": "https://github.com/tintinweb/pi-gitnexus",
+    "commit": "db34bccdd29ee29f9185edb131a9ba0feb18d441",
+    "localTarget": "extensions/gitnexus",
+    "adaptedFor": "panda-harness extensions layout"
+  }
+}
