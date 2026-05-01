@@ -52,6 +52,10 @@ export function createAgentSession() {
   return {};
 }
 
+export function defineTool<T>(definition: T): T {
+  return definition;
+}
+
 export function createBashTool() {
   return {};
 }
