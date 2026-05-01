@@ -27,6 +27,7 @@ extensions: readonly_bash
 - **Data processing:** `jq`, `wc`, `sort`, `uniq`, `cut`
 - **File info:** `file`, `stat`, `du`, `df`
 - **Git (read-only):** `status`, `log`, `diff`, `show`, `branch`, `rev-parse`, `grep`
+- **GitHub (read-only):** `gh search repos`, `search code`, `search issues`, `search prs`, `gh repo view`, `repo list`
 - **Kubernetes (read-only):** `kubectl get`, `describe`, `logs`, `explain`, `api-resources`, `api-versions`, `version`, `top`, `events`, `options`
 - **Flux (read-only):** `flux get`, `logs`, `stats`, `tree`, `trace`, `events`, `version`, `check`, `export`
 
@@ -39,6 +40,7 @@ Read-only cluster commands can still expose Secrets, ConfigMaps, logs, events, n
 - `xargs`, `sudo`
 - Mutating commands (`rm`, `mv`, `cp`, `mkdir`, `chmod`, `chown`, `touch`)
 - Mutating git (`add`, `commit`, `push`, `checkout`, `rebase`, `merge`, `reset`)
+- Mutating or broad GitHub CLI commands (`gh auth`, `api`, `issue`, `pr`, `workflow`, `repo clone/create/delete/edit/fork/sync`)
 - Mutating kubectl (`apply`, `delete`, `patch`, `exec`, `port-forward`, `config`, `auth`)
 - Mutating flux (`bootstrap`, `reconcile`, `create`, `delete`, `suspend`, `resume`)
 - Package managers (`npm`, `pip`, `brew`, `apt`)

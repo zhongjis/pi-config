@@ -62,6 +62,7 @@ const ALLOWED_COMMANDS = new Set([
   "du",
   "df",
   "git",
+  "gh",
   "kubectl",
   "flux",
 ]);
@@ -111,6 +112,54 @@ const MUTATING_GIT_BRANCH_OPTIONS = new Set([
 ]);
 
 const GIT_OUTPUT_OPTIONS = new Set(["--output"]);
+
+const READ_ONLY_GH_TOP_LEVELS = new Set(["search", "repo"]);
+const GH_SEARCH_READ_ONLY_KINDS = new Set(["repos", "code", "issues", "prs"]);
+const GH_REPO_READ_ONLY_SUBCOMMANDS = new Set(["view", "list"]);
+
+const MUTABLE_GH_TOP_LEVELS = new Set([
+  "api",
+  "auth",
+  "attestation",
+  "browse",
+  "cache",
+  "codespace",
+  "completion",
+  "config",
+  "copilot",
+  "extension",
+  "gist",
+  "gpg-key",
+  "issue",
+  "label",
+  "org",
+  "pr",
+  "project",
+  "release",
+  "ruleset",
+  "run",
+  "secret",
+  "ssh-key",
+  "status",
+  "variable",
+  "workflow",
+]);
+
+const MUTABLE_GH_REPO_SUBCOMMANDS = new Set([
+  "archive",
+  "clone",
+  "create",
+  "delete",
+  "deploy-key",
+  "edit",
+  "fork",
+  "rename",
+  "set-default",
+  "sync",
+  "unarchive",
+]);
+
+const GH_BROWSER_OPTIONS = new Set(["--web", "-w"]);
 
 const MUTATING_COMMANDS = new Set([
   "rm",
@@ -372,6 +421,35 @@ function validateGit(argv: string[]): string | undefined {
   return undefined;
 }
 
+function validateGh(argv: string[]): string | undefined {
+  const topLevel = argv[1]?.toLowerCase();
+  if (!topLevel) return "gh requires an explicit read-only subcommand";
+  if (MUTABLE_GH_TOP_LEVELS.has(topLevel)) return `gh ${topLevel} is not allowed`;
+  if (!READ_ONLY_GH_TOP_LEVELS.has(topLevel)) return `gh ${topLevel} is outside the read-only allowlist`;
+
+  const args = argv.slice(2);
+  if (args.some((arg) => gitOptionMatches(arg, GH_BROWSER_OPTIONS))) {
+    return "gh browser-opening options are not allowed";
+  }
+
+  if (topLevel === "search") {
+    const kind = argv[2]?.toLowerCase();
+    if (!kind) return "gh search requires a read-only search kind";
+    if (!GH_SEARCH_READ_ONLY_KINDS.has(kind)) {
+      return `gh search ${kind} is outside the read-only allowlist`;
+    }
+    return undefined;
+  }
+
+  const repoSubcommand = argv[2]?.toLowerCase();
+  if (!repoSubcommand) return "gh repo requires an explicit read-only subcommand";
+  if (MUTABLE_GH_REPO_SUBCOMMANDS.has(repoSubcommand)) return `gh repo ${repoSubcommand} is not allowed`;
+  if (!GH_REPO_READ_ONLY_SUBCOMMANDS.has(repoSubcommand)) {
+    return `gh repo ${repoSubcommand} is outside the read-only allowlist`;
+  }
+  return undefined;
+}
+
 const KUBECTL_READ_ONLY_SUBCOMMANDS = new Set([
   "get",
   "describe",
@@ -500,6 +578,11 @@ const READONLY_BASH_HELP_SECTIONS: readonly ReadonlyBashHelpSection[] = [
   {
     label: "Local",
     examples: ["ls -la", "rg \"pattern\" path", "cat file", "jq . file.json", "git status --short"],
+  },
+  {
+    label: "GitHub",
+    commands: ["gh"],
+    examples: ["gh search repos QUERY", "gh repo view OWNER/REPO", "gh repo list OWNER"],
   },
   {
     label: "Kubernetes",
@@ -639,6 +722,7 @@ function validateAllowedFamily(argv: string[]): string | undefined {
   if (name === "sed") return validateSed(argv);
   if (name === "awk") return validateAwk(argv);
   if (name === "git") return validateGit(argv);
+  if (name === "gh") return validateGh(argv);
   if (name === "kubectl") return validateKubectl(argv);
   if (name === "flux") return validateFlux(argv);
   return undefined;
