@@ -11,6 +11,8 @@ export * from "./logger.js";
 export * from "./status.js";
 export * from "./utils.js";
 export * from "./ux.js";
+export * from "./model.js";
+export * from "./thinking-level.js";
 
 /**
  * Wire the shared library into an extension.
