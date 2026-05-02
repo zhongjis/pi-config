@@ -12,14 +12,15 @@
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { defineTool, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, getAgentDir } from "@mariozechner/pi-coding-agent";
+import { defineTool, type AgentToolResult, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
+import { buildEjectedAgentMarkdown, buildGenerateAgentPrompt, buildManualAgentMarkdown } from "./agent-definition-authoring.js";
 import { AgentManager } from "./agent-manager.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, setDefaultMaxTurns, setGraceTurns, steerAgent } from "./agent-runner.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, getDefaultAgentNames, getUserAgentNames, isValidType, registerAgents, resolveType } from "./agent-types.js";
 import { registerRpcHandlers } from "./cross-extension-rpc.js";
-import { loadCustomAgents } from "./custom-agents.js";
+import { loadCustomAgentsWithDiagnostics } from "./custom-agents.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged } from "./settings.js";
@@ -32,7 +33,7 @@ import {
   getBackgroundSupervisionAction,
   getLastProgressAt,
 } from "./background-supervision.js";
-import { type AgentConfig, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType } from "./types.js";
+import { type AgentConfig, type AgentDefinitionDiagnostic, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType } from "./types.js";
 import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "./delegation-policy.js";
 import {
   type AgentActivity,
@@ -51,15 +52,29 @@ import {
 
 // ---- Shared helpers ----
 
+type SubagentManagerBridge = {
+  waitForAll: () => ReturnType<AgentManager["waitForAll"]>;
+  hasRunning: () => ReturnType<AgentManager["hasRunning"]>;
+  spawn: (...args: Parameters<AgentManager["spawn"]>) => ReturnType<AgentManager["spawn"]>;
+  getRecord: AgentManager["getRecord"];
+};
+
+type SubagentGlobal = typeof globalThis & Record<symbol, SubagentManagerBridge | undefined>;
+
 /** Tool execute return value for a text response. */
-function textResult(msg: string, details?: AgentDetails) {
-  return { content: [{ type: "text" as const, text: msg }], details: details as any };
+function textResult(msg: string, details?: AgentDetails): AgentToolResult<AgentDetails | undefined> {
+  return { content: [{ type: "text", text: msg }], details };
 }
 
 /** Safe token formatting — wraps session.getSessionStats() in try-catch. */
 function safeFormatTokens(session: { getSessionStats(): { tokens: { total: number } } } | undefined): string {
   if (!session) return "";
-  try { return formatTokens(session.getSessionStats().tokens.total); } catch { return ""; }
+  try {
+    return formatTokens(session.getSessionStats().tokens.total);
+  } catch (err) {
+    void err;
+    return "";
+  }
 }
 
 /**
@@ -149,7 +164,10 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
       const stats = record.session.getSessionStats();
       totalTokens = stats.tokens?.total ?? 0;
     }
-  } catch { /* session stats unavailable */ }
+  } catch (err) {
+    void err;
+    /* session stats unavailable */
+  }
 
   const recoveredResult = getRecoveredResultText(record);
   const resultPreview = recoveredResult.length > resultMaxLen
@@ -195,7 +213,9 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
   let totalTokens = 0;
   try {
     if (record.session) totalTokens = record.session.getSessionStats().tokens?.total ?? 0;
-  } catch {}
+  } catch (err) {
+    void err;
+  }
 
   return {
     id: record.id,
@@ -215,6 +235,19 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
         : recoveredResult;
     })(),
   };
+}
+
+export function formatAgentDefinitionDiagnostic(diagnostic: AgentDefinitionDiagnostic): string {
+  return `${diagnostic.severity.toUpperCase()} ${diagnostic.agentName} (${diagnostic.file}) field "${diagnostic.field}": ${diagnostic.message}`;
+}
+
+export function formatAgentDefinitionDiagnostics(diagnostics: AgentDefinitionDiagnostic[]): string {
+  return diagnostics.map(formatAgentDefinitionDiagnostic).join("\n");
+}
+
+export function formatInvalidAgentDefinitionMessage(agentName: string, diagnostics: AgentDefinitionDiagnostic[]): string {
+  const detail = formatAgentDefinitionDiagnostics(diagnostics);
+  return `Agent type "${agentName}" is unavailable because its custom definition has invalid frontmatter.\n${detail}\nFix the frontmatter: tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools; denylist fields are invalid/obsolete.`;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -267,10 +300,18 @@ export default function (pi: ExtensionAPI) {
     }
   );
 
+  let latestAgentDefinitionDiagnostics: AgentDefinitionDiagnostic[] = [];
+
+  function findDiagnosticsForAgent(agentName: string): AgentDefinitionDiagnostic[] {
+    const lower = agentName.toLowerCase();
+    return latestAgentDefinitionDiagnostics.filter(diagnostic => diagnostic.agentName.toLowerCase() === lower);
+  }
+
   /** Reload custom agents from .pi/agents/*.md (called on init and each Agent invocation). */
   const reloadCustomAgents = () => {
-    const userAgents = loadCustomAgents(process.cwd());
-    registerAgents(userAgents);
+    const result = loadCustomAgentsWithDiagnostics(process.cwd());
+    latestAgentDefinitionDiagnostics = result.diagnostics;
+    registerAgents(result.agents);
   };
 
   // Initial load
@@ -390,7 +431,10 @@ export default function (pi: ExtensionAPI) {
           total: stats.tokens?.total ?? 0,
         };
       }
-    } catch { /* session stats unavailable */ }
+    } catch (err) {
+      void err;
+      /* session stats unavailable */
+    }
     return {
       id: record.id,
       type: record.type,
@@ -491,7 +535,10 @@ export default function (pi: ExtensionAPI) {
         if (record.session) {
           try {
             await steerAgent(record.session, `You appear idle after ${Math.round(idleMs / 1000)}s. Wrap up with your best current answer now, or explicitly state what is blocking completion.`);
-          } catch { /* ignore steering failures */ }
+          } catch (err) {
+            void err;
+            /* ignore steering failures */
+          }
         }
         sendStaleAgentReminder(record, idleMs, "steer");
         continue;
@@ -511,17 +558,21 @@ export default function (pi: ExtensionAPI) {
   // Expose manager via Symbol.for() global registry for cross-package access.
   // Standard Node.js pattern for cross-package singletons (used by OpenTelemetry, etc.).
   const MANAGER_KEY = Symbol.for("pi-subagents:manager");
-  (globalThis as any)[MANAGER_KEY] = {
+  const subagentGlobal = globalThis as SubagentGlobal;
+  subagentGlobal[MANAGER_KEY] = {
     waitForAll: () => manager.waitForAll(),
     hasRunning: () => manager.hasRunning(),
-    spawn: (piRef: any, ctx: any, type: string, prompt: string, options: any) => {
+    spawn: (piRef, ctxRef, type, prompt, options) => {
       const resolvedType = requireSpawnableType(type);
-      return manager.spawn(piRef, ctx, resolvedType, prompt, options);
+      return manager.spawn(piRef, ctxRef, resolvedType, prompt, options);
     },
     getRecord: (id: string) => manager.getRecord(id),
   };
 
   function formatUnavailableAgentType(type: string): string {
+    const diagnostics = findDiagnosticsForAgent(type);
+    if (diagnostics.length > 0) return formatInvalidAgentDefinitionMessage(type, diagnostics);
+
     const availableTypes = getAvailableTypes();
     const availableText = availableTypes.length > 0 ? availableTypes.join(", ") : "none";
     return `Unknown or disabled agent type "${type}". Available types: ${availableText}.`;
@@ -564,7 +615,7 @@ export default function (pi: ExtensionAPI) {
     unsubStopRpc();
     unsubPingRpc();
     currentCtx = undefined;
-    delete (globalThis as any)[MANAGER_KEY];
+    delete subagentGlobal[MANAGER_KEY];
     manager.abortAll();
     for (const timer of pendingNudges.values()) clearTimeout(timer);
     pendingNudges.clear();
@@ -715,7 +766,10 @@ export default function (pi: ExtensionAPI) {
         try {
           await steerAgent(record.session, `You appear idle after ${Math.round(idleMs / 1000)}s. Wrap up now with your best available answer, or explicitly state what is blocking completion.`);
           idleWrapUpSent = true;
-        } catch { /* ignore steering failures during supervised wait */ }
+        } catch (err) {
+          void err;
+          /* ignore steering failures during supervised wait */
+        }
       }
 
       const settled = await Promise.race([
@@ -933,7 +987,7 @@ Guidelines:
       let effectiveThinking = resolvedConfig.thinkingOverride;
 
       if (resolvedConfig.modelCandidates.length > 0) {
-        let resolved: any = undefined;
+        let resolved: any;
         for (const candidate of resolvedConfig.modelCandidates) {
           const result = resolveModel(candidate.model, ctx.modelRegistry);
           if (typeof result !== "string") {
@@ -1099,10 +1153,11 @@ Guidelines:
           activity: describeActivity(fgState.activeTools, fgState.responseText),
           spinnerFrame: spinnerFrame % SPINNER.length,
         };
-        onUpdate?.({
+        const update: AgentToolResult<AgentDetails> = {
           content: [{ type: "text", text: `${fgState.toolUses} tool uses...` }],
-          details: details as any,
-        });
+          details,
+        };
+        onUpdate?.(update);
       };
 
       const { state: fgState, callbacks: fgCallbacks } = createActivityTracker(effectiveMaxTurns, streamUpdate);
@@ -1360,6 +1415,9 @@ Guidelines:
     }
 
     // Actions
+    if (latestAgentDefinitionDiagnostics.length > 0) {
+      options.push(`Agent definition issues (${latestAgentDefinitionDiagnostics.length})`);
+    }
     options.push("Create new agent");
     options.push("Settings");
 
@@ -1382,6 +1440,8 @@ Guidelines:
     } else if (choice.startsWith("Agent types (")) {
       await showAllAgentsList(ctx);
       await showAgentsMenu(ctx);
+    } else if (choice.startsWith("Agent definition issues (")) {
+      ctx.ui.notify(formatAgentDefinitionDiagnostics(latestAgentDefinitionDiagnostics), "warning");
     } else if (choice === "Create new agent") {
       await showCreateWizard(ctx);
     } else if (choice === "Settings") {
@@ -1599,25 +1659,7 @@ Guidelines:
       if (!overwrite) return;
     }
 
-    const fmFields: string[] = [];
-    fmFields.push(`description: ${cfg.description}`);
-    if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
-    fmFields.push(`tools: ${cfg.builtinToolNames?.join(", ") || "all"}`);
-    if (cfg.model) fmFields.push(`model: ${cfg.model}`);
-    if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
-    fmFields.push(`prompt_mode: ${cfg.promptMode}`);
-    if (cfg.extensions === false) fmFields.push("extensions: false");
-    else if (Array.isArray(cfg.extensions)) fmFields.push(`extensions: ${cfg.extensions.join(", ")}`);
-    if (cfg.skills === false) fmFields.push("skills: false");
-    else if (Array.isArray(cfg.skills)) fmFields.push(`skills: ${cfg.skills.join(", ")}`);
-    if (cfg.disallowedTools?.length) fmFields.push(`disallowed_tools: ${cfg.disallowedTools.join(", ")}`);
-    if (cfg.inheritContext) fmFields.push("inherit_context: true");
-    if (cfg.runInBackground) fmFields.push("run_in_background: true");
-    if (cfg.isolated) fmFields.push("isolated: true");
-    if (cfg.memory) fmFields.push(`memory: ${cfg.memory}`);
-    if (cfg.isolation) fmFields.push(`isolation: ${cfg.isolation}`);
-
-    const content = `---\n${fmFields.join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
+    const content = buildEjectedAgentMarkdown(cfg);
 
     const { writeFileSync } = await import("node:fs");
     writeFileSync(targetPath, content, "utf-8");
@@ -1688,46 +1730,7 @@ Guidelines:
 
     ctx.ui.notify("Generating agent definition...", "info");
 
-    const generatePrompt = `Create a custom pi sub-agent definition file based on this description: "${description}"
-
-Write a markdown file to: ${targetPath}
-
-The file format is a markdown file with YAML frontmatter and a system prompt body:
-
-\`\`\`markdown
----
-description: <one-line description shown in UI>
-tools: <comma-separated built-in tools: read, bash, edit, write. Use bash with rg/fd/ls for search/listing instead of grep/find/ls tools. Use "none" for no tools. Omit for default tools: read, bash, edit, write>
-model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5-20251001". Omit to inherit parent model>
-thinking: <optional thinking level: none, minimal, low, medium, high, xhigh. Omit to inherit>
-max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
-prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
-extensions: <true (inherit all MCP/extension tools), false (none), or comma-separated names. Default: true>
-skills: <true (inherit all), false (none), or comma-separated skill names to preload into prompt. Default: true>
-disallowed_tools: <comma-separated tool names to block, even if otherwise available. Omit for none>
-allow_delegation_to: <comma-separated agent names this agent may delegate to via Agent. Omit for unrestricted delegation>
-disallow_delegation_to: <comma-separated agent names this agent may not delegate to via Agent. Omit for none>
-inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>
-run_in_background: <true to run in background by default. Default: false>
-isolated: <true for no extension/MCP tools, only built-in tools. Default: false>
-memory: <"user" (global), "project" (per-project), or "local" (gitignored per-project) for persistent memory. Omit for none>
-isolation: <"worktree" to run in isolated git worktree. Omit for normal>
----
-
-<system prompt body — instructions for the agent>
-\`\`\`
-
-Guidelines for choosing settings:
-- For read-only tasks (review, analysis): tools: read, bash; use bash commands rg/fd/ls for search/listing
-- For code modification tasks: include edit, write
-- Use prompt_mode: append if the agent should keep the default system prompt and add specialization on top
-- Use prompt_mode: replace for fully custom agents with their own personality/instructions
-- Set inherit_context: true if the agent needs to know what was discussed in the parent conversation
-- Set isolated: true if the agent should NOT have access to MCP servers or other extensions
-- Use allow_delegation_to and disallow_delegation_to to restrict which other agents this agent may spawn via Agent; the allowlist is applied first, then the denylist removes from that set
-- Only include frontmatter fields that differ from defaults — omit fields where the default is fine
-
-Write the file using the write tool. Only write the file, nothing else.`;
+    const generatePrompt = buildGenerateAgentPrompt(description, targetPath);
 
     const record = await manager.spawnAndWait(pi, ctx, "general-purpose", generatePrompt, {
       description: `Generate ${name} agent`,
@@ -1757,22 +1760,39 @@ Write the file using the write tool. Only write the file, nothing else.`;
     const description = await ctx.ui.input("Description (one line)");
     if (!description) return;
 
-    // 3. Tools
-    const toolChoice = await ctx.ui.select("Tools", ["all", "none", "read-only (read, bash; use rg/fd/ls)", "custom..."]);
-    if (!toolChoice) return;
+    // 3. Built-in tools
+    const builtinToolChoice = await ctx.ui.select("builtin_tools (built-in tools)", ["all", "none", "read-only (read, bash; use rg/fd)", "custom..."]);
+    if (!builtinToolChoice) return;
 
-    let tools: string;
-    if (toolChoice === "all") {
-      tools = BUILTIN_TOOL_NAMES.join(", ");
-    } else if (toolChoice === "none") {
-      tools = "none";
-    } else if (toolChoice.startsWith("read-only")) {
-      tools = "read, bash";
+    let builtinTools: string;
+    if (builtinToolChoice === "all") {
+      builtinTools = BUILTIN_TOOL_NAMES.join(", ");
+    } else if (builtinToolChoice === "none") {
+      builtinTools = "none";
+    } else if (builtinToolChoice.startsWith("read-only")) {
+      builtinTools = "read, bash";
     } else {
-      const customTools = await ctx.ui.input("Tools (comma-separated)", BUILTIN_TOOL_NAMES.join(", "));
+      const customTools = await ctx.ui.input("builtin_tools (comma-separated built-ins)", BUILTIN_TOOL_NAMES.join(", "));
       if (!customTools) return;
-      tools = customTools;
+      builtinTools = customTools;
     }
+
+    // 4. Extension/MCP provider scope and exact tool filter
+    const extensionsChoice = await ctx.ui.select("extensions (extension/MCP provider scope)", ["inherit all", "none", "custom names..."]);
+    if (!extensionsChoice) return;
+
+    let extensionsLine = "";
+    if (extensionsChoice === "none") {
+      extensionsLine = "\nextensions: false";
+    } else if (extensionsChoice === "custom names...") {
+      const customExtensions = await ctx.ui.input("extensions (comma-separated extension/MCP provider names)", "");
+      if (customExtensions === undefined) return;
+      if (customExtensions.trim()) extensionsLine = `\nextensions: ${customExtensions.trim()}`;
+    }
+
+    const extensionTools = await ctx.ui.input("extension_tools (exact extension/MCP tool names, optional; none = no extension tools)", "");
+    if (extensionTools === undefined) return;
+    const extensionToolsLine = extensionTools.trim() ? `\nextension_tools: ${extensionTools.trim()}` : "";
 
     // 4. Model
     const modelChoice = await ctx.ui.select("Model", [
@@ -1826,14 +1846,17 @@ Write the file using the write tool. Only write the file, nothing else.`;
     if (systemPrompt === undefined) return;
 
     // Build the file
-    const content = `---
-description: ${description}
-tools: ${tools}${modelLine}${thinkingLine}${allowDelegationLine}${disallowDelegationLine}
-prompt_mode: replace
----
-
-${systemPrompt}
-`;
+    const content = buildManualAgentMarkdown({
+      description,
+      builtinTools,
+      extensionsLine,
+      extensionToolsLine,
+      modelLine,
+      thinkingLine,
+      allowDelegationLine,
+      disallowDelegationLine,
+      systemPrompt,
+    });
 
     mkdirSync(targetDir, { recursive: true });
     const targetPath = join(targetDir, `${name}.md`);
