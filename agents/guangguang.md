@@ -2,8 +2,8 @@
 display_name: Guangguang 光光
 description: A fast lightweight build worker for trivial implementation tasks — single-file typo fixes, config changes, simple function edits. Adapted from OmO Sisyphus-Junior.
 model: gpt-5.4-mini:low,claude-haiku-4-5:low
-tools: read,bash,edit,write,lsp_diagnostics
-disallowed_tools: exit_plan_mode,Agent,get_subagent_result,steer_subagent
+builtin_tools: read,bash,edit,write
+extension_tools: lsp_diagnostics
 ---
 
 <role>

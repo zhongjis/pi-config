@@ -2,8 +2,8 @@
 display_name: Jintong 金童
 description: A focused build worker for isolated implementation, debugging, and verification tasks delegated by other agents.
 model: anthropic/claude-opus-4-6:high,openai-codex/gpt-5.5:high
-tools: read,bash,edit,write,lsp_diagnostics
-disallowed_tools: exit_plan_mode,Agent,get_subagent_result,steer_subagent
+builtin_tools: read,bash,edit,write
+extension_tools: lsp_diagnostics
 ---
 
 <role>
