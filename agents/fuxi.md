@@ -5,7 +5,8 @@ model: anthropic/claude-opus-4-6:high,openai-codex/gpt-5.5:high
 prompt_mode: replace
 inherit_context: false
 run_in_background: false
-tools: read,write,edit
+builtin_tools: read,write,edit
+extension_tools: ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve,readonly_bash
 extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve,readonly_bash
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu
 disallow_delegation_to: houtu
