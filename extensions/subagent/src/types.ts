@@ -19,13 +19,31 @@ export type MemoryScope = "user" | "project" | "local";
 /** Isolation mode for agent execution. */
 export type IsolationMode = "worktree";
 
+/** Structured diagnostic emitted while loading agent frontmatter. */
+export interface AgentDefinitionDiagnostic {
+  file: string;
+  agentName: string;
+  field: string;
+  severity: "warning" | "error";
+  message: string;
+}
+
+/** Result from loading custom agents with diagnostics. */
+export interface CustomAgentsLoadResult {
+  agents: Map<string, AgentConfig>;
+  diagnostics: AgentDefinitionDiagnostic[];
+}
+
 /** Unified agent configuration — used for both default and user-defined agents. */
 export interface AgentConfig {
   name: string;
   displayName?: string;
   description: string;
+  /** Built-in allowlist from `builtin_tools`; undefined = all built-ins. */
   builtinToolNames?: string[];
-  /** Tool denylist — these tools are removed even if `builtinToolNames` or extensions include them. */
+  /** Extension tool allowlist from `extension_tools`; undefined = all extension tools, [] = none. */
+  extensionToolNames?: string[];
+  /** Runtime-only compatibility for obsolete tool denylist behavior; frontmatter denylist fields are invalid. */
   disallowedTools?: string[];
   /** Agent allowlist — only these subagents may be delegated to. */
   allowDelegationTo?: string[];
@@ -39,6 +57,7 @@ export interface AgentConfig {
   skills: true | string[] | false;
   model?: string;
   maxTurns?: number;
+  thinking?: ThinkingLevel;
   systemPrompt: string;
   promptMode: "replace" | "append";
   /** Default for spawn: fork parent conversation. undefined = caller decides. */

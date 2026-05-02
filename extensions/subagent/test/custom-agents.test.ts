@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BUILTIN_TOOL_NAMES } from "../src/agent-types.js";
-import { loadCustomAgents } from "../src/custom-agents.js";
+import { loadCustomAgents, loadCustomAgentsWithDiagnostics } from "../src/custom-agents.js";
 
 describe("loadCustomAgents", () => {
   let tmpDir: string;
@@ -21,10 +21,12 @@ describe("loadCustomAgents", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function writeAgent(name: string, content: string) {
+  function writeAgent(name: string, content: string): string {
     const dir = join(tmpDir, ".pi", "agents");
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${name}.md`), content);
+    const filePath = join(dir, `${name}.md`);
+    writeFileSync(filePath, content);
+    return filePath;
   }
 
   it("returns empty map when .pi/agents/ does not exist", () => {
@@ -35,7 +37,7 @@ describe("loadCustomAgents", () => {
   it("loads a basic agent with all frontmatter fields", () => {
     writeAgent("auditor", `---
 description: Security Auditor
-tools: read, grep, find
+builtin_tools: read, grep, find
 model: anthropic/claude-opus-4-6:high
 max_turns: 30
 prompt_mode: replace
@@ -53,6 +55,7 @@ You are a security auditor.`);
     expect(agent.name).toBe("auditor");
     expect(agent.description).toBe("Security Auditor");
     expect(agent.builtinToolNames).toEqual(["read", "grep", "find"]);
+    expect(agent.extensionToolNames).toBeUndefined();
     expect(agent.model).toBe("anthropic/claude-opus-4-6:high");
     expect(agent.maxTurns).toBe(30);
     expect(agent.promptMode).toBe("replace");
@@ -98,9 +101,9 @@ Just a prompt.`);
     expect(agent.systemPrompt).toBe("Just a system prompt, no frontmatter.");
   });
 
-  it("handles tools: none → empty array", () => {
+  it("handles builtin_tools: none → empty array", () => {
     writeAgent("notool", `---
-tools: none
+builtin_tools: none
 ---
 
 No tools.`);
@@ -123,7 +126,7 @@ No extensions.`);
     expect(agent.skills).toBe(false);
   });
 
-  it("handles extension allowlist", () => {
+  it("preserves extensions CSV source scope", () => {
     writeAgent("partial", `---
 extensions: web-search, mcp-server
 skills: planning, review
@@ -137,16 +140,15 @@ Partial access.`);
     expect(agent.skills).toEqual(["planning", "review"]);
   });
 
-  it("passes through unknown tool names (not filtered)", () => {
+  it("keeps only canonical names from builtin_tools", () => {
     writeAgent("custom-tools", `---
-tools: read, my_custom_tool, grep
+builtin_tools: read, my_custom_tool, grep
 ---
 
 Custom tools.`);
 
     const result = loadCustomAgents(tmpDir);
-    // Unknown tool names are passed through — filtering happens at tool creation time
-    expect(result.get("custom-tools")!.builtinToolNames).toEqual(["read", "my_custom_tool", "grep"]);
+    expect(result.get("custom-tools")!.builtinToolNames).toEqual(["read", "grep"]);
   });
 
   it("normalizes invalid thinking level to undefined", () => {
@@ -259,7 +261,7 @@ Should be loaded.`);
   it("handles empty body with frontmatter", () => {
     writeAgent("nobody", `---
 description: No body
-tools: read
+builtin_tools: read
 ---
 `);
 
@@ -332,17 +334,25 @@ Agent prompt.`);
     expect(result.get("myagent")!.displayName).toBe("MyAgent");
   });
 
-  it("parses disallowed_tools as csv list", () => {
-    writeAgent("restricted", `---
+  it("rejects disallowed_tools and skips the invalid agent", () => {
+    const file = writeAgent("restricted", `---
 description: Restricted Agent
 disallowed_tools: bash, write
 ---
 
 No bash or write.`);
 
-    const result = loadCustomAgents(tmpDir);
-    const agent = result.get("restricted")!;
-    expect(agent.disallowedTools).toEqual(["bash", "write"]);
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(result.agents.has("restricted")).toBe(false);
+    expect(result.diagnostics).toEqual([
+      {
+        file,
+        agentName: "restricted",
+        field: "disallowed_tools",
+        severity: "error",
+        message: "disallowed_tools is invalid/obsolete; use builtin_tools and extension_tools explicit allowlists instead.",
+      },
+    ]);
   });
 
   it("disallowed_tools defaults to undefined when omitted", () => {
@@ -354,6 +364,100 @@ All tools.`);
 
     const result = loadCustomAgents(tmpDir);
     expect(result.get("unrestricted")!.disallowedTools).toBeUndefined();
+  });
+
+  it("rejects disallow_tools and skips the invalid agent", () => {
+    const file = writeAgent("restricted-alias", `---
+description: Restricted Agent
+disallow_tools: bash, write
+---
+
+No bash or write.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(result.agents.has("restricted-alias")).toBe(false);
+    expect(result.diagnostics).toEqual([
+      {
+        file,
+        agentName: "restricted-alias",
+        field: "disallow_tools",
+        severity: "error",
+        message: "disallow_tools is invalid/obsolete; use builtin_tools and extension_tools explicit allowlists instead.",
+      },
+    ]);
+  });
+
+  it("rejects legacy tools and skips the invalid agent", () => {
+    const file = writeAgent("legacy", `---
+tools: read, custom_extension_tool, grep
+---
+
+Legacy tools.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(result.agents.has("legacy")).toBe(false);
+    expect(result.diagnostics).toEqual([
+      {
+        file,
+        agentName: "legacy",
+        field: "tools",
+        severity: "error",
+        message: "tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools instead.",
+      },
+    ]);
+  });
+
+  it("rejects legacy tools even when builtin_tools is present", () => {
+    const file = writeAgent("both", `---
+builtin_tools: bash
+tools: read, grep
+---
+
+Both fields.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(result.agents.has("both")).toBe(false);
+    expect(result.diagnostics).toEqual([
+      {
+        file,
+        agentName: "both",
+        field: "tools",
+        severity: "error",
+        message: "tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools instead.",
+      },
+    ]);
+  });
+
+  it("parses extension_tools separately from extensions", () => {
+    writeAgent("extension-picker", `---
+extensions: web-search, mcp-server
+extension_tools: search_web, list_servers
+---
+
+Extension tools.`);
+
+    const result = loadCustomAgents(tmpDir);
+    const agent = result.get("extension-picker")!;
+    expect(agent.extensions).toEqual(["web-search", "mcp-server"]);
+    expect(agent.extensionToolNames).toEqual(["search_web", "list_servers"]);
+  });
+
+  it("distinguishes omitted extension_tools from none", () => {
+    writeAgent("extension-default", `---
+extensions: web-search
+---
+
+All extension tools.`);
+    writeAgent("extension-none", `---
+extensions: web-search
+extension_tools: none
+---
+
+No extension tools.`);
+
+    const result = loadCustomAgents(tmpDir);
+    expect(result.get("extension-default")!.extensionToolNames).toBeUndefined();
+    expect(result.get("extension-none")!.extensionToolNames).toEqual([]);
   });
 
   it("parses memory scope", () => {
