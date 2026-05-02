@@ -4,114 +4,100 @@ Claude Code-style autonomous sub-agents for Pi. Spawn specialized agents in isol
 
 Vendored from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3. See [CHANGELOG.md](CHANGELOG.md) for upstream history.
 
-## Tools
+## Tools and Commands
 
-### `Agent`
-
-Spawn a new agent or resume an existing one.
-
-**Parameters:**
-- `prompt` (required): Task for the agent
-- `description` (required): Short label shown in UI
-- `subagent_type`: Agent type (default: `general-purpose`)
-- `run_in_background`: Return immediately, notify on completion
-- `resume`: Agent ID to continue from
-- `model`: Model override (fuzzy: `"haiku"`, `"sonnet"`, or full `"provider/modelId"`)
-- `thinking`: Thinking level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`)
-- `max_turns`: Turn cap before graceful wrap-up
-- `inherit_context`: Fork parent conversation into agent
-- `isolated`: No extension/MCP tools
-- `isolation`: `"worktree"` for git worktree isolation
-
-### `get_subagent_result`
-
-Check status or wait for a background agent. Returns full result text.
-
-**Parameters:**
-- `agent_id` (required)
-- `wait`: Block until completion
-- `verbose`: Include full conversation
-
-### `steer_subagent`
-
-Inject a message into a running agent's conversation.
-
-**Parameters:**
-- `agent_id` (required)
-- `message` (required)
-
-## Commands
-
-- `/agents` — Interactive management menu: browse running agents, view conversations, create/edit/eject/disable custom agents, configure settings.
+- `Agent` — spawn a new agent or resume an existing one. Required params: `prompt`, `description`. Optional params: `subagent_type` (default `general-purpose`), `run_in_background`, `resume`, `model` (fuzzy `"haiku"`, `"sonnet"`, or full `"provider/modelId"`), `thinking`, `max_turns`, `inherit_context`, `isolated`, `isolation: "worktree"`.
+- `get_subagent_result` — check status or wait for a background agent. Params: `agent_id` (required), `wait`, `verbose`.
+- `steer_subagent` — inject a message into a running agent. Params: `agent_id` (required), `message` (required).
+- `/agents` — browse running agents, view conversations, create/edit/eject/disable custom agents, configure settings.
 
 ## Default Agent Types
 
-| Type | Tools | Model | Prompt Mode |
-|------|-------|-------|-------------|
-| `general-purpose` | all | inherit | append (parent twin) |
-| `Explore` | read, bash, grep, find, ls | haiku | replace (standalone) |
-| `Plan` | read, bash, grep, find, ls | inherit | replace (standalone) |
+| Type | Built-ins | Extensions | Model | Prompt Mode |
+|------|-----------|------------|-------|-------------|
+| `general-purpose` | all | all | inherit | append (parent twin) |
+| `Explore` | read, bash, grep, find, ls | all | haiku | replace (standalone) |
+| `Plan` | read, bash, grep, find, ls | all | inherit | replace (standalone) |
 
 Defaults can be overridden by creating `.pi/agents/<name>.md` with the same name, or ejected via `/agents` menu.
 
 ## Custom Agents
 
-Define agents as `.md` files with YAML frontmatter. Filename = agent type name.
+Define agents as `.md` files with YAML frontmatter. Project `.pi/agents/<name>.md` wins over global `$PI_CODING_AGENT_DIR/agents/<name>.md` (default `~/.pi/agent/agents/`). Filename = agent type name.
 
-| Priority | Location |
-|----------|----------|
-| 1 (highest) | `.pi/agents/<name>.md` (project) |
-| 2 | `$PI_CODING_AGENT_DIR/agents/<name>.md` (global, default `~/.pi/agent/agents/`) |
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `builtin_tools` | all built-ins | Exact built-in allowlist: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; use `none` for no built-ins. |
+| `extensions` | `true` | Extension availability/source scope: `true`/omitted = extension tools enabled, `false`/`none` = none, CSV = source names preserved where supported. Current active-tool filtering treats CSV as enabled; it is not a fuzzy tool matcher. |
+| `extension_tools` | all available extension tools | Exact extension-tool allowlist after extensions are available; `none` means no extension tools. Cannot grant built-ins. |
+
+Tool evaluation order:
+
+```mermaid
+flowchart LR
+  A[builtin_tools] --> B[extensions availability/source scope]
+  B --> C[extension_tools exact filter]
+  C --> D[allow_nesting gate removes Agent tools unless true]
+```
+
+`extensions` × `extension_tools` defaults:
+
+| `extensions` | `extension_tools` omitted | `extension_tools: none` | `extension_tools: foo` |
+|--------------|---------------------------|-------------------------|------------------------|
+| omitted/`true` | all available extension tools | no extension tools | only exact `foo` |
+| CSV | all available extension tools (source names preserved where supported) | no extension tools | only exact `foo` |
+| `false`/`none` | no extension tools | no extension tools | no extension tools |
 
 Example `.pi/agents/auditor.md`:
 
 ```markdown
 ---
 description: Security Code Reviewer
-tools: read, grep, find, bash
+builtin_tools: read, bash, grep, find
+extensions: false
 model: anthropic/claude-opus-4-6
-thinking: high
 max_turns: 30
 ---
-
-You are a security auditor. Review code for vulnerabilities.
-Report findings with file paths, line numbers, severity, and remediation.
+Review code for vulnerabilities. Report findings with file paths, line numbers, severity, and remediation.
 ```
+
+More tool-shape examples:
+
+```yaml
+# read-only agent
+builtin_tools: read, bash, grep, find, ls
+extensions: false
+
+# extension-tool agent
+builtin_tools: read, bash
+extensions: web-search
+extension_tools: web_search
+
+# no-extension agent with normal built-ins
+extensions: false
+
+# write-less agent with explicit built-ins
+builtin_tools: read, bash, grep, find, ls
+extension_tools: none
+```
+
+Migration notes:
+- `tools:` is invalid/obsolete. Use `builtin_tools` for built-in tools and `extension_tools` for extension/custom tools instead.
+- `disallowed_tools:` and `disallow_tools:` are invalid/obsolete. Express the exact allowed set with `builtin_tools` and `extension_tools` instead.
+- `inherit_extensions` remains a compatibility alias; prefer `extensions` in new docs and agent files.
 
 ## Settings
 
-Configured via `/agents` → Settings. Persisted to `<cwd>/.pi/subagents.json` (project) with global defaults from `~/.pi/agent/subagents.json`.
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Max concurrency | 4 | Background agent slots |
-| Default max turns | unlimited | Turn cap for agents without explicit limit |
-| Grace turns | 5 | Extra turns after wrap-up warning |
-| Join mode | smart | Completion notification grouping (`async`, `group`, `smart`) |
+Configured via `/agents` → Settings. Persisted to `<cwd>/.pi/subagents.json` (project) with global defaults from `~/.pi/agent/subagents.json`. Defaults: max concurrency 4, max turns unlimited, grace turns 5, join mode `smart`.
 
 ## UI Formatting
 
-Status widgets, Agent result renderers, and background completion notifications use compact Nerd Font stats: `⟳ 5≤30 · 󱁤 3 · 󰾆 33.8k · 4.1s`. Turn counts include a space after `⟳`; tool uses use the tools icon (`󱁤`); token counts use the chip icon (`󰾆`).
+Status widgets, Agent result renderers, and background completion notifications use compact Nerd Font stats: `⟳ 5≤30 · 󱁤 3 · 󰾆 33.8k · 4.1s`. Preserve local UI stat formatting during upstream syncs.
 
 ## Events
 
-Lifecycle events on `pi.events`:
-
-- `subagents:created`, `subagents:started`, `subagents:completed`, `subagents:failed`, `subagents:steered`
-- `subagents:ready` — broadcast on extension load
-- `subagents:settings_loaded`, `subagents:settings_changed`
-
-Cross-extension RPC: `subagents:rpc:ping`, `subagents:rpc:spawn`, `subagents:rpc:stop` with reply on `:reply:${requestId}`.
+Lifecycle events on `pi.events`: `subagents:created`, `subagents:started`, `subagents:completed`, `subagents:failed`, `subagents:steered`, `subagents:ready`, `subagents:settings_loaded`, `subagents:settings_changed`. Cross-extension RPC: `subagents:rpc:ping`, `subagents:rpc:spawn`, `subagents:rpc:stop` with reply on `:reply:${requestId}`.
 
 ## Local Additions
 
-Features added on top of upstream, not present in the published package:
-
-- **Background supervision** (`background-supervision.ts`) — auto-steers idle agents after a timeout, auto-aborts after prolonged inactivity. Parent gets stale-agent reminders.
-- **Delegation policy** (`delegation-policy.ts`) — `allow_delegation_to`, `disallow_delegation_to`, `allow_nesting` frontmatter fields control which agents a subagent may spawn.
-- **Result recovery** (`result-recovery.ts`) — fallback text extraction from session history when `record.result` is empty (non-streaming providers, aborted agents).
-- **ThinkingLevel normalizer** (`thinking-level.ts`) — maps legacy `"none"` → `"off"` for backward compatibility with existing agent frontmatter.
-- **Enhanced skill loader** (`skill-loader.ts`) — Pi-aware skill discovery: `SKILL.md` directory skills, ancestor `.agents/skills/` traversal, frontmatter name matching, `sourcePath`/`baseDir` metadata for relative path resolution.
-- **Abort signal forwarding** — external tool abort signals propagate into running/queued agents, enabling clean cancellation.
-- **Model label tracking** — resolved `provider/model` label shown in widget for each agent.
-- **Nerd Font UI stats** — widget and Agent renderers intentionally format turns/tokens/tools as `⟳ 5`, `󰾆 33.8k`, and `󱁤 3`; preserve this divergence during upstream syncs.
+Features added on top of upstream: background supervision, delegation policy, result recovery, thinking-level normalization, enhanced skill loading, abort signal forwarding, model label tracking, and Nerd Font UI stats.

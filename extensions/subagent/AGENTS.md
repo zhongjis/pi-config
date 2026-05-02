@@ -52,7 +52,7 @@ pnpm run build
 ## Gotchas
 - `src/index.ts` is large because it owns tool registration, widget rendering, notifications, and event emission; many changes fan out from there.
 - `subagents:ready` is the discovery signal for other extensions; breaking or delaying it causes load-order bugs.
-- Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after denylist handling.
+- Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after explicit allowlist resolution.
 
 ## Local Tweaks
 

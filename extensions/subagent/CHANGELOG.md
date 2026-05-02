@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Explicit custom-agent tool schema**: `builtin_tools` selects built-in tools exactly,
+  `extensions` controls extension availability/source-scope hints, and `extension_tools` selects extension-provided tools exactly.
+  Active tools are evaluated as built-ins → extension availability → extension tools → nesting gate.
 - **Model fallback chain**: `model` frontmatter field now supports comma-separated
   model list. First available model is used; subsequent entries are fallbacks.
   Example: `model: claude-opus-4-6,claude-sonnet-4-6`
@@ -24,11 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `resolveAgentInvocationConfig()` return type: `modelInput` → `modelCandidates[]`,
   `thinking` → `thinkingOverride` (from tool param only).
+- `disallowed_tools` and `disallow_tools` are invalid/obsolete; express the exact
+  allowed set with `builtin_tools` and `extension_tools` instead.
 
 ### Migration
 - Before: `model: claude-opus-4-6` + `thinking: high`
 - After:  `model: claude-opus-4-6:high`
 - The tool `thinking` parameter still works as a blanket override.
+- Legacy `tools:` is invalid/obsolete. Use `builtin_tools` for built-in tools
+  and `extension_tools` for extension/custom tools instead.
 
 ### ⚠️ Local Vendored Change
 - This change is LOCAL to this repo. Do not override during upstream sync.
@@ -178,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Persistent agent memory** — new `memory` frontmatter field with three scopes: `"user"` (global `~/.pi/`), `"project"` (per-project `.pi/`), `"local"` (gitignored `.pi/`). Agents with write/edit tools get full read-write memory; read-only agents get a read-only fallback that injects existing MEMORY.md content without granting write access or creating directories.
 - **Git worktree isolation** — new `isolation: "worktree"` frontmatter field and Agent tool parameter. Creates a temporary `git worktree` so agents work on an isolated copy of the repo. On completion, changes are auto-committed to a `pi-agent-<id>` branch; clean worktrees are removed. Includes crash recovery via `pruneWorktrees()`.
 - **Skill preloading** — `skills` frontmatter now accepts a comma-separated list of skill names (e.g. `skills: planning, review`). Reads from `.pi/skills/` (project) then `~/.pi/skills/` (global), tries `.md`/`.txt`/bare extensions. Content injected into the system prompt as `# Preloaded Skill: {name}`.
-- **Tool denylist** — new `disallowed_tools` frontmatter field (e.g. `disallowed_tools: bash, write`). Blocks specified tools even if `builtinToolNames` or extensions would provide them. Enforced for both extension-enabled and extension-disabled agents.
+- **Invalid/obsolete historical blocked-tool field** — v0.4.3 introduced `disallowed_tools`; current custom agents should use explicit `builtin_tools` and `extension_tools` allowlists instead.
 - **Prompt extras system** — new `PromptExtras` interface in `prompts.ts`; `buildAgentPrompt()` accepts optional memory and skill blocks appended in both `replace` and `append` modes.
 - `getMemoryTools()`, `getReadOnlyMemoryTools()` in `agent-types.ts`.
 - `buildMemoryBlock()`, `buildReadOnlyMemoryBlock()`, `isSymlink()`, `safeReadFile()` in `memory.ts`.
@@ -189,7 +196,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Read-only agents no longer escalated to read-write** — enabling `memory` on a read-only agent (e.g. Explore) previously auto-added `write`/`edit` tools. Now the runner detects write capability and branches: read-write agents get full memory tools, read-only agents get read-only memory prompt with only the `read` tool added.
-- **Denylist-aware memory detection** — write capability check now accounts for `disallowedTools`. An agent with `tools: write` + `disallowed_tools: write` correctly gets read-only memory instead of broken read-write instructions.
+- **Invalid/obsolete historical blocked-tool-aware memory detection** — write capability check accounted for the then-current blocked-tool field. Current configs should express read-only access directly with `builtin_tools`.
 - **Worktree requires commits** — repos with no commits (empty HEAD) are now rejected early with a warning instead of failing silently at `git worktree add`.
 - **Worktree failure warning** — when worktree creation fails, a warning is prepended to the agent's prompt instead of silently falling through to the main cwd.
 - **No force-branch overwrite** — worktree cleanup appends a timestamp suffix on branch name conflict instead of using `git branch -f`.
@@ -203,7 +210,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agent-runner.ts`: tool/extension/skill resolution moved before memory detection; `ctx.cwd` → `effectiveCwd` throughout.
 - `custom-agents.ts`: extracted `parseCsvField()` helper; added `csvListOptional()` and `parseMemory()`.
 - `skill-loader.ts`: uses `safeReadFile()` from `memory.ts` instead of raw `readFileSync`.
-- Agent tool schema updated with `isolation` parameter and help text for `memory`, `isolation`, `disallowed_tools`, and skill list.
+- Agent tool schema updated with `isolation` parameter and help text for `memory`, `isolation`, invalid/obsolete historical blocked-tool fields, and skill list.
 
 ## [0.4.2] - 2026-03-12
 
@@ -252,7 +259,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Case-insensitive agent type lookup** — `"explore"`, `"EXPLORE"`, and `"Explore"` all resolve to the same agent. LLMs frequently lowercase type names; this prevents validation failures.
 - **Unknown type fallback** — unrecognized agent types fall back to `general-purpose` with a note, instead of hard-rejecting. Matches Claude Code behavior.
-- **Dynamic tool list for general-purpose** — `builtinToolNames` is now optional in `AgentConfig`. When omitted, the agent gets all tools from `TOOL_FACTORIES` at lookup time, so new tools added upstream are automatically available.
+- **Dynamic built-in tool list for general-purpose** — `builtin_tools` maps to the internal `builtinToolNames` field, which is optional in `AgentConfig`. When omitted, the agent gets all current built-in tools at lookup time, so new built-ins added upstream are automatically available.
 - **Agent source indicators in `/agents` menu** — `•` (project), `◦` (global), `✕` (disabled) with legend. Defaults are unmarked.
 - **Disabled agents visible in UI** — disabled agents now show in the "Agent types" list (marked `✕`) with an Enable action, instead of being invisible.
 - **Enable action** — re-enable a disabled agent from the `/agents` menu. Stub files are auto-cleaned.
@@ -398,7 +405,7 @@ Initial release.
 - **Autonomous sub-agents** — spawn specialized agents via tool call, each running in an isolated pi session
 - **Built-in agent types** — general-purpose, Explore (defaults to haiku), Plan, statusline-setup, claude-code-guide
 - **Custom user-defined agents** — define agents in `.pi/agents/<name>.md` with YAML frontmatter + system prompt body
-- **Frontmatter configuration** — tools, extensions, skills, model, thinking, max_turns, prompt_mode, inherit_context, run_in_background, isolated
+- **Frontmatter configuration** — `builtin_tools`, `extensions`, `extension_tools`, skills, model, thinking, max_turns, prompt_mode, inherit_context, run_in_background, isolated
 - **Graceful max_turns** — steer message at limit, 5 grace turns, then hard abort
 - **Background execution** — `run_in_background` with completion notifications
 - **`get_subagent_result` tool** — check status, wait for completion, verbose conversation output
