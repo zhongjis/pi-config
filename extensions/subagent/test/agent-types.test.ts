@@ -178,7 +178,7 @@ describe("agent type registry", () => {
       expect(config.skills).toBe(true);
     });
 
-    it("getConfig returns extension allowlist for user agents", () => {
+    it("getConfig returns extension source scope for user agents", () => {
       const agents = new Map([["partial", makeAgentConfig({
         name: "partial",
         extensions: ["web-search"],

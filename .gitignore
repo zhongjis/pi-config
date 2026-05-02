@@ -12,3 +12,6 @@ node_modules/
 
 .direnv
 .gitnexus
+extensions/subagent/dist/
+extensions/lib/*.js
+extensions/lib/*.d.ts
