@@ -5,7 +5,8 @@ model: anthropic/claude-opus-4-7:high,openai-codex/gpt-5.5:high
 prompt_mode: replace
 inherit_context: false
 run_in_background: false
-tools: read
+builtin_tools: read
+extension_tools: readonly_bash
 extensions: clauderock,readonly_bash
 ---
 
