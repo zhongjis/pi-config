@@ -14,7 +14,8 @@ import {
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import { getAgentConfig, getConfig, getMemoryToolNames, getReadOnlyMemoryToolNames, getToolNamesForType } from "./agent-types.js";
+import { computeActiveToolNames } from "./active-tools.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getMemoryToolNames, getReadOnlyMemoryToolNames } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
@@ -23,8 +24,6 @@ import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
 
-/** Names of tools registered by this extension that subagents must NOT inherit. */
-const EXCLUDED_TOOL_NAMES = ["Agent", "get_subagent_result", "steer_subagent"];
 
 /** Default max turns. undefined = unlimited (no turn limit). */
 let defaultMaxTurns: number | undefined;
@@ -185,24 +184,23 @@ export async function runAgent(
     }
   }
 
-  let toolNames = getToolNamesForType(type);
+  let toolNames = [...config.builtinToolNames];
 
   // Persistent memory: detect write capability and branch accordingly.
-  // Account for disallowedTools — a tool in the base set but on the denylist is not truly available.
+  // Memory may only use built-ins already permitted by builtin_tools/default built-ins.
   if (agentConfig?.memory) {
     const existingNames = new Set(toolNames);
-    const denied = agentConfig.disallowedTools ? new Set(agentConfig.disallowedTools) : undefined;
-    const effectivelyHas = (name: string) => existingNames.has(name) && !denied?.has(name);
-    const hasWriteTools = effectivelyHas("write") || effectivelyHas("edit");
+    const hasWriteTools = existingNames.has("write") || existingNames.has("edit");
+    const permittedMemoryTools = new Set(["read", "write", "edit"].filter((name) => existingNames.has(name)));
 
     if (hasWriteTools) {
-      // Read-write memory: add any missing memory tool names (read/write/edit)
-      const extraNames = getMemoryToolNames(existingNames);
+      // Read-write memory: add any missing permitted memory tool names (read/write/edit).
+      const extraNames = getMemoryToolNames(existingNames).filter((name) => permittedMemoryTools.has(name));
       if (extraNames.length > 0) toolNames = [...toolNames, ...extraNames];
       extras.memoryBlock = buildMemoryBlock(agentConfig.name, agentConfig.memory, effectiveCwd);
     } else {
-      // Read-only memory: only add read tool name, use read-only prompt
-      const extraNames = getReadOnlyMemoryToolNames(existingNames);
+      // Read-only memory: only add read when read is otherwise permitted.
+      const extraNames = getReadOnlyMemoryToolNames(existingNames).filter((name) => permittedMemoryTools.has(name));
       if (extraNames.length > 0) toolNames = [...toolNames, ...extraNames];
       extras.memoryBlock = buildReadOnlyMemoryBlock(agentConfig.name, agentConfig.memory, effectiveCwd);
     }
@@ -260,7 +258,6 @@ export async function runAgent(
     settingsManager: SettingsManager.create(effectiveCwd, agentDir),
     modelRegistry: ctx.modelRegistry,
     model,
-    tools: toolNames,
     resourceLoader: loader,
   };
   if (thinkingLevel) {
@@ -269,35 +266,9 @@ export async function runAgent(
 
   const { session } = await createAgentSession(sessionOpts);
 
-  // Build disallowed tools set from agent config
-  const disallowedSet = agentConfig?.disallowedTools
-    ? new Set(agentConfig.disallowedTools)
-    : undefined;
-
-  // Filter active tools: remove our own tools to prevent nesting,
-  // apply extension allowlist if specified, and apply disallowedTools denylist
-  if (extensions !== false) {
-    const builtinToolNameSet = new Set(toolNames);
-    const activeTools = session.getActiveToolNames().filter((t) => {
-      if (EXCLUDED_TOOL_NAMES.includes(t) && !agentConfig?.allowNesting) return false;
-      if (disallowedSet?.has(t)) return false;
-      if (builtinToolNameSet.has(t)) return true;
-      if (Array.isArray(extensions)) {
-        return extensions.some(ext => t.startsWith(ext) || t.includes(ext));
-      }
-      return true;
-    });
-    session.setActiveToolsByName(activeTools);
-  } else if (disallowedSet) {
-    // Even with extensions disabled, apply denylist to built-in tools
-    const activeTools = session.getActiveToolNames().filter(t => !disallowedSet.has(t));
-    session.setActiveToolsByName(activeTools);
-  }
-
-  // Bind extensions so that session_start fires and extensions can initialize
-  // (e.g. loading credentials, setting up state). Placed after tool filtering
-  // so extension-provided skills/prompts from extendResourcesFromExtensions()
-  // respect the active tool set. All ExtensionBindings fields are optional.
+  // Bind extensions first so extension tools are visible, then apply the final
+  // exact active-tool policy. Do not pass `tools` to createAgentSession here:
+  // that SDK allowlist is built-in-only and would pre-strip extension tools.
   await session.bindExtensions({
     onError: (err) => {
       options.onToolActivity?.({
@@ -306,6 +277,17 @@ export async function runAgent(
       });
     },
   });
+
+  const activeTools = computeActiveToolNames({
+    availableToolNames: session.getActiveToolNames(),
+    builtinToolNames: toolNames,
+    builtinToolUniverse: BUILTIN_TOOL_NAMES,
+    extensions,
+    extensionTools: agentConfig?.extensionToolNames,
+    allowNesting: agentConfig?.allowNesting,
+    isolated: options.isolated,
+  });
+  session.setActiveToolsByName(activeTools);
 
   options.onSessionCreated?.(session);
 
@@ -409,6 +391,17 @@ export async function steerAgent(
   await session.steer(message);
 }
 
+type ToolCallSummary = {
+  name?: unknown;
+  toolName?: unknown;
+};
+
+function getToolCallDisplayName(content: ToolCallSummary): string {
+  if (typeof content.name === "string") return content.name;
+  if (typeof content.toolName === "string") return content.toolName;
+  return "unknown";
+}
+
 /**
  * Get the subagent's conversation messages as formatted text.
  */
@@ -426,7 +419,7 @@ export function getAgentConversation(session: AgentSession): string {
       const toolCalls: string[] = [];
       for (const c of msg.content) {
         if (c.type === "text" && c.text) textParts.push(c.text);
-        else if (c.type === "toolCall") toolCalls.push(`  Tool: ${(c as any).name ?? (c as any).toolName ?? "unknown"}`);
+        else if (c.type === "toolCall") toolCalls.push(`  Tool: ${getToolCallDisplayName(c)}`);
       }
       if (textParts.length > 0) parts.push(`[Assistant]: ${textParts.join("\n")}`);
       if (toolCalls.length > 0) parts.push(`[Tool Calls]:\n${toolCalls.join("\n")}`);
