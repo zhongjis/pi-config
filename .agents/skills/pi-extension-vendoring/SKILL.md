@@ -144,7 +144,7 @@ Do not silently add dependencies. Do not run global installs. Use this repo's pa
 
 When package metadata changes:
 
-- Preserve upstream author, license, repository, homepage, version/tag, and commit SHA in the vendored extension's local metadata or README.
+- Preserve upstream author, license, repository, homepage, version/tag, commit SHA, and last-synced version in the vendored extension's local metadata or README.
 - If keeping an extension-local `package.json`, do not delete original attribution fields. Add local notes in a custom field if useful:
 
 ```json
@@ -175,7 +175,7 @@ One-paragraph summary: what it does, key capabilities.
 
 ## Upstream
 
-(Vendored only) Source URL, version/commit, license, local changes summary.
+(Vendored only) Source URL, last synced version/tag, immutable commit SHA, license, local changes summary.
 
 ## Tools
 
@@ -214,6 +214,7 @@ Config file path, key fields, defaults. No full JSON blobs — list fields.
 - **No file-listing tables** — put those in AGENTS.md if needed.
 - **Upstream README is noisy?** Replace it entirely. Keep only usage/config substance.
 - **Sections are optional.** Skip any section that doesn't apply (e.g., no Tools section for hook-only extensions).
+- **Always include last synced version/commit.** The Upstream section should say what upstream version/tag and commit this local copy was last synced to.
 
 ## Event and UI adaptation checklist
 
@@ -229,6 +230,7 @@ After vendoring, report:
 
 - Files added/changed.
 - Upstream source and pinned commit/version.
+- Last synced version/commit recorded in README.
 - Dependency changes and any warnings accepted.
 - Adaptation risks found and how handled.
 - Validation commands run and results.
