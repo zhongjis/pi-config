@@ -1,16 +1,19 @@
 # Pi Web Access
 
-Web search, content extraction, and video understanding for Pi. Supports Exa, Perplexity, Gemini (API and browser-based), GitHub repo cloning, YouTube/local video analysis, and PDF extraction.
+Web search, content extraction, and video understanding for Pi. Supports Exa, Perplexity, Gemini API/Web, GitHub repo cloning, YouTube/local video analysis, and PDF extraction.
 
 ## Upstream
 
-Source: <https://github.com/nicobailon/pi-web-access> (MIT). Vendored.
+- **Source:** <https://github.com/nicobailon/pi-web-access>
+- **Version:** `0.10.7` (`076bf0db5e739b200286ca37486e4edd8d19123c`)
+- **License:** MIT
+- **Adapted:** Vendored into this repo with stable local tool names, concise docs, and repo-root validation.
 
 ## Tools
 
-### web_search
+### `web_search`
 
-Search the web via Exa, Perplexity, or Gemini.
+Search the web via Exa, Perplexity, or Gemini. Returns synthesized answers with citations. In `auto` mode, provider fallback is Exa → Perplexity → Gemini API → Gemini Web when browser-cookie access is enabled.
 
 | Parameter | Description |
 |-----------|-------------|
@@ -20,18 +23,18 @@ Search the web via Exa, Perplexity, or Gemini.
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
 | `provider` | `auto` (default), `exa`, `perplexity`, or `gemini` |
 | `includeContent` | Fetch full page content from sources in background |
-| `workflow` | `none` or `summary-review` (default) |
+| `workflow` | `summary-review` (default) opens curator; `none` skips curator |
 
-### code_search
+### `code_search`
 
-Search for code examples and docs via Exa MCP. No API key required.
+Search for code examples, docs, API refs, and implementation examples. Uses Exa MCP code context when available, with an Exa MCP web-search fallback.
 
 | Parameter | Description |
 |-----------|-------------|
 | `query` | Programming question, API, library, or debugging topic |
 | `maxTokens` | Max tokens to return (default: 5000, max: 50000) |
 
-### fetch_content
+### `fetch_content`
 
 Fetch URLs and extract readable content. Handles GitHub repos, YouTube, PDFs, local video files, and web pages.
 
@@ -42,8 +45,9 @@ Fetch URLs and extract readable content. Handles GitHub repos, YouTube, PDFs, lo
 | `timestamp` | Frame extraction — single (`"23:41"`), range (`"23:41-25:00"`), or seconds (`"85"`) |
 | `frames` | Number of frames to extract (max 12) |
 | `forceClone` | Clone GitHub repos exceeding the 350MB threshold |
+| `model` | Override Gemini model for video or YouTube analysis |
 
-### get_search_content
+### `get_search_content`
 
 Retrieve stored content from previous searches or fetches. Content over 30k chars is truncated in tool responses but stored in full for retrieval here.
 
@@ -53,6 +57,7 @@ Retrieve stored content from previous searches or fetches. Content over 30k char
 | `urlIndex` | Index of the result to retrieve |
 | `url` | URL of the result to retrieve |
 | `query` | Original query to retrieve results for |
+| `queryIndex` | Query index for multi-query search results |
 
 ## Commands
 
@@ -74,7 +79,7 @@ Configurable via the `shortcuts` field in config.
 
 ## Configuration
 
-Config file: `~/.pi/web-search.json`. All fields optional.
+Config file: `~/.pi/web-search.json`. All fields optional; env vars override config values.
 
 | Field | Description |
 |-------|-------------|
@@ -83,27 +88,28 @@ Config file: `~/.pi/web-search.json`. All fields optional.
 | `geminiApiKey` | Gemini API key (or `GEMINI_API_KEY` env var) |
 | `provider` | Default search provider: `exa`, `perplexity`, or `gemini` |
 | `workflow` | Curator mode: `summary-review` (default) or `none` |
-| `chromeProfile` | Chromium profile directory for Gemini Web cookie lookup |
+| `summaryModel` | Preferred model for curator summary drafts when available |
 | `searchModel` | Override Gemini API model for `web_search` |
+| `allowBrowserCookies` | Enable browser-cookie lookup for Gemini Web (`false` by default) |
+| `chromeProfile` | Chromium profile directory for Gemini Web cookie lookup when enabled |
 | `curatorTimeoutSeconds` | Initial curator idle timeout (default: 20, max: 600) |
 | `shortcuts` | Key bindings for curator and activity monitor |
-
-Env vars take precedence over config file values.
 
 ## Provider Fallback Chains
 
 ```
 web_search(query)
-  → Exa (direct API with key, MCP without) → Perplexity → Gemini API → Gemini Web
+  → Exa (direct API with key, MCP without) → Perplexity → Gemini API → Gemini Web (if browser cookies enabled)
 
 fetch_content(url)
   → GitHub URL?  Clone repo, return file contents + local path
-  → YouTube URL? Gemini Web → Gemini API → Perplexity
-  → Video file?  Gemini API (Files API) → Gemini Web
+  → YouTube URL? Gemini Web (if enabled) → Gemini API → Perplexity
+  → Video file?  Gemini API (Files API) → Gemini Web (if enabled)
   → PDF?         Extract text, save to ~/Downloads/
   → HTML?        Readability → RSC parser → Jina Reader → Gemini fallback
 ```
 
-## Skills
+## Local Additions
 
-Bundles a `librarian` skill for investigating open-source libraries. Combines GitHub cloning, web search, and git operations to produce evidence-backed answers with permalinks. Loaded automatically based on prompt context.
+- Local tool names are kept stable for this harness: `web_search`, `code_search`, `fetch_content`, `get_search_content`.
+- Bundles a `librarian` skill for open-source library investigation using web search, GitHub cloning, and git evidence.

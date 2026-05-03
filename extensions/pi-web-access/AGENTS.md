@@ -41,7 +41,18 @@ pnpm lint:typecheck
 - Never bypass the GitHub-specific extraction path for GitHub code URLs.
 
 ## Gotchas
-- This package has no local `scripts`; use repo-root validation.
 - `index.ts` is the integration hub; provider modules are comparatively isolated.
+- Package-local upstream Node tests live under `test/*.mjs`; repo-root Vitest still owns harness validation.
 - YouTube/local frame extraction needs `ffmpeg`; YouTube frame extraction also needs `yt-dlp`. Content analysis can still work without them.
-- `README.md` still shows upstream package-install commands; repo-level guidance for this harness is stricter than upstream packaging docs.
+
+## Local Tweaks
+
+Intentional divergences from upstream. Preserve these on sync.
+
+| File | What | Why |
+|------|------|-----|
+| `index.ts` | Preserve registered tool names `web_search`, `code_search`, `fetch_content`, `get_search_content` and command names `/websearch`, `/curator`, `/google-account`, `/search` | Existing local prompts/workflows depend on these names |
+| `README.md` | Replaced upstream marketing/install README with concise repo-local documentation | This repo vendors extensions locally and forbids `pi install npm:...` guidance |
+| `AGENTS.md` | Local maintenance guide and this tweak manifest | Required source of truth for future vendored syncs |
+| `index.test.ts` | Local Vitest coverage for schema normalization and tool registration | Root `pnpm test:extensions` discovers `extensions/**/*.test.ts` |
+| `package.json` | Version/dependencies synced to upstream; `test` script is scoped to upstream `test/*.test.mjs` | Avoids Node test runner trying local TypeScript/Vitest tests while preserving package-local upstream tests |
