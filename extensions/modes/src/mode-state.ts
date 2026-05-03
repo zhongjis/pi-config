@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
-import { parseModelChain, resolveFirstAvailable } from "../../lib/model.js";
+import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model.js";
 import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
 
 function colored(mode: Mode, text: string): string {
@@ -27,6 +27,14 @@ function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
 	const set = new Set(a);
 	for (const t of b) if (!set.has(t)) return false;
 	return true;
+}
+
+export function resolveModelFromStr(
+	input: string,
+	registry: Parameters<typeof resolveModel>[1],
+): any | undefined {
+	const result = resolveModel(input, registry);
+	return typeof result === "string" ? undefined : result;
 }
 
 export class ModeStateManager {
