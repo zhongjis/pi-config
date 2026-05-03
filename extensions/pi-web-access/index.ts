@@ -37,6 +37,7 @@ import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
+import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -44,6 +45,7 @@ interface WebSearchConfig {
 	provider?: string;
 	workflow?: string;
 	curatorTimeoutSeconds?: unknown;
+	summaryModel?: string;
 	shortcuts?: {
 		curate?: string;
 		activity?: string;
@@ -703,15 +705,22 @@ export default function (pi: ExtensionAPI) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
+		const config = loadConfig();
+		const configuredSummaryModel = typeof config.summaryModel === "string" ? config.summaryModel.trim() : "";
 		const preferredDefaults = [
 			"anthropic/claude-haiku-4-5",
 			"openai-codex/gpt-5.3-codex-spark",
 		];
 		let defaultSummaryModel: string | null = null;
-		for (const preferred of preferredDefaults) {
-			if (availableValues.has(preferred)) {
-				defaultSummaryModel = preferred;
-				break;
+		if (configuredSummaryModel.length > 0 && availableValues.has(configuredSummaryModel)) {
+			defaultSummaryModel = configuredSummaryModel;
+		}
+		if (!defaultSummaryModel) {
+			for (const preferred of preferredDefaults) {
+				if (availableValues.has(preferred)) {
+					defaultSummaryModel = preferred;
+					break;
+				}
 			}
 		}
 		if (!defaultSummaryModel && summaryModels.length > 0) {
@@ -2269,13 +2278,24 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("google-account", {
 		description: "Show the active Google account for Gemini Web",
 		handler: async () => {
+			if (!isBrowserCookieAccessAllowed()) {
+				pi.sendMessage({
+					customType: "google-account",
+					content: [{ type: "text", text: "Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ~/.pi/web-search.json to enable it." }],
+					display: true,
+					details: { available: false, cookieAccessAllowed: false },
+				}, { triggerTurn: true, deliverAs: "followUp" });
+				return;
+			}
+
+
 			const cookies = await isGeminiWebAvailable();
 			if (!cookies) {
 				pi.sendMessage({
 					customType: "google-account",
 					content: [{ type: "text", text: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser." }],
 					display: true,
-					details: { available: false },
+					details: { available: false, cookieAccessAllowed: true },
 				}, { triggerTurn: true, deliverAs: "followUp" });
 				return;
 			}
