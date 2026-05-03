@@ -415,7 +415,7 @@ function buildPlainText(snapshot: Snapshot): string {
   return lines.join("\n");
 }
 
-export default function contextExtension(pi: ExtensionAPI): void {
+export function registerContextDashboard(pi: ExtensionAPI): void {
   pi.registerCommand("context", {
     description: "Visualize detailed current session context usage",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
