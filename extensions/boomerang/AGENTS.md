@@ -8,9 +8,10 @@ Intentional divergences from upstream. Preserve these on sync.
 
 | File | What | Why |
 |------|------|-----|
-| `index.ts` | Copied from upstream root `index.ts` | Repo loads extensions from `extensions/<name>/index.ts` |
-| `index.test.ts` | Copied from upstream root `index.test.ts` | Root Vitest discovers `extensions/**/*.test.ts` |
-| `README.md` | Rewritten in local concise extension README format | Repo requires factual README with provenance, no install/marketing sections |
+| `index.ts` | Copied from upstream root `index.ts`; local forced-skill plumbing remains for `/boomerang:commit` | Repo loads extensions from `extensions/<name>/index.ts`; local shortcut needs boomerang task internals |
+| `commit.ts` | Local-only `/boomerang:commit` registration and commit task builder | Separates local git commit addon from vendored upstream entrypoint |
+| `index.test.ts` | Copied from upstream root `index.test.ts`; local tests cover `/boomerang:commit` | Root Vitest discovers `extensions/**/*.test.ts`; local shortcut needs coverage |
+| `README.md` | Rewritten in local concise extension README format and documents `/boomerang:commit` | Repo requires factual README with provenance, no install/marketing sections |
 | `package.json`, `package-lock.json`, `vitest.config.ts`, `banner.png`, `CHANGELOG.md` | Not copied | Root project already supplies deps/test config; README records upstream version/commit |
 
 ## Sync Notes

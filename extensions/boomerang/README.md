@@ -25,6 +25,7 @@ Parameters:
 ## Commands
 
 - `/boomerang <task>` — run task autonomously, then summarize context.
+- `/boomerang:commit [args]` — run `commit [args]` through boomerang with the `git-master` skill injected.
 - `/boomerang <task> --rethrow N` — run repeated passes with summaries between passes.
 - `/boomerang <task> --loop N` — compatibility alias for `--rethrow N`.
 - `/boomerang /a -> /b -> /c` — chain prompt templates before summarizing.

@@ -14,6 +14,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type SessionEntry, type SessionManager } from "@mariozechner/pi-coding-agent";
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
+import { registerCommitCommand, type BoomerangTaskSnapshot } from "./commit.js";
 
 interface BoomerangConfig {
   toolEnabled?: boolean;
@@ -427,6 +428,7 @@ interface RethrowState {
   templateRef?: string;
   templateArgs?: string[];
   commandCtx: ExtensionCommandContext;
+  forcedSkill?: string;
 }
 
 const TEMPLATE_LOAD_FAILED = Symbol("template-load-failed");
@@ -1097,6 +1099,12 @@ export default function (pi: ExtensionAPI) {
         lastTaskSummary = null;
         lastHandoffSummary = null;
 
+        if (currentRethrow.forcedSkill) {
+          injectedSkill = injectSkill(currentRethrow.forcedSkill, rethrowCwd, ctx);
+          if (!injectedSkill) {
+            aborted = true;
+          }
+        }
 
         if (!aborted && currentRethrow.isChain) {
           const parsed = parseChain(currentRethrow.baseTask);
@@ -1555,7 +1563,7 @@ export default function (pi: ExtensionAPI) {
   async function startTask(
     trimmed: string,
     ctx: ExtensionCommandContext,
-    restoreSnapshot?: { model?: Model<any>; thinking?: ThinkingLevel }
+    restoreSnapshot?: BoomerangTaskSnapshot
   ): Promise<void> {
     const modelSnapshot = restoreSnapshot?.model ?? ctx.model;
     const thinkingSnapshot = restoreSnapshot?.thinking ?? pi.getThinkingLevel();
@@ -1623,6 +1631,9 @@ export default function (pi: ExtensionAPI) {
       pendingSkill = null;
       chainState = null;
 
+      if (restoreSnapshot?.forcedSkill && !injectSkill(restoreSnapshot.forcedSkill, ctx.cwd, ctx)) {
+        return;
+      }
 
       rethrowState = {
         rethrowCount: extracted.rethrowCount,
@@ -1632,6 +1643,7 @@ export default function (pi: ExtensionAPI) {
         baseTask: taskString,
         isChain: !!chainParsed,
         commandCtx: ctx,
+        forcedSkill: restoreSnapshot?.forcedSkill,
       };
 
       if (!chainParsed && isTemplate) {
@@ -1681,6 +1693,12 @@ export default function (pi: ExtensionAPI) {
     toolCollapsePending = false;
     clearTaskState();
 
+    const forcedInjectedSkill = restoreSnapshot?.forcedSkill
+      ? injectSkill(restoreSnapshot.forcedSkill, ctx.cwd, ctx)
+      : undefined;
+    if (restoreSnapshot?.forcedSkill && !forcedInjectedSkill) {
+      return;
+    }
 
     let task = trimmed;
     let taskDisplayName = trimmed;
@@ -1755,7 +1773,7 @@ export default function (pi: ExtensionAPI) {
     keepBoomerangExpanded(ctx);
 
     const targetId = anchorEntryId ?? startEntryId!;
-    pendingCollapse = { targetId, task: taskDisplayName, commandCtx: ctx };
+    pendingCollapse = { targetId, task: taskDisplayName, commandCtx: ctx, injectedSkill: forcedInjectedSkill };
 
     updateStatus(ctx);
     ctx.ui.notify("Boomerang started. Agent will work autonomously.", "info");
@@ -1765,6 +1783,14 @@ export default function (pi: ExtensionAPI) {
     markAwaitingAssistant(ctx, task, leafBeforeSend ?? targetId);
   }
 
+  registerCommitCommand(pi, {
+    isBoomerangRunning: () => boomerangActive || chainState !== null,
+    setCommandContext: (ctx) => {
+      storedCommandCtx = ctx;
+      reloadFallbackDisplay = () => ctx.reload();
+    },
+    startTask: (task, ctx, restoreSnapshot) => startTask(task, ctx, restoreSnapshot),
+  });
 
   pi.registerCommand("boomerang", {
     description: "Execute task autonomously, then summarize context",

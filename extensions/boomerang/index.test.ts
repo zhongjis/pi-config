@@ -402,6 +402,10 @@ describe("Boomerang Extension", () => {
     await getCommand("boomerang")(args, ctx);
   }
 
+  async function runBoomerangCommit(args: string, ctx: ExtensionCommandContext = mockCommandCtx) {
+    await getCommand("boomerang:commit")(args, ctx);
+  }
+
   async function runCancel(ctx: ExtensionCommandContext = mockCommandCtx) {
     await getCommand("boomerang-cancel")("", ctx);
   }
@@ -631,6 +635,11 @@ describe("Boomerang Extension", () => {
     rmSync(tempRoot, { recursive: true, force: true });
   });
 
+  describe("command registration", () => {
+    it("registers the commit command", () => {
+      expect(commands.has("boomerang:commit")).toBe(true);
+    });
+  });
 
   describe("validation order", () => {
     it("rejects empty task before template processing", async () => {
@@ -669,6 +678,82 @@ describe("Boomerang Extension", () => {
     });
   });
 
+  describe("boomerang:commit command", () => {
+    it("sends a plain commit task with args", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+
+      await runBoomerangCommit("--amend");
+
+      expect(sentMessages).toEqual(["commit --amend"]);
+      expect(sentMessages[0]).not.toContain("/skills:git-master");
+    });
+
+    it("sends commit when args are empty", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+
+      await runBoomerangCommit("   ");
+
+      expect(sentMessages).toEqual(["commit"]);
+    });
+
+    it("injects git-master in before_agent_start", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+
+      await runBoomerangCommit("fix auth");
+      const result = await fireBeforeAgentStart();
+
+      expect(result.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expect(result.systemPrompt).toContain('<skill name="git-master">');
+      expect(result.systemPrompt).toContain("Use git carefully.");
+      expect(uiMock.notify).toHaveBeenCalledWith('Skill "git-master" loaded', "info");
+    });
+
+    it("injects git-master on each rethrow turn", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      const prompts: string[] = [];
+      waitForIdleMock.mockImplementation(async () => {
+        const beforeStart = await fireBeforeAgentStart("original");
+        prompts.push(beforeStart?.systemPrompt ?? "original");
+        agentIdle = true;
+      });
+
+      await runBoomerangCommit("fix auth --rethrow 2");
+
+      expect(sentMessages).toEqual(["commit fix auth", "commit fix auth"]);
+      expect(prompts).toHaveLength(2);
+      expect(prompts.every((prompt) => prompt.includes('<skill name="git-master">'))).toBe(true);
+    });
+
+    it("rejects while boomerang is active", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+
+      await runBoomerang("regular task");
+      await runBoomerangCommit("fix auth");
+
+      expect(uiMock.notify).toHaveBeenLastCalledWith(
+        "Boomerang already active. Use /boomerang-cancel to abort.",
+        "error"
+      );
+      expect(sentMessages).toEqual(["regular task"]);
+    });
+
+    it("rejects when the agent is busy", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      isIdleMock.mockReturnValue(false);
+
+      await runBoomerangCommit("fix auth");
+
+      expect(uiMock.notify).toHaveBeenCalledWith("Agent is busy. Wait for completion first.", "error");
+      expect(sentMessages).toEqual([]);
+    });
+
+    it("aborts when git-master cannot load", async () => {
+      await runBoomerangCommit("fix auth");
+
+      expect(uiMock.notify).toHaveBeenCalledWith('Skill "git-master" not found', "warning");
+      expect(sentMessages).toEqual([]);
+    });
+  });
 
   describe("template detection", () => {
     it("treats /boomerang /commit as a template reference", async () => {
