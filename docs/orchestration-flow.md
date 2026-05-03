@@ -12,7 +12,7 @@ flowchart LR
     F --> D[Di Renjie gap review]
     D --> P[local://PLAN.md]
     P --> A[plan_approve]
-    A -->|Approve| B[/handoff:start-work bridge]
+    A -->|Approve| B["/handoff:start-work bridge"]
     B --> H[Hou Tu child session]
     H --> E[Execute plan waves]
 
