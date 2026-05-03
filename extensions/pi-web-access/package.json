@@ -1,8 +1,11 @@
 {
   "name": "pi-web-access",
-  "version": "0.10.6",
+  "version": "0.10.7",
   "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent",
   "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "keywords": [
     "pi-package",
     "pi",
@@ -28,7 +31,7 @@
     "linkedom": "^0.16.0",
     "p-limit": "^6.1.0",
     "turndown": "^7.2.0",
-    "unpdf": "^1.4.0"
+    "unpdf": "^1.6.2"
   },
   "pi": {
     "extensions": [

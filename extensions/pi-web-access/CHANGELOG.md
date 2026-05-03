@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-05-02
+
+### Added
+- Added `summaryModel` config for choosing the default curator summary draft model from `~/.pi/web-search.json`.
+
+### Fixed
+- Made Gemini Web browser-cookie access opt-in via `allowBrowserCookies` or `PI_ALLOW_BROWSER_COOKIES=1`, preventing surprise macOS Keychain prompts during provider checks.
+- Restored `code_search` after Exa removed the `get_code_context_exa` MCP tool by falling back to `web_search_exa` with code-focused queries.
+- Migrated extension tool schemas from `@sinclair/typebox` to Pi's bundled `typebox` 1.x import path.
+
 ## [0.10.6] - 2026-04-04
 
 ### Changed
