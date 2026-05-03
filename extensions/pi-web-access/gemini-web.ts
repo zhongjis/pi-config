@@ -1,7 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, basename } from "node:path";
+import { basename } from "node:path";
 import { type CookieMap, getGoogleCookies } from "./chrome-cookies.js";
+import { getChromeProfileFromConfig, isBrowserCookieAccessAllowed, normalizeChromeProfile } from "./gemini-web-config.ts";
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
 const GEMINI_STREAM_GENERATE_URL =
@@ -22,13 +21,6 @@ const MODEL_HEADERS: Record<string, string> = {
 };
 
 const REQUIRED_COOKIES = ["__Secure-1PSID", "__Secure-1PSIDTS"];
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
-
-interface GeminiWebConfig {
-	chromeProfile?: string;
-}
-
-let cachedConfig: GeminiWebConfig | null = null;
 
 export interface GeminiWebOptions {
 	youtubeUrl?: string;
@@ -38,39 +30,9 @@ export interface GeminiWebOptions {
 	timeoutMs?: number;
 }
 
-function loadConfig(): GeminiWebConfig {
-	if (cachedConfig) return cachedConfig;
-	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
-	}
-
-	const rawText = readFileSync(CONFIG_PATH, "utf-8");
-	let raw: { chromeProfile?: unknown };
-	try {
-		raw = JSON.parse(rawText) as { chromeProfile?: unknown };
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
-	}
-
-	cachedConfig = {
-		chromeProfile: normalizeChromeProfile(raw.chromeProfile),
-	};
-	return cachedConfig;
-}
-
-function normalizeChromeProfile(value: unknown): string | undefined {
-	if (typeof value !== "string") return undefined;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : undefined;
-}
-
-function getChromeProfileFromConfig(): string | undefined {
-	return loadConfig().chromeProfile;
-}
-
 export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
+	if (!isBrowserCookieAccessAllowed()) return null;
+
 	const result = await getGoogleCookies({
 		profile: normalizeChromeProfile(chromeProfile) ?? getChromeProfileFromConfig(),
 		requiredCookies: REQUIRED_COOKIES,
