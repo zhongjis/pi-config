@@ -102,6 +102,11 @@ export function formatTurns(turnCount: number, maxTurns?: number | null): string
   return maxTurns != null ? `⟳ ${turnCount}≤${maxTurns}` : `⟳ ${turnCount}`;
 }
 
+/** Join status stats without padding around separators to keep widget compact. */
+export function formatStatusParts(parts: string[]): string {
+  return parts.join("·");
+}
+
 /** Format milliseconds as human-readable duration. */
 export function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
@@ -268,7 +273,7 @@ export class AgentWidget {
     parts.push(duration);
 
     const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
-    return `${icon} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
+    return `${icon} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", formatStatusParts(parts))}${statusText}`;
   }
 
 
@@ -325,7 +330,7 @@ export class AgentWidget {
       if (toolUses > 0) parts.push(`󱁤 ${toolUses}`);
       if (tokenText) parts.push(tokenText);
       parts.push(elapsed);
-      const statsText = parts.join(" · ");
+      const statsText = formatStatusParts(parts);
 
       const activity = bg ? describeActivity(bg.activeTools, bg.responseText) : "thinking…";
 

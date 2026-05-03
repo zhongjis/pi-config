@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTokens, formatTurns, formatMs, formatDuration, describeActivity } from "../src/ui/agent-widget.js";
+import { formatTokens, formatTurns, formatStatusParts, formatMs, formatDuration, describeActivity } from "../src/ui/agent-widget.js";
 
 // Nerd Font icon codepoints used in formatting:
 // 󰾆 = U+F0F86 (nf-md-chip) — token counts
@@ -54,6 +54,12 @@ describe("formatTurns", () => {
 
   it("handles turn count equal to max", () => {
     expect(formatTurns(50, 50)).toBe("⟳ 50≤50");
+  });
+});
+
+describe("formatStatusParts", () => {
+  it("joins stats without spaces around separators", () => {
+    expect(formatStatusParts(["github-copilot/claude-haiku-4.5", "⟳ 9", "󱁤 28", "󰾆 274.3k"])).toBe("github-copilot/claude-haiku-4.5·⟳ 9·󱁤 28·󰾆 274.3k");
   });
 });
 
