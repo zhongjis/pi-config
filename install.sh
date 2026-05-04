@@ -28,6 +28,7 @@ ALLOWED_ITEMS=(
     "git"
     "lsp.json"
     "mcp.json"
+    "mcporter.json"
     "caveman.json"
     "context-prune"
     "plans"
