@@ -50,7 +50,7 @@ Prune settings live at `~/.pi/agent/context-prune/settings.json`.
 Fields:
 
 - `enabled` — enables future-context pruning.
-- `summarizerModel` — `default` or `provider/model-id`.
+- `summarizerModel` — `default`, `provider/model-id`, fuzzy alias, or comma fallback chain with optional `:thinking` suffixes (for example `haiku:low,gemini-flash:off,default`).
 - `summarizerThinking` — `default`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`.
 - `pruneOn` — `every-turn`, `on-context-tag`, `on-demand`, `agent-message`, `agentic-auto`.
 - `remindUnprunedCount` — adds agentic-auto reminders when pending tool calls accumulate.
