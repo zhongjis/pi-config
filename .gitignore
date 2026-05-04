@@ -1,7 +1,6 @@
 auth.json
 *.local
 
-/skills
 git
 /mcp-cache.json
 /.pi/tasks

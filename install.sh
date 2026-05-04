@@ -7,6 +7,8 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$HOME/.pi/agent"
 EXTENSIONS_TARGET="$TARGET/extensions"
 REPO_EXTENSIONS_DIR="$REPO_DIR/extensions"
+SKILLS_TARGET="$TARGET/skills"
+REPO_SKILLS_DIR="$REPO_DIR/skills"
 
 # Nix-managed files — do NOT symlink these (handled by Home Manager)
 NIX_MANAGED=(
@@ -135,6 +137,64 @@ sync_repo_extensions() {
     done
 }
 
+sync_repo_skills() {
+    local item
+    local name
+    local target_path
+    local link_target
+
+    if [ ! -d "$REPO_SKILLS_DIR" ]; then
+        return 0
+    fi
+
+    mkdir -p "$SKILLS_TARGET"
+
+    # Clean stale repo-managed symlinks (skip Nix-store symlinks — they point elsewhere)
+    find "$SKILLS_TARGET" -mindepth 1 -maxdepth 1 -type l -print0 | while IFS= read -r -d '' item; do
+        name="$(basename "$item")"
+        link_target="$(readlink "$item")"
+
+        case "$link_target" in
+        "$REPO_SKILLS_DIR"/*)
+            if [ ! -e "$REPO_SKILLS_DIR/$name" ]; then
+                rm "$item"
+                echo "Removed stale skill symlink: $name"
+            fi
+            ;;
+        esac
+    done
+
+    for item in "$REPO_SKILLS_DIR"/*; do
+        [ -e "$item" ] || continue
+        [ -d "$item" ] || continue
+
+        name="$(basename "$item")"
+        target_path="$SKILLS_TARGET/$name"
+
+        # If a non-symlink (e.g., Nix-managed real dir) sits at this name, leave it alone
+        if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
+            echo "Skipping skill (non-symlink at target, likely Nix-managed): $name"
+            continue
+        fi
+
+        # If a symlink exists but doesn't point into our repo, leave it alone (Nix-store link)
+        if [ -L "$target_path" ]; then
+            link_target="$(readlink "$target_path")"
+            case "$link_target" in
+            "$REPO_SKILLS_DIR"/*) ;;
+            *)
+                echo "Skipping skill (symlink points outside repo, likely Nix-managed): $name"
+                continue
+                ;;
+            esac
+            rm "$target_path"
+        fi
+
+        ln -s "$item" "$target_path"
+        echo "Linked skill $name"
+    done
+}
+
 install_git_package_deps() {
     local git_root="$TARGET/git"
 
@@ -226,6 +286,7 @@ for name in "${ALLOWED_ITEMS[@]}"; do
 done
 
 sync_repo_extensions
+sync_repo_skills
 install_git_package_deps
 
 echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; allowed: ${ALLOWED_ITEMS[*]}"
