@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "summarizerModel": "claude-haiku-4-5:low,gemini-2.5-flash:off,default",
+  "summarizerThinking": "default",
+  "pruneOn": "agentic-auto",
+  "remindUnprunedCount": true
+}

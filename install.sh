@@ -29,6 +29,7 @@ ALLOWED_ITEMS=(
     "lsp.json"
     "mcp.json"
     "caveman.json"
+    "context-prune"
     "plans"
     "README.md"
     "scripts"
@@ -214,7 +215,11 @@ for name in "${ALLOWED_ITEMS[@]}"; do
         continue
     fi
 
-    ln -sfn "$local_path" "$TARGET/$name"
+    target_path="$TARGET/$name"
+    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+        rm -rf "$target_path"
+    fi
+    ln -s "$local_path" "$target_path"
     echo "Linked $name"
 done
 
