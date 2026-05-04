@@ -1,5 +1,6 @@
 import { complete } from "@mariozechner/pi-ai";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { parseModelChain, resolveModel as resolveSharedModel } from "../../lib/model.js";
 import type { CapturedBatch, ContextPruneConfig, SummarizerThinking, SummarizeResult } from "./types.js";
 import { serializeBatchForSummarizer, serializeBatchesForSummarizer } from "./batch-capture.js";
 
@@ -20,9 +21,25 @@ For each turn, provide a concise summary of all tool calls in that turn:
 
 Keep each tool call to 1-3 bullet points. Group by turn. Be concise.`;
 
-export function summarizerThinkingOptions(config: ContextPruneConfig): Record<string, unknown> {
-  const level: SummarizerThinking = config.summarizerThinking;
-  if (level === "default") {
+type EffectiveSummarizerThinking = Exclude<SummarizerThinking, "default">;
+
+interface ResolvedSummarizerModel {
+  model: any;
+  thinking?: EffectiveSummarizerThinking;
+}
+
+function effectiveSummarizerThinking(
+  config: ContextPruneConfig,
+  candidateThinking?: EffectiveSummarizerThinking,
+): EffectiveSummarizerThinking | undefined {
+  if (config.summarizerThinking !== "default") {
+    return config.summarizerThinking;
+  }
+  return candidateThinking;
+}
+
+export function summarizerThinkingOptions(thinking?: EffectiveSummarizerThinking): Record<string, unknown> {
+  if (thinking == null) {
     return {};
   }
 
@@ -30,41 +47,52 @@ export function summarizerThinkingOptions(config: ContextPruneConfig): Record<st
   // pi-ai adapters translate reasoningEffort into the provider-specific field.
   // "off" intentionally sends no effort; adapters that support explicit disable
   // handle that the same way as an absent effort, while preserving compatibility.
-  return { reasoningEffort: level === "off" ? undefined : level };
+  return { reasoningEffort: thinking === "off" ? undefined : thinking };
+}
+
+function isDefaultModelCandidate(model: string): boolean {
+  return model === "default";
 }
 
 /**
- * Returns the model to use for summarization.
- * config.summarizerModel === "default" => ctx.model
- * "provider/model-id" => ctx.modelRegistry.find(provider, modelId), fallback to ctx.model with warning
+ * Returns the model and effective thinking to use for summarization.
+ * config.summarizerModel supports frontmatter-style fallback chains, e.g.
+ * "claude-haiku-4-5:low,gemini-2.5-flash:off,default".
+ * "default" means ctx.model, including as a fallback or with a suffix like "default:low".
  */
+export function resolveSummarizerModel(
+  config: ContextPruneConfig,
+  ctx: ExtensionContext
+): ResolvedSummarizerModel {
+  const candidates = parseModelChain(config.summarizerModel);
+
+  for (const candidate of candidates) {
+    if (isDefaultModelCandidate(candidate.model)) {
+      return {
+        model: ctx.model,
+        thinking: effectiveSummarizerThinking(config, candidate.thinkingLevel),
+      };
+    }
+
+    const resolved = resolveSharedModel(candidate.model, ctx.modelRegistry);
+    if (typeof resolved !== "string") {
+      return {
+        model: resolved,
+        thinking: effectiveSummarizerThinking(config, candidate.thinkingLevel),
+      };
+    }
+  }
+
+  ctx.ui.notify(
+    `pruner: no summarizerModel candidates resolved from "${config.summarizerModel}". Falling back to default model.`,
+    "warning"
+  );
+  return { model: ctx.model, thinking: effectiveSummarizerThinking(config) };
+}
+
+/** Returns only the resolved summarizer model, preserving the old helper shape. */
 export function resolveModel(config: ContextPruneConfig, ctx: ExtensionContext): any {
-  if (config.summarizerModel === "default") {
-    return ctx.model;
-  }
-
-  const slashIndex = config.summarizerModel.indexOf("/");
-  if (slashIndex === -1) {
-    ctx.ui.notify(
-      `pruner: invalid summarizerModel "${config.summarizerModel}", expected "provider/model-id". Falling back to default model.`,
-      "warning"
-    );
-    return ctx.model;
-  }
-
-  const provider = config.summarizerModel.slice(0, slashIndex);
-  const modelId = config.summarizerModel.slice(slashIndex + 1);
-
-  const found = ctx.modelRegistry.find(provider, modelId);
-  if (!found) {
-    ctx.ui.notify(
-      `pruner: model "${config.summarizerModel}" not found in registry. Falling back to default model.`,
-      "warning"
-    );
-    return ctx.model;
-  }
-
-  return found;
+  return resolveSummarizerModel(config, ctx).model;
 }
 
 /**
@@ -77,7 +105,7 @@ export async function summarizeBatch(
   ctx: ExtensionContext
 ): Promise<SummarizeResult | null> {
   try {
-    const model = resolveModel(config, ctx);
+    const { model, thinking } = resolveSummarizerModel(config, ctx);
 
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) {
@@ -100,7 +128,7 @@ export async function summarizeBatch(
           },
         ],
       },
-      { apiKey: auth.apiKey, headers: auth.headers, ...summarizerThinkingOptions(config) }
+      { apiKey: auth.apiKey, headers: auth.headers, ...summarizerThinkingOptions(thinking) }
     );
 
     const llmText = response.content
@@ -142,7 +170,7 @@ export async function summarizeBatches(
   if (batches.length === 1) return summarizeBatch(batches[0], config, ctx);
 
   try {
-    const model = resolveModel(config, ctx);
+    const { model, thinking } = resolveSummarizerModel(config, ctx);
 
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) {
@@ -165,7 +193,7 @@ export async function summarizeBatches(
           },
         ],
       },
-      { apiKey: auth.apiKey, headers: auth.headers, ...summarizerThinkingOptions(config) }
+      { apiKey: auth.apiKey, headers: auth.headers, ...summarizerThinkingOptions(thinking) }
     );
 
     const llmText = response.content

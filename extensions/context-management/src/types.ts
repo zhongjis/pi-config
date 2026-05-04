@@ -19,8 +19,8 @@
  * CONFIG FORMAT (Ph1 step 4):
  *   { "contextPrune": { "enabled": false, "summarizerModel": "default" } }
  *   summarizerModel: "default" = use current active model (ctx.model)
- *                   "provider/model-id" = explicit model via ctx.modelRegistry.find()
- *
+ *                   comma-separated fallback chain with optional :thinking suffixes
+ *                   (e.g. "claude-haiku-4-5:low,gemini-2.5-flash:off,default")
  * SUMMARY MESSAGE FORMAT (Ph1 step 5):
  *   customType: "context-prune-summary"
  *   content: markdown with one bullet per tool call + toolCallIds footer
@@ -130,8 +130,9 @@ export interface ContextPruneConfig {
   enabled: boolean;
   /**
    * Which model to use for summarization.
-   * "default" = current active Pi model (ctx.model)
-   * "provider/model-id" = explicit model (e.g. "anthropic/claude-haiku-3-5")
+   * "default" = current active Pi model (ctx.model).
+   * Also accepts frontmatter-style comma fallback chains with fuzzy aliases and
+   * optional :thinking suffixes (e.g. "haiku:low,gemini-flash:off,default").
    */
   summarizerModel: string;
   /** Thinking/reasoning level to request for summarizer calls. */

@@ -98,9 +98,17 @@ function summarizerThinkingDescription(level: ContextPruneConfig["summarizerThin
   return `Request ${level} thinking/reasoning for summarizer calls where supported.`;
 }
 
-function parseModelAndThinkingArg(
-  value: string,
-): { model: string; thinking?: ContextPruneConfig["summarizerThinking"]; error?: string } {
+function parseModelAndThinkingArg(value: string): {
+  model: string;
+  thinking?: ContextPruneConfig["summarizerThinking"];
+  error?: string;
+} {
+  // Comma chains use frontmatter-style per-candidate thinking suffixes
+  // (e.g. "haiku:low,gemini-flash:off,default"). Preserve them verbatim.
+  if (value.includes(",")) {
+    return { model: value };
+  }
+
   const separatorIndex = value.lastIndexOf(":");
   if (separatorIndex === -1) {
     return { model: value };
@@ -138,8 +146,8 @@ Usage:
   /pruner off                              Disable context pruning
   /pruner status                           Show status, model, prune trigger, and stats
   /pruner model                            Show the current summarizer model
-  /pruner model <id>                       Set summarizer model (e.g. anthropic/claude-haiku-3-5)
-  /pruner model <id>:<thinking>            Set summarizer model and thinking together (e.g. openai/gpt-5-mini:low)
+  /pruner model <spec>                     Set summarizer model. Supports fuzzy aliases and comma fallbacks (e.g. haiku:low,gemini-flash:off,default)
+  /pruner model <id>:<thinking>            Back-compat shortcut for one model plus global thinking (e.g. openai/gpt-5-mini:low)
   /pruner thinking                         Show the current summarizer thinking level
   /pruner thinking <level>                 Set summarizer thinking: default, off, minimal, low, medium, high, xhigh
   /pruner prune-on                         Show or interactively pick the trigger
@@ -423,7 +431,7 @@ export function registerCommands(
 
         // ── /pruner model [value] ──
         case "model": {
-          const modelArg = subArgs[0];
+          const modelArg = subArgs.join(" ");
           if (!modelArg) {
             ctx.ui.notify(
               `Current summarizer model: ${currentConfig.value.summarizerModel}\nCurrent summarizer thinking: ${summarizerThinkingLabel(currentConfig.value.summarizerThinking)} (${currentConfig.value.summarizerThinking})`,
