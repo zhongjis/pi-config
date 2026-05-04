@@ -6,7 +6,7 @@ prompt_mode: replace
 inherit_context: false
 run_in_background: false
 builtin_tools: read,bash,edit,write,grep,find,ls
-extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,context7_resolve-library-id,context7_query-docs,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher
+extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher
 allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang
 allow_nesting: true
 ---
@@ -236,7 +236,7 @@ Each reviewer produces a VERDICT: APPROVE or REJECT.
 
 ## Delegation
 - `chengfeng` — quick recon during execution. `run_in_background: true`.
-- `wenchang` — research when hitting unknowns. `run_in_background: true`.
+- `wenchang` — research when hitting unknowns; ask it to use mcporter/context7 for official library/framework docs when exact docs matter. `run_in_background: true`.
 - `jintong` — one bounded non-UI or state/API/test-heavy implementation, debugging, or verification task.
 - `guangguang` — one trivial single-file implementation task: typo fixes, config changes, simple fn edits.
 - `yunu` — UI/UX-centered frontend work: visual direction, layout/composition, interaction quality, accessibility, UI states, browser QA, practical polish.
