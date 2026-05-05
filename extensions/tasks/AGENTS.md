@@ -46,3 +46,16 @@ pnpm run build
 - `src/index.ts` mixes user-facing tool specs with runtime wiring; text-only edits can change agent behavior materially.
 - Completed-task auto-clear is intentionally delayed by turns for UX; immediate cleanup is usually a regression here.
 - A stopped subagent is not treated the same as a hard failure; status mapping is subtle and covered by tests.
+
+## Local Tweaks
+
+Intentional divergences from upstream. Preserve these on sync.
+
+| File | What | Why |
+|------|------|-----|
+| `index.ts` | Local re-export entrypoint is kept as `export { default } from "./src/index.js";` while package metadata points Pi to `./index.ts`. | Repo smoke/install discovery expects directory entrypoints. |
+| `src/index.ts` | Preserves Fu Xi planning provenance metadata helpers and `tasks:rpc:clear-planning-tasks` handler. | Plan-execute handoff cleanup depends on this local RPC surface. |
+| `src/index.ts` | `TaskCreate` examples and `agentType` copy mention `chengfeng`/custom local subagents instead of upstream `general-purpose` examples. | Local harness agents are mythology-named; prompts should route to available agent types. |
+| `package.json` | Uses peer dependencies for Pi/typebox, root-relative Vitest scripts, `biome --config-path`, and `pi.extensions: ["./index.ts"]`; no package-lock is vendored. | Keeps this vendored package compatible with root dependency management and repo extension loading. |
+| `README.md` | Concise repo-local README replaces upstream marketing/install content and documents provenance/local adaptations. | This repo vendors extensions locally and avoids npm install instructions. |
+| `test/handoff-cleanup.test.ts` | Local-only regression tests for planning provenance and handoff cleanup. | Protects Fu Xi planning task cleanup behavior. |

@@ -306,9 +306,32 @@ export default function (pi: ExtensionAPI) {
   checkSubagentsVersion();
   pi.events.on("subagents:ready", () => checkSubagentsVersion());
 
-  /** Build a prompt for a task being executed by a subagent. */
-  function buildTaskPrompt(task: { id: string; subject: string; description: string }, additionalContext?: string): string {
+  /** Build a prompt for a task being executed by a subagent.
+   *  Injects completed dependency results so cascaded agents have context from prerequisites.
+   */
+  function buildTaskPrompt(
+    task: { id: string; subject: string; description: string; blockedBy?: string[] },
+    additionalContext?: string,
+  ): string {
     let prompt = `You are executing task #${task.id}: "${task.subject}"\n\n${task.description}`;
+
+    // Inject completed dependency results so cascaded agents have full context
+    if (task.blockedBy && task.blockedBy.length > 0) {
+      const depResults: string[] = [];
+      for (const depId of task.blockedBy) {
+        const dep = store.get(depId);
+        if (dep?.metadata?.result) {
+          const result = dep.metadata.result.length > 4000
+            ? dep.metadata.result.slice(0, 4000) + "\n\n[... truncated — use TaskGet for full output]"
+            : dep.metadata.result;
+          depResults.push(`### Task #${depId}: ${dep.subject}\n${result}`);
+        }
+      }
+      if (depResults.length > 0) {
+        prompt += `\n\n## Prerequisite task results\n\n${depResults.join("\n\n")}`;
+      }
+    }
+
     if (additionalContext) prompt += `\n\n${additionalContext}`;
     prompt += `\n\nComplete this task fully. Do not attempt to manage tasks yourself.`;
     return prompt;
@@ -352,6 +375,7 @@ export default function (pi: ExtensionAPI) {
             description: next.subject,
             isBackground: true,
             maxTurns: cascadeConfig.maxTurns,
+            ...(cascadeConfig.model ? { model: cascadeConfig.model } : {}),
           });
           agentTaskMap.set(agentId, next.id);
           store.update(next.id, { owner: agentId, metadata: { ...next.metadata, agentId } });
@@ -819,10 +843,8 @@ Set up task dependencies:
     parameters: Type.Object({
       taskId: Type.String({ description: "The ID of the task to update" }),
       status: Type.Optional(Type.Unsafe<"pending" | "in_progress" | "completed" | "deleted">({
-        anyOf: [
-          { type: "string", enum: ["pending", "in_progress", "completed"] },
-          { type: "string", const: "deleted" },
-        ],
+        type: "string",
+        enum: ["pending", "in_progress", "completed", "deleted"],
         description: "New status for the task",
       })),
       subject: Type.Optional(Type.String({ description: "New subject for the task" })),
@@ -1077,6 +1099,7 @@ Set up task dependencies:
             description: task.subject,
             isBackground: true,
             maxTurns: params.max_turns,
+            ...(params.model ? { model: params.model } : {}),
           });
           agentTaskMap.set(agentId, taskId);
           store.update(taskId, { owner: agentId, metadata: { ...task.metadata, agentId } });

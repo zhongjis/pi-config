@@ -82,17 +82,17 @@ Tasks  ✔2 ◼1 ◻3
 
 | Setting | Values | Default | Description |
 |---------|--------|---------|-------------|
-| `taskScope` | `memory` / `session` / `project` | `memory` | Where tasks persist |
+| `taskScope` | `memory` / `session` / `project` | `session` | Where tasks persist |
 | `autoCascade` | boolean | `false` | Auto-execute unblocked dependents |
-| `autoClearCompleted` | boolean | `false` | Remove completed tasks automatically |
+| `autoClearCompleted` | `never` / `on_list_complete` / `on_task_complete` | `on_list_complete` | Remove completed tasks after a turn delay |
 
-Persisted to `.pi/tasks-config.json`. Override scope with `PI_TASKS` env var (path to shared JSON file).
+Persisted to `.pi/tasks-config.json`. Override scope with `PI_TASKS` env var (`off`, named list, or file path).
 
 ## Storage
 
 - `memory` — in-process only, lost on exit
-- `session` — `.pi/tasks-session.json`, per-session
-- `project` — `.pi/tasks.json`, shared across sessions
+- `session` — `.pi/tasks/tasks-<sessionId>.json`, per-session
+- `project` — `.pi/tasks/tasks.json`, shared across sessions
 
 ## Events
 
@@ -104,4 +104,4 @@ Persisted to `.pi/tasks-config.json`. Override scope with `PI_TASKS` env var (pa
 
 ## Upstream
 
-Source: [tintinweb/pi-tasks](https://github.com/tintinweb/pi-tasks) (MIT). Vendored with local modifications.
+Source: [tintinweb/pi-tasks](https://github.com/tintinweb/pi-tasks) (MIT). Last synced to v0.5.0 at commit `30c3452fd1292860482f1afc7908edb76a46f1ed`. Local adaptations keep this repo's directory entrypoint (`./index.ts`), peer dependency style, root-relative Vitest/Biome scripts, chengfeng-oriented task examples, and planning-handoff cleanup RPC/provenance behavior.

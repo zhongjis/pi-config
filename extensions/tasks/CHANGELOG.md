@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-28
+
+### Changed
+- **Bumped local package metadata for pi 0.73/typebox 1.1 compatibility.** Local vendoring keeps peer dependencies and root-relative scripts instead of upstream direct dependencies/package-lock workflow.
+
+## [0.4.3] - 2026-04-28
+
+### Added
+- **Cascade dependency-result injection** — when `autoCascade` is enabled, a cascaded subagent's prompt now includes a `## Prerequisite task results` section listing each completed blocker's stored `metadata.result` (capped at 4 KB per dependency, with a truncation marker pointing at `TaskGet`).
+
+### Performance
+- **Spinner render rate** — reduced widget animation interval from 80 ms to 150 ms to lower CPU usage during long-running active tasks.
+
+### Fixed
+- **`TaskUpdate.status` schema** — replaced the `anyOf` enum/const shape with a single flat `enum: ["pending", "in_progress", "completed", "deleted"]`.
+- **`TaskExecute` `model` parameter now forwards** to both initial subagent spawns and auto-cascade spawns.
+
 ## [0.4.2] - 2026-03-24
 
 ### Added
@@ -133,6 +150,8 @@ Initial release — Claude Code-style task tracking and coordination for pi.
 - **Background process tracker** — output buffering (stdout + stderr), waiter notification, graceful stop with timeout escalation (SIGTERM → 5s → SIGKILL).
 - **78 unit tests** — task store CRUD, dependencies, warnings, file persistence; widget rendering, icons, spinners, token/duration formatting; process tracker lifecycle.
 
+[0.5.0]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.5.0
+[0.4.3]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.4.3
 [0.4.2]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.4.2
 [0.4.1]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.4.1
 [0.4.0]: https://github.com/tintinweb/pi-tasks/releases/tag/v0.4.0
