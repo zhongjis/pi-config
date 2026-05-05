@@ -24,7 +24,7 @@ Personal Pi harness around `pi`: custom agents, runtime extensions, test harness
 | Build or debug a Pi extension | `extensions/AGENTS.md` | Child file covers layout tiers, events, smoke-test assumptions |
 | Change subagent orchestration | `extensions/subagent/AGENTS.md` | Eventbus RPC + background-agent lifecycle |
 | Change task tracking flow | `extensions/tasks/AGENTS.md` | Task DAG, storage, subagent bridge |
-| Change web search/fetch tools | `extensions/pi-web-access/AGENTS.md` | Provider fallbacks, curator, GitHub/video paths |
+| Change web search/fetch tools | `extensions/web-access/AGENTS.md` | Provider fallbacks, curator, GitHub/video paths |
 | Change install/symlink behavior | `install.sh` | Allowlist + Nix-managed skip rules |
 | Change repo-wide tests | `docs/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
 

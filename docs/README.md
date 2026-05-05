@@ -48,7 +48,7 @@ Some extensions are vendored from upstream repositories. These have a `package.j
 Current vendored extensions:
 - `subagent` — from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
 - `tasks` — from [tintinweb/pi-tasks](https://github.com/tintinweb/pi-tasks)
-- `pi-web-access` — from [nicobailon/pi-web-access](https://github.com/nicobailon/pi-web-access)
+- `web-access` — package `pi-web-access` from [nicobailon/pi-web-access](https://github.com/nicobailon/pi-web-access)
 
 ### Agent Modes
 

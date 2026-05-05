@@ -23,7 +23,7 @@ extensions/
 | Shared event semantics | `CONVENTIONS.md` | Source of truth for `pi.events` usage |
 | Subagents | `subagent/AGENTS.md` | High-coupling runtime/event surface |
 | Tasks | `tasks/AGENTS.md` | File-backed task store + RPC bridge |
-| Web research tools | `pi-web-access/AGENTS.md` | Providers, curator, GitHub/video fallbacks |
+| Web research tools | `web-access/AGENTS.md` | Providers, curator, GitHub/video fallbacks |
 
 ## Commands
 ```bash
