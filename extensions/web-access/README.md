@@ -5,9 +5,9 @@ Web search, content extraction, and video understanding for Pi. Supports Exa, Pe
 ## Upstream
 
 - **Source:** <https://github.com/nicobailon/pi-web-access>
-- **Version:** `0.10.7` (`076bf0db5e739b200286ca37486e4edd8d19123c`)
+- **Last synced:** `v0.10.7` (`076bf0db5e739b200286ca37486e4edd8d19123c`)
 - **License:** MIT
-- **Adapted:** Vendored into this repo with stable local tool names, concise docs, and repo-root validation.
+- **Adapted:** Local directory is `extensions/web-access`; package/upstream name remains `pi-web-access`. Local changes keep stable tool names, concise docs, Vitest helper exports/tests, and repo-root validation.
 
 ## Tools
 
@@ -111,5 +111,8 @@ fetch_content(url)
 
 ## Local Additions
 
+- Local directory is `extensions/web-access`; package identity remains `pi-web-access`.
 - Local tool names are kept stable for this harness: `web_search`, `code_search`, `fetch_content`, `get_search_content`.
+- Commands remain `/websearch`, `/curator`, `/google-account`, and `/search`.
+- Custom result messages use type `web-search-results`; config remains `~/.pi/web-search.json`.
 - Bundles a `librarian` skill for open-source library investigation using web search, GitHub cloning, and git evidence.

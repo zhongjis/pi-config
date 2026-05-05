@@ -1,6 +1,6 @@
 packages:
   - extensions/tasks
-  - extensions/pi-web-access
+  - extensions/web-access
   - extensions/subagent
 
 patchedDependencies:

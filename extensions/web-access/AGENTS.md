@@ -1,4 +1,4 @@
-# pi-web-access
+# web-access
 
 ## Overview
 Research/fetch extension: `web_search`, `code_search`, `fetch_content`, and `get_search_content` with provider fallbacks, curator UI, GitHub cloning, PDF extraction, and video handling.
@@ -51,8 +51,9 @@ Intentional divergences from upstream. Preserve these on sync.
 
 | File | What | Why |
 |------|------|-----|
-| `index.ts` | Preserve registered tool names `web_search`, `code_search`, `fetch_content`, `get_search_content` and command names `/websearch`, `/curator`, `/google-account`, `/search` | Existing local prompts/workflows depend on these names |
+| `index.ts` | Preserves registered tool names `web_search`, `code_search`, `fetch_content`, `get_search_content`, command names `/websearch`, `/curator`, `/google-account`, `/search`, and local test exports/types | Existing local prompts/workflows and Vitest tests depend on these names and exported helpers |
 | `README.md` | Replaced upstream marketing/install README with concise repo-local documentation | This repo vendors extensions locally and forbids `pi install npm:...` guidance |
 | `AGENTS.md` | Local maintenance guide and this tweak manifest | Required source of truth for future vendored syncs |
 | `index.test.ts` | Local Vitest coverage for schema normalization and tool registration | Root `pnpm test:extensions` discovers `extensions/**/*.test.ts` |
-| `package.json` | Version/dependencies synced to upstream; `test` script is scoped to upstream `test/*.test.mjs` | Avoids Node test runner trying local TypeScript/Vitest tests while preserving package-local upstream tests |
+| Directory | Renamed local directory from `extensions/pi-web-access` to `extensions/web-access`; package/upstream name remains `pi-web-access` | Local path is shorter while preserving package identity and upstream attribution |
+| `package.json` | Version/dependencies synced to upstream; package name remains `pi-web-access`; `test` script is scoped to upstream `test/*.test.mjs` | Avoids Node test runner trying local TypeScript/Vitest tests while preserving package-local upstream tests and package identity |

@@ -14,7 +14,7 @@ vi.mock("./gemini-search.js", () => ({
 	search: searchMock,
 }));
 
-describe("pi-web-access config and schema normalization", () => {
+describe("web-access config and schema normalization", () => {
 	beforeEach(() => {
 		searchMock.mockReset();
 	});
