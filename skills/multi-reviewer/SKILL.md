@@ -63,12 +63,12 @@ delegate. All steps below run before any reviewer is spawned.
 ### A.1 Resolve PR reference
 
 ```bash
-gh pr view "$PR_REF" --json number,title,body,labels,baseRefName,headRefName,headRefOid,author,url,headRepository
+gh pr view "$PR_REF" --json number,title,body,labels,baseRefName,headRefName,headRefOid,author,url
 ```
 
 `$PR_REF` is whatever the user gave: PR number, branch name, or full URL.
-Capture `headRefOid` as `$HEAD_SHA` and `headRepository.url` as `$HEAD_REPO`
-(needed for fork PRs in the next step).
+Capture `headRefOid` as `$HEAD_SHA`. Fork PRs work via `refs/pull/${N}/head`
+in A.2, so no fork-repo URL is needed.
 
 ### A.2 Establish a PR-head worktree
 
@@ -144,11 +144,29 @@ cat "$WT/$path"
 
 Skip binary files and any file over a sensible cap (e.g., 50KB).
 
+**Aggregate context budget**: cap total prepared-context file content at
+~500KB (separate from diff + metadata). Reviewer prompts are identical
+bytes across models (Invariant #2), so the cap is a single global value —
+not model-aware.
+
+Priority for inclusion (descending):
+1. Production-code files, ordered by changed-line count.
+2. Test files, ordered by changed-line count.
+
+Drop from the bottom until under budget. Files dropped from full-content
+inclusion remain visible via the diff in A.4. Add a "Truncated for context
+budget" subheader to the prepared-context blob listing dropped paths so
+reviewers know what is missing.
+
 ### A.6 Optional caller map (chengfeng)
 
-For non-trivial PRs, spawn `chengfeng` in the background to identify
-callers and dependents of changed symbols. Skip for tiny diffs (one
-file, one function).
+Skip caller map when ANY is true:
+
+- Diff touches ≤2 files AND ≤50 changed lines.
+- All changes are in test files.
+
+Otherwise spawn `chengfeng` in the background to identify callers and
+dependents of changed symbols.
 
 ```
 Agent(
@@ -319,19 +337,24 @@ CONTEXT:
 
 ### B.3 Collect results
 
-Poll all reviewer agents:
+Poll each reviewer with a deadline. `get_subagent_result` does not accept
+a timeout argument; use the non-blocking form in a polling loop:
 
 ```
-get_subagent_result(agent_id=<id>, wait=true)
+# every ~30s until status is "completed"/"failed" or 900s elapsed
+get_subagent_result(agent_id=<id>, wait=false)
 ```
+
+Treat 900s (~15 min) as a timeout failure. High-thinking models on a
+large PR can use most of that budget; tune down for fast iteration.
 
 Failure handling:
 
 - **One reviewer fails / times out** → continue with the rest. Note the
   failure in the final review summary ("model X did not return; review
   is based on N–1 reviewers").
-- **All reviewers fail** → abort. Do NOT post a one-sided or empty review.
-  Report the failure to the user.
+- **All reviewers fail or time out** → abort. Do NOT post a one-sided
+  or empty review. Report the failure to the user.
 
 ### B.4 Sanity check — distinct effective models
 
@@ -356,11 +379,54 @@ mode.
 ## Phase C — Aggregate (orchestrator, inline)
 
 The orchestrator reads all N reports and merges them. Clustering uses LLM
-judgment — there is no shared finding ID across reviewers. Heuristic:
+judgment — there is no shared finding ID across reviewers.
+
+### C.1 Reconcile against Already Raised
+
+Before clustering, classify each finding against the A.3 list:
+
+- **DROP** — path matches AND line within ±3. Same bug at the same place.
+  Log as "Filtered: N findings already raised."
+- **ECHO** — path matches but line differs by more than ±3. Surface in
+  the Minority Views section with prefix `[echo of prior review by X]`.
+  Reader can decide whether it is the same issue restated or a new one
+  nearby.
+- **KEEP** — path does not match. Pass through to clustering unchanged.
+
+No fuzzy title match. Prior-review summaries are short and share
+vocabulary on common defect classes (null checks, races, leaks); fuzzy
+matching causes false drops that hide signal. Explicit echo tagging
+surfaces signal instead.
+
+This is the enforcement layer for the dedupe corpus from A.3. The
+reviewer-side "skip Already Raised" instruction is best-effort; this
+filter is authoritative.
+
+### C.2 Cluster cross-reviewer findings
+
+Heuristic:
 
 - Two findings cluster if they reference the **same file**, with line
   ranges within ±5 lines, and titles describe the same defect class
   (null safety, race, leak, etc.).
+- **If uncertain, prefer NOT clustering.** False consensus hides
+  disagreement under a fake majority signal; fragmented minorities are
+  noisy but visible.
+
+**Worked examples:**
+
+1. *Same bug, different phrasing* — opus says `src/auth.ts:42 — null deref on token`,
+   gpt-5.5 says `src/auth.ts:42 — missing undefined guard for token`.
+   → Cluster (Consensus). Same file, same line, same defect class.
+
+2. *Adjacent unrelated bugs* — opus says `src/db.ts:118 — missing query timeout`,
+   gpt-5.5 says `src/db.ts:122 — wrong index used`.
+   → DO NOT cluster despite proximity. Different defect classes.
+   Both surface as Minority views.
+
+3. *Renamed file mid-PR* — opus says `src/auth.ts:42`, gpt-5.5 says
+   `src/security/auth.ts:42`. Check the diff for a `rename from` header.
+   If present, cluster. If absent, leave as 2 minorities.
 
 For each cluster:
 
@@ -370,7 +436,7 @@ For each cluster:
 | 1 reviewer flagged + others addressed but disagreed (different severity or "this is fine") | **Disagreement** | show both sides |
 | 1 reviewer flagged + others silent | **Minority view** | tag with model name |
 
-### C.1 Output structure
+### C.3 Output structure
 
 ```markdown
 ## Consensus Findings (≥2 reviewers agreed)
@@ -404,14 +470,15 @@ gpt-5.5 did not flag. Worth a closer look.
 8 findings: 3 consensus, 2 disagreements, 3 minority. Verdict: REQUEST_CHANGES.
 ```
 
-### C.2 Verdict reconciliation
+### C.4 Verdict reconciliation
 
-Deterministic — no LLM judgment.
+Deterministic — no LLM judgment. Conservative by design — a single
+high-confidence flag from any reviewer drives `REQUEST_CHANGES`;
+silence is not approval.
 
 | Condition | Final verdict |
 |---|---|
-| Any consensus `BLOCKER` or `HIGH` | `REQUEST_CHANGES` |
-| Any disagreement on `BLOCKER`/`HIGH` (one flags, other doesn't) | `REQUEST_CHANGES` (conservative) |
+| Any reviewer flagged `BLOCKER` or `HIGH` (consensus, disagreement, or minority) | `REQUEST_CHANGES` |
 | Otherwise | `COMMENT` |
 
 **Never auto-`APPROVE`.** Multi-reviewer does not unilaterally approve.
@@ -423,13 +490,47 @@ verdict is `APPROVE` — humans should explicitly approve PRs.
 One atomic `POST` per run. Each invocation creates a new review thread on
 the PR; idempotency is the user's responsibility.
 
-### D.1 Map findings to inline comments
+### D.1 Validate and map findings to inline comments
 
-Inline comments are only for **Consensus findings**. Disagreements and
-minority views go in the summary body to avoid spamming the PR author
-with noisy threads.
+Inline comments are only for **Consensus findings whose line falls
+within the PR diff hunks**. Disagreements and minority views go in the
+summary body. Findings outside diff hunks (e.g., a consensus issue in
+unchanged context) also go in the body — GitHub rejects the entire
+review payload if any single inline comment line is out-of-range, so
+this validation must happen *before* the POST.
+
+**Hunk parse** (POSIX awk — no gawk extensions; runs on macOS BSD awk):
+
+```bash
+# Build {file → [(right_start, right_end), ...]} from the diff
+gh pr diff "$PR_REF" | awk '
+  /^diff --git/ {
+    sub(/^diff --git /, "")
+    sub(/.* b\//, "")
+    file = $0
+    next
+  }
+  /^@@ / {
+    s = $0
+    sub(/.*\+/, "", s)
+    sub(/ .*/, "", s)
+    n = split(s, a, ",")
+    start = a[1] + 0
+    len = (n == 2 ? a[2] + 0 : 1)
+    print file "\t" start "\t" (start + len - 1)
+  }'
+```
 
 For each consensus finding:
+
+- If `line` (and `start_line` if present) falls within at least one
+  hunk range for `path` on the RIGHT side, emit as inline comment.
+  For multi-line, both `start_line` and `line` MUST fall within the
+  same hunk; otherwise demote.
+- Otherwise demote to the body under a `## Findings outside diff hunks`
+  subsection. Log demotions in the run summary.
+
+Inline comment shape:
 
 ```json
 {
