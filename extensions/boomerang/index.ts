@@ -771,6 +771,38 @@ export default function (pi: ExtensionAPI) {
     return undefined;
   }
 
+  async function applySnapshotTarget(
+    restoreSnapshot: BoomerangTaskSnapshot | undefined,
+    ctx: ExtensionContext,
+  ): Promise<{ switchedToModel?: string; switchedToThinking?: ThinkingLevel } | undefined> {
+    let switchedToModel: string | undefined;
+    let switchedToThinking: ThinkingLevel | undefined;
+
+    if (restoreSnapshot?.targetModel) {
+      const target = restoreSnapshot.targetModel;
+      const alreadyActive = ctx.model?.provider === target.provider && ctx.model?.id === target.id;
+
+      if (!alreadyActive) {
+        previousModel = restoreSnapshot.model ?? ctx.model;
+        const success = await pi.setModel(target);
+        if (!success) {
+          previousModel = undefined;
+          ctx.ui.notify(`No API key for model: ${target.provider}/${target.id}`, "error");
+          return undefined;
+        }
+        switchedToModel = target.id;
+      }
+    }
+
+    if (restoreSnapshot?.targetThinking && restoreSnapshot.targetThinking !== pi.getThinkingLevel()) {
+      previousThinking = restoreSnapshot.thinking ?? pi.getThinkingLevel();
+      pi.setThinkingLevel(restoreSnapshot.targetThinking);
+      switchedToThinking = restoreSnapshot.targetThinking;
+    }
+
+    return { switchedToModel, switchedToThinking };
+  }
+
   async function restoreModelAndThinking(ctx: ExtensionContext): Promise<void> {
     const restoredParts: string[] = [];
     const restoreErrors: string[] = [];
@@ -1632,6 +1664,15 @@ export default function (pi: ExtensionAPI) {
       chainState = null;
 
       if (restoreSnapshot?.forcedSkill && !injectSkill(restoreSnapshot.forcedSkill, ctx.cwd, ctx)) {
+        previousModel = undefined;
+        previousThinking = undefined;
+        return;
+      }
+
+      const snapshotTarget = await applySnapshotTarget(restoreSnapshot, ctx);
+      if (!snapshotTarget) {
+        previousModel = undefined;
+        previousThinking = undefined;
         return;
       }
 
@@ -1702,7 +1743,7 @@ export default function (pi: ExtensionAPI) {
 
     let task = trimmed;
     let taskDisplayName = trimmed;
-
+    let snapshotTarget: { switchedToModel?: string; switchedToThinking?: ThinkingLevel } | undefined;
     if (isTemplate) {
       const spaceIndex = trimmed.indexOf(" ");
       const templateRef = spaceIndex > 0
@@ -1769,11 +1810,20 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    snapshotTarget = await applySnapshotTarget(restoreSnapshot, ctx);
+    if (!snapshotTarget) return;
+
     boomerangActive = true;
     keepBoomerangExpanded(ctx);
 
     const targetId = anchorEntryId ?? startEntryId!;
-    pendingCollapse = { targetId, task: taskDisplayName, commandCtx: ctx, injectedSkill: forcedInjectedSkill };
+    pendingCollapse = {
+      targetId,
+      task: taskDisplayName,
+      commandCtx: ctx,
+      injectedSkill: forcedInjectedSkill,
+      ...snapshotTarget,
+    };
 
     updateStatus(ctx);
     ctx.ui.notify("Boomerang started. Agent will work autonomously.", "info");

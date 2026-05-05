@@ -509,6 +509,8 @@ describe("Boomerang Extension", () => {
     currentThinking = "low";
     allModels = [
       currentModel,
+      model("openai", "gpt-5.4-mini"),
+      model("anthropic", "claude-haiku-4-5"),
       model("anthropic", "claude-opus-4-6"),
       model("anthropic", "claude-sonnet-4-20250514"),
       model("openrouter", "claude-sonnet-4-20250514"),
@@ -686,6 +688,40 @@ describe("Boomerang Extension", () => {
 
       expect(sentMessages).toEqual(["commit --amend"]);
       expect(sentMessages[0]).not.toContain("/skills:git-master");
+    });
+
+    it("uses the Wen Chang model fallback chain", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+
+      await runBoomerangCommit("--amend");
+
+      expect(setModelCalls).toEqual(["openai/gpt-5.4-mini"]);
+      expect(setThinkingCalls).toEqual([]);
+    });
+
+    it("falls back to claude-haiku-4-5 when gpt-5.4-mini is unavailable", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      availableModels = availableModels.filter((entry) => entry.id !== "gpt-5.4-mini");
+
+      await runBoomerangCommit("--amend");
+
+      expect(setModelCalls).toEqual(["anthropic/claude-haiku-4-5"]);
+    });
+
+    it("aborts when no commit fallback model is available", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      availableModels = availableModels.filter(
+        (entry) => entry.id !== "gpt-5.4-mini" && entry.id !== "claude-haiku-4-5"
+      );
+
+      await runBoomerangCommit("--amend");
+
+      expect(uiMock.notify).toHaveBeenCalledWith(
+        "No available model from: gpt-5.4-mini:low,claude-haiku-4-5:low",
+        "error"
+      );
+      expect(sentMessages).toEqual([]);
+      expect(setModelCalls).toEqual([]);
     });
 
     it("sends commit when args are empty", async () => {
