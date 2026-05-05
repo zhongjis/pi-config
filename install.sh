@@ -30,6 +30,7 @@ ALLOWED_ITEMS=(
     "mcp.json"
     "mcporter.json"
     "caveman.json"
+    "session-summary.json"
     "context-prune"
     "plans"
     "README.md"
