@@ -139,7 +139,15 @@ worktree is already pinned to the PR head SHA, so this avoids per-file
 `gh api` round-trips:
 
 ```bash
-cat "$WT/$path"
+# Read all changed files in one shell round-trip; markers let downstream
+# parsing split them. Skip binaries and files >50KB.
+for path in $CHANGED_FILES; do
+  [ -f "$WT/$path" ] || continue
+  size=$(wc -c < "$WT/$path")
+  [ "$size" -gt 51200 ] && continue
+  printf '\n=== FILE: %s ===\n' "$path"
+  cat "$WT/$path"
+done
 ```
 
 Skip binary files and any file over a sensible cap (e.g., 50KB).
@@ -165,8 +173,10 @@ Skip caller map when ANY is true:
 - Diff touches ≤2 files AND ≤50 changed lines.
 - All changes are in test files.
 
-Otherwise spawn `chengfeng` in the background to identify callers and
-dependents of changed symbols.
+Otherwise spawn `chengfeng` in the background **immediately after the
+diff is fetched in A.4** so it runs concurrent with A.5 file reads. Do
+NOT wait inline — `get_subagent_result(wait=true)` is called once at the
+start of A.7 to join.
 
 ```
 Agent(
@@ -186,7 +196,10 @@ Return: each symbol → list of path:line callers + dependents at PR head.`
 )
 ```
 
-Wait for chengfeng before assembling prepared context.
+Join chengfeng at the top of A.7 via
+`get_subagent_result(agent_id=<id>, wait=true)`. If chengfeng times out
+or fails, proceed without the caller map and note its absence in the
+prepared-context blob (`## Caller Map` → `not available`).
 
 ### A.7 Assemble prepared-context blob
 
@@ -249,7 +262,7 @@ reviewers to run on opus in the very first test.
 Default roster:
 
 - `anthropic/claude-opus-4-7`
-- `openai-code/gpt-5.5`
+- `openai-codex/gpt-5.5`
 
 These match the providers configured in `agents/kuafu.md`. If the user's
 pi setup uses different provider IDs, they MUST be passed as overrides;
@@ -280,7 +293,7 @@ Agent(
 Agent(
   subagent_type="taishang",
   description="gpt-5.5 PR review",
-  model="openai-code/gpt-5.5",
+  model="openai-codex/gpt-5.5",
   thinking="high",
   run_in_background=true,
   prompt=<reviewer-prompt>,
@@ -294,20 +307,21 @@ Agent(
 Build once; pass to every reviewer:
 
 ```
-TASK: Review the prepared PR context below. Produce structured findings.
+TASK: Review the prepared PR context below and produce structured findings.
 
 EXPECTED OUTCOME: A markdown report with three sections in this exact order:
 
 VERDICT: APPROVE | REQUEST_CHANGES | COMMENT
 
 FINDINGS:
-- [SEVERITY] path:line — title
-  body (1–4 sentences)
-  confidence: high | medium | low
+- [SEVERITY] path:line — short title
+  Issue: what is wrong (1–2 sentences, grounded in the file content).
+  Why it matters: concrete impact (1–2 sentences).
+  Suggestion: a specific fix — code snippet or precise instruction. Skip
+    only for [NIT] / [KUDOS].
+  confidence: 1–5
 
-SUMMARY: 2–3 sentences capturing your overall take.
-
-SEVERITY values: BLOCKER | HIGH | MEDIUM | LOW | NIT
+SUMMARY: 2–3 sentences capturing your overall take. End with `overall confidence: N/5`.
 
 WORKING DIRECTORY: <$WT>
 This is a detached git worktree at the PR head SHA. If you need to read
@@ -316,20 +330,54 @@ pass cwd: <$WT> to any shell command. Do NOT read or search outside it.
 
 REQUIRED TOOLS: read only.
 
+REVIEW DIMENSIONS — examine each dimension explicitly. Skip a dimension only
+if it does not apply to the diff. Do NOT skip dimensions silently.
+
+| Dimension | What to look for |
+|---|---|
+| Correctness    | Logic errors, off-by-one, null/undefined handling, edge cases, boundary conditions |
+| Security       | Input validation, injection (SQL/XSS/command), auth/authz gaps, secrets exposure, OWASP top 10 |
+| Performance    | N+1 queries, heavy allocations in loops, algorithm complexity, resource leaks, missing pagination |
+| Concurrency    | Races, deadlocks, unsafe shared mutable state, missing locks/atomics |
+| Error Handling | Swallowed exceptions, missing error context, improper propagation, empty catch blocks |
+| Testing        | Coverage of new logic, edge case tests, meaningful assertions (not just existence) |
+| Observability  | Logging for debugging, metrics for monitoring, tracing in distributed paths |
+| Code Quality   | Naming clarity, function length/complexity, DRY violations, single responsibility |
+
+SEVERITY tags (use these exact labels):
+- [BLOCKER]    — security vuln, data loss, crash, correctness bug. Must fix before merge.
+- [MAJOR]      — logic error, missing edge case, architectural violation, missing tests. Must fix or justify.
+- [SUGGESTION] — refactor, readability, optimization. Recommended, not blocking.
+- [NIT]        — style, naming preference, trivial formatting. Optional.
+- [KUDOS]      — exemplary code, clever solution, good pattern. Recognition only.
+
+CONFIDENCE rubric (per finding AND overall review):
+- 5/5 — verified end-to-end; can point to the exact failure mode.
+- 4/5 — strong pattern match; one or two hops left untraced.
+- 3/5 — moderate complexity; some logic paths or side effects unclear.
+- 2/5 — significant uncertainty or domain unfamiliarity.
+- 1/5 — speculative; likely issues missed.
+
+Subtract 1 from overall confidence for each that applies: DB migrations,
+auth/security logic, complex concurrency, large cross-cutting refactor,
+missing test coverage, unfamiliar domain.
+
 MUST DO:
-- Ground every finding in actual file content from the prepared context
-  or the worktree at <$WT>.
-- Skip anything in "Already Raised" — those are not your findings.
-- Use exact path:line(s) references; reviewers downstream rely on them.
-- Be dense. One reader-actionable insight per finding.
+- Focus on the diff. Flag pre-existing issues only if directly impacted by the change.
+- Ground every finding in actual file content from the prepared context or the worktree at <$WT>.
+- Use exact path:line(s) references; multi-line findings include a line range.
+- Be dense. One reader-actionable insight per finding. ~5–15 substantive findings is typical for a non-trivial PR; do NOT pad.
+- For [BLOCKER] / [MAJOR] / [SUGGESTION], include a concrete fix (snippet or precise instruction) — not just "consider X".
+- Skip anything in "Already Raised".
+- Use [KUDOS] sparingly to highlight patterns worth reinforcing.
 
 MUST NOT DO:
 - Delegate to chengfeng, wenchang, or any subagent. Context is provided.
 - Modify any file.
-- Speculate beyond the prepared context. If you cannot tell, say so.
+- Speculate beyond the prepared context. If you cannot tell, say so explicitly and lower confidence.
 - Re-raise issues already in "Already Raised".
-- Read or search outside <$WT>; the user's main checkout may be on a
-  different branch and would give false results.
+- Read or search outside <$WT>; the user's main checkout may be on a different branch and would give false results.
+- Pad with low-value nits to inflate findings count.
 
 CONTEXT:
 <prepared-context blob from Phase A>
@@ -337,16 +385,19 @@ CONTEXT:
 
 ### B.3 Collect results
 
-Poll each reviewer with a deadline. `get_subagent_result` does not accept
-a timeout argument; use the non-blocking form in a polling loop:
+Fire `get_subagent_result(wait=true)` for each reviewer in the SAME
+assistant message — both block in parallel and return when their reviewer
+completes. This avoids the polling-loop turn churn.
 
 ```
-# every ~30s until status is "completed"/"failed" or 900s elapsed
-get_subagent_result(agent_id=<id>, wait=false)
+get_subagent_result(agent_id=<id_1>, wait=true)
+get_subagent_result(agent_id=<id_2>, wait=true)
 ```
 
-Treat 900s (~15 min) as a timeout failure. High-thinking models on a
-large PR can use most of that budget; tune down for fast iteration.
+Pi's Agent supervision enforces internal deadlines per reviewer. If a
+reviewer is still running after ~15 min and the orchestrator is
+concerned about drift, use `steer_subagent` with a concrete narrowing
+instruction; otherwise let `wait=true` hold.
 
 Failure handling:
 
@@ -404,11 +455,20 @@ filter is authoritative.
 
 ### C.2 Cluster cross-reviewer findings
 
-Heuristic:
+**Step 1 — Normalize each finding before clustering:**
 
-- Two findings cluster if they reference the **same file**, with line
-  ranges within ±5 lines, and titles describe the same defect class
-  (null safety, race, leak, etc.).
+- Strip leading `./` and any `a/`/`b/` diff prefixes from `path`.
+- Detect renames: parse `gh pr diff` for `rename from X` / `rename to Y`
+  pairs and treat findings against either side as the same canonical
+  path (use `Y`, the new path).
+- Use `(path, primary_line)` as the cluster key; `primary_line` is `line`
+  for single-line findings, `start_line` for multi-line.
+
+**Step 2 — Cluster heuristic:**
+
+- Two findings cluster if they reference the **same canonical path**,
+  with `primary_line` ranges within ±5 lines, and titles describe the
+  same defect class (null safety, race, leak, validation gap, etc.).
 - **If uncertain, prefer NOT clustering.** False consensus hides
   disagreement under a fake majority signal; fragmented minorities are
   noisy but visible.
@@ -425,8 +485,9 @@ Heuristic:
    Both surface as Minority views.
 
 3. *Renamed file mid-PR* — opus says `src/auth.ts:42`, gpt-5.5 says
-   `src/security/auth.ts:42`. Check the diff for a `rename from` header.
-   If present, cluster. If absent, leave as 2 minorities.
+   `src/security/auth.ts:42`. Step 1 rename detection canonicalizes both
+   to the new path → cluster. If no `rename from` header, leave as 2
+   minorities.
 
 For each cluster:
 
@@ -442,29 +503,35 @@ For each cluster:
 ## Consensus Findings (≥2 reviewers agreed)
 
 [BLOCKER] src/auth.ts:42 — null deref on token  (opus + gpt-5.5)
-Token may be undefined when refresh path is taken; calling .userId throws.
-confidence: high
+Issue: token may be undefined when the refresh path is taken; calling .userId throws.
+Why it matters: every refresh request 500s in production.
+Suggestion: guard with `if (!token) return unauthorized();` before line 42.
+confidence: 5/5 (opus), 4/5 (gpt-5.5)
 
 ...
 
 ## Disagreements
 
 src/db.ts:118 — query timeout missing
-- opus: BLOCKER (high) — production traffic spikes will time-block the loop
-- gpt-5.5: NIT (medium) — defaults are fine for current load
+- opus: [BLOCKER] 4/5 — production traffic spikes will time-block the loop
+- gpt-5.5: [NIT] 3/5 — defaults are fine for current load
 
 ...
 
 ## Minority Views
 
-[HIGH, opus only] src/api/login.ts:55 — rate-limit bypass via nested header
-gpt-5.5 did not flag. Worth a closer look.
+[MAJOR, opus only] src/api/login.ts:55 — rate-limit bypass via nested header
+gpt-5.5 did not flag. Worth a closer look. confidence: 4/5.
 
 ...
 
+## Kudos (optional)
+
+[KUDOS] src/utils/retry.ts — clean exponential backoff with jitter (gpt-5.5)
+
 ## Reviewer Verdicts
-- opus: REQUEST_CHANGES
-- gpt-5.5: COMMENT
+- opus: REQUEST_CHANGES (overall confidence: 4/5)
+- gpt-5.5: COMMENT (overall confidence: 3/5)
 
 ## Summary
 8 findings: 3 consensus, 2 disagreements, 3 minority. Verdict: REQUEST_CHANGES.
@@ -478,7 +545,7 @@ silence is not approval.
 
 | Condition | Final verdict |
 |---|---|
-| Any reviewer flagged `BLOCKER` or `HIGH` (consensus, disagreement, or minority) | `REQUEST_CHANGES` |
+| Any reviewer flagged `[BLOCKER]` or `[MAJOR]` (consensus, disagreement, or minority) | `REQUEST_CHANGES` |
 | Otherwise | `COMMENT` |
 
 **Never auto-`APPROVE`.** Multi-reviewer does not unilaterally approve.
