@@ -1,27 +1,33 @@
 # direnv
 
-Loads direnv environment variables on session start and auto-reloads on changes.
+Loads direnv environment variables on session start and auto-reloads on `.envrc` / `.direnv/` changes.
 
-## What It Does
+## Upstream
 
-- Runs `direnv export json` on session start to load environment variables into the process
-- Watches `.envrc` and `.direnv/` for filesystem changes with debounced reload (300ms)
-- Shows status bar indicator when direnv is blocked or errored
-- Re-activates on session switch and session tree navigation
-- Cleans up watchers on session shutdown
+- Source: https://github.com/rytswd/pi-agent-extensions/tree/main/direnv
+- Last synced version: `main` (no releases/tags published)
+- Last synced commit: `9df8ca72acda83b4249f50c4b0211ac217d94624`
+- Sync date: 2026-05-05
+- License: MIT
+- Local changes: stale-context guards, session switch/tree reloads, shared debounce, local README/AGENTS docs
 
 ## Commands
 
-- `/direnv` — Manually reload direnv environment variables
+- `/direnv` — Manually reload direnv environment variables for the current session.
 
 ## Hooks
 
-- `session_start`, `session_switch`, `session_tree` — Activate direnv and start file watchers
-- `session_shutdown` — Stop watchers and deactivate
+- `session_start` — Activates direnv and starts file watchers.
+- `session_switch`, `session_tree` — Re-activates direnv for the new active session context.
+- `session_shutdown` — Stops watchers and clears active context.
 
-## Configuration
+## Settings / Configuration
 
-### Requirements
+- Requires `direnv` in `PATH`.
+- Requires `.envrc` to be allowed first with `direnv allow`.
+- Watches `.envrc` and `.direnv/` with a 300 ms debounced reload.
 
-- `direnv` must be installed and in PATH
-- `.envrc` must be allowed (`direnv allow` in your shell first)
+## Local Additions
+
+- Preserves local stale-context/session-version guards to avoid UI updates against dead extension contexts.
+- Uses repo shared `debounce` helper instead of an inline reload timer.
