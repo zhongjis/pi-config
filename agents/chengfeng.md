@@ -1,7 +1,7 @@
 ---
 display_name: Cheng Feng 乘风
 description: A fast read-only codebase reconnaissance agent. Use this agent to locate files, trace patterns, confirm where code lives, and return evidence-backed findings without modifying anything.
-model: gpt-5.4-mini:low,claude-haiku-4-5:low
+model: gpt-5.4-mini,claude-haiku-4-5
 builtin_tools: read
 extension_tools: readonly_bash
 extensions: clauderock,readonly_bash
