@@ -1,21 +1,40 @@
 # smart-sessions
 
-Auto-names sessions after the first agent loop using a cheap model.
+Maintains an LLM-generated one-line session summary as the session name, so active sessions and `/resume` entries show current work instead of only the first prompt.
 
 ## Upstream
 
-- **Source:** https://github.com/HazAT/pi-smart-sessions
-- **Adapted:** Lightly adapted for this config. Core logic preserved.
+- Source: https://github.com/pasky/pi-session-summary
+- Last synced version: 1.0.1
+- Last synced commit: 49902da5f42bd3c6d8954bbcf4d8bebeb220ed4b
+- License: MIT
+- Local changes: vendored into existing `extensions/smart-sessions/` path; notification level adapted from upstream `success` to local Pi-supported `info`.
 
-## What It Does
+## Commands
 
-- Detects `/skill:<name> <prompt>` patterns in user input
-- Sets an immediate temporary session name: `[skill-name] <first 60 chars>`
-- Calls `claude-haiku-4-5` (or falls back to the current model) to generate a 5-10 word summary
-- Updates the session name with the LLM-generated summary
-- Only runs once per session (skips if already named)
+- `/summary:settings` — Create/show `~/.pi/agent/session-summary.json` settings file.
+- `/summary:update` — Force an immediate summary update.
+- `/summary:clear` — Clear current summary/session name.
+- `/summary:cost` — Show model, calls, token usage, and cost for this session.
 
 ## Hooks
 
-- `session_start` — Check if session already has a name
-- `input` — Detect skill pattern, set temporary name, trigger async summarization
+- `session_start` — Load settings, reset in-memory counters, restore existing session name.
+- `agent_end` — Debounce and update the session summary/name after agent turns.
+
+## Settings / Configuration
+
+Global config: `~/.pi/agent/session-summary.json`.
+Project override: `.pi/session-summary.json`.
+
+Fields:
+- `provider`, `model` — Optional explicit summary model; otherwise auto-detected.
+- `debounceSeconds` — Minimum seconds between LLM calls. Default: `60`.
+- `maxTokens` — Max tokens for summary response. Default: `300`.
+- `resummarizeTokenThreshold` — Token threshold for full re-summary. Default: `40000`.
+- `showWidget` — Show summary/staleness widget below editor. Default: `false`.
+- `verbose` — Notify whenever summary changes. Default: `false`.
+
+## Local Additions
+
+None. Local repo only keeps the previous extension directory name for compatibility with existing harness wiring.
