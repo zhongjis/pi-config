@@ -1,6 +1,6 @@
 # superpowers
 
-Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode superpowers` workflow.
+Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode luban` workflow (Lu Ban 鲁班 persona).
 
 ## Upstream
 
@@ -13,13 +13,12 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode s
 ## What It Does
 
 - Ships the 14 upstream Superpowers skills under `skills/` for Pi package discovery.
-- Supports the local `superpowers` mode registered by `extensions/modes`.
-- Keeps Superpowers opt-in: no automatic bootstrap prompt injection outside `/mode superpowers`.
+- Supports the local `luban` mode registered by `extensions/modes`.
+- Keeps Superpowers opt-in: no automatic bootstrap prompt injection outside `/mode luban`.
 
 ## Commands
 
-- `/mode superpowers` — Switch to Superpowers mode.
-- `/mode sp` — Short alias for Superpowers mode.
+- `/mode luban` — Switch to Lu Ban mode (Superpowers skills active).
 
 ## Local Additions
 
