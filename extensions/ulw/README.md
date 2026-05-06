@@ -10,15 +10,15 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 ## What It Does
 
 - Detects "ultrawork" or "ulw" keyword in user messages (case-insensitive, word-boundary)
-- Strips the keyword from user text
+- Strips the keyword from user text in kuafu mode
 - Injects the ultrawork prompt via `before_agent_start` as a collapsed context message
-- Only activates in kuafu (build) mode — other modes are skipped with a notification
+- Only triggers in kuafu (build) mode — other modes pass through untouched
 - Sanitizes detection: ignores keywords inside code blocks, inline code, `@file` references, and the ultrawork prompt block itself
 - Shows "⚡ Ultrawork Mode Activated" notification and status bar indicator
 
 ## Hooks
 
-- `input` — Detect keyword, strip from text, set pending flag
+- `input` — Detect keyword in kuafu mode, strip from text, set pending flag
 - `before_agent_start` — Inject ultrawork prompt as collapsed message
 
 ## Files Worth Reading
