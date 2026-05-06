@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved direction, not yet implemented.
+Implemented on 2026-05-06. Current runtime: `agents/superpowers.md`, `extensions/modes`, and `extensions/superpowers`.
 
 ## Decision
 
@@ -119,7 +119,7 @@ Required frontmatter decisions:
 
 - `name` or display name: Superpowers.
 - `prompt_mode: replace`.
-- Include Pi-native tools needed for skill discipline, delegation, task tracking, file work, search, tests, and review.
+- Use migrated agent frontmatter: `builtin_tools` for built-ins, `extension_tools` for exact extension-tool allowlists, and `extensions` only for extension availability/source scope.
 - Set delegation policy explicitly. It should allow existing specialist agents, not Weiping-style subprocess agents.
 
 Use `prompt_mode: replace` because existing modes use replacement semantics. This avoids accumulating old mode bodies when switching modes. It still preserves global and repo AGENTS rules.
