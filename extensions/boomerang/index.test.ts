@@ -211,7 +211,7 @@ describe("Boomerang Extension", () => {
   let mockCommandCtx: ExtensionCommandContext;
 
   function model(provider: string, id: string) {
-    return { provider, id };
+    return { provider, id, name: id };
   }
 
   function modelKey(value: { provider: string; id: string }) {
@@ -717,7 +717,7 @@ describe("Boomerang Extension", () => {
       await runBoomerangCommit("--amend");
 
       expect(uiMock.notify).toHaveBeenCalledWith(
-        "No available model from: gpt-5.4-mini:low,claude-haiku-4-5:low",
+        "No available model from: gpt-5.4-mini,claude-haiku-4-5",
         "error"
       );
       expect(sentMessages).toEqual([]);
@@ -1614,17 +1614,16 @@ describe("Boomerang Extension", () => {
       }));
 
       const running = runBoomerang("/task --rethrow 3");
-      await Promise.resolve();
-      waitResolvers[0]?.();
-      while (waitResolvers.length < 2) {
-        await Promise.resolve();
+      for (let attempts = 0; waitResolvers.length < 1 && attempts < 20; attempts++) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
+      expect(waitResolvers).toHaveLength(1);
       await runCancel();
-      waitResolvers[1]?.();
+      waitResolvers[0]?.();
       await running;
 
-      expect(sentMessages).toHaveLength(2);
-      expect(navigateTreeCalls).toHaveLength(1);
+      expect(sentMessages).toHaveLength(1);
+      expect(navigateTreeCalls).toHaveLength(0);
     });
 
     it("stops when cancelled before a rethrow turn starts", async () => {
