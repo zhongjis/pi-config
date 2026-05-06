@@ -1,13 +1,13 @@
 # better-bash-tool
 
-Overrides the built-in `bash` tool with a `cwd` parameter and improved rendering.
+Overrides the built-in `bash` tool with a `cwd` parameter and native streaming result rendering.
 
 ## What It Does
 
 - Adds explicit `cwd` parameter so the agent sets the working directory per-call instead of using `cd && command`
 - Prompt guidelines enforce `cwd` usage over `cd` chaining
 - Custom call rendering: shows cwd (shortened with `~`) above the command, with timeout suffix
-- Custom result rendering: exit code status (✓/✗), line count, collapsed output preview (last 5 visual lines), expand hint, truncation warnings
+- Native bash result rendering: incremental output streaming, collapsed output preview, expand hint, elapsed/took timing, truncation warnings
 
 ## Tools
 

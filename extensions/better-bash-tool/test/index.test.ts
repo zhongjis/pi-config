@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 
+const nativeRenderResultMock = vi.hoisted(() => vi.fn(() => ({ native: "rendered" })));
+
 const bashMockState = vi.hoisted(() => ({
   createCalls: [] as string[],
   executeCalls: [] as Array<{
     boundCwd: string;
     toolCallId: string;
     params: { command: string; timeout?: number };
+    onUpdate: unknown;
     ctx: { cwd: string };
   }>,
 }));
@@ -19,8 +22,9 @@ const createBashToolDefinitionMock = vi.hoisted(() =>
     return {
       name: "bash",
       label: "bash",
-      execute: vi.fn(async (toolCallId: string, params: { command: string; timeout?: number }, _signal: unknown, _onUpdate: unknown, ctx: { cwd: string }) => {
-        bashMockState.executeCalls.push({ boundCwd: cwd, toolCallId, params, ctx });
+      renderResult: nativeRenderResultMock,
+      execute: vi.fn(async (toolCallId: string, params: { command: string; timeout?: number }, _signal: unknown, onUpdate: unknown, ctx: { cwd: string }) => {
+        bashMockState.executeCalls.push({ boundCwd: cwd, toolCallId, params, onUpdate, ctx });
         return {
           content: [{ type: "text", text: `ran ${params.command}` }],
           details: { cwd },
@@ -55,6 +59,7 @@ describe("better-bash-tool", () => {
     createBashToolDefinitionMock.mockClear();
     bashMockState.createCalls.length = 0;
     bashMockState.executeCalls.length = 0;
+    nativeRenderResultMock.mockClear();
   });
 
   it("rebinds execution to the resolved cwd without rewriting the command", async () => {
@@ -62,17 +67,18 @@ describe("better-bash-tool", () => {
     const mock = createMockPi();
     initBetterBashTool(mock.pi as never);
 
-    const tool = mock.tools.get("bash") as { execute: (...args: unknown[]) => Promise<unknown> };
+    const tool = mock.tools.get("bash") as { execute: (...args: unknown[]) => Promise<unknown>; renderResult: unknown };
     expect(tool).toBeDefined();
     expect(createBashToolDefinitionMock).toHaveBeenCalledTimes(1);
     expect(createBashToolDefinitionMock).toHaveBeenCalledWith(process.cwd());
 
     const ctx = { ...createMockContext(), cwd: "/repo/worktree" };
+    const onUpdate = vi.fn();
     const result = await tool.execute(
       "call-1",
       { command: "pwd", timeout: 15, cwd: "packages/app" },
       undefined,
-      undefined,
+      onUpdate,
       ctx,
     );
 
@@ -85,6 +91,8 @@ describe("better-bash-tool", () => {
       params: { command: "pwd", timeout: 15 },
       ctx: { cwd: "/repo/worktree" },
     });
+    expect(bashMockState.executeCalls[0]?.onUpdate).toBe(onUpdate);
+    expect(tool.renderResult).toBe(nativeRenderResultMock);
     expect(result).toMatchObject({
       content: [{ type: "text", text: "ran pwd" }],
       details: { cwd: resolvedCwd },
