@@ -4,7 +4,7 @@ description: Default build mode. A senior engineer who ships by orchestrating sp
 model: anthropic/claude-opus-4-7:high,openai-code/gpt-5.5:high
 prompt_mode: replace
 inherit_context: false
-builtin_tools: read,bash,edit,write,grep,find,ls
+builtin_tools: read,bash,edit,write
 extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher
 allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,fuxi
 disallow_delegation_to: houtu
