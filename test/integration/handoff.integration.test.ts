@@ -27,7 +27,6 @@ describe("handoff extension — integration", () => {
 	it("loads without errors", async () => {
 		// createTestSession throws on extension load errors
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
@@ -37,7 +36,6 @@ describe("handoff extension — integration", () => {
 
 	it("registers /handoff and /handoff:start-work commands", async () => {
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
@@ -58,7 +56,6 @@ describe("handoff extension — integration", () => {
 		let eventBus: { emit: (ch: string, data: unknown) => void; on: (ch: string, handler: (data: unknown) => void) => () => void } | null = null;
 
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			extensionFactories: [
 				(pi: any) => {
@@ -102,7 +99,6 @@ describe("handoff extension — integration", () => {
 		let eventBus: any = null;
 
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			extensionFactories: [(pi: any) => { eventBus = pi.events; }],
 			mockTools: MOCK_TOOLS,
@@ -137,7 +133,6 @@ describe("handoff extension — integration", () => {
 		let eventBus: any = null;
 
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			extensionFactories: [(pi: any) => { eventBus = pi.events; }],
 			mockTools: MOCK_TOOLS,
@@ -172,7 +167,6 @@ describe("handoff extension — integration", () => {
 		let eventBus: any = null;
 
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			extensionFactories: [(pi: any) => { eventBus = pi.events; }],
 			mockTools: MOCK_TOOLS,
@@ -202,7 +196,6 @@ describe("handoff extension — integration", () => {
 		let eventBus: any = null;
 
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			extensionFactories: [(pi: any) => { eventBus = pi.events; }],
 			mockTools: MOCK_TOOLS,
@@ -237,7 +230,6 @@ describe("handoff extension — integration", () => {
 		let eventBus: any = null;
 
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			extensionFactories: [(pi: any) => { eventBus = pi.events; }],
 			mockTools: MOCK_TOOLS,
@@ -275,7 +267,6 @@ describe("handoff extension — integration", () => {
 		let eventBus: any = null;
 
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			extensionFactories: [(pi: any) => { eventBus = pi.events; }],
 			mockTools: MOCK_TOOLS,
@@ -377,7 +368,6 @@ describe("handoff extension — integration", () => {
 
 	it("/handoff command handler notifies on empty args", async () => {
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
@@ -406,7 +396,6 @@ describe("handoff extension — integration", () => {
 
 	it("/handoff command handler notifies on invalid mode", async () => {
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
@@ -436,7 +425,6 @@ describe("handoff extension — integration", () => {
 
 	it("/handoff command returns error when hasUI is false", async () => {
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
@@ -469,7 +457,6 @@ describe("handoff extension — integration", () => {
 
 	it("/handoff:start-work notifies when no prepared handoff exists", async () => {
 		t = await createTestSession({
-			cwd: PROJECT_ROOT,
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
