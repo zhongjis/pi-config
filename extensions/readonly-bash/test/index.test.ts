@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 
+const nativeRenderResultMock = vi.hoisted(() => vi.fn(() => ({ native: "rendered" })));
+
 const bashMockState = vi.hoisted(() => ({
   createCalls: [] as string[],
   executeCalls: [] as Array<{
@@ -20,6 +22,7 @@ const createBashToolDefinitionMock = vi.hoisted(() =>
     return {
       name: "bash",
       label: "bash",
+      renderResult: nativeRenderResultMock,
       execute: vi.fn(
         async (
           toolCallId: string,
@@ -36,6 +39,15 @@ const createBashToolDefinitionMock = vi.hoisted(() =>
             onUpdate,
             ctx,
           });
+          if (typeof onUpdate === "function") {
+            onUpdate({
+              content: [{ type: "text", text: `partial for ${params.command}` }],
+              details: { truncation: undefined, fullOutputPath: undefined },
+            });
+          }
+          if (params.command === "git diff") {
+            throw new Error("diff output\n\nCommand exited with code 2");
+          }
           return {
             content: [{ type: "text", text: `stdout for ${params.command}` }],
             details: { cwd, stderr: "ignored stderr", exitCode: 99 },
@@ -59,6 +71,12 @@ type ReadonlyBashTool = {
   name: string;
   label: string;
   description: string;
+  renderResult: (
+    result: { content: Array<{ type: string; text: string }>; details: Record<string, unknown> },
+    options: unknown,
+    theme: unknown,
+    context: unknown,
+  ) => unknown;
   execute: (
     toolCallId: string,
     params: { command: string; timeout?: number },
@@ -295,6 +313,7 @@ describe("readonly-bash tool", () => {
     createBashToolDefinitionMock.mockClear();
     bashMockState.createCalls.length = 0;
     bashMockState.executeCalls.length = 0;
+    nativeRenderResultMock.mockClear();
 
     const module = await import("../index.js");
     returnToolInit = module.default as (pi: never) => void;
@@ -327,8 +346,9 @@ describe("readonly-bash tool", () => {
       ctx,
     );
 
-    expect(createBashToolDefinitionMock).toHaveBeenCalledTimes(1);
-    expect(createBashToolDefinitionMock).toHaveBeenCalledWith("/repo/worktree");
+    expect(createBashToolDefinitionMock).toHaveBeenCalledTimes(2);
+    expect(createBashToolDefinitionMock).toHaveBeenNthCalledWith(1, process.cwd());
+    expect(createBashToolDefinitionMock).toHaveBeenNthCalledWith(2, "/repo/worktree");
     expect(bashMockState.executeCalls).toHaveLength(1);
     expect(bashMockState.executeCalls[0]).toMatchObject({
       boundCwd: "/repo/worktree",
@@ -347,7 +367,16 @@ describe("readonly-bash tool", () => {
         exitCode: 0,
       },
     });
-    expect(onUpdate).not.toHaveBeenCalled();
+    expect(onUpdate).toHaveBeenCalledWith({
+      content: [{ type: "text", text: "partial for pwd" }],
+      details: {
+        truncation: undefined,
+        fullOutputPath: undefined,
+        stdout: "partial for pwd",
+        stderr: "",
+        exitCode: 0,
+      },
+    });
   });
 
   it("passes explicit timeout for allowed commands", async () => {
@@ -374,7 +403,42 @@ describe("readonly-bash tool", () => {
       tool.execute("call-3", { command: "rm -rf ." }, undefined, undefined, ctx),
     ).rejects.toThrow("readonly_bash blocked: rm is not allowed");
 
-    expect(createBashToolDefinitionMock).not.toHaveBeenCalled();
+    expect(createBashToolDefinitionMock).toHaveBeenCalledTimes(1);
     expect(bashMockState.executeCalls).toHaveLength(0);
+  });
+
+  it("delegates rendering to native bash renderer and preserves nonzero exit visibility", async () => {
+    const tool = getReadonlyBashTool();
+    const ctx = { ...createMockContext(), cwd: "/repo/worktree" };
+
+    const result = await tool.execute(
+      "call-4",
+      { command: "git diff" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result).toMatchObject({
+      content: [{ type: "text", text: "diff output" }],
+      details: {
+        stdout: "diff output",
+        stderr: "",
+        exitCode: 2,
+      },
+    });
+
+    const options = { expanded: false };
+    const theme = { fg: (_name: string, text: string) => text };
+    const context = { state: {}, executionStarted: true, showImages: false };
+    tool.renderResult(result, options, theme, context);
+
+    expect(nativeRenderResultMock).toHaveBeenCalledTimes(1);
+    expect(nativeRenderResultMock.mock.calls[0]?.[0]).toMatchObject({
+      content: [
+        { type: "text", text: "diff output" },
+        { type: "text", text: "\n\nCommand exited with code 2" },
+      ],
+    });
   });
 });

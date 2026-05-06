@@ -11,6 +11,7 @@ Parameters:
 - `command` (required) — the shell command to run
 - `timeout` (optional) — execution timeout in seconds
 
+- Streams output incrementally through Pi's native bash result renderer
 ## Registration
 
 Registered globally but disabled by default. Enable per-agent via frontmatter:
