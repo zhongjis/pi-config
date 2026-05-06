@@ -1,19 +1,18 @@
 import type { Mode } from "./types.js";
 
-export const MODES: Mode[] = ["kuafu", "fuxi", "houtu", "superpowers"];
+export const MODES: Mode[] = ["kuafu", "fuxi", "houtu", "luban"];
 
 export const MODE_ALIASES: Record<string, Mode> = {
 	build: "kuafu",
 	plan: "fuxi",
 	execute: "houtu",
-	sp: "superpowers",
 };
 
-export const MODE_META: Record<Mode, { alias: string; label: string }> = {
+export const MODE_META: Record<Mode, { alias?: string; label: string }> = {
 	kuafu: { alias: "build", label: "Kua Fu 夸父 (build)" },
 	fuxi: { alias: "plan", label: "Fu Xi 伏羲 (plan)" },
 	houtu: { alias: "execute", label: "Hou Tu 后土 (execute)" },
-	superpowers: { alias: "sp", label: "Lu Ban 鲁班 (superpowers)" },
+	luban: { label: "Lu Ban 鲁班 (luban)" },
 };
 
 // Color scheme (24-bit ANSI)
@@ -21,7 +20,7 @@ export const MODE_COLORS: Record<Mode, string> = {
 	kuafu: "\x1b[38;2;0;206;209m", // #00CED1 — dark turquoise (夸父)
 	fuxi: "\x1b[38;2;255;87;34m", // #FF5722 — deep orange/fire (伏羲)
 	houtu: "\x1b[38;2;16;185;129m",
-	superpowers: "\x1b[38;2;168;85;247m", // #A855F7 — purple (Superpowers)
+	luban: "\x1b[38;2;168;85;247m", // #A855F7 — purple (Lu Ban)
 };
 
 export const RESET = "\x1b[0m";

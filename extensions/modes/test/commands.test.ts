@@ -48,6 +48,6 @@ describe("registerModeCommands", () => {
 		await modeCommand?.handler("", { ui: { select } });
 
 		expect(select).toHaveBeenCalledWith("Agent Mode", expect.any(Array));
-		expect(state.switchMode).toHaveBeenCalledWith("superpowers", { ui: { select } });
+		expect(state.switchMode).toHaveBeenCalledWith("luban", { ui: { select } });
 	});
 });

@@ -1,6 +1,6 @@
 import type { ExtensionSelection } from "../../lib/active-tools.js";
 
-export type Mode = "kuafu" | "fuxi" | "houtu" | "superpowers";
+export type Mode = "kuafu" | "fuxi" | "houtu" | "luban";
 
 export type ModePromptMode = "append" | "replace";
 

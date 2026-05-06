@@ -11,18 +11,18 @@ function colored(mode: Mode, text: string): string {
 export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager): void {
 	// CLI flag
 	pi.registerFlag("mode", {
-		description: "Agent mode: kuafu (build), fuxi (plan), houtu (execute), superpowers (sp)",
+		description: "Agent mode: kuafu (build), fuxi (plan), houtu (execute), luban",
 		type: "string",
 		default: "kuafu",
 	});
 
 	// /mode command
 	pi.registerCommand("mode", {
-		description: "Switch agent mode (kuafu/fuxi/houtu/superpowers)",
+		description: "Switch agent mode (kuafu/fuxi/houtu/luban)",
 		getArgumentCompletions: (prefix) => {
 			const query = prefix.trim().toLowerCase();
 			const filtered = MODES
-				.filter((mode) => !query || mode.startsWith(query) || MODE_META[mode].alias.startsWith(query))
+				.filter((mode) => !query || mode.startsWith(query) || (MODE_META[mode].alias?.startsWith(query) ?? false))
 				.map((mode) => ({ value: mode, label: MODE_META[mode].label }));
 			return filtered.length > 0 ? filtered : null;
 		},
