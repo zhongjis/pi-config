@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
 import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
 import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model.js";
@@ -8,25 +9,19 @@ function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
 }
 
-const BUILTIN_TOOL_NAMES = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
-
-function isExtensionTool(toolName: string): boolean {
-	return !BUILTIN_TOOL_NAMES.has(toolName);
-}
-
-function configAllowsReadonlyBash(config: ModeConfig): boolean {
-	return Array.isArray(config.extensions) && config.extensions.includes("readonly_bash");
-}
-
-function canAddExtensionTool(toolName: string, config: ModeConfig): boolean {
-	return toolName !== "readonly_bash" || configAllowsReadonlyBash(config);
+function hasToolPolicy(config: ModeConfig): boolean {
+  return Boolean(
+    config.builtinToolNames
+    || config.extensionToolNames !== undefined
+    || config.extensions !== undefined
+  );
 }
 
 function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
-	if (a.length !== b.length) return false;
-	const set = new Set(a);
-	for (const t of b) if (!set.has(t)) return false;
-	return true;
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  for (const t of b) if (!set.has(t)) return false;
+  return true;
 }
 
 export function resolveModelFromStr(
@@ -85,47 +80,19 @@ export class ModeStateManager {
 		const allToolNames = this.pi.getAllTools().map((t) => t.name);
 		const activeToolNames = this.pi.getActiveTools().filter((t) => allToolNames.includes(t));
 
-		let active: string[] | undefined;
+		if (hasToolPolicy(config)) {
+			const active = computeActiveToolNames({
+				availableToolNames: allToolNames,
+				builtinToolNames: config.builtinToolNames ?? [...DEFAULT_BUILTIN_TOOL_NAMES],
+				builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
+				extensions: config.extensions ?? true,
+				extensionTools: config.extensionToolNames,
+				allowNesting: config.allowNesting,
+			});
 
-		if (config.tools) {
-			const allowed = new Set<string>();
-			for (const t of config.tools) if (allToolNames.includes(t) && canAddExtensionTool(t, config)) allowed.add(t);
-
-			if (config.extensions !== false) {
-				const extensionTools = Array.isArray(config.extensions)
-					? config.extensions
-					: activeToolNames.filter(isExtensionTool);
-				for (const t of extensionTools) if (allToolNames.includes(t) && canAddExtensionTool(t, config)) allowed.add(t);
+			if (!sameToolSet(active, activeToolNames)) {
+				this.pi.setActiveTools(active);
 			}
-
-			active = Array.from(allowed);
-		} else if (config.extensions !== undefined) {
-			const allowed = new Set(activeToolNames.filter((t) => BUILTIN_TOOL_NAMES.has(t)));
-			if (config.extensions !== false) {
-				const extensionTools = Array.isArray(config.extensions)
-					? config.extensions
-					: activeToolNames.filter(isExtensionTool);
-				for (const t of extensionTools) if (allToolNames.includes(t) && canAddExtensionTool(t, config)) allowed.add(t);
-			}
-			active = Array.from(allowed);
-		} else if (config.disallowedTools?.length) {
-			active = activeToolNames;
-		}
-
-		if (active && config.disallowedTools?.length) {
-			const denied = new Set(config.disallowedTools);
-			active = active.filter((t) => !denied.has(t));
-		}
-
-		if (!configAllowsReadonlyBash(config)) {
-			const source = active ?? activeToolNames;
-			const filtered = source.filter((t) => t !== "readonly_bash");
-			if (filtered.length !== source.length) active = filtered;
-		}
-
-		// Guard 1: skip setActiveTools when unchanged — avoids redundant system-prompt rebuild.
-		if (active && !sameToolSet(active, activeToolNames)) {
-			this.pi.setActiveTools(active);
 		}
 
 		await this.applyModelFromConfig(config, ctx);

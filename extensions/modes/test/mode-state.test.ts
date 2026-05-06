@@ -54,13 +54,18 @@ describe("ModeStateManager", () => {
 			getAllTools: () => [
 				{ name: "read" },
 				{ name: "write" },
+				{ name: "edit" },
 				{ name: "bash" },
 				{ name: "grep" },
 				{ name: "find" },
 				{ name: "ls" },
+				{ name: "ask" },
 				{ name: "web_search" },
 				{ name: "clauderock" },
 				{ name: "readonly_bash" },
+				{ name: "Agent" },
+				{ name: "get_subagent_result" },
+				{ name: "steer_subagent" },
 			],
 			getActiveTools: () => activeTools,
 			setActiveTools: vi.fn(),
@@ -109,10 +114,15 @@ describe("ModeStateManager", () => {
 		expect(state.currentMode).toBe("kuafu");
 	});
 
-	it("filters tools based on whitelist without enabling extra built-ins", async () => {
+	it("filters active tools from builtin_tools and extension_tools", async () => {
 		const pi = createMockPi(["read", "write", "bash", "web_search"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "prompt", tools: ["read", "write"] };
+		state.cachedConfigs.kuafu = {
+			body: "prompt",
+			builtinToolNames: ["read", "write"],
+			extensionToolNames: ["web_search"],
+			extensions: true,
+		};
 
 		const ctx = {
 			hasUI: false,
@@ -124,10 +134,15 @@ describe("ModeStateManager", () => {
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
 	});
 
-	it("filters readonly_bash from inherited extension tools only", async () => {
+	it("uses extension_tools: none to disable extension tools", async () => {
 		const pi = createMockPi(["read", "write", "bash", "readonly_bash", "web_search", "clauderock"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "prompt", tools: ["read"] };
+		state.cachedConfigs.kuafu = {
+			body: "prompt",
+			builtinToolNames: ["read"],
+			extensionToolNames: [],
+			extensions: true,
+		};
 
 		const ctx = {
 			hasUI: false,
@@ -136,13 +151,18 @@ describe("ModeStateManager", () => {
 		};
 
 		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "web_search", "clauderock"]);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
 	});
 
 	it("exposes readonly_bash when exactly allowlisted", async () => {
 		const pi = createMockPi(["read", "write", "bash", "readonly_bash", "web_search"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "prompt", tools: ["read"], extensions: ["readonly_bash"] };
+		state.cachedConfigs.kuafu = {
+			body: "prompt",
+			builtinToolNames: ["read"],
+			extensionToolNames: ["readonly_bash"],
+			extensions: true,
+		};
 
 		const ctx = {
 			hasUI: false,
@@ -154,10 +174,15 @@ describe("ModeStateManager", () => {
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "readonly_bash"]);
 	});
 
-	it("filters readonly_bash from disallowed-tools-only modes unless exactly allowlisted", async () => {
-		const pi = createMockPi(["read", "write", "readonly_bash", "web_search"]);
+	it("removes nested Agent tools unless allow_nesting is true", async () => {
+		const pi = createMockPi(["read", "Agent", "get_subagent_result", "steer_subagent"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "prompt", disallowedTools: ["bash"] };
+		state.cachedConfigs.kuafu = {
+			body: "prompt",
+			builtinToolNames: ["read"],
+			extensionToolNames: ["Agent", "get_subagent_result", "steer_subagent"],
+			extensions: true,
+		};
 
 		const ctx = {
 			hasUI: false,
@@ -166,23 +191,9 @@ describe("ModeStateManager", () => {
 		};
 
 		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
 	});
 
-	it("filters tools based on blacklist from the current active set", async () => {
-		const pi = createMockPi(["read", "write", "bash", "web_search"]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "prompt", disallowedTools: ["bash"] };
-
-		const ctx = {
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		};
-
-		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
-	});
 
 	it("does not change active tools when mode has no tool settings", async () => {
 		const pi = createMockPi(["read", "write", "bash", "web_search"]);
