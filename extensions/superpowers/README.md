@@ -12,7 +12,8 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode l
 
 ## What It Does
 
-- Ships the 14 upstream Superpowers skills under `skills/` for Pi package discovery.
+- Bundles 14 upstream Superpowers skills under `skills/`.
+- Registers a `resources_discover` event handler in `index.ts` that injects the bundled skills directory into Pi at session start, so each `SKILL.md` is discoverable like a normal skill (`/skill:<name>`).
 - Supports the local `luban` mode registered by `extensions/modes`.
 - Keeps Superpowers opt-in: no automatic bootstrap prompt injection outside `/mode luban`.
 
@@ -33,6 +34,7 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode l
 
 ## Files Worth Reading
 
-- `package.json` — Declares `pi.skills` and vendoring metadata.
+- `index.ts` — Registers `resources_discover` to inject `./skills` into Pi.
+- `package.json` — Declares `pi.extensions`, `pi.skills`, and vendoring metadata.
 - `skills/using-superpowers/SKILL.md` — Upstream guardrail skill, patched for Pi mapping.
 - `skills/using-superpowers/references/pi-tools.md` — Pi-native tool mapping.
