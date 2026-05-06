@@ -194,6 +194,21 @@ describe("mode hooks", () => {
 		expect(systemPromptAfterKuafu).toContain("Base");
 	});
 
+	it("injects superpowers prompt with HTML markers", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "superpowers";
+		state.cachedConfigs.superpowers = { body: "Superpowers prompt", promptMode: "replace" };
+
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire("before_agent_start", { systemPrompt: "Base prompt" }, { hasUI: false });
+
+		expect(result).toEqual({
+			systemPrompt: "Base prompt\n\n<!-- mode:superpowers -->\nSuperpowers prompt\n<!-- /mode:superpowers -->",
+		});
+	});
+
 	it("rebinds activeCtx on session_switch and session_tree", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);

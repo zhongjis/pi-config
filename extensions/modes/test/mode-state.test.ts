@@ -90,6 +90,7 @@ describe("ModeStateManager", () => {
 		state.cachedConfigs.kuafu = { body: "" };
 		state.cachedConfigs.fuxi = { body: "" };
 		state.cachedConfigs.houtu = { body: "" };
+		state.cachedConfigs.superpowers = { body: "" };
 
 		const ctx = {
 			hasUI: false,
@@ -102,6 +103,8 @@ describe("ModeStateManager", () => {
 		expect(state.currentMode).toBe("fuxi");
 		await state.cycleMode(ctx as never);
 		expect(state.currentMode).toBe("houtu");
+		await state.cycleMode(ctx as never);
+		expect(state.currentMode).toBe("superpowers");
 		await state.cycleMode(ctx as never);
 		expect(state.currentMode).toBe("kuafu");
 	});

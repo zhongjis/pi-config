@@ -1,4 +1,4 @@
-export type Mode = "kuafu" | "fuxi" | "houtu";
+export type Mode = "kuafu" | "fuxi" | "houtu" | "superpowers";
 
 export type ModePromptMode = "append" | "replace";
 

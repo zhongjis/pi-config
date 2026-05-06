@@ -1,16 +1,17 @@
 # modes
 
-Agent modes extension with three personas — switch behavior, prompt, and tool sets per mode.
+Agent modes extension with four personas — switch behavior, prompt, and tool sets per mode.
 
 ## What It Does
 
-Three modes with distinct agent personas:
+Four modes with distinct agent personas:
 
 | Mode | Alias | Description |
 |------|-------|-------------|
 | Kua Fu 夸父 | `build` | Default. Senior engineer who ships by orchestrating specialists. |
 | Fu Xi 伏羲 | `plan` | Planning and decomposition. Drafts plans with gap review. |
 | Hou Tu 后土 | `execute` | Focused execution worker. Runs plans step by step. |
+| Superpowers | `sp` | Skill-first discipline mode adapted from obra/superpowers. |
 
 Each mode reads its prompt from `agents/<mode>.md`. Global AGENTS.md rules stay active in all modes.
 
@@ -31,7 +32,7 @@ Present the plan approval menu after plan generation is complete.
 
 ## Commands
 
-- `/mode [kuafu|fuxi|houtu|build|plan|execute]` — Switch agent mode
+- `/mode [kuafu|fuxi|houtu|superpowers|build|plan|execute|sp]` — Switch agent mode
 - Tab / Ctrl+Shift+M — Cycle modes
 - `--mode <name>` flag on session start
 
