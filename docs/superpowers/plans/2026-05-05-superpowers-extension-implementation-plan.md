@@ -21,13 +21,11 @@ Create or modify these files:
 - Modify: `extensions/modes/README.md` — document `superpowers` and `sp`.
 - Modify: `extensions/modes/test/mode-state.test.ts` — verify mode cycle includes `superpowers`.
 - Modify: `extensions/modes/test/hooks.test.ts` — verify `superpowers` prompt marker injection.
-- Create: `extensions/superpowers/index.ts` — harmless `/superpowers` help command so smoke tests see a registration.
 - Create: `extensions/superpowers/package.json` — package-tier manifest with `pi.skills: ["./skills"]`.
 - Create: `extensions/superpowers/README.md` — concise upstream/provenance/local behavior docs.
 - Create: `extensions/superpowers/skills/**` — copy from `/tmp/obra-superpowers/skills`.
 - Create: `extensions/superpowers/skills/using-superpowers/references/pi-tools.md` — Pi-native mapping reference.
 - Create: `extensions/superpowers/test/manifest.test.ts` — package/skills/provenance/patch-audit tests.
-- Create: `extensions/superpowers/test/index.test.ts` — direct command-registration test.
 
 Do not create `extensions/superpowers/src/`; this extension is small enough for flat package-tier layout.
 
@@ -102,7 +100,6 @@ describe("superpowers package manifest", () => {
     const manifest = readJson(join(extensionRoot, "package.json"));
 
     expect(manifest.pi).toEqual({
-      extensions: ["./index.ts"],
       skills: ["./skills"],
     });
     expect(manifest.piVendor).toMatchObject({
@@ -183,7 +180,6 @@ git commit -m "test: specify superpowers skill package"
 **Files:**
 - Create: `extensions/superpowers/package.json`
 - Create: `extensions/superpowers/README.md`
-- Create: `extensions/superpowers/index.ts`
 - Create: `extensions/superpowers/skills/**`
 - Create: `extensions/superpowers/skills/using-superpowers/references/pi-tools.md`
 - Test: `extensions/superpowers/test/manifest.test.ts`
@@ -211,7 +207,6 @@ Create `extensions/superpowers/package.json`:
   "description": "Vendored Superpowers skills adapted for the local Pi harness.",
   "license": "MIT",
   "pi": {
-    "extensions": ["./index.ts"],
     "skills": ["./skills"]
   },
   "piVendor": {
@@ -221,26 +216,6 @@ Create `extensions/superpowers/package.json`:
     "localTarget": "extensions/superpowers",
     "adaptedFor": "panda-harness Pi mode and native Agent/Task tools"
   }
-}
-```
-
-- [ ] **Step 3: Write the extension help command**
-
-Create `extensions/superpowers/index.ts`:
-
-```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-
-export default function superpowersExtension(pi: ExtensionAPI) {
-  pi.registerCommand("superpowers", {
-    description: "Show Superpowers mode and skill package help",
-    handler: async (_args, ctx) => {
-      ctx.ui.notify(
-        "Superpowers skills are installed. Use /mode superpowers or /mode sp to enable the Superpowers guardrail mode.",
-        "info",
-      );
-    },
-  });
 }
 ```
 
@@ -269,7 +244,6 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode s
 
 ## Commands
 
-- `/superpowers` — Show a short status/help message.
 - `/mode superpowers` — Switch to Superpowers mode.
 - `/mode sp` — Short alias for Superpowers mode.
 
@@ -286,7 +260,6 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode s
 
 ## Files Worth Reading
 
-- `index.ts` — Registers the `/superpowers` help command.
 - `package.json` — Declares `pi.skills` and vendoring metadata.
 - `skills/using-superpowers/SKILL.md` — Upstream guardrail skill, patched for Pi mapping.
 - `skills/using-superpowers/references/pi-tools.md` — Pi-native tool mapping.
@@ -406,15 +379,15 @@ pnpm vitest run --project unit extensions/superpowers/test/manifest.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 10: Run root extension smoke test**
+- [ ] **Step 10: Confirm root smoke discovery**
 
-Run:
+Skills-only packages have no `index.ts`, so the root extension smoke test (`test/extensions.smoke.test.ts`) discovers entrypoints by `index.ts` and correctly skips this package. Confirm by running:
 
 ```bash
 pnpm vitest run --project unit test/extensions.smoke.test.ts
 ```
 
-Expected: PASS, including `./extensions/superpowers/index.ts`.
+Expected: PASS. `extensions/superpowers` is not in the discovered entries because it has no `index.ts`.
 
 - [ ] **Step 11: Commit scaffold and vendored skills**
 
@@ -425,60 +398,9 @@ git commit -m "feat: vendor superpowers skills package"
 
 ---
 
-## Task 3: Add direct test for the `/superpowers` help command
+## Task 3: (Removed)
 
-**Files:**
-- Create: `extensions/superpowers/test/index.test.ts`
-- Modify: `extensions/superpowers/index.ts` only if the test reveals a bug
-- Test: `extensions/superpowers/test/index.test.ts`
-
-- [ ] **Step 1: Write direct command registration test**
-
-Create `extensions/superpowers/test/index.test.ts`:
-
-```typescript
-import { describe, expect, it, vi } from "vitest";
-import { createMockPi } from "../../../test/fixtures/mock-pi.js";
-import superpowersExtension from "../index.js";
-
-describe("superpowers extension", () => {
-  it("registers the /superpowers help command", async () => {
-    const mock = createMockPi();
-    superpowersExtension(mock.pi as never);
-
-    expect(mock.commands.has("superpowers")).toBe(true);
-
-    const command = mock.commands.get("superpowers") as {
-      handler: (args: string, ctx: { ui: { notify: ReturnType<typeof vi.fn> } }) => Promise<void>;
-    };
-    const notify = vi.fn();
-
-    await command.handler("", { ui: { notify } });
-
-    expect(notify).toHaveBeenCalledWith(
-      expect.stringContaining("/mode superpowers"),
-      "info",
-    );
-  });
-});
-```
-
-- [ ] **Step 2: Run the direct command test**
-
-Run:
-
-```bash
-pnpm vitest run --project unit extensions/superpowers/test/index.test.ts
-```
-
-Expected: PASS.
-
-- [ ] **Step 3: Commit command test**
-
-```bash
-git add extensions/superpowers/test/index.test.ts extensions/superpowers/index.ts
-git commit -m "test: cover superpowers help command"
-```
+The `/superpowers` help command was specced earlier but later removed as unnecessary. The package is skills-only; root smoke skips it because it has no `index.ts`, and `manifest.test.ts` covers package and skill validation. No direct command-registration test is needed.
 
 ---
 
@@ -841,7 +763,7 @@ Expected: only acceptable contexts remain:
 Run:
 
 ```bash
-pnpm vitest run --project unit extensions/superpowers/test/manifest.test.ts extensions/superpowers/test/index.test.ts extensions/modes/test/mode-state.test.ts extensions/modes/test/hooks.test.ts test/extensions.smoke.test.ts
+pnpm vitest run --project unit extensions/superpowers/test/manifest.test.ts extensions/modes/test/mode-state.test.ts extensions/modes/test/hooks.test.ts test/extensions.smoke.test.ts
 ```
 
 Expected: PASS.
@@ -886,7 +808,6 @@ extensions/modes/src/constants.ts
 extensions/modes/src/types.ts
 extensions/modes/src/commands.ts
 extensions/modes/README.md
-extensions/superpowers/index.ts
 extensions/superpowers/package.json
 extensions/superpowers/README.md
 extensions/superpowers/skills/using-superpowers/SKILL.md
@@ -898,7 +819,6 @@ Expected:
 - `superpowers` mode uses `prompt_mode: replace`.
 - `sp` alias exists.
 - `extensions/superpowers/package.json` declares `pi.skills`.
-- `/superpowers` command exists.
 - no bootstrap hook exists.
 - no `dispatch_agent` tool exists.
 - upstream skill names remain unchanged.
@@ -925,7 +845,7 @@ If no fixes were needed, skip this commit.
 - Minimal Pi-native patching: Task 2, Steps 5-8, plus Task 7 audit.
 - No Weiping bootstrap or subprocess runtime: Task 2 README and Task 7 audit.
 - Package manifest skill discovery: Tasks 1 and 2.
-- Non-no-op extension registration: Tasks 2 and 3.
+- Skills-only package shape: Task 2 (smoke test correctly skips packages without `index.ts`).
 - Skill collision stance: Task 2 README.
 - `using-superpowers` sync relationship: Task 2 README plus Task 5 mode prompt.
 - Validation: Task 7.

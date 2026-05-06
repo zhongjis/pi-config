@@ -158,7 +158,6 @@ Create:
 
 ```text
 extensions/superpowers/
-  index.ts
   README.md
   package.json
   skills/
@@ -188,7 +187,6 @@ extensions/superpowers/
   "description": "Vendored Superpowers skills adapted for the local Pi harness.",
   "license": "MIT",
   "pi": {
-    "extensions": ["./index.ts"],
     "skills": ["./skills"]
   },
   "piVendor": {
@@ -201,7 +199,7 @@ extensions/superpowers/
 }
 ```
 
-`index.ts` must not be a true no-op because root smoke tests expect each extension to register something. It should register one harmless command, for example `/superpowers`, that displays concise status/help text and points users to `/mode superpowers` and `/skill:<name>`.
+This package is skills-only. It declares `pi.skills` in `package.json` and ships no `index.ts`. The root extension smoke test discovers extensions by `index.ts`, so a skills-only package is correctly skipped by smoke and validated by the package manifest test instead.
 
 No lifecycle hook should inject Superpowers instructions. Mode switching owns prompt injection.
 
@@ -219,7 +217,6 @@ Create `extensions/superpowers/README.md` with these sections:
   - ships upstream Superpowers skills
   - adds optional `/mode superpowers` support through `extensions/modes`
 - Commands:
-  - `/superpowers` if implemented as help/status
   - `/mode superpowers`
   - `/mode sp`
 - Local Additions:
@@ -325,28 +322,24 @@ Implementation should include these checks:
    - `extensions/modes/README.md` lists `superpowers` and `sp`.
    - command descriptions mention new mode.
 
-3. Extension smoke:
-   - `extensions/superpowers/index.ts` imports and registers without throwing.
-   - registration count is greater than zero.
-
-4. Package manifest check:
+3. Package manifest check:
    - `extensions/superpowers/package.json` has `pi.skills: ["./skills"]`.
    - `piVendor` records upstream URL, version, commit, and local target.
 
-5. Skill validation:
+4. Skill validation:
    - all 14 expected skill dirs exist.
    - each dir has `SKILL.md`.
    - frontmatter `name` matches directory name.
    - frontmatter `description` exists.
    - `adaptedFrom` or equivalent provenance exists.
 
-6. Patch audit:
+5. Patch audit:
    - no vendored skill refers to `dispatch_agent` as an available tool.
    - no vendored skill instructs use of Claude `Task` without nearby Pi mapping.
    - no vendored skill requires `TodoWrite` without nearby Pi mapping.
    - no README recommends `pi install npm:...`.
 
-7. Focused commands:
+6. Focused commands:
    - `pnpm test:extensions`
    - `pnpm lint:typecheck`
 
@@ -382,7 +375,7 @@ Mitigation: keep extension package-tier only because it needs package skills and
 
 1. Vendor upstream skills into `extensions/superpowers/skills`.
 2. Apply minimal mechanical Pi tool-reference patches.
-3. Add `extensions/superpowers/package.json`, `README.md`, and `index.ts` help command.
+3. Add `extensions/superpowers/package.json` and `README.md` for the skills-only package.
 4. Add `agents/superpowers.md` as standalone `prompt_mode: replace` mode prompt adapted from `using-superpowers`.
 5. Register `superpowers` and `sp` in `extensions/modes` constants/types/docs.
 6. Add tests for mode registration, package manifest, and skill validation.
@@ -404,7 +397,7 @@ Mitigation: keep extension package-tier only because it needs package skills and
 Taishang reviewed the design and conditionally approved it. Required tightenings were incorporated:
 
 - explicit skill collision policy;
-- non-no-op `index.ts` registration for smoke tests;
+- skills-only package shape (no `index.ts`); root smoke discovers by `index.ts` and skips skills-only packages, with `manifest.test.ts` covering validation;
 - `prompt_mode: replace` and standalone mode behavior;
 - explicit sync rule between `agents/superpowers.md` and `skills/using-superpowers/SKILL.md`;
 - exact Pi-native tool mapping;
