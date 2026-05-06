@@ -1,6 +1,6 @@
 {
-  "enabled": true,
-  "summarizerModel": "claude-haiku-4-5:low,gemini-2.5-flash:off,default",
+  "enabled": false,
+  "summarizerModel": "gpt-5.4-mini,claude-haiku-4-5,default",
   "summarizerThinking": "default",
   "pruneOn": "agentic-auto",
   "remindUnprunedCount": true
