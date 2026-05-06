@@ -56,6 +56,7 @@ describe("superpowers package manifest", () => {
     const manifest = readJson(join(extensionRoot, "package.json"));
 
     expect(manifest.pi).toEqual({
+      extensions: ["./index.ts"],
       skills: ["./skills"],
     });
     expect(manifest.piVendor).toMatchObject({
