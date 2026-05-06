@@ -40,7 +40,7 @@ function parseFrontmatter(content: string): Record<string, string> {
   const frontmatter: Record<string, string> = {};
   for (const line of normalized.slice(4, endIndex).split("\n")) {
     const match = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
-    if (match) frontmatter[match[1]] = match[2].trim().replace(/^[\'"]|[\'"]$/g, "");
+    if (match) frontmatter[match[1]] = match[2].trim().replace(/^['"]|['"]$/g, "");
   }
   return frontmatter;
 }
