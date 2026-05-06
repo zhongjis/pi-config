@@ -21,6 +21,18 @@ Each mode reads its prompt from `agents/<mode>.md`. Global AGENTS.md rules stay 
 2. `plan_approve` tool presents choices: Approve, High Accuracy Review (Yan Luo), Refine
 3. Approved plan prepares Hou Tu handoff via `/handoff:start-work`
 
+
+### Mode frontmatter
+
+Mode prompts live in `agents/<mode>.md` and use the shared agent frontmatter schema:
+
+- `builtin_tools` — exact built-in allowlist (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; `none` for none)
+- `extensions` — extension availability/source scope; `false`/`none` disables extension tools
+- `extension_tools` — exact extension-tool allowlist after extensions are available; `none` disables extension tools
+- `allow_nesting` — permits nested subagent tools only when those tools are also allowlisted
+- `prompt_mode`, `model`, `allow_delegation_to`, `disallow_delegation_to` — same schema as custom subagents
+
+Obsolete `tools`, `disallowed_tools`, and `disallow_tools` frontmatter is rejected.
 ## Tools
 
 ### `plan_approve`

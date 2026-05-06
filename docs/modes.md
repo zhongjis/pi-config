@@ -1,6 +1,6 @@
 # Modes Extension
 
-The modes extension implements agent persona switching for three modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), and **Hou Tu 后土** (execute). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
+The modes extension implements agent persona switching for four modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), **Hou Tu 后土** (execute), and **Superpowers** (sp). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
 
 For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.md).
 
@@ -11,8 +11,9 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 | Mode | Alias | Purpose |
 |------|-------|---------|
 | `kuafu` | `build` | Default. General-purpose coding and implementation. |
-| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is blocked and read-only shell inspection uses `readonly_bash` when exactly allowlisted via `extensions: readonly_bash`. |
+| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is blocked and read-only shell inspection uses `readonly_bash` when exactly allowlisted via `extension_tools: readonly_bash`. |
 | `houtu` | `execute` | Plan execution after handoff. Receives a prepared execution prompt in a child session. |
+| `superpowers` | `sp` | Skill-first discipline mode adapted from obra/superpowers. |
 
 ---
 
@@ -24,7 +25,7 @@ Six ways to switch modes:
 |--------|---------|-------|
 | **`/mode` command** | `/mode fuxi` | Interactive selector when called with no arguments. Accepts mode names or aliases. |
 | **`/mode:<name>` shortcut** | `/mode:plan do the thing` | Switches mode, then delivers any trailing text as a follow-up message. Works with names (`fuxi`) and aliases (`plan`). |
-| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → kuafu. |
+| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → superpowers → kuafu. |
 | **Tab in empty editor** | Press `Tab` with no text | Same cycle behavior as Ctrl+Shift+M. |
 | **Bare word input** | Type `fuxi` or `plan` | Transformed into `/mode:fuxi` before submission. Recognized words: all mode names and aliases. |
 | **CLI `--mode` flag** | `pi --mode fuxi` | Sets the initial mode at startup. Overrides session-restored mode. |
@@ -40,9 +41,10 @@ Each mode reads its prompt and settings from `~/.pi/agent/agents/<mode>.md`. The
 | Field | Type | Description |
 |-------|------|-------------|
 | `prompt_mode` | `"append"` \| `"replace"` | How the mode body is injected into the system prompt. `append` (default) adds after existing prompt. `replace` strips previous mode bodies first. |
-| `tools` | comma-separated strings | Allowlist of tool names. When set, only these tools (plus `extensions`) are active. |
-| `extensions` | comma-separated strings \| `true` | Extension-provided tools to include. `true` includes all. A list includes only named tools. |
-| `disallowed_tools` | comma-separated strings | Tools to remove from the active set after allowlist processing. |
+| `builtin_tools` | comma-separated built-in names | Exact built-in allowlist: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; `none` means no built-ins. |
+| `extensions` | comma-separated strings \| `true` \| `false` | Extension availability/source scope. `true`/omitted enables extension tools, `false`/`none` disables them, CSV preserves source names where supported. Current active-tool filtering treats CSV as enabled; exact tool filtering comes from `extension_tools`. |
+| `extension_tools` | comma-separated tool names | Exact extension-tool allowlist after extensions are available; `none` means no extension tools. Cannot grant built-ins. |
+| `allow_nesting` | boolean | When true, permits nested subagent tools (`Agent`, `get_subagent_result`, `steer_subagent`) if also allowlisted by extension tool policy. |
 | `allow_delegation_to` | comma-separated strings | Allowlist of subagent types the mode may delegate to. |
 | `disallow_delegation_to` | comma-separated strings | Blocklist of subagent types. Applied as exclusions from `allow_delegation_to` when both are set. |
 | `model` | string | Model override. Resolved by exact `provider/modelId`, exact `modelId`, or starts-with prefix match. |
@@ -66,7 +68,7 @@ When the active mode is `fuxi`, the `tool_call` hook enforces restrictions.
 
 ### Bash Restrictions
 
-In Fu Xi, built-in `bash` tool calls are blocked unconditionally. Read-only shell inspection must use the extension-provided `readonly_bash` tool, and that tool is exposed only when the mode frontmatter opts in exactly with `extensions: readonly_bash`.
+In Fu Xi, built-in `bash` tool calls are blocked unconditionally. Read-only shell inspection must use the extension-provided `readonly_bash` tool, and that tool is exposed only when the mode frontmatter opts in exactly with `extension_tools: readonly_bash`.
 
 Mutable shell work requires switching to build mode.
 
