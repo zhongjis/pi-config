@@ -1,8 +1,59 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { parseModeAgentConfig } from "../src/config-loader.js";
 import { derivePlanTitleFromMarkdown } from "../src/plan-storage.js";
 
-// config-loader.test.ts — tests config parsing edge cases via plan-storage's derivePlanTitleFromMarkdown
-// (config-loader itself requires filesystem access; we test the pure parsing functions here)
+describe("parseModeAgentConfig", () => {
+	it("parses migrated builtin and extension tool frontmatter", () => {
+		const config = parseModeAgentConfig(`---
+prompt_mode: replace
+builtin_tools: read,write,edit
+extension_tools: ask,Agent,readonly_bash
+extensions: clauderock
+allow_delegation_to: chengfeng,yanluo
+disallow_delegation_to: houtu
+allow_nesting: true
+model: anthropic/claude-sonnet-4-6:medium
+---
+
+Mode prompt.`);
+
+		expect(config).toMatchObject({
+			body: "Mode prompt.",
+			promptMode: "replace",
+			builtinToolNames: ["read", "write", "edit"],
+			extensionToolNames: ["ask", "Agent", "readonly_bash"],
+			extensions: ["clauderock"],
+			allowDelegationTo: ["chengfeng", "yanluo"],
+			disallowDelegationTo: ["houtu"],
+			allowNesting: true,
+			model: "anthropic/claude-sonnet-4-6:medium",
+		});
+	});
+
+	it("leaves tool policy unset when tool frontmatter is absent", () => {
+		const config = parseModeAgentConfig(`---
+prompt_mode: append
+---
+
+Prompt only.`);
+
+		expect(config).toMatchObject({
+			body: "Prompt only.",
+			promptMode: "append",
+		});
+		expect(config?.builtinToolNames).toBeUndefined();
+		expect(config?.extensionToolNames).toBeUndefined();
+		expect(config?.extensions).toBeUndefined();
+	});
+
+	it("rejects obsolete tools frontmatter", () => {
+		expect(parseModeAgentConfig(`---
+tools: read,bash
+---
+
+Legacy prompt.`)).toBeNull();
+	});
+});
 
 describe("derivePlanTitleFromMarkdown", () => {
 	it("extracts H1 title from markdown", () => {

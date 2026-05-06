@@ -1,16 +1,19 @@
+import type { ExtensionSelection } from "../../lib/active-tools.js";
+
 export type Mode = "kuafu" | "fuxi" | "houtu" | "superpowers";
 
 export type ModePromptMode = "append" | "replace";
 
 export interface ModeConfig {
-	body: string;
-	promptMode?: ModePromptMode;
-	tools?: string[];
-	extensions?: string[] | true | false;
-	disallowedTools?: string[];
-	allowDelegationTo?: string[];
-	disallowDelegationTo?: string[];
-	model?: string;
+  body: string;
+  promptMode?: ModePromptMode;
+  builtinToolNames?: string[];
+  extensionToolNames?: string[];
+  extensions?: ExtensionSelection;
+  allowDelegationTo?: string[];
+  disallowDelegationTo?: string[];
+  allowNesting?: boolean;
+  model?: string;
 }
 
 export type PlanTitleSource = "content-h1" | "explicit-exit" | "cached-state";
