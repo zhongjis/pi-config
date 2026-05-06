@@ -214,26 +214,21 @@ describe("ulw extension — unit tests", () => {
 		expect(bas?.message?.content).toContain("<ultrawork-mode>");
 	});
 
-	it("skips injection in fuxi mode", async () => {
+	it("does not intercept in fuxi mode", async () => {
 		const ctx = createCtxWithMode("fuxi");
 		const result = await fireInput(mock, "ulw fix it", ctx);
-		expect(result?.action).toBe("transform");
-		// Should strip keyword but NOT inject ultrawork prompt
-		expect((result as any).text).toBe("fix it");
-		expect((result as any).text).not.toContain("<ultrawork-mode>");
+		expect(result).toEqual({ action: "continue" });
 	});
 
-	it("skips injection in houtu mode", async () => {
+	it("does not intercept in houtu mode", async () => {
 		const ctx = createCtxWithMode("houtu");
 		const result = await fireInput(mock, "ulw fix it", ctx);
-		expect(result?.action).toBe("transform");
-		expect((result as any).text).toBe("fix it");
+		expect(result).toEqual({ action: "continue" });
 	});
 
 	it("returns continue for bare keyword in non-kuafu mode", async () => {
 		const ctx = createCtxWithMode("fuxi");
 		const result = await fireInput(mock, "ulw", ctx);
-		// No task text after stripping → continue
 		expect(result).toEqual({ action: "continue" });
 	});
 
@@ -241,6 +236,12 @@ describe("ulw extension — unit tests", () => {
 		const ctx = createCtxWithMode("fuxi");
 		await fireInput(mock, "ulw fix it", ctx);
 		const bas = await fireBeforeAgentStart(mock);
+		expect(bas).toBeUndefined();
+	});
+
+	it("does NOT inject if mode changes before before_agent_start", async () => {
+		await fireInput(mock, "ulw fix it", createCtxWithMode("kuafu"));
+		const bas = await fireBeforeAgentStart(mock, createCtxWithMode("fuxi"));
 		expect(bas).toBeUndefined();
 	});
 
@@ -270,17 +271,14 @@ describe("ulw extension — unit tests", () => {
 		expect(statusCalls[0]).toEqual({ id: "ultrawork", text: "⚡ Ultrawork" });
 	});
 
-	it("calls notify with warning and clears status when skipped in non-kuafu mode", async () => {
+	it("does not notify or set status when ignored in non-kuafu mode", async () => {
 		const ctx = createCtxWithMode("fuxi");
 		const notifyCalls: Array<{ text: string; level: string }> = [];
 		const statusCalls: Array<{ id: string; text: string | undefined }> = [];
 		ctx.ui.notify = ((text: string, level: string) => { notifyCalls.push({ text, level }); }) as any;
 		ctx.ui.setStatus = ((id: string, text: string | undefined) => { statusCalls.push({ id, text }); }) as any;
 		await fireInput(mock, "ulw fix it", ctx);
-		expect(notifyCalls).toHaveLength(1);
-		expect(notifyCalls[0].text).toContain("skipped");
-		expect(notifyCalls[0].level).toBe("warning");
-		expect(statusCalls).toHaveLength(1);
-		expect(statusCalls[0]).toEqual({ id: "ultrawork", text: undefined });
+		expect(notifyCalls).toHaveLength(0);
+		expect(statusCalls).toHaveLength(0);
 	});
 });

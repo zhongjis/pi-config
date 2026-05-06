@@ -102,16 +102,11 @@ export default function ulwExtension(pi: ExtensionAPI): void {
       return { action: "continue" };
     }
 
-    // Only activate in kuafu (default build) mode
+    // Only trigger in kuafu (default build) mode. In other modes, leave the
+    // input untouched so mode-specific flows can handle it normally.
     const mode = getCurrentMode(ctx);
     if (mode !== "kuafu") {
-      if (ctx.hasUI) {
-        ctx.ui.notify(`⚡ Ultrawork skipped — active mode is ${mode}`, "warning");
-        ctx.ui.setStatus("ultrawork", undefined);
-      }
-      // Strip keyword but don't inject prompt
-      const stripped = stripUlwKeyword(raw);
-      return stripped ? { action: "transform", text: stripped } : { action: "continue" };
+      return { action: "continue" };
     }
 
     const stripped = stripUlwKeyword(raw);
@@ -135,9 +130,10 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     return { action: "transform", text: stripped };
   });
 
-  pi.on("before_agent_start", async (event) => {
+  pi.on("before_agent_start", async (_event, ctx) => {
     if (!pendingUltrawork) return;
     pendingUltrawork = false;
+    if (getCurrentMode(ctx) !== "kuafu") return;
 
     return {
       message: {
