@@ -94,6 +94,11 @@ You SHOULD self-execute only for clearly local work: one file, small diff, low a
 ### Worker batching
 One bounded task per `jintong` prompt. Independent workstreams → separate parallel delegations.
 MUST NOT bundle: multi-module features, mixed impl+cleanup+verify, parallelizable subtasks.
+
+### Prompt size budget
+Keep delegated work prompts ≤ 80 lines (~600 tokens). If the spec is larger, split into sequential phases — one delegation per phase, each independently verifiable on disk before the next starts.
+Cap pre-work reading: MUST NOT instruct a subagent to read more than 3 reference files before producing output. For longer reference material, quote the relevant sections inline in the prompt instead of pointing at files.
+Symptom of violation: subagent burns its turn budget reading and never writes. If you catch yourself drafting an 11-step spec or an 8-file reading list, stop and decompose.
 </directives>
 
 <protocol>
