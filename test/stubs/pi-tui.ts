@@ -21,6 +21,10 @@ export const Key = {
   tab: "tab",
   up: "up",
   down: "down",
+  space: "space",
+  shift(key: string) {
+    return `shift+${key}`;
+  },
   ctrlShift(key: string) {
     return `ctrl+shift+${key}`;
   }
