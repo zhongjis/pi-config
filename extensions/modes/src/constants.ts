@@ -13,7 +13,7 @@ export const MODE_META: Record<Mode, { alias: string; label: string }> = {
 	kuafu: { alias: "build", label: "Kua Fu 夸父 (build)" },
 	fuxi: { alias: "plan", label: "Fu Xi 伏羲 (plan)" },
 	houtu: { alias: "execute", label: "Hou Tu 后土 (execute)" },
-	superpowers: { alias: "sp", label: "Superpowers (skills)" },
+	superpowers: { alias: "sp", label: "Lu Ban 鲁班 (superpowers)" },
 };
 
 // Color scheme (24-bit ANSI)
