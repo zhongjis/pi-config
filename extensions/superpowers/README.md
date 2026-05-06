@@ -18,7 +18,6 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode s
 
 ## Commands
 
-- `/superpowers` — Show a short status/help message.
 - `/mode superpowers` — Switch to Superpowers mode.
 - `/mode sp` — Short alias for Superpowers mode.
 
@@ -35,7 +34,6 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode s
 
 ## Files Worth Reading
 
-- `index.ts` — Registers the `/superpowers` help command.
 - `package.json` — Declares `pi.skills` and vendoring metadata.
 - `skills/using-superpowers/SKILL.md` — Upstream guardrail skill, patched for Pi mapping.
 - `skills/using-superpowers/references/pi-tools.md` — Pi-native tool mapping.
