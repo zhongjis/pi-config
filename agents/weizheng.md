@@ -5,6 +5,7 @@ model: anthropic/claude-opus-4-7:high,openai-codex/gpt-5.5:high
 prompt_mode: replace
 inherit_context: false
 builtin_tools: read,bash
+extension_tools: lsp_diagnostics,readonly_bash,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_cypher
 ---
 
 <role>
