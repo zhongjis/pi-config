@@ -180,6 +180,7 @@ git commit -m "test: specify superpowers skill package"
 **Files:**
 - Create: `extensions/superpowers/package.json`
 - Create: `extensions/superpowers/README.md`
+- Create: `extensions/superpowers/index.ts`
 - Create: `extensions/superpowers/skills/**`
 - Create: `extensions/superpowers/skills/using-superpowers/references/pi-tools.md`
 - Test: `extensions/superpowers/test/manifest.test.ts`
@@ -207,6 +208,7 @@ Create `extensions/superpowers/package.json`:
   "description": "Vendored Superpowers skills adapted for the local Pi harness.",
   "license": "MIT",
   "pi": {
+    "extensions": ["./index.ts"],
     "skills": ["./skills"]
   },
   "piVendor": {
@@ -379,15 +381,15 @@ pnpm vitest run --project unit extensions/superpowers/test/manifest.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 10: Confirm root smoke discovery**
+- [ ] **Step 10: Run root extension smoke test**
 
-Skills-only packages have no `index.ts`, so the root extension smoke test (`test/extensions.smoke.test.ts`) discovers entrypoints by `index.ts` and correctly skips this package. Confirm by running:
+At this stage `extensions/superpowers/` contains the package manifest and skills but not yet an `index.ts` (added in Task 3). The smoke test discovers entrypoints by `index.ts`, so it temporarily skips this package and still passes. Confirm:
 
 ```bash
 pnpm vitest run --project unit test/extensions.smoke.test.ts
 ```
 
-Expected: PASS. `extensions/superpowers` is not in the discovered entries because it has no `index.ts`.
+Expected: PASS.
 
 - [ ] **Step 11: Commit scaffold and vendored skills**
 
@@ -398,9 +400,80 @@ git commit -m "feat: vendor superpowers skills package"
 
 ---
 
-## Task 3: (Removed)
+## Task 3: Add extension `index.ts` that injects bundled skills via `resources_discover`
 
-The `/superpowers` help command was specced earlier but later removed as unnecessary. The package is skills-only; root smoke skips it because it has no `index.ts`, and `manifest.test.ts` covers package and skill validation. No direct command-registration test is needed.
+**Why:** `pi.skills` in `package.json` is honored only for packages installed through `pi install`. For symlink-deployed local extensions, Pi's auto-discovery never reads `pi.skills`, so the bundled skills are invisible without a `resources_discover` event handler. This is the documented Pi extension API for injecting skill paths.
+
+**Files:**
+- Create: `extensions/superpowers/index.ts`
+- Create: `extensions/superpowers/test/index.test.ts`
+- Test: `extensions/superpowers/test/index.test.ts`
+
+- [ ] **Step 1: Write `index.ts`**
+
+```typescript
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+
+const baseDir = dirname(fileURLToPath(import.meta.url));
+
+export default function superpowersExtension(pi: ExtensionAPI) {
+  pi.on("resources_discover", () => ({
+    skillPaths: [join(baseDir, "skills")],
+  }));
+}
+```
+
+Pattern matches Pi's official `dynamic-resources` example (`pi-coding-agent/examples/extensions/dynamic-resources/index.ts`).
+
+- [ ] **Step 2: Write the direct test**
+
+Create `extensions/superpowers/test/index.test.ts`:
+
+```typescript
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { createMockPi } from "../../../test/fixtures/mock-pi.js";
+import superpowersExtension from "../index.js";
+
+describe("superpowers extension", () => {
+  it("registers a resources_discover handler that points at the bundled skills dir", async () => {
+    const mock = createMockPi();
+    superpowersExtension(mock.pi as never);
+
+    const handlers = mock.lifecycleHandlers.get("resources_discover");
+    expect(handlers).toBeDefined();
+    expect(handlers?.length).toBe(1);
+
+    const result = (await handlers?.[0]?.({ cwd: process.cwd(), reason: "startup" }, {})) as {
+      skillPaths: string[];
+    };
+
+    expect(result.skillPaths).toHaveLength(1);
+    const skillsPath = result.skillPaths[0];
+    expect(skillsPath).toMatch(/extensions\/superpowers\/skills$/);
+    expect(existsSync(skillsPath)).toBe(true);
+    expect(existsSync(join(skillsPath, "using-superpowers", "SKILL.md"))).toBe(true);
+  });
+});
+```
+
+- [ ] **Step 3: Run focused tests**
+
+```bash
+pnpm vitest run --project unit extensions/superpowers/test/index.test.ts test/extensions.smoke.test.ts
+```
+
+Expected: PASS. Smoke test now picks up `extensions/superpowers/index.ts` again.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add extensions/superpowers/index.ts extensions/superpowers/test/index.test.ts
+git commit -m "feat(superpowers): inject bundled skills via resources_discover"
+```
 
 ---
 
@@ -808,7 +881,9 @@ extensions/modes/src/constants.ts
 extensions/modes/src/types.ts
 extensions/modes/src/commands.ts
 extensions/modes/README.md
+extensions/superpowers/index.ts
 extensions/superpowers/package.json
+extensions/superpowers/test/index.test.ts
 extensions/superpowers/README.md
 extensions/superpowers/skills/using-superpowers/SKILL.md
 extensions/superpowers/skills/using-superpowers/references/pi-tools.md
@@ -818,7 +893,8 @@ Expected:
 
 - `superpowers` mode uses `prompt_mode: replace`.
 - `sp` alias exists.
-- `extensions/superpowers/package.json` declares `pi.skills`.
+- `extensions/superpowers/package.json` declares `pi.extensions: ["./index.ts"]` and `pi.skills: ["./skills"]`.
+- `extensions/superpowers/index.ts` registers `resources_discover` returning the absolute `skills/` path.
 - no bootstrap hook exists.
 - no `dispatch_agent` tool exists.
 - upstream skill names remain unchanged.
@@ -845,7 +921,7 @@ If no fixes were needed, skip this commit.
 - Minimal Pi-native patching: Task 2, Steps 5-8, plus Task 7 audit.
 - No Weiping bootstrap or subprocess runtime: Task 2 README and Task 7 audit.
 - Package manifest skill discovery: Tasks 1 and 2.
-- Skills-only package shape: Task 2 (smoke test correctly skips packages without `index.ts`).
+- Skill injection via `resources_discover`: Task 3 (extension `index.ts` ensures bundled skills are discoverable in symlink-deployed setups).
 - Skill collision stance: Task 2 README.
 - `using-superpowers` sync relationship: Task 2 README plus Task 5 mode prompt.
 - Validation: Task 7.

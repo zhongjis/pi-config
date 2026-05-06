@@ -199,9 +199,11 @@ extensions/superpowers/
 }
 ```
 
-This package is skills-only. It declares `pi.skills` in `package.json` and ships no `index.ts`. The root extension smoke test discovers extensions by `index.ts`, so a skills-only package is correctly skipped by smoke and validated by the package manifest test instead.
+Restore `pi.extensions: ["./index.ts"]`. Skills declared via `pi.skills` are only honored for packages installed through `pi install` (i.e. when the path is in settings.json's `packages` array). For symlink-deployed local extensions in `~/.pi/agent/extensions/`, the loader never reads `pi.skills`, so the bundled skills would otherwise be invisible.
 
-No lifecycle hook should inject Superpowers instructions. Mode switching owns prompt injection.
+`extensions/superpowers/index.ts` is a thin extension that registers a `resources_discover` event handler. The handler returns the absolute path of the bundled `skills/` directory, computed from `import.meta.url`. Pi calls `resources_discover` after `session_start` (and on `/reload`), then loads every `SKILL.md` underneath the returned path through normal skill discovery. This is the documented mechanism (see Pi extensions doc, `resources_discover` section, and the `dynamic-resources` example) and is the only path that works when the package is delivered via symlink rather than `pi install`.
+
+No lifecycle hook should inject Superpowers instructions into the system prompt. Mode switching owns prompt injection.
 
 ### README
 
@@ -323,23 +325,27 @@ Implementation should include these checks:
    - command descriptions mention new mode.
 
 3. Package manifest check:
-   - `extensions/superpowers/package.json` has `pi.skills: ["./skills"]`.
+   - `extensions/superpowers/package.json` has `pi.extensions: ["./index.ts"]` and `pi.skills: ["./skills"]`.
    - `piVendor` records upstream URL, version, commit, and local target.
 
-4. Skill validation:
+4. Extension smoke and resources_discover wiring:
+   - `extensions/superpowers/index.ts` loads without throwing and registers a `resources_discover` handler.
+   - The handler returns an absolute path ending in `extensions/superpowers/skills` and the path exists on disk.
+
+5. Skill validation:
    - all 14 expected skill dirs exist.
    - each dir has `SKILL.md`.
    - frontmatter `name` matches directory name.
    - frontmatter `description` exists.
    - `adaptedFrom` or equivalent provenance exists.
 
-5. Patch audit:
+6. Patch audit:
    - no vendored skill refers to `dispatch_agent` as an available tool.
    - no vendored skill instructs use of Claude `Task` without nearby Pi mapping.
    - no vendored skill requires `TodoWrite` without nearby Pi mapping.
    - no README recommends `pi install npm:...`.
 
-6. Focused commands:
+7. Focused commands:
    - `pnpm test:extensions`
    - `pnpm lint:typecheck`
 
@@ -375,7 +381,7 @@ Mitigation: keep extension package-tier only because it needs package skills and
 
 1. Vendor upstream skills into `extensions/superpowers/skills`.
 2. Apply minimal mechanical Pi tool-reference patches.
-3. Add `extensions/superpowers/package.json` and `README.md` for the skills-only package.
+3. Add `extensions/superpowers/package.json`, `README.md`, and `index.ts`. `index.ts` registers a `resources_discover` handler that returns the bundled `skills/` directory.
 4. Add `agents/superpowers.md` as standalone `prompt_mode: replace` mode prompt adapted from `using-superpowers`.
 5. Register `superpowers` and `sp` in `extensions/modes` constants/types/docs.
 6. Add tests for mode registration, package manifest, and skill validation.
@@ -397,7 +403,7 @@ Mitigation: keep extension package-tier only because it needs package skills and
 Taishang reviewed the design and conditionally approved it. Required tightenings were incorporated:
 
 - explicit skill collision policy;
-- skills-only package shape (no `index.ts`); root smoke discovers by `index.ts` and skips skills-only packages, with `manifest.test.ts` covering validation;
+- thin `index.ts` registers `resources_discover` to inject `./skills` (the only mechanism that works for symlink-deployed extensions; `pi.skills` alone is not honored without `pi install`);
 - `prompt_mode: replace` and standalone mode behavior;
 - explicit sync rule between `agents/superpowers.md` and `skills/using-superpowers/SKILL.md`;
 - exact Pi-native tool mapping;
