@@ -39,6 +39,43 @@ pnpm lint:typecheck
 bash install.sh
 ```
 
+## Minimal Tools
+
+**Check existing before adding. Compose before building.**
+
+Before registering any new tool, extension, or MCP server:
+
+1. **Audit the registry below.** A tool may already exist in `extensions/` or a remote package in `settings.json`.
+2. **No speculative tools.** Tools exist to serve current, concrete workflows — not hypothetical future use.
+3. **Compose first.** `bash` + existing tools covers most needs. A new tool = new test surface, new docs, new maintenance.
+4. **MCP via mcporter.** This harness uses `pi-mcporter` as a unified MCP proxy. Route through `mcporter`; don't add standalone MCP servers.
+
+### Extension & Package Registry
+
+| Capability | Source |
+|---|---|
+| Interactive user prompts (questions, select) | `extensions/ask` |
+| Shell with cwd | `extensions/better-bash-tool` |
+| Read-only validated shell | `extensions/readonly-bash` |
+| Subagent orchestration (Agent, get_subagent_result, steer_subagent) | `extensions/subagent` |
+| Task tracking + DAG (TaskCreate/Update/List/Get/Execute) | `extensions/tasks` |
+| Web search, fetch, code search, video | `extensions/web-access` |
+| MCP tools proxy | `pi-mcporter` package → `mcporter` tool |
+| Git diff viewer | `extensions/diff` |
+| Context save/restore + pruning | `extensions/context-management` |
+| Session-local file storage (`local://`) | `extensions/session-local` |
+| Secrets redaction from tool outputs | `extensions/filter-outputs` |
+| Code knowledge graph (GitNexus) | `extensions/gitnexus` |
+| Session handoff to new focused session | `extensions/handoff` |
+| Token-efficient background task execution | `extensions/boomerang` |
+| Agent modes (kuafu / fuxi / houtu / etc.) | `extensions/modes` |
+| AGENTS.md generation | `extensions/init-deep` |
+| Mermaid diagram rendering | `pi-mermaid` package |
+| Thinking steps visualization | `pi-thinking-steps` package |
+| Guardrails | `pi-guardrails` package |
+| Autoresearch experiment loop | `pi-autoresearch` package |
+| Plan annotation | `plannotator` package |
+
 ## Always
 - Keep root guidance repo-wide only; push extension-only rules into `extensions/AGENTS.md`.
 - Treat root Vitest as two tiers: unit tests use stubs from `test/stubs/`; integration tests in `test/integration/` use the real pi runtime via `pi-test-harness`.
