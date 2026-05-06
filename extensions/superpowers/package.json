@@ -5,7 +5,6 @@
   "description": "Vendored Superpowers skills adapted for the local Pi harness.",
   "license": "MIT",
   "pi": {
-    "extensions": ["./index.ts"],
     "skills": ["./skills"]
   },
   "piVendor": {
