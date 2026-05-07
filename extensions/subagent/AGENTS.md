@@ -53,6 +53,7 @@ pnpm run build
 - `src/index.ts` is large because it owns tool registration, widget rendering, notifications, and event emission; many changes fan out from there.
 - `subagents:ready` is the discovery signal for other extensions; breaking or delaying it causes load-order bugs.
 - Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after explicit allowlist resolution.
+- `prompt_mode` is parsed by both `subagent` (this extension) and `modes`. Subagent honors all three values (`replace`/`append`/`system_instructions`); modes coerces non-`append` to `replace` (see `extensions/modes/src/config-loader.ts`). When changing parser semantics in `extensions/lib/agent-frontmatter.ts`, update both consumers.
 
 ## Local Tweaks
 
@@ -80,3 +81,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `test/delegation-policy.test.ts` | Local-only test | Covers delegation allow/deny |
 | `test/result-recovery.test.ts` | Local-only test | Covers fallback extraction |
 | `test/index.session-context.test.ts` | Local-only test | Covers session context integration |
+| `src/types.ts`, `src/agent-types.ts` | `promptMode` widened to `"replace" \| "append" \| "system_instructions"` | Adds new mode that injects AGENTS.md project context without parent role/mode body bleed |
+| `src/agent-runner.ts` | `inheritContextFiles` derives from `promptMode === "system_instructions"` (overridden to false by `isolated: true`); flips `noContextFiles` so pi auto-injects AGENTS.md as `# Project Context` after `systemPromptOverride` | Single-source-of-truth AGENTS.md inheritance for worker subagents (jintong, guangguang, yunu, weizheng) |
+| `src/prompts.ts` | Doc comment lists three modes; builder output for `system_instructions` is identical to `replace` (the branch lives in `agent-runner.ts`) | Mode behavior orthogonal to prompt assembly |
+| `src/agent-definition-authoring.ts` | Frontmatter template + guidelines describe `system_instructions` mode | User-visible authoring docs |

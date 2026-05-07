@@ -100,4 +100,4 @@ Lifecycle events on `pi.events`: `subagents:created`, `subagents:started`, `suba
 
 ## Local Additions
 
-Features added on top of upstream: background supervision, delegation policy, result recovery, thinking-level normalization, enhanced skill loading, abort signal forwarding, model label tracking, and Nerd Font UI stats.
+Features added on top of upstream: background supervision, delegation policy, result recovery, thinking-level normalization, enhanced skill loading, abort signal forwarding, model label tracking, Nerd Font UI stats, and `prompt_mode: system_instructions` (env header + agent body + auto-injected AGENTS.md project context, no parent identity bleed). See `src/agent-runner.ts` `inheritContextFiles` and `src/prompts.ts` doc comment.

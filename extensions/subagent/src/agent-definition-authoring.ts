@@ -67,7 +67,7 @@ extension_tools: <optional exact comma-separated extension/MCP tool names to all
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5-20251001". Omit to inherit parent model>
 thinking: <optional thinking level: none, minimal, low, medium, high, xhigh. Omit to inherit>
 max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
-prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
+prompt_mode: <"replace" (body IS the full system prompt; no parent identity, no AGENTS.md), "append" (body appended to parent system prompt incl. parent identity + AGENTS.md), or "system_instructions" (body IS the full system prompt; pi auto-injects AGENTS.md as a '# Project Context' block after the body — no parent identity bleed). Default: replace>
 skills: <true (inherit all), false (none), or comma-separated skill names to preload into prompt. Default: true>
 allow_delegation_to: <comma-separated agent names this agent may delegate to via Agent. Omit for unrestricted delegation>
 disallow_delegation_to: <comma-separated agent names this agent may not delegate to via Agent. Omit for none>
@@ -90,8 +90,9 @@ Tool field rules:
 Guidelines for choosing settings:
 - For read-only tasks (review, analysis): builtin_tools: read, bash; use bash commands rg/fd for search/listing
 - For code modification tasks: include edit, write in builtin_tools
-- Use prompt_mode: append if the agent should keep the default system prompt and add specialization on top
-- Use prompt_mode: replace for fully custom agents with their own personality/instructions
+- Use prompt_mode: append if the agent should keep the default/parent system prompt and add specialization on top (subagent inherits parent identity AND AGENTS.md)
+- Use prompt_mode: replace for fully custom agents with their own personality/instructions and zero parent context
+- Use prompt_mode: system_instructions when the agent should have its own personality (no parent identity bleed) but still inherit project AGENTS.md guardrails (recommended for implementation/edit workers)
 - Set inherit_context: true if the agent needs to know what was discussed in the parent conversation
 - Set isolated: true if the agent should NOT have access to MCP servers or other extensions
 - Use allow_delegation_to and disallow_delegation_to to restrict which other agents this agent may spawn via Agent; the allowlist is applied first, then disallow_delegation_to removes from that set
