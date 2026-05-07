@@ -181,6 +181,31 @@ jq -r 'select(.type=="compaction") |
   "Compacted \(.tokensBefore) tokens. First kept: \(.firstKeptEntryId)\nSummary: \(.summary[:400])"' session.jsonl
 ```
 
+### Custom entry extraction by type
+```bash
+# List all custom entry types with counts
+jq -r 'select(.type=="custom" or .type=="custom_message") | .customType // "unknown"' session.jsonl | sort | uniq -c | sort -rn
+
+# Extract subagent completion records (agent type + duration)
+jq -r '
+  select(.type=="custom" and .customType=="subagents:record") |
+  .data | "\(.type) | \(.description) | \(.status) | " +
+  (if .completedAt and .startedAt then "\((.completedAt - .startedAt) / 1000 | round)s" else "?" end)
+' session.jsonl
+
+# Extract agent mode changes
+jq -r 'select(.type=="custom" and .customType=="agent-mode") | "[\(.timestamp)] mode=\(.data.mode)"' session.jsonl
+```
+
+### Per-turn cost analysis
+```bash
+# Cost per assistant turn (sorted by cost, most expensive first)
+jq -r 'select(.type=="message" and .message.role=="assistant" and .message.usage.cost.total != null) |
+  "$\(.message.usage.cost.total * 100 | round / 100)  \(.message.usage.totalTokens)tok  " +
+  ([.message.content[]? | if .type == "text" then .text[:60] elif .type == "toolCall" then "[\(.name)]" else empty end] | join(" "))[:100]
+' session.jsonl | sort -rn | head -10
+```
+
 ---
 
 ## File Size vs. Content Guide
