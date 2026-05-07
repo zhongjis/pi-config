@@ -2,7 +2,6 @@
 display_name: Di Renjie 狄仁杰
 description: A Metis-style gap analyzer — catches hidden assumptions, guardrail gaps, and execution risks before finalization.
 model: anthropic/claude-opus-4-6:high,openai-codex/gpt-5.5:high
-prompt_mode: replace
 inherit_context: false
 run_in_background: false
 builtin_tools: read
