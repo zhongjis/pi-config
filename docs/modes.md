@@ -1,6 +1,6 @@
 # Modes Extension
 
-The modes extension implements agent persona switching for four modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), **Hou Tu 后土** (execute), and **Superpowers** (sp). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
+The modes extension implements agent persona switching for four modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), **Hou Tu 后土** (execute), and **Lu Ban 鲁班** (luban). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
 
 For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.md).
 
@@ -13,7 +13,7 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 | `kuafu` | `build` | Default. General-purpose coding and implementation. |
 | `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is blocked and read-only shell inspection uses `readonly_bash` when exactly allowlisted via `extension_tools: readonly_bash`. |
 | `houtu` | `execute` | Plan execution after handoff. Receives a prepared execution prompt in a child session. |
-| `superpowers` | `sp` | Skill-first discipline mode adapted from obra/superpowers. |
+| `luban` | — | Skill-first discipline mode adapted from obra/superpowers. |
 
 ---
 
@@ -25,7 +25,7 @@ Six ways to switch modes:
 |--------|---------|-------|
 | **`/mode` command** | `/mode fuxi` | Interactive selector when called with no arguments. Accepts mode names or aliases. |
 | **`/mode:<name>` shortcut** | `/mode:plan do the thing` | Switches mode, then delivers any trailing text as a follow-up message. Works with names (`fuxi`) and aliases (`plan`). |
-| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → superpowers → kuafu. |
+| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → luban → kuafu. |
 | **Tab in empty editor** | Press `Tab` with no text | Same cycle behavior as Ctrl+Shift+M. |
 | **Bare word input** | Type `fuxi` or `plan` | Transformed into `/mode:fuxi` before submission. Recognized words: all mode names and aliases. |
 | **CLI `--mode` flag** | `pi --mode fuxi` | Sets the initial mode at startup. Overrides session-restored mode. |
@@ -40,7 +40,7 @@ Each mode reads its prompt and settings from `~/.pi/agent/agents/<mode>.md`. The
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `prompt_mode` | `"append"` \| `"replace"` | How the mode body is injected into the system prompt. `append` (default) adds after existing prompt. `replace` strips previous mode bodies first. |
+| `prompt_mode` | `"append"` \| `"replace"` (`"system_instructions"` accepted by parser, coerced to `"replace"` for modes) | How the mode body is injected into the system prompt. `replace` (default) strips previous mode bodies first, then appends the wrapped current mode body. `append` adds the wrapped body without stripping. Mode-level `prompt_mode` does not control AGENTS.md injection — modes always run with project AGENTS.md present. |
 | `builtin_tools` | comma-separated built-in names | Exact built-in allowlist: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; `none` means no built-ins. |
 | `extensions` | comma-separated strings \| `true` \| `false` | Extension availability/source scope. `true`/omitted enables extension tools, `false`/`none` disables them, CSV preserves source names where supported. Current active-tool filtering treats CSV as enabled; exact tool filtering comes from `extension_tools`. |
 | `extension_tools` | comma-separated tool names | Exact extension-tool allowlist after extensions are available; `none` means no extension tools. Cannot grant built-ins. |

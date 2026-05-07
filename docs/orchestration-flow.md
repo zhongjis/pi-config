@@ -166,6 +166,7 @@ flowchart LR
     Builtins --> PromptMode
     PromptMode -->|replace| Replace[Env header + agent prompt]
     PromptMode -->|append| Append[Env header + parent prompt + sub-agent context + agent prompt]
+    PromptMode -->|system_instructions| SysInstr[Env header + agent prompt + auto-injected AGENTS.md]
     AgentTool --> RunMode{run mode}
     RunMode -->|foreground| FG[Synchronous child session]
     RunMode -->|background| BG[Background record + output file + supervision]
@@ -174,7 +175,7 @@ flowchart LR
 
 - `extensions/subagent/src/index.ts` registers `Agent`, background execution, resume, `get_subagent_result`, and `steer_subagent`.
 - `extensions/subagent/src/custom-agents.ts` loads agent markdown from project `.pi/agents/*.md` and global `~/.pi/agent/agents/*.md`; project agents override global agents.
-- `extensions/subagent/src/prompts.ts` builds prompts from agent frontmatter. `replace` gives the child a fresh prompt; `append` wraps the parent prompt with sub-agent context and the child instructions.
+- `extensions/subagent/src/prompts.ts` builds prompts from agent frontmatter. `replace` gives the child a fresh prompt; `append` wraps the parent prompt with sub-agent context and the child instructions; `system_instructions` returns the same prompt as `replace` and lets pi auto-inject AGENTS.md (project guardrails) without parent identity bleed — see `agent-runner.ts` `inheritContextFiles`.
 - `agents/fuxi.md`, `agents/houtu.md`, and `agents/kuafu.md` are the prompt contracts that define the workflows above.
 
 ## Ownership by file
@@ -205,7 +206,7 @@ Custom agent loader. It scans project and global agent markdown, parses frontmat
 
 ### `extensions/subagent/src/prompts.ts`
 
-Prompt builder. It renders `replace` and `append` prompt modes and injects skill/memory extras.
+Prompt builder. It renders `replace`, `append`, and `system_instructions` prompt modes and injects skill/memory extras.
 
 ### `agents/fuxi.md`
 
