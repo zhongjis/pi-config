@@ -15,9 +15,12 @@ export interface PromptExtras {
 /**
  * Build the system prompt for an agent from its config.
  *
- * - "replace" mode: env header + config.systemPrompt (full control, no parent identity)
+ * - "replace" mode: env header + config.systemPrompt (full control, no parent identity, no AGENTS.md)
  * - "append" mode: env header + parent system prompt + sub-agent context + config.systemPrompt
  * - "append" with empty systemPrompt: pure parent clone
+ * - "system_instructions" mode: same buildAgentPrompt output as "replace"; agent-runner.ts lets pi
+ *   auto-inject AGENTS.md as `# Project Context` block AFTER this prompt (single source of truth,
+ *   no parent role/mode body bleed). See agent-runner.ts noContextFiles handling.
  *
  * @param parentSystemPrompt  The parent agent's effective system prompt (for append mode).
  * @param extras  Optional extra sections to inject (memory, preloaded skills).

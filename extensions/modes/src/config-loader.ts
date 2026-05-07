@@ -13,7 +13,8 @@ export function parseModeAgentConfig(content: string): ModeConfig | null {
 
   return {
     body: trimmedBody,
-    promptMode: parsed.promptMode,
+    // modes treat any non-append (incl. system_instructions) as replace; AGENTS.md inheritance is irrelevant here
+    promptMode: parsed.promptMode === "append" ? "append" : "replace",
     builtinToolNames: parsed.toolSelectionSpecified ? parsed.builtinToolNames : undefined,
     extensionToolNames: parsed.toolSelectionSpecified ? parsed.extensionToolNames : undefined,
     extensions: parsed.toolSelectionSpecified ? parsed.extensions : undefined,

@@ -123,7 +123,7 @@ export function getConfig(type: string): {
   builtinToolNames: string[];
   extensions: true | string[] | false;
   skills: true | string[] | false;
-  promptMode: "replace" | "append";
+  promptMode: "replace" | "append" | "system_instructions";
 } {
   const key = resolveKey(type);
   const config = key ? agents.get(key) : undefined;

@@ -224,12 +224,19 @@ export async function runAgent(
 
   const agentDir = getAgentDir();
 
+  // Resolve AGENTS.md inheritance: prompt_mode: system_instructions opts in to having pi
+  // inject the AGENTS.md walk (global agentDir + cwd→root ancestors) as `# Project Context`
+  // AFTER systemPromptOverride. This gives subagents project guardrails as a single source of
+  // truth (no kuafu mode body bleed, no bridge-text duplication of AGENTS.md content).
+  // isolated overrides to false (true isolation means no project context).
+  const inheritContextFiles = !options.isolated && agentConfig?.promptMode === "system_instructions";
+
   // Load extensions/skills: true or string[] → load; false → don't.
-  // Suppress AGENTS.md/CLAUDE.md and APPEND_SYSTEM.md — upstream's
-  // buildSystemPrompt() re-appends both AFTER systemPromptOverride, which
-  // would defeat prompt_mode: replace and isolated: true. Parent context, if
-  // wanted, reaches the subagent via prompt_mode: append (parentSystemPrompt
-  // is embedded in systemPromptOverride) or inherit_context (conversation).
+  // Suppress AGENTS.md/CLAUDE.md (unless system_instructions) and APPEND_SYSTEM.md — upstream's
+  // buildSystemPrompt() re-appends both AFTER systemPromptOverride, which would defeat
+  // prompt_mode: replace and isolated: true. Parent context, if wanted, reaches the subagent via
+  // prompt_mode: append (parentSystemPrompt is embedded in systemPromptOverride),
+  // inherit_context (conversation), or prompt_mode: system_instructions (AGENTS.md only).
   const loader = new DefaultResourceLoader({
     cwd: effectiveCwd,
     agentDir,
@@ -237,7 +244,7 @@ export async function runAgent(
     noSkills,
     noPromptTemplates: true,
     noThemes: true,
-    noContextFiles: true,
+    noContextFiles: !inheritContextFiles,
     systemPromptOverride: () => systemPrompt,
     appendSystemPromptOverride: () => [],
   });

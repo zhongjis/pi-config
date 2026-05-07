@@ -59,7 +59,7 @@ export interface AgentConfig {
   maxTurns?: number;
   thinking?: ThinkingLevel;
   systemPrompt: string;
-  promptMode: "replace" | "append";
+  promptMode: "replace" | "append" | "system_instructions";
   /** Default for spawn: fork parent conversation. undefined = caller decides. */
   inheritContext?: boolean;
   /** Default for spawn: run in background. undefined = caller decides. */

@@ -3,7 +3,7 @@ import { DEFAULT_BUILTIN_TOOL_NAMES } from "./active-tools.js";
 
 export type InheritSelection = true | string[] | false;
 export type MemoryScope = "user" | "project" | "local";
-export type PromptMode = "replace" | "append";
+export type PromptMode = "replace" | "append" | "system_instructions";
 
 export interface ParsedAgentFrontmatter {
   frontmatter: Record<string, unknown>;
@@ -56,7 +56,7 @@ export function parseAgentFrontmatter(
     skills: inheritField(fm.skills ?? fm.inherit_skills),
     model: str(fm.model),
     maxTurns: nonNegativeInt(fm.max_turns),
-    promptMode: fm.prompt_mode === "append" ? "append" : "replace",
+    promptMode: parsePromptMode(fm.prompt_mode),
     inheritContext: fm.inherit_context != null ? fm.inherit_context === true : undefined,
     runInBackground: fm.run_in_background != null ? fm.run_in_background === true : undefined,
     isolated: fm.isolated != null ? fm.isolated === true : undefined,
@@ -141,4 +141,10 @@ function inheritField(val: unknown): InheritSelection {
   if (val === false || val === "none") return false;
   const items = csvList(val, []);
   return items.length > 0 ? items : false;
+}
+
+function parsePromptMode(val: unknown): PromptMode {
+  if (val === "append") return "append";
+  if (val === "system_instructions") return "system_instructions";
+  return "replace";
 }
