@@ -18,11 +18,23 @@ description: "Use when the user wants to know what will break if they change som
 
 ```
 1. gitnexus_impact({target: "X", direction: "upstream"})  → What depends on this
-2. gitnexus_detect_changes()                               → Map current git changes to affected flows
-3. Assess risk and report to user
+2. READ gitnexus://repo/{name}/processes                   → Check affected execution flows
+3. gitnexus_detect_changes()                               → Map current git changes to affected flows
+4. Assess risk and report to user
 ```
 
-> If index is stale → run `/gitnexus analyze` to rebuild.
+> If "Index is stale" → run `npx gitnexus analyze` in terminal.
+
+## Checklist
+
+```
+- [ ] gitnexus_impact({target, direction: "upstream"}) to find dependents
+- [ ] Review d=1 items first (these WILL BREAK)
+- [ ] Check high-confidence (>0.8) dependencies
+- [ ] READ processes to check affected execution flows
+- [ ] gitnexus_detect_changes() for pre-commit check
+- [ ] Assess risk level and report to user
+```
 
 ## Understanding Output
 
@@ -41,19 +53,9 @@ description: "Use when the user wants to know what will break if they change som
 | >15 symbols or many processes  | HIGH     |
 | Critical path (auth, payments) | CRITICAL |
 
-## Checklist
-
-```
-- [ ] gitnexus_impact({target, direction: "upstream"}) to find dependents
-- [ ] Review d=1 items first (these WILL BREAK)
-- [ ] Check high-confidence (>0.8) dependencies
-- [ ] gitnexus_detect_changes() for pre-commit check
-- [ ] Assess risk level and report to user
-```
-
 ## Tools
 
-**gitnexus_impact** — primary tool for symbol blast radius:
+**gitnexus_impact** — the primary tool for symbol blast radius:
 
 ```
 gitnexus_impact({
@@ -88,6 +90,8 @@ gitnexus_detect_changes({scope: "staged"})
    → d=1: loginHandler, apiMiddleware (WILL BREAK)
    → d=2: authRouter, sessionManager (LIKELY AFFECTED)
 
-2. Risk: 2 direct callers, 2 processes = MEDIUM
-   → Recommend: update loginHandler and apiMiddleware first, then run tests
+2. READ gitnexus://repo/my-app/processes
+   → LoginFlow and TokenRefresh touch validateUser
+
+3. Risk: 2 direct callers, 2 processes = MEDIUM
 ```

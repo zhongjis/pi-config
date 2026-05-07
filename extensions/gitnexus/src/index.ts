@@ -4,6 +4,7 @@ import { clearIndexCache, extractFilePatternsFromContent, extractFilesFromReadMa
 import { mcpClient } from './mcp-client.js';
 import { registerTools } from './tools.js';
 import { openMainMenu } from './ui/main-menu.js';
+import { buildInjectedSystemPrompt, composeAnalyzeArgs, checkSkillDrift } from './stealth-injection.js';
 
 const SEARCH_TOOLS = new Set(['grep', 'find', 'bash', 'read', 'read_many']);
 
@@ -73,18 +74,16 @@ export default function(pi: ExtensionAPI) {
     description: 'Command used to invoke gitnexus, e.g. "npx gitnexus@latest". Empty uses saved config or plain "gitnexus".',
   });
 
-  // Append a one-liner so the agent understands graph context in search results.
-  pi.on('before_agent_start', async (event: { systemPrompt?: string }, ctx: ExtensionContext) => {
-    if (!findGitNexusIndex(ctx.cwd)) return;
+  // Inject GitNexus contract + runtime-derived skill list into system prompt.
+  pi.on('before_agent_start', async (event: { systemPrompt?: string; systemPromptOptions?: { skills?: Array<{ name: string }> } }, ctx: ExtensionContext) => {
     if (event.systemPrompt == null) return;
-    return {
-      systemPrompt:
-        event.systemPrompt +
-        '\n\n[GitNexus active] Graph context will appear after search results. ' +
-        'Use gitnexus_query, gitnexus_context, gitnexus_impact, gitnexus_detect_changes, ' +
-        'gitnexus_list_repos, gitnexus_rename, and gitnexus_cypher for deeper analysis. ' +
-        'If the index is stale after code changes, run /gitnexus analyze to rebuild it.',
-    };
+    const injected = buildInjectedSystemPrompt({
+      base: event.systemPrompt,
+      cwd: ctx.cwd,
+      skills: event.systemPromptOptions?.skills,
+    });
+    if (injected === undefined) return;
+    return { systemPrompt: injected };
   });
 
   // Core hook: mirrors the Claude Code PreToolUse integration.
@@ -199,6 +198,32 @@ export default function(pi: ExtensionAPI) {
         'GitNexus: knowledge graph active — searches will be enriched automatically.',
         'info',
       );
+
+      // Drift check: compare vendored skills VERSION against installed binary version.
+      // Non-blocking: missing VERSION file or binary version failure skips silently.
+      try {
+        const { readFileSync } = await import('node:fs');
+        const { fileURLToPath } = await import('node:url');
+        const { dirname, join } = await import('node:path');
+        const moduleDir = dirname(fileURLToPath(import.meta.url));
+        const versionFilePath = join(moduleDir, '..', 'skills', 'VERSION');
+        const vendoredVersion = readFileSync(versionFilePath, 'utf-8').trim() || undefined;
+
+        const binaryVersionOut = await new Promise<string>((resolve_) => {
+          let out = '';
+          const [bin, ...args] = gitnexusCmd;
+          const proc = spawn(bin, [...args, '--version'], { stdio: ['ignore', 'pipe', 'ignore'], env: spawnEnv });
+          proc.stdout!.on('data', (d: { toString(): string }) => { out += d.toString(); });
+          proc.on('close', () => resolve_(out.trim()));
+          proc.on('error', () => resolve_(''));
+        });
+        const binaryVersion = binaryVersionOut.split('\n')[0]?.trim() || undefined;
+
+        const drift = checkSkillDrift({ vendoredVersion, binaryVersion });
+        if (drift) ctx.ui.notify(drift.message, drift.severity);
+      } catch {
+        // VERSION file missing or unreadable → skip silently per spec.
+      }
     } else {
       ctx.ui.notify(
         'GitNexus index found but gitnexus is not on PATH. Install: npm i -g gitnexus',
@@ -320,7 +345,7 @@ export default function(pi: ExtensionAPI) {
         ctx.ui.notify('GitNexus: analyzing codebase, this may take a while…', 'info');
         const exitCode = await new Promise<number | null>((resolve_) => {
           const [bin, ...baseArgs] = gitnexusCmd;
-          const proc = spawn(bin, [...baseArgs, 'analyze'], {
+          const proc = spawn(bin, composeAnalyzeArgs(baseArgs), {
             cwd: ctx.cwd,
             stdio: 'ignore',
             env: spawnEnv,

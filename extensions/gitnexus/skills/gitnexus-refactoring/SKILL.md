@@ -22,7 +22,7 @@ description: "Use when the user wants to rename, extract, split, move, or restru
 4. Plan update order: interfaces → implementations → callers → tests
 ```
 
-> If index is stale → run `/gitnexus analyze` to rebuild.
+> If "Index is stale" → run `npx gitnexus analyze` in terminal.
 
 ## Checklists
 
@@ -59,6 +59,41 @@ description: "Use when the user wants to rename, extract, split, move, or restru
 - [ ] Run tests for affected processes
 ```
 
+## Tools
+
+**gitnexus_rename** — automated multi-file rename:
+
+```
+gitnexus_rename({symbol_name: "validateUser", new_name: "authenticateUser", dry_run: true})
+→ 12 edits across 8 files
+→ 10 graph edits (high confidence), 2 ast_search edits (review)
+→ Changes: [{file_path, edits: [{line, old_text, new_text, confidence}]}]
+```
+
+**gitnexus_impact** — map all dependents first:
+
+```
+gitnexus_impact({target: "validateUser", direction: "upstream"})
+→ d=1: loginHandler, apiMiddleware, testUtils
+→ Affected Processes: LoginFlow, TokenRefresh
+```
+
+**gitnexus_detect_changes** — verify your changes after refactoring:
+
+```
+gitnexus_detect_changes({scope: "all"})
+→ Changed: 8 files, 12 symbols
+→ Affected processes: LoginFlow, TokenRefresh
+→ Risk: MEDIUM
+```
+
+**gitnexus_cypher** — custom reference queries:
+
+```cypher
+MATCH (caller)-[:CodeRelation {type: 'CALLS'}]->(f:Function {name: "validateUser"})
+RETURN caller.name, caller.filePath ORDER BY caller.filePath
+```
+
 ## Risk Rules
 
 | Risk Factor         | Mitigation                                |
@@ -73,6 +108,7 @@ description: "Use when the user wants to rename, extract, split, move, or restru
 ```
 1. gitnexus_rename({symbol_name: "validateUser", new_name: "authenticateUser", dry_run: true})
    → 12 edits: 10 graph (safe), 2 ast_search (review)
+   → Files: validator.ts, login.ts, middleware.ts, config.json...
 
 2. Review ast_search edits (config.json: dynamic reference!)
 

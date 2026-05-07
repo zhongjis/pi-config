@@ -92,3 +92,7 @@ Config file: `~/.pi/pi-gitnexus.json`.
 ## Local Additions
 
 Upstream skill files are vendored under `skills/` for provenance/package parity. This repo's `install.sh` does not symlink root `skills/`, so runtime availability depends on Pi package skill loading, not this extension symlink alone.
+
+- `src/stealth-injection.ts` — exports `GITNEXUS_CONTRACT_PROSE`, `buildInjectedSystemPrompt`, `composeAnalyzeArgs`, and `checkSkillDrift`. The `before_agent_start` handler appends the contract prose plus a runtime-derived list of loaded `gitnexus-*` skills to the system prompt. The `/gitnexus analyze` slash command always passes `--skip-agents-md --no-stats` and never passes `--skills`. Purpose: zero working-tree impact from `analyze`. See `docs/superpowers/specs/2026-05-07-gitnexus-stealth-injection-design.md`.
+- `skills/VERSION` — single-line binary version that the vendored skills track. Updated only by `scripts/sync-gitnexus-resources.sh`. Drift vs installed binary produces a non-blocking `notify('warning')` at `session_start`.
+- Root `.gitignore` entries `.claude/` and `CLAUDE.md` — defense in depth against direct-CLI invocations of `gitnexus analyze` outside pi.
