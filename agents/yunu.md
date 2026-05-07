@@ -2,6 +2,7 @@
 display_name: Yunu 玉女
 description: A UI/UX designer for visual direction, interaction quality, and practical frontend design improvements.
 model: gemini-3.1-pro-preview:high
+prompt_mode: system_instructions
 builtin_tools: read,bash,edit,write
 extension_tools: lsp_diagnostics
 ---
