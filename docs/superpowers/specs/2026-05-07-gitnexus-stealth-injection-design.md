@@ -85,9 +85,17 @@ No sentinel, no pointer comment. Stealth means stealth.
 
 Current (`src/index.ts:77-88`): ~4 lines of text appended to `systemPrompt` when a `.gitnexus/` index is present.
 
-Replacement: full GitNexus contract, hoisted into a module-level `GITNEXUS_CONTRACT` constant. Exact content mirrors the current `<!-- gitnexus:start/end -->` block minus the stats sentence. Numbers (symbols, relationships, flows) are dropped entirely — they affect no agent decision. Freshness reminder ("if stale, run /gitnexus analyze") is kept.
+Replacement: expanded GitNexus contract built at hook-time, not a verbatim lift of the current `<!-- gitnexus:start/end -->` block. Two parts:
+
+**Part A — Static prose** (module-level `GITNEXUS_CONTRACT_PROSE` constant): the "Always Do", "Never Do", "Resources" sections from the current block. Numbers (symbols, relationships, flows) dropped — they affect no agent decision. Freshness reminder ("if stale, run /gitnexus analyze") kept. **No `.claude/skills/...` paths appear anywhere in this constant.**
+
+**Part B — Runtime-derived skill list**: inside the hook, filter `event.systemPromptOptions.skills` for names starting with `gitnexus-`. Format as a short reference list (names only, no filesystem paths — pi's skill registry already makes skills loadable by name). If zero gitnexus skills loaded, emit a single line stating this with a pointer to the sync script; no list. This makes the contract self-healing across skill add/rename/remove and removes a drift failure class.
+
+Final injected text = `base systemPrompt + "\n\n" + GITNEXUS_CONTRACT_PROSE + derivedSkillList`.
 
 Gate remains: only inject when `findGitNexusIndex(ctx.cwd)` returns a path. No index → no injection, no wasted context.
+
+Rationale for runtime derivation (Part B): the current committed block references 6 skills by filesystem path; the vendored tree has 5 skills with one name mismatch (`pr-review` vendored; `guide` / `cli` not). Verbatim lift would inject dead paths and reference skills pi never loaded. Deriving from `systemPromptOptions.skills` removes the coupling to any static name list and makes the first-run state correct regardless of future sync outcomes.
 
 ### Component 3 — CLI flag composition
 
@@ -122,7 +130,7 @@ Behavior:
 6. If `--dry-run`, exit here.
 7. Otherwise, prompt `Apply changes? [y/N]` and on `y`, rsync `SKILL.md` files into the vendored tree.
 8. Print: the binary version (from `gitnexus --version`), the current `extensions/gitnexus/skills/VERSION`, and a suggested commit message.
-9. **Do not auto-edit `src/index.ts`.** If the upstream contract block diverges, print the diff and path; human patches the `GITNEXUS_CONTRACT` constant.
+9. **Do not auto-edit `src/index.ts`.** If the upstream contract block diverges, print the diff and path; human patches the `GITNEXUS_CONTRACT_PROSE` constant.
 
 Exit codes: 0 success or no-op, 1 upstream run failed, 2 user declined apply, 3 other error.
 
@@ -133,7 +141,7 @@ New file: `extensions/gitnexus/skills/VERSION` — single line, binary version s
 In `src/index.ts`, existing `session_start` handler gains:
 - Read `VERSION` file (relative to extension module dir).
 - Parse `gitnexus --version` output captured during existing binary probe.
-- If mismatch, one-shot `ctx.ui.notify(message, "warn")`. Message names both versions and points to the sync script.
+- If mismatch, one-shot `ctx.ui.notify(message, "warning")`. Message names both versions and points to the sync script. (Note: existing code in `src/index.ts` uses `"warning"`, not `"warn"` — match that.)
 
 Non-blocking. Never fails session start. If `VERSION` file is missing or unreadable, skip the check silently.
 
@@ -155,7 +163,7 @@ user starts new pi session
     → if drift: notify, continue
   → user submits prompt
     → before_agent_start fires
-      → if .gitnexus/ index present, append GITNEXUS_CONTRACT to systemPrompt
+      → if .gitnexus/ index present, append prose + runtime-derived skill list to systemPrompt
     → agent runs with contract in context ✓
 ```
 
@@ -170,18 +178,22 @@ user starts new pi session
 
 ## Testing
 
-Unit-level assertions (extensions use existing Vitest harness):
+**Harness context:** `extensions/gitnexus/` currently has **zero** test files. This spec introduces the first. Root `vitest.config.ts` includes `extensions/**/*.test.ts`, so any file placed under `extensions/gitnexus/test/` is auto-discovered — no config edit required. New test file path: `extensions/gitnexus/test/stealth-injection.test.ts`. Implementer needs to add lightweight test setup (mocks for `fs.existsSync`, `findGitNexusIndex`, and `ctx.ui.notify`) since no fixtures exist in this package.
 
-1. `before_agent_start` with `.gitnexus/` present → returned `systemPrompt` contains the word `gitnexus_query` (signature token from contract).
+Unit-level assertions:
+
+1. `before_agent_start` with `.gitnexus/` present → returned `systemPrompt` contains the word `gitnexus_query` (signature token from contract prose).
 2. `before_agent_start` with no `.gitnexus/` → returned object does not set `systemPrompt`.
-3. Slash command for `/gitnexus analyze` composes args with `--skip-agents-md` and `--no-stats` as a prefix.
-4. Drift check: when `VERSION` matches probed binary, no notify fires; when they differ, notify is called once with both versions in the message.
-5. Drift check: `VERSION` missing → no notify fires, no throw.
+3. `before_agent_start` derives skill list from `event.systemPromptOptions.skills` filtered by `gitnexus-` prefix — injected text contains each loaded skill name, and **no `.claude/skills/` string** appears anywhere in the output.
+4. `before_agent_start` with zero `gitnexus-*` skills loaded → injected text still has prose but a single-line fallback pointing at the sync script (no empty list).
+5. Slash command for `/gitnexus analyze` composes args with `--skip-agents-md` and `--no-stats` as a prefix. Never includes `--skills`.
+6. Drift check: when `VERSION` matches probed binary, no notify fires; when they differ, notify is called once with both versions in the message.
+7. Drift check: `VERSION` missing → no notify fires, no throw.
 
 Integration-level:
 
-6. Manual: run `/gitnexus analyze` in a test repo, verify `git status` is clean afterward.
-7. Manual: run `scripts/sync-gitnexus-resources.sh --dry-run` against a checkout, verify it reports diffs without modifying tracked files.
+8. **Automated** (promoted from manual): `spawn gitnexus analyze` in a `mktemp` scratch repo with the extension's flag composition, assert `git status --porcelain` is empty afterward. Binary is Nix-pinned in dev shell so this is deterministic. This test most directly validates the spec's top-level goal; worth the cost.
+9. Manual: run `scripts/sync-gitnexus-resources.sh --dry-run` against a checkout, verify it reports diffs without modifying tracked files.
 
 ## Migration
 
@@ -203,21 +215,28 @@ No schema migration, no data migration.
 | Vendored skills drift far from binary templates between syncs. | `session_start` drift notify tells the human; sync script is one command away. |
 | Sync script mistakes a local edit for a stale file and overwrites it. | Prompt before apply; dry-run flag; user reviews the printed diff. No force-overwrite mode. |
 | `.gitignore` additions break developer workflows that rely on `.claude/` (e.g., Claude Code side). | `.claude/` is Claude-Code-specific; this repo is pi-centric per root `AGENTS.md`. Root file already says edits to repo skills don't propagate to live setup (Home Manager managed). Low risk. |
+| Expanded contract increases systemPrompt size in every pi session, including short-lived subagent sessions launched by `extensions/subagent`. | Existing one-liner already ships into subagents, so new cost is incremental, not categorical. Gate remains on `findGitNexusIndex`. If measured cost becomes material, follow-up: gate on a subagent-detection signal (e.g., checking `ctx.sessionManager` type or a flag passed by the subagent extension). Not blocking for this spec. |
 
 ## What this spec does not decide
 
 - Whether to also expose the contract content via a `/gitnexus contract` slash command for on-demand display. Out of scope; not requested.
-- Whether to vendor `gitnexus-guide` and `gitnexus-cli` skills (present in binary templates, absent from current `extensions/gitnexus/skills/`). Deferred to the first sync-script run — if the script surfaces them, human decides then.
+- Whether to vendor `gitnexus-guide` and `gitnexus-cli` skills (present in binary templates, absent from current `extensions/gitnexus/skills/`). Deferred to the first sync-script run — if the script surfaces them, human decides then. The runtime-derived skill list in Component 2 means the contract stays correct either way: if vendored, they appear in the list; if not, they don't.
 - CI enforcement of `git status` clean after `analyze`. Out of scope; trust and tooling, not CI gate.
 
 ## Implementation sequence (informs the plan)
 
 Implementers work in this order to keep each change reviewable:
 
-1. Extract `GITNEXUS_CONTRACT` constant; expand `before_agent_start`. Add unit test.
-2. Add `--skip-agents-md --no-stats` to `/gitnexus analyze` arg composition. Add unit test.
+**Atomic group (one commit or strictly sequenced PR) — steps 1–3 must land together.** If step 3 lands without steps 1–2, the next `/gitnexus analyze` will re-write the AGENTS.md block that step 3 deleted and dirty the tree. These three steps are the minimum stealth set.
+
+1. Extract `GITNEXUS_CONTRACT_PROSE` constant and runtime skill-list derivation; expand `before_agent_start`. Add unit tests (#1–#4 from Testing).
+2. Add `--skip-agents-md --no-stats` to `/gitnexus analyze` arg composition. Add unit test #5.
 3. Add `.gitignore` entries. One-time repo cleanup commit for `AGENTS.md` block.
-4. Add `VERSION` file + drift check in `session_start`. Add unit test.
+
+**Follow-up (separate commits):**
+
+4. Add `VERSION` file + drift check in `session_start`. Add unit tests #6–#7.
 5. Write `scripts/sync-gitnexus-resources.sh`. Manual verification (no unit test — it's a bash script that spawns real binary).
-6. Run sync script once, commit resulting `VERSION` and any skill updates.
-7. Update `extensions/gitnexus/README.md` Local Additions section.
+6. Add automated integration test #8 (spawn-analyze-in-scratch, assert clean `git status`).
+7. Run sync script once, commit resulting `VERSION` and any skill updates.
+8. Update `extensions/gitnexus/README.md` Local Additions section.
