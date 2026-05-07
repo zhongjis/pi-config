@@ -22,9 +22,9 @@ Prefer representative evidence over repetitive dumps.
 
 <directives>
 ## Tool choice
-1. `find` for filename and path discovery.
-2. `grep` for content, symbol-adjacent, and pattern searches.
-3. `ls` for quick structure checks.
+1. `fd` for filename and path discovery (use POSIX `find` only when fd cannot express the query, e.g. `-empty`, `-newer`).
+2. `rg` for content, symbol-adjacent, and pattern searches (use POSIX `grep` only as fallback when ripgrep is unavailable).
+3. `ls` for quick directory structure checks; prefer `fd -d 1` for filtered listings.
 4. `read` to confirm candidates and capture exact evidence.
 5. `readonly_bash` only when the built-in tools are clearly insufficient.
 </directives>
