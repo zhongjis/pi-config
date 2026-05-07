@@ -26,13 +26,10 @@ NIX_MANAGED_EXTENSIONS=(
 # Everything else (test infra, build config, node_modules, runtime state, etc.) stays out of repo-managed symlinks.
 ALLOWED_ITEMS=(
   "agents"
-  "docs"
-  "git"
   "lsp.json"
   "caveman.json"
   "session-summary.json"
   "context-prune"
-  "README.md"
   "scripts"
   "themes"
 )
