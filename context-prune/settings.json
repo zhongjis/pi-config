@@ -1,7 +1,7 @@
 {
-  "enabled": false,
+  "enabled": true,
   "summarizerModel": "gpt-5.4-mini,claude-haiku-4-5,default",
   "summarizerThinking": "default",
-  "pruneOn": "agentic-auto",
-  "remindUnprunedCount": true
+  "pruneOn": "agentic-message",
+  "remindUnprunedCount": false
 }
