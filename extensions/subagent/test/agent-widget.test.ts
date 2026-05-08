@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { formatTokens, formatTurns, formatStatusParts, formatMs, formatDuration, describeActivity } from "../src/ui/agent-widget.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AgentWidget, formatTokens, formatTurns, formatStatusParts, formatMs, formatDuration, describeActivity } from "../src/ui/agent-widget.js";
 
 // Nerd Font icon codepoints used in formatting:
 // 󰾆 = U+F0F86 (nf-md-chip) — token counts
 // 󱁤 = U+F1064 (nf-md-tools) — tool uses in UI renderers
 
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 describe("formatTokens", () => {
   it("formats millions with 󰾆 prefix", () => {
     expect(formatTokens(1_200_000)).toBe("󰾆 1.2M");
@@ -125,5 +129,42 @@ describe("describeActivity", () => {
   it("uses unknown tool name verbatim", () => {
     const tools = new Map([["c1", "custom_tool"]]);
     expect(describeActivity(tools)).toBe("custom_tool…");
+  });
+});
+
+describe("AgentWidget render scheduling", () => {
+  it("does not request another render when active agent state is unchanged before the animation cadence", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    const record = {
+      id: "agent-1",
+      type: "general-purpose",
+      status: "running",
+      description: "Investigate blinking",
+      toolUses: 0,
+      startedAt: 0,
+    };
+    const manager = { listAgents: vi.fn(() => [record]) };
+    const widget = new AgentWidget(manager as never, new Map());
+    const uiCtx = {
+      setStatus: vi.fn(),
+      setWidget: vi.fn(),
+    };
+
+    widget.setUICtx(uiCtx);
+    widget.update();
+
+    const widgetFactory = uiCtx.setWidget.mock.calls[0][1];
+    const tui = { terminal: { columns: 120 }, requestRender: vi.fn() };
+    const theme = { fg: vi.fn((_color: string, text: string) => text), bold: vi.fn((text: string) => text) };
+    widgetFactory(tui, theme).render();
+
+    widget.update();
+    expect(tui.requestRender).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(250);
+    widget.update();
+    expect(tui.requestRender).toHaveBeenCalledTimes(1);
   });
 });

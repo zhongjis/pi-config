@@ -1262,9 +1262,6 @@ Guidelines:
           await waitForAgentCompletionWithSupervision(record, _signal);
         } finally {
           record.waitingConsumers = Math.max(0, (record.waitingConsumers ?? 1) - 1);
-          if ((record.waitingConsumers ?? 0) === 0 && record.completedAt && !record.resultConsumed && !record.suppressNotification) {
-            sendIndividualNudge(record);
-          }
         }
       }
 

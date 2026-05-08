@@ -18,6 +18,9 @@ const MAX_WIDGET_LINES = 12;
 /** Braille spinner frames for animated running indicator. */
 export const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/** Minimum time between animation-only renders while active agents are unchanged. */
+const ACTIVE_RENDER_CADENCE_MS = 250;
+
 /** Statuses that indicate an error/non-success outcome (used for linger behavior and icon rendering). */
 export const ERROR_STATUSES = new Set(["error", "aborted", "steered", "stopped"]);
 
@@ -181,6 +184,10 @@ export class AgentWidget {
   private tui: any | undefined;
   /** Last status bar text, used to avoid redundant setStatus calls. */
   private lastStatusText: string | undefined;
+  /** Last live-state signature rendered by the widget callback. */
+  private lastRenderSignature: string | undefined;
+  /** Last time an animation-only render was requested. */
+  private lastRenderAt = 0;
 
   constructor(
     private manager: AgentManager,
@@ -196,6 +203,8 @@ export class AgentWidget {
       this.widgetRegistered = false;
       this.tui = undefined;
       this.lastStatusText = undefined;
+      this.lastRenderSignature = undefined;
+      this.lastRenderAt = 0;
     }
   }
 
@@ -215,7 +224,7 @@ export class AgentWidget {
   /** Ensure the widget update timer is running. */
   ensureTimer() {
     if (!this.widgetInterval) {
-      this.widgetInterval = setInterval(() => this.update(), 80);
+      this.widgetInterval = setInterval(() => this.update(), ACTIVE_RENDER_CADENCE_MS);
     }
   }
 
@@ -413,6 +422,28 @@ export class AgentWidget {
     return lines;
   }
 
+  private buildRenderSignature(allAgents: ReturnType<AgentManager["listAgents"]>): string {
+    const agentParts = allAgents.map((agent) => {
+      const activity = this.agentActivity.get(agent.id);
+      const activeTools = activity ? Array.from(activity.activeTools.values()).join(",") : "";
+      return [
+        agent.id,
+        agent.status,
+        agent.completedAt ?? "",
+        agent.toolUses,
+        agent.error ?? "",
+        activity?.toolUses ?? "",
+        activity?.tokens ?? "",
+        activity?.responseText ?? "",
+        activity?.turnCount ?? "",
+        activity?.maxTurns ?? "",
+        activeTools,
+      ].join(":");
+    });
+    const finishedAges = Array.from(this.finishedTurnAge.entries()).map(([id, age]) => `${id}:${age}`).join(",");
+    return `${agentParts.join("|")}|finished:${finishedAges}`;
+  }
+
   /** Force an immediate widget update. */
   update() {
     if (!this.uiCtx) return;
@@ -441,6 +472,8 @@ export class AgentWidget {
         this.lastStatusText = undefined;
       }
       if (this.widgetInterval) { clearInterval(this.widgetInterval); this.widgetInterval = undefined; }
+      this.lastRenderSignature = undefined;
+      this.lastRenderAt = 0;
       // Clean up stale entries
       for (const [id] of this.finishedTurnAge) {
         if (!allAgents.some(a => a.id === id)) this.finishedTurnAge.delete(id);
@@ -462,11 +495,15 @@ export class AgentWidget {
       this.lastStatusText = newStatusText;
     }
 
-    this.widgetFrame++;
+    const renderSignature = this.buildRenderSignature(allAgents);
+    const now = Date.now();
 
     // Register widget callback once; subsequent updates use requestRender()
     // which re-invokes render() without replacing the component (avoids layout thrashing).
     if (!this.widgetRegistered) {
+      this.widgetFrame++;
+      this.lastRenderSignature = renderSignature;
+      this.lastRenderAt = now;
       this.uiCtx.setWidget("agents", (tui, theme) => {
         this.tui = tui;
         return {
@@ -475,14 +512,22 @@ export class AgentWidget {
             // Theme changed — force re-registration so factory captures fresh theme.
             this.widgetRegistered = false;
             this.tui = undefined;
+            this.lastRenderSignature = undefined;
           },
         };
       }, { placement: "aboveEditor" });
       this.widgetRegistered = true;
-    } else {
-      // Widget already registered — just request a re-render of existing components.
-      this.tui?.requestRender();
+      return;
     }
+
+    const stateChanged = renderSignature !== this.lastRenderSignature;
+    const cadenceElapsed = hasActive && now - this.lastRenderAt >= ACTIVE_RENDER_CADENCE_MS;
+    if (!stateChanged && !cadenceElapsed) return;
+
+    this.widgetFrame++;
+    this.lastRenderSignature = renderSignature;
+    this.lastRenderAt = now;
+    this.tui?.requestRender();
   }
 
   dispose() {
@@ -497,5 +542,7 @@ export class AgentWidget {
     this.widgetRegistered = false;
     this.tui = undefined;
     this.lastStatusText = undefined;
+    this.lastRenderSignature = undefined;
+    this.lastRenderAt = 0;
   }
 }

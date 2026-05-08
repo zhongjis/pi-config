@@ -273,4 +273,42 @@ describe("subagent session UI rebinding", () => {
     expect(text).toContain("ERROR restricted (/repo/.pi/agents/restricted.md) field \"disallow_tools\": disallow_tools is invalid/obsolete; use builtin_tools and extension_tools explicit allowlists instead.");
     expect(text).toContain("tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools; denylist fields are invalid/obsolete");
   });
+
+  it("does not refresh the widget for a completion nudge when wait consumes the result", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+
+    const record: any = {
+      id: "agent-1",
+      type: "general-purpose",
+      description: "Investigate blinking",
+      status: "running",
+      toolUses: 0,
+      startedAt: Date.now(),
+      promise: undefined,
+    };
+    record.promise = Promise.resolve().then(() => {
+      record.status = "completed";
+      record.completedAt = Date.now();
+      record.result = "done";
+      return "done";
+    });
+    managerInstances[0]?.getRecord.mockReturnValue(record);
+    widgetInstances[0]?.update.mockClear();
+
+    const result = await mock.registeredTools.get("get_subagent_result").execute(
+      "tool-1",
+      { agent_id: "agent-1", wait: true },
+      undefined,
+      undefined,
+      createCtx(),
+    );
+
+    expect(result.content[0].text).toContain("done");
+    expect(record.resultConsumed).toBe(true);
+    expect(widgetInstances[0]?.update).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(250);
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+  });
 });
