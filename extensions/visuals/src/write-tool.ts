@@ -43,11 +43,15 @@ export function installWriteToolVisual(pi: ExtensionAPI): void {
       return originalWrite.execute(toolCallId, params, signal, onUpdate, ctx);
     },
 
-    renderCall(args: WriteToolArgs, theme: ExtensionContext["ui"]["theme"], _context: unknown) {
+    renderCall(args: WriteToolArgs, theme: ExtensionContext["ui"]["theme"], context: { isPartial?: boolean }) {
       let text = theme.fg("toolTitle", theme.bold("write "));
-      text += theme.fg("accent", args.path);
-      const lineCount = args.content.split("\n").length;
-      text += theme.fg("dim", ` (${lineCount} lines)`);
+      text += theme.fg("accent", args?.path ?? "");
+      const content = typeof args?.content === "string" ? args.content : "";
+      const lineCount = content ? content.split("\n").length : 0;
+      const suffix = context?.isPartial
+        ? ` (writing… ${lineCount} line${lineCount === 1 ? "" : "s"})`
+        : ` (${lineCount} line${lineCount === 1 ? "" : "s"})`;
+      text += theme.fg("dim", suffix);
       return new Text(text, 0, 0);
     },
 
@@ -55,13 +59,19 @@ export function installWriteToolVisual(pi: ExtensionAPI): void {
       result: ToolResult,
       { isPartial }: { isPartial: boolean },
       theme: ExtensionContext["ui"]["theme"],
-      _context: unknown,
+      context: { isError?: boolean },
     ) {
-      if (isPartial) return new Text(theme.fg("warning", "Writing..."), 0, 0);
+      if (isPartial) return new Text(theme.fg("warning", "Writing…"), 0, 0);
 
-      const content = result.content[0];
-      if (content?.type === "text" && content.text?.startsWith("Error")) {
-        return new Text(theme.fg("error", content.text.split("\n")[0]), 0, 0);
+      if (context?.isError) {
+        const message = (result?.content ?? [])
+          .map((c) => c?.text ?? "")
+          .filter(Boolean)
+          .join(" ")
+          .split("\n")[0]
+          .trim();
+        const reason = message || "unknown error";
+        return new Text(theme.fg("error", `✗ Failed: ${reason}`), 0, 0);
       }
 
       return new Text(theme.fg("success", "✓ Written"), 0, 0);
