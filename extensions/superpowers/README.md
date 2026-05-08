@@ -1,6 +1,6 @@
 # superpowers
 
-Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode luban` workflow (Lu Ban 鲁班 persona).
+Vendored Superpowers skills adapted for this Pi harness. Opt-in via `/mode luban`.
 
 ## Upstream
 
@@ -8,33 +8,58 @@ Vendored Superpowers skills adapted for this Pi harness, plus an opt-in `/mode l
 - **Version:** 5.1.0
 - **Commit:** f2cbfbef
 - **License:** MIT
-- **Adapted:** Skills keep upstream names and workflow semantics, with minimal Pi-native tool mapping notes.
+- **Last synced:** 2026-05-08
+
+## Sync
+
+Use `scripts/sync-superpowers.sh` to track and update vendored skills.
+
+```bash
+scripts/sync-superpowers.sh status              # show pin vs upstream HEAD + drift
+scripts/sync-superpowers.sh diff [<skill>]      # diff vendored vs pinned upstream
+scripts/sync-superpowers.sh update --dry-run    # preview upcoming changes
+scripts/sync-superpowers.sh update              # re-vendor to upstream HEAD
+scripts/sync-superpowers.sh update --commit <sha>
+```
+
+Sync model: `upstream@<pinned> + overlay/pi-adaptations.patch + overlay/files/ = skills/`.
+
+Do not hand-edit `skills/` for Pi-specific divergences. Edit upstream content or
+the overlay instead, then regenerate:
+
+```bash
+# after modifying skills/ with intentional local changes:
+diff -urN /tmp/superpowers-upstream/skills extensions/superpowers/skills \
+  -x codex-tools.md -x copilot-tools.md -x gemini-tools.md \
+  | sed -E 's|^--- /tmp/superpowers-upstream/skills/|--- a/|; s|^\+\+\+ extensions/superpowers/skills/|+++ b/|' \
+  > extensions/superpowers/overlay/pi-adaptations.patch
+```
+
+`sync-superpowers.sh status` verifies vendored tree matches
+`upstream@pinned + overlay` and fails loud on unexpected drift.
 
 ## What It Does
 
 - Bundles 14 upstream Superpowers skills under `skills/`.
-- Registers a `resources_discover` event handler in `index.ts` that injects the bundled skills directory into Pi at session start, so each `SKILL.md` is discoverable like a normal skill (`/skill:<name>`).
-- Supports the local `luban` mode registered by `extensions/modes`.
-- Keeps Superpowers opt-in: no automatic bootstrap prompt injection outside `/mode luban`.
+- `index.ts` registers a `resources_discover` handler that injects bundled skills
+  into Pi at session start; every `SKILL.md` is discoverable like a normal skill.
+- Supports the `luban` mode registered by `extensions/modes`.
+- No bootstrap prompt injection outside `/mode luban`.
 
 ## Commands
 
 - `/mode luban` — Switch to Lu Ban mode (Superpowers skills active).
 
-## Local Additions
-
-- Maps upstream Claude-style tool references to Pi-native tools in `skills/using-superpowers/references/pi-tools.md`.
-- Uses this repo's existing `Agent` and `Task*` tools instead of Weiping's `dispatch_agent` subprocess tool.
-- Omits bootstrap injection; `extensions/modes` owns mode prompt injection.
-
-## Notes
-
-- Skill names remain upstream-exact for easier sync.
-- `brainstorming` may be shadowed by an existing global/user skill depending Pi skill load order.
-
 ## Files Worth Reading
 
 - `index.ts` — Registers `resources_discover` to inject `./skills` into Pi.
-- `package.json` — Declares `pi.extensions`, `pi.skills`, and vendoring metadata.
-- `skills/using-superpowers/SKILL.md` — Upstream guardrail skill, patched for Pi mapping.
-- `skills/using-superpowers/references/pi-tools.md` — Pi-native tool mapping.
+- `package.json` — Declares `pi.extensions`, `pi.skills`, and `piVendor` metadata.
+- `skills/using-superpowers/SKILL.md` — Upstream guardrail skill, patched for Pi.
+- `skills/using-superpowers/references/pi-tools.md` — Pi-native tool mapping (local-only).
+- `overlay/pi-adaptations.patch` — All intentional text patches vs upstream.
+- `overlay/files/` — Local-only files (no upstream counterpart).
+
+## Notes
+
+- Skill directory names remain upstream-exact for easier sync.
+- `brainstorming` may be shadowed by a global/user skill depending Pi skill load order.
