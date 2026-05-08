@@ -381,7 +381,23 @@ export async function runAugment(pattern: string, cwd: string): Promise<string> 
       if (done) return;
       done = true;
       clearTimeout(timer);
-      resolve_(code === 0 ? output.trim().slice(0, MAX_OUTPUT_CHARS) : '');
+      if (code === 0) {
+        // Drop subprocess stderr unless it is structured augment output.
+        // gitnexus 1.6.3 has a known bug where pool-adapter opens Kuzu
+        // read-only but bm25-index unconditionally calls CREATE_FTS_INDEX on
+        // every search, emitting `[gitnexus] FTS index ensure failed ...`
+        // (one line per table) on every invocation. Real augment output from
+        // core/augmentation/engine.js always starts with `[GitNexus] ` (see
+        // cli/augment.js which writes engine.js result to stderr verbatim).
+        // Upstream tracking: abhigyanpatwari/GitNexus#1287, #1255, #1224, #1226.
+        // Fixed on main via PRs #1107/#1123/#1226; shipped in 1.6.4-rc.41+.
+        // TODO: remove this filter once gitnexus is pinned >= 1.6.4 stable.
+        const trimmed = output.trim();
+        const firstLine = trimmed.split('\n').find((l) => l.trim()) ?? '';
+        resolve_(firstLine.startsWith('[GitNexus] ') ? trimmed.slice(0, MAX_OUTPUT_CHARS) : '');
+      } else {
+        resolve_('');
+      }
     });
 
     proc.on('error', () => {
