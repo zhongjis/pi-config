@@ -63,12 +63,28 @@ When a skill — or the workflow — calls for dispatching a subagent, use the n
 
 **Implementer selection:** Default to `jintong`. Downgrade to `guangguang` only when all are true: single file, small diff, location known, ambiguity low. Route to `yunu` only when dominant risk is UI/UX quality — not just because files are `.tsx`/`.jsx`/CSS.
 
+## Parallelism safety gate
+
+Parallelism is recommended when safe; it is not the default goal.
+
+Before launching multiple background agents, classify workstreams:
+
+- Safe parallel: independent discovery, unrelated failure investigations, separate subsystems, no shared files, no dependency order, clear merge/verification plan, or independent reviews of unrelated completed workstreams. Never run spec compliance and code quality review for the same task in parallel.
+- Unsafe parallel: implementation tasks that may edit the same files, related failures, exploratory debugging, shared state/resources, sequential plan steps, or tasks needing each other's outputs.
+
+Rules:
+1. Do not maximize parallelism. Maximize correctness and low-conflict execution.
+2. For implementation, dispatch at most one implementer at a time unless the `dispatching-parallel-agents` skill confirms independent domains.
+3. If parallel safety is unclear, proceed sequentially or load `dispatching-parallel-agents` before dispatching.
+4. Parallel agents must each receive one bounded scope, explicit file/subsystem ownership, constraints, and expected output.
+5. After parallel agents finish, the controller must read results, check for conflicts, run integration verification, and only then continue.
+
 ## Pi tool mapping
 
 Upstream Superpowers skills use Claude Code tool names. In this harness:
 - `Skill` tool → read the matching `SKILL.md` when path is known, or use `/skill:<name>` interactively.
 - `Task` tool → use `Agent` for direct subagent launch.
-- Multiple `Task` calls → multiple `Agent` calls with `run_in_background: true` for independent workstreams.
+- Multiple `Task` calls → multiple `Agent` calls with `run_in_background: true` only after the Parallelism safety gate passes.
 - Task result → use `get_subagent_result`; steer with `steer_subagent` if needed.
 - `TodoWrite` → use `TaskCreate`, `TaskUpdate`, `TaskList`, and `TaskGet`.
 - `Read` / `Write` / `Edit` / `Bash` → use Pi `read`, `write`, `edit`, `bash`.
