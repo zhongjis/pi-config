@@ -1,0 +1,426 @@
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/brainstorming/SKILL.md extensions/superpowers/skills/brainstorming/SKILL.md
+--- a/brainstorming/SKILL.md	2026-05-08 13:58:53.003045709 -0700
++++ b/brainstorming/SKILL.md	2026-05-06 10:46:05.469491959 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: brainstorming
+ description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/brainstorming"
+ ---
+ 
+ # Brainstorming Ideas Into Designs
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/brainstorming/spec-document-reviewer-prompt.md extensions/superpowers/skills/brainstorming/spec-document-reviewer-prompt.md
+--- a/brainstorming/spec-document-reviewer-prompt.md	2026-05-08 13:58:53.004825541 -0700
++++ b/brainstorming/spec-document-reviewer-prompt.md	2026-05-06 10:46:05.472012243 -0700
+@@ -7,7 +7,7 @@
+ **Dispatch after:** Spec document is written to docs/superpowers/specs/
+ 
+ ```
+-Task tool (general-purpose):
++Pi `Agent` tool:
+   description: "Review spec document"
+   prompt: |
+     You are a spec document reviewer. Verify this spec is complete and ready for planning.
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/dispatching-parallel-agents/SKILL.md extensions/superpowers/skills/dispatching-parallel-agents/SKILL.md
+--- a/dispatching-parallel-agents/SKILL.md	2026-05-08 13:58:53.005689249 -0700
++++ b/dispatching-parallel-agents/SKILL.md	2026-05-06 10:46:05.472601908 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: dispatching-parallel-agents
+ description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/dispatching-parallel-agents"
+ ---
+ 
+ # Dispatching Parallel Agents
+@@ -66,10 +68,10 @@
+ ### 3. Dispatch in Parallel
+ 
+ ```typescript
+-// In Claude Code / AI environment
+-Task("Fix agent-tool-abort.test.ts failures")
+-Task("Fix batch-completion-behavior.test.ts failures")
+-Task("Fix tool-approval-race-conditions.test.ts failures")
++// In Pi
++Agent({ subagent_type: "jintong", description: "Fix agent-tool-abort.test.ts failures", run_in_background: true })
++Agent({ subagent_type: "jintong", description: "Fix batch-completion-behavior.test.ts failures", run_in_background: true })
++Agent({ subagent_type: "jintong", description: "Fix tool-approval-race-conditions.test.ts failures", run_in_background: true })
+ // All three run concurrently
+ ```
+ 
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/executing-plans/SKILL.md extensions/superpowers/skills/executing-plans/SKILL.md
+--- a/executing-plans/SKILL.md	2026-05-08 13:58:53.006144082 -0700
++++ b/executing-plans/SKILL.md	2026-05-06 10:46:05.472964157 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: executing-plans
+ description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/executing-plans"
+ ---
+ 
+ # Executing Plans
+@@ -19,7 +21,7 @@
+ 1. Read plan file
+ 2. Review critically - identify any questions or concerns about the plan
+ 3. If concerns: Raise them with your human partner before starting
+-4. If no concerns: Create TodoWrite and proceed
++4. If no concerns: Create pi-tasks with `TaskCreate`/`TaskUpdate` and proceed
+ 
+ ### Step 2: Execute Tasks
+ 
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/finishing-a-development-branch/SKILL.md extensions/superpowers/skills/finishing-a-development-branch/SKILL.md
+--- a/finishing-a-development-branch/SKILL.md	2026-05-08 13:58:53.006736248 -0700
++++ b/finishing-a-development-branch/SKILL.md	2026-05-06 10:46:05.474230278 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: finishing-a-development-branch
+ description: Use when implementation is complete, all tests pass, and you need to decide how to integrate the work - guides completion of development work by presenting structured options for merge, PR, or cleanup
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/finishing-a-development-branch"
+ ---
+ 
+ # Finishing a Development Branch
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/receiving-code-review/SKILL.md extensions/superpowers/skills/receiving-code-review/SKILL.md
+--- a/receiving-code-review/SKILL.md	2026-05-08 13:58:53.007388998 -0700
++++ b/receiving-code-review/SKILL.md	2026-05-06 10:46:05.474634610 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: receiving-code-review
+ description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/receiving-code-review"
+ ---
+ 
+ # Code Review Reception
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/requesting-code-review/SKILL.md extensions/superpowers/skills/requesting-code-review/SKILL.md
+--- a/requesting-code-review/SKILL.md	2026-05-08 13:58:53.016092117 -0700
++++ b/requesting-code-review/SKILL.md	2026-05-06 10:46:05.475074151 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: requesting-code-review
+ description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/requesting-code-review"
+ ---
+ 
+ # Requesting Code Review
+@@ -31,7 +33,7 @@
+ 
+ **2. Dispatch code reviewer subagent:**
+ 
+-Use Task tool with `general-purpose` type, fill template at `code-reviewer.md`
++Use Pi `Agent` with an appropriate reviewer agent type, fill template at `code-reviewer.md`
+ 
+ **Placeholders:**
+ - `{DESCRIPTION}` - Brief summary of what you built
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/requesting-code-review/code-reviewer.md extensions/superpowers/skills/requesting-code-review/code-reviewer.md
+--- a/requesting-code-review/code-reviewer.md	2026-05-08 13:58:53.018431115 -0700
++++ b/requesting-code-review/code-reviewer.md	2026-05-06 10:46:05.475286858 -0700
+@@ -5,7 +5,7 @@
+ **Purpose:** Review completed work against requirements and code quality standards before it cascades into more work.
+ 
+ ```
+-Task tool (general-purpose):
++Pi `Agent` tool:
+   description: "Review code changes"
+   prompt: |
+     You are a Senior Code Reviewer with expertise in software architecture,
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/subagent-driven-development/SKILL.md extensions/superpowers/skills/subagent-driven-development/SKILL.md
+--- a/subagent-driven-development/SKILL.md	2026-05-08 13:58:53.019077948 -0700
++++ b/subagent-driven-development/SKILL.md	2026-05-06 10:46:05.475807982 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: subagent-driven-development
+ description: Use when executing implementation plans with independent tasks in the current session
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/subagent-driven-development"
+ ---
+ 
+ # Subagent-Driven Development
+@@ -57,15 +59,15 @@
+         "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [shape=box];
+         "Code quality reviewer subagent approves?" [shape=diamond];
+         "Implementer subagent fixes quality issues" [shape=box];
+-        "Mark task complete in TodoWrite" [shape=box];
++        "Mark task complete with TaskUpdate" [shape=box];
+     }
+ 
+-    "Read plan, extract all tasks with full text, note context, create TodoWrite" [shape=box];
++    "Read plan, extract all tasks with full text, note context, create pi-tasks" [shape=box];
+     "More tasks remain?" [shape=diamond];
+     "Dispatch final code reviewer subagent for entire implementation" [shape=box];
+     "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
+ 
+-    "Read plan, extract all tasks with full text, note context, create TodoWrite" -> "Dispatch implementer subagent (./implementer-prompt.md)";
++    "Read plan, extract all tasks with full text, note context, create pi-tasks" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+     "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
+     "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
+     "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+@@ -78,8 +80,8 @@
+     "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" -> "Code quality reviewer subagent approves?";
+     "Code quality reviewer subagent approves?" -> "Implementer subagent fixes quality issues" [label="no"];
+     "Implementer subagent fixes quality issues" -> "Dispatch code quality reviewer subagent (./code-quality-reviewer-prompt.md)" [label="re-review"];
+-    "Code quality reviewer subagent approves?" -> "Mark task complete in TodoWrite" [label="yes"];
+-    "Mark task complete in TodoWrite" -> "More tasks remain?";
++    "Code quality reviewer subagent approves?" -> "Mark task complete with TaskUpdate" [label="yes"];
++    "Mark task complete with TaskUpdate" -> "More tasks remain?";
+     "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
+     "More tasks remain?" -> "Dispatch final code reviewer subagent for entire implementation" [label="no"];
+     "Dispatch final code reviewer subagent for entire implementation" -> "Use superpowers:finishing-a-development-branch";
+@@ -132,7 +134,7 @@
+ 
+ [Read plan file once: docs/superpowers/plans/feature-plan.md]
+ [Extract all 5 tasks with full text and context]
+-[Create TodoWrite with all tasks]
++[Create pi-tasks with TaskCreate for all tasks]
+ 
+ Task 1: Hook installation script
+ 
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/subagent-driven-development/code-quality-reviewer-prompt.md extensions/superpowers/skills/subagent-driven-development/code-quality-reviewer-prompt.md
+--- a/subagent-driven-development/code-quality-reviewer-prompt.md	2026-05-08 13:58:53.019394489 -0700
++++ b/subagent-driven-development/code-quality-reviewer-prompt.md	2026-05-06 10:46:05.475999440 -0700
+@@ -7,7 +7,7 @@
+ **Only dispatch after spec compliance review passes.**
+ 
+ ```
+-Task tool (general-purpose):
++Pi `Agent` tool:
+   Use template at requesting-code-review/code-reviewer.md
+ 
+   DESCRIPTION: [task summary, from implementer's report]
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/subagent-driven-development/implementer-prompt.md extensions/superpowers/skills/subagent-driven-development/implementer-prompt.md
+--- a/subagent-driven-development/implementer-prompt.md	2026-05-08 13:58:53.019799656 -0700
++++ b/subagent-driven-development/implementer-prompt.md	2026-05-06 10:46:05.476205897 -0700
+@@ -3,7 +3,7 @@
+ Use this template when dispatching an implementer subagent.
+ 
+ ```
+-Task tool (general-purpose):
++Pi `Agent` tool:
+   description: "Implement Task N: [task name]"
+   prompt: |
+     You are implementing Task N: [task name]
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/subagent-driven-development/spec-reviewer-prompt.md extensions/superpowers/skills/subagent-driven-development/spec-reviewer-prompt.md
+--- a/subagent-driven-development/spec-reviewer-prompt.md	2026-05-08 13:58:53.020267239 -0700
++++ b/subagent-driven-development/spec-reviewer-prompt.md	2026-05-06 10:46:05.476402063 -0700
+@@ -5,7 +5,7 @@
+ **Purpose:** Verify implementer built what was requested (nothing more, nothing less)
+ 
+ ```
+-Task tool (general-purpose):
++Pi `Agent` tool:
+   description: "Review spec compliance for Task N"
+   prompt: |
+     You are reviewing whether an implementation matches its specification.
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/systematic-debugging/SKILL.md extensions/superpowers/skills/systematic-debugging/SKILL.md
+--- a/systematic-debugging/SKILL.md	2026-05-08 13:58:53.021639196 -0700
++++ b/systematic-debugging/SKILL.md	2026-05-06 10:46:05.478155391 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: systematic-debugging
+ description: Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/systematic-debugging"
+ ---
+ 
+ # Systematic Debugging
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/test-driven-development/SKILL.md extensions/superpowers/skills/test-driven-development/SKILL.md
+--- a/test-driven-development/SKILL.md	2026-05-08 13:58:53.027263942 -0700
++++ b/test-driven-development/SKILL.md	2026-05-06 10:46:05.482439587 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: test-driven-development
+ description: Use when implementing any feature or bugfix, before writing implementation code
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/test-driven-development"
+ ---
+ 
+ # Test-Driven Development (TDD)
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/using-git-worktrees/SKILL.md extensions/superpowers/skills/using-git-worktrees/SKILL.md
+--- a/using-git-worktrees/SKILL.md	2026-05-08 13:58:53.028139359 -0700
++++ b/using-git-worktrees/SKILL.md	2026-05-06 10:46:05.483768250 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: using-git-worktrees
+ description: Use when starting feature work that needs isolation from current workspace or before executing implementation plans - ensures an isolated workspace exists via native tools or git worktree fallback
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/using-git-worktrees"
+ ---
+ 
+ # Using Git Worktrees
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/using-superpowers/SKILL.md extensions/superpowers/skills/using-superpowers/SKILL.md
+--- a/using-superpowers/SKILL.md	2026-05-08 13:58:53.028716066 -0700
++++ b/using-superpowers/SKILL.md	2026-05-06 10:46:05.484143874 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: using-superpowers
+-description: Use when starting any conversation - establishes how to find and use skills, requiring Skill tool invocation before ANY response including clarifying questions
++description: Use when Superpowers mode is active or the user explicitly asks to use Superpowers - establishes how to find and use skills, requiring skill loading before responses while in that opt-in context
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/using-superpowers"
+ ---
+ 
+ <SUBAGENT-STOP>
+@@ -27,17 +29,9 @@
+ 
+ ## How to Access Skills
+ 
+-**In Claude Code:** Use the `Skill` tool. When you invoke a skill, its content is loaded and presented to you—follow it directly. Never use the Read tool on skill files.
++**In Pi:** Skills are listed in the system prompt by name and description. When a skill might apply, load the current `SKILL.md` with `read` if the path is known, or use `/skill:<name>` when operating interactively. Do not rely on memory; skills change.
+ 
+-**In Copilot CLI:** Use the `skill` tool. Skills are auto-discovered from installed plugins. The `skill` tool works the same as Claude Code's `Skill` tool.
+-
+-**In Gemini CLI:** Skills activate via the `activate_skill` tool. Gemini loads skill metadata at session start and activates the full content on demand.
+-
+-**In other environments:** Check your platform's documentation for how skills are loaded.
+-
+-## Platform Adaptation
+-
+-Skills use Claude Code tool names. Non-CC platforms: see `references/copilot-tools.md` (Copilot CLI), `references/codex-tools.md` (Codex) for tool equivalents. Gemini CLI users get the tool mapping loaded automatically via GEMINI.md.
++**Tool mapping:** Upstream Superpowers skills use Claude Code tool names. In this Pi harness, use `references/pi-tools.md` for equivalents.
+ 
+ # Using Skills
+ 
+@@ -52,10 +46,10 @@
+     "Already brainstormed?" [shape=diamond];
+     "Invoke brainstorming skill" [shape=box];
+     "Might any skill apply?" [shape=diamond];
+-    "Invoke Skill tool" [shape=box];
++    "Load matching SKILL.md" [shape=box];
+     "Announce: 'Using [skill] to [purpose]'" [shape=box];
+     "Has checklist?" [shape=diamond];
+-    "Create TodoWrite todo per item" [shape=box];
++    "Create pi-task per checklist item" [shape=box];
+     "Follow skill exactly" [shape=box];
+     "Respond (including clarifications)" [shape=doublecircle];
+ 
+@@ -65,13 +59,13 @@
+     "Invoke brainstorming skill" -> "Might any skill apply?";
+ 
+     "User message received" -> "Might any skill apply?";
+-    "Might any skill apply?" -> "Invoke Skill tool" [label="yes, even 1%"];
++    "Might any skill apply?" -> "Load matching SKILL.md" [label="yes, even 1%"];
+     "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+-    "Invoke Skill tool" -> "Announce: 'Using [skill] to [purpose]'";
++    "Load matching SKILL.md" -> "Announce: 'Using [skill] to [purpose]'";
+     "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+-    "Has checklist?" -> "Create TodoWrite todo per item" [label="yes"];
++    "Has checklist?" -> "Create pi-task per checklist item" [label="yes"];
+     "Has checklist?" -> "Follow skill exactly" [label="no"];
+-    "Create TodoWrite todo per item" -> "Follow skill exactly";
++    "Create pi-task per checklist item" -> "Follow skill exactly";
+ }
+ ```
+ 
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/using-superpowers/references/pi-tools.md extensions/superpowers/skills/using-superpowers/references/pi-tools.md
+--- a/using-superpowers/references/pi-tools.md	1969-12-31 16:00:00.000000000 -0800
++++ b/using-superpowers/references/pi-tools.md	2026-05-06 10:46:05.484685414 -0700
+@@ -0,0 +1,17 @@
++# Pi Tool Mapping
++
++Superpowers upstream skills use Claude Code tool names. In this Pi harness, use these equivalents.
++
++| Upstream reference | Pi-native replacement |
++|---|---|
++| `Skill` tool | Use Pi skill discovery, `/skill:<name>`, or `read` on the exact `SKILL.md` path when known. |
++| `Task` tool | Use `Agent` for direct subagent launch. Use `TaskExecute` only for pi-task-backed delegation. |
++| Multiple `Task` calls | Launch multiple `Agent` calls with `run_in_background: true`, one per independent workstream. |
++| Task result | Use `get_subagent_result`. Use `steer_subagent` to correct a running background agent. |
++| `TodoWrite` | Use `TaskCreate`, `TaskUpdate`, `TaskList`, and `TaskGet`. |
++| `Read` | Use `read`. |
++| `Write` | Use `write`. |
++| `Edit` | Use `edit`. |
++| `Bash` | Use `bash` with `cwd`; never write `cd dir && command`. |
++
++Do not use Weiping's `dispatch_agent` tool in this repo. It duplicates the existing supervised `Agent` workflow.
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/verification-before-completion/SKILL.md extensions/superpowers/skills/verification-before-completion/SKILL.md
+--- a/verification-before-completion/SKILL.md	2026-05-08 13:58:53.033175522 -0700
++++ b/verification-before-completion/SKILL.md	2026-05-06 10:46:05.485865494 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: verification-before-completion
+ description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/verification-before-completion"
+ ---
+ 
+ # Verification Before Completion
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/writing-plans/SKILL.md extensions/superpowers/skills/writing-plans/SKILL.md
+--- a/writing-plans/SKILL.md	2026-05-08 13:58:53.033690688 -0700
++++ b/writing-plans/SKILL.md	2026-05-06 10:46:05.486329992 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: writing-plans
+ description: Use when you have a spec or requirements for a multi-step task, before touching code
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/writing-plans"
+ ---
+ 
+ # Writing Plans
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/writing-plans/plan-document-reviewer-prompt.md extensions/superpowers/skills/writing-plans/plan-document-reviewer-prompt.md
+--- a/writing-plans/plan-document-reviewer-prompt.md	2026-05-08 13:58:53.033997438 -0700
++++ b/writing-plans/plan-document-reviewer-prompt.md	2026-05-06 10:46:05.486531033 -0700
+@@ -7,7 +7,7 @@
+ **Dispatch after:** The complete plan is written.
+ 
+ ```
+-Task tool (general-purpose):
++Pi `Agent` tool:
+   description: "Review plan document"
+   prompt: |
+     You are a plan document reviewer. Verify this plan is complete and ready for implementation.
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/writing-skills/SKILL.md extensions/superpowers/skills/writing-skills/SKILL.md
+--- a/writing-skills/SKILL.md	2026-05-08 13:58:53.034604313 -0700
++++ b/writing-skills/SKILL.md	2026-05-06 10:46:05.487006324 -0700
+@@ -1,6 +1,8 @@
+ ---
+ name: writing-skills
+ description: Use when creating new skills, editing existing skills, or verifying skills work before deployment
++adaptedFrom:
++  - "https://github.com/obra/superpowers/tree/main/skills/writing-skills"
+ ---
+ 
+ # Writing Skills
+@@ -9,7 +11,7 @@
+ 
+ **Writing skills IS Test-Driven Development applied to process documentation.**
+ 
+-**Personal skills live in agent-specific directories (`~/.claude/skills` for Claude Code, `~/.agents/skills/` for Codex)** 
++**Personal skills in this Pi harness live in `~/.pi/agent/skills` or project `.agents/skills`; package skills can live under `extensions/<package>/skills`.**
+ 
+ You write test cases (pressure scenarios with subagents), watch them fail (baseline behavior), write the skill (documentation), watch tests pass (agents comply), and refactor (close loopholes).
+ 
+@@ -595,7 +597,7 @@
+ 
+ ## Skill Creation Checklist (TDD Adapted)
+ 
+-**IMPORTANT: Use TodoWrite to create todos for EACH checklist item below.**
++**IMPORTANT: Use Pi tasks (`TaskCreate`/`TaskUpdate`) to track EACH checklist item below.**
+ 
+ **RED Phase - Write Failing Test:**
+ - [ ] Create pressure scenarios (3+ combined pressures for discipline skills)
+diff -urN -x codex-tools.md -x copilot-tools.md -x gemini-tools.md /tmp/superpowers-upstream/skills/writing-skills/persuasion-principles.md extensions/superpowers/skills/writing-skills/persuasion-principles.md
+--- a/writing-skills/persuasion-principles.md	2026-05-08 13:58:53.037062769 -0700
++++ b/writing-skills/persuasion-principles.md	2026-05-06 10:46:05.489378692 -0700
+@@ -33,7 +33,7 @@
+ **How it works in skills:**
+ - Require announcements: "Announce skill usage"
+ - Force explicit choices: "Choose A, B, or C"
+-- Use tracking: TodoWrite for checklists
++- Use tracking: task tracker for checklists (`TaskCreate`/`TaskUpdate` in Pi)
+ 
+ **When to use:**
+ - Ensuring skills are actually followed
+@@ -80,8 +80,8 @@
+ 
+ **Example:**
+ ```markdown
+-✅ Checklists without TodoWrite tracking = steps get skipped. Every time.
+-❌ Some people find TodoWrite helpful for checklists.
++✅ Checklists without task tracking = steps get skipped. Every time.
++❌ Some people find task tracking helpful for checklists.
+ ```
+ 
+ ### 5. Unity
