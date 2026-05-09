@@ -1,14 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { resolveModel } from "../lib/model.js";
 
 export interface OfflineConfig {
-	enabled: boolean;
 	localProviders: string[];
 	defaultModel: string;
-	agentModels: Record<string, string>;
 	blockedAgents: string[];
 	blockedTools: string[];
 	notifyOnSessionStart: boolean;
@@ -25,6 +22,23 @@ type ModelRegistryLike = {
 
 type Notify = (message: string, type: "info" | "warning" | "error") => void;
 
+export const OFFLINE_STATE_CUSTOM_TYPE = "panda:offline-mode";
+
+type OfflineState = { active: boolean };
+type SessionEntryLike = { type?: string; customType?: string; data?: unknown };
+type RegistryPolicy = {
+	activeConfigs: Map<symbol, OfflineConfig>;
+	originalGetAvailable?: ModelRegistryLike["getAvailable"];
+};
+
+type SessionContext = ExtensionContext & {
+	sessionManager?: { getEntries?: () => unknown[] };
+};
+
+type OfflineExtensionAPI = ExtensionAPI & {
+	appendEntry?: (customType: string, data: unknown) => void;
+};
+
 const NOTIFICATION_TEXT = "Offline mode enabled: local models only; web tools and wenchang disabled.";
 
 export const OFFLINE_SYSTEM_PROMPT = `Offline mode is ON.
@@ -38,30 +52,15 @@ Constraints:
 - If external information is missing, state what local evidence is missing and proceed from repo files, local docs, and cached context.`;
 
 export const DEFAULT_OFFLINE_CONFIG: OfflineConfig = {
-	enabled: false,
 	localProviders: ["llama-swap"],
 	defaultModel: "llama-swap/qwen3.6:27b",
-	agentModels: {
-		chengfeng: "llama-swap/qwen2.5-coder:7b",
-		guangguang: "llama-swap/qwen2.5-coder:7b",
-		jintong: "llama-swap/qwen3.6:27b",
-		kuafu: "llama-swap/qwen3.6:27b",
-		luban: "llama-swap/qwen3.6:27b",
-		houtu: "llama-swap/qwen3.6:27b",
-		fuxi: "llama-swap/gemma4:31b",
-		taishang: "llama-swap/gemma4:31b",
-		direnjie: "llama-swap/gemma4:26b",
-		yanluo: "llama-swap/gemma4:26b",
-		weizheng: "llama-swap/gemma4:26b",
-		yunu: "llama-swap/gemma4:31b",
-	},
 	blockedAgents: ["wenchang"],
 	blockedTools: ["web_search", "code_search", "fetch_content", "get_search_content"],
 	notifyOnSessionStart: true,
 	statusText: "offline: llama-swap",
 };
 
-const originalGetAvailableByRegistry = new WeakMap<object, ModelRegistryLike["getAvailable"]>();
+const registryPolicies = new WeakMap<object, RegistryPolicy>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -73,32 +72,37 @@ function stringArray(value: unknown): string[] | undefined {
 	return strings.length === value.length ? strings : undefined;
 }
 
-function stringMap(value: unknown): Record<string, string> | undefined {
-	if (!isRecord(value)) return undefined;
-	const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string");
-	return entries.length === Object.keys(value).length ? Object.fromEntries(entries) : undefined;
-}
-
-function sanitizeConfig(value: unknown): PartialOfflineConfig {
+function sanitizeConfig(value: unknown, path: string, notify?: Notify): PartialOfflineConfig {
 	if (!isRecord(value)) return {};
 	const next: PartialOfflineConfig = {};
 
-	if (typeof value.enabled === "boolean") next.enabled = value.enabled;
+	if ("enabled" in value) {
+		notify?.(`Offline mode: ignoring ${path}: enabled is no longer supported; use /offline on`, "warning");
+	}
+	if ("agentModels" in value) {
+		notify?.(`Offline mode: ignoring ${path}: agentModels is no longer supported; use subagent model fallback`, "warning");
+	}
+
 	if (typeof value.defaultModel === "string") next.defaultModel = value.defaultModel;
+	else if ("defaultModel" in value) notify?.(`Offline mode: ignoring invalid defaultModel in ${path}`, "warning");
+
 	if (typeof value.notifyOnSessionStart === "boolean") next.notifyOnSessionStart = value.notifyOnSessionStart;
+	else if ("notifyOnSessionStart" in value) notify?.(`Offline mode: ignoring invalid notifyOnSessionStart in ${path}`, "warning");
+
 	if (typeof value.statusText === "string") next.statusText = value.statusText;
+	else if ("statusText" in value) notify?.(`Offline mode: ignoring invalid statusText in ${path}`, "warning");
 
 	const localProviders = stringArray(value.localProviders);
 	if (localProviders) next.localProviders = localProviders;
+	else if ("localProviders" in value) notify?.(`Offline mode: ignoring invalid localProviders in ${path}`, "warning");
 
 	const blockedAgents = stringArray(value.blockedAgents);
 	if (blockedAgents) next.blockedAgents = blockedAgents;
+	else if ("blockedAgents" in value) notify?.(`Offline mode: ignoring invalid blockedAgents in ${path}`, "warning");
 
 	const blockedTools = stringArray(value.blockedTools);
 	if (blockedTools) next.blockedTools = blockedTools;
-
-	const agentModels = stringMap(value.agentModels);
-	if (agentModels) next.agentModels = agentModels;
+	else if ("blockedTools" in value) notify?.(`Offline mode: ignoring invalid blockedTools in ${path}`, "warning");
 
 	return next;
 }
@@ -110,17 +114,31 @@ function mergeConfig(base: OfflineConfig, override: PartialOfflineConfig): Offli
 		localProviders: override.localProviders ?? base.localProviders,
 		blockedAgents: override.blockedAgents ?? base.blockedAgents,
 		blockedTools: override.blockedTools ?? base.blockedTools,
-		agentModels: {
-			...base.agentModels,
-			...(override.agentModels ?? {}),
-		},
 	};
+}
+
+function isOfflineState(value: unknown): value is OfflineState {
+	return isRecord(value) && typeof value.active === "boolean";
+}
+
+function readSessionOfflineState(ctx: ExtensionContext): boolean | undefined {
+	const entries = ((ctx as SessionContext).sessionManager?.getEntries?.() ?? []) as SessionEntryLike[];
+	for (let i = entries.length - 1; i >= 0; i -= 1) {
+		const entry = entries[i];
+		if (entry?.type !== "custom" || entry.customType !== OFFLINE_STATE_CUSTOM_TYPE) continue;
+		if (isOfflineState(entry.data)) return entry.data.active;
+	}
+	return undefined;
+}
+
+function writeSessionOfflineState(pi: ExtensionAPI, active: boolean): void {
+	(pi as OfflineExtensionAPI).appendEntry?.(OFFLINE_STATE_CUSTOM_TYPE, { active });
 }
 
 function readConfig(path: string, notify?: Notify): PartialOfflineConfig {
 	if (!existsSync(path)) return {};
 	try {
-		return sanitizeConfig(JSON.parse(readFileSync(path, "utf-8")));
+		return sanitizeConfig(JSON.parse(readFileSync(path, "utf-8")), path, notify);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		notify?.(`Offline mode: failed to read ${path}: ${message}`, "error");
@@ -129,9 +147,8 @@ function readConfig(path: string, notify?: Notify): PartialOfflineConfig {
 }
 
 export function loadOfflineConfig(cwd: string, notify?: Notify): OfflineConfig {
-	const globalPath = join(homedir(), ".pi", "agent", "offline.json");
 	const projectPath = join(cwd, ".pi", "offline.json");
-	return mergeConfig(mergeConfig(DEFAULT_OFFLINE_CONFIG, readConfig(globalPath, notify)), readConfig(projectPath, notify));
+	return mergeConfig(DEFAULT_OFFLINE_CONFIG, readConfig(projectPath, notify));
 }
 
 function normalize(value: string): string {
@@ -142,12 +159,6 @@ function isLocalProvider(provider: string | undefined, config: OfflineConfig): b
 	if (!provider) return false;
 	const localProviders = new Set(config.localProviders.map(normalize));
 	return localProviders.has(normalize(provider));
-}
-
-function isSameModel(a: unknown, b: unknown): boolean {
-	const left = a as { id?: unknown; provider?: unknown } | undefined;
-	const right = b as { id?: unknown; provider?: unknown } | undefined;
-	return Boolean(left?.id && right?.id && left.id === right.id && left.provider === right.provider);
 }
 
 function findConfigModel(modelName: string, registry: ModelRegistryLike): unknown | undefined {
@@ -180,30 +191,51 @@ export async function forceLocalModel(pi: ExtensionAPI, ctx: ExtensionContext, c
 	await setModel(pi, target, notify);
 }
 
-export function installModelRegistryFilter(
-	registry: ModelRegistryLike,
-	isActive: () => boolean,
-	getConfig: () => OfflineConfig,
-): void {
-	if (!registry || typeof registry !== "object" || typeof registry.getAvailable !== "function") return;
-	if (!originalGetAvailableByRegistry.has(registry)) {
-		originalGetAvailableByRegistry.set(registry, registry.getAvailable);
+function getRegistryPolicy(registry: ModelRegistryLike): RegistryPolicy | undefined {
+	if (!registry || typeof registry !== "object") return undefined;
+	let policy = registryPolicies.get(registry);
+	if (!policy) {
+		policy = { activeConfigs: new Map() };
+		registryPolicies.set(registry, policy);
 	}
-	const original = originalGetAvailableByRegistry.get(registry);
-	if (!original) return;
+	return policy;
+}
 
+function unionLocalProviders(configs: Iterable<OfflineConfig>): Set<string> {
+	const providers = new Set<string>();
+	for (const config of configs) {
+		for (const provider of config.localProviders) providers.add(normalize(provider));
+	}
+	return providers;
+}
+
+export function installModelRegistryFilter(registry: ModelRegistryLike): void {
+	if (!registry || typeof registry !== "object" || typeof registry.getAvailable !== "function") return;
+	const policy = getRegistryPolicy(registry);
+	if (!policy || policy.originalGetAvailable) return;
+
+	policy.originalGetAvailable = registry.getAvailable;
 	registry.getAvailable = function getOfflineAvailable(this: ModelRegistryLike): ModelLike[] {
-		const available = original.call(this) ?? [];
-		if (!isActive()) return available;
-		const config = getConfig();
-		return available.filter((model) => isLocalProvider(model.provider, config));
+		const available = policy.originalGetAvailable?.call(this) ?? [];
+		if (policy.activeConfigs.size === 0) return available;
+		const localProviders = unionLocalProviders(policy.activeConfigs.values());
+		return available.filter((model) => localProviders.has(normalize(model.provider)));
 	};
 }
 
-function isOfflineActive(pi: ExtensionAPI, config: OfflineConfig, manualOverride: boolean | undefined): boolean {
-	if (manualOverride !== undefined) return manualOverride;
-	const flag = pi.getFlag("offline-mode");
-	return flag === true || flag === "true" || process.env.PI_AGENT_OFFLINE_MODE === "1" || config.enabled;
+function setRegistryOfflinePolicy(registry: ModelRegistryLike, owner: symbol, active: boolean, config: OfflineConfig): void {
+	const policy = getRegistryPolicy(registry);
+	if (!policy) return;
+	installModelRegistryFilter(registry);
+	if (active) policy.activeConfigs.set(owner, config);
+	else policy.activeConfigs.delete(owner);
+}
+
+function hasInheritedRegistryOfflinePolicy(registry: ModelRegistryLike, owner: symbol): boolean {
+	const policy = getRegistryPolicy(registry);
+	if (!policy) return false;
+	if (policy.activeConfigs.has(owner)) return false;
+	return policy.activeConfigs.size > 0;
 }
 
 function offlineStatus(config: OfflineConfig, active: boolean): string {
@@ -217,11 +249,11 @@ function appendOfflinePrompt(systemPrompt: string): string {
 
 export default function offlineExtension(pi: ExtensionAPI): void {
 	let config = DEFAULT_OFFLINE_CONFIG;
-	let active = false;
-	let manualOverride: boolean | undefined;
+	const owner = Symbol("offline-mode-session");
+	let sessionActive = false;
+	let effectiveActive = false;
 	let notifiedSessionStart = false;
 	const notifiedErrors = new Set<string>();
-	const temporaryAgentModels = new Map<string, { previousModel: unknown; temporaryModel: unknown }>();
 
 	function notifyOnce(ctx: ExtensionContext, key: string, message: string, type: "info" | "warning" | "error" = "info"): void {
 		if (notifiedErrors.has(key)) return;
@@ -229,28 +261,29 @@ export default function offlineExtension(pi: ExtensionAPI): void {
 		ctx.ui.notify(message, type);
 	}
 
+	function restoreSessionState(ctx: ExtensionContext): void {
+		notifiedSessionStart = false;
+		sessionActive = readSessionOfflineState(ctx) ?? false;
+	}
+
 	function refreshState(ctx: ExtensionContext): void {
 		config = loadOfflineConfig(ctx.cwd, (message, type) => notifyOnce(ctx, `config:${message}`, message, type));
-		active = isOfflineActive(pi, config, manualOverride);
-		installModelRegistryFilter(ctx.modelRegistry, () => active, () => config);
+		setRegistryOfflinePolicy(ctx.modelRegistry, owner, sessionActive, config);
+		effectiveActive = sessionActive || hasInheritedRegistryOfflinePolicy(ctx.modelRegistry, owner);
+		installModelRegistryFilter(ctx.modelRegistry);
 	}
 
 	function updateStatus(ctx: ExtensionContext): void {
-		ctx.ui.setStatus("offline", active ? config.statusText : undefined);
+		ctx.ui.setStatus("offline", effectiveActive ? config.statusText : undefined);
 	}
 
-	async function applyOffline(ctx: ExtensionContext): Promise<void> {
+	async function applyOffline(ctx: ExtensionContext, options: { restoreSession?: boolean } = {}): Promise<void> {
+		if (options.restoreSession) restoreSessionState(ctx);
 		refreshState(ctx);
 		updateStatus(ctx);
-		if (!active) return;
+		if (!effectiveActive) return;
 		await forceLocalModel(pi, ctx, config, (message, type) => notifyOnce(ctx, `model:${message}`, message, type));
 	}
-
-	pi.registerFlag("offline-mode", {
-		description: "Enable offline mode: local models only; web tools and wenchang disabled",
-		type: "boolean",
-		default: false,
-	});
 
 	pi.registerCommand("offline", {
 		description: "Control offline mode (on/off/status)",
@@ -261,13 +294,15 @@ export default function offlineExtension(pi: ExtensionAPI): void {
 		handler: async (args, ctx) => {
 			const action = args.trim().toLowerCase() || "status";
 			if (action === "on") {
-				manualOverride = true;
+				sessionActive = true;
+				writeSessionOfflineState(pi, true);
 				await applyOffline(ctx);
-				ctx.ui.notify(`Offline mode ${offlineStatus(config, active)}`, "info");
+				ctx.ui.notify(`Offline mode ${offlineStatus(config, effectiveActive)}`, "info");
 				return;
 			}
 			if (action === "off") {
-				manualOverride = false;
+				sessionActive = false;
+				writeSessionOfflineState(pi, false);
 				await applyOffline(ctx);
 				ctx.ui.notify("Offline mode off", "info");
 				return;
@@ -275,7 +310,7 @@ export default function offlineExtension(pi: ExtensionAPI): void {
 			if (action === "status") {
 				refreshState(ctx);
 				updateStatus(ctx);
-				ctx.ui.notify(`Offline mode ${offlineStatus(config, active)}`, "info");
+				ctx.ui.notify(`Offline mode ${offlineStatus(config, effectiveActive)}`, "info");
 				return;
 			}
 			ctx.ui.notify("Usage: /offline on|off|status", "error");
@@ -283,8 +318,8 @@ export default function offlineExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		await applyOffline(ctx);
-		if (active && config.notifyOnSessionStart && !notifiedSessionStart) {
+		await applyOffline(ctx, { restoreSession: true });
+		if (effectiveActive && config.notifyOnSessionStart && !notifiedSessionStart) {
 			ctx.ui.notify(NOTIFICATION_TEXT, "info");
 			notifiedSessionStart = true;
 		}
@@ -292,13 +327,13 @@ export default function offlineExtension(pi: ExtensionAPI): void {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		await applyOffline(ctx);
-		if (!active) return;
+		if (!effectiveActive) return;
 		return { systemPrompt: appendOfflinePrompt(event.systemPrompt) };
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		refreshState(ctx);
-		if (!active) return;
+		await applyOffline(ctx);
+		if (!effectiveActive) return;
 
 		if (config.blockedTools.map(normalize).includes(normalize(event.toolName))) {
 			return {
@@ -316,36 +351,9 @@ export default function offlineExtension(pi: ExtensionAPI): void {
 				reason: `Offline mode: delegation to "${requestedType}" is disabled.`,
 			};
 		}
-
-		const agentModel = config.agentModels[requestedType] ?? config.agentModels[normalize(requestedType)];
-		if (!agentModel) return;
-
-		const temporaryModel = findConfigModel(agentModel, ctx.modelRegistry);
-		if (!temporaryModel || !isLocalProvider((temporaryModel as { provider?: string }).provider, config)) {
-			notifyOnce(ctx, `agent-model:${requestedType}`, `Offline mode: configured model for ${requestedType} is unavailable: ${agentModel}`, "error");
-			return;
-		}
-
-		temporaryAgentModels.set(event.toolCallId, {
-			previousModel: ctx.model,
-			temporaryModel,
-		});
-		await setModel(pi, temporaryModel, (message, type) => notifyOnce(ctx, `agent-set:${message}`, message, type));
 	});
 
-	pi.on("tool_result", async (event, ctx) => {
-		if (event.toolName !== "Agent") return;
-		const pending = temporaryAgentModels.get(event.toolCallId);
-		if (!pending) return;
-		temporaryAgentModels.delete(event.toolCallId);
-
-		refreshState(ctx);
-		if (!active) return;
-		const previous = pending.previousModel as { provider?: string } | undefined;
-		if (previous && isLocalProvider(previous.provider, config) && (isSameModel(ctx.model, pending.temporaryModel) || isSameModel(ctx.model, previous) || !ctx.model)) {
-			await setModel(pi, previous, (message, type) => notifyOnce(ctx, `agent-restore:${message}`, message, type));
-			return;
-		}
-		await forceLocalModel(pi, ctx, config, (message, type) => notifyOnce(ctx, `agent-force:${message}`, message, type));
+	pi.on("session_shutdown", async (_event, ctx) => {
+		setRegistryOfflinePolicy(ctx.modelRegistry, owner, false, config);
 	});
 }
