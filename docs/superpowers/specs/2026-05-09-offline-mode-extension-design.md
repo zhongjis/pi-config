@@ -2,30 +2,37 @@
 
 ## Goal
 
-Add one new Pi extension that makes the current orchestration usable without internet access. Offline mode must keep the existing modes extension untouched, force local models, block web-dependent tools and agents, and tell both the user and the model that the session is offline.
+Polish `extensions/offline/` so offline mode is a session-scoped guard. A user can enable it for the current Pi session, keep it across reloads of that same session, and avoid any global or project config that silently turns it on in future sessions.
+
+Offline mode must force local model selection, hide cloud models from normal model resolution, block web-dependent tools and agents, and tell both the user and the model that the session is offline.
 
 ## Non-goals
 
 - Do not change `extensions/modes/`.
-- Do not change `extensions/subagent/`.
-- Do not edit agent frontmatter for the first version.
-- Do not implement OS-level network blocking. Shell-command blocking is out of scope for the first version.
-- Do not persist `/offline on` automatically. Session-only control is enough.
+- Do not change `extensions/subagent/` for this feature.
+- Do not implement OS-level network blocking.
+- Do not block arbitrary shell commands that may access the network.
+- Do not disable built-in providers by unregistering or mutating Pi internals beyond the existing `getAvailable()` filter.
+- Do not persist activation in `~/.pi/agent/offline.json`, `<cwd>/.pi/offline.json`, environment variables, or settings files.
 
 ## User Experience
 
-Users can enable offline mode in three ways:
+Users enable offline mode with:
 
-- `--offline-mode`
-- `PI_AGENT_OFFLINE_MODE=1`
-- `/offline on`
+```text
+/offline on
+```
 
-Users can inspect or disable it with:
+Users inspect or disable it with:
 
-- `/offline status`
-- `/offline off`
+```text
+/offline status
+/offline off
+```
 
-When offline mode is active, the extension shows one notification at session start:
+`/offline on` affects only the current session. If the user reloads the same session, offline mode remains on because the extension records activation in the session log. If the user starts a different session, offline mode starts off.
+
+When offline mode is active, the extension shows one notification per session load:
 
 ```text
 Offline mode enabled: local models only; web tools and wenchang disabled.
@@ -37,38 +44,26 @@ The extension also sets a footer/status item, defaulting to:
 offline: llama-swap
 ```
 
-The extension does not repeat the notification on every turn. Blocked tools return a clear block reason, but no extra notification is required.
+Blocked tools return a clear block reason. The extension does not repeat notifications on every turn.
 
 ## Configuration
 
-The extension reads optional JSON configuration from two places:
+Activation is not configurable. No file can turn offline mode on.
 
-1. `~/.pi/agent/offline.json`
-2. `<cwd>/.pi/offline.json`
+The extension may still read optional project-local policy from:
 
-Project config overrides global config. Missing fields use defaults.
+```text
+<cwd>/.pi/offline.json
+```
 
-Default config:
+This file can tune local model policy, but it cannot contain an `enabled` field. The extension must ignore `enabled` if present and should not read `~/.pi/agent/offline.json` at all.
+
+Default policy:
 
 ```json
 {
-  "enabled": false,
   "localProviders": ["llama-swap"],
   "defaultModel": "llama-swap/qwen3.6:27b",
-  "agentModels": {
-    "chengfeng": "llama-swap/qwen2.5-coder:7b",
-    "guangguang": "llama-swap/qwen2.5-coder:7b",
-    "jintong": "llama-swap/qwen3.6:27b",
-    "kuafu": "llama-swap/qwen3.6:27b",
-    "luban": "llama-swap/qwen3.6:27b",
-    "houtu": "llama-swap/qwen3.6:27b",
-    "fuxi": "llama-swap/gemma4:31b",
-    "taishang": "llama-swap/gemma4:31b",
-    "direnjie": "llama-swap/gemma4:26b",
-    "yanluo": "llama-swap/gemma4:26b",
-    "weizheng": "llama-swap/gemma4:26b",
-    "yunu": "llama-swap/gemma4:31b"
-  },
   "blockedAgents": ["wenchang"],
   "blockedTools": ["web_search", "code_search", "fetch_content", "get_search_content"],
   "notifyOnSessionStart": true,
@@ -76,18 +71,11 @@ Default config:
 }
 ```
 
-The local model list matches the current `~/.pi/agent/models.json` provider:
-
-- `llama-swap/qwen3.6:27b`
-- `llama-swap/gemma4:31b`
-- `llama-swap/gemma4:26b`
-- `llama-swap/qwen2.5-coder:14b`
-- `llama-swap/qwen2.5-coder:7b`
-- `llama-swap/gemma4:e4b`
+Project policy overrides defaults for these fields only. Invalid JSON or invalid field types fall back to defaults and show one error notification.
 
 ## Architecture
 
-Create a new directory extension:
+Keep the extension as a directory extension:
 
 ```text
 extensions/offline/
@@ -96,46 +84,75 @@ extensions/offline/
 └── offline.test.ts
 ```
 
-Keep the implementation small. A single `index.ts` can own config loading, runtime state, guards, and commands.
+Keep `index.ts` small. It owns policy loading, session state, model filtering, commands, guards, and prompt injection.
 
-### Activation State
+### Session Activation State
 
-Offline mode is active if any of these is true:
+The extension records activation as session state, not file state.
 
-- `--offline-mode` flag is set.
-- `PI_AGENT_OFFLINE_MODE=1` is set.
-- `offline.json` has `enabled: true`.
-- The user runs `/offline on` in the current session.
+Use a custom session entry, for example:
 
-`/offline off` disables it for the current session even if config enabled it. The command does not write files.
+```text
+panda:offline-mode
+```
+
+Entry payload:
+
+```json
+{
+  "active": true
+}
+```
+
+On startup, the extension reads the latest `panda:offline-mode` entry from `ctx.sessionManager`. If the latest entry says `active: true`, offline mode starts on for that session. If no entry exists, offline mode starts off.
+
+`/offline on` appends `{ "active": true }`. `/offline off` appends `{ "active": false }`. Commands update in-memory state immediately after appending.
+
+Remove activation from:
+
+- global `~/.pi/agent/offline.json`
+- project `.pi/offline.json` `enabled`
+- `PI_AGENT_OFFLINE_MODE`
+- `--offline-mode` flag
+
+Preferred behavior: `/offline on` is the only activation path after startup. If another startup path is needed later, it must append session state and stay off by default for all other sessions.
 
 ### Model Guard
 
-When offline mode is active, the extension forces the parent session to a local model. It resolves `defaultModel` through `ctx.modelRegistry.find()` / model matching and calls `pi.setModel()` on `session_start` and `before_agent_start` if the current provider is not in `localProviders`.
+When offline mode is active, the extension forces the parent session to a local model. It resolves `defaultModel` through the model registry and calls `pi.setModel()` on `session_start`, `/offline on`, and `before_agent_start` if the current provider is not in `localProviders`.
 
-The extension also wraps `ctx.modelRegistry.getAvailable()` while active so it returns only models whose provider is in `localProviders`. This makes cloud models invisible to code paths that choose the first available model from a chain.
+The extension also wraps `ctx.modelRegistry.getAvailable()` while active so it returns only models whose provider appears in `localProviders`. This makes cloud models invisible to normal model selection and to subagent model fallback resolution.
 
-This wrapper is the only intentional pragmatic part of the design. Pi documents `ctx.modelRegistry`, but not monkey-patching its methods as a first-class policy hook. The wrapper should be defensive:
+The wrapper must be defensive:
 
-- Install once per runtime.
-- Preserve the original method.
-- Restore or bypass filtering when offline mode is disabled.
+- Install once per registry.
+- Preserve the original `getAvailable()` method.
+- Return the unfiltered list when offline mode is disabled.
 - Leave `getAll()` unchanged.
+
+Do not try to disable built-in providers with `pi.unregisterProvider()`. Pi can dynamically register and unregister extension providers, but it has no clean built-in-provider disable API. Filtering `getAvailable()` is the narrowest working hook.
 
 ### Subagent Guard
 
-Current subagent resolution gives agent frontmatter models priority over `Agent` tool params. Because of that, mutating `event.input.model` alone is not enough for per-agent offline routing.
+Rely on `extensions/subagent/` frontmatter model fallback chains.
 
-On `tool_call` for `Agent`:
+The subagent resolver parses frontmatter like:
 
-1. Read `event.input.subagent_type`.
-2. If it matches `blockedAgents`, block the call.
-3. Resolve `agentModels[subagent_type]` if present.
-4. If a per-agent local model resolves, call `pi.setModel()` before the `Agent` tool executes. The subagent extension starts from `ctx.model`, then falls back to that parent model when frontmatter cloud candidates are hidden by the filtered registry.
-5. Record the previous parent model for that tool call.
-6. On `tool_result` for the matching `Agent` tool call, restore the previous parent model if offline mode is still active and the current model is the temporary per-agent model.
+```yaml
+model: anthropic/claude-opus-4-6:high,llama-swap/gemma4:31b:high
+```
 
-This gives one-extension per-agent routing without changing `extensions/subagent/` or agent frontmatter. The tradeoff is a brief parent-model switch around subagent creation. The UI may show that model change momentarily.
+It resolves each candidate through `ctx.modelRegistry.getAvailable()`. While offline mode is active, the offline extension filters `getAvailable()` to local providers. Cloud candidates fail, then local candidates win.
+
+Keep enforcement in the offline extension:
+
+1. Block `Agent` calls whose `subagent_type` is in `blockedAgents`.
+2. Do not temporarily switch the parent model per agent.
+3. Do not maintain an `agentModels` map in offline config.
+4. If an agent has no local fallback and no explicit local model, subagent execution may fall back to the already-local parent model.
+5. If the user explicitly passes a cloud `model` to `Agent`, the resolver should fail because the cloud model is not available.
+
+This design removes parent-model flicker and uses the fallback chain already owned by the subagent extension.
 
 ### Tool Guard
 
@@ -148,7 +165,7 @@ Initial blocked tools:
 - `fetch_content`
 - `get_search_content`
 
-Do not block shell commands in the first version. Shell network detection is heuristic and noisy. Users who need a hard guarantee should rely on actual network absence, OS firewall rules, or container networking.
+Do not block shell commands in this iteration. Shell network detection is noisy. Users who need a hard guarantee should rely on actual network absence, OS firewall rules, or container networking.
 
 ### System Prompt Injection
 
@@ -170,50 +187,62 @@ This is a behavior nudge, not the enforcement layer. Tool and model guards enfor
 
 ### UI
 
-On `session_start`, if offline mode is active:
+When offline mode becomes active:
 
-- Call `ctx.ui.notify(...)` once if `notifyOnSessionStart` is true.
+- Call `ctx.ui.notify(...)` once per session load if `notifyOnSessionStart` is true.
 - Call `ctx.ui.setStatus("offline", config.statusText)`.
 
-When offline mode is disabled, clear or replace the status.
+When offline mode becomes inactive:
+
+- Clear the `offline` status.
+- Stop filtering `getAvailable()`.
+- Stop blocking tools and agents.
 
 ## Data Flow
 
 1. Pi loads the extension.
-2. Extension registers flag, command, and event handlers.
-3. `session_start` loads config, resolves activation state, filters model availability, forces local model, and shows notification/status.
-4. User prompt triggers `before_agent_start`.
-5. Extension rechecks activation state, forces local model if needed, and injects offline instructions.
-6. If the model calls tools, `tool_call` blocks web tools and `wenchang`.
-7. For allowed subagents, `tool_call` temporarily switches the parent model to the configured local model for that subagent.
-8. Subagent model resolution sees only local available models because of the filtered registry; cloud frontmatter entries fail and the subagent falls back to the temporary parent model.
-9. `tool_result` restores the previous parent model after subagent creation/execution.
+2. Extension registers `/offline` and event handlers.
+3. `session_start` loads project policy, restores latest session activation entry, installs the model registry filter, updates status, and forces a local model if active.
+4. User runs `/offline on`.
+5. Extension appends session state, updates in-memory state, filters model availability, forces a local model, updates status, and notifies the user.
+6. User prompt triggers `before_agent_start`.
+7. Extension rechecks policy and state, keeps the parent model local, and injects offline instructions.
+8. If the model calls tools, `tool_call` blocks web tools and `wenchang`.
+9. If the model calls allowed subagents, subagent fallback sees only local available models and selects the first local candidate.
+10. `/offline off` appends inactive session state, clears UI status, and lets `getAvailable()` return all available models again.
 
 ## Error Handling
 
-- Invalid JSON: show one error notification and fall back to defaults.
-- Missing configured model: show one error notification and keep the current model if no local fallback resolves.
-- `pi.setModel()` returns false: show one error notification explaining the local model is unavailable.
-- Unknown subagent type: leave `event.input.model` unchanged unless blocked.
+- Invalid project policy JSON: show one error notification and use defaults.
+- Unsupported policy fields: ignore them.
+- `enabled` in project policy: ignore it and optionally warn once that activation is session-scoped.
+- Missing configured default model: choose the first available local model.
+- No local model available: show one error notification and keep the current model.
+- `pi.setModel()` returns false: show one error notification explaining that the local model is unavailable.
 - Disabled offline mode: all guards no-op.
 
 ## Testing
 
 Unit tests should cover:
 
-- Config merge order: defaults < global < project.
-- Activation precedence: command off overrides config/flag for current session.
+- No global config read from `~/.pi/agent/offline.json`.
+- Project policy merge excludes activation and ignores `enabled`.
+- `/offline on` appends active session state.
+- `/offline off` appends inactive session state.
+- Session start restores latest session state entry.
+- New session with no session entry starts offline mode off.
 - `getAvailable()` filtering keeps only local providers while active.
+- Disabling offline mode makes `getAvailable()` return the original available list.
 - Parent model is forced when current model is cloud.
 - `before_agent_start` injects offline instructions only when active.
-- Web tools are blocked.
-- `Agent` with `wenchang` is blocked.
-- `Agent` with `jintong` temporarily switches the parent model to `agentModels.jintong`.
-- `tool_result` restores the previous parent model after the `Agent` call.
-- Notification fires once on session start, not every turn.
+- Web tools are blocked only when active.
+- `Agent` with `wenchang` is blocked only when active.
+- Allowed `Agent` calls do not temporarily switch the parent model.
+- Subagent fallback can resolve local candidates through filtered `getAvailable()`.
+- Notification fires once per session load, not every turn.
 
 Smoke coverage should ensure `extensions/offline/index.ts` loads with the root extension smoke harness.
 
 ## Open Questions
 
-None for the first version.
+None.
