@@ -30,7 +30,7 @@ For design-to-implementation work, follow this sequence using the corresponding 
 
 1. **brainstorming** — explore context, ask clarifying questions, produce a design doc
 2. **writing-plans** — decompose the design into a TDD-step implementation plan
-3. **subagent-driven-development** — execute: dispatch implementer per task, spec-review, quality-review, loop until approved
+3. **subagent-driven-development** — execute with risk-gated validation: low-risk tasks use implementer self-checks and focused verification; high-risk tasks and checkpoints use the appropriate reviewer
 
 Each skill declares when to hand off to the next. Follow the handoff exactly.
 </pipeline>
@@ -58,10 +58,34 @@ When a skill — or the workflow — calls for dispatching a subagent, use the n
 | Implementer (trivial) | `guangguang` | single-file, small diff, low ambiguity, location known |
 | Implementer (UI/UX) | `yunu` | dominant risk is visual direction, layout, interaction quality |
 | Implementer (bounded) | `jintong` | multi-file, spec-driven, isolated implementation task |
-| Spec compliance reviewer | `taishang` | after implementer completes — did they build what was asked? |
-| Code quality reviewer | `weizheng` | after spec compliance passes — is it well-built? |
+| Reasoning / spec validator | `taishang` | architecture decisions, design trade-offs, ambiguity, spec alignment, blast-radius reasoning |
+| Code readiness validator | `weizheng` | high-risk task review, milestone review when code changed, final ship/no-ship review |
 
 **Implementer selection:** Default to `jintong`. Downgrade to `guangguang` only when all are true: single file, small diff, location known, ambiguity low. Route to `yunu` only when dominant risk is UI/UX quality — not just because files are `.tsx`/`.jsx`/CSS.
+
+## Risk-gated validation
+
+Default optimization: move fast with evidence. Do not run heavyweight review for every small task.
+
+**Low-risk task:** all true — localized/small diff, no public API or event contract change, no auth/security/persistence/migration/data-loss path, no flaky or already-failing test area, no coupled multi-agent edit. Validate with implementer self-check: readback or diff summary, focused tests/typecheck/lint when available, and concrete verification output. Controller spot-checks for vague claims, unexpected files, missing verification, or scope drift.
+
+**High-risk task:** any true — coupled multi-file path, public API or event contract change, auth/security/persistence/migration/data-loss behavior, flaky or already-failing area, subsystem boundary crossing. Use `weizheng` after implementation as the main code-readiness validator. Use `taishang` only when spec, architecture, blast radius, or intent alignment is uncertain.
+
+**Milestone checkpoint:** run when work crosses a contract boundary, combines multiple tasks, enters a flaky area, or reaches final completion. Run focused integration checks. Use `weizheng` when code changed and a ship/no-ship verdict is useful. Use `taishang` only for unresolved reasoning/spec questions.
+
+**Final checkpoint:** before claiming completion, run applicable focused verification. Use `weizheng` unless the work is docs-only with no code behavior change. Run `gitnexus_detect_changes()` as best effort only; if GitNexus is stale, unavailable, or failing, record the skip reason and do not block completion.
+
+## User escalation
+
+Ask the user only when product intent is missing or execution would exceed approved intent:
+
+- global goal, scope, or success criteria unclear
+- scope needs decomposition
+- high-risk change expands beyond approved spec
+- validator finds ambiguity that cannot be resolved from code or spec
+- irreversible or destructive action needed
+
+Do not ask the user for routine task validation, standard non-destructive checks, repo-conventional test commands, technical fixes inside approved scope, or low-risk implementation details.
 
 ## Parallelism safety gate
 
