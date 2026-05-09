@@ -503,19 +503,21 @@ export default function (pi: ExtensionAPI) {
     return (ctx as ExtensionContext & { signal?: AbortSignal }).signal;
   }
 
+  function abortAgentsForTurnCancellation() {
+    let hasActiveAgents = false;
+    for (const record of manager.listAgents()) {
+      if (record.status !== "running" && record.status !== "queued") continue;
+      hasActiveAgents = true;
+      record.suppressNotification = true;
+      cancelNudge(record.id);
+    }
+    if (hasActiveAgents) manager.abortAll();
+  }
+
   function bindTurnAbortSignal(signal?: AbortSignal) {
     if (!signal || turnAbortSignals.has(signal)) return;
 
-    const onAbort = () => {
-      for (const record of manager.listAgents()) {
-        if (record.status !== "running" && record.status !== "queued") continue;
-        record.suppressNotification = true;
-        cancelNudge(record.id);
-      }
-      manager.abortAll();
-    };
-
-    signal.addEventListener("abort", onAbort, { once: true });
+    signal.addEventListener("abort", abortAgentsForTurnCancellation, { once: true });
     turnAbortSignals.add(signal);
   }
 
@@ -686,7 +688,7 @@ export default function (pi: ExtensionAPI) {
         const record = manager.getRecord(id);
         if (!record) continue;
         record.groupId = groupId;
-        if (record.completedAt != null && !record.resultConsumed) {
+        if (record.completedAt != null && !record.resultConsumed && !record.suppressNotification) {
           groupJoin.onAgentComplete(record);
         }
       }
@@ -695,7 +697,7 @@ export default function (pi: ExtensionAPI) {
       // during the debounce window and had their notification deferred.
       for (const { id } of batchAgents) {
         const record = manager.getRecord(id);
-        if (record?.completedAt != null && !record.resultConsumed) {
+        if (record?.completedAt != null && !record.resultConsumed && !record.suppressNotification) {
           sendIndividualNudge(record);
         }
       }
@@ -755,11 +757,33 @@ export default function (pi: ExtensionAPI) {
 
   const typeListText = buildTypeListText();
 
+  async function waitForAgentPoll(record: AgentRecord, signal?: AbortSignal): Promise<"settled" | "tick" | "aborted"> {
+    if (signal?.aborted) return "aborted";
+
+    let cleanupAbort = () => {};
+    const abortPromise = signal
+      ? new Promise<"aborted">((resolve) => {
+          const onAbort = () => resolve("aborted");
+          signal.addEventListener("abort", onAbort, { once: true });
+          cleanupAbort = () => signal.removeEventListener("abort", onAbort);
+        })
+      : undefined;
+
+    try {
+      const waits: Promise<"settled" | "tick" | "aborted">[] = [
+        record.promise!.then(() => "settled" as const, () => "settled" as const),
+        delay(1000).then(() => "tick" as const),
+      ];
+      if (abortPromise) waits.push(abortPromise);
+      return await Promise.race(waits);
+    } finally {
+      cleanupAbort();
+    }
+  }
+
   async function waitForAgentCompletionWithSupervision(record: AgentRecord, signal?: AbortSignal) {
     let idleWrapUpSent = false;
     while (record.status === "running" && record.promise) {
-      if (signal?.aborted) return;
-
       const activity = agentActivity.get(record.id);
       const idleMs = Date.now() - getLastProgressAt(activity, record.startedAt);
       if (!idleWrapUpSent && idleMs >= BACKGROUND_STALE_STEER_AFTER_MS && record.session) {
@@ -772,11 +796,12 @@ export default function (pi: ExtensionAPI) {
         }
       }
 
-      const settled = await Promise.race([
-        record.promise.then(() => true, () => true),
-        delay(1000).then(() => false),
-      ]);
-      if (settled) return;
+      const outcome = await waitForAgentPoll(record, signal);
+      if (outcome === "aborted") {
+        abortAgentsForTurnCancellation();
+        throw new Error("Agent wait aborted; stopped running subagents.");
+      }
+      if (outcome === "settled") return;
     }
   }
 
@@ -1248,7 +1273,7 @@ Guidelines:
         }),
       ),
     }),
-    execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
+    execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
       const record = manager.getRecord(params.agent_id);
       if (!record) {
         return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
@@ -1259,7 +1284,9 @@ Guidelines:
         record.waitingConsumers = (record.waitingConsumers ?? 0) + 1;
         cancelNudge(params.agent_id);
         try {
-          await waitForAgentCompletionWithSupervision(record, _signal);
+          const waitSignal = getAbortSignal(ctx) ?? signal;
+          bindTurnAbortSignal(waitSignal);
+          await waitForAgentCompletionWithSupervision(record, waitSignal);
         } finally {
           record.waitingConsumers = Math.max(0, (record.waitingConsumers ?? 1) - 1);
         }

@@ -311,4 +311,42 @@ describe("subagent session UI rebinding", () => {
     vi.advanceTimersByTime(250);
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
   });
+
+  it("stops running agents and rejects when waiting result is cancelled", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const controller = new AbortController();
+    const record: any = {
+      id: "agent-1",
+      type: "general-purpose",
+      description: "Long running",
+      status: "running",
+      toolUses: 0,
+      startedAt: Date.now(),
+      promise: new Promise(() => {}),
+    };
+    managerInstances[0]?.getRecord.mockReturnValue(record);
+    managerInstances[0]?.listAgents.mockReturnValue([record]);
+    managerInstances[0]?.abortAll.mockImplementation(() => {
+      record.status = "stopped";
+      record.completedAt = Date.now();
+      return 1;
+    });
+
+    const resultPromise = mock.registeredTools.get("get_subagent_result").execute(
+      "tool-1",
+      { agent_id: "agent-1", wait: true },
+      undefined,
+      undefined,
+      { ...createCtx(), signal: controller.signal },
+    );
+
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(resultPromise).rejects.toThrow("Agent wait aborted; stopped running subagents.");
+    expect(record.suppressNotification).toBe(true);
+    expect(record.waitingConsumers).toBe(0);
+    expect(managerInstances[0]?.abortAll).toHaveBeenCalledTimes(1);
+  });
 });
