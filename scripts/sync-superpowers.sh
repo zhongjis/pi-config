@@ -229,7 +229,7 @@ cmd_update() {
   # Stage a fresh skills tree in a scratch directory, then atomically swap.
   local stage
   stage="$(mktemp -d)"
-  trap 'rm -rf "$stage"' EXIT
+  trap "rm -rf '$stage'" EXIT
 
   checkout_upstream "$new_sha"
   cp -R "$UPSTREAM_CLONE/skills" "$stage/skills"
@@ -280,9 +280,11 @@ cmd_update() {
   local short_sha="${new_sha:0:8}"
   local tmp_pkg
   tmp_pkg="$(mktemp)"
-  jq --arg c "$short_sha" --arg v "$new_version" \
-     '.piVendor.commit = $c | .piVendor.version = $v' \
-     "$PKG_JSON" > "$tmp_pkg"
+  awk -v c="$short_sha" -v v="$new_version" '
+    /"commit":/ { sub(/"commit": "[^"]+"/, "\"commit\": \"" c "\"") }
+    /"version":/ { sub(/"version": "[^"]+"/, "\"version\": \"" v "\"") }
+    { print }
+  ' "$PKG_JSON" > "$tmp_pkg"
   mv "$tmp_pkg" "$PKG_JSON"
   info "updated $PKG_JSON piVendor -> $short_sha ($new_version)"
 
