@@ -71,7 +71,7 @@ Default policy:
 }
 ```
 
-Project policy overrides defaults for these fields only. Invalid JSON or invalid field types fall back to defaults and show one error notification.
+Project policy overrides defaults for these fields only. Invalid JSON ignores the whole project policy and shows one notification. Invalid field types ignore only that field, keep other valid fields, and show one notification per invalid field name.
 
 ## Architecture
 
@@ -104,9 +104,9 @@ Entry payload:
 }
 ```
 
-On startup, the extension reads the latest `panda:offline-mode` entry from `ctx.sessionManager`. If the latest entry says `active: true`, offline mode starts on for that session. If no entry exists, offline mode starts off.
+On startup, the extension restores activation by scanning `ctx.sessionManager.getEntries()` backward for the latest custom entry with `customType === "panda:offline-mode"`. If that entry has `active: true`, offline mode starts on for that session. If it has `active: false`, offline mode starts off. If no valid entry exists, offline mode starts off. Malformed payloads are ignored.
 
-`/offline on` appends `{ "active": true }`. `/offline off` appends `{ "active": false }`. Commands update in-memory state immediately after appending.
+`/offline on` writes `pi.appendEntry("panda:offline-mode", { active: true })`. `/offline off` writes `pi.appendEntry("panda:offline-mode", { active: false })`. Commands update in-memory state immediately after appending.
 
 Remove activation from:
 
@@ -127,7 +127,7 @@ The wrapper must be defensive:
 
 - Install once per registry.
 - Preserve the original `getAvailable()` method.
-- Return the unfiltered list when offline mode is disabled.
+- Return the unfiltered list only when no offline policy is active for that registry.
 - Leave `getAll()` unchanged.
 
 Do not try to disable built-in providers with `pi.unregisterProvider()`. Pi can dynamically register and unregister extension providers, but it has no clean built-in-provider disable API. Filtering `getAvailable()` is the narrowest working hook.
@@ -150,9 +150,24 @@ Keep enforcement in the offline extension:
 2. Do not temporarily switch the parent model per agent.
 3. Do not maintain an `agentModels` map in offline config.
 4. If an agent has no local fallback and no explicit local model, subagent execution may fall back to the already-local parent model.
-5. If the user explicitly passes a cloud `model` to `Agent`, the resolver should fail because the cloud model is not available.
+5. If the user explicitly passes a cloud `model` to `Agent`, the resolver must fail because the cloud model is not available.
 
 This design removes parent-model flicker and uses the fallback chain already owned by the subagent extension.
+
+### Child Agent Sessions
+
+Subagents spawned while the parent session is offline must inherit offline enforcement in memory for that run. They must not append their own `panda:offline-mode` activation entries, read global config, or disable the parent session's active model-registry filter.
+
+This matters because `extensions/subagent/` creates child sessions with their own session managers but reuses the parent model registry. Session-entry scanning alone cannot make child guards active.
+
+The extension therefore needs two activation sources:
+
+1. Session source: the latest valid `panda:offline-mode` entry in the current session manager.
+2. Process-local registry source: an offline policy associated with the shared `ctx.modelRegistry`, installed by a parent session when offline mode is active.
+
+Effective active state is true when either source is active. `before_agent_start`, `tool_call`, model forcing, and `getAvailable()` filtering must all use this effective active state. A child extension instance with no session entry must still block configured web tools and blocked agents if its shared registry has an inherited active offline policy.
+
+An instance may clear its own session source with `/offline off`, but it must not remove or bypass a registry-level policy owned by another active parent session. The registry filter returns unfiltered models only when no session source and no inherited registry source is active.
 
 ### Tool Guard
 
@@ -192,28 +207,30 @@ When offline mode becomes active:
 - Call `ctx.ui.notify(...)` once per session load if `notifyOnSessionStart` is true.
 - Call `ctx.ui.setStatus("offline", config.statusText)`.
 
-When offline mode becomes inactive:
+When offline mode becomes inactive for the current session:
 
-- Clear the `offline` status.
-- Stop filtering `getAvailable()`.
-- Stop blocking tools and agents.
+- Clear the `offline` status for that session.
+- Stop blocking tools and agents only if no inherited registry source is active.
+- Let `getAvailable()` return all available models only if no other active session owns an offline policy for the shared registry.
 
 ## Data Flow
 
 1. Pi loads the extension.
 2. Extension registers `/offline` and event handlers.
-3. `session_start` loads project policy, restores latest session activation entry, installs the model registry filter, updates status, and forces a local model if active.
+3. `session_start` loads project policy, restores latest session activation entry, installs the model registry filter, updates status, and forces a local model if effective active state is true.
 4. User runs `/offline on`.
-5. Extension appends session state, updates in-memory state, filters model availability, forces a local model, updates status, and notifies the user.
+5. Extension writes `pi.appendEntry("panda:offline-mode", { active: true })`, updates in-memory state, installs or activates the process-local registry policy, filters model availability, forces a local model, updates status, and notifies the user.
 6. User prompt triggers `before_agent_start`.
-7. Extension rechecks policy and state, keeps the parent model local, and injects offline instructions.
-8. If the model calls tools, `tool_call` blocks web tools and `wenchang`.
-9. If the model calls allowed subagents, subagent fallback sees only local available models and selects the first local candidate.
-10. `/offline off` appends inactive session state, clears UI status, and lets `getAvailable()` return all available models again.
+7. Extension rechecks policy and effective active state, keeps the parent model local, and injects offline instructions.
+8. If the model calls tools, `tool_call` blocks web tools and `wenchang` while effective active state is true.
+9. If the model calls allowed subagents, the child session inherits effective active state from the shared filtered model registry.
+10. Subagent fallback sees only local available models and selects the first local candidate.
+11. `/offline off` writes `pi.appendEntry("panda:offline-mode", { active: false })`, clears current-session UI status, and lets `getAvailable()` return all available models only if no inherited registry source remains active.
 
 ## Error Handling
 
-- Invalid project policy JSON: show one error notification and use defaults.
+- Invalid project policy JSON: show one error notification and ignore the whole project policy.
+- Invalid project policy field type: show one error notification for that field and keep the default for that field.
 - Unsupported policy fields: ignore them.
 - `enabled` in project policy: ignore it and optionally warn once that activation is session-scoped.
 - Missing configured default model: choose the first available local model.
@@ -223,7 +240,7 @@ When offline mode becomes inactive:
 
 ## Testing
 
-Unit tests should cover:
+Unit tests must cover:
 
 - No global config read from `~/.pi/agent/offline.json`.
 - Project policy merge excludes activation and ignores `enabled`.
@@ -239,9 +256,12 @@ Unit tests should cover:
 - `Agent` with `wenchang` is blocked only when active.
 - Allowed `Agent` calls do not temporarily switch the parent model.
 - Subagent fallback can resolve local candidates through filtered `getAvailable()`.
+- Child subagents spawned from an offline parent inherit offline enforcement in memory.
+- Child subagent extension instances do not append activation entries just because the parent is offline.
+- An inactive child extension instance does not disable an active shared registry filter installed by the parent.
 - Notification fires once per session load, not every turn.
 
-Smoke coverage should ensure `extensions/offline/index.ts` loads with the root extension smoke harness.
+Smoke coverage must ensure `extensions/offline/index.ts` loads with the root extension smoke harness.
 
 ## Open Questions
 
