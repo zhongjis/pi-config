@@ -63,7 +63,7 @@ Default policy:
 ```json
 {
   "localProviders": ["llama-swap"],
-  "defaultModel": "llama-swap/qwen3.6:27b",
+  "defaultModel": "llama-swap/qwen2.5-coder:14b",
   "blockedAgents": ["wenchang"],
   "blockedTools": ["web_search", "code_search", "fetch_content", "get_search_content"],
   "notifyOnSessionStart": true,

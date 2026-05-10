@@ -223,7 +223,7 @@ export interface OfflineConfig {
 ```ts
 export const DEFAULT_OFFLINE_CONFIG: OfflineConfig = {
 	localProviders: ["llama-swap"],
-	defaultModel: "llama-swap/qwen3.6:27b",
+	defaultModel: "llama-swap/qwen2.5-coder:14b",
 	blockedAgents: ["wenchang"],
 	blockedTools: ["web_search", "code_search", "fetch_content", "get_search_content"],
 	notifyOnSessionStart: true,
@@ -691,7 +691,7 @@ describe("offline guards", () => {
 
 		const resolved = resolveFirstAvailable([
 			{ model: "anthropic/claude-sonnet" },
-			{ model: "llama-swap/qwen3.6:27b" },
+			{ model: "llama-swap/qwen2.5-coder:14b" },
 		], ctx.modelRegistry as never);
 
 		expect(typeof resolveModel("anthropic/claude-sonnet", ctx.modelRegistry as never)).toBe("string");
@@ -832,7 +832,7 @@ Optional project policy lives at `<cwd>/.pi/offline.json`. The extension does no
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `localProviders` | `string[]` | `["llama-swap"]` | Providers considered local. |
-| `defaultModel` | `string` | `"llama-swap/qwen3.6:27b"` | Parent model used when current model is not local. |
+| `defaultModel` | `string` | `"llama-swap/qwen2.5-coder:14b"` | Parent model used when current model is not local. |
 | `blockedAgents` | `string[]` | `["wenchang"]` | Subagents blocked while offline. |
 | `blockedTools` | `string[]` | web/search/fetch tools | Tools blocked while offline. |
 | `notifyOnSessionStart` | `boolean` | `true` | Show the session-start notification. |
@@ -847,7 +847,7 @@ Example:
 
 ```json
 {
-  "defaultModel": "llama-swap/qwen3.6:27b",
+  "defaultModel": "llama-swap/qwen2.5-coder:14b",
   "blockedAgents": ["wenchang"],
   "statusText": "offline: llama-swap"
 }
