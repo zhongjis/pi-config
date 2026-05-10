@@ -33,7 +33,7 @@ Optional project policy lives at `<cwd>/.pi/offline.json`. The extension does no
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `localProviders` | `string[]` | `["llama-swap"]` | Providers considered local. |
-| `defaultModel` | `string` | `"llama-swap/qwen3.6:27b"` | Parent model used when current model is not local. |
+| `defaultModel` | `string` | `"llama-swap/qwen2.5-coder:14b"` | Parent model used when current model is not local. |
 | `blockedAgents` | `string[]` | `["wenchang"]` | Subagents blocked while offline. |
 | `blockedTools` | `string[]` | web/search/fetch tools | Tools blocked while offline. |
 | `notifyOnSessionStart` | `boolean` | `true` | Show the session-start notification. |
@@ -48,7 +48,7 @@ Example:
 
 ```json
 {
-  "defaultModel": "llama-swap/qwen3.6:27b",
+  "defaultModel": "llama-swap/qwen2.5-coder:14b",
   "blockedAgents": ["wenchang"],
   "statusText": "offline: llama-swap"
 }

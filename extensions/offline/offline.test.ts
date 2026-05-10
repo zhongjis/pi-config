@@ -10,7 +10,7 @@ type Handler = (event: any, ctx: any) => unknown | Promise<unknown>;
 type MockModel = { id: string; name: string; provider: string };
 
 const cloudModel: MockModel = { id: "claude-sonnet", name: "Claude", provider: "anthropic" };
-const defaultLocalModel: MockModel = { id: "qwen3.6:27b", name: "Qwen", provider: "llama-swap" };
+const defaultLocalModel: MockModel = { id: "qwen2.5-coder:14b", name: "Qwen", provider: "llama-swap" };
 const coderLocalModel: MockModel = { id: "qwen2.5-coder:7b", name: "Coder", provider: "llama-swap" };
 
 function createMockRegistry(models: MockModel[]) {
@@ -296,7 +296,7 @@ describe("offline guards", () => {
 
 		const resolved = resolveFirstAvailable([
 			{ model: "anthropic/claude-sonnet" },
-			{ model: "llama-swap/qwen3.6:27b" },
+			{ model: "llama-swap/qwen2.5-coder:14b" },
 		], ctx.modelRegistry as never);
 
 		expect(typeof resolveModel("anthropic/claude-sonnet", ctx.modelRegistry as never)).toBe("string");
