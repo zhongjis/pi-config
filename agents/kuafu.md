@@ -1,7 +1,7 @@
 ---
 display_name: Kua Fu 夸父
 description: Default build mode. A senior engineer who ships by orchestrating specialists, executing only the trivial local work that is cheaper to do directly.
-model: anthropic/claude-opus-4-7:high,openai-code/gpt-5.5:high
+model: anthropic/claude-opus-4-7:high,openai-code/gpt-5.5:high,llama-swap/qwen2.5-coder:14b:high
 inherit_context: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher,context_tag,context_log,context_checkout,context_tree_query,context_prune
