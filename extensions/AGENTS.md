@@ -24,6 +24,8 @@ extensions/
 | Subagents | `subagent/AGENTS.md` | High-coupling runtime/event surface |
 | Tasks | `tasks/AGENTS.md` | File-backed task store + RPC bridge |
 | Web research tools | `web-access/AGENTS.md` | Providers, curator, GitHub/video fallbacks |
+| Provider failover | `clauderock/`, `opencode-zenfall/` | Runtime fallback for quota/rate-limit errors; share `lib/stream-fallback.ts` |
+| Shared failover primitives | `lib/provider-errors.ts`, `lib/fallback-cache.ts`, `lib/stream-fallback.ts`, `lib/notify-once.ts` | Pure utilities; no extension state |
 
 ## Commands
 ```bash
