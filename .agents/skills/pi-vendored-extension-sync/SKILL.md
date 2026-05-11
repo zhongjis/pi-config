@@ -10,19 +10,43 @@ Use this skill when an extension already exists under `extensions/<name>/` and t
 
 This is not a blind copy. Treat sync as a three-way maintenance task: understand upstream, understand local intentional drift, then apply the smallest safe merge.
 
+## Companion skills
+
+- `.agents/skills/pi-extension-vendoring/SKILL.md` — base vendoring policy, dependency warnings, README standard, `## Local Tweaks` manifest format.
+- `.agents/skills/pi-extensions/SKILL.md` — Pi extension architecture; see `guides/08-vendored-adaptation.md` for local-adaptation patterns and `references/local-tweaks-format.md` for the manifest spec.
+
+If the extension does not yet exist under `extensions/<name>/`, this is first-time vendoring — switch to `pi-extension-vendoring`.
+
+## Manifest is authoritative
+
+The `## Local Tweaks` section in `extensions/<name>/AGENTS.md` is the **current-state snapshot** of local divergences and is the first thing to read. It is authoritative: if the manifest says a file diverges for reason X, preserve that divergence on sync, even if the diff looks like it could be harmlessly overwritten.
+
+Supporting evidence, used only to verify or bootstrap:
+
+- `git log extensions/<name>/` — chronological history; useful for tracing when a local tweak was introduced, especially if the manifest cites a commit SHA.
+- `extensions/<name>/README.md` `## Upstream` — holds upstream source URL, last synced version/commit, license. Separate from the manifest; do not fold it in.
+- `extensions/<name>/CHANGELOG.md` if present — local release notes.
+
 ## First reads
 
 Read these before editing:
 
-1. `AGENTS.md` — repo boundaries, commands, install gotchas.
-2. `extensions/AGENTS.md` — extension layout and validation rules.
-3. `extensions/CONVENTIONS.md` — event/RPC contract.
-4. `.agents/skills/pi-extension-vendoring/SKILL.md` — base vendoring policy, dependency warnings, README standard.
-5. `extensions/<name>/AGENTS.md` — extension-specific rules and `## Local Tweaks` manifest.
-6. `extensions/<name>/README.md`, `package.json` if present, and the current entrypoint.
+1. `extensions/<name>/AGENTS.md` — extension-specific rules and the `## Local Tweaks` manifest. **Read this first.**
+2. `extensions/<name>/README.md` `## Upstream` — documented upstream source, version, commit.
+3. `AGENTS.md` — repo boundaries, commands, install gotchas.
+4. `extensions/AGENTS.md` — extension layout and validation rules.
+5. `extensions/CONVENTIONS.md` — event/RPC contract.
+6. `.agents/skills/pi-extension-vendoring/SKILL.md` — base vendoring policy, dependency warnings, README standard.
+7. `extensions/<name>/package.json` if present, and the current entrypoint.
 
-If `extensions/<name>/AGENTS.md` has no `## Local Tweaks`, reconstruct likely local divergences from docs, tests, and git history, then add the manifest during the sync.
+### Missing or stale manifest
 
+If `extensions/<name>/AGENTS.md` has no `## Local Tweaks`, or the manifest predates visible local churn:
+
+1. Reconstruct likely divergences from `git log extensions/<name>/`, `CHANGELOG.md`, and the existing README.
+2. For each suspected divergence, confirm by diffing against upstream at the documented last-synced commit.
+3. Write the manifest into `AGENTS.md` as the first edit of this sync — before touching any source file.
+4. Flag to the user: "manifest was missing/stale; reconstructed from git history, confirm before I proceed."
 ## Intake
 
 Identify:
