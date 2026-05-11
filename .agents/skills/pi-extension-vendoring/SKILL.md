@@ -8,6 +8,15 @@ description: |
 
 Use this skill when bringing an external Pi extension into this repo. Vendoring is not a plain copy: you must preserve provenance, adapt to this harness, and warn before adding risk.
 
+## Companion skills
+
+This skill owns **first-time vendoring**. Two companions handle related work:
+
+- `.agents/skills/pi-vendored-extension-sync/SKILL.md` — updating an already-vendored extension from upstream. Reads the `## Local Tweaks` manifest this skill writes, and uses it to preserve divergences on sync.
+- `.agents/skills/pi-extensions/SKILL.md` — Pi extension architecture, patterns, and the vendored-adaptation guide (`guides/08-vendored-adaptation.md`) that explains *how* to make surgical local changes to vendored code.
+
+If the user is updating an existing vendored extension, switch to the sync skill. If the user is adapting vendored code locally (not initial import), consult the adaptation guide.
+
 ## First read
 
 Read these files before touching code:
@@ -15,11 +24,10 @@ Read these files before touching code:
 1. `AGENTS.md` — repo-wide boundaries, commands, install gotchas.
 2. `extensions/AGENTS.md` — supported extension layouts and validation commands.
 3. `extensions/CONVENTIONS.md` — event bus/RPC contracts.
-4. `.agents/skills/pi-extensions/SKILL.md` — Pi extension architecture pointers.
+4. `.agents/skills/pi-extensions/SKILL.md` — Pi extension architecture pointers; see `guides/08-vendored-adaptation.md` for local-adaptation patterns.
 5. Relevant child `extensions/<area>/AGENTS.md` if the vendored extension touches an existing subsystem.
 
 Why: this repo has local rules that differ from generic Pi extension installs. In particular, do not recommend `pi install npm:...`; this repo vendors/extensions locally.
-
 ## Intake
 
 Identify:
@@ -62,14 +70,16 @@ If target name, source, or intended behavior is unclear, ask before editing.
 
 5. **Document local tweaks**
    - Every vendored extension with local modifications MUST have a `## Local Tweaks` section in its `AGENTS.md`.
-   - This manifest is the source of truth for what to preserve on the next upstream sync.
-   - Format: one entry per intentional divergence. Each entry names the file, describes the change, and states why.
-   - Use this template:
+   - The manifest is a **current-state snapshot**, not a history log. It answers: "what diverges from upstream right now, and why?" — nothing more. Drop entries once the divergence is resolved (upstream absorbed the change, or the local tweak was reverted).
+   - Upstream metadata (source URL, last synced version, commit SHA, license) lives in `README.md` `## Upstream`, NOT in the manifest. Keep the two concerns separate.
+   - Git log is the supporting history; the manifest MAY cite an introducing commit SHA but MUST NOT rely on git archaeology to explain the divergence. A reader should understand each entry from the table alone.
+   - Format: one row per intentional divergence. Required columns: file, what, why. Optional column: commit SHA of the change.
+   - Full spec: `.agents/skills/pi-extensions/references/local-tweaks-format.md`.
 
    ```markdown
    ## Local Tweaks
 
-   Intentional divergences from upstream. Preserve these on sync.
+   Intentional divergences from upstream. Current-state snapshot — preserve these on sync.
 
    | File | What | Why |
    |------|------|-----|
@@ -81,6 +91,7 @@ If target name, source, or intended behavior is unclear, ask before editing.
 
    - Entries should cover: added files, deleted upstream files, modified lines in shared files, changed interfaces/types, kept-but-divergent behavior.
    - When a file is entirely local-only, say so. When only a few lines differ, name the specific change.
+   - Optional commit-message convention for history: prefix commits that touch a vendored extension with `extensions/<name>: <adapt|sync|upstream>: <subject>` so `git log extensions/<name>` stays greppable. Not blocking; the manifest is authoritative.
    - On the next sync, the agent reads this manifest FIRST to know which local modifications to preserve.
 
 6. **Validate**
