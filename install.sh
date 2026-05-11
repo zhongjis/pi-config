@@ -29,7 +29,7 @@ ALLOWED_ITEMS=(
   "lsp.json"
   "caveman.json"
   "session-summary.json"
-  "context-prune"
+  "context-management-settings.json"
   "scripts"
   "themes"
 )
