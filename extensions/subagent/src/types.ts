@@ -111,6 +111,8 @@ export interface AgentRecord {
   toolCallId?: string;
   /** Path to the streaming output transcript file. */
   outputFile?: string;
+  /** Path to the persistent pi session JSONL (under ~/.pi/agent/sessions/). */
+  sessionFile?: string;
   /** Cleanup function for the output file stream subscription. */
   outputCleanup?: () => void;
   /** Cleanup function for any externally bound abort signal listener. */
@@ -136,6 +138,7 @@ export interface NotificationDetails {
   totalTokens: number;
   durationMs: number;
   outputFile?: string;
+  sessionFile?: string;
   error?: string;
   resultPreview: string;
   /** Additional agents in a group notification. */

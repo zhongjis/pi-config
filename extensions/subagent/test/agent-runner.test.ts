@@ -9,7 +9,7 @@ const {
   getConfig,
   getMemoryToolNames,
   getReadOnlyMemoryToolNames,
-  sessionManagerInMemory,
+  sessionManagerCreate,
   settingsManagerCreate,
 } = vi.hoisted(() => ({
   createAgentSession: vi.fn(),
@@ -19,7 +19,7 @@ const {
   getConfig: vi.fn(),
   getMemoryToolNames: vi.fn(() => []),
   getReadOnlyMemoryToolNames: vi.fn(() => []),
-  sessionManagerInMemory: vi.fn(() => ({ kind: "memory-session-manager" })),
+  sessionManagerCreate: vi.fn(() => ({ kind: "created-session-manager" })),
   settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager" })),
 }));
 
@@ -33,7 +33,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
     async reload() {}
   },
   getAgentDir,
-  SessionManager: { inMemory: sessionManagerInMemory },
+  SessionManager: { create: sessionManagerCreate },
   SettingsManager: { create: settingsManagerCreate },
 }));
 
@@ -137,7 +137,7 @@ beforeEach(() => {
   getAgentDir.mockClear();
   getMemoryToolNames.mockClear();
   getReadOnlyMemoryToolNames.mockClear();
-  sessionManagerInMemory.mockClear();
+  sessionManagerCreate.mockClear();
   settingsManagerCreate.mockClear();
 });
 
@@ -179,7 +179,7 @@ describe("agent-runner final output capture", () => {
       agentDir: "/mock/agent-dir",
     }));
     expect(settingsManagerCreate).toHaveBeenCalledWith("/tmp/worktree", "/mock/agent-dir");
-    expect(sessionManagerInMemory).toHaveBeenCalledWith("/tmp/worktree");
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp/worktree");
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
       cwd: "/tmp/worktree",
       agentDir: "/mock/agent-dir",

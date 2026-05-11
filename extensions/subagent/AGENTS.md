@@ -3,7 +3,7 @@
 ## Overview
 Background/foreground subagent runtime: tool surface, queueing, widget UI, eventbus RPC, resume/steer/worktree support.
 
-Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking.
+Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking, persistent session JSONL (`SessionManager.create` under `~/.pi/agent/sessions/`; record + notifications expose `sessionFile`).
 
 ## Where to Look
 | Task | Location | Notes |

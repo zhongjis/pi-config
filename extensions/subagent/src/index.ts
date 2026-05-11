@@ -179,6 +179,7 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
     `<task-id>${record.id}</task-id>`,
     record.toolCallId ? `<tool-use-id>${escapeXml(record.toolCallId)}</tool-use-id>` : null,
     record.outputFile ? `<output-file>${escapeXml(record.outputFile)}</output-file>` : null,
+    record.sessionFile ? `<session-file>${escapeXml(record.sessionFile)}</session-file>` : null,
     `<status>${escapeXml(status)}</status>`,
     `<summary>Agent "${escapeXml(record.description)}" ${record.status}</summary>`,
     `<result>${escapeXml(resultPreview)}</result>`,
@@ -227,6 +228,7 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
     totalTokens,
     durationMs: record.completedAt ? record.completedAt - record.startedAt : 0,
     outputFile: record.outputFile,
+    sessionFile: record.sessionFile,
     error: record.error,
     resultPreview: (() => {
       const recoveredResult = getRecoveredResultText(record);
@@ -287,9 +289,12 @@ export default function (pi: ExtensionAPI) {
           line += "\n  " + theme.fg("dim", `⎿  ${preview}`);
         }
 
-        // Line 4: output file link (if present)
+        // Line 4: output file + session file links (if present)
         if (d.outputFile) {
           line += "\n  " + theme.fg("muted", `transcript: ${d.outputFile}`);
+        }
+        if (d.sessionFile) {
+          line += "\n  " + theme.fg("muted", `session: ${d.sessionFile}`);
         }
 
         return line;
@@ -351,7 +356,9 @@ export default function (pi: ExtensionAPI) {
     if (record.resultConsumed) return;  // re-check at send time
 
     const notification = formatTaskNotification(record, 500);
-    const footer = record.outputFile ? `\nFull transcript available at: ${record.outputFile}` : '';
+    const footer =
+      (record.outputFile ? `\nFull transcript available at: ${record.outputFile}` : '') +
+      (record.sessionFile ? `\nSession log: ${record.sessionFile}` : '');
 
     pi.sendMessage<NotificationDetails>({
       customType: "subagent-notification",
@@ -373,7 +380,9 @@ export default function (pi: ExtensionAPI) {
     const activity = agentActivity.get(record.id);
     const idleSeconds = Math.round(idleMs / 1000);
     const currentActivity = activity ? describeActivity(activity.activeTools, activity.responseText) : "waiting";
-    const transcript = record.outputFile ? `\nTranscript: ${record.outputFile}` : "";
+    const transcript =
+      (record.outputFile ? `\nTranscript: ${record.outputFile}` : "") +
+      (record.sessionFile ? `\nSession: ${record.sessionFile}` : "");
     const actionText = action === "abort"
       ? "The agent was auto-stopped after prolonged inactivity."
       : "The agent was auto-steered to wrap up because it appears idle.";
@@ -1096,6 +1105,10 @@ Guidelines:
           if (rec?.outputFile) {
             rec.outputCleanup = streamToOutputFile(session, rec.outputFile, id, ctx.cwd);
           }
+          // Capture persistent session JSONL path for discoverability.
+          if (rec && typeof session.sessionFile === "string") {
+            rec.sessionFile = session.sessionFile;
+          }
         };
 
         id = manager.spawn(pi, ctx, subagentType, params.prompt, {
@@ -1153,6 +1166,7 @@ Guidelines:
           `Type: ${displayName}\n` +
           `Description: ${params.description}\n` +
           (record?.outputFile ? `Output file: ${record.outputFile}\n` : "") +
+          (record?.sessionFile ? `Session file: ${record.sessionFile}\n` : "") +
           (isQueued ? `Position: queued (max ${manager.getMaxConcurrent()} concurrent)\n` : "") +
           `\nYou will be notified when this agent completes.\n` +
           `Actively supervise it with get_subagent_result, steer_subagent, and resume as needed.\n` +
@@ -1196,6 +1210,8 @@ Guidelines:
             fgId = a.id;
             agentActivity.set(a.id, fgState);
             widget.ensureTimer();
+            // Capture persistent session JSONL path for discoverability.
+            if (typeof session.sessionFile === "string") a.sessionFile = session.sessionFile;
             break;
           }
         }

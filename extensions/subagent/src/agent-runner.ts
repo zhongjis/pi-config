@@ -261,7 +261,11 @@ export async function runAgent(
   const sessionOpts: Parameters<typeof createAgentSession>[0] = {
     cwd: effectiveCwd,
     agentDir,
-    sessionManager: SessionManager.inMemory(effectiveCwd),
+    // Persist session to disk so it appears under ~/.pi/agent/sessions/ and
+    // is discoverable via `pi sessions` / `pi --resume <id>` — matches the
+    // main agent's on-disk JSONL format. Prior behavior used SessionManager.inMemory()
+    // which produced no persistent log.
+    sessionManager: SessionManager.create(effectiveCwd),
     settingsManager: SettingsManager.create(effectiveCwd, agentDir),
     modelRegistry: ctx.modelRegistry,
     model,

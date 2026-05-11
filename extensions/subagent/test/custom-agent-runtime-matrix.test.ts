@@ -8,14 +8,14 @@ const {
   createAgentSession,
   defaultResourceLoaderCtor,
   getAgentDirMock,
-  sessionManagerInMemory,
+  sessionManagerCreate,
   settingsManagerCreate,
   mockState,
 } = vi.hoisted(() => ({
   createAgentSession: vi.fn(),
   defaultResourceLoaderCtor: vi.fn(),
   getAgentDirMock: vi.fn(() => "/mock/agent-dir"),
-  sessionManagerInMemory: vi.fn(() => ({ kind: "memory-session-manager" })),
+  sessionManagerCreate: vi.fn(() => ({ kind: "created-session-manager" })),
   settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager" })),
   mockState: { agentDir: "/mock/agent-dir" },
 }));
@@ -33,7 +33,7 @@ vi.mock("@mariozechner/pi-coding-agent", async (importOriginal) => {
       async reload() {}
     },
     getAgentDir: getAgentDirMock,
-    SessionManager: { inMemory: sessionManagerInMemory },
+    SessionManager: { create: sessionManagerCreate },
     SettingsManager: { create: settingsManagerCreate },
   };
 });
@@ -212,7 +212,7 @@ describe("custom agent parser/runtime active-tool matrix", () => {
     getAgentDirMock.mockImplementation(() => mockState.agentDir);
     createAgentSession.mockReset();
     defaultResourceLoaderCtor.mockClear();
-    sessionManagerInMemory.mockClear();
+    sessionManagerCreate.mockClear();
     settingsManagerCreate.mockClear();
   });
 
