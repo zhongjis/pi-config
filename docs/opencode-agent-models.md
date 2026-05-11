@@ -9,9 +9,8 @@ This document is canonical for the `opencode` profile. For the `default` (US Ant
 ## Context
 
 - **OpenCode Go** = $10/mo curated bundle of 12 Chinese open-source coding models. Env var: `OPENCODE_API_KEY`.
-- **OpenCode Zen** = pay-as-you-go tier (same key), used as rate-limit overflow for Go.
+- **OpenCode Zen** = pay-as-you-go tier (same key). Enable the `Use balance` toggle in [opencode.ai/auth](https://opencode.ai/auth) console; Go falls back to Zen balance automatically when quotas exhaust ([docs](https://opencode.ai/docs/go#usage-beyond-limits)).
 - **Profile extension** (`extensions/profiles/`) filters `registry.getAvailable()` to the provider allowlist for the active profile. Comma-separated model chains in agent frontmatter are resolved first-available-wins within the allowlist.
-- **Rate-limit rotation** (clauderock-style wrapper) catches `opencode-go` 429/402 errors and transparently rotates to the equivalent `opencode` model mid-session.
 
 ---
 
@@ -102,17 +101,11 @@ Resolution per profile:
 
 ---
 
-## Rate-limit overflow: opencode-go → opencode
+## Rate-limit overflow
 
-Pattern mirrors [`extensions/clauderock`](../extensions/clauderock/) (anthropic → bedrock fallback).
+Server-side. Enable `Use balance` in [opencode.ai/auth](https://opencode.ai/auth) console; OpenCode routes traffic to Zen balance automatically once Go quotas exhaust. No client-side wrapper.
 
-Mechanism:
-1. Register `opencode-go` as a custom provider with a wrapper `streamFn`.
-2. Intercept 429 (rate-limit) and 402 (quota) errors.
-3. Transparently rotate to the `opencode/<same-id>` model (Zen tier, pay-as-you-go, same API key).
-4. Cache fallback state to `~/.pi/agent/opencode-rotation-state.json` across sessions.
-5. Show `● OpenCode-Zen` status indicator when rotation active.
-6. Zen tier will charge Zen balance when Go quota is exhausted — requires user to have Zen balance or `Use balance` option enabled in OpenCode console.
+Gap: 4 Go models have no Zen equivalent (`deepseek-v4-pro`, `deepseek-v4-flash`, `mimo-v2.5`, `mimo-v2.5-pro`) — quota errors for these surface to the user directly. Pi's built-in model fallback chain in agent frontmatter handles this: when the primary Go model errors, pi advances to the next entry in the comma-separated chain.
 
 Effort suffix policy (clamping):
 - **`deepseek-v4-pro`, `deepseek-v4-flash`** have `thinkingLevelMap = {minimal: null, low: null, medium: null, high: "high", xhigh: "max"}`. Only `:high` and `:xhigh` work; `:medium` clamps up.
