@@ -10,8 +10,13 @@ import {
 import { type ExtensionAPI, getAgentDir } from "@mariozechner/pi-coding-agent";
 import type { AutocompleteItem } from "@mariozechner/pi-tui";
 import { execSync } from "child_process";
-import { readFileSync, writeFileSync, unlinkSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import {
+  createFlatFallbackCache,
+  isQuotaError,
+  isRateLimitError as isOauthRateLimitFallback,
+} from "../lib/index.js";
 
 // ---------------------------------------------------------------------------
 // Model ID mapping
@@ -46,47 +51,10 @@ function normalizeModelId(id: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Quota error detection
+// Quota / rate-limit detection — delegated to lib/provider-errors.
+// `isQuotaError` and `isOauthRateLimitFallback` (lib alias: isRateLimitError)
+// are imported above.
 // ---------------------------------------------------------------------------
-
-function getErrorText(err: unknown): string {
-  if (!err || typeof err !== "object") return "";
-  const parts = [
-    "errorMessage" in err && typeof (err as any).errorMessage === "string" ? (err as any).errorMessage : "",
-    "message" in err && typeof (err as any).message === "string" ? (err as any).message : "",
-    "error" in err && (err as any).error && typeof (err as any).error === "object" && typeof (err as any).error.errorMessage === "string"
-      ? (err as any).error.errorMessage
-      : "",
-    "error" in err && (err as any).error && typeof (err as any).error === "object" && typeof (err as any).error.message === "string"
-      ? (err as any).error.message
-      : "",
-    "cause" in err && (err as any).cause && typeof (err as any).cause === "object" && typeof (err as any).cause.message === "string"
-      ? (err as any).cause.message
-      : "",
-  ];
-  return parts.join(" ").toLowerCase();
-}
-
-function isQuotaError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const msg = getErrorText(err);
-
-  if ("status" in err && (err as any).status === 402) return true;
-  if ("statusCode" in err && (err as any).statusCode === 402) return true;
-
-  return msg.includes("billing") || msg.includes("credit")
-      || msg.includes("spend limit") || msg.includes("quota");
-}
-
-function isOauthRateLimitFallback(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const msg = getErrorText(err);
-  return ("status" in err && (err as any).status === 429)
-      || ("statusCode" in err && (err as any).statusCode === 429)
-      || ("error" in err && typeof (err as any).error?.status === "number" && (err as any).error.status === 429)
-      || msg.includes("rate limit") || msg.includes("rate-limit")
-      || msg.includes("rate_limit") || msg.includes("too many requests");
-}
 
 /** Extract actionable diagnostics from AWS SDK errors (which often have opaque messages like 'Unknown: UnknownError'). */
 function formatBedrockError(err: unknown): string {
@@ -185,47 +153,27 @@ function getUiErrorMessage(err: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Cross-session cache
+// Cross-session cache — delegated to lib/fallback-cache.
+// Keeps `clauderock-state.json` filename and legacy `exhausted: true` field
+// for backward compatibility with existing caches and external scripts.
 // ---------------------------------------------------------------------------
 
-interface FallbackCache {
-  exhausted: boolean;
-  since: string;
-  reason: string;
-}
+const cache = createFlatFallbackCache("clauderock-state.json");
 
-function getCachePath(): string {
-  return join(getAgentDir(), "clauderock-state.json");
-}
+// Back-compat aliases so the rest of this file reads the same.
+const readCache = () => cache.read();
+const clearCache = () => cache.clear();
 
-function readCache(): FallbackCache | null {
-  try {
-    const raw = readFileSync(getCachePath(), "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && parsed.exhausted) {
-      return parsed as FallbackCache;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
+/** Write cache with legacy `exhausted: true` field for external-script compatibility. */
 function writeCache(reason: string): void {
-  const data: FallbackCache = {
-    exhausted: true,
-    since: new Date().toISOString(),
-    reason,
-  };
-  writeFileSync(getCachePath(), JSON.stringify(data, null, 2));
-}
-
-function clearCache(): void {
-  try {
-    unlinkSync(getCachePath());
-  } catch {
-    // file may not exist — ignore
-  }
+  cache.write(reason);
+  // Re-write with exhausted field prepended (lib wrote {since, reason}).
+  const entry = cache.read();
+  if (!entry) return;
+  writeFileSync(
+    join(getAgentDir(), "clauderock-state.json"),
+    JSON.stringify({ exhausted: true, since: entry.since, reason: entry.reason }, null, 2),
+  );
 }
 
 function getAwsProfiles(): string[] {
@@ -637,10 +585,20 @@ async function streamViaBedrock(
 // Extension entry point
 
 export default function (pi: ExtensionAPI) {
-  // 1. Initialize fallback state from cache
-  const cache = readCache();
-  if (cache?.exhausted) {
-    fallbackActive = true;
+  // 1. Initialize fallback state from cache.
+  // Back-compat: legacy cache format used `exhausted: false` to mark inactive;
+  // read the raw file to honor that field. New lib cache omits the field entirely.
+  try {
+    const rawCache = JSON.parse(
+      readFileSync(join(getAgentDir(), "clauderock-state.json"), "utf-8"),
+    );
+    if (rawCache && typeof rawCache === "object") {
+      // If `exhausted` key exists, honor it. If absent (new format), treat presence as active.
+      const active = "exhausted" in rawCache ? Boolean(rawCache.exhausted) : true;
+      if (active) fallbackActive = true;
+    }
+  } catch {
+    // file missing or unreadable — stay inactive
   }
 
   // 2. Session start — update status bar and reset per-session flags
