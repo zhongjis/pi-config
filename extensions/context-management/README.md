@@ -45,9 +45,22 @@ Flushes pending tool-call batches into a summary. Registered always, active only
 
 ## Settings / Configuration
 
-Prune settings live at `~/.pi/agent/context-prune/settings.json`.
+All settings live in a single file at `~/.pi/agent/context-management-settings.json` with two slices:
 
-Fields:
+In this repo, the source of truth is `context-management-settings.json` at the repo root; `install.sh` symlinks it to `~/.pi/agent/context-management-settings.json`.
+
+```json
+{
+  "core":   { "auto": true },
+  "pruner": { "enabled": true, "pruneOn": "agentic-auto", "...": "..." }
+}
+```
+
+### `core` (ACM)
+
+- `auto` — local tweak. If `true`, the first interactive user input in each session is rewritten from `<text>` to `/acm <text>` so agentic context management activates automatically. No-op once `/acm` has already run in the session.
+
+### `pruner`
 
 - `enabled` — enables future-context pruning.
 - `summarizerModel` — `default`, `provider/model-id`, fuzzy alias, or comma fallback chain with optional `:thinking` suffixes (for example `haiku:low,gemini-flash:off,default`).

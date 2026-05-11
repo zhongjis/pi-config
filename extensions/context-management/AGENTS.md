@@ -19,6 +19,8 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/context-dashboard.ts` | Preserved old local `extensions/context/index.ts`; export renamed to `registerContextDashboard` | Existing local `/context` dashboard was richer than upstream and already vendored from pi-context |
 | `src/context-prune.ts` | Adapted from `pi-context-prune/index.ts`; default export renamed to `registerContextPrune`; imports flattened from `./src/*` to `./*` | Keeps repo max depth at `extensions/foo/src/` and allows composition |
 | `src/query-tool.ts`, `src/context-prune-tool.ts` | Typebox import uses `typebox` | Avoids adding a root `@sinclair/typebox` dependency |
+| `src/config.ts` | Rewritten. Unifies core + pruner settings in one file at `~/.pi/agent/context-management-settings.json` with shape `{ core: { auto }, pruner: { ... } }`. Exposes `loadConfig`/`saveConfig` (pruner slice, signatures preserved) and `loadAcmConfig` (core slice) | Single settings file instead of two; pruner is architecturally an addon on top of ACM core, so one unified file reflects that |
+| `src/context-core.ts` | `input` event handler that rewrites first interactive user input to `/acm <text>` when `core.auto` is true and `CommandCtx` is unset | Captures `ExtensionCommandContext` automatically so `context_checkout` works without manual `/acm` |
 | `skills/context-management/SKILL.md` | Copied from `pi-context` | Provides the requested context-management skill docs |
 | `prompts/release.md` | Copied from `pi-context-prune` | Preserves upstream prompt package metadata |
 | `package.json` | Local package metadata with both upstream sources and Pi extension/skill/prompt entries | Preserves provenance and package discovery hints without a nested toolchain |

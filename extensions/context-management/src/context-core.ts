@@ -11,6 +11,7 @@ import type {
 import { Type, type Static } from "typebox";
 import { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { formatTokens } from "./utils.js";
+import { loadAcmConfig } from "./config.js";
 
 // Define missing types locally as they are not exported from the main entry point
 interface SessionTreeNode {
@@ -63,6 +64,26 @@ const ContextTagParams = Type.Object({
 });
 
 export function registerContextCore(pi: ExtensionAPI) {
+    // Local tweak: auto-enable `/acm` on first user input when
+    // autoEnableAcm=true in ~/.pi/agent/context-prune/settings.json.
+    // Rewrites the first user message from `<text>` to `/acm <text>` so the
+    // command dispatcher runs, captures CommandCtx, and injects the skill.
+    pi.on("input", async (event) => {
+        if (CommandCtx) return { action: "continue" };
+        if (event.source !== "interactive") return { action: "continue" };
+        const text = event.text ?? "";
+        if (text.startsWith("/")) return { action: "continue" };
+        let cfg;
+        try {
+            cfg = await loadAcmConfig();
+        } catch {
+            return { action: "continue" };
+        }
+        if (!cfg.auto) return { action: "continue" };
+        const rewritten = text.trim().length > 0 ? `/acm ${text}` : "/acm";
+        return { action: "transform", text: rewritten, images: event.images };
+    });
+
     pi.registerCommand("acm", {
         description: "Enable agentic context management for the current session",
         handler: async (args, ctx) => {
