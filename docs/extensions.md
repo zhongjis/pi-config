@@ -27,6 +27,8 @@ If the extension is vendored or adapted from an external source, include an **Up
 
 Omit this section for original (non-vendored) extensions.
 
+Intentional local divergences are tracked separately in `AGENTS.md` under a `## Local Tweaks` manifest — see `.agents/skills/pi-extensions/references/local-tweaks-format.md`. Keep upstream metadata here; keep divergence snapshots in `AGENTS.md`.
+
 ### 3. Features / What It Does
 
 Describe the extension's behavior. Keep it brief — bullet points or short paragraphs. Group by feature area when the extension does multiple things.

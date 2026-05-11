@@ -36,8 +36,11 @@ pnpm lint:typecheck
 - Every extension directory must have a `README.md`. Max ~120 lines, concise and factual:
   - One-paragraph summary, then sections for Tools, Commands, Hooks, Settings, Events as applicable.
   - No install instructions, badges, screenshots, developer guides, test matrices, or marketing copy.
-  - Vendored extensions must include an Upstream section (source URL, version, license) and a Local Additions section if customized.
-  - Full format spec: `.agents/skills/pi-extension-vendoring/SKILL.md` → README.md requirements.
+  - Vendored extensions must include an `## Upstream` section (source URL, last synced version/tag, commit SHA, license).
+  - Vendored extensions with local divergences must maintain a `## Local Tweaks` manifest in their `AGENTS.md` — current-state snapshot of what diverges from upstream and why.
+  - Full format specs:
+    - README: `.agents/skills/pi-extension-vendoring/SKILL.md` → README.md requirements.
+    - Manifest: `.agents/skills/pi-extensions/references/local-tweaks-format.md`.
 - Promote layout gradually: flat directory → `src/` package. Do not skip straight to deep nesting.
 - For `src/` packages, keep `index.ts` as a re-export shim; implementation lives under `src/`, tests under `test/`.
 - Extension-specific unit tests belong with the extension under `extensions/foo/test/`; root `test/` is for shared smoke, fixtures, stubs, and other harness coverage.
