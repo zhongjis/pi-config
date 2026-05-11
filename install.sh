@@ -29,7 +29,6 @@ ALLOWED_ITEMS=(
   "lsp.json"
   "caveman.json"
   "session-summary.json"
-  "context-management-settings.json"
   "scripts"
   "themes"
 )
