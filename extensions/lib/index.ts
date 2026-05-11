@@ -15,6 +15,10 @@ export * from "./model.js";
 export * from "./thinking-level.js";
 export * from "./active-tools.js";
 export * from "./agent-frontmatter.js";
+export * from "./provider-errors.js";
+export * from "./fallback-cache.js";
+export * from "./notify-once.js";
+export * from "./stream-fallback.js";
 
 /**
  * Wire the shared library into an extension.

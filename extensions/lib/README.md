@@ -15,6 +15,10 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 | `status.ts` | Status bar helpers |
 | `utils.ts` | `debounce`, `checkExec`, `notifyError`, `computeLineDiff` |
 | `ux.ts` | UX helpers |
+| `provider-errors.ts` | `getErrorText`, `isQuotaError` (402 + billing/credit/quota/spend), `isRateLimitError` (429 + rate-limit keywords), `isQuotaOrRateLimitError` |
+| `fallback-cache.ts` | `createFlatFallbackCache(filename)` + `createKeyedFallbackCache(filename)` — cross-session fallback state with optional TTL |
+| `notify-once.ts` | `createOnceNotifier()` — defer notifications from stream-wrapping code until a safe UI moment (e.g., `turn_end`) |
+| `stream-fallback.ts` | `streamWithFallback(opts)` — generic two-tier failover wrapper; `patchEventModelId(event, id)` — rewrite model fields on emitted events |
 
 ## Usage
 
