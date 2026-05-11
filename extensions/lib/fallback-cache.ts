@@ -4,8 +4,8 @@
  * Two cache modes:
  * - Flat: single `FallbackEntry` object (e.g., clauderock — anthropic account
  *   rate limit is global; one flag covers all models).
- * - Keyed: `{ [modelId]: FallbackEntry }` (e.g., opencode-zenfall — Go quotas
- *   are per-model-per-month).
+ * - Keyed: `{ [key]: FallbackEntry }` — use when failover state is partitioned
+ *   (per-model, per-region, per-resource, etc.).
  *
  * Entries older than `ttlMs` are treated as absent on read (auto-expiry).
  *

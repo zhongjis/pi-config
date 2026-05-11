@@ -9,7 +9,7 @@
  * event flow: try primary, detect failure before first content, flush buffered
  * `start` event, hand off to fallback, patch model IDs on emitted events.
  *
- * Usage — see extensions/clauderock and extensions/opencode-zenfall.
+ * Usage — see extensions/clauderock.
  */
 
 import {
