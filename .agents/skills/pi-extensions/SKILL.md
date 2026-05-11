@@ -18,6 +18,19 @@ upstream: "https://github.com/Dwsy/pi-extensions-skill"
 
 The `guides/` and `references/` directories contain deeper narratives and examples. Use them after scanning the three master docs above.
 
+## Working with Vendored Extensions
+
+If the task involves a vendored (upstream-sourced) extension under `extensions/`, route to the companion skill:
+
+| Task | Skill |
+|------|-------|
+| First-time vendoring: bringing an external Pi extension into this repo | `.agents/skills/pi-extension-vendoring/SKILL.md` |
+| Updating an already-vendored extension from upstream | `.agents/skills/pi-vendored-extension-sync/SKILL.md` |
+| Making surgical local changes to a vendored extension | [`guides/08-vendored-adaptation.md`](guides/08-vendored-adaptation.md) |
+| Writing or updating the `## Local Tweaks` manifest | [`references/local-tweaks-format.md`](references/local-tweaks-format.md) |
+
+Local divergences from upstream are tracked in each vendored extension's `AGENTS.md` under a `## Local Tweaks` table — the current-state snapshot. Upstream metadata lives in `README.md` `## Upstream`. Git log provides supporting history; the manifest is authoritative.
+
 ---
 
 ## One-Line Directives
@@ -112,6 +125,7 @@ State is temporary cache? ─────────────────►
 | [`guides/05-rpc-mode.md`](guides/05-rpc-mode.md) | 🔌 RPC | RPC mode compatibility and degradation |
 | [`guides/06-internals.md`](guides/06-internals.md) | ⚙️ Internals | Loader, runner, event dispatch, binding |
 | [`guides/07-advanced-patterns.md`](guides/07-advanced-patterns.md) | 🚀 Advanced | Provider plugins, OAuth, tool overrides, file mutation queues |
+| [`guides/08-vendored-adaptation.md`](guides/08-vendored-adaptation.md) | 📦 Vendoring | Surgical local changes to vendored extensions |
 
 ### Reference Docs
 
@@ -123,6 +137,7 @@ State is temporary cache? ─────────────────►
 | [`references/examples.md`](references/examples.md) | Additional code examples |
 | [`references/ui-components.md`](references/ui-components.md) | TUI component catalog |
 | [`references/source-patterns.md`](references/source-patterns.md) | Patterns extracted from pi source |
+| [`references/local-tweaks-format.md`](references/local-tweaks-format.md) | `## Local Tweaks` manifest spec for vendored extensions |
 
 ### Examples
 
