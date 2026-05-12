@@ -40,6 +40,7 @@ class MockAgentManager {
   hasRunning = vi.fn(() => false);
   spawn = vi.fn(() => "agent-1");
   getRecord = vi.fn(() => undefined);
+  spawnAndWait = vi.fn();
 }
 
 vi.mock("../src/ui/agent-widget.js", () => ({
@@ -75,6 +76,7 @@ vi.mock("../src/agent-manager.js", () => ({
     hasRunning = vi.fn(() => false);
     spawn = vi.fn(() => "agent-1");
     getRecord = vi.fn(() => undefined);
+    spawnAndWait = vi.fn();
 
     constructor() {
       managerInstances.push(this as unknown as MockAgentManager);
@@ -171,6 +173,16 @@ function createCtx() {
     model: undefined,
     sessionManager: { getEntries: vi.fn(() => []) },
   };
+}
+
+const plainTheme = {
+  fg: vi.fn((_color: string, text: string) => text),
+  bold: vi.fn((text: string) => text),
+};
+
+function renderText(component: { render?: () => string[]; text?: string }): string {
+  if (typeof component.render === "function") return component.render().join("\n");
+  return component.text ?? "";
 }
 
 describe("subagent session UI rebinding", () => {
@@ -349,4 +361,135 @@ describe("subagent session UI rebinding", () => {
     expect(record.waitingConsumers).toBe(0);
     expect(managerInstances[0]?.abortAll).toHaveBeenCalledTimes(1);
   });
+
+  it("renders subagent notifications via summary renderer and keeps transcript links", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const renderer = mock.pi.registerMessageRenderer.mock.calls.find(([type]) => type === "subagent-notification")?.[1];
+
+    const details = {
+      id: "agent-1",
+      description: "Investigate blinking",
+      status: "completed",
+      toolUses: 3,
+      turnCount: 2,
+      maxTurns: 5,
+      totalTokens: 1234,
+      durationMs: 4500,
+      outputFile: "/tmp/agent-output.md",
+      sessionFile: "/tmp/session.jsonl",
+      resultPreview: "Found root cause\nSecond detail",
+    };
+
+    const collapsed = renderText(renderer({ details }, { expanded: false }, plainTheme));
+    expect(collapsed).toContain("✓ Investigate blinking · ⟳ 2≤5·󱁤 3·󰾆 1.2k·4.5s");
+    expect(collapsed).toContain("  ⎿ Found root cause");
+    expect(collapsed).toContain("  transcript: /tmp/agent-output.md");
+    expect(collapsed).toContain("  session: /tmp/session.jsonl");
+    expect(collapsed).not.toContain("Second detail");
+
+    const expanded = renderText(renderer({ details }, { expanded: true }, plainTheme));
+    expect(expanded).toContain("  Found root cause");
+    expect(expanded).toContain("  Second detail");
+    expect(expanded).toContain("  transcript: /tmp/agent-output.md");
+    expect(expanded).toContain("  session: /tmp/session.jsonl");
+  });
+
+  it("renders Agent results via summary renderer while preserving expanded details and background line", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const agentTool = mock.registeredTools.get("Agent");
+    const details = {
+      displayName: "Agent",
+      description: "Patch renderer",
+      subagentType: "jintong",
+      toolUses: 2,
+      tokens: "󰾆 9.8k",
+      durationMs: 1200,
+      status: "completed",
+      turnCount: 3,
+      maxTurns: 10,
+    };
+    const result = {
+      content: [{ type: "text", text: "Agent completed in 1.2s.\n\nDetailed result" }],
+      details,
+    };
+
+    const collapsed = renderText(agentTool.renderResult(result, { expanded: false, isPartial: false }, plainTheme));
+    expect(collapsed).toContain("✓ Agent Patch renderer · ⟳ 3≤10·󱁤 2·󰾆 9.8k·1.2s");
+    expect(collapsed).toContain("  ⎿ Done");
+    expect(collapsed).not.toContain("Detailed result");
+
+    const expanded = renderText(agentTool.renderResult(result, { expanded: true, isPartial: false }, plainTheme));
+    expect(expanded).toContain("✓ Agent Patch renderer · ⟳ 3≤10·󱁤 2·󰾆 9.8k·1.2s");
+    expect(expanded).toContain("  Agent completed in 1.2s.");
+    expect(expanded).toContain("  Detailed result");
+
+    const background = renderText(agentTool.renderResult({
+      content: [{ type: "text", text: "background" }],
+      details: { ...details, status: "background", agentId: "agent-bg", durationMs: 0 },
+    }, { expanded: false, isPartial: false }, plainTheme));
+    expect(background).toBe("  ⎿  Running in background (ID: agent-bg)");
+  });
+
+  it("uses RenderScheduler cadence for foreground progress and flushes state boundaries", async () => {
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    const mock = createMockPi();
+    await initExtension(mock);
+    const agentTool = mock.registeredTools.get("Agent");
+    const manager = managerInstances[0]!;
+    const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 1234 } })), sessionFile: "/tmp/session.jsonl" };
+    const record: any = {
+      id: "agent-1",
+      type: "general-purpose",
+      description: "Run foreground",
+      status: "completed",
+      toolUses: 1,
+      startedAt: Date.now(),
+      completedAt: Date.now() + 1000,
+      result: "done",
+      session,
+    };
+    let finish!: (record: any) => void;
+    const finished = new Promise<any>((resolve) => { finish = resolve; });
+
+    manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
+      manager.listAgents.mockReturnValue([record]);
+      options.onSessionCreated(session);
+      options.onTextDelta("partial", "partial");
+      return await finished;
+    });
+
+    const onUpdate = vi.fn();
+    const resultPromise = agentTool.execute(
+      "tool-1",
+      { prompt: "do it", description: "Run foreground", subagent_type: "general-purpose" },
+      undefined,
+      onUpdate,
+      createCtx(),
+    );
+
+    await Promise.resolve();
+    expect(onUpdate).toHaveBeenCalledTimes(2); // start + session boundary flush
+    expect(onUpdate.mock.calls.at(-1)?.[0].details.activity).toBe("thinking…");
+
+    vi.advanceTimersByTime(249);
+    expect(onUpdate).toHaveBeenCalledTimes(2);
+
+    vi.advanceTimersByTime(1);
+    expect(onUpdate).toHaveBeenCalledTimes(3);
+    expect(onUpdate.mock.calls.at(-1)?.[0].details.activity).toBe("thinking…");
+
+    finish(record);
+    const result = await resultPromise;
+
+    expect(onUpdate).toHaveBeenCalledTimes(4); // cleanup flush before final result
+    vi.advanceTimersByTime(1000);
+    expect(onUpdate).toHaveBeenCalledTimes(4);
+    expect(widgetInstances[0]?.markFinished).toHaveBeenCalledWith("agent-1");
+    expect(result.content[0].text).toContain("done");
+    expect(result.details.status).toBe("completed");
+    expect(setIntervalSpy).not.toHaveBeenCalledWith(expect.any(Function), 80);
+  });
+
 });

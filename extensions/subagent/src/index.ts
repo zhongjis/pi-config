@@ -43,14 +43,18 @@ import {
   formatDuration,
   formatMs,
   formatTokens,
-  formatTurns,
   getDisplayName,
   getPromptModeLabel,
   SPINNER,
   type UICtx,
 } from "./ui/agent-widget.js";
+import { renderSubagentSummary } from "./ui/summary-renderer.js";
+import type { SubagentSummaryAgent, SubagentSummaryStatus } from "./ui/summary-renderer.js";
+import { RenderScheduler } from "./ui/render-scheduler.js";
 
 // ---- Shared helpers ----
+const FOREGROUND_RENDER_CADENCE_MS = 250;
+
 
 type SubagentManagerBridge = {
   waitForAll: () => ReturnType<AgentManager["waitForAll"]>;
@@ -239,6 +243,73 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
   };
 }
 
+const SUMMARY_STATUS_VALUES = new Set<SubagentSummaryStatus>([
+  "queued",
+  "running",
+  "completed",
+  "steered",
+  "aborted",
+  "stopped",
+  "error",
+  "background",
+]);
+
+function toSummaryStatus(status: string): SubagentSummaryStatus {
+  return SUMMARY_STATUS_VALUES.has(status as SubagentSummaryStatus)
+    ? (status as SubagentSummaryStatus)
+    : "completed";
+}
+
+function compactResultPreview(text: string, maxLength = 80): string | undefined {
+  const firstLine = text.split("\n")[0]?.slice(0, maxLength) ?? "";
+  return firstLine || undefined;
+}
+
+function renderNotificationSummary(detail: NotificationDetails, expanded: boolean): string {
+  const lines = renderSubagentSummary({
+    displayName: detail.description,
+    status: toSummaryStatus(detail.status),
+    resultPreview: expanded ? undefined : compactResultPreview(detail.resultPreview),
+    toolUses: detail.toolUses,
+    totalTokens: detail.totalTokens > 0 ? detail.totalTokens : undefined,
+    durationMs: detail.durationMs > 0 ? detail.durationMs : undefined,
+    turnCount: detail.turnCount > 0 ? detail.turnCount : undefined,
+    maxTurns: detail.maxTurns,
+    error: detail.error,
+  });
+
+  if (expanded) {
+    for (const line of detail.resultPreview.split("\n").slice(0, 30)) {
+      lines.push(`  ${line}`);
+    }
+  }
+
+  if (detail.outputFile) lines.push(`  transcript: ${detail.outputFile}`);
+  if (detail.sessionFile) lines.push(`  session: ${detail.sessionFile}`);
+
+  return lines.join("\n");
+}
+
+function renderAgentSummary(details: AgentDetails, overrides: Partial<SubagentSummaryAgent> = {}): string[] {
+  return renderSubagentSummary({
+    displayName: details.displayName,
+    description: details.description,
+    status: toSummaryStatus(details.status),
+    activity: details.activity,
+    resultPreview: details.activity,
+    toolUses: details.toolUses,
+    tokens: details.tokens || undefined,
+    durationMs: details.durationMs,
+    spinnerFrame: details.spinnerFrame,
+    modelName: details.modelName,
+    tags: details.tags,
+    turnCount: details.turnCount,
+    maxTurns: details.maxTurns,
+    error: details.error,
+    ...overrides,
+  });
+}
+
 export function formatAgentDefinitionDiagnostic(diagnostic: AgentDefinitionDiagnostic): string {
   return `${diagnostic.severity.toUpperCase()} ${diagnostic.agentName} (${diagnostic.file}) field "${diagnostic.field}": ${diagnostic.message}`;
 }
@@ -256,52 +327,12 @@ export default function (pi: ExtensionAPI) {
   // ---- Register custom notification renderer ----
   pi.registerMessageRenderer<NotificationDetails>(
     "subagent-notification",
-    (message, { expanded }, theme) => {
+    (message, { expanded }, _theme) => {
       const d = message.details;
       if (!d) return undefined;
 
-      function renderOne(d: NotificationDetails): string {
-        const isError = d.status === "error" || d.status === "stopped" || d.status === "aborted";
-        const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
-        const statusText = isError ? d.status
-          : d.status === "steered" ? "completed (steered)"
-          : "completed";
-
-        // Line 1: icon + agent description + status
-        let line = `${icon} ${theme.bold(d.description)} ${theme.fg("dim", statusText)}`;
-
-        // Line 2: stats
-        const parts: string[] = [];
-        if (d.turnCount > 0) parts.push(formatTurns(d.turnCount, d.maxTurns));
-        if (d.toolUses > 0) parts.push(`󱁤 ${d.toolUses}`);
-        if (d.totalTokens > 0) parts.push(formatTokens(d.totalTokens));
-        if (d.durationMs > 0) parts.push(formatMs(d.durationMs));
-        if (parts.length) {
-          line += "\n  " + parts.map(p => theme.fg("dim", p)).join(" " + theme.fg("dim", "·") + " ");
-        }
-
-        // Line 3: result preview (collapsed) or full (expanded)
-        if (expanded) {
-          const lines = d.resultPreview.split("\n").slice(0, 30);
-          for (const l of lines) line += "\n" + theme.fg("dim", `  ${l}`);
-        } else {
-          const preview = d.resultPreview.split("\n")[0]?.slice(0, 80) ?? "";
-          line += "\n  " + theme.fg("dim", `⎿  ${preview}`);
-        }
-
-        // Line 4: output file + session file links (if present)
-        if (d.outputFile) {
-          line += "\n  " + theme.fg("muted", `transcript: ${d.outputFile}`);
-        }
-        if (d.sessionFile) {
-          line += "\n  " + theme.fg("muted", `session: ${d.sessionFile}`);
-        }
-
-        return line;
-      }
-
       const all = [d, ...(d.others ?? [])];
-      return new Text(all.map(renderOne).join("\n"), 0, 0);
+      return new Text(all.map(detail => renderNotificationSummary(detail, expanded)).join("\n"), 0, 0);
     }
   );
 
@@ -907,26 +938,12 @@ Guidelines:
         return new Text(text, 0, 0);
       }
 
-      // Helper: build "haiku · thinking: high · ⟳ 5≤30 · 󱁤 3 · 󰾆 33.8k" stats string
-      const stats = (d: AgentDetails) => {
-        const parts: string[] = [];
-        if (d.modelName) parts.push(d.modelName);
-        if (d.tags) parts.push(...d.tags);
-        if (d.turnCount != null && d.turnCount > 0) {
-          parts.push(formatTurns(d.turnCount, d.maxTurns));
-        }
-        if (d.toolUses > 0) parts.push(`󱁤 ${d.toolUses}`);
-        if (d.tokens) parts.push(d.tokens);
-        return parts.map(p => theme.fg("dim", p)).join(" " + theme.fg("dim", "·") + " ");
-      };
-
       // ---- While running (streaming) ----
       if (isPartial || details.status === "running") {
-        const frame = SPINNER[details.spinnerFrame ?? 0];
-        const s = stats(details);
-        let line = theme.fg("accent", frame) + (s ? " " + s : "");
-        line += "\n" + theme.fg("dim", `  ⎿  ${details.activity ?? "thinking…"}`);
-        return new Text(line, 0, 0);
+        return new Text(renderAgentSummary(details, {
+          durationMs: undefined,
+          resultPreview: details.activity ?? "thinking…",
+        }).join("\n"), 0, 0);
       }
 
       // ---- Background agent launched ----
@@ -936,50 +953,44 @@ Guidelines:
 
       // ---- Completed / Steered ----
       if (details.status === "completed" || details.status === "steered") {
-        const duration = formatMs(details.durationMs);
         const isSteered = details.status === "steered";
-        const icon = isSteered ? theme.fg("warning", "✓") : theme.fg("success", "✓");
-        const s = stats(details);
-        let line = icon + (s ? " " + s : "");
-        line += " " + theme.fg("dim", "·") + " " + theme.fg("dim", duration);
+        const doneText = isSteered ? "Wrapped up (turn limit)" : "Done";
+        const lines = renderAgentSummary(details, {
+          resultPreview: expanded ? undefined : doneText,
+        });
 
         if (expanded) {
           const resultText = result.content[0]?.type === "text" ? result.content[0].text : "";
           if (resultText) {
-            const lines = resultText.split("\n").slice(0, 50);
-            for (const l of lines) {
-              line += "\n" + theme.fg("dim", `  ${l}`);
+            const resultLines = resultText.split("\n");
+            for (const l of resultLines.slice(0, 50)) {
+              lines.push(theme.fg("dim", `  ${l}`));
             }
-            if (resultText.split("\n").length > 50) {
-              line += "\n" + theme.fg("muted", "  ... (use get_subagent_result with verbose for full output)");
+            if (resultLines.length > 50) {
+              lines.push(theme.fg("muted", "  ... (use get_subagent_result with verbose for full output)"));
             }
           }
-        } else {
-          const doneText = isSteered ? "Wrapped up (turn limit)" : "Done";
-          line += "\n" + theme.fg("dim", `  ⎿  ${doneText}`);
         }
-        return new Text(line, 0, 0);
+
+        return new Text(lines.join("\n"), 0, 0);
       }
 
       // ---- Stopped (user-initiated abort) ----
       if (details.status === "stopped") {
-        const s = stats(details);
-        let line = theme.fg("dim", "■") + (s ? " " + s : "");
-        line += "\n" + theme.fg("dim", "  ⎿  Stopped");
-        return new Text(line, 0, 0);
+        return new Text(renderAgentSummary(details, {
+          durationMs: undefined,
+          resultPreview: "Stopped",
+        }).join("\n"), 0, 0);
       }
 
       // ---- Error / Aborted (hard max_turns) ----
-      const s = stats(details);
-      let line = theme.fg("error", "✗") + (s ? " " + s : "");
-
-      if (details.status === "error") {
-        line += "\n" + theme.fg("error", `  ⎿  Error: ${details.error ?? "unknown"}`);
-      } else {
-        line += "\n" + theme.fg("warning", "  ⎿  Aborted (max turns exceeded)");
-      }
-
-      return new Text(line, 0, 0);
+      const resultPreview = details.status === "error"
+        ? `Error: ${details.error ?? "unknown"}`
+        : "Aborted (max turns exceeded)";
+      return new Text(renderAgentSummary(details, {
+        durationMs: undefined,
+        resultPreview,
+      }).join("\n"), 0, 0);
     },
 
     // ---- Execute ----
@@ -1179,6 +1190,7 @@ Guidelines:
       let spinnerFrame = 0;
       const startedAt = Date.now();
       let fgId: string | undefined;
+      let foregroundActive = true;
 
       const streamUpdate = () => {
         const details: AgentDetails = {
@@ -1197,9 +1209,24 @@ Guidelines:
           details,
         };
         onUpdate?.(update);
+        spinnerFrame = (spinnerFrame + 1) % SPINNER.length;
       };
 
-      const { state: fgState, callbacks: fgCallbacks } = createActivityTracker(effectiveMaxTurns, streamUpdate);
+      let renderScheduler: RenderScheduler | undefined;
+      const { state: fgState, callbacks: fgCallbacks } = createActivityTracker(effectiveMaxTurns, () => renderScheduler?.requestRender());
+      renderScheduler = new RenderScheduler(() => {
+        streamUpdate();
+        if (foregroundActive) renderScheduler?.requestRender();
+      }, FOREGROUND_RENDER_CADENCE_MS);
+
+      const flushStreamUpdate = () => renderScheduler?.flushNow();
+
+      // Tool/session state boundaries should not wait for the progress cadence.
+      const origOnToolActivity = fgCallbacks.onToolActivity;
+      fgCallbacks.onToolActivity = (activity) => {
+        origOnToolActivity(activity);
+        flushStreamUpdate();
+      };
 
       // Wire session creation to register in widget
       const origOnSession = fgCallbacks.onSessionCreated;
@@ -1215,35 +1242,37 @@ Guidelines:
             break;
           }
         }
+        flushStreamUpdate();
       };
 
-      // Animate spinner at ~80ms (smooth rotation through 10 braille frames)
-      const spinnerInterval = setInterval(() => {
-        spinnerFrame++;
-        streamUpdate();
-      }, 80);
+      let record!: AgentRecord;
+      try {
+        flushStreamUpdate();
+        record = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
+          description: params.description,
+          model,
+          modelLabel: agentModelLabel,
+          maxTurns: effectiveMaxTurns,
+          signal: parentSignal,
+          isolated,
+          inheritContext,
+          thinkingLevel: thinking,
+          isolation,
+          ...fgCallbacks,
+        });
+      } finally {
+        foregroundActive = false;
+        try {
+          flushStreamUpdate();
+        } finally {
+          renderScheduler?.dispose();
 
-      streamUpdate();
-
-      const record = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
-        description: params.description,
-        model,
-        modelLabel: agentModelLabel,
-        maxTurns: effectiveMaxTurns,
-        signal: parentSignal,
-        isolated,
-        inheritContext,
-        thinkingLevel: thinking,
-        isolation,
-        ...fgCallbacks,
-      });
-
-      clearInterval(spinnerInterval);
-
-      // Clean up foreground agent from widget
-      if (fgId) {
-        agentActivity.delete(fgId);
-        widget.markFinished(fgId);
+          // Clean up foreground agent from widget
+          if (fgId) {
+            agentActivity.delete(fgId);
+            widget.markFinished(fgId);
+          }
+        }
       }
 
       // Get final token count

@@ -9,6 +9,8 @@ import { truncateToWidth } from "@mariozechner/pi-tui";
 import type { AgentManager } from "../agent-manager.js";
 import { getConfig } from "../agent-types.js";
 import type { SubagentType } from "../types.js";
+import { renderSubagentSummary } from "./summary-renderer.js";
+import type { SubagentSummaryAgent, SubagentSummaryStatus } from "./summary-renderer.js";
 
 // ---- Constants ----
 
@@ -50,6 +52,8 @@ export type UICtx = {
     options?: { placement?: "aboveEditor" | "belowEditor" },
   ): void;
 };
+
+type AgentRecord = ReturnType<AgentManager["listAgents"]>[number];
 
 /** Per-agent live activity state. */
 export interface AgentActivity {
@@ -242,47 +246,34 @@ export class AgentWidget {
     }
   }
 
+  private getDisplayNameWithMode(type: SubagentType): string {
+    const name = getDisplayName(type);
+    const modeLabel = getPromptModeLabel(type);
+    return modeLabel ? `${name} (${modeLabel})` : name;
+  }
+
+  private getSessionTokenText(agentId: string): string | undefined {
+    const activity = this.agentActivity.get(agentId);
+    if (!activity?.session) return undefined;
+    try { return formatTokens(activity.session.getSessionStats().tokens.total); } catch { return undefined; }
+  }
+
   /** Render a finished agent line. */
-  private renderFinishedLine(a: { id: string; type: SubagentType; status: string; description: string; toolUses: number; startedAt: number; completedAt?: number; error?: string; modelLabel?: string }, theme: Theme): string {
-    const name = getDisplayName(a.type);
-    const modeLabel = getPromptModeLabel(a.type);
-    const duration = formatMs((a.completedAt ?? Date.now()) - a.startedAt);
-
-    let icon: string;
-    let statusText: string;
-    if (a.status === "completed") {
-      icon = theme.fg("success", "✓");
-      statusText = "";
-    } else if (a.status === "steered") {
-      icon = theme.fg("warning", "✓");
-      statusText = theme.fg("warning", " (turn limit)");
-    } else if (a.status === "stopped") {
-      icon = theme.fg("dim", "■");
-      statusText = theme.fg("dim", " stopped");
-    } else if (a.status === "error") {
-      icon = theme.fg("error", "✗");
-      const errMsg = a.error ? `: ${a.error.slice(0, 60)}` : "";
-      statusText = theme.fg("error", ` error${errMsg}`);
-    } else {
-      // aborted
-      icon = theme.fg("error", "✗");
-      statusText = theme.fg("warning", " aborted");
-    }
-
-    const parts: string[] = [];
-    if (a.modelLabel) parts.push(a.modelLabel);
+  private renderFinishedLine(a: AgentRecord): string {
     const activity = this.agentActivity.get(a.id);
-    if (activity) parts.push(formatTurns(activity.turnCount, activity.maxTurns));
-    if (a.toolUses > 0) parts.push(`󱁤 ${a.toolUses}`);
-    let tokenText = "";
-    if (activity?.session) {
-      try { tokenText = formatTokens(activity.session.getSessionStats().tokens.total); } catch { /* */ }
-    }
-    if (tokenText) parts.push(tokenText);
-    parts.push(duration);
-
-    const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
-    return `${icon} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", formatStatusParts(parts))}${statusText}`;
+    const summary: SubagentSummaryAgent = {
+      displayName: this.getDisplayNameWithMode(a.type),
+      description: a.description,
+      status: a.status as SubagentSummaryStatus,
+      toolUses: a.toolUses,
+      tokens: this.getSessionTokenText(a.id),
+      durationMs: (a.completedAt ?? Date.now()) - a.startedAt,
+      modelName: a.modelLabel,
+      turnCount: activity?.turnCount,
+      maxTurns: activity?.maxTurns,
+      error: a.error,
+    };
+    return renderSubagentSummary(summary)[0] ?? "";
   }
 
 
@@ -309,48 +300,41 @@ export class AgentWidget {
     const truncate = (line: string) => truncateToWidth(line, w);
     const headingColor = hasActive ? "accent" : "dim";
     const headingIcon = hasActive ? "●" : "○";
-    const frame = SPINNER[this.widgetFrame % SPINNER.length];
-
     // Build sections separately for overflow-aware assembly.
     // Each running agent = 2 lines (header + activity), finished = 1 line, queued = 1 line.
 
     const finishedLines: string[] = [];
     for (const a of finished) {
-      finishedLines.push(truncate(`${theme.fg("dim", "├─")} ${this.renderFinishedLine(a, theme)}`));
+      finishedLines.push(truncate(`${theme.fg("dim", "├─")} ${this.renderFinishedLine(a)}`));
     }
 
     const runningLines: string[][] = []; // each entry is [header, activity]
     for (const a of running) {
-      const name = getDisplayName(a.type);
-      const modeLabel = getPromptModeLabel(a.type);
-      const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
-      const elapsed = formatMs(Date.now() - a.startedAt);
-
       const bg = this.agentActivity.get(a.id);
       const toolUses = bg?.toolUses ?? a.toolUses;
-      let tokenText = "";
-      if (bg?.session) {
-        try { tokenText = formatTokens(bg.session.getSessionStats().tokens.total); } catch { /* */ }
-      }
-
-      const parts: string[] = [];
-      if (a.modelLabel) parts.push(a.modelLabel);
-      if (bg) parts.push(formatTurns(bg.turnCount, bg.maxTurns));
-      if (toolUses > 0) parts.push(`󱁤 ${toolUses}`);
-      if (tokenText) parts.push(tokenText);
-      parts.push(elapsed);
-      const statsText = formatStatusParts(parts);
-
       const activity = bg ? describeActivity(bg.activeTools, bg.responseText) : "thinking…";
+      const summaryLines = renderSubagentSummary({
+        displayName: this.getDisplayNameWithMode(a.type),
+        description: a.description,
+        status: "running",
+        activity,
+        spinnerFrame: this.widgetFrame,
+        modelName: a.modelLabel,
+        turnCount: bg?.turnCount,
+        maxTurns: bg?.maxTurns,
+        toolUses,
+        tokens: this.getSessionTokenText(a.id),
+        durationMs: Date.now() - a.startedAt,
+      });
 
       runningLines.push([
-        truncate(`${theme.fg("dim", "├─")} ${theme.fg("accent", frame)} ${theme.bold(name)}${modeTag}  ${theme.fg("muted", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", statsText)}`),
-        truncate(`${theme.fg("dim", "│  ")}${theme.fg("dim", `  ⎿  ${activity}`)}`),
+        truncate(`${theme.fg("dim", "├─")} ${summaryLines[0] ?? ""}`),
+        truncate(`${theme.fg("dim", "│  ")}${summaryLines[1] ?? "  ⎿ thinking…"}`),
       ]);
     }
 
     const queuedLine = queued.length > 0
-      ? truncate(`${theme.fg("dim", "├─")} ${theme.fg("muted", "◦")} ${theme.fg("dim", `${queued.length} queued`)}`)
+      ? truncate(`${theme.fg("dim", "├─")} ${renderSubagentSummary({ title: `${queued.length} queued`, status: "queued", agents: [] })[0] ?? `◦ ${queued.length} queued`}`)
       : undefined;
 
     // Assemble with overflow cap (heading + overflow indicator = 2 reserved lines).
