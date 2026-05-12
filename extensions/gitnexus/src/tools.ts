@@ -141,7 +141,7 @@ export function registerTools(pi: ExtensionAPI): void {
     label: 'GitNexus Query',
     description: 'Search the knowledge graph for execution flows related to a concept or error.',
     parameters: Type.Object({
-      query: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-]' }),
+      query: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-].*$' }),
       task_context: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
       goal: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 5 })),
@@ -161,7 +161,7 @@ export function registerTools(pi: ExtensionAPI): void {
     label: 'GitNexus Context',
     description: '360-degree view of a code symbol: callers, callees, processes it participates in.',
     parameters: Type.Object({
-      name: Type.Optional(Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-]' })),
+      name: Type.Optional(Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-].*$' })),
       uid: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
       file: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
       file_path: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
@@ -191,7 +191,7 @@ export function registerTools(pi: ExtensionAPI): void {
     label: 'GitNexus Impact',
     description: 'Blast radius analysis: what breaks at each depth if you change a symbol.',
     parameters: Type.Object({
-      target: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-]' }),
+      target: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-].*$' }),
       direction: StringEnum(['upstream', 'downstream'] as const),
       depth: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, default: 3 })),
       maxDepth: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
@@ -239,9 +239,9 @@ export function registerTools(pi: ExtensionAPI): void {
     label: 'GitNexus Rename',
     description: 'Multi-file coordinated rename using the knowledge graph plus text search. Use dry_run first.',
     parameters: Type.Object({
-      symbol_name: Type.Optional(Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-]' })),
+      symbol_name: Type.Optional(Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-].*$' })),
       symbol_uid: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
-      new_name: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-]' }),
+      new_name: Type.String({ minLength: 1, maxLength: 200, pattern: '^[^-].*$' }),
       file_path: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
       dry_run: Type.Optional(Type.Boolean()),
       repo: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
@@ -282,7 +282,7 @@ export function registerTools(pi: ExtensionAPI): void {
     label: 'GitNexus Cypher',
     description: 'Execute a raw Cypher query against the code knowledge graph.',
     parameters: Type.Object({
-      query: Type.String({ minLength: 1, maxLength: 10_000, pattern: '^[^-]' }),
+      query: Type.String({ minLength: 1, maxLength: 10_000, pattern: '^[^-].*$' }),
       repo: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     }),
     execute: async (_id, params, _signal, _onUpdate, ctx) => {
