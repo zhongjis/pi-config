@@ -76,7 +76,7 @@ export default function betterBashTool(pi: ExtensionAPI): void {
         ? theme.fg("dim", ` (timeout ${args.timeout}s)`)
         : "";
 
-      if (args.cwd && resolve(args.cwd) !== process.cwd()) {
+      if (args.cwd) {
         const displayCwd = args.cwd.startsWith(homedir)
           ? "~" + args.cwd.slice(homedir.length)
           : args.cwd;

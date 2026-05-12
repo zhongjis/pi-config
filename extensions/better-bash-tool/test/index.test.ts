@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
@@ -67,7 +68,11 @@ describe("better-bash-tool", () => {
     const mock = createMockPi();
     initBetterBashTool(mock.pi as never);
 
-    const tool = mock.tools.get("bash") as { execute: (...args: unknown[]) => Promise<unknown>; renderResult: unknown };
+    const tool = mock.tools.get("bash") as {
+      execute: (...args: unknown[]) => Promise<unknown>;
+      renderCall: (...args: unknown[]) => { text: string };
+      renderResult: unknown;
+    };
     expect(tool).toBeDefined();
     expect(createBashToolDefinitionMock).toHaveBeenCalledTimes(1);
     expect(createBashToolDefinitionMock).toHaveBeenCalledWith(process.cwd());
@@ -97,5 +102,25 @@ describe("better-bash-tool", () => {
       content: [{ type: "text", text: "ran pwd" }],
       details: { cwd: resolvedCwd },
     });
+  });
+
+  it("keeps explicit cwd visible even when it matches the process cwd", async () => {
+    const { default: initBetterBashTool } = await import("../index.js");
+    const mock = createMockPi();
+    initBetterBashTool(mock.pi as never);
+
+    const tool = mock.tools.get("bash") as {
+      renderCall: (...args: unknown[]) => { text: string };
+    };
+    const ctx = { ...createMockContext(), cwd: process.cwd() };
+
+    const rendered = tool.renderCall(
+      { command: "pnpm test", cwd: process.cwd() },
+      ctx.ui.theme,
+      { cwd: ctx.cwd, state: {}, executionStarted: false },
+    );
+
+    expect(rendered.text).toContain("~" + process.cwd().slice(homedir().length));
+    expect(rendered.text).toContain("$ pnpm test");
   });
 });
