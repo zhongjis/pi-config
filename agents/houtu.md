@@ -5,7 +5,7 @@ model: anthropic/claude-sonnet-4-6:medium,openai-codex/gpt-5.5:medium,llama-swap
 inherit_context: false
 run_in_background: false
 builtin_tools: read,bash,edit,write
-extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher,context_tag,context_log,context_checkout,context_tree_query,context_prune
+extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher,context_tag,context_log,context_checkout,context_tree_query,context_prune
 allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang
 allow_nesting: true
 ---
