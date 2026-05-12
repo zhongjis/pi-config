@@ -710,14 +710,19 @@ describe("Boomerang Extension", () => {
 
     it("aborts when no commit fallback model is available", async () => {
       writeSkill("user", "git-master", "Use git carefully.");
-      availableModels = availableModels.filter(
-        (entry) => entry.id !== "gpt-5.4-mini" && entry.id !== "claude-haiku-4-5"
+      // Profile-aware chain: gpt-5.4-mini, claude-haiku-4-5,
+      // opencode-go/qwen3.5-plus, llama-swap/qwen2.5-coder:7b
+      availableModels = availableModels.filter((entry) =>
+        entry.id !== "gpt-5.4-mini"
+        && entry.id !== "claude-haiku-4-5"
+        && entry.id !== "qwen3.5-plus"
+        && entry.id !== "qwen2.5-coder:7b"
       );
 
       await runBoomerangCommit("--amend");
 
       expect(uiMock.notify).toHaveBeenCalledWith(
-        "No available model from: gpt-5.4-mini,claude-haiku-4-5",
+        expect.stringContaining("No available model from:"),
         "error"
       );
       expect(sentMessages).toEqual([]);

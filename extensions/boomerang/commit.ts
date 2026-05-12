@@ -6,7 +6,15 @@ import type {
 import type { Model } from "@mariozechner/pi-ai";
 import { parseModelChain, resolveFirstAvailable } from "../lib/model.js";
 
-const COMMIT_MODEL_CHAIN = "gpt-5.4-mini,claude-haiku-4-5";
+// Profile-aware chain: one entry per active profile (default/opencode/local).
+// resolveFirstAvailable picks the first one in the registry that's already
+// filtered by the active profile via getAvailable().
+const COMMIT_MODEL_CHAIN = [
+  "gpt-5.4-mini",
+  "claude-haiku-4-5",
+  "opencode-go/qwen3.5-plus",
+  "llama-swap/qwen2.5-coder:7b",
+].join(",");
 const COMMIT_MODEL_CANDIDATES = parseModelChain(COMMIT_MODEL_CHAIN);
 
 export interface BoomerangTaskSnapshot {
