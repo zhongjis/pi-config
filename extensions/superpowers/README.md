@@ -42,8 +42,9 @@ diff -urN /tmp/superpowers-upstream/skills extensions/superpowers/skills \
 
 - Bundles 14 upstream Superpowers skills under `skills/`.
 - `index.ts` registers a `resources_discover` handler that injects bundled skills
-  into Pi at session start; every `SKILL.md` is discoverable like a normal skill.
-- Supports the `luban` mode registered by `extensions/modes`.
+  only when the latest persisted `agent-mode` entry is `luban`.
+- Supports the `luban` mode registered by `extensions/modes`; crossing the Lu Ban
+  boundary triggers runtime reload when available.
 - No bootstrap prompt injection outside `/mode luban`.
 
 ## Commands
@@ -52,8 +53,8 @@ diff -urN /tmp/superpowers-upstream/skills extensions/superpowers/skills \
 
 ## Files Worth Reading
 
-- `index.ts` — Registers `resources_discover` to inject `./skills` into Pi.
-- `package.json` — Declares `pi.extensions`, `pi.skills`, and `piVendor` metadata.
+- `index.ts` — Registers `resources_discover` to conditionally inject `./skills`.
+- `package.json` — Declares `pi.extensions` and `piVendor` metadata.
 - `skills/using-superpowers/SKILL.md` — Upstream guardrail skill, patched for Pi.
 - `skills/using-superpowers/references/pi-tools.md` — Pi-native tool mapping (local-only).
 - `overlay/pi-adaptations.patch` — All intentional text patches vs upstream.
