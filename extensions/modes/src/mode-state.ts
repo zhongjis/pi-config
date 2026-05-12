@@ -146,10 +146,15 @@ export class ModeStateManager {
 	}
 
 	async switchMode(mode: Mode, ctx: ExtensionContext): Promise<void> {
+		const previousMode = this.currentMode;
 		this.currentMode = mode;
 		this.cachedConfigs = {};
 		await this.applyMode(ctx);
 		this.persistState();
+		const reload = (ctx as ExtensionContext & { reload?: () => Promise<void> }).reload;
+		if ((previousMode === "luban") !== (mode === "luban") && typeof reload === "function") {
+			await reload();
+		}
 	}
 
 	async cycleMode(ctx: ExtensionContext): Promise<void> {

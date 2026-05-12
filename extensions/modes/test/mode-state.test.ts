@@ -89,6 +89,97 @@ describe("ModeStateManager", () => {
 		expect(pi.appendEntry).toHaveBeenCalled();
 	});
 
+	it("reloads resources when switching into luban", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.luban = { body: "" };
+		const reload = vi.fn(async () => {});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("luban", ctx as never);
+
+		expect(reload).toHaveBeenCalledTimes(1);
+	});
+
+	it("reloads resources when switching out of luban", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.currentMode = "luban";
+		state.cachedConfigs.kuafu = { body: "" };
+		const reload = vi.fn(async () => {});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("kuafu", ctx as never);
+
+		expect(reload).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not reload resources when switch stays outside luban", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.fuxi = { body: "" };
+		const reload = vi.fn(async () => {});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("fuxi", ctx as never);
+
+		expect(reload).not.toHaveBeenCalled();
+	});
+
+	it("persists luban boundary mode before reloading resources", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.luban = { body: "" };
+		const calls: string[] = [];
+		pi.appendEntry.mockImplementation(() => calls.push("persist"));
+		const reload = vi.fn(async () => {
+			calls.push("reload");
+		});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("luban", ctx as never);
+
+		expect(calls).toEqual(["persist", "reload"]);
+	});
+
+	it("does not throw when crossing luban boundary without reload support", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.luban = { body: "" };
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+		};
+
+		await expect(state.switchMode("luban", ctx as never)).resolves.toBeUndefined();
+	});
+
 	it("cycles through modes", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
