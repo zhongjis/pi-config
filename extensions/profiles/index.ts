@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { resolveModel } from "../lib/model.js";
 
@@ -8,25 +6,19 @@ import { resolveModel } from "../lib/model.js";
 // ---------------------------------------------------------------------------
 
 export interface ProfileConfig {
-providers: string[];
-defaultModel?: string;
-statusText: string;
-blockedAgents?: string[];
-blockedTools?: string[];
-systemPrompt?: string;
-notifyOnSessionStart?: boolean;
+	providers: string[];
+	defaultModel?: string;
+	statusText: string;
+	blockedAgents?: string[];
+	blockedTools?: string[];
+	systemPrompt?: string;
+	notifyOnSessionStart?: boolean;
 }
 
 export interface ProfilesConfig {
 	defaultProfile: string;
 	profiles: Record<string, ProfileConfig>;
 }
-
-type PartialProfileConfig = Partial<ProfileConfig>;
-type PartialProfilesConfig = Partial<{
-	defaultProfile: string;
-	profiles: Record<string, PartialProfileConfig>;
-}>;
 
 type ModelLike = { id: string; provider: string; name?: string };
 type ModelRegistryLike = {
@@ -36,7 +28,6 @@ type ModelRegistryLike = {
 };
 
 type Notify = (message: string, type: "info" | "warning" | "error") => void;
-
 
 export const OFFLINE_SYSTEM_PROMPT = `Offline mode is ON.
 
@@ -83,157 +74,25 @@ export const DEFAULT_PROFILES_CONFIG: ProfilesConfig = {
 			defaultModel: "opencode-go/kimi-k2.6",
 			statusText: "opencode",
 		},
-local: {
-providers: ["llama-swap"],
-defaultModel: "llama-swap/qwen2.5-coder:14b",
-statusText: "local",
-blockedAgents: ["wenchang"],
-blockedTools: ["web_search", "code_search", "fetch_content", "get_search_content"],
-systemPrompt: OFFLINE_SYSTEM_PROMPT,
-notifyOnSessionStart: true,
-},
-},
+		local: {
+			providers: ["llama-swap"],
+			defaultModel: "llama-swap/qwen2.5-coder:14b",
+			statusText: "local",
+			blockedAgents: ["wenchang"],
+			blockedTools: ["web_search", "code_search", "fetch_content", "get_search_content"],
+			systemPrompt: OFFLINE_SYSTEM_PROMPT,
+			notifyOnSessionStart: true,
+		},
+	},
 };
 
 // ---------------------------------------------------------------------------
-// Config loading
+// Session state
 // ---------------------------------------------------------------------------
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
-
-function stringArray(value: unknown): string[] | undefined {
-	if (!Array.isArray(value)) return undefined;
-	const strings = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-	return strings.length === value.length ? strings : undefined;
-}
-
-function sanitizeProfile(value: unknown, profileKey: string, path: string, notify?: Notify): PartialProfileConfig {
-	if (!isRecord(value)) return {};
-	const next: PartialProfileConfig = {};
-
-	const providers = stringArray(value.providers);
-	if (providers) next.providers = providers;
-	else if ("providers" in value) {
-		notify?.(`Profiles: ignoring invalid providers for "${profileKey}" in ${path}`, "warning");
-	}
-
-	if (typeof value.defaultModel === "string") next.defaultModel = value.defaultModel;
-	else if ("defaultModel" in value) {
-		notify?.(`Profiles: ignoring invalid defaultModel for "${profileKey}" in ${path}`, "warning");
-	}
-
-if (typeof value.statusText === "string") next.statusText = value.statusText;
-else if ("statusText" in value) {
-notify?.(`Profiles: ignoring invalid statusText for "${profileKey}" in ${path}`, "warning");
-}
-
-const blockedAgents = stringArray(value.blockedAgents);
-if (blockedAgents) next.blockedAgents = blockedAgents;
-else if ("blockedAgents" in value) {
-notify?.(`Profiles: ignoring invalid blockedAgents for "${profileKey}" in ${path}`, "warning");
-}
-
-const blockedTools = stringArray(value.blockedTools);
-if (blockedTools) next.blockedTools = blockedTools;
-else if ("blockedTools" in value) {
-notify?.(`Profiles: ignoring invalid blockedTools for "${profileKey}" in ${path}`, "warning");
-}
-
-if (typeof value.systemPrompt === "string") next.systemPrompt = value.systemPrompt;
-else if ("systemPrompt" in value) {
-notify?.(`Profiles: ignoring invalid systemPrompt for "${profileKey}" in ${path}`, "warning");
-}
-
-if (typeof value.notifyOnSessionStart === "boolean") next.notifyOnSessionStart = value.notifyOnSessionStart;
-else if ("notifyOnSessionStart" in value) {
-notify?.(`Profiles: ignoring invalid notifyOnSessionStart for "${profileKey}" in ${path}`, "warning");
-}
-
-return next;
-}
-
-function sanitizeConfig(value: unknown, path: string, notify?: Notify): PartialProfilesConfig {
-	if (!isRecord(value)) return {};
-	const next: PartialProfilesConfig = {};
-
-	if (typeof value.defaultProfile === "string") next.defaultProfile = value.defaultProfile;
-	else if ("defaultProfile" in value) {
-		notify?.(`Profiles: ignoring invalid defaultProfile in ${path}`, "warning");
-	}
-
-	if (isRecord(value.profiles)) {
-		const profiles: Record<string, PartialProfileConfig> = {};
-		for (const [key, raw] of Object.entries(value.profiles)) {
-			profiles[key] = sanitizeProfile(raw, key, path, notify);
-		}
-		next.profiles = profiles;
-	} else if ("profiles" in value) {
-		notify?.(`Profiles: ignoring invalid profiles in ${path}`, "warning");
-	}
-
-	return next;
-}
-
-function mergeProfile(base: ProfileConfig | undefined, override: PartialProfileConfig): ProfileConfig {
-const merged: ProfileConfig = {
-providers: override.providers ?? base?.providers ?? [],
-statusText: override.statusText ?? base?.statusText ?? "",
-};
-const defaultModel = override.defaultModel ?? base?.defaultModel;
-if (defaultModel) merged.defaultModel = defaultModel;
-const blockedAgents = override.blockedAgents ?? base?.blockedAgents;
-if (blockedAgents) merged.blockedAgents = blockedAgents;
-const blockedTools = override.blockedTools ?? base?.blockedTools;
-if (blockedTools) merged.blockedTools = blockedTools;
-const systemPrompt = override.systemPrompt ?? base?.systemPrompt;
-if (systemPrompt) merged.systemPrompt = systemPrompt;
-const notifyOnSessionStart = override.notifyOnSessionStart ?? base?.notifyOnSessionStart;
-if (notifyOnSessionStart !== undefined) merged.notifyOnSessionStart = notifyOnSessionStart;
-return merged;
-}
-
-function mergeConfig(base: ProfilesConfig, override: PartialProfilesConfig): ProfilesConfig {
-	const profiles: Record<string, ProfileConfig> = { ...base.profiles };
-	if (override.profiles) {
-		for (const [key, partial] of Object.entries(override.profiles)) {
-			profiles[key] = mergeProfile(profiles[key], partial);
-		}
-	}
-	return {
-		defaultProfile: override.defaultProfile ?? base.defaultProfile,
-		profiles,
-	};
-}
-
-function readConfig(path: string, notify?: Notify): PartialProfilesConfig {
-	if (!existsSync(path)) return {};
-	try {
-		return sanitizeConfig(JSON.parse(readFileSync(path, "utf-8")), path, notify);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		notify?.(`Profiles: failed to read ${path}: ${message}`, "error");
-		return {};
-	}
-}
-
-function getHomeDir(): string | undefined {
-	return process.env.HOME ?? process.env.USERPROFILE;
-}
-
-export function loadProfilesConfig(cwd: string, notify?: Notify): ProfilesConfig {
-	const home = getHomeDir();
-	const globalPath = home ? join(home, ".pi", "agent", "profiles.json") : undefined;
-	const projectPath = join(cwd, ".pi", "profiles.json");
-	const globalConfig = globalPath ? readConfig(globalPath, notify) : {};
-	const projectConfig = readConfig(projectPath, notify);
-	return mergeConfig(mergeConfig(DEFAULT_PROFILES_CONFIG, globalConfig), projectConfig);
-}
-
-// ---------------------------------------------------------------------------
-// Session state
-// ---------------------------------------------------------------------------
 
 function isProfileState(value: unknown): value is ProfileState {
 	return isRecord(value) && typeof value.name === "string";
@@ -254,7 +113,7 @@ function writeSessionProfile(pi: ExtensionAPI, name: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Registry filtering (shared policy map — composes with offline extension)
+// Registry filtering (shared policy map)
 // ---------------------------------------------------------------------------
 
 const registryPolicies = new WeakMap<object, RegistryPolicy>();
@@ -361,7 +220,7 @@ export async function forceProfileModel(
 // ---------------------------------------------------------------------------
 
 export default function profilesExtension(pi: ExtensionAPI): void {
-	let config = DEFAULT_PROFILES_CONFIG;
+	const config = DEFAULT_PROFILES_CONFIG;
 	const owner = Symbol("profiles-session");
 	let activeName = DEFAULT_PROFILES_CONFIG.defaultProfile;
 	let cliFlagConsumed = false;
@@ -379,7 +238,7 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 	}
 
 	function resolveInitialProfile(ctx: ExtensionContext): string {
-		// Priority: CLI flag (this run, explicit) > session state > env var > config default > hardcoded.
+		// Priority: CLI flag (this run, explicit) > session state > env var > hardcoded default.
 		if (!cliFlagConsumed) {
 			const flagValue = pi.getFlag("profile");
 			if (typeof flagValue === "string" && flagValue.trim()) {
@@ -412,8 +271,6 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 	}
 
 	async function applyProfile(ctx: ExtensionContext, options: { restoreSession?: boolean } = {}): Promise<void> {
-		config = loadProfilesConfig(ctx.cwd, (message, type) => notifyOnce(ctx, `config:${message}`, message, type));
-
 		if (options.restoreSession) {
 			activeName = resolveInitialProfile(ctx);
 			// CLI flag is persisted to session state so subsequent turns remember it
@@ -435,7 +292,6 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 
 	/** Switch to a named profile. Shared by /profile <name>, /profile:<name>, and CLI. */
 	async function switchProfile(name: string, ctx: ExtensionContext): Promise<void> {
-		config = loadProfilesConfig(ctx.cwd, (message, type) => notifyOnce(ctx, `config:${message}`, message, type));
 		if (!config.profiles[name]) {
 			ctx.ui.notify(
 				`Unknown profile "${name}". Available: ${Object.keys(config.profiles).join(", ")}`,
@@ -471,7 +327,6 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 			const action = args.trim().toLowerCase() || "status";
 
 			if (action === "status") {
-				config = loadProfilesConfig(ctx.cwd);
 				const active = getActiveConfig();
 				ctx.ui.notify(
 					`Profile: ${activeName} (providers: ${active.providers.join(", ") || "<none>"})`,
@@ -485,10 +340,6 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 	});
 
 	// Shortcut slash commands: /profile:<name> for each built-in profile.
-	// Only the hardcoded defaults get a dedicated command because registerCommand
-	// runs at extension-init time, before any config file is loaded. Custom profiles
-	// defined in ~/.pi/agent/profiles.json or .pi/profiles.json still work via
-	// `/profile <name>` and the --profile CLI flag.
 	for (const shortcutName of Object.keys(DEFAULT_PROFILES_CONFIG.profiles)) {
 		pi.registerCommand(`profile:${shortcutName}`, {
 			description: `Switch to the "${shortcutName}" provider profile`,
@@ -498,52 +349,52 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 		});
 	}
 
-let notifiedSessionStart = false;
+	let notifiedSessionStart = false;
 
-function appendSystemPrompt(systemPrompt: string, extra: string): string {
-if (systemPrompt.includes(extra)) return systemPrompt;
-return systemPrompt.trimEnd() ? `${systemPrompt.trimEnd()}\n\n${extra}` : extra;
-}
+	function appendSystemPrompt(systemPrompt: string, extra: string): string {
+		if (systemPrompt.includes(extra)) return systemPrompt;
+		return systemPrompt.trimEnd() ? `${systemPrompt.trimEnd()}\n\n${extra}` : extra;
+	}
 
-pi.on("session_start", async (_event, ctx) => {
-notifiedSessionStart = false;
-await applyProfile(ctx, { restoreSession: true });
-const active = getActiveConfig();
-if (active.notifyOnSessionStart && !notifiedSessionStart) {
-ctx.ui.notify(LOCAL_PROFILE_NOTIFICATION, "info");
-notifiedSessionStart = true;
-}
-});
+	pi.on("session_start", async (_event, ctx) => {
+		notifiedSessionStart = false;
+		await applyProfile(ctx, { restoreSession: true });
+		const active = getActiveConfig();
+		if (active.notifyOnSessionStart && !notifiedSessionStart) {
+			ctx.ui.notify(LOCAL_PROFILE_NOTIFICATION, "info");
+			notifiedSessionStart = true;
+		}
+	});
 
-pi.on("before_agent_start", async (event, ctx) => {
-await applyProfile(ctx);
-const active = getActiveConfig();
-if (active.systemPrompt) {
-return { systemPrompt: appendSystemPrompt(event.systemPrompt, active.systemPrompt) };
-}
-});
+	pi.on("before_agent_start", async (event, ctx) => {
+		await applyProfile(ctx);
+		const active = getActiveConfig();
+		if (active.systemPrompt) {
+			return { systemPrompt: appendSystemPrompt(event.systemPrompt, active.systemPrompt) };
+		}
+	});
 
-pi.on("tool_call", async (event, ctx) => {
-await applyProfile(ctx);
-const active = getActiveConfig();
+	pi.on("tool_call", async (event, ctx) => {
+		await applyProfile(ctx);
+		const active = getActiveConfig();
 
-if (active.blockedTools?.map(normalize).includes(normalize(event.toolName))) {
-return {
-block: true,
-reason: `Profile "${activeName}": tool "${event.toolName}" is disabled.`,
-};
-}
+		if (active.blockedTools?.map(normalize).includes(normalize(event.toolName))) {
+			return {
+				block: true,
+				reason: `Profile "${activeName}": tool "${event.toolName}" is disabled.`,
+			};
+		}
 
-if (event.toolName !== "Agent") return;
+		if (event.toolName !== "Agent") return;
 
-const requestedType = typeof event.input.subagent_type === "string" ? event.input.subagent_type : "";
-if (active.blockedAgents?.map(normalize).includes(normalize(requestedType))) {
-return {
-block: true,
-reason: `Profile "${activeName}": delegation to "${requestedType}" is disabled.`,
-};
-}
-});
+		const requestedType = typeof event.input.subagent_type === "string" ? event.input.subagent_type : "";
+		if (active.blockedAgents?.map(normalize).includes(normalize(requestedType))) {
+			return {
+				block: true,
+				reason: `Profile "${activeName}": delegation to "${requestedType}" is disabled.`,
+			};
+		}
+	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		setRegistryProfilePolicy(ctx.modelRegistry, owner, false, getActiveConfig());

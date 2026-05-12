@@ -1,12 +1,8 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import profilesExtension, {
-DEFAULT_PROFILES_CONFIG,
-loadProfilesConfig,
-PROFILE_STATE_CUSTOM_TYPE,
-OFFLINE_SYSTEM_PROMPT,
+	DEFAULT_PROFILES_CONFIG,
+	PROFILE_STATE_CUSTOM_TYPE,
+	OFFLINE_SYSTEM_PROMPT,
 } from "./index.js";
 
 type Handler = (event: any, ctx: any) => unknown | Promise<unknown>;
@@ -72,7 +68,6 @@ function createHarness(flagValues: Record<string, boolean | string | undefined> 
 }
 
 function createContext(
-	cwd: string,
 	model: MockModel | undefined = anthropicModel,
 	entries: Array<{ type: string; customType?: string; data?: unknown }> = [],
 	registry = createMockRegistry([
@@ -86,7 +81,7 @@ function createContext(
 	]),
 ) {
 	return {
-		cwd,
+		cwd: "/project",
 		hasUI: true,
 		model,
 		modelRegistry: registry,
@@ -100,102 +95,20 @@ function createContext(
 	};
 }
 
-let tempHome = "";
-let tempProject = "";
-let originalHome: string | undefined;
 let originalPiProfile: string | undefined;
 
-beforeEach(async () => {
-	originalHome = process.env.HOME;
+beforeEach(() => {
 	originalPiProfile = process.env.PI_PROFILE;
-	tempHome = join(tmpdir(), `profiles-home-${Date.now()}-${Math.random()}`);
-	tempProject = join(tmpdir(), `profiles-project-${Date.now()}-${Math.random()}`);
-	await mkdir(tempHome, { recursive: true });
-	await mkdir(tempProject, { recursive: true });
-	process.env.HOME = tempHome;
 	delete process.env.PI_PROFILE;
 });
 
-afterEach(async () => {
-	process.env.HOME = originalHome;
+afterEach(() => {
 	if (originalPiProfile === undefined) {
 		delete process.env.PI_PROFILE;
 	} else {
 		process.env.PI_PROFILE = originalPiProfile;
 	}
 	vi.restoreAllMocks();
-	await rm(tempHome, { force: true, recursive: true });
-	await rm(tempProject, { force: true, recursive: true });
-});
-
-// ---------------------------------------------------------------------------
-// Config loading
-// ---------------------------------------------------------------------------
-
-describe("profiles config", () => {
-	it("returns built-in defaults when no config files exist", () => {
-		const loaded = loadProfilesConfig(tempProject);
-		expect(loaded.defaultProfile).toBe("default");
-		expect(loaded.profiles.default.providers).toContain("anthropic");
-		expect(loaded.profiles.opencode.providers).toContain("opencode-go");
-		expect(loaded.profiles.local.providers).toContain("llama-swap");
-	});
-
-	it("merges global config over defaults", async () => {
-		await mkdir(join(tempHome, ".pi", "agent"), { recursive: true });
-		await writeFile(
-			join(tempHome, ".pi", "agent", "profiles.json"),
-			JSON.stringify({
-				defaultProfile: "opencode",
-				profiles: {
-					opencode: { defaultModel: "opencode-go/glm-5.1" },
-				},
-			}),
-		);
-		const loaded = loadProfilesConfig(tempProject);
-		expect(loaded.defaultProfile).toBe("opencode");
-		expect(loaded.profiles.opencode.defaultModel).toBe("opencode-go/glm-5.1");
-		// Providers inherited from defaults.
-		expect(loaded.profiles.opencode.providers).toEqual(DEFAULT_PROFILES_CONFIG.profiles.opencode.providers);
-	});
-
-	it("project config overrides global", async () => {
-		await mkdir(join(tempHome, ".pi", "agent"), { recursive: true });
-		await writeFile(
-			join(tempHome, ".pi", "agent", "profiles.json"),
-			JSON.stringify({ defaultProfile: "opencode" }),
-		);
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({ defaultProfile: "local" }),
-		);
-		const loaded = loadProfilesConfig(tempProject);
-		expect(loaded.defaultProfile).toBe("local");
-	});
-
-	it("ignores invalid fields with warnings", async () => {
-		const notify = vi.fn();
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({
-				defaultProfile: 123,
-				profiles: {
-					opencode: {
-						providers: "not-an-array",
-						defaultModel: 42,
-						statusText: null,
-					},
-				},
-			}),
-		);
-		const loaded = loadProfilesConfig(tempProject, notify);
-		// Defaults preserved.
-		expect(loaded.defaultProfile).toBe("default");
-		expect(loaded.profiles.opencode.providers).toEqual(DEFAULT_PROFILES_CONFIG.profiles.opencode.providers);
-		expect(notify).toHaveBeenCalled();
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -204,7 +117,7 @@ describe("profiles config", () => {
 
 describe("registry filter", () => {
 	it("returns all models when no profile is active yet", () => {
-		const ctx = createContext(tempProject);
+		const ctx = createContext();
 		// Not fired session_start — filter shouldn't be active.
 		const snapshot = ctx.modelRegistry.getAvailable();
 		expect(snapshot).toEqual([
@@ -220,7 +133,7 @@ describe("registry filter", () => {
 
 	it("filters to default providers on session_start", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toContain("anthropic");
@@ -232,7 +145,7 @@ describe("registry filter", () => {
 	it("filters to opencode providers when PI_PROFILE=opencode", async () => {
 		process.env.PI_PROFILE = "opencode";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toEqual(expect.arrayContaining(["opencode-go", "opencode"]));
@@ -243,7 +156,7 @@ describe("registry filter", () => {
 	it("filters to llama-swap when profile=local", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, llamaSwapModel);
+		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toEqual([llamaSwapModel.provider]);
@@ -251,7 +164,7 @@ describe("registry filter", () => {
 
 	it("restores original getAvailable on session_shutdown", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		expect(ctx.modelRegistry.getAvailable().length).toBeGreaterThan(0);
 		await harness.fire("session_shutdown", {}, ctx);
@@ -267,16 +180,10 @@ describe("registry filter", () => {
 // ---------------------------------------------------------------------------
 
 describe("profile resolution", () => {
-	it("prefers session state over env var and config", async () => {
+	it("prefers session state over env var", async () => {
 		process.env.PI_PROFILE = "opencode";
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({ defaultProfile: "local" }),
-		);
 		const harness = createHarness();
 		const ctx = createContext(
-			tempProject,
 			anthropicModel,
 			[{ type: "custom", customType: PROFILE_STATE_CUSTOM_TYPE, data: { name: "default" } }],
 		);
@@ -288,15 +195,10 @@ describe("profile resolution", () => {
 		expect(visible).not.toContain("llama-swap");
 	});
 
-	it("prefers env var over config default when no session state", async () => {
+	it("prefers env var over default when no session state", async () => {
 		process.env.PI_PROFILE = "opencode";
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({ defaultProfile: "local" }),
-		);
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toContain("opencode-go");
@@ -304,23 +206,10 @@ describe("profile resolution", () => {
 		expect(visible).not.toContain("llama-swap");
 	});
 
-	it("uses config default when no env var and no session state", async () => {
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({ defaultProfile: "local" }),
-		);
-		const harness = createHarness();
-		const ctx = createContext(tempProject, llamaSwapModel);
-		await harness.fire("session_start", {}, ctx);
-		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
-		expect(visible).toEqual([llamaSwapModel.provider]);
-	});
-
 	it("falls back to built-in default when env var references unknown profile", async () => {
 		process.env.PI_PROFILE = "nonexistent";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toContain("anthropic");
@@ -334,7 +223,7 @@ describe("profile resolution", () => {
 describe("model forcing", () => {
 	it("does not switch model when current model is in profile's providers", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		expect(harness.pi.setModel).not.toHaveBeenCalled();
 	});
@@ -342,46 +231,11 @@ describe("model forcing", () => {
 	it("switches to profile's defaultModel when current model is out-of-profile", async () => {
 		process.env.PI_PROFILE = "opencode";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		expect(harness.pi.setModel).toHaveBeenCalled();
 		const called = harness.pi.setModel.mock.calls[0][0] as MockModel;
 		expect(called.provider).toBe("opencode-go");
-	});
-
-	it("falls back to first allowed model when defaultModel is missing", async () => {
-		process.env.PI_PROFILE = "opencode";
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({
-				profiles: { opencode: { defaultModel: "opencode-go/non-existent-model" } },
-			}),
-		);
-		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
-		await harness.fire("session_start", {}, ctx);
-		expect(harness.pi.setModel).toHaveBeenCalled();
-		const called = harness.pi.setModel.mock.calls[0][0] as MockModel;
-		expect(["opencode-go", "opencode"]).toContain(called.provider);
-	});
-
-	it("notifies when no model is available for profile's providers", async () => {
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({
-				defaultProfile: "custom-empty",
-				profiles: { "custom-empty": { providers: ["no-such-provider"], statusText: "empty" } },
-			}),
-		);
-		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
-		await harness.fire("session_start", {}, ctx);
-		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("no model available"),
-			"error",
-		);
 	});
 });
 
@@ -392,7 +246,7 @@ describe("model forcing", () => {
 describe("/profile command", () => {
 	it("shows status when invoked with no args", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject);
+		const ctx = createContext();
 		await harness.fire("session_start", {}, ctx);
 		await harness.commands.get("profile")!.handler("", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
@@ -403,7 +257,7 @@ describe("/profile command", () => {
 
 	it("switches profile and writes session state", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject);
+		const ctx = createContext();
 		await harness.fire("session_start", {}, ctx);
 		await harness.commands.get("profile")!.handler("opencode", ctx);
 		expect(harness.appendedEntries).toContainEqual({
@@ -417,7 +271,7 @@ describe("/profile command", () => {
 
 	it("rejects unknown profile name", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject);
+		const ctx = createContext();
 		await harness.fire("session_start", {}, ctx);
 		await harness.commands.get("profile")!.handler("nonexistent", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
@@ -432,7 +286,7 @@ describe("/profile command", () => {
 
 	it("exposes argument completions for known profile names", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject);
+		const ctx = createContext();
 		await harness.fire("session_start", {}, ctx);
 		const def = harness.commands.get("profile")!;
 		const completions = (def as any).getArgumentCompletions("op");
@@ -441,21 +295,16 @@ describe("/profile command", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Filter composition with concurrent owners (offline-style)
+// Filter composition with concurrent owners
 // ---------------------------------------------------------------------------
 
 describe("filter composition", () => {
 	it("multiple independent filter owners union their allowed providers", async () => {
-		// Simulate: profile extension installed + offline extension installed on same registry.
+		// Simulate: profile extension installed + another filter owner on same registry.
 		// Both should be able to add/remove their policies without breaking the other.
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
-
-		// Manually install a second filter owner (simulating offline).
-		const policy = (ctx.modelRegistry as any);
-		const getAvail = policy.getAvailable;
-		expect(typeof getAvail).toBe("function");
 
 		// Profile filter keeps anthropic+openai-codex. That's verified above.
 		const beforeShutdown = ctx.modelRegistry.getAvailable();
@@ -482,7 +331,7 @@ describe("/profile:<name> shortcut commands", () => {
 
 	it("switches profile and writes session state via /profile:opencode", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject);
+		const ctx = createContext();
 		await harness.fire("session_start", {}, ctx);
 		await harness.commands.get("profile:opencode")!.handler("", ctx);
 		expect(harness.appendedEntries).toContainEqual({
@@ -496,27 +345,11 @@ describe("/profile:<name> shortcut commands", () => {
 
 	it("/profile:local switches to llama-swap-only", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject);
+		const ctx = createContext();
 		await harness.fire("session_start", {}, ctx);
 		await harness.commands.get("profile:local")!.handler("", ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toEqual([llamaSwapModel.provider]);
-	});
-
-	it("does NOT auto-register shortcut commands for custom profiles from config", async () => {
-		// Custom profiles defined only in config file don't get their own /profile:<name>
-		// command since registerCommand runs at init time before config loads.
-		await mkdir(join(tempProject, ".pi"), { recursive: true });
-		await writeFile(
-			join(tempProject, ".pi", "profiles.json"),
-			JSON.stringify({
-				profiles: {
-					"custom-one": { providers: ["anthropic"], statusText: "custom" },
-				},
-			}),
-		);
-		const harness = createHarness();
-		expect(harness.commands.has("profile:custom-one")).toBe(false);
 	});
 });
 
@@ -533,7 +366,7 @@ describe("--profile CLI flag", () => {
 
 	it("activates the profile specified by --profile at session_start", async () => {
 		const harness = createHarness({ profile: "opencode" });
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toContain("opencode-go");
@@ -543,7 +376,7 @@ describe("--profile CLI flag", () => {
 	it("CLI flag takes precedence over PI_PROFILE env var", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness({ profile: "opencode" });
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toContain("opencode-go");
@@ -554,7 +387,6 @@ describe("--profile CLI flag", () => {
 	it("CLI flag takes precedence over previous session state", async () => {
 		const harness = createHarness({ profile: "opencode" });
 		const ctx = createContext(
-			tempProject,
 			anthropicModel,
 			// Session history has "local" as the last-used profile.
 			[{ type: "custom", customType: PROFILE_STATE_CUSTOM_TYPE, data: { name: "local" } }],
@@ -567,7 +399,7 @@ describe("--profile CLI flag", () => {
 
 	it("persists CLI flag choice into session state so /resume keeps it", async () => {
 		const harness = createHarness({ profile: "opencode" });
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		expect(harness.appendedEntries).toContainEqual({
 			customType: PROFILE_STATE_CUSTOM_TYPE,
@@ -577,7 +409,7 @@ describe("--profile CLI flag", () => {
 
 	it("warns and falls back to default when --profile references unknown profile", async () => {
 		const harness = createHarness({ profile: "nonexistent" });
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
 			expect.stringContaining("unknown"),
@@ -597,7 +429,7 @@ describe("local profile offline guards", () => {
 	it("injects offline system prompt via before_agent_start when local profile is active", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, llamaSwapModel);
+		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
 		const [result] = await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx) as [{ systemPrompt: string }];
 		expect(result.systemPrompt).toContain("Base");
@@ -606,7 +438,7 @@ describe("local profile offline guards", () => {
 
 	it("does not inject system prompt for default profile", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const [result] = await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
 		expect(result).toBeUndefined();
@@ -615,7 +447,7 @@ describe("local profile offline guards", () => {
 	it("blocks web tools and wenchang delegation when local profile is active", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, llamaSwapModel);
+		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
 		const [webResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "web", toolName: "web_search", input: {} }, ctx);
 		const [agentResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent", toolName: "Agent", input: { subagent_type: "wenchang" } }, ctx);
@@ -626,7 +458,7 @@ describe("local profile offline guards", () => {
 	it("allows allowed Agent calls through when local profile is active", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, llamaSwapModel);
+		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
 		const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent-1", toolName: "Agent", input: { subagent_type: "chengfeng" } }, ctx);
 		expect(result).toBeUndefined();
@@ -634,7 +466,7 @@ describe("local profile offline guards", () => {
 
 	it("does not block tools for default profile", async () => {
 		const harness = createHarness();
-		const ctx = createContext(tempProject, anthropicModel);
+		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const [webResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "web", toolName: "web_search", input: {} }, ctx);
 		expect(webResult).toBeUndefined();
@@ -643,7 +475,7 @@ describe("local profile offline guards", () => {
 	it("shows session-start notification once for local profile", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
-		const ctx = createContext(tempProject, llamaSwapModel);
+		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
 		await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
 		await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
