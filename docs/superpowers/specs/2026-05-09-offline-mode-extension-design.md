@@ -1,3 +1,6 @@
+> **DEPRECATED (2026-05-11):** `extensions/offline/` has been merged into `extensions/profiles/`. The `local` profile now carries all offline guards (blocked tools/agents, system prompt, notify on session start). This spec is preserved for historical reference only.
+
+
 # Offline Mode Extension Design
 
 ## Goal

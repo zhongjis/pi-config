@@ -1,3 +1,6 @@
+> **DEPRECATED (2026-05-11):** `extensions/offline/` has been merged into `extensions/profiles/`. The `local` profile now carries all offline guards (blocked tools/agents, system prompt, notify on session start). This plan is preserved for historical reference only.
+
+
 # Offline Mode Session-Scoped Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

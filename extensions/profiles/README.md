@@ -9,7 +9,7 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 - Persists profile choice in the session journal (`panda:profile` custom entry) so `--resume` + `--continue` restore it.
 - Honors `PI_PROFILE=<name>` env var as the default when no session state exists — lets nix-config set the profile per machine/location.
 - Shows `● profile: <name>` status bar indicator when a non-default profile is active.
-- Composes cleanly with `extensions/offline`: both patch `registry.getAvailable()`; the resulting available set is the intersection of all active filters.
+- **The `local` profile includes offline guards:** blocks web tools, blocks `wenchang` delegation, and injects an offline system prompt.
 
 ## Profiles
 
@@ -17,7 +17,7 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 |---|---|---|
 | `default` | `anthropic`, `openai-codex`, `openai`, `amazon-bedrock`, `google` | US default — paid frontier models. |
 | `opencode` | `opencode-go`, `opencode` | China — OpenCode Go subscription, Zen overflow. |
-| `local` | `llama-swap` | Offline-first or no-network environments. |
+| `local` | `llama-swap` | Offline-first or no-network environments. Blocks web tools and wenchang. |
 
 Override via `.pi/profiles.json` (project) or `~/.pi/agent/profiles.json` (global). Project overrides global.
 
@@ -43,6 +43,7 @@ The CLI choice is persisted into session state, so `pi --resume` keeps the profi
 ## Activation order
 
 When a session starts, the active profile is determined by the first match:
+
 1. `--profile <name>` CLI flag (explicit, one-shot override — wins over everything).
 2. `panda:profile` custom entry in the session journal (from a previous `/profile <name>` or `--profile`).
 3. `PI_PROFILE` environment variable.
@@ -71,13 +72,29 @@ Project: `<cwd>/.pi/profiles.json`
     "local": {
       "providers": ["llama-swap"],
       "defaultModel": "llama-swap/qwen2.5-coder:14b",
-      "statusText": "local"
+      "statusText": "local",
+      "blockedAgents": ["wenchang"],
+      "blockedTools": ["web_search", "code_search", "fetch_content", "get_search_content"],
+      "systemPrompt": "Offline mode is ON.\n\nConstraints:\n- Assume no internet access.\n...",
+      "notifyOnSessionStart": true
     }
   }
 }
 ```
 
 All fields are optional — omit to inherit the built-in defaults.
+
+### Profile config fields
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `providers` | `string[]` | Allowed model providers. |
+| `defaultModel` | `string` | Model to force-switch to when current model is out-of-profile. |
+| `statusText` | `string` | Status bar indicator text. |
+| `blockedAgents` | `string[]` | Subagents to block while this profile is active. |
+| `blockedTools` | `string[]` | Tools to block while this profile is active. |
+| `systemPrompt` | `string` | Extra system prompt injected while this profile is active. |
+| `notifyOnSessionStart` | `boolean` | Show a notification when this profile activates on session start. |
 
 ## Frontmatter compatibility
 
@@ -88,14 +105,3 @@ model: gpt-5.4-mini, claude-haiku-4-5, opencode-go/qwen3.5-plus, llama-swap/qwen
 ```
 
 pi's `resolveModel` walks the chain and returns the first entry whose provider is in the active profile's allowlist. See [`docs/opencode-agent-models.md`](../../docs/opencode-agent-models.md) for the opencode-profile mapping.
-
-## Interaction with offline extension
-
-Both extensions filter `registry.getAvailable()` via separate Symbol owners on a shared WeakMap policy. Filters intersect:
-
-- `profile=default` + `offline=off` → Anthropic + OpenAI visible.
-- `profile=default` + `offline=on` → empty (Anthropic/OpenAI aren't "local"). Offline notifies user.
-- `profile=local` + `offline=on` → llama-swap visible. Consistent.
-- `profile=opencode` + `offline=off` → OpenCode providers visible.
-
-`/offline on` typically implies `local` profile is desired; users should switch both.
