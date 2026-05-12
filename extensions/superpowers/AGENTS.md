@@ -22,7 +22,7 @@ Never run `git clone` inside this repo worktree. The sync script uses `/tmp`.
 
 ## Local Tweaks
 
-Intentional divergences from upstream. Preserve on sync.
+Intentional divergences from upstream. Preserve these on sync.
 
 | File | What | Why |
 |------|------|-----|

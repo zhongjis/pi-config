@@ -2,7 +2,13 @@
 
 Claude Code-style autonomous sub-agents for Pi. Spawn specialized agents in isolated sessions with their own tools, model, thinking level, and system prompt. Run foreground or background, steer mid-run, resume completed sessions.
 
-Vendored from [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3. See [CHANGELOG.md](CHANGELOG.md) for upstream history.
+## Upstream
+
+- **Source:** https://github.com/tintinweb/pi-subagents
+- **Version:** 0.6.3
+- **License:** not declared upstream
+- **Adapted:** See `AGENTS.md` `## Local Tweaks` for the full divergence manifest. Briefly: background supervision, delegation policy, result recovery, enhanced skill loading, persistent session JSONL logging, Pi-native agent frontmatter, Nerd Font UI stats.
+
 
 ## Tools and Commands
 
@@ -97,7 +103,3 @@ Status widgets, Agent result renderers, and background completion notifications 
 ## Events
 
 Lifecycle events on `pi.events`: `subagents:created`, `subagents:started`, `subagents:completed`, `subagents:failed`, `subagents:steered`, `subagents:ready`, `subagents:settings_loaded`, `subagents:settings_changed`. Cross-extension RPC: `subagents:rpc:ping`, `subagents:rpc:spawn`, `subagents:rpc:stop` with reply on `:reply:${requestId}`.
-
-## Local Additions
-
-Features added on top of upstream: background supervision, delegation policy, result recovery, thinking-level normalization, enhanced skill loading, abort signal forwarding, model label tracking, Nerd Font UI stats, `prompt_mode: system_instructions` (env header + agent body + auto-injected AGENTS.md project context, no parent identity bleed), and **persistent session JSONL logging** (`SessionManager.create` under `~/.pi/agent/sessions/`, matching the main agent; discoverable via `pi sessions` / `pi --resume`, exposed on records and notifications as `sessionFile`). See `src/agent-runner.ts` `inheritContextFiles` and `src/prompts.ts` doc comment.

@@ -104,4 +104,8 @@ Persisted to `.pi/tasks-config.json`. Override scope with `PI_TASKS` env var (`o
 
 ## Upstream
 
-Source: [tintinweb/pi-tasks](https://github.com/tintinweb/pi-tasks) (MIT). Last synced to v0.5.0 at commit `30c3452fd1292860482f1afc7908edb76a46f1ed`. Local adaptations keep this repo's directory entrypoint (`./index.ts`), peer dependency style, root-relative Vitest/Biome scripts, chengfeng-oriented task examples, and planning-handoff cleanup RPC/provenance behavior.
+- **Source:** https://github.com/tintinweb/pi-tasks
+- **Version:** 0.5.0
+- **Commit:** `30c3452fd1292860482f1afc7908edb76a46f1ed`
+- **License:** MIT
+- **Adapted:** Directory entrypoint (`./index.ts`), peer dependency style, root-relative Vitest/Biome scripts, chengfeng-oriented task examples, planning-handoff cleanup RPC/provenance behavior.
