@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-6:high,openai-codex/gpt-5.5:high,llama-swap/qwen2
 inherit_context: false
 run_in_background: false
 builtin_tools: read,write,edit
-extension_tools: ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve,readonly_bash,render-visual,look_at,context_tag,context_log,context_checkout,context_tree_query,context_prune
+extension_tools: ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve,readonly_bash,render-visual,look_at
 extensions: clauderock,ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,lsp_diagnostics,plan_approve,readonly_bash,render-visual,look_at,context_tag,context_log,context_checkout,context_tree_query,context_prune
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu
 disallow_delegation_to: houtu
