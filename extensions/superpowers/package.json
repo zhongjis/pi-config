@@ -5,8 +5,7 @@
   "description": "Vendored Superpowers skills adapted for the local Pi harness.",
   "license": "MIT",
   "pi": {
-    "extensions": ["./index.ts"],
-    "skills": ["./skills"]
+    "extensions": ["./index.ts"]
   },
   "piVendor": {
     "upstream": "https://github.com/obra/superpowers",

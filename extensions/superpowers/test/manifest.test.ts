@@ -52,12 +52,11 @@ function listSkillDirs(): string[] {
 }
 
 describe("superpowers package manifest", () => {
-  it("declares package skills and upstream provenance", () => {
+  it("declares extension entrypoint and upstream provenance", () => {
     const manifest = readJson(join(extensionRoot, "package.json"));
 
     expect(manifest.pi).toEqual({
       extensions: ["./index.ts"],
-      skills: ["./skills"],
     });
     expect(manifest.piVendor).toMatchObject({
       upstream: "https://github.com/obra/superpowers",
