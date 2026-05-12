@@ -8,9 +8,13 @@ import { resolveModel } from "../lib/model.js";
 // ---------------------------------------------------------------------------
 
 export interface ProfileConfig {
-	providers: string[];
-	defaultModel?: string;
-	statusText: string;
+providers: string[];
+defaultModel?: string;
+statusText: string;
+blockedAgents?: string[];
+blockedTools?: string[];
+systemPrompt?: string;
+notifyOnSessionStart?: boolean;
 }
 
 export interface ProfilesConfig {
@@ -33,6 +37,18 @@ type ModelRegistryLike = {
 
 type Notify = (message: string, type: "info" | "warning" | "error") => void;
 
+
+export const OFFLINE_SYSTEM_PROMPT = `Offline mode is ON.
+
+Constraints:
+- Assume no internet access.
+- Use only local files, local tools, and local models.
+- Do not delegate to wenchang.
+- Do not call web, search, or fetch tools.
+- Do not suggest online documentation unless the user asks to leave offline mode.
+- If external information is missing, state what local evidence is missing and proceed from repo files, local docs, and cached context.`;
+
+const LOCAL_PROFILE_NOTIFICATION = "Local profile active: local models only; web tools and wenchang disabled.";
 export const PROFILE_STATE_CUSTOM_TYPE = "panda:profile";
 
 type ProfileState = { name: string };
@@ -67,12 +83,16 @@ export const DEFAULT_PROFILES_CONFIG: ProfilesConfig = {
 			defaultModel: "opencode-go/kimi-k2.6",
 			statusText: "opencode",
 		},
-		local: {
-			providers: ["llama-swap"],
-			defaultModel: "llama-swap/qwen2.5-coder:14b",
-			statusText: "local",
-		},
-	},
+local: {
+providers: ["llama-swap"],
+defaultModel: "llama-swap/qwen2.5-coder:14b",
+statusText: "local",
+blockedAgents: ["wenchang"],
+blockedTools: ["web_search", "code_search", "fetch_content", "get_search_content"],
+systemPrompt: OFFLINE_SYSTEM_PROMPT,
+notifyOnSessionStart: true,
+},
+},
 };
 
 // ---------------------------------------------------------------------------
@@ -104,12 +124,34 @@ function sanitizeProfile(value: unknown, profileKey: string, path: string, notif
 		notify?.(`Profiles: ignoring invalid defaultModel for "${profileKey}" in ${path}`, "warning");
 	}
 
-	if (typeof value.statusText === "string") next.statusText = value.statusText;
-	else if ("statusText" in value) {
-		notify?.(`Profiles: ignoring invalid statusText for "${profileKey}" in ${path}`, "warning");
-	}
+if (typeof value.statusText === "string") next.statusText = value.statusText;
+else if ("statusText" in value) {
+notify?.(`Profiles: ignoring invalid statusText for "${profileKey}" in ${path}`, "warning");
+}
 
-	return next;
+const blockedAgents = stringArray(value.blockedAgents);
+if (blockedAgents) next.blockedAgents = blockedAgents;
+else if ("blockedAgents" in value) {
+notify?.(`Profiles: ignoring invalid blockedAgents for "${profileKey}" in ${path}`, "warning");
+}
+
+const blockedTools = stringArray(value.blockedTools);
+if (blockedTools) next.blockedTools = blockedTools;
+else if ("blockedTools" in value) {
+notify?.(`Profiles: ignoring invalid blockedTools for "${profileKey}" in ${path}`, "warning");
+}
+
+if (typeof value.systemPrompt === "string") next.systemPrompt = value.systemPrompt;
+else if ("systemPrompt" in value) {
+notify?.(`Profiles: ignoring invalid systemPrompt for "${profileKey}" in ${path}`, "warning");
+}
+
+if (typeof value.notifyOnSessionStart === "boolean") next.notifyOnSessionStart = value.notifyOnSessionStart;
+else if ("notifyOnSessionStart" in value) {
+notify?.(`Profiles: ignoring invalid notifyOnSessionStart for "${profileKey}" in ${path}`, "warning");
+}
+
+return next;
 }
 
 function sanitizeConfig(value: unknown, path: string, notify?: Notify): PartialProfilesConfig {
@@ -135,13 +177,21 @@ function sanitizeConfig(value: unknown, path: string, notify?: Notify): PartialP
 }
 
 function mergeProfile(base: ProfileConfig | undefined, override: PartialProfileConfig): ProfileConfig {
-	const merged: ProfileConfig = {
-		providers: override.providers ?? base?.providers ?? [],
-		statusText: override.statusText ?? base?.statusText ?? "",
-	};
-	const defaultModel = override.defaultModel ?? base?.defaultModel;
-	if (defaultModel) merged.defaultModel = defaultModel;
-	return merged;
+const merged: ProfileConfig = {
+providers: override.providers ?? base?.providers ?? [],
+statusText: override.statusText ?? base?.statusText ?? "",
+};
+const defaultModel = override.defaultModel ?? base?.defaultModel;
+if (defaultModel) merged.defaultModel = defaultModel;
+const blockedAgents = override.blockedAgents ?? base?.blockedAgents;
+if (blockedAgents) merged.blockedAgents = blockedAgents;
+const blockedTools = override.blockedTools ?? base?.blockedTools;
+if (blockedTools) merged.blockedTools = blockedTools;
+const systemPrompt = override.systemPrompt ?? base?.systemPrompt;
+if (systemPrompt) merged.systemPrompt = systemPrompt;
+const notifyOnSessionStart = override.notifyOnSessionStart ?? base?.notifyOnSessionStart;
+if (notifyOnSessionStart !== undefined) merged.notifyOnSessionStart = notifyOnSessionStart;
+return merged;
 }
 
 function mergeConfig(base: ProfilesConfig, override: PartialProfilesConfig): ProfilesConfig {
@@ -448,9 +498,52 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 		});
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
-		await applyProfile(ctx, { restoreSession: true });
-	});
+let notifiedSessionStart = false;
+
+function appendSystemPrompt(systemPrompt: string, extra: string): string {
+if (systemPrompt.includes(extra)) return systemPrompt;
+return systemPrompt.trimEnd() ? `${systemPrompt.trimEnd()}\n\n${extra}` : extra;
+}
+
+pi.on("session_start", async (_event, ctx) => {
+notifiedSessionStart = false;
+await applyProfile(ctx, { restoreSession: true });
+const active = getActiveConfig();
+if (active.notifyOnSessionStart && !notifiedSessionStart) {
+ctx.ui.notify(LOCAL_PROFILE_NOTIFICATION, "info");
+notifiedSessionStart = true;
+}
+});
+
+pi.on("before_agent_start", async (event, ctx) => {
+await applyProfile(ctx);
+const active = getActiveConfig();
+if (active.systemPrompt) {
+return { systemPrompt: appendSystemPrompt(event.systemPrompt, active.systemPrompt) };
+}
+});
+
+pi.on("tool_call", async (event, ctx) => {
+await applyProfile(ctx);
+const active = getActiveConfig();
+
+if (active.blockedTools?.map(normalize).includes(normalize(event.toolName))) {
+return {
+block: true,
+reason: `Profile "${activeName}": tool "${event.toolName}" is disabled.`,
+};
+}
+
+if (event.toolName !== "Agent") return;
+
+const requestedType = typeof event.input.subagent_type === "string" ? event.input.subagent_type : "";
+if (active.blockedAgents?.map(normalize).includes(normalize(requestedType))) {
+return {
+block: true,
+reason: `Profile "${activeName}": delegation to "${requestedType}" is disabled.`,
+};
+}
+});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		setRegistryProfilePolicy(ctx.modelRegistry, owner, false, getActiveConfig());

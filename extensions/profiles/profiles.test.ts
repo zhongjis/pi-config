@@ -3,9 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import profilesExtension, {
-	DEFAULT_PROFILES_CONFIG,
-	loadProfilesConfig,
-	PROFILE_STATE_CUSTOM_TYPE,
+DEFAULT_PROFILES_CONFIG,
+loadProfilesConfig,
+PROFILE_STATE_CUSTOM_TYPE,
+OFFLINE_SYSTEM_PROMPT,
 } from "./index.js";
 
 type Handler = (event: any, ctx: any) => unknown | Promise<unknown>;
@@ -585,5 +586,71 @@ describe("--profile CLI flag", () => {
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		// Falls back to default profile.
 		expect(visible).toContain("anthropic");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Offline behavior merged into local profile
+// ---------------------------------------------------------------------------
+
+describe("local profile offline guards", () => {
+	it("injects offline system prompt via before_agent_start when local profile is active", async () => {
+		process.env.PI_PROFILE = "local";
+		const harness = createHarness();
+		const ctx = createContext(tempProject, llamaSwapModel);
+		await harness.fire("session_start", {}, ctx);
+		const [result] = await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx) as [{ systemPrompt: string }];
+		expect(result.systemPrompt).toContain("Base");
+		expect(result.systemPrompt).toContain(OFFLINE_SYSTEM_PROMPT);
+	});
+
+	it("does not inject system prompt for default profile", async () => {
+		const harness = createHarness();
+		const ctx = createContext(tempProject, anthropicModel);
+		await harness.fire("session_start", {}, ctx);
+		const [result] = await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
+		expect(result).toBeUndefined();
+	});
+
+	it("blocks web tools and wenchang delegation when local profile is active", async () => {
+		process.env.PI_PROFILE = "local";
+		const harness = createHarness();
+		const ctx = createContext(tempProject, llamaSwapModel);
+		await harness.fire("session_start", {}, ctx);
+		const [webResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "web", toolName: "web_search", input: {} }, ctx);
+		const [agentResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent", toolName: "Agent", input: { subagent_type: "wenchang" } }, ctx);
+		expect(webResult).toMatchObject({ block: true, reason: expect.stringContaining("web_search") });
+		expect(agentResult).toMatchObject({ block: true, reason: expect.stringContaining("wenchang") });
+	});
+
+	it("allows allowed Agent calls through when local profile is active", async () => {
+		process.env.PI_PROFILE = "local";
+		const harness = createHarness();
+		const ctx = createContext(tempProject, llamaSwapModel);
+		await harness.fire("session_start", {}, ctx);
+		const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent-1", toolName: "Agent", input: { subagent_type: "chengfeng" } }, ctx);
+		expect(result).toBeUndefined();
+	});
+
+	it("does not block tools for default profile", async () => {
+		const harness = createHarness();
+		const ctx = createContext(tempProject, anthropicModel);
+		await harness.fire("session_start", {}, ctx);
+		const [webResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "web", toolName: "web_search", input: {} }, ctx);
+		expect(webResult).toBeUndefined();
+	});
+
+	it("shows session-start notification once for local profile", async () => {
+		process.env.PI_PROFILE = "local";
+		const harness = createHarness();
+		const ctx = createContext(tempProject, llamaSwapModel);
+		await harness.fire("session_start", {}, ctx);
+		await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
+		await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("local models only"),
+			"info",
+		);
 	});
 });
