@@ -19,15 +19,13 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 | `opencode` | `opencode-go`, `opencode` | China — OpenCode Go subscription, Zen overflow. |
 | `local` | `llama-swap` | Offline-first or no-network environments. Blocks web tools and wenchang. |
 
-Override via `.pi/profiles.json` (project) or `~/.pi/agent/profiles.json` (global). Project overrides global.
+Profiles are hardcoded. No config files.
 
 ## Commands
 
 - `/profile` or `/profile status` — Show active profile.
-- `/profile <name>` — Switch to a named profile (works for any configured profile).
+- `/profile <name>` — Switch to a named profile.
 - `/profile:default`, `/profile:opencode`, `/profile:local` — Shortcut commands for built-in profiles.
-
-Shortcut commands (`/profile:<name>`) are only auto-registered for built-in profiles (`default`, `opencode`, `local`). Custom profiles defined only in config files use `/profile <name>` instead — command registration happens at extension load, before config is read.
 
 ## CLI flag
 
@@ -47,44 +45,9 @@ When a session starts, the active profile is determined by the first match:
 1. `--profile <name>` CLI flag (explicit, one-shot override — wins over everything).
 2. `panda:profile` custom entry in the session journal (from a previous `/profile <name>` or `--profile`).
 3. `PI_PROFILE` environment variable.
-4. Config `defaultProfile` (either global or project `profiles.json`).
-5. Hardcoded default: `default`.
+4. Hardcoded default: `default`.
 
-## Configuration
-
-Global: `~/.pi/agent/profiles.json`
-Project: `<cwd>/.pi/profiles.json`
-
-```json
-{
-  "defaultProfile": "opencode",
-  "profiles": {
-    "default": {
-      "providers": ["anthropic", "openai-codex"],
-      "defaultModel": "anthropic/claude-opus-4-7",
-      "statusText": "default"
-    },
-    "opencode": {
-      "providers": ["opencode-go", "opencode"],
-      "defaultModel": "opencode-go/kimi-k2.6",
-      "statusText": "opencode"
-    },
-    "local": {
-      "providers": ["llama-swap"],
-      "defaultModel": "llama-swap/qwen2.5-coder:14b",
-      "statusText": "local",
-      "blockedAgents": ["wenchang"],
-      "blockedTools": ["web_search", "code_search", "fetch_content", "get_search_content"],
-      "systemPrompt": "Offline mode is ON.\n\nConstraints:\n- Assume no internet access.\n...",
-      "notifyOnSessionStart": true
-    }
-  }
-}
-```
-
-All fields are optional — omit to inherit the built-in defaults.
-
-### Profile config fields
+## Profile fields
 
 | Key | Type | Description |
 |-----|------|-------------|
