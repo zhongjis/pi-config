@@ -24,12 +24,21 @@ const DEFAULTS: SummaryConfig = {
 	verbose: false,
 };
 
-/** Models to try in order when no explicit model is configured. */
+/**
+ * Models to try in order when no explicit model is configured.
+ *
+ * Profile-aware: bare IDs match against getAvailable() which is already
+ * filtered by the active profile. Default profile picks GPT/Gemini/Claude
+ * first; opencode profile falls through to qwen3.5-plus; local profile
+ * picks qwen2.5-coder:7b.
+ */
 const AUTO_DETECT_MODELS = [
 	"gpt-5.4-nano",
 	"gpt-5.4-mini",
 	"gemini-3-flash",
 	"claude-4-5-haiku",
+	"qwen3.5-plus",
+	"qwen2.5-coder:7b",
 ];
 
 function loadConfig(cwd: string): SummaryConfig {
