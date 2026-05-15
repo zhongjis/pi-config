@@ -12,7 +12,7 @@
     "resolveJsonModule": true,
     "paths": {
       "@marcfargas/pi-test-harness": [
-        "./node_modules/@marcfargas/pi-test-harness/src/index.ts"
+        "./test/types/pi-test-harness.d.ts"
       ],
       "@mariozechner/pi-ai": [
         "./node_modules/@mariozechner/pi-ai"
