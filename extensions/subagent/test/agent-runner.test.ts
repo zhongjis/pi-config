@@ -179,11 +179,20 @@ describe("agent-runner final output capture", () => {
       agentDir: "/mock/agent-dir",
     }));
     expect(settingsManagerCreate).toHaveBeenCalledWith("/tmp/worktree", "/mock/agent-dir");
-    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp/worktree");
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp/worktree", undefined);
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
       cwd: "/tmp/worktree",
       agentDir: "/mock/agent-dir",
     }));
+  });
+
+  it("uses a custom session directory when provided", async () => {
+    const { session } = createSession("CUSTOM_DIR");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "Say CUSTOM_DIR", { pi, sessionDir: "/tmp/subagent-sessions/parent-1" });
+
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/tmp/subagent-sessions/parent-1");
   });
 
   it("suppresses AGENTS.md/CLAUDE.md/APPEND_SYSTEM.md for subagents", async () => {

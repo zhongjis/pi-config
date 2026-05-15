@@ -171,7 +171,8 @@ function createCtx() {
     },
     modelRegistry: {},
     model: undefined,
-    sessionManager: { getEntries: vi.fn(() => []) },
+    cwd: "/repo",
+    sessionManager: { getEntries: vi.fn(() => []), getSessionId: vi.fn(() => "parent-session-1") },
   };
 }
 
@@ -284,6 +285,33 @@ describe("subagent session UI rebinding", () => {
     expect(text).toContain("Agent type \"restricted\" is unavailable because its custom definition has invalid frontmatter.");
     expect(text).toContain("ERROR restricted (/repo/.pi/agents/restricted.md) field \"disallow_tools\": disallow_tools is invalid/obsolete; use builtin_tools and extension_tools explicit allowlists instead.");
     expect(text).toContain("tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools; denylist fields are invalid/obsolete");
+  });
+
+  it("routes new subagent sessions to a separate parent-scoped directory", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const agentTool = mock.registeredTools.get("Agent");
+
+    const result = await agentTool.execute(
+      "tool-1",
+      { prompt: "do it", description: "Do it", subagent_type: "general-purpose", run_in_background: true },
+      undefined,
+      undefined,
+      createCtx(),
+    );
+
+    expect(result.content[0].text).toContain("Agent started in background.");
+    expect(result.content[0].text).toContain("Session dir: /tmp/mock-agent-dir/subagent-sessions/parent-session-1");
+    expect(managerInstances[0]?.spawn).toHaveBeenCalledWith(
+      mock.pi,
+      expect.any(Object),
+      "general-purpose",
+      "do it",
+      expect.objectContaining({
+        parentSessionId: "parent-session-1",
+        sessionDir: "/tmp/mock-agent-dir/subagent-sessions/parent-session-1",
+      }),
+    );
   });
 
   it("does not refresh the widget for a completion nudge when wait consumes the result", async () => {

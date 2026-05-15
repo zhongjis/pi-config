@@ -37,6 +37,10 @@ interface SpawnOptions {
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
   isBackground?: boolean;
+  /** Parent session id for durable subagent linkage. */
+  parentSessionId?: string;
+  /** Directory for persistent subagent session JSONL files. */
+  sessionDir?: string;
   /** Isolation mode — "worktree" creates a temp git worktree for the agent. */
   isolation?: IsolationMode;
   /** Resolved provider/model label for widget display. */
@@ -105,6 +109,8 @@ export class AgentManager {
       abortController,
       modelLabel: options.modelLabel,
       isBackground: options.isBackground,
+      parentSessionId: options.parentSessionId,
+      sessionDir: options.sessionDir,
     };
     this.agents.set(id, record);
 
@@ -159,6 +165,7 @@ export class AgentManager {
       inheritContext: options.inheritContext,
       thinkingLevel: options.thinkingLevel,
       cwd: worktreeCwd,
+      sessionDir: options.sessionDir,
       signal: record.abortController!.signal,
       onToolActivity: (activity) => {
         if (activity.type === "end") record.toolUses++;

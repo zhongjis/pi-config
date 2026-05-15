@@ -95,6 +95,8 @@ export interface RunOptions {
   thinkingLevel?: ThinkingLevel;
   /** Override working directory (e.g. for worktree isolation). */
   cwd?: string;
+  /** Directory for persistent subagent session JSONL files. Defaults to pi's normal session tree. */
+  sessionDir?: string;
   /** Called on tool start/end with activity info. */
   onToolActivity?: (activity: ToolActivity) => void;
   /** Called on streaming text deltas from the assistant response. */
@@ -261,11 +263,10 @@ export async function runAgent(
   const sessionOpts: Parameters<typeof createAgentSession>[0] = {
     cwd: effectiveCwd,
     agentDir,
-    // Persist session to disk so it appears under ~/.pi/agent/sessions/ and
-    // is discoverable via `pi sessions` / `pi --resume <id>` — matches the
-    // main agent's on-disk JSONL format. Prior behavior used SessionManager.inMemory()
-    // which produced no persistent log.
-    sessionManager: SessionManager.create(effectiveCwd),
+    // Persist session to disk. subagent callers pass a separate sessionDir so
+    // subagent JSONL files stay out of the main agent session tree while still
+    // using pi's native session format.
+    sessionManager: SessionManager.create(effectiveCwd, options.sessionDir),
     settingsManager: SettingsManager.create(effectiveCwd, agentDir),
     modelRegistry: ctx.modelRegistry,
     model,

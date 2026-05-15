@@ -3,7 +3,7 @@
 ## Overview
 Background/foreground subagent runtime: tool surface, queueing, widget UI, eventbus RPC, resume/steer/worktree support.
 
-Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking, persistent session JSONL (`SessionManager.create` under `~/.pi/agent/sessions/`; record + notifications expose `sessionFile`).
+Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking, persistent subagent session JSONL (`SessionManager.create` with custom dir under `~/.pi/agent/subagent-sessions/`; record + notifications expose `sessionFile`).
 
 ## Where to Look
 | Task | Location | Notes |
@@ -85,3 +85,4 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/agent-runner.ts` | `inheritContextFiles` derives from `promptMode === "system_instructions"` (overridden to false by `isolated: true`); flips `noContextFiles` so pi auto-injects AGENTS.md as `# Project Context` after `systemPromptOverride` | Single-source-of-truth AGENTS.md inheritance for worker subagents (jintong, guangguang, yunu, weizheng) |
 | `src/prompts.ts` | Doc comment lists three modes; builder output for `system_instructions` is identical to `replace` (the branch lives in `agent-runner.ts`) | Mode behavior orthogonal to prompt assembly |
 | `src/agent-definition-authoring.ts` | Frontmatter template + guidelines describe `system_instructions` mode | User-visible authoring docs |
+| `src/agent-runner.ts`, `src/agent-manager.ts`, `src/index.ts`, `test/agent-runner.test.ts`, `test/index.session-context.test.ts` | Subagent sessions use parent-scoped `~/.pi/agent/subagent-sessions/<parent-session-id>/` and persist `sessionFile`/`sessionDir`/parent metadata in records/events | Keeps main `/tree` session list clean while preserving subagent log discoverability |

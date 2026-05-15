@@ -577,8 +577,8 @@ export default function (pi: ExtensionAPI) {
   let toolRegistered = false;
 
   let pendingSkill: { name: string; content: string } | null = null;
-  let previousModel: Model<any> | undefined = undefined;
-  let previousThinking: ThinkingLevel | undefined = undefined;
+  let previousModel: Model<any> | undefined;
+  let previousThinking: ThinkingLevel | undefined;
   let chainState: ChainState | null = null;
   let rethrowState: RethrowState | null = null;
   let toolQueuedTask: string | null = null;

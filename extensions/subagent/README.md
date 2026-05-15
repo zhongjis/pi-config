@@ -7,7 +7,7 @@ Claude Code-style autonomous sub-agents for Pi. Spawn specialized agents in isol
 - **Source:** https://github.com/tintinweb/pi-subagents
 - **Version:** 0.6.3
 - **License:** not declared upstream
-- **Adapted:** See `AGENTS.md` `## Local Tweaks` for the full divergence manifest. Briefly: background supervision, delegation policy, result recovery, enhanced skill loading, persistent session JSONL logging, Pi-native agent frontmatter, Nerd Font UI stats.
+- **Adapted:** See `AGENTS.md` `## Local Tweaks` for the full divergence manifest. Briefly: background supervision, delegation policy, result recovery, enhanced skill loading, parent-scoped subagent session JSONL logging, Pi-native agent frontmatter, Nerd Font UI stats.
 
 
 ## Tools and Commands
@@ -16,6 +16,8 @@ Claude Code-style autonomous sub-agents for Pi. Spawn specialized agents in isol
 - `get_subagent_result` — check status or wait for a background agent. Params: `agent_id` (required), `wait`, `verbose`.
 - `steer_subagent` — inject a message into a running agent. Params: `agent_id` (required), `message` (required).
 - `/agents` — browse running agents, view conversations, create/edit/eject/disable custom agents, configure settings.
+
+Subagent session JSONL logs are stored outside the main Pi session tree under `$PI_CODING_AGENT_DIR/subagent-sessions/<parent-session-id>/`; notifications and persisted `subagents:record` entries include the exact `sessionFile` path.
 
 ## Default Agent Types
 

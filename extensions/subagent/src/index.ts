@@ -54,6 +54,20 @@ import { RenderScheduler } from "./ui/render-scheduler.js";
 
 // ---- Shared helpers ----
 const FOREGROUND_RENDER_CADENCE_MS = 250;
+const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
+
+function safePathSegment(value: string | undefined): string {
+  return (value ?? "unknown-session").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 128) || "unknown-session";
+}
+
+function getParentSessionId(ctx: ExtensionContext): string | undefined {
+  const sessionManager = ctx.sessionManager as { getSessionId?: () => string | undefined } | undefined;
+  return typeof sessionManager?.getSessionId === "function" ? sessionManager.getSessionId() : undefined;
+}
+
+function createSubagentSessionDir(parentSessionId: string | undefined): string {
+  return join(getAgentDir(), SUBAGENT_SESSION_DIR_NAME, safePathSegment(parentSessionId));
+}
 
 
 type SubagentManagerBridge = {
@@ -485,6 +499,12 @@ export default function (pi: ExtensionAPI) {
       toolUses: record.toolUses,
       durationMs,
       tokens,
+      outputFile: record.outputFile,
+      sessionFile: record.sessionFile,
+      sessionDir: record.sessionDir,
+      parentSessionId: record.parentSessionId,
+      toolCallId: record.toolCallId,
+      modelLabel: record.modelLabel,
     };
   }
 
@@ -504,6 +524,8 @@ export default function (pi: ExtensionAPI) {
       id: record.id, type: record.type, description: record.description,
       status: record.status, result: record.result, error: record.error,
       startedAt: record.startedAt, completedAt: record.completedAt,
+      outputFile: record.outputFile, sessionFile: record.sessionFile, sessionDir: record.sessionDir,
+      parentSessionId: record.parentSessionId, toolCallId: record.toolCallId, modelLabel: record.modelLabel,
     });
 
     // Skip notification if result was already consumed, is being synchronously waited on, or intentionally suppressed
@@ -1101,6 +1123,9 @@ Guidelines:
         );
       }
 
+      const parentSessionId = getParentSessionId(ctx);
+      const subagentSessionDir = createSubagentSessionDir(parentSessionId);
+
       // Background execution
       if (runInBackground) {
         const { state: bgState, callbacks: bgCallbacks } = createActivityTracker(effectiveMaxTurns);
@@ -1133,6 +1158,8 @@ Guidelines:
           thinkingLevel: thinking,
           isBackground: true,
           isolation,
+          parentSessionId,
+          sessionDir: subagentSessionDir,
           ...bgCallbacks,
         });
 
@@ -1177,6 +1204,7 @@ Guidelines:
           `Type: ${displayName}\n` +
           `Description: ${params.description}\n` +
           (record?.outputFile ? `Output file: ${record.outputFile}\n` : "") +
+          `Session dir: ${subagentSessionDir}\n` +
           (record?.sessionFile ? `Session file: ${record.sessionFile}\n` : "") +
           (isQueued ? `Position: queued (max ${manager.getMaxConcurrent()} concurrent)\n` : "") +
           `\nYou will be notified when this agent completes.\n` +
@@ -1258,6 +1286,8 @@ Guidelines:
           inheritContext,
           thinkingLevel: thinking,
           isolation,
+          parentSessionId,
+          sessionDir: subagentSessionDir,
           ...fgCallbacks,
         });
       } finally {
@@ -1281,15 +1311,17 @@ Guidelines:
       const details = buildDetails(detailBase, record, fgState, { tokens: tokenText });
 
 
+      const sessionLog = record.sessionFile ? `\nSession log: ${record.sessionFile}` : "";
+
       if (record.status === "error") {
-        return textResult(`Agent failed.\n\n${getRecoveredResultText(record)}`, details);
+        return textResult(`Agent failed.${sessionLog}\n\n${getRecoveredResultText(record)}`, details);
       }
 
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
       const statsParts = [`${record.toolUses} tool uses`];
       if (tokenText) statsParts.push(tokenText);
       return textResult(
-        `Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.\n\n` +
+        `Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.${sessionLog}\n\n` +
         getRecoveredResultText(record),
         details,
       );
@@ -1357,6 +1389,9 @@ Guidelines:
         `Agent: ${record.id}\n` +
         `Type: ${displayName} | Status: ${record.status}${turnSummary} | ${toolStats} | Duration: ${duration}\n` +
         `Description: ${record.description}\n`;
+      if (record.outputFile) output += `Output file: ${record.outputFile}\n`;
+      if (record.sessionDir) output += `Session dir: ${record.sessionDir}\n`;
+      if (record.sessionFile) output += `Session file: ${record.sessionFile}\n`;
 
       if (record.status === "running" || record.status === "queued") {
         const liveLines = [

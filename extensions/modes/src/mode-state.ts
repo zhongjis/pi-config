@@ -17,6 +17,14 @@ function hasToolPolicy(config: ModeConfig): boolean {
   );
 }
 
+const PLAN_APPROVE_TOOL_NAME = "plan_approve";
+
+function applyPlanApproveAccess(mode: Mode, toolNames: readonly string[], allToolNames: readonly string[]): string[] {
+  const withoutPlanApprove = toolNames.filter((toolName) => toolName !== PLAN_APPROVE_TOOL_NAME);
+  if (mode !== "fuxi" || !allToolNames.includes(PLAN_APPROVE_TOOL_NAME)) return withoutPlanApprove;
+  return [...withoutPlanApprove, PLAN_APPROVE_TOOL_NAME];
+}
+
 function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
   const set = new Set(a);
@@ -80,8 +88,9 @@ export class ModeStateManager {
 		const allToolNames = this.pi.getAllTools().map((t) => t.name);
 		const activeToolNames = this.pi.getActiveTools().filter((t) => allToolNames.includes(t));
 
+		let nextActiveToolNames = activeToolNames;
 		if (hasToolPolicy(config)) {
-			const active = computeActiveToolNames({
+			nextActiveToolNames = computeActiveToolNames({
 				availableToolNames: allToolNames,
 				builtinToolNames: config.builtinToolNames ?? [...DEFAULT_BUILTIN_TOOL_NAMES],
 				builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
@@ -89,10 +98,11 @@ export class ModeStateManager {
 				extensionTools: config.extensionToolNames,
 				allowNesting: config.allowNesting,
 			});
+		}
 
-			if (!sameToolSet(active, activeToolNames)) {
-				this.pi.setActiveTools(active);
-			}
+		nextActiveToolNames = applyPlanApproveAccess(this.currentMode, nextActiveToolNames, allToolNames);
+		if (!sameToolSet(nextActiveToolNames, activeToolNames)) {
+			this.pi.setActiveTools(nextActiveToolNames);
 		}
 
 		await this.applyModelFromConfig(config, ctx);

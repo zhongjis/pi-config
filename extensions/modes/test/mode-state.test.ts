@@ -48,8 +48,9 @@ describe("resolveModelFromStr", () => {
 });
 
 describe("ModeStateManager", () => {
-	function createMockPi(activeTools = ["read", "write", "bash"]) {
-		return {
+	function createMockPi(initialActiveTools = ["read", "write", "bash"]) {
+		let activeTools = initialActiveTools;
+		const pi = {
 			appendEntry: vi.fn(),
 			getAllTools: () => [
 				{ name: "read" },
@@ -66,11 +67,15 @@ describe("ModeStateManager", () => {
 				{ name: "Agent" },
 				{ name: "get_subagent_result" },
 				{ name: "steer_subagent" },
+				{ name: "plan_approve" },
 			],
 			getActiveTools: () => activeTools,
-			setActiveTools: vi.fn(),
+			setActiveTools: vi.fn((toolNames: string[]) => {
+				activeTools = toolNames;
+			}),
 			setModel: vi.fn(),
 		};
+		return pi;
 	}
 
 	it("switches mode and persists state", async () => {
@@ -299,6 +304,26 @@ describe("ModeStateManager", () => {
 
 		await state.applyMode(ctx as never);
 		expect(pi.setActiveTools).not.toHaveBeenCalled();
+	});
+
+	it("exposes plan_approve only in fuxi mode", async () => {
+		const pi = createMockPi(["read", "write", "plan_approve"]);
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.kuafu = { body: "build" };
+		state.cachedConfigs.fuxi = { body: "plan" };
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+		};
+
+		await state.applyMode(ctx as never);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write"]);
+
+		pi.setActiveTools.mockClear();
+		await state.switchMode("fuxi", ctx as never);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "plan_approve"]);
 	});
 
 	it("resets plan review state", () => {

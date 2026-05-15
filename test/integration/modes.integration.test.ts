@@ -27,20 +27,36 @@ async function switchMode(t: TestSession, mode: string): Promise<void> {
 	await (t.session as any).prompt(`/mode ${mode}`);
 }
 
+async function executePlanApprove(t: TestSession): Promise<any> {
+	const runner = (t.session as any).extensionRunner;
+	const tool = runner.getToolDefinition("plan_approve");
+	expect(tool).toBeDefined();
+	return tool.execute("tool-plan-approve", { variant: "post-gap-review" }, undefined, undefined, runner.createContext());
+}
+
 describe("modes extension — integration", () => {
 	let t: TestSession;
 	afterEach(() => t?.dispose());
 
 	// ── Loading & registration ──────────────────────────────────
 
-	it("loads without errors and registers plan_approve tool", async () => {
+	it("loads without errors and exposes plan_approve only in fuxi mode", async () => {
 		t = await createTestSession({
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
 
-		const tools = (t.session.agent as any).state.tools as Array<{ name: string }>;
-		const toolNames = tools.map((tool) => tool.name);
+		const runner = (t.session as any).extensionRunner;
+		expect(runner.getToolDefinition("plan_approve")).toBeDefined();
+
+		let tools = (t.session.agent as any).state.tools as Array<{ name: string }>;
+		let toolNames = tools.map((tool) => tool.name);
+		expect(toolNames).not.toContain("plan_approve");
+
+		await switchMode(t, "fuxi");
+
+		tools = (t.session.agent as any).state.tools as Array<{ name: string }>;
+		toolNames = tools.map((tool) => tool.name);
 		expect(toolNames).toContain("plan_approve");
 	});
 
@@ -266,18 +282,9 @@ describe("modes extension — integration", () => {
 
 		await switchMode(t, "fuxi");
 
-		await t.run(
-			when("Approve the plan", [
-				calls("plan_approve", { variant: "post-gap-review" }),
-				says("Plan approved."),
-			]),
-		);
+		const result = await executePlanApprove(t);
 
-		const results = t.events.toolResultsFor("plan_approve");
-		expect(results).toHaveLength(1);
-		// The tool should execute (not be blocked)
-		const blocked = t.events.blockedCalls();
-		const planBlocked = blocked.filter((b) => b.toolName === "plan_approve");
-		expect(planBlocked).toHaveLength(0);
+		expect(result.content[0].text).not.toContain("blocked");
+		expect(result.details.variant).toBe("post-gap-review");
 	});
 });

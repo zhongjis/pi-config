@@ -20,7 +20,8 @@ const SUPPORTED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "
 
 const VISION_MODEL_CHAIN = [
 	"gpt-5.5:medium",
-	"kimi-k2.6",
+	"mimo-v2.5",
+	// "kimi-k2.6",
 	"glm-4.6v",
 	"gpt-5-nano",
 ].join(",");

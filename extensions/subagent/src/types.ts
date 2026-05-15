@@ -111,8 +111,12 @@ export interface AgentRecord {
   toolCallId?: string;
   /** Path to the streaming output transcript file. */
   outputFile?: string;
-  /** Path to the persistent pi session JSONL (under ~/.pi/agent/sessions/). */
+  /** Directory containing this agent's persistent pi session JSONL. */
+  sessionDir?: string;
+  /** Path to the persistent pi session JSONL (normally under ~/.pi/agent/subagent-sessions/). */
   sessionFile?: string;
+  /** Parent/main pi session id that launched this subagent. */
+  parentSessionId?: string;
   /** Cleanup function for the output file stream subscription. */
   outputCleanup?: () => void;
   /** Cleanup function for any externally bound abort signal listener. */

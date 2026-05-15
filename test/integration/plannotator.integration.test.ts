@@ -22,6 +22,13 @@ async function switchMode(t: TestSession, mode: string): Promise<void> {
 	await (t.session as any).prompt(`/mode ${mode}`);
 }
 
+async function executePlanApprove(t: TestSession): Promise<any> {
+	const runner = (t.session as any).extensionRunner;
+	const tool = runner.getToolDefinition("plan_approve");
+	expect(tool).toBeDefined();
+	return tool.execute("tool-plan-approve", { variant: "post-gap-review" }, undefined, undefined, runner.createContext());
+}
+
 describe("plannotator integration", () => {
 	let t: TestSession;
 	afterEach(() => t?.dispose());
@@ -53,12 +60,7 @@ describe("plannotator integration", () => {
 
 		// Call plan_approve — this triggers checkPlannotatorAvailability internally
 		// The availability check should NOT emit "plannotator:request" (old IPC)
-		await t.run(
-			when("Approve the plan", [
-				calls("plan_approve", { variant: "post-gap-review" }),
-				says("Approved."),
-			]),
-		);
+		await executePlanApprove(t);
 
 		// Verify no IPC events were emitted to the old plannotator channel
 		const plannotatorIPCEvents = emittedChannels.filter(
@@ -81,19 +83,10 @@ describe("plannotator integration", () => {
 
 		await switchMode(t, "fuxi");
 
-		await t.run(
-			when("Run plan approve", [
-				calls("plan_approve", { variant: "post-gap-review" }),
-				says("Plan approve done."),
-			]),
-		);
-
-		const results = t.events.toolResultsFor("plan_approve");
-		expect(results).toHaveLength(1);
-		// Should not contain "timed out" — that was the old IPC failure mode
-		const resultText = typeof results[0].content === "string"
-			? results[0].content
-			: JSON.stringify(results[0].content);
+		const result = await executePlanApprove(t);
+		const resultText = typeof result.content?.[0]?.text === "string"
+			? result.content[0].text
+			: JSON.stringify(result.content);
 		expect(resultText).not.toContain("timed out");
 	});
 
