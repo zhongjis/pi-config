@@ -78,6 +78,15 @@ function getString(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+
+// ─── Subagent detection ────────────────────────────────────────────────────
+
+function isSubagentSession(ctx: ExtensionContext): boolean {
+  const sm = ctx.sessionManager as any;
+  if (!sm || typeof sm.getSessionFile !== "function") return false;
+  const sessionFile = sm.getSessionFile();
+  return typeof sessionFile === "string" && sessionFile.includes("subagent-sessions");
+}
 function isSuccessfulPlanMutationResult(event: {
 	toolName: string;
 	input?: unknown;
@@ -271,6 +280,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		state.activeCtx = ctx;
+		if (isSubagentSession(ctx)) return; // subagents have their own model config
 		const config = state.loadConfig(state.currentMode);
 
 		await state.applyModelFromConfig(config, ctx);
@@ -286,6 +296,17 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 	pi.on("session_start", async (_event, ctx) => {
 		bindActiveSessionContext(ctx);
+
+		if (isSubagentSession(ctx)) {
+			// Subagents self-configure from their own agent frontmatter.
+			// Skip mode model/tool overrides but keep editor + plan state.
+			setupModeEditor(ctx, state);
+			resolveInitialMode(pi, state, ctx);
+			await hydratePlanState(ctx as any, state);
+			await recoverPlanReview(pi, state, ctx);
+			state.persistState();
+			return;
+		}
 
 		setupModeEditor(ctx, state);
 		resolveInitialMode(pi, state, ctx);
