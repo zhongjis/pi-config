@@ -22,6 +22,7 @@ import { detectEnv } from "./env.js";
 import { buildMemoryBlock, buildReadOnlyMemoryBlock } from "./memory.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
+import { parseModelChain, resolveFirstAvailable, type ModelRegistry } from "./model-resolver.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
 
 
@@ -49,32 +50,22 @@ export function setGraceTurns(n: number): void { graceTurns = Math.max(1, n); }
 
 /**
  * Try to find the right model for an agent type.
- * Priority: explicit option > config.model > parent model.
+ * Priority: explicit option > config.model chain > parent model.
  */
 function resolveDefaultModel(
   parentModel: Model<any> | undefined,
-  registry: { find(provider: string, modelId: string): Model<any> | undefined; getAvailable?(): Model<any>[] },
+  registry: ModelRegistry,
   configModel?: string,
 ): Model<any> | undefined {
   if (configModel) {
-    const slashIdx = configModel.indexOf("/");
-    if (slashIdx !== -1) {
-      const provider = configModel.slice(0, slashIdx);
-      const modelId = configModel.slice(slashIdx + 1);
-
-      // Build a set of available model keys for fast lookup
-      const available = registry.getAvailable?.();
-      const availableKeys = available
-        ? new Set(available.map((m: any) => `${m.provider}/${m.id}`))
-        : undefined;
-      const isAvailable = (p: string, id: string) =>
-        !availableKeys || availableKeys.has(`${p}/${id}`);
-
-      const found = registry.find(provider, modelId);
-      if (found && isAvailable(provider, modelId)) return found;
+    const result = resolveFirstAvailable(parseModelChain(configModel), registry);
+    if (result) {
+      if (result.thinkingLevel && !result.model?.thinkingLevel) {
+        result.model.thinkingLevel = result.thinkingLevel;
+      }
+      return result.model;
     }
   }
-
   return parentModel;
 }
 
