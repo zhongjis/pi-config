@@ -107,7 +107,7 @@ function resolveUnderCwd(cwd: string, inputPath: string): string {
 	const absolute = resolve(cwd, stripped);
 	const rel = relative(cwd, absolute);
 	if (rel.startsWith("..") || isAbsolute(rel)) {
-		throw new Error("look_at file_path must resolve under the current working directory.");
+		throw new Error("look_at file_path must resolve under cwd. If the image is elsewhere, copy it into cwd first (e.g., cp /path ./img.png), then use the relative path.");
 	}
 	return absolute;
 }
@@ -268,14 +268,15 @@ export default function multimodalLook(pi: ExtensionAPI): void {
 		label: "Look At",
 		description: "Inspect a local image or base64 image with a dedicated profile-aware vision model and return concise text findings.",
 		promptSnippet:
-			"Use look_at when image understanding needs reliable vision-model analysis instead of relying on the current main model.",
+			"Use look_at when image understanding needs reliable vision-model analysis instead of relying on the current main model. If the image is outside cwd, copy it into cwd first.",
 		promptGuidelines: [
 			"Use look_at for screenshots, diagrams, photos, UI captures, charts, or visual artifacts when the answer depends on image contents.",
 			"Provide a specific goal; look_at returns text evidence for the main agent to use.",
 			"Do not use look_at for rendering or converting visuals; use render-visual for preview/render tasks.",
+			"If the user references an image outside the current working directory, copy it into cwd first (e.g., cp /path ./img.png), then call look_at with the relative path.",
 		],
 		parameters: Type.Object({
-			file_path: Type.Optional(Type.String({ description: "Path under ctx.cwd to an image file. Leading @ is stripped." })),
+			file_path: Type.Optional(Type.String({ description: "Path relative to the current working directory to an image file. Leading @ is stripped. If the image is elsewhere, copy it into cwd first." })),
 			image_data: Type.Optional(Type.String({ description: "Base64 image data or data:image/...;base64,... URI." })),
 			mime_type: Type.Optional(Type.String({ description: "MIME type for bare base64 image_data. Default: image/png." })),
 			goal: Type.String({ description: "Specific visual question or extraction goal." }),
