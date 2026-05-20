@@ -375,6 +375,7 @@ export default function (pi: ExtensionAPI) {
   // before they reach pi.sendMessage (fire-and-forget).
   const pendingNudges = new Map<string, ReturnType<typeof setTimeout>>();
   const NUDGE_HOLD_MS = 200;
+  const POLLED_RECENTLY_MS = 60_000;
 
   function scheduleNudge(key: string, send: () => void, delay = NUDGE_HOLD_MS) {
     cancelNudge(key);
@@ -398,7 +399,8 @@ export default function (pi: ExtensionAPI) {
 
   // ---- Individual nudge helper (async join mode) ----
   function emitIndividualNudge(record: AgentRecord) {
-    if (record.resultConsumed) return;  // re-check at send time
+    const recentlyPolled = record.lastPolledAt != null && (Date.now() - record.lastPolledAt) < POLLED_RECENTLY_MS;
+    if (record.resultConsumed || recentlyPolled) return;  // re-check at send time
 
     const notification = formatTaskNotification(record, 500);
     const footer =
@@ -528,8 +530,9 @@ export default function (pi: ExtensionAPI) {
       parentSessionId: record.parentSessionId, toolCallId: record.toolCallId, modelLabel: record.modelLabel,
     });
 
-    // Skip notification if result was already consumed, is being synchronously waited on, or intentionally suppressed
-    if (record.resultConsumed || record.suppressNotification || (record.waitingConsumers ?? 0) > 0) {
+    // Skip notification if result was already consumed, is being synchronously waited on, intentionally suppressed, or parent polled recently
+    const recentlyPolled = record.lastPolledAt != null && (Date.now() - record.lastPolledAt) < POLLED_RECENTLY_MS;
+    if (record.resultConsumed || record.suppressNotification || (record.waitingConsumers ?? 0) > 0 || recentlyPolled) {
       agentActivity.delete(record.id);
       widget.markFinished(record.id);
       widget.update();
@@ -1355,7 +1358,7 @@ Guidelines:
       if (!record) {
         return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
       }
-
+      record.lastPolledAt = Date.now();
       // Wait for completion if requested, but keep a supervision window instead of a blind block.
       if (params.wait && record.status === "running" && record.promise) {
         record.waitingConsumers = (record.waitingConsumers ?? 0) + 1;

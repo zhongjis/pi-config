@@ -129,6 +129,8 @@ export interface AgentRecord {
   lastSupervisionSteerAt?: number;
   /** Last time background supervision auto-aborted this agent for idleness. */
   lastSupervisionAbortAt?: number;
+  /** Last time the parent called get_subagent_result for this agent. */
+  lastPolledAt?: number;
 }
 
 /** Details attached to custom notification messages for visual rendering. */

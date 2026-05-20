@@ -21,6 +21,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const widgetInstances: MockAgentWidget[] = [];
 const managerInstances: MockAgentManager[] = [];
+let lastOnComplete: ((record: any) => void) | undefined;
+let lastOnStart: ((record: any) => void) | undefined;
 
 class MockAgentWidget {
   setUICtx = vi.fn();
@@ -41,6 +43,8 @@ class MockAgentManager {
   spawn = vi.fn(() => "agent-1");
   getRecord = vi.fn(() => undefined);
   spawnAndWait = vi.fn();
+  invokeOnComplete(record: any) { lastOnComplete?.(record); }
+  invokeOnStart(record: any) { lastOnStart?.(record); }
 }
 
 vi.mock("../src/ui/agent-widget.js", () => ({
@@ -77,10 +81,13 @@ vi.mock("../src/agent-manager.js", () => ({
     spawn = vi.fn(() => "agent-1");
     getRecord = vi.fn(() => undefined);
     spawnAndWait = vi.fn();
-
-    constructor() {
+    constructor(onComplete?: any, _onError?: any, onStart?: any) {
+      lastOnComplete = onComplete;
+      lastOnStart = onStart;
       managerInstances.push(this as unknown as MockAgentManager);
     }
+    invokeOnComplete(record: any) { lastOnComplete?.(record); }
+    invokeOnStart(record: any) { lastOnStart?.(record); }
   },
 }));
 
@@ -191,6 +198,8 @@ describe("subagent session UI rebinding", () => {
     vi.useFakeTimers();
     widgetInstances.length = 0;
     managerInstances.length = 0;
+    lastOnComplete = undefined;
+    lastOnStart = undefined;
     customAgentLoaderState.result = { agents: new Map(), diagnostics: [] };
     agentTypeState.allTypes = ["general-purpose"];
     agentTypeState.availableTypes = ["general-purpose"];
@@ -347,6 +356,41 @@ describe("subagent session UI rebinding", () => {
     expect(result.content[0].text).toContain("done");
     expect(record.resultConsumed).toBe(true);
     expect(widgetInstances[0]?.update).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(250);
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+  });
+  it("suppresses completion nudge when parent polled recently via get_subagent_result", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+
+    const record: any = {
+      id: "agent-1",
+      type: "general-purpose",
+      description: "Investigate blinking",
+      status: "running",
+      toolUses: 0,
+      startedAt: Date.now(),
+      promise: undefined,
+    };
+    managerInstances[0]?.getRecord.mockReturnValue(record);
+
+    // Parent polls without waiting — sets lastPolledAt
+    const pollResult = await mock.registeredTools.get("get_subagent_result").execute(
+      "tool-1",
+      { agent_id: "agent-1", wait: false },
+      undefined,
+      undefined,
+      createCtx(),
+    );
+    expect(record.lastPolledAt).toBeGreaterThan(0);
+    expect(pollResult.content[0].text).toContain("running");
+
+    // Agent completes shortly after poll
+    record.status = "completed";
+    record.completedAt = Date.now();
+    record.result = "done";
+    managerInstances[0]?.invokeOnComplete(record);
 
     vi.advanceTimersByTime(250);
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
