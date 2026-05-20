@@ -19,8 +19,11 @@ Parameters:
 
 `look_at` keeps the main session model unchanged. At call time it resolves the first available model from a vision-focused chain through `ctx.modelRegistry`, so `extensions/profiles` filtering naturally constrains the choice:
 
-- `default` / `opencode` profiles use OmO fallback chain: `gpt-5.5` → `kimi-k2.6` → `glm-4.6v` → `gpt-5-nano`. The first available model matching the active profile wins.
-- `local` profile has no OmO analogue, so the tool fails clearly unless local vision models are added later.
+- `default` / `opencode` profiles use OmO fallback chain: `gpt-5.5` → `mimo-v2.5` → `glm-4.6v` → `gpt-5-nano`. The first available model matching the active profile wins.
+- If no dedicated vision model is available, `look_at` falls back to the **current agent model** when it declares image input support (`model.input` includes `"image"`).
+- On first fallback use per session, a UI warning notification is shown (interactive mode only).
+- If neither a dedicated vision model nor the current model supports images, the tool throws a clear error naming the current model.
+- `local` profile has no OmO analogue, so the tool will fall back to the current model if it supports vision, or fail clearly otherwise.
 
 ## Hooks
 
