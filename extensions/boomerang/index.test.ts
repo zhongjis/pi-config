@@ -708,7 +708,7 @@ describe("Boomerang Extension", () => {
       expect(setModelCalls).toEqual(["anthropic/claude-haiku-4-5"]);
     });
 
-    it("aborts when no commit fallback model is available", async () => {
+    it("falls back to current model when no commit fallback model is available", async () => {
       writeSkill("user", "git-master", "Use git carefully.");
       // Profile-aware chain: gpt-5.4-mini, claude-haiku-4-5,
       // opencode-go/qwen3.5-plus, llama-swap/qwen2.5-coder:7b
@@ -722,10 +722,10 @@ describe("Boomerang Extension", () => {
       await runBoomerangCommit("--amend");
 
       expect(uiMock.notify).toHaveBeenCalledWith(
-        expect.stringContaining("No available model from:"),
-        "error"
+        expect.stringContaining("Falling back to current model"),
+        "warning"
       );
-      expect(sentMessages).toEqual([]);
+      expect(sentMessages).toEqual(["commit --amend"]);
       expect(setModelCalls).toEqual([]);
     });
 
