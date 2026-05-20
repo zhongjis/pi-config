@@ -26,6 +26,9 @@ const VISION_MODEL_CHAIN = [
 	"gpt-5-nano",
 ].join(",");
 
+/** Sessions already warned about look_at falling back to the current agent model. */
+const FALLBACK_WARNED_SESSIONS = new Set<string>();
+
 type LookAtParams = {
 	file_path?: string;
 	image_data?: string;
@@ -187,9 +190,30 @@ function buildPrompt(goal: string): string {
 }
 
 async function runVisionInspection(ctx: ExtensionContext, image: ImageContent, goal: string, signal?: AbortSignal) {
-	const resolved = resolveFirstAvailable(parseModelChain(VISION_MODEL_CHAIN), ctx.modelRegistry);
+	let resolved = resolveFirstAvailable(parseModelChain(VISION_MODEL_CHAIN), ctx.modelRegistry);
+	let fallback = false;
+
 	if (!resolved) {
-		throw new Error("look_at could not find an available vision model for the active profile.");
+		const current = ctx.model;
+		if (current && current.input.includes("image")) {
+			resolved = { model: current, thinkingLevel: undefined };
+			fallback = true;
+			const sid = ctx.sessionManager.getSessionId();
+			if (!FALLBACK_WARNED_SESSIONS.has(sid)) {
+				FALLBACK_WARNED_SESSIONS.add(sid);
+				if (ctx.hasUI) {
+					ctx.ui.notify(
+						`look_at: no dedicated vision model in profile; using current model ${current.provider}/${current.id}`,
+						"warning",
+					);
+				}
+			}
+		} else {
+			const currentName = current ? `${current.provider}/${current.id}` : "none";
+			throw new Error(
+				`look_at could not find an available vision model for the active profile, and the current model (${currentName}) does not support image input.`,
+			);
+		}
 	}
 
 	const agentDir = getAgentDir();
@@ -229,6 +253,7 @@ async function runVisionInspection(ctx: ExtensionContext, image: ImageContent, g
 			text,
 			model: `${resolved.model.provider}/${resolved.model.id}`,
 			thinkingLevel: resolved.thinkingLevel,
+			fallback,
 		};
 	} finally {
 		signal?.removeEventListener("abort", abort);
@@ -267,6 +292,7 @@ export default function multimodalLook(pi: ExtensionAPI): void {
 					mimeType: image.mimeType,
 					bytes: image.bytes,
 					source: image.source,
+					fallback: result.fallback,
 				},
 			};
 		},
