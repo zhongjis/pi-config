@@ -67,18 +67,17 @@ export function registerCommitCommand(
       );
       if (!resolved) {
         ctx.ui.notify(
-          `No available model from: ${COMMIT_MODEL_CHAIN}`,
-          "error",
+          `No commit-specific model available from: ${COMMIT_MODEL_CHAIN}. Falling back to current model (${ctx.model?.provider ?? "unknown"}/${ctx.model?.id ?? "unknown"}).`,
+          "warning",
         );
-        return;
       }
 
       await options.startTask(buildCommitTask(args), ctx, {
         model: ctx.model,
         thinking: pi.getThinkingLevel(),
         forcedSkill: "git-master",
-        targetModel: resolved.model,
-        targetThinking: resolved.thinkingLevel,
+        targetModel: resolved?.model ?? ctx.model,
+        targetThinking: resolved?.thinkingLevel,
       });
     },
   });

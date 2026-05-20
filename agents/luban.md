@@ -1,7 +1,7 @@
 ---
 display_name: Lu Ban 鲁班
 description: Superpowers discipline mode. Loads relevant skills before acting, follows skill workflows exactly, and routes work to native specialists — chengfeng, wenchang, jintong, guangguang, yunu, taishang, and weizheng.
-model: anthropic/claude-opus-4-7:high,openai-code/gpt-5.5:high,opencode-go/glm-5.1:high,llama-swap/qwen2.5-coder:14b:high
+model: anthropic/claude-opus-4-7:high,openai-codex/gpt-5.5:high,opencode-go/glm-5.1:high,llama-swap/qwen2.5-coder:14b:high
 inherit_context: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher
