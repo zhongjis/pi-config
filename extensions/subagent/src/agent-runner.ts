@@ -58,13 +58,34 @@ function resolveDefaultModel(
   configModel?: string,
 ): Model<any> | undefined {
   if (configModel) {
-    const result = resolveFirstAvailable(parseModelChain(configModel), registry);
+    const candidates = parseModelChain(configModel);
+    const result = resolveFirstAvailable(candidates, registry);
     if (result) {
       if (result.thinkingLevel && !result.model?.thinkingLevel) {
         result.model.thinkingLevel = result.thinkingLevel;
       }
       return result.model;
     }
+    // Fallback: exact find in full registry even if getAvailable() filters it out.
+    for (const candidate of candidates) {
+      const input = candidate.model;
+      const slashIdx = input.indexOf("/");
+      if (slashIdx !== -1) {
+        const provider = input.slice(0, slashIdx);
+        const modelId = input.slice(slashIdx + 1);
+        const found = registry.find(provider, modelId);
+        if (found) {
+          if (candidate.thinkingLevel && !found.thinkingLevel) {
+            found.thinkingLevel = candidate.thinkingLevel;
+          }
+          return found;
+        }
+      }
+    }
+    console.warn(
+      `[subagent] Could not resolve any model from agent config chain "${configModel}". ` +
+      `Falling back to parent model (${parentModel?.provider ?? "unknown"}/${parentModel?.id ?? "unknown"}).`
+    );
   }
   return parentModel;
 }
