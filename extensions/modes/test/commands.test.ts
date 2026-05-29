@@ -50,4 +50,118 @@ describe("registerModeCommands", () => {
 		expect(select).toHaveBeenCalledWith("Agent Mode", expect.any(Array));
 		expect(state.switchMode).toHaveBeenCalledWith("luban", { ui: { select } });
 	});
+
+	it("shows mode model info with no args", async () => {
+		const mock = createMockPi();
+		const notify = vi.fn();
+		const state = {
+			currentMode: "kuafu" as Mode,
+			modelOverride: undefined,
+			loadConfig: vi.fn(() => ({ body: "build", model: "anthropic/claude-opus-4" })),
+			applyMode: vi.fn(async () => {}),
+			persistState: vi.fn(),
+		};
+
+		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
+		const command = mock.commands.get("mode-model");
+		expect(command).toBeDefined();
+
+		await command?.handler("", {
+			ui: { notify, select: vi.fn() },
+			model: { provider: "anthropic", id: "claude-sonnet-4" },
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+		} as never);
+
+		expect(notify).toHaveBeenCalledWith(
+			expect.stringContaining("Mode: kuafu"),
+			"info",
+		);
+		expect(notify).toHaveBeenCalledWith(
+			expect.stringContaining("Override: (none)"),
+			"info",
+		);
+	});
+
+	it("sets model override from args", async () => {
+		const mock = createMockPi();
+		const notify = vi.fn();
+		const state = {
+			currentMode: "kuafu" as Mode,
+			modelOverride: undefined,
+			loadConfig: vi.fn(() => ({ body: "build", model: "anthropic/claude-opus-4" })),
+			applyMode: vi.fn(async () => {}),
+			persistState: vi.fn(),
+		};
+
+		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
+		const command = mock.commands.get("mode-model");
+
+		const registry = {
+			getAll: () => [{ id: "gpt-4o", name: "GPT-4o", provider: "openai" }],
+			getAvailable: () => [{ id: "gpt-4o", name: "GPT-4o", provider: "openai" }],
+			find: () => ({ id: "gpt-4o", name: "GPT-4o", provider: "openai" }),
+		};
+
+		await command?.handler("openai/gpt-4o", {
+			ui: { notify, select: vi.fn() },
+			model: { provider: "anthropic", id: "claude-sonnet-4" },
+			modelRegistry: registry,
+		} as never);
+
+		expect(state.modelOverride).toBe("openai/gpt-4o");
+		expect(state.applyMode).toHaveBeenCalled();
+		expect(state.persistState).toHaveBeenCalled();
+		expect(notify).toHaveBeenCalledWith("Model override set: openai/gpt-4o", "success");
+	});
+
+	it("rejects unavailable model override", async () => {
+		const mock = createMockPi();
+		const notify = vi.fn();
+		const state = {
+			currentMode: "kuafu" as Mode,
+			modelOverride: undefined,
+			loadConfig: vi.fn(() => ({ body: "build", model: "anthropic/claude-opus-4" })),
+			applyMode: vi.fn(async () => {}),
+			persistState: vi.fn(),
+		};
+
+		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
+		const command = mock.commands.get("mode-model");
+
+		await command?.handler("nonexistent-model", {
+			ui: { notify, select: vi.fn() },
+			model: undefined,
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+		} as never);
+
+		expect(state.modelOverride).toBeUndefined();
+		expect(state.applyMode).not.toHaveBeenCalled();
+		expect(notify).toHaveBeenCalledWith('Model not available: "nonexistent-model"', "error");
+	});
+
+	it("clears model override with --reset", async () => {
+		const mock = createMockPi();
+		const notify = vi.fn();
+		const state = {
+			currentMode: "kuafu" as Mode,
+			modelOverride: "openai/gpt-4o" as string | undefined,
+			loadConfig: vi.fn(() => ({ body: "build", model: "anthropic/claude-opus-4" })),
+			applyMode: vi.fn(async () => {}),
+			persistState: vi.fn(),
+		};
+
+		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
+		const command = mock.commands.get("mode-model");
+
+		await command?.handler("--reset", {
+			ui: { notify, select: vi.fn() },
+			model: undefined,
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+		} as never);
+
+		expect(state.modelOverride).toBeUndefined();
+		expect(state.applyMode).toHaveBeenCalled();
+		expect(state.persistState).toHaveBeenCalled();
+		expect(notify).toHaveBeenCalledWith("Model override cleared", "success");
+	});
 });

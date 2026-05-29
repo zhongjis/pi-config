@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Key } from "@mariozechner/pi-tui";
 import { MODE_COLORS, MODES, MODE_ALIASES, MODE_META, RESET } from "./constants.js";
-import type { ModeStateManager } from "./mode-state.js";
+import { resolveModelFromStr, type ModeStateManager } from "./mode-state.js";
 import type { Mode } from "./types.js";
 
 function colored(mode: Mode, text: string): string {
@@ -48,6 +48,48 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				return;
 			}
 			await state.switchMode(resolved, ctx);
+		},
+	});
+
+	// /mode-model command
+	pi.registerCommand("mode-model", {
+		description: "Override or show mode model",
+		handler: async (args, ctx) => {
+			const config = state.loadConfig(state.currentMode);
+
+			if (!args?.trim()) {
+				const current = ctx.model;
+				const override = state.modelOverride;
+				const chain = config.model ?? "(none)";
+				const lines = [
+					`Mode: ${state.currentMode}`,
+					`Override: ${override ?? "(none)"}`,
+					`Configured: ${chain}`,
+					`Active: ${current ? `${current.provider}/${current.id}` : "(none)"}`,
+				];
+				ctx.ui.notify(lines.join("\n"), "info");
+				return;
+			}
+
+			const arg = args.trim();
+			if (arg === "--reset") {
+				state.modelOverride = undefined;
+				await state.applyMode(ctx);
+				state.persistState();
+				ctx.ui.notify("Model override cleared", "success");
+				return;
+			}
+
+			const resolved = resolveModelFromStr(arg, ctx.modelRegistry);
+			if (!resolved) {
+				ctx.ui.notify(`Model not available: "${arg}"`, "error");
+				return;
+			}
+
+			state.modelOverride = arg;
+			await state.applyMode(ctx);
+			state.persistState();
+			ctx.ui.notify(`Model override set: ${arg}`, "success");
 		},
 	});
 
