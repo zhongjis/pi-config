@@ -40,6 +40,22 @@ Six ways to switch modes:
 
 ---
 
+## Model Override
+
+The `/mode-model` command provides a session-scoped model override that takes precedence over the mode's frontmatter `model` chain:
+
+| Command | Behavior |
+|---------|----------|
+| `/mode-model` | Displays current mode, active override (if any), configured fallback chain, and active model. |
+| `/mode-model <spec>` | Sets override to `<spec>`. Validates against the model registry before applying. Example: `/mode-model anthropic/claude-sonnet-4:high`. |
+| `/mode-model --reset` | Clears the override and re-applies the mode's configured `model` chain. |
+
+The override is persisted in the session JSONL as `modelOverride` and survives `/reload`. It does **not** modify the mode's frontmatter. When switching modes, the override persists across the switch — use `--reset` to revert.
+
+---
+
+## Mode Configuration
+
 ## Mode Configuration
 
 Each mode reads its prompt and settings from `~/.pi/agent/agents/<mode>.md`. The file uses YAML frontmatter for configuration and markdown body for the system prompt injection.
@@ -55,7 +71,7 @@ Each mode reads its prompt and settings from `~/.pi/agent/agents/<mode>.md`. The
 | `allow_nesting` | boolean | When true, permits nested subagent tools (`Agent`, `get_subagent_result`, `steer_subagent`) if also allowlisted by extension tool policy. |
 | `allow_delegation_to` | comma-separated strings | Allowlist of subagent types the mode may delegate to. |
 | `disallow_delegation_to` | comma-separated strings | Blocklist of subagent types. Applied as exclusions from `allow_delegation_to` when both are set. |
-| `model` | string | Model override. Resolved by exact `provider/modelId`, exact `modelId`, or starts-with prefix match. |
+| `model` | string | Model fallback chain. Comma-separated `provider/modelId:thinkingLevel` entries; first available match wins. |
 
 ### Prompt Injection
 
@@ -193,6 +209,7 @@ Mode state survives pi restarts through two mechanisms.
 - Plan title, title source, and content
 - Review state (`planReviewId` restored into runtime `pendingPlanReviewId`, pending flag, approved flag, feedback)
 - `awaitingUserAction`
+- `modelOverride`
 
 ### Local Plan File
 
@@ -202,8 +219,10 @@ Mode state survives pi restarts through two mechanisms.
 
 The `--mode` flag takes precedence over session-restored mode. If a flag is provided and is not the default `kuafu`, the session-restored mode is ignored.
 
-### Review Recovery
+### Model Restoration
 
+On session start, the mode's model is applied via `applyModelFromConfig`. If pi subsequently restores a previously saved model (e.g., when resuming a session), the `model_select` hook detects `source === "restore"` and re-applies the mode's model — ensuring the mode's configured chain (or active override) takes precedence over the session's last-used model.
+### Review Recovery
 On session start, if a pending Plannotator review ID exists in restored state, recovery clears it because browser review sessions do not survive the restart. It also clears the related `awaitingUserAction` marker and notifies the user when UI is available.
 
 ---

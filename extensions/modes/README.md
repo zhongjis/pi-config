@@ -45,13 +45,27 @@ Present the plan approval menu after plan generation is complete.
 ## Commands
 
 - `/mode [kuafu|fuxi|houtu|luban|build|plan|execute]` — Switch agent mode
+- `/mode-model` — Show or override the mode's model
+- `/mode-model <provider/modelId>` — Set a session-scoped model override
+- `/mode-model --reset` — Clear the model override and revert to mode's chain
 - Tab / Ctrl+Shift+M — Cycle modes
 - `--mode <name>` flag on session start
+
+## Model Override
+
+By default, each mode selects its model from the `model` frontmatter chain in `agents/<mode>.md`. The `/mode-model` command lets you temporarily override this choice for the current session:
+
+- `/mode-model` — Shows current mode, override (if any), configured fallback chain, and active model.
+- `/mode-model anthropic/claude-sonnet-4:high` — Sets a session-scoped override. Validates the model exists in the registry before applying.
+- `/mode-model --reset` — Clears the override and reverts to the mode's configured chain.
+
+The override is persisted in the session JSONL and survives `/reload`. It does **not** change the mode's frontmatter — it's a runtime override only.
 
 ## Hooks
 
 - `session_start`, `session_tree` — Restore mode state
 - `before_agent_start` — Inject mode-specific prompt
+- `model_select` — Re-apply mode model when session restores a saved model
 - `input` — Handle mode switching keywords
 - Status bar shows current mode with color coding
 
