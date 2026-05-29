@@ -26,6 +26,7 @@ const ANTHROPIC_TO_BEDROCK: Record<string, string> = {
   "claude-sonnet-4-6":         "us.anthropic.claude-sonnet-4-6",
   "claude-opus-4-6":           "us.anthropic.claude-opus-4-6-v1",
   "claude-opus-4-7":           "us.anthropic.claude-opus-4-7",
+  "claude-opus-4-8":           "us.anthropic.claude-opus-4-8",
   "claude-haiku-4-5":          "us.anthropic.claude-haiku-4-5-20251001-v1:0",
   "claude-haiku-4-5-20251001": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
 };
