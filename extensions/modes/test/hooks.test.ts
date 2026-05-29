@@ -55,6 +55,8 @@ function createMockPi() {
 			appendEntry: vi.fn(),
 			getFlag: vi.fn(() => undefined),
 			sendUserMessage: vi.fn(),
+			getThinkingLevel: vi.fn(() => "off"),
+			setThinkingLevel: vi.fn(),
 		},
 		async fire(event: string, payload: unknown, ctx: unknown) {
 			const results: unknown[] = [];
@@ -224,4 +226,50 @@ describe("mode hooks", () => {
 		expect(state.activeCtx).toBe(treeCtx as never);
 	});
 
+	it("re-applies mode model on model_select restore", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.cachedConfigs.kuafu = {
+			body: "build",
+			model: "anthropic/claude-sonnet-4:medium",
+		};
+
+		registerModeHooks(mock.pi as never, state);
+
+		const registry = {
+			getAll: () => [{ id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" }],
+			getAvailable: () => [{ id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" }],
+			find: (provider: string, modelId: string) =>
+				({ id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" }),
+		};
+
+		await mock.fire("model_select", { source: "restore", model: {}, previousModel: {} }, {
+			modelRegistry: registry,
+			model: undefined,
+		});
+
+		expect(mock.pi.setModel).toHaveBeenCalledWith(
+			expect.objectContaining({ provider: "anthropic", id: "claude-sonnet-4" }),
+		);
+	});
+
+	it("ignores model_select when source is not restore", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.cachedConfigs.kuafu = {
+			body: "build",
+			model: "anthropic/claude-sonnet-4:medium",
+		};
+
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("model_select", { source: "set", model: {}, previousModel: {} }, {
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+			model: undefined,
+		});
+
+		expect(mock.pi.setModel).not.toHaveBeenCalled();
+	});
 });

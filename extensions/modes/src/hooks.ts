@@ -203,6 +203,7 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 			state.awaitingUserAction = modeEntry.data.awaitingUserAction;
 			state.planReviewApproved = modeEntry.data.planReviewApproved ?? false;
 			state.planReviewFeedback = modeEntry.data.planReviewFeedback;
+			state.modelOverride = modeEntry.data.modelOverride;
 		}
 	}
 	if (!state.pendingPlanReviewId) {
@@ -291,7 +292,14 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
-		state.activeCtx = ctx;
+		bindActiveSessionContext(ctx);
+	});
+
+	pi.on("model_select", async (event, ctx) => {
+		if (event.source === "restore") {
+			const config = state.loadConfig(state.currentMode);
+			await state.applyModelFromConfig(config, ctx);
+		}
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
