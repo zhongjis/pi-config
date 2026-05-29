@@ -74,6 +74,8 @@ describe("ModeStateManager", () => {
 				activeTools = toolNames;
 			}),
 			setModel: vi.fn(),
+			getThinkingLevel: vi.fn(() => "off" as any),
+			setThinkingLevel: vi.fn(),
 		};
 		return pi;
 	}
@@ -345,5 +347,68 @@ describe("ModeStateManager", () => {
 		expect(state.awaitingUserAction).toBeUndefined();
 		expect(state.planReviewApproved).toBe(false);
 		expect(state.planReviewFeedback).toBeUndefined();
+	});
+
+	it("prefers modelOverride over config.model when applying model", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.kuafu = {
+			body: "build",
+			model: "anthropic/claude-sonnet-4:medium",
+		};
+		state.modelOverride = "openai/gpt-4o";
+
+		const models = [
+			{ id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" },
+			{ id: "gpt-4o", name: "GPT-4o", provider: "openai" },
+		];
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry(models),
+			model: undefined,
+		};
+
+		await state.applyModelFromConfig(state.cachedConfigs.kuafu!, ctx as never);
+		expect(pi.setModel).toHaveBeenCalledWith(
+			expect.objectContaining({ provider: "openai", id: "gpt-4o" }),
+		);
+	});
+
+	it("falls back to config.model when no override", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs.kuafu = {
+			body: "build",
+			model: "anthropic/claude-sonnet-4:medium",
+		};
+
+		const models = [
+			{ id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" },
+		];
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry(models),
+			model: undefined,
+		};
+
+		await state.applyModelFromConfig(state.cachedConfigs.kuafu!, ctx as never);
+		expect(pi.setModel).toHaveBeenCalledWith(
+			expect.objectContaining({ provider: "anthropic", id: "claude-sonnet-4" }),
+		);
+	});
+
+	it("persists modelOverride in state", () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.modelOverride = "openai/gpt-4o:high";
+		state.persistState();
+		expect(pi.appendEntry).toHaveBeenCalledWith(
+			"agent-mode",
+			expect.objectContaining({ modelOverride: "openai/gpt-4o:high" }),
+		);
 	});
 });

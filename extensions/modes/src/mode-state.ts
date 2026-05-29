@@ -58,6 +58,7 @@ export class ModeStateManager {
 	plannotatorUnavailableReason: string | undefined;
 	lastStatusMode: Mode | undefined;
 
+	modelOverride?: string;
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;
 	}
@@ -73,6 +74,7 @@ export class ModeStateManager {
 			awaitingUserAction: this.awaitingUserAction,
 			planReviewApproved: this.planReviewApproved,
 			planReviewFeedback: this.planReviewFeedback,
+			modelOverride: this.modelOverride,
 		});
 	}
 
@@ -123,8 +125,9 @@ export class ModeStateManager {
 	 * before_agent_start firing on every user message).
 	 */
 	async applyModelFromConfig(config: ModeConfig, ctx: ExtensionContext): Promise<void> {
-		if (!config.model) return;
-		const candidates = parseModelChain(config.model);
+		const modelSpec = this.modelOverride ?? config.model;
+		if (!modelSpec) return;
+		const candidates = parseModelChain(modelSpec);
 		const resolved = resolveFirstAvailable(candidates, ctx.modelRegistry);
 		if (!resolved) return;
 

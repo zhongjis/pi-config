@@ -33,6 +33,7 @@ export interface ModeState {
 	awaitingUserAction?: AwaitingUserActionState;
 	planReviewApproved?: boolean;
 	planReviewFeedback?: string;
+	modelOverride?: string;
 }
 
 export interface PlanReviewState {
