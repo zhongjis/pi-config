@@ -14,8 +14,11 @@ import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import {
   createFlatFallbackCache,
+  createLogger,
+  initLib,
   isQuotaError,
   isRateLimitError as isOauthRateLimitFallback,
+  type Logger,
 } from "../lib/index.js";
 
 // ---------------------------------------------------------------------------
@@ -273,6 +276,21 @@ let fallbackActive = false;
 let pendingNotification: "quota_exhausted" | "using_cached_fallback" | null = null;
 let sessionNotified = false;
 let agentStarted = false; // true only after agent_start fires; guards against history-replay message_start
+let logger: Logger | null = null;
+/** Why fallback activated this session: subscription quota vs temporary rate limit. */
+let fallbackReason: "quota" | "ratelimit" | null = null;
+
+/**
+ * Classify the active fallback cause. Prefers the live in-session reason; falls
+ * back to the cached `reason` string (e.g. on a fresh session that loaded an
+ * active cache). Defaults to "ratelimit" when nothing indicates a quota cause.
+ */
+function activeFallbackKind(): "quota" | "ratelimit" {
+  if (fallbackReason) return fallbackReason;
+  const cached = readCache();
+  if (cached?.reason && isQuotaError({ message: cached.reason })) return "quota";
+  return "ratelimit";
+}
 
 // ---------------------------------------------------------------------------
 // Status bar
@@ -376,6 +394,7 @@ function streamWithFallback(
         ) {
           if (bedrockId) {
             fallbackActive = true;
+            fallbackReason = isQuotaError((event as any).error ?? event) ? "quota" : "ratelimit";
             writeCache(((event as any).error?.message ?? (event as any).errorMessage ?? "quota exhausted"));
             pendingNotification = "quota_exhausted";
             // Push start immediately so UI exits "Working..." before Bedrock connects
@@ -406,6 +425,7 @@ function streamWithFallback(
     } catch (err) {
       if ((isQuotaError(err) || isOauthRateLimitFallback(err)) && bedrockId && !hasResponseContent) {
         fallbackActive = true;
+        fallbackReason = isQuotaError(err) ? "quota" : "ratelimit";
         writeCache(
           (err instanceof Error ? err.message : "quota exhausted"),
         );
@@ -521,7 +541,7 @@ async function streamViaBedrock(
           // Dump raw error for diagnostics — helps trace opaque "Unknown: UnknownError"
           try {
             const keys = errObj && typeof errObj === "object" ? Object.keys(errObj) : [];
-            console.error("[clauderock] Bedrock stream error event:", {
+            logger?.debug("bedrock_stream_error_event", {
               type: errObj?.constructor?.name,
               keys,
               errorMessage: errObj?.errorMessage,
@@ -561,7 +581,7 @@ async function streamViaBedrock(
     }
     // Dump raw thrown error for diagnostics
     try {
-      console.error("[clauderock] Bedrock thrown error:", {
+      logger?.debug("bedrock_thrown_error", {
         type: bedrockErr?.constructor?.name,
         name: (bedrockErr as any)?.name,
         message: (bedrockErr as any)?.message,
@@ -571,7 +591,7 @@ async function streamViaBedrock(
         stack: (bedrockErr as any)?.stack?.split("\n").slice(0, 5).join("\n"),
       });
     } catch { /* ignore logging errors */ }
-    console.error(`[clauderock] ${formatBedrockError(bedrockErr)}`);
+    logger?.debug("bedrock_error_detail", { detail: formatBedrockError(bedrockErr) });
     stream.push({
       type: "error",
       error: new Error(
@@ -586,6 +606,7 @@ async function streamViaBedrock(
 // Extension entry point
 
 export default function (pi: ExtensionAPI) {
+  initLib(pi);
   // 1. Initialize fallback state from cache.
   // Back-compat: legacy cache format used `exhausted: false` to mark inactive;
   // read the raw file to honor that field. New lib cache omits the field entirely.
@@ -604,6 +625,7 @@ export default function (pi: ExtensionAPI) {
 
   // 2. Session start — update status bar and reset per-session flags
   pi.on("session_start", async (_event, ctx) => {
+    logger = createLogger(ctx, "clauderock");
     sessionNotified = false;
     agentStarted = false;
     isAnthropicProvider = ctx.model?.provider === "anthropic";
@@ -627,8 +649,12 @@ export default function (pi: ExtensionAPI) {
     if ((event as any).message?.role !== "user") return;
     if (!agentStarted) return;
     if (fallbackActive && !sessionNotified && isAnthropicProvider) {
+      const kind = activeFallbackKind();
+      const why = kind === "quota"
+        ? "Claude subscription quota is exhausted (not a temporary rate limit)"
+        : "Claude API was previously rate-limited";
       ctx.ui.notify(
-        "Using Clauderock — Claude API was previously rate-limited. Run " + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
+        `Using Clauderock — ${why}. Run ` + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
         "info",
       );
       updateStatusBar(ctx);
@@ -639,17 +665,23 @@ export default function (pi: ExtensionAPI) {
   // 3b. Turn end — deliver quota_exhausted notification (fires after Bedrock stream completes)
   pi.on("turn_end", async (_event, ctx) => {
     if (pendingNotification === "quota_exhausted") {
-      ctx.ui.notify(
-        ctx.ui.theme.fg("warning", "⚠ Claude rate limit hit") + " — switching to Clauderock",
-        "warning",
-      );
+      const kind = activeFallbackKind();
+      const headline = kind === "quota"
+        ? ctx.ui.theme.fg("warning", "⚠ Claude subscription quota exhausted") +
+          " — switched to Clauderock (Bedrock). Not a temporary rate limit; /clauderock off will re-fail until your Claude quota resets."
+        : ctx.ui.theme.fg("warning", "⚠ Claude rate limit hit") + " — switched to Clauderock (Bedrock).";
+      ctx.ui.notify(headline, "warning");
       updateStatusBar(ctx);
       sessionNotified = true;
       pendingNotification = null;
     } else if (pendingNotification === "using_cached_fallback") {
       // Fallback: if before_agent_start somehow missed it, deliver here
+      const kind = activeFallbackKind();
+      const why = kind === "quota"
+        ? "Claude subscription quota is exhausted (not a temporary rate limit)"
+        : "Claude API was previously rate-limited";
       ctx.ui.notify(
-        "Using Clauderock — Claude API was previously rate-limited. Run " + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
+        `Using Clauderock — ${why}. Run ` + ctx.ui.theme.fg("accent", "/clauderock off") + " to retry direct API.",
         "info",
       );
       updateStatusBar(ctx);
@@ -784,11 +816,22 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (action === "off") {
+        const wasActive = fallbackActive;
+        const kind = activeFallbackKind();
         clearCache();
         fallbackActive = false;
+        fallbackReason = null;
         sessionNotified = false;
         updateStatusBar(ctx);
-        ctx.ui.notify(ctx.ui.theme.fg("success", "✓ Switched to Claude direct API") + " — Clauderock disabled", "info");
+        if (wasActive && kind === "quota") {
+          ctx.ui.notify(
+            ctx.ui.theme.fg("warning", "✓ Switched to Claude direct API — Clauderock disabled.") +
+            " Note: fallback was triggered by Claude subscription quota exhaustion, so the direct API will likely fail and re-activate Clauderock until your quota resets.",
+            "warning",
+          );
+        } else {
+          ctx.ui.notify(ctx.ui.theme.fg("success", "✓ Switched to Claude direct API") + " — Clauderock disabled", "info");
+        }
         return;
       }
 
