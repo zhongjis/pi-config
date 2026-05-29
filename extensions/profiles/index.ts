@@ -81,7 +81,7 @@ export const DEFAULT_PROFILES_CONFIG: ProfilesConfig = {
     },
     opencode: {
       providers: ["opencode-go"],
-      defaultModel: "opencode-go/glm-5.1",
+      defaultModel: "opencode-go/kimi-k2.6",
       statusText: "opencode",
     },
     local: {

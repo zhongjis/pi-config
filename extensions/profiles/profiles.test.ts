@@ -148,7 +148,8 @@ describe("registry filter", () => {
 		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
-		expect(visible).toEqual(expect.arrayContaining(["opencode-go", "opencode"]));
+		expect(visible).toContain("opencode-go");
+		expect(visible).not.toContain("opencode");
 		expect(visible).not.toContain("anthropic");
 		expect(visible).not.toContain("llama-swap");
 	});

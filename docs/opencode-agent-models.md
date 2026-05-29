@@ -1,6 +1,6 @@
 # OpenCode Agent Model Mapping
 
-Maps each custom agent in [`agents/`](../agents/) to its preferred model on the **OpenCode profile** (`opencode-go` + `opencode` providers).
+Maps each custom agent in [`agents/`](../agents/) to its preferred model on the **OpenCode profile** (`opencode-go` provider).
 
 This document is canonical for the `opencode` profile. For the `default` (US Anthropic/OpenAI) and `local` (llama-swap) profiles, see each agent's frontmatter.
 

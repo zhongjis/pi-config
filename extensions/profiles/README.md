@@ -1,6 +1,6 @@
 # profiles
 
-Provider-scope profiles for pi. Switches the active set of model providers between `default` (US — Anthropic, OpenAI), `opencode` (China — OpenCode Zen + Go), and `local` (offline-capable — llama-swap).
+Provider-scope profiles for pi. Switches the active set of model providers between `default` (US — Anthropic, OpenAI), `opencode` (China — OpenCode Go), and `local` (offline-capable — llama-swap).
 
 ## What it does
 
@@ -16,7 +16,7 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 | Profile | Providers kept | Intended use |
 |---|---|---|
 | `default` | `anthropic`, `openai-codex`, `openai`, `amazon-bedrock`, `google` | US default — paid frontier models. |
-| `opencode` | `opencode-go`, `opencode` | China — OpenCode Go subscription, Zen overflow. |
+| `opencode` | `opencode-go` | China — OpenCode Go subscription, Zen overflow. |
 | `local` | `llama-swap` | Offline-first or no-network environments. Blocks web tools and wenchang. |
 
 Profiles are hardcoded. No config files.
