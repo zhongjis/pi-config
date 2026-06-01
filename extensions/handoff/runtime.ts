@@ -1,3 +1,6 @@
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { complete, type Message } from "@mariozechner/pi-ai";
 import type {
   ExtensionAPI,
@@ -366,6 +369,91 @@ export async function runHandoffCommand(
     clearPendingPreparedHandoff(currentSessionFile);
   }
 
+  return undefined;
+}
+
+export interface ParsedHandoffFileArgs {
+  goal: string;
+  summarize: boolean;
+}
+
+export function getHandoffFileUsage(): string {
+  return "Usage: /handoff:file [-no-summarize] [goal]";
+}
+
+export function parseHandoffFileArgs(args: string): ParsedHandoffFileArgs {
+  let remaining = args.trim();
+  let summarize = true;
+
+  const noSummarizeMatch = remaining.match(/(?:^|\s)-no-summarize(?=\s|$)/u);
+  if (noSummarizeMatch) {
+    summarize = false;
+    remaining = remaining.replace(noSummarizeMatch[0], " ");
+  }
+
+  const goal = stripMatchingQuotes(remaining.trim());
+  return { goal, summarize };
+}
+
+function buildHandoffDocument(
+  goal: string,
+  parentSession: string | undefined,
+  body: string,
+): string {
+  const sections = [
+    "# Handoff Document",
+    "",
+    `**Created:** ${new Date().toISOString()}`,
+  ];
+  if (parentSession) {
+    sections.push(`**Parent session:** \`${parentSession}\``);
+  }
+  sections.push(`**Goal:** ${goal || "(not specified)"}`, "", "---", "", body.trim(), "");
+  return sections.join("\n");
+}
+
+export async function runHandoffFileCommand(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  args: ParsedHandoffFileArgs,
+): Promise<string | undefined> {
+  void pi;
+  const currentSessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
+  const messages = collectConversationMessages(ctx.sessionManager.getBranch());
+
+  let body: string;
+  if (args.summarize && messages.length > 0) {
+    if (!ctx.hasUI) {
+      return "handoff:file with summarization requires interactive mode (use -no-summarize otherwise).";
+    }
+    const summaryModel = await resolveSummaryModelChoice(ctx);
+    if (!summaryModel) {
+      return "Handoff cancelled.";
+    }
+    const summary = await generateContextSummaryWithUi(
+      ctx,
+      summaryModel,
+      messages,
+      args.goal,
+    );
+    if (summary === null) {
+      return "Handoff cancelled.";
+    }
+    body = summary;
+  } else {
+    body = buildDeterministicPrompt(args.goal, currentSessionFile);
+  }
+
+  const document = buildHandoffDocument(args.goal, currentSessionFile, body);
+  const fileName = `handoff-${new Date().toISOString().replace(/[:.]/gu, "-")}.md`;
+  const filePath = join(tmpdir(), fileName);
+  try {
+    writeFileSync(filePath, document, "utf8");
+  } catch (error) {
+    return `Failed to write handoff file: ${error instanceof Error ? error.message : String(error)}`;
+  }
+
+  ctx.ui.notify(`Handoff document written to ${filePath}`, "info");
   return undefined;
 }
 

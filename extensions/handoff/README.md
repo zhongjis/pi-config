@@ -5,6 +5,7 @@ Session handoff system for transferring context to a new focused session.
 ## What It Does
 
 - Summarizes current session context using a cheap model, then launches a new session with the summary as starting context
+- Alternatively writes the summary to a temp-dir handoff document (`/handoff:file`) for handing work to an out-of-session agent
 - Supports mode selection for the target session (kuafu, fuxi, houtu)
 - Optional `--no-summarize` flag skips the summary step
 - Integrates with the modes extension for plan-to-execution handoff (`/handoff:start-work`)
@@ -14,6 +15,7 @@ Session handoff system for transferring context to a new focused session.
 ## Commands
 
 - `/handoff [-mode <name>] [-no-summarize]` — Transfer context to a new focused session
+- `/handoff:file [-no-summarize] [goal]` — Write a handoff document to a temp file (`$TMPDIR/handoff-<timestamp>.md`) for another agent to pick up
 - `/handoff:start-work` — Hand off an approved plan to an execution agent in a new session
 
 ## Hooks

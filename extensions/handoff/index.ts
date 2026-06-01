@@ -3,25 +3,31 @@ import {
   getHandoffUsage,
   getPreparedHandoffCommand,
   parseHandoffArgs,
+  parseHandoffFileArgs,
   registerDirectHandoffBridge,
   runHandoffCommand,
+  runHandoffFileCommand,
   runPreparedHandoffCommand,
 } from "./runtime.js";
 
 export {
   buildPlanExecutionGoal,
+  getHandoffFileUsage,
   getHandoffUsage,
   getPreparedHandoffCommand,
   parseHandoffArgs,
+  parseHandoffFileArgs,
   registerDirectHandoffBridge,
   requestDirectHandoffBridge,
   runHandoffCommand,
+  runHandoffFileCommand,
   runPreparedHandoffCommand,
   setPreparedHandoffArgsResolver,
   type DirectHandoffBridgeReply,
   type DirectHandoffBridgeRequest,
   type HandoffMode,
   type ParsedHandoffArgs,
+  type ParsedHandoffFileArgs,
   type PreparedHandoffArgsResolver,
 } from "./runtime.js";
 
@@ -43,6 +49,20 @@ export default function (pi: ExtensionAPI) {
       }
 
       const level = error === "Handoff cancelled." || error === "New session cancelled." ? "info" : "error";
+      ctx.ui.notify(error, level);
+    },
+  });
+
+  pi.registerCommand("handoff:file", {
+    description: "Write a handoff document to a temp file for another agent to pick up (-no-summarize)",
+    handler: async (args: string, ctx: any) => {
+      const parsed = parseHandoffFileArgs(args);
+      const error = await runHandoffFileCommand(pi, ctx as ExtensionCommandContext, parsed);
+      if (!error) {
+        return;
+      }
+
+      const level = error === "Handoff cancelled." ? "info" : "error";
       ctx.ui.notify(error, level);
     },
   });
