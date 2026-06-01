@@ -18,3 +18,4 @@ extensions/lib/*.d.ts
 # GitNexus stealth — artifacts if someone runs the binary bare outside pi
 .claude/
 CLAUDE.md
+/.omo
