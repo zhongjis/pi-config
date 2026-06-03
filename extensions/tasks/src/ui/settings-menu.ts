@@ -6,8 +6,9 @@
  * own settings panel style.
  */
 
-import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
-import { Container, type SettingItem, SettingsList, Spacer, Text } from "@mariozechner/pi-tui";
+import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
+import { TASK_SETTINGS_MAX_VISIBLE } from "../constants.js";
 import { saveTasksConfig, type TasksConfig } from "../tasks-config.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -64,7 +65,7 @@ export async function openSettingsMenu(
 
     const list = new SettingsList(
       items,
-      /* maxVisible */ 10,
+      /* maxVisible */ TASK_SETTINGS_MAX_VISIBLE,
       getSettingsListTheme(),
       /* onChange */ (id, newValue) => {
         if (id === "autoCascade") {

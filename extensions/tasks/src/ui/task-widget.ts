@@ -8,7 +8,10 @@
  *   ✳/✽ actively executing task (star spinner with activeForm text)
  */
 
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { filterBlockers } from "../../../lib/blocker.js";
+import { groupByStatus } from "../../../lib/status-group.js";
+import { TASK_WIDGET_MAX_VISIBLE, TASK_WIDGET_REFRESH_INTERVAL_MS } from "../constants.js";
 import type { TaskStore } from "../task-store.js";
 
 // ---- Types ----
@@ -30,8 +33,6 @@ export type UICtx = {
 
 /** Star spinner frames for animated active task indicator (matches Claude Code). */
 const SPINNER = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"];
-
-const MAX_VISIBLE_TASKS = 10;
 
 /** Per-task runtime metrics (elapsed time, token usage). */
 export interface TaskMetrics {
@@ -112,7 +113,7 @@ export class TaskWidget {
   /** Ensure the widget update timer is running. */
   ensureTimer() {
     if (!this.widgetInterval) {
-      this.widgetInterval = setInterval(() => this.update(), 150);
+      this.widgetInterval = setInterval(() => this.update(), TASK_WIDGET_REFRESH_INTERVAL_MS);
     }
   }
 
@@ -124,9 +125,10 @@ export class TaskWidget {
 
     if (tasks.length === 0) return [];
 
-    const completed = tasks.filter(t => t.status === "completed");
-    const inProgress = tasks.filter(t => t.status === "in_progress");
-    const pending = tasks.filter(t => t.status === "pending");
+    const groupedTasks = groupByStatus(tasks);
+    const completed = groupedTasks.completed ?? [];
+    const inProgress = groupedTasks.in_progress ?? [];
+    const pending = groupedTasks.pending ?? [];
 
     const parts: string[] = [];
     if (completed.length > 0) parts.push(`${completed.length} done`);
@@ -137,7 +139,7 @@ export class TaskWidget {
     const spinnerChar = SPINNER[this.widgetFrame % SPINNER.length];
     const lines: string[] = [truncate(theme.fg("accent", "●") + " " + theme.fg("accent", statusText))];
 
-    const visible = tasks.slice(0, MAX_VISIBLE_TASKS);
+    const visible = tasks.slice(0, TASK_WIDGET_MAX_VISIBLE);
     for (let i = 0; i < visible.length; i++) {
       const task = visible[i];
       const isActive = this.activeTaskIds.has(task.id) && task.status === "in_progress";
@@ -153,15 +155,12 @@ export class TaskWidget {
         icon = "◻";
       }
 
-      let suffix = "";
-      if (task.status === "pending" && task.blockedBy.length > 0) {
-        const openBlockers = task.blockedBy.filter(bid => {
-          const blocker = this.store.get(bid);
-          return blocker && blocker.status !== "completed";
-        });
-        if (openBlockers.length > 0) {
-          suffix = theme.fg("dim", ` › blocked by ${openBlockers.map(id => "#" + id).join(", ")}`);
-        }
+	      let suffix = "";
+	      if (task.status === "pending" && task.blockedBy.length > 0) {
+	        const { unsatisfied: openBlockers } = filterBlockers(task.blockedBy, this.store);
+	        if (openBlockers.length > 0) {
+	          suffix = theme.fg("dim", ` › blocked by ${openBlockers.map(id => "#" + id).join(", ")}`);
+	        }
       }
 
       let text: string;
@@ -193,8 +192,8 @@ export class TaskWidget {
       lines.push(truncate(text + suffix));
     }
 
-    if (tasks.length > MAX_VISIBLE_TASKS) {
-      lines.push(truncate(theme.fg("dim", `    … and ${tasks.length - MAX_VISIBLE_TASKS} more`)));
+    if (tasks.length > TASK_WIDGET_MAX_VISIBLE) {
+      lines.push(truncate(theme.fg("dim", `    … and ${tasks.length - TASK_WIDGET_MAX_VISIBLE} more`)));
     }
 
     return lines;
