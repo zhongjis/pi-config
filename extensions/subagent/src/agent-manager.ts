@@ -8,7 +8,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { Model } from "@mariozechner/pi-ai";
-import type { AgentSession, ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS, SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS, SUBAGENT_BACKGROUND_MAX_CONCURRENT } from "./constants.js";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import type { AgentRecord, IsolationMode, SubagentType, ThinkingLevel } from "./types.js";
 import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js";
@@ -18,7 +19,7 @@ export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
 
 /** Default max concurrent background agents. */
-const DEFAULT_MAX_CONCURRENT = 4;
+const DEFAULT_MAX_CONCURRENT = SUBAGENT_BACKGROUND_MAX_CONCURRENT;
 
 interface SpawnArgs {
   pi: ExtensionAPI;
@@ -49,6 +50,8 @@ interface SpawnOptions {
   onToolActivity?: (activity: ToolActivity) => void;
   /** Called on streaming text deltas from the assistant response. */
   onTextDelta?: (delta: string, fullText: string) => void;
+  /** Called when reasoning/thinking deltas indicate model progress. */
+  onProgress?: () => void;
   /** Called when the agent session is created (for accessing session stats). */
   onSessionCreated?: (session: AgentSession) => void;
   /** Called at the end of each agentic turn with the cumulative count. */
@@ -72,7 +75,7 @@ export class AgentManager {
     this.onStart = onStart;
     this.maxConcurrent = maxConcurrent;
     // Cleanup completed agents after 10 minutes (but keep sessions for resume)
-    this.cleanupInterval = setInterval(() => this.cleanup(), 60_000);
+    this.cleanupInterval = setInterval(() => this.cleanup(), SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS);
   }
 
   /** Update the max concurrent background agents limit. */
@@ -173,6 +176,7 @@ export class AgentManager {
       },
       onTurnEnd: options.onTurnEnd,
       onTextDelta: options.onTextDelta,
+      onProgress: options.onProgress,
       onSessionCreated: (session) => {
         record.session = session;
         // Flush any steers that arrived before the session was ready
@@ -222,7 +226,7 @@ export class AgentManager {
         if (record.status !== "stopped") {
           record.status = "error";
         }
-        record.error = err instanceof Error ? err.message : String(err);
+        record.error = record.error ?? (err instanceof Error ? err.message : String(err));
         record.completedAt ??= Date.now();
 
         // Final flush of streaming output file on error
@@ -392,7 +396,7 @@ export class AgentManager {
   }
 
   private cleanup() {
-    const cutoff = Date.now() - 10 * 60_000;
+    const cutoff = Date.now() - SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS;
     for (const [id, record] of this.agents) {
       if (record.status === "running" || record.status === "queued") continue;
       if ((record.completedAt ?? 0) >= cutoff) continue;

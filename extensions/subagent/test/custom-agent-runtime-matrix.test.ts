@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const {
   createAgentSession,
@@ -20,8 +20,8 @@ const {
   mockState: { agentDir: "/mock/agent-dir" },
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-coding-agent")>();
+  vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
   return {
     ...actual,
     createAgentSession,

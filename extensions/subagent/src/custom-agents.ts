@@ -4,7 +4,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { getAgentDir } from "@mariozechner/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   invalidFrontmatterFieldMessage,
   parseAgentMarkdown,
@@ -104,5 +104,4 @@ function loadFromDir(
     });
   }
 }
-
 

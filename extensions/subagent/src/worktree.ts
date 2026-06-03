@@ -11,6 +11,17 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  SUBAGENT_WORKTREE_ADD_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_BRANCH_RETRY_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_BRANCH_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_CHECK_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_COMMIT_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_CREATE_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_PRUNE_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_REMOVE_TIMEOUT_MS,
+  SUBAGENT_WORKTREE_STATUS_TIMEOUT_MS,
+} from "./constants.js";
 
 export interface WorktreeInfo {
   /** Absolute path to the worktree directory. */
@@ -35,8 +46,8 @@ export interface WorktreeCleanupResult {
 export function createWorktree(cwd: string, agentId: string): WorktreeInfo | undefined {
   // Verify we're in a git repo with at least one commit (HEAD must exist)
   try {
-    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, stdio: "pipe", timeout: 5000 });
-    execFileSync("git", ["rev-parse", "HEAD"], { cwd, stdio: "pipe", timeout: 5000 });
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, stdio: "pipe", timeout: SUBAGENT_WORKTREE_CHECK_TIMEOUT_MS });
+    execFileSync("git", ["rev-parse", "HEAD"], { cwd, stdio: "pipe", timeout: SUBAGENT_WORKTREE_CHECK_TIMEOUT_MS });
   } catch {
     return undefined;
   }
@@ -50,7 +61,7 @@ export function createWorktree(cwd: string, agentId: string): WorktreeInfo | und
     execFileSync("git", ["worktree", "add", "--detach", worktreePath, "HEAD"], {
       cwd,
       stdio: "pipe",
-      timeout: 30000,
+      timeout: SUBAGENT_WORKTREE_CREATE_TIMEOUT_MS,
     });
     return { path: worktreePath, branch };
   } catch {
@@ -78,7 +89,7 @@ export function cleanupWorktree(
     const status = execFileSync("git", ["status", "--porcelain"], {
       cwd: worktree.path,
       stdio: "pipe",
-      timeout: 10000,
+      timeout: SUBAGENT_WORKTREE_STATUS_TIMEOUT_MS,
     }).toString().trim();
 
     if (!status) {
@@ -88,14 +99,14 @@ export function cleanupWorktree(
     }
 
     // Changes exist — stage, commit, and create a branch
-    execFileSync("git", ["add", "-A"], { cwd: worktree.path, stdio: "pipe", timeout: 10000 });
+    execFileSync("git", ["add", "-A"], { cwd: worktree.path, stdio: "pipe", timeout: SUBAGENT_WORKTREE_ADD_TIMEOUT_MS });
     // Truncate description for commit message (no shell sanitization needed — execFileSync uses argv)
     const safeDesc = agentDescription.slice(0, 200);
     const commitMsg = `pi-agent: ${safeDesc}`;
     execFileSync("git", ["commit", "-m", commitMsg], {
       cwd: worktree.path,
       stdio: "pipe",
-      timeout: 10000,
+      timeout: SUBAGENT_WORKTREE_COMMIT_TIMEOUT_MS,
     });
 
     // Create a branch pointing to the worktree's HEAD.
@@ -105,7 +116,7 @@ export function cleanupWorktree(
       execFileSync("git", ["branch", branchName], {
         cwd: worktree.path,
         stdio: "pipe",
-        timeout: 5000,
+        timeout: SUBAGENT_WORKTREE_BRANCH_TIMEOUT_MS,
       });
     } catch {
       // Branch already exists — use a unique suffix
@@ -113,7 +124,7 @@ export function cleanupWorktree(
       execFileSync("git", ["branch", branchName], {
         cwd: worktree.path,
         stdio: "pipe",
-        timeout: 5000,
+        timeout: SUBAGENT_WORKTREE_BRANCH_RETRY_TIMEOUT_MS,
       });
     }
     // Update branch name in worktree info for the caller
@@ -142,12 +153,12 @@ function removeWorktree(cwd: string, worktreePath: string): void {
     execFileSync("git", ["worktree", "remove", "--force", worktreePath], {
       cwd,
       stdio: "pipe",
-      timeout: 10000,
+      timeout: SUBAGENT_WORKTREE_REMOVE_TIMEOUT_MS,
     });
   } catch {
     // If git worktree remove fails, try pruning
     try {
-      execFileSync("git", ["worktree", "prune"], { cwd, stdio: "pipe", timeout: 5000 });
+      execFileSync("git", ["worktree", "prune"], { cwd, stdio: "pipe", timeout: SUBAGENT_WORKTREE_PRUNE_TIMEOUT_MS });
     } catch { /* ignore */ }
   }
 }
@@ -157,6 +168,6 @@ function removeWorktree(cwd: string, worktreePath: string): void {
  */
 export function pruneWorktrees(cwd: string): void {
   try {
-    execFileSync("git", ["worktree", "prune"], { cwd, stdio: "pipe", timeout: 5000 });
+    execFileSync("git", ["worktree", "prune"], { cwd, stdio: "pipe", timeout: SUBAGENT_WORKTREE_PRUNE_TIMEOUT_MS });
   } catch { /* ignore */ }
 }

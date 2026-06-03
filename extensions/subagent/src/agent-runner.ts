@@ -3,7 +3,7 @@
  */
 
 import type { Model } from "@mariozechner/pi-ai";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   type AgentSession,
   type AgentSessionEvent,
@@ -13,7 +13,7 @@ import {
   getAgentDir,
   SessionManager,
   SettingsManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { computeActiveToolNames } from "./active-tools.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getMemoryToolNames, getReadOnlyMemoryToolNames } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
@@ -113,6 +113,10 @@ export interface RunOptions {
   onToolActivity?: (activity: ToolActivity) => void;
   /** Called on streaming text deltas from the assistant response. */
   onTextDelta?: (delta: string, fullText: string) => void;
+  /** Called when non-text assistant deltas still indicate model progress. */
+  onProgress?: () => void;
+  /** Called when a new assistant message starts. */
+  onMessageStart?: () => void;
   onSessionCreated?: (session: AgentSession) => void;
   /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
@@ -164,6 +168,10 @@ function forwardAbortSignal(session: AgentSession, signal?: AbortSignal): () => 
   const onAbort = () => session.abort();
   signal.addEventListener("abort", onAbort, { once: true });
   return () => signal.removeEventListener("abort", onAbort);
+}
+
+function isThinkingProgressDelta(type: string): boolean {
+  return type === "thinking_delta" || type === "reasoning_delta";
 }
 
 export async function runAgent(
@@ -338,10 +346,15 @@ export async function runAgent(
     }
     if (event.type === "message_start") {
       currentMessageText = "";
+      options.onMessageStart?.();
     }
-    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-      currentMessageText += event.assistantMessageEvent.delta;
-      options.onTextDelta?.(event.assistantMessageEvent.delta, currentMessageText);
+    if (event.type === "message_update") {
+      if (event.assistantMessageEvent.type === "text_delta") {
+        currentMessageText += event.assistantMessageEvent.delta;
+        options.onTextDelta?.(event.assistantMessageEvent.delta, currentMessageText);
+      } else if (isThinkingProgressDelta((event.assistantMessageEvent as { type: string }).type)) {
+        options.onProgress?.();
+      }
     }
     if (event.type === "tool_execution_start") {
       options.onToolActivity?.({ type: "start", toolName: event.toolName });

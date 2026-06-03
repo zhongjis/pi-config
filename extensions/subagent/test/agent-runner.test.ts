@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentSession, AgentSessionEvent, ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, AgentSessionEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const {
   createAgentSession,
@@ -23,7 +23,7 @@ const {
   settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager" })),
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession,
   DefaultResourceLoader: class {
     constructor(options: any) {

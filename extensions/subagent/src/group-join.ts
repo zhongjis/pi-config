@@ -7,6 +7,7 @@
  */
 
 import type { AgentRecord } from "./types.js";
+import { SUBAGENT_GROUP_JOIN_TIMEOUT_MS, SUBAGENT_GROUP_STRAGGLER_TIMEOUT_MS } from "./constants.js";
 
 export type DeliveryCallback = (records: AgentRecord[], partial: boolean) => void;
 
@@ -21,9 +22,9 @@ interface AgentGroup {
 }
 
 /** Default timeout: 30s after first completion in a group. */
-const DEFAULT_TIMEOUT = 30_000;
+const DEFAULT_TIMEOUT = SUBAGENT_GROUP_JOIN_TIMEOUT_MS;
 /** Straggler re-batch timeout: 15s. */
-const STRAGGLER_TIMEOUT = 15_000;
+const STRAGGLER_TIMEOUT = SUBAGENT_GROUP_STRAGGLER_TIMEOUT_MS;
 
 export class GroupJoinManager {
   private groups = new Map<string, AgentGroup>();
