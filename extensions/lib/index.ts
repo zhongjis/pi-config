@@ -9,6 +9,7 @@ import {
 export * from "./clipboard.js";
 export * from "./logger.js";
 export * from "./status.js";
+export * from "./status-group.js";
 export * from "./utils.js";
 export * from "./ux.js";
 export * from "./model.js";
@@ -19,6 +20,7 @@ export * from "./provider-errors.js";
 export * from "./fallback-cache.js";
 export * from "./notify-once.js";
 export * from "./stream-fallback.js";
+export * from "./rpc.js";
 
 /**
  * Wire the shared library into an extension.
