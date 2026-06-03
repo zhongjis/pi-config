@@ -253,6 +253,50 @@ done
 
 migrate_repo_sessions_to_target
 
+# Phase 2 hard fork: rename pre-fork upstream package to @panda/pi-subagents.
+# Defensive cleanup of any legacy pi-installed symlink under ~/.pi/agent/git/.
+# Subagent itself stays symlinked through sync_repo_extensions ->
+# $EXTENSIONS_TARGET/subagent, so no positive recreation is needed here.
+remove_legacy_git_subagent_symlinks() {
+  local legacy_scope="@tintinweb"
+  local legacy_package="pi-subagents"
+  local legacy_path="$TARGET/git/$legacy_scope/$legacy_package"
+  if [ -L "$legacy_path" ]; then
+    rm "$legacy_path"
+    echo "Removed legacy git symlink: $legacy_scope/$legacy_package"
+  elif [ -e "$legacy_path" ]; then
+    echo "Note: legacy path exists but is not a symlink: $legacy_path (leaving alone)"
+  fi
+  local legacy_dir="$TARGET/git/$legacy_scope"
+  if [ -d "$legacy_dir" ] && [ -z "$(ls -A "$legacy_dir" 2>/dev/null)" ]; then
+    rmdir "$legacy_dir"
+    echo "Removed empty legacy scope directory: $legacy_scope"
+  fi
+}
+remove_legacy_git_subagent_symlinks
+
+# Phase 2 hard fork: defensive cleanup of any legacy pi-installed symlink for
+# the tasks extension under ~/.pi/agent/git/. Tasks extension itself stays
+# symlinked through sync_repo_extensions -> $EXTENSIONS_TARGET/tasks, so no
+# positive recreation is needed here.
+remove_legacy_git_tasks_symlinks() {
+  local legacy_scope="@tintinweb"
+  local legacy_package="pi-tasks"
+  local legacy_path="$TARGET/git/$legacy_scope/$legacy_package"
+  if [ -L "$legacy_path" ]; then
+    rm "$legacy_path"
+    echo "Removed legacy git symlink: $legacy_scope/$legacy_package"
+  elif [ -e "$legacy_path" ]; then
+    echo "Note: legacy path exists but is not a symlink: $legacy_path (leaving alone)"
+  fi
+  local legacy_dir="$TARGET/git/$legacy_scope"
+  if [ -d "$legacy_dir" ] && [ -z "$(ls -A "$legacy_dir" 2>/dev/null)" ]; then
+    rmdir "$legacy_dir"
+    echo "Removed empty legacy scope directory: $legacy_scope"
+  fi
+}
+remove_legacy_git_tasks_symlinks
+
 # Symlink only allowlisted items from repo into ~/.pi/agent/
 for name in "${ALLOWED_ITEMS[@]}"; do
   local_path="$REPO_DIR/$name"

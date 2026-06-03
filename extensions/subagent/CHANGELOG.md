@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-06-02 — Panda fork
+
+### Changed
+- **Hard-fork rename**: package renamed to `@panda/pi-subagents` and version reset
+  to `1.0.0` to signal the local fork. Upstream `@tintinweb/pi-subagents` history
+  is preserved verbatim in the entries below for historical context.
+- **Symbol-key string unchanged** at `Symbol.for("pi-subagents:manager")` so the
+  tasks bridge keeps interop during the transition window. The new
+  `globalThis.__pandaSubagentsManagerVersion` guard distinguishes the @panda fork
+  (`"1.0.0"`) from older registrations; on mismatch the loader emits one
+  `subagent.symbol.version-conflict` warning and takes over last-write-wins.
+
 ## [Unreleased]
 
 ### Added

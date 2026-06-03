@@ -8,6 +8,24 @@ Claude Code-style autonomous sub-agents for Pi. Spawn specialized agents in isol
 - **Version:** 0.6.3
 - **License:** not declared upstream
 - **Adapted:** See `AGENTS.md` `## Local Tweaks` for the full divergence manifest. Briefly: background supervision, delegation policy, result recovery, enhanced skill loading, parent-scoped subagent session JSONL logging, Pi-native agent frontmatter, Nerd Font UI stats.
+- **Fork:** Hard-forked as `@panda/pi-subagents@1.0.0` (Phase 2). Upstream is no longer tracked.
+
+## Symbol Version-Guard Transition Window
+
+The cross-package singleton key stays `Symbol.for("pi-subagents:manager")` so the
+tasks bridge keeps interop with any concurrently-loaded older build during the rename.
+On registration, the loader checks `globalThis.__pandaSubagentsManagerVersion`:
+
+- If unset, the @panda fork claims it (`"1.0.0"`) and registers normally.
+- If set to `"1.0.0"`, the loader registers and overwrites the bridge slot
+  (last-write-wins) without warning.
+- If set to any other value (e.g., a stale @tintinweb-vintage manager that wrote
+  the slot), the loader emits exactly one `[panda-warn]` line with code
+  `subagent.symbol.version-conflict` carrying `{expectedVersion, previousVersion,
+  resolution: "last-write-wins"}`, then takes over.
+
+The warning is throttled to once per process; downstream tooling can grep for
+`subagent.symbol.version-conflict` to detect mixed installs.
 
 
 ## Tools and Commands
@@ -97,6 +115,11 @@ Migration notes:
 ## Settings
 
 Configured via `/agents` → Settings. Persisted to `<cwd>/.pi/subagents.json` (project) with global defaults from `~/.pi/agent/subagents.json`. Defaults: max concurrency 4, max turns unlimited, grace turns 5, join mode `smart`.
+
+Environment overrides:
+
+- `PI_SUBAGENT_SUPERVISION` — `v2` (default) keeps active-tool and non-streaming-provider protections; `legacy` restores pre-Phase-1.1 token-idle supervision behavior for regression comparison.
+- `SUBAGENT_SUPERVISION_CEILING_MS` — absolute running-agent ceiling in milliseconds. Defaults to `1800000` (30 minutes) and aborts even when token-idle supervision is suppressed by active tools or non-streaming detection.
 
 ## UI Formatting
 

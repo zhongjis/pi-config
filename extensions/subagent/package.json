@@ -1,6 +1,6 @@
 {
-  "name": "@tintinweb/pi-subagents",
-  "version": "0.6.3",
+  "name": "@panda/pi-subagents",
+  "version": "1.0.0",
   "description": "A pi extension extension that brings smart Claude Code-style autonomous sub-agents to pi.",
   "author": "tintinweb",
   "license": "MIT",
