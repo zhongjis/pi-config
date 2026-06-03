@@ -1,6 +1,6 @@
 {
-  "name": "@tintinweb/pi-tasks",
-  "version": "0.5.0",
+  "name": "@panda/pi-tasks",
+  "version": "1.0.0",
   "description": "A pi extension that brings Claude Code-style task tracking and coordination to pi.",
   "author": "tintinweb",
   "license": "MIT",

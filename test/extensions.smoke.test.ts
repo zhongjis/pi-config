@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
@@ -76,6 +76,17 @@ describe("extension entrypoints", () => {
   it("discovers top-level extension entrypoints automatically", () => {
     expect(extensionEntries.length).toBeGreaterThan(0);
     expect(new Set(extensionEntries).size).toBe(extensionEntries.length);
+  });
+
+  it("locks Phase 2 fork package names for subagent and tasks", () => {
+    const cases: Array<[string, string]> = [
+      ["extensions/subagent/package.json", "@panda/pi-subagents"],
+      ["extensions/tasks/package.json", "@panda/pi-tasks"],
+    ];
+    for (const [relPath, expectedName] of cases) {
+      const pkg = JSON.parse(readFileSync(join(process.cwd(), relPath), "utf8"));
+      expect(pkg.name).toBe(expectedName);
+    }
   });
 
   for (const entry of extensionEntries) {

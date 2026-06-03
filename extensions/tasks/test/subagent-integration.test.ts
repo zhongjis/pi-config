@@ -94,7 +94,7 @@ function mockCtx() {
 
 // ---- Mock subagents extension (RPC responders) ----
 
-/** Simulates the @tintinweb/pi-subagents extension: responds to ping + spawn RPCs and emits ready. */
+/** Simulates the @panda/pi-subagents extension: responds to ping + spawn RPCs and emits ready. */
 function installSubagentsMock(pi: { events: MockEventBus }, opts?: { spawnError?: string }) {
   let idCounter = 0;
   const spawned: Array<{ id: string; type: string; prompt: string; options: any }> = [];
@@ -219,7 +219,7 @@ describe("TaskExecute", () => {
     await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
 
     const result = await mock.executeTool("TaskExecute", { task_ids: ["2"] });
-    expect(result.content[0].text).toContain("#2: blocked by #1");
+    expect(result.content[0].text).toContain("#2: tasks.claim.blocker-not-satisfied: blocked by #1 (pending)");
   });
 
   it("spawns agent for valid task and updates metadata", async () => {
@@ -602,7 +602,7 @@ describe("RPC protocol correctness", () => {
     await vi.advanceTimersByTimeAsync(31000);
 
     const result = await execPromise;
-    expect(result.content[0].text).toContain("timeout");
+    expect(result.content[0].text).toContain("timed out");
 
     vi.useRealTimers();
   });

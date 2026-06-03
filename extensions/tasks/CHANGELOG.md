@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-02
+
+### Changed
+- **Hard-forked as `@panda/pi-tasks@1.0.0` (Phase 2).** Local fork stops tracking upstream `@tintinweb/pi-tasks`; refactors are no longer constrained by upstream merge cost. Behavior, event bus contracts (`tasks:*`, `tasks:rpc:*`), task-store schema, and tool surface are unchanged from `0.5.0`. Cross-extension references now point at the sibling fork `@panda/pi-subagents` (renamed in Phase 2 Task 22).
+
+
 ## [0.5.0] - 2026-04-28
 
 ### Changed

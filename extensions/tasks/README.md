@@ -63,7 +63,7 @@ Sends SIGTERM, waits 5s, then SIGKILL. For subagent tasks, sends a stop RPC.
 | `model` | string | Model override |
 | `max_turns` | number | Max turns per agent |
 
-Tasks must be `pending`, have `agentType` set, and all blockers completed. Requires [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents).
+Tasks must be `pending`, have `agentType` set, and all blockers completed. Requires the `@panda/pi-subagents` extension (Phase 2 hard fork of the upstream `pi-subagents` package).
 
 ## Widget
 
@@ -93,6 +93,18 @@ Persisted to `.pi/tasks-config.json`. Override scope with `PI_TASKS` env var (`o
 - `memory` — in-process only, lost on exit
 - `session` — `.pi/tasks/tasks-<sessionId>.json`, per-session
 - `project` — `.pi/tasks/tasks.json`, shared across sessions
+
+On-disk state carries a `schemaVersion` field (current = `2`). The store migrates legacy v1 files (no `schemaVersion`) to v2 on first write, inside the advisory lock.
+
+## Restoring from pre-v2 snapshot
+
+Before the first v1 → v2 upgrade, the entire `~/.pi/tasks/` directory is snapshotted to `~/.pi/tasks.bak-pre-v2-<ts>/`. Snapshots are never auto-deleted. To restore:
+
+```bash
+cp -r ~/.pi/tasks.bak-pre-v2-<ts>/ ~/.pi/tasks/
+```
+
+Replace `<ts>` with the timestamp suffix of the snapshot directory you want to restore.
 
 ## Events
 
