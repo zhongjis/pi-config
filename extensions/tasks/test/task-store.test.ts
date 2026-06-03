@@ -180,29 +180,29 @@ describe("TaskStore (in-memory)", () => {
     expect(retrieved.metadata).toEqual({ pr: "123", reviewer: "alice" });
   });
 
-  it("allows circular dependencies with warning", () => {
+  it("rejects circular dependencies with warning", () => {
     store.create("A", "Desc");
     store.create("B", "Desc");
     store.update("1", { addBlocks: ["2"] });
     const { warnings } = store.update("2", { addBlocks: ["1"] });
 
     expect(store.get("1")!.blocks).toContain("2");
-    expect(store.get("2")!.blocks).toContain("1");
-    expect(warnings).toContain("cycle: #2 and #1 block each other");
+    expect(store.get("2")!.blocks).not.toContain("1");
+    expect(warnings).toContain("edge rejected: cycle #2 -> #1");
   });
 
-  it("allows self-dependency with warning", () => {
+  it("rejects self-dependency with warning", () => {
     store.create("Self", "Desc");
     const { warnings } = store.update("1", { addBlocks: ["1"] });
-    expect(store.get("1")!.blocks).toContain("1");
-    expect(warnings).toContain("#1 blocks itself");
+    expect(store.get("1")!.blocks).not.toContain("1");
+    expect(warnings).toContain("edge rejected: self-loop #1 -> #1");
   });
 
-  it("stores dangling edge IDs with warning", () => {
+  it("rejects dangling edge IDs with warning", () => {
     store.create("Real", "Desc");
     const { warnings } = store.update("1", { addBlocks: ["9999"] });
-    expect(store.get("1")!.blocks).toContain("9999");
-    expect(warnings).toContain("#9999 does not exist");
+    expect(store.get("1")!.blocks).not.toContain("9999");
+    expect(warnings).toContain("edge rejected: dangling-target #1 -> #9999");
   });
 
   it("returns no warnings for valid dependencies", () => {
@@ -265,15 +265,15 @@ describe("TaskStore (in-memory)", () => {
   it("addBlockedBy warns on self-dependency", () => {
     store.create("Self", "Desc");
     const { warnings } = store.update("1", { addBlockedBy: ["1"] });
-    expect(store.get("1")!.blockedBy).toContain("1");
-    expect(warnings).toContain("#1 blocks itself");
+    expect(store.get("1")!.blockedBy).not.toContain("1");
+    expect(warnings).toContain("edge rejected: self-loop #1 -> #1");
   });
 
   it("addBlockedBy warns on dangling ref", () => {
     store.create("Real", "Desc");
     const { warnings } = store.update("1", { addBlockedBy: ["9999"] });
-    expect(store.get("1")!.blockedBy).toContain("9999");
-    expect(warnings).toContain("#9999 does not exist");
+    expect(store.get("1")!.blockedBy).not.toContain("9999");
+    expect(warnings).toContain("edge rejected: dangling-target #9999 -> #1");
   });
 
   it("addBlockedBy warns on cycle", () => {
@@ -281,7 +281,8 @@ describe("TaskStore (in-memory)", () => {
     store.create("B", "Desc");
     store.update("1", { addBlocks: ["2"] });
     const { warnings } = store.update("1", { addBlockedBy: ["2"] });
-    expect(warnings).toContain("cycle: #1 and #2 block each other");
+    expect(store.get("1")!.blockedBy).not.toContain("2");
+    expect(warnings).toContain("edge rejected: cycle #2 -> #1");
   });
 
   it("clearCompleted returns 0 when no completed tasks", () => {

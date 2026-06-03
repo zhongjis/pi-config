@@ -20,8 +20,10 @@ export interface Task {
 
 /** Serialized store format on disk. */
 export interface TaskStoreData {
-  nextId: number;
-  tasks: Task[];
+  /** On-disk schema version. Absent in legacy v1 files; stamped to 2 on save. */
+  schemaVersion?: number;
+nextId: number;
+tasks: Task[];
 }
 
 /** Background process associated with a task. */
