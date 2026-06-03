@@ -2,6 +2,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { JSON_PRETTY_PRINT_SPACES } from "./constants.js";
 
 export interface TasksConfig {
   taskScope?: "memory" | "session" | "project";  // default: "session"
@@ -19,5 +20,5 @@ export function loadTasksConfig(): TasksConfig {
 
 export function saveTasksConfig(config: TasksConfig): void {
   mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, JSON_PRETTY_PRINT_SPACES));
 }

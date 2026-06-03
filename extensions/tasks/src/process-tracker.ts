@@ -6,6 +6,7 @@
  */
 
 import type { ChildProcess } from "node:child_process";
+import { PROCESS_STOP_GRACE_PERIOD_MS } from "./constants.js";
 import type { BackgroundProcess } from "./types.js";
 
 export interface ProcessOutput {
@@ -119,7 +120,7 @@ export class ProcessTracker {
       const timer = setTimeout(() => {
         try { bp.proc.kill("SIGKILL"); } catch { /* already dead */ }
         resolve();
-      }, 5000);
+      }, PROCESS_STOP_GRACE_PERIOD_MS);
 
       bp.proc.on("close", () => {
         clearTimeout(timer);
