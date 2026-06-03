@@ -1,0 +1,173 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import initExtension from "../src/index.js";
+import { TaskStore } from "../src/task-store.js";
+import type { Task } from "../src/types.js";
+
+beforeEach(() => { process.env.PI_TASKS = "off"; });
+
+type MockEventBus = {
+  on: (channel: string, handler: (data: unknown) => void) => () => void;
+  emit: (channel: string, data: unknown) => void;
+};
+
+function mockCtx() {
+  return {
+    model: { id: "test-model", name: "Test" },
+    modelRegistry: {},
+    sessionManager: {
+      getSessionId: () => "session-1",
+      getEntries: () => [],
+    },
+    ui: {
+      setWidget() {},
+      setStatus() {},
+      notify() {},
+    },
+  };
+}
+
+function mockPi() {
+  const tools = new Map<string, any>();
+  const eventHandlers = new Map<string, ((data: unknown) => void)[]>();
+  const lifecycleHandlers = new Map<string, ((...args: any[]) => any)[]>();
+
+  const pi = {
+    registerTool(def: any) { tools.set(def.name, def); },
+    registerCommand() {},
+    on(event: string, handler: any) {
+      if (!lifecycleHandlers.has(event)) lifecycleHandlers.set(event, []);
+      lifecycleHandlers.get(event)!.push(handler);
+    },
+    events: {
+      emit(channel: string, data: unknown) {
+        for (const handler of eventHandlers.get(channel) ?? []) handler(data);
+      },
+      on(channel: string, handler: (data: unknown) => void) {
+        if (!eventHandlers.has(channel)) eventHandlers.set(channel, []);
+        eventHandlers.get(channel)!.push(handler);
+        return () => {
+          const handlers = eventHandlers.get(channel);
+          if (handlers) eventHandlers.set(channel, handlers.filter(item => item !== handler));
+        };
+      },
+    },
+  };
+
+  return {
+    pi,
+    async executeTool(name: string, params: any) {
+      const tool = tools.get(name);
+      if (!tool) throw new Error(`Tool ${name} not registered`);
+      return tool.execute("call-1", params, undefined, undefined, mockCtx());
+    },
+  };
+}
+
+function installSubagentsMock(pi: { events: MockEventBus }) {
+  const spawned: string[] = [];
+
+  const unsubscribePing = pi.events.on("subagents:rpc:ping", (data: unknown) => {
+    const { requestId } = data as { requestId: string };
+    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: 2 } });
+  });
+
+  const unsubscribeSpawn = pi.events.on("subagents:rpc:spawn", (data: unknown) => {
+    const { requestId } = data as { requestId: string };
+    const id = `agent-${spawned.length + 1}`;
+    spawned.push(id);
+    pi.events.emit(`subagents:rpc:spawn:reply:${requestId}`, { success: true, data: { id } });
+  });
+
+  pi.events.emit("subagents:ready", {});
+
+  return {
+    spawned,
+    dispose() {
+      unsubscribePing();
+      unsubscribeSpawn();
+    },
+  };
+}
+
+function parsePandaWarns(warnSpy: ReturnType<typeof vi.spyOn>) {
+  return warnSpy.mock.calls
+    .filter(call => call[0] === "[panda-warn]")
+    .map(call => JSON.parse(String(call[1])));
+}
+
+function captureCreatedTasks() {
+  const tasks: Task[] = [];
+  const originalCreate = TaskStore.prototype.create;
+  const createSpy = vi.spyOn(TaskStore.prototype, "create").mockImplementation(function (
+    this: TaskStore,
+    subject: string,
+    description: string,
+    activeForm?: string,
+    metadata?: Record<string, any>,
+  ) {
+    const task = originalCreate.call(this, subject, description, activeForm, metadata);
+    tasks.push(task);
+    return task;
+  });
+  return { tasks, createSpy };
+}
+
+describe("dangling blocker claim semantics", () => {
+  it("rejects TaskUpdate claim when blocker ID is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { tasks, createSpy } = captureCreatedTasks();
+    const mock = mockPi();
+    const subagents = installSubagentsMock(mock.pi);
+    initExtension(mock.pi as any);
+
+    await mock.executeTool("TaskCreate", { subject: "Blocked", description: "Desc" });
+    tasks[0].blockedBy.push("999");
+
+    await expect(mock.executeTool("TaskUpdate", { taskId: "1", status: "in_progress" }))
+      .rejects.toThrow("tasks.claim.blocker-not-satisfied");
+
+    const task = await mock.executeTool("TaskGet", { taskId: "1" });
+    expect(task.content[0].text).toContain("Status: pending");
+    expect(parsePandaWarns(warnSpy)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "tasks.claim.rejected",
+        taskId: "1",
+        blockerId: "999",
+        reason: "dangling",
+      }),
+    ]));
+
+    subagents.dispose();
+    createSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("rejects TaskExecute claim when blocker ID is missing instead of treating it as satisfied", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { tasks, createSpy } = captureCreatedTasks();
+    const mock = mockPi();
+    const subagents = installSubagentsMock(mock.pi);
+    initExtension(mock.pi as any);
+
+    await mock.executeTool("TaskCreate", { subject: "Blocked", description: "Desc", agentType: "general-purpose" });
+    tasks[0].blockedBy.push("999");
+
+    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+
+    expect(result.content[0].text).toContain("tasks.claim.blocker-not-satisfied");
+    expect(result.content[0].text).toContain("blocked by #999 (dangling)");
+    expect(subagents.spawned).toEqual([]);
+    expect(parsePandaWarns(warnSpy)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "tasks.claim.rejected",
+        taskId: "1",
+        blockerId: "999",
+        reason: "dangling",
+      }),
+    ]));
+
+    subagents.dispose();
+    createSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+});
