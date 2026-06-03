@@ -9,6 +9,11 @@
  *   error   → { success: false, error: string }
  */
 
+import { PROTOCOL_VERSION } from "./constants.js";
+import { registerRpcHandler } from "../../lib/rpc.js";
+
+export { PROTOCOL_VERSION };
+
 /** Minimal event bus interface needed by the RPC handlers. */
 export interface EventBus {
   on(event: string, handler: (data: unknown) => void): () => void;
@@ -21,7 +26,6 @@ export type RpcReply<T = void> =
   | { success: false; error: string };
 
 /** RPC protocol version — bumped when the envelope or method contracts change. */
-export const PROTOCOL_VERSION = 2;
 
 /** Minimal AgentManager interface needed by the spawn/stop RPCs. */
 export interface SpawnCapable {
@@ -43,53 +47,27 @@ export interface RpcHandle {
 }
 
 /**
- * Wire a single RPC handler: listen on `channel`, run `fn(params)`,
- * emit the reply envelope on `channel:reply:${requestId}`.
- */
-function handleRpc<P extends { requestId: string }>(
-  events: EventBus,
-  channel: string,
-  fn: (params: P) => unknown | Promise<unknown>,
-): () => void {
-  return events.on(channel, async (raw: unknown) => {
-    const params = raw as P;
-    try {
-      const data = await fn(params);
-      const reply: { success: true; data?: unknown } = { success: true };
-      if (data !== undefined) reply.data = data;
-      events.emit(`${channel}:reply:${params.requestId}`, reply);
-    } catch (err: any) {
-      events.emit(`${channel}:reply:${params.requestId}`, {
-        success: false, error: err?.message ?? String(err),
-      });
-    }
-  });
-}
-
-/**
  * Register ping, spawn, and stop RPC handlers on the event bus.
  * Returns unsub functions for cleanup.
  */
 export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
-  const { events, pi, getCtx, manager } = deps;
+  const { pi, getCtx, manager } = deps;
 
-  const unsubPing = handleRpc(events, "subagents:rpc:ping", () => {
+  const unsubPing = registerRpcHandler(pi as any, "subagents", "ping", () => {
     return { version: PROTOCOL_VERSION };
   });
 
-  const unsubSpawn = handleRpc<{ requestId: string; type: string; prompt: string; options?: any }>(
-    events, "subagents:rpc:spawn", ({ type, prompt, options }) => {
-      const ctx = getCtx();
-      if (!ctx) throw new Error("No active session");
-      return { id: manager.spawn(pi, ctx, type, prompt, options ?? {}) };
-    },
-  );
+  const unsubSpawn = registerRpcHandler(pi as any, "subagents", "spawn", (raw) => {
+    const { type, prompt, options } = raw as { type: string; prompt: string; options?: any };
+    const ctx = getCtx();
+    if (!ctx) throw new Error("No active session");
+    return { id: manager.spawn(pi, ctx, type, prompt, options ?? {}) };
+  });
 
-  const unsubStop = handleRpc<{ requestId: string; agentId: string }>(
-    events, "subagents:rpc:stop", ({ agentId }) => {
-      if (!manager.abort(agentId)) throw new Error("Agent not found");
-    },
-  );
+  const unsubStop = registerRpcHandler(pi as any, "subagents", "stop", (raw) => {
+    const { agentId } = raw as { agentId: string };
+    if (!manager.abort(agentId)) throw new Error("Agent not found");
+  });
 
   return { unsubPing, unsubSpawn, unsubStop };
 }
