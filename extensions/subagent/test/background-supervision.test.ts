@@ -48,11 +48,16 @@ describe("background supervision", () => {
     ).toEqual({ action: "none", idleMs: now });
   });
 
-  it("aborts very stale background agents once", () => {
+  it("aborts very stale background agents once after a prior steer", () => {
     const now = BACKGROUND_STALE_ABORT_AFTER_MS + 1;
     expect(
       getBackgroundSupervisionAction({
-        record: { status: "running", isBackground: true, startedAt: 0 },
+        record: {
+          status: "running",
+          isBackground: true,
+          startedAt: 0,
+          lastSupervisionSteerAt: now - BACKGROUND_SUPERVISION_COOLDOWN_MS + 1000,
+        },
         activity: { lastProgressAt: 0 },
         now,
       }),
