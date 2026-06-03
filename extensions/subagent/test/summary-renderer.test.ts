@@ -127,11 +127,11 @@ describe("renderSubagentSummary", () => {
 
     expect(lines).toMatchInlineSnapshot(`
       [
-        "✗ 2 very long agents completed w",
-        "├─ ✓ Explore Inspect an extremel",
-        "│    ⎿ This preview is also inte",
-        "└─ ✗ Plan Write narrow safe rend",
-        "     ⎿ Error preview should be t",
+        "✗ 2 very long agents complete...",
+        "├─ ✓ Explore Inspect an extre...",
+        "│    ⎿ This preview is also i...",
+        "└─ ✗ Plan Write narrow safe r...",
+        "     ⎿ Error preview should b...",
       ]
     `);
     expect(lines.every(line => line.length <= 32)).toBe(true);

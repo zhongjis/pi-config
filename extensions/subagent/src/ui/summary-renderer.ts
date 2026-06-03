@@ -1,4 +1,4 @@
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 export type SubagentSummaryStatus =
   | "queued"
@@ -176,5 +176,9 @@ function applyWidth(lines: string[], width?: number): string[] {
   if (width == null) return lines;
   if (!Number.isFinite(width) || width <= 0) return lines.map(() => "");
   const safeWidth = Math.floor(width);
-  return lines.map(line => truncateToWidth(line, safeWidth));
+  return lines.map(line => stripAnsi(truncateToWidth(line, safeWidth)));
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;]*m/g, "");
 }

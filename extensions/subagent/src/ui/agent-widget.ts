@@ -5,7 +5,8 @@
  * Uses the callback form of setWidget for themed rendering.
  */
 
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { groupByStatus } from "../../../lib/status-group.js";
 import type { AgentManager } from "../agent-manager.js";
 import { getConfig } from "../agent-types.js";
 import type { SubagentType } from "../types.js";
@@ -283,8 +284,9 @@ export class AgentWidget {
    */
   private renderWidget(tui: any, theme: Theme): string[] {
     const allAgents = this.manager.listAgents();
-    const running = allAgents.filter(a => a.status === "running");
-    const queued = allAgents.filter(a => a.status === "queued");
+    const groupedAgents = groupByStatus(allAgents);
+    const running = groupedAgents.running ?? [];
+    const queued = groupedAgents.queued ?? [];
     const finished = allAgents.filter(a =>
       a.status !== "running" && a.status !== "queued" && a.completedAt
       && this.shouldShowFinished(a.id, a.status),
@@ -432,15 +434,14 @@ export class AgentWidget {
   update() {
     if (!this.uiCtx) return;
     const allAgents = this.manager.listAgents();
+    const groupedAgents = groupByStatus(allAgents);
 
     // Lightweight existence checks — full categorization happens in renderWidget()
-    let runningCount = 0;
-    let queuedCount = 0;
+    const runningCount = groupedAgents.running?.length ?? 0;
+    const queuedCount = groupedAgents.queued?.length ?? 0;
     let hasFinished = false;
     for (const a of allAgents) {
-      if (a.status === "running") { runningCount++; }
-      else if (a.status === "queued") { queuedCount++; }
-      else if (a.completedAt && this.shouldShowFinished(a.id, a.status)) { hasFinished = true; }
+      if (a.completedAt && this.shouldShowFinished(a.id, a.status)) { hasFinished = true; }
     }
     const hasActive = runningCount > 0 || queuedCount > 0;
 
