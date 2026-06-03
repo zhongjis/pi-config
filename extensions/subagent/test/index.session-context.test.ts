@@ -118,7 +118,7 @@ vi.mock("../src/agent-types.js", () => ({
   resolveType: vi.fn((type?: string) => agentTypeState.resolveType(type)),
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+  vi.mock("@earendil-works/pi-coding-agent", () => ({
   defineTool: (opts: any) => opts,
   getAgentDir: vi.fn(() => "/tmp/mock-agent-dir"),
 }));
