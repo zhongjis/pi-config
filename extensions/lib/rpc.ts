@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** Default reply timeout in milliseconds when `opts.timeout` is not supplied. */
 const DEFAULT_RPC_TIMEOUT_MS = 30_000;

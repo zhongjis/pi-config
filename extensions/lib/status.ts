@@ -1,5 +1,5 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
 // StatusPart

@@ -62,7 +62,7 @@ function makePushableStream() {
 	};
 }
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
 	createAssistantMessageEventStream: makePushableStream,
 }));
 

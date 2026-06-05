@@ -7,7 +7,7 @@
  * listener being registered first.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { requestDirectHandoffBridge, buildPlanExecutionGoal } from "../../handoff/runtime.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { LOCAL_PLAN_URI } from "./constants.js";

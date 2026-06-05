@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { confirmOrAbort, selectOrAbort, withSpinner } from "../ux.js";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 
-vi.mock("@mariozechner/pi-coding-agent", () => import("../../../test/stubs/pi-coding-agent.js"));
+vi.mock("@earendil-works/pi-coding-agent", () => import("../../../test/stubs/pi-coding-agent.js"));
 
 // ---------------------------------------------------------------------------
 // confirmOrAbort

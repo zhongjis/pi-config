@@ -9,13 +9,13 @@ import { createMockPi } from "./fixtures/mock-pi.js";
 /*
  * vi.mock() calls are hoisted and intercept both ESM imports AND CJS require().
  * The resolve.alias in vitest.config.ts handles most ESM imports, but
- * extensions/session-local/storage.ts uses require("@mariozechner/pi-coding-agent")
+ * extensions/session-local/storage.ts uses require("@earendil-works/pi-coding-agent")
  * at the top level, which bypasses Vite's alias. vi.mock() catches both paths.
  */
-vi.mock("@mariozechner/pi-coding-agent", () => import("./stubs/pi-coding-agent.js"));
-vi.mock("@mariozechner/pi-tui", () => import("./stubs/pi-tui.js"));
-vi.mock("@mariozechner/pi-ai", () => import("./stubs/pi-ai.js"));
-vi.mock("@mariozechner/pi-agent-core", () => import("./stubs/pi-agent-core.js"));
+vi.mock("@earendil-works/pi-coding-agent", () => import("./stubs/pi-coding-agent.js"));
+vi.mock("@earendil-works/pi-tui", () => import("./stubs/pi-tui.js"));
+vi.mock("@earendil-works/pi-ai", () => import("./stubs/pi-ai.js"));
+vi.mock("@earendil-works/pi-agent-core", () => import("./stubs/pi-agent-core.js"));
 
 function discoverExtensionEntries(): string[] {
   const extensionsDir = join(process.cwd(), "extensions");

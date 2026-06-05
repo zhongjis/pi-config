@@ -4,7 +4,7 @@
  * Holds cursor / selection / multi-set / custom-input / visited state and
  * exposes a `dispatch(KeyEvent, callbacks)` entrypoint that index.ts wires to
  * the pi-tui keyboard input. KeyEvent is a tui-agnostic abstract type — this
- * module MUST NOT import from `@mariozechner/pi-tui`.
+ * module MUST NOT import from `@earendil-works/pi-tui`.
  *
  * Imports `./types` only.
  */

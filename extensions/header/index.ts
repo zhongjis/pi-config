@@ -21,14 +21,14 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   VERSION,
   keyHint,
   keyText,
   rawKeyHint,
-} from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

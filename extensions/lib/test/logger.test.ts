@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 
-vi.mock("@mariozechner/pi-coding-agent", () => import("../../../test/stubs/pi-coding-agent.js"));
+vi.mock("@earendil-works/pi-coding-agent", () => import("../../../test/stubs/pi-coding-agent.js"));
 
 let tempDir = "";
 let sessionFile = "";

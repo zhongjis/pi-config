@@ -1,5 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Key } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Key } from "@earendil-works/pi-tui";
 import { MODE_COLORS, MODES, MODE_ALIASES, MODE_META, RESET } from "./constants.js";
 import { resolveModelFromStr, type ModeStateManager } from "./mode-state.js";
 import type { Mode } from "./types.js";

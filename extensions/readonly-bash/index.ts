@@ -6,9 +6,9 @@ import type {
   ExtensionContext,
   Theme,
   ToolRenderResultOptions,
-} from "@mariozechner/pi-coding-agent";
-import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { homedir as getHomedir } from "node:os";
 import { resolve } from "node:path";

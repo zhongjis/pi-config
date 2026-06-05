@@ -147,7 +147,7 @@ const piAiConfig: PiAiConfig = {
 // ---------------------------------------------------------------------------
 // Mocks (vi.mock is hoisted; factories run lazily at first import)
 // ---------------------------------------------------------------------------
-vi.mock("@mariozechner/pi-coding-agent", async () => {
+vi.mock("@earendil-works/pi-coding-agent", async () => {
   const stub = await import("../../test/stubs/pi-coding-agent.js");
   return {
     ...stub,
@@ -156,9 +156,9 @@ vi.mock("@mariozechner/pi-coding-agent", async () => {
   };
 });
 
-vi.mock("@mariozechner/pi-tui", () => import("../../test/stubs/pi-tui.js"));
+vi.mock("@earendil-works/pi-tui", () => import("../../test/stubs/pi-tui.js"));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   createAssistantMessageEventStream: makePushableStream,
 
   async *streamSimpleAnthropic(model: any, context: any, options: any) {

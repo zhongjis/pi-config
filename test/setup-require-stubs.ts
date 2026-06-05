@@ -1,6 +1,6 @@
 /**
  * Vitest setup file — patches Node's CJS Module._resolveFilename so that
- * require("@mariozechner/…") inside extension source files resolves to the
+ * require("@earendil-works/…") inside extension source files resolves to the
  * test stubs instead of the real (possibly broken) packages.
  *
  * This is needed because extensions/session-local/storage.ts uses CJS
@@ -14,10 +14,10 @@ import { fileURLToPath } from "node:url";
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const stubMap: Record<string, string> = {
-  "@mariozechner/pi-coding-agent": resolve(rootDir, "test/stubs/pi-coding-agent.ts"),
-  "@mariozechner/pi-tui": resolve(rootDir, "test/stubs/pi-tui.ts"),
-  "@mariozechner/pi-ai": resolve(rootDir, "test/stubs/pi-ai.ts"),
-  "@mariozechner/pi-agent-core": resolve(rootDir, "test/stubs/pi-agent-core.ts"),
+  "@earendil-works/pi-coding-agent": resolve(rootDir, "test/stubs/pi-coding-agent.ts"),
+  "@earendil-works/pi-tui": resolve(rootDir, "test/stubs/pi-tui.ts"),
+  "@earendil-works/pi-ai": resolve(rootDir, "test/stubs/pi-ai.ts"),
+  "@earendil-works/pi-agent-core": resolve(rootDir, "test/stubs/pi-agent-core.ts"),
 };
 
 const originalResolveFilename = (Module as any)._resolveFilename;

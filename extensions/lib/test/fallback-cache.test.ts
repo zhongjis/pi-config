@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 let tempHome = "";
 
-vi.mock("@mariozechner/pi-coding-agent", async () => {
+vi.mock("@earendil-works/pi-coding-agent", async () => {
 	const stub = await import("../../../test/stubs/pi-coding-agent.js");
 	return {
 		...stub,

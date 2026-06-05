@@ -6,9 +6,9 @@ import {
   createAssistantMessageEventStream,
   streamSimple,
   streamSimpleAnthropic,
-} from "@mariozechner/pi-ai";
-import { type ExtensionAPI, getAgentDir } from "@mariozechner/pi-coding-agent";
-import type { AutocompleteItem } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-ai";
+import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { execSync } from "child_process";
 import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -713,7 +713,7 @@ export default function (pi: ExtensionAPI) {
         try {
           // Resolve from pi-ai's context since jiti can't find it from extension dir
           const { createRequire } = await import("module");
-          const piRequire = createRequire(require.resolve("@mariozechner/pi-ai"));
+          const piRequire = createRequire(require.resolve("@earendil-works/pi-ai"));
           const { BedrockRuntimeClient, ConverseStreamCommand } = piRequire("@aws-sdk/client-bedrock-runtime");
           const profile = getPreferredAwsProfile();
           const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";

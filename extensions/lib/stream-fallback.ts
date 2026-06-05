@@ -17,7 +17,7 @@ import {
 	type Model,
 	type SimpleStreamOptions,
 	createAssistantMessageEventStream,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 
 /**
  * Minimal event stream shape emitted by `createAssistantMessageEventStream`.

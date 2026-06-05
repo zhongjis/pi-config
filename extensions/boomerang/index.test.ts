@@ -1,14 +1,14 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_COMPACTION_SETTINGS } from "@mariozechner/pi-coding-agent";
+import { DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionContext,
   ExtensionCommandContext,
   SessionBeforeCompactEvent,
   SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const mockState = vi.hoisted(() => ({
   homeDir: "",

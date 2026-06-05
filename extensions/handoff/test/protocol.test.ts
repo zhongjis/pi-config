@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   complete: vi.fn(),
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
   BorderedLoader: class {},
   convertToLlm: (messages: unknown) => messages,
   serializeConversation: () => "[]",

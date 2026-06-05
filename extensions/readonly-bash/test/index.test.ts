@@ -58,7 +58,7 @@ const createBashToolDefinitionMock = vi.hoisted(() =>
   }),
 );
 
-vi.mock("@mariozechner/pi-coding-agent", async () => {
+vi.mock("@earendil-works/pi-coding-agent", async () => {
   const actual = await import("../../../test/stubs/pi-coding-agent.js");
 
   return {

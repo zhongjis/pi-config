@@ -10,10 +10,10 @@ export default defineConfig({
       {
         resolve: {
           alias: {
-            "@mariozechner/pi-ai": resolve(rootDir, "test/stubs/pi-ai.ts"),
-            "@mariozechner/pi-agent-core": resolve(rootDir, "test/stubs/pi-agent-core.ts"),
-            "@mariozechner/pi-coding-agent": resolve(rootDir, "test/stubs/pi-coding-agent.ts"),
-            "@mariozechner/pi-tui": resolve(rootDir, "test/stubs/pi-tui.ts")
+            "@earendil-works/pi-ai": resolve(rootDir, "test/stubs/pi-ai.ts"),
+            "@earendil-works/pi-agent-core": resolve(rootDir, "test/stubs/pi-agent-core.ts"),
+            "@earendil-works/pi-coding-agent": resolve(rootDir, "test/stubs/pi-coding-agent.ts"),
+            "@earendil-works/pi-tui": resolve(rootDir, "test/stubs/pi-tui.ts")
           }
         },
         test: {
@@ -33,7 +33,7 @@ export default defineConfig({
           setupFiles: ["test/setup-require-stubs.ts"],
           server: {
             deps: {
-              inline: [/@mariozechner/]
+              inline: [/@earendil-works/, /@mariozechner/]
             }
           }
         }
@@ -57,7 +57,7 @@ export default defineConfig({
           testTimeout: 30_000,
           server: {
             deps: {
-              inline: [/@mariozechner/, /@marcfargas/]
+              inline: [/@earendil-works/, /@mariozechner/, /@marcfargas/]
             }
           }
         }

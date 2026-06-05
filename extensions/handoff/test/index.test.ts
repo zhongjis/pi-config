@@ -5,11 +5,11 @@ import { join } from "node:path";
 
 const completeMock = vi.fn();
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
 	complete: completeMock,
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
 	BorderedLoader: class {
 		signal = undefined;
 		onAbort?: () => void;

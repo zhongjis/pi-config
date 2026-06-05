@@ -1,18 +1,18 @@
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { complete, type Message } from "@mariozechner/pi-ai";
+import { complete, type Message } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
   SessionEntry,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
   BorderedLoader,
   convertToLlm,
   serializeConversation,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { loadHandoffConfig, updateHandoffConfig } from "./config.js";
 
 export type HandoffMode = "kuafu" | "fuxi" | "houtu";

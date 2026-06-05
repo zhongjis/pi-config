@@ -1,6 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { CustomEditor } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";

@@ -13,7 +13,7 @@
  *   Approved plan prepares Hou Tu handoff via /handoff:start-work
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../handoff/runtime.js";
 import { registerModeCommands } from "./commands.js";

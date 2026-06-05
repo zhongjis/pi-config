@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -10,7 +10,7 @@ import {
   SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import { parseModelChain, resolveFirstAvailable } from "../lib/model.js";

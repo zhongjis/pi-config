@@ -21,15 +21,15 @@
     "autonomous"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.77.0",
-    "@earendil-works/pi-tui": "^0.77.0",
-    "@mariozechner/pi-ai": "^0.73.0",
+    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@earendil-works/pi-tui": "^0.78.0",
+    "@earendil-works/pi-ai": "^0.78.0",
     "typebox": "^1.0.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": { "optional": true },
     "@earendil-works/pi-tui": { "optional": true },
-    "@mariozechner/pi-ai": { "optional": true },
+    "@earendil-works/pi-ai": { "optional": true },
     "typebox": { "optional": true }
   },
   "scripts": {

@@ -29,17 +29,17 @@ let completeImpl: (...args: unknown[]) => Promise<unknown> = async () => ({
 // Controllable return value for buildSessionContext
 let sessionMessages: unknown[] = [];
 
-vi.mock("@mariozechner/pi-coding-agent", async () => {
+vi.mock("@earendil-works/pi-coding-agent", async () => {
   const actual = await import("../../test/stubs/pi-coding-agent.js");
   return {
     ...actual,
     buildSessionContext: () => ({ messages: sessionMessages }),
   };
 });
-vi.mock("@mariozechner/pi-tui", () => import("../../test/stubs/pi-tui.js"));
-vi.mock("@mariozechner/pi-agent-core", () => import("../../test/stubs/pi-agent-core.js"));
+vi.mock("@earendil-works/pi-tui", () => import("../../test/stubs/pi-tui.js"));
+vi.mock("@earendil-works/pi-agent-core", () => import("../../test/stubs/pi-agent-core.js"));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   complete: (...args: unknown[]) => {
     capturedArgs = args;
     return completeImpl(...args);

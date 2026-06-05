@@ -10,9 +10,9 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type SessionEntry, type SessionManager } from "@mariozechner/pi-coding-agent";
-import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type SessionEntry, type SessionManager } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { registerCommitCommand, type BoomerangTaskSnapshot } from "./commit.js";
 

@@ -1,4 +1,4 @@
-import { parseFrontmatter } from "@mariozechner/pi-coding-agent";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_BUILTIN_TOOL_NAMES } from "./active-tools.js";
 
 export type InheritSelection = true | string[] | false;

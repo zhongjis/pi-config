@@ -1,5 +1,5 @@
-import { StringEnum } from '@mariozechner/pi-ai';
-import type { ExtensionAPI, ExtensionContext } from '@mariozechner/pi-coding-agent';
+import { StringEnum } from '@earendil-works/pi-ai';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { isAbsolute } from 'path';
 import { Type } from 'typebox';
 import { expandUserPath, findGitNexusIndex, findGitNexusRoot, normalizePathArg, safeResolvePath, toRepoRelativePath, validateRepoRelativePath } from './gitnexus.js';

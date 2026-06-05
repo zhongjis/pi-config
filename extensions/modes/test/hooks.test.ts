@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
 	CustomEditor: class {
 		constructor(..._args: unknown[]) {}
 		handleInput(_data: string): void {}
@@ -10,7 +10,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	},
 }));
 
-vi.mock("@mariozechner/pi-tui", () => ({
+vi.mock("@earendil-works/pi-tui", () => ({
 	Key: { tab: "tab" },
 	matchesKey: () => false,
 }));

@@ -1,6 +1,6 @@
 declare function require(id: string): any;
 
-const { getAgentDir } = require("@mariozechner/pi-coding-agent") as { getAgentDir: () => string };
+const { getAgentDir } = require("@earendil-works/pi-coding-agent") as { getAgentDir: () => string };
 const { mkdir, readFile, realpath, writeFile } = require("fs/promises") as {
   mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
   readFile: (path: string, encoding: string) => Promise<string>;

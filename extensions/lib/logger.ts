@@ -1,6 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
 // Module-level singleton debug state

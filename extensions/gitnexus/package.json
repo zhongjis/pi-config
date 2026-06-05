@@ -23,13 +23,13 @@
     "agent"
   ],
   "peerDependencies": {
-    "@mariozechner/pi-ai": ">=0.70",
-    "@mariozechner/pi-coding-agent": ">=0.70",
+    "@earendil-works/pi-ai": ">=0.70",
+    "@earendil-works/pi-coding-agent": ">=0.70",
     "typebox": ">=1.0"
   },
   "peerDependenciesMeta": {
-    "@mariozechner/pi-ai": { "optional": true },
-    "@mariozechner/pi-coding-agent": { "optional": true },
+    "@earendil-works/pi-ai": { "optional": true },
+    "@earendil-works/pi-coding-agent": { "optional": true },
     "typebox": { "optional": true }
   },
   "scripts": {

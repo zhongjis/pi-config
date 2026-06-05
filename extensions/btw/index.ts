@@ -5,8 +5,8 @@ import {
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-import { complete, type Message } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import { complete, type Message } from "@earendil-works/pi-ai";
 import { appendFileSync } from "fs";
 import { randomUUID } from "crypto";
 import {
@@ -16,7 +16,7 @@ import {
   Text,
   matchesKey,
   type TUI,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 
 function normalizeReasoningLevel(level: string): string {
   return level === "off" ? "none" : level;

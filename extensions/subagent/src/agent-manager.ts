@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { Model } from "@mariozechner/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS, SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS, SUBAGENT_BACKGROUND_MAX_CONCURRENT } from "./constants.js";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";

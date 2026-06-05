@@ -1,6 +1,6 @@
-import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
-import { createBashToolDefinition } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { homedir as getHomedir } from "node:os";
 import { resolve } from "node:path";

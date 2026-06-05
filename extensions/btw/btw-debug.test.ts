@@ -29,11 +29,11 @@ let completeImpl: () => Promise<unknown> = async () => ({
   content: [{ type: "text", text: "hello world" }],
 });
 
-vi.mock("@mariozechner/pi-coding-agent", () => import("../../test/stubs/pi-coding-agent.js"));
-vi.mock("@mariozechner/pi-tui", () => import("../../test/stubs/pi-tui.js"));
-vi.mock("@mariozechner/pi-agent-core", () => import("../../test/stubs/pi-agent-core.js"));
+vi.mock("@earendil-works/pi-coding-agent", () => import("../../test/stubs/pi-coding-agent.js"));
+vi.mock("@earendil-works/pi-tui", () => import("../../test/stubs/pi-tui.js"));
+vi.mock("@earendil-works/pi-agent-core", () => import("../../test/stubs/pi-agent-core.js"));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
   complete: (..._args: unknown[]) => completeImpl(),
 }));
 
