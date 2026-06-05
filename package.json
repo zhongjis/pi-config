@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.5",
-    "@marcfargas/pi-test-harness": "git+https://github.com/marcfargas/pi-test-harness.git",
+    "@marcfargas/pi-test-harness": "git+https://github.com/marcfargas/pi-test-harness.git#v0.6.1",
     "@earendil-works/pi-agent-core": "0.78.0",
     "@earendil-works/pi-ai": "0.78.0",
     "@earendil-works/pi-coding-agent": "0.78.0",
@@ -23,10 +23,5 @@
     "@types/node": "^24.6.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.7"
-  },
-  "pnpm": {
-    "patchedDependencies": {
-      "@marcfargas/pi-test-harness@0.5.0": "patches/@marcfargas__pi-test-harness@0.5.0.patch"
-    }
   }
 }

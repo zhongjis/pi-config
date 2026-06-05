@@ -90,7 +90,7 @@ function installRuntimeFixtures(): void {
 
 	writeFileSync(
 		matrixToolsExtension,
-		`import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+		`import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 function matrixTool(name: string) {
