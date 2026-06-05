@@ -77,7 +77,7 @@ describe("buildStatusLine", () => {
     const result = buildStatusLine(ctx.ui.theme, [
       { text: "hello world" },
     ], 5);
-    expect(result).toBe("hello");
+    expect(result).toBe("he...");
   });
 
   it("passes text through mock theme unchanged", () => {

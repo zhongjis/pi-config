@@ -94,8 +94,18 @@ export function matchesKey(candidate: unknown, expected: unknown): boolean {
   return false;
 }
 
-export function truncateToWidth(text: string, width: number): string {
-  return stripAnsi(text).slice(0, Math.max(0, width));
+export function truncateToWidth(text: string, maxWidth: number, ellipsis = "...", pad = false): string {
+  if (maxWidth <= 0) return "";
+  const plain = stripAnsi(text);
+  if (plain.length <= maxWidth) {
+    return pad ? plain + " ".repeat(maxWidth - plain.length) : plain;
+  }
+  const ellipsisWidth = ellipsis.length;
+  if (ellipsisWidth >= maxWidth) {
+    return ellipsis.slice(0, maxWidth);
+  }
+  const truncated = plain.slice(0, maxWidth - ellipsisWidth) + ellipsis;
+  return pad ? truncated + " ".repeat(Math.max(0, maxWidth - truncated.length)) : truncated;
 }
 
 export function visibleWidth(text: string): number {
