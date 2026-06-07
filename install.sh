@@ -22,6 +22,17 @@ NIX_MANAGED_EXTENSIONS=(
   "rtk.ts"
 )
 
+# Extension-dir entries that are NOT pi extensions — do NOT symlink.
+# Docs, empty placeholders, and leftover runtime junk. lib/ and guardrails.json
+# stay linked: lib is imported by other extensions, and pi-guardrails reads
+# ~/.pi/agent/extensions/guardrails.json.
+EXCLUDED_EXTENSION_ITEMS=(
+  "AGENTS.md"
+  "CONVENTIONS.md"
+  "codex"
+  "pi-web-access"
+)
+
 # Top-level items to symlink into ~/.pi/agent (allowlist).
 # Everything else (test infra, build config, node_modules, runtime state, etc.) stays out of repo-managed symlinks.
 ALLOWED_ITEMS=(
@@ -60,6 +71,10 @@ is_nix_managed() {
 
 is_nix_managed_extension() {
   contains_item "$1" "${NIX_MANAGED_EXTENSIONS[@]}"
+}
+
+is_excluded_extension() {
+  contains_item "$1" "${EXCLUDED_EXTENSION_ITEMS[@]}"
 }
 
 is_allowed_item() {
@@ -105,7 +120,7 @@ sync_repo_extensions() {
 
     case "$link_target" in
       "$REPO_EXTENSIONS_DIR"/*)
-        if [ ! -e "$REPO_EXTENSIONS_DIR/$name" ] || is_nix_managed_extension "$name"; then
+        if [ ! -e "$REPO_EXTENSIONS_DIR/$name" ] || is_nix_managed_extension "$name" || is_excluded_extension "$name"; then
           rm "$item"
           echo "Removed stale extension symlink: $name"
         fi
@@ -120,6 +135,11 @@ sync_repo_extensions() {
 
     if is_nix_managed_extension "$name"; then
       echo "Skipping extension (Nix-managed): $name"
+      continue
+    fi
+
+    if is_excluded_extension "$name"; then
+      echo "Skipping extension (not a pi extension): $name"
       continue
     fi
 
@@ -325,4 +345,4 @@ sync_repo_extensions
 sync_repo_skills
 install_git_package_deps
 
-echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; allowed: ${ALLOWED_ITEMS[*]}"
+echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; excluded extension items: ${EXCLUDED_EXTENSION_ITEMS[*]}; allowed: ${ALLOWED_ITEMS[*]}"
