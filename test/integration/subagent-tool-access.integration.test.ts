@@ -6,7 +6,7 @@ import {
 	when,
 	type TestSession,
 } from "@marcfargas/pi-test-harness";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
@@ -14,6 +14,8 @@ const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const SUBAGENT_SOURCE = path.join(PROJECT_ROOT, "extensions/subagent/index.ts");
 const MATRIX_AGENT = "jintong";
 const MATRIX_AGENT_NESTED = "chengfeng";
+const WENCHANG_AGENT = "wenchang";
+const WENCHANG_SOURCE = path.join(PROJECT_ROOT, "agents/wenchang.md");
 
 let testCwd = "";
 let previousAgentDir: string | undefined;
@@ -106,6 +108,9 @@ function matrixTool(name: string) {
 export default function(pi: ExtensionAPI) {
   pi.registerTool(matrixTool("matrix.allowed"));
   pi.registerTool(matrixTool("matrix.denied"));
+  for (const name of ["web_search", "code_search", "fetch_content", "get_search_content", "mcporter", "mcp"]) {
+    pi.registerTool(matrixTool(name));
+  }
 }
 `,
 	);
@@ -136,6 +141,8 @@ allow_nesting: true
 Report the nested active tool matrix.
 `,
 	);
+
+	writeFileSync(path.join(agentsDir, `${WENCHANG_AGENT}.md`), readFileSync(WENCHANG_SOURCE, "utf8"));
 }
 
 async function shutdownSession(session: SessionLike | undefined): Promise<void> {
@@ -267,5 +274,32 @@ describe("subagent tool access — integration", () => {
 		expect(nestedTools).toContain("Agent");
 		expect(nestedTools).toContain("get_subagent_result");
 		expect(nestedTools).toContain("steer_subagent");
+	});
+
+	it("gives the real Wen Chang agent access to mcporter", async () => {
+		installRuntimeFixtures();
+		t = await createTestSession({
+			cwd: testCwd,
+			propagateErrors: false,
+		});
+		parentManager = getSubagentManager();
+
+		const wenchangId = await spawnBackgroundAgent(t, WENCHANG_AGENT);
+		spawnedIds.push(wenchangId);
+		const wenchangTools = await waitForActiveTools(wenchangId);
+
+		expect(wenchangTools).toContain("read");
+		expect(wenchangTools).toContain("web_search");
+		expect(wenchangTools).toContain("code_search");
+		expect(wenchangTools).toContain("fetch_content");
+		expect(wenchangTools).toContain("get_search_content");
+		expect(wenchangTools).toContain("mcporter");
+		expect(wenchangTools).toContain("mcp");
+		expect(wenchangTools).not.toContain("bash");
+		expect(wenchangTools).not.toContain("edit");
+		expect(wenchangTools).not.toContain("write");
+		expect(wenchangTools).not.toContain("matrix.allowed");
+		expect(wenchangTools).not.toContain("matrix.denied");
+		expect(wenchangTools).not.toContain("Agent");
 	});
 });
