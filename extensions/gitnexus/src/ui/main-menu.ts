@@ -5,13 +5,14 @@
  */
 
 import { spawn } from 'node:child_process';
-import type { GitNexusConfig } from '../gitnexus.js';
+import { type GitNexusConfig, runGitNexusAnalyze } from '../gitnexus.js';
 import { openSettingsMenu } from './settings-menu.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type MenuUI = {
   select(title: string, options: string[]): Promise<string | undefined>;
+  input(title: string, placeholder?: string): Promise<string | undefined>;
   notify(message: string, type: 'info' | 'warning' | 'error'): void;
   custom<T>(
     factory: (tui: any, theme: any, keybindings: any, done: (result: T) => void) => any,
@@ -31,6 +32,7 @@ export interface MenuContext {
   getAugmentHits: () => number;
   findGitNexusIndex: (cwd: string) => boolean;
   clearIndexCache: () => void;
+  resetAugmentCaches: () => void;
   setGitnexusCmd: (cmd: string[]) => void;
   setAugmentTimeout: (seconds: number) => void;
   syncState: () => void;
@@ -69,18 +71,10 @@ async function runAnalyze(mctx: MenuContext): Promise<void> {
   mctx.state.augmentEnabled = false;
   mctx.syncState();
   mctx.ui.notify('GitNexus: analyzing codebase, this may take a while…', 'info');
-  const exitCode = await new Promise<number | null>((resolve_) => {
-    const [bin, ...baseArgs] = mctx.gitnexusCmd;
-    const proc = spawn(bin, [...baseArgs, 'analyze'], {
-      cwd: mctx.cwd,
-      stdio: 'ignore',
-      env: mctx.spawnEnv,
-    });
-    proc.on('close', resolve_);
-    proc.on('error', () => resolve_(null));
-  });
+  const exitCode = await runGitNexusAnalyze(mctx.cwd);
   if (exitCode === 0) {
     mctx.clearIndexCache();
+    mctx.resetAugmentCaches();
     mctx.state.augmentEnabled = true;
     mctx.syncState();
     mctx.ui.notify('GitNexus: analysis complete. Knowledge graph ready.', 'info');
@@ -125,9 +119,7 @@ export async function openMainMenu(mctx: MenuContext): Promise<void> {
       return mainMenu();
     }
     if (choice === 'Settings') {
-      await openSettingsMenu(mctx.ui, mctx.cfg, mctx.state, async () => {
-        mctx.syncState();
-      });
+      await openSettingsMenu(mctx.ui, mctx.cfg, mctx.state, mctx.syncState);
       return mainMenu();
     }
     if (choice === 'Help') {

@@ -2,14 +2,17 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { basename, extname, join, posix, relative, resolve, sep } from 'path';
+import { mcpClient } from './mcp-client.js';
+import { composeAnalyzeArgs } from './stealth-injection.js';
 
 /** Max output chars returned to the LLM. Prevents context flooding. JS strings are UTF-16 chars, not bytes. */
 export const MAX_OUTPUT_CHARS = 8 * 1024;
 
 /**
  * Environment passed to all child processes.
- * Resolved from a login shell on session_start to pick up nvm/fnm/volta PATH entries
- * that are missing when pi launches as a GUI app.
+ * On session_start, the agent's PATH is merged with the login shell's PATH
+ * (via resolveShellPath) so that nvm/fnm/volta paths are picked up while
+ * preserving any directories the agent already had (e.g. ~/.local/share/nvm/…).
  */
 export let spawnEnv: NodeJS.ProcessEnv = process.env;
 export function updateSpawnEnv(env: NodeJS.ProcessEnv): void { spawnEnv = env; }
@@ -29,6 +32,7 @@ export interface GitNexusConfig {
   augmentTimeout?: number;
   maxAugmentsPerResult?: number;
   maxSecondaryPatterns?: number;
+  mcpIdleTimeout?: number;
 }
 
 export function loadSavedConfig(): GitNexusConfig {
@@ -404,4 +408,37 @@ export async function runAugment(pattern: string, cwd: string): Promise<string> 
       if (!done) { done = true; clearTimeout(timer); resolve_(''); }
     });
   });
+}
+
+/**
+ * Run `gitnexus analyze` and return the exit code (null on spawn error).
+ *
+ * Stops the MCP process before reindexing so it does not query a half-rebuilt
+ * graph, and again after completion so the next tool call respawns against the
+ * fresh index. If the first run fails because the directory is not a git
+ * repository, retries once with `--skip-git`.
+ */
+export async function runGitNexusAnalyze(cwd: string): Promise<number | null> {
+  mcpClient.stop();
+
+  const runOnce = (extraArgs: string[]) => new Promise<{ code: number | null; stderr: string }>((resolve_) => {
+    const [bin, ...baseArgs] = gitnexusCmd;
+    const proc = spawn(bin, composeAnalyzeArgs(baseArgs, extraArgs), {
+      cwd,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      env: spawnEnv,
+    });
+    let stderr = '';
+    proc.stderr!.on('data', (chunk: { toString(): string }) => { stderr += chunk.toString(); });
+    proc.on('close', (code) => resolve_({ code, stderr }));
+    proc.on('error', () => resolve_({ code: null, stderr }));
+  });
+
+  let result = await runOnce([]);
+  if (result.code !== 0 && /not a git repository/i.test(result.stderr)) {
+    result = await runOnce(['--skip-git']);
+  }
+
+  mcpClient.stop();
+  return result.code;
 }

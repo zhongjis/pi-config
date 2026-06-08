@@ -2,20 +2,23 @@ import { type GitNexusConfig, saveConfig } from "../gitnexus.js";
 
 export type SettingsUI = {
   select(title: string, options: string[]): Promise<string | undefined>;
+  input(title: string, placeholder?: string): Promise<string | undefined>;
 };
 
+type SettingId = "autoAugment" | "augmentTimeout" | "maxAugmentsPerResult" | "maxSecondaryPatterns" | "mcpIdleTimeout" | "cmd";
+
 type Setting = {
-  id: "autoAugment" | "augmentTimeout" | "maxAugmentsPerResult" | "maxSecondaryPatterns" | "cmd";
+  id: SettingId;
   label: string;
   currentValue: () => string;
-  values: string[];
+  values?: string[];
 };
 
 export async function openSettingsMenu(
   ui: SettingsUI,
   cfg: GitNexusConfig,
   state: { augmentEnabled: boolean },
-  onBack: () => Promise<void>,
+  applyChanges: () => void,
 ): Promise<void> {
   const settings: Setting[] = [
     {
@@ -43,10 +46,15 @@ export async function openSettingsMenu(
       values: ["0", "1", "2", "3", "5"],
     },
     {
+      id: "mcpIdleTimeout",
+      label: "MCP idle timeout",
+      currentValue: () => cfg.mcpIdleTimeout === 0 ? "off" : String(cfg.mcpIdleTimeout ?? 600),
+      values: ["off", "60", "300", "600", "1800", "3600"],
+    },
+    {
       id: "cmd",
       label: "GitNexus command",
       currentValue: () => cfg.cmd ?? "gitnexus",
-      values: ["gitnexus", "npx gitnexus@latest", "npx -y gitnexus@latest"],
     },
   ];
 
@@ -61,18 +69,19 @@ export async function openSettingsMenu(
     const setting = settings[index];
     if (!setting) continue;
 
-    const newValue = await ui.select(setting.label, setting.values);
+    const newValue = setting.id === "cmd"
+      ? await ui.input("GitNexus command", setting.currentValue())
+      : await ui.select(setting.label, setting.values ?? []);
     if (!newValue) continue;
 
     applySetting(setting.id, newValue, cfg, state);
     saveConfig(cfg);
+    applyChanges();
   }
-
-  return onBack();
 }
 
 function applySetting(
-  id: Setting["id"],
+  id: SettingId,
   newValue: string,
   cfg: GitNexusConfig,
   state: { augmentEnabled: boolean },
@@ -98,5 +107,10 @@ function applySetting(
     return;
   }
 
-  cfg.cmd = newValue;
+  if (id === "mcpIdleTimeout") {
+    cfg.mcpIdleTimeout = newValue === "off" ? 0 : parseInt(newValue, 10);
+    return;
+  }
+
+  cfg.cmd = newValue.trim() || undefined;
 }

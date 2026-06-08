@@ -1,23 +1,81 @@
+import { delimiter } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { spawn } from 'node:child_process';
-import { clearIndexCache, extractFilePatternsFromContent, extractFilesFromReadMany, extractPattern, findGitNexusIndex, findGitNexusRoot, type GitNexusConfig, gitnexusCmd, loadSavedConfig, resolveGitNexusCmd, runAugment, setAugmentTimeout, setGitnexusCmd, spawnEnv, updateSpawnEnv } from './gitnexus.js';
-import { mcpClient } from './mcp-client.js';
+import { clearIndexCache, extractFilePatternsFromContent, extractFilesFromReadMany, extractPattern, findGitNexusIndex, findGitNexusRoot, type GitNexusConfig, gitnexusCmd, loadSavedConfig, resolveGitNexusCmd, runAugment, runGitNexusAnalyze, setAugmentTimeout, setGitnexusCmd, spawnEnv, updateSpawnEnv } from './gitnexus.js';
+import { mcpClient, setMcpIdleTimeout } from './mcp-client.js';
 import { registerTools } from './tools.js';
 import { openMainMenu } from './ui/main-menu.js';
-import { buildInjectedSystemPrompt, composeAnalyzeArgs, checkSkillDrift } from './stealth-injection.js';
+import { buildInjectedSystemPrompt, checkSkillDrift } from './stealth-injection.js';
 
 const SEARCH_TOOLS = new Set(['grep', 'find', 'bash', 'read', 'read_many']);
 
-/** Resolve PATH from a login shell so nvm/fnm/volta binaries are visible. */
+/**
+ * Merge two PATH values, preferring the agent's PATH over the login shell's PATH
+ * while preserving order. Any shell-only directories (e.g. nvm/fnm/volta paths
+ * that the agent didn't inherit) are appended at the end so they are still found.
+ *
+ * This prevents the agent's existing PATH entries (such as ~/.local/share/nvm/…)
+ * from being silently dropped when the login shell reports a different PATH.
+ */
+function mergePaths(agent: string, shell: string): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const dir of [...agent.split(delimiter), ...shell.split(delimiter)]) {
+    if (!dir) continue;
+    const key = process.platform === 'win32' ? dir.toLowerCase() : dir;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(dir);
+  }
+
+  return out.join(delimiter);
+}
+
+/**
+ * Resolve PATH from a login shell so nvm/fnm/volta binaries are visible.
+ * Merges with the agent's current PATH so directories already present
+ * (e.g. ~/.local/share/nvm/…) are never lost.
+ *
+ * On Windows the agent's PATH is already correct so we skip the probe entirely.
+ * On macOS/Linux we use the user's login shell ($SHELL) to read login startup
+ * files (.zprofile, .bash_profile, .profile), which is where most package
+ * managers place their PATH setup.
+ *
+ * The probe is bounded by a timeout to prevent a slow or broken startup file
+ * from stalling session initialization.
+ */
 async function resolveShellPath(): Promise<void> {
-  const path = await new Promise<string>((resolve_) => {
+  if (process.platform === 'win32') return;
+
+  const loginShell = process.env.SHELL ?? '/bin/sh';
+  const shellPath = await new Promise<string>((resolve_) => {
     let out = '';
-    const proc = spawn('/bin/sh', ['-lc', 'printf %s "$PATH"'], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let done = false;
+
+    const finish = (value: string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve_(value);
+    };
+
+    const proc = spawn(loginShell, ['-lc', 'printf %s "$PATH"'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+
+    const timer = setTimeout(() => {
+      proc.kill();
+      finish(process.env.PATH ?? '');
+    }, 3_000);
+
     proc.stdout!.on('data', (d: { toString(): string }) => { out += d.toString(); });
-    proc.on('close', () => resolve_(out.trim() || (process.env.PATH ?? '')));
-    proc.on('error', () => resolve_(process.env.PATH ?? ''));
+    proc.on('close', () => finish(out.trim() || (process.env.PATH ?? '')));
+    proc.on('error', () => finish(process.env.PATH ?? ''));
   });
-  updateSpawnEnv({ ...process.env, PATH: path });
+
+  const merged = mergePaths(process.env.PATH ?? '', shellPath);
+  updateSpawnEnv({ ...process.env, PATH: merged });
 }
 
 function trySpawn(bin: string, args: string[]): Promise<boolean> {
@@ -65,6 +123,11 @@ const augmentedCache = new Set<string>();
  */
 const emptyCache = new Set<string>();
 
+function resetAugmentCaches(): void {
+  augmentedCache.clear();
+  emptyCache.clear();
+}
+
 export default function(pi: ExtensionAPI) {
   registerTools(pi);
 
@@ -91,6 +154,8 @@ export default function(pi: ExtensionAPI) {
   pi.on('tool_result', async (event, ctx) => {
     if (!augmentEnabled) return;
     if (!SEARCH_TOOLS.has(event.toolName)) return;
+    // Guard: event.content may be undefined for error results.
+    if (!event.content || !Array.isArray(event.content)) return;
     hookFires++;
     const cwd = sessionCwd || ctx.cwd;
     if (!findGitNexusIndex(cwd)) return;
@@ -174,8 +239,7 @@ export default function(pi: ExtensionAPI) {
     clearIndexCache();
     augmentHits = 0;
     hookFires = 0;
-    augmentedCache.clear();
-    emptyCache.clear();
+    resetAugmentCaches();
     sessionCwd = ctx.cwd;
     await resolveShellPath();
 
@@ -183,6 +247,7 @@ export default function(pi: ExtensionAPI) {
     cfg = loadSavedConfig();
     augmentEnabled = cfg.autoAugment !== false;
     if (cfg.augmentTimeout) setAugmentTimeout(cfg.augmentTimeout);
+    if (cfg.mcpIdleTimeout != null) setMcpIdleTimeout(cfg.mcpIdleTimeout);
 
     // Resolve command: default → saved config → CLI flag (highest precedence).
     // Smoke-test mocks return flag definitions from getFlag(); only runtime string values apply here.
@@ -232,7 +297,15 @@ export default function(pi: ExtensionAPI) {
     }
   }
 
-  pi.on('session_start', (_event: unknown, ctx: ExtensionContext) => { void onSession(ctx); });
+  pi.on('session_start', (_event: unknown, ctx: ExtensionContext) => {
+    void onSession(ctx).catch(err => {
+      ctx.ui.notify(`GitNexus session init failed: ${err.message}`, 'error');
+    });
+  });
+
+  pi.on('session_shutdown', () => {
+    mcpClient.stop();
+  });
 
   const subcommands = ['status', 'analyze', 'on', 'off', 'settings', 'query', 'context', 'impact', 'help'];
 
@@ -324,12 +397,14 @@ export default function(pi: ExtensionAPI) {
           getAugmentHits: () => augmentHits,
           findGitNexusIndex,
           clearIndexCache,
+          resetAugmentCaches,
           setGitnexusCmd,
           setAugmentTimeout,
           syncState: () => {
             augmentEnabled = state.augmentEnabled;
             if (cfg.cmd) setGitnexusCmd(cfg.cmd.trim().split(/\s+/));
             if (cfg.augmentTimeout) setAugmentTimeout(cfg.augmentTimeout);
+            if (cfg.mcpIdleTimeout != null) setMcpIdleTimeout(cfg.mcpIdleTimeout);
           },
         });
         return;
@@ -343,18 +418,10 @@ export default function(pi: ExtensionAPI) {
         }
         augmentEnabled = false;
         ctx.ui.notify('GitNexus: analyzing codebase, this may take a while…', 'info');
-        const exitCode = await new Promise<number | null>((resolve_) => {
-          const [bin, ...baseArgs] = gitnexusCmd;
-          const proc = spawn(bin, composeAnalyzeArgs(baseArgs), {
-            cwd: ctx.cwd,
-            stdio: 'ignore',
-            env: spawnEnv,
-          });
-          proc.on('close', resolve_);
-          proc.on('error', () => resolve_(null));
-        });
+        const exitCode = await runGitNexusAnalyze(ctx.cwd);
         if (exitCode === 0) {
           clearIndexCache();
+          resetAugmentCaches();
           augmentEnabled = true;
           ctx.ui.notify('GitNexus: analysis complete. Knowledge graph ready.', 'info');
         } else {
