@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **System-reminder delivery — transient `context`-hook injection (ported from upstream `@tintinweb/pi-tasks` 0.7.0, #19).** The periodic `<system-reminder>` nudge is no longer appended onto unrelated `tool_result` content. Appending it there persisted a now-stale reminder into session history (it reappeared on every later turn) and misattributed host policy text as tool output. `tool_result` is now used solely to advance the reminder cadence; the reminder is injected as a transient, non-persisted user message via the `context` hook on the one request where it is due. Only the delivery mechanism changed — the local cadence (`ContinuationCooldown` backoff + stagnation cap, `[panda-warn] subagent.continuation.reminder`) is unchanged. Covered by `test/reminder-delivery.test.ts`.
+
 ## [1.0.0] - 2026-06-02
 
 ### Changed
