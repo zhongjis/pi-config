@@ -1,4 +1,5 @@
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { isTui } from "../../../lib/mode.js";
 import { AUTO_CLEAR_DELAY } from "../constants.js";
 import { updateTask } from "../lifecycle/fsm-dispatch.js";
 import { buildTaskMetadata, type SessionStateContext } from "../lifecycle/store-glue.js";
@@ -107,8 +108,13 @@ export function registerTasksCommand({ pi, runtime }: TaskToolDeps) {
         return viewTasks();
       };
 
-      const settingsMenu = (): Promise<void> =>
-        openSettingsMenu(ui, runtime.cfg, mainMenu, AUTO_CLEAR_DELAY);
+      const settingsMenu = async (): Promise<void> => {
+        if (!isTui(ctx)) {
+          ui.notify("Settings panel requires interactive (TUI) mode", "warning");
+          return mainMenu();
+        }
+        return openSettingsMenu(ui, runtime.cfg, mainMenu, AUTO_CLEAR_DELAY);
+      };
 
       const createTask = async (): Promise<void> => {
         const subject = await ui.input("Task subject");

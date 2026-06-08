@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
+import { isTui } from "../lib/mode.js";
 
 interface ToolsState {
   enabledTools: string[];
@@ -50,8 +51,8 @@ export default function toolsExtension(pi: ExtensionAPI): void {
   pi.registerCommand("tools", {
     description: "Enable or disable available tools",
     handler: async (_args, ctx) => {
-      if (!ctx.hasUI) {
-        ctx.ui.notify("No UI available", "error");
+      if (!isTui(ctx)) {
+        ctx.ui.notify("Tool settings require interactive (TUI) mode", "error");
         return;
       }
 

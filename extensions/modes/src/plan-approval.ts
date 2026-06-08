@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { computeLineDiff } from "../../lib/utils.js";
+import { isTui } from "../../lib/mode.js";
 import type { ModeStateManager } from "./mode-state.js";
 import { LOCAL_PLAN_URI } from "./constants.js";
 import { hydratePlanState, writeLocalPlanFile } from "./plan-storage.js";
@@ -34,7 +35,7 @@ async function refineInSystemEditor(
 	state: ModeStateManager,
 	ctx: ExtensionContext,
 ): Promise<"edited" | "cancelled" | "no-ui"> {
-	if (!ctx.hasUI) return "no-ui";
+	if (!isTui(ctx)) return "no-ui";
 
 	const editorCmd = process.env.VISUAL || process.env.EDITOR || "vi";
 

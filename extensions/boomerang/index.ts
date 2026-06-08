@@ -14,6 +14,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type SessionEntry, type SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { isTui } from "../lib/mode.js";
 import { registerCommitCommand, type BoomerangTaskSnapshot } from "./commit.js";
 
 interface BoomerangConfig {
@@ -1368,7 +1369,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function reloadFallbackChatDisplay(ctx: ExtensionContext): Promise<void> {
-    if (!ctx.hasUI) return;
+    if (!isTui(ctx)) return;
 
     if (reloadFallbackDisplay) {
       try {

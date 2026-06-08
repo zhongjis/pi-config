@@ -7,6 +7,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import { isTui } from "../lib/mode.js";
 import {
   Container,
   Key,
@@ -26,8 +27,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("diff", {
     description: "Show git changes and open in VS Code diff view",
     handler: async (_args, ctx) => {
-      if (!ctx.hasUI) {
-        ctx.ui.notify("No UI available", "error");
+      if (!isTui(ctx)) {
+        ctx.ui.notify("diff requires interactive (TUI) mode", "error");
         return;
       }
 

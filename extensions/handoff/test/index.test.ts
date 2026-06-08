@@ -109,6 +109,7 @@ function createCommandContext(options: {
 
 	const ctx = {
 		hasUI: true,
+		mode: "tui",
 		ui,
 		model: options.currentModel,
 		modelRegistry: {

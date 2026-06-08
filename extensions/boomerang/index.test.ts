@@ -379,6 +379,7 @@ describe("Boomerang Extension", () => {
 
     return {
       hasUI: true,
+      mode: "tui",
       ui: uiMock,
       get cwd() {
         return currentCwd;
@@ -559,6 +560,7 @@ describe("Boomerang Extension", () => {
 
     mockCtx = {
       hasUI: true,
+      mode: "tui",
       ui: uiMock,
       get cwd() {
         return currentCwd;
@@ -2382,7 +2384,7 @@ describe("Boomerang Extension", () => {
     });
 
     it("completes shortcut-first fallback without editor reload when UI is unavailable", async () => {
-      const noUiCtx = { ...mockCtx, hasUI: false } as ExtensionContext;
+      const noUiCtx = { ...mockCtx, hasUI: false, mode: "print" } as ExtensionContext;
       await getShortcut("ctrl+alt+b")(noUiCtx);
 
       await getHandler("input")({ type: "input", text: "no ui shortcut task", source: "interactive" }, noUiCtx);

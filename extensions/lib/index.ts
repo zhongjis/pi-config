@@ -12,6 +12,7 @@ export * from "./status.js";
 export * from "./status-group.js";
 export * from "./utils.js";
 export * from "./ux.js";
+export * from "./mode.js";
 export * from "./model.js";
 export * from "./thinking-level.js";
 export * from "./active-tools.js";

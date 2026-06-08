@@ -14,6 +14,7 @@ import {
   serializeConversation,
 } from "@earendil-works/pi-coding-agent";
 import { loadHandoffConfig, updateHandoffConfig } from "./config.js";
+import { isTui } from "../lib/mode.js";
 
 export type HandoffMode = "kuafu" | "fuxi" | "houtu";
 type HandoffModeState = { mode?: HandoffMode };
@@ -324,6 +325,9 @@ export async function runHandoffCommand(
 
   let finalPrompt: string;
   if (args.summarize && messages.length > 0) {
+    if (!isTui(ctx)) {
+      return "Handoff --summarize requires interactive (TUI) mode. Re-run without --summarize for a deterministic prompt.";
+    }
     const summaryModel = await resolveSummaryModelChoice(ctx);
     if (!summaryModel) {
       return "Handoff cancelled.";

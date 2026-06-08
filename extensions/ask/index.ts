@@ -13,6 +13,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isTui } from "../lib/mode.js";
 import {
 	Editor,
 	type EditorTheme,
@@ -174,7 +175,7 @@ export default function ask(pi: ExtensionAPI) {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const inputQuestions = (params.questions as IncomingQuestion[]) ?? [];
 
-			if (!ctx.hasUI) {
+			if (!isTui(ctx)) {
 				return errorResult("Error: ask tool requires interactive mode", inputQuestions);
 			}
 			if (inputQuestions.length === 0) {

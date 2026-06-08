@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { isTui } from "../../../lib/mode.js";
 import { type ExtensionCommandContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { buildEjectedAgentMarkdown, buildGenerateAgentPrompt, buildManualAgentMarkdown } from "../agent-definition-authoring.js";
 import { getDefaultMaxTurns, getGraceTurns, setDefaultMaxTurns, setGraceTurns } from "../agent-runner.js";
@@ -187,6 +188,11 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
   async function viewAgentConversation(ctx: ExtensionCommandContext, record: AgentRecord) {
     if (!record.session) {
       ctx.ui.notify(`Agent is ${record.status === "queued" ? "queued" : "expired"} — no session available.`, "info");
+      return;
+    }
+
+    if (!isTui(ctx)) {
+      ctx.ui.notify("Conversation viewer requires interactive (TUI) mode.", "info");
       return;
     }
 

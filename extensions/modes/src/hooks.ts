@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
+import { isTui } from "../../lib/mode.js";
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
@@ -158,7 +159,7 @@ function buildModeSystemPrompt(
 // ─── Session start sub-steps ─────────────────────────────────────────────────
 
 function setupModeEditor(ctx: ExtensionContext, state: ModeStateManager): void {
-	if (!ctx.hasUI) return;
+	if (!isTui(ctx)) return;
 
 	ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 		const BaseEditor = CustomEditor as unknown as new (...args: unknown[]) => {
