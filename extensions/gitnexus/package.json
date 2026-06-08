@@ -1,6 +1,6 @@
 {
   "name": "pi-gitnexus",
-  "version": "0.6.0",
+  "version": "0.6.3",
   "description": "GitNexus knowledge graph integration for pi — enriches searches with call chains, execution flows, and blast radius",
   "author": "tintinweb",
   "license": "MIT",
@@ -23,8 +23,8 @@
     "agent"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.70",
-    "@earendil-works/pi-coding-agent": ">=0.70",
+    "@earendil-works/pi-ai": ">=0.74",
+    "@earendil-works/pi-coding-agent": ">=0.74",
     "typebox": ">=1.0"
   },
   "peerDependenciesMeta": {
@@ -49,7 +49,7 @@
   },
   "piVendor": {
     "upstream": "https://github.com/tintinweb/pi-gitnexus",
-    "commit": "db34bccdd29ee29f9185edb131a9ba0feb18d441",
+    "commit": "79c77223ae34ebfef44c13bf0c4bf0f2588c5741",
     "localTarget": "extensions/gitnexus",
     "adaptedFor": "panda-harness extensions layout"
   }

@@ -5,9 +5,9 @@ GitNexus knowledge graph integration for pi. It can append call-graph context to
 ## Upstream
 
 - **Source:** https://github.com/tintinweb/pi-gitnexus
-- **Version:** 0.6.0, commit `db34bccdd29ee29f9185edb131a9ba0feb18d441`
+- **Version:** 0.6.3, commit `79c77223ae34ebfef44c13bf0c4bf0f2588c5741`
 - **License:** MIT for this extension. GitNexus itself is PolyForm Noncommercial; commercial use needs a separate GitNexus license.
-- **Adapted:** Vendored under `extensions/gitnexus`; `cross-spawn` was replaced with Node's built-in `child_process.spawn`; package metadata points at local `index.ts`.
+- **Adapted:** Vendored under `extensions/gitnexus`; upstream `cross-spawn`/`pi-tui` usage is replaced with Node `child_process.spawn` and select/input dialogs; package metadata points at local `index.ts`.
 
 ## Tools
 
@@ -55,9 +55,9 @@ Execute raw Cypher against the GitNexus graph.
 
 - `/gitnexus` — Open status/settings menu.
 - `/gitnexus status` — Show index status and augmentation counts.
-- `/gitnexus analyze` — Build or rebuild the graph index.
+- `/gitnexus analyze` — Build or rebuild the graph index. Stops MCP before/after analyze, clears augmentation caches on success, retries with `--skip-git` if needed, and always passes the local stealth flags.
 - `/gitnexus on` / `/gitnexus off` — Enable/disable automatic result augmentation.
-- `/gitnexus settings` — Configure command, timeout, and augmentation limits.
+- `/gitnexus settings` — Configure command, timeouts, and augmentation limits.
 - `/gitnexus <pattern>` — Manual graph lookup.
 - `/gitnexus query <text>` — Search execution flows.
 - `/gitnexus context <name>` — Show symbol context.
@@ -66,9 +66,10 @@ Execute raw Cypher against the GitNexus graph.
 
 ## Hooks
 
-- `before_agent_start` — Adds a one-line GitNexus hint when the project has a `.gitnexus/` index.
+- `before_agent_start` — Appends the local GitNexus contract and loaded `gitnexus-*` skills when the project has a `.gitnexus/` index.
 - `tool_result` — Appends graph context after `grep`, `find`, `bash`, `read`, and `read_many` results when auto-augment is enabled.
-- `session_start` — Resets caches, loads config, resolves the GitNexus command, probes the binary, and reports index status.
+- `session_start` — Resets caches, loads config, resolves GitNexus command/PATH, probes the binary, checks skill drift, and reports index status.
+- `session_shutdown` — Stops the long-lived `gitnexus mcp` child.
 
 ## Configuration
 
@@ -81,18 +82,19 @@ Config file: `~/.pi/pi-gitnexus.json`.
 | `augmentTimeout` | `number` | `8` | Seconds to wait for `gitnexus augment`. |
 | `maxAugmentsPerResult` | `number` | `3` | Max graph lookups per tool result. |
 | `maxSecondaryPatterns` | `number` | `2` | Max file-derived secondary lookups. |
+| `mcpIdleTimeout` | `number` | `600` | Seconds before idle `gitnexus mcp` shutdown; `0` means keep alive for session. |
 
 ## Files Worth Reading
 
 - `src/index.ts` — Extension registration, hooks, and slash command.
 - `src/tools.ts` — Tool schemas and MCP calls.
-- `src/gitnexus.ts` — Config, path safety, pattern extraction, augmentation.
-- `src/mcp-client.ts` — Stdio JSON-RPC client for `gitnexus mcp`.
+- `src/gitnexus.ts` — Config, path safety, pattern extraction, augmentation, analyze lifecycle.
+- `src/mcp-client.ts` — Stdio JSON-RPC client for `gitnexus mcp` with idle shutdown.
 
 ## Local Additions
 
 Upstream skill files are vendored under `skills/` for provenance/package parity. This repo's `install.sh` does not symlink root `skills/`, so runtime availability depends on Pi package skill loading, not this extension symlink alone.
 
-- `src/stealth-injection.ts` — exports `GITNEXUS_CONTRACT_PROSE`, `buildInjectedSystemPrompt`, `composeAnalyzeArgs`, and `checkSkillDrift`. The `before_agent_start` handler appends the contract prose plus a runtime-derived list of loaded `gitnexus-*` skills to the system prompt. The `/gitnexus analyze` slash command always passes `--skip-agents-md --no-stats` and never passes `--skills`. Purpose: zero working-tree impact from `analyze`. See `docs/superpowers/specs/2026-05-07-gitnexus-stealth-injection-design.md`.
+- `src/stealth-injection.ts` — exports `GITNEXUS_CONTRACT_PROSE`, `buildInjectedSystemPrompt`, `composeAnalyzeArgs`, and `checkSkillDrift`. The `before_agent_start` handler appends the contract prose plus a runtime-derived list of loaded `gitnexus-*` skills to the system prompt. `/gitnexus analyze` always passes `--skip-agents-md --no-stats` and never passes `--skills`. Purpose: zero working-tree impact from `analyze`. See `docs/superpowers/specs/2026-05-07-gitnexus-stealth-injection-design.md`.
 - `skills/VERSION` — single-line binary version that the vendored skills track. Updated only by `scripts/sync-gitnexus-resources.sh`. Drift vs installed binary produces a non-blocking `notify('warning')` at `session_start`.
 - Root `.gitignore` entries `.claude/` and `CLAUDE.md` — defense in depth against direct-CLI invocations of `gitnexus analyze` outside pi.
