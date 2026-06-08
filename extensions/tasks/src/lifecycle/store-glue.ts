@@ -115,6 +115,7 @@ export type TaskRuntime = {
   currentTurn: number;
   lastTaskToolUseTurn: number;
   continuationCooldown: ContinuationCooldown;
+  reminderDue: boolean;
   resolveStorePath(sessionId?: string): string | undefined;
 };
 
@@ -140,6 +141,7 @@ export function createTaskRuntime(): TaskRuntime {
     currentTurn: 0,
     lastTaskToolUseTurn: 0,
     continuationCooldown: new ContinuationCooldown(REMINDER_INTERVAL),
+    reminderDue: false,
     resolveStorePath(sessionId?: string): string | undefined {
       if (piTasks === "off") return undefined;
       if (piTasks?.startsWith("/")) return piTasks;
@@ -242,8 +244,31 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
       attempt: meta.attempt,
       intervalMs: meta.intervalMs,
     }));
+    // Queue the reminder for transient delivery via the `context` hook below.
+    // We deliberately do NOT append it to this tool result: doing so persists a
+    // now-stale <system-reminder> into session history (it reappears on every
+    // later turn) and misattributes host policy text as unrelated tool output.
+    // tool_result is used only to track cadence. (Ported from upstream 0.7.0.)
+    runtime.reminderDue = true;
+    return {};
+  });
+
+  // Inject the queued system-reminder as a transient user message before the
+  // next LLM call. `context` returns a transformed messages array used only for
+  // this one request, so the reminder is never persisted and cannot go stale.
+  // One-shot: the flag is cleared as soon as it is drained.
+  pi.on("context", async (event) => {
+    if (!runtime.reminderDue) return {};
+    runtime.reminderDue = false;
     return {
-      content: [...event.content, { type: "text" as const, text: SYSTEM_REMINDER }],
+      messages: [
+        ...event.messages,
+        {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: SYSTEM_REMINDER }],
+          timestamp: Date.now(),
+        },
+      ],
     };
   });
 
@@ -268,6 +293,7 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
     runtime.currentTurn = 0;
     runtime.lastTaskToolUseTurn = 0;
     runtime.continuationCooldown.recordProgress();
+    runtime.reminderDue = false;
     runtime.autoClear.reset();
 
     if (!isResume && runtime.taskScope === "memory") {
