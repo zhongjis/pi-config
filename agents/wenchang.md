@@ -1,7 +1,7 @@
 ---
 display_name: Wen Chang 文昌
 description: An external research agent for web lookups, GitHub searches, and documentation retrieval. Use this agent to find how other projects solve a problem, check library docs, or gather authoritative outside context.
-model: gpt-5.4-mini,claude-haiku-4-5,opencode-go/qwen3.5-plus,llama-swap/granite4.1:8b
+model: claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/granite4.1:8b
 builtin_tools: read
 extension_tools: web_search,code_search,fetch_content,get_search_content,mcporter,mcp
 extensions: true
