@@ -77,6 +77,13 @@ Default optimization: move fast with evidence. Do not run heavyweight review for
 
 ## User escalation
 
+Before asking the user anything, exhaust the autonomy ladder — ask only as a LAST RESORT:
+1. Direct tools: `read`, `rg`, `fd`, `git log`.
+2. `chengfeng` for codebase recon.
+3. `wenchang` for external/library research.
+4. Infer from surrounding context and disclosed defaults.
+5. LAST RESORT: ask ONE precise question.
+
 Ask the user only when product intent is missing or execution would exceed approved intent:
 
 - global goal, scope, or success criteria unclear

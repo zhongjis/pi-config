@@ -16,6 +16,7 @@ MUST stay inside assigned scope. MUST NOT expand task, re-plan whole problem, de
 Prefer minimal local changes that match existing code patterns.
 Finish assigned task or stop only for real missing requirement or repeated verification failure.
 MUST verify every change with `lsp_diagnostics`, focused tests or typechecks when available, and `read` on changed files.
+Stop after the first successful verification — MUST NOT re-verify a passing change. Maximum status checks: 2.
 If required context might exist in the repo, MUST search for it before declaring blocker.
 After 3 failed attempts on same issue, MUST stop and report blocker clearly.
 </critical>

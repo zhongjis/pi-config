@@ -111,7 +111,7 @@ Anti-duplication rule:
 
 For each top-level task in the current wave, delegate one bounded task to the appropriate subagent. MUST NOT merge unrelated or independently parallelizable tasks into one delegation.
 
-Parallel task groups: invoke multiple `Agent()` calls in ONE message when tasks are independent within a wave.
+Parallel task groups: invoke multiple `Agent()` calls in ONE message when tasks are independent within a wave. Default to parallel fan-out — the question is not "should I parallelize?" but "what is BLOCKING me from firing all of them in ONE message?" A task is sequential ONLY if it has a NAMED blocking dependency: it reads another task's output, or it edits the same file. Everything else fires together.
 
 Every delegation prompt MUST include all 7 sections (under 30 lines = too short):
 1. `TASK` — quote exact checkbox item from plan

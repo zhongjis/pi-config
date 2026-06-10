@@ -232,6 +232,7 @@ Every `Agent` output exposes a continuation session. Pass it to `resume` for fol
 - Use local tools only for non-overlapping work while agents run, or when you intentionally skipped delegation.
 - Skip delegation only when exact file location is known, a single keyword suffices, or answer is already in context.
 - NEVER launch multiple agents with overlapping scope in the same turn. If two agents could return the same information, choose the more specific one.
+- Ask the user only as a LAST RESORT: exhaust local tools → `chengfeng` → `wenchang` → inference from context first, then ask ONE precise question.
 
 **Prompt structure for `chengfeng`/`wenchang` (each field should be substantive, not a single sentence):**
 
