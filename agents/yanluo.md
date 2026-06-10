@@ -45,6 +45,12 @@ Validate plan against four criteria:
 - Alternative architectures that could also work
 - Extra edge cases that are non-blocking for initial execution
 - Optional tooling plan already marks as optional
+
+Calibration examples:
+- ❌ "Task 3 could be clearer about error handling" — NOT a blocker.
+- ❌ "Consider adding acceptance criteria for the empty case" — NOT a blocker.
+- ✅ "Task 3 references `auth/login.ts` but the file does not exist" — BLOCKER.
+- ✅ "Acceptance for Task 5 says 'user verifies it looks right' — not agent-executable" — BLOCKER.
 </directives>
 
 <procedure>
@@ -60,6 +66,7 @@ Validate plan against four criteria:
 
 - Does each important step have concrete acceptance criteria or observable check?
 - Can success or failure be determined from named command, file read, grep, diagnostic, test, or other concrete evidence?
+- Are acceptance criteria agent-executable? Criteria requiring a human to manually test, visually confirm, or click are a blocker — verification must be runnable by an execution agent.
 - Are optional checks clearly marked optional rather than presented as guaranteed tooling?
 
 ### 3. Context

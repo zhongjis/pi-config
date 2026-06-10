@@ -46,7 +46,7 @@ MUST NOT return empty review. If you hit turn limit, wrap-up request, or partial
 
 - Hidden intention or implied constraint in user's request.
 - Ambiguity likely to derail implementation.
-- Scope creep area that should be locked down explicitly.
+- Scope creep area that should be locked down explicitly. Flag named AI-slop patterns: scope inflation (tests/changes for adjacent modules), premature abstraction (extracted-to-utility for single use), over-validation (many checks for few inputs), documentation bloat (JSDoc/comments everywhere).
 - Assumption presented without validation path.
 - Missing acceptance criteria or edge case that would cause execution guesswork.
 
@@ -64,7 +64,7 @@ MUST NOT return empty review. If you hit turn limit, wrap-up request, or partial
 
 ### 4. Verification quality
 
-- Are acceptance criteria concrete and observable?
+- Are acceptance criteria concrete, observable, and **agent-executable**? Flag any criterion that requires a human to manually test, visually confirm, or click — those block autonomous execution and MUST become commands (curl, test runner, headless browser action) or be named a real blocker.
 - Do verification steps use specific tools or commands when those tools are known to exist?
 - Are optional checks clearly marked optional rather than presented as guaranteed tooling?
 - Does verification plan cover likely failure mode or side effect, not only happy path?
