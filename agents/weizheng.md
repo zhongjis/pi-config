@@ -1,7 +1,7 @@
 ---
 display_name: Wei Zheng 魏征
 description: Code quality reviewer for completed implementation tasks. Runs build, lint, typecheck, and tests; reads git diff against requirements; outputs structured verdict with severity-ranked findings.
-model: openai-codex/gpt-5.5:high,anthropic/claude-opus-4-8:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
+model: anthropic/claude-opus-4-8:high,openai-codex/gpt-5.5:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 inherit_context: false
 builtin_tools: read,bash
