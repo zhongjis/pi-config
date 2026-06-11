@@ -10,8 +10,8 @@ import { parseModelChain, resolveFirstAvailable } from "../lib/model.js";
 // resolveFirstAvailable picks the first one in the registry that's already
 // filtered by the active profile via getAvailable().
 const COMMIT_MODEL_CHAIN = [
-  "gpt-5.4-mini",
   "claude-haiku-4-5",
+  "gpt-5.4-mini",
   "opencode-go/qwen3.5-plus",
   "llama-swap/qwen2.5-coder:7b",
 ].join(",");
