@@ -4,7 +4,9 @@ import type {
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
-import { parseModelChain, resolveFirstAvailable } from "../lib/model.js";
+import { DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-coding-agent";
+import { parseModelChain, resolveModel } from "../lib/model.js";
+import type { ModelCandidate, ModelRegistry } from "../lib/model.js";
 
 // Profile-aware chain: one entry per active profile (default/opencode/local).
 // resolveFirstAvailable picks the first one in the registry that's already
@@ -16,6 +18,44 @@ const COMMIT_MODEL_CHAIN = [
   "llama-swap/qwen2.5-coder:7b",
 ].join(",");
 const COMMIT_MODEL_CANDIDATES = parseModelChain(COMMIT_MODEL_CHAIN);
+
+// Pi triggers auto-compaction when context tokens exceed
+// (contextWindow - reserveTokens). Switching the commit task to a model whose
+// window cannot hold the current context would immediately trip compaction on
+// the user's main session, so a candidate is only eligible if it can hold the
+// current context plus this reserve.
+const COMMIT_CONTEXT_RESERVE_TOKENS = DEFAULT_COMPACTION_SETTINGS.reserveTokens;
+const DEFAULT_CONTEXT_WINDOW = 128000;
+
+type CommitModelResolution = {
+  model?: Model<any>;
+  thinkingLevel?: ThinkingLevel;
+  reason?: "unavailable" | "context-too-large";
+};
+
+// Resolve the first available commit model whose context window can hold the
+// current context. When requiredTokens is null (usage unknown), the window
+// check is skipped and resolution matches plain first-available behavior.
+function resolveCommitModel(
+  candidates: ModelCandidate[],
+  registry: ModelRegistry,
+  requiredTokens: number | null,
+): CommitModelResolution {
+  let sawAvailableButTooSmall = false;
+  for (const candidate of candidates) {
+    const result = resolveModel(candidate.model, registry);
+    if (typeof result === "string") continue; // unavailable / no auth
+    if (requiredTokens !== null) {
+      const window = result.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+      if (window < requiredTokens) {
+        sawAvailableButTooSmall = true;
+        continue;
+      }
+    }
+    return { model: result, thinkingLevel: candidate.thinkingLevel };
+  }
+  return { reason: sawAvailableButTooSmall ? "context-too-large" : "unavailable" };
+}
 
 export interface BoomerangTaskSnapshot {
   model?: Model<any>;
@@ -61,23 +101,38 @@ export function registerCommitCommand(
         return;
       }
 
-      const resolved = resolveFirstAvailable(
+      const usage = ctx.getContextUsage?.();
+      const requiredTokens =
+        usage && usage.tokens !== null
+          ? usage.tokens + COMMIT_CONTEXT_RESERVE_TOKENS
+          : null;
+
+      const resolved = resolveCommitModel(
         COMMIT_MODEL_CANDIDATES,
         ctx.modelRegistry,
+        requiredTokens,
       );
-      if (!resolved) {
-        ctx.ui.notify(
-          `No commit-specific model available from: ${COMMIT_MODEL_CHAIN}. Falling back to current model (${ctx.model?.provider ?? "unknown"}/${ctx.model?.id ?? "unknown"}).`,
-          "warning",
-        );
+      if (!resolved.model) {
+        const current = `${ctx.model?.provider ?? "unknown"}/${ctx.model?.id ?? "unknown"}`;
+        if (resolved.reason === "context-too-large") {
+          ctx.ui.notify(
+            `Current context (~${usage?.tokens ?? "?"} tokens) exceeds every commit model's context window. Using current model (${current}) to avoid compaction.`,
+            "warning",
+          );
+        } else {
+          ctx.ui.notify(
+            `No commit-specific model available from: ${COMMIT_MODEL_CHAIN}. Falling back to current model (${current}).`,
+            "warning",
+          );
+        }
       }
 
       await options.startTask(buildCommitTask(args), ctx, {
         model: ctx.model,
         thinking: pi.getThinkingLevel(),
         forcedSkill: "git-master",
-        targetModel: resolved?.model ?? ctx.model,
-        targetThinking: resolved?.thinkingLevel,
+        targetModel: resolved.model ?? ctx.model,
+        targetThinking: resolved.thinkingLevel,
       });
     },
   });

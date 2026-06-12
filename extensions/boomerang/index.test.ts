@@ -214,6 +214,10 @@ describe("Boomerang Extension", () => {
     return { provider, id, name: id };
   }
 
+  function modelWithWindow(provider: string, id: string, contextWindow: number) {
+    return { provider, id, name: id, contextWindow };
+  }
+
   function modelKey(value: { provider: string; id: string }) {
     return `${value.provider}/${value.id}`;
   }
@@ -697,7 +701,7 @@ describe("Boomerang Extension", () => {
 
       await runBoomerangCommit("--amend");
 
-      expect(setModelCalls).toEqual(["openai/gpt-5.4-mini"]);
+      expect(setModelCalls).toEqual(["anthropic/claude-haiku-4-5"]);
       expect(setThinkingCalls).toEqual([]);
     });
 
@@ -729,6 +733,80 @@ describe("Boomerang Extension", () => {
       );
       expect(sentMessages).toEqual(["commit --amend"]);
       expect(setModelCalls).toEqual([]);
+    });
+
+    it("skips a first-choice commit model that cannot hold the current context", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      allModels = [
+        modelWithWindow("anthropic", "current-model", 200000),
+        modelWithWindow("anthropic", "claude-haiku-4-5", 64000),
+        modelWithWindow("openai", "gpt-5.4-mini", 400000),
+      ];
+      availableModels = [...allModels];
+      const ctx = createCommandCtx({
+        getContextUsage: () => ({ tokens: 100000, contextWindow: 200000, percent: 50 }),
+      });
+
+      await runBoomerangCommit("--amend", ctx);
+
+      expect(setModelCalls).toEqual(["openai/gpt-5.4-mini"]);
+      expect(sentMessages).toEqual(["commit --amend"]);
+    });
+
+    it("falls back to the current model when context exceeds every commit model's window", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      allModels = [
+        modelWithWindow("anthropic", "current-model", 200000),
+        modelWithWindow("anthropic", "claude-haiku-4-5", 64000),
+        modelWithWindow("openai", "gpt-5.4-mini", 64000),
+      ];
+      availableModels = [...allModels];
+      const ctx = createCommandCtx({
+        getContextUsage: () => ({ tokens: 200000, contextWindow: 200000, percent: 100 }),
+      });
+
+      await runBoomerangCommit("--amend", ctx);
+
+      expect(uiMock.notify).toHaveBeenCalledWith(
+        expect.stringContaining("exceeds every commit model's context window"),
+        "warning"
+      );
+      expect(setModelCalls).toEqual([]);
+      expect(sentMessages).toEqual(["commit --amend"]);
+    });
+
+    it("uses the first commit model when the current context fits", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      allModels = [
+        modelWithWindow("anthropic", "current-model", 200000),
+        modelWithWindow("anthropic", "claude-haiku-4-5", 200000),
+        modelWithWindow("openai", "gpt-5.4-mini", 400000),
+      ];
+      availableModels = [...allModels];
+      const ctx = createCommandCtx({
+        getContextUsage: () => ({ tokens: 1000, contextWindow: 200000, percent: 1 }),
+      });
+
+      await runBoomerangCommit("--amend", ctx);
+
+      expect(setModelCalls).toEqual(["anthropic/claude-haiku-4-5"]);
+    });
+
+    it("skips the context-window check when usage is unknown", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      allModels = [
+        modelWithWindow("anthropic", "current-model", 200000),
+        modelWithWindow("anthropic", "claude-haiku-4-5", 1000),
+        modelWithWindow("openai", "gpt-5.4-mini", 400000),
+      ];
+      availableModels = [...allModels];
+      const ctx = createCommandCtx({
+        getContextUsage: () => ({ tokens: null, contextWindow: 200000, percent: null }),
+      });
+
+      await runBoomerangCommit("--amend", ctx);
+
+      expect(setModelCalls).toEqual(["anthropic/claude-haiku-4-5"]);
     });
 
     it("sends commit when args are empty", async () => {
