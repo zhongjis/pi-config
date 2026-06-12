@@ -40,6 +40,12 @@ export class SettingsManager {}
 
 export const VERSION = "0.0.0-test";
 
+export const DEFAULT_COMPACTION_SETTINGS = {
+  enabled: true,
+  reserveTokens: 16384,
+  keepRecentTokens: 20000,
+};
+
 export function buildSessionContext() {
   return { messages: [] };
 }
