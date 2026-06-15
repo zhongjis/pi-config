@@ -22,7 +22,7 @@ description: "Use when the user is debugging a bug, tracing an error, or asking 
 4. gitnexus_cypher({query: "MATCH path..."})                 → Custom traces if needed
 ```
 
-> If "Index is stale" → run `npx gitnexus analyze` in terminal.
+> If "Index is stale" → run `/gitnexus analyze` in pi.
 
 ## Checklist
 
@@ -40,11 +40,11 @@ description: "Use when the user is debugging a bug, tracing an error, or asking 
 
 | Symptom              | GitNexus Approach                                          |
 | -------------------- | ---------------------------------------------------------- |
-| Error message        | `gitnexus_query` for error text → `context` on throw sites |
-| Wrong return value   | `context` on the function → trace callees for data flow    |
-| Intermittent failure | `context` → look for external calls, async deps            |
-| Performance issue    | `context` → find symbols with many callers (hot paths)     |
-| Recent regression    | `detect_changes` to see what your changes affect           |
+| Error message        | `gitnexus_query` for error text → `gitnexus_context` on throw sites |
+| Wrong return value   | `gitnexus_context` on the function → trace callees for data flow    |
+| Intermittent failure | `gitnexus_context` → look for external calls, async deps            |
+| Performance issue    | `gitnexus_context` → find symbols with many callers (hot paths)     |
+| Recent regression    | `gitnexus_detect_changes` to see what your changes affect           |
 
 ## Tools
 

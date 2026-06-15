@@ -42,4 +42,4 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/ui/settings-menu.ts` | Replaced upstream `SettingsList` custom TUI with `ui.select`/`ui.input` dialogs | Avoids adding `@earendil-works/pi-tui` to root deps and stays RPC-friendly |
 | `package.json` | Removed upstream runtime `dependencies` and `@earendil-works/pi-tui` peer; added `piVendor` metadata; changed `pi.extensions` to `./index.ts` | Preserve attribution while fitting local vendored layout without new deps |
 | `README.md` | Replaced upstream marketing/install docs with repo-standard concise docs | Repo forbids `pi install npm:...` instructions and long marketing README |
-| `skills/` | Kept upstream skills under extension root plus local GitNexus skill docs synced from binary | Preserves upstream package payload; root skill wiring is Nix-managed here |
+| `skills/` | Kept upstream skills under extension root, synced from the installed GitNexus package `skills/*.md`, with local `gitnexus_*` tool names and `/gitnexus analyze` wording preserved | Preserves upstream package payload; root skill wiring is Nix-managed here; local tool names differ from upstream MCP short names |

@@ -15,7 +15,7 @@ For any task involving code understanding, debugging, impact analysis, or refact
 2. **Match your task to a skill below** and **read that skill file**
 3. **Follow the skill's workflow and checklist**
 
-> If step 1 warns the index is stale, run `npx gitnexus analyze` in the terminal first.
+> If step 1 warns the index is stale, run `/gitnexus analyze` in pi first.
 
 ## Skills
 
@@ -32,12 +32,12 @@ For any task involving code understanding, debugging, impact analysis, or refact
 
 | Tool             | What it gives you                                                        |
 | ---------------- | ------------------------------------------------------------------------ |
-| `query`          | Process-grouped code intelligence — execution flows related to a concept |
-| `context`        | 360-degree symbol view — categorized refs, processes it participates in  |
-| `impact`         | Symbol blast radius — what breaks at depth 1/2/3 with confidence         |
-| `detect_changes` | Git-diff impact — what do your current changes affect                    |
-| `rename`         | Multi-file coordinated rename with confidence-tagged edits               |
-| `cypher`         | Raw graph queries (read `gitnexus://repo/{name}/schema` first)           |
+| `gitnexus_query`          | Process-grouped code intelligence — execution flows related to a concept |
+| `gitnexus_context`        | 360-degree symbol view — categorized refs, processes it participates in  |
+| `gitnexus_impact`         | Symbol blast radius — what breaks at depth 1/2/3 with confidence         |
+| `gitnexus_detect_changes` | Git-diff impact — what do your current changes affect                    |
+| `gitnexus_rename`         | Multi-file coordinated rename with confidence-tagged edits               |
+| `gitnexus_cypher`         | Raw graph queries (read `gitnexus://repo/{name}/schema` first)           |
 | `list_repos`     | Discover indexed repos                                                   |
 
 ## Resources Reference
