@@ -1,7 +1,7 @@
 ---
 display_name: Yunu 玉女
 description: A frontend and UI/UX specialist for visual engineering, design implementation, and practical frontend improvements.
-model: gemini-3.1-pro-preview:high,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high
+model: gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 builtin_tools: read,bash,edit,write
 extension_tools: lsp_diagnostics,look_at
