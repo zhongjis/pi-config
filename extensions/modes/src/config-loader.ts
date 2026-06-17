@@ -25,14 +25,48 @@ export function parseModeAgentConfig(content: string): ModeConfig | null {
   };
 }
 
-export function loadAgentConfig(mode: Mode): ModeConfig | null {
-  const globalPath = join(homedir(), ".pi", "agent", "agents", `${mode}.md`);
+export function loadAgentConfig(mode: Mode, family?: "gpt" | "gemini" | "default"): ModeConfig | null {
+  const modeDir = join(homedir(), ".pi", "agent", "modes", mode);
+  const modePath = join(modeDir, "mode.md");
 
-  if (!existsSync(globalPath)) return null;
+  if (!existsSync(modePath)) return null;
 
+  let baseConfig: ModeConfig | null;
   try {
-    return parseModeAgentConfig(readFileSync(globalPath, "utf-8"));
+    baseConfig = parseModeAgentConfig(readFileSync(modePath, "utf-8"));
   } catch {
     return null;
   }
+  if (!baseConfig) return null;
+
+  // GPT family: gpt.md replaces the prompt body (body-only file, no frontmatter)
+  if (family === "gpt") {
+    const gptPath = join(modeDir, "gpt.md");
+    if (existsSync(gptPath)) {
+      try {
+        const gptBody = readFileSync(gptPath, "utf-8").trim();
+        if (gptBody) return { ...baseConfig, body: gptBody };
+      } catch {
+        /* fall through to base config */
+      }
+    }
+    return baseConfig;
+  }
+
+  // Gemini family: gemini.md is an overlay fragment (body-only file, no frontmatter)
+  if (family === "gemini") {
+    const geminiPath = join(modeDir, "gemini.md");
+    if (existsSync(geminiPath)) {
+      try {
+        const overlays = readFileSync(geminiPath, "utf-8").trim();
+        if (overlays) return { ...baseConfig, overlays };
+      } catch {
+        /* fall through to base config */
+      }
+    }
+    return baseConfig;
+  }
+
+  // default or undefined: use mode.md body unchanged
+  return baseConfig;
 }

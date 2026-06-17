@@ -137,6 +137,24 @@ function stripModeBodiesFromSystemPrompt(systemPrompt: string): string {
 	return systemPrompt.replace(/<!-- mode:\w+ -->[\s\S]*?<!-- \/mode:\w+ -->/g, "").trim();
 }
 
+function injectOverlays(body: string, overlays: string): string {
+	// Inject overlays BEFORE <critical> section (lost-in-the-middle fix)
+	const anchor = "<critical>";
+	const idx = body.indexOf(anchor);
+	if (idx !== -1) {
+		return `${body.slice(0, idx)}${overlays}\n\n${body.slice(idx)}`;
+	}
+	// Fallback: inject AFTER </role> if no <critical> found
+	const roleClose = "</role>";
+	const roleIdx = body.indexOf(roleClose);
+	if (roleIdx !== -1) {
+		const insertAt = roleIdx + roleClose.length;
+		return `${body.slice(0, insertAt)}\n\n${overlays}${body.slice(insertAt)}`;
+	}
+	// Last resort: append at end
+	return `${body}\n\n${overlays}`;
+}
+
 function buildModeSystemPrompt(
 	systemPrompt: string,
 	state: ModeStateManager,
@@ -146,7 +164,9 @@ function buildModeSystemPrompt(
 		return systemPrompt;
 	}
 
-	const wrappedBody = `${modeMarkerStart(state.currentMode)}\n${config.body}\n${modeMarkerEnd(state.currentMode)}`;
+	// Apply Gemini overlays into body before wrapping
+	const effectiveBody = config.overlays ? injectOverlays(config.body, config.overlays) : config.body;
+	const wrappedBody = `${modeMarkerStart(state.currentMode)}\n${effectiveBody}\n${modeMarkerEnd(state.currentMode)}`;
 
 	if (config.promptMode === "replace") {
 		const strippedBasePrompt = stripModeBodiesFromSystemPrompt(systemPrompt).trimEnd();
@@ -283,9 +303,14 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	pi.on("before_agent_start", async (event, ctx) => {
 		state.activeCtx = ctx;
 		if (isSubagentSession(ctx)) return; // subagents have their own model config
-		const config = state.loadConfig(state.currentMode);
+		// First pass: load default config to get model spec from frontmatter
+		const baseConfig = state.loadConfig(state.currentMode);
 
-		await state.applyModelFromConfig(config, ctx);
+		// Apply model from config — this sets state.resolvedFamily based on resolved model
+		await state.applyModelFromConfig(baseConfig, ctx);
+
+		// Second pass: reload with resolved family (picks up gpt.md body or gemini.md overlays)
+		const config = state.loadConfig(state.currentMode, state.resolvedFamily);
 
 		const systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
 		if (!config.body) return;

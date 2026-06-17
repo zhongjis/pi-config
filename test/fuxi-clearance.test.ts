@@ -12,13 +12,45 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const FUXI_PATH = join(process.cwd(), "agents", "fuxi.md");
+const FUXI_PATH = join(process.cwd(), "modes", "fuxi", "mode.md");
 
 function getFuxiPrompt(): string {
   return readFileSync(FUXI_PATH, "utf-8");
 }
 
-describe("fuxi.md clearance sequence", () => {
+const FUXI_GPT_PATH = join(process.cwd(), "modes", "fuxi", "gpt.md");
+const FUXI_GEMINI_PATH = join(process.cwd(), "modes", "fuxi", "gemini.md");
+
+function getFuxiGptPrompt(): string {
+  return readFileSync(FUXI_GPT_PATH, "utf-8");
+}
+
+function getFuxiGeminiOverlays(): string {
+  return readFileSync(FUXI_GEMINI_PATH, "utf-8");
+}
+
+/**
+ * Compose the default body with gemini overlays injected before <critical>.
+ * Mirrors the injectOverlays() logic from extensions/modes/src/hooks.ts.
+ */
+function composeFuxiGeminiPrompt(): string {
+  const body = getFuxiPrompt();
+  const overlays = getFuxiGeminiOverlays();
+  const anchor = "<critical>";
+  const idx = body.indexOf(anchor);
+  if (idx !== -1) {
+    return `${body.slice(0, idx)}${overlays}\n\n${body.slice(idx)}`;
+  }
+  const roleClose = "</role>";
+  const roleIdx = body.indexOf(roleClose);
+  if (roleIdx !== -1) {
+    const insertAt = roleIdx + roleClose.length;
+    return `${body.slice(0, insertAt)}\n\n${overlays}${body.slice(insertAt)}`;
+  }
+  return `${body}\n\n${overlays}`;
+}
+
+describe("fuxi clearance sequence", () => {
   describe("#given the mandatory plan generation sequence", () => {
     it("#then should require TaskCreate for step registration immediately on trigger", () => {
       const prompt = getFuxiPrompt();
@@ -167,5 +199,68 @@ describe("fuxi.md clearance sequence", () => {
       // ask is required for clarifying plan requirements with the user
       expect(frontmatter).toMatch(/\bask\b/);
     });
+  });
+});
+
+describe("fuxi gpt variant", () => {
+  it("#then should require Di Renjie consultation requirement", () => {
+    const prompt = getFuxiGptPrompt();
+    expect(prompt).toMatch(/direnjie|Di Renjie/i);
+  });
+
+  it("#then should require plan approval flow", () => {
+    const prompt = getFuxiGptPrompt();
+    expect(prompt).toMatch(/plan_approve/);
+  });
+
+  it("#then should require draft management", () => {
+    const prompt = getFuxiGptPrompt();
+    expect(prompt).toMatch(/DRAFT\.md|local:\/\/DRAFT/);
+  });
+
+  it("#then should enforce scope boundary (plan only, no implementation)", () => {
+    const prompt = getFuxiGptPrompt();
+    expect(prompt).toMatch(/PLAN ONLY|plan only|NOT implement|no implementation|read.only/i);
+  });
+
+  it("#then should require interview phase", () => {
+    const prompt = getFuxiGptPrompt();
+    expect(prompt).toMatch(/interview|ask.*tool|Interview Phase/i);
+  });
+
+  it("#then should contain no frontmatter", () => {
+    const prompt = getFuxiGptPrompt();
+    expect(prompt).not.toMatch(/^---/);
+  });
+});
+
+describe("fuxi gemini composed", () => {
+  it("#then should include all gemini overlays in composed prompt", () => {
+    const composed = composeFuxiGeminiPrompt();
+    expect(composed).toContain("<FUXI_INTENT_GATE>");
+    expect(composed).toContain("<FUXI_ANTI_FALSE_FINALIZE>");
+    expect(composed).toContain("<FUXI_DRAFT_MANDATE>");
+    expect(composed).toContain("<FUXI_VERIFICATION_OVERRIDE>");
+  });
+
+  it("#then overlays should appear before <critical> section", () => {
+    const composed = composeFuxiGeminiPrompt();
+    const overlayPos = composed.indexOf("<FUXI_INTENT_GATE>");
+    const criticalPos = composed.indexOf("<critical>");
+    // Either both exist and overlay is before critical, OR critical doesn't exist (fallback path)
+    if (criticalPos !== -1) {
+      expect(overlayPos).toBeLessThan(criticalPos);
+    } else {
+      // fallback: overlays exist somewhere in the composed text
+      expect(overlayPos).toBeGreaterThan(-1);
+    }
+  });
+
+  it("#then safety clauses from base body should be preserved in composed prompt", () => {
+    const composed = composeFuxiGeminiPrompt();
+    // Key safety requirements from modes/fuxi/mode.md must survive composition
+    expect(composed).toContain("plan_approve");
+    expect(composed).toMatch(/DRAFT\.md|local:\/\/DRAFT/);
+    expect(composed).toMatch(/direnjie|Di Renjie/i);
   });
 });

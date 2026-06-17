@@ -14,6 +14,7 @@ export interface ModeConfig {
   disallowDelegationTo?: string[];
   allowNesting?: boolean;
   model?: string;
+  overlays?: string;
 }
 
 export type PlanTitleSource = "content-h1" | "explicit-exit" | "cached-state";

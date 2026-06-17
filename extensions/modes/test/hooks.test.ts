@@ -73,7 +73,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs.fuxi = { body: "Fu Xi prompt" };
+		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi prompt" };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -87,7 +87,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs.fuxi = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "" };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -107,7 +107,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs.fuxi = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "" };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -130,7 +130,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "kuafu";
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "build prompt",
 			allowDelegationTo: ["jintong", "chengfeng"],
 		};
@@ -153,7 +153,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "kuafu";
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "build prompt",
 			allowDelegationTo: ["jintong", "chengfeng"],
 		};
@@ -173,8 +173,8 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs.fuxi = { body: "Fu Xi planning prompt", promptMode: "replace" };
-		state.cachedConfigs.kuafu = { body: "Kua Fu build prompt", promptMode: "replace" };
+		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi planning prompt", promptMode: "replace" };
+		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", promptMode: "replace" };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -200,7 +200,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "luban";
-		state.cachedConfigs.luban = { body: "Lu Ban prompt", promptMode: "replace" };
+		state.cachedConfigs["luban:default"] = { body: "Lu Ban prompt", promptMode: "replace" };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -230,7 +230,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "kuafu";
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
 			model: "anthropic/claude-sonnet-4:medium",
 		};
@@ -258,7 +258,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "kuafu";
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
 			model: "anthropic/claude-sonnet-4:medium",
 		};
@@ -271,5 +271,42 @@ describe("mode hooks", () => {
 		});
 
 		expect(mock.pi.setModel).not.toHaveBeenCalled();
+	});
+
+	it("uses gpt variant body when resolvedFamily is gpt", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.cachedConfigs["kuafu:gpt"] = { body: "GPT variant body" };
+		state.cachedConfigs["kuafu:default"] = { body: "default body" };
+		state.resolvedFamily = "gpt";
+
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire("before_agent_start", { systemPrompt: "Base" }, { hasUI: false });
+		expect(result).toEqual({
+			systemPrompt: "Base\n\n<!-- mode:kuafu -->\nGPT variant body\n<!-- /mode:kuafu -->",
+		});
+	});
+
+	it("injects gemini overlays before <critical> when resolvedFamily is gemini", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.cachedConfigs["kuafu:gemini"] = {
+			body: "before\n\n<critical>\nafter",
+			overlays: "<GEMINI_INTENT_GATE>must classify</GEMINI_INTENT_GATE>",
+		};
+		state.cachedConfigs["kuafu:default"] = { body: "before\n\n<critical>\nafter" };
+		state.resolvedFamily = "gemini";
+
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire("before_agent_start", { systemPrompt: "" }, { hasUI: false });
+		const sp = (result as { systemPrompt: string }).systemPrompt;
+		expect(sp).toContain("<GEMINI_INTENT_GATE>must classify</GEMINI_INTENT_GATE>");
+		const overlayPos = sp.indexOf("<GEMINI_INTENT_GATE>");
+		const criticalPos = sp.indexOf("<critical>");
+		expect(overlayPos).toBeLessThan(criticalPos);
 	});
 });

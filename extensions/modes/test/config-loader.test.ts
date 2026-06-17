@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { parseModeAgentConfig } from "../src/config-loader.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+
+vi.mock("node:fs", async () => {
+	const actual = await vi.importActual<typeof fs>("node:fs");
+	return { ...actual, existsSync: vi.fn(), readFileSync: vi.fn() };
+});
+
+import { loadAgentConfig, parseModeAgentConfig } from "../src/config-loader.js";
 import { derivePlanTitleFromMarkdown } from "../src/plan-storage.js";
 
 describe("parseModeAgentConfig", () => {
@@ -78,5 +85,89 @@ describe("derivePlanTitleFromMarkdown", () => {
 
 	it("returns undefined for empty string", () => {
 		expect(derivePlanTitleFromMarkdown("")).toBeUndefined();
+	});
+});
+
+describe("loadAgentConfig", () => {
+	const MODE_MD = `---
+prompt_mode: replace
+model: anthropic/claude-sonnet-4-6:medium
+---
+
+Base mode body.`;
+
+	function stubFiles(files: Record<string, string>): void {
+		vi.mocked(fs.existsSync).mockImplementation((p) =>
+			Object.keys(files).some((suffix) => String(p).endsWith(suffix)));
+		vi.mocked(fs.readFileSync).mockImplementation(((p: unknown) => {
+			const suffix = Object.keys(files).find((s) => String(p).endsWith(s));
+			if (suffix === undefined) throw new Error(`unexpected read: ${String(p)}`);
+			return files[suffix];
+		}) as unknown as typeof fs.readFileSync);
+	}
+
+	beforeEach(() => {
+		vi.mocked(fs.existsSync).mockReset();
+		vi.mocked(fs.readFileSync).mockReset();
+	});
+
+	it("reads base config from modes/{mode}/mode.md", () => {
+		stubFiles({ "mode.md": MODE_MD });
+		const config = loadAgentConfig("kuafu");
+		expect(config?.body).toBe("Base mode body.");
+		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
+	});
+
+	it("returns null when mode.md does not exist", () => {
+		vi.mocked(fs.existsSync).mockReturnValue(false);
+		expect(loadAgentConfig("kuafu")).toBeNull();
+	});
+
+	it("gpt family replaces body from gpt.md, keeping mode.md frontmatter", () => {
+		stubFiles({ "mode.md": MODE_MD, "gpt.md": "GPT body override.\n" });
+		const config = loadAgentConfig("kuafu", "gpt");
+		expect(config?.body).toBe("GPT body override.");
+		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
+		expect(config?.promptMode).toBe("replace");
+	});
+
+	it("gpt family falls back to base body when gpt.md is absent", () => {
+		stubFiles({ "mode.md": MODE_MD });
+		const config = loadAgentConfig("kuafu", "gpt");
+		expect(config?.body).toBe("Base mode body.");
+		expect(config?.overlays).toBeUndefined();
+	});
+
+	it("gemini family loads gemini.md into overlays", () => {
+		stubFiles({ "mode.md": MODE_MD, "gemini.md": "Gemini overlay fragment.\n" });
+		const config = loadAgentConfig("kuafu", "gemini");
+		expect(config?.overlays).toBe("Gemini overlay fragment.");
+		expect(config?.body).toBe("Base mode body.");
+		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
+	});
+
+	it("gemini family falls back to base config when gemini.md is absent", () => {
+		stubFiles({ "mode.md": MODE_MD });
+		const config = loadAgentConfig("kuafu", "gemini");
+		expect(config?.overlays).toBeUndefined();
+		expect(config?.body).toBe("Base mode body.");
+	});
+
+	it("default family returns the mode.md body unchanged", () => {
+		stubFiles({ "mode.md": MODE_MD });
+		const config = loadAgentConfig("kuafu", "default");
+		expect(config?.body).toBe("Base mode body.");
+		expect(config?.overlays).toBeUndefined();
+	});
+});
+
+describe("ModeConfig overlays field", () => {
+	it("accepts an overlays field on a parsed config", () => {
+		const config = parseModeAgentConfig("---\n---\n\nBody text.");
+		expect(config).not.toBeNull();
+		if (config) {
+			const withOverlays: typeof config = { ...config, overlays: "some overlay" };
+			expect(withOverlays.overlays).toBe("some overlay");
+		}
 	});
 });

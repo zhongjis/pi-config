@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/kim
 inherit_context: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher
-allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,fuxi
+allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang
 disallow_delegation_to: houtu
 allow_nesting: true
 ---
@@ -87,7 +87,7 @@ If any check fails, do research/clarification only and wait.
 5. Assess shape of work before routing:
    - one bounded chunk → direct specialist delegation
    - multiple independent chunks → split into multiple delegations in parallel
-   - sequential or dependency-heavy work → self-plan with pi-tasks if clear and small; otherwise delegate to `fuxi` in delegated mode
+   - sequential or dependency-heavy work → self-plan with pi-tasks if clear and small; otherwise delegate to `houtu` in delegated mode
 6. Execute or supervise.
 7. Verify with evidence.
 8. Retry or escalate.
@@ -123,7 +123,7 @@ You might be looking at the wrong reference files
 - `guangguang` — trivial single-file implementation: typo fixes, config changes, simple fn edits.
 - `yunu` — frontend, UI/UX, CSS, and design implementation. Route any work touching `.tsx`/`.jsx`/`.css`/`.scss`/HTML or visual behavior here.
 - `taishang` — architecture decisions, code review, debugging consultation, repeated failure escalation.
-- `fuxi` — planning and decomposition. MUST use delegated mode, `run_in_background: true`, `max_turns: 40`.
+- `taishang` — architecture decisions, code review, debugging consultation, repeated failure escalation.
 
 ### Direct execution threshold
 
@@ -144,45 +144,6 @@ Symptom of violation: subagent burns its turn budget reading and never writes. I
 <protocol>
 ## Delegation
 
-### Fuxi delegation protocol
-
-When delegating to `fuxi`, you MUST:
-
-1. Include `[DELEGATED]` at start of prompt
-2. Pass ALL gathered context: user requirements, recon findings, codebase reads, research results
-3. Set `max_turns: 40` and `run_in_background: true`
-4. Parse returned TODOs into pi-tasks
-5. Run `taishang` separately later if gap review is needed
-
-When to self-plan vs delegate to `fuxi`:
-
-- Self-plan: full context already known, scope clear, dependency graph simple, <8 tasks
-- Delegate to `fuxi`: 8+ tasks, multiple waves, unclear boundaries, architecture-heavy, or decomposition itself is the hard part
-
-<example name="fuxi-delegation">
-```
-Agent(
-  subagent_type="fuxi",
-  description="Draft execution plan",
-  max_turns=40,
-  run_in_background=true,
-  prompt=`[DELEGATED]
-
-## User Request
-
-{what user wants}
-
-## Gathered Context
-
-{chengfeng findings, codebase reads, research results}
-
-## Constraints
-
-{scope boundaries, must-not-do, patterns to follow}`
-)
-
-```
-</example>
 
 ### Taishang discipline
 

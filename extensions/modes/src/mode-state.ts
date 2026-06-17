@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
 import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
+import { getModePromptSource } from "../../lib/model-family.js";
 import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model.js";
 import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
 
@@ -44,7 +45,7 @@ export class ModeStateManager {
 	private pi: ExtensionAPI;
 
 	currentMode: Mode = "kuafu";
-	cachedConfigs: Partial<Record<Mode, ModeConfig>> = {};
+	cachedConfigs: Record<string, ModeConfig> = {};
 	planTitle: string | undefined;
 	planTitleSource: PlanTitleSource | undefined;
 	planContent: string | undefined;
@@ -59,6 +60,7 @@ export class ModeStateManager {
 	lastStatusMode: Mode | undefined;
 
 	modelOverride?: string;
+	resolvedFamily: "gpt" | "gemini" | "default" = "default";
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;
 	}
@@ -78,11 +80,12 @@ export class ModeStateManager {
 		});
 	}
 
-	loadConfig(mode: Mode): ModeConfig {
-		if (!this.cachedConfigs[mode]) {
-			this.cachedConfigs[mode] = loadAgentConfig(mode) ?? { body: "" };
+	loadConfig(mode: Mode, family?: "gpt" | "gemini" | "default"): ModeConfig {
+		const cacheKey = `${mode}:${family ?? "default"}`;
+		if (!this.cachedConfigs[cacheKey]) {
+			this.cachedConfigs[cacheKey] = loadAgentConfig(mode, family) ?? { body: "" };
 		}
-		return this.cachedConfigs[mode]!;
+		return this.cachedConfigs[cacheKey]!;
 	}
 
 	async applyMode(ctx: ExtensionContext): Promise<void> {
@@ -130,6 +133,7 @@ export class ModeStateManager {
 		const candidates = parseModelChain(modelSpec);
 		const resolved = resolveFirstAvailable(candidates, ctx.modelRegistry);
 		if (!resolved) return;
+		this.resolvedFamily = getModePromptSource(resolved.model);
 
 		// Guard 2: skip setModel if already the active model.
 		const current = ctx.model;
@@ -162,6 +166,7 @@ export class ModeStateManager {
 		const previousMode = this.currentMode;
 		this.currentMode = mode;
 		this.cachedConfigs = {};
+		this.resolvedFamily = "default";
 		await this.applyMode(ctx);
 		this.persistState();
 		const reload = (ctx as ExtensionContext & { reload?: () => Promise<void> }).reload;

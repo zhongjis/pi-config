@@ -37,6 +37,7 @@ EXCLUDED_EXTENSION_ITEMS=(
 # Everything else (test infra, build config, node_modules, runtime state, etc.) stays out of repo-managed symlinks.
 ALLOWED_ITEMS=(
   "agents"
+  "modes"
   "lsp.json"
   "caveman.json"
   "session-summary.json"

@@ -83,7 +83,7 @@ describe("ModeStateManager", () => {
 	it("switches mode and persists state", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.fuxi = { body: "plan" };
+		state.cachedConfigs["fuxi:default"] = { body: "plan" };
 
 		const ctx = {
 			hasUI: false,
@@ -99,7 +99,7 @@ describe("ModeStateManager", () => {
 	it("reloads resources when switching into luban", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.luban = { body: "" };
+		state.cachedConfigs["luban:default"] = { body: "" };
 		const reload = vi.fn(async () => {});
 
 		const ctx = {
@@ -118,7 +118,7 @@ describe("ModeStateManager", () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.currentMode = "luban";
-		state.cachedConfigs.kuafu = { body: "" };
+		state.cachedConfigs["kuafu:default"] = { body: "" };
 		const reload = vi.fn(async () => {});
 
 		const ctx = {
@@ -136,7 +136,7 @@ describe("ModeStateManager", () => {
 	it("does not reload resources when switch stays outside luban", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.fuxi = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "" };
 		const reload = vi.fn(async () => {});
 
 		const ctx = {
@@ -154,7 +154,7 @@ describe("ModeStateManager", () => {
 	it("persists luban boundary mode before reloading resources", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.luban = { body: "" };
+		state.cachedConfigs["luban:default"] = { body: "" };
 		const calls: string[] = [];
 		pi.appendEntry.mockImplementation(() => calls.push("persist"));
 		const reload = vi.fn(async () => {
@@ -176,7 +176,7 @@ describe("ModeStateManager", () => {
 	it("does not throw when crossing luban boundary without reload support", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.luban = { body: "" };
+		state.cachedConfigs["luban:default"] = { body: "" };
 
 		const ctx = {
 			hasUI: false,
@@ -190,10 +190,10 @@ describe("ModeStateManager", () => {
 	it("cycles through modes", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "" };
-		state.cachedConfigs.fuxi = { body: "" };
-		state.cachedConfigs.houtu = { body: "" };
-		state.cachedConfigs.luban = { body: "" };
+		state.cachedConfigs["kuafu:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["houtu:default"] = { body: "" };
+		state.cachedConfigs["luban:default"] = { body: "" };
 
 		const ctx = {
 			hasUI: false,
@@ -215,7 +215,7 @@ describe("ModeStateManager", () => {
 	it("filters active tools from builtin_tools and extension_tools", async () => {
 		const pi = createMockPi(["read", "write", "bash", "web_search"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "prompt",
 			builtinToolNames: ["read", "write"],
 			extensionToolNames: ["web_search"],
@@ -235,7 +235,7 @@ describe("ModeStateManager", () => {
 	it("uses extension_tools: none to disable extension tools", async () => {
 		const pi = createMockPi(["read", "write", "bash", "readonly_bash", "web_search", "clauderock"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "prompt",
 			builtinToolNames: ["read"],
 			extensionToolNames: [],
@@ -255,7 +255,7 @@ describe("ModeStateManager", () => {
 	it("exposes readonly_bash when exactly allowlisted", async () => {
 		const pi = createMockPi(["read", "write", "bash", "readonly_bash", "web_search"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "prompt",
 			builtinToolNames: ["read"],
 			extensionToolNames: ["readonly_bash"],
@@ -275,7 +275,7 @@ describe("ModeStateManager", () => {
 	it("removes nested Agent tools unless allow_nesting is true", async () => {
 		const pi = createMockPi(["read", "Agent", "get_subagent_result", "steer_subagent"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "prompt",
 			builtinToolNames: ["read"],
 			extensionToolNames: ["Agent", "get_subagent_result", "steer_subagent"],
@@ -296,7 +296,7 @@ describe("ModeStateManager", () => {
 	it("does not change active tools when mode has no tool settings", async () => {
 		const pi = createMockPi(["read", "write", "bash", "web_search"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "prompt" };
+		state.cachedConfigs["kuafu:default"] = { body: "prompt" };
 
 		const ctx = {
 			hasUI: false,
@@ -311,8 +311,8 @@ describe("ModeStateManager", () => {
 	it("exposes plan_approve only in fuxi mode", async () => {
 		const pi = createMockPi(["read", "write", "plan_approve"]);
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = { body: "build" };
-		state.cachedConfigs.fuxi = { body: "plan" };
+		state.cachedConfigs["kuafu:default"] = { body: "build" };
+		state.cachedConfigs["fuxi:default"] = { body: "plan" };
 
 		const ctx = {
 			hasUI: false,
@@ -352,7 +352,7 @@ describe("ModeStateManager", () => {
 	it("prefers modelOverride over config.model when applying model", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
 			model: "anthropic/claude-sonnet-4:medium",
 		};
@@ -370,7 +370,7 @@ describe("ModeStateManager", () => {
 			model: undefined,
 		};
 
-		await state.applyModelFromConfig(state.cachedConfigs.kuafu!, ctx as never);
+		await state.applyModelFromConfig(state.cachedConfigs["kuafu:default"]!, ctx as never);
 		expect(pi.setModel).toHaveBeenCalledWith(
 			expect.objectContaining({ provider: "openai", id: "gpt-4o" }),
 		);
@@ -379,7 +379,7 @@ describe("ModeStateManager", () => {
 	it("falls back to config.model when no override", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs.kuafu = {
+		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
 			model: "anthropic/claude-sonnet-4:medium",
 		};
@@ -395,7 +395,7 @@ describe("ModeStateManager", () => {
 			model: undefined,
 		};
 
-		await state.applyModelFromConfig(state.cachedConfigs.kuafu!, ctx as never);
+		await state.applyModelFromConfig(state.cachedConfigs["kuafu:default"]!, ctx as never);
 		expect(pi.setModel).toHaveBeenCalledWith(
 			expect.objectContaining({ provider: "anthropic", id: "claude-sonnet-4" }),
 		);
@@ -410,5 +410,18 @@ describe("ModeStateManager", () => {
 			"agent-mode",
 			expect.objectContaining({ modelOverride: "openai/gpt-4o:high" }),
 		);
+	});
+
+	describe("loadConfig — family cache key", () => {
+		it("uses family-scoped cache key", () => {
+			const pi = createMockPi();
+			const state = new ModeStateManager(pi as never);
+			state.cachedConfigs["kuafu:default"] = { body: "default body" };
+			state.cachedConfigs["kuafu:gpt"] = { body: "gpt body" };
+
+			expect(state.loadConfig("kuafu").body).toBe("default body");
+			expect(state.loadConfig("kuafu", "gpt").body).toBe("gpt body");
+			expect(state.loadConfig("kuafu", "default").body).toBe("default body");
+		});
 	});
 });

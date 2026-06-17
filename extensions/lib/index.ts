@@ -14,6 +14,7 @@ export * from "./utils.js";
 export * from "./ux.js";
 export * from "./mode.js";
 export * from "./model.js";
+export * from "./model-family.js";
 export * from "./thinking-level.js";
 export * from "./active-tools.js";
 export * from "./agent-frontmatter.js";
