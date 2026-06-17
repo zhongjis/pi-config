@@ -9,6 +9,15 @@ type PandaGlobal = typeof globalThis & {
   [MANAGER_VERSION_GLOBAL_KEY]?: string;
 };
 
+// pandaWarn is mocked so the version-conflict assertion observes the emit call directly,
+// independent of the runtime sink the real entry installs via installPandaWarnFileSink.
+// vi.hoisted keeps a stable mock instance across the vi.resetModules() re-imports below.
+const { pandaWarn } = vi.hoisted(() => ({ pandaWarn: vi.fn() }));
+vi.mock("../../lib/warn.js", () => ({
+  pandaWarn,
+  installPandaWarnFileSink: vi.fn(),
+}));
+
 vi.mock("../src/lifecycle/supervision.js", () => ({
   registerSubagentRuntime: vi.fn(),
   formatAgentDefinitionDiagnostic: vi.fn(),
@@ -27,15 +36,12 @@ function clearManagerVersionGlobal() {
 }
 
 describe("subagent symbol version guard", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
     clearManagerVersionGlobal();
-    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    pandaWarn.mockClear();
   });
 
   afterEach(() => {
-    warnSpy.mockRestore();
     clearManagerVersionGlobal();
   });
 
@@ -45,7 +51,7 @@ describe("subagent symbol version guard", () => {
     mod.default(FAKE_PI);
 
     expect((globalThis as PandaGlobal)[MANAGER_VERSION_GLOBAL_KEY]).toBe("1.0.0");
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(pandaWarn).not.toHaveBeenCalled();
   });
 
   it("does not warn when another @panda 1.0.0 manager already registered (last-write-wins, same version)", async () => {
@@ -55,7 +61,7 @@ describe("subagent symbol version guard", () => {
     mod.default(FAKE_PI);
 
     expect((globalThis as PandaGlobal)[MANAGER_VERSION_GLOBAL_KEY]).toBe("1.0.0");
-    expect(warnSpy).not.toHaveBeenCalled();
+    expect(pandaWarn).not.toHaveBeenCalled();
   });
 
   it("emits subagent.symbol.version-conflict and takes over on mismatch", async () => {
@@ -64,19 +70,12 @@ describe("subagent symbol version guard", () => {
     const mod = await loadFreshIndex();
     mod.default(FAKE_PI);
 
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    const warnArg = warnSpy.mock.calls[0]?.[0];
-    expect(typeof warnArg).toBe("string");
-    expect(warnArg).toMatch(/^\[panda-warn\] /);
-
-    const payload = JSON.parse((warnArg as string).replace(/^\[panda-warn\] /, ""));
-    expect(payload).toMatchObject({
-      code: "subagent.symbol.version-conflict",
+    expect(pandaWarn).toHaveBeenCalledTimes(1);
+    expect(pandaWarn).toHaveBeenCalledWith("subagent.symbol.version-conflict", {
       expectedVersion: "1.0.0",
       previousVersion: "0.6.3",
       resolution: "last-write-wins",
     });
-    expect(typeof payload.ts).toBe("string");
 
     // Last-write-wins: the @panda fork takes over the version slot.
     expect((globalThis as PandaGlobal)[MANAGER_VERSION_GLOBAL_KEY]).toBe("1.0.0");
@@ -91,6 +90,6 @@ describe("subagent symbol version guard", () => {
     (globalThis as PandaGlobal)[MANAGER_VERSION_GLOBAL_KEY] = "0.6.3";
     mod.default(FAKE_PI);
 
-    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(pandaWarn).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 beforeEach(() => {
@@ -63,5 +66,61 @@ describe("pandaWarnOnce", () => {
 		);
 
 		nowSpy.mockRestore();
+	});
+});
+
+describe("installPandaWarnFileSink", () => {
+	it("writes [panda-warn] lines to <dir>/panda-warn.log instead of the console", async () => {
+		const { pandaWarn, installPandaWarnFileSink } = await import("../warn.js");
+		const dir = mkdtempSync(join(tmpdir(), "panda-warn-test-"));
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1234567890);
+
+		try {
+			installPandaWarnFileSink(() => dir);
+			pandaWarn("W100", { detail: "to-file" });
+
+			expect(console.warn).not.toHaveBeenCalled();
+			const contents = readFileSync(join(dir, "panda-warn.log"), "utf-8");
+			expect(contents).toBe(
+				`[panda-warn] ${JSON.stringify({ code: "W100", ts: 1234567890, detail: "to-file" })}\n`,
+			);
+		} finally {
+			nowSpy.mockRestore();
+			rmSync(dir, { force: true, recursive: true });
+		}
+	});
+
+	it("is idempotent — a second install call is ignored", async () => {
+		const { pandaWarn, installPandaWarnFileSink } = await import("../warn.js");
+		const dirA = mkdtempSync(join(tmpdir(), "panda-warn-a-"));
+		const dirB = mkdtempSync(join(tmpdir(), "panda-warn-b-"));
+
+		try {
+			installPandaWarnFileSink(() => dirA);
+			installPandaWarnFileSink(() => dirB); // ignored — already installed
+			pandaWarn("W101");
+
+			expect(existsSync(join(dirA, "panda-warn.log"))).toBe(true);
+			expect(existsSync(join(dirB, "panda-warn.log"))).toBe(false);
+		} finally {
+			rmSync(dirA, { force: true, recursive: true });
+			rmSync(dirB, { force: true, recursive: true });
+		}
+	});
+
+	it("resetPandaWarnSink restores console output after a file sink is installed", async () => {
+		const { pandaWarn, installPandaWarnFileSink, resetPandaWarnSink } = await import("../warn.js");
+		const dir = mkdtempSync(join(tmpdir(), "panda-warn-reset-"));
+
+		try {
+			installPandaWarnFileSink(() => dir);
+			resetPandaWarnSink();
+			pandaWarn("W102");
+
+			expect(console.warn).toHaveBeenCalledWith("[panda-warn]", expect.stringContaining("W102"));
+			expect(existsSync(join(dir, "panda-warn.log"))).toBe(false);
+		} finally {
+			rmSync(dir, { force: true, recursive: true });
+		}
 	});
 });

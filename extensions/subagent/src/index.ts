@@ -10,7 +10,8 @@
  *   /agents                 — Interactive agent management menu
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { installPandaWarnFileSink, pandaWarn } from "../../lib/warn.js";
 import { registerSubagentRuntime } from "./lifecycle/supervision.js";
 export {
   formatAgentDefinitionDiagnostic,
@@ -39,16 +40,15 @@ let warnedSymbolVersionConflict = false;
 function reportSymbolVersionConflict(previousVersion: string | undefined): void {
   if (warnedSymbolVersionConflict) return;
   warnedSymbolVersionConflict = true;
-  console.warn(`[panda-warn] ${JSON.stringify({
-    code: "subagent.symbol.version-conflict",
-    ts: new Date().toISOString(),
+  pandaWarn("subagent.symbol.version-conflict", {
     expectedVersion: MANAGER_VERSION,
     previousVersion: previousVersion ?? null,
     resolution: "last-write-wins",
-  })}`);
+  });
 }
 
 export default function (pi: ExtensionAPI) {
+  installPandaWarnFileSink(getAgentDir);
   const pandaGlobal = globalThis as PandaManagerGlobal;
   const previousVersion = pandaGlobal[MANAGER_VERSION_GLOBAL_KEY];
   if (previousVersion !== undefined && previousVersion !== MANAGER_VERSION) {

@@ -14,13 +14,15 @@
  *   /tasks       — Interactive task management menu
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { installPandaWarnFileSink } from "../../lib/warn.js";
 import { registerTaskRpcHandlers } from "./bridge/rpc-handlers.js";
 import { createSubagentBridge } from "./bridge/subagent-bridge.js";
 import { createTaskRuntime, registerLifecycleEvents } from "./lifecycle/store-glue.js";
 import { registerTaskTools } from "./tools/index.js";
 
 export default function (pi: ExtensionAPI) {
+  installPandaWarnFileSink(getAgentDir);
   const runtime = createTaskRuntime();
   const bridge = createSubagentBridge(pi, runtime);
 

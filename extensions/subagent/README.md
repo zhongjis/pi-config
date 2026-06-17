@@ -24,8 +24,10 @@ On registration, the loader checks `globalThis.__pandaSubagentsManagerVersion`:
   `subagent.symbol.version-conflict` carrying `{expectedVersion, previousVersion,
   resolution: "last-write-wins"}`, then takes over.
 
-The warning is throttled to once per process; downstream tooling can grep for
-`subagent.symbol.version-conflict` to detect mixed installs.
+The warning is throttled to once per process. `[panda-warn]` diagnostics are written to
+`<agentDir>/panda-warn.log` (not the console) so they never corrupt the TUI render frame;
+downstream tooling can grep that file for `subagent.symbol.version-conflict` to detect mixed
+installs. The agent dir respects `$PI_CODING_AGENT_DIR` (default `~/.pi/agent`).
 
 
 ## Tools and Commands
