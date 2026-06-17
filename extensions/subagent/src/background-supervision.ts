@@ -5,6 +5,7 @@ import {
   BACKGROUND_SUPERVISION_INTERVAL_MS,
   DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS,
 } from "./constants.js";
+import { pandaWarn } from "../../lib/warn.js";
 
 export {
   BACKGROUND_STALE_ABORT_AFTER_MS,
@@ -54,13 +55,11 @@ export function emitSupervisionAbortWarning(args: {
   idleMs: number;
   reasonClass: BackgroundSupervisionReasonClass;
 }): void {
-  console.warn(`[panda-warn] ${JSON.stringify({
-    code: "subagent.supervision.abort",
-    ts: new Date().toISOString(),
+  pandaWarn("subagent.supervision.abort", {
     agentId: args.agentId,
     idleMs: args.idleMs,
     reasonClass: args.reasonClass,
-  })}`);
+  });
 }
 
 export function emitSupervisionCeilingHitWarning(args: {
@@ -68,13 +67,11 @@ export function emitSupervisionCeilingHitWarning(args: {
   idleMs: number;
   ceilingMs: number;
 }): void {
-  console.warn(`[panda-warn] ${JSON.stringify({
-    code: "subagent.supervision.ceiling-hit",
-    ts: new Date().toISOString(),
+  pandaWarn("subagent.supervision.ceiling-hit", {
     agentId: args.agentId,
     idleMs: args.idleMs,
     ceilingMs: args.ceilingMs,
-  })}`);
+  });
 }
 
 export function getBackgroundSupervisionAction(args: {

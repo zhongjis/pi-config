@@ -8,6 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
+import { pandaWarn } from "../../lib/warn.js";
 import { DECIMAL_RADIX, JSON_PRETTY_PRINT_SPACES } from "./constants.js";
 import { CURRENT_SCHEMA_VERSION, migrate } from "./migrations/v1-to-v2.js";
 import type { Task, TaskStatus, TaskStoreData } from "./types.js";
@@ -30,22 +31,15 @@ function warnCorruptStoreOnce(path: string, reason: string): void {
   const key = `tasks-store-corrupt:${path}`;
   if (warnedCorruptStorePaths.has(key)) return;
   warnedCorruptStorePaths.add(key);
-  console.warn("[panda-warn]", JSON.stringify({ code: "tasks.store.corrupt", ts: Date.now(), path, reason }));
+  pandaWarn("tasks.store.corrupt", { path, reason });
 }
 
 function warnRejectedEdge(from: string, to: string, reason: DagEdgeRejectReason): void {
-  console.warn("[panda-warn]", JSON.stringify({ code: "tasks.dag.edge-rejected", ts: Date.now(), from, to, reason }));
+  pandaWarn("tasks.dag.edge-rejected", { from, to, reason });
 }
 
 function warnQuarantinedEdge(path: string, edge: QuarantinedDagEdge): void {
-  console.warn("[panda-warn]", JSON.stringify({
-    code: "tasks.dag.edge-quarantine",
-    ts: Date.now(),
-    path,
-    from: edge.from,
-    to: edge.to,
-    reason: edge.reason,
-  }));
+  pandaWarn("tasks.dag.edge-quarantine", { path, from: edge.from, to: edge.to, reason: edge.reason });
 }
 
 /** Simple file-based locking. */

@@ -1,3 +1,4 @@
+import { pandaWarn } from "../../../lib/warn.js";
 import { assertTransition, isLateReplyTransition, type TransitionSource, type TransitionTarget } from "../fsm.js";
 import { TaskStore } from "../task-store.js";
 import type { Task } from "../types.js";
@@ -12,23 +13,11 @@ export type TaskStatusForUpdate = Task["status"];
 const CLAIM_BLOCKER_NOT_SATISFIED_CODE = "tasks.claim.blocker-not-satisfied";
 
 export function warnLateReplyDropped(taskId: string, from: TaskStatusForUpdate, to: TransitionTarget): void {
-  console.warn("[panda-warn]", JSON.stringify({
-    code: "tasks.fsm.late-reply-dropped",
-    ts: Date.now(),
-    taskId,
-    from,
-    to,
-  }));
+  pandaWarn("tasks.fsm.late-reply-dropped", { taskId, from, to });
 }
 
 export function warnClaimRejected(failure: ClaimBlockerFailure): void {
-  console.warn("[panda-warn]", JSON.stringify({
-    code: "tasks.claim.rejected",
-    ts: Date.now(),
-    taskId: failure.taskId,
-    blockerId: failure.blockerId,
-    reason: failure.reason,
-  }));
+  pandaWarn("tasks.claim.rejected", { taskId: failure.taskId, blockerId: failure.blockerId, reason: failure.reason });
 }
 
 export function getClaimBlockerFailure(runtime: TaskRuntime, task: Task): ClaimBlockerFailure | undefined {

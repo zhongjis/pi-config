@@ -9,10 +9,10 @@ import {
 } from "../../src/background-supervision.js";
 
 function readPandaWarn(spy: ReturnType<typeof vi.spyOn>) {
-  const line = spy.mock.calls[0]?.[0];
+  const [prefix, line] = spy.mock.calls[0] ?? [];
+  expect(prefix).toBe("[panda-warn]");
   expect(line).toBeTypeOf("string");
-  expect(line).toMatch(/^\[panda-warn\] /);
-  return JSON.parse((line as string).slice("[panda-warn] ".length)) as Record<string, unknown>;
+  return JSON.parse(line as string) as Record<string, unknown>;
 }
 
 describe("regression: supervision non-streaming re-detect", () => {
@@ -73,6 +73,6 @@ describe("regression: supervision non-streaming re-detect", () => {
       idleMs: now,
       reasonClass: "non-stream-disabled",
     });
-    expect(readPandaWarn(warn).ts).toBeTypeOf("string");
+    expect(readPandaWarn(warn).ts).toBeTypeOf("number");
   });
 });

@@ -379,14 +379,12 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     const key = `${record.id}:${skippedAction}`;
     if (supervisionActiveToolWarnings.has(key)) return;
     supervisionActiveToolWarnings.add(key);
-    console.warn(`[panda-warn] ${JSON.stringify({
-      code: "subagent.supervision.abort-skipped-active-tool",
-      ts: new Date().toISOString(),
+    pandaWarn("subagent.supervision.abort-skipped-active-tool", {
       agentId: record.id,
       skippedAction,
       idleMs,
       activeTools: [...activity.activeTools.values()],
-    })}`);
+    });
   }
 
   function warnSupervisionAbort(record: AgentRecord, idleMs: number, reasonClass: BackgroundSupervisionReasonClass) {

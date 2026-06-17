@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { pandaWarn } from "../../../lib/warn.js";
 import { AutoClearManager } from "../auto-clear.js";
 import { AUTO_CLEAR_DELAY, REMINDER_INTERVAL } from "../constants.js";
 import { ContinuationCooldown } from "../continuation-cooldown.js";
@@ -220,12 +221,7 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
         if (tasks.length > 0) {
           const stagnation = runtime.continuationCooldown.consumeStagnationWarning();
           if (stagnation) {
-            console.warn("[panda-warn]", JSON.stringify({
-              code: "subagent.continuation.stagnation-cap",
-              ts: Date.now(),
-              attempt: stagnation.attempt,
-              cap: stagnation.cap,
-            }));
+            pandaWarn("subagent.continuation.stagnation-cap", { attempt: stagnation.attempt, cap: stagnation.cap });
             runtime.lastTaskToolUseTurn = runtime.currentTurn;
           }
         }
@@ -238,12 +234,7 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
 
     const meta = runtime.continuationCooldown.recordFire();
     runtime.lastTaskToolUseTurn = runtime.currentTurn;
-    console.warn("[panda-warn]", JSON.stringify({
-      code: "subagent.continuation.reminder",
-      ts: Date.now(),
-      attempt: meta.attempt,
-      intervalMs: meta.intervalMs,
-    }));
+    pandaWarn("subagent.continuation.reminder", { attempt: meta.attempt, intervalMs: meta.intervalMs });
     // Queue the reminder for transient delivery via the `context` hook below.
     // We deliberately do NOT append it to this tool result: doing so persists a
     // now-stale <system-reminder> into session history (it reappears on every
