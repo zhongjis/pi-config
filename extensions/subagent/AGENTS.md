@@ -8,7 +8,11 @@ Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents
 ## Where to Look
 | Task | Location | Notes |
 |------|----------|-------|
-| Register tools, lifecycle wiring, notifications | `src/index.ts` | Main integration hub |
+| Runtime entry / version-guard bootstrap | `src/index.ts` | 59-line shim: factory delegates to `registerSubagentRuntime` |
+| Runtime hub: tool + UI wiring, notifications, event emission | `src/lifecycle/supervision.ts` | `registerSubagentRuntime`; large central wiring file (~900 lines) |
+| LLM tool definitions | `src/tools/` | `agent.ts`, `get_subagent_result.ts`, `steer_subagent.ts`; `stop_subagent.ts` is a reserved stub |
+| Event listeners, `/agents` command, tool renderers | `src/ui-wiring/` | `messages.ts` (pi.on lifecycle), `commands.ts` (`/agents` menu + CRUD), `renderers.ts` |
+| Durable background-agent registry | `src/lifecycle/registry-persistence.ts` | `appendEntry` write-through; replayed on `session_start`, survives compaction |
 | Execution / resume / max-turn behavior | `src/agent-runner.ts` | Session creation + graceful wrap-up |
 | Queueing / active-state bookkeeping | `src/agent-manager.ts` | Running vs queued agents |
 | Cross-extension RPC | `src/cross-extension-rpc.ts` | `ping`, `spawn`, `stop` handlers |
@@ -50,7 +54,7 @@ pnpm run build
 - Never assume worktree isolation is guaranteed; fallback-to-main-worktree behavior is part of the current contract.
 
 ## Gotchas
-- `src/index.ts` is large because it owns tool registration, widget rendering, notifications, and event emission; many changes fan out from there.
+- The runtime hub is `src/lifecycle/supervision.ts` (`registerSubagentRuntime`): it owns tool/UI wiring, widget rendering, notifications, and event emission, so many changes fan out from there. `src/index.ts` is only a 59-line bootstrap + symbol version-guard.
 - `subagents:ready` is the discovery signal for other extensions; breaking or delaying it causes load-order bugs.
 - Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after explicit allowlist resolution.
 - `prompt_mode` is parsed by both `subagent` (this extension) and `modes`. Subagent honors all three values (`replace`/`append`/`system_instructions`); modes coerces non-`append` to `replace` (see `extensions/modes/src/config-loader.ts`). When changing parser semantics in `extensions/lib/agent-frontmatter.ts`, update both consumers.
