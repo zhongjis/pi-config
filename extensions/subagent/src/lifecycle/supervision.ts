@@ -38,6 +38,7 @@ import {
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, setDefaultMaxTurns, setGraceTurns, steerAgent } from "../agent-runner.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, getDefaultAgentNames, getUserAgentNames, isValidType, registerAgents, resolveType } from "../agent-types.js";
 import { registerRpcHandlers } from "../cross-extension-rpc.js";
+import { emitTerminalContract } from "../external-contract-adapter.js";
 import { loadCustomAgentsWithDiagnostics } from "../custom-agents.js";
 import { GroupJoinManager } from "../group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "../invocation-config.js";
@@ -478,23 +479,9 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
 
   // Background completion: route through group join or send individual nudge
   const manager = new AgentManager((record) => {
-    // Emit lifecycle event based on terminal status
-    const isError = record.status === "error" || record.status === "stopped" || record.status === "aborted";
+    // Emit the frozen external contract (subagents:* event + durable subagents:record).
     const eventData = buildEventData(record);
-    if (isError) {
-      pi.events.emit("subagents:failed", eventData);
-    } else {
-      pi.events.emit("subagents:completed", eventData);
-    }
-
-    // Persist final record for cross-extension history reconstruction
-    pi.appendEntry("subagents:record", {
-      id: record.id, type: record.type, description: record.description,
-      status: record.status, result: record.result, error: record.error,
-      startedAt: record.startedAt, completedAt: record.completedAt,
-      outputFile: record.outputFile, sessionFile: record.sessionFile, sessionDir: record.sessionDir,
-      parentSessionId: record.parentSessionId, toolCallId: record.toolCallId, modelLabel: record.modelLabel,
-    });
+    emitTerminalContract(pi, record, eventData);
 
     // Durable bg-agent registry: persist the terminal transition (write-through-first).
     // recordAgent already emits a structured warning + leaves its cache unchanged on
