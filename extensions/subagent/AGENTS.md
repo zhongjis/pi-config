@@ -3,19 +3,21 @@
 ## Overview
 Background/foreground subagent runtime: tool surface, queueing, widget UI, eventbus RPC, resume/steer/worktree support.
 
-Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking, persistent subagent session JSONL (`SessionManager.create` with custom dir under `~/.pi/agent/subagent-sessions/`; record + notifications expose `sessionFile`).
+Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking, persistent subagent session JSONL (`SessionManager.create` with custom dir under `~/.pi/agent/subagent-sessions/`; record + notifications expose `sessionFile`), and the **C/D single-source-of-truth revamp** (`AgentRun` event stream + `ExternalContractAdapter`).
 
 ## Where to Look
 | Task | Location | Notes |
 |------|----------|-------|
 | Runtime entry / version-guard bootstrap | `src/index.ts` | 59-line shim: factory delegates to `registerSubagentRuntime` |
-| Runtime hub: tool + UI wiring, notifications, event emission | `src/lifecycle/supervision.ts` | `registerSubagentRuntime`; large central wiring file (~900 lines) |
+| Runtime hub: tool + UI wiring, notifications | `src/lifecycle/supervision.ts` | `registerSubagentRuntime`; large central wiring file (~900 lines). Terminal `subagents:*` emission delegated to `external-contract-adapter.ts` |
 | LLM tool definitions | `src/tools/` | `agent.ts`, `get_subagent_result.ts`, `steer_subagent.ts`; `stop_subagent.ts` is a reserved stub |
 | Event listeners, `/agents` command, tool renderers | `src/ui-wiring/` | `messages.ts` (pi.on lifecycle), `commands.ts` (`/agents` menu + CRUD), `renderers.ts` |
 | Durable background-agent registry | `src/lifecycle/registry-persistence.ts` | `appendEntry` write-through; replayed on `session_start`, survives compaction |
 | Execution / resume / max-turn behavior | `src/agent-runner.ts` | Session creation + graceful wrap-up |
 | Queueing / active-state bookkeeping | `src/agent-manager.ts` | Running vs queued agents |
 | Cross-extension RPC | `src/cross-extension-rpc.ts` | `ping`, `spawn`, `stop` handlers |
+| Single source of truth (per-run state) | `src/agent-run.ts` | `AgentRun` event-stream reducer + `waitForTerminal` + supervision snapshots + pure `toExternalEffects`; populated by `agent-manager`, read everywhere (C/D revamp) |
+| External `subagents:*` emission boundary | `src/external-contract-adapter.ts` | Sole emitter of the `subagents:*` events + `subagents:record` snapshot, via `toExternalEffects`; `buildSubagentRecordEntry` owns the durable field set |
 | Agent registry / custom definitions | `src/agent-types.ts`, `src/custom-agents.ts`, `src/default-agents.ts` | Unified registry with embedded defaults |
 | Widget / viewer | `src/ui/` | Persistent widget + conversation viewer |
 | Isolation / memory / skill loading | `src/worktree.ts`, `src/memory.ts`, `src/skill-loader.ts` | Side systems with user-visible effects |
@@ -58,6 +60,7 @@ pnpm run build
 - `subagents:ready` is the discovery signal for other extensions; breaking or delaying it causes load-order bugs.
 - Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after explicit allowlist resolution.
 - `prompt_mode` is parsed by both `subagent` (this extension) and `modes`. Subagent honors all three values (`replace`/`append`/`system_instructions`); modes coerces non-`append` to `replace` (see `extensions/modes/src/config-loader.ts`). When changing parser semantics in `extensions/lib/agent-frontmatter.ts`, update both consumers.
+- **Single source of truth**: `record.run` (`AgentRun`) owns per-run status + activity; the `agentActivity` map is a live getter-view of it (`runActivityView` in `tools/agent.ts`); supervision reads its snapshots. The external `subagents:*` contract is emitted ONLY by `external-contract-adapter.ts` (`emitTerminalContract`) — keep all external emission there so `tasks/` + compaction-replay stay intact.
 
 ## Local Tweaks
 
@@ -90,3 +93,10 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/prompts.ts` | Doc comment lists three modes; builder output for `system_instructions` is identical to `replace` (the branch lives in `agent-runner.ts`) | Mode behavior orthogonal to prompt assembly |
 | `src/agent-definition-authoring.ts` | Frontmatter template + guidelines describe `system_instructions` mode | User-visible authoring docs |
 | `src/agent-runner.ts`, `src/agent-manager.ts`, `src/index.ts`, `test/agent-runner.test.ts`, `test/index.session-context.test.ts` | Subagent sessions use parent-scoped `~/.pi/agent/subagent-sessions/<parent-session-id>/` and persist `sessionFile`/`sessionDir`/parent metadata in records/events | Keeps main `/tree` session list clean while preserving subagent log discoverability |
+| `src/agent-run.ts` | Local-only file | C/D revamp keystone: single-source `AgentRun` event-stream reducer, `waitForTerminal`, supervision snapshots, pure `toExternalEffects` two-bus mapping |
+| `src/external-contract-adapter.ts` | Local-only file | Sole emitter of `subagents:*` + `subagents:record` via `toExternalEffects`; `buildSubagentRecordEntry` is the durable field set |
+| `src/agent-manager.ts` | Attaches `record.run` and publishes lifecycle/terminal/abort/resume events at every transition (idempotent terminal) | Single source populated alongside the record (C/D revamp) |
+| `src/lifecycle/supervision.ts` | Terminal emission via `emitTerminalContract`; foreground-wait loop reuses `getBackgroundSupervisionAction` (no inline duplicate) | Two-bus boundary + supervision de-dup |
+| `src/background-supervision.ts` | `ignoreWaiters` flag on `getBackgroundSupervisionAction` | Lets the foreground supervised-wait reuse one decision fn |
+| `src/tools/agent.ts` | `runActivityView(run)` backs the `agentActivity` map (getters + `nonStreamingSince` setter) | Widget/supervision/get_result read the single source |
+| `test/regression/{agent-run-parity,group-join,lifecycle-contract,external-contract-adapter,run-activity-view,supervision-ignore-waiters}.test.ts`, `test/agent-run.test.ts` | New characterization + parity tests | Lock C/D revamp behavior + frozen contract |

@@ -41,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `thinking` → `thinkingOverride` (from tool param only).
 - `disallowed_tools` and `disallow_tools` are invalid/obsolete; express the exact
   allowed set with `builtin_tools` and `extension_tools` instead.
+- **Single-source-of-truth refactor (C/D revamp; Step 0 + Phases 0–3)**: per-run state
+  now flows through one `AgentRun` event-stream reducer (`src/agent-run.ts`); the external
+  `subagents:*` events + `subagents:record` snapshot are emitted solely by
+  `src/external-contract-adapter.ts` via the pure `toExternalEffects` mapping; the
+  `agentActivity` map is a live view of `record.run` (`runActivityView` in `tools/agent.ts`);
+  and the foreground supervised-wait loop reuses `getBackgroundSupervisionAction` (via a new
+  `ignoreWaiters` flag) instead of a duplicate inline decision tree. External contract, RPC,
+  and observable behavior are unchanged — verified by parity + characterization tests and live
+  `pi -p` smoke. The literal poll→per-run-timer collapse was intentionally deferred (the two
+  supervision loops differ by design for non-streaming providers).
 
 ### Migration
 - Before: `model: claude-opus-4-6` + `thinking: high`
