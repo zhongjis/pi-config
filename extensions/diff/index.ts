@@ -1,252 +1,67 @@
 /**
  * Diff Extension
  *
- * /diff command shows modified/deleted/new files from git status and opens
- * the selected file in VS Code's diff view.
+ * /diff opens hunk (https://github.com/modem-dev/hunk) to review the current
+ * git working-tree changes. Suspends pi's TUI, hands the terminal to hunk,
+ * then resumes once hunk exits.
  */
-
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder } from "@earendil-works/pi-coding-agent";
+import { spawnSync } from "node:child_process";
 import { isTui } from "../lib/mode.js";
-import {
-  Container,
-  Key,
-  matchesKey,
-  type SelectItem,
-  SelectList,
-  Text,
-} from "@earendil-works/pi-tui";
-
-interface FileInfo {
-  status: string;
-  statusLabel: string;
-  file: string;
-}
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("diff", {
-    description: "Show git changes and open in VS Code diff view",
+    description: "Review git changes in hunk",
     handler: async (_args, ctx) => {
       if (!isTui(ctx)) {
         ctx.ui.notify("diff requires interactive (TUI) mode", "error");
         return;
       }
 
-      // Get changed files from git status
-      const result = await pi.exec("git", ["status", "--porcelain"], {
+      // Bail early when there is nothing to review.
+      const status = await pi.exec("git", ["status", "--porcelain"], {
         cwd: ctx.cwd,
       });
-
-      if (result.code !== 0) {
-        ctx.ui.notify(`git status failed: ${result.stderr}`, "error");
+      if (status.code !== 0) {
+        ctx.ui.notify(`git status failed: ${status.stderr}`, "error");
         return;
       }
-
-      if (!result.stdout || !result.stdout.trim()) {
+      if (!status.stdout || !status.stdout.trim()) {
         ctx.ui.notify("No changes in working tree", "info");
         return;
       }
 
-      // Parse git status output
-      // Format: XY filename (where XY is two-letter status, then space, then filename)
-      const lines = result.stdout.split("\n");
-      const files: FileInfo[] = [];
-
-      for (const line of lines) {
-        if (line.length < 4) continue; // Need at least "XY f"
-
-        const status = line.slice(0, 2);
-        const file = line.slice(2).trimStart();
-
-        // Translate status codes to short labels
-        let statusLabel: string;
-        if (status.includes("M")) statusLabel = "M";
-        else if (status.includes("A")) statusLabel = "A";
-        else if (status.includes("D")) statusLabel = "D";
-        else if (status.includes("?")) statusLabel = "?";
-        else if (status.includes("R")) statusLabel = "R";
-        else if (status.includes("C")) statusLabel = "C";
-        else statusLabel = status.trim() || "~";
-
-        files.push({ status: statusLabel, statusLabel, file });
-      }
-
-      if (files.length === 0) {
-        ctx.ui.notify("No changes found", "info");
-        return;
-      }
-
-      const WINDOWS_UNSAFE_CMD_CHARS_RE = /[&|<>^%\r\n]/;
-      const quoteCmdArg = (value: string) => `"${value.replace(/"/g, '""')}"`;
-
-      const openWithCode = async (file: string) => {
-        if (process.platform === "win32") {
-          if (WINDOWS_UNSAFE_CMD_CHARS_RE.test(file)) {
-            ctx.ui.notify(
-              `Refusing to open ${file}: path contains Windows cmd metacharacters (& | < > ^ % or newline).`,
-              "error",
-            );
-            return null;
-          }
-          const commandLine = `code -g ${quoteCmdArg(file)}`;
-          return pi.exec("cmd", ["/d", "/s", "/c", commandLine], {
-            cwd: ctx.cwd,
-          });
-        }
-        return pi.exec("code", ["-g", file], { cwd: ctx.cwd });
-      };
-
-      const openSelected = async (fileInfo: FileInfo): Promise<void> => {
+      // Suspend pi's TUI, hand the terminal to hunk, then resume.
+      // Pattern mirrors extensions/modes/src/plan-approval.ts (refineInSystemEditor).
+      let launchError: string | undefined;
+      await ctx.ui.custom<void>((tui, _theme, _keybindings, done) => {
         try {
-          // Open in VS Code diff view.
-          // For untracked files, git difftool won't work, so fall back to just opening the file.
-          if (fileInfo.status === "?") {
-            const openResult = await openWithCode(fileInfo.file);
-            if (!openResult) return;
-            if (openResult.code !== 0) {
-              const openStderr = openResult.stderr.trim();
-              ctx.ui.notify(
-                `Failed to open ${fileInfo.file} (exit ${openResult.code})${openStderr ? `: ${openStderr}` : ""}`,
-                "error",
-              );
-            }
-            return;
+          tui.stop();
+          // Enter alternate screen so hunk output doesn't pollute scrollback.
+          process.stdout.write("\x1b[?1049h");
+          const result = spawnSync("hunk", ["diff"], {
+            stdio: "inherit",
+            cwd: ctx.cwd,
+            shell: process.platform === "win32",
+          });
+          if (result.error) {
+            launchError = result.error.message;
           }
-
-          const diffResult = await pi.exec(
-            "git",
-            ["difftool", "-y", "--tool=vscode", fileInfo.file],
-            {
-              cwd: ctx.cwd,
-            },
-          );
-          if (diffResult.code !== 0) {
-            const diffStderr = diffResult.stderr.trim();
-            ctx.ui.notify(
-              `Failed to show diff with vscode for ${fileInfo.file} (exit ${diffResult.code})${diffStderr ? `: ${diffStderr}` : ""}`,
-              "error",
-            );
-            ctx.ui.notify(
-              "Troubleshooting: check git difftool config (e.g. `git config --get difftool.vscode.cmd`).",
-              "info",
-            );
-
-            const openResult = await openWithCode(fileInfo.file);
-            if (!openResult) return;
-            if (openResult.code !== 0) {
-              const openStderr = openResult.stderr.trim();
-              ctx.ui.notify(
-                `Failed to open ${fileInfo.file} (exit ${openResult.code})${openStderr ? `: ${openStderr}` : ""}`,
-                "error",
-              );
-            }
-          }
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          ctx.ui.notify(`Failed to open ${fileInfo.file}: ${message}`, "error");
+        } finally {
+          // Exit alternate screen, then restore pi's TUI.
+          process.stdout.write("\x1b[?1049l");
+          tui.start();
+          tui.requestRender(true);
         }
-      };
-
-      // Show file picker with SelectList
-      await ctx.ui.custom<void>((tui, theme, _kb, done) => {
-        const container = new Container();
-
-        // Top border
-        container.addChild(
-          new DynamicBorder((s: string) => theme.fg("accent", s)),
-        );
-
-        // Title
-        container.addChild(
-          new Text(
-            theme.fg("accent", theme.bold(" Select file to diff")),
-            0,
-            0,
-          ),
-        );
-
-        // Build select items with colored status
-        const items: SelectItem[] = files.map((f) => {
-          let statusColor: string;
-          switch (f.status) {
-            case "M":
-              statusColor = theme.fg("warning", f.status);
-              break;
-            case "A":
-              statusColor = theme.fg("success", f.status);
-              break;
-            case "D":
-              statusColor = theme.fg("error", f.status);
-              break;
-            case "?":
-              statusColor = theme.fg("muted", f.status);
-              break;
-            default:
-              statusColor = theme.fg("dim", f.status);
-          }
-          return {
-            value: f,
-            label: `${statusColor} ${f.file}`,
-          };
-        });
-
-        const visibleRows = Math.min(files.length, 15);
-        let currentIndex = 0;
-
-        const selectList = new SelectList(items, visibleRows, {
-          selectedPrefix: (t) => theme.fg("accent", t),
-          selectedText: (t) => t, // Keep existing colors
-          description: (t) => theme.fg("muted", t),
-          scrollInfo: (t) => theme.fg("dim", t),
-          noMatch: (t) => theme.fg("warning", t),
-        });
-        selectList.onSelect = (item) => {
-          void openSelected(item.value as FileInfo);
-        };
-        selectList.onCancel = () => done();
-        selectList.onSelectionChange = (item) => {
-          currentIndex = items.indexOf(item);
-        };
-        container.addChild(selectList);
-
-        // Help text
-        container.addChild(
-          new Text(
-            theme.fg("dim", " ↑↓ navigate • ←→ page • enter open • esc close"),
-            0,
-            0,
-          ),
-        );
-
-        // Bottom border
-        container.addChild(
-          new DynamicBorder((s: string) => theme.fg("accent", s)),
-        );
-
-        return {
-          render: (w) => container.render(w),
-          invalidate: () => container.invalidate(),
-          handleInput: (data) => {
-            // Add paging with left/right
-            if (matchesKey(data, Key.left)) {
-              // Page up - clamp to 0
-              currentIndex = Math.max(0, currentIndex - visibleRows);
-              selectList.setSelectedIndex(currentIndex);
-            } else if (matchesKey(data, Key.right)) {
-              // Page down - clamp to last
-              currentIndex = Math.min(
-                items.length - 1,
-                currentIndex + visibleRows,
-              );
-              selectList.setSelectedIndex(currentIndex);
-            } else {
-              selectList.handleInput(data);
-            }
-            tui.requestRender();
-          },
-        };
+        // Resolve after the TUI is fully restored — avoids a "Working..." flash.
+        done();
+        // Placeholder component — never visible, the TUI is stopped synchronously.
+        return { width: 0, height: 0, draw() {} } as any;
       });
+
+      if (launchError) {
+        ctx.ui.notify(`Failed to launch hunk: ${launchError}`, "error");
+      }
     },
   });
 }

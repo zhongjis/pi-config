@@ -1,15 +1,16 @@
 # diff
 
-Shows git-changed files and opens the selected file in VS Code's diff view.
+Opens [hunk](https://github.com/modem-dev/hunk) to review the current git working-tree changes.
 
 ## What It Does
 
-- Runs `git status --porcelain` to list modified, added, deleted, renamed, and untracked files
-- Presents an interactive file picker with colored status indicators (M=yellow, A=green, D=red, ?=muted)
-- Opens selected file in VS Code diff view via `git difftool -y --tool=vscode`
-- Falls back to `code -g <file>` for untracked files or if difftool fails
-- Supports left/right arrow paging in the file list
+- Runs `git status --porcelain`; if the working tree is clean, notifies and exits
+- Suspends pi's TUI and hands the terminal to hunk via `hunk diff`
+- hunk shows an interactive multi-file review stream (sidebar navigation, syntax highlighting), including untracked files
+- Resumes pi's TUI when hunk exits
+
+Requires `hunk` on PATH and interactive (TUI) mode.
 
 ## Commands
 
-- `/diff` — Show git changes and open selected file in VS Code diff view
+- `/diff` — Review git working-tree changes in hunk
