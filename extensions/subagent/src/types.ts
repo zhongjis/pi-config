@@ -4,6 +4,7 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AgentRun } from "./agent-run.js";
 
 export type { ThinkingLevel };
 
@@ -131,6 +132,8 @@ export interface AgentRecord {
   lastSupervisionAbortAt?: number;
   /** Last time the parent called get_subagent_result for this agent. */
   lastPolledAt?: number;
+  /** Phase 1 (dormant): single-source-of-truth run state, populated alongside this record. */
+  run?: AgentRun;
 }
 
 /** Details attached to custom notification messages for visual rendering. */

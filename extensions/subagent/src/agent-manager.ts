@@ -14,6 +14,7 @@ import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import type { AgentRecord, IsolationMode, SubagentType, ThinkingLevel } from "./types.js";
 import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js";
 import { getRecoveredResultText } from "./result-recovery.js";
+import { AgentRun } from "./agent-run.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
@@ -115,6 +116,18 @@ export class AgentManager {
       parentSessionId: options.parentSessionId,
       sessionDir: options.sessionDir,
     };
+    record.run = new AgentRun(id);
+    record.run.publish({
+      kind: "created",
+      type,
+      description: options.description,
+      isBackground: options.isBackground ?? false,
+      startedAt: record.startedAt,
+      maxTurns: options.maxTurns,
+      parentSessionId: options.parentSessionId,
+      sessionDir: options.sessionDir,
+      modelLabel: options.modelLabel,
+    });
     this.agents.set(id, record);
 
     const args: SpawnArgs = { pi, ctx, type, prompt, options };
@@ -139,6 +152,7 @@ export class AgentManager {
   /** Actually start an agent (called immediately or from queue drain). */
   private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options }: SpawnArgs) {
     record.status = "running";
+    record.run?.publish({ kind: "started" });
     record.startedAt = Date.now();
     if (options.isBackground) this.runningBackground++;
     this.onStart?.(record);
@@ -172,13 +186,24 @@ export class AgentManager {
       signal: record.abortController!.signal,
       onToolActivity: (activity) => {
         if (activity.type === "end") record.toolUses++;
+        record.run?.publish({ kind: "tool", phase: activity.type, toolName: activity.toolName });
         options.onToolActivity?.(activity);
       },
-      onTurnEnd: options.onTurnEnd,
-      onTextDelta: options.onTextDelta,
-      onProgress: options.onProgress,
+      onTurnEnd: (turnCount) => {
+        record.run?.publish({ kind: "turn_end", turnCount });
+        options.onTurnEnd?.(turnCount);
+      },
+      onTextDelta: (delta, fullText) => {
+        record.run?.publish({ kind: "text_delta", delta, fullText });
+        options.onTextDelta?.(delta, fullText);
+      },
+      onProgress: () => {
+        record.run?.publish({ kind: "progress" });
+        options.onProgress?.();
+      },
       onSessionCreated: (session) => {
         record.session = session;
+        record.run?.publish({ kind: "session_created", session });
         // Flush any steers that arrived before the session was ready
         if (record.pendingSteers?.length) {
           for (const msg of record.pendingSteers) {
@@ -213,6 +238,11 @@ export class AgentManager {
               `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
           }
         }
+        if (record.status === "completed" || record.status === "steered") {
+          record.run?.publish({ kind: "completed", result: record.result ?? "", status: record.status });
+        } else if (record.status === "aborted") {
+          record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns" });
+        }
 
         if (options.isBackground) {
           this.runningBackground--;
@@ -243,6 +273,9 @@ export class AgentManager {
           } catch { /* ignore cleanup errors */ }
         }
         record.result = getRecoveredResultText(record);
+        if (record.status === "error") {
+          record.run?.publish({ kind: "failed", error: record.error ?? "Agent failed." });
+        }
 
         if (options.isBackground) {
           this.runningBackground--;
@@ -271,6 +304,7 @@ export class AgentManager {
         record.status = "stopped";
         record.completedAt ??= Date.now();
         record.error = record.error ?? "Parent tool signal aborted before the queued agent could start.";
+        this.publishRunStop(record);
         return;
       }
       if (record.status !== "running") return;
@@ -278,6 +312,7 @@ export class AgentManager {
       record.status = "stopped";
       record.completedAt ??= Date.now();
       record.error = record.error ?? "Parent tool signal aborted while the agent was running.";
+      this.publishRunStop(record);
     };
 
     if (signal.aborted) {
@@ -287,6 +322,11 @@ export class AgentManager {
 
     signal.addEventListener("abort", onAbort, { once: true });
     return () => signal.removeEventListener("abort", onAbort);
+  }
+
+  /** Phase 1 (dormant): mirror an external/forced stop into the AgentRun. */
+  private publishRunStop(record: AgentRecord): void {
+    record.run?.publish({ kind: "aborted", status: "stopped", reason: "user" });
   }
 
   /** Start queued agents up to the concurrency limit. */
@@ -332,6 +372,7 @@ export class AgentManager {
     record.completedAt = undefined;
     record.result = undefined;
     record.error = undefined;
+    record.run?.publish({ kind: "resumed" });
 
     try {
       const responseText = await resumeAgent(record.session, prompt, {
@@ -343,11 +384,13 @@ export class AgentManager {
       record.status = "completed";
       record.result = responseText.trim() || getRecoveredResultText(record);
       record.completedAt = Date.now();
+      record.run?.publish({ kind: "completed", result: record.result ?? "", status: "completed" });
     } catch (err) {
       record.status = "error";
       record.error = err instanceof Error ? err.message : String(err);
       record.result = getRecoveredResultText(record);
       record.completedAt = Date.now();
+      record.run?.publish({ kind: "failed", error: record.error ?? "Agent failed." });
     }
 
     return record;
@@ -373,6 +416,7 @@ export class AgentManager {
       record.status = "stopped";
       record.completedAt = Date.now();
       record.error = record.error ?? "Agent was stopped before it started running.";
+      this.publishRunStop(record);
       return true;
     }
 
@@ -381,6 +425,7 @@ export class AgentManager {
     record.status = "stopped";
     record.completedAt = Date.now();
     record.error = record.error ?? "Agent was stopped while running.";
+    this.publishRunStop(record);
     return true;
   }
 
@@ -432,6 +477,7 @@ export class AgentManager {
         record.status = "stopped";
         record.completedAt = Date.now();
         record.error = record.error ?? "Agent was stopped before it started running.";
+        this.publishRunStop(record);
         count++;
       }
     }
@@ -443,6 +489,7 @@ export class AgentManager {
         record.status = "stopped";
         record.completedAt = Date.now();
         record.error = record.error ?? "Agent was stopped while running.";
+        this.publishRunStop(record);
         count++;
       }
     }
