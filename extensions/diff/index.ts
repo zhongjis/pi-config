@@ -3,6 +3,8 @@
  *
  * /diff opens hunk (https://github.com/modem-dev/hunk) to review git changes.
  * Suspends pi's TUI, hands the terminal to hunk, then resumes once hunk exits.
+ * After the review, any inline comments left in hunk are harvested and handed
+ * to the agent so it can address them.
  *
  * Subcommands:
  *   /diff            working-tree changes (default)
@@ -19,6 +21,24 @@ import { isTui } from "../lib/mode.js";
 interface CommandArgumentCompletion {
   value: string;
   label: string;
+}
+
+interface HunkComment {
+  file: string;
+  line: number | null;
+  summary: string;
+}
+
+interface HunkRawComment {
+  filePath?: string;
+  file_path?: string;
+  file?: string;
+  newLine?: number | string;
+  new_line?: number | string;
+  oldLine?: number | string;
+  old_line?: number | string;
+  summary?: string;
+  comment?: string;
 }
 
 const SUBCOMMANDS: CommandArgumentCompletion[] = [
@@ -52,6 +72,42 @@ export default function (pi: ExtensionAPI) {
       if (await git(["rev-parse", "--verify", "--quiet", candidate], cwd)) return candidate;
     }
     return null;
+  };
+
+  // Harvest inline review comments left in the live hunk session for this repo.
+  // Returns [] on any failure (no session, parse error, hunk missing).
+  const harvestHunkComments = async (cwd: string): Promise<HunkComment[]> => {
+    const r = await pi.exec(
+      "hunk",
+      ["session", "comment", "list", "--repo", cwd, "--json"],
+      { cwd },
+    );
+    if (r.code !== 0 || !r.stdout) return [];
+    try {
+      const raw = JSON.parse(r.stdout) as HunkRawComment[] | { comments?: HunkRawComment[] };
+      const arr: HunkRawComment[] = Array.isArray(raw) ? raw : (raw.comments ?? []);
+      return arr
+        .map((c) => ({
+          file: String(c.filePath ?? c.file_path ?? c.file ?? ""),
+          line: Number(c.newLine ?? c.new_line ?? c.oldLine ?? c.old_line ?? 0) || null,
+          summary: String(c.summary ?? c.comment ?? "").trim(),
+        }))
+        .filter((c) => c.file !== "" && c.summary !== "");
+    } catch {
+      return [];
+    }
+  };
+
+  // Format harvested comments into a prompt instructing the agent to act on them.
+  const formatReviewPrompt = (comments: HunkComment[]): string => {
+    const lines = comments.map(
+      (c) => `- ${c.file}${c.line ? `:${c.line}` : ""} — ${c.summary}`,
+    );
+    return [
+      "I left these inline review comments in hunk. Address each one in the code:",
+      "",
+      ...lines,
+    ].join("\n");
   };
 
   pi.registerCommand("diff", {
@@ -147,6 +203,21 @@ export default function (pi: ExtensionAPI) {
 
       if (launchError) {
         ctx.ui.notify(`Failed to launch hunk: ${launchError}`, "error");
+        return;
+      }
+
+      // Auto-harvest any inline comments left during the review and hand them
+      // to the agent to act on.
+      const comments = await harvestHunkComments(ctx.cwd);
+      if (comments.length > 0) {
+        const prompt = formatReviewPrompt(comments);
+        const idle = typeof ctx.isIdle === "function" ? ctx.isIdle() : true;
+        if (idle) {
+          pi.sendUserMessage(prompt);
+        } else {
+          pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+        }
+        ctx.ui.notify(`Picked up ${comments.length} hunk review comment(s)`, "info");
       }
     },
   });
