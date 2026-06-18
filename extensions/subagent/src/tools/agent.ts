@@ -19,6 +19,7 @@ import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../
 import { getRecoveredResultText } from "../result-recovery.js";
 import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycle/supervision.js";
 import type { SubagentRuntimeContext, SupervisedAgentActivity } from "../lifecycle/supervision.js";
+import type { AgentRun } from "../agent-run.js";
 import {
   type AgentActivity,
   type AgentDetails,
@@ -114,6 +115,28 @@ function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
   };
 
   return { state, callbacks };
+}
+
+/**
+ * Live AgentActivity view backed by an AgentRun (the single source of truth).
+ * Getters read through to run.activity so the widget, supervision, get_subagent_result,
+ * and /agents all observe live run state instead of a parallel tracker. The
+ * nonStreamingSince setter routes supervision's only write back into the run.
+ */
+export function runActivityView(run: AgentRun): SupervisedAgentActivity {
+  return {
+    get activeTools() { return run.activity.activeTools; },
+    get toolUses() { return run.activity.toolUses; },
+    get turnCount() { return run.activity.turnCount; },
+    get maxTurns() { return run.activity.maxTurns; },
+    get tokens() { return safeFormatTokens(run.session as AgentActivity["session"]); },
+    get responseText() { return run.activity.responseText; },
+    get session() { return run.session as AgentActivity["session"]; },
+    get lastProgressAt() { return run.activity.lastProgressAt; },
+    get streamingDeltasSeen() { return run.activity.streamingDeltasSeen; },
+    get nonStreamingSince() { return run.activity.nonStreamingSince; },
+    set nonStreamingSince(v: number | undefined) { run.activity.nonStreamingSince = v; },
+  };
 }
 
 /** Parenthetical status note for completed agent result text. */
@@ -473,7 +496,7 @@ Guidelines:
           enqueueBackgroundBatch(id, joinMode);
         }
 
-        agentActivity.set(id, bgState);
+        agentActivity.set(id, record?.run ? runActivityView(record.run) : bgState);
         widget.ensureTimer();
         widget.update();
 
@@ -551,7 +574,7 @@ Guidelines:
         for (const a of manager.listAgents()) {
           if (a.session === session) {
             fgId = a.id;
-            agentActivity.set(a.id, fgState);
+            agentActivity.set(a.id, a.run ? runActivityView(a.run) : fgState);
             widget.ensureTimer();
             // Capture persistent session JSONL path for discoverability.
             if (typeof session.sessionFile === "string") a.sessionFile = session.sessionFile;
