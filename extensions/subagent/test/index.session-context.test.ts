@@ -564,4 +564,46 @@ describe("subagent session UI rebinding", () => {
     expect(setIntervalSpy).not.toHaveBeenCalledWith(expect.any(Function), 80);
   });
 
+  it("surfaces the agent-record id in foreground completion text so resume works", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const agentTool = mock.registeredTools.get("Agent");
+    const manager = managerInstances[0]!;
+    const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 1234 } })), sessionFile: "/tmp/session.jsonl" };
+    const record: any = {
+      id: "fg-record-42",
+      type: "general-purpose",
+      description: "Run foreground",
+      status: "completed",
+      toolUses: 0,
+      startedAt: Date.now(),
+      completedAt: Date.now() + 1000,
+      result: "ACK",
+      sessionFile: "/tmp/session.jsonl",
+      session,
+    };
+
+    manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
+      manager.listAgents.mockReturnValue([record]);
+      options.onSessionCreated(session);
+      return record;
+    });
+
+    const result = await agentTool.execute(
+      "tool-1",
+      { prompt: "do it", description: "Run foreground", subagent_type: "general-purpose" },
+      undefined,
+      vi.fn(),
+      createCtx(),
+    );
+
+    const text = result.content[0].text;
+    // The resumable id must be the agent-record id (getRecord lookup key), not the
+    // session-log UUID — otherwise Agent(resume: ...) fails with "Agent not found".
+    expect(text).toContain("Agent ID: fg-record-42");
+    expect(text).toContain('Agent(resume: "fg-record-42")');
+    expect(text).toContain("ACK");
+    expect(result.details.agentId).toBe("fg-record-42");
+  });
+
 });

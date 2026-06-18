@@ -609,7 +609,8 @@ Guidelines:
       const statsParts = [`${record.toolUses} tool uses`];
       if (tokenText) statsParts.push(tokenText);
       return textResult(
-        `Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.${sessionLog}\n\n` +
+        `Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.\n` +
+        `Agent ID: ${record.id} (resume with Agent(resume: "${record.id}")).${sessionLog}\n\n` +
         getRecoveredResultText(record),
         details,
       );
