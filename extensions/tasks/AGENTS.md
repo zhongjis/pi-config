@@ -47,6 +47,7 @@ pnpm run build
 - `src/index.ts` mixes user-facing tool specs with runtime wiring; text-only edits can change agent behavior materially.
 - Completed-task auto-clear is intentionally delayed by turns for UX; immediate cleanup is usually a regression here.
 - A stopped subagent is not treated the same as a hard failure; status mapping is subtle and covered by tests.
+- Task terminal states collapse to `completed`: `TaskStop` and a stopped subagent both finalize as `completed` — there is no distinct `stopped`/`cancelled` status, so a killed task is indistinguishable from a finished one. `finalizeStop` (`src/task-runner.ts`) is the single seam to add one if ever needed.
 
 ## Local Tweaks
 

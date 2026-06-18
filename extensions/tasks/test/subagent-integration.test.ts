@@ -375,6 +375,43 @@ describe("Completion listener", () => {
     const result = await mock.executeTool("TaskGet", { taskId: "1" });
     expect(result.content[0].text).toContain("Status: pending");
   });
+
+  it("marks task completed with result on a stopped subagents:failed event", async () => {
+    await mock.executeTool("TaskCreate", {
+      subject: "Stoppable task",
+      description: "Desc",
+      agentType: "general-purpose",
+    });
+    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+
+    // Subagent reports it was stopped, carrying its partial result.
+    mock.emitEvent("subagents:failed", { id: "agent-1", status: "stopped", result: "partial work" });
+
+    const get = await mock.executeTool("TaskGet", { taskId: "1" });
+    expect(get.content[0].text).toContain("Status: completed");
+    const out = await mock.executeTool("TaskOutput", { task_id: "1", block: false });
+    expect(out.content[0].text).toContain("partial work");
+  });
+
+  it("backfills result without reprocessing when a stopped event arrives after manual TaskStop (F2)", async () => {
+    await mock.executeTool("TaskCreate", {
+      subject: "Manually stopped task",
+      description: "Desc",
+      agentType: "general-purpose",
+    });
+    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+
+    // Manual stop finalizes the task as completed but leaves the agent mapping in place.
+    await mock.executeTool("TaskStop", { task_id: "1" });
+
+    // The late stopped event must not revert/re-finalize — only backfill the partial result.
+    mock.emitEvent("subagents:failed", { id: "agent-1", status: "stopped", result: "late partial" });
+
+    const get = await mock.executeTool("TaskGet", { taskId: "1" });
+    expect(get.content[0].text).toContain("Status: completed");
+    const out = await mock.executeTool("TaskOutput", { task_id: "1", block: false });
+    expect(out.content[0].text).toContain("late partial");
+  });
 });
 
 describe("Auto-cascade", () => {

@@ -179,6 +179,14 @@ export function createSubagentBridge(pi: ExtensionAPI, runtime: TaskRuntime) {
       if (!task) return;
 
       if (status === "stopped") {
+        if (task.status === "completed") {
+          // Late stopped event after a manual TaskStop already finalized the task:
+          // backfill the partial result if we now have one, but don't re-track or re-render.
+          if (result && !task.metadata?.result) {
+            updateTask(runtime, task.id, { metadata: { ...task.metadata, result } }, "internal");
+          }
+          return;
+        }
         updateTask(runtime, task.id, { status: "completed", metadata: { ...task.metadata, result: result || task.metadata?.result } }, "internal");
         runtime.autoClear.trackCompletion(task.id, runtime.currentTurn);
       } else {

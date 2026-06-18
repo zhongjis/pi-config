@@ -120,3 +120,82 @@ describe("TaskRunner — process adapter", () => {
     expect(out).toContain("(completed)");
   });
 });
+
+describe("TaskRunner — subagent read paths (Fix A + edge cases)", () => {
+  function seedTerminal(
+    runtime: TaskRuntime,
+    status: "completed" | "pending",
+    extraMeta: Record<string, unknown>,
+    agentId = "agent-1",
+  ): string {
+    const t = runtime.store.create("Agent task", "Desc", undefined, { agentType: "general-purpose", agentId, ...extraMeta });
+    runtime.store.update(t.id, { status });
+    runtime.agentTaskMap.set(agentId, t.id);
+    return t.id;
+  }
+
+  it("F1: appends metadata.result for a completed subagent task", async () => {
+    const runtime = createTaskRuntime();
+    const id = seedTerminal(runtime, "completed", { result: "THE REAL OUTPUT" });
+    const runner = createTaskRunner(mockPi(), runtime, fakeBridge());
+
+    const out = await runner.getOutput(id, { block: false, timeout: 1000 });
+    expect(out).toContain("[completed]");
+    expect(out).toContain("THE REAL OUTPUT");
+  });
+
+  it("F1: appends lastError for a failed/requeued subagent task", async () => {
+    const runtime = createTaskRuntime();
+    const id = seedTerminal(runtime, "pending", { lastError: "out of turns" });
+    const runner = createTaskRunner(mockPi(), runtime, fakeBridge());
+
+    const out = await runner.getOutput(id, { block: false, timeout: 1000 });
+    expect(out).toContain("Error: out of turns");
+  });
+
+  it("F5: an agent-id input resolves to the task and surfaces its result", async () => {
+    const runtime = createTaskRuntime();
+    seedTerminal(runtime, "completed", { result: "RESOLVED VIA AGENT ID" }, "agent-7");
+    const runner = createTaskRunner(mockPi(), runtime, fakeBridge());
+
+    const out = await runner.getOutput("agent-7", { block: false, timeout: 1000 });
+    expect(out).toContain("RESOLVED VIA AGENT ID");
+  });
+
+  it("block resolves when subagents:failed fires", async () => {
+    const runtime = createTaskRuntime();
+    const id = seedSubagentTask(runtime);
+    const pi = mockPi();
+    const runner = createTaskRunner(pi, runtime, fakeBridge());
+
+    const pending = runner.getOutput(id, { block: true, timeout: 30000 });
+    runtime.store.update(id, { status: "pending", metadata: { agentType: "general-purpose", agentId: "agent-1", lastError: "boom" } });
+    pi.events.emit("subagents:failed", { id: "agent-1" });
+
+    const out = await pending;
+    expect(out).toContain("[pending]");
+    expect(out).toContain("Error: boom");
+  });
+
+  it("block resolves on timeout when no event arrives", async () => {
+    const runtime = createTaskRuntime();
+    const id = seedSubagentTask(runtime);
+    const runner = createTaskRunner(mockPi(), runtime, fakeBridge());
+
+    const out = await runner.getOutput(id, { block: true, timeout: 30 });
+    expect(out).toBe(`Task #${id} [in_progress] — subagent agent-1`);
+  });
+
+  it("block resolves when the abort signal fires", async () => {
+    const runtime = createTaskRuntime();
+    const id = seedSubagentTask(runtime);
+    const controller = new AbortController();
+    const runner = createTaskRunner(mockPi(), runtime, fakeBridge());
+
+    const pending = runner.getOutput(id, { block: true, timeout: 30000, signal: controller.signal });
+    controller.abort();
+
+    const out = await pending;
+    expect(out).toContain("[in_progress]");
+  });
+});

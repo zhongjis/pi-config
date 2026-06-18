@@ -103,13 +103,18 @@ function createSubagentAdapter(pi: ExtensionAPI, runtime: TaskRuntime, bridge: S
           const unsubFail = pi.events.on("subagents:failed", (d: unknown) => {
             if ((d as any).id === agentId) { unsubOk(); unsubFail(); cleanup(); }
           });
-          const settled = runtime.store.get(externalId);
+          const settled = runtime.store.get(taskId);
           if (settled && settled.status !== "in_progress") { unsubOk(); unsubFail(); cleanup(); }
           opts.signal?.addEventListener("abort", () => { unsubOk(); unsubFail(); cleanup(); }, { once: true });
         });
       }
-      const updated = runtime.store.get(externalId) ?? task;
-      return `Task #${externalId} [${updated.status}] — subagent ${agentId}`;
+      const updated = runtime.store.get(taskId) ?? task;
+      const header = `Task #${externalId} [${updated.status}] — subagent ${agentId}`;
+      const result = updated.metadata?.result;
+      const lastError = updated.metadata?.lastError;
+      if (result) return `${header}\n\n${result}`;
+      if (lastError) return `${header}\n\nError: ${lastError}`;
+      return header;
     },
     async stop(externalId) {
       const bound = bind(externalId);
@@ -126,8 +131,8 @@ export function createTaskRunner(pi: ExtensionAPI, runtime: TaskRuntime, bridge:
 
   function finalizeStop(completedTaskId: string, externalId: string): string {
     updateTask(runtime, completedTaskId, { status: "completed" }, "internal");
-    runtime.autoClear.trackCompletion(externalId, runtime.currentTurn);
-    runtime.widget.setActiveTask(externalId, false);
+    runtime.autoClear.trackCompletion(completedTaskId, runtime.currentTurn);
+    runtime.widget.setActiveTask(completedTaskId, false);
     runtime.widget.update();
     return `Task #${externalId} stopped successfully`;
   }
