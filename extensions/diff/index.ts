@@ -9,7 +9,9 @@
  * Subcommands:
  *   /diff            working-tree changes (default)
  *   /diff staged     staged changes (alias: cached)
- *   /diff base       changes since the branch diverged from its upstream
+ *   /diff base       unpushed work — working tree vs your tracking upstream (@{upstream})
+ *   /diff pr [<ref>] the whole PR — vs the integration branch (origin default;
+ *                    pass <ref> to override, e.g. develop or upstream/main)
  *   /diff commit     the most recent commit
  *   /diff stash      the latest stash entry
  *   /diff <ref>      working tree compared against a ref (HEAD, branch, sha)
@@ -43,13 +45,14 @@ interface HunkRawComment {
 
 const SUBCOMMANDS: CommandArgumentCompletion[] = [
   { value: "staged", label: "staged — review staged changes" },
-  { value: "base", label: "base — review changes since the branch diverged from upstream" },
+  { value: "base", label: "base — unpushed work vs your tracking upstream (@{upstream})" },
+  { value: "pr", label: "pr — the whole PR vs the integration branch (/diff pr <ref> to override)" },
   { value: "commit", label: "commit — review the most recent commit" },
   { value: "stash", label: "stash — review the latest stash entry" },
 ];
 
 const USAGE =
-  "Usage: /diff | /diff staged | /diff base | /diff commit | /diff stash | /diff <ref>";
+  "Usage: /diff | /diff staged | /diff base | /diff pr [<ref>] | /diff commit | /diff stash | /diff <ref>";
 
 export default function (pi: ExtensionAPI) {
   // Run a git command; return trimmed stdout, or null when git exits non-zero.
@@ -58,14 +61,27 @@ export default function (pi: ExtensionAPI) {
     return r.code === 0 ? (r.stdout || "").trim() : null;
   };
 
-  // Resolve the upstream ref for `/diff base`: prefer the tracking branch,
-  // else fall back to origin's default branch.
+  // Resolve the base ref for `/diff base`: the branch's tracking upstream
+  // (@{upstream}) — "what isn't on my remote yet" — falling back to origin's
+  // default branch when the branch has no tracking branch.
   const resolveUpstream = async (cwd: string): Promise<string | null> => {
     const tracking = await git(
       ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
       cwd,
     );
     if (tracking) return tracking;
+    const originHead = await git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd);
+    if (originHead) return originHead.replace(/^refs\/remotes\//, "");
+    for (const candidate of ["origin/main", "origin/master"]) {
+      if (await git(["rev-parse", "--verify", "--quiet", candidate], cwd)) return candidate;
+    }
+    return null;
+  };
+
+  // Resolve the PR base for `/diff pr` when no explicit ref is given: origin's
+  // default branch, falling back to origin/main / origin/master. Deliberately
+  // ignores @{upstream} — a pushed feature branch's upstream is itself.
+  const resolvePrBase = async (cwd: string): Promise<string | null> => {
     const originHead = await git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], cwd);
     if (originHead) return originHead.replace(/^refs\/remotes\//, "");
     for (const candidate of ["origin/main", "origin/master"]) {
@@ -111,7 +127,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.registerCommand("diff", {
-    description: "Review git changes in hunk (/diff | staged | base | commit | stash | <ref>)",
+    description: "Review git changes in hunk (/diff | staged | base | pr | commit | stash | <ref>)",
     getArgumentCompletions: (prefix: string): CommandArgumentCompletion[] | null => {
       const p = prefix.trim().toLowerCase();
       const filtered = SUBCOMMANDS.filter((s) => s.value.startsWith(p));
@@ -124,7 +140,8 @@ export default function (pi: ExtensionAPI) {
       }
 
       const arg = (args || "").trim();
-      const sub = arg.toLowerCase();
+      const parts = arg.split(/\s+/).filter(Boolean);
+      const sub = (parts[0] || "").toLowerCase();
       let hunkArgs: string[];
 
       if (!arg) {
@@ -156,6 +173,37 @@ export default function (pi: ExtensionAPI) {
         const sha = await git(["merge-base", "HEAD", upstream], ctx.cwd);
         if (!sha) {
           ctx.ui.notify(`Could not compute merge-base against ${upstream}`, "error");
+          return;
+        }
+        hunkArgs = ["diff", sha];
+      } else if (sub === "pr") {
+        // PR-style: working tree vs the merge-base with the integration branch.
+        if (parts.length > 2) {
+          ctx.ui.notify(`Usage: /diff pr [<ref>]\n${USAGE}`, "error");
+          return;
+        }
+        const explicit = parts[1];
+        let base: string | null;
+        if (explicit) {
+          const valid = await git(["rev-parse", "--verify", "--quiet", `${explicit}^{commit}`], ctx.cwd);
+          if (!valid) {
+            ctx.ui.notify(`Unknown ref: ${explicit}`, "error");
+            return;
+          }
+          base = explicit;
+        } else {
+          base = await resolvePrBase(ctx.cwd);
+          if (!base) {
+            ctx.ui.notify(
+              "Could not determine the PR base branch (no origin default). Try /diff pr <ref>",
+              "error",
+            );
+            return;
+          }
+        }
+        const sha = await git(["merge-base", "HEAD", base], ctx.cwd);
+        if (!sha) {
+          ctx.ui.notify(`Could not compute merge-base against ${base}`, "error");
           return;
         }
         hunkArgs = ["diff", sha];
