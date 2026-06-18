@@ -80,8 +80,10 @@ export function getBackgroundSupervisionAction(args: {
   now: number;
   mode?: BackgroundSupervisionMode;
   ceilingMs?: number;
+  /** When true (foreground supervised wait), skip the waitingConsumers deferral — the waiter IS supervising. */
+  ignoreWaiters?: boolean;
 }): { action: BackgroundSupervisionAction; idleMs: number; reasonClass?: BackgroundSupervisionReasonClass; markNonStreaming?: boolean } {
-  const { record, activity, now, mode = "v2", ceilingMs = DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS } = args;
+  const { record, activity, now, mode = "v2", ceilingMs = DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS, ignoreWaiters = false } = args;
 
   if (!record.isBackground || record.status !== "running") {
     return { action: "none", idleMs: 0 };
@@ -92,7 +94,7 @@ export function getBackgroundSupervisionAction(args: {
     return { action: "abort", idleMs: runtimeMs, reasonClass: "ceiling" };
   }
 
-  if ((record.waitingConsumers ?? 0) > 0) {
+  if (!ignoreWaiters && (record.waitingConsumers ?? 0) > 0) {
     return { action: "none", idleMs: 0 };
   }
 

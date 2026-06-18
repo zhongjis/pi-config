@@ -50,7 +50,6 @@ import {
   emitSupervisionAbortWarning,
   emitSupervisionCeilingHitWarning,
   getBackgroundSupervisionAction,
-  getLastProgressAt,
   parseBackgroundSupervisionMode,
   parseSubagentSupervisionCeilingMs,
   type BackgroundSupervisionReasonClass,
@@ -800,38 +799,35 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       const activity = agentActivity.get(record.id);
       const supervisionMode = parseBackgroundSupervisionMode();
       const ceilingMs = parseSubagentSupervisionCeilingMs();
-      const runtimeMs = Date.now() - record.startedAt;
-      if (runtimeMs >= ceilingMs && !record.lastSupervisionAbortAt) {
+      const { action, idleMs, reasonClass } = getBackgroundSupervisionAction({
+        record,
+        activity,
+        now: Date.now(),
+        mode: supervisionMode,
+        ceilingMs,
+        ignoreWaiters: true,
+      });
+      if (supervisionMode === "v2" && activity) warnSupervisionSkippedActiveTool(record, idleMs, activity);
+      // Preserve the non-streaming diagnostic; the unified decision's steer precedence
+      // would otherwise mask it during a supervised wait.
+      if (
+        supervisionMode === "v2" &&
+        activity &&
+        idleMs >= BACKGROUND_STALE_ABORT_AFTER_MS &&
+        asSupervisedActivity(activity)?.streamingDeltasSeen === false
+      ) {
+        warnSupervisionNonStreamingDisabled(record, idleMs, activity);
+      }
+      if (action === "abort") {
         record.lastSupervisionAbortAt = Date.now();
-        record.error = record.error ?? `Auto-stopped after ${Math.round(runtimeMs / 1000)}s of inactivity.`;
-        warnSupervisionCeilingHit(record, runtimeMs, ceilingMs);
-        warnSupervisionAbort(record, runtimeMs, "ceiling");
+        record.error = record.error ?? `Auto-stopped after ${Math.round(idleMs / 1000)}s of inactivity.`;
+        if (reasonClass === "ceiling") warnSupervisionCeilingHit(record, idleMs, ceilingMs);
+        warnSupervisionAbort(record, idleMs, reasonClass ?? "token-idle");
         manager.abort(record.id);
         await waitForAgentPoll(record, signal);
         return;
       }
-      const idleMs = Date.now() - getLastProgressAt(activity, record.startedAt);
-      if (supervisionMode === "v2" && activity) warnSupervisionSkippedActiveTool(record, idleMs, activity);
-      if (supervisionMode === "v2" && (activity?.activeTools.size ?? 0) > 0) {
-        const outcome = await waitForAgentPoll(record, signal);
-        if (outcome === "aborted") {
-          abortAgentsForTurnCancellation();
-          throw new Error("Agent wait aborted; stopped running subagents.");
-        }
-        if (outcome === "settled") return;
-        continue;
-      }
-      if (supervisionMode === "v2" && activity && idleMs >= BACKGROUND_STALE_ABORT_AFTER_MS && asSupervisedActivity(activity)?.streamingDeltasSeen === false) {
-        warnSupervisionNonStreamingDisabled(record, idleMs, activity);
-        const outcome = await waitForAgentPoll(record, signal);
-        if (outcome === "aborted") {
-          abortAgentsForTurnCancellation();
-          throw new Error("Agent wait aborted; stopped running subagents.");
-        }
-        if (outcome === "settled") return;
-        continue;
-      }
-      if (!idleWrapUpSent && idleMs >= BACKGROUND_STALE_STEER_AFTER_MS && record.session) {
+      if (action === "steer" && !idleWrapUpSent && record.session) {
         try {
           await steerAgent(record.session, `You appear idle after ${Math.round(idleMs / 1000)}s. Wrap up now with your best available answer, or explicitly state what is blocking completion.`);
           idleWrapUpSent = true;
