@@ -9,6 +9,7 @@ Task-tracking extension: Claude Code-style task tools, persistent widget, file-b
 | Tool definitions, reminder injection, subagent bridge | `src/index.ts` | Central behavior hub |
 | Persistence + dependency graph | `src/task-store.ts` | CRUD, blockers, locking |
 | Background process handling | `src/process-tracker.ts` | Output buffering + stop flow |
+| Task read/stop dispatch (process vs subagent) | `src/task-runner.ts` | `TaskRunner` seam; `TaskOutput`/`TaskStop` route here instead of branching on model |
 | Settings persistence | `src/tasks-config.ts` | `.pi/tasks-config.json` contract |
 | Auto-clear rules | `src/auto-clear.ts` | Turn-based cleanup logic |
 | Widget / settings UI | `src/ui/` | Task list + settings menu |
@@ -26,7 +27,7 @@ pnpm run build
 
 ## Always
 - Keep task lifecycle/tool descriptions aligned: `pending -> in_progress -> completed`; if guidance changes, update the tool text and matching tests together.
-- Preserve the request/reply RPC contract to `subagents:*`; `TaskExecute`, `TaskOutput`, and `TaskStop` depend on `requestId`-scoped replies plus `agentTaskMap` lookups.
+- Preserve the request/reply RPC contract to `subagents:*`; `TaskExecute`, `TaskOutput`, and `TaskStop` depend on `requestId`-scoped replies plus `agentTaskMap` lookups (read/stop now dispatched behind `src/task-runner.ts`).
 - Keep standalone mode working when `subagent` is absent; only `TaskExecute` should degrade.
 - Treat storage location as behavior, not implementation detail: session tasks live under `.pi/tasks/`, shared config under `.pi/tasks-config.json`.
 - Preserve reserved provenance handling for planning-mode metadata merges.
@@ -60,3 +61,4 @@ Intentional divergences from upstream. Preserve these on sync.
 | `README.md` | Concise repo-local README replaces upstream marketing/install content and documents provenance/local adaptations. | This repo vendors extensions locally and avoids npm install instructions. |
 | `test/handoff-cleanup.test.ts` | Local-only regression tests for planning provenance and handoff cleanup. | Protects Fu Xi planning task cleanup behavior. |
 | `src/lifecycle/store-glue.ts` | System-reminder delivery matches upstream 0.7.0 (transient `context`-hook injection via `runtime.reminderDue`, never `tool_result` content mutation), but cadence keeps the local `ContinuationCooldown` (backoff + stagnation cap). | Adopts upstream's stale-reminder fix without discarding local backoff/stagnation cadence; do NOT replace with upstream's simpler `reminder-cadence.ts`. |
+| `src/task-runner.ts`, `src/tools/output.ts`, `src/tools/stop.ts` | `TaskRunner` seam: process + subagent execution sit behind one interface as adapters; `TaskOutput`/`TaskStop` call the runner instead of branching on model and re-walking `agentTaskMap` inline. Behavior-preserving. | Deepening refactor — removes the per-tool model fork + duplicated id-resolution; makes the read/stop paths unit-testable with a fake bridge (`test/task-runner.test.ts`). Not in upstream. |

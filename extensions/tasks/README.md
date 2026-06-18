@@ -120,4 +120,4 @@ Replace `<ts>` with the timestamp suffix of the snapshot directory you want to r
 - **Version:** 0.5.0
 - **Commit:** `30c3452fd1292860482f1afc7908edb76a46f1ed`
 - **License:** MIT
-- **Adapted:** Directory entrypoint (`./index.ts`), peer dependency style, root-relative Vitest/Biome scripts, chengfeng-oriented task examples, planning-handoff cleanup RPC/provenance behavior.
+- **Adapted:** Directory entrypoint (`./index.ts`), peer dependency style, root-relative Vitest/Biome scripts, chengfeng-oriented task examples, planning-handoff cleanup RPC/provenance behavior, and a local `TaskRunner` seam (`src/task-runner.ts`) behind which `TaskOutput`/`TaskStop` dispatch process- vs subagent-backed tasks.
