@@ -30,7 +30,6 @@ EXCLUDED_EXTENSION_ITEMS=(
   "AGENTS.md"
   "CONVENTIONS.md"
   "codex"
-  "pi-web-access"
 )
 
 # Top-level items to symlink into ~/.pi/agent (allowlist).
