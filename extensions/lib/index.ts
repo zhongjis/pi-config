@@ -1,6 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-  applyDebugFlag,
   initDebugFromEnv,
   registerDebugCommand,
   registerDebugFlag,
@@ -40,7 +39,6 @@ export * from "./rpc.js";
 export function initLib(pi: ExtensionAPI): void {
   initDebugFromEnv();
   registerDebugFlag(pi);
-  applyDebugFlag(pi);
   registerDebugCommand(pi);
 }
 /**

@@ -3,18 +3,36 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 // ---------------------------------------------------------------------------
-// Module-level singleton debug state
+// Process-global shared debug state
 // ---------------------------------------------------------------------------
 
-let globalDebugEnabled = false;
-let debugNamespaces: Set<string> | null = null; // null = all namespaces
-let flagRegistered = false;
-let commandRegistered = false;
+interface PandaDebugState {
+  enabled: boolean;
+  namespaces: Set<string> | null; // null = all namespaces
+  flagRegistered: boolean;
+  commandRegistered: boolean;
+}
+
+// Shared across every extension in the process. Extensions load via jiti with
+// isolated module graphs, so a module-level singleton cannot dedupe across
+// extensions — globalThis is the one realm they all share. This lets a single
+// extension register the `--debug` flag/command while all loggers read the
+// same debug state.
+const globalScope = globalThis as Record<string, unknown>;
+if (!globalScope.__pandaDebugState) {
+  globalScope.__pandaDebugState = {
+    enabled: false,
+    namespaces: null,
+    flagRegistered: false,
+    commandRegistered: false,
+  } satisfies PandaDebugState;
+}
+const debugState = globalScope.__pandaDebugState as PandaDebugState;
 
 function isDebugActive(namespace: string): boolean {
-  if (!globalDebugEnabled) return false;
-  if (debugNamespaces === null) return true;
-  return debugNamespaces.has(namespace);
+  if (!debugState.enabled) return false;
+  if (debugState.namespaces === null) return true;
+  return debugState.namespaces.has(namespace);
 }
 
 // ---------------------------------------------------------------------------
@@ -31,11 +49,11 @@ export function initDebugFromEnv(): void {
   const val = process.env.PANDA_DEBUG;
   if (!val) return;
   if (val === "*") {
-    globalDebugEnabled = true;
-    debugNamespaces = null;
+    debugState.enabled = true;
+    debugState.namespaces = null;
   } else {
-    globalDebugEnabled = true;
-    debugNamespaces = new Set(val.split(",").map((s) => s.trim()).filter(Boolean));
+    debugState.enabled = true;
+    debugState.namespaces = new Set(val.split(",").map((s) => s.trim()).filter(Boolean));
   }
 }
 
@@ -43,20 +61,23 @@ export function initDebugFromEnv(): void {
  * Programmatically enable or disable global debug logging.
  */
 export function setGlobalDebug(enabled: boolean): void {
-  globalDebugEnabled = enabled;
+  debugState.enabled = enabled;
 }
 
 /**
  * Registers the `--debug` flag with pi. Idempotent — only registers once.
  */
 export function registerDebugFlag(pi: ExtensionAPI): void {
-  if (flagRegistered) return;
-  flagRegistered = true;
+  if (debugState.flagRegistered) return;
+  debugState.flagRegistered = true;
   pi.registerFlag("debug", {
     description: "Enable extension debug logging to session JSONL and console",
     type: "boolean",
     default: false,
   });
+  // Flag values are not parsed at factory time, and only the extension that
+  // registered the flag can read it. Defer the read until the session starts.
+  pi.on("session_start", () => applyDebugFlag(pi));
 }
 
 /**
@@ -72,15 +93,15 @@ export function applyDebugFlag(pi: ExtensionAPI): void {
  * Registers the `/debug` toggle command. Idempotent — only registers once.
  */
 export function registerDebugCommand(pi: ExtensionAPI): void {
-  if (commandRegistered) return;
-  commandRegistered = true;
+  if (debugState.commandRegistered) return;
+  debugState.commandRegistered = true;
   pi.registerCommand("debug", {
     description: "Toggle extension debug logging on/off",
     handler: async (_args: string, ctx: ExtensionContext) => {
-      setGlobalDebug(!globalDebugEnabled);
+      setGlobalDebug(!debugState.enabled);
       if (ctx.hasUI) {
         ctx.ui.notify(
-          `Debug logging ${globalDebugEnabled ? "enabled" : "disabled"}`,
+          `Debug logging ${debugState.enabled ? "enabled" : "disabled"}`,
           "info",
         );
       }
