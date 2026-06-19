@@ -1,17 +1,17 @@
 /**
- * agent-run.ts — Keystone for the C/D revamp (Step 0).
+ * agent-run.ts — Single source of truth for one agent run.
  *
- * A single per-run object that owns ALL runtime state via an ordered, in-process
- * event stream. It is the sole writer of run state; every other concern (widget,
- * supervision, output-file, foreground waiter, external-contract adapter) becomes a
+ * AgentRun is the sole writer of run state: all field mutations flow through
+ * publish() → apply() → project(run, record). The record is a projection.
+ * Every other concern (widget, supervision, external-contract adapter) is a
  * read-only subscriber.
  *
- * DORMANT / ADDITIVE: nothing in the extension imports this yet. It exists so the
- * event taxonomy + reducer + two-bus boundary can be reviewed and tested before any
- * existing file is touched. Deleting this file is a full rollback.
+ * The projector subscriber is installed as the FIRST listener at spawn time in
+ * agent-manager.ts so every event projects to the record synchronously before
+ * any downstream subscriber sees it.
  *
- * See ~/Documents/pi-agent-subagent-revamp/DESIGN-event-taxonomy.md for rationale and
- * the verified mapping to the current implementation.
+ * See ~/Documents/pi-agent-subagent-revamp/DESIGN-event-taxonomy.md for the
+ * verified mapping to the current implementation.
  */
 
 import type { AgentRecord } from "./types.js";
@@ -68,7 +68,8 @@ export type AgentRunEvent =
   | { kind: "waiter"; delta: 1 | -1 }
   | { kind: "completed"; result: string; status: "completed" | "steered" }
   | { kind: "aborted"; status: "aborted" | "stopped"; reason: AbortReason; error?: string; result?: string }
-  | { kind: "failed"; error: string; result?: string };
+  | { kind: "failed"; error: string; result?: string }
+  | { kind: "result_amended"; result: string; error?: string };
 
 type TerminalEvent = Extract<AgentRunEvent, { kind: "completed" | "aborted" | "failed" }>;
 
@@ -385,6 +386,11 @@ export class AgentRun {
         break;
       case "waiter":
         this.waitingConsumers = Math.max(0, this.waitingConsumers + event.delta);
+        break;
+      case "result_amended":
+        if (!this.isTerminal()) return; // defense: amends an already-final result only
+        this.result = event.result;
+        if (event.error !== undefined) this.error = event.error;
         break;
       case "completed":
         this.status = event.status;

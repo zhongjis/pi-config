@@ -60,7 +60,7 @@ pnpm run build
 - `subagents:ready` is the discovery signal for other extensions; breaking or delaying it causes load-order bugs.
 - Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after explicit allowlist resolution.
 - `prompt_mode` is parsed by both `subagent` (this extension) and `modes`. Subagent honors all three values (`replace`/`append`/`system_instructions`); modes coerces non-`append` to `replace` (see `extensions/modes/src/config-loader.ts`). When changing parser semantics in `extensions/lib/agent-frontmatter.ts`, update both consumers.
-- **Single source of truth**: `record.run` (`AgentRun`) owns per-run status + activity; the `agentActivity` map is a live getter-view of it (`runActivityView` in `tools/agent.ts`); supervision reads its snapshots. The external `subagents:*` contract is emitted ONLY by `external-contract-adapter.ts` (`emitTerminalContract`) — keep all external emission there so `tasks/` + compaction-replay stay intact.
+- **Single source of truth**: `record.run` (`AgentRun`) owns all run state; all writes flow `publish() → apply() → project(run, record)` — the record is a projection. The projector subscriber is installed first at spawn (agent-manager.ts) so every publish is synchronously reflected in the record before downstream subscribers see it. The `agentActivity` map is a live getter-view of the run (`runActivityView` in `tools/agent.ts`); supervision reads its snapshots. The external `subagents:*` contract is emitted ONLY by `external-contract-adapter.ts` (`emitTerminalContract`) — keep all external emission there so `tasks/` + compaction-replay stay intact.
 
 ## Local Tweaks
 

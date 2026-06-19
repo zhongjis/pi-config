@@ -117,6 +117,8 @@ export class AgentManager {
       sessionDir: options.sessionDir,
     };
     record.run = new AgentRun(id);
+    // Projector must be the first subscriber so every event projects before downstream readers.
+    record.run.subscribe((_event, run) => project(run, record));
     record.run.publish({
       kind: "created",
       type,
@@ -153,7 +155,6 @@ export class AgentManager {
   private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options }: SpawnArgs) {
     const startedAt = Date.now();
     record.run?.publish({ kind: "started", startedAt });
-    if (record.run) project(record.run, record);
     if (options.isBackground) this.runningBackground++;
     this.onStart?.(record);
 
@@ -243,11 +244,9 @@ export class AgentManager {
           } else {
             record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns", result: finalResult });
           }
-          if (record.run) project(record.run, record);
         } else {
-          // Stopped path: flush resources without touching terminal state (D3 will invert these)
-          record.result = responseText.trim() || getRecoveredResultText(record);
-          record.completedAt ??= Date.now();
+          // Stopped path: amend result via result_amended; run already owns status/error/completedAt
+          let finalResult = responseText.trim() || getRecoveredResultText(record);
           if (record.outputCleanup) {
             try { record.outputCleanup(); } catch { /* ignore */ }
             record.outputCleanup = undefined;
@@ -257,11 +256,12 @@ export class AgentManager {
               const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
               record.worktreeResult = wtResult;
               if (wtResult.hasChanges && wtResult.branch) {
-                record.result = (record.result ?? "") +
+                finalResult = finalResult +
                   `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
               }
             } catch { /* ignore cleanup errors */ }
           }
+          record.run?.publish({ kind: "result_amended", result: finalResult });
         }
         if (options.isBackground) {
           this.runningBackground--;
@@ -291,12 +291,8 @@ export class AgentManager {
           }
 
           record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
-          if (record.run) project(record.run, record);
         } else {
-          // Stopped path: flush resources, keep existing in-place writes
-          record.error = record.error ?? (err instanceof Error ? err.message : String(err));
-          record.completedAt ??= Date.now();
-
+          // Stopped path: amend result via result_amended; run already owns status/error/completedAt
           if (record.outputCleanup) {
             try { record.outputCleanup(); } catch { /* ignore */ }
             record.outputCleanup = undefined;
@@ -307,7 +303,8 @@ export class AgentManager {
               record.worktreeResult = wtResult;
             } catch { /* ignore cleanup errors */ }
           }
-          record.result = getRecoveredResultText(record);
+          const finalResult = getRecoveredResultText(record);
+          record.run?.publish({ kind: "result_amended", result: finalResult });
         }
         if (options.isBackground) {
           this.runningBackground--;
@@ -353,7 +350,6 @@ export class AgentManager {
   /** Phase 1 (dormant): mirror an external/forced stop into the AgentRun. */
   private publishRunStop(record: AgentRecord, message?: string): void {
     record.run?.publish({ kind: "aborted", status: "stopped", reason: "user", error: record.error ?? message });
-    if (record.run) project(record.run, record);
   }
 
   /** Start queued agents up to the concurrency limit. */
@@ -396,7 +392,6 @@ export class AgentManager {
 
     const startedAt = Date.now();
     record.run?.publish({ kind: "resumed", startedAt });
-    if (record.run) project(record.run, record);
 
     try {
       const responseText = await resumeAgent(record.session, prompt, {
@@ -407,12 +402,10 @@ export class AgentManager {
       });
       const finalResult = responseText.trim() || getRecoveredResultText({ ...record, status: "completed" });
       record.run?.publish({ kind: "completed", result: finalResult, status: "completed" });
-      if (record.run) project(record.run, record);
     } catch (err) {
       const finalError = err instanceof Error ? err.message : String(err);
       const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
       record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
-      if (record.run) project(record.run, record);
     }
 
     return record;

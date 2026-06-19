@@ -257,3 +257,42 @@ describe("D3a — abort() / publishRunStop interleave: stopped status wins over 
     }
   });
 });
+
+describe("D4a — result_amended: stopped result flows via run after late settle", () => {
+  afterEach(() => {
+    runAgentMock.mockReset();
+  });
+
+  it("abort() then settle: run.result === record.result, status stays stopped", async () => {
+    const session = fakeSession();
+    let resolveRun!: (v: any) => void;
+    runAgentMock.mockImplementation(() => new Promise(resolve => { resolveRun = resolve; }));
+
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn(PI, CTX, "general-purpose", "p", { description: "d", isBackground: false });
+      const record = manager.getRecord(id)!;
+
+      await Promise.resolve(); // flush so startAgent runs
+
+      manager.abort(id); // sets status="stopped" synchronously via publishRunStop+project
+      expect(record.status).toBe("stopped");
+
+      // Resolve with partial text — .then stopped branch publishes result_amended
+      resolveRun({ responseText: "partial output", session, aborted: false, steered: false });
+      await record.promise;
+
+      // status and error unchanged (terminal guard held)
+      expect(record.status).toBe("stopped");
+      expect(record.error).toBe("Agent was stopped while running.");
+      // result_amended + project() propagated the result
+      expect(record.result).toBe("partial output");
+      expect(record.run?.result).toBe("partial output");
+      expect(record.run?.result).toBe(record.result); // run is the writer
+      // completedAt stamped at abort time, not settle time
+      expect(record.completedAt).toBeTypeOf("number");
+    } finally {
+      manager.dispose();
+    }
+  });
+});

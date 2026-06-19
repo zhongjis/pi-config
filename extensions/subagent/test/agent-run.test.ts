@@ -127,6 +127,16 @@ describe("AgentRun reducer — terminal idempotency & resume", () => {
     expect(run.status).toBe("completed");
     expect(run.result).toBe("second");
   });
+
+  it("result_amended on a non-terminal run is a no-op (pre-terminal guard)", () => {
+    const { run } = makeRun();
+    run.publish(created());
+    run.publish({ kind: "started", startedAt: 1000 });
+    expect(run.status).toBe("running"); // non-terminal
+
+    run.publish({ kind: "result_amended", result: "should not stick" });
+    expect(run.result).toBeUndefined(); // guard rejected it
+  });
 });
 
 describe("AgentRun reducer — activity", () => {
@@ -456,5 +466,40 @@ describe("project() — terminal projector", () => {
     project(run, record);
     expect(record.startedAt).toBe(500); // project() copied actual-start, not queue time
     expect(record.startedAt).toBe(run.startedAt);
+  });
+});
+
+describe("project() subscriber — synchronous projection invariant", () => {
+  it("immediately after publish() returns, record fields are already projected (no await)", () => {
+    const run = new AgentRun("sync1", { now: () => 9000 });
+    const record: any = { id: "sync1", status: "queued", startedAt: 0 };
+    // Wire subscriber exactly as agent-manager.ts spawn does
+    run.subscribe((_event, r) => project(r, record));
+
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 1000 });
+    run.publish({ kind: "started", startedAt: 1500 });
+    // synchronous — no await
+    expect(record.status).toBe("running");
+    expect(record.startedAt).toBe(1500);
+
+    run.publish({ kind: "completed", result: "done", status: "completed" });
+    // synchronous — no await
+    expect(record.status).toBe("completed");
+    expect(record.result).toBe("done");
+    expect(record.completedAt).toBe(9000);
+  });
+
+  it("stop publish projects status=stopped synchronously (the .then guard invariant)", () => {
+    const run = new AgentRun("sync2", { now: () => 9000 });
+    const record: any = { id: "sync2", status: "running", startedAt: 0 };
+    run.subscribe((_event, r) => project(r, record));
+
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 1000 });
+    run.publish({ kind: "started", startedAt: 1500 });
+    run.publish({ kind: "aborted", status: "stopped", reason: "user", error: "Agent was stopped while running." });
+    // synchronous — no await
+    expect(record.status).toBe("stopped");
+    expect(record.error).toBe("Agent was stopped while running.");
+    expect(record.completedAt).toBe(9000);
   });
 });
