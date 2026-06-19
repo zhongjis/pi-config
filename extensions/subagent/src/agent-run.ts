@@ -67,8 +67,8 @@ export type AgentRunEvent =
   | { kind: "steered"; message: string; origin: SteerOrigin; at: number }
   | { kind: "waiter"; delta: 1 | -1 }
   | { kind: "completed"; result: string; status: "completed" | "steered" }
-  | { kind: "aborted"; status: "aborted" | "stopped"; reason: AbortReason; error?: string }
-  | { kind: "failed"; error: string };
+  | { kind: "aborted"; status: "aborted" | "stopped"; reason: AbortReason; error?: string; result?: string }
+  | { kind: "failed"; error: string; result?: string };
 
 type TerminalEvent = Extract<AgentRunEvent, { kind: "completed" | "aborted" | "failed" }>;
 
@@ -392,6 +392,7 @@ export class AgentRun {
       case "aborted":
         this.status = event.status;
         this.error = event.error ?? this.error;
+        this.result = event.result ?? this.result;
         if (event.reason === "ceiling" || event.reason === "supervision") {
           this.lastSupervisionAbortAt = this.now();
         }
@@ -400,8 +401,26 @@ export class AgentRun {
       case "failed":
         this.status = "error";
         this.error = event.error;
+        this.result = event.result ?? this.result;
         this.completedAt ??= this.now();
         break;
     }
   }
+}
+
+/**
+ * Pure projector: copy terminal run state into the record.
+ * Called immediately after each terminal publish so record stays
+ * consistent with the run (D2 contract). Pure — no events, no side effects.
+ *
+ * Fields projected: status, result, error, completedAt.
+ * startedAt is a NON-terminal field left in-place (record.startedAt is
+ * overwritten to actual-start time in startAgent/resume; run.startedAt only
+ * reflects queue/creation time until a future slice wires "started" → run).
+ */
+export function project(run: AgentRun, record: AgentRecord): void {
+  record.status = run.status;
+  record.result = run.result;
+  record.error = run.error;
+  record.completedAt = run.completedAt;
 }

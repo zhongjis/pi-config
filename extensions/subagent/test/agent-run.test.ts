@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentRun, type AgentRunEvent, toExternalEffects } from "../src/agent-run.js";
+import { AgentRun, type AgentRunEvent, project, toExternalEffects } from "../src/agent-run.js";
 
 /** Run with a controllable clock for deterministic timestamp assertions. */
 function makeRun(start = 1000) {
@@ -415,5 +415,29 @@ describe("AgentRun — realistic sequence", () => {
     expect(run.activity.tokens).toBe("12.0k");
     expect(run.completedAt).toBe(1300);
     await expect(terminal).resolves.toEqual({ status: "completed", result: "all done", error: undefined });
+  });
+});
+
+describe("project() — terminal projector", () => {
+  it("writes status/result/error/completedAt from run to record", () => {
+    const run = new AgentRun("p1", { now: () => 9000 });
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 100 });
+    run.publish({ kind: "started" });
+    run.publish({ kind: "completed", result: "done", status: "completed" });
+
+    const record = {
+      id: "p1", type: "general-purpose", description: "d",
+      status: "running" as const, toolUses: 0,
+      startedAt: 500,  // actual-start time — must NOT be overwritten by project()
+    } as any;
+
+    project(run, record);
+
+    expect(record.status).toBe("completed");
+    expect(record.result).toBe("done");
+    expect(record.error).toBeUndefined();
+    expect(record.completedAt).toBe(run.completedAt);
+    // startedAt must be unchanged — project() does not touch non-terminal fields
+    expect(record.startedAt).toBe(500);
   });
 });

@@ -14,7 +14,7 @@ import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import type { AgentRecord, IsolationMode, SubagentType, ThinkingLevel } from "./types.js";
 import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js";
 import { getRecoveredResultText } from "./result-recovery.js";
-import { AgentRun } from "./agent-run.js";
+import { AgentRun, project } from "./agent-run.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
@@ -215,35 +215,54 @@ export class AgentManager {
       },
     })
       .then(({ responseText, session, aborted, steered }) => {
+        record.session = session;
+
         // Don't overwrite status if externally stopped via abort()
         if (record.status !== "stopped") {
-          record.status = aborted ? "aborted" : steered ? "steered" : "completed";
-        }
-        record.session = session;
-        record.result = responseText.trim() || getRecoveredResultText(record);
-        record.completedAt ??= Date.now();
+          const finalStatus = aborted ? "aborted" : steered ? "steered" : "completed";
+          let finalResult = responseText.trim() || getRecoveredResultText({ ...record, status: finalStatus });
 
-        // Final flush of streaming output file
-        if (record.outputCleanup) {
-          try { record.outputCleanup(); } catch { /* ignore */ }
-          record.outputCleanup = undefined;
-        }
+          // Final flush of streaming output file
+          if (record.outputCleanup) {
+            try { record.outputCleanup(); } catch { /* ignore */ }
+            record.outputCleanup = undefined;
+          }
 
-        // Clean up worktree if used
-        if (record.worktree) {
-          const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
-          record.worktreeResult = wtResult;
-          if (wtResult.hasChanges && wtResult.branch) {
-            record.result = (record.result ?? "") +
-              `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
+          // Clean up worktree if used
+          if (record.worktree) {
+            const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
+            record.worktreeResult = wtResult;
+            if (wtResult.hasChanges && wtResult.branch) {
+              finalResult = finalResult +
+                `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
+            }
+          }
+
+          if (finalStatus === "completed" || finalStatus === "steered") {
+            record.run?.publish({ kind: "completed", result: finalResult, status: finalStatus });
+          } else {
+            record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns", result: finalResult });
+          }
+          if (record.run) project(record.run, record);
+        } else {
+          // Stopped path: flush resources without touching terminal state (D3 will invert these)
+          record.result = responseText.trim() || getRecoveredResultText(record);
+          record.completedAt ??= Date.now();
+          if (record.outputCleanup) {
+            try { record.outputCleanup(); } catch { /* ignore */ }
+            record.outputCleanup = undefined;
+          }
+          if (record.worktree) {
+            try {
+              const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
+              record.worktreeResult = wtResult;
+              if (wtResult.hasChanges && wtResult.branch) {
+                record.result = (record.result ?? "") +
+                  `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
+              }
+            } catch { /* ignore cleanup errors */ }
           }
         }
-        if (record.status === "completed" || record.status === "steered") {
-          record.run?.publish({ kind: "completed", result: record.result ?? "", status: record.status });
-        } else if (record.status === "aborted") {
-          record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns" });
-        }
-
         if (options.isBackground) {
           this.runningBackground--;
           this.onComplete?.(record);
@@ -254,29 +273,42 @@ export class AgentManager {
       .catch((err) => {
         // Don't overwrite status if externally stopped via abort()
         if (record.status !== "stopped") {
-          record.status = "error";
-        }
-        record.error = record.error ?? (err instanceof Error ? err.message : String(err));
-        record.completedAt ??= Date.now();
+          const finalError = record.error ?? (err instanceof Error ? err.message : String(err));
+          const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
 
-        // Final flush of streaming output file on error
-        if (record.outputCleanup) {
-          try { record.outputCleanup(); } catch { /* ignore */ }
-          record.outputCleanup = undefined;
-        }
+          // Final flush of streaming output file on error
+          if (record.outputCleanup) {
+            try { record.outputCleanup(); } catch { /* ignore */ }
+            record.outputCleanup = undefined;
+          }
 
-        // Best-effort worktree cleanup on error
-        if (record.worktree) {
-          try {
-            const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
-            record.worktreeResult = wtResult;
-          } catch { /* ignore cleanup errors */ }
-        }
-        record.result = getRecoveredResultText(record);
-        if (record.status === "error") {
-          record.run?.publish({ kind: "failed", error: record.error ?? "Agent failed." });
-        }
+          // Best-effort worktree cleanup on error
+          if (record.worktree) {
+            try {
+              const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
+              record.worktreeResult = wtResult;
+            } catch { /* ignore cleanup errors */ }
+          }
 
+          record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
+          if (record.run) project(record.run, record);
+        } else {
+          // Stopped path: flush resources, keep existing in-place writes
+          record.error = record.error ?? (err instanceof Error ? err.message : String(err));
+          record.completedAt ??= Date.now();
+
+          if (record.outputCleanup) {
+            try { record.outputCleanup(); } catch { /* ignore */ }
+            record.outputCleanup = undefined;
+          }
+          if (record.worktree) {
+            try {
+              const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
+              record.worktreeResult = wtResult;
+            } catch { /* ignore cleanup errors */ }
+          }
+          record.result = getRecoveredResultText(record);
+        }
         if (options.isBackground) {
           this.runningBackground--;
           this.onComplete?.(record);
@@ -381,16 +413,14 @@ export class AgentManager {
         },
         signal,
       });
-      record.status = "completed";
-      record.result = responseText.trim() || getRecoveredResultText(record);
-      record.completedAt = Date.now();
-      record.run?.publish({ kind: "completed", result: record.result ?? "", status: "completed" });
+      const finalResult = responseText.trim() || getRecoveredResultText({ ...record, status: "completed" });
+      record.run?.publish({ kind: "completed", result: finalResult, status: "completed" });
+      if (record.run) project(record.run, record);
     } catch (err) {
-      record.status = "error";
-      record.error = err instanceof Error ? err.message : String(err);
-      record.result = getRecoveredResultText(record);
-      record.completedAt = Date.now();
-      record.run?.publish({ kind: "failed", error: record.error ?? "Agent failed." });
+      const finalError = err instanceof Error ? err.message : String(err);
+      const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
+      record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
+      if (record.run) project(record.run, record);
     }
 
     return record;
