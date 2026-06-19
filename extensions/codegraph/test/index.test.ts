@@ -62,7 +62,14 @@ function createMockPi(): MockPi {
   };
 }
 
-function createChild(options: { errorOnInitialize?: Error; resultText?: string } = {}): FakeChild {
+type CreateChildOptions = {
+  errorOnInitialize?: Error;
+  resultText?: string;
+  toolError?: boolean;
+  toolResponseDelay?: Promise<void>;
+};
+
+function createChild(options: CreateChildOptions = {}): FakeChild {
   const child = new EventEmitter() as FakeChild;
   child.stdout = new FakeStream();
   child.stderr = new FakeStream();
@@ -86,13 +93,16 @@ function createChild(options: { errorOnInitialize?: Error; resultText?: string }
       });
     }
     if (msg.method === "tools/call") {
-      queueMicrotask(() => {
+      queueMicrotask(async () => {
+        await options.toolResponseDelay;
         child.stdout.emit(
           "data",
           `${JSON.stringify({
             jsonrpc: "2.0",
             id: msg.id,
-            result: { content: [{ type: "text", text: options.resultText ?? "ok" }] },
+            result: options.toolError
+              ? { isError: true, content: [{ type: "text", text: options.resultText ?? "tool failed" }] }
+              : { content: [{ type: "text", text: options.resultText ?? "ok" }] },
           })}\n`,
         );
       });
@@ -100,6 +110,14 @@ function createChild(options: { errorOnInitialize?: Error; resultText?: string }
     return true;
   });
   return child;
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1000;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for condition.");
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
 }
 
 async function loadExtension() {
@@ -233,18 +251,7 @@ describe("codegraph extension", () => {
   });
 
   it("cleans up pending MCP session on tool error", async () => {
-    const child = createChild({ resultText: "tool failed" });
-    child.stdin.write.mockImplementation((payload: string) => {
-      const msg = JSON.parse(payload.trim()) as Record<string, unknown>;
-      child.writes.push(msg);
-      if (msg.method === "initialize") {
-        queueMicrotask(() => child.stdout.emit("data", `${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} })}\n`));
-      }
-      if (msg.method === "tools/call") {
-        queueMicrotask(() => child.stdout.emit("data", `${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { isError: true, content: [{ type: "text", text: "tool failed" }] } })}\n`));
-      }
-      return true;
-    });
+    const child = createChild({ resultText: "tool failed", toolError: true });
     spawnMock.mockReturnValue(child);
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
@@ -254,5 +261,86 @@ describe("codegraph extension", () => {
       mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
     ).rejects.toThrow("tool failed");
     expect(child.kill).toHaveBeenCalled();
+  });
+
+  it("serializes concurrent calls for the same project", async () => {
+    let releaseFirst!: () => void;
+    const firstToolResponse = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let spawnCount = 0;
+    spawnMock.mockImplementation(() => {
+      spawnCount += 1;
+      return createChild({
+        resultText: `ok ${spawnCount}`,
+        toolResponseDelay: spawnCount === 1 ? firstToolResponse : undefined,
+      });
+    });
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const first = mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+    await waitFor(() => spawnMock.mock.calls.length === 1);
+    const second = mock.tools.get("codegraph_files")!.execute("tool-2", {}, undefined, undefined, { cwd: tempRoot });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    releaseFirst();
+    const results = await Promise.all([first, second]);
+
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(results.map((result) => result.content[0].text)).toEqual(["ok 1", "ok 2"]);
+  });
+
+  it("continues same-project queue after a failed call", async () => {
+    let spawnCount = 0;
+    spawnMock.mockImplementation(() => {
+      spawnCount += 1;
+      return createChild({
+        resultText: spawnCount === 1 ? "tool failed" : "ok after failure",
+        toolError: spawnCount === 1,
+      });
+    });
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const first = mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+    const second = mock.tools.get("codegraph_files")!.execute("tool-2", {}, undefined, undefined, { cwd: tempRoot });
+    const [firstResult, secondResult] = await Promise.allSettled([first, second]);
+
+    expect(firstResult.status).toBe("rejected");
+    expect(secondResult.status).toBe("fulfilled");
+    if (secondResult.status === "fulfilled") {
+      expect(secondResult.value.content[0].text).toBe("ok after failure");
+    }
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not serialize calls for different projects", async () => {
+    const projectPath = await mkdtemp(path.join(tempRoot, "other-"));
+    let releaseTools!: () => void;
+    const toolResponse = new Promise<void>((resolve) => {
+      releaseTools = resolve;
+    });
+    spawnMock.mockImplementation(() => createChild({ toolResponseDelay: toolResponse }));
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const first = mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+    const second = mock.tools.get("codegraph_status")!.execute(
+      "tool-2",
+      { projectPath },
+      undefined,
+      undefined,
+      { cwd: tempRoot },
+    );
+    await waitFor(() => spawnMock.mock.calls.length === 2);
+
+    releaseTools();
+    await Promise.all([first, second]);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 });

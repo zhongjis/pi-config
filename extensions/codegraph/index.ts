@@ -121,8 +121,25 @@ type PendingJsonRpcRequests = Map<number, {
 }>;
 
 const MaxDiagnosticLength = 1000;
+const projectQueues = new Map<string, Promise<void>>();
 
 export const codegraphToolNames = ToolDefinitions.map((tool) => tool.name);
+
+function enqueueCodeGraphRequest<T>(cwd: string, task: () => Promise<T>): Promise<T> {
+  const previous = projectQueues.get(cwd) ?? Promise.resolve();
+  const run = previous.then(task, task);
+  const cleanup = run
+    .then(
+      () => undefined,
+      () => undefined,
+    )
+    .then(() => {
+      if (projectQueues.get(cwd) === cleanup) projectQueues.delete(cwd);
+    });
+
+  projectQueues.set(cwd, cleanup);
+  return run;
+}
 
 export async function withCodeGraphMcp<T>(
   projectPath: string | undefined,
@@ -369,14 +386,18 @@ export async function callCodeGraphTool(
 ): Promise<string> {
   const { args, originalFilesPath } = await prepareToolArguments(name, params);
 
-  const result = await withCodeGraphMcp(
-    typeof args.projectPath === "string" ? args.projectPath : undefined,
-    signal,
-    (request) =>
-      request("tools/call", {
-        name,
-        arguments: args,
-      }),
+  const projectPath = typeof args.projectPath === "string" ? args.projectPath : undefined;
+  const projectCwd = await resolveProjectCwd(projectPath);
+  const result = await enqueueCodeGraphRequest(projectCwd, () =>
+    withCodeGraphMcp(
+      projectCwd,
+      signal,
+      (request) =>
+        request("tools/call", {
+          name,
+          arguments: args,
+        }),
+    )
   );
 
   const text = (result?.content || [])

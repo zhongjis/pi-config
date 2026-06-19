@@ -35,3 +35,4 @@ All tools accept optional `projectPath` to query another absolute indexed projec
 - `codegraph` CLI must be available on `PATH`; no new repo dependency is added.
 - Target projects must have a `.codegraph/` index initialized for useful results.
 - Each tool starts internal subprocess `codegraph serve --mcp --path <project>` for its call. This is not a root MCP server and adds no `settings.json` MCP config.
+- Same-project tool calls are serialized inside this extension to avoid CodeGraph MCP proxy races under parallel agent tool use; different `projectPath` values may still run concurrently.

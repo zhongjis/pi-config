@@ -9,7 +9,7 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 | File | What | Why |
 |------|------|-----|
 | `index.ts` | Upstream `extensions/codegraph.ts` lives at directory entrypoint `extensions/codegraph/index.ts` | Repo requires extension directories with `index.ts`; no bare `extensions/*.ts` |
-| `index.ts` | Tool `execute` injects `ctx.cwd` as `projectPath` only when params omit `projectPath`; explicit `projectPath` still wins. JSON-RPC stdout loop avoids assignment-in-expression. | Pi runtime cwd is correct project default in this harness; repo lint disallows assignment in expressions |
+| `index.ts` | Tool `execute` injects `ctx.cwd` as `projectPath` only when params omit `projectPath`; explicit `projectPath` still wins. JSON-RPC stdout loop avoids assignment-in-expression. Same-project tool calls are serialized through a module-level queue; different resolved project paths remain independent. | Pi runtime cwd is correct project default in this harness; repo lint disallows assignment in expressions; CodeGraph MCP proxy is flaky under same-project parallel short-lived subprocesses |
 | `README.md` | Replaced upstream README with repo-standard concise docs and provenance | Repo docs omit install/development instructions and keep upstream metadata local |
 | upstream `package.json` | Omitted; upstream metadata moved to `README.md` | No extension-local package/toolchain; no new deps |
 | `LICENSE` | Copied upstream MIT license | Preserve vendored attribution/license text |
