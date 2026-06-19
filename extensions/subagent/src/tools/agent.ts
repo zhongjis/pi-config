@@ -439,6 +439,22 @@ Guidelines:
       const parentSessionId = getParentSessionId(ctx);
       const subagentSessionDir = createSubagentSessionDir(parentSessionId);
 
+      // Shared spawn options for both paths. Background adds isBackground + bg callbacks;
+      // foreground adds fg callbacks. Single source so the two call sites can't drift.
+      const baseSpawnOptions = {
+        description: params.description,
+        model,
+        modelLabel: agentModelLabel,
+        maxTurns: effectiveMaxTurns,
+        signal: parentSignal,
+        isolated,
+        inheritContext,
+        thinkingLevel: thinking,
+        isolation,
+        parentSessionId,
+        sessionDir: subagentSessionDir,
+      };
+
       // Background execution
       if (runInBackground) {
         const { state: bgState, callbacks: bgCallbacks } = createActivityTracker(effectiveMaxTurns);
@@ -461,18 +477,8 @@ Guidelines:
         };
 
         id = manager.spawn(pi, ctx, subagentType, params.prompt, {
-          description: params.description,
-          model,
-          modelLabel: agentModelLabel,
-          maxTurns: effectiveMaxTurns,
-          signal: parentSignal,
-          isolated,
-          inheritContext,
-          thinkingLevel: thinking,
+          ...baseSpawnOptions,
           isBackground: true,
-          isolation,
-          parentSessionId,
-          sessionDir: subagentSessionDir,
           ...bgCallbacks,
         });
 
@@ -576,17 +582,7 @@ Guidelines:
       try {
         flushStreamUpdate();
         record = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
-          description: params.description,
-          model,
-          modelLabel: agentModelLabel,
-          maxTurns: effectiveMaxTurns,
-          signal: parentSignal,
-          isolated,
-          inheritContext,
-          thinkingLevel: thinking,
-          isolation,
-          parentSessionId,
-          sessionDir: subagentSessionDir,
+          ...baseSpawnOptions,
           ...fgCallbacks,
         });
       } finally {
