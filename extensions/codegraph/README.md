@@ -36,3 +36,8 @@ All tools accept optional `projectPath` to query another absolute indexed projec
 - Target projects must have a `.codegraph/` index initialized for useful results.
 - Each tool starts internal subprocess `codegraph serve --mcp --path <project>` for its call. This is not a root MCP server and adds no `settings.json` MCP config.
 - Same-project tool calls are serialized inside this extension to avoid CodeGraph MCP proxy races under parallel agent tool use; different `projectPath` values may still run concurrently.
+- Project paths resolve to the nearest ancestor directory containing `.codegraph/`, so launching pi inside a subdirectory of an indexed repo still works.
+- Each JSON-RPC request to the subprocess times out after 30s (override with the `CODEGRAPH_TIMEOUT_MS` env var); on timeout the subprocess is killed so a hung `codegraph` cannot block the agent or the same-project queue.
+- When the `codegraph` CLI is missing from `PATH` or the project has no `.codegraph/` index, tools fail with actionable install / `codegraph init -i` guidance instead of a raw spawn error.
+
+These local divergences from upstream `@vndv/pi-codegraph` are recorded in `AGENTS.md`.

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -227,7 +227,7 @@ describe("codegraph extension", () => {
 
     await expect(
       mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
-    ).rejects.toThrow("spawn codegraph ENOENT");
+    ).rejects.toThrow("was not found on PATH");
   });
 
   it("normalizes absolute codegraph_files path inside ctx.cwd", async () => {
@@ -342,5 +342,45 @@ describe("codegraph extension", () => {
     releaseTools();
     await Promise.all([first, second]);
     expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves to the nearest ancestor that contains .codegraph", async () => {
+    const projectRoot = await mkdtemp(path.join(tempRoot, "mono-"));
+    await mkdir(path.join(projectRoot, ".codegraph"));
+    const nested = path.join(projectRoot, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    const { resolveProjectCwd } = await loadExtension();
+
+    expect(await resolveProjectCwd(nested)).toBe(projectRoot);
+    expect(await resolveProjectCwd(projectRoot)).toBe(projectRoot);
+  });
+
+  it("times out and kills the subprocess when CodeGraph never responds", async () => {
+    process.env.CODEGRAPH_TIMEOUT_MS = "40";
+    try {
+      const child = createChild({ toolResponseDelay: new Promise<void>(() => { /* never settles; forces a timeout */ }) });
+      spawnMock.mockReturnValue(child);
+      const mock = createMockPi();
+      const { default: codegraphExtension } = await loadExtension();
+      codegraphExtension(mock.pi as never);
+
+      await expect(
+        mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
+      ).rejects.toThrow("timed out");
+      expect(child.kill).toHaveBeenCalled();
+    } finally {
+      delete process.env.CODEGRAPH_TIMEOUT_MS;
+    }
+  });
+
+  it("adds index-init guidance when CodeGraph reports an uninitialized project", async () => {
+    spawnMock.mockReturnValue(createChild({ toolError: true, resultText: "Project is not initialized" }));
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    await expect(
+      mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
+    ).rejects.toThrow("codegraph init -i");
   });
 });

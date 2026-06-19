@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -122,6 +123,7 @@ type PendingJsonRpcRequests = Map<number, {
 
 const MaxDiagnosticLength = 1000;
 const projectQueues = new Map<string, Promise<void>>();
+const RequestTimeoutMs = Number(process.env.CODEGRAPH_TIMEOUT_MS) || 30_000;
 
 export const codegraphToolNames = ToolDefinitions.map((tool) => tool.name);
 
@@ -156,6 +158,17 @@ export async function withCodeGraphMcp<T>(
   return runJsonRpcSession(child, cwd, signal, fn);
 }
 
+function findCodeGraphRoot(startDir: string): string | undefined {
+  let current = startDir;
+  let parent = path.dirname(current);
+  while (current !== parent) {
+    if (existsSync(path.join(current, ".codegraph"))) return current;
+    current = parent;
+    parent = path.dirname(current);
+  }
+  return existsSync(path.join(current, ".codegraph")) ? current : undefined;
+}
+
 export async function resolveProjectCwd(projectPath: string | undefined): Promise<string> {
   const cwd = projectPath || process.cwd();
 
@@ -174,7 +187,7 @@ export async function resolveProjectCwd(projectPath: string | undefined): Promis
     throw new Error("CodeGraph projectPath must point to a directory.");
   }
 
-  return cwd;
+  return findCodeGraphRoot(cwd) ?? cwd;
 }
 
 export function normalizeFilesPath(inputPath?: string, projectCwd?: string): string | undefined {
@@ -327,7 +340,21 @@ function createJsonRpcRequestSender(
     const id = nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     const promise = new Promise<any>((resolve, reject) => {
-      pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (!pending.delete(id)) return;
+        reject(new Error(`CodeGraph MCP request "${method}" timed out after ${RequestTimeoutMs}ms.`));
+      }, RequestTimeoutMs);
+      timer.unref();
+      pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
     });
     child.stdin.write(`${JSON.stringify(payload)}\n`);
     return promise;
@@ -410,6 +437,32 @@ export async function callCodeGraphTool(
   return name === "codegraph_files" ? annotateFilesResult(finalText, originalFilesPath) : finalText;
 }
 
+export function formatCodeGraphError(error: unknown, toolName: string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+
+  if (lower.includes("enoent") || lower.includes("spawn codegraph")) {
+    return [
+      `CodeGraph ${toolName} failed: the \`codegraph\` CLI was not found on PATH.`,
+      "Install it, then relaunch pi from the same shell:",
+      "  npm install -g @colbymchenry/codegraph",
+      "Or install it inside the project:",
+      "  npm install -D @colbymchenry/codegraph",
+    ].join("\n");
+  }
+
+  if (lower.includes("not initialized") || lower.includes(".codegraph")) {
+    return [
+      `CodeGraph ${toolName} failed: ${message}`,
+      "Build the index in the project root first:",
+      "  codegraph init -i",
+      "  codegraph status",
+    ].join("\n");
+  }
+
+  return `CodeGraph ${toolName} failed: ${message}`;
+}
+
 export default function codegraphExtension(pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (event) => {
     const guidance = [
@@ -437,11 +490,15 @@ export default function codegraphExtension(pi: ExtensionAPI): void {
       parameters: tool.parameters,
       async execute(_toolCallId, params: Static<typeof tool.parameters>, signal, _onUpdate, ctx) {
         const toolParams = (params || {}) as ToolParams;
-        const text = await callCodeGraphTool(tool.name, { projectPath: ctx.cwd, ...toolParams }, signal);
-        return {
-          content: [{ type: "text" as const, text }],
-          details: {},
-        };
+        try {
+          const text = await callCodeGraphTool(tool.name, { projectPath: ctx.cwd, ...toolParams }, signal);
+          return {
+            content: [{ type: "text" as const, text }],
+            details: {},
+          };
+        } catch (error) {
+          throw new Error(formatCodeGraphError(error, tool.name));
+        }
       },
     });
   }
