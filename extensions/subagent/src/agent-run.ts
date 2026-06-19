@@ -67,7 +67,7 @@ export type AgentRunEvent =
   | { kind: "steered"; message: string; origin: SteerOrigin; at: number }
   | { kind: "waiter"; delta: 1 | -1 }
   | { kind: "completed"; result: string; status: "completed" | "steered" }
-  | { kind: "aborted"; status: "aborted" | "stopped"; reason: AbortReason }
+  | { kind: "aborted"; status: "aborted" | "stopped"; reason: AbortReason; error?: string }
   | { kind: "failed"; error: string };
 
 type TerminalEvent = Extract<AgentRunEvent, { kind: "completed" | "aborted" | "failed" }>;
@@ -391,6 +391,7 @@ export class AgentRun {
         break;
       case "aborted":
         this.status = event.status;
+        this.error = event.error ?? this.error;
         if (event.reason === "ceiling" || event.reason === "supervision") {
           this.lastSupervisionAbortAt = this.now();
         }

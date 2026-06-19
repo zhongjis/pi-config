@@ -326,7 +326,7 @@ export class AgentManager {
 
   /** Phase 1 (dormant): mirror an external/forced stop into the AgentRun. */
   private publishRunStop(record: AgentRecord): void {
-    record.run?.publish({ kind: "aborted", status: "stopped", reason: "user" });
+    record.run?.publish({ kind: "aborted", status: "stopped", reason: "user", error: record.error });
   }
 
   /** Start queued agents up to the concurrency limit. */

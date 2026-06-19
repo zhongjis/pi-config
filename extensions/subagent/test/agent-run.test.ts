@@ -67,6 +67,30 @@ describe("AgentRun reducer — status derivation", () => {
     expect(c.status).toBe("error");
     expect(c.error).toBe("boom");
   });
+
+  it("aborted event with error sets run.error", () => {
+    const { run } = makeRun();
+    run.publish(created());
+    run.publish({ kind: "aborted", status: "stopped", reason: "user", error: "Agent was stopped while running." });
+    expect(run.status).toBe("stopped");
+    expect(run.error).toBe("Agent was stopped while running.");
+  });
+
+  it("aborted event WITHOUT error field does not set run.error (?? preserves undefined)", () => {
+    const { run } = makeRun();
+    run.publish(created());
+    // event.error = undefined, this.error = undefined → undefined ?? undefined = undefined
+    run.publish({ kind: "aborted", status: "stopped", reason: "user" }); // no error field
+    expect(run.error).toBeUndefined();
+  });
+
+  it("max_turns aborted event carries no error by default", () => {
+    const { run } = makeRun();
+    run.publish(created());
+    run.publish({ kind: "aborted", status: "aborted", reason: "max_turns" });
+    expect(run.status).toBe("aborted");
+    expect(run.error).toBeUndefined();
+  });
 });
 
 describe("AgentRun reducer — terminal idempotency & resume", () => {
