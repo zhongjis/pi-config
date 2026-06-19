@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+type ModeContext = { mode?: unknown };
 
 // ---------------------------------------------------------------------------
 // isTui
@@ -12,6 +12,6 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
  * `true` in BOTH TUI and RPC modes, but `ui.custom()` returns `undefined` and
  * component factories do not render under RPC — so `hasUI` cannot gate them.
  */
-export function isTui(ctx: Pick<ExtensionContext, "mode">): boolean {
-  return ctx.mode === "tui";
+export function isTui(ctx: unknown): boolean {
+  return typeof ctx === "object" && ctx !== null && "mode" in ctx && (ctx as ModeContext).mode === "tui";
 }
