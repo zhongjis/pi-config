@@ -20,6 +20,7 @@ Requires `hunk` on PATH and interactive (TUI) mode.
 | `/diff staged` | index (alias: `cached`) | what's staged | `hunk diff --staged` |
 | `/diff base` | `@{upstream}` merge-base | unpushed work (vs my remote branch) | `hunk diff $(git merge-base HEAD @{upstream})` |
 | `/diff pr [<ref>]` | integration branch merge-base | the whole PR | `hunk diff $(git merge-base HEAD <origin/HEAD\|ref>)` |
+| `/diff pr-walkthrough [<ref>]` | integration branch merge-base | the PR, **annotated by the agent** | agent writes sidecar → `hunk diff <sha> --agent-context notes.json` |
 | `/diff <ref>` | a ref, direct | working tree vs that ref | `hunk diff <ref>` |
 | `/diff commit` | last commit | most recent commit | `hunk show` |
 | `/diff stash` | latest stash | stash entry | `hunk stash show` |
@@ -36,3 +37,29 @@ Requires `hunk` on PATH and interactive (TUI) mode.
 After every `/diff` review, the extension queries the live hunk session for inline comments. If you left any, they are formatted as `file:line — summary` and sent to the agent as a user message instructing it to address each one — turning the diff view into a two-way review channel. No comments left → nothing is sent.
 
 Comments are owned by hunk; the extension keeps no separate comment store. Querying when no session/comment exists is a silent no-op.
+
+## PR walkthrough (agent-narrated)
+
+`/diff pr-walkthrough [<ref>]` flips the review loop: instead of *you* annotating for the agent, the **agent annotates the PR for you**. Two phases:
+
+1. **Analyze** — the command resolves the PR base (same logic as `/diff pr`) and hands the agent a prompt to read `git diff <sha>` and write a [hunk agent-context sidecar](https://github.com/modem-dev/hunk/blob/main/docs/agent-workflows.md): a JSON file of per-hunk summaries and rationale. The command does **not** launch hunk itself.
+2. **Open** — the agent calls the `open_pr_walkthrough` tool, which launches `hunk diff <sha> --agent-context <sidecar> --agent-notes` so the annotations render inline beside each hunk. Closing the review harvests any comments *you* leave (the Review loop above), so the walkthrough and your feedback compose into one conversation.
+
+Sidecar schema (line numbers are on the new side of each file):
+
+```json
+{
+  "version": 1,
+  "summary": "one-line PR summary",
+  "files": [
+    { "path": "src/x.ts", "summary": "what changed in this file",
+      "annotations": [
+        { "newRange": [12, 20], "summary": "what this hunk does", "rationale": "why it matters" }
+      ] }
+  ]
+}
+```
+
+Single terminal — the tool suspends pi's TUI and launches hunk like any other `/diff`, so no separate hunk window is needed.
+
+The `open_pr_walkthrough` tool is **command-gated, not allowlisted**: it is registered but kept out of every mode's `extension_tools` list. `/diff pr-walkthrough` force-enables it for the session via `pi.setActiveTools`, and the tool removes itself from the active set after a successful launch. So it stays invisible to the agent until you actually ask for a walkthrough — and it works in any mode without per-mode frontmatter edits.
