@@ -28,7 +28,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_search",
     label: "CodeGraph Search",
-    description: "Quick symbol search by name. Returns locations only.",
+    description: "Locating-only symbol lookup by name (returns positions, not source). For the actual code, prefer codegraph_explore.",
     parameters: Type.Object({
       query: Type.String({ description: "Symbol name or partial name." }),
       kind: ToolKind,
@@ -39,7 +39,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_callers",
     label: "CodeGraph Callers",
-    description: "Find all functions or methods that call a specific symbol.",
+    description: "Find all functions or methods that call a specific symbol. Structural graph query — don't reconstruct with grep.",
     parameters: Type.Object({
       symbol: Type.String(),
       limit: Type.Optional(Type.Number({ default: 20 })),
@@ -49,7 +49,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_callees",
     label: "CodeGraph Callees",
-    description: "Find all functions or methods that a specific symbol calls.",
+    description: "Find all functions or methods that a specific symbol calls. Structural graph query — don't reconstruct with grep.",
     parameters: Type.Object({
       symbol: Type.String(),
       limit: Type.Optional(Type.Number({ default: 20 })),
@@ -59,7 +59,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_impact",
     label: "CodeGraph Impact",
-    description: "Analyze the impact radius of changing a symbol.",
+    description: "Analyze the impact radius of changing a symbol. Structural graph query — don't reconstruct with grep.",
     parameters: Type.Object({
       symbol: Type.String(),
       depth: Type.Optional(Type.Number({ default: 2 })),
@@ -69,7 +69,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_explore",
     label: "CodeGraph Explore",
-    description: "Return source for several related symbols grouped by file.",
+    description: "Primary tool for understanding code. Returns full source for related symbols grouped by file; treat shown source as already read — do not re-open those files with Read.",
     parameters: Type.Object({
       query: Type.String({ description: "Specific symbols, files, or code terms to explore." }),
       maxFiles: Type.Optional(Type.Number({ default: 12 })),
@@ -79,7 +79,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_node",
     label: "CodeGraph Node",
-    description: "Get one symbol's details plus callers and callees trail.",
+    description: "Full detail for one known symbol plus its callers/callees trail. Use instead of Read when you have a symbol name.",
     parameters: Type.Object({
       symbol: Type.String(),
       includeCode: Type.Optional(Type.Boolean({ default: false })),
@@ -97,7 +97,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_files",
     label: "CodeGraph Files",
-    description: "Get project file structure from the CodeGraph index.",
+    description: "Project file structure from the CodeGraph index; prefer over ls/find for indexed repos.",
     parameters: Type.Object({
       path: Type.Optional(Type.String()),
       pattern: Type.Optional(Type.String()),
@@ -464,13 +464,19 @@ export function formatCodeGraphError(error: unknown, toolName: string): string {
 }
 
 export default function codegraphExtension(pi: ExtensionAPI): void {
-  pi.on("before_agent_start", async (event) => {
+  pi.on("before_agent_start", async (event, ctx) => {
+    // Only steer toward CodeGraph when the active project actually has an index.
+    // This hook fires once per user turn and ctx.cwd is read fresh each time, so an
+    // index created mid-session (e.g. `codegraph init -i`) is picked up next turn.
+    if (!findCodeGraphRoot(ctx.cwd)) return {};
+
     const guidance = [
-      "CodeGraph tools are available as codegraph_* Pi tools.",
-      "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph tools directly before grep/read.",
-      "Use codegraph_explore first for broad questions, codegraph_search for symbol-name lookup, codegraph_files for project structure, codegraph_node for a known symbol, and codegraph_callers for impact/flow analysis.",
-      "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node before falling back to grep/read; CodeGraph symbol search may miss literal constants or generated names that still exist in source text.",
-      "Only use grep/read after CodeGraph is insufficient or when the user asks for literal text matching.",
+      "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph (codegraph_* tools) directly before grep/read.",
+      "Use codegraph_explore first for broad questions, codegraph_search for symbol-name lookup, codegraph_files for project structure, codegraph_node for a known symbol, and codegraph_callers/codegraph_impact for impact and flow analysis.",
+      "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node before falling back to grep/read; symbol search may miss literal constants or generated names that still exist in source text.",
+      "Do not re-verify a CodeGraph result with grep/read, and do not re-open files whose source codegraph_explore or codegraph_node already returned.",
+      "Do not loop codegraph_node over many symbols — use codegraph_impact or codegraph_callers for breadth, and codegraph_explore to read several at once.",
+      "Otherwise use grep/read only after CodeGraph is insufficient or when the user asks for literal text matching.",
     ].join("\n");
 
     return {
@@ -483,10 +489,6 @@ export default function codegraphExtension(pi: ExtensionAPI): void {
       name: tool.name,
       label: tool.label,
       description: tool.description,
-      promptSnippet: tool.description,
-      promptGuidelines: [
-        `${tool.name} is available for structural code questions backed by the local CodeGraph index.`,
-      ],
       parameters: tool.parameters,
       async execute(_toolCallId, params: Static<typeof tool.parameters>, signal, _onUpdate, ctx) {
         const toolParams = (params || {}) as ToolParams;

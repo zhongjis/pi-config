@@ -157,7 +157,8 @@ describe("codegraph extension", () => {
     ]);
   });
 
-  it("adds before_agent_start guidance without spawning CodeGraph", async () => {
+  it("injects before_agent_start guidance for an indexed project without spawning CodeGraph", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
 
@@ -167,7 +168,21 @@ describe("codegraph extension", () => {
     const result = await handler!({ systemPrompt: "base" }, { cwd: tempRoot });
 
     expect(result.systemPrompt).toContain("base");
-    expect(result.systemPrompt).toContain("CodeGraph tools are available as codegraph_* Pi tools.");
+    expect(result.systemPrompt).toContain("use CodeGraph (codegraph_* tools) directly before grep/read");
+    expect(result.systemPrompt).toContain("Do not re-verify a CodeGraph result");
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("skips before_agent_start guidance when the project has no .codegraph index", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+
+    codegraphExtension(mock.pi as never);
+    const handler = mock.handlers.get("before_agent_start");
+    expect(handler).toBeDefined();
+    const result = await handler!({ systemPrompt: "base" }, { cwd: tempRoot });
+
+    expect(result.systemPrompt).toBeUndefined();
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
