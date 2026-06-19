@@ -24,7 +24,7 @@ Personal Pi harness around `pi`: custom agents, runtime extensions, test harness
 | Build or debug a Pi extension | `extensions/AGENTS.md` | Child file covers layout tiers, events, smoke-test assumptions |
 | Change subagent orchestration | `extensions/subagent/AGENTS.md` | Eventbus RPC + background-agent lifecycle |
 | Change task tracking flow | `extensions/tasks/AGENTS.md` | Task DAG, storage, subagent bridge |
-| Change web search/fetch tools | `extensions/web-access/AGENTS.md` | Provider fallbacks, curator, GitHub/video paths |
+| Change web search/fetch tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local extension; model wiring → `docs/extension-model-usage.md` |
 | Change install/symlink behavior | `install.sh` | Allowlist + Nix-managed skip rules |
 | Change repo-wide tests | `docs/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
 
@@ -59,10 +59,9 @@ Before registering any new tool, extension, or MCP server:
 | Read-only validated shell | `extensions/readonly-bash` |
 | Subagent orchestration (Agent, get_subagent_result, steer_subagent) | `extensions/subagent` |
 | Task tracking + DAG (TaskCreate/Update/List/Get/Execute) | `extensions/tasks` |
-| Web search, fetch, code search, video | `extensions/web-access` |
+| Web search, fetch, code search, video | `pi-web-access` git package (`settings.json`) |
 | MCP tools proxy | `pi-mcporter` package → `mcporter` tool |
 | Git diff viewer | `extensions/diff` |
-| Context save/restore + pruning | `extensions/context-management` |
 | Session-local file storage (`local://`) | `extensions/session-local` |
 | Secrets redaction from tool outputs | `extensions/filter-outputs` |
 | Code knowledge graph | `extensions/codegraph` |

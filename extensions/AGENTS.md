@@ -23,7 +23,7 @@ extensions/
 | Shared event semantics | `CONVENTIONS.md` | Source of truth for `pi.events` usage |
 | Subagents | `subagent/AGENTS.md` | High-coupling runtime/event surface |
 | Tasks | `tasks/AGENTS.md` | File-backed task store + RPC bridge |
-| Web research tools | `web-access/AGENTS.md` | Providers, curator, GitHub/video fallbacks |
+| Web research tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local `extensions/` dir |
 | Provider failover | `clauderock/` | Anthropic → AWS Bedrock fallback on quota/rate-limit; uses `lib/stream-fallback.ts` |
 | Shared failover primitives | `lib/provider-errors.ts`, `lib/fallback-cache.ts`, `lib/stream-fallback.ts`, `lib/notify-once.ts` | Pure utilities; no extension state |
 
