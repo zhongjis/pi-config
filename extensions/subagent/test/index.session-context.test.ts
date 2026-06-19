@@ -323,7 +323,7 @@ describe("subagent session UI rebinding", () => {
     );
   });
 
-  it("does not refresh the widget for a completion nudge when wait consumes the result", async () => {
+  it("does not send a notification at agent_end when result was consumed before idle", async () => {
     const mock = createMockPi();
     await initExtension(mock);
 
@@ -331,36 +331,23 @@ describe("subagent session UI rebinding", () => {
       id: "agent-1",
       type: "general-purpose",
       description: "Investigate blinking",
-      status: "running",
+      status: "completed",
       toolUses: 0,
-      startedAt: Date.now(),
-      promise: undefined,
+      startedAt: Date.now() - 1000,
+      completedAt: Date.now(),
+      result: "done",
+      isBackground: true,
+      resultConsumed: true,   // consumed via get_subagent_result wait=true
+      notified: false,
+      suppressNotification: false,
     };
-    record.promise = Promise.resolve().then(() => {
-      record.status = "completed";
-      record.completedAt = Date.now();
-      record.result = "done";
-      return "done";
-    });
-    managerInstances[0]?.getRecord.mockReturnValue(record);
-    widgetInstances[0]?.update.mockClear();
+    managerInstances[0]?.listAgents.mockReturnValue([record]);
 
-    const result = await mock.registeredTools.get("get_subagent_result").execute(
-      "tool-1",
-      { agent_id: "agent-1", wait: true },
-      undefined,
-      undefined,
-      createCtx(),
-    );
+    await mock.fire("agent_end", {}, createCtx());
 
-    expect(result.content[0].text).toContain("done");
-    expect(record.resultConsumed).toBe(true);
-    expect(widgetInstances[0]?.update).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(250);
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
   });
-  it("suppresses completion nudge when parent polled recently via get_subagent_result", async () => {
+  it("suppresses completion nudge at agent_end when parent polled recently via get_subagent_result", async () => {
     const mock = createMockPi();
     await initExtension(mock);
 
@@ -372,6 +359,9 @@ describe("subagent session UI rebinding", () => {
       toolUses: 0,
       startedAt: Date.now(),
       promise: undefined,
+      isBackground: true,
+      notified: false,
+      suppressNotification: false,
     };
     managerInstances[0]?.getRecord.mockReturnValue(record);
 
@@ -390,11 +380,12 @@ describe("subagent session UI rebinding", () => {
     record.status = "completed";
     record.completedAt = Date.now();
     record.result = "done";
-    managerInstances[0]?.invokeOnComplete(record);
+    managerInstances[0]?.listAgents.mockReturnValue([record]);
 
-    vi.advanceTimersByTime(250);
+    // Fire agent_end — should suppress because polled recently
+    await mock.fire("agent_end", {}, createCtx());
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
-  });
+  })
 
   it("stops running agents and rejects when waiting result is cancelled", async () => {
     const mock = createMockPi();

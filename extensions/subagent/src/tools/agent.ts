@@ -13,7 +13,7 @@ import { getDefaultMaxTurns, normalizeMaxTurns } from "../agent-runner.js";
 import { getAgentConfig, getAvailableTypes } from "../agent-types.js";
 import { SUBAGENT_FOREGROUND_RENDER_CADENCE_MS } from "../constants.js";
 import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "../delegation-policy.js";
-import { resolveAgentInvocationConfig, resolveJoinMode } from "../invocation-config.js";
+import { resolveAgentInvocationConfig } from "../invocation-config.js";
 import { resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
@@ -179,8 +179,6 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
     requireSpawnableType,
     bindTurnAbortSignal,
     getAbortSignal,
-    getDefaultJoinMode,
-    enqueueBackgroundBatch,
     typeListText,
   } = ctx;
 
@@ -478,22 +476,12 @@ Guidelines:
           ...bgCallbacks,
         });
 
-        // Set output file + join mode synchronously after spawn, before the
-        // event loop yields — onSessionCreated is async so this is safe.
-        const joinMode = resolveJoinMode(getDefaultJoinMode(), true);
+        // Set output file synchronously after spawn, before the event loop yields.
         const record = manager.getRecord(id);
-        if (record && joinMode) {
-          record.joinMode = joinMode;
+        if (record) {
           record.toolCallId = toolCallId;
           record.outputFile = createOutputFilePath(ctx.cwd, id, ctx.sessionManager.getSessionId());
           writeInitialEntry(record.outputFile, id, params.prompt, ctx.cwd);
-        }
-
-        if (joinMode == null || joinMode === 'async') {
-          // Foreground/no join mode or explicit async — not part of any batch
-        } else {
-          // smart or group — add to current batch
-          enqueueBackgroundBatch(id, joinMode);
         }
 
         agentActivity.set(id, record?.run ? runActivityView(record.run) : bgState);

@@ -21,15 +21,11 @@ import {
   BACKGROUND_STALE_ABORT_AFTER_MS,
   BACKGROUND_STALE_STEER_AFTER_MS,
   BACKGROUND_SUPERVISION_INTERVAL_MS,
-  SUBAGENT_BATCH_FINALIZE_DELAY_MS,
   SUBAGENT_DECIMAL_RADIX,
   SUBAGENT_FOREGROUND_RENDER_CADENCE_MS,
-  SUBAGENT_GROUP_JOIN_MIN_AGENTS,
-  SUBAGENT_GROUP_JOIN_TIMEOUT_MS,
   SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS,
   SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS,
   SUBAGENT_MAX_GENERATION_TURNS,
-  SUBAGENT_NUDGE_HOLD_MS,
   SUBAGENT_PING_TIMEOUT_MS,
   SUBAGENT_POLLED_RECENTLY_MS,
   SUBAGENT_POLL_INTERVAL_MS,
@@ -40,8 +36,6 @@ import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, get
 import { registerRpcHandlers } from "../cross-extension-rpc.js";
 import { emitTerminalContract } from "../external-contract-adapter.js";
 import { loadCustomAgentsWithDiagnostics } from "../custom-agents.js";
-import { GroupJoinManager } from "../group-join.js";
-import { resolveAgentInvocationConfig, resolveJoinMode } from "../invocation-config.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged } from "../settings.js";
 import { type ModelRegistry, parseModelChain, resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
@@ -265,7 +259,6 @@ export interface SubagentRuntimeContext {
   getAbortSignal: (ctx: ExtensionContext) => AbortSignal | undefined;
   cancelNudge: (key: string) => void;
   waitForAgentCompletionWithSupervision: (record: AgentRecord, signal?: AbortSignal) => Promise<void>;
-  enqueueBackgroundBatch: (id: string, joinMode: JoinMode) => void;
   getDefaultJoinMode: () => JoinMode;
   setDefaultJoinMode: (mode: JoinMode) => void;
   typeListText: string;
@@ -307,16 +300,12 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   // Holds notifications briefly so get_subagent_result can cancel them
   // before they reach pi.sendMessage (fire-and-forget).
   const pendingNudges = new Map<string, ReturnType<typeof setTimeout>>();
-  const NUDGE_HOLD_MS = SUBAGENT_NUDGE_HOLD_MS;
   const POLLED_RECENTLY_MS = SUBAGENT_POLLED_RECENTLY_MS;
 
-  function scheduleNudge(key: string, send: () => void, delay = NUDGE_HOLD_MS) {
-    cancelNudge(key);
-    pendingNudges.set(key, setTimeout(() => {
-      pendingNudges.delete(key);
-      send();
-    }, delay));
-  }
+  // Tracks whether the PARENT prompt loop is active. Children are raw SDK sessions
+  // (createAgentSession/session.prompt) and never fire the parent's agent_start/agent_end,
+  // so this reflects only the parent. Gates the idle completion-notification flush.
+  let parentBusy = false;
 
   function cancelNudge(key: string) {
     const timer = pendingNudges.get(key);
@@ -330,30 +319,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // ---- Individual nudge helper (async join mode) ----
-  function emitIndividualNudge(record: AgentRecord) {
-    const recentlyPolled = record.lastPolledAt != null && (Date.now() - record.lastPolledAt) < POLLED_RECENTLY_MS;
-    if (record.resultConsumed || recentlyPolled) return;  // re-check at send time
-
-    const notification = formatTaskNotification(record, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS);
-    const footer =
-      (record.outputFile ? `\nFull transcript available at: ${record.outputFile}` : '') +
-      (record.sessionFile ? `\nSession log: ${record.sessionFile}` : '');
-
-    pi.sendMessage<NotificationDetails>({
-      customType: "subagent-notification",
-      content: notification + footer,
-      display: true,
-      details: buildNotificationDetails(record, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS, agentActivity.get(record.id)),
-    }, { deliverAs: "followUp", triggerTurn: true });
-  }
-
-  function sendIndividualNudge(record: AgentRecord) {
-    agentActivity.delete(record.id);
-    widget.markFinished(record.id);
-    scheduleNudge(record.id, () => emitIndividualNudge(record));
-    widget.update();
-  }
 
   function sendStaleAgentReminder(record: AgentRecord, idleMs: number, action: "steer" | "abort") {
     if (record.resultConsumed || record.suppressNotification) return;
@@ -406,39 +371,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     warnSupervisionAbort(record, idleMs, "non-stream-disabled");
   }
 
-  // ---- Group join manager ----
-  const groupJoin = new GroupJoinManager(
-    (records, partial) => {
-      for (const r of records) { agentActivity.delete(r.id); widget.markFinished(r.id); }
-
-      const groupKey = `group:${records.map(r => r.id).join(",")}`;
-      scheduleNudge(groupKey, () => {
-        // Re-check at send time
-        const unconsumed = records.filter(r => !r.resultConsumed);
-        if (unconsumed.length === 0) { widget.update(); return; }
-
-        const notifications = unconsumed.map(r => formatTaskNotification(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS)).join('\n\n');
-        const label = partial
-          ? `${unconsumed.length} agent(s) finished (partial — others still running)`
-          : `${unconsumed.length} agent(s) finished`;
-
-        const [first, ...rest] = unconsumed;
-        const details = buildNotificationDetails(first, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(first.id));
-        if (rest.length > 0) {
-          details.others = rest.map(r => buildNotificationDetails(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(r.id)));
-        }
-
-        pi.sendMessage<NotificationDetails>({
-          customType: "subagent-notification",
-          content: `Background agent group completed: ${label}\n\n${notifications}\n\nUse get_subagent_result for full output.`,
-          display: true,
-          details,
-        }, { deliverAs: "followUp", triggerTurn: true });
-      });
-      widget.update();
-    },
-    SUBAGENT_GROUP_JOIN_TIMEOUT_MS,
-  );
 
   /** Helper: build event data for lifecycle events from an AgentRecord. */
   function buildEventData(record: AgentRecord) {
@@ -497,28 +429,9 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       } catch { /* already warned; do not break completion handling */ }
     }
 
-    // Skip notification if result was already consumed, is being synchronously waited on, intentionally suppressed, or parent polled recently
-    const recentlyPolled = record.lastPolledAt != null && (Date.now() - record.lastPolledAt) < POLLED_RECENTLY_MS;
-    if (record.resultConsumed || record.suppressNotification || (record.waitingConsumers ?? 0) > 0 || recentlyPolled) {
-      agentActivity.delete(record.id);
-      widget.markFinished(record.id);
-      widget.update();
-      return;
-    }
-
-    // If this agent is pending batch finalization (debounce window still open),
-    // don't send an individual nudge — finalizeBatch will pick it up retroactively.
-    if (currentBatchAgents.some(a => a.id === record.id)) {
-      widget.update();
-      return;
-    }
-
-    const result = groupJoin.onAgentComplete(record);
-    if (result === 'pass') {
-      sendIndividualNudge(record);
-    }
-    // 'held' → do nothing, group will fire later
-    // 'delivered' → group callback already fired
+    // Widget cleanup — notification is consolidated at agent_end via emitCompletionNotificationsAtIdle.
+    agentActivity.delete(record.id);
+    widget.markFinished(record.id);
     widget.update();
   }, undefined, (record) => {
     // Emit started event when agent transitions to running (including from queue)
@@ -607,6 +520,9 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
 
   const backgroundSupervisionTimer = setInterval(() => {
     void superviseBackgroundAgents();
+    // Idle flush: surface completion notifications for agents that finished while the
+    // parent sat idle between prompts (no agent_end fires then). notified-gated → one-shot.
+    if (!parentBusy) emitCompletionNotificationsAtIdle();
   }, BACKGROUND_SUPERVISION_INTERVAL_MS);
 
   // Expose manager via Symbol.for() global registry for cross-package access.
@@ -689,55 +605,48 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     },
     (event, payload) => pi.events.emit(event, payload),
   );
-  // Collects background agent IDs spawned in the current turn for smart grouping.
-  // Uses a debounced timer: each new agent resets the 100ms window so that all
-  // parallel tool calls (which may be dispatched across multiple microtasks by the
-  // framework) are captured in the same batch.
-  let currentBatchAgents: { id: string; joinMode: JoinMode }[] = [];
-  let batchFinalizeTimer: ReturnType<typeof setTimeout> | undefined;
-  let batchCounter = 0;
+  // ---- agent_end: consolidated completion notifications ----
+  function emitCompletionNotificationsAtIdle() {
+    const pending = manager.listAgents().filter(r =>
+      r.isBackground &&
+      r.completedAt != null &&
+      !r.resultConsumed &&
+      !r.suppressNotification &&
+      !r.notified &&
+      !(r.lastPolledAt != null && (Date.now() - r.lastPolledAt) < POLLED_RECENTLY_MS),
+    );
+    if (pending.length === 0) return;
 
-  /** Finalize the current batch: if 2+ smart-mode agents, register as a group. */
-  function finalizeBatch() {
-    batchFinalizeTimer = undefined;
-    const batchAgents = [...currentBatchAgents];
-    currentBatchAgents = [];
+    let content: string;
+    let details: NotificationDetails;
 
-    const smartAgents = batchAgents.filter(a => a.joinMode === 'smart' || a.joinMode === 'group');
-    if (smartAgents.length >= SUBAGENT_GROUP_JOIN_MIN_AGENTS) {
-      const groupId = `batch-${++batchCounter}`;
-      const ids = smartAgents.map(a => a.id);
-      groupJoin.registerGroup(groupId, ids);
-      // Retroactively process agents that already completed during the debounce window.
-      // Their onComplete fired but was deferred (agent was in currentBatchAgents),
-      // so we feed them into the group now.
-      for (const id of ids) {
-        const record = manager.getRecord(id);
-        if (!record) continue;
-        record.groupId = groupId;
-        if (record.completedAt != null && !record.resultConsumed && !record.suppressNotification) {
-          groupJoin.onAgentComplete(record);
-        }
-      }
+    if (pending.length === 1) {
+      const first = pending[0];
+      const notification = formatTaskNotification(first, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS);
+      const footer =
+        (first.outputFile ? `\nFull transcript available at: ${first.outputFile}` : '') +
+        (first.sessionFile ? `\nSession log: ${first.sessionFile}` : '');
+      content = notification + footer;
+      details = buildNotificationDetails(first, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS, agentActivity.get(first.id));
     } else {
-      // No group formed — send individual nudges for any agents that completed
-      // during the debounce window and had their notification deferred.
-      for (const { id } of batchAgents) {
-        const record = manager.getRecord(id);
-        if (record?.completedAt != null && !record.resultConsumed && !record.suppressNotification) {
-          sendIndividualNudge(record);
-        }
+      const n = pending.length;
+      const notifications = pending.map(r => formatTaskNotification(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS)).join('\n\n');
+      const label = `${n} agent(s) finished`;
+      content = `Background agent group completed: ${label}\n\n${notifications}\n\nUse get_subagent_result for full output.`;
+      const [first, ...rest] = pending;
+      details = buildNotificationDetails(first, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(first.id));
+      if (rest.length > 0) {
+        details.others = rest.map(r => buildNotificationDetails(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(r.id)));
       }
     }
-  }
 
-  /** Enqueue a smart/group background agent into the current spawn batch (debounced). */
-  function enqueueBackgroundBatch(id: string, joinMode: JoinMode) {
-    currentBatchAgents.push({ id, joinMode });
-    // Debounce: reset timer on each new agent so parallel tool calls
-    // dispatched across multiple event loop ticks are captured together
-    if (batchFinalizeTimer) clearTimeout(batchFinalizeTimer);
-    batchFinalizeTimer = setTimeout(finalizeBatch, SUBAGENT_BATCH_FINALIZE_DELAY_MS);
+    pi.sendMessage<NotificationDetails>({
+      customType: "subagent-notification",
+      content,
+      display: true,
+      details,
+    }, { deliverAs: "followUp", triggerTurn: true });
+    for (const r of pending) r.run?.publish({ kind: "notified" });
   }
 
 
@@ -877,7 +786,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     getAbortSignal,
     cancelNudge,
     waitForAgentCompletionWithSupervision,
-    enqueueBackgroundBatch,
     getDefaultJoinMode,
     setDefaultJoinMode,
     typeListText,
@@ -897,4 +805,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   registerSubagentMessageHandlers(runtimeContext);
   registerCleanup(runtimeContext);
   registerAgentsCommand(runtimeContext);
+  pi.on("agent_start", () => { parentBusy = true; });
+  pi.on("agent_end", () => { parentBusy = false; emitCompletionNotificationsAtIdle(); });
 }
