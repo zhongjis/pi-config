@@ -65,7 +65,7 @@ Before registering any new tool, extension, or MCP server:
 | Context save/restore + pruning | `extensions/context-management` |
 | Session-local file storage (`local://`) | `extensions/session-local` |
 | Secrets redaction from tool outputs | `extensions/filter-outputs` |
-| Code knowledge graph (CodeGraph + GitNexus during migration) | `extensions/codegraph`, `extensions/gitnexus` |
+| Code knowledge graph | `extensions/codegraph` |
 | Session handoff to new focused session | `extensions/handoff` |
 | Token-efficient background task execution | `extensions/boomerang` |
 | Agent modes (kuafu / fuxi / houtu / etc.) | `extensions/modes` |

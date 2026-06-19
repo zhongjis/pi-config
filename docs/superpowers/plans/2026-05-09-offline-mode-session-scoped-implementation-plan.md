@@ -38,18 +38,6 @@
 **Files:**
 - Modify: `extensions/offline/offline.test.ts`
 
-- [ ] **Step 1: Run impact analysis before code edits**
-
-Run GitNexus impact analysis before editing symbols:
-
-```text
-gitnexus_impact({ target: "loadOfflineConfig", direction: "upstream", repo: "pi-config" })
-gitnexus_impact({ target: "installModelRegistryFilter", direction: "upstream", repo: "pi-config" })
-gitnexus_impact({ target: "offlineExtension", direction: "upstream", repo: "pi-config" })
-```
-
-Record direct callers, affected processes, and risk level in the implementation notes before editing. If any result is HIGH or CRITICAL, stop and report before changing code. Expected risk: low-to-medium, limited to `extensions/offline/` tests/docs.
-
 - [ ] **Step 2: Update the test harness to support session entries**
 
 Replace `createHarness()` with a version that records appended entries:
@@ -763,16 +751,6 @@ Expected: PASS.
 
 - [ ] **Step 12: Commit implementation and tests**
 
-Before committing, run GitNexus change detection and record the affected scope:
-
-```text
-gitnexus_detect_changes({ scope: "unstaged", repo: "pi-config" })
-```
-
-Expected: changed symbols limited to `extensions/offline/index.ts`; risk not high/critical. If risk is high/critical, stop and report before committing.
-
-Then:
-
 ```bash
 git add extensions/offline/index.ts extensions/offline/offline.test.ts
 git commit -m "feat(offline): make activation session-scoped"
@@ -905,15 +883,7 @@ pnpm lint:typecheck
 
 Expected: PASS.
 
-- [ ] **Step 5: Run GitNexus changed-flow check**
-
-```text
-gitnexus_detect_changes({ scope: "all", repo: "pi-config" })
-```
-
-Expected: changed symbols limited to `extensions/offline/index.ts`; risk not high/critical.
-
-- [ ] **Step 6: Final status check**
+- [ ] **Step 5: Final status check**
 
 ```bash
 git status --short

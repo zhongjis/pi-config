@@ -91,7 +91,6 @@ Fixed model IDs used as health probes, test fixtures, or example references. Not
 |---|---|---|---|
 | `clauderock` | `index.ts:695` | `us.anthropic.claude-opus-4-6-v1` | Bedrock connectivity test (`/clauderock test`) |
 | `clauderock` | `index.ts:826` | `claude-haiku-4-5-20251001` | Anthropic API quota probe (`/clauderock health`) |
-| `gitnexus` | [`skills/gitnexus-cli/SKILL.md`](../extensions/gitnexus/skills/gitnexus-cli/SKILL.md) | `minimax/minimax-m2.5` | Documentation example only — not invoked by extension code |
 
 ---
 

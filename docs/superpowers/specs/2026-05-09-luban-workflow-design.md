@@ -11,7 +11,6 @@ The workflow should optimize for fast progress by default. It should still stop 
 - Do not change Superpowers skill files.
 - Do not remove the brainstorming or writing-plans gates.
 - Do not make user approval a routine implementation checkpoint.
-- Do not make GitNexus checks block completion when the index or tool is unhealthy.
 - Do not broaden this into a new agent framework.
 
 ## Decision
@@ -91,7 +90,6 @@ Before claiming completion, always run the applicable focused verification: test
 
 Use Wei Zheng for the final review unless the work is docs-only and has no code behavior change.
 
-Run `gitnexus_detect_changes()` only as best effort. If GitNexus is stale, unavailable, or failing, record the skip reason and do not block completion on it.
 
 ## User Escalation Rules
 
@@ -128,7 +126,6 @@ Update `agents/luban.md` to:
 - Replace routine two-reviewer validation with conditional Taishang and Wei Zheng use.
 - Define low-risk, high-risk, milestone, and final checkpoint behavior.
 - Add user escalation rules.
-- Make GitNexus change detection best effort.
 
 Update `docs/modes.md` to keep the Lu Ban mode summary aligned with the new behavior.
 

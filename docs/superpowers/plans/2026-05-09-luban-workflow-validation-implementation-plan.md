@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Modify `agents/luban.md` to define risk-gated validation, validator roles, user escalation rules, and best-effort GitNexus change detection.
+- Modify `agents/luban.md` to define risk-gated validation, validator roles, user escalation rules, and final-checkpoint verification.
 - Modify `docs/modes.md` to document Lu Ban behavior at a high level.
 - Do not edit files under `extensions/superpowers/skills/`.
 
@@ -63,7 +63,7 @@ Default optimization: move fast with evidence. Do not run heavyweight review for
 
 **Milestone checkpoint:** run when work crosses a contract boundary, combines multiple tasks, enters a flaky area, or reaches final completion. Run focused integration checks. Use `weizheng` when code changed and a ship/no-ship verdict is useful. Use `taishang` only for unresolved reasoning/spec questions.
 
-**Final checkpoint:** before claiming completion, run applicable focused verification. Use `weizheng` unless the work is docs-only with no code behavior change. Run `gitnexus_detect_changes()` as best effort only; if GitNexus is stale, unavailable, or failing, record the skip reason and do not block completion.
+**Final checkpoint:** before claiming completion, run applicable focused verification. Use `weizheng` unless the work is docs-only with no code behavior change.
 ```
 
 - [ ] **Step 4: Add user escalation policy**
@@ -89,7 +89,7 @@ Do not ask the user for routine task validation, standard non-destructive checks
 Run:
 
 ```bash
-rg -n "risk-gated|Low-risk|High-risk|Final checkpoint|User escalation|gitnexus_detect_changes|Reasoning / spec validator|Code readiness validator" agents/luban.md
+rg -n "risk-gated|Low-risk|High-risk|Final checkpoint|User escalation|Reasoning / spec validator|Code readiness validator" agents/luban.md
 ```
 
 Expected: matches for each new policy and updated routing row.
@@ -110,7 +110,6 @@ Lu Ban follows Superpowers skill gates, then validates implementation by risk. L
 
 User approval is reserved for product intent: unclear goals, missing success criteria, scope decomposition, high-risk expansion beyond the approved spec, unresolved ambiguity, or destructive actions. Routine technical validation stays inside the agent loop.
 
-`gitnexus_detect_changes()` is best effort for Lu Ban final checkpoints. A stale or unavailable GitNexus index should be recorded, not treated as a blocker.
 ```
 
 - [ ] **Step 2: Read back `docs/modes.md`**
@@ -118,7 +117,7 @@ User approval is reserved for product intent: unclear goals, missing success cri
 Run:
 
 ```bash
-rg -n "Lu Ban Validation Policy|risk|Wei Zheng|Taishang|gitnexus_detect_changes" docs/modes.md
+rg -n "Lu Ban Validation Policy|risk|Wei Zheng|Taishang" docs/modes.md
 ```
 
 Expected: the new section appears once and matches the prompt policy.

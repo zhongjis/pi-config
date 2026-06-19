@@ -653,7 +653,7 @@ model: anthropic/claude-sonnet-4-6:medium,openai-codex/gpt-5.5:medium
 prompt_mode: replace
 inherit_context: false
 builtin_tools: read,bash,edit,write,grep,find,ls
-extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve,gitnexus_list_repos,gitnexus_query,gitnexus_context,gitnexus_impact,gitnexus_detect_changes,gitnexus_rename,gitnexus_cypher
+extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,plan_approve
 allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,fuxi
 allow_nesting: true
 ---
@@ -861,17 +861,7 @@ pnpm lint:typecheck
 
 Expected: PASS.
 
-- [ ] **Step 5: Run GitNexus changed-flow detection before final handoff**
-
-Run through the GitNexus tool, not shell:
-
-```text
-gitnexus_detect_changes({ scope: "all", repo: "pi-config" })
-```
-
-Expected: affected areas are limited to modes registration, Superpowers extension package, and Superpowers docs/agent prompt.
-
-- [ ] **Step 6: Manual readback checklist**
+- [ ] **Step 5: Manual readback checklist**
 
 Read these files and confirm they match the spec:
 

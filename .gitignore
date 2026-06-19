@@ -10,12 +10,8 @@ node_modules/
 .omx
 
 .direnv
-.gitnexus
 extensions/subagent/dist/
 extensions/lib/*.js
 extensions/lib/*.d.ts
 
-# GitNexus stealth — artifacts if someone runs the binary bare outside pi
-.claude/
-CLAUDE.md
 /.omo

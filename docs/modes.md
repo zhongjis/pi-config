@@ -22,7 +22,7 @@ Lu Ban follows Superpowers skill gates, then validates implementation by risk. L
 
 User approval is reserved for product intent: unclear goals, missing success criteria, scope decomposition, high-risk expansion beyond the approved spec, unresolved ambiguity, or destructive actions. Routine technical validation stays inside the agent loop.
 
-`gitnexus_detect_changes()` is best effort for Lu Ban final checkpoints. A stale or unavailable GitNexus index should be recorded, not treated as a blocker.
+CodeGraph checks are best effort for Lu Ban final checkpoints. A stale or unavailable CodeGraph index should be recorded, not treated as a blocker.
 ---
 
 ## Mode Switching
