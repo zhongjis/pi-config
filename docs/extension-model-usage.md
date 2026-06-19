@@ -8,6 +8,8 @@ Companion to:
 
 Last audited: 2026-05-11. Refresh when adding new extensions that make LLM calls or read model state.
 
+> **Note:** `web-access` is now the external `pi-web-access` git package (pinned in `settings.json`), not a local `extensions/` dir. Its rows below name upstream files; line numbers are dropped because they drift with the pinned version.
+
 ---
 
 ## Audit categories
@@ -46,8 +48,8 @@ These predate profiles and test auth directly via `getApiKeyAndHeaders` against 
 
 | Extension | Where | Mechanism | Models hardcoded |
 |---|---|---|---|
-| `web-access` | [`index.ts:599`](../extensions/web-access/index.ts) `resolveFirstAvailableModel` | Iterates candidate list, tests `getApiKeyAndHeaders` per entry | `anthropic/claude-haiku-4-5`, `google/gemini-2.5-flash`, `openai/gpt-4.1-mini` |
-| `web-access` | [`summary-review.ts:5`](../extensions/web-access/summary-review.ts) `PREFERRED_SUMMARY_MODELS` | Same as above, for search-result summarization | `anthropic/claude-haiku-4-5`, `openai-codex/gpt-5.3-codex-spark` |
+| `web-access` | `index.ts` `resolveFirstAvailableModel` | Iterates candidate list, tests `getApiKeyAndHeaders` per entry | `anthropic/claude-haiku-4-5`, `google/gemini-2.5-flash`, `openai/gpt-4.1-mini` |
+| `web-access` | `summary-review.ts` `PREFERRED_SUMMARY_MODELS` | Same as above, for search-result summarization | `anthropic/claude-haiku-4-5`, `openai-codex/gpt-5.3-codex-spark` |
 
 **Why not fixed:** user-deferred. These features (web search summarization, query rewriting) are tightly bound to summary-quality experiments; opencode-go equivalents not yet validated.
 
@@ -61,13 +63,13 @@ These bypass pi's model registry entirely — they call Google's Gemini API or i
 
 | Extension | Where | Constant | Purpose |
 |---|---|---|---|
-| `web-access` | [`gemini-api.ts:7`](../extensions/web-access/gemini-api.ts) | `DEFAULT_MODEL = "gemini-3-flash-preview"` | Default model for direct Gemini REST API calls |
-| `web-access` | [`gemini-search.ts:251`](../extensions/web-access/gemini-search.ts) | inline `"gemini-3-flash-preview"` | Web search via Gemini |
-| `web-access` | [`gemini-url-context.ts:89`](../extensions/web-access/gemini-url-context.ts) | inline `"gemini-3-flash-preview"` | URL content extraction via Gemini |
-| `web-access` | [`gemini-web.ts:18-20`](../extensions/web-access/gemini-web.ts) | `MODEL_HEADERS` map | Gemini web product (Aistudio) cookie auth headers for `gemini-3-pro`, `gemini-2.5-pro`, `gemini-2.5-flash` |
-| `web-access` | [`video-extract.ts:70`](../extensions/web-access/video-extract.ts) | `preferredModel: "gemini-3-flash-preview"` | Video frame extraction + transcription |
-| `web-access` | [`youtube-extract.ts:45`](../extensions/web-access/youtube-extract.ts) | `preferredModel: "gemini-3-flash-preview"` | YouTube transcript via Gemini |
-| `web-access` | [`perplexity.ts:123`](../extensions/web-access/perplexity.ts) | `model: "sonar"` | Perplexity Sonar API |
+| `web-access` | `gemini-api.ts` | `DEFAULT_MODEL = "gemini-3-flash-preview"` | Default model for direct Gemini REST API calls |
+| `web-access` | `gemini-search.ts` | inline `"gemini-3-flash-preview"` | Web search via Gemini |
+| `web-access` | `gemini-url-context.ts` | inline `"gemini-3-flash-preview"` | URL content extraction via Gemini |
+| `web-access` | `gemini-web.ts` | `MODEL_HEADERS` map | Gemini web product (Aistudio) cookie auth headers for `gemini-3-pro`, `gemini-2.5-pro`, `gemini-2.5-flash` |
+| `web-access` | `video-extract.ts` | `preferredModel: "gemini-3-flash-preview"` | Video frame extraction + transcription |
+| `web-access` | `youtube-extract.ts` | `preferredModel: "gemini-3-flash-preview"` | YouTube transcript via Gemini |
+| `web-access` | `perplexity.ts` | `model: "sonar"` | Perplexity Sonar API |
 
 **Requirement:** Google Gemini API key (`GEMINI_API_KEY`) or browser-Gemini cookies, regardless of profile. Perplexity needs `PERPLEXITY_API_KEY`.
 

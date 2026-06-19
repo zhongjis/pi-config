@@ -230,7 +230,7 @@ same library but maintain separate hardcoded chains, cataloged in
 - **`boomerang`** ([`commit.ts`](../extensions/boomerang/commit.ts)) — commit-message chain through `resolveFirstAvailable`; keeps the current model with a warning when none resolves.
 - **`smart-sessions`** ([`index.ts`](../extensions/smart-sessions/index.ts)) — summary model; explicit `provider`+`model` override, else an auto-detect list over `getAvailable()`.
 - **`multimodal-look`** ([`index.ts`](../extensions/multimodal-look/index.ts)) — vision chain, falling back to the current model only when it accepts image input.
-- **`web-access`** ([`index.ts`](../extensions/web-access/index.ts), [`summary-review.ts`](../extensions/web-access/summary-review.ts)) — profile-bypassing: tests `getApiKeyAndHeaders` against a candidate list rather than reading `getAvailable()`. Known gap, documented in the companion audit.
+- **`web-access`** (external `pi-web-access` git package — `index.ts`, `summary-review.ts`) — profile-bypassing: tests `getApiKeyAndHeaders` against a candidate list rather than reading `getAvailable()`. Known gap, documented in the companion audit.
 
 ---
 
