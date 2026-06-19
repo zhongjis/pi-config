@@ -97,7 +97,11 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
 
       // Mark result as consumed only after a terminal result is actually returned here.
       if (record.status !== "running" && record.status !== "queued") {
-        record.resultConsumed = true;
+        if (record.run) {
+          record.run.publish({ kind: "consumed" });
+        } else {
+          record.resultConsumed = true;
+        }
         cancelNudge(params.agent_id);
       }
 

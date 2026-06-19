@@ -503,3 +503,58 @@ describe("project() subscriber — synchronous projection invariant", () => {
     expect(record.completedAt).toBe(9000);
   });
 });
+
+describe("AgentRun — consumed / notified events", () => {
+  it("(a) completed then consumed → run.resultConsumed true; project() sets record.resultConsumed", () => {
+    const run = new AgentRun("c1", { now: () => 5000 });
+    const record: any = { id: "c1", status: "queued", startedAt: 0 };
+    run.subscribe((_e, r) => project(r, record));
+
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 1000 });
+    run.publish({ kind: "started", startedAt: 1000 });
+    run.publish({ kind: "completed", result: "done", status: "completed" });
+    expect(run.resultConsumed).toBe(false);
+
+    run.publish({ kind: "consumed" });
+    expect(run.resultConsumed).toBe(true);
+    expect(record.resultConsumed).toBe(true);
+  });
+
+  it("(b) notified → run.notified true; project() sets record.notified", () => {
+    const run = new AgentRun("n1", { now: () => 5000 });
+    const record: any = { id: "n1", status: "queued", startedAt: 0 };
+    run.subscribe((_e, r) => project(r, record));
+
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 1000 });
+    run.publish({ kind: "completed", result: "done", status: "completed" });
+
+    run.publish({ kind: "notified" });
+    expect(run.notified).toBe(true);
+    expect(record.notified).toBe(true);
+  });
+
+  it("(c) consumed/notified published AFTER terminal are NOT dropped by first-terminal-wins guard", () => {
+    const run = new AgentRun("g1", { now: () => 5000 });
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 1000 });
+    run.publish({ kind: "completed", result: "done", status: "completed" });
+    expect(run.isTerminal()).toBe(true);
+
+    // These must NOT be swallowed by the terminal guard
+    run.publish({ kind: "consumed" });
+    run.publish({ kind: "notified" });
+    expect(run.resultConsumed).toBe(true);
+    expect(run.notified).toBe(true);
+    // Both events appear in the log
+    expect(run.events().map((e) => e.kind)).toContain("consumed");
+    expect(run.events().map((e) => e.kind)).toContain("notified");
+  });
+
+  it("(d) duplicate terminal events still ignored (existing invariant holds)", () => {
+    const run = new AgentRun("d1", { now: () => 5000 });
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 1000 });
+    run.publish({ kind: "completed", result: "first", status: "completed" });
+    run.publish({ kind: "completed", result: "second", status: "completed" });
+    expect(run.result).toBe("first");
+    expect(run.events().filter((e) => e.kind === "completed")).toHaveLength(1);
+  });
+});

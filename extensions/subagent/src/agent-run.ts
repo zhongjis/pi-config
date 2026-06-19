@@ -66,6 +66,8 @@ export type AgentRunEvent =
   | { kind: "turn_end"; turnCount: number }
   | { kind: "steered"; message: string; origin: SteerOrigin; at: number }
   | { kind: "waiter"; delta: 1 | -1 }
+  | { kind: "consumed" }
+  | { kind: "notified" }
   | { kind: "completed"; result: string; status: "completed" | "steered" }
   | { kind: "aborted"; status: "aborted" | "stopped"; reason: AbortReason; error?: string; result?: string }
   | { kind: "failed"; error: string; result?: string }
@@ -208,6 +210,8 @@ export class AgentRun {
   toolCallId?: string;
   modelLabel?: string;
   waitingConsumers = 0;
+  resultConsumed = false;
+  notified = false;
   lastSupervisionSteerAt?: number;
   lastSupervisionAbortAt?: number;
   readonly activity: AgentRunActivity = {
@@ -387,6 +391,12 @@ export class AgentRun {
       case "waiter":
         this.waitingConsumers = Math.max(0, this.waitingConsumers + event.delta);
         break;
+      case "consumed":
+        this.resultConsumed = true;
+        break;
+      case "notified":
+        this.notified = true;
+        break;
       case "result_amended":
         if (!this.isTerminal()) return; // defense: amends an already-final result only
         this.result = event.result;
@@ -430,4 +440,6 @@ export function project(run: AgentRun, record: AgentRecord): void {
   record.error = run.error;
   record.completedAt = run.completedAt;
   record.startedAt = run.startedAt;
+  record.resultConsumed = run.resultConsumed;
+  record.notified = run.notified;
 }

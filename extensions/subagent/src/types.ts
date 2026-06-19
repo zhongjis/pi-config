@@ -100,6 +100,8 @@ export interface AgentRecord {
   modelLabel?: string;
   /** Set when result was already consumed via get_subagent_result — suppresses completion notification. */
   resultConsumed?: boolean;
+  /** Set when completion notification was already sent — suppresses duplicate notification. */
+  notified?: boolean;
   /** Number of active get_subagent_result waiters currently supervising this agent. */
   waitingConsumers?: number;
   /** Steering messages queued before the session was ready. */
