@@ -2,16 +2,27 @@
 
 Vendored CodeGraph Pi extension. Registers native `codegraph_*` tools that proxy one request to a local CodeGraph MCP subprocess for symbol search, callers/callees, impact, exploration, node details, status, and indexed file trees.
 
-## Upstream
+## Provenance
+
+No longer a straight fork. This extension began as a vendored copy of `@vndv/pi-codegraph` and has since absorbed QoL, limit, and timeout fixes from several other Pi CodeGraph adapters, plus locally-authored changes — it no longer tracks any single upstream. The underlying engine is the `@colbymchenry/codegraph` CLI, which every adapter (including this one) proxies via `codegraph serve --mcp`.
+
+**Base vendor — `@vndv/pi-codegraph@0.1.8`**
 
 - **Source:** https://github.com/vndv/pi-codegraph
-- **Package:** `@vndv/pi-codegraph@0.1.8`
 - **gitHead:** `c5fbafdf89b987b5f868cbad521fc852af82db61`
 - **License:** MIT; copied in `LICENSE`
 - **npm tarball:** `vndv-pi-codegraph-0.1.8.tgz`
 - **shasum:** `cc61254ed346c2728fa054d49935d8c63dca7878`
 - **integrity:** `sha512-viJnU4zxpPSPzvn4YCaAK7K73zTpHyg71MbpCfIBF+7kUPZ6JrrHQE1w1yRRjcfQ3BaA4/bAny2WVpSBxcCxFg==`
-- **Adapted:** copied upstream `extensions/codegraph.ts` to `extensions/codegraph/index.ts`; default project path now comes from `ctx.cwd` when `projectPath` is omitted.
+
+**Absorbed fixes (sourced from peer adapters / locally authored):**
+
+- Per-request JSON-RPC timeout + subprocess kill (`CODEGRAPH_TIMEOUT_MS`) — adapted from `gripebomb/pi-codegraph-extension`.
+- Actionable spawn / uninitialized-index error guidance — adapted from `gripebomb/pi-codegraph-extension`.
+- Monorepo `.codegraph` ancestor discovery (`findCodeGraphRoot`) — adapted from `viniraioli/pi-codegraph`.
+- Same-project call serialization queue, `ctx.cwd` default project path, directory entrypoint, and lint-compliance — locally authored.
+
+`AGENTS.md` holds the per-change table (what / why / origin) and is the source of truth for divergences.
 
 ## Tools
 
@@ -28,7 +39,7 @@ All tools accept optional `projectPath` to query another absolute indexed projec
 
 ## Hooks
 
-- `before_agent_start` — appends guidance encouraging CodeGraph tools for structural code questions before grep/read fallback.
+- `before_agent_start` — when the active project (`ctx.cwd`) has a `.codegraph/` index, appends guidance steering CodeGraph tools before grep/read, including anti-patterns. Re-checked each turn, so an index created mid-session (`codegraph init -i`) is picked up on the next turn; skipped entirely for non-indexed projects. Per-tool descriptions carry the when-to-prefer steering.
 
 ## Configuration / Requirements
 
@@ -39,5 +50,3 @@ All tools accept optional `projectPath` to query another absolute indexed projec
 - Project paths resolve to the nearest ancestor directory containing `.codegraph/`, so launching pi inside a subdirectory of an indexed repo still works.
 - Each JSON-RPC request to the subprocess times out after 30s (override with the `CODEGRAPH_TIMEOUT_MS` env var); on timeout the subprocess is killed so a hung `codegraph` cannot block the agent or the same-project queue.
 - When the `codegraph` CLI is missing from `PATH` or the project has no `.codegraph/` index, tools fail with actionable install / `codegraph init -i` guidance instead of a raw spawn error.
-
-These local divergences from upstream `@vndv/pi-codegraph` are recorded in `AGENTS.md`.
