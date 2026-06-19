@@ -216,3 +216,44 @@ describe("D2 — stopped path leaves terminal state from publishRunStop (not pro
     }
   });
 });
+
+describe("D3a — abort() / publishRunStop interleave: stopped status wins over .then settlement", () => {
+  afterEach(() => {
+    runAgentMock.mockReset();
+  });
+
+  it("abort() while running: .then sees stopped, does not overwrite stop message", async () => {
+    const session = fakeSession();
+    let resolveRun!: (v: any) => void;
+    runAgentMock.mockImplementation(() => new Promise(resolve => { resolveRun = resolve; }));
+
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn(PI, CTX, "general-purpose", "p", { description: "d", isBackground: false });
+      const record = manager.getRecord(id)!;
+
+      // Flush microtasks so startAgent has been called (record.promise is set)
+      await Promise.resolve();
+
+      // abort() while running — publishRunStop sets status synchronously via project()
+      manager.abort(id);
+
+      expect(record.status).toBe("stopped");
+      expect(record.error).toBe("Agent was stopped while running.");
+      expect(record.run?.status).toBe("stopped");
+
+      // Now resolve the runAgent promise (late arrival, after abort)
+      resolveRun({ responseText: "late result", session, aborted: false, steered: false });
+
+      // Wait for the promise chain to fully settle
+      await record.promise;
+
+      // .then guard saw status === "stopped" and did NOT overwrite terminal state
+      expect(record.status).toBe("stopped");
+      expect(record.error).toBe("Agent was stopped while running.");
+      expect(record.run?.status).toBe("stopped");
+    } finally {
+      manager.dispose();
+    }
+  });
+});

@@ -53,8 +53,8 @@ export type AgentRunEvent =
       toolCallId?: string;
       modelLabel?: string;
     }
-  | { kind: "started" }
-  | { kind: "resumed" }
+  | { kind: "started"; startedAt: number }
+  | { kind: "resumed"; startedAt?: number }
   | { kind: "session_created"; session: unknown }
   | { kind: "output_file_ready"; outputFile?: string; sessionFile?: string }
   | { kind: "message_start" }
@@ -326,10 +326,12 @@ export class AgentRun {
         break;
       case "started":
         this.status = "running";
+        this.startedAt = event.startedAt;
         break;
       case "resumed":
         // Reopen a terminal run (mirrors AgentManager.resume): clear completion state.
         this.status = "running";
+        if (event.startedAt !== undefined) this.startedAt = event.startedAt;
         this.completedAt = undefined;
         this.result = undefined;
         this.error = undefined;
@@ -409,18 +411,17 @@ export class AgentRun {
 }
 
 /**
- * Pure projector: copy terminal run state into the record.
- * Called immediately after each terminal publish so record stays
- * consistent with the run (D2 contract). Pure — no events, no side effects.
+ * Pure projector: copy run state into the record.
+ * Called after each non-terminal start publish and after each terminal publish
+ * so record stays consistent with the run (D2/D3b contract). Pure — no events,
+ * no side effects.
  *
- * Fields projected: status, result, error, completedAt.
- * startedAt is a NON-terminal field left in-place (record.startedAt is
- * overwritten to actual-start time in startAgent/resume; run.startedAt only
- * reflects queue/creation time until a future slice wires "started" → run).
+ * Fields projected: status, result, error, completedAt, startedAt.
  */
 export function project(run: AgentRun, record: AgentRecord): void {
   record.status = run.status;
   record.result = run.result;
   record.error = run.error;
   record.completedAt = run.completedAt;
+  record.startedAt = run.startedAt;
 }

@@ -31,7 +31,7 @@ describe("AgentRun reducer — status derivation", () => {
     expect(run.status).toBe("queued");
     run.publish(created());
     expect(run.status).toBe("queued");
-    run.publish({ kind: "started" });
+    run.publish({ kind: "started", startedAt: 1000 });
     expect(run.status).toBe("running");
     expect(run.isTerminal()).toBe(false);
   });
@@ -248,7 +248,7 @@ describe("AgentRun — supervision projections", () => {
   it("recordSnapshot matches the RecordSnapshot shape supervision consumes", () => {
     const { run } = makeRun(1000);
     run.publish(created({ isBackground: true, startedAt: 1000 }));
-    run.publish({ kind: "started" });
+    run.publish({ kind: "started", startedAt: 1000 });
     run.publish({ kind: "waiter", delta: 1 });
     const snap = run.recordSnapshot();
     expect(snap).toEqual({
@@ -300,7 +300,7 @@ describe("AgentRun — waitForTerminal (push completion)", () => {
   it("resolves when a terminal event is published", async () => {
     const { run } = makeRun();
     run.publish(created());
-    run.publish({ kind: "started" });
+    run.publish({ kind: "started", startedAt: 1000 });
     const pending = run.waitForTerminal();
     run.publish({ kind: "completed", result: "done", status: "completed" });
     await expect(pending).resolves.toEqual({ status: "completed", result: "done", error: undefined });
@@ -320,7 +320,7 @@ describe("AgentRun — subscriptions", () => {
     const seen: string[] = [];
     const unsub = run.subscribe((e) => seen.push(e.kind));
     run.publish(created());
-    run.publish({ kind: "started" });
+    run.publish({ kind: "started", startedAt: 1000 });
     unsub();
     run.publish({ kind: "completed", result: "r", status: "completed" });
     expect(seen).toEqual(["created", "started"]);
@@ -334,7 +334,7 @@ describe("toExternalEffects — frozen contract mapping", () => {
     expect(toExternalEffects(created({ isBackground: true }), BG)).toEqual([
       { type: "event", name: "subagents:created" },
     ]);
-    expect(toExternalEffects({ kind: "started" }, BG)).toEqual([{ type: "event", name: "subagents:started" }]);
+    expect(toExternalEffects({ kind: "started", startedAt: 1000 }, BG)).toEqual([{ type: "event", name: "subagents:started" }]);
     expect(toExternalEffects({ kind: "completed", result: "r", status: "completed" }, BG)).toEqual([
       { type: "event", name: "subagents:completed" },
       { type: "record" },
@@ -359,7 +359,7 @@ describe("toExternalEffects — frozen contract mapping", () => {
 
   it("foreground runs only emit subagents:started (created/terminal/record are bg-only)", () => {
     expect(toExternalEffects(created({ isBackground: false }), FG)).toEqual([]);
-    expect(toExternalEffects({ kind: "started" }, FG)).toEqual([{ type: "event", name: "subagents:started" }]);
+    expect(toExternalEffects({ kind: "started", startedAt: 1000 }, FG)).toEqual([{ type: "event", name: "subagents:started" }]);
     expect(toExternalEffects({ kind: "completed", result: "r", status: "completed" }, FG)).toEqual([]);
     expect(toExternalEffects({ kind: "aborted", status: "aborted", reason: "max_turns" }, FG)).toEqual([]);
     expect(toExternalEffects({ kind: "failed", error: "e" }, FG)).toEqual([]);
@@ -395,7 +395,7 @@ describe("AgentRun — realistic sequence", () => {
     const { run, setClock } = makeRun(1000);
     const terminal = run.waitForTerminal();
     run.publish(created({ startedAt: 1000, maxTurns: 30 }));
-    run.publish({ kind: "started" });
+    run.publish({ kind: "started", startedAt: 1000 });
     run.publish({ kind: "session_created", session: { id: "s" } });
     run.publish({ kind: "message_start" });
     setClock(1100);
@@ -419,16 +419,16 @@ describe("AgentRun — realistic sequence", () => {
 });
 
 describe("project() — terminal projector", () => {
-  it("writes status/result/error/completedAt from run to record", () => {
+  it("writes status/result/error/completedAt/startedAt from run to record", () => {
     const run = new AgentRun("p1", { now: () => 9000 });
     run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: false, startedAt: 100 });
-    run.publish({ kind: "started" });
+    run.publish({ kind: "started", startedAt: 500 }); // actual-start overrides creation time
     run.publish({ kind: "completed", result: "done", status: "completed" });
 
     const record = {
       id: "p1", type: "general-purpose", description: "d",
       status: "running" as const, toolUses: 0,
-      startedAt: 500,  // actual-start time — must NOT be overwritten by project()
+      startedAt: 999,  // will be overwritten by project() with run.startedAt
     } as any;
 
     project(run, record);
@@ -437,7 +437,24 @@ describe("project() — terminal projector", () => {
     expect(record.result).toBe("done");
     expect(record.error).toBeUndefined();
     expect(record.completedAt).toBe(run.completedAt);
-    // startedAt must be unchanged — project() does not touch non-terminal fields
+    // project() copies run.startedAt (set by started event, not creation time)
     expect(record.startedAt).toBe(500);
+    expect(record.startedAt).toBe(run.startedAt);
+  });
+
+  it("started event overrides queued creation startedAt (queued-agent actual-start scenario)", () => {
+    const run = new AgentRun("q1", { now: () => 9000 });
+    run.publish({ kind: "created", type: "general-purpose", description: "d", isBackground: true, startedAt: 100 });
+    expect(run.startedAt).toBe(100); // queue/creation time
+
+    run.publish({ kind: "started", startedAt: 500 }); // actual-start time (later, from drainQueue)
+    expect(run.startedAt).toBe(500);
+
+    run.publish({ kind: "completed", result: "done", status: "completed" });
+
+    const record = { id: "q1", type: "general-purpose", description: "d", status: "running" as const, toolUses: 0, startedAt: 100 } as any;
+    project(run, record);
+    expect(record.startedAt).toBe(500); // project() copied actual-start, not queue time
+    expect(record.startedAt).toBe(run.startedAt);
   });
 });

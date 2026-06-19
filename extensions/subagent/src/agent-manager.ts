@@ -151,9 +151,9 @@ export class AgentManager {
 
   /** Actually start an agent (called immediately or from queue drain). */
   private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options }: SpawnArgs) {
-    record.status = "running";
-    record.run?.publish({ kind: "started" });
-    record.startedAt = Date.now();
+    const startedAt = Date.now();
+    record.run?.publish({ kind: "started", startedAt });
+    if (record.run) project(record.run, record);
     if (options.isBackground) this.runningBackground++;
     this.onStart?.(record);
 
@@ -333,18 +333,12 @@ export class AgentManager {
     const onAbort = () => {
       if (record.status === "queued") {
         this.queue = this.queue.filter(q => q.id !== record.id);
-        record.status = "stopped";
-        record.completedAt ??= Date.now();
-        record.error = record.error ?? "Parent tool signal aborted before the queued agent could start.";
-        this.publishRunStop(record);
+        this.publishRunStop(record, "Parent tool signal aborted before the queued agent could start.");
         return;
       }
       if (record.status !== "running") return;
       record.abortController?.abort();
-      record.status = "stopped";
-      record.completedAt ??= Date.now();
-      record.error = record.error ?? "Parent tool signal aborted while the agent was running.";
-      this.publishRunStop(record);
+      this.publishRunStop(record, "Parent tool signal aborted while the agent was running.");
     };
 
     if (signal.aborted) {
@@ -357,8 +351,9 @@ export class AgentManager {
   }
 
   /** Phase 1 (dormant): mirror an external/forced stop into the AgentRun. */
-  private publishRunStop(record: AgentRecord): void {
-    record.run?.publish({ kind: "aborted", status: "stopped", reason: "user", error: record.error });
+  private publishRunStop(record: AgentRecord, message?: string): void {
+    record.run?.publish({ kind: "aborted", status: "stopped", reason: "user", error: record.error ?? message });
+    if (record.run) project(record.run, record);
   }
 
   /** Start queued agents up to the concurrency limit. */
@@ -399,12 +394,9 @@ export class AgentManager {
     const record = this.agents.get(id);
     if (!record?.session) return undefined;
 
-    record.status = "running";
-    record.startedAt = Date.now();
-    record.completedAt = undefined;
-    record.result = undefined;
-    record.error = undefined;
-    record.run?.publish({ kind: "resumed" });
+    const startedAt = Date.now();
+    record.run?.publish({ kind: "resumed", startedAt });
+    if (record.run) project(record.run, record);
 
     try {
       const responseText = await resumeAgent(record.session, prompt, {
@@ -443,19 +435,13 @@ export class AgentManager {
     // Remove from queue if queued
     if (record.status === "queued") {
       this.queue = this.queue.filter(q => q.id !== id);
-      record.status = "stopped";
-      record.completedAt = Date.now();
-      record.error = record.error ?? "Agent was stopped before it started running.";
-      this.publishRunStop(record);
+      this.publishRunStop(record, "Agent was stopped before it started running.");
       return true;
     }
 
     if (record.status !== "running") return false;
     record.abortController?.abort();
-    record.status = "stopped";
-    record.completedAt = Date.now();
-    record.error = record.error ?? "Agent was stopped while running.";
-    this.publishRunStop(record);
+    this.publishRunStop(record, "Agent was stopped while running.");
     return true;
   }
 
@@ -504,10 +490,7 @@ export class AgentManager {
     for (const queued of this.queue) {
       const record = this.agents.get(queued.id);
       if (record) {
-        record.status = "stopped";
-        record.completedAt = Date.now();
-        record.error = record.error ?? "Agent was stopped before it started running.";
-        this.publishRunStop(record);
+        this.publishRunStop(record, "Agent was stopped before it started running.");
         count++;
       }
     }
@@ -516,10 +499,7 @@ export class AgentManager {
     for (const record of this.agents.values()) {
       if (record.status === "running") {
         record.abortController?.abort();
-        record.status = "stopped";
-        record.completedAt = Date.now();
-        record.error = record.error ?? "Agent was stopped while running.";
-        this.publishRunStop(record);
+        this.publishRunStop(record, "Agent was stopped while running.");
         count++;
       }
     }
