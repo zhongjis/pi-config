@@ -48,7 +48,7 @@ import {
   parseSubagentSupervisionCeilingMs,
   type BackgroundSupervisionReasonClass,
 } from "../background-supervision.js";
-import { type AgentConfig, type AgentDefinitionDiagnostic, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType } from "../types.js";
+import { type AgentConfig, type AgentDefinitionDiagnostic, type AgentRecord, type NotificationDetails, type SubagentType } from "../types.js";
 import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "../delegation-policy.js";
 import {
   type AgentActivity,
@@ -257,16 +257,12 @@ export interface SubagentRuntimeContext {
   getLatestDiagnostics: () => AgentDefinitionDiagnostic[];
   bindTurnAbortSignal: (signal?: AbortSignal) => void;
   getAbortSignal: (ctx: ExtensionContext) => AbortSignal | undefined;
-  cancelNudge: (key: string) => void;
   waitForAgentCompletionWithSupervision: (record: AgentRecord, signal?: AbortSignal) => Promise<void>;
-  getDefaultJoinMode: () => JoinMode;
-  setDefaultJoinMode: (mode: JoinMode) => void;
   typeListText: string;
   syncSessionContext: (ctx: ExtensionContext | undefined) => void;
   setCurrentCtx: (ctx: ExtensionContext | undefined) => void;
   unsubRpcHandlers: () => void;
   releaseManager: () => void;
-  clearPendingNudges: () => void;
   clearBackgroundSupervision: () => void;
 }
 
@@ -296,24 +292,12 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   // appendEntry-backed, write-through-first. Rebuilt from the session log on session_start.
   const persistentRegistry = new PersistentBgAgentRegistry(pi);
 
-  // ---- Cancellable pending notifications ----
-  // Holds notifications briefly so get_subagent_result can cancel them
-  // before they reach pi.sendMessage (fire-and-forget).
-  const pendingNudges = new Map<string, ReturnType<typeof setTimeout>>();
   const POLLED_RECENTLY_MS = SUBAGENT_POLLED_RECENTLY_MS;
 
   // Tracks whether the PARENT prompt loop is active. Children are raw SDK sessions
   // (createAgentSession/session.prompt) and never fire the parent's agent_start/agent_end,
   // so this reflects only the parent. Gates the idle completion-notification flush.
   let parentBusy = false;
-
-  function cancelNudge(key: string) {
-    const timer = pendingNudges.get(key);
-    if (timer != null) {
-      clearTimeout(timer);
-      pendingNudges.delete(key);
-    }
-  }
 
   function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -466,7 +450,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       if (record.status !== "running" && record.status !== "queued") continue;
       hasActiveAgents = true;
       record.suppressNotification = true;
-      cancelNudge(record.id);
     }
     if (hasActiveAgents) manager.abortAll();
   }
@@ -588,11 +571,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
 
 
 
-  // ---- Join mode configuration ----
-  let defaultJoinMode: JoinMode = 'smart';
-  function getDefaultJoinMode(): JoinMode { return defaultJoinMode; }
-  function setDefaultJoinMode(mode: JoinMode) { defaultJoinMode = mode; }
-
   // ---- Batch tracking for smart join mode ----
 
   // Apply persisted settings on startup and emit `subagents:settings_loaded`.
@@ -601,7 +579,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       setMaxConcurrent: (n) => manager.setMaxConcurrent(n),
       setDefaultMaxTurns,
       setGraceTurns,
-      setDefaultJoinMode,
     },
     (event, payload) => pi.events.emit(event, payload),
   );
@@ -766,10 +743,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     unsubPingRpc();
   };
   const releaseManager = () => { delete subagentGlobal[managerKey]; };
-  const clearPendingNudges = () => {
-    for (const timer of pendingNudges.values()) clearTimeout(timer);
-    pendingNudges.clear();
-  };
   const clearBackgroundSupervision = () => { clearInterval(backgroundSupervisionTimer); };
 
   // ---- Build the shared runtime context ----
@@ -784,16 +757,12 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     getLatestDiagnostics,
     bindTurnAbortSignal,
     getAbortSignal,
-    cancelNudge,
     waitForAgentCompletionWithSupervision,
-    getDefaultJoinMode,
-    setDefaultJoinMode,
     typeListText,
     syncSessionContext,
     setCurrentCtx,
     unsubRpcHandlers,
     releaseManager,
-    clearPendingNudges,
     clearBackgroundSupervision,
   };
 

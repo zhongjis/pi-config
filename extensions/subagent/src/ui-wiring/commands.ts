@@ -15,7 +15,7 @@ import { formatAgentDefinitionDiagnostics, getModelLabelFromConfig } from "../li
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 import { type ModelRegistry, parseModelChain, resolveModel } from "../model-resolver.js";
 import { type SubagentsSettings, saveAndEmitChanged } from "../settings.js";
-import type { AgentConfig, AgentRecord, JoinMode } from "../types.js";
+import type { AgentConfig, AgentRecord } from "../types.js";
 import { formatDuration, getDisplayName } from "../ui/agent-widget.js";
 
 export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
@@ -25,8 +25,6 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
     agentActivity,
     reloadCustomAgents,
     getLatestDiagnostics,
-    getDefaultJoinMode,
-    setDefaultJoinMode,
   } = ctx;
 
   const projectAgentsDir = () => join(process.cwd(), ".pi", "agents");
@@ -541,7 +539,6 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
       maxConcurrent: manager.getMaxConcurrent(),
       defaultMaxTurns: getDefaultMaxTurns() ?? 0,
       graceTurns: getGraceTurns(),
-      defaultJoinMode: getDefaultJoinMode(),
     };
   }
 
@@ -559,7 +556,6 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
       `Max concurrency (current: ${manager.getMaxConcurrent()})`,
       `Default max turns (current: ${getDefaultMaxTurns() ?? "unlimited"})`,
       `Grace turns (current: ${getGraceTurns()})`,
-      `Join mode (current: ${getDefaultJoinMode()})`,
     ]);
     if (!choice) return;
 
@@ -598,17 +594,6 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
         } else {
           ctx.ui.notify("Must be a positive integer.", "warning");
         }
-      }
-    } else if (choice.startsWith("Join mode")) {
-      const val = await ctx.ui.select("Default join mode for background agents", [
-        "smart — auto-group 2+ agents in same turn (default)",
-        "async — always notify individually",
-        "group — always group background agents",
-      ]);
-      if (val) {
-        const mode = val.split(" ")[0] as JoinMode;
-        setDefaultJoinMode(mode);
-        notifyApplied(ctx, `Default join mode set to ${mode}`);
       }
     }
   }

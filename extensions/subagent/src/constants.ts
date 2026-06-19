@@ -56,13 +56,6 @@ export const SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS = 10 * 60_000;
 
 /**
  * unit: ms
- * source: extensions/subagent/src/index.ts:412
- * rationale: preserve the cancellable notification hold window.
- */
-export const SUBAGENT_NUDGE_HOLD_MS = 200;
-
-/**
- * unit: ms
  * source: extensions/subagent/src/index.ts:413
  * rationale: preserve the recent-poll suppression window.
  */
@@ -81,13 +74,6 @@ export const SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS = 500;
  * rationale: preserve the grouped-result truncation cap.
  */
 export const SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS = 300;
-
-/**
- * unit: count
- * source: extensions/subagent/src/index.ts:823
- * rationale: preserve the 2+ agent grouping threshold.
- */
-export const SUBAGENT_GROUP_JOIN_MIN_AGENTS = 2;
 
 /**
  * unit: ms
@@ -137,20 +123,6 @@ export const SUBAGENT_FOREGROUND_RENDER_CADENCE_MS = 250;
  * rationale: preserve the expanded result preview line cap.
  */
 export const SUBAGENT_RESULT_PREVIEW_LINES = 30;
-
-/**
- * unit: ms
- * source: extensions/subagent/src/index.ts:1298
- * rationale: preserve the batch finalize debounce.
- */
-export const SUBAGENT_BATCH_FINALIZE_DELAY_MS = 100;
-
-/**
- * unit: ms
- * source: extensions/subagent/src/group-join.ts:24
- * rationale: preserve the primary group join timeout.
- */
-export const SUBAGENT_GROUP_JOIN_TIMEOUT_MS = 30_000;
 
 /**
  * unit: ms

@@ -15,7 +15,6 @@ export function registerCleanup(ctx: SubagentRuntimeContext): void {
     unsubRpcHandlers,
     setCurrentCtx,
     releaseManager,
-    clearPendingNudges,
     clearBackgroundSupervision,
   } = ctx;
 
@@ -26,7 +25,6 @@ export function registerCleanup(ctx: SubagentRuntimeContext): void {
     setCurrentCtx(undefined);
     releaseManager();
     manager.abortAll();
-    clearPendingNudges();
     clearBackgroundSupervision();
     manager.dispose();
   });

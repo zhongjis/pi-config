@@ -67,17 +67,16 @@ describe("settings persistence", () => {
   });
 
   it("loads from project when no global file", () => {
-    writeProject({ maxConcurrent: 8, defaultJoinMode: "group" });
-    expect(loadSettings(projectDir)).toEqual({ maxConcurrent: 8, defaultJoinMode: "group" });
+    writeProject({ maxConcurrent: 8 });
+    expect(loadSettings(projectDir)).toEqual({ maxConcurrent: 8 });
   });
 
   it("merges global + project with project winning on conflicts", () => {
-    writeGlobal({ maxConcurrent: 16, graceTurns: 10, defaultJoinMode: "async" });
+    writeGlobal({ maxConcurrent: 16, graceTurns: 10 });
     writeProject({ maxConcurrent: 4, defaultMaxTurns: 50 });
     expect(loadSettings(projectDir)).toEqual({
       maxConcurrent: 4, // project wins
       graceTurns: 10, // from global
-      defaultJoinMode: "async", // from global
       defaultMaxTurns: 50, // from project only
     });
   });
@@ -87,7 +86,6 @@ describe("settings persistence", () => {
       maxConcurrent: 7,
       defaultMaxTurns: 30,
       graceTurns: 3,
-      defaultJoinMode: "smart" as const,
     };
     saveSettings(settings, projectDir);
     expect(loadSettings(projectDir)).toEqual(settings);
@@ -163,22 +161,6 @@ describe("settings persistence", () => {
       expect(loadSettings(projectDir)).toEqual({});
     });
 
-    it("drops invalid defaultJoinMode values", () => {
-      writeProject({ defaultJoinMode: "invalid" });
-      expect(loadSettings(projectDir)).toEqual({});
-      writeProject({ defaultJoinMode: 42 });
-      expect(loadSettings(projectDir)).toEqual({});
-      writeProject({ defaultJoinMode: "" });
-      expect(loadSettings(projectDir)).toEqual({});
-    });
-
-    it("accepts all three valid join modes", () => {
-      for (const mode of ["async", "group", "smart"] as const) {
-        writeProject({ defaultJoinMode: mode });
-        expect(loadSettings(projectDir)).toEqual({ defaultJoinMode: mode });
-      }
-    });
-
     it("returns {} when the JSON root is not an object (array, string, null)", () => {
       mkdirSync(join(projectDir, ".pi"), { recursive: true });
       writeFileSync(projectFile(), '["not", "an", "object"]');
@@ -194,7 +176,6 @@ describe("settings persistence", () => {
         maxConcurrent: 4, // ok
         defaultMaxTurns: -5, // dropped
         graceTurns: 3, // ok
-        defaultJoinMode: "nope", // dropped
       });
       expect(loadSettings(projectDir)).toEqual({ maxConcurrent: 4, graceTurns: 3 });
     });
@@ -273,7 +254,6 @@ describe("settings persistence", () => {
         setMaxConcurrent: vi.fn(),
         setDefaultMaxTurns: vi.fn(),
         setGraceTurns: vi.fn(),
-        setDefaultJoinMode: vi.fn(),
       };
     });
 
@@ -282,7 +262,6 @@ describe("settings persistence", () => {
       expect(appliers.setMaxConcurrent).not.toHaveBeenCalled();
       expect(appliers.setDefaultMaxTurns).not.toHaveBeenCalled();
       expect(appliers.setGraceTurns).not.toHaveBeenCalled();
-      expect(appliers.setDefaultJoinMode).not.toHaveBeenCalled();
     });
 
     it("applies only the fields that are present", () => {
@@ -290,18 +269,16 @@ describe("settings persistence", () => {
       expect(appliers.setMaxConcurrent).toHaveBeenCalledWith(4);
       expect(appliers.setGraceTurns).toHaveBeenCalledWith(3);
       expect(appliers.setDefaultMaxTurns).not.toHaveBeenCalled();
-      expect(appliers.setDefaultJoinMode).not.toHaveBeenCalled();
     });
 
-    it("applies all four fields when all are present", () => {
+    it("applies all three fields when all are present", () => {
       applySettings(
-        { maxConcurrent: 8, defaultMaxTurns: 50, graceTurns: 7, defaultJoinMode: "group" },
+        { maxConcurrent: 8, defaultMaxTurns: 50, graceTurns: 7 },
         appliers,
       );
       expect(appliers.setMaxConcurrent).toHaveBeenCalledWith(8);
       expect(appliers.setDefaultMaxTurns).toHaveBeenCalledWith(50);
       expect(appliers.setGraceTurns).toHaveBeenCalledWith(7);
-      expect(appliers.setDefaultJoinMode).toHaveBeenCalledWith("group");
     });
 
     it("applies defaultMaxTurns: 0 as the explicit unlimited marker", () => {
@@ -334,7 +311,6 @@ describe("settings persistence", () => {
         setMaxConcurrent: vi.fn(),
         setDefaultMaxTurns: vi.fn(),
         setGraceTurns: vi.fn(),
-        setDefaultJoinMode: vi.fn(),
       };
     });
 
@@ -348,7 +324,6 @@ describe("settings persistence", () => {
       expect(appliers.setMaxConcurrent).toHaveBeenCalledWith(16);
       expect(appliers.setGraceTurns).toHaveBeenCalledWith(7);
       expect(appliers.setDefaultMaxTurns).not.toHaveBeenCalled();
-      expect(appliers.setDefaultJoinMode).not.toHaveBeenCalled();
 
       expect(emit).toHaveBeenCalledTimes(1);
       expect(emit).toHaveBeenCalledWith("subagents:settings_loaded", {
@@ -368,7 +343,6 @@ describe("settings persistence", () => {
       expect(appliers.setMaxConcurrent).not.toHaveBeenCalled();
       expect(appliers.setDefaultMaxTurns).not.toHaveBeenCalled();
       expect(appliers.setGraceTurns).not.toHaveBeenCalled();
-      expect(appliers.setDefaultJoinMode).not.toHaveBeenCalled();
     });
   });
 

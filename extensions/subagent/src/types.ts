@@ -79,8 +79,6 @@ export interface AgentConfig {
   source?: "default" | "project" | "global";
 }
 
-export type JoinMode = 'async' | 'group' | 'smart';
-
 export interface AgentRecord {
   id: string;
   type: SubagentType;
@@ -94,8 +92,6 @@ export interface AgentRecord {
   session?: AgentSession;
   abortController?: AbortController;
   promise?: Promise<string>;
-  groupId?: string;
-  joinMode?: JoinMode;
   /** Resolved provider/model label shown in the widget (e.g. "anthropic/claude-sonnet-4-6"). */
   modelLabel?: string;
   /** Set when result was already consumed via get_subagent_result — suppresses completion notification. */

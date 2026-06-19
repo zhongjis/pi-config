@@ -11,7 +11,7 @@ import { safeFormatTokens, textResult } from "../lifecycle/supervision.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 
 export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void {
-  const { pi, manager, agentActivity, getAbortSignal, bindTurnAbortSignal, cancelNudge, waitForAgentCompletionWithSupervision } = ctx;
+  const { pi, manager, agentActivity, getAbortSignal, bindTurnAbortSignal, waitForAgentCompletionWithSupervision } = ctx;
 
   pi.registerTool(defineTool({
     name: "get_subagent_result",
@@ -42,7 +42,6 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
       // Wait for completion if requested, but keep a supervision window instead of a blind block.
       if (params.wait && record.status === "running" && record.promise) {
         record.waitingConsumers = (record.waitingConsumers ?? 0) + 1;
-        cancelNudge(params.agent_id);
         try {
           const waitSignal = getAbortSignal(ctx) ?? signal;
           bindTurnAbortSignal(waitSignal);
@@ -102,7 +101,6 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
         } else {
           record.resultConsumed = true;
         }
-        cancelNudge(params.agent_id);
       }
 
       // Verbose: include full conversation

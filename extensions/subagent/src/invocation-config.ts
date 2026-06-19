@@ -1,7 +1,7 @@
 import { normalizeThinkingLevel } from "./thinking-level.js";
 import { parseModelChain, type ModelCandidate } from "./model-resolver.js";
 
-import type { AgentConfig, IsolationMode, JoinMode, ThinkingLevel } from "./types.js";
+import type { AgentConfig, IsolationMode, ThinkingLevel } from "./types.js";
 
 interface AgentInvocationParams {
   model?: string;
@@ -43,6 +43,3 @@ export function resolveAgentInvocationConfig(
   };
 }
 
-export function resolveJoinMode(defaultJoinMode: JoinMode, runInBackground: boolean): JoinMode | undefined {
-  return runInBackground ? defaultJoinMode : undefined;
-}
