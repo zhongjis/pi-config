@@ -217,103 +217,33 @@ export class AgentManager {
     })
       .then(({ responseText, session, aborted, steered }) => {
         record.session = session;
-
-        // Don't overwrite status if externally stopped via abort()
-        if (record.status !== "stopped") {
-          const finalStatus = aborted ? "aborted" : steered ? "steered" : "completed";
-          let finalResult = responseText.trim() || getRecoveredResultText({ ...record, status: finalStatus });
-
-          // Final flush of streaming output file
-          if (record.outputCleanup) {
-            try { record.outputCleanup(); } catch { /* ignore */ }
-            record.outputCleanup = undefined;
-          }
-
-          // Clean up worktree if used
-          if (record.worktree) {
-            const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
-            record.worktreeResult = wtResult;
-            if (wtResult.hasChanges && wtResult.branch) {
-              finalResult = finalResult +
-                `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
-            }
-          }
-
-          if (finalStatus === "completed" || finalStatus === "steered") {
-            record.run?.publish({ kind: "completed", result: finalResult, status: finalStatus });
-          } else {
-            record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns", result: finalResult });
-          }
-        } else {
-          // Stopped path: amend result via result_amended; run already owns status/error/completedAt
-          let finalResult = responseText.trim() || getRecoveredResultText(record);
-          if (record.outputCleanup) {
-            try { record.outputCleanup(); } catch { /* ignore */ }
-            record.outputCleanup = undefined;
-          }
-          if (record.worktree) {
-            try {
-              const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
-              record.worktreeResult = wtResult;
-              if (wtResult.hasChanges && wtResult.branch) {
-                finalResult = finalResult +
-                  `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
-              }
-            } catch { /* ignore cleanup errors */ }
-          }
-          record.run?.publish({ kind: "result_amended", result: finalResult });
-        }
-        if (options.isBackground) {
-          this.runningBackground--;
-          this.onComplete?.(record);
-          this.drainQueue();
-        }
+        // Read the stop discriminator once; AgentRun owns status past this point.
+        const stopped = record.status === "stopped";
+        this.finalizeRun(record, ctx, options.description, {
+          source: "settled",
+          stopped,
+          responseText,
+          aborted,
+          steered,
+        });
         return responseText;
       })
       .catch((err) => {
-        // Don't overwrite status if externally stopped via abort()
-        if (record.status !== "stopped") {
-          const finalError = record.error ?? (err instanceof Error ? err.message : String(err));
-          const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
-
-          // Final flush of streaming output file on error
-          if (record.outputCleanup) {
-            try { record.outputCleanup(); } catch { /* ignore */ }
-            record.outputCleanup = undefined;
-          }
-
-          // Best-effort worktree cleanup on error
-          if (record.worktree) {
-            try {
-              const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
-              record.worktreeResult = wtResult;
-            } catch { /* ignore cleanup errors */ }
-          }
-
-          record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
-        } else {
-          // Stopped path: amend result via result_amended; run already owns status/error/completedAt
-          if (record.outputCleanup) {
-            try { record.outputCleanup(); } catch { /* ignore */ }
-            record.outputCleanup = undefined;
-          }
-          if (record.worktree) {
-            try {
-              const wtResult = cleanupWorktree(ctx.cwd, record.worktree, options.description);
-              record.worktreeResult = wtResult;
-            } catch { /* ignore cleanup errors */ }
-          }
-          const finalResult = getRecoveredResultText(record);
-          record.run?.publish({ kind: "result_amended", result: finalResult });
-        }
+        const stopped = record.status === "stopped";
+        this.finalizeRun(record, ctx, options.description, {
+          source: "rejected",
+          stopped,
+          error: err,
+        });
+        return "";
+      })
+      .finally(() => {
+        // Background queue bookkeeping: runs once on every settle, regardless of outcome.
         if (options.isBackground) {
           this.runningBackground--;
           this.onComplete?.(record);
           this.drainQueue();
         }
-        return "";
-      })
-      .finally(() => {
         if (record.externalAbortCleanup) {
           record.externalAbortCleanup();
           record.externalAbortCleanup = undefined;
@@ -321,6 +251,74 @@ export class AgentManager {
       });
 
     record.promise = promise;
+  }
+
+  /**
+   * Own the terminal handling for a run: flush streaming output, clean up the worktree,
+   * derive the final result text, and publish the single terminal AgentRun event.
+   * The four former in-`startAgent` blocks (then/catch × normal/stopped) all route here.
+   *
+   * Variation is carried entirely by `outcome`:
+   *  - source "settled" (runAgent resolved) vs "rejected" (threw): governs the branch-note
+   *    append (settled appends, rejected omits) and the result-derivation source.
+   *  - stopped (read ONCE by the caller before this runs): a user-stopped run only amends its
+   *    already-final result; AgentRun owns status/error/completedAt, so no status re-derivation.
+   *
+   * Out of scope (stays in startAgent): queue bookkeeping and externalAbortCleanup.
+   */
+  private finalizeRun(
+    record: AgentRecord,
+    ctx: ExtensionContext,
+    description: string,
+    outcome:
+      | { source: "settled"; stopped: boolean; responseText: string; aborted: boolean; steered: boolean }
+      | { source: "rejected"; stopped: boolean; error: unknown },
+  ): void {
+    // Flush any streaming output file (common to every terminal path).
+    if (record.outputCleanup) {
+      try { record.outputCleanup(); } catch { /* ignore */ }
+      record.outputCleanup = undefined;
+    }
+
+    // Worktree cleanup + branch note. The note is appended only on the settled continuation
+    // (completed / then-stopped); the rejected continuation (error / catch-stopped) omits it.
+    // cleanupWorktree is self-guarding (never throws), so no extra try/catch is needed.
+    const finalizeWorktree = (base: string): string => {
+      if (!record.worktree) return base;
+      const wtResult = cleanupWorktree(ctx.cwd, record.worktree, description);
+      record.worktreeResult = wtResult;
+      if (outcome.source === "settled" && wtResult.hasChanges && wtResult.branch) {
+        return base +
+          `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
+      }
+      return base;
+    };
+
+    // Stopped: AgentRun already owns status/error/completedAt (set when the stop was published).
+    // Only amend the final result text.
+    if (outcome.stopped) {
+      const base = (outcome.source === "settled" ? outcome.responseText.trim() : "")
+        || getRecoveredResultText(record);
+      record.run?.publish({ kind: "result_amended", result: finalizeWorktree(base) });
+      return;
+    }
+
+    if (outcome.source === "settled") {
+      const finalStatus = outcome.aborted ? "aborted" : outcome.steered ? "steered" : "completed";
+      const base = outcome.responseText.trim() || getRecoveredResultText({ ...record, status: finalStatus });
+      const finalResult = finalizeWorktree(base);
+      if (finalStatus === "completed" || finalStatus === "steered") {
+        record.run?.publish({ kind: "completed", result: finalResult, status: finalStatus });
+      } else {
+        record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns", result: finalResult });
+      }
+      return;
+    }
+
+    // Rejected (error).
+    const finalError = record.error ?? (outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
+    const finalResult = finalizeWorktree(getRecoveredResultText({ ...record, status: "error", error: finalError }));
+    record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
   }
 
   /** Forward an outer tool abort signal into this agent's internal abort controller. */
