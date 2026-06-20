@@ -33,7 +33,7 @@ These walk `getAvailable()` which is already filtered by the active profile. Add
 | Extension | Where | Constant | Default profile | Opencode profile | Local profile |
 |---|---|---|---|---|---|
 | `boomerang` | [`commit.ts`](../extensions/boomerang/commit.ts) | `COMMIT_MODEL_CHAIN` | `gpt-5.4-mini`, `claude-haiku-4-5` | `opencode-go/qwen3.5-plus` | `llama-swap/qwen2.5-coder:7b` |
-| `smart-sessions` | [`index.ts`](../extensions/smart-sessions/index.ts) | `AUTO_DETECT_MODELS` | `gpt-5.4-nano`, `gpt-5.4-mini`, `gemini-3-flash`, `claude-4-5-haiku` | `qwen3.5-plus` | `qwen2.5-coder:7b` |
+| `smart-sessions` | [`index.ts`](../extensions/smart-sessions/index.ts) | `AUTO_DETECT_MODELS` | `gpt-5.4-mini`, `gemini-3-flash`, `claude-haiku-4-5` | `qwen3.5-plus` | `qwen2.5-coder:14b` |
 | `subagent` | [`src/default-agents.ts`](../extensions/subagent/src/default-agents.ts) | `general-purpose` agent default | `anthropic/claude-haiku-4-5-20251001` | — (no profile equivalent yet) | — |
 
 **Pattern:** List one bare id (e.g., `qwen3.5-plus`) or `provider/id` (e.g., `opencode-go/qwen3.5-plus`) per profile. `getAvailable()` filtering naturally selects the right one.

@@ -30,15 +30,14 @@ const DEFAULTS: SummaryConfig = {
  * Profile-aware: bare IDs match against getAvailable() which is already
  * filtered by the active profile. Default profile picks GPT/Gemini/Claude
  * first; opencode profile falls through to qwen3.5-plus; local profile
- * picks qwen2.5-coder:7b.
+ * picks qwen2.5-coder:14b.
  */
 const AUTO_DETECT_MODELS = [
-	"gpt-5.4-nano",
 	"gpt-5.4-mini",
 	"gemini-3-flash",
-	"claude-4-5-haiku",
+	"claude-haiku-4-5",
 	"qwen3.5-plus",
-	"qwen2.5-coder:7b",
+	"qwen2.5-coder:14b",
 ];
 
 function loadConfig(cwd: string): SummaryConfig {
@@ -445,12 +444,10 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			const globalPath = join(getAgentDir(), "session-summary.json");
 			if (!existsSync(globalPath)) {
 				mkdirSync(dirname(globalPath), { recursive: true });
-				// Materialize the resolved model (auto-detected or configured) into the settings
-				const resolved = resolveModel(ctx);
 				const settingsToWrite = {
 					...DEFAULTS,
-					provider: resolved?.provider ?? "",
-					model: resolved?.model ?? "",
+					provider: "",
+					model: "",
 				};
 				writeFileSync(globalPath, JSON.stringify(settingsToWrite, null, 2) + "\n");
 				ctx.ui.notify(`Created ${globalPath}`, "info");
