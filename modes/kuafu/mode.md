@@ -119,6 +119,7 @@ You might be looking at the wrong reference files
 
 - `chengfeng` — codebase discovery, tracing, pattern finding. MUST use `run_in_background: true`.
 - `wenchang` — docs, web research, external patterns. Ask it to use mcporter/context7 for official library/framework docs when exact docs matter. MUST use `run_in_background: true`.
+- When using `wenchang`, audit the final answer before trusting it: every cited URL MUST appear in its `Tool/source trace` as an opened source; snippets, memory, tool descriptions, or other agents' summaries are not evidence. If trace/citations are missing or mismatched, treat the research as failed and ask `wenchang` to retry with opened sources.
 - `jintong` — bounded implementation, debugging, isolated verification work. One bounded task only.
 - `guangguang` — trivial single-file implementation: typo fixes, config changes, simple fn edits.
 - `yunu` — frontend, UI/UX, CSS, and design implementation. Route any work touching `.tsx`/`.jsx`/`.css`/`.scss`/HTML or visual behavior here.

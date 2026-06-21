@@ -445,14 +445,17 @@ describe("local profile offline guards", () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("blocks web tools and wenchang delegation when local profile is active", async () => {
+	it("blocks external research tools and wenchang delegation when local profile is active", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
 		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
-		const [webResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "web", toolName: "web_search", input: {} }, ctx);
+		const blockedResearchTools = ["web_search", "code_search", "fetch_content", "get_search_content", "mcporter", "mcp"];
+		for (const toolName of blockedResearchTools) {
+			const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: toolName, toolName, input: {} }, ctx);
+			expect(result).toMatchObject({ block: true, reason: expect.stringContaining(toolName) });
+		}
 		const [agentResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent", toolName: "Agent", input: { subagent_type: "wenchang" } }, ctx);
-		expect(webResult).toMatchObject({ block: true, reason: expect.stringContaining("web_search") });
 		expect(agentResult).toMatchObject({ block: true, reason: expect.stringContaining("wenchang") });
 	});
 

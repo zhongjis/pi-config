@@ -9,7 +9,7 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 - Persists profile choice in the session journal (`panda:profile` custom entry) so `--resume` + `--continue` restore it.
 - Honors `PI_PROFILE=<name>` env var as the default when no session state exists — lets nix-config set the profile per machine/location.
 - Shows `● profile: <name>` status bar indicator when a non-default profile is active.
-- **The `local` profile includes offline guards:** blocks web tools, blocks `wenchang` delegation, and injects an offline system prompt.
+- **The `local` profile includes offline guards:** blocks external research tools, blocks `wenchang` delegation, and injects an offline system prompt.
 
 ## Profiles
 
@@ -17,7 +17,7 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 |---|---|---|
 | `default` | `anthropic`, `openai-codex`, `openai`, `amazon-bedrock`, `google` | US default — paid frontier models. |
 | `opencode` | `opencode-go` | China — OpenCode Go subscription, Zen overflow. |
-| `local` | `llama-swap` | Offline-first or no-network environments. Blocks web tools and wenchang. |
+| `local` | `llama-swap` | Offline-first or no-network environments. Blocks external research tools and wenchang. |
 
 Profiles are hardcoded. No config files.
 

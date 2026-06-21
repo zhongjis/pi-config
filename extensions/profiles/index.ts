@@ -38,12 +38,12 @@ Constraints:
 - Assume no internet access.
 - Use only local files, local tools, and local models.
 - Do not delegate to wenchang.
-- Do not call web, search, or fetch tools.
+- Do not call web, search, fetch, MCP, or external research tools.
 - Do not suggest online documentation unless the user asks to leave offline mode.
 - If external information is missing, state what local evidence is missing and proceed from repo files, local docs, and cached context.`;
 
 const LOCAL_PROFILE_NOTIFICATION =
-  "Local profile active: local models only; web tools and wenchang disabled.";
+  "Local profile active: local models only; external research tools and wenchang disabled.";
 export const PROFILE_STATE_CUSTOM_TYPE = "panda:profile";
 
 type ProfileState = { name: string };
@@ -94,6 +94,8 @@ export const DEFAULT_PROFILES_CONFIG: ProfilesConfig = {
         "code_search",
         "fetch_content",
         "get_search_content",
+        "mcporter",
+        "mcp",
       ],
       systemPrompt: OFFLINE_SYSTEM_PROMPT,
       notifyOnSessionStart: true,
