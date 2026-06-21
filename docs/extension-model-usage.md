@@ -10,6 +10,8 @@ Load order:
 
 Later layers override earlier layers.
 
+`install.sh` symlinks the repo's top-level `tool_models.json` into the global path.
+
 ## Schema
 
 ```json

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "roles": {
+    "summary.session": "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b",
+    "commit": "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b"
+  },
+  "tools": {
+    "smart-sessions.summary": { "role": "summary.session" },
+    "boomerang.commit": { "role": "commit" }
+  }
+}

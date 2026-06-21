@@ -40,6 +40,7 @@ ALLOWED_ITEMS=(
   "lsp.json"
   "caveman.json"
   "session-summary.json"
+  "tool_models.json"
   "scripts"
   "themes"
 )
