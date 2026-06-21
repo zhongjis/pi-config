@@ -28,7 +28,7 @@ Global config: `~/.pi/agent/session-summary.json`.
 Project override: `.pi/session-summary.json`.
 
 Fields:
-- `provider`, `model` — Optional explicit summary model; otherwise auto-detected.
+- `provider`, `model` — Optional explicit summary model. When either is blank or missing, model selection uses the `smart-sessions.summary` role from `~/.pi/agent/tool_models.json` / `.pi/tool_models.json`.
 - `debounceSeconds` — Minimum seconds between LLM calls. Default: `60`.
 - `maxTokens` — Max tokens for summary response. Default: `300`.
 - `resummarizeTokenThreshold` — Token threshold for full re-summary. Default: `40000`.

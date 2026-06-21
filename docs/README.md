@@ -65,6 +65,8 @@ See [modes.md](modes.md) and [orchestration-flow.md](orchestration-flow.md) for 
 | Document | Purpose |
 |----------|---------|
 | [extensions.md](extensions.md) | Extension README standard — what every extension README must contain |
+| [extension-model-usage.md](extension-model-usage.md) | Shared `tool_models.json` role schema for extension-owned LLM calls |
+| [model-selection-and-fallback.md](model-selection-and-fallback.md) | Model-chain parsing, profile filtering, and fallback behavior |
 | [modes.md](modes.md) | Agent modes design and switching behavior |
 | [orchestration-flow.md](orchestration-flow.md) | Planning-to-execution lifecycle |
 | [testing/README.md](testing/README.md) | Extension testing policy and two-tier model |

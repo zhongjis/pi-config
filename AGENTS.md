@@ -25,6 +25,7 @@ Personal Pi harness around `pi`: custom agents, runtime extensions, test harness
 | Change subagent orchestration | `extensions/subagent/AGENTS.md` | Eventbus RPC + background-agent lifecycle |
 | Change task tracking flow | `extensions/tasks/AGENTS.md` | Task DAG, storage, subagent bridge |
 | Change web search/fetch tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local extension; model wiring → `docs/extension-model-usage.md` |
+| Change shared extension model roles | `extensions/lib/tool-models.ts`, `docs/extension-model-usage.md` | `tool_models.json` roles bind extension-owned LLM calls to model chains |
 | Change install/symlink behavior | `install.sh` | Allowlist + Nix-managed skip rules |
 | Change repo-wide tests | `docs/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
 

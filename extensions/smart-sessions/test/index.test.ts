@@ -128,6 +128,59 @@ describe("smart-sessions model selection", () => {
 		);
 	});
 
+	it("uses global tool_models.json when session-summary provider/model are blank", async () => {
+		await writeFile(
+			join(tempAgentDir, "session-summary.json"),
+			JSON.stringify({ provider: "", model: "" }),
+		);
+		await writeFile(
+			join(tempAgentDir, "tool_models.json"),
+			JSON.stringify({
+				version: 1,
+				roles: { "summary.session": "gemini-3-flash" },
+				tools: { "smart-sessions.summary": { role: "summary.session" } },
+			}),
+		);
+
+		await runSummary([
+			{ id: "gpt-5.4-mini", name: "GPT 5.4 Mini", provider: "openai" },
+			{ id: "gemini-3-flash", name: "Gemini 3 Flash", provider: "google" },
+		]);
+
+		expect(mockedComplete).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "gemini-3-flash", provider: "google" }),
+			expect.any(Object),
+			expect.any(Object),
+		);
+	});
+
+	it("uses project tool_models.json over global when session-summary provider/model are blank", async () => {
+		await writeFile(
+			join(tempAgentDir, "session-summary.json"),
+			JSON.stringify({ provider: "", model: "" }),
+		);
+		await writeFile(
+			join(tempAgentDir, "tool_models.json"),
+			JSON.stringify({ version: 1, roles: { "summary.session": "gpt-5.4-mini" } }),
+		);
+		await mkdir(join(tempCwd, ".pi"), { recursive: true });
+		await writeFile(
+			join(tempCwd, ".pi", "tool_models.json"),
+			JSON.stringify({ version: 1, roles: { "summary.session": "claude-haiku-4-5" } }),
+		);
+
+		await runSummary([
+			{ id: "gpt-5.4-mini", name: "GPT 5.4 Mini", provider: "openai" },
+			{ id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" },
+		]);
+
+		expect(mockedComplete).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "claude-haiku-4-5", provider: "anthropic" }),
+			expect.any(Object),
+			expect.any(Object),
+		);
+	});
+
 	it("does not silently fall back when explicit config points at an unavailable model", async () => {
 		await writeFile(
 			join(tempAgentDir, "session-summary.json"),

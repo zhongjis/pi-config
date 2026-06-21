@@ -705,6 +705,21 @@ describe("Boomerang Extension", () => {
       expect(setThinkingCalls).toEqual([]);
     });
 
+    it("uses project tool_models override for commit model", async () => {
+      writeSkill("user", "git-master", "Use git carefully.");
+      writeFile(
+        join(currentCwd, ".pi", "tool_models.json"),
+        JSON.stringify({
+          version: 1,
+          tools: { "boomerang.commit": { chain: "gpt-5.4-mini" } },
+        }),
+      );
+
+      await runBoomerangCommit("--amend");
+
+      expect(setModelCalls).toEqual(["openai/gpt-5.4-mini"]);
+    });
+
     it("falls back to claude-haiku-4-5 when gpt-5.4-mini is unavailable", async () => {
       writeSkill("user", "git-master", "Use git carefully.");
       availableModels = availableModels.filter((entry) => entry.id !== "gpt-5.4-mini");

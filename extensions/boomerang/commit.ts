@@ -5,19 +5,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
 import { DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-coding-agent";
-import { parseModelChain, resolveModel } from "../lib/model.js";
+import { resolveModel } from "../lib/model.js";
 import type { ModelCandidate, ModelRegistry } from "../lib/model.js";
+import { getToolModelSelection, loadToolModelsConfig } from "../lib/tool-models.js";
 
-// Profile-aware chain: one entry per active profile (default/opencode/local).
-// resolveFirstAvailable picks the first one in the registry that's already
-// filtered by the active profile via getAvailable().
-const COMMIT_MODEL_CHAIN = [
-  "claude-haiku-4-5",
-  "gpt-5.4-mini",
-  "opencode-go/qwen3.5-plus",
-  "llama-swap/qwen2.5-coder:7b",
-].join(",");
-const COMMIT_MODEL_CANDIDATES = parseModelChain(COMMIT_MODEL_CHAIN);
+const COMMIT_TOOL_KEY = "boomerang.commit";
 
 // Pi triggers auto-compaction when context tokens exceed
 // (contextWindow - reserveTokens). Switching the commit task to a model whose
@@ -107,8 +99,10 @@ export function registerCommitCommand(
           ? usage.tokens + COMMIT_CONTEXT_RESERVE_TOKENS
           : null;
 
+      const toolModelConfig = loadToolModelsConfig(ctx.cwd);
+      const selection = getToolModelSelection(toolModelConfig, COMMIT_TOOL_KEY);
       const resolved = resolveCommitModel(
-        COMMIT_MODEL_CANDIDATES,
+        selection?.candidates ?? [],
         ctx.modelRegistry,
         requiredTokens,
       );
@@ -121,7 +115,7 @@ export function registerCommitCommand(
           );
         } else {
           ctx.ui.notify(
-            `No commit-specific model available from: ${COMMIT_MODEL_CHAIN}. Falling back to current model (${current}).`,
+            `No commit-specific model available from: ${selection?.chain ?? "none"}. Falling back to current model (${current}).`,
             "warning",
           );
         }

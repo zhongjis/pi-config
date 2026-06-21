@@ -22,6 +22,7 @@ export * from "./fallback-cache.js";
 export * from "./notify-once.js";
 export * from "./stream-fallback.js";
 export * from "./rpc.js";
+export * from "./tool-models.js";
 
 /**
  * Wire the shared library into an extension.

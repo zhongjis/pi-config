@@ -54,10 +54,12 @@ Fields:
 - `toolEnabled` — boolean; whether agent-callable `boomerang` tool is enabled.
 - `toolGuidance` — string or null; extra system-prompt guidance for tool use.
 
+Model role config: `/boomerang:commit` uses the `boomerang.commit` rule / `commit` role from `~/.pi/agent/tool_models.json` or project `.pi/tool_models.json`.
+
 ## Events
 
 Uses Pi lifecycle events only; no custom cross-extension event channels.
 
 ## Local Additions
 
-Adds `/boomerang:commit [args]`, a local shortcut that sends plain `commit [args]` to boomerang while injecting `git-master`.
+Adds `/boomerang:commit [args]`, a local shortcut that sends plain `commit [args]` to boomerang while injecting `git-master` and resolving the shared `boomerang.commit` model role.

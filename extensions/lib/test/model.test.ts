@@ -47,4 +47,24 @@ describe("resolveFirstAvailable", () => {
   it("returns undefined when no candidate resolves", () => {
     expect(resolveFirstAvailable(parseModelChain("missing"), makeRegistry([]))).toBeUndefined();
   });
+
+  it("handles available model entries without names", () => {
+    const nameless = { id: "gemini-2.5-flash", provider: "google" };
+    const registry: ModelRegistry = {
+      find(provider: string, modelId: string) {
+        return provider === nameless.provider && modelId === nameless.id ? nameless : undefined;
+      },
+      getAll() {
+        return [nameless];
+      },
+      getAvailable() {
+        return [nameless];
+      },
+    };
+
+    expect(resolveFirstAvailable(parseModelChain("gemini-flash"), registry)).toEqual({
+      model: nameless,
+      thinkingLevel: undefined,
+    });
+  });
 });

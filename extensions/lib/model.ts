@@ -100,7 +100,7 @@ export function resolveModel(
 
 	for (const m of all) {
 		const id = m.id.toLowerCase();
-		const name = m.name.toLowerCase();
+		const name = (m.name ?? m.id).toLowerCase();
 		const full = `${m.provider}/${m.id}`.toLowerCase();
 
 		let score = 0;

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { complete } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getToolModelSelection, loadToolModelsConfig, resolveToolModelSelection } from "../lib/tool-models.js";
 
 // -- Configuration --------------------------------------------------------
 
@@ -24,21 +25,7 @@ const DEFAULTS: SummaryConfig = {
 	verbose: false,
 };
 
-/**
- * Models to try in order when no explicit model is configured.
- *
- * Profile-aware: bare IDs match against getAvailable() which is already
- * filtered by the active profile. Default profile picks GPT/Gemini/Claude
- * first; opencode profile falls through to qwen3.5-plus; local profile
- * picks qwen2.5-coder:14b.
- */
-const AUTO_DETECT_MODELS = [
-	"gpt-5.4-mini",
-	"gemini-3-flash",
-	"claude-haiku-4-5",
-	"qwen3.5-plus",
-	"qwen2.5-coder:14b",
-];
+const SUMMARY_TOOL_KEY = "smart-sessions.summary";
 
 function loadConfig(cwd: string): SummaryConfig {
 	const globalPath = join(getAgentDir(), "session-summary.json");
@@ -192,27 +179,28 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		llmCallCount = 0;
 	}
 
-	// -- Model auto-detection ---------------------------------------------
+	// -- Model selection -----------------------------------------------------
 
-	/** Resolve the model to use: explicit config or auto-detect from available models. */
-	function resolveModel(ctx: ExtensionContext): { provider: string; model: string } | undefined {
-		if (config.provider && config.model) {
-			resolvedModelName = `${config.provider}/${config.model}`;
-			return { provider: config.provider, model: config.model };
+	/** Resolve explicit legacy settings or the smart-sessions summary role. */
+	function resolveSummaryModel(ctx: ExtensionContext): { model?: any; error?: string; chain?: string } {
+		const explicitProvider = typeof config.provider === "string" ? config.provider.trim() : "";
+		const explicitModel = typeof config.model === "string" ? config.model.trim() : "";
+		if (explicitProvider && explicitModel) {
+			resolvedModelName = `${explicitProvider}/${explicitModel}`;
+			const model = ctx.modelRegistry.find(explicitProvider, explicitModel);
+			return model ? { model } : { error: "MODEL_NOT_FOUND" };
 		}
 
-		// Auto-detect: find the first available model from the priority list
-		const available = ctx.modelRegistry.getAvailable();
-		for (const candidateId of AUTO_DETECT_MODELS) {
-			const match = available.find((m) => m.id === candidateId);
-			if (match) {
-				resolvedModelName = `${match.provider}/${match.id}`;
-				return { provider: match.provider, model: match.id };
-			}
+		const toolConfig = loadToolModelsConfig(ctx.cwd);
+		const selection = getToolModelSelection(toolConfig, SUMMARY_TOOL_KEY);
+		const resolved = resolveToolModelSelection(selection, ctx.modelRegistry);
+		if (resolved?.model) {
+			resolvedModelName = `${resolved.model.provider}/${resolved.model.id}`;
+			return { model: resolved.model, chain: selection?.chain };
 		}
 
 		resolvedModelName = "";
-		return undefined;
+		return { error: `No summary model available (tried: ${selection?.chain ?? "none"})`, chain: selection?.chain };
 	}
 
 	// -- Widget rendering -------------------------------------------------
@@ -293,19 +281,14 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 	async function generateSummary(ctx: ExtensionContext) {
 		if (pendingLLMCall) return;
 
-		const resolved = resolveModel(ctx);
-		if (!resolved) {
-			lastError = "No summary model available (tried: " + AUTO_DETECT_MODELS.join(", ") + ")";
+		const resolved = resolveSummaryModel(ctx);
+		if (!resolved.model) {
+			lastError = resolved.error ?? "No summary model available";
 			updateWidget(ctx);
 			return;
 		}
 
-		const model = ctx.modelRegistry.find(resolved.provider, resolved.model);
-		if (!model) {
-			lastError = "MODEL_NOT_FOUND";
-			updateWidget(ctx);
-			return;
-		}
+		const model = resolved.model;
 
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 		if (!auth?.ok || !auth.apiKey) {
@@ -489,7 +472,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		description: "Show summary model and its cost this session",
 		handler: async (_args, ctx) => {
 			// Ensure model is resolved fresh
-			if (!resolvedModelName) resolveModel(ctx);
+			if (!resolvedModelName) resolveSummaryModel(ctx);
 			const model = resolvedModelName || "(none)";
 			const costStr = totalCost.total > 0 ? `$${totalCost.total.toFixed(4)}` : "$0";
 			const line = `${model} | ${llmCallCount} calls | tokens: ${totalTokens.input}→${totalTokens.output} | cost: ${costStr} (in: $${totalCost.input.toFixed(4)}, out: $${totalCost.output.toFixed(4)}, cache-r: $${totalCost.cacheRead.toFixed(4)}, cache-w: $${totalCost.cacheWrite.toFixed(4)})`;
@@ -506,9 +489,9 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		latestCtx = ctx;
 
 		// Resolve model early so waiting message shows model name
-		const resolved = resolveModel(ctx);
-		if (!resolved) {
-			lastError = "No summary model available (tried: " + AUTO_DETECT_MODELS.join(", ") + ")";
+		const resolved = resolveSummaryModel(ctx);
+		if (!resolved.model) {
+			lastError = resolved.error ?? "No summary model available";
 		}
 
 		restoreFromSessionName();

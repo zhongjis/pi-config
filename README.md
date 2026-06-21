@@ -72,6 +72,8 @@ See `docs/testing/README.md` for the exact maintenance rules.
 
 - `README.md` — human-facing overview
 - `AGENTS.md` — AI-facing maintenance rules and repo boundaries
+- `docs/extension-model-usage.md` — `tool_models.json` role schema for extension-owned LLM calls
+- `docs/model-selection-and-fallback.md` — model-chain parsing and fallback behavior
 - `docs/testing/README.md` — extension testing policy
 - `docs/orchestration-flow.md` — orchestration design notes
 

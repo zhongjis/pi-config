@@ -2,23 +2,22 @@
 
 How a model gets chosen, and what happens when the chosen one is unavailable.
 
-This document describes the engine. Three surfaces feed it — profiles, modes,
-and subagents — and one shared library does the parsing and matching. The
-catalog docs below build on this engine; read this first when the question is
-*how* selection works, not *which* model a given agent uses.
+This document describes the engine. Profiles, modes, subagents, and tool-model
+roles feed it; one shared library does the parsing and matching. The companion
+docs below build on this engine; read this first when the question is *how*
+selection works, not *which* model a given agent or extension uses.
 
 Companion docs:
 
-- [`extension-model-usage.md`](./extension-model-usage.md) — every hardcoded model id and chain, by extension.
+- [`extension-model-usage.md`](./extension-model-usage.md) — `tool_models.json` roles for extension-owned LLM calls.
 - [`opencode-agent-models.md`](./opencode-agent-models.md) — per-agent model assignments on the `opencode` profile.
 - [`../extensions/profiles/README.md`](../extensions/profiles/README.md) — profile commands, flags, and config fields.
 - [`./modes.md`](./modes.md) — mode switching and frontmatter.
-
 Source is authoritative. Where a catalog doc disagrees with code, trust the code paths cited here.
 
 ---
 
-## The four surfaces
+## The five surfaces
 
 Each surface decides a different question. They compose; none replaces another.
 
@@ -28,13 +27,14 @@ Each surface decides a different question. They compose; none replaces another.
 | **Profiles** | Which models are visible at all | Patches `registry.getAvailable()` to a provider allowlist; force-switches the session model | [`extensions/profiles/index.ts`](../extensions/profiles/index.ts) |
 | **Modes** | Which model the main session uses per mode | Applies mode-frontmatter `model:` through the shared library | [`extensions/modes/src/`](../extensions/modes/src/) |
 | **Subagents** | Which model each agent runs on | Resolves the `model` param or agent-config chain, falling back to the parent model | [`extensions/subagent/src/`](../extensions/subagent/src/) |
+| **Tool model roles** | Which model extension-owned background LLM calls use | `tool_models.json` maps tool keys to role chains, then resolves through the shared library | [`extensions/lib/tool-models.ts`](../extensions/lib/tool-models.ts), [`extension-model-usage.md`](./extension-model-usage.md) |
 
 The profile filter sits under everything: every `getAvailable()` call the other
 surfaces make already returns a profile-filtered list.
 
-A fifth concern is **runtime failover** — `clauderock` switches provider after a
-request fails mid-flight, independent of all resolution-time selection above.
-See [Runtime provider failover](#runtime-provider-failover-clauderock).
+Runtime failover is separate: `clauderock` switches provider after a request
+fails mid-flight, independent of all resolution-time selection above. See
+[Runtime provider failover](#runtime-provider-failover-clauderock).
 
 ---
 
@@ -209,28 +209,34 @@ resolved its own model through the subagent path above.
 For a chain-aware caller under an active profile, resolution runs top to bottom
 and stops at the first hit:
 
-1. Explicit `provider/modelId`, available and authed → use it.
-2. Fuzzy match against the profile-filtered available set (score ≥ 20) → use the best.
-3. Next candidate in the chain → repeat 1–2.
-4. (Subagent config chains only) exact `registry.find()` ignoring the availability filter.
-5. Surface-specific terminal fallback:
+1. Surface-specific explicit override, when present:
+   - smart-sessions legacy `session-summary.json` `provider` + `model`.
+   - subagent explicit `model` param.
+   - mode session override from `/mode-model`.
+2. Configured chain source: mode frontmatter, agent frontmatter, or `tool_models.json` role/tool chain.
+3. Explicit `provider/modelId`, available and authed → use it.
+4. Fuzzy match against the profile-filtered available set (score ≥ 20) → use the best.
+5. Next candidate in the chain → repeat 3–4.
+6. (Subagent config chains only) exact `registry.find()` ignoring the availability filter.
+7. Surface-specific terminal fallback:
    - Subagent param chain → error, agent aborts.
    - Subagent config chain → parent model.
    - Mode chain → no switch; session keeps its current model.
+   - Tool model role chain → caller-specific fallback; boomerang commit keeps current model with warning, smart-sessions records no summary model available.
    - Profile force-switch → first allowed available model, else no change with an error notice.
 
 ---
 
-## Other extension selectors
+## Extension-owned LLM calls
 
-Several extensions run their own selection for background work. They share the
-same library but maintain separate hardcoded chains, cataloged in
-[`extension-model-usage.md`](./extension-model-usage.md). In brief:
+Some extensions make background LLM calls outside the main session model/mode path.
+These use `tool_models.json` where possible, then pass the resulting chain through
+the shared resolver:
 
-- **`boomerang`** ([`commit.ts`](../extensions/boomerang/commit.ts)) — commit-message chain through `resolveFirstAvailable`; keeps the current model with a warning when none resolves.
-- **`smart-sessions`** ([`index.ts`](../extensions/smart-sessions/index.ts)) — summary model; explicit `provider`+`model` override, else an auto-detect list over `getAvailable()`.
+- **`smart-sessions`** ([`index.ts`](../extensions/smart-sessions/index.ts)) — legacy explicit `provider`+`model` still wins; blank/missing fields resolve `smart-sessions.summary` → `summary.session`.
+- **`boomerang`** ([`commit.ts`](../extensions/boomerang/commit.ts)) — resolves `boomerang.commit` → `commit`, then applies its context-window eligibility gate before choosing a target model.
 - **`multimodal-look`** ([`index.ts`](../extensions/multimodal-look/index.ts)) — vision chain, falling back to the current model only when it accepts image input.
-- **`web-access`** (external `pi-web-access` git package — `index.ts`, `summary-review.ts`) — profile-bypassing: tests `getApiKeyAndHeaders` against a candidate list rather than reading `getAvailable()`. Known gap, documented in the companion audit.
+- **`web-access`** (external `pi-web-access` git package — `index.ts`, `summary-review.ts`) — profile-bypassing: tests `getApiKeyAndHeaders` against a candidate list rather than reading `getAvailable()`. Known gap until those selectors migrate to shared role config.
 
 ---
 
