@@ -2,15 +2,16 @@
 
 ## Status
 
-Implemented on 2026-05-06. Current runtime: `agents/superpowers.md`, `extensions/modes`, and `extensions/superpowers`.
+> **SUPERSEDED (2026-06-21):** The vendored `extensions/superpowers` skill package remains current, but the opt-in mode is now Lu Ban (`/mode luban`, `modes/luban/mode.md`, `extensions/modes` mode `luban`). There is no current `agents/superpowers.md` or `/mode superpowers` path. This design is preserved for historical reference.
 
-## Decision
+Implemented as Superpowers on 2026-05-06, then replaced by the Lu Ban mode flow.
 
-Add Superpowers as an opt-in Pi mode plus a vendored upstream skill package:
-
-- `agents/superpowers.md` defines `/mode superpowers` behavior.
-- `extensions/modes` registers the new mode.
+Current runtime:
+- `modes/luban/mode.md` defines `/mode luban` behavior.
+- `extensions/modes` registers the `luban` mode.
 - `extensions/superpowers` vendors the upstream Superpowers skills from `obra/superpowers`.
+
+## Historical Decision
 
 Do not copy Weiping's runtime design wholesale. Use Weiping's Pi mapping as reference only.
 

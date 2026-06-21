@@ -6,7 +6,7 @@ Unit tests validate extension logic in isolation using hand-rolled stubs instead
 
 - `extensions/*/test/` — per-extension unit tests; extension-specific tests belong here, next to the extension
 - `test/extensions.smoke.test.ts` — auto-discovery smoke test for all extensions
-- `test/stubs/` — stub modules for `@mariozechner/pi-ai`, `pi-agent-core`, `pi-coding-agent`, `pi-tui`
+- `test/stubs/` — stub modules for `@earendil-works/pi-ai`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`
 - `test/fixtures/` — `mock-pi.ts`, `mock-context.ts`; root `test/` is for shared harness files, not per-extension specs
 
 ## Running
@@ -20,11 +20,11 @@ These run the `unit` vitest project (defined in `vitest.config.ts`).
 
 ## How It Works
 
-The unit project uses `resolve.alias` to redirect all `@mariozechner/*` imports to local stubs in `test/stubs/`. Extensions never touch real pi internals — they get fake `Pi` objects, fake `Context`, and fake lifecycle events.
+The unit project uses `resolve.alias` to redirect all `@earendil-works/*` imports to local stubs in `test/stubs/`. Extensions never touch real pi internals — they get fake `Pi` objects, fake `Context`, and fake lifecycle events.
 
 ```
 extensions/modes/src/index.ts
-       ↓ imports @mariozechner/pi-coding-agent
+       ↓ imports @earendil-works/pi-coding-agent
        ↓ vitest resolves → test/stubs/pi-coding-agent.ts
        ↓ receives mock types and utilities
 ```

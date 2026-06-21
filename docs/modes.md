@@ -56,8 +56,6 @@ The override is persisted in the session JSONL as `modelOverride` and survives `
 
 ## Mode Configuration
 
-## Mode Configuration
-
 Each mode reads its prompt and settings from `~/.pi/agent/agents/<mode>.md`. The file uses YAML frontmatter for configuration and markdown body for the system prompt injection.
 
 ### Frontmatter Fields

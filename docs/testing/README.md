@@ -19,7 +19,7 @@ pnpm test:integration    # integration tests only
 
 Two vitest projects defined inline in `vitest.config.ts` using the `projects` array:
 
-- **unit** — stubs `@mariozechner/*` via resolve aliases, includes `extensions/**/*.test.ts` + `test/**/*.test.ts`
+- **unit** — stubs `@earendil-works/*` via resolve aliases, includes `extensions/**/*.test.ts` + `test/**/*.test.ts`
 - **integration** — real pi packages, includes `test/integration/**/*.test.ts`, 30s timeout
 
 Rule: extension-specific unit tests stay next to their extension under `extensions/foo/test/`. Root `test/` holds shared harness tests, smoke coverage, fixtures, and stubs.
@@ -31,4 +31,4 @@ Rule: extension-specific unit tests stay next to their extension under `extensio
 
 ## install.sh Behavior
 
-The test framework is intentionally excluded from `install.sh` symlinking. The allowlist only symlinks pi-runtime items (`agents/`, `docs/`, `mcp.json`, etc.) into `~/.pi/agent/`. Test infrastructure (`test/`, `vitest.config.ts`, `package.json`, `node_modules/`, etc.) stays in the repo only.
+The test framework is intentionally excluded from `install.sh` symlinking. The top-level allowlist symlinks only runtime support items (`agents/`, `modes/`, `lsp.json`, `caveman.json`, `session-summary.json`, `tool_models.json`, `scripts/`, and `themes/`) into `~/.pi/agent/`. Test infrastructure (`test/`, `vitest.config.ts`, `package.json`, `node_modules/`, etc.) stays in the repo only.

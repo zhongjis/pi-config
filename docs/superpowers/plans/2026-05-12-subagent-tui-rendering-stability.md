@@ -6,7 +6,7 @@
 
 **Architecture:** Add one deep summary-rendering Module for compact subagent status surfaces, plus one small render-scheduling Module to coalesce update bursts. Keep `ConversationViewer` separate because it is a scrollable conversation overlay, not a compact summary surface. Keep current tool/event/result interfaces stable.
 
-**Tech Stack:** TypeScript, Pi extension runtime, `@mariozechner/pi-tui`, Vitest, `@marcfargas/pi-test-harness`.
+**Tech Stack:** TypeScript, Pi extension runtime, `@earendil-works/pi-tui`, Vitest, `@marcfargas/pi-test-harness`.
 
 ---
 
@@ -69,7 +69,7 @@ Cover these cases:
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
   renderAgentSummaryLine,
   renderAgentResultLines,
@@ -151,7 +151,7 @@ Expected: fail because `summary-renderer.ts` does not exist.
 Create `summary-renderer.ts` with:
 
 ```ts
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 
 export type SummaryStatus = "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error" | "background";
 

@@ -1,3 +1,5 @@
+> **SUPERSEDED (2026-06-21):** The implementation path in this plan used `/mode superpowers`. Current runtime uses Lu Ban (`/mode luban`) with `modes/luban/mode.md`; `extensions/superpowers` remains the vendored skill package. Preserve this file as historical implementation context.
+
 # Superpowers Extension Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -414,7 +416,7 @@ git commit -m "feat: vendor superpowers skills package"
 ```typescript
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
 

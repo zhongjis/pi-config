@@ -46,9 +46,9 @@ These are in root `devDependencies` (aligned with nix pi version):
 
 ```
 @marcfargas/pi-test-harness  — test harness (git dep)
-@mariozechner/pi-coding-agent — real pi runtime
-@mariozechner/pi-ai           — real AI types
-@mariozechner/pi-agent-core   — real agent core
+@earendil-works/pi-coding-agent — real pi runtime
+@earendil-works/pi-ai           — real AI types
+@earendil-works/pi-agent-core   — real agent core
 ```
 
 ## Playbook DSL

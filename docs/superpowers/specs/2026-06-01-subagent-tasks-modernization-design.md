@@ -279,13 +279,13 @@ API (`session_before_compact` / `session_compact` events, `ctx.session.idle` fla
   hardening also touches *existing* on-disk graphs — it needs a load-time quarantine +
   migration pass, not just future schema versioning.
 - **`Symbol.for("pi-subagents:manager")` global** (`subagent/src/index.ts:627`) is shared
-  mutable cross-package state. Fine today, but it is the one coordination point Phase 4
-  durability cannot fully eliminate — note it, don't fight it in Phase 1–3.
+  mutable cross-package state. Acceptable in the current implementation, but it is the one
+  coordination point Phase 4 durability cannot fully eliminate — note it, don't fight it in Phase 1–3.
 
 ## Open questions
 
 1. Phase 4: is restart-durable background-agent state actually wanted, or do orphaned
-   background agents on restart match expectations today?
+   background agents on restart match current expectations?
 2. Should the hard fork be reflected by renaming the packages
    (`@tintinweb/*` → repo-local scope) to stop implying upstream lineage?
 
