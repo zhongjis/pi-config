@@ -5,7 +5,7 @@ model: anthropic/claude-sonnet-4-6:medium,openai-codex/gpt-5.5:medium,opencode-g
 inherit_context: false
 run_in_background: false
 builtin_tools: read,bash,edit,write
-extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,codegraph_search,codegraph_callers,codegraph_callees,codegraph_impact,codegraph_explore,codegraph_node,codegraph_status,codegraph_files
+extension_tools: ask,readonly_bash,lsp_diagnostics,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,mcp,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskList,TaskGet,TaskUpdate,TaskOutput,TaskStop,TaskExecute,codegraph_*,context_*
 allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang
 allow_nesting: true
 ---

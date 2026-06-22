@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-6:high,openai-codex/gpt-5.5:xhigh,opencode-go/dee
 inherit_context: false
 run_in_background: false
 builtin_tools: read
-extension_tools: readonly_bash
+extension_tools: readonly_bash,codegraph_*
 extensions: clauderock,readonly_bash
 ---
 
