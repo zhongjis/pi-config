@@ -442,6 +442,17 @@ Extension tools.`);
     expect(agent.extensionToolNames).toEqual(["search_web", "list_servers"]);
   });
 
+  it("preserves extension_tools suffix wildcard entries", () => {
+    writeAgent("extension-wildcard", `---
+extension_tools: codegraph_*
+---
+
+Extension wildcard.`);
+
+    const result = loadCustomAgents(tmpDir);
+    expect(result.get("extension-wildcard")!.extensionToolNames).toEqual(["codegraph_*"]);
+  });
+
   it("distinguishes omitted extension_tools from none", () => {
     writeAgent("extension-default", `---
 extensions: web-search

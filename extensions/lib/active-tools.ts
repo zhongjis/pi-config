@@ -2,7 +2,7 @@
  * Shared active-tool policy for mode and subagent sessions.
  *
  * Active tool names are strings. `extensions` controls whether extension tools
- * are available; `extensionTools` is the exact post-load extension-tool filter.
+ * are available; `extensionTools` is the post-load extension-tool filter.
  */
 
 export const DEFAULT_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
@@ -21,7 +21,7 @@ export interface ComputeActiveToolNamesInput {
   builtinToolUniverse: readonly string[];
   /** false disables extension tools; true/string[] means extension tools are available after loading. */
   extensions: ExtensionSelection;
-  /** undefined = all available extension tools; false/[] = none; string[] = exact extension tool names. */
+  /** undefined = all available extension tools; false/[] = none; string[] = exact tool names or `_*` suffix wildcards. */
   extensionTools?: ExtensionToolSelection;
   /** false removes nested subagent tools even if extension tool policy would otherwise include them. */
   allowNesting?: boolean;
@@ -40,7 +40,7 @@ export function computeActiveToolNames(input: ComputeActiveToolNamesInput): stri
   const selectedBuiltins = new Set(
     input.builtinToolNames.filter((name) => builtinUniverse.has(name)),
   );
-  const exactExtensionTools = input.extensionTools === undefined || input.extensionTools === false
+  const selectedExtensionTools = input.extensionTools === undefined || input.extensionTools === false
     ? input.extensionTools
     : new Set(input.extensionTools);
   const extensionsEnabled = input.isolated !== true
@@ -63,10 +63,20 @@ export function computeActiveToolNames(input: ComputeActiveToolNamesInput): stri
     }
 
     if (!extensionsEnabled) continue;
-    if (exactExtensionTools instanceof Set && !exactExtensionTools.has(name)) continue;
+    if (selectedExtensionTools instanceof Set && !matchesExtensionToolSelection(selectedExtensionTools, name)) continue;
 
     activeToolNames.push(name);
   }
 
   return activeToolNames;
+}
+
+function matchesExtensionToolSelection(selection: ReadonlySet<string>, name: string): boolean {
+  if (selection.has(name)) return true;
+
+  for (const pattern of selection) {
+    if (pattern.endsWith("_*") && name.startsWith(pattern.slice(0, -1))) return true;
+  }
+
+  return false;
 }

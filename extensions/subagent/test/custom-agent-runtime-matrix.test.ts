@@ -154,6 +154,7 @@ interface MatrixCase {
  * | no built-ins + omitted extension_tools | none | true | omitted | false | false | all non-nested extension/custom names |
  * | extension_tools none | read,bash | true | none | false | false | read,bash |
  * | exact extension_tools filter | read | alpha CSV | alpha.search | false | false | read,alpha.search only |
+ * | `_*` extension_tools suffix wildcard | read | true | custom_* | false | false | read,custom_tool |
  * | extensions false | read,bash | false | alpha.search | false | false | read,bash |
  * | isolated override | read | true | alpha.search | true | false | read |
  * | nesting denied | read | true | Agent/get/steer/alpha.search | false | false | read,alpha.search |
@@ -179,6 +180,11 @@ const matrix: MatrixCase[] = [
     name: "extension_tools CSV is an exact allowlist after extensions CSV enables extension tools",
     frontmatter: "builtin_tools: read\nextensions: alpha\nextension_tools: alpha.search",
     expectedActiveToolNames: ["read", "alpha.search"],
+  },
+  {
+    name: "extension_tools suffix wildcard allowlist matches tool-name prefix",
+    frontmatter: "builtin_tools: read\nextensions: true\nextension_tools: custom_*",
+    expectedActiveToolNames: ["read", "custom_tool"],
   },
   {
     name: "extensions false disables extension tools regardless of extension_tools",

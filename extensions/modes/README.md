@@ -28,7 +28,7 @@ Mode prompts live in `agents/<mode>.md` and use the shared agent frontmatter sch
 
 - `builtin_tools` — exact built-in allowlist (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; `none` for none)
 - `extensions` — extension availability/source scope; `false`/`none` disables extension tools
-- `extension_tools` — exact extension-tool allowlist after extensions are available; `none` disables extension tools
+- `extension_tools` — extension-tool allowlist after extensions are available; exact names and `_*` suffix wildcards are supported; `none` disables extension tools
 - `allow_nesting` — permits nested subagent tools only when those tools are also allowlisted
 - `prompt_mode`, `model`, `allow_delegation_to`, `disallow_delegation_to` — same schema as custom subagents. Modes only honor `replace` (default; strips prior mode bodies before appending) and `append` (stacks); `system_instructions` is parsed but coerced to `replace` for modes.
 

@@ -31,6 +31,20 @@ describe("computeActiveToolNames", () => {
     expect(compute({ extensionTools: ["search"] })).toEqual(["read", "bash"]);
   });
 
+  it("allows extension_tools suffix wildcards ending in _*", () => {
+    expect(compute({
+      availableToolNames: ["read", "bash", "codegraph_search", "codegraph_files", "codegraph"],
+      extensionTools: ["codegraph_*"],
+    })).toEqual(["read", "bash", "codegraph_search", "codegraph_files"]);
+  });
+
+  it("does not treat other wildcard-like values as patterns", () => {
+    expect(compute({
+      availableToolNames: ["read", "bash", "codegraph_search"],
+      extensionTools: ["codegraph*"],
+    })).toEqual(["read", "bash"]);
+  });
+
   it("does not let extension_tools select built-in tools", () => {
     expect(compute({ builtinToolNames: [], extensionTools: ["read", "web_search"] })).toEqual(["web_search"]);
   });
