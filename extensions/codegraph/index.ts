@@ -124,6 +124,9 @@ type PendingJsonRpcRequests = Map<number, {
 const MaxDiagnosticLength = 1000;
 const projectQueues = new Map<string, Promise<void>>();
 const RequestTimeoutMs = Number(process.env.CODEGRAPH_TIMEOUT_MS) || 30_000;
+const MaxToolCallAttempts = 2;
+const ToolCallRetryBackoffMinMs = 250;
+const ToolCallRetryBackoffJitterMs = 500;
 
 export const codegraphToolNames = ToolDefinitions.map((tool) => tool.name);
 
@@ -141,6 +144,76 @@ function enqueueCodeGraphRequest<T>(cwd: string, task: () => Promise<T>): Promis
 
   projectQueues.set(cwd, cleanup);
   return run;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isToolsCallTimeout(error: unknown): boolean {
+  return getErrorMessage(error).startsWith('CodeGraph MCP request "tools/call" timed out after ');
+}
+
+function createAbortError(signal: AbortSignal): Error {
+  const reason = signal.reason;
+  if (reason instanceof Error) return reason;
+  if (reason !== undefined) return new Error(String(reason));
+  return new Error("CodeGraph request aborted.");
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw createAbortError(signal);
+}
+
+async function waitForToolCallRetryBackoff(signal: AbortSignal | undefined): Promise<void> {
+  const delayMs = ToolCallRetryBackoffMinMs + Math.floor(Math.random() * (ToolCallRetryBackoffJitterMs + 1));
+
+  await new Promise<void>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(signal ? createAbortError(signal) : new Error("CodeGraph request aborted."));
+    };
+
+    if (signal?.aborted) {
+      reject(createAbortError(signal));
+      return;
+    }
+
+    timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function withToolsCallTimeoutRetry<T>(
+  signal: AbortSignal | undefined,
+  task: () => Promise<T>,
+): Promise<T> {
+  for (let attempt = 1; attempt <= MaxToolCallAttempts; attempt += 1) {
+    throwIfAborted(signal);
+
+    try {
+      return await task();
+    } catch (error) {
+      if (!isToolsCallTimeout(error)) throw error;
+
+      if (attempt >= MaxToolCallAttempts) {
+        throw new Error(`${getErrorMessage(error)} (after ${attempt} attempts)`);
+      }
+
+      throwIfAborted(signal);
+      await waitForToolCallRetryBackoff(signal);
+    }
+  }
+
+  throw new Error("CodeGraph tools/call retry loop exhausted.");
 }
 
 export async function withCodeGraphMcp<T>(
@@ -416,14 +489,16 @@ export async function callCodeGraphTool(
   const projectPath = typeof args.projectPath === "string" ? args.projectPath : undefined;
   const projectCwd = await resolveProjectCwd(projectPath);
   const result = await enqueueCodeGraphRequest(projectCwd, () =>
-    withCodeGraphMcp(
-      projectCwd,
-      signal,
-      (request) =>
-        request("tools/call", {
-          name,
-          arguments: args,
-        }),
+    withToolsCallTimeoutRetry(signal, () =>
+      withCodeGraphMcp(
+        projectCwd,
+        signal,
+        (request) =>
+          request("tools/call", {
+            name,
+            arguments: args,
+          }),
+      ),
     )
   );
 

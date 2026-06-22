@@ -234,8 +234,9 @@ describe("codegraph extension", () => {
     await expect(resolveProjectCwd(filePath)).rejects.toThrow("CodeGraph projectPath must point to a directory.");
   });
 
-  it("rejects when the CodeGraph CLI cannot spawn", async () => {
-    spawnMock.mockReturnValue(createChild({ errorOnInitialize: new Error("spawn codegraph ENOENT") }));
+  it("does not retry when the CodeGraph CLI cannot spawn", async () => {
+    const child = createChild({ errorOnInitialize: new Error("spawn codegraph ENOENT") });
+    spawnMock.mockReturnValue(child);
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
@@ -243,6 +244,8 @@ describe("codegraph extension", () => {
     await expect(
       mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
     ).rejects.toThrow("was not found on PATH");
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(child.kill).toHaveBeenCalled();
   });
 
   it("normalizes absolute codegraph_files path inside ctx.cwd", async () => {
@@ -276,6 +279,7 @@ describe("codegraph extension", () => {
       mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
     ).rejects.toThrow("tool failed");
     expect(child.kill).toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
   it("serializes concurrent calls for the same project", async () => {
@@ -370,19 +374,67 @@ describe("codegraph extension", () => {
     expect(await resolveProjectCwd(projectRoot)).toBe(projectRoot);
   });
 
-  it("times out and kills the subprocess when CodeGraph never responds", async () => {
-    process.env.CODEGRAPH_TIMEOUT_MS = "40";
+  it("retries once after a tools/call timeout, then succeeds and kills the first child", async () => {
+    process.env.CODEGRAPH_TIMEOUT_MS = "30";
+    vi.spyOn(Math, "random").mockReturnValue(0);
     try {
-      const child = createChild({ toolResponseDelay: new Promise<void>(() => { /* never settles; forces a timeout */ }) });
-      spawnMock.mockReturnValue(child);
+      const firstChild = createChild({ toolResponseDelay: new Promise<void>(() => { /* never settles; forces a timeout */ }) });
+      const secondChild = createChild({ resultText: "ok after retry" });
+      spawnMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+      const mock = createMockPi();
+      const { default: codegraphExtension } = await loadExtension();
+      codegraphExtension(mock.pi as never);
+
+      const result = await mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+
+      expect(result.content[0].text).toBe("ok after retry");
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+      expect(firstChild.kill).toHaveBeenCalled();
+      expect(secondChild.kill).toHaveBeenCalled();
+    } finally {
+      delete process.env.CODEGRAPH_TIMEOUT_MS;
+    }
+  });
+
+  it("fails after two tools/call timeouts and kills both subprocesses", async () => {
+    process.env.CODEGRAPH_TIMEOUT_MS = "30";
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const firstChild = createChild({ toolResponseDelay: new Promise<void>(() => { /* never settles; forces a timeout */ }) });
+      const secondChild = createChild({ toolResponseDelay: new Promise<void>(() => { /* never settles; forces a timeout */ }) });
+      spawnMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
       const mock = createMockPi();
       const { default: codegraphExtension } = await loadExtension();
       codegraphExtension(mock.pi as never);
 
       await expect(
         mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
-      ).rejects.toThrow("timed out");
-      expect(child.kill).toHaveBeenCalled();
+      ).rejects.toThrow('CodeGraph MCP request "tools/call" timed out after 30ms. (after 2 attempts)');
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+      expect(firstChild.kill).toHaveBeenCalled();
+      expect(secondChild.kill).toHaveBeenCalled();
+    } finally {
+      delete process.env.CODEGRAPH_TIMEOUT_MS;
+    }
+  });
+
+  it("does not retry when aborted during tools/call timeout backoff", async () => {
+    process.env.CODEGRAPH_TIMEOUT_MS = "30";
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    try {
+      const child = createChild({ toolResponseDelay: new Promise<void>(() => { /* never settles; forces a timeout */ }) });
+      spawnMock.mockReturnValue(child);
+      const controller = new AbortController();
+      const mock = createMockPi();
+      const { default: codegraphExtension } = await loadExtension();
+      codegraphExtension(mock.pi as never);
+
+      const result = mock.tools.get("codegraph_status")!.execute("tool-1", {}, controller.signal, undefined, { cwd: tempRoot });
+      await waitFor(() => child.kill.mock.calls.length === 1);
+      controller.abort(new Error("user abort"));
+
+      await expect(result).rejects.toThrow("user abort");
+      expect(spawnMock).toHaveBeenCalledTimes(1);
     } finally {
       delete process.env.CODEGRAPH_TIMEOUT_MS;
     }
@@ -397,5 +449,6 @@ describe("codegraph extension", () => {
     await expect(
       mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
     ).rejects.toThrow("codegraph init -i");
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 });
