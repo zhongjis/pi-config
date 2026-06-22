@@ -27,6 +27,13 @@ export const SUBAGENT_SPAWN_TIMEOUT_MS = 30_000;
 export const SUBAGENT_STOP_TIMEOUT_MS = 10_000;
 
 /**
+ * unit: ms
+ * source: extensions/tasks/src/bridge/subagent-bridge.ts
+ * rationale: preserve the TaskOutput consume RPC timeout.
+ */
+export const SUBAGENT_CONSUME_TIMEOUT_MS = 10_000;
+
+/**
  * unit: number
  * source: extensions/tasks/src/index.ts:360
  * rationale: preserve the subagent protocol version contract.

@@ -24,7 +24,7 @@ describe("cross-extension RPC", () => {
 
   beforeEach(() => {
     events = createEventBus();
-    manager = { spawn: vi.fn().mockReturnValue("agent-42"), abort: vi.fn().mockReturnValue(true) };
+    manager = { spawn: vi.fn().mockReturnValue("agent-42"), abort: vi.fn().mockReturnValue(true), getRecord: vi.fn(() => undefined) };
     ctx = { session: true };
     deps = { events, pi: { events }, getCtx: () => ctx, manager };
   });
@@ -205,6 +205,46 @@ describe("cross-extension RPC", () => {
 
       await new Promise((r) => setTimeout(r, 20));
       expect(reply).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- consume ---
+
+  describe("consume RPC", () => {
+    it("marks a terminal agent run consumed", async () => {
+      const record = { id: "agent-42", status: "completed", run: { publish: vi.fn() } };
+      (manager.getRecord as ReturnType<typeof vi.fn>).mockReturnValue(record);
+      registerRpcHandlers(deps);
+      const reply = vi.fn();
+      events.on("subagents:rpc:consume:reply:req-c1", reply);
+      events.emit("subagents:rpc:consume", { requestId: "req-c1", agentId: "agent-42" });
+
+      await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+      expect(record.run.publish).toHaveBeenCalledWith({ kind: "consumed" });
+      expect(reply).toHaveBeenCalledWith({ success: true, data: { consumed: true } });
+    });
+
+    it("no-ops safely for unknown agents", async () => {
+      registerRpcHandlers(deps);
+      const reply = vi.fn();
+      events.on("subagents:rpc:consume:reply:req-c2", reply);
+      events.emit("subagents:rpc:consume", { requestId: "req-c2", agentId: "missing" });
+
+      await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+      expect(reply).toHaveBeenCalledWith({ success: true, data: { consumed: false } });
+    });
+
+    it("does not consume running agents", async () => {
+      const record = { id: "agent-42", status: "running", resultConsumed: false };
+      (manager.getRecord as ReturnType<typeof vi.fn>).mockReturnValue(record);
+      registerRpcHandlers(deps);
+      const reply = vi.fn();
+      events.on("subagents:rpc:consume:reply:req-c3", reply);
+      events.emit("subagents:rpc:consume", { requestId: "req-c3", agentId: "agent-42" });
+
+      await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+      expect(record.resultConsumed).toBe(false);
+      expect(reply).toHaveBeenCalledWith({ success: true, data: { consumed: false } });
     });
   });
 

@@ -1,7 +1,7 @@
 /**
  * Cross-extension RPC handlers for the subagents extension.
  *
- * Exposes ping, spawn, and stop RPCs over the pi.events event bus,
+ * Exposes ping, spawn, stop, and consume RPCs over the pi.events event bus,
  * using per-request scoped reply channels.
  *
  * Reply envelope follows pi-mono convention:
@@ -27,10 +27,11 @@ export type RpcReply<T = void> =
 
 /** RPC protocol version — bumped when the envelope or method contracts change. */
 
-/** Minimal AgentManager interface needed by the spawn/stop RPCs. */
+/** Minimal AgentManager interface needed by the RPCs. */
 export interface SpawnCapable {
   spawn(pi: unknown, ctx: unknown, type: string, prompt: string, options: any): string;
   abort(id: string): boolean;
+  getRecord(id: string): any | undefined;
 }
 
 export interface RpcDeps {
@@ -44,10 +45,11 @@ export interface RpcHandle {
   unsubPing: () => void;
   unsubSpawn: () => void;
   unsubStop: () => void;
+  unsubConsume: () => void;
 }
 
 /**
- * Register ping, spawn, and stop RPC handlers on the event bus.
+ * Register ping, spawn, stop, and consume RPC handlers on the event bus.
  * Returns unsub functions for cleanup.
  */
 export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
@@ -69,5 +71,20 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
     if (!manager.abort(agentId)) throw new Error("Agent not found");
   });
 
-  return { unsubPing, unsubSpawn, unsubStop };
+  const unsubConsume = registerRpcHandler(pi as any, "subagents", "consume", (raw) => {
+    const { agentId } = raw as { agentId: string };
+    const record = manager.getRecord(agentId);
+    if (!record) return { consumed: false };
+    if (record.status !== "running" && record.status !== "queued") {
+      if (record.run) {
+        record.run.publish({ kind: "consumed" });
+      } else {
+        record.resultConsumed = true;
+      }
+      return { consumed: true };
+    }
+    return { consumed: false };
+  });
+
+  return { unsubPing, unsubSpawn, unsubStop, unsubConsume };
 }

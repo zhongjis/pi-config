@@ -305,7 +305,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
 
 
   function sendStaleAgentReminder(record: AgentRecord, idleMs: number, action: "steer" | "abort") {
-    if (record.resultConsumed || record.suppressNotification) return;
+    if (parentBusy || record.resultConsumed || record.suppressNotification) return;
     const activity = agentActivity.get(record.id);
     const idleSeconds = Math.round(idleMs / 1000);
     const currentActivity = activity ? describeActivity(activity.activeTools, activity.responseText) : "waiting";
@@ -540,7 +540,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   // --- Cross-extension RPC via pi.events ---
   let currentCtx: ExtensionContext | undefined;
 
-  const { unsubPing: unsubPingRpc, unsubSpawn: unsubSpawnRpc, unsubStop: unsubStopRpc } = registerRpcHandlers({
+  const { unsubPing: unsubPingRpc, unsubSpawn: unsubSpawnRpc, unsubStop: unsubStopRpc, unsubConsume: unsubConsumeRpc } = registerRpcHandlers({
     events: pi.events,
     pi,
     getCtx: () => currentCtx,
@@ -550,6 +550,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
         return manager.spawn(piRef as ExtensionAPI, ctxRef as ExtensionContext, resolvedType, prompt, options);
       },
       abort: (id) => manager.abort(id),
+      getRecord: (id) => manager.getRecord(id),
     },
   });
 
@@ -741,6 +742,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     unsubSpawnRpc();
     unsubStopRpc();
     unsubPingRpc();
+    unsubConsumeRpc();
   };
   const releaseManager = () => { delete subagentGlobal[managerKey]; };
   const clearBackgroundSupervision = () => { clearInterval(backgroundSupervisionTimer); };

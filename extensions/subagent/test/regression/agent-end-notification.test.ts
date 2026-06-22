@@ -58,6 +58,7 @@ vi.mock("../../src/cross-extension-rpc.js", () => ({
     unsubPing: vi.fn(),
     unsubSpawn: vi.fn(),
     unsubStop: vi.fn(),
+    unsubConsume: vi.fn(),
   })),
 }));
 
@@ -76,6 +77,11 @@ vi.mock("../../src/agent-types.js", () => ({
   registerAgents: vi.fn(),
   resolveType: vi.fn((type?: string) => type ?? "general-purpose"),
 }));
+
+vi.mock("../../src/agent-runner.js", async () => {
+  const actual = await vi.importActual<any>("../../src/agent-runner.js");
+  return { ...actual, steerAgent: vi.fn() };
+});
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   defineTool: (opts: any) => opts,
@@ -257,6 +263,32 @@ describe("agent_end-gated consolidated notifications", () => {
 
     await mock.fire("agent_start", {}, createCtx()); // parentBusy = true
     await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("stale supervision auto-steers while parentBusy but does not enqueue a reminder", async () => {
+    vi.useFakeTimers();
+    const mock = createMockPi();
+    await initExtension(mock);
+    const record = bgRecord("a1", {
+      status: "running",
+      completedAt: undefined,
+      startedAt: Date.now() - 300_000,
+    });
+    managerInstances[0].listAgents.mockReturnValue([record]);
+
+    await mock.fire("agent_start", {}, createCtx()); // parentBusy = true
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(record.lastSupervisionSteerAt).toBe(Date.now());
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+
+    record.status = "completed";
+    record.completedAt = Date.now();
+    record.resultConsumed = true;
+    await mock.fire("agent_end", {}, createCtx());
+    await vi.advanceTimersByTimeAsync(30_000);
 
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
   });

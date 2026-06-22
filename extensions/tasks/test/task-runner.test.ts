@@ -31,9 +31,12 @@ function mockPi() {
   return { events } as unknown as ExtensionAPI;
 }
 
-/** Fake bridge — only stopSubagent is used by the runner. */
+/** Fake bridge — only stopSubagent/consumeSubagentResult are used by the runner. */
 function fakeBridge() {
-  return { stopSubagent: vi.fn().mockResolvedValue(undefined) } as unknown as SubagentBridge & { stopSubagent: ReturnType<typeof vi.fn> };
+  return {
+    consumeSubagentResult: vi.fn().mockResolvedValue(undefined),
+    stopSubagent: vi.fn().mockResolvedValue(undefined),
+  } as unknown as SubagentBridge & { consumeSubagentResult: ReturnType<typeof vi.fn>; stopSubagent: ReturnType<typeof vi.fn> };
 }
 
 /** Seed an in-progress subagent-backed task; returns its task id. */
@@ -151,6 +154,33 @@ describe("TaskRunner — subagent read paths (Fix A + edge cases)", () => {
 
     const out = await runner.getOutput(id, { block: false, timeout: 1000 });
     expect(out).toContain("Error: out of turns");
+  });
+
+  it("marks terminal subagent result/error consumed once when returned", async () => {
+    const runtime = createTaskRuntime();
+    const resultId = seedTerminal(runtime, "completed", { result: "done" }, "agent-r");
+    const errorId = seedTerminal(runtime, "pending", { lastError: "boom" }, "agent-e");
+    const bridge = fakeBridge();
+    const runner = createTaskRunner(mockPi(), runtime, bridge);
+
+    await runner.getOutput(resultId, { block: false, timeout: 1000 });
+    await runner.getOutput(resultId, { block: false, timeout: 1000 });
+    await runner.getOutput(errorId, { block: false, timeout: 1000 });
+
+    expect(bridge.consumeSubagentResult).toHaveBeenCalledTimes(2);
+    expect(bridge.consumeSubagentResult).toHaveBeenNthCalledWith(1, "agent-r");
+    expect(bridge.consumeSubagentResult).toHaveBeenNthCalledWith(2, "agent-e");
+  });
+
+  it("does not mark in-progress subagent polls consumed", async () => {
+    const runtime = createTaskRuntime();
+    const id = seedSubagentTask(runtime);
+    const bridge = fakeBridge();
+    const runner = createTaskRunner(mockPi(), runtime, bridge);
+
+    await runner.getOutput(id, { block: false, timeout: 1000 });
+
+    expect(bridge.consumeSubagentResult).not.toHaveBeenCalled();
   });
 
   it("F5: an agent-id input resolves to the task and surfaces its result", async () => {

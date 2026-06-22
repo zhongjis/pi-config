@@ -5,6 +5,7 @@ import {
   DEPENDENCY_RESULT_TRUNCATION_CHARS,
   PROTOCOL_PING_TIMEOUT_MS,
   PROTOCOL_VERSION,
+  SUBAGENT_CONSUME_TIMEOUT_MS,
   SUBAGENT_SPAWN_TIMEOUT_MS,
   SUBAGENT_STOP_TIMEOUT_MS,
 } from "../constants.js";
@@ -24,6 +25,10 @@ export function createSubagentBridge(pi: ExtensionAPI, runtime: TaskRuntime) {
 
   function stopSubagent(agentId: string): Promise<void> {
     return rpcCall<void>(pi as any, "subagents", "stop", { agentId }, { timeout: SUBAGENT_STOP_TIMEOUT_MS }).catch(() => {});
+  }
+
+  function consumeSubagentResult(agentId: string): Promise<void> {
+    return rpcCall<void>(pi as any, "subagents", "consume", { agentId }, { timeout: SUBAGENT_CONSUME_TIMEOUT_MS }).catch(() => {});
   }
 
   function checkSubagentsVersion() {
@@ -201,6 +206,7 @@ export function createSubagentBridge(pi: ExtensionAPI, runtime: TaskRuntime) {
   return {
     buildTaskPrompt,
     clearPlanningTasksForHandoff,
+    consumeSubagentResult,
     getBoundAgentId,
     registerCompletionListeners,
     registerPresence,

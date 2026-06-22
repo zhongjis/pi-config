@@ -96,6 +96,7 @@ vi.mock("../src/cross-extension-rpc.js", () => ({
     unsubPing: vi.fn(),
     unsubSpawn: vi.fn(),
     unsubStop: vi.fn(),
+    unsubConsume: vi.fn(),
   })),
 }));
 

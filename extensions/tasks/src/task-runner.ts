@@ -86,6 +86,14 @@ function createSubagentAdapter(pi: ExtensionAPI, runtime: TaskRuntime, bridge: S
     const agentId = runtime.store.get(taskId)?.metadata?.agentId;
     return typeof agentId === "string" && agentId ? { taskId, agentId } : undefined;
   }
+  const consumedOutputs = new Set<string>();
+
+  function markConsumedOnce(agentId: string): void {
+    if (consumedOutputs.has(agentId)) return;
+    consumedOutputs.add(agentId);
+    void bridge.consumeSubagentResult(agentId);
+  }
+
   return {
     claims(externalId) {
       return bind(externalId) !== undefined;
@@ -112,8 +120,14 @@ function createSubagentAdapter(pi: ExtensionAPI, runtime: TaskRuntime, bridge: S
       const header = `Task #${externalId} [${updated.status}] — subagent ${agentId}`;
       const result = updated.metadata?.result;
       const lastError = updated.metadata?.lastError;
-      if (result) return `${header}\n\n${result}`;
-      if (lastError) return `${header}\n\nError: ${lastError}`;
+      if (result && updated.status !== "in_progress") {
+        markConsumedOnce(agentId);
+        return `${header}\n\n${result}`;
+      }
+      if (lastError && updated.status !== "in_progress") {
+        markConsumedOnce(agentId);
+        return `${header}\n\nError: ${lastError}`;
+      }
       return header;
     },
     async stop(externalId) {
