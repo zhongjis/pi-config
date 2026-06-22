@@ -13,7 +13,8 @@ export async function preflight(
   }
 
   const loginCheck = await pi.exec("codex", ["login", "status"], { cwd });
-  if (loginCheck.code !== 0 || !loginCheck.stdout.includes("Logged in")) {
+  const loginOutput = loginCheck.stdout + loginCheck.stderr;
+  if (loginCheck.code !== 0 || !loginOutput.includes("Logged in")) {
     ctx.ui.notify("Codex not logged in — run: codex login", "error");
     return false;
   }
