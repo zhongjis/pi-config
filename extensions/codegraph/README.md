@@ -17,7 +17,7 @@ No longer a straight fork. This extension began as a vendored copy of `@vndv/pi-
 
 **Absorbed fixes (sourced from peer adapters / locally authored):**
 
-- Per-request JSON-RPC timeout + subprocess kill (`CODEGRAPH_TIMEOUT_MS`) — adapted from `gripebomb/pi-codegraph-extension`.
+- Per-request JSON-RPC timeout + subprocess kill (`CODEGRAPH_TIMEOUT_MS`) and one retry after a `tools/call` timeout — adapted from `gripebomb/pi-codegraph-extension`.
 - Actionable spawn / uninitialized-index error guidance — adapted from `gripebomb/pi-codegraph-extension`.
 - Monorepo `.codegraph` ancestor discovery (`findCodeGraphRoot`) — adapted from `viniraioli/pi-codegraph`.
 - Same-project call serialization queue, `ctx.cwd` default project path, directory entrypoint, and lint-compliance — locally authored.
@@ -48,5 +48,5 @@ All tools accept optional `projectPath` to query another absolute indexed projec
 - Each tool starts internal subprocess `codegraph serve --mcp --path <project>` for its call. This is not a root MCP server and adds no `settings.json` MCP config.
 - Same-project tool calls are serialized inside this extension to avoid CodeGraph MCP proxy races under parallel agent tool use; different `projectPath` values may still run concurrently.
 - Project paths resolve to the nearest ancestor directory containing `.codegraph/`, so launching pi inside a subdirectory of an indexed repo still works.
-- Each JSON-RPC request to the subprocess times out after 30s (override with the `CODEGRAPH_TIMEOUT_MS` env var); on timeout the subprocess is killed so a hung `codegraph` cannot block the agent or the same-project queue.
+- Each JSON-RPC request to the subprocess times out after 30s (override with the `CODEGRAPH_TIMEOUT_MS` env var); on timeout the subprocess is killed so a hung `codegraph` cannot block the agent or the same-project queue. If `tools/call` times out, the extension waits 250–750ms and retries once inside that same queue; initialize timeouts/failures, spawn errors, tool `isError` results, aborts, invalid paths, and uninitialized projects are not retried.
 - When the `codegraph` CLI is missing from `PATH` or the project has no `.codegraph/` index, tools fail with actionable install / `codegraph init -i` guidance instead of a raw spawn error.
