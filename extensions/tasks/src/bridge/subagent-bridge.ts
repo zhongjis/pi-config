@@ -9,7 +9,8 @@ import {
   SUBAGENT_SPAWN_TIMEOUT_MS,
   SUBAGENT_STOP_TIMEOUT_MS,
 } from "../constants.js";
-import { updateTask } from "../lifecycle/fsm-dispatch.js";
+import { advanceTaskGraph, type GraphSnapshot } from "../lifecycle/advance-task-graph.js";
+import { applyCommands } from "../lifecycle/apply-commands.js";
 import { debug, isPlanningTaskMetadataForSession, type TaskRuntime } from "../lifecycle/store-glue.js";
 import type { Task } from "../types.js";
 import type { ClearPlanningTasksReply } from "./rpc-handlers.js";
@@ -135,71 +136,25 @@ export function createSubagentBridge(pi: ExtensionAPI, runtime: TaskRuntime) {
   }
 
   function registerCompletionListeners() {
-    pi.events.on("subagents:completed", async (data) => {
-      const { id, result } = data as { id: string; result?: string };
-      const taskId = runtime.agentTaskMap.get(id);
-      if (!taskId) return;
-      runtime.agentTaskMap.delete(id);
-      const task = runtime.store.get(taskId);
-      if (!task) return;
-
-      updateTask(runtime, task.id, { status: "completed", metadata: { ...task.metadata, result } }, "internal");
-      runtime.widget.setActiveTask(task.id, false);
-
-      if ((runtime.cfg.autoCascade ?? false) && runtime.cascadeConfig && runtime.latestCtx) {
-        const unblocked = runtime.store.list().filter(t =>
-          t.status === "pending" &&
-          t.metadata?.agentType &&
-          t.blockedBy.includes(task.id) &&
-          t.blockedBy.every(depId => runtime.store.get(depId)?.status === "completed")
-        );
-        for (const next of unblocked) {
-          updateTask(runtime, next.id, { status: "in_progress" }, "internal");
-          const prompt = buildTaskPrompt(next, runtime.cascadeConfig.additionalContext);
-          try {
-            const agentId = await spawnSubagent(next.metadata.agentType, prompt, {
-              description: next.subject,
-              isBackground: true,
-              maxTurns: runtime.cascadeConfig.maxTurns,
-              ...(runtime.cascadeConfig.model ? { model: runtime.cascadeConfig.model } : {}),
-            });
-            runtime.agentTaskMap.set(agentId, next.id);
-            updateTask(runtime, next.id, { owner: agentId, metadata: { ...next.metadata, agentId } }, "internal");
-            runtime.widget.setActiveTask(next.id);
-          } catch (err: any) {
-            updateTask(runtime, next.id, { status: "pending", metadata: { ...next.metadata, lastError: err.message } }, "internal");
-          }
-        }
-      }
-      runtime.autoClear.trackCompletion(task.id, runtime.currentTurn);
-      runtime.widget.update();
+    const snapshot = (): GraphSnapshot => ({
+      tasks: runtime.store.list(),
+      agentToTask: runtime.agentTaskMap,
+      cascade:
+        (runtime.cfg.autoCascade ?? false) && runtime.cascadeConfig && runtime.latestCtx
+          ? runtime.cascadeConfig
+          : undefined,
     });
 
-    pi.events.on("subagents:failed", (data) => {
-      const { id, error, result, status } = data as { id: string; error?: string; result?: string; status: string };
-      const taskId = runtime.agentTaskMap.get(id);
-      if (!taskId) return;
-      runtime.agentTaskMap.delete(id);
-      const task = runtime.store.get(taskId);
-      if (!task) return;
+    pi.events.on("subagents:completed", async (data) => {
+      const { id, result } = data as { id: string; result?: string };
+      const commands = advanceTaskGraph({ kind: "completed", agentId: id, result }, snapshot());
+      await applyCommands(runtime, { spawnSubagent, buildTaskPrompt }, commands);
+    });
 
-      if (status === "stopped") {
-        if (task.status === "completed") {
-          // Late stopped event after a manual TaskStop already finalized the task:
-          // backfill the partial result if we now have one, but don't re-track or re-render.
-          if (result && !task.metadata?.result) {
-            updateTask(runtime, task.id, { metadata: { ...task.metadata, result } }, "internal");
-          }
-          return;
-        }
-        updateTask(runtime, task.id, { status: "completed", metadata: { ...task.metadata, result: result || task.metadata?.result } }, "internal");
-        runtime.autoClear.trackCompletion(task.id, runtime.currentTurn);
-      } else {
-        updateTask(runtime, task.id, { status: "pending", metadata: { ...task.metadata, lastError: error || status } }, "internal");
-        runtime.autoClear.resetBatchCountdown();
-      }
-      runtime.widget.setActiveTask(task.id, false);
-      runtime.widget.update();
+    pi.events.on("subagents:failed", async (data) => {
+      const { id, error, result, status } = data as { id: string; error?: string; result?: string; status: string };
+      const commands = advanceTaskGraph({ kind: "failed", agentId: id, error, result, status }, snapshot());
+      await applyCommands(runtime, { spawnSubagent, buildTaskPrompt }, commands);
     });
   }
 

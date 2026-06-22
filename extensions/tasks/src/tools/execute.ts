@@ -1,6 +1,7 @@
 import { Type } from "typebox";
+import { runSpawn } from "../lifecycle/apply-commands.js";
 import { claimBlockerMessage, getClaimBlockerFailure, updateTask, warnClaimRejected } from "../lifecycle/fsm-dispatch.js";
-import { debug, textResult } from "../lifecycle/store-glue.js";
+import { textResult } from "../lifecycle/store-glue.js";
 import type { TaskToolDeps } from "./types.js";
 
 export function registerExecuteTool({ pi, runtime, bridge }: TaskToolDeps) {
@@ -65,22 +66,21 @@ export function registerExecuteTool({ pi, runtime, bridge }: TaskToolDeps) {
         }
 
         updateTask(runtime, taskId, { status: "in_progress" }, "internal");
-        const prompt = bridge.buildTaskPrompt(task, params.additional_context);
-        try {
-          const agentId = await bridge.spawnSubagent(task.metadata.agentType, prompt, {
+        const outcome = await runSpawn(runtime, bridge, {
+          taskId,
+          agentType: task.metadata.agentType,
+          additionalContext: params.additional_context,
+          spawnOptions: {
             description: task.subject,
             isBackground: true,
             maxTurns: params.max_turns,
             ...(params.model ? { model: params.model } : {}),
-          });
-          runtime.agentTaskMap.set(agentId, taskId);
-          updateTask(runtime, taskId, { owner: agentId, metadata: { ...task.metadata, agentId } }, "internal");
-          runtime.widget.setActiveTask(taskId);
-          launched.push(`#${taskId} → agent ${agentId}`);
-        } catch (err: any) {
-          debug(`spawn:error task=#${taskId}`, err);
-          updateTask(runtime, taskId, { status: "pending" }, "internal");
-          results.push(`#${taskId}: spawn failed — ${err.message}`);
+          },
+        });
+        if (outcome.ok) {
+          launched.push(`#${taskId} → agent ${outcome.agentId}`);
+        } else {
+          results.push(`#${taskId}: spawn failed — ${outcome.error}`);
         }
       }
 
