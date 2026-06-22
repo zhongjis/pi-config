@@ -31,17 +31,17 @@ describe("computeActiveToolNames", () => {
     expect(compute({ extensionTools: ["search"] })).toEqual(["read", "bash"]);
   });
 
-  it("allows extension_tools suffix wildcards ending in _*", () => {
+  it("allows extension_tools trailing-star prefix wildcards", () => {
     expect(compute({
-      availableToolNames: ["read", "bash", "codegraph_search", "codegraph_files", "codegraph"],
-      extensionTools: ["codegraph_*"],
-    })).toEqual(["read", "bash", "codegraph_search", "codegraph_files"]);
+      availableToolNames: ["read", "bash", "codegraph_search", "codegraph_files", "codegraph", "TaskCreate", "TaskList"],
+      extensionTools: ["codegraph_*", "Task*"],
+    })).toEqual(["read", "bash", "codegraph_search", "codegraph_files", "TaskCreate", "TaskList"]);
   });
 
-  it("does not treat other wildcard-like values as patterns", () => {
+  it("does not treat non-trailing wildcard-like values as patterns", () => {
     expect(compute({
-      availableToolNames: ["read", "bash", "codegraph_search"],
-      extensionTools: ["codegraph*"],
+      availableToolNames: ["read", "bash", "TaskCreate"],
+      extensionTools: ["Ta*k"],
     })).toEqual(["read", "bash"]);
   });
 

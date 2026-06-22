@@ -21,7 +21,7 @@ export interface ComputeActiveToolNamesInput {
   builtinToolUniverse: readonly string[];
   /** false disables extension tools; true/string[] means extension tools are available after loading. */
   extensions: ExtensionSelection;
-  /** undefined = all available extension tools; false/[] = none; string[] = exact tool names or `_*` suffix wildcards. */
+  /** undefined = all available extension tools; false/[] = none; string[] = exact tool names or trailing `*` prefix wildcards. */
   extensionTools?: ExtensionToolSelection;
   /** false removes nested subagent tools even if extension tool policy would otherwise include them. */
   allowNesting?: boolean;
@@ -75,7 +75,7 @@ function matchesExtensionToolSelection(selection: ReadonlySet<string>, name: str
   if (selection.has(name)) return true;
 
   for (const pattern of selection) {
-    if (pattern.endsWith("_*") && name.startsWith(pattern.slice(0, -1))) return true;
+    if (pattern.endsWith("*") && name.startsWith(pattern.slice(0, -1))) return true;
   }
 
   return false;
