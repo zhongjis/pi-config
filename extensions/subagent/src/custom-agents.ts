@@ -97,8 +97,6 @@ function loadFromDir(
       inheritContext: parsed.inheritContext,
       runInBackground: parsed.runInBackground,
       isolated: parsed.isolated,
-      memory: parsed.memory,
-      isolation: parsed.isolation,
       enabled: parsed.enabled,
       source,
     });

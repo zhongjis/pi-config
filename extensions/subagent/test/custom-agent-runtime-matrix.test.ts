@@ -46,10 +46,6 @@ vi.mock("../src/prompts.js", () => ({
   buildAgentPrompt: vi.fn(() => "system prompt"),
 }));
 
-vi.mock("../src/memory.js", () => ({
-  buildMemoryBlock: vi.fn(() => ""),
-  buildReadOnlyMemoryBlock: vi.fn(() => ""),
-}));
 
 vi.mock("../src/skill-loader.js", () => ({
   preloadSkills: vi.fn(() => []),

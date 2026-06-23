@@ -4,10 +4,8 @@
 
 import type { AgentConfig, EnvInfo } from "./types.js";
 
-/** Extra sections to inject into the system prompt (memory, skills, etc.). */
+/** Extra sections to inject into the system prompt (skills, etc.). */
 export interface PromptExtras {
-  /** Persistent memory content to inject (first 200 lines of MEMORY.md + instructions). */
-  memoryBlock?: string;
   /** Preloaded skill contents to inject. */
   skillBlocks?: { name: string; content: string; sourcePath?: string; baseDir?: string }[];
 }
@@ -23,7 +21,7 @@ export interface PromptExtras {
  *   no parent role/mode body bleed). See agent-runner.ts noContextFiles handling.
  *
  * @param parentSystemPrompt  The parent agent's effective system prompt (for append mode).
- * @param extras  Optional extra sections to inject (memory, preloaded skills).
+ * @param extras  Optional extra sections to inject (preloaded skills).
  */
 export function buildAgentPrompt(
   config: AgentConfig,
@@ -39,9 +37,6 @@ Platform: ${env.platform}`;
 
   // Build optional extras suffix
   const extraSections: string[] = [];
-  if (extras?.memoryBlock) {
-    extraSections.push(extras.memoryBlock);
-  }
   if (extras?.skillBlocks?.length) {
     for (const skill of extras.skillBlocks) {
       const sourceLine = skill.sourcePath ? `Source: ${skill.sourcePath}\n` : "";

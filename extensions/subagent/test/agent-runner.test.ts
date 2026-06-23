@@ -7,8 +7,6 @@ const {
   getAgentConfig,
   getAgentDir,
   getConfig,
-  getMemoryToolNames,
-  getReadOnlyMemoryToolNames,
   sessionManagerCreate,
   settingsManagerCreate,
 } = vi.hoisted(() => ({
@@ -17,8 +15,6 @@ const {
   getAgentConfig: vi.fn(),
   getAgentDir: vi.fn(() => "/mock/agent-dir"),
   getConfig: vi.fn(),
-  getMemoryToolNames: vi.fn(() => []),
-  getReadOnlyMemoryToolNames: vi.fn(() => []),
   sessionManagerCreate: vi.fn(() => ({ kind: "created-session-manager" })),
   settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager" })),
 }));
@@ -41,8 +37,6 @@ vi.mock("../src/agent-types.js", () => ({
   BUILTIN_TOOL_NAMES: ["read", "bash", "edit", "write", "grep", "find", "ls"],
   getAgentConfig,
   getConfig,
-  getMemoryToolNames,
-  getReadOnlyMemoryToolNames,
 }));
 
 vi.mock("../src/env.js", () => ({
@@ -53,10 +47,6 @@ vi.mock("../src/prompts.js", () => ({
   buildAgentPrompt: vi.fn(() => "system prompt"),
 }));
 
-vi.mock("../src/memory.js", () => ({
-  buildMemoryBlock: vi.fn(() => ""),
-  buildReadOnlyMemoryBlock: vi.fn(() => ""),
-}));
 
 vi.mock("../src/skill-loader.js", () => ({
   preloadSkills: vi.fn(() => []),
@@ -135,8 +125,6 @@ beforeEach(() => {
   getConfig.mockReset();
   getConfig.mockReturnValue(defaultConfig());
   getAgentDir.mockClear();
-  getMemoryToolNames.mockClear();
-  getReadOnlyMemoryToolNames.mockClear();
   sessionManagerCreate.mockClear();
   settingsManagerCreate.mockClear();
 });
@@ -165,25 +153,6 @@ describe("agent-runner final output capture", () => {
     const bindOrder = session.bindExtensions.mock.invocationCallOrder[0];
     const promptOrder = session.prompt.mock.invocationCallOrder[0];
     expect(bindOrder).toBeLessThan(promptOrder);
-  });
-
-  it("passes effective cwd and agentDir to the loader and settings manager", async () => {
-    const { session } = createSession("CONFIGURED");
-    createAgentSession.mockResolvedValue({ session });
-
-    await runAgent(ctx, "Explore", "Say CONFIGURED", { pi, cwd: "/tmp/worktree" });
-
-    expect(getAgentDir).toHaveBeenCalledTimes(1);
-    expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(expect.objectContaining({
-      cwd: "/tmp/worktree",
-      agentDir: "/mock/agent-dir",
-    }));
-    expect(settingsManagerCreate).toHaveBeenCalledWith("/tmp/worktree", "/mock/agent-dir");
-    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp/worktree", undefined);
-    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      cwd: "/tmp/worktree",
-      agentDir: "/mock/agent-dir",
-    }));
   });
 
   it("uses a custom session directory when provided", async () => {

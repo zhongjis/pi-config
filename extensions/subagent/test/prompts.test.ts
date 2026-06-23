@@ -203,45 +203,6 @@ describe("buildAgentPrompt", () => {
     expect(prompt).toContain("Extra stuff.");
   });
 
-  it("injects memory block in replace mode", () => {
-    const config: AgentConfig = {
-      name: "mem-agent",
-      description: "Memory Agent",
-      builtinToolNames: [],
-      extensions: true,
-      skills: true,
-      systemPrompt: "You are a memory agent.",
-      promptMode: "replace",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const extras = { memoryBlock: "# Agent Memory\nYou have persistent memory at /tmp/mem/" };
-    const prompt = buildAgentPrompt(config, "/workspace", env, undefined, extras);
-    expect(prompt).toContain("You are a memory agent.");
-    expect(prompt).toContain("Agent Memory");
-    expect(prompt).toContain("persistent memory");
-  });
-
-  it("injects memory block in append mode", () => {
-    const config: AgentConfig = {
-      name: "mem-append",
-      description: "Memory Append",
-      builtinToolNames: [],
-      extensions: true,
-      skills: true,
-      systemPrompt: "Custom instructions.",
-      promptMode: "append",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const extras = { memoryBlock: "# Agent Memory\nPersistent memory here." };
-    const prompt = buildAgentPrompt(config, "/workspace", env, "Parent prompt.", extras);
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain("Agent Memory");
-    expect(prompt).toContain("Custom instructions.");
-  });
 
   it("injects preloaded skill blocks", () => {
     const config: AgentConfig = {
@@ -269,27 +230,6 @@ describe("buildAgentPrompt", () => {
     expect(prompt).toContain("Handle errors gracefully.");
   });
 
-  it("injects both memory and skills", () => {
-    const config: AgentConfig = {
-      name: "full-agent",
-      description: "Full Agent",
-      builtinToolNames: [],
-      extensions: true,
-      skills: true,
-      systemPrompt: "Full agent.",
-      promptMode: "replace",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const extras = {
-      memoryBlock: "# Memory\nRemember this.",
-      skillBlocks: [{ name: "skill1", content: "Skill content." }],
-    };
-    const prompt = buildAgentPrompt(config, "/workspace", env, undefined, extras);
-    expect(prompt).toContain("# Memory");
-    expect(prompt).toContain("Preloaded Skill: skill1");
-  });
 
   it("no extras means no extra sections", () => {
     const config: AgentConfig = {

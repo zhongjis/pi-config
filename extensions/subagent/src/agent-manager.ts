@@ -11,8 +11,7 @@ import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS, SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS, SUBAGENT_BACKGROUND_MAX_CONCURRENT } from "./constants.js";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
-import type { AgentRecord, IsolationMode, SubagentType, ThinkingLevel } from "./types.js";
-import { cleanupWorktree, createWorktree, pruneWorktrees, } from "./worktree.js";
+import type { AgentRecord, SubagentType, ThinkingLevel } from "./types.js";
 import { getRecoveredResultText } from "./result-recovery.js";
 import { AgentRun, project } from "./agent-run.js";
 
@@ -43,8 +42,6 @@ interface SpawnOptions {
   parentSessionId?: string;
   /** Directory for persistent subagent session JSONL files. */
   sessionDir?: string;
-  /** Isolation mode — "worktree" creates a temp git worktree for the agent. */
-  isolation?: IsolationMode;
   /** Resolved provider/model label for widget display. */
   modelLabel?: string;
   /** Called on tool start/end with activity info (for streaming progress to UI). */
@@ -159,30 +156,13 @@ export class AgentManager {
     this.onStart?.(record);
 
 
-    // Worktree isolation: create a temporary git worktree if requested
-    let worktreeCwd: string | undefined;
-    let worktreeWarning = "";
-    if (options.isolation === "worktree") {
-      const wt = createWorktree(ctx.cwd, id);
-      if (wt) {
-        record.worktree = wt;
-        worktreeCwd = wt.path;
-      } else {
-        worktreeWarning = "\n\n[WARNING: Worktree isolation was requested but failed (not a git repo, or no commits yet). Running in the main working directory instead.]";
-      }
-    }
-
-    // Prepend worktree warning to prompt if isolation failed
-    const effectivePrompt = worktreeWarning ? worktreeWarning + "\n\n" + prompt : prompt;
-
-    const promise = runAgent(ctx, type, effectivePrompt, {
+    const promise = runAgent(ctx, type, prompt, {
       pi,
       model: options.model,
       maxTurns: options.maxTurns,
       isolated: options.isolated,
       inheritContext: options.inheritContext,
       thinkingLevel: options.thinkingLevel,
-      cwd: worktreeCwd,
       sessionDir: options.sessionDir,
       signal: record.abortController!.signal,
       onToolActivity: (activity) => {
@@ -254,13 +234,13 @@ export class AgentManager {
   }
 
   /**
-   * Own the terminal handling for a run: flush streaming output, clean up the worktree,
+   * Own the terminal handling for a run: flush streaming output,
    * derive the final result text, and publish the single terminal AgentRun event.
    * The four former in-`startAgent` blocks (then/catch × normal/stopped) all route here.
    *
    * Variation is carried entirely by `outcome`:
-   *  - source "settled" (runAgent resolved) vs "rejected" (threw): governs the branch-note
-   *    append (settled appends, rejected omits) and the result-derivation source.
+   *  - source "settled" (runAgent resolved) vs "rejected" (threw): governs the
+   *    result-derivation source.
    *  - stopped (read ONCE by the caller before this runs): a user-stopped run only amends its
    *    already-final result; AgentRun owns status/error/completedAt, so no status re-derivation.
    *
@@ -280,33 +260,19 @@ export class AgentManager {
       record.outputCleanup = undefined;
     }
 
-    // Worktree cleanup + branch note. The note is appended only on the settled continuation
-    // (completed / then-stopped); the rejected continuation (error / catch-stopped) omits it.
-    // cleanupWorktree is self-guarding (never throws), so no extra try/catch is needed.
-    const finalizeWorktree = (base: string): string => {
-      if (!record.worktree) return base;
-      const wtResult = cleanupWorktree(ctx.cwd, record.worktree, description);
-      record.worktreeResult = wtResult;
-      if (outcome.source === "settled" && wtResult.hasChanges && wtResult.branch) {
-        return base +
-          `\n\n---\nChanges saved to branch \`${wtResult.branch}\`. Merge with: \`git merge ${wtResult.branch}\``;
-      }
-      return base;
-    };
-
     // Stopped: AgentRun already owns status/error/completedAt (set when the stop was published).
     // Only amend the final result text.
     if (outcome.stopped) {
       const base = (outcome.source === "settled" ? outcome.responseText.trim() : "")
         || getRecoveredResultText(record);
-      record.run?.publish({ kind: "result_amended", result: finalizeWorktree(base) });
+      record.run?.publish({ kind: "result_amended", result: base });
       return;
     }
 
     if (outcome.source === "settled") {
       const finalStatus = outcome.aborted ? "aborted" : outcome.steered ? "steered" : "completed";
       const base = outcome.responseText.trim() || getRecoveredResultText({ ...record, status: finalStatus });
-      const finalResult = finalizeWorktree(base);
+      const finalResult = base;
       if (finalStatus === "completed" || finalStatus === "steered") {
         record.run?.publish({ kind: "completed", result: finalResult, status: finalStatus });
       } else {
@@ -317,7 +283,7 @@ export class AgentManager {
 
     // Rejected (error).
     const finalError = record.error ?? (outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
-    const finalResult = finalizeWorktree(getRecoveredResultText({ ...record, status: "error", error: finalError }));
+    const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
     record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
   }
 
@@ -524,7 +490,5 @@ export class AgentManager {
       record.session?.dispose();
     }
     this.agents.clear();
-    // Prune any orphaned git worktrees (crash recovery)
-    try { pruneWorktrees(process.cwd()); } catch { /* ignore */ }
   }
 }

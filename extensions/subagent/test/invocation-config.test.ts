@@ -27,7 +27,6 @@ describe("resolveAgentInvocationConfig", () => {
         inheritContext: false,
         runInBackground: false,
         isolated: false,
-        isolation: "worktree",
       }),
       {
         model: "provider/param-model",
@@ -36,7 +35,6 @@ describe("resolveAgentInvocationConfig", () => {
         inherit_context: true,
         run_in_background: true,
         isolated: true,
-        isolation: "worktree",
       },
     );
 
@@ -47,7 +45,6 @@ describe("resolveAgentInvocationConfig", () => {
     expect(resolved.inheritContext).toBe(false);
     expect(resolved.runInBackground).toBe(false);
     expect(resolved.isolated).toBe(false);
-    expect(resolved.isolation).toBe("worktree");
   });
 
   it("uses tool-call params when no agent config is available", () => {
@@ -58,7 +55,6 @@ describe("resolveAgentInvocationConfig", () => {
       inherit_context: true,
       run_in_background: true,
       isolated: true,
-      isolation: "worktree",
     });
 
     expect(resolved.modelCandidates[0].model).toBe("provider/param-model");
@@ -68,7 +64,6 @@ describe("resolveAgentInvocationConfig", () => {
     expect(resolved.inheritContext).toBe(true);
     expect(resolved.runInBackground).toBe(true);
     expect(resolved.isolated).toBe(true);
-    expect(resolved.isolation).toBe("worktree");
   });
 
   it("lets parent fill in booleans when config leaves them undefined", () => {

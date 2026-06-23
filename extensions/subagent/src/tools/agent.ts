@@ -202,8 +202,7 @@ Guidelines:
 - Agent results are returned as text; summarize them for the user.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
 - Use thinking to control extended thinking level.
-- Use inherit_context if the agent needs the parent conversation history.
-- Use isolation: "worktree" to run the agent in an isolated git worktree (safe parallel file modifications).`,
+- Use inherit_context if the agent needs the parent conversation history.`,
     parameters: Type.Object({
       prompt: Type.String({
         description: "The task for the agent to perform.",
@@ -249,11 +248,6 @@ Guidelines:
       inherit_context: Type.Optional(
         Type.Boolean({
           description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
-        }),
-      ),
-      isolation: Type.Optional(
-        Type.Literal("worktree", {
-          description: 'Set to "worktree" to run the agent in a temporary git worktree (isolated copy of the repo). Changes are saved to a branch on completion.',
         }),
       ),
     }),
@@ -392,7 +386,6 @@ Guidelines:
       const inheritContext = resolvedConfig.inheritContext;
       const runInBackground = resolvedConfig.runInBackground;
       const isolated = resolvedConfig.isolated;
-      const isolation = resolvedConfig.isolation;
 
       // Build display tags for non-default config
       const parentModelId = ctx.model?.id;
@@ -406,7 +399,6 @@ Guidelines:
       if (modeLabel) agentTags.push(modeLabel);
       if (thinking) agentTags.push(`thinking: ${thinking}`);
       if (isolated) agentTags.push("isolated");
-      if (isolation === "worktree") agentTags.push("worktree");
       const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
       // Shared base fields for all AgentDetails in this call
       const detailBase = {
@@ -450,7 +442,6 @@ Guidelines:
         isolated,
         inheritContext,
         thinkingLevel: thinking,
-        isolation,
         parentSessionId,
         sessionDir: subagentSessionDir,
       };

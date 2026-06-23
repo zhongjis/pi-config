@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { isUnsafeName, safeReadFile } from "./memory.js";
+import { isUnsafeName, safeReadFile } from "./fs-safety.js";
 
 export interface PreloadedSkill {
   name: string;

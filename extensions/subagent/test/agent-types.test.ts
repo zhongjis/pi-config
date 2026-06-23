@@ -5,8 +5,6 @@ import {
   getAvailableTypes,
   getConfig,
   getDefaultAgentNames,
-  getMemoryToolNames,
-  getReadOnlyMemoryToolNames,
   getToolNamesForType,
   getUserAgentNames,
   isValidType,
@@ -256,35 +254,4 @@ describe("agent type registry", () => {
     });
   });
 
-  describe("getMemoryToolNames", () => {
-    it("returns read, write, edit when none exist", () => {
-      const names = getMemoryToolNames(new Set());
-      expect(names).toContain("read");
-      expect(names).toContain("write");
-      expect(names).toContain("edit");
-      expect(names).toHaveLength(3);
-    });
-
-    it("skips tools that already exist", () => {
-      const names = getMemoryToolNames(new Set(["read", "edit"]));
-      expect(names).toEqual(["write"]);
-    });
-
-    it("returns empty when all memory tools already exist", () => {
-      const names = getMemoryToolNames(new Set(["read", "write", "edit"]));
-      expect(names).toHaveLength(0);
-    });
-  });
-
-  describe("getReadOnlyMemoryToolNames", () => {
-    it("returns only read when missing", () => {
-      const names = getReadOnlyMemoryToolNames(new Set());
-      expect(names).toEqual(["read"]);
-    });
-
-    it("returns empty when read already exists", () => {
-      const names = getReadOnlyMemoryToolNames(new Set(["read"]));
-      expect(names).toHaveLength(0);
-    });
-  });
 });

@@ -15,11 +15,10 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { computeActiveToolNames } from "./active-tools.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getMemoryToolNames, getReadOnlyMemoryToolNames } from "./agent-types.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
-import { buildMemoryBlock, buildReadOnlyMemoryBlock } from "./memory.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import { parseModelChain, resolveFirstAvailable, type ModelRegistry } from "./model-resolver.js";
@@ -105,8 +104,6 @@ export interface RunOptions {
   isolated?: boolean;
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
-  /** Override working directory (e.g. for worktree isolation). */
-  cwd?: string;
   /** Directory for persistent subagent session JSONL files. Defaults to pi's normal session tree. */
   sessionDir?: string;
   /** Called on tool start/end with activity info. */
@@ -183,8 +180,7 @@ export async function runAgent(
   const config = getConfig(type);
   const agentConfig = getAgentConfig(type);
 
-  // Resolve working directory: worktree override > parent cwd
-  const effectiveCwd = options.cwd ?? ctx.cwd;
+  const effectiveCwd = ctx.cwd;
 
   const env = await detectEnv(options.pi, effectiveCwd);
 
@@ -206,27 +202,7 @@ export async function runAgent(
     }
   }
 
-  let toolNames = [...config.builtinToolNames];
-
-  // Persistent memory: detect write capability and branch accordingly.
-  // Memory may only use built-ins already permitted by builtin_tools/default built-ins.
-  if (agentConfig?.memory) {
-    const existingNames = new Set(toolNames);
-    const hasWriteTools = existingNames.has("write") || existingNames.has("edit");
-    const permittedMemoryTools = new Set(["read", "write", "edit"].filter((name) => existingNames.has(name)));
-
-    if (hasWriteTools) {
-      // Read-write memory: add any missing permitted memory tool names (read/write/edit).
-      const extraNames = getMemoryToolNames(existingNames).filter((name) => permittedMemoryTools.has(name));
-      if (extraNames.length > 0) toolNames = [...toolNames, ...extraNames];
-      extras.memoryBlock = buildMemoryBlock(agentConfig.name, agentConfig.memory, effectiveCwd);
-    } else {
-      // Read-only memory: only add read when read is otherwise permitted.
-      const extraNames = getReadOnlyMemoryToolNames(existingNames).filter((name) => permittedMemoryTools.has(name));
-      if (extraNames.length > 0) toolNames = [...toolNames, ...extraNames];
-      extras.memoryBlock = buildReadOnlyMemoryBlock(agentConfig.name, agentConfig.memory, effectiveCwd);
-    }
-  }
+  const toolNames = [...config.builtinToolNames];
 
   // Build system prompt from agent config
   let systemPrompt: string;

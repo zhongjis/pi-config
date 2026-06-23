@@ -1,7 +1,7 @@
 # subagent
 
 ## Overview
-Background/foreground subagent runtime: tool surface, queueing, widget UI, eventbus RPC, resume/steer/worktree support.
+Background/foreground subagent runtime: tool surface, queueing, widget UI, eventbus RPC, resume/steer support.
 
 Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) v0.6.3 (commit `7102b3e`). Local additions: background supervision, delegation policy, result recovery, enhanced skill-loader, abort signal forwarding, model label tracking, persistent subagent session JSONL (`SessionManager.create` with custom dir under `~/.pi/agent/subagent-sessions/`; record + notifications expose `sessionFile`), and the **C/D single-source-of-truth revamp** (`AgentRun` event stream + `ExternalContractAdapter`).
 
@@ -20,7 +20,7 @@ Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents
 | External `subagents:*` emission boundary | `src/external-contract-adapter.ts` | Sole emitter of the `subagents:*` events + `subagents:record` snapshot, via `toExternalEffects`; `buildSubagentRecordEntry` owns the durable field set |
 | Agent registry / custom definitions | `src/agent-types.ts`, `src/custom-agents.ts`, `src/default-agents.ts` | Unified registry with embedded defaults |
 | Widget / viewer | `src/ui/` | Persistent widget + conversation viewer |
-| Isolation / memory / skill loading | `src/worktree.ts`, `src/memory.ts`, `src/skill-loader.ts` | Side systems with user-visible effects |
+| Isolation / skill loading | `src/fs-safety.ts`, `src/skill-loader.ts` | Side systems with user-visible effects |
 | Persistent settings | `src/settings.ts` | Dual-scope (global + project) settings persistence |
 | Background supervision | `src/background-supervision.ts` | Auto-steer/abort idle agents (local) |
 | Delegation policy | `src/delegation-policy.ts` | Allow/deny agent delegation rules (local) |
@@ -46,19 +46,18 @@ pnpm run build
 
 ## Ask First
 - Changing `subagents:*` payload shape, RPC method names, or reply envelope fields.
-- Changing transcript/output-file location semantics or worktree completion behavior.
+- Changing `subagents:*` payload shape, RPC method names, or reply envelope fields.
 - Changing completion-notification timing/consolidation; notifications fire once per parent prompt at `agent_end` (parent idle), gated background-only on `!resultConsumed`/`!notified`/`!suppressNotification`/not-recently-polled.
 
 ## Never
 - Never replace the eventbus RPC bridge with shared mutable globals; `tasks/` integration depends on the RPC contract.
 - Never emit unscoped reply channels.
 - Never separate lifecycle behavior changes from the tests that lock them down.
-- Never assume worktree isolation is guaranteed; fallback-to-main-worktree behavior is part of the current contract.
+- Never assume any particular isolation mode; there is none.
 
 ## Gotchas
 - The runtime hub is `src/lifecycle/supervision.ts` (`registerSubagentRuntime`): it owns tool/UI wiring, widget rendering, notifications, and event emission, so many changes fan out from there. `src/index.ts` is only a 59-line bootstrap + symbol version-guard.
 - `subagents:ready` is the discovery signal for other extensions; breaking or delaying it causes load-order bugs.
-- Read-only agents still consume memory files in read-only mode; write capability is inferred from available tools after explicit allowlist resolution.
 - `prompt_mode` is parsed by both `subagent` (this extension) and `modes`. Subagent honors all three values (`replace`/`append`/`system_instructions`); modes coerces non-`append` to `replace` (see `extensions/modes/src/config-loader.ts`). When changing parser semantics in `extensions/lib/agent-frontmatter.ts`, update both consumers.
 - **Single source of truth**: `record.run` (`AgentRun`) owns all run state; all writes flow `publish() → apply() → project(run, record)` — the record is a projection. The projector subscriber is installed first at spawn (agent-manager.ts) so every publish is synchronously reflected in the record before downstream subscribers see it. The `agentActivity` map is a live getter-view of the run (`runActivityView` in `tools/agent.ts`); supervision reads its snapshots. The external `subagents:*` contract is emitted ONLY by `external-contract-adapter.ts` (`emitTerminalContract`) — keep all external emission there so `tasks/` + compaction-replay stay intact.
 - **Completion notifications** are emitted only by `emitCompletionNotificationsAtIdle` (`supervision.ts`) as a single consolidated message — NOT at completion time. Two trigger paths, both `notified`-deduped (so a completion surfaces exactly once): (1) `pi.on("agent_end")` — end of each parent prompt; (2) the background supervision timer when `!parentBusy` — flushes completions that finished while the parent sat idle between prompts (no `agent_end` fires then). `parentBusy` is toggled by the parent's `agent_start`/`agent_end` (children are raw SDK sessions and never fire them). Gate: `isBackground && completedAt!=null && !resultConsumed && !notified && !suppressNotification && !recentlyPolled`; `onComplete` only does widget cleanup + the frozen `subagents:*`/registry emission. `resultConsumed`/`notified` are AgentRun-owned run-state (`publish({kind:"consumed"|"notified"})` → projector), never direct writes. Do NOT reintroduce completion-time emission: pi follow-ups are deferred-until-idle and non-retractable, so emitting before consumption causes the duplicate-notification spam. Group-join/batch was retired (this consolidation supersedes it).

@@ -22,8 +22,6 @@ export function buildEjectedAgentMarkdown(cfg: AgentConfig): string {
   if (cfg.inheritContext) fmFields.push("inherit_context: true");
   if (cfg.runInBackground) fmFields.push("run_in_background: true");
   if (cfg.isolated) fmFields.push("isolated: true");
-  if (cfg.memory) fmFields.push(`memory: ${cfg.memory}`);
-  if (cfg.isolation) fmFields.push(`isolation: ${cfg.isolation}`);
 
   return `---\n${fmFields.join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
 }
@@ -74,8 +72,6 @@ disallow_delegation_to: <comma-separated agent names this agent may not delegate
 inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>
 run_in_background: <true to run in background by default. Default: false>
 isolated: <true for no extension/MCP tools, only built-in tools. Default: false>
-memory: <"user" (global), "project" (per-project), or "local" (gitignored per-project) for persistent memory. Omit for none>
-isolation: <"worktree" to run in isolated git worktree. Omit for normal>
 ---
 
 <system prompt body — instructions for the agent>

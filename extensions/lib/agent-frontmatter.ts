@@ -2,7 +2,6 @@ import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_BUILTIN_TOOL_NAMES } from "./active-tools.js";
 
 export type InheritSelection = true | string[] | false;
-export type MemoryScope = "user" | "project" | "local";
 export type PromptMode = "replace" | "append" | "system_instructions";
 
 export interface ParsedAgentFrontmatter {
@@ -24,8 +23,6 @@ export interface ParsedAgentFrontmatter {
   inheritContext?: boolean;
   runInBackground?: boolean;
   isolated?: boolean;
-  memory?: MemoryScope;
-  isolation?: "worktree";
   enabled: boolean;
   toolSelectionSpecified: boolean;
 }
@@ -60,8 +57,6 @@ export function parseAgentFrontmatter(
     inheritContext: fm.inherit_context != null ? fm.inherit_context === true : undefined,
     runInBackground: fm.run_in_background != null ? fm.run_in_background === true : undefined,
     isolated: fm.isolated != null ? fm.isolated === true : undefined,
-    memory: parseMemory(fm.memory),
-    isolation: fm.isolation === "worktree" ? "worktree" : undefined,
     enabled: fm.enabled !== false,
     toolSelectionSpecified:
       hasField(fm, "builtin_tools")
@@ -131,10 +126,6 @@ function csvListOptionalWithNone(val: unknown): string[] | undefined {
   return parseCsvField(val) ?? [];
 }
 
-function parseMemory(val: unknown): MemoryScope | undefined {
-  if (val === "user" || val === "project" || val === "local") return val;
-  return undefined;
-}
 
 function inheritField(val: unknown): InheritSelection {
   if (val === undefined || val === null || val === true) return true;

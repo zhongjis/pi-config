@@ -8,14 +8,11 @@
 //           SETTLED continuation (completed, then-stopped) and NOT on the REJECTED continuation
 //           (error, catch-stopped). This asymmetry is intentional-as-of-today; pin = preserve.
 //
-// Drives the real manager terminal blocks via a mocked runAgent + mocked worktree.
+// Drives the real manager terminal blocks via a mocked runAgent.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const runAgentMock = vi.fn();
 const resumeAgentMock = vi.fn();
-const createWorktreeMock = vi.fn();
-const cleanupWorktreeMock = vi.fn();
-const pruneWorktreesMock = vi.fn();
 
 vi.mock("../../src/agent-runner.js", () => ({
   runAgent: (...args: any[]) => runAgentMock(...args),
@@ -23,11 +20,6 @@ vi.mock("../../src/agent-runner.js", () => ({
   getAgentConversation: () => "",
 }));
 
-vi.mock("../../src/worktree.js", () => ({
-  createWorktree: (...args: any[]) => createWorktreeMock(...args),
-  cleanupWorktree: (...args: any[]) => cleanupWorktreeMock(...args),
-  pruneWorktrees: (...args: any[]) => pruneWorktreesMock(...args),
-}));
 
 const { AgentManager } = await import("../../src/agent-manager.js");
 
@@ -42,7 +34,6 @@ function fakeSession() {
 
 const PI = {} as any;
 const CTX = { cwd: process.cwd() } as any;
-const BRANCH_NOTE = "Changes saved to branch";
 
 /** runAgent that settles (resolve or reject) only once the agent's abort signal fires. */
 function settleOnAbort(mode: "resolve" | "reject", responseText = "") {
@@ -64,16 +55,11 @@ function settleOnAbort(mode: "resolve" | "reject", responseText = "") {
 afterEach(() => {
   runAgentMock.mockReset();
   resumeAgentMock.mockReset();
-  createWorktreeMock.mockReset();
-  cleanupWorktreeMock.mockReset();
-  pruneWorktreesMock.mockReset();
 });
 
-// ─── Pin A: stopped idempotency (no worktree) ──────────────────────────────────
 
 describe("finalizeRun parity — stopped idempotency", () => {
   it("then-stopped (runAgent resolves after abort): exactly one result_amended, no completed/failed", async () => {
-    createWorktreeMock.mockReturnValue(undefined);
     runAgentMock.mockImplementation(settleOnAbort("resolve", "late output"));
 
     const manager = new AgentManager(undefined, 4);
@@ -99,7 +85,6 @@ describe("finalizeRun parity — stopped idempotency", () => {
   });
 
   it("catch-stopped (runAgent rejects after abort): exactly one result_amended, no completed/failed", async () => {
-    createWorktreeMock.mockReturnValue(undefined);
     runAgentMock.mockImplementation(settleOnAbort("reject"));
 
     const manager = new AgentManager(undefined, 4);
@@ -125,97 +110,3 @@ describe("finalizeRun parity — stopped idempotency", () => {
   });
 });
 
-// ─── Pin B: branch-note asymmetry (with worktree) ──────────────────────────────
-
-describe("finalizeRun parity — branch-note asymmetry", () => {
-  function withWorktree() {
-    createWorktreeMock.mockReturnValue({ path: "/tmp/wt", branch: "pi-agent-x" });
-    cleanupWorktreeMock.mockReturnValue({ hasChanges: true, branch: "pi-agent-x", path: "/tmp/wt" });
-  }
-
-  it("completed (settled): appends the branch note", async () => {
-    withWorktree();
-    runAgentMock.mockResolvedValue({ responseText: "done", session: fakeSession(), aborted: false, steered: false });
-
-    const manager = new AgentManager(undefined, 4);
-    try {
-      const id = manager.spawn(PI, CTX, "general-purpose", "p", {
-        description: "d",
-        isBackground: true,
-        isolation: "worktree",
-      });
-      const record = manager.getRecord(id)!;
-      await record.promise;
-      expect(record.status).toBe("completed");
-      expect(record.result ?? "").toContain(BRANCH_NOTE);
-    } finally {
-      manager.dispose();
-    }
-  });
-
-  it("error (rejected): does NOT append the branch note", async () => {
-    withWorktree();
-    runAgentMock.mockRejectedValue(new Error("kaboom"));
-
-    const manager = new AgentManager(undefined, 4);
-    try {
-      const id = manager.spawn(PI, CTX, "general-purpose", "p", {
-        description: "d",
-        isBackground: true,
-        isolation: "worktree",
-      });
-      const record = manager.getRecord(id)!;
-      await record.promise;
-      expect(record.status).toBe("error");
-      expect(record.result ?? "").not.toContain(BRANCH_NOTE);
-    } finally {
-      manager.dispose();
-    }
-  });
-
-  it("then-stopped (settled after abort): appends the branch note", async () => {
-    withWorktree();
-    runAgentMock.mockImplementation(settleOnAbort("resolve", "late output"));
-
-    const manager = new AgentManager(undefined, 4);
-    const controller = new AbortController();
-    try {
-      const id = manager.spawn(PI, CTX, "general-purpose", "p", {
-        description: "d",
-        isBackground: true,
-        isolation: "worktree",
-        signal: controller.signal,
-      });
-      const record = manager.getRecord(id)!;
-      controller.abort();
-      await record.promise;
-      expect(record.status).toBe("stopped");
-      expect(record.result ?? "").toContain(BRANCH_NOTE);
-    } finally {
-      manager.dispose();
-    }
-  });
-
-  it("catch-stopped (rejected after abort): does NOT append the branch note", async () => {
-    withWorktree();
-    runAgentMock.mockImplementation(settleOnAbort("reject"));
-
-    const manager = new AgentManager(undefined, 4);
-    const controller = new AbortController();
-    try {
-      const id = manager.spawn(PI, CTX, "general-purpose", "p", {
-        description: "d",
-        isBackground: true,
-        isolation: "worktree",
-        signal: controller.signal,
-      });
-      const record = manager.getRecord(id)!;
-      controller.abort();
-      await record.promise;
-      expect(record.status).toBe("stopped");
-      expect(record.result ?? "").not.toContain(BRANCH_NOTE);
-    } finally {
-      manager.dispose();
-    }
-  });
-});

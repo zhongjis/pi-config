@@ -14,11 +14,6 @@ export type SubagentType = string;
 /** Names of the three embedded default agents. */
 export const DEFAULT_AGENT_NAMES = ["general-purpose", "Explore", "Plan"] as const;
 
-/** Memory scope for persistent agent memory. */
-export type MemoryScope = "user" | "project" | "local";
-
-/** Isolation mode for agent execution. */
-export type IsolationMode = "worktree";
 
 /** Structured diagnostic emitted while loading agent frontmatter. */
 export interface AgentDefinitionDiagnostic {
@@ -67,10 +62,6 @@ export interface AgentConfig {
   runInBackground?: boolean;
   /** Default for spawn: no extension tools. undefined = caller decides. */
   isolated?: boolean;
-  /** Persistent memory scope — agents with memory get a persistent directory and MEMORY.md */
-  memory?: MemoryScope;
-  /** Isolation mode — "worktree" runs the agent in a temporary git worktree */
-  isolation?: IsolationMode;
   /** true = this is an embedded default agent (informational) */
   isDefault?: boolean;
   /** false = agent is hidden from the registry */
@@ -102,10 +93,6 @@ export interface AgentRecord {
   waitingConsumers?: number;
   /** Steering messages queued before the session was ready. */
   pendingSteers?: string[];
-  /** Worktree info if the agent is running in an isolated worktree. */
-  worktree?: { path: string; branch: string };
-  /** Worktree cleanup result after agent completion. */
-  worktreeResult?: { hasChanges: boolean; branch?: string };
   /** The tool_use_id from the original Agent tool call. */
   toolCallId?: string;
   /** Path to the streaming output transcript file. */

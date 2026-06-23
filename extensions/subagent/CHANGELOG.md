@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Git-worktree isolation feature**: deleted `src/worktree.ts`, removed `isolation: "worktree"` from
+  `AgentConfig`, `AgentRecord`, `SpawnOptions`, `invocation-config`, tool schema, and frontmatter.
+  All 9 `SUBAGENT_WORKTREE_*` constants removed from `constants.ts`. No agents used `isolation:`.
+- **Agent-memory feature**: deleted `src/memory.ts`, removed `MemoryScope` type, `memory?` field from
+  `AgentConfig`/frontmatter, `getMemoryToolNames`/`getReadOnlyMemoryToolNames` from `agent-types.ts`,
+  `memoryBlock` from `PromptExtras`, and all memory injection in `agent-runner.ts`. FS-safety utilities
+  (`isUnsafeName`, `isSymlink`, `safeReadFile`) extracted into new `src/fs-safety.ts`; `skill-loader.ts`
+  now imports from there. No agents used `memory:`.
+
 ### Added
 - **Explicit custom-agent tool schema**: `builtin_tools` selects built-in tools exactly,
   `extensions` controls extension availability/source-scope hints, and `extension_tools` selects extension-provided tools exactly.

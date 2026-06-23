@@ -1,7 +1,7 @@
 import { normalizeThinkingLevel } from "./thinking-level.js";
 import { parseModelChain, type ModelCandidate } from "./model-resolver.js";
 
-import type { AgentConfig, IsolationMode, ThinkingLevel } from "./types.js";
+import type { AgentConfig, ThinkingLevel } from "./types.js";
 
 interface AgentInvocationParams {
   model?: string;
@@ -10,7 +10,6 @@ interface AgentInvocationParams {
   run_in_background?: boolean;
   inherit_context?: boolean;
   isolated?: boolean;
-  isolation?: IsolationMode;
 }
 
 export function resolveAgentInvocationConfig(
@@ -24,7 +23,6 @@ export function resolveAgentInvocationConfig(
   inheritContext: boolean;
   runInBackground: boolean;
   isolated: boolean;
-  isolation?: IsolationMode;
 } {
   const rawModel = agentConfig?.model ?? params.model;
   const modelFromParams = agentConfig?.model == null && params.model != null;
@@ -39,7 +37,6 @@ export function resolveAgentInvocationConfig(
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,
     runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? false,
     isolated: agentConfig?.isolated ?? params.isolated ?? false,
-    isolation: agentConfig?.isolation ?? params.isolation,
   };
 }
 
