@@ -400,10 +400,16 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 					lastError = "";
 					// Update session name so it shows in /resume
 					pi.setSessionName(lastSummary);
-					// Verbose notification
-					if (config.verbose && changed && latestCtx?.hasUI) {
-						const mode = shouldResummarize ? "resummarize" : "incremental";
-						latestCtx.ui.notify(`[summary:${mode}] ${lastSummary}`, "info");
+					// Verbose notification (guard: ctx may be stale after session replacement/reload)
+					if (config.verbose && changed) {
+						try {
+							if (latestCtx?.hasUI) {
+								const mode = shouldResummarize ? "resummarize" : "incremental";
+								latestCtx.ui.notify(`[summary:${mode}] ${lastSummary}`, "info");
+							}
+						} catch {
+							// ctx went stale after session replacement/reload -- skip notify
+						}
 					}
 				}
 			})
@@ -415,7 +421,15 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			})
 			.finally(() => {
 				pendingLLMCall = false;
-				if (latestCtx) updateWidget(latestCtx);
+				// ctx may be stale if the session was replaced/reloaded while this
+				// fire-and-forget summary was in flight; touching it throws.
+				if (latestCtx) {
+					try {
+						updateWidget(latestCtx);
+					} catch {
+						// stale ctx after session replacement/reload -- nothing to update
+					}
+				}
 			});
 	}
 
