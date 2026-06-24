@@ -9,6 +9,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { SUBAGENTS_COMPLETED, SUBAGENTS_FAILED } from "../../lib/subagent-channels.js";
 import type { SubagentBridge } from "./bridge/subagent-bridge.js";
 import { TASK_OUTPUT_DEFAULT_TIMEOUT_MS, TASK_PROCESS_WAIT_TIMEOUT_MS } from "./constants.js";
 import { updateTask } from "./lifecycle/fsm-dispatch.js";
@@ -105,10 +106,10 @@ function createSubagentAdapter(pi: ExtensionAPI, runtime: TaskRuntime, bridge: S
         await new Promise<void>((resolve) => {
           const timer = setTimeout(() => { unsubOk(); unsubFail(); resolve(); }, opts.timeout ?? TASK_OUTPUT_DEFAULT_TIMEOUT_MS);
           const cleanup = () => { clearTimeout(timer); resolve(); };
-          const unsubOk = pi.events.on("subagents:completed", (d: unknown) => {
+          const unsubOk = pi.events.on(SUBAGENTS_COMPLETED, (d: unknown) => {
             if ((d as any).id === agentId) { unsubOk(); unsubFail(); cleanup(); }
           });
-          const unsubFail = pi.events.on("subagents:failed", (d: unknown) => {
+          const unsubFail = pi.events.on(SUBAGENTS_FAILED, (d: unknown) => {
             if ((d as any).id === agentId) { unsubOk(); unsubFail(); cleanup(); }
           });
           const settled = runtime.store.get(taskId);

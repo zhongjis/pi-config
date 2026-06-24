@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { SUBAGENTS_SETTINGS_CHANGED, SUBAGENTS_SETTINGS_LOADED } from "../../lib/subagent-channels.js";
 
 export interface SubagentsSettings {
   maxConcurrent?: number;
@@ -142,7 +143,7 @@ export function applyAndEmitLoaded(
 ): SubagentsSettings {
   const settings = loadSettings(cwd);
   applySettings(settings, appliers);
-  emit("subagents:settings_loaded", { settings });
+  emit(SUBAGENTS_SETTINGS_LOADED, { settings });
   return settings;
 }
 
@@ -159,6 +160,6 @@ export function saveAndEmitChanged(
   cwd: string = process.cwd(),
 ): { message: string; level: "info" | "warning" } {
   const persisted = saveSettings(snapshot, cwd);
-  emit("subagents:settings_changed", { settings: snapshot, persisted });
+  emit(SUBAGENTS_SETTINGS_CHANGED, { settings: snapshot, persisted });
   return persistToastFor(successMsg, persisted);
 }

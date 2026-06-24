@@ -6,6 +6,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { steerAgent } from "../agent-runner.js";
 import { textResult } from "../lifecycle/supervision.js";
+import { SUBAGENTS_STEERED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 
 export function registerSteerSubagentTool(ctx: SubagentRuntimeContext): void {
@@ -37,13 +38,13 @@ export function registerSteerSubagentTool(ctx: SubagentRuntimeContext): void {
         // Session not ready yet — queue the steer for delivery once initialized
         if (!record.pendingSteers) record.pendingSteers = [];
         record.pendingSteers.push(params.message);
-        pi.events.emit("subagents:steered", { id: record.id, message: params.message });
+        pi.events.emit(SUBAGENTS_STEERED, { id: record.id, message: params.message });
         return textResult(`Steering message queued for agent ${record.id}. It will be delivered once the session initializes.`);
       }
 
       try {
         await steerAgent(record.session, params.message);
-        pi.events.emit("subagents:steered", { id: record.id, message: params.message });
+        pi.events.emit(SUBAGENTS_STEERED, { id: record.id, message: params.message });
         return textResult(`Steering message sent to agent ${record.id}. The agent will process it after its current tool execution.`);
       } catch (err) {
         return textResult(`Failed to steer agent: ${err instanceof Error ? err.message : String(err)}`);

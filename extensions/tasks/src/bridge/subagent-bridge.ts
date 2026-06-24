@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { rpcCall } from "../../../lib/rpc.js";
+import { SUBAGENTS_COMPLETED, SUBAGENTS_FAILED, SUBAGENTS_READY } from "../../../lib/subagent-channels.js";
 import {
   DEPENDENCY_RESULT_TRUNCATION_CHARS,
   PROTOCOL_PING_TIMEOUT_MS,
@@ -33,32 +33,35 @@ export function createSubagentBridge(pi: ExtensionAPI, runtime: TaskRuntime) {
   }
 
   function checkSubagentsVersion() {
-    const requestId = randomUUID();
-    const timer = setTimeout(() => { unsub(); }, PROTOCOL_PING_TIMEOUT_MS);
-    const unsub = pi.events.on(`subagents:rpc:ping:reply:${requestId}`, (raw: unknown) => {
-      unsub(); clearTimeout(timer);
-      const remoteVersion = (raw as any)?.data?.version as number | undefined;
-      if (remoteVersion === undefined) {
-        runtime.pendingWarning =
-          "@panda/pi-subagents is outdated — please update for task execution support.";
-      } else if (remoteVersion > PROTOCOL_VERSION) {
-        runtime.pendingWarning =
-          `@panda/pi-tasks is outdated (protocol v${PROTOCOL_VERSION}, ` +
-          `pi-subagents has v${remoteVersion}) — please update for task execution support.`;
-      } else if (remoteVersion < PROTOCOL_VERSION) {
-        runtime.pendingWarning =
-          `@panda/pi-subagents is outdated (protocol v${remoteVersion}, ` +
-          `pi-tasks has v${PROTOCOL_VERSION}) — please update for task execution support.`;
-      } else {
-        runtime.subagentsAvailable = true;
-      }
-    });
-    pi.events.emit("subagents:rpc:ping", { requestId });
+    rpcCall<{ version?: number }>(pi as any, "subagents", "ping", {}, { timeout: PROTOCOL_PING_TIMEOUT_MS })
+      .then((data) => {
+        const remoteVersion = data?.version;
+        if (remoteVersion === undefined) {
+          runtime.pendingWarning =
+            "@panda/pi-subagents is outdated — please update for task execution support.";
+        } else if (remoteVersion > PROTOCOL_VERSION) {
+          runtime.pendingWarning =
+            `@panda/pi-tasks is outdated (protocol v${PROTOCOL_VERSION}, ` +
+            `pi-subagents has v${remoteVersion}) — please update for task execution support.`;
+        } else if (remoteVersion < PROTOCOL_VERSION) {
+          runtime.pendingWarning =
+            `@panda/pi-subagents is outdated (protocol v${remoteVersion}, ` +
+            `pi-tasks has v${PROTOCOL_VERSION}) — please update for task execution support.`;
+        } else {
+          runtime.subagentsAvailable = true;
+        }
+      })
+      .catch((err: Error) => {
+        if (!err.message.includes("timed out")) {
+          runtime.pendingWarning =
+            "@panda/pi-subagents is outdated — please update for task execution support.";
+        }
+      });
   }
 
   function registerPresence() {
     checkSubagentsVersion();
-    pi.events.on("subagents:ready", () => checkSubagentsVersion());
+    pi.events.on(SUBAGENTS_READY, () => checkSubagentsVersion());
   }
 
   function buildTaskPrompt(
@@ -145,13 +148,13 @@ export function createSubagentBridge(pi: ExtensionAPI, runtime: TaskRuntime) {
           : undefined,
     });
 
-    pi.events.on("subagents:completed", async (data) => {
+    pi.events.on(SUBAGENTS_COMPLETED, async (data) => {
       const { id, result } = data as { id: string; result?: string };
       const commands = advanceTaskGraph({ kind: "completed", agentId: id, result }, snapshot());
       await applyCommands(runtime, { spawnSubagent, buildTaskPrompt }, commands);
     });
 
-    pi.events.on("subagents:failed", async (data) => {
+    pi.events.on(SUBAGENTS_FAILED, async (data) => {
       const { id, error, result, status } = data as { id: string; error?: string; result?: string; status: string };
       const commands = advanceTaskGraph({ kind: "failed", agentId: id, error, result, status }, snapshot());
       await applyCommands(runtime, { spawnSubagent, buildTaskPrompt }, commands);

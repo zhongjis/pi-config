@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SUBAGENTS_COMPLETED, SUBAGENTS_FAILED } from "../../lib/subagent-channels.js";
 import type { SubagentBridge } from "../src/bridge/subagent-bridge.js";
 import { createTaskRuntime, type TaskRuntime } from "../src/lifecycle/store-glue.js";
 import { createTaskRunner } from "../src/task-runner.js";
@@ -85,7 +86,7 @@ describe("TaskRunner — subagent adapter", () => {
     const pending = runner.getOutput(id, { block: true, timeout: 30000 });
     // Listeners are registered synchronously before the promise is returned.
     runtime.store.update(id, { status: "completed" });
-    pi.events.emit("subagents:completed", { id: "agent-1" });
+    pi.events.emit(SUBAGENTS_COMPLETED, { id: "agent-1" });
 
     expect(await pending).toBe(`Task #${id} [completed] — subagent agent-1`);
   });
@@ -200,7 +201,7 @@ describe("TaskRunner — subagent read paths (Fix A + edge cases)", () => {
 
     const pending = runner.getOutput(id, { block: true, timeout: 30000 });
     runtime.store.update(id, { status: "pending", metadata: { agentType: "general-purpose", agentId: "agent-1", lastError: "boom" } });
-    pi.events.emit("subagents:failed", { id: "agent-1" });
+    pi.events.emit(SUBAGENTS_FAILED, { id: "agent-1" });
 
     const out = await pending;
     expect(out).toContain("[pending]");

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SUBAGENTS_READY } from "../../lib/subagent-channels.js";
 import initExtension from "../src/index.js";
 import { TaskStore } from "../src/task-store.js";
 import type { Task } from "../src/types.js";
@@ -85,7 +86,7 @@ function installSubagentsMock(pi: { events: MockEventBus }) {
     pi.events.emit(`subagents:rpc:spawn:reply:${requestId}`, { success: true, data: { id } });
   });
 
-  pi.events.emit("subagents:ready", {});
+  pi.events.emit(SUBAGENTS_READY, {});
 
   return {
     spawned,

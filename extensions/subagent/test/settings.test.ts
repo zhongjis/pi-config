@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SUBAGENTS_SETTINGS_CHANGED, SUBAGENTS_SETTINGS_LOADED } from "../../lib/subagent-channels.js";
 import {
   applyAndEmitLoaded,
   applySettings,
@@ -326,7 +327,7 @@ describe("settings persistence", () => {
       expect(appliers.setDefaultMaxTurns).not.toHaveBeenCalled();
 
       expect(emit).toHaveBeenCalledTimes(1);
-      expect(emit).toHaveBeenCalledWith("subagents:settings_loaded", {
+      expect(emit).toHaveBeenCalledWith(SUBAGENTS_SETTINGS_LOADED, {
         settings: { maxConcurrent: 16, graceTurns: 7 },
       });
       expect(result).toEqual({ maxConcurrent: 16, graceTurns: 7 });
@@ -337,7 +338,7 @@ describe("settings persistence", () => {
 
       const result = applyAndEmitLoaded(appliers, emit, projectDir);
 
-      expect(emit).toHaveBeenCalledWith("subagents:settings_loaded", { settings: {} });
+      expect(emit).toHaveBeenCalledWith(SUBAGENTS_SETTINGS_LOADED, { settings: {} });
       expect(result).toEqual({});
       // No setters fired — defaults preserved
       expect(appliers.setMaxConcurrent).not.toHaveBeenCalled();
@@ -354,7 +355,7 @@ describe("settings persistence", () => {
       const toast = saveAndEmitChanged(snapshot, "Max concurrency set to 5", emit, projectDir);
 
       expect(emit).toHaveBeenCalledTimes(1);
-      expect(emit).toHaveBeenCalledWith("subagents:settings_changed", {
+      expect(emit).toHaveBeenCalledWith(SUBAGENTS_SETTINGS_CHANGED, {
         settings: snapshot,
         persisted: true,
       });
@@ -374,7 +375,7 @@ describe("settings persistence", () => {
           emit,
           filePosingAsCwd,
         );
-        expect(emit).toHaveBeenCalledWith("subagents:settings_changed", {
+        expect(emit).toHaveBeenCalledWith(SUBAGENTS_SETTINGS_CHANGED, {
           settings: { maxConcurrent: 5 },
           persisted: false,
         });

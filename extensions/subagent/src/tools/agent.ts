@@ -18,6 +18,7 @@ import { resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
 import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycle/supervision.js";
+import { SUBAGENTS_CREATED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext, SupervisedAgentActivity } from "../lifecycle/supervision.js";
 import type { AgentRun } from "../agent-run.js";
 import {
@@ -486,7 +487,7 @@ Guidelines:
         widget.update();
 
         // Emit created event
-        pi.events.emit("subagents:created", {
+        pi.events.emit(SUBAGENTS_CREATED, {
           id,
           type: subagentType,
           description: params.description,

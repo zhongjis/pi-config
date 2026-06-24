@@ -11,5 +11,5 @@
     "declaration": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["index.ts", "src/**/*.ts", "../lib/rpc.ts", "../lib/warn.ts"]
+  "include": ["index.ts", "src/**/*.ts", "../lib/rpc.ts", "../lib/warn.ts", "../lib/subagent-channels.ts"]
 }

@@ -15,6 +15,7 @@
  */
 
 import type { AgentRecord } from "./types.js";
+import { SUBAGENTS_COMPLETED, SUBAGENTS_CREATED, SUBAGENTS_FAILED, SUBAGENTS_STARTED, SUBAGENTS_STEERED } from "../../lib/subagent-channels.js";
 
 /**
  * Run status. Locked to `AgentRecord["status"]` at compile time so the new event
@@ -126,11 +127,11 @@ export type AgentRunListener = (event: AgentRunEvent, run: AgentRun) => void;
  * subscriber that touches `pi.events` / `appendEntry` for `subagents:*`.
  */
 export type ExternalEventName =
-  | "subagents:created"
-  | "subagents:started"
-  | "subagents:steered"
-  | "subagents:completed"
-  | "subagents:failed";
+  | typeof SUBAGENTS_CREATED
+  | typeof SUBAGENTS_STARTED
+  | typeof SUBAGENTS_STEERED
+  | typeof SUBAGENTS_COMPLETED
+  | typeof SUBAGENTS_FAILED;
 
 export type ExternalEffect =
   | { type: "event"; name: ExternalEventName }
@@ -158,19 +159,19 @@ export interface ExternalContext {
 export function toExternalEffects(event: AgentRunEvent, ctx: ExternalContext): ExternalEffect[] {
   switch (event.kind) {
     case "created":
-      return ctx.isBackground ? [{ type: "event", name: "subagents:created" }] : [];
+      return ctx.isBackground ? [{ type: "event", name: SUBAGENTS_CREATED }] : [];
     case "started":
-      return [{ type: "event", name: "subagents:started" }];
+      return [{ type: "event", name: SUBAGENTS_STARTED }];
     case "steered":
-      return event.origin === "user" ? [{ type: "event", name: "subagents:steered" }] : [];
+      return event.origin === "user" ? [{ type: "event", name: SUBAGENTS_STEERED }] : [];
     case "completed":
       return ctx.isBackground
-        ? [{ type: "event", name: "subagents:completed" }, { type: "record" }]
+        ? [{ type: "event", name: SUBAGENTS_COMPLETED }, { type: "record" }]
         : [];
     case "aborted":
     case "failed":
       return ctx.isBackground
-        ? [{ type: "event", name: "subagents:failed" }, { type: "record" }]
+        ? [{ type: "event", name: SUBAGENTS_FAILED }, { type: "record" }]
         : [];
     default:
       return [];

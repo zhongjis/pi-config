@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SUBAGENTS_COMPLETED, SUBAGENTS_CREATED, SUBAGENTS_FAILED, SUBAGENTS_STARTED, SUBAGENTS_STEERED } from "../../lib/subagent-channels.js";
 import { AgentRun, type AgentRunEvent, project, toExternalEffects } from "../src/agent-run.js";
 
 /** Run with a controllable clock for deterministic timestamp assertions. */
@@ -342,34 +343,34 @@ describe("AgentRun — subscriptions", () => {
 describe("toExternalEffects — frozen contract mapping", () => {
   it("background runs reproduce the verified external effects", () => {
     expect(toExternalEffects(created({ isBackground: true }), BG)).toEqual([
-      { type: "event", name: "subagents:created" },
+      { type: "event", name: SUBAGENTS_CREATED },
     ]);
-    expect(toExternalEffects({ kind: "started", startedAt: 1000 }, BG)).toEqual([{ type: "event", name: "subagents:started" }]);
+    expect(toExternalEffects({ kind: "started", startedAt: 1000 }, BG)).toEqual([{ type: "event", name: SUBAGENTS_STARTED }]);
     expect(toExternalEffects({ kind: "completed", result: "r", status: "completed" }, BG)).toEqual([
-      { type: "event", name: "subagents:completed" },
+      { type: "event", name: SUBAGENTS_COMPLETED },
       { type: "record" },
     ]);
     expect(toExternalEffects({ kind: "completed", result: "r", status: "steered" }, BG)).toEqual([
-      { type: "event", name: "subagents:completed" },
+      { type: "event", name: SUBAGENTS_COMPLETED },
       { type: "record" },
     ]);
     expect(toExternalEffects({ kind: "aborted", status: "aborted", reason: "max_turns" }, BG)).toEqual([
-      { type: "event", name: "subagents:failed" },
+      { type: "event", name: SUBAGENTS_FAILED },
       { type: "record" },
     ]);
     expect(toExternalEffects({ kind: "aborted", status: "stopped", reason: "user" }, BG)).toEqual([
-      { type: "event", name: "subagents:failed" },
+      { type: "event", name: SUBAGENTS_FAILED },
       { type: "record" },
     ]);
     expect(toExternalEffects({ kind: "failed", error: "e" }, BG)).toEqual([
-      { type: "event", name: "subagents:failed" },
+      { type: "event", name: SUBAGENTS_FAILED },
       { type: "record" },
     ]);
   });
 
   it("foreground runs only emit subagents:started (created/terminal/record are bg-only)", () => {
     expect(toExternalEffects(created({ isBackground: false }), FG)).toEqual([]);
-    expect(toExternalEffects({ kind: "started", startedAt: 1000 }, FG)).toEqual([{ type: "event", name: "subagents:started" }]);
+    expect(toExternalEffects({ kind: "started", startedAt: 1000 }, FG)).toEqual([{ type: "event", name: SUBAGENTS_STARTED }]);
     expect(toExternalEffects({ kind: "completed", result: "r", status: "completed" }, FG)).toEqual([]);
     expect(toExternalEffects({ kind: "aborted", status: "aborted", reason: "max_turns" }, FG)).toEqual([]);
     expect(toExternalEffects({ kind: "failed", error: "e" }, FG)).toEqual([]);
@@ -377,7 +378,7 @@ describe("toExternalEffects — frozen contract mapping", () => {
 
   it("subagents:steered fires only for user-origin steers", () => {
     expect(toExternalEffects({ kind: "steered", message: "m", origin: "user", at: 1 }, BG)).toEqual([
-      { type: "event", name: "subagents:steered" },
+      { type: "event", name: SUBAGENTS_STEERED },
     ]);
     expect(toExternalEffects({ kind: "steered", message: "m", origin: "supervision", at: 1 }, BG)).toEqual([]);
   });

@@ -15,6 +15,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { loadHandoffConfig, updateHandoffConfig } from "./config.js";
 import { isTui } from "../lib/mode.js";
+import { rpcCall, registerRpcHandler } from "../lib/rpc.js";
 
 export type HandoffMode = "kuafu" | "fuxi" | "houtu";
 type HandoffModeState = { mode?: HandoffMode };
@@ -84,7 +85,7 @@ const PENDING_PREPARED_HANDOFFS_GLOBAL_KEY = Symbol.for(
 const HANDOFF_STARTUP_PROMPT_KEY = Symbol.for(
   "pi-config-handoff-startup-prompt",
 );
-const DIRECT_HANDOFF_BRIDGE_CHANNEL = "handoff:rpc:prepare";
+// DIRECT_HANDOFF_BRIDGE_CHANNEL removed — channel name is built internally by rpcCall/registerRpcHandler
 const DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS = 1000;
 const DIRECT_HANDOFF_COMMAND = "/handoff:start-work";
 const HANDOFF_MODES: HandoffMode[] = ["kuafu", "fuxi", "houtu"];
@@ -168,76 +169,39 @@ export async function requestDirectHandoffBridge(
   pi: ExtensionAPI,
   request: DirectHandoffBridgeRequest,
 ): Promise<DirectHandoffBridgeReply> {
-  const requestId = `handoff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  return await new Promise<DirectHandoffBridgeReply>((resolve) => {
-    let settled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const replyChannel = `${DIRECT_HANDOFF_BRIDGE_CHANNEL}:reply:${requestId}`;
-    const unsubscribe = pi.events.on(replyChannel, (raw: unknown) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      unsubscribe();
-
-      const response = raw as DirectHandoffBridgeReply | null;
-      if (!response || typeof response !== "object") {
-        resolve({ success: false, error: "Invalid handoff bridge response." });
-        return;
-      }
-
-      resolve(response);
-    });
-
-    timeoutId = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      unsubscribe();
-      resolve({ success: false, error: "Handoff bridge timed out." });
-    }, DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS);
-
-    pi.events.emit(DIRECT_HANDOFF_BRIDGE_CHANNEL, { requestId, request });
-  });
+  try {
+    const data = await rpcCall<{ command: string; sessionFile: string; source?: string }>(
+      pi,
+      "handoff",
+      "prepare",
+      { request },
+      { timeout: DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS },
+    );
+    return { success: true, data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export function registerDirectHandoffBridge(pi: ExtensionAPI): () => void {
-  return pi.events.on(DIRECT_HANDOFF_BRIDGE_CHANNEL, (raw: unknown) => {
-    const params = raw as {
-      requestId?: string;
-      request?: DirectHandoffBridgeRequest;
-    } | null;
-    if (!params || typeof params.requestId !== "string") {
-      return;
-    }
-
-    const replyChannel = `${DIRECT_HANDOFF_BRIDGE_CHANNEL}:reply:${params.requestId}`;
-
-    try {
-      const pending = normalizeDirectHandoffBridgeRequest(params.request);
+  return registerRpcHandler(
+    pi,
+    "handoff",
+    "prepare",
+    (raw, _requestId) => {
+      const params = raw as { request?: DirectHandoffBridgeRequest } | null;
+      const pending = normalizeDirectHandoffBridgeRequest(params?.request);
       setPendingPreparedHandoff(pending);
-      pi.events.emit(replyChannel, {
-        success: true,
-        data: {
-          command: DIRECT_HANDOFF_COMMAND,
-          sessionFile: pending.sessionFile,
-          ...(pending.source ? { source: pending.source } : {}),
-        },
-      } satisfies DirectHandoffBridgeReply);
-    } catch (error) {
-      pi.events.emit(replyChannel, {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      } satisfies DirectHandoffBridgeReply);
-    }
-  });
+      return {
+        command: DIRECT_HANDOFF_COMMAND,
+        sessionFile: pending.sessionFile,
+        ...(pending.source ? { source: pending.source } : {}),
+      };
+    },
+  );
 }
 
 export async function runPreparedHandoffCommand(

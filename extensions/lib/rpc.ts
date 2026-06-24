@@ -74,7 +74,10 @@ export function rpcCall<T = unknown>(
       cleanup();
       const reply = raw as RpcReply<T>;
       if (reply?.success) resolve(reply.data as T);
-      else reject(new Error(reply?.error ?? `${channel} failed`));
+      else {
+        const failure = reply as { success: false; error: string } | null | undefined;
+        reject(new Error(failure?.error ?? `${channel} failed`));
+      }
     });
 
     // Payload always carries `requestId` last so it wins over any caller-supplied key.

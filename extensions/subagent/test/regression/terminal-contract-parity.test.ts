@@ -17,6 +17,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { SUBAGENTS_COMPLETED, SUBAGENTS_FAILED } from "../../../lib/subagent-channels.js";
 import {
   buildSubagentRecordEntry,
   emitTerminalContract,
@@ -85,7 +86,7 @@ describe("terminal contract parity — completed", () => {
     const pi = spyPi();
     emitTerminalContract(pi, record, EVENT_DATA);
     expect(pi.events.emit).toHaveBeenCalledTimes(1);
-    expect(pi.events.emit).toHaveBeenCalledWith("subagents:completed", EVENT_DATA);
+    expect(pi.events.emit).toHaveBeenCalledWith(SUBAGENTS_COMPLETED, EVENT_DATA);
     expect(pi.appendEntry).toHaveBeenCalledTimes(1); // guard: no double-emission
   });
 
@@ -117,7 +118,7 @@ describe("terminal contract parity — steered", () => {
     const pi = spyPi();
     emitTerminalContract(pi, record, EVENT_DATA);
     expect(pi.events.emit).toHaveBeenCalledTimes(1);
-    expect(pi.events.emit).toHaveBeenCalledWith("subagents:completed", EVENT_DATA);
+    expect(pi.events.emit).toHaveBeenCalledWith(SUBAGENTS_COMPLETED, EVENT_DATA);
     expect(pi.appendEntry).toHaveBeenCalledTimes(1);
   });
 
@@ -153,7 +154,7 @@ describe("terminal contract parity — failed/error", () => {
     const pi = spyPi();
     emitTerminalContract(pi, record, EVENT_DATA);
     expect(pi.events.emit).toHaveBeenCalledTimes(1);
-    expect(pi.events.emit).toHaveBeenCalledWith("subagents:failed", EVENT_DATA);
+    expect(pi.events.emit).toHaveBeenCalledWith(SUBAGENTS_FAILED, EVENT_DATA);
     expect(pi.appendEntry).toHaveBeenCalledTimes(1);
   });
 
@@ -187,7 +188,7 @@ describe("terminal contract parity — aborted (max_turns)", () => {
     const pi = spyPi();
     emitTerminalContract(pi, record, EVENT_DATA);
     expect(pi.events.emit).toHaveBeenCalledTimes(1);
-    expect(pi.events.emit).toHaveBeenCalledWith("subagents:failed", EVENT_DATA);
+    expect(pi.events.emit).toHaveBeenCalledWith(SUBAGENTS_FAILED, EVENT_DATA);
     expect(pi.appendEntry).toHaveBeenCalledTimes(1);
   });
 
@@ -219,7 +220,7 @@ describe("terminal contract parity — stopped (user)", () => {
     const pi = spyPi();
     emitTerminalContract(pi, record, EVENT_DATA);
     expect(pi.events.emit).toHaveBeenCalledTimes(1);
-    expect(pi.events.emit).toHaveBeenCalledWith("subagents:failed", EVENT_DATA);
+    expect(pi.events.emit).toHaveBeenCalledWith(SUBAGENTS_FAILED, EVENT_DATA);
     expect(pi.appendEntry).toHaveBeenCalledTimes(1);
   });
 
@@ -267,12 +268,12 @@ describe("terminal contract parity — cross-family invariants", () => {
     for (const status of completedChannel) {
       const pi = spyPi();
       emitTerminalContract(pi, makeRecord({ status }), EVENT_DATA);
-      expect(pi.events.emit).toHaveBeenCalledWith("subagents:completed", EVENT_DATA);
+      expect(pi.events.emit).toHaveBeenCalledWith(SUBAGENTS_COMPLETED, EVENT_DATA);
     }
     for (const status of failedChannel) {
       const pi = spyPi();
       emitTerminalContract(pi, makeRecord({ status }), EVENT_DATA);
-      expect(pi.events.emit).toHaveBeenCalledWith("subagents:failed", EVENT_DATA);
+      expect(pi.events.emit).toHaveBeenCalledWith(SUBAGENTS_FAILED, EVENT_DATA);
     }
   });
 

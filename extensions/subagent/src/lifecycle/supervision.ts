@@ -38,6 +38,7 @@ import { emitTerminalContract } from "../external-contract-adapter.js";
 import { loadCustomAgentsWithDiagnostics } from "../custom-agents.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged } from "../settings.js";
 import { type ModelRegistry, parseModelChain, resolveModel } from "../model-resolver.js";
+import { SUBAGENTS_READY, SUBAGENTS_STARTED } from "../../../lib/subagent-channels.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
 import {
@@ -419,7 +420,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     widget.update();
   }, undefined, (record) => {
     // Emit started event when agent transitions to running (including from queue)
-    pi.events.emit("subagents:started", {
+    pi.events.emit(SUBAGENTS_STARTED, {
       id: record.id,
       type: record.type,
       description: record.description,
@@ -555,7 +556,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   });
 
   // Broadcast readiness so extensions loaded after us can discover us
-  pi.events.emit("subagents:ready", {});
+  pi.events.emit(SUBAGENTS_READY, {});
 
 
 

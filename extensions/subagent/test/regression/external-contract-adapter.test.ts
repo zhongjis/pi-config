@@ -2,6 +2,7 @@
 // record field set) now that emission is extracted into a single tested adapter.
 // Asserts behavior-equivalence with the prior inline supervision.ts emission.
 import { describe, expect, it, vi } from "vitest";
+import { SUBAGENTS_COMPLETED, SUBAGENTS_FAILED } from "../../../lib/subagent-channels.js";
 import { buildSubagentRecordEntry, emitTerminalContract } from "../../src/external-contract-adapter.js";
 import type { AgentRecord } from "../../src/types.js";
 
@@ -30,12 +31,12 @@ const EVENT_DATA = { id: "a1", status: "x" };
 describe("emitTerminalContract — channel mapping (background)", () => {
   // The prior inline rule: isError = status ∈ {error,stopped,aborted} → subagents:failed,
   // else subagents:completed; appendEntry on every terminal.
-  const cases: Array<[AgentRecord["status"], "subagents:completed" | "subagents:failed"]> = [
-    ["completed", "subagents:completed"],
-    ["steered", "subagents:completed"],
-    ["error", "subagents:failed"],
-    ["stopped", "subagents:failed"],
-    ["aborted", "subagents:failed"],
+  const cases: Array<[AgentRecord["status"], typeof SUBAGENTS_COMPLETED | typeof SUBAGENTS_FAILED]> = [
+    ["completed", SUBAGENTS_COMPLETED],
+    ["steered", SUBAGENTS_COMPLETED],
+    ["error", SUBAGENTS_FAILED],
+    ["stopped", SUBAGENTS_FAILED],
+    ["aborted", SUBAGENTS_FAILED],
   ];
 
   for (const [status, channel] of cases) {
