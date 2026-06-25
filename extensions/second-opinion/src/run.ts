@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { isTui } from "../../lib/mode.js";
+import { formatDuration, headingIcon, SEPARATOR, spinnerGlyph, TREE } from "../../lib/widget-style.js";
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+type Theme = { fg(color: string, text: string): string };
+
 const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
 export async function runCodexReview(
@@ -24,16 +27,42 @@ export async function runCodexReview(
     const startMs = Date.now();
     let ticker: ReturnType<typeof setInterval> | undefined;
     let off: (() => void) | undefined;
+    let tui: { requestRender(): void } | undefined;
+    let widgetRegistered = false;
+
+    const renderWidget = (t: { terminal: { columns: number } }, theme: Theme): string[] => {
+      const truncate = (line: string) => truncateToWidth(line, t.terminal.columns);
+      const elapsed = formatDuration(Date.now() - startMs);
+      const heading = `${theme.fg("accent", headingIcon(true))} ${theme.fg("accent", "codex review")}${theme.fg("dim", SEPARATOR + elapsed)}`;
+      const act = activity.split("\n").find((l) => l.trim())?.trim() || "working…";
+      return [
+        truncate(heading),
+        truncate(`${theme.fg("dim", TREE.last)} ${theme.fg("accent", spinnerGlyph(frameIdx))} ${theme.fg("dim", act)}`),
+      ];
+    };
 
     if (isTui(ctx)) {
       ticker = setInterval(() => {
-        const frame = SPINNER_FRAMES[frameIdx % SPINNER_FRAMES.length];
         frameIdx++;
-        const elapsedSec = Math.floor((Date.now() - startMs) / 1000);
-        ctx.ui.setWidget("codex-review", [
-          `${frame} codex review · ${elapsedSec}s`,
-          `  ${activity.slice(0, 100)}`,
-        ]);
+        if (!widgetRegistered) {
+          ctx.ui.setWidget(
+            "codex-review",
+            (t: any, theme: Theme) => {
+              tui = t;
+              return {
+                render: () => renderWidget(t, theme),
+                invalidate: () => {
+                  widgetRegistered = false;
+                  tui = undefined;
+                },
+              };
+            },
+            { placement: "aboveEditor" },
+          );
+          widgetRegistered = true;
+        } else {
+          tui?.requestRender();
+        }
       }, 80);
 
       off = ctx.ui.onTerminalInput((data: string) => {
