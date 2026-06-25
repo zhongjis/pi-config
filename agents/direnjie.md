@@ -6,7 +6,7 @@ inherit_context: false
 run_in_background: false
 builtin_tools: read
 extension_tools: lsp_diagnostics,readonly_bash,codegraph_*
-extensions: clauderock,lsp_diagnostics,readonly_bash
+extensions: true
 ---
 
 <role>

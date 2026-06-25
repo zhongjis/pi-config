@@ -18,6 +18,9 @@ import { resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
 import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycle/supervision.js";
+import { buildAgentToolDescription } from "../agent-tool-description.js";
+import { getToolDescriptionMode, getScopeModels } from "../runtime-flags.js";
+import { readEnabledModels, resolveEnabledModels, decideModelScope, type ModelRegistryRef } from "../enabled-models.js";
 import { SUBAGENTS_CREATED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext, SupervisedAgentActivity } from "../lifecycle/supervision.js";
 import type { AgentRun } from "../agent-run.js";
@@ -181,29 +184,13 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
     bindTurnAbortSignal,
     getAbortSignal,
     typeListText,
+    compactTypeListText,
   } = ctx;
 
   pi.registerTool(defineTool({
     name: "Agent",
     label: "Agent",
-    description: `Launch a new agent to handle complex, multi-step tasks autonomously.
-
-The Agent tool launches specialized agents that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
-
-Available agent types:
-${typeListText}
-
-Guidelines:
-- For parallel work, use run_in_background: true on each agent. Foreground calls run sequentially — only one executes at a time.
-- Leave max_turns unset unless you need an explicit cap. Unset is the normal unlimited-by-default behavior.
-- Background agents require active supervision: check progress with get_subagent_result, use steer_subagent for mid-run course correction, and use resume to continue the same agent instead of starting duplicate work.
-- If a background agent is still useful, keep supervising it rather than launching overlapping duplicate work or leaving it unattended for long periods.
-- Choose an available custom agent whose description matches the task.
-- Provide clear, detailed prompts so the agent can work autonomously.
-- Agent results are returned as text; summarize them for the user.
-- Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
-- Use thinking to control extended thinking level.
-- Use inherit_context if the agent needs the parent conversation history.`,
+    description: buildAgentToolDescription(getToolDescriptionMode(), typeListText, compactTypeListText),
     parameters: Type.Object({
       prompt: Type.String({
         description: "The task for the agent to perform.",
@@ -380,6 +367,24 @@ Guidelines:
           // config-specified: silent fallback to parent model
         } else {
           model = resolved;
+        }
+      }
+
+      // scopeModels guardrail: validate the effective model against pi's enabledModels.
+      if (getScopeModels() && model) {
+        const cwd = process.cwd();
+        const patterns = readEnabledModels(cwd);
+        const allowed = resolveEnabledModels(patterns, ctx.modelRegistry as unknown as ModelRegistryRef, cwd);
+        const decision = decideModelScope({
+          model: { provider: model.provider, id: model.id },
+          modelFromParams: resolvedConfig.modelFromParams,
+          allowed,
+        });
+        if (decision.action === "block") {
+          return textResult(decision.message);
+        }
+        if (decision.action === "warn") {
+          ctx.ui.notify(decision.message, "warning");
         }
       }
 

@@ -37,6 +37,18 @@ type PandaManagerGlobal = typeof globalThis & {
 
 let warnedSymbolVersionConflict = false;
 
+const SUBAGENT_ORCHESTRATION_GUIDANCE = `## Subagent Orchestration
+
+You have access to subagent tools for delegating work:
+- \`Agent\` — Launch a new agent for complex, multi-step tasks. Use \`run_in_background: true\` for parallel work.
+- \`get_subagent_result\` — Check status and retrieve results from background agents.
+- \`steer_subagent\` — Send steering messages to redirect running agents.
+
+Guidelines:
+- For parallel work, launch multiple agents with \`run_in_background: true\` and supervise with \`get_subagent_result\`.
+- Background agents require active supervision — check progress, steer if needed.
+- Choose agent types that match the task (see Agent tool description for available types).`;
+
 function reportSymbolVersionConflict(previousVersion: string | undefined): void {
   if (warnedSymbolVersionConflict) return;
   warnedSymbolVersionConflict = true;
@@ -46,7 +58,6 @@ function reportSymbolVersionConflict(previousVersion: string | undefined): void 
     resolution: "last-write-wins",
   });
 }
-
 export default function (pi: ExtensionAPI) {
   installPandaWarnFileSink(getAgentDir);
   const pandaGlobal = globalThis as PandaManagerGlobal;
@@ -55,5 +66,10 @@ export default function (pi: ExtensionAPI) {
     reportSymbolVersionConflict(previousVersion);
   }
   pandaGlobal[MANAGER_VERSION_GLOBAL_KEY] = MANAGER_VERSION;
+  pi.on("before_agent_start", async (ctx) => {
+    return {
+      systemPrompt: (ctx.systemPrompt ?? "") + "\n\n" + SUBAGENT_ORCHESTRATION_GUIDANCE,
+    };
+  });
   registerSubagentRuntime(pi, MANAGER_KEY);
 }

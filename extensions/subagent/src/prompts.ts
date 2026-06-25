@@ -63,11 +63,13 @@ You are operating as a sub-agent invoked to handle a specific task.
 - Be concise but complete
 </sub_agent_context>`;
 
+    const activeAgentTag = `<active_agent name="${config.name}">${config.description ?? ""}</active_agent>`;
+
     const customSection = config.systemPrompt?.trim()
       ? `\n\n<agent_instructions>\n${config.systemPrompt}\n</agent_instructions>`
       : "";
 
-    return envBlock + "\n\n<inherited_system_prompt>\n" + identity + "\n</inherited_system_prompt>\n\n" + bridge + customSection + extrasSuffix;
+    return identity + "\n\n" + bridge + "\n\n" + envBlock + "\n\n" + activeAgentTag + customSection + extrasSuffix;
   }
 
   // "replace" mode — env header + the config's full system prompt
@@ -76,11 +78,11 @@ You have been invoked to handle a specific task autonomously.
 
 ${envBlock}`;
 
-  return replaceHeader + "\n\n" + config.systemPrompt + extrasSuffix;
+  return replaceHeader + "\n\n" + `<active_agent name="${config.name}">${config.description ?? ""}</active_agent>` + "\n\n" + config.systemPrompt + extrasSuffix;
 }
 
 /** Fallback base prompt when parent system prompt is unavailable in append mode. */
 const genericBase = `# Role
-You are a general-purpose coding agent for complex, multi-step tasks.
+You are a coding agent for complex, multi-step tasks.
 You have full access to read, write, edit files, and execute commands.
 Do what has been asked; nothing more, nothing less.`;

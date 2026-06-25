@@ -2,6 +2,7 @@
  * agent-runner.ts — Core execution engine: creates sessions, runs agents, collects results.
  */
 
+import { basename, dirname } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -15,9 +16,8 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { computeActiveToolNames } from "./active-tools.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig } from "./agent-types.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getAvailableTypes, getConfig } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
-import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
@@ -116,7 +116,10 @@ export interface RunOptions {
   onMessageStart?: () => void;
   onSessionCreated?: (session: AgentSession) => void;
   /** Called at the end of each agentic turn with the cumulative count. */
+  /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
+  /** Called on each completed assistant message with token usage (excludes cacheRead). */
+  onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number }) => void;
 }
 
 export interface RunResult {
@@ -171,6 +174,53 @@ function isThinkingProgressDelta(type: string): boolean {
   return type === "thinking_delta" || type === "reasoning_delta";
 }
 
+/**
+ * Canonical lowercase name for an extension path.
+ * Directory extensions (foo/index.ts) → parent dir name;
+ * single-file extensions → basename minus .ts/.js.
+ */
+export function extensionCanonicalName(extPath: string): string {
+  const base = basename(extPath);
+  const name = base === "index.ts" || base === "index.js"
+    ? basename(dirname(extPath))
+    : base.replace(/\.(ts|js)$/, "");
+  return name.toLowerCase();
+}
+
+/**
+ * Build the extensionsOverride filter for DefaultResourceLoader.
+ * Returns undefined when no filtering is needed (fast path).
+ *
+ * keep(ext) ⇔ !excluded.has(name) && (loadAll || allow.has(name))
+ */
+type ExtensionsOverrideFn = NonNullable<ConstructorParameters<typeof DefaultResourceLoader>[0]["extensionsOverride"]>;
+export function buildExtensionsOverride(opts: {
+  extensions: true | string[] | false;
+  excludeExtensions: string[] | undefined;
+  isolated: boolean;
+}): ExtensionsOverrideFn | undefined {
+  const { extensions, excludeExtensions, isolated } = opts;
+
+  if (extensions === false) return undefined;
+  if (isolated) return undefined;
+
+  const loadAll = extensions === true;
+  const allow = loadAll ? undefined : new Set((extensions as string[]).map((n) => n.toLowerCase()));
+  const excluded = new Set((excludeExtensions ?? []).map((n) => n.toLowerCase()));
+  const hasExcludes = excluded.size > 0;
+
+  if (loadAll && !hasExcludes) return undefined;
+
+  return (base) => ({
+    ...base,
+    extensions: base.extensions.filter((e) => {
+      const name = extensionCanonicalName(e.path);
+      if (excluded.has(name)) return false;
+      return loadAll || allow!.has(name);
+    }),
+  });
+}
+
 export async function runAgent(
   ctx: ExtensionContext,
   type: SubagentType,
@@ -192,6 +242,7 @@ export async function runAgent(
 
   // Resolve extensions/skills: isolated overrides to false
   const extensions = options.isolated ? false : config.extensions;
+  const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
   const skills = options.isolated ? false : config.skills;
 
   // Skill preloading: when skills is string[], preload their content into prompt
@@ -209,11 +260,8 @@ export async function runAgent(
   if (agentConfig) {
     systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, parentSystemPrompt, extras);
   } else {
-    // Unknown type fallback: spread the canonical general-purpose config (defensive —
-    // unreachable in practice since index.ts resolves unknown types before calling runAgent).
-    const fallback = DEFAULT_AGENTS.get("general-purpose");
-    if (!fallback) throw new Error(`No fallback config available for unknown type "${type}"`);
-    systemPrompt = buildAgentPrompt({ ...fallback, name: type }, effectiveCwd, env, parentSystemPrompt, extras);
+    const available = getAvailableTypes();
+    throw new Error(`Agent type '${type}' not found. Available: ${available.join(', ') || '(none)'}`);
   }
 
   // When skills is string[], we've already preloaded them into the prompt.
@@ -239,6 +287,7 @@ export async function runAgent(
     cwd: effectiveCwd,
     agentDir,
     noExtensions: extensions === false,
+    extensionsOverride: buildExtensionsOverride({ extensions, excludeExtensions, isolated: !!options.isolated }),
     noSkills,
     noPromptTemplates: true,
     noThemes: true,
@@ -337,6 +386,10 @@ export async function runAgent(
     }
     if (event.type === "tool_execution_end") {
       options.onToolActivity?.({ type: "end", toolName: event.toolName });
+    }
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      const u = event.message.usage;
+      options.onAssistantUsage?.({ input: u.input ?? 0, output: u.output ?? 0, cacheWrite: u.cacheWrite ?? 0 });
     }
   });
 

@@ -6,7 +6,7 @@ inherit_context: false
 run_in_background: false
 builtin_tools: read
 extension_tools: readonly_bash,look_at,codegraph_*
-extensions: clauderock,readonly_bash
+extensions: true
 ---
 
 <role>

@@ -16,6 +16,7 @@
 
 import { type AgentRunEvent, toExternalEffects } from "./agent-run.js";
 import type { AgentRecord } from "./types.js";
+import { SUBAGENTS_COMPACTED } from "../../lib/subagent-channels.js";
 
 /** Minimal pi surface the adapter needs (keeps the module unit-testable). */
 export interface ExternalContractPi {
@@ -91,4 +92,21 @@ export function emitTerminalContract(pi: ExternalContractPi, record: AgentRecord
       pi.appendEntry("subagents:record", buildSubagentRecordEntry(record));
     }
   }
+}
+
+/**
+ * Emit the subagents:compacted lifecycle event for a successful session compaction.
+ */
+export function emitCompactedContract(
+  pi: ExternalContractPi,
+  record: { id: string; type: string },
+  data: { reason: string; tokensBefore: number; compactionCount: number }
+): void {
+  pi.events.emit(SUBAGENTS_COMPACTED, {
+    id: record.id,
+    type: record.type,
+    reason: data.reason,
+    tokensBefore: data.tokensBefore,
+    compactionCount: data.compactionCount,
+  });
 }

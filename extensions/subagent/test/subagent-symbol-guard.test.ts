@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const MANAGER_VERSION_GLOBAL_KEY = "__pandaSubagentsManagerVersion";
-const FAKE_PI = { events: { emit: () => undefined } } as unknown as Parameters<
+const FAKE_PI = { events: { emit: () => undefined }, on: vi.fn() } as unknown as Parameters<
   typeof import("../src/index.js").default
 >[0];
 

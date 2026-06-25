@@ -32,11 +32,12 @@ import {
   SUBAGENT_RESULT_PREVIEW_LINES,
 } from "../constants.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, setDefaultMaxTurns, setGraceTurns, steerAgent } from "../agent-runner.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, getDefaultAgentNames, getUserAgentNames, isValidType, registerAgents, resolveType } from "../agent-types.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, isValidType, registerAgents, resolveType } from "../agent-types.js";
 import { registerRpcHandlers } from "../cross-extension-rpc.js";
-import { emitTerminalContract } from "../external-contract-adapter.js";
+import { emitCompactedContract, emitTerminalContract } from "../external-contract-adapter.js";
 import { loadCustomAgentsWithDiagnostics } from "../custom-agents.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged } from "../settings.js";
+import { setToolDescriptionMode, getToolDescriptionMode, setScopeModels } from "../runtime-flags.js";
 import { type ModelRegistry, parseModelChain, resolveModel } from "../model-resolver.js";
 import { SUBAGENTS_READY, SUBAGENTS_STARTED } from "../../../lib/subagent-channels.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
@@ -76,6 +77,7 @@ import { registerSubagentRenderers } from "../ui-wiring/renderers.js";
 import { registerSubagentMessageHandlers } from "../ui-wiring/messages.js";
 import { registerAgentsCommand } from "../ui-wiring/commands.js";
 import { registerCleanup } from "./cleanup.js";
+import { formatLifetimeTokens } from "../usage.js";
 
 // ---- Shared helpers ----
 const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
@@ -154,10 +156,12 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
   const status = getStatusLabel(record.status, record.error);
   const durationMs = record.completedAt ? record.completedAt - record.startedAt : 0;
   let totalTokens = 0;
+  let contextPercent: number | null = null;
   try {
     if (record.session) {
       const stats = record.session.getSessionStats();
       totalTokens = stats.tokens?.total ?? 0;
+      contextPercent = stats.contextUsage?.percent ?? null;
     }
   } catch (err) {
     void err;
@@ -179,6 +183,7 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
     `<summary>Agent "${escapeXml(record.description)}" ${record.status}</summary>`,
     `<result>${escapeXml(resultPreview)}</result>`,
     `<usage><total_tokens>${totalTokens}</total_tokens><tool_uses>${record.toolUses}</tool_uses><duration_ms>${durationMs}</duration_ms></usage>`,
+    contextPercent !== null ? `<context_percent>${Math.round(contextPercent)}</context_percent>` : null,
     `</task-notification>`,
   ].filter(Boolean).join('\n');
 }
@@ -187,8 +192,13 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
 /** Build notification details for the custom message renderer. */
 function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, activity?: AgentActivity): NotificationDetails {
   let totalTokens = 0;
+  let contextPercent: number | null = null;
   try {
-    if (record.session) totalTokens = record.session.getSessionStats().tokens?.total ?? 0;
+    if (record.session) {
+      const stats = record.session.getSessionStats();
+      totalTokens = stats.tokens?.total ?? 0;
+      contextPercent = stats.contextUsage?.percent ?? null;
+    }
   } catch (err) {
     void err;
   }
@@ -201,6 +211,7 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
     turnCount: activity?.turnCount ?? 0,
     maxTurns: activity?.maxTurns,
     totalTokens,
+    contextPercent,
     durationMs: record.completedAt ? record.completedAt - record.startedAt : 0,
     outputFile: record.outputFile,
     sessionFile: record.sessionFile,
@@ -260,6 +271,7 @@ export interface SubagentRuntimeContext {
   getAbortSignal: (ctx: ExtensionContext) => AbortSignal | undefined;
   waitForAgentCompletionWithSupervision: (record: AgentRecord, signal?: AbortSignal) => Promise<void>;
   typeListText: string;
+  compactTypeListText: string;
   syncSessionContext: (ctx: ExtensionContext | undefined) => void;
   setCurrentCtx: (ctx: ExtensionContext | undefined) => void;
   unsubRpcHandlers: () => void;
@@ -360,19 +372,16 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   /** Helper: build event data for lifecycle events from an AgentRecord. */
   function buildEventData(record: AgentRecord) {
     const durationMs = record.completedAt ? record.completedAt - record.startedAt : Date.now() - record.startedAt;
-    let tokens: { input: number; output: number; total: number } | undefined;
+    const tokens: string = record.lifetimeUsage
+      ? formatLifetimeTokens(record.lifetimeUsage)
+      : safeFormatTokens(record.session);
+    let contextPercent: number | null = null;
     try {
       if (record.session) {
-        const stats = record.session.getSessionStats();
-        tokens = {
-          input: stats.tokens?.input ?? 0,
-          output: stats.tokens?.output ?? 0,
-          total: stats.tokens?.total ?? 0,
-        };
+        contextPercent = record.session.getSessionStats().contextUsage?.percent ?? null;
       }
-    } catch (err) {
-      void err;
-      /* session stats unavailable */
+    } catch {
+      /* unavailable */
     }
     return {
       id: record.id,
@@ -390,6 +399,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       parentSessionId: record.parentSessionId,
       toolCallId: record.toolCallId,
       modelLabel: record.modelLabel,
+      contextPercent,
     };
   }
 
@@ -437,6 +447,12 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
         });
       } catch { /* already warned; do not break started handling */ }
     }
+  }, (record, data) => {
+    emitCompactedContract(pi, record, {
+      reason: data.reason,
+      tokensBefore: data.tokensBefore,
+      compactionCount: record.compactionCount ?? 0,
+    });
   });
 
   const turnAbortSignals = new WeakSet<AbortSignal>();
@@ -581,6 +597,8 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       setMaxConcurrent: (n) => manager.setMaxConcurrent(n),
       setDefaultMaxTurns,
       setGraceTurns,
+      setToolDescriptionMode: (mode) => setToolDescriptionMode(mode),
+      setScopeModels: (on) => setScopeModels(on),
     },
     (event, payload) => pi.events.emit(event, payload),
   );
@@ -631,31 +649,36 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
 
   /** Build the full type list text dynamically from the custom-agent registry. */
   const buildTypeListText = () => {
-    const defaultNames = getDefaultAgentNames();
-    const userNames = getUserAgentNames();
-
-    const defaultDescs = defaultNames.map((name) => {
+    const names = getAvailableTypes();
+    const lines = names.map((name) => {
       const cfg = getAgentConfig(name);
       const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(parseModelChain(cfg.model)[0]?.model ?? cfg.model)})` : "";
       return `- ${name}: ${cfg?.description ?? name}${modelSuffix}`;
     });
-
-    const customDescs = userNames.map((name) => {
-      const cfg = getAgentConfig(name);
-      return `- ${name}: ${cfg?.description ?? name}`;
-    });
-
     return [
-      "Default agents:",
-      ...defaultDescs,
-      ...(customDescs.length > 0 ? ["", "Custom agents:", ...customDescs] : []),
+      ...lines,
       "",
-      `Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.`,
+      `Agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones.`,
     ].join("\n");
   };
 
+  const firstSentence = (s: string): string => {
+    const m = s.match(/^.*?[.!?](\s|$)/);
+    return (m ? m[0] : s).trim();
+  };
+
+  /** Compact agent list: first-sentence-only descriptions, no model suffix, no footer. */
+  const buildCompactTypeListText = () => {
+    return getAvailableTypes()
+      .map((name) => {
+        const cfg = getAgentConfig(name);
+        return `- ${name}: ${firstSentence(cfg?.description ?? name)}`;
+      })
+      .join("\n");
+  };
 
   const typeListText = buildTypeListText();
+  const compactTypeListText = buildCompactTypeListText();
 
   async function waitForAgentPoll(record: AgentRecord, signal?: AbortSignal): Promise<"settled" | "tick" | "aborted"> {
     if (signal?.aborted) return "aborted";
@@ -762,6 +785,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     getAbortSignal,
     waitForAgentCompletionWithSupervision,
     typeListText,
+    compactTypeListText,
     syncSessionContext,
     setCurrentCtx,
     unsubRpcHandlers,

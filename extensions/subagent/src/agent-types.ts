@@ -5,7 +5,6 @@
  * User agents override defaults with the same name. Disabled agents are kept but excluded from spawning.
  */
 
-import { DEFAULT_AGENTS } from "./default-agents.js";
 import type { AgentConfig } from "./types.js";
 
 /** All known built-in tool names. */
@@ -16,18 +15,10 @@ const agents = new Map<string, AgentConfig>();
 
 /**
  * Register agents into the unified registry.
- * Starts with DEFAULT_AGENTS, then overlays user agents (overrides defaults with same name).
  * Disabled agents (enabled === false) are kept in the registry but excluded from spawning.
  */
 export function registerAgents(userAgents: Map<string, AgentConfig>): void {
   agents.clear();
-
-  // Start with defaults
-  for (const [name, config] of DEFAULT_AGENTS) {
-    agents.set(name, config);
-  }
-
-  // Overlay user agents (overrides defaults with same name)
   for (const [name, config] of userAgents) {
     agents.set(name, config);
   }
@@ -66,19 +57,6 @@ export function getAllTypes(): string[] {
   return [...agents.keys()];
 }
 
-/** Get names of default agents currently in the registry. */
-export function getDefaultAgentNames(): string[] {
-  return [...agents.entries()]
-    .filter(([_, config]) => config.isDefault === true)
-    .map(([name]) => name);
-}
-
-/** Get names of user-defined agents (non-defaults) currently in the registry. */
-export function getUserAgentNames(): string[] {
-  return [...agents.entries()]
-    .filter(([_, config]) => config.isDefault !== true)
-    .map(([name]) => name);
-}
 
 /** Check if a type is valid and enabled (case-insensitive). */
 export function isValidType(type: string): boolean {
@@ -97,7 +75,7 @@ export function getToolNamesForType(type: string): string[] {
   return names;
 }
 
-/** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). Falls back to general-purpose. */
+/** Get config for a type (case-insensitive). Throws if not found or disabled. */
 export function getConfig(type: string): {
   displayName: string;
   description: string;
@@ -105,6 +83,7 @@ export function getConfig(type: string): {
   extensions: true | string[] | false;
   skills: true | string[] | false;
   promptMode: "replace" | "append" | "system_instructions";
+  excludeExtensions?: string[];
 } {
   const key = resolveKey(type);
   const config = key ? agents.get(key) : undefined;
@@ -116,30 +95,8 @@ export function getConfig(type: string): {
       extensions: config.extensions,
       skills: config.skills,
       promptMode: config.promptMode,
+      excludeExtensions: config.excludeExtensions,
     };
   }
-
-  // Fallback for unknown/disabled types — general-purpose config
-  const gp = agents.get("general-purpose");
-  if (gp && gp.enabled !== false) {
-    return {
-      displayName: gp.displayName ?? gp.name,
-      description: gp.description,
-      builtinToolNames: gp.builtinToolNames ?? BUILTIN_TOOL_NAMES,
-      extensions: gp.extensions,
-      skills: gp.skills,
-      promptMode: gp.promptMode,
-    };
-  }
-
-  // Absolute fallback (should never happen)
-  return {
-    displayName: "Agent",
-    description: "General-purpose agent for complex, multi-step tasks",
-    builtinToolNames: BUILTIN_TOOL_NAMES,
-    extensions: true,
-    skills: true,
-    promptMode: "append",
-  };
+  throw new Error(`Agent type '${type}' not found. Available: ${getAvailableTypes().join(', ') || '(none)'}`);
 }
-

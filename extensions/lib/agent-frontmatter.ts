@@ -16,6 +16,7 @@ export interface ParsedAgentFrontmatter {
   disallowDelegationTo?: string[];
   allowNesting?: boolean;
   extensions: InheritSelection;
+  excludeExtensions?: string[];
   skills: InheritSelection;
   model?: string;
   maxTurns?: number;
@@ -50,6 +51,7 @@ export function parseAgentFrontmatter(
     disallowDelegationTo: csvListOptional(fm.disallow_delegation_to),
     allowNesting: fm.allow_nesting === true,
     extensions: inheritField(fm.extensions ?? fm.inherit_extensions),
+    excludeExtensions: csvListOptional(fm.exclude_extensions),
     skills: inheritField(fm.skills ?? fm.inherit_skills),
     model: str(fm.model),
     maxTurns: nonNegativeInt(fm.max_turns),
@@ -62,7 +64,8 @@ export function parseAgentFrontmatter(
       hasField(fm, "builtin_tools")
       || hasField(fm, "extension_tools")
       || hasField(fm, "extensions")
-      || hasField(fm, "inherit_extensions"),
+      || hasField(fm, "inherit_extensions")
+      || hasField(fm, "exclude_extensions"),
   };
 }
 

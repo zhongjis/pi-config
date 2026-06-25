@@ -89,6 +89,7 @@ function loadFromDir(
       disallowDelegationTo: parsed.disallowDelegationTo,
       allowNesting: parsed.allowNesting,
       extensions: parsed.extensions,
+      excludeExtensions: parsed.excludeExtensions,
       skills: parsed.skills,
       model: parsed.model,
       maxTurns: parsed.maxTurns,

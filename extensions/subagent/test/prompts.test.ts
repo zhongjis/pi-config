@@ -1,5 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { getAgentConfig, registerAgents } from "../src/agent-types.js";
+import { describe, expect, it } from "vitest";
 import { buildAgentPrompt } from "../src/prompts.js";
 import type { AgentConfig, EnvInfo } from "../src/types.js";
 
@@ -15,18 +14,13 @@ const envNoGit: EnvInfo = {
   platform: "linux",
 };
 
-// Initialize default agents
-beforeEach(() => {
-  registerAgents(new Map());
-});
-
-function getDefaultConfig(name: string): AgentConfig {
-  return getAgentConfig(name)!;
-}
 
 describe("buildAgentPrompt", () => {
   it("includes cwd and git info", () => {
-    const config = getDefaultConfig("general-purpose");
+    const config: AgentConfig = {
+      name: "test-agent", description: "Test", extensions: true, skills: true,
+      systemPrompt: "", promptMode: "append",
+    };
     const prompt = buildAgentPrompt(config, "/workspace", env);
     expect(prompt).toContain("/workspace");
     expect(prompt).toContain("Branch: main");
@@ -34,42 +28,37 @@ describe("buildAgentPrompt", () => {
   });
 
   it("handles non-git repos", () => {
-    const config = getDefaultConfig("Explore");
+    const config: AgentConfig = {
+      name: "test-agent", description: "Test", extensions: true, skills: true,
+      systemPrompt: "You are a test.", promptMode: "replace",
+    };
     const prompt = buildAgentPrompt(config, "/workspace", envNoGit);
     expect(prompt).toContain("Not a git repository");
     expect(prompt).not.toContain("Branch:");
   });
 
-  it("Explore prompt is read-only", () => {
-    const config = getDefaultConfig("Explore");
-    const prompt = buildAgentPrompt(config, "/workspace", env);
-    expect(prompt).toContain("READ-ONLY");
-    expect(prompt).toContain("file search specialist");
-  });
-
-  it("Plan prompt is read-only", () => {
-    const config = getDefaultConfig("Plan");
-    const prompt = buildAgentPrompt(config, "/workspace", env);
-    expect(prompt).toContain("READ-ONLY");
-    expect(prompt).toContain("software architect");
-  });
-
-  it("general-purpose uses append mode (parent twin)", () => {
-    const config = getDefaultConfig("general-purpose");
+  it("append mode with parent prompt is a twin", () => {
+    const config: AgentConfig = {
+      name: "test-agent", description: "Test", extensions: true, skills: true,
+      systemPrompt: "", promptMode: "append",
+    };
     const parentPrompt = "You are a parent coding agent with full powers.";
     const prompt = buildAgentPrompt(config, "/workspace", env, parentPrompt);
     expect(prompt).toContain("parent coding agent with full powers");
     expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain("<inherited_system_prompt>");
+    expect(prompt).not.toContain("<inherited_system_prompt>");
     expect(prompt).not.toContain("READ-ONLY");
     // Empty systemPrompt means no <agent_instructions> section
     expect(prompt).not.toContain("<agent_instructions>");
   });
 
-  it("general-purpose without parent prompt falls back to generic base", () => {
-    const config = getDefaultConfig("general-purpose");
+  it("append mode without parent prompt falls back to generic base", () => {
+    const config: AgentConfig = {
+      name: "test-agent", description: "Test", extensions: true, skills: true,
+      systemPrompt: "", promptMode: "append",
+    };
     const prompt = buildAgentPrompt(config, "/workspace", env);
-    expect(prompt).toContain("general-purpose coding agent");
+    expect(prompt).toContain("coding agent for complex, multi-step tasks");
     expect(prompt).not.toContain("READ-ONLY");
   });
 
@@ -91,7 +80,7 @@ describe("buildAgentPrompt", () => {
     expect(prompt).toContain("/workspace");
     expect(prompt).toContain("parent coding agent with special powers");
     expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain("<inherited_system_prompt>");
+    expect(prompt).not.toContain("<inherited_system_prompt>");
     expect(prompt).toContain("<agent_instructions>");
     expect(prompt).toContain("Extra custom instructions here.");
   });
@@ -111,7 +100,7 @@ describe("buildAgentPrompt", () => {
     };
     const prompt = buildAgentPrompt(config, "/workspace", env);
     expect(prompt).toContain("/workspace");
-    expect(prompt).toContain("general-purpose coding agent");
+    expect(prompt).toContain("coding agent for complex, multi-step tasks");
     expect(prompt).toContain("Extra custom instructions here.");
   });
 
@@ -132,7 +121,7 @@ describe("buildAgentPrompt", () => {
     const prompt = buildAgentPrompt(config, "/workspace", env, parentPrompt);
     expect(prompt).toContain("parent coding agent");
     expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain("<inherited_system_prompt>");
+    expect(prompt).not.toContain("<inherited_system_prompt>");
     expect(prompt).not.toContain("<agent_instructions>");
   });
 
@@ -175,7 +164,10 @@ describe("buildAgentPrompt", () => {
   });
 
   it("append mode bridge contains tool reminders", () => {
-    const config = getDefaultConfig("general-purpose");
+    const config = {
+      name: "test-agent", description: "Test", extensions: true as const, skills: true as const,
+      systemPrompt: "", promptMode: "append" as const,
+    };
     const prompt = buildAgentPrompt(config, "/workspace", env, "Parent prompt.");
     expect(prompt).toContain("Use the read tool instead of cat");
     expect(prompt).toContain("Use the edit tool instead of sed");
@@ -197,12 +189,33 @@ describe("buildAgentPrompt", () => {
     };
     const prompt = buildAgentPrompt(config, "/workspace", env);
     expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain("<inherited_system_prompt>");
+    expect(prompt).not.toContain("<inherited_system_prompt>");
     expect(prompt).toContain("Use the read tool instead of cat");
-    expect(prompt).toContain("general-purpose coding agent");
+    expect(prompt).toContain("coding agent for complex, multi-step tasks");
     expect(prompt).toContain("Extra stuff.");
   });
 
+  it("append mode: parent content appears before sub_agent_context", () => {
+    const config: AgentConfig = {
+      name: "order-test",
+      description: "Order test",
+      builtinToolNames: [],
+      extensions: true,
+      skills: true,
+      systemPrompt: "",
+      promptMode: "append",
+      inheritContext: false,
+      runInBackground: false,
+      isolated: false,
+    };
+    const parentPrompt = "UNIQUE_PARENT_CONTENT_MARKER";
+    const prompt = buildAgentPrompt(config, "/workspace", env, parentPrompt);
+    const parentIdx = prompt.indexOf("UNIQUE_PARENT_CONTENT_MARKER");
+    const bridgeIdx = prompt.indexOf("<sub_agent_context>");
+    expect(parentIdx).toBeGreaterThan(-1);
+    expect(bridgeIdx).toBeGreaterThan(-1);
+    expect(parentIdx).toBeLessThan(bridgeIdx);
+  });
 
   it("injects preloaded skill blocks", () => {
     const config: AgentConfig = {

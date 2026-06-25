@@ -7,6 +7,8 @@ import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { SUBAGENTS_SETTINGS_CHANGED, SUBAGENTS_SETTINGS_LOADED } from "../../lib/subagent-channels.js";
 
+export type ToolDescriptionMode = "full" | "compact";
+
 export interface SubagentsSettings {
   maxConcurrent?: number;
   /**
@@ -16,6 +18,10 @@ export interface SubagentsSettings {
    */
   defaultMaxTurns?: number;
   graceTurns?: number;
+  /** Agent tool description verbosity. `compact` ≈ 75% smaller. Applied at tool registration (next session). */
+  toolDescriptionMode?: ToolDescriptionMode;
+  /** When true, validate effective subagent models against pi's enabledModels. Off by default. */
+  scopeModels?: boolean;
 }
 
 /** Setter hooks used by applySettings to wire persisted values into in-memory state. */
@@ -23,6 +29,8 @@ export interface SettingsAppliers {
   setMaxConcurrent: (n: number) => void;
   setDefaultMaxTurns: (n: number) => void;
   setGraceTurns: (n: number) => void;
+  setToolDescriptionMode: (mode: ToolDescriptionMode) => void;
+  setScopeModels: (on: boolean) => void;
 }
 
 /** Emit callback — a subset of `pi.events.emit` to keep helpers testable. */
@@ -61,6 +69,12 @@ function sanitize(raw: unknown): SubagentsSettings {
     (r.graceTurns as number) <= GRACE_TURNS_CEILING
   ) {
     out.graceTurns = r.graceTurns as number;
+  }
+  if (r.toolDescriptionMode === "full" || r.toolDescriptionMode === "compact") {
+    out.toolDescriptionMode = r.toolDescriptionMode;
+  }
+  if (typeof r.scopeModels === "boolean") {
+    out.scopeModels = r.scopeModels;
   }
   return out;
 }
@@ -115,6 +129,8 @@ export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers):
   if (typeof s.maxConcurrent === "number") appliers.setMaxConcurrent(s.maxConcurrent);
   if (typeof s.defaultMaxTurns === "number") appliers.setDefaultMaxTurns(s.defaultMaxTurns);
   if (typeof s.graceTurns === "number") appliers.setGraceTurns(s.graceTurns);
+  if (typeof s.toolDescriptionMode === "string") appliers.setToolDescriptionMode(s.toolDescriptionMode);
+  if (typeof s.scopeModels === "boolean") appliers.setScopeModels(s.scopeModels);
 }
 
 /**

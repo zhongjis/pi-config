@@ -5,14 +5,12 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentRun } from "./agent-run.js";
+import type { LifetimeUsage } from "./usage.js";
 
 export type { ThinkingLevel };
 
 /** Agent type: any string name (built-in defaults or user-defined). */
 export type SubagentType = string;
-
-/** Names of the three embedded default agents. */
-export const DEFAULT_AGENT_NAMES = ["general-purpose", "Explore", "Plan"] as const;
 
 
 /** Structured diagnostic emitted while loading agent frontmatter. */
@@ -49,6 +47,7 @@ export interface AgentConfig {
   allowNesting?: boolean;
   /** true = inherit all, string[] = only listed, false = none */
   extensions: true | string[] | false;
+  excludeExtensions?: string[];
   /** true = inherit all, string[] = only listed, false = none */
   skills: true | string[] | false;
   model?: string;
@@ -119,6 +118,10 @@ export interface AgentRecord {
   lastPolledAt?: number;
   /** Phase 1 (dormant): single-source-of-truth run state, populated alongside this record. */
   run?: AgentRun;
+  /** Accumulated token usage excluding cacheRead inflation. */
+  lifetimeUsage?: LifetimeUsage;
+  /** Number of successful compactions for this agent's session. */
+  compactionCount?: number;
 }
 
 /** Details attached to custom notification messages for visual rendering. */
@@ -130,6 +133,7 @@ export interface NotificationDetails {
   turnCount: number;
   maxTurns?: number;
   totalTokens: number;
+  contextPercent?: number | null;
   durationMs: number;
   outputFile?: string;
   sessionFile?: string;

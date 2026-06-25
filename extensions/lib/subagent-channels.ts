@@ -31,7 +31,11 @@ export const SUBAGENTS_READY = "subagents:ready" as const;
 export const SUBAGENTS_SETTINGS_LOADED = "subagents:settings_loaded" as const;
 
 /** Emitted when subagent settings are changed. */
+/** Emitted when subagent settings are changed. */
 export const SUBAGENTS_SETTINGS_CHANGED = "subagents:settings_changed" as const;
+
+/** Emitted when a subagent's session is compacted. */
+export const SUBAGENTS_COMPACTED = "subagents:compacted" as const;
 
 /**
  * Event payload type map, keyed by channel name.
@@ -69,6 +73,7 @@ export type SubagentEventPayloads = {
     parentSessionId?: string;
     toolCallId?: string;
     modelLabel?: string;
+    contextPercent?: number | null;
   };
   "subagents:failed": {
     id: string;
@@ -86,6 +91,7 @@ export type SubagentEventPayloads = {
     parentSessionId?: string;
     toolCallId?: string;
     modelLabel?: string;
+    contextPercent?: number | null;
   };
   "subagents:ready": Record<string, never>;
   "subagents:settings_loaded": {
@@ -102,5 +108,12 @@ export type SubagentEventPayloads = {
       graceTurns?: number;
     };
     persisted: boolean;
+  };
+  "subagents:compacted": {
+    id: string;
+    type: string;
+    reason: string;
+    tokensBefore: number;
+    compactionCount: number;
   };
 };

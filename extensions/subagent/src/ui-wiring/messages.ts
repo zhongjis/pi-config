@@ -77,7 +77,7 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
     }
   });
 
-  pi.on("session_before_switch", () => { manager.clearCompleted(); });
+  pi.on("session_before_switch", () => { manager.clearCompleted(true); });
 
   // Grab UI context from first tool execution + clear lingering widget on new turn
   pi.on("tool_execution_start", async (_event, ctx) => {

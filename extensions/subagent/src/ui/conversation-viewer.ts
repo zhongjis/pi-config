@@ -8,6 +8,7 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { type Component, matchesKey, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { extractText } from "../context.js";
+import { getAgentConfig } from "../agent-types.js";
 import type { AgentRecord } from "../types.js";
 import type { Theme } from "./agent-widget.js";
 import { type AgentActivity, describeActivity, formatDuration, formatTokens, getDisplayName, getPromptModeLabel } from "./agent-widget.js";
@@ -22,6 +23,7 @@ export class ConversationViewer implements Component {
   private unsubscribe: (() => void) | undefined;
   private lastInnerW = 0;
   private closed = false;
+  private stopArmed = false;
 
   constructor(
     private tui: TUI,
@@ -30,6 +32,7 @@ export class ConversationViewer implements Component {
     private activity: AgentActivity | undefined,
     private theme: Theme,
     private done: (result: undefined) => void,
+    private onStop?: () => void,
   ) {
     this.unsubscribe = session.subscribe(() => {
       if (this.closed) return;
@@ -44,11 +47,30 @@ export class ConversationViewer implements Component {
       return;
     }
 
+    if (matchesKey(data, "x")) {
+      if (this.isStoppable()) {
+        if (this.stopArmed) {
+          this.stopArmed = false;
+          this.onStop?.();
+        } else {
+          this.stopArmed = true;
+        }
+        this.tui.requestRender();
+      }
+      return;
+    }
+
     const totalLines = this.buildContentLines(this.lastInnerW).length;
     const viewportHeight = this.viewportHeight();
     const maxScroll = Math.max(0, totalLines - viewportHeight);
 
-    if (matchesKey(data, "up") || matchesKey(data, "k")) {
+    if (matchesKey(data, "shift+up")) {
+      this.scrollOffset = Math.max(0, this.scrollOffset - viewportHeight);
+      this.autoScroll = false;
+    } else if (matchesKey(data, "shift+down")) {
+      this.scrollOffset = Math.min(maxScroll, this.scrollOffset + viewportHeight);
+      this.autoScroll = this.scrollOffset >= maxScroll;
+    } else if (matchesKey(data, "up") || matchesKey(data, "k")) {
       this.scrollOffset = Math.max(0, this.scrollOffset - 1);
       this.autoScroll = this.scrollOffset >= maxScroll;
     } else if (matchesKey(data, "down") || matchesKey(data, "j")) {
@@ -67,6 +89,9 @@ export class ConversationViewer implements Component {
       this.scrollOffset = maxScroll;
       this.autoScroll = true;
     }
+
+    // Any non-x key disarms a pending stop confirmation.
+    if (this.stopArmed) this.stopArmed = false;
   }
 
   render(width: number): string[] {
@@ -113,6 +138,19 @@ export class ConversationViewer implements Component {
     lines.push(row(
       `${statusIcon} ${th.bold(name)}${modeTag}  ${th.fg("muted", this.record.description)} ${th.fg("dim", "·")} ${th.fg("dim", headerParts.join(" · "))}`,
     ));
+
+    // Spawn args secondary header
+    const spawnParts: string[] = [];
+    if (this.record.modelLabel) spawnParts.push(`model:${this.record.modelLabel}`);
+    const thinkingLevel = getAgentConfig(this.record.type)?.thinking;
+    if (thinkingLevel) spawnParts.push(`thinking:${thinkingLevel}`);
+    if (this.record.isBackground) spawnParts.push("bg:true");
+    const maxTurns = this.activity?.maxTurns;
+    if (maxTurns != null) spawnParts.push(`turns:≤${maxTurns}`);
+    if (spawnParts.length > 0) {
+      lines.push(row(th.fg("dim", spawnParts.join(" │ "))));
+    }
+
     lines.push(hrMid);
 
     // Content area — rebuild every render (live data, no cache needed)
@@ -137,7 +175,9 @@ export class ConversationViewer implements Component {
       ? "100%"
       : `${Math.round(((visibleStart + viewportHeight) / contentLines.length) * 100)}%`;
     const footerLeft = th.fg("dim", `${contentLines.length} lines · ${scrollPct}`);
-    const footerRight = th.fg("dim", "↑↓ scroll · PgUp/PgDn · Esc close");
+    const footerRight = this.stopArmed
+      ? th.fg("error", "Press x again to STOP · any key cancels")
+      : th.fg("dim", `↑↓/Shift+↑↓ scroll · PgUp/PgDn · Esc close${this.isStoppable() ? " · x stop" : ""}`);
     const footerGap = Math.max(1, innerW - visibleWidth(footerLeft) - visibleWidth(footerRight));
     lines.push(row(footerLeft + " ".repeat(footerGap) + footerRight));
     lines.push(hrBot);
@@ -153,6 +193,10 @@ export class ConversationViewer implements Component {
       this.unsubscribe();
       this.unsubscribe = undefined;
     }
+  }
+
+  private isStoppable(): boolean {
+    return this.onStop != null && (this.record.status === "running" || this.record.status === "queued");
   }
 
   // ---- Private ----

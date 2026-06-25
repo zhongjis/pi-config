@@ -255,6 +255,8 @@ describe("settings persistence", () => {
         setMaxConcurrent: vi.fn(),
         setDefaultMaxTurns: vi.fn(),
         setGraceTurns: vi.fn(),
+        setToolDescriptionMode: vi.fn(),
+        setScopeModels: vi.fn(),
       };
     });
 
@@ -312,6 +314,8 @@ describe("settings persistence", () => {
         setMaxConcurrent: vi.fn(),
         setDefaultMaxTurns: vi.fn(),
         setGraceTurns: vi.fn(),
+        setToolDescriptionMode: vi.fn(),
+        setScopeModels: vi.fn(),
       };
     });
 
@@ -387,5 +391,38 @@ describe("settings persistence", () => {
         rmSync(filePosingAsCwd, { force: true });
       }
     });
+  });
+});
+
+describe("toolDescriptionMode setting", () => {
+  function writeProject(obj: unknown): string {
+    const dir = mkdtempSync(join(tmpdir(), "subagents-settings-"));
+    mkdirSync(join(dir, ".pi"), { recursive: true });
+    writeFileSync(join(dir, ".pi", "subagents.json"), JSON.stringify(obj), "utf-8");
+    return dir;
+  }
+
+  it("accepts 'full' and 'compact'", () => {
+    expect(loadSettings(writeProject({ toolDescriptionMode: "compact" })).toolDescriptionMode).toBe("compact");
+    expect(loadSettings(writeProject({ toolDescriptionMode: "full" })).toolDescriptionMode).toBe("full");
+  });
+
+  it("drops invalid modes", () => {
+    expect(loadSettings(writeProject({ toolDescriptionMode: "tiny" })).toolDescriptionMode).toBeUndefined();
+  });
+});
+
+describe("scopeModels setting", () => {
+  function writeProject(obj: unknown): string {
+    const dir = mkdtempSync(join(tmpdir(), "subagents-scope-"));
+    mkdirSync(join(dir, ".pi"), { recursive: true });
+    writeFileSync(join(dir, ".pi", "subagents.json"), JSON.stringify(obj), "utf-8");
+    return dir;
+  }
+  it("accepts a boolean", () => {
+    expect(loadSettings(writeProject({ scopeModels: true })).scopeModels).toBe(true);
+  });
+  it("drops non-boolean", () => {
+    expect(loadSettings(writeProject({ scopeModels: "yes" })).scopeModels).toBeUndefined();
   });
 });

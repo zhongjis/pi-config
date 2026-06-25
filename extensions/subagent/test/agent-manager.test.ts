@@ -190,3 +190,62 @@ describe("AgentManager", () => {
     }
   });
 });
+
+describe("AgentManager.clearCompleted", () => {
+  it("clearCompleted() removes all non-running records", async () => {
+    const session = { steer: vi.fn(), abort: vi.fn(), dispose: vi.fn() } as any;
+    runAgentMock.mockResolvedValue({ responseText: "", session, aborted: false, steered: false });
+
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn({} as any, { cwd: process.cwd() } as any, "general-purpose", "Test", { description: "bg", isBackground: true });
+      const record = manager.getRecord(id)!;
+      await record.promise;
+      expect(record.status).toBe("completed");
+
+      manager.clearCompleted();
+      expect(manager.listAgents()).toHaveLength(0);
+    } finally {
+      manager.dispose();
+    }
+  });
+
+  it("clearCompleted(true) preserves records where resultConsumed is not true", async () => {
+    const session = { steer: vi.fn(), abort: vi.fn(), dispose: vi.fn() } as any;
+    runAgentMock.mockResolvedValue({ responseText: "", session, aborted: false, steered: false });
+
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn({} as any, { cwd: process.cwd() } as any, "general-purpose", "Test", { description: "bg", isBackground: true });
+      const record = manager.getRecord(id)!;
+      await record.promise;
+      expect(record.status).toBe("completed");
+      // resultConsumed is undefined → unconsumed
+
+      manager.clearCompleted(true);
+      expect(manager.listAgents()).toHaveLength(1);
+      expect(manager.getRecord(id)).toBeDefined();
+    } finally {
+      manager.dispose();
+    }
+  });
+
+  it("clearCompleted(true) removes records where resultConsumed === true", async () => {
+    const session = { steer: vi.fn(), abort: vi.fn(), dispose: vi.fn() } as any;
+    runAgentMock.mockResolvedValue({ responseText: "", session, aborted: false, steered: false });
+
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn({} as any, { cwd: process.cwd() } as any, "general-purpose", "Test", { description: "bg", isBackground: true });
+      const record = manager.getRecord(id)!;
+      await record.promise;
+      expect(record.status).toBe("completed");
+      record.resultConsumed = true;
+
+      manager.clearCompleted(true);
+      expect(manager.getRecord(id)).toBeUndefined();
+    } finally {
+      manager.dispose();
+    }
+  });
+});

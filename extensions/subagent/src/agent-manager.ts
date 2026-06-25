@@ -8,9 +8,10 @@
 
 import { randomUUID } from "node:crypto";
 import type { Model } from "@earendil-works/pi-ai";
-import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, AgentSessionEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS, SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS, SUBAGENT_BACKGROUND_MAX_CONCURRENT } from "./constants.js";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
+import { addUsage, type LifetimeUsage } from "./usage.js";
 import type { AgentRecord, SubagentType, ThinkingLevel } from "./types.js";
 import { getRecoveredResultText } from "./result-recovery.js";
 import { AgentRun, project } from "./agent-run.js";
@@ -61,6 +62,7 @@ export class AgentManager {
   private cleanupInterval: ReturnType<typeof setInterval>;
   private onComplete?: OnAgentComplete;
   private onStart?: OnAgentStart;
+  private onCompact?: (record: AgentRecord, data: { reason: string; tokensBefore: number }) => void;
   private maxConcurrent: number;
 
   /** Queue of background agents waiting to start. */
@@ -68,9 +70,10 @@ export class AgentManager {
   /** Number of currently running background agents. */
   private runningBackground = 0;
 
-  constructor(onComplete?: OnAgentComplete, maxConcurrent = DEFAULT_MAX_CONCURRENT, onStart?: OnAgentStart) {
+  constructor(onComplete?: OnAgentComplete, maxConcurrent = DEFAULT_MAX_CONCURRENT, onStart?: OnAgentStart, onCompact?: (record: AgentRecord, data: { reason: string; tokensBefore: number }) => void) {
     this.onComplete = onComplete;
     this.onStart = onStart;
+    this.onCompact = onCompact;
     this.maxConcurrent = maxConcurrent;
     // Cleanup completed agents after 10 minutes (but keep sessions for resume)
     this.cleanupInterval = setInterval(() => this.cleanup(), SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS);
@@ -112,6 +115,8 @@ export class AgentManager {
       isBackground: options.isBackground,
       parentSessionId: options.parentSessionId,
       sessionDir: options.sessionDir,
+      lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 } satisfies LifetimeUsage,
+      compactionCount: 0,
     };
     record.run = new AgentRun(id);
     // Projector must be the first subscriber so every event projects before downstream readers.
@@ -182,9 +187,19 @@ export class AgentManager {
         record.run?.publish({ kind: "progress" });
         options.onProgress?.();
       },
+      onAssistantUsage: (usage) => {
+        if (record.lifetimeUsage) addUsage(record.lifetimeUsage, usage);
+      },
       onSessionCreated: (session) => {
         record.session = session;
         record.run?.publish({ kind: "session_created", session });
+        // Subscribe to compaction events for observability
+        session.subscribe?.((event: AgentSessionEvent) => {
+          if (event.type === "compaction_end" && !event.aborted && event.result) {
+            record.compactionCount = (record.compactionCount ?? 0) + 1;
+            this.onCompact?.(record, { reason: event.reason, tokensBefore: event.result.tokensBefore });
+          }
+        });
         // Flush any steers that arrived before the session was ready
         if (record.pendingSteers?.length) {
           for (const msg of record.pendingSteers) {
@@ -425,10 +440,12 @@ export class AgentManager {
   /**
    * Remove all completed/stopped/errored records immediately.
    * Called on session start/switch so tasks from a prior session don't persist.
+   * @param skipUnconsumed - when true, skip records whose result has not been consumed yet
    */
-  clearCompleted(): void {
+  clearCompleted(skipUnconsumed = false): void {
     for (const [id, record] of this.agents) {
       if (record.status === "running" || record.status === "queued") continue;
+      if (skipUnconsumed && !record.resultConsumed) continue;
       this.removeRecord(id, record);
     }
   }

@@ -9,7 +9,7 @@ import { isTui } from "../../../lib/mode.js";
 import { type ExtensionCommandContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { buildEjectedAgentMarkdown, buildGenerateAgentPrompt, buildManualAgentMarkdown } from "../agent-definition-authoring.js";
 import { getDefaultMaxTurns, getGraceTurns, setDefaultMaxTurns, setGraceTurns } from "../agent-runner.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes } from "../agent-types.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes } from "../agent-types.js";
 import { SUBAGENT_DECIMAL_RADIX, SUBAGENT_MAX_GENERATION_TURNS } from "../constants.js";
 import { formatAgentDefinitionDiagnostics, getModelLabelFromConfig } from "../lifecycle/supervision.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
@@ -17,6 +17,7 @@ import { type ModelRegistry, parseModelChain, resolveModel } from "../model-reso
 import { type SubagentsSettings, saveAndEmitChanged } from "../settings.js";
 import type { AgentConfig, AgentRecord } from "../types.js";
 import { formatDuration, getDisplayName } from "../ui/agent-widget.js";
+import { getScopeModels, setScopeModels, getToolDescriptionMode, setToolDescriptionMode } from "../runtime-flags.js";
 
 export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
   const {
@@ -135,7 +136,7 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
     });
     const maxPrefix = Math.max(...entries.map(e => e.prefix.length));
 
-    const hasCustom = allNames.some(n => { const c = getAgentConfig(n); return c && !c.isDefault && c.enabled !== false; });
+    const hasCustom = allNames.some(n => { const c = getAgentConfig(n); return c && c.enabled !== false; });
     const hasDisabled = allNames.some(n => getAgentConfig(n)?.enabled === false);
     const legendParts: string[] = [];
     if (hasCustom) legendParts.push("• = project  ◦ = global");
@@ -200,7 +201,9 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
 
     await ctx.ui.custom<undefined>(
       (tui, theme, _keybindings, done) => {
-        return new ConversationViewer(tui, session, record, activity, theme, done);
+        return new ConversationViewer(tui, session, record, activity, theme, done, () => {
+          manager.abort(record.id);
+        });
       },
       {
         overlay: true,
@@ -217,18 +220,13 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
     }
 
     const file = findAgentFile(name);
-    const isDefault = cfg.isDefault === true;
     const disabled = cfg.enabled === false;
 
     let menuOptions: string[];
-    if (disabled && file) {
-      menuOptions = isDefault
-        ? ["Enable", "Edit", "Reset to default", "Delete", "Back"]
-        : ["Enable", "Edit", "Delete", "Back"];
-    } else if (isDefault && !file) {
-      menuOptions = ["Eject (export as .md)", "Disable", "Back"];
-    } else if (isDefault && file) {
-      menuOptions = ["Edit", "Disable", "Reset to default", "Delete", "Back"];
+    if (disabled) {
+      menuOptions = file ? ["Enable", "Edit", "Delete", "Back"] : ["Enable", "Back"];
+    } else if (!file) {
+      menuOptions = ["Disable", "Back"];
     } else {
       menuOptions = ["Edit", "Disable", "Delete", "Back"];
     }
@@ -258,15 +256,6 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
       await disableAgent(ctx, name);
     } else if (choice === "Enable") {
       await enableAgent(ctx, name);
-    } else if (choice === "Reset to default" && file) {
-      const confirmed = await ctx.ui.confirm("Reset to default", `Delete override ${file.path} and restore embedded default?`);
-      if (confirmed) {
-        unlinkSync(file.path);
-        reloadCustomAgents();
-        ctx.ui.notify(`Restored default ${name}`, "info");
-      }
-    } else if (choice.startsWith("Eject")) {
-      await ejectAgent(ctx, name, cfg);
     }
   }
 
@@ -394,7 +383,9 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
 
     const generatePrompt = buildGenerateAgentPrompt(description, targetPath);
 
-    const record = await manager.spawnAndWait(pi, ctx, "general-purpose", generatePrompt, {
+    const spawnType = getAvailableTypes()[0];
+    if (!spawnType) throw new Error("No agent types available. Create an agent first.");
+    const record = await manager.spawnAndWait(pi, ctx, spawnType, generatePrompt, {
       description: `Generate ${name} agent`,
       maxTurns: SUBAGENT_MAX_GENERATION_TURNS,
     });
@@ -539,6 +530,8 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
       maxConcurrent: manager.getMaxConcurrent(),
       defaultMaxTurns: getDefaultMaxTurns() ?? 0,
       graceTurns: getGraceTurns(),
+      scopeModels: getScopeModels(),
+      toolDescriptionMode: getToolDescriptionMode(),
     };
   }
 
@@ -556,6 +549,8 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
       `Max concurrency (current: ${manager.getMaxConcurrent()})`,
       `Default max turns (current: ${getDefaultMaxTurns() ?? "unlimited"})`,
       `Grace turns (current: ${getGraceTurns()})`,
+      `Scope models (current: ${getScopeModels() ? "on" : "off"})`,
+      `Tool description (current: ${getToolDescriptionMode()})`,
     ]);
     if (!choice) return;
 
@@ -595,6 +590,14 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
           ctx.ui.notify("Must be a positive integer.", "warning");
         }
       }
+    } else if (choice.startsWith("Scope models")) {
+      const next = !getScopeModels();
+      setScopeModels(next);
+      notifyApplied(ctx, `Scope models ${next ? "enabled" : "disabled"}`);
+    } else if (choice.startsWith("Tool description")) {
+      const next = getToolDescriptionMode() === "compact" ? "full" : "compact";
+      setToolDescriptionMode(next);
+      notifyApplied(ctx, `Tool description set to ${next} (applies next session)`);
     }
   }
 
