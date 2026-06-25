@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 
 const rootChecks = [
   ["pnpm", ["run", "lint"]],
-  ["pnpm", ["exec", "tsc", "--noEmit", "-p", "tsconfig.json"]]
+  ["pnpm", ["exec", "tsc", "--noEmit", "-p", "tsconfig.json"]],
+  ["pnpm", ["exec", "tsc", "--noEmit", "-p", "extensions/second-opinion/tsconfig.json"]]
 ];
 
 const packageDirs = ["extensions/subagent", "extensions/tasks"];

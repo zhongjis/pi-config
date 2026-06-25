@@ -69,6 +69,7 @@ export async function runCodexReview(
         if (data.includes("\x1b") || data.includes("\x03")) {
           child.kill("SIGTERM");
         }
+        return undefined;
       });
     }
 
