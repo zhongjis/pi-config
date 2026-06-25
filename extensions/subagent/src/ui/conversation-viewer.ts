@@ -11,6 +11,7 @@ import { extractText } from "../context.js";
 import { getAgentConfig } from "../agent-types.js";
 import type { AgentRecord } from "../types.js";
 import type { Theme } from "./agent-widget.js";
+import { formatTools } from "../../../lib/widget-style.js";
 import { type AgentActivity, describeActivity, formatDuration, formatTokens, getDisplayName, getPromptModeLabel } from "./agent-widget.js";
 
 /** Lines consumed by chrome: top border + header + header sep + footer sep + footer + bottom border. */
@@ -127,7 +128,7 @@ export class ConversationViewer implements Component {
 
     const headerParts: string[] = [duration];
     const toolUses = this.activity?.toolUses ?? this.record.toolUses;
-    if (toolUses > 0) headerParts.unshift(`󱁤 ${toolUses}`);
+    if (toolUses > 0) headerParts.unshift(formatTools(toolUses));
     if (this.activity?.session) {
       try {
         const tokens = this.activity.session.getSessionStats().tokens.total;

@@ -67,35 +67,35 @@ describe("TaskWidget", () => {
     expect(entry?.content).toBeUndefined();
   });
 
-  it("renders pending tasks with ◻ icon", () => {
+  it("renders pending tasks with ○ icon", () => {
     store.create("Do something", "Desc");
     widget.update();
 
     const lines = renderWidget(ui.state);
     expect(lines).toHaveLength(2); // header + 1 task
-    expect(lines[0]).toContain("1 tasks");
+    expect(lines[0]).toContain("Tasks");
     expect(lines[0]).toContain("1 open");
-    expect(lines[1]).toContain("◻");
+    expect(lines[1]).toContain("○");
     expect(lines[1]).toContain("Do something");
   });
 
-  it("renders in-progress tasks with ◼ icon", () => {
+  it("renders in-progress tasks with ◐ icon", () => {
     store.create("Working on it", "Desc");
     store.update("1", { status: "in_progress" });
     widget.update();
 
     const lines = renderWidget(ui.state);
-    expect(lines[1]).toContain("◼");
+    expect(lines[1]).toContain("◐");
     expect(lines[1]).toContain("Working on it");
   });
 
-  it("renders completed tasks with ✔ icon and strikethrough", () => {
+  it("renders completed tasks with ✓ icon and strikethrough", () => {
     store.create("Done task", "Desc");
     store.update("1", { status: "completed" });
     widget.update();
 
     const lines = renderWidget(ui.state);
-    expect(lines[1]).toContain("✔");
+    expect(lines[1]).toContain("✓");
     expect(lines[1]).toContain("~~#1 Done task~~");
   });
 
@@ -108,7 +108,7 @@ describe("TaskWidget", () => {
     // Should show activeForm text with "…" suffix
     expect(lines[1]).toContain("Processing data…");
     // Should NOT show ◼ for active task
-    expect(lines[1]).not.toContain("◼");
+    expect(lines[1]).not.toContain("◐");
   });
 
   it("shows blocked-by info for pending tasks", () => {
@@ -143,7 +143,7 @@ describe("TaskWidget", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    expect(lines[0]).toContain("3 tasks");
+    expect(lines[0]).toContain("Tasks");
     expect(lines[0]).toContain("1 done");
     expect(lines[0]).toContain("1 in progress");
     expect(lines[0]).toContain("1 open");
@@ -197,7 +197,7 @@ describe("TaskWidget", () => {
     widget.setActiveTask("1", false);
     lines = renderWidget(ui.state);
     // Should now show as regular in_progress (◼)
-    expect(lines[1]).toContain("◼");
+    expect(lines[1]).toContain("◐");
     expect(lines[1]).not.toContain("Doing work…");
   });
 
@@ -212,7 +212,7 @@ describe("TaskWidget", () => {
 
     // Should render as completed, not active
     const lines = renderWidget(ui.state);
-    expect(lines[1]).toContain("✔");
+    expect(lines[1]).toContain("✓");
     expect(lines[1]).toContain("~~#1 Task~~");
   });
 
@@ -304,8 +304,8 @@ describe("TaskWidget", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    // Task line should start with 2 spaces
-    expect(lines[1]).toMatch(/^\s{2}/);
+    // Task line should start with a tree connector
+    expect(lines[1]).toMatch(/^(├─|└─)/);
   });
 
   it("widget is placed aboveEditor", () => {
@@ -352,11 +352,11 @@ describe("formatDuration (via widget rendering)", () => {
     store.update("1", { status: "in_progress" });
     widget.setActiveTask("1", true);
 
-    vi.advanceTimersByTime(3_723_000); // 1h 2m 3s → "1h 2m"
+    vi.advanceTimersByTime(3_723_000); // 1h 2m 3s → "1h2m"
     widget.update();
 
     const lines = renderWidget(ui.state);
-    expect(lines[1]).toContain("1h 2m");
+    expect(lines[1]).toContain("1h2m");
   });
 
   it("shows exact hours without minutes", () => {
@@ -380,7 +380,7 @@ describe("formatDuration (via widget rendering)", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    expect(lines[1]).toContain("2m 49s");
+    expect(lines[1]).toContain("2m49s");
   });
 
   it("formats small token counts without k suffix", () => {

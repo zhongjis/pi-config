@@ -6,6 +6,7 @@
  */
 
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { formatTokens as styleTokens, formatTurns as styleTurns, joinStats, SEPARATOR, SPINNER as STYLE_SPINNER } from "../../../lib/widget-style.js";
 import { groupByStatus } from "../../../lib/status-group.js";
 import type { AgentManager } from "../agent-manager.js";
 import { getAgentConfig } from "../agent-types.js";
@@ -19,7 +20,7 @@ import type { SubagentSummaryAgent, SubagentSummaryStatus } from "./summary-rend
 const MAX_WIDGET_LINES = 12;
 
 /** Braille spinner frames for animated running indicator. */
-export const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+export const SPINNER = STYLE_SPINNER;
 
 /** Minimum time between animation-only renders while active agents are unchanged. */
 const ACTIVE_RENDER_CADENCE_MS = 250;
@@ -98,16 +99,14 @@ export interface AgentDetails {
 
 // ---- Formatting helpers ----
 
-/** Format a token count compactly: "󰾆 33.8k", "󰾆 1.2M". */
+/** Format a token count compactly: "33.8k", "1.2M". Delegates to shared style. */
 export function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `󰾆 ${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `󰾆 ${(count / 1_000).toFixed(1)}k`;
-  return `󰾆 ${count}`;
+  return styleTokens(count);
 }
 
-/** Format turn count with optional max limit: "⟳ 5≤30" or "⟳ 5". */
+/** Format turn count with optional max limit: "↻5≤30" or "↻5". Delegates to shared style. */
 export function formatTurns(turnCount: number, maxTurns?: number | null): string {
-  return maxTurns != null ? `⟳ ${turnCount}≤${maxTurns}` : `⟳ ${turnCount}`;
+  return styleTurns(turnCount, maxTurns);
 }
 
 /** Join status stats without padding around separators to keep widget compact. */
@@ -115,7 +114,7 @@ export function formatStatusParts(parts: string[]): string {
   return parts.join("·");
 }
 
-/** Format milliseconds as human-readable duration. */
+/** Format milliseconds as a fixed-decimal duration (e.g. "5.7s"); used by the conversation viewer. */
 export function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
@@ -332,7 +331,7 @@ export class AgentWidget {
 
       runningLines.push([
         truncate(`${theme.fg("dim", "├─")} ${summaryLines[0] ?? ""}`),
-        truncate(`${theme.fg("dim", "│  ")}${summaryLines[1] ?? "  ⎿ thinking…"}`),
+        truncate(`${theme.fg("dim", "│  ")}${summaryLines[1] ?? "└─ thinking…"}`),
       ]);
     }
 
@@ -344,7 +343,14 @@ export class AgentWidget {
     const maxBody = MAX_WIDGET_LINES - 1; // heading takes 1 line
     const totalBody = finishedLines.length + runningLines.length * 2 + (queuedLine ? 1 : 0);
 
-    const lines: string[] = [truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, "Agents")}`)];
+    const summary = joinStats([
+      running.length > 0 ? `${running.length} running` : "",
+      queued.length > 0 ? `${queued.length} queued` : "",
+    ]);
+    const heading = summary
+      ? `${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, "Agents")}${theme.fg("dim", SEPARATOR + summary)}`
+      : `${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, "Agents")}`;
+    const lines: string[] = [truncate(heading)];
 
     if (totalBody <= maxBody) {
       // Everything fits — add all lines and fix up connectors for the last item.

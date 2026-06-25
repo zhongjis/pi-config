@@ -1,63 +1,63 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentWidget, formatTokens, formatTurns, formatStatusParts, formatMs, formatDuration, describeActivity } from "../src/ui/agent-widget.js";
 
-// Nerd Font icon codepoints used in formatting:
-// 󰾆 = U+F0F86 (nf-md-chip) — token counts
-// 󱁤 = U+F1064 (nf-md-tools) — tool uses in UI renderers
+// Status formatters now emit ASCII-ish glyphs (↻ turns, plain "N tools",
+// compact token magnitudes). The legacy Nerd Font literals (󰾆/󱁤) survive only
+// as opaque inputs to the formatStatusParts join test below.
 
 
 afterEach(() => {
   vi.useRealTimers();
 });
 describe("formatTokens", () => {
-  it("formats millions with 󰾆 prefix", () => {
-    expect(formatTokens(1_200_000)).toBe("󰾆 1.2M");
+  it("formats millions with M suffix", () => {
+    expect(formatTokens(1_200_000)).toBe("1.2M");
   });
 
   it("formats exactly 1M", () => {
-    expect(formatTokens(1_000_000)).toBe("󰾆 1.0M");
+    expect(formatTokens(1_000_000)).toBe("1M");
   });
 
   it("formats thousands with k suffix", () => {
-    expect(formatTokens(33_800)).toBe("󰾆 33.8k");
+    expect(formatTokens(33_800)).toBe("33.8k");
   });
 
   it("formats exactly 1k", () => {
-    expect(formatTokens(1_000)).toBe("󰾆 1.0k");
+    expect(formatTokens(1_000)).toBe("1k");
   });
 
   it("formats small counts without suffix", () => {
-    expect(formatTokens(500)).toBe("󰾆 500");
+    expect(formatTokens(500)).toBe("500");
   });
 
   it("formats zero", () => {
-    expect(formatTokens(0)).toBe("󰾆 0");
+    expect(formatTokens(0)).toBe("0");
   });
 });
 
 describe("formatTurns", () => {
-  it("formats turn count with space after ⟳", () => {
-    expect(formatTurns(5)).toBe("⟳ 5");
+  it("formats turn count", () => {
+    expect(formatTurns(5)).toBe("↻5");
   });
 
   it("includes max turns with ≤ separator", () => {
-    expect(formatTurns(5, 30)).toBe("⟳ 5≤30");
+    expect(formatTurns(5, 30)).toBe("↻5≤30");
   });
 
   it("omits max when null", () => {
-    expect(formatTurns(3, null)).toBe("⟳ 3");
+    expect(formatTurns(3, null)).toBe("↻3");
   });
 
   it("omits max when undefined", () => {
-    expect(formatTurns(3, undefined)).toBe("⟳ 3");
+    expect(formatTurns(3, undefined)).toBe("↻3");
   });
 
   it("handles zero turns", () => {
-    expect(formatTurns(0)).toBe("⟳ 0");
+    expect(formatTurns(0)).toBe("↻0");
   });
 
   it("handles turn count equal to max", () => {
-    expect(formatTurns(50, 50)).toBe("⟳ 50≤50");
+    expect(formatTurns(50, 50)).toBe("↻50≤50");
   });
 });
 

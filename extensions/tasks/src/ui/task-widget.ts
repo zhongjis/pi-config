@@ -1,16 +1,17 @@
 /**
  * task-widget.ts — Persistent widget showing task list with status icons and progress.
  *
- * Display style matches Claude Code's task list:
- *   ✔ completed tasks (strikethrough + dim)
- *   ◼ in_progress tasks
- *   ◻ pending tasks
- *   ✳/✽ actively executing task (star spinner with activeForm text)
+ * Shared style (extensions/lib/widget-style.ts) — light tree, ASCII glyphs:
+ *   ✓ completed tasks (strikethrough + dim)
+ *   ◐ in_progress tasks
+ *   ○ pending tasks
+ *   braille spinner for the actively executing task (with activeForm text)
  */
 
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { filterBlockers } from "../../../lib/blocker.js";
 import { groupByStatus } from "../../../lib/status-group.js";
+import { formatDuration, formatTokens, GLYPH, headingIcon, joinStats, SEPARATOR, spinnerGlyph, TREE } from "../../../lib/widget-style.js";
 import { TASK_WIDGET_MAX_VISIBLE, TASK_WIDGET_REFRESH_INTERVAL_MS } from "../constants.js";
 import type { TaskStore } from "../task-store.js";
 
@@ -31,32 +32,11 @@ export type UICtx = {
   ): void;
 };
 
-/** Star spinner frames for animated active task indicator (matches Claude Code). */
-const SPINNER = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"];
-
 /** Per-task runtime metrics (elapsed time, token usage). */
 export interface TaskMetrics {
   startedAt: number;
   inputTokens: number;
   outputTokens: number;
-}
-
-/** Format milliseconds as a human-readable duration (e.g., "2m 49s", "1h 3m"). */
-function formatDuration(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min < 60) return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
-  const hr = Math.floor(min / 60);
-  const remMin = min % 60;
-  return remMin > 0 ? `${hr}h ${remMin}m` : `${hr}h`;
-}
-
-/** Format token count with k suffix (e.g., "4.1k", "850"). */
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n);
-  return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
 }
 
 // ---- Widget ----
@@ -130,29 +110,37 @@ export class TaskWidget {
     const inProgress = groupedTasks.in_progress ?? [];
     const pending = groupedTasks.pending ?? [];
 
-    const parts: string[] = [];
-    if (completed.length > 0) parts.push(`${completed.length} done`);
-    if (inProgress.length > 0) parts.push(`${inProgress.length} in progress`);
-    if (pending.length > 0) parts.push(`${pending.length} open`);
-    const statusText = `${tasks.length} tasks (${parts.join(", ")})`;
+    const summary = joinStats([
+      completed.length > 0 ? `${completed.length} done` : "",
+      inProgress.length > 0 ? `${inProgress.length} in progress` : "",
+      pending.length > 0 ? `${pending.length} open` : "",
+    ]);
+    const active = inProgress.length > 0 || pending.length > 0;
+    const headColor = active ? "accent" : "dim";
 
-    const spinnerChar = SPINNER[this.widgetFrame % SPINNER.length];
-    const lines: string[] = [truncate(theme.fg("accent", "●") + " " + theme.fg("accent", statusText))];
+    const spinnerChar = spinnerGlyph(this.widgetFrame);
+    const heading = summary
+      ? `${theme.fg(headColor, headingIcon(active))} ${theme.fg(headColor, "Tasks")}${theme.fg("dim", SEPARATOR + summary)}`
+      : `${theme.fg(headColor, headingIcon(active))} ${theme.fg(headColor, "Tasks")}`;
+    const lines: string[] = [truncate(heading)];
 
+    const hasOverflow = tasks.length > TASK_WIDGET_MAX_VISIBLE;
     const visible = tasks.slice(0, TASK_WIDGET_MAX_VISIBLE);
     for (let i = 0; i < visible.length; i++) {
       const task = visible[i];
       const isActive = this.activeTaskIds.has(task.id) && task.status === "in_progress";
+      const isLastRow = !hasOverflow && i === visible.length - 1;
+      const connector = theme.fg("dim", isLastRow ? TREE.last : TREE.mid);
 
       let icon: string;
       if (isActive) {
         icon = theme.fg("accent", spinnerChar);
       } else if (task.status === "completed") {
-        icon = theme.fg("success", "✔");
+        icon = theme.fg("success", GLYPH.done);
       } else if (task.status === "in_progress") {
-        icon = theme.fg("accent", "◼");
+        icon = theme.fg("accent", GLYPH.active);
       } else {
-        icon = "◻";
+        icon = theme.fg("dim", GLYPH.pending);
       }
 
 	      let suffix = "";
@@ -179,21 +167,21 @@ export class TaskWidget {
             ? ` ${theme.fg("dim", `(${elapsed} · ${tokenParts.join(" ")})`)}`
             : ` ${theme.fg("dim", `(${elapsed})`)}`;
         }
-        text = `  ${icon} ${theme.fg("dim", "#" + task.id)} ${theme.fg("accent", form + agentLabel + "…")}${stats}`;
+        text = `${connector} ${icon} ${theme.fg("dim", "#" + task.id)} ${theme.fg("accent", form + agentLabel + "…")}${stats}`;
       } else if (task.status === "completed") {
-        text = `  ${icon} ${theme.fg("dim", theme.strikethrough("#" + task.id + " " + task.subject))}`;
+        text = `${connector} ${icon} ${theme.fg("dim", theme.strikethrough("#" + task.id + " " + task.subject))}`;
       } else {
         const agentSuffix = task.status === "in_progress" && task.metadata?.agentId
           ? theme.fg("dim", ` (agent ${task.metadata.agentId.slice(0, 5)})`)
           : "";
-        text = `  ${icon} ${theme.fg("dim", "#" + task.id)} ${task.subject}${agentSuffix}`;
+        text = `${connector} ${icon} ${theme.fg("dim", "#" + task.id)} ${task.subject}${agentSuffix}`;
       }
 
       lines.push(truncate(text + suffix));
     }
 
-    if (tasks.length > TASK_WIDGET_MAX_VISIBLE) {
-      lines.push(truncate(theme.fg("dim", `    … and ${tasks.length - TASK_WIDGET_MAX_VISIBLE} more`)));
+    if (hasOverflow) {
+      lines.push(truncate(theme.fg("dim", `${TREE.last} … and ${tasks.length - TASK_WIDGET_MAX_VISIBLE} more`)));
     }
 
     return lines;

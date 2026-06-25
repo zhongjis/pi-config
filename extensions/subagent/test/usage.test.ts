@@ -25,21 +25,21 @@ describe("addUsage", () => {
 describe("formatLifetimeTokens", () => {
   it("formats values < 1000 as plain number", () => {
     const result = formatLifetimeTokens({ input: 10, output: 5, cacheWrite: 0 });
-    expect(result).toBe("󰾆 15");
+    expect(result).toBe("15");
   });
 
   it("formats values >= 1000 with k suffix", () => {
     const result = formatLifetimeTokens({ input: 10_000, output: 4_500, cacheWrite: 0 });
-    expect(result).toBe("󰾆 14.5k");
+    expect(result).toBe("14.5k");
   });
 
   it("formats values >= 1_000_000 with M suffix", () => {
     const result = formatLifetimeTokens({ input: 1_200_000, output: 0, cacheWrite: 0 });
-    expect(result).toBe("󰾆 1.2M");
+    expect(result).toBe("1.2M");
   });
 
   it("includes cacheWrite in total", () => {
     const result = formatLifetimeTokens({ input: 0, output: 0, cacheWrite: 5_000 });
-    expect(result).toBe("󰾆 5.0k");
+    expect(result).toBe("5k");
   });
 });

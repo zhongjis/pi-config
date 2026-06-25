@@ -1,4 +1,5 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
+import { formatDuration, formatTokens, formatTools, formatTurns, SEPARATOR, SPINNER } from "../../../lib/widget-style.js";
 
 export type SubagentSummaryStatus =
   | "queued"
@@ -40,7 +41,7 @@ export interface SummaryRenderOptions {
   width?: number;
 }
 
-export const SUMMARY_SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+export const SUMMARY_SPINNER = SPINNER;
 
 export const SUMMARY_ERROR_STATUSES = new Set<SubagentSummaryStatus>([
   "error",
@@ -50,21 +51,19 @@ export const SUMMARY_ERROR_STATUSES = new Set<SubagentSummaryStatus>([
 ]);
 
 export function formatSummaryTokens(count: number): string {
-  if (count >= 1_000_000) return `󰾆 ${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `󰾆 ${(count / 1_000).toFixed(1)}k`;
-  return `󰾆 ${count}`;
+  return formatTokens(count);
 }
 
 export function formatSummaryTurns(turnCount: number, maxTurns?: number | null): string {
-  return maxTurns != null ? `⟳ ${turnCount}≤${maxTurns}` : `⟳ ${turnCount}`;
+  return formatTurns(turnCount, maxTurns);
 }
 
 export function formatSummaryMs(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}s`;
+  return formatDuration(ms);
 }
 
 export function formatSummaryStats(parts: string[]): string {
-  return parts.filter(Boolean).join("·");
+  return parts.filter(Boolean).join(SEPARATOR);
 }
 
 export function renderSubagentSummary(input: SubagentSummaryInput, options: SummaryRenderOptions = {}): string[] {
@@ -123,7 +122,7 @@ function buildAgentLines(agent: SubagentSummaryAgent): string[] {
   ].filter(Boolean).join(" · ");
   const preview = getPreviewText(agent);
 
-  return preview ? [head, `  ⎿ ${preview}`] : [head];
+  return preview ? [head, `└─ ${preview}`] : [head];
 }
 
 function getAgentStats(agent: SubagentSummaryAgent): string {
@@ -131,7 +130,7 @@ function getAgentStats(agent: SubagentSummaryAgent): string {
   if (agent.modelName) parts.push(agent.modelName);
   if (agent.tags) parts.push(...agent.tags);
   if (agent.turnCount != null) parts.push(formatSummaryTurns(agent.turnCount, agent.maxTurns));
-  if (agent.toolUses && agent.toolUses > 0) parts.push(`󱁤 ${agent.toolUses}`);
+  if (agent.toolUses && agent.toolUses > 0) parts.push(formatTools(agent.toolUses));
   const tokenText = getTokenText(agent);
   if (tokenText) parts.push(tokenText);
   if (agent.durationMs != null) parts.push(formatSummaryMs(agent.durationMs));

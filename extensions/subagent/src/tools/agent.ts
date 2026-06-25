@@ -265,7 +265,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
 
       // ---- Background agent launched ----
       if (details.status === "background") {
-        return new Text(theme.fg("dim", `  ⎿  Running in background (ID: ${details.agentId})`), 0, 0);
+        return new Text(theme.fg("dim", `└─ Running in background (ID: ${details.agentId})`), 0, 0);
       }
 
       // ---- Completed / Steered ----

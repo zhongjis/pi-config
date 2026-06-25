@@ -444,8 +444,8 @@ describe("subagent session UI rebinding", () => {
     };
 
     const collapsed = renderText(renderer({ details }, { expanded: false }, plainTheme));
-    expect(collapsed).toContain("✓ Investigate blinking · ⟳ 2≤5·󱁤 3·󰾆 1.2k·4.5s");
-    expect(collapsed).toContain("  ⎿ Found root cause");
+    expect(collapsed).toContain("✓ Investigate blinking · ↻2≤5 · 3 tools · 1.2k · 4.5s");
+    expect(collapsed).toContain("└─ Found root cause");
     expect(collapsed).toContain("  transcript: /tmp/agent-output.md");
     expect(collapsed).toContain("  session: /tmp/session.jsonl");
     expect(collapsed).not.toContain("Second detail");
@@ -466,7 +466,7 @@ describe("subagent session UI rebinding", () => {
       description: "Patch renderer",
       subagentType: "jintong",
       toolUses: 2,
-      tokens: "󰾆 9.8k",
+      tokens: "9.8k",
       durationMs: 1200,
       status: "completed",
       turnCount: 3,
@@ -478,12 +478,12 @@ describe("subagent session UI rebinding", () => {
     };
 
     const collapsed = renderText(agentTool.renderResult(result, { expanded: false, isPartial: false }, plainTheme));
-    expect(collapsed).toContain("✓ Agent Patch renderer · ⟳ 3≤10·󱁤 2·󰾆 9.8k·1.2s");
-    expect(collapsed).toContain("  ⎿ Done");
+    expect(collapsed).toContain("✓ Agent Patch renderer · ↻3≤10 · 2 tools · 9.8k · 1.2s");
+    expect(collapsed).toContain("└─ Done");
     expect(collapsed).not.toContain("Detailed result");
 
     const expanded = renderText(agentTool.renderResult(result, { expanded: true, isPartial: false }, plainTheme));
-    expect(expanded).toContain("✓ Agent Patch renderer · ⟳ 3≤10·󱁤 2·󰾆 9.8k·1.2s");
+    expect(expanded).toContain("✓ Agent Patch renderer · ↻3≤10 · 2 tools · 9.8k · 1.2s");
     expect(expanded).toContain("  Agent completed in 1.2s.");
     expect(expanded).toContain("  Detailed result");
 
@@ -491,7 +491,7 @@ describe("subagent session UI rebinding", () => {
       content: [{ type: "text", text: "background" }],
       details: { ...details, status: "background", agentId: "agent-bg", durationMs: 0 },
     }, { expanded: false, isPartial: false }, plainTheme));
-    expect(background).toBe("  ⎿  Running in background (ID: agent-bg)");
+    expect(background).toBe("└─ Running in background (ID: agent-bg)");
   });
 
   it("uses RenderScheduler cadence for foreground progress and flushes state boundaries", async () => {

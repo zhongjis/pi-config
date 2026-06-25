@@ -17,8 +17,8 @@ describe("renderSubagentSummary", () => {
       durationMs: 5700,
     })).toMatchInlineSnapshot(`
       [
-        "⠹ Explore Trace blinking · sonnet·⟳ 3≤12·󱁤 4·󰾆 12.3k·5.7s",
-        "  ⎿ reading files…",
+        "⠹ Explore Trace blinking · sonnet · ↻3≤12 · 4 tools · 12.3k · 5.7s",
+        "└─ reading files…",
       ]
     `);
   });
@@ -31,12 +31,12 @@ describe("renderSubagentSummary", () => {
       resultPreview: "Use stable widget callback and requestRender.",
       turnCount: 5,
       toolUses: 2,
-      tokens: "󰾆 9.8k",
+      tokens: "9.8k",
       durationMs: 12_400,
     })).toMatchInlineSnapshot(`
       [
-        "✓ Plan Draft fix · ⟳ 5·󱁤 2·󰾆 9.8k·12.4s",
-        "  ⎿ Use stable widget callback and requestRender.",
+        "✓ Plan Draft fix · ↻5 · 2 tools · 9.8k · 12s",
+        "└─ Use stable widget callback and requestRender.",
       ]
     `);
   });
@@ -73,12 +73,12 @@ describe("renderSubagentSummary", () => {
     })).toMatchInlineSnapshot(`
       [
         "✓ 3 agents completed",
-        "├─ ✓ Explore Find cause · 󱁤 1·1.2s",
-        "│    ⎿ Timer re-registers widget.",
-        "├─ ✓ Plan Shape patch · 󱁤 2·2.3s",
-        "│    ⎿ Extract pure renderer first.",
-        "└─ ✓ Debug Verify · 󱁤 3·3.4s",
-        "     ⎿ Focused tests pass.",
+        "├─ ✓ Explore Find cause · 1 tool · 1.2s",
+        "│  └─ Timer re-registers widget.",
+        "├─ ✓ Plan Shape patch · 2 tools · 2.3s",
+        "│  └─ Extract pure renderer first.",
+        "└─ ✓ Debug Verify · 3 tools · 3.4s",
+        "   └─ Focused tests pass.",
       ]
     `);
   });
@@ -96,8 +96,8 @@ describe("renderSubagentSummary", () => {
       durationMs: 300,
     })).toMatchInlineSnapshot(`
       [
-        "✗ Jintong Patch renderer · ⟳ 1≤3·󱁤 1·0.3s · error: Typecheck failed",
-        "  ⎿ Stopped before writing files.",
+        "✗ Jintong Patch renderer · ↻1≤3 · 1 tool · 0.3s · error: Typecheck failed",
+        "└─ Stopped before writing files.",
       ]
     `);
   });
@@ -129,9 +129,9 @@ describe("renderSubagentSummary", () => {
       [
         "✗ 2 very long agents complete...",
         "├─ ✓ Explore Inspect an extre...",
-        "│    ⎿ This preview is also i...",
+        "│  └─ This preview is also in...",
         "└─ ✗ Plan Write narrow safe r...",
-        "     ⎿ Error preview should b...",
+        "   └─ Error preview should be...",
       ]
     `);
     expect(lines.every(line => line.length <= 32)).toBe(true);

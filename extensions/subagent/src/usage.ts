@@ -1,3 +1,5 @@
+import { formatTokens } from "../../lib/widget-style.js";
+
 export interface LifetimeUsage {
   input: number;
   output: number;
@@ -11,8 +13,5 @@ export function addUsage(into: LifetimeUsage, delta: { input: number; output: nu
 }
 
 export function formatLifetimeTokens(usage: LifetimeUsage): string {
-  const total = usage.input + usage.output + usage.cacheWrite;
-  if (total >= 1_000_000) return `󰾆 ${(total / 1_000_000).toFixed(1)}M`;
-  if (total >= 1_000) return `󰾆 ${(total / 1_000).toFixed(1)}k`;
-  return `󰾆 ${total}`;
+  return formatTokens(usage.input + usage.output + usage.cacheWrite);
 }
