@@ -4,7 +4,7 @@ description: A frontend and UI/UX specialist for visual engineering, design impl
 model: gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 builtin_tools: read,bash,edit,write
-extension_tools: lsp_diagnostics,look_at,codegraph_*
+extension_tools: look_at,codegraph_*
 ---
 
 <role>

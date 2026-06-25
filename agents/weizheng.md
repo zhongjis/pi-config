@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-8:high,openai-codex/gpt-5.5:high,opencode-go/deep
 prompt_mode: system_instructions
 inherit_context: false
 builtin_tools: read,bash
-extension_tools: lsp_diagnostics,readonly_bash,codegraph_*
+extension_tools: readonly_bash,codegraph_*
 ---
 
 <role>
