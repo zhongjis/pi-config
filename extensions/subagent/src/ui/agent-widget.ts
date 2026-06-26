@@ -23,7 +23,7 @@ const MAX_WIDGET_LINES = 12;
 export const SPINNER = STYLE_SPINNER;
 
 /** Minimum time between animation-only renders while active agents are unchanged. */
-const ACTIVE_RENDER_CADENCE_MS = 250;
+const ACTIVE_RENDER_CADENCE_MS = 150;
 
 /** Statuses that indicate an error/non-success outcome (used for linger behavior and icon rendering). */
 export const ERROR_STATUSES = new Set(["error", "aborted", "steered", "stopped"]);
