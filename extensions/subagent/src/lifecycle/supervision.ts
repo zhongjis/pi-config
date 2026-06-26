@@ -104,6 +104,8 @@ type SubagentManagerBridge = {
   hasRunning: () => ReturnType<AgentManager["hasRunning"]>;
   spawn: (...args: Parameters<AgentManager["spawn"]>) => ReturnType<AgentManager["spawn"]>;
   getRecord: AgentManager["getRecord"];
+  /** Total subagent cost (USD) accrued this session. Optional for cross-version interop. */
+  getLifetimeCost?: () => number;
 };
 
 export type SupervisedAgentActivity = AgentActivity & {
@@ -536,6 +538,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       return manager.spawn(piRef, ctxRef, resolvedType, prompt, options);
     },
     getRecord: (id: string) => manager.getRecord(id),
+    getLifetimeCost: () => manager.getLifetimeCost(),
   };
 
   function formatUnavailableAgentType(type: string): string {

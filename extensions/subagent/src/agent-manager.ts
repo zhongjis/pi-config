@@ -59,6 +59,8 @@ interface SpawnOptions {
 
 export class AgentManager {
   private agents = new Map<string, AgentRecord>();
+  /** Monotonic per-session sum of subagent message cost (USD). Reset on session_start. */
+  private lifetimeCost = 0;
   private cleanupInterval: ReturnType<typeof setInterval>;
   private onComplete?: OnAgentComplete;
   private onStart?: OnAgentStart;
@@ -88,6 +90,16 @@ export class AgentManager {
 
   getMaxConcurrent(): number {
     return this.maxConcurrent;
+  }
+
+  /** Total subagent cost (USD) accrued this session, across live and cleaned-up agents. */
+  getLifetimeCost(): number {
+    return this.lifetimeCost;
+  }
+
+  /** Reset the per-session subagent cost accumulator (called on session_start). */
+  resetLifetimeCost(): void {
+    this.lifetimeCost = 0;
   }
 
   /**
@@ -189,6 +201,7 @@ export class AgentManager {
       },
       onAssistantUsage: (usage) => {
         if (record.lifetimeUsage) addUsage(record.lifetimeUsage, usage);
+        this.lifetimeCost += usage.cost ?? 0;
       },
       onSessionCreated: (session) => {
         record.session = session;

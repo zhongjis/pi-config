@@ -116,6 +116,24 @@ function getUsageTotals(ctx: Pick<ExtensionContext, "sessionManager">): {
   return { input, output, cacheRead, cacheWrite, cost };
 }
 
+// Subagent cost is owned by the `extensions/subagent` extension and exposed via the
+// Symbol.for("pi-subagents:manager") global bridge (the same handle the tasks bridge reads).
+// Read defensively: returns 0 when the subagent extension is absent or is an older build
+// without getLifetimeCost.
+const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
+
+function getSubagentCost(): number {
+  try {
+    const handle = (globalThis as Record<symbol, unknown>)[SUBAGENT_MANAGER_KEY] as
+      | { getLifetimeCost?: () => number }
+      | undefined;
+    const cost = handle?.getLifetimeCost?.();
+    return typeof cost === "number" && Number.isFinite(cost) ? cost : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function getContextSegment(ctx: ExtensionContext, theme: ExtensionContext["ui"]["theme"]): string {
   const usage = ctx.getContextUsage();
   const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
@@ -129,15 +147,18 @@ function getContextSegment(ctx: ExtensionContext, theme: ExtensionContext["ui"][
 }
 
 function getCostSegment(
-  cost: number,
+  mainCost: number,
+  subagentCost: number,
   usingSubscription: boolean,
   theme: ExtensionContext["ui"]["theme"],
 ): string {
-  const costText = `$${cost.toFixed(3)}`;
-  const label = usingSubscription ? `${costText} (sub)` : costText;
+  const combined = mainCost + subagentCost;
+  const costText = `$${combined.toFixed(3)}`;
+  let label = usingSubscription ? `${costText} (sub)` : costText;
+  if (subagentCost > 0) label += ` (+$${subagentCost.toFixed(3)} agents)`;
 
-  if (cost >= 10) return theme.fg("error", label);
-  if (cost >= 1) return theme.fg("warning", label);
+  if (combined >= 10) return theme.fg("error", label);
+  if (combined >= 1) return theme.fg("warning", label);
   return theme.fg("dim", label);
 }
 
@@ -240,6 +261,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           );
 
           const totals = getUsageTotals(ctx);
+          const subagentCost = getSubagentCost();
           const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
 
           // Stats segments with priority (higher = keep longer).
@@ -259,8 +281,8 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
             priorities.push(2);
           }
 
-          if (totals.cost || usingSubscription) {
-            statsSegments.push(getCostSegment(totals.cost, usingSubscription, theme));
+          if (totals.cost || subagentCost || usingSubscription) {
+            statsSegments.push(getCostSegment(totals.cost, subagentCost, usingSubscription, theme));
             priorities.push(1);
           }
 

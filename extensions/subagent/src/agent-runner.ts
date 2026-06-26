@@ -118,8 +118,8 @@ export interface RunOptions {
   /** Called at the end of each agentic turn with the cumulative count. */
   /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
-  /** Called on each completed assistant message with token usage (excludes cacheRead). */
-  onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number }) => void;
+  /** Called on each completed assistant message with token usage (excludes cacheRead) plus per-message cost (USD, includes cacheRead). */
+  onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number; cost: number }) => void;
 }
 
 export interface RunResult {
@@ -389,7 +389,7 @@ export async function runAgent(
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
       const u = event.message.usage;
-      options.onAssistantUsage?.({ input: u.input ?? 0, output: u.output ?? 0, cacheWrite: u.cacheWrite ?? 0 });
+      options.onAssistantUsage?.({ input: u.input ?? 0, output: u.output ?? 0, cacheWrite: u.cacheWrite ?? 0, cost: u.cost?.total ?? 0 });
     }
   });
 

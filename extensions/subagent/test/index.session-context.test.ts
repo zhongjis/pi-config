@@ -35,6 +35,8 @@ class MockAgentWidget {
 
 class MockAgentManager {
   clearCompleted = vi.fn();
+  resetLifetimeCost = vi.fn();
+  getLifetimeCost = vi.fn(() => 0);
   listAgents = vi.fn(() => []);
   abortAll = vi.fn();
   dispose = vi.fn();
@@ -73,6 +75,8 @@ vi.mock("../src/ui/agent-widget.js", () => ({
 vi.mock("../src/agent-manager.js", () => ({
   AgentManager: class {
     clearCompleted = vi.fn();
+    resetLifetimeCost = vi.fn();
+    getLifetimeCost = vi.fn(() => 0);
     listAgents = vi.fn(() => []);
     abortAll = vi.fn();
     dispose = vi.fn();

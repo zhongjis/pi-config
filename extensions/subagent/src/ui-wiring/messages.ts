@@ -31,6 +31,7 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
   // (startup/reload/new/resume/fork), so this covers the old switch path too.
   pi.on("session_start", async (_event, ctx) => {
     manager.clearCompleted();           // preserve existing behavior
+    manager.resetLifetimeCost();        // new session → reset per-session subagent cost total
     // Boot recovery: rebuild the durable bg-agent registry + task claims from this
     // session's appendEntry log (emits subagent.recovery.replayed with { count }).
     try {
