@@ -9,7 +9,7 @@
 #   diff [<skill>]      Show diff between pinned upstream and vendored tree.
 #                       Optional skill name narrows to one directory.
 #   update [opts]       Re-vendor skills: copy upstream @ target commit, skip the
-#                       ignore list, apply overlay patch, restore local-only files,
+#                       ignore list, restore local-only overlay files,
 #                       then update package.json + README.md.
 #
 # Update options:
@@ -20,9 +20,7 @@
 # Design:
 #   * Never runs git clone inside the repo worktree. Clones to /tmp cache.
 #   * Reads pinned commit via jq from extensions/superpowers/package.json piVendor.
-#   * Overlay model: upstream skills/ + patch + local-only files = vendored tree.
-#     - overlay/pi-adaptations.patch: all intentional text patches (adaptedFrom
-#       frontmatter + Claude-tool -> Pi-tool mappings).
+#   * Overlay model: upstream skills/ + local-only overlay files = vendored tree.
 #     - overlay/files/: local-only files that have no upstream counterpart.
 #   * Intentionally-skipped upstream files are hardcoded in IGNORE_FROM_UPSTREAM.
 #   * Uses git-native commands for transport, per repo policy.
@@ -33,7 +31,6 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 EXT_DIR="$REPO_ROOT/extensions/superpowers"
 SKILLS_DIR="$EXT_DIR/skills"
 OVERLAY_DIR="$EXT_DIR/overlay"
-OVERLAY_PATCH="$OVERLAY_DIR/pi-adaptations.patch"
 OVERLAY_FILES="$OVERLAY_DIR/files"
 PKG_JSON="$EXT_DIR/package.json"
 README="$EXT_DIR/README.md"
@@ -60,7 +57,6 @@ require() {
 
 require git
 require jq
-require patch
 require diff
 
 pinned_commit() {
@@ -124,11 +120,6 @@ cmd_status() {
   for rel in "${IGNORE_FROM_UPSTREAM[@]}"; do
     rm -f "$stage/skills/$rel"
   done
-  if [[ -f "$OVERLAY_PATCH" ]]; then
-    (cd "$stage/skills" && patch -p1 --quiet --no-backup-if-mismatch < "$OVERLAY_PATCH") \
-      || { err "overlay patch no longer applies to pinned commit; overlay drifted"; return 1; }
-    find "$stage/skills" \( -name '*.rej' -o -name '*.orig' \) -delete
-  fi
   if [[ -d "$OVERLAY_FILES" ]]; then
     (cd "$OVERLAY_FILES" && find . -type f -print0) \
       | while IFS= read -r -d '' rel; do
@@ -140,12 +131,12 @@ cmd_status() {
   drift_file=$(mktemp)
   diff -rq "$expected_tree" "$SKILLS_DIR" 2>/dev/null > "$drift_file" || true
   if [[ ! -s "$drift_file" ]]; then
-    ok "vendored tree matches upstream@pinned + overlay (clean)"
+    ok "vendored tree matches upstream@pinned + overlay files (clean)"
   else
-    warn "UNEXPECTED DRIFT (vendored tree diverges from upstream+overlay):"
+    warn "UNEXPECTED DRIFT (vendored tree diverges from expected state):"
     cat "$drift_file"
-    warn "either someone edited skills/ directly, or overlay is out of date."
-    warn "fix: edit skills/ and regenerate overlay, or revert skills/ and rerun update."
+    warn "either someone edited skills/ directly, or overlay files are out of date."
+    warn "fix: revert skills/ and rerun update, or update overlay/files/ contents."
   fi
   rm -f "$drift_file"
 }
@@ -239,21 +230,6 @@ cmd_update() {
     rm -f "$stage/skills/$rel"
   done
 
-  # Apply overlay patch.
-  if [[ -f "$OVERLAY_PATCH" ]]; then
-    info "applying overlay patch"
-    pushd "$stage/skills" >/dev/null
-    if ! patch -p1 --quiet --no-backup-if-mismatch < "$OVERLAY_PATCH"; then
-      popd >/dev/null
-      err "overlay patch failed to apply cleanly."
-      err "upstream likely changed text that our overlay patches."
-      err "inspect conflicts under $stage/skills and regenerate overlay."
-      exit 1
-    fi
-    # Remove any .rej / .orig leftovers just in case.
-    find "$stage/skills" \( -name '*.rej' -o -name '*.orig' \) -delete
-    popd >/dev/null
-  fi
 
   # Copy local-only overlay files over.
   if [[ -d "$OVERLAY_FILES" ]]; then

@@ -1,8 +1,6 @@
 ---
 name: dispatching-parallel-agents
 description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
-adaptedFrom:
-  - "https://github.com/obra/superpowers/tree/main/skills/dispatching-parallel-agents"
 ---
 
 # Dispatching Parallel Agents
@@ -67,13 +65,16 @@ Each agent gets:
 
 ### 3. Dispatch in Parallel
 
-```typescript
-// In Pi
-Agent({ subagent_type: "jintong", description: "Fix agent-tool-abort.test.ts failures", run_in_background: true })
-Agent({ subagent_type: "jintong", description: "Fix batch-completion-behavior.test.ts failures", run_in_background: true })
-Agent({ subagent_type: "jintong", description: "Fix tool-approval-race-conditions.test.ts failures", run_in_background: true })
-// All three run concurrently
+Issue all three subagent dispatches in the same response — they run in parallel:
+
+```text
+Subagent (general-purpose): "Fix agent-tool-abort.test.ts failures"
+Subagent (general-purpose): "Fix batch-completion-behavior.test.ts failures"
+Subagent (general-purpose): "Fix tool-approval-race-conditions.test.ts failures"
+# All three run concurrently.
 ```
+
+Multiple dispatch calls in one response = parallel execution. One per response = sequential.
 
 ### 4. Review and Integrate
 

@@ -5,10 +5,10 @@ Vendored Superpowers skills adapted for this Pi harness. Opt-in via `/mode luban
 ## Upstream
 
 - **Source:** https://github.com/obra/superpowers
-- **Version:** 5.1.0
-- **Commit:** f2cbfbef
+- **Version:** 6.0.3
+- **Commit:** 896224c
 - **License:** MIT
-- **Last synced:** 2026-05-08
+- **Last synced:** 2026-06-26
 
 ## Sync
 
@@ -22,21 +22,10 @@ scripts/sync-superpowers.sh update              # re-vendor to upstream HEAD
 scripts/sync-superpowers.sh update --commit <sha>
 ```
 
-Sync model: `upstream@<pinned> + overlay/pi-adaptations.patch + overlay/files/ = skills/`.
+Sync model: `upstream@<pinned> skills/ (minus ignore list) + overlay/files/* = skills/`; `index.ts` = mode-gated fork of upstream `.pi/extensions/superpowers.ts`.
 
-Do not hand-edit `skills/` for Pi-specific divergences. Edit upstream content or
-the overlay instead, then regenerate:
-
-```bash
-# after modifying skills/ with intentional local changes:
-diff -urN /tmp/superpowers-upstream/skills extensions/superpowers/skills \
-  -x codex-tools.md -x copilot-tools.md -x gemini-tools.md \
-  | sed -E 's|^--- /tmp/superpowers-upstream/skills/|--- a/|; s|^\+\+\+ extensions/superpowers/skills/|+++ b/|' \
-  > extensions/superpowers/overlay/pi-adaptations.patch
-```
-
-`sync-superpowers.sh status` verifies vendored tree matches
-`upstream@pinned + overlay` and fails loud on unexpected drift.
+Do not hand-edit `skills/` for Pi-specific divergences. Use `overlay/files/` for
+local-only files (no upstream counterpart) and update `index.ts` for mode-gating changes.
 
 ## What It Does
 
@@ -55,9 +44,8 @@ diff -urN /tmp/superpowers-upstream/skills extensions/superpowers/skills \
 
 - `index.ts` — Registers `resources_discover` to conditionally inject `./skills`.
 - `package.json` — Declares `pi.extensions` and `piVendor` metadata.
-- `skills/using-superpowers/SKILL.md` — Upstream guardrail skill, patched for Pi.
+- `skills/using-superpowers/SKILL.md` — Upstream guardrail skill (verbatim).
 - `skills/using-superpowers/references/pi-tools.md` — Pi-native tool mapping (local-only).
-- `overlay/pi-adaptations.patch` — All intentional text patches vs upstream.
 - `overlay/files/` — Local-only files (no upstream counterpart).
 
 ## Notes

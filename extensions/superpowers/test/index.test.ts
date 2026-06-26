@@ -15,6 +15,12 @@ describe("superpowers extension", () => {
     return handlers![0]!;
   }
 
+  function setupExtension() {
+    const mock = createMockPi();
+    superpowersExtension(mock.pi as never);
+    return mock;
+  }
+
   function ctxWithMode(mode?: string) {
     return {
       sessionManager: {
@@ -63,5 +69,59 @@ describe("superpowers extension", () => {
     })) as { skillPaths: string[] };
 
     expect(result.skillPaths).toEqual([]);
+  });
+
+  it("context handler injects bootstrap message when luban mode", async () => {
+    const mock = setupExtension();
+    const handler = mock.lifecycleHandlers.get("context")![0]!;
+    const result = (await handler({ messages: [] }, ctxWithMode("luban"))) as { messages: unknown[] } | undefined;
+    expect(result).toBeDefined();
+    expect(result?.messages).toHaveLength(1);
+  });
+
+  it("context handler skips bootstrap injection when not luban", async () => {
+    const mock = setupExtension();
+    const handler = mock.lifecycleHandlers.get("context")![0]!;
+    const result = await handler({ messages: [] }, ctxWithMode("kuafu"));
+    expect(result).toBeUndefined();
+  });
+
+  it("bootstrap message contains BOOTSTRAP_MARKER", async () => {
+    const mock = setupExtension();
+    const handler = mock.lifecycleHandlers.get("context")![0]!;
+    const result = (await handler({ messages: [] }, ctxWithMode("luban"))) as {
+      messages: Array<{ content: Array<{ text: string }> }>;
+    };
+    const text = result.messages[0]!.content[0]!.text;
+    expect(text).toContain("superpowers:using-superpowers bootstrap for pi");
+  });
+
+  it("bootstrap message contains piToolMapping content", async () => {
+    const mock = setupExtension();
+    const handler = mock.lifecycleHandlers.get("context")![0]!;
+    const result = (await handler({ messages: [] }, ctxWithMode("luban"))) as {
+      messages: Array<{ content: Array<{ text: string }> }>;
+    };
+    const text = result.messages[0]!.content[0]!.text;
+    expect(text).toMatch(/`Agent`|TaskCreate/);
+  });
+
+  it("session_start resets injectBootstrap so context injects again", async () => {
+    const mock = setupExtension();
+    const handler = mock.lifecycleHandlers.get("context")![0]!;
+
+    // agent_end sets injectBootstrap = false
+    await mock.fireLifecycle("agent_end");
+
+    // context must not inject when flag is false
+    const afterEnd = await handler({ messages: [] }, ctxWithMode("luban"));
+    expect(afterEnd).toBeUndefined();
+
+    // session_start resets flag to true
+    await mock.fireLifecycle("session_start");
+
+    // context injects again
+    const afterStart = (await handler({ messages: [] }, ctxWithMode("luban"))) as { messages: unknown[] };
+    expect(afterStart?.messages).toHaveLength(1);
   });
 });

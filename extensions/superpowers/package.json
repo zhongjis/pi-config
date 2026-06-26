@@ -9,9 +9,9 @@
   },
   "piVendor": {
     "upstream": "https://github.com/obra/superpowers",
-    "commit": "f2cbfbef",
-    "version": "5.1.0",
+    "commit": "896224c",
+    "version": "6.0.3",
     "localTarget": "extensions/superpowers",
-    "adaptedFor": "panda-harness Pi mode and native Agent/Task tools"
+    "adaptedFor": "panda-harness Pi mode-gating wrapper around upstream Pi extension"
   }
 }

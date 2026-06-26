@@ -60,8 +60,8 @@ describe("superpowers package manifest", () => {
     });
     expect(manifest.piVendor).toMatchObject({
       upstream: "https://github.com/obra/superpowers",
-      commit: "f2cbfbef",
-      version: "5.1.0",
+      commit: "896224c",
+      version: "6.0.3",
       localTarget: "extensions/superpowers",
     });
   });
@@ -70,6 +70,13 @@ describe("superpowers package manifest", () => {
 describe("superpowers vendored skills", () => {
   it("vendors all expected upstream skill directories", () => {
     expect(listSkillDirs()).toEqual(expectedSkills);
+  });
+
+  it("does not include Claude-only vendor directories", () => {
+    const skillDirs = listSkillDirs();
+    expect(skillDirs).not.toContain("codex-tools");
+    expect(skillDirs).not.toContain("copilot-tools");
+    expect(skillDirs).not.toContain("gemini-tools");
   });
 
   for (const skillName of expectedSkills) {
@@ -82,7 +89,6 @@ describe("superpowers vendored skills", () => {
 
       expect(frontmatter.name).toBe(skillName);
       expect(frontmatter.description).toBeTruthy();
-      expect(content).toContain(`https://github.com/obra/superpowers/tree/main/skills/${skillName}`);
     });
   }
 
