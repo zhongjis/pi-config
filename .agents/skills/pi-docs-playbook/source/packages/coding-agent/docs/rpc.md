@@ -374,10 +374,13 @@ Response:
     "summary": "Summary of conversation...",
     "firstKeptEntryId": "abc123",
     "tokensBefore": 150000,
+    "estimatedTokensAfter": 32000,
     "details": {}
   }
 }
 ```
+
+`estimatedTokensAfter` is a heuristic estimate over the rebuilt message context immediately after compaction, not a provider-exact token count.
 
 #### set_auto_compaction
 
@@ -924,6 +927,7 @@ The `reason` field is `"manual"`, `"threshold"`, or `"overflow"`.
     "summary": "Summary of conversation...",
     "firstKeptEntryId": "abc123",
     "tokensBefore": 150000,
+    "estimatedTokensAfter": 32000,
     "details": {}
   },
   "aborted": false,
@@ -1003,7 +1007,7 @@ Some `ExtensionUIContext` methods are not supported or degraded in RPC mode beca
 - `getTheme()` returns `undefined`
 - `setTheme()` returns `{ success: false, error: "..." }`
 
-Note: `ctx.hasUI` is `true` in RPC mode because the dialog and fire-and-forget methods are functional via the extension UI sub-protocol.
+Note: `ctx.mode` is `"rpc"` and `ctx.hasUI` is `true` in RPC mode because the dialog and fire-and-forget methods are functional via the extension UI sub-protocol. Use `ctx.mode === "tui"` to guard TUI-specific features like `custom()` that require a real terminal.
 
 ### Extension UI Requests (stdout)
 

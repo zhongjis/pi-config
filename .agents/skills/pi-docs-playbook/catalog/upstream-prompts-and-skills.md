@@ -6,4 +6,5 @@ These are dogfood assets from upstream pi.
 - [Prompt: is](../source/.pi/prompts/is.md)
 - [Prompt: pr](../source/.pi/prompts/pr.md)
 - [Prompt: wr](../source/.pi/prompts/wr.md)
+- [Prompt: sa (security advisory)](../source/.pi/prompts/sa.md)
 - [Skill: add LLM provider](../source/.pi/skills/add-llm-provider.md)

@@ -40,6 +40,11 @@ These are the Markdown files behind `https://pi.dev/docs/latest`.
 - [Shell Aliases](../source/packages/coding-agent/docs/shell-aliases.md)
 - [Development](../source/packages/coding-agent/docs/development.md)
 
+## Security And Sandboxing
+
+- [Security](../source/packages/coding-agent/docs/security.md)
+- [Containerization](../source/packages/coding-agent/docs/containerization.md)
+
 ## Extra Assets
 
 - [docs.json](../source/packages/coding-agent/docs/docs.json)
