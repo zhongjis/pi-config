@@ -22,3 +22,7 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 
 - No new dependencies. Existing repo runtime provides `@earendil-works/pi-coding-agent` and `typebox`.
 - `codegraph` CLI is assumed on `PATH`; tools spawn it per request.
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/codegraph/`.

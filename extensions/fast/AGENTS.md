@@ -43,3 +43,7 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 ## Upstream Sync Note
 
 Upstream ships these as two separate npm packages. To re-vendor, sync each profile independently against its upstream source (see `README.md`), then re-apply the merge: keep the shared engine, update only the affected `FastProfile` entry and provider-specific helpers (e.g. `syncAnthropicBetaHeader`).
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/fast/`.

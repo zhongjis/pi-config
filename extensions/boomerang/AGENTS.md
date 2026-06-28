@@ -20,3 +20,7 @@ Intentional divergences from upstream. Preserve these on sync.
 - Last synced upstream commit: `ea543818f0d3b92bc427e179cfe75d0984553f36`.
 - Upstream license: not declared.
 - Required runtime deps are already present in root `package.json`: `typebox`, `@mariozechner/pi-agent-core`, `@mariozechner/pi-ai`, `@mariozechner/pi-coding-agent`.
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/boomerang/`.

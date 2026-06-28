@@ -106,3 +106,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/enabled-models.ts` | Ported from upstream + local `decideModelScope` | scopeModels guardrail; caller-param out-of-scope blocks, frontmatter/inherited warns (frontmatter authoritative) |
 | `src/ui/conversation-viewer.ts` | `stopArmed` + `onStop` two-press `x` confirm | Stop agent from viewer (#0.10.0); aborts via `AgentManager.abort` → AgentRun pipeline (no new emission) |
 | `src/agent-runner.ts` | `extensionCanonicalName` + `buildExtensionsOverride` + `extensionsOverride` wiring | Revives dead `extensions: string[]` allowlist + adds `exclude_extensions` denylist (T2.3 Stage 1); `computeActiveToolNames` stays denylist-free |
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/subagent/`.

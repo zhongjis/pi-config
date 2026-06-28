@@ -63,3 +63,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `test/handoff-cleanup.test.ts` | Local-only regression tests for planning provenance and handoff cleanup. | Protects Fu Xi planning task cleanup behavior. |
 | `src/lifecycle/store-glue.ts` | System-reminder delivery matches upstream 0.7.0 (transient `context`-hook injection via `runtime.reminderDue`, never `tool_result` content mutation), but cadence keeps the local `ContinuationCooldown` (backoff + stagnation cap). | Adopts upstream's stale-reminder fix without discarding local backoff/stagnation cadence; do NOT replace with upstream's simpler `reminder-cadence.ts`. |
 | `src/task-runner.ts`, `src/tools/output.ts`, `src/tools/stop.ts` | `TaskRunner` seam: process + subagent execution sit behind one interface as adapters; `TaskOutput`/`TaskStop` call the runner instead of branching on model and re-walking `agentTaskMap` inline. Behavior-preserving. | Deepening refactor — removes the per-tool model fork + duplicated id-resolution; makes the read/stop paths unit-testable with a fake bridge (`test/task-runner.test.ts`). Not in upstream. |
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/tasks/`.

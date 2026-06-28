@@ -7,14 +7,43 @@
 ## Overview
 Personal Pi harness around `pi`: custom agents, runtime extensions, test harnesses, and Nix-managed local setup.
 
+## DOX Contract
+
+Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyright 2026 Agent Zero). Adopted as a documentation/process layer, not as a Pi extension or package.
+
+- `AGENTS.md` files are binding work contracts for their subtrees.
+- Before editing, identify expected target paths and read the applicable chain: root `AGENTS.md` → every child `AGENTS.md` on the path → nearest owning `AGENTS.md`.
+- The nearest `AGENTS.md` controls local work details. Parent docs still control repo-wide rules; child docs must not weaken this root contract.
+- After meaningful changes to structure, ownership, workflows, contracts, verification, permissions, side effects, or durable user preferences, update the nearest owning `AGENTS.md` and any affected parent/child index before finishing.
+- Tiny behavior-neutral edits may leave docs unchanged, but still do the DOX pass and report docs intentionally unchanged when relevant.
+- Keep docs concise, operational, and current. Delete stale or contradictory guidance instead of explaining history.
+
+## Child DOX Index
+
+| Path | Owner Doc | Scope |
+|------|-----------|-------|
+| `.agents/` | `.agents/AGENTS.md` | Repo-local agent skills and skill source snapshots. |
+| `agents/` | `agents/AGENTS.md` | Custom subagent definitions and prompt/frontmatter conventions. |
+| `docs/` | `docs/AGENTS.md` | Human-facing design docs, testing notes, and references. |
+| `extensions/` | `extensions/AGENTS.md` | Runtime Pi extensions, shared extension rules, event contracts, and extension-local child docs. |
+| `modes/` | `modes/AGENTS.md` | Mode prompt variants and prompt-family construction rules. |
+| `scripts/` | `scripts/AGENTS.md` | Repo helper scripts used by install/test/maintenance flows. |
+| `skills/` | `skills/AGENTS.md` | Repo-managed skills; live sync is Nix/Home Manager constrained. |
+| `test/` | `test/AGENTS.md` | Root Vitest smoke/integration harness, fixtures, and stubs. |
+| `themes/` | `themes/AGENTS.md` | Theme JSON assets. |
+
 ## Structure
 ```
 ./
+├── .agents/         # repo-local skills and skill source snapshots
 ├── agents/          # custom agent definitions; Chinese mythology naming
-├── extensions/      # runtime Pi extensions; most active product code
-├── test/            # root Vitest smoke + integration harness
 ├── docs/            # design docs, standards, and reference material
-└── scripts/         # repo helper scripts used by root flows
+├── extensions/      # runtime Pi extensions; most active product code
+├── modes/           # mode prompt variants
+├── scripts/         # repo helper scripts used by root flows
+├── skills/          # repo-managed skills
+├── test/            # root Vitest smoke + integration harness
+└── themes/          # theme assets
 ```
 
 ## Where to Look

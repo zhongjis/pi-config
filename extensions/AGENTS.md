@@ -69,3 +69,18 @@ pnpm lint:typecheck
 - Root smoke discovery does not scan arbitrary nested entrypoints.
 - Many extension tests rely on root Vitest aliases/stubs; run validation from repo root unless a package README says otherwise.
 - `node_modules/` inside some extension folders are local package artifacts, not a signal to treat the whole repo as a workspace monorepo.
+
+## Child DOX Index
+
+Child `AGENTS.md` files own only local extension details. This file owns extension-wide rules and every extension directory not listed here.
+
+| Path | Owner Doc | Scope |
+|------|-----------|-------|
+| `boomerang/` | `boomerang/AGENTS.md` | Vendored Boomerang extension sync notes and local `/boomerang:commit` tweaks. |
+| `codegraph/` | `codegraph/AGENTS.md` | Vendored CodeGraph tool extension, timeout/retry behavior, and teaching layer tweaks. |
+| `direnv/` | `direnv/AGENTS.md` | Vendored direnv extension sync notes and local lifecycle/status tweaks. |
+| `fast/` | `fast/AGENTS.md` | Vendored fast-mode provider profile merge and session-only state rules. |
+| `smart-sessions/` | `smart-sessions/AGENTS.md` | Vendored session-summary behavior and model-role compatibility notes. |
+| `subagent/` | `subagent/AGENTS.md` | Subagent runtime, tool surface, RPC, lifecycle, and local fork manifest. |
+| `superpowers/` | `superpowers/AGENTS.md` | Vendored superpowers skill tree, overlay workflow, and sync script rules. |
+| `tasks/` | `tasks/AGENTS.md` | Task DAG, process tracking, subagent bridge, and task-local fork manifest. |
