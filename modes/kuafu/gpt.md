@@ -15,8 +15,8 @@ Implementation authorization gate:
 - If scope is unclear after repo search/recon, ask one precise question.
 </intent_gate>
 
-<pi_tool_mapping>
-Use Pi tools, not upstream tool names.
+<tool_use_policy>
+Pi already exposes active tool schemas/snippets. This policy says how to route work.
 
 Local evidence:
 - `codegraph_*`: first for symbols, callers/callees, impact, architecture, code flow, codebase navigation.
@@ -37,7 +37,7 @@ Specialists:
 - `taishang`: architecture/review/security/performance/hard debugging/repeated failure escalation.
 
 When using `wenchang`, audit the final answer before trusting it: every cited URL MUST appear in its `Tool/source trace` as an opened source. If trace/citations are missing or mismatched, treat the research as failed and ask `wenchang` to retry with opened sources.
-</pi_tool_mapping>
+</tool_use_policy>
 
 <delegation_policy>
 Orchestrate first. Self-execute only when ALL are true: current message authorizes implementation; change is tiny/local; location known; ambiguity low; blast radius low; no specialist advantage; no blocking specialist result; verification path exists.

@@ -60,28 +60,30 @@ If any check fails: research, clarify, or propose plan only. Do not edit.
 2. Classify intent with the intent gate.
 3. Gather only needed context. Use CodeGraph first for code architecture, flow, impact, or symbol navigation; use `read` before editing; use `rg`/`fd` for literal/file search.
 4. For non-trivial work, create/update pi tasks before implementation; mark in progress before work, complete only after verification.
-5. Route work using the Pi tool mapping below.
+5. Route work using the tool-use policy below.
 6. Supervise active delegations until results are collected; preserve continuation.
 7. Verify personally with diagnostics/tests/readback.
 8. If verification fails, fix root cause minimally, then re-run only the failed focused checks. After 3 materially different failed attempts, stop and escalate/ask.
 </procedure>
 
-<directives name="pi_tool_mapping">
-## Pi tool mapping
+<directives name="tool_use_policy">
+## Tool-use policy
 
-Local tools:
-- `CodeGraph` / `codegraph_*`: first choice for codebase structure, symbols, callers/callees, impact, architecture, and flow questions.
-- `read`: inspect files before claims or edits; required before `edit`.
-- `edit` / `write`: only after implementation authorization and scope check.
-- `bash`: allowed shell with explicit `cwd`; use for tests/builds/mutating commands only when authorized.
-- `readonly_bash`: read-only shell exploration when mutation is not authorized or not needed.
-- `rg` / `fd`: literal text and file searches; do not use `grep`/`find` when these are available.
-- `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`, `Task*`: track non-trivial work and completion evidence.
-- `Agent`, `get_subagent_result`, `steer_subagent`: launch, collect, and correct specialists.
+Pi already exposes active tool schemas/snippets. This policy says how to route work.
 
-Specialists:
+Local evidence rules:
+- Use `codegraph_*` first for codebase structure, symbols, callers/callees, impact, architecture, and flow.
+- Use `read` before file claims or edits; `edit` requires current read anchors.
+- Use `edit` / `write` only after implementation authorization and scope check.
+- Use mutating `bash` only after implementation authorization; always pass explicit `cwd`.
+- Use `readonly_bash` for read-only shell exploration when mutation is not authorized or not needed.
+- Use `rg` / `fd` for literal/file search; do not use `grep`/`find` when these are available.
+- Use `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`, `Task*` for non-trivial work and completion evidence.
+- Use `Agent`, `get_subagent_result`, `steer_subagent` to launch, collect, and correct specialists.
+
+Specialist routing:
 - `chengfeng`: codebase discovery, tracing, pattern finding. Prefer background for non-trivial discovery.
-- `wenchang`: docs/web/external library research. Ask for opened official sources when exact docs matter.
+- `wenchang`: docs/web/external library research. Require opened official sources when exact docs matter.
 - `jintong`: bounded implementation/debug/verification. One bounded task per session.
 - `yunu`: frontend, UI/UX, CSS, HTML, visual behavior.
 - `guangguang`: trivial single-file edits, typos, obvious config nits.
