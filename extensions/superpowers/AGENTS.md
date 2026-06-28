@@ -70,3 +70,7 @@ would require us to manually keep per-agent references in sync.
 - `scripts/sync-superpowers.sh` — sync tooling
 - `overlay/files/` — source-of-truth local-only files
 - `.agents/skills/pi-vendored-extension-sync/SKILL.md` — general sync skill
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/superpowers/`, including `skills/` and `overlay/`.

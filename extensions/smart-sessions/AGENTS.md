@@ -13,3 +13,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `README.md` | Rewritten to match repo README format and omit install/package instructions | Repo vendors/loads extensions locally |
 | `AGENTS.md` | Local-only provenance and sync notes | Required for vendored extension local tweaks |
 | `package.json` | Not vendored | Root repo already provides Pi runtime deps; this extension is loaded by directory entrypoint |
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/smart-sessions/`.

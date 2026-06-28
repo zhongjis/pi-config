@@ -20,3 +20,7 @@ Intentional divergences from upstream. Preserve these on sync.
 - Last checked upstream commit: `9df8ca72acda83b4249f50c4b0211ac217d94624`.
 - Upstream has no releases, tags, or direnv-specific changelog.
 - Upstream README still describes the older per-bash-hook behavior, while upstream code now uses `direnv export json` plus file watchers.
+
+## Child DOX Index
+
+No child `AGENTS.md` files. This file owns all files under `extensions/direnv/`.
