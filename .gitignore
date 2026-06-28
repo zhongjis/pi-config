@@ -3,8 +3,8 @@ auth.json
 
 git
 /mcp-cache.json
-/.pi/tasks
-/.pi/skills/
+.pi/tasks
+.pi/tmp
 node_modules/
 
 .omx
