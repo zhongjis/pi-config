@@ -4,7 +4,7 @@ description: A fast lightweight build worker for trivial implementation tasks â€
 model: claude-haiku-4-5:low,gpt-5.4-mini:low,opencode-go/minimax-m2.5,llama-swap/qwen2.5-coder:7b:low
 prompt_mode: system_instructions
 builtin_tools: read,bash,edit,write
-extension_tools: none
+extension_tools: lsp
 ---
 
 <role>

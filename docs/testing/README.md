@@ -31,4 +31,4 @@ Rule: extension-specific unit tests stay next to their extension under `extensio
 
 ## install.sh Behavior
 
-The test framework is intentionally excluded from `install.sh` symlinking. The top-level allowlist symlinks only runtime support items (`agents/`, `modes/`, `lsp.json`, `caveman.json`, `session-summary.json`, `tool_models.json`, `scripts/`, and `themes/`) into `~/.pi/agent/`. Test infrastructure (`test/`, `vitest.config.ts`, `package.json`, `node_modules/`, etc.) stays in the repo only.
+The test framework is intentionally excluded from `install.sh` symlinking. The top-level allowlist symlinks only runtime support items (`agents/`, `modes/`, `caveman.json`, `session-summary.json`, `tool_models.json`, `scripts/`, and `themes/`) into `~/.pi/agent/`. Test infrastructure (`test/`, `vitest.config.ts`, `package.json`, `node_modules/`, etc.) stays in the repo only.
