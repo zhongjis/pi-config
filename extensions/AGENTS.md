@@ -80,6 +80,7 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | `codegraph/` | `codegraph/AGENTS.md` | Vendored CodeGraph tool extension, timeout/retry behavior, and teaching layer tweaks. |
 | `direnv/` | `direnv/AGENTS.md` | Vendored direnv extension sync notes and local lifecycle/status tweaks. |
 | `fast/` | `fast/AGENTS.md` | Vendored fast-mode provider profile merge and session-only state rules. |
+| `init/` | `init/AGENTS.md` | AGENTS.md/DOX initialization command extension, `/init-deep` preservation, and template layout. |
 | `pi-lsp/` | `pi-lsp/AGENTS.md` | Vendored dreki LSP extension sync notes and local package-layout tweaks. |
 | `smart-sessions/` | `smart-sessions/AGENTS.md` | Vendored session-summary behavior and model-role compatibility notes. |
 | `subagent/` | `subagent/AGENTS.md` | Subagent runtime, tool surface, RPC, lifecycle, and local fork manifest. |

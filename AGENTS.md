@@ -98,7 +98,7 @@ Before registering any new tool, extension, or MCP server:
 | Session handoff to new focused session | `extensions/handoff` |
 | Token-efficient background task execution | `extensions/boomerang` |
 | Agent modes (kuafu / fuxi / houtu / etc.) | `extensions/modes` |
-| AGENTS.md generation | `extensions/init-deep` |
+| AGENTS.md generation | `extensions/init` |
 | Mermaid diagram rendering | `pi-mermaid` package |
 | Thinking steps visualization | `pi-thinking-steps` package |
 | Guardrails | `pi-guardrails` package |
