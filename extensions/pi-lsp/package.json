@@ -1,0 +1,49 @@
+{
+  "name": "@dreki-gg/pi-lsp",
+  "version": "0.4.1",
+  "description": "Language-agnostic LSP code intelligence for pi — diagnostics, hover, definitions, references, symbols, and call hierarchy",
+  "keywords": [
+    "pi-package"
+  ],
+  "author": "Juan Albarran <jalbarrandev@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dreki-gg/pi-extensions",
+    "directory": "packages/lsp"
+  },
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "effect": "^3.21.2"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "0.79.0",
+    "@earendil-works/pi-coding-agent": "0.79.0",
+    "typebox": "1.1.24"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
+  },
+  "piVendor": {
+    "upstream": "https://github.com/dreki-gg/pi-extensions/tree/524efa3c9a28291a578d820c460c6637b200fb02/packages/lsp",
+    "package": "@dreki-gg/pi-lsp",
+    "version": "0.4.1",
+    "commit": "524efa3c9a28291a578d820c460c6637b200fb02",
+    "integrity": "sha512-urhY/MTG30p93eq/r748d3/OnCRy9Bc1YABi8pLQA/Cl51U9Ydlwqr8NRXlM7E7FWJnBj8OxGDptPQcUSieJ0A==",
+    "localTarget": "extensions/pi-lsp",
+    "adaptedFor": "panda-harness extensions layout"
+  }
+}

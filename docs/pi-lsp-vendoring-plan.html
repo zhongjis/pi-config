@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pi LSP vendoring plan</title>
+  <script>
+    (function () {
+      try {
+        const saved = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (!saved && prefersDark)) document.documentElement.classList.add('dark');
+      } catch {
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      --ivory: #faf9f5;
+      --white: #ffffff;
+      --slate: #141413;
+      --ink: #2a2a28;
+      --muted: #6f6d66;
+      --clay: #d97757;
+      --clay-strong: #bd5534;
+      --oat: #e3dacc;
+      --olive: #788c5d;
+      --red: #b95454;
+      --amber: #b8872f;
+      --green: #5c8a63;
+      --gray-100: #f4f1e8;
+      --gray-150: #f0eee6;
+      --gray-300: #d1cfc5;
+      --gray-700: #3d3d3a;
+      --code-bg: #191917;
+      --code-fg: #f0eee6;
+      --shadow: 0 18px 45px rgba(20, 20, 19, 0.08);
+      --radius: 18px;
+      --serif: Georgia, 'Times New Roman', serif;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+    }
+
+    html.dark {
+      --ivory: #121211;
+      --white: #1b1b19;
+      --slate: #f5f0e7;
+      --ink: #e7e0d3;
+      --muted: #aaa397;
+      --clay: #e78a68;
+      --clay-strong: #ff9f78;
+      --oat: #3b342b;
+      --olive: #a5bb84;
+      --red: #e17878;
+      --amber: #e0b75a;
+      --green: #8fc894;
+      --gray-100: #201f1d;
+      --gray-150: #272521;
+      --gray-300: #46423b;
+      --gray-700: #c8c0b5;
+      --code-bg: #090908;
+      --code-fg: #f0eee6;
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--ivory);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    a { color: var(--clay-strong); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { font-family: var(--mono); font-size: 0.92em; }
+    .page { max-width: 1180px; margin: 0 auto; padding: 48px 28px 72px; }
+    .topbar { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 28px; }
+    .eyebrow { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+    h1 { font-family: var(--serif); color: var(--slate); font-size: clamp(42px, 7vw, 82px); line-height: 0.92; letter-spacing: -0.05em; margin: 0 0 18px; max-width: 900px; }
+    h2 { font-family: var(--serif); color: var(--slate); font-size: 34px; line-height: 1; margin: 0; letter-spacing: -0.03em; }
+    h3 { color: var(--slate); font-size: 18px; margin: 0 0 8px; }
+    p { margin: 0; }
+    .theme-toggle {
+      border: 1.5px solid var(--gray-300);
+      background: var(--white);
+      color: var(--slate);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+      white-space: nowrap;
+    }
+    .prompt-box {
+      border-left: 4px solid var(--clay);
+      background: var(--white);
+      padding: 18px 20px;
+      max-width: 900px;
+      box-shadow: var(--shadow);
+    }
+    .prompt-box .label { display: block; font-family: var(--mono); color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 28px 0 42px; }
+    .stat { background: var(--white); border: 1.5px solid var(--gray-300); border-radius: var(--radius); padding: 18px; }
+    .stat .k { font-family: var(--mono); color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .stat .v { font-weight: 800; color: var(--slate); font-size: 22px; }
+    .stat .v.accent { color: var(--clay-strong); }
+    section { margin: 42px 0; }
+    .sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+    .sec-head .num { font-family: var(--mono); color: var(--muted); font-size: 13px; }
+    .rule { border: 0; border-top: 1.5px solid var(--gray-300); margin: 16px 0 22px; }
+    .recommendation { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 18px; }
+    .rec-card { background: var(--white); border: 3px solid var(--clay); border-radius: 24px; padding: 26px; box-shadow: var(--shadow); }
+    .rec-card h2 { margin-bottom: 12px; }
+    .rec-card p { color: var(--muted); margin-bottom: 14px; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .pill { font-family: var(--mono); font-size: 12px; border: 1px solid var(--gray-300); border-radius: 999px; padding: 7px 10px; background: var(--gray-100); color: var(--slate); }
+    .mini-panel { background: var(--white); border: 1.5px solid var(--gray-300); border-radius: 20px; padding: 22px; }
+    .mini-panel ul { margin: 10px 0 0; padding-left: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .candidate { background: var(--white); border: 1.5px solid var(--gray-300); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+    .candidate.good { border-color: var(--clay); }
+    .candidate .head { padding: 18px; border-bottom: 1.5px solid var(--gray-300); background: var(--gray-100); }
+    .candidate .rank { font-family: var(--mono); color: var(--muted); font-size: 12px; }
+    .candidate .body { padding: 18px; flex: 1; }
+    .candidate ul { margin: 10px 0 0; padding-left: 18px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 18px 18px; }
+    .chip { font-family: var(--mono); font-size: 11px; color: var(--slate); background: var(--oat); border-radius: 999px; padding: 6px 8px; }
+    .matrix { background: var(--white); border: 1.5px solid var(--gray-300); border-radius: var(--radius); overflow: hidden; }
+    .row { display: grid; grid-template-columns: 1.1fr 1fr 1fr 0.8fr 1.2fr; }
+    .row.header { background: var(--gray-100); font-family: var(--mono); color: var(--muted); font-size: 12px; }
+    .cell { padding: 14px; border-top: 1.5px solid var(--gray-300); }
+    .row.header .cell { border-top: 0; }
+    .cell + .cell { border-left: 1.5px solid var(--gray-300); }
+    .score { font-weight: 800; color: var(--slate); }
+    .tag { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; border-radius: 999px; padding: 5px 8px; background: var(--gray-100); }
+    .tag.high { color: var(--green); }
+    .tag.med { color: var(--amber); }
+    .tag.low { color: var(--red); }
+    .code { background: var(--code-bg); color: var(--code-fg); border-radius: 18px; padding: 18px; overflow: auto; font-family: var(--mono); font-size: 13px; line-height: 1.6; border: 1px solid rgba(255,255,255,0.08); }
+    .code .cm { color: #9a9489; }
+    .code .kw { color: #e78a68; }
+    .code .str { color: #a5bb84; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .timeline { display: grid; gap: 12px; }
+    .step { display: grid; grid-template-columns: 82px 1fr; gap: 16px; background: var(--white); border: 1.5px solid var(--gray-300); border-radius: var(--radius); padding: 18px; }
+    .step .when { font-family: var(--mono); color: var(--clay-strong); font-size: 12px; }
+    .risk-list { display: grid; gap: 10px; }
+    .risk { background: var(--white); border: 1.5px solid var(--gray-300); border-left: 5px solid var(--amber); border-radius: 14px; padding: 14px; }
+    .risk.high { border-left-color: var(--red); }
+    .risk.low { border-left-color: var(--green); }
+    .sources { font-size: 13px; color: var(--muted); }
+    .sources li { margin-bottom: 6px; }
+    @media (max-width: 900px) {
+      .summary, .grid, .recommendation, .two-col { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 1fr; }
+      .cell + .cell { border-left: 0; }
+      .cell { border-top: 1px solid var(--gray-300); }
+      .topbar { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <header>
+        <div class="eyebrow">Decision plan · Pi LSP extension · NixOS aware</div>
+        <h1>Which Pi LSP extension should we vendor?</h1>
+        <div class="prompt-box">
+          <span class="label">Goal</span>
+          Choose an LSP extension that works with Pi and does not repeat the old Nix failure: language server starts must use explicit Nix store paths or wrappers, not ambient global installs.
+        </div>
+      </header>
+      <button id="themeToggle" class="theme-toggle" type="button">Toggle theme</button>
+    </div>
+
+    <div class="summary">
+      <div class="stat"><div class="k">Recommendation</div><div class="v accent">Vendor dreki</div></div>
+      <div class="stat"><div class="k">Install path</div><div class="v">Local extension</div></div>
+      <div class="stat"><div class="k">Nix stance</div><div class="v">No PATH faith</div></div>
+      <div class="stat"><div class="k">Pilot</div><div class="v">1 server</div></div>
+    </div>
+
+    <section class="recommendation">
+      <article class="rec-card">
+        <h2>Pick: <code>@dreki-gg/pi-lsp@0.4.1</code></h2>
+        <p>Best fit for this repo: config-driven, lazy LSP startup, session cleanup, one unified <code>lsp</code> tool, project-local config support, command arrays with env. Small enough to adapt.</p>
+        <p>Vendor it under <code>extensions/pi-lsp/</code>, then load via Home-Manager-managed Pi settings. Do not rely on <code>pi install npm:...</code> for the live setup.</p>
+        <div class="pill-row">
+          <span class="pill">MIT</span>
+          <span class="pill">npm package</span>
+          <span class="pill">lazy spawn</span>
+          <span class="pill">command[] config</span>
+          <span class="pill">good Nix fit</span>
+        </div>
+      </article>
+      <aside class="mini-panel">
+        <h3>Why vendor, not settings-only?</h3>
+        <ul>
+          <li>Repo rule: local harness prefers vendored/local wiring over <code>pi install npm:...</code>.</li>
+          <li>Live <code>~/.pi/agent/settings.json</code> is Nix/Home-Manager managed.</li>
+          <li>Vendoring lets us patch config compatibility, remove global-install hints, add README provenance, and test in repo.</li>
+          <li>If source review passes with zero changes, settings package can still be an option later.</li>
+        </ul>
+      </aside>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="num">01</span><h2>Candidate comparison</h2></div>
+      <hr class="rule">
+      <div class="grid">
+        <article class="candidate good">
+          <div class="head"><div class="rank">01 · recommended</div><h3>@dreki-gg/pi-lsp</h3></div>
+          <div class="body">
+            <p>Unified tool: diagnostics, hover, definitions, refs, implementation, document/workspace symbols, call hierarchy, code actions.</p>
+            <ul>
+              <li>Config: global <code>config.json</code> + project <code>.pi/lsp.json</code>.</li>
+              <li>Servers disabled by default in starter config.</li>
+              <li>Spawn uses configured command + args + env.</li>
+            </ul>
+          </div>
+          <div class="chips"><span class="chip">Nix fit: high</span><span class="chip">Blast radius: low</span><span class="chip">Vendor first</span></div>
+        </article>
+
+        <article class="candidate">
+          <div class="head"><div class="rank">02 · fallback</div><h3>code-yeongyu/pi-lsp-client</h3></div>
+          <div class="body">
+            <p>More complete lifecycle: shared pool, refcounts, idle reaping, crash retry, inspector, post-edit diagnostics.</p>
+            <ul>
+              <li>Richer tool surface: split tools, rename mutation, installer commands.</li>
+              <li>Has builtin server registry with install hints.</li>
+              <li>More code to review/adapt.</li>
+            </ul>
+          </div>
+          <div class="chips"><span class="chip">Nix fit: medium</span><span class="chip">More machinery</span><span class="chip">Use if dreki leaks/hangs</span></div>
+        </article>
+
+        <article class="candidate">
+          <div class="head"><div class="rank">03 · defer</div><h3>samfoy/pi-lsp-extension</h3></div>
+          <div class="body">
+            <p>Older, feature-rich extension: diagnostics, hover, definition, refs, symbols, rename, completions, AST search/rewrite.</p>
+            <ul>
+              <li>Docs assume global installs like <code>npm -g</code>, <code>pip</code>, <code>rustup</code>.</li>
+              <li>Can be Nix-safe only if command/args/env config path is verified.</li>
+            </ul>
+          </div>
+          <div class="chips"><span class="chip">Nix fit: medium-low</span><span class="chip">Rich tools</span><span class="chip">Audit only</span></div>
+        </article>
+
+        <article class="candidate">
+          <div class="head"><div class="rank">04 · avoid now</div><h3>trotsky1997/pi-lsp-extension</h3></div>
+          <div class="body">
+            <p>LSP plus formatters/analyzers such as Semgrep, Ruff, ShellCheck, Lychee.</p>
+            <ul>
+              <li>Powerful, but every extra binary expands Nix failure surface.</li>
+              <li>Wrong first step if basic LSP startup is not proven.</li>
+            </ul>
+          </div>
+          <div class="chips"><span class="chip">Nix fit: low</span><span class="chip">Too broad</span></div>
+        </article>
+
+        <article class="candidate">
+          <div class="head"><div class="rank">05 · wrong shape</div><h3>VinhLe1410/pi-vscode</h3></div>
+          <div class="body">
+            <p>VS Code bridge for diagnostics/editor state.</p>
+            <ul>
+              <li>Good if Pi always runs inside VS Code.</li>
+              <li>Bad fit for terminal/headless Pi sessions.</li>
+            </ul>
+          </div>
+          <div class="chips"><span class="chip">Nix fit: irrelevant</span><span class="chip">Dependency on editor</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="num">02</span><h2>Feature / risk matrix</h2></div>
+      <hr class="rule">
+      <div class="matrix">
+        <div class="row header">
+          <div class="cell">Candidate</div><div class="cell">Feature depth</div><div class="cell">Lifecycle</div><div class="cell">Nix risk</div><div class="cell">Decision</div>
+        </div>
+        <div class="row">
+          <div class="cell"><strong>@dreki-gg/pi-lsp</strong></div><div class="cell">Core LSP coverage; unified tool; call hierarchy/code actions.</div><div class="cell">Lazy start; session shutdown cleanup; restart command.</div><div class="cell"><span class="tag high">Low</span></div><div class="cell"><span class="score">Vendor first</span></div>
+        </div>
+        <div class="row">
+          <div class="cell"><strong>pi-lsp-client</strong></div><div class="cell">Core + rename mutation + post-edit diagnostics + inspector.</div><div class="cell">Best advertised lifecycle: pool/refcount/reaper/retry.</div><div class="cell"><span class="tag med">Medium</span></div><div class="cell">Fallback if dreki fails runtime soak.</div>
+        </div>
+        <div class="row">
+          <div class="cell"><strong>samfoy/pi-lsp-extension</strong></div><div class="cell">Broad: LSP + completion + AST search/rewrite.</div><div class="cell">Needs source audit before trust.</div><div class="cell"><span class="tag med">Medium-high</span></div><div class="cell">Only after config/startup proof.</div>
+        </div>
+        <div class="row">
+          <div class="cell"><strong>trotsky1997</strong></div><div class="cell">LSP + formatter/analyzer suite.</div><div class="cell">More process types to manage.</div><div class="cell"><span class="tag low">High</span></div><div class="cell">Defer.</div>
+        </div>
+        <div class="row">
+          <div class="cell"><strong>pi-vscode</strong></div><div class="cell">Editor bridge, not direct LSP.</div><div class="cell">Depends on VS Code state.</div><div class="cell"><span class="tag low">Wrong target</span></div><div class="cell">Skip.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="num">03</span><h2>Nix integration model</h2></div>
+      <hr class="rule">
+      <div class="two-col">
+        <div>
+          <h3>Use opencode as pattern</h3>
+          <p>Current opencode LSP config uses pinned Nix store executables directly. Same shape should feed Pi LSP. Its MCP block also shows a valid ad-hoc pattern with <code>nix run ... --</code>, but LSP should prefer stable store paths or tiny wrappers.</p>
+          <div class="pill-row">
+            <span class="pill">absolute /nix/store command</span>
+            <span class="pill">per-server initialization</span>
+            <span class="pill">no global npm/pip</span>
+          </div>
+        </div>
+        <pre class="code"><code><span class="cm">// Shape from ~/.config/opencode/opencode.json</span>
+<span class="kw">"lsp"</span>: {
+  <span class="kw">"nixd"</span>: {
+    <span class="kw">"command"</span>: [<span class="str">"/nix/store/...-nixd-2.9.1/bin/nixd"</span>],
+    <span class="kw">"extensions"</span>: [<span class="str">".nix"</span>],
+    <span class="kw">"initialization"</span>: {
+      <span class="kw">"formatting"</span>: {
+        <span class="kw">"command"</span>: [<span class="str">"/nix/store/...-alejandra/bin/alejandra"</span>]
+      }
+    }
+  },
+  <span class="kw">"typescript"</span>: {
+    <span class="kw">"command"</span>: [<span class="str">"/nix/store/.../bin/typescript-language-server"</span>, <span class="str">"--stdio"</span>],
+    <span class="kw">"extensions"</span>: [<span class="str">".ts"</span>, <span class="str">".tsx"</span>, <span class="str">".js"</span>]
+  }
+}</code></pre>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="num">04</span><h2>Vendoring plan</h2></div>
+      <hr class="rule">
+      <div class="timeline">
+        <div class="step"><div class="when">Step 1</div><div><strong>Source audit.</strong> Pin upstream commit/version, inspect all spawn/exec sites, package deps, session lifecycle, config schema, stderr handling.</div></div>
+        <div class="step"><div class="when">Step 2</div><div><strong>Vendor minimally.</strong> Copy into <code>extensions/pi-lsp/</code>; preserve README upstream metadata; add <code>AGENTS.md</code> Local Tweaks only if we change upstream code.</div></div>
+        <div class="step"><div class="when">Step 3</div><div><strong>Config bridge.</strong> Convert historical repo <code>lsp.json</code> / opencode-style <code>extensions</code> keys to extension's expected <code>.pi/lsp.json</code> shape, or add a tiny adapter.</div></div>
+        <div class="step"><div class="when">Step 4</div><div><strong>Pilot one server.</strong> Enable TypeScript or Nix only. Run <code>/lsp</code>, then diagnostics/hover/definition on this repo.</div></div>
+        <div class="step"><div class="when">Step 5</div><div><strong>Soak and expand.</strong> Restart Pi, reload extension, verify no orphan server, then enable Python/YAML/JSON/TOML/Bash.</div></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="num">05</span><h2>Acceptance criteria</h2></div>
+      <hr class="rule">
+      <div class="risk-list">
+        <div class="risk low"><strong>Startup:</strong> Pi starts cleanly with no LSP server spawned before first tool use.</div>
+        <div class="risk low"><strong>First tool call:</strong> TypeScript or Nix server spawns from a Nix store path and returns diagnostics/hover.</div>
+        <div class="risk low"><strong>Shutdown:</strong> <code>session_shutdown</code> kills child process; <code>/reload</code> does not leave stale LSP children.</div>
+        <div class="risk"><strong>Config:</strong> Missing server returns actionable error; no hidden fallback to <code>npx</code>, global <code>npm</code>, <code>pip</code>, or <code>rustup</code>.</div>
+        <div class="risk high"><strong>Blocker:</strong> Any extension that auto-installs language servers or assumes PATH wins is rejected or patched before enabling.</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="num">06</span><h2>Decision points for user</h2></div>
+      <hr class="rule">
+      <div class="grid">
+        <article class="mini-panel"><h3>A. Conservative</h3><p>Vendor <code>@dreki-gg/pi-lsp</code>, enable one server, no mutation tools. Recommended.</p></article>
+        <article class="mini-panel"><h3>B. Feature-rich</h3><p>Vendor <code>pi-lsp-client</code> if you want post-edit diagnostics, inspector, refcount pool, rename mutation.</p></article>
+        <article class="mini-panel"><h3>C. Settings-only trial</h3><p>Add package to Home Manager settings first. Fastest, but harder to patch Nix/config issues.</p></article>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="num">07</span><h2>Sources</h2></div>
+      <hr class="rule">
+      <ol class="sources">
+        <li><a href="https://www.npmjs.com/package/@dreki-gg/pi-lsp">@dreki-gg/pi-lsp npm</a> — package metadata/features.</li>
+        <li><a href="https://github.com/code-yeongyu/pi-lsp-client">code-yeongyu/pi-lsp-client</a> — lifecycle/inspector/feature set.</li>
+        <li><a href="https://github.com/samfoy/pi-lsp-extension">samfoy/pi-lsp-extension</a> — feature set and global-install caveat.</li>
+        <li><a href="https://github.com/trotsky1997/pi-lsp-extension">trotsky1997/pi-lsp-extension</a> — broader analyzer/formatter scope.</li>
+        <li><a href="https://github.com/VinhLe1410/pi-vscode">VinhLe1410/pi-vscode</a> — VS Code bridge option.</li>
+        <li><code>~/.config/opencode/opencode.json</code> — local Nix-pinned LSP command examples.</li>
+        <li><code>lsp.json</code> and <code>.pi-lsp.json</code> — historical repo LSP server commands used as migration inputs.</li>
+      </ol>
+    </section>
+  </div>
+
+  <script>
+    const button = document.getElementById('themeToggle');
+    function label() {
+      button.textContent = document.documentElement.classList.contains('dark') ? 'Light mode' : 'Dark mode';
+    }
+    label();
+    button.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.toggle('dark');
+      try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch {}
+      label();
+    });
+  </script>
+</body>
+</html>

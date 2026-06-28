@@ -2,3 +2,4 @@ packages:
   - extensions/tasks
   - extensions/web-access
   - extensions/subagent
+  - extensions/pi-lsp

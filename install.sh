@@ -37,7 +37,6 @@ EXCLUDED_EXTENSION_ITEMS=(
 ALLOWED_ITEMS=(
   "agents"
   "modes"
-  "lsp.json"
   "caveman.json"
   "session-summary.json"
   "tool_models.json"
