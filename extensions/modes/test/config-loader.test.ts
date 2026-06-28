@@ -146,6 +146,29 @@ Base mode body.`;
 		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
 	});
 
+	it("reads Houtu and Luban GPT/Gemini variant files when present", () => {
+		for (const mode of ["houtu", "luban"] as const) {
+			stubFiles({
+				[`${mode}/mode.md`]: `---
+prompt_mode: replace
+model: anthropic/claude-sonnet-4-6:medium
+---
+
+${mode} base body.`,
+				[`${mode}/gpt.md`]: `${mode} GPT body.\n`,
+				[`${mode}/gemini.md`]: `${mode} Gemini overlay.\n`,
+			});
+
+			const gptConfig = loadAgentConfig(mode, "gpt");
+			expect(gptConfig?.body).toBe(`${mode} GPT body.`);
+			expect(gptConfig?.overlays).toBeUndefined();
+
+			const geminiConfig = loadAgentConfig(mode, "gemini");
+			expect(geminiConfig?.body).toBe(`${mode} base body.`);
+			expect(geminiConfig?.overlays).toBe(`${mode} Gemini overlay.`);
+		}
+	});
+
 	it("gemini family falls back to base config when gemini.md is absent", () => {
 		stubFiles({ "mode.md": MODE_MD });
 		const config = loadAgentConfig("kuafu", "gemini");
@@ -156,6 +179,13 @@ Base mode body.`;
 	it("default family returns the mode.md body unchanged", () => {
 		stubFiles({ "mode.md": MODE_MD });
 		const config = loadAgentConfig("kuafu", "default");
+		expect(config?.body).toBe("Base mode body.");
+		expect(config?.overlays).toBeUndefined();
+	});
+
+	it("unsupported runtime family returns the mode.md body unchanged", () => {
+		stubFiles({ "mode.md": MODE_MD, "gpt.md": "GPT body override.\n", "gemini.md": "Gemini overlay fragment.\n" });
+		const config = loadAgentConfig("kuafu", "opus" as never);
 		expect(config?.body).toBe("Base mode body.");
 		expect(config?.overlays).toBeUndefined();
 	});

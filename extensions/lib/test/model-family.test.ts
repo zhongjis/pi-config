@@ -103,6 +103,12 @@ describe("getModePromptSource", () => {
 		);
 	});
 
+	it("keeps unsupported prompt families on default source", () => {
+		expect(getModePromptSource({ provider: "anthropic", id: "claude-sonnet-4-6" })).toBe("default");
+		expect(getModePromptSource({ provider: "xai", id: "grok-4" })).toBe("default");
+		expect(getModePromptSource({ provider: "moonshot", id: "kimi-k2.6" })).toBe("default");
+	});
+
 	it("prioritizes gpt check over gemini check", () => {
 		// If a model somehow had both "gpt" and "gemini" in id, gpt wins
 		expect(getModePromptSource({ provider: "weird", id: "gpt-gemini-hybrid" })).toBe("gpt");

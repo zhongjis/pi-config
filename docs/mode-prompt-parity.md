@@ -1,0 +1,120 @@
+# Mode Prompt Parity Spec
+
+Purpose: pin upstream evidence and local behavioral invariants before any mode prompt edits. This is a behavior-parity guide, not an exact-copy mandate.
+
+## Verified Upstream Baselines
+
+- Oh My OpenAgent repo: `https://github.com/code-yeongyu/oh-my-openagent`, commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`.
+- Superpowers repo: `https://github.com/obra/superpowers`, `main` inspected at commit `896224c4b1879920ab573417e68fd51d2ccc9072`, path `skills/`.
+
+Required upstream paths verified at `f7ec55526b2a3603665c5c0308b031a4f14900b0`:
+
+- `packages/omo-opencode/src/agents/sisyphus-agent-factory.ts`
+- `packages/omo-opencode/src/agents/prometheus/system-prompt.ts`
+- `packages/omo-opencode/src/agents/atlas/agent.ts`
+- `packages/prompts-core/src/atlas-prompts.ts`
+
+Relevant prompt sources located:
+
+- Sisyphus: no `packages/prompts-core/prompts/sisyphus/*.md` files found. Prompt sources are TypeScript builders under `packages/omo-opencode/src/agents/sisyphus/`, especially `default.ts`, `gpt-5-5.ts`, `gemini.ts`, plus `AGENTS.md` as variant reference.
+- Prometheus: `packages/prompts-core/prompts/prometheus/default.md`.
+- Atlas: `packages/prompts-core/prompts/atlas/default.md`, `gpt.md`, `gemini.md`, plus non-local-scope variants `glm.md`, `kimi.md`, `kimi-k2-7.md`, `opus-4-7.md`.
+
+## Local Construction Semantics
+
+- `mode.md`: default body. Frontmatter + body parsed. Default/unknown family uses this body unchanged.
+- `gpt.md`: body-only replacement. If present and non-empty, it replaces the `mode.md` body while retaining parsed frontmatter config from `mode.md`.
+- `gemini.md`: body-only overlay. If present and non-empty, it is injected into the default `mode.md` body before `<critical>`, else after `</role>`, else appended.
+- Hook behavior: resolved model family is applied before prompt injection. Active mode body is wrapped in `<!-- mode:<mode> --> ... <!-- /mode:<mode> -->`; stale mode blocks are stripped before replacement.
+
+## Current File Matrix
+
+| Mode | Upstream Target | Default `mode.md` | GPT `gpt.md` | Gemini `gemini.md` |
+|---|---|---:|---:|---:|
+| Kuafu | Sisyphus | present | present | present |
+| Fuxi | Prometheus | present | present | present |
+| Houtu | Atlas | present | present | present |
+| Luban | Superpowers skills persona/profile check | present | present | present |
+
+## Upstream-to-Local Map
+
+### Kuafu <- Sisyphus
+
+Evidence:
+
+- `sisyphus-agent-factory.ts` selects full Sisyphus prompt families by model: Kimi, GPT, Claude/Fable/Opus, GLM, fallback.
+- `sisyphus/default.ts` defines senior-engineer orchestrator identity, intent gate, task/todo tracking, delegation, exploration, verification, failure recovery, and concise communication.
+- `sisyphus/gpt-5-5.ts` is a complete GPT-native orchestration prompt, not a reminder fragment.
+- `sisyphus/gemini.ts` is corrective Gemini guidance for tool use, delegation, intent gate, and verification.
+
+Local invariants before edits:
+
+- Kuafu remains Pi build mode: senior engineer/orchestrator, direct implementation only for trivial local work.
+- Every family must include intent gate, explicit implementation authorization gate, scope discipline, delegation policy, continuation/supervision, and verification gates.
+- GPT replacement must be self-contained; it cannot depend on missing `mode.md` body text.
+- Gemini overlay must reinforce tool use, delegation, read-before-claim, and verify-before-completion without replacing the full prompt.
+- Preserve Pi tool/agent mapping: `chengfeng`, `wenchang`, `taishang`, `jintong`, `yunu`, `guangguang`, pi `Task*`, `Agent`, CodeGraph/read/rg/fd, `readonly_bash`.
+
+### Fuxi <- Prometheus
+
+Evidence:
+
+- `prometheus/system-prompt.ts` loads only `prometheusPromptVariants.default`; `getPrometheusPrompt()` ignores model and disabled tools.
+- `prompts/prometheus/default.md` says Prometheus is a planning consultant, planner-only, writes plan artifacts under `.omo/`, never edits product code, and must load/follow `ulw-plan`.
+
+Local invariants before edits:
+
+- Fuxi remains planner-only. Product code edits and implementation are forbidden.
+- Planning is sticky: user implementation verbs mean “plan this” in Fuxi.
+- Only plan artifacts may be written: `local://DRAFT.md` and `local://PLAN.md`; hook restrictions remain authoritative.
+- Preserve Pi planning ceremony: interview, continuous draft, Di Renjie review, final plan write, self-review, `plan_approve` gate.
+- `ask` is interview-only; final approval/proceed menus use `plan_approve`.
+- GPT replacement must contain the full planner contract. Gemini overlay must not bypass draft, review, or approval requirements.
+
+### Houtu <- Atlas
+
+Evidence:
+
+- `atlas/agent.ts` routes model variants through `getAtlasPromptSource()`, loads prompt bodies from `atlasPromptVariants`, and creates Atlas as master orchestrator.
+- `atlas-prompts.ts` maps Atlas prompt markdown files. Local scope uses only `default.md`, `gpt.md`, `gemini.md`.
+- Atlas prompts define conductor identity: delegate, coordinate, verify; never write code; complete every plan task; parallelize independent work; verify every delegation; update plan state only after evidence; run final verification wave.
+
+Local invariants before edits:
+
+- Houtu executes `local://PLAN.md` by coordinating and verifying, not by implementing product changes directly.
+- One bounded plan task per `Agent()` delegation. No giant multi-task handoff.
+- Independent tasks may fan out in parallel only when no named dependency or file conflict exists.
+- Every delegation prompt includes task, expected outcome, required tools, must-do, must-not-do, context, and accumulated context.
+- After every delegation: read changed files, run `lsp_diagnostics`, run focused tests/build when available, perform manual QA for user-visible behavior, compare claims to actual code.
+- Mark checkboxes only after verification passes, then reread plan to confirm progress. Failed work resumes same subagent session when possible.
+- Final wave approval remains required before completion.
+
+### Luban <- Superpowers skills
+
+Superpowers finding:
+
+- Inspected `obra/superpowers` `skills/` at `896224c4b1879920ab573417e68fd51d2ccc9072`.
+- No explicit top-level agent persona/profile was found in `skills/`. The tree contains skills with `name`/`description` frontmatter and workflow instructions.
+- Task-specific embedded prompts exist, e.g. `requesting-code-review/code-reviewer.md`, `subagent-driven-development/implementer-prompt.md`, and reviewer prompts. These are not a global Superpowers agent profile.
+
+Local persona/behavior source:
+
+- Primary source: `skills/using-superpowers/SKILL.md` — invoke relevant skills before any response/action; 1% applicability triggers skill use; Superpowers skills override default system behavior, while user instructions remain highest priority.
+- Workflow sources: `skills/brainstorming/SKILL.md`, `skills/writing-plans/SKILL.md`, `skills/subagent-driven-development/SKILL.md`, `skills/executing-plans/SKILL.md`, `skills/dispatching-parallel-agents/SKILL.md`, `skills/verification-before-completion/SKILL.md`.
+
+Local invariants before edits:
+
+- Luban must not claim Sisyphus/Prometheus/Atlas parity or an upstream Superpowers agent profile.
+- Luban is Pi-local skill-first mode: skill gate before action, current skill text loaded, skill workflow followed exactly unless user instructions override.
+- Design-to-implementation flow stays skill-driven: brainstorming -> writing-plans -> subagent-driven-development or executing-plans -> verification-before-completion.
+- Preserve Pi routing: `chengfeng`, `wenchang`, `taishang`, `jintong`, `guangguang`, `yunu`, `weizheng`, `Agent`, `Task*`, CodeGraph, `readonly_bash`.
+- Parallelism is safety-gated, not maximized. Implementation parallelism needs independent scope and conflict plan.
+- GPT replacement must be self-contained. Gemini overlay must reinforce skill loading, tool use, and verification only.
+
+## Non-Goals
+
+- No model families beyond local default/GPT/Gemini.
+- No model-chain, provider, auth, or registry changes.
+- No wholesale upstream prompt clone.
+- No exact-copy claim. Target final injected behavior parity where applicable, with Pi-native tools and constraints.
+- No prompt, test, or implementation edits in this spec task.

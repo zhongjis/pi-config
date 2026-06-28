@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
@@ -68,6 +70,126 @@ function createMockPi() {
 	};
 }
 
+type PromptFamily = "default" | "gpt" | "gemini";
+type TestMode = "kuafu" | "fuxi" | "houtu" | "luban";
+
+type PromptConfig = {
+	body: string;
+	overlays?: string;
+	promptMode?: "replace" | "append";
+};
+
+const ALL_TEST_MODES: TestMode[] = ["kuafu", "fuxi", "houtu", "luban"];
+
+const MODE_PROMPT_FILES: Record<PromptFamily, string> = {
+	default: "mode.md",
+	gpt: "gpt.md",
+	gemini: "gemini.md",
+};
+
+type PromptInvariantSet = {
+	default: string[];
+	gpt: string[];
+	geminiOverlay: string[];
+	defaultOnlyInGptReplacement: string;
+	overlayAnchor: string;
+};
+
+const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
+	kuafu: {
+		default: ["Implementation authorization gate", "Orchestrate first", "No evidence = not complete"],
+		gpt: ["Implementation authorization gate", "codegraph_*", "Subagent self-report is never evidence"],
+		geminiOverlay: ["<KUAFU_INTENT_GATE>", "<KUAFU_VERIFICATION_OVERRIDE>"],
+		defaultOnlyInGptReplacement: "Turn-local intent gate controls every response.",
+		overlayAnchor: "<KUAFU_INTENT_GATE>",
+	},
+	fuxi: {
+		default: ["Plan only. MUST NOT implement", "local://DRAFT.md", "plan_approve"],
+		gpt: ["Plan mode is sticky", "local://DRAFT.md", "Di Renjie", "plan_approve", "No product-code patches"],
+		geminiOverlay: ["<FUXI_DRAFT_MANDATE>", "<FUXI_APPROVAL_GATE>"],
+		defaultOnlyInGptReplacement: "ADVISORY SUBPLAN MODE",
+		overlayAnchor: "<FUXI_DRAFT_MANDATE>",
+	},
+	houtu: {
+		default: [
+			"You execute by coordinating, delegating, and verifying",
+			"One `Agent()` delegation = one bounded top-level plan task",
+			"Final Verification Wave is an approval gate",
+		],
+		gpt: [
+			"Read `local://PLAN.md` before doing anything else",
+			"One `Agent()` delegation = one bounded top-level plan task",
+			"Final Verification Wave is mandatory approval gate",
+			"APPROVE",
+		],
+		geminiOverlay: ["<gemini-corrective-overlay>", "Do not become the implementer", "Final Verification Wave requires explicit `APPROVE`"],
+		defaultOnlyInGptReplacement: "TASK ANALYSIS:",
+		overlayAnchor: "<gemini-corrective-overlay>",
+	},
+	luban: {
+		default: [
+			"Skill-first is mandatory",
+			"Do not claim Sisyphus, Prometheus, Atlas, or upstream agent-profile parity",
+			"Parallelism is safety-gated, not maximized",
+		],
+		gpt: [
+			"Before any response or action, run the skill gate",
+			"1% chance a skill applies",
+			"Do not claim Sisyphus, Prometheus, Atlas",
+			"verification-before-completion",
+		],
+		geminiOverlay: ["<LUBAN_GEMINI_CORRECTIVE_OVERLAY>", "Do not skip skill loading", "verify with readback"],
+		defaultOnlyInGptReplacement: "Consult the grain before the first cut",
+		overlayAnchor: "<LUBAN_GEMINI_CORRECTIVE_OVERLAY>",
+	},
+};
+
+function getModePromptPath(mode: TestMode, family: PromptFamily): string {
+	return join(process.cwd(), "modes", mode, MODE_PROMPT_FILES[family]);
+}
+
+function stripFrontmatter(markdown: string): string {
+	return markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
+}
+
+function readModePromptBody(mode: TestMode, family: PromptFamily): string {
+	const content = readFileSync(getModePromptPath(mode, family), "utf-8");
+	return family === "default" ? stripFrontmatter(content) : content.trim();
+}
+
+function expectContainsAll(text: string, expectedSnippets: string[]): void {
+	for (const snippet of expectedSnippets) {
+		expect(text).toContain(snippet);
+	}
+}
+
+async function renderInjectedPrompt({
+	mode,
+	family = "default",
+	basePrompt = "Base prompt",
+	defaultConfig = { body: "Default body", promptMode: "replace" },
+	familyConfig,
+}: {
+	mode: TestMode;
+	family?: PromptFamily;
+	basePrompt?: string;
+	defaultConfig?: PromptConfig;
+	familyConfig?: PromptConfig;
+}): Promise<string> {
+	const mock = createMockPi();
+	const state = new ModeStateManager(mock.pi as never);
+	state.currentMode = mode;
+	state.resolvedFamily = family;
+	state.cachedConfigs[`${mode}:default`] = defaultConfig;
+	if (family !== "default") {
+		state.cachedConfigs[`${mode}:${family}`] = familyConfig ?? { body: `${family} body`, promptMode: "replace" };
+	}
+
+	registerModeHooks(mock.pi as never, state);
+	const [result] = await mock.fire("before_agent_start", { systemPrompt: basePrompt }, { hasUI: false });
+	return (result as { systemPrompt: string }).systemPrompt;
+}
+
 describe("mode hooks", () => {
 	it("appends mode prompt with HTML markers during before_agent_start", async () => {
 		const mock = createMockPi();
@@ -81,6 +203,56 @@ describe("mode hooks", () => {
 		expect(result).toEqual({
 			systemPrompt: "Base prompt\n\n<!-- mode:fuxi -->\nFu Xi prompt\n<!-- /mode:fuxi -->",
 		});
+	});
+
+	it("renders actual default, GPT, and Gemini final prompts for every mode", async () => {
+		for (const mode of ALL_TEST_MODES) {
+			const invariants = MODE_PROMPT_INVARIANTS[mode];
+			const defaultBody = readModePromptBody(mode, "default");
+			const gptBody = readModePromptBody(mode, "gpt");
+			const geminiOverlay = readModePromptBody(mode, "gemini");
+			const stalePrompt = "Base\n\n<!-- mode:fuxi -->\nstale plan prompt\n<!-- /mode:fuxi -->";
+
+			const defaultPrompt = await renderInjectedPrompt({
+				mode,
+				family: "default",
+				basePrompt: stalePrompt,
+				defaultConfig: { body: defaultBody, promptMode: "replace" },
+			});
+			expect(defaultPrompt).toContain(`<!-- mode:${mode} -->`);
+			expect(defaultPrompt).not.toContain("stale plan prompt");
+			expectContainsAll(defaultPrompt, invariants.default);
+
+			const gptPrompt = await renderInjectedPrompt({
+				mode,
+				family: "gpt",
+				basePrompt: stalePrompt,
+				defaultConfig: { body: defaultBody, promptMode: "replace" },
+				familyConfig: { body: gptBody, promptMode: "replace" },
+			});
+			expect(gptPrompt).toContain(`<!-- mode:${mode} -->`);
+			expect(gptPrompt).not.toContain("stale plan prompt");
+			expectContainsAll(gptPrompt, invariants.gpt);
+			expect(gptPrompt).not.toContain(invariants.defaultOnlyInGptReplacement);
+
+			const geminiPrompt = await renderInjectedPrompt({
+				mode,
+				family: "gemini",
+				basePrompt: stalePrompt,
+				defaultConfig: { body: defaultBody, promptMode: "replace" },
+				familyConfig: { body: defaultBody, overlays: geminiOverlay, promptMode: "replace" },
+			});
+			expect(geminiPrompt).toContain(`<!-- mode:${mode} -->`);
+			expect(geminiPrompt).not.toContain("stale plan prompt");
+			expectContainsAll(geminiPrompt, invariants.default);
+			expectContainsAll(geminiPrompt, invariants.geminiOverlay);
+
+			const overlayPos = geminiPrompt.indexOf(invariants.overlayAnchor);
+			const criticalPos = geminiPrompt.indexOf("<critical>");
+			expect(overlayPos).toBeGreaterThan(-1);
+			expect(criticalPos).toBeGreaterThan(-1);
+			expect(overlayPos).toBeLessThan(criticalPos);
+		}
 	});
 
 	it("blocks plan-mode writes outside local://PLAN.md", async () => {
@@ -308,5 +480,35 @@ describe("mode hooks", () => {
 		const overlayPos = sp.indexOf("<GEMINI_INTENT_GATE>");
 		const criticalPos = sp.indexOf("<critical>");
 		expect(overlayPos).toBeLessThan(criticalPos);
+	});
+
+	it("injects gemini overlays after </role> when no <critical> anchor exists", async () => {
+		const overlay = "<GEMINI_ROLE_FALLBACK>after role</GEMINI_ROLE_FALLBACK>";
+		const prompt = await renderInjectedPrompt({
+			mode: "kuafu",
+			family: "gemini",
+			defaultConfig: { body: "<role>\nRole only\n</role>\n\nBody", promptMode: "replace" },
+			familyConfig: {
+				body: "<role>\nRole only\n</role>\n\nBody",
+				overlays: overlay,
+				promptMode: "replace",
+			},
+		});
+
+		expect(prompt.indexOf(overlay)).toBeGreaterThan(prompt.indexOf("</role>"));
+		expect(prompt.indexOf(overlay)).toBeLessThan(prompt.indexOf("Body"));
+	});
+
+	it("appends gemini overlays when no <critical> or </role> anchors exist", async () => {
+		const overlay = "<GEMINI_APPEND_FALLBACK>append</GEMINI_APPEND_FALLBACK>";
+		const prompt = await renderInjectedPrompt({
+			mode: "kuafu",
+			family: "gemini",
+			defaultConfig: { body: "Plain body", promptMode: "replace" },
+			familyConfig: { body: "Plain body", overlays: overlay, promptMode: "replace" },
+		});
+
+		expect(prompt.indexOf(overlay)).toBeGreaterThan(prompt.indexOf("Plain body"));
+		expect(prompt).toContain(`${overlay}\n<!-- /mode:kuafu -->`);
 	});
 });

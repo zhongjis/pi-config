@@ -37,10 +37,10 @@ Short, forceful overlays maintain context while mitigating these known weaknesse
 |------|------|--------------|-------------|----------------|
 | **kuafu** | Build orchestrator | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **fuxi** | Strategic planner | `anthropic/claude-opus-4-6:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **houtu** | Plan executor | `anthropic/claude-opus-4-8:xhigh` | No (v1) | No (v1) |
-| **luban** | Superpowers discipline | `anthropic/claude-opus-4-8:xhigh` | No (v1) | No (v1) |
+| **houtu** | Plan executor | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
+| **luban** | Superpowers discipline | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 
-Variants exist for kuafu and fuxi as these modes handle complex user input where family-specific behavior is most evident.
+All four primary modes have default/GPT/Gemini prompt coverage. GPT files are standalone replacement bodies; Gemini files are corrective overlays on default bodies.
 
 ## Local Addition: Small Models as Corrective
 

@@ -8,9 +8,10 @@
  * and absence of the removed tools.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseModeAgentConfig } from "../extensions/modes/src/config-loader.js";
 
 const FUXI_PATH = join(process.cwd(), "modes", "fuxi", "mode.md");
 
@@ -49,6 +50,185 @@ function composeFuxiGeminiPrompt(): string {
   }
   return `${body}\n\n${overlays}`;
 }
+
+type ModeName = "kuafu" | "fuxi" | "houtu" | "luban";
+type PromptFamily = "default" | "gpt" | "gemini";
+
+type ModePromptInvariants = {
+  default: string[];
+  gpt: string[];
+  geminiOverlay: string[];
+  geminiComposed: string[];
+  defaultOnlyInGptReplacement: string;
+};
+
+const MODE_PROMPT_FILES: Record<PromptFamily, string> = {
+  default: "mode.md",
+  gpt: "gpt.md",
+  gemini: "gemini.md",
+};
+const ALL_MODES: ModeName[] = ["kuafu", "fuxi", "houtu", "luban"];
+
+const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
+  kuafu: {
+    default: ["Implementation authorization gate", "Orchestrate first", "No evidence = not complete"],
+    gpt: ["Implementation authorization gate", "codegraph_*", "Subagent self-report is never evidence"],
+    geminiOverlay: ["<KUAFU_INTENT_GATE>", "<KUAFU_VERIFICATION_OVERRIDE>"],
+    geminiComposed: ["Implementation authorization gate", "<KUAFU_TOOL_MANDATE>", "No evidence = not complete"],
+    defaultOnlyInGptReplacement: "Turn-local intent gate controls every response.",
+  },
+  fuxi: {
+    default: ["Plan only. MUST NOT implement", "local://DRAFT.md", "plan_approve"],
+    gpt: ["Plan mode is sticky", "local://DRAFT.md", "Di Renjie", "plan_approve", "No product-code patches"],
+    geminiOverlay: ["<FUXI_DRAFT_MANDATE>", "<FUXI_APPROVAL_GATE>"],
+    geminiComposed: ["Plan only. MUST NOT implement", "<FUXI_ANTI_FALSE_FINALIZE>", "plan_approve"],
+    defaultOnlyInGptReplacement: "ADVISORY SUBPLAN MODE",
+  },
+  houtu: {
+    default: [
+      "You execute by coordinating, delegating, and verifying",
+      "One `Agent()` delegation = one bounded top-level plan task",
+      "Final Verification Wave is an approval gate",
+    ],
+    gpt: [
+      "Read `local://PLAN.md` before doing anything else",
+      "One `Agent()` delegation = one bounded top-level plan task",
+      "Final Verification Wave is mandatory approval gate",
+      "APPROVE",
+    ],
+    geminiOverlay: [
+      "<gemini-corrective-overlay>",
+      "Do not become the implementer",
+      "Final Verification Wave requires explicit `APPROVE`",
+    ],
+    geminiComposed: [
+      "You execute by coordinating, delegating, and verifying",
+      "Do not become the implementer",
+      "One `Agent()` delegation = one bounded top-level plan task",
+    ],
+    defaultOnlyInGptReplacement: "TASK ANALYSIS:",
+  },
+  luban: {
+    default: [
+      "Skill-first is mandatory",
+      "Do not claim Sisyphus, Prometheus, Atlas, or upstream agent-profile parity",
+      "Parallelism is safety-gated, not maximized",
+    ],
+    gpt: [
+      "Before any response or action, run the skill gate",
+      "1% chance a skill applies",
+      "Do not claim Sisyphus, Prometheus, Atlas",
+      "verification-before-completion",
+    ],
+    geminiOverlay: ["<LUBAN_GEMINI_CORRECTIVE_OVERLAY>", "Do not skip skill loading", "verify with readback"],
+    geminiComposed: ["Skill-first is mandatory", "Do not skip skill loading", "explicit user/project instructions override active skill text"],
+    defaultOnlyInGptReplacement: "Consult the grain before the first cut",
+  },
+};
+
+function getModePromptPath(mode: ModeName, family: PromptFamily): string {
+  return join(process.cwd(), "modes", mode, MODE_PROMPT_FILES[family]);
+}
+
+function readModePrompt(mode: ModeName, family: PromptFamily): string {
+  return readFileSync(getModePromptPath(mode, family), "utf-8");
+}
+
+function getModeDefaultBody(mode: ModeName): string {
+  const parsed = parseModeAgentConfig(readModePrompt(mode, "default"));
+  if (!parsed) throw new Error(`invalid mode.md prompt for ${mode}`);
+  return parsed.body;
+}
+
+function getBodyOnlyVariant(mode: ModeName, family: Exclude<PromptFamily, "default">): string {
+  return readModePrompt(mode, family).trim();
+}
+
+function injectOverlaysForTest(body: string, overlays: string): string {
+  const criticalIdx = body.indexOf("<critical>");
+  if (criticalIdx !== -1) {
+    return `${body.slice(0, criticalIdx)}${overlays}\n\n${body.slice(criticalIdx)}`;
+  }
+
+  const roleClose = "</role>";
+  const roleIdx = body.indexOf(roleClose);
+  if (roleIdx !== -1) {
+    const insertAt = roleIdx + roleClose.length;
+    return `${body.slice(0, insertAt)}\n\n${overlays}${body.slice(insertAt)}`;
+  }
+
+  return `${body}\n\n${overlays}`;
+}
+
+function renderInjectedModePrompt(mode: ModeName, family: PromptFamily): string {
+  const defaultBody = getModeDefaultBody(mode);
+  const body = family === "gpt"
+    ? getBodyOnlyVariant(mode, "gpt")
+    : family === "gemini"
+      ? injectOverlaysForTest(defaultBody, getBodyOnlyVariant(mode, "gemini"))
+      : defaultBody;
+
+  return `Base prompt\n\n<!-- mode:${mode} -->\n${body}\n<!-- /mode:${mode} -->`;
+}
+
+function expectContainsAll(text: string, snippets: string[]): void {
+  for (const snippet of snippets) {
+    expect(text).toContain(snippet);
+  }
+}
+
+describe("mode prompt family matrix", () => {
+  it("requires default, GPT, and Gemini prompt files for every mode", () => {
+    for (const mode of ALL_MODES) {
+      for (const family of ["default", "gpt", "gemini"] as const) {
+        const path = getModePromptPath(mode, family);
+        expect(existsSync(path), `${mode}:${family} prompt missing`).toBe(true);
+        expect(readModePrompt(mode, family).trim(), `${mode}:${family} prompt empty`).not.toBe("");
+      }
+    }
+  });
+
+  for (const mode of ALL_MODES) {
+    describe(`${mode} injected prompt variants`, () => {
+      it("renders default prompt with mode-critical invariants", () => {
+        const rendered = renderInjectedModePrompt(mode, "default");
+        expect(rendered).toContain(`<!-- mode:${mode} -->`);
+        expectContainsAll(rendered, MODE_PROMPT_INVARIANTS[mode].default);
+      });
+
+      it("renders GPT as body-only replacement with self-contained invariants", () => {
+        const gptBody = getBodyOnlyVariant(mode, "gpt");
+        const rendered = renderInjectedModePrompt(mode, "gpt");
+
+        expect(gptBody).not.toMatch(/^---/);
+        expect(rendered).toContain(`<!-- mode:${mode} -->`);
+        expectContainsAll(rendered, MODE_PROMPT_INVARIANTS[mode].gpt);
+        expect(rendered).not.toContain(MODE_PROMPT_INVARIANTS[mode].defaultOnlyInGptReplacement);
+      });
+
+      it("renders Gemini as overlay while preserving default invariants", () => {
+        const defaultBody = getModeDefaultBody(mode);
+        const overlay = getBodyOnlyVariant(mode, "gemini");
+        const rendered = renderInjectedModePrompt(mode, "gemini");
+        const overlayPos = rendered.indexOf(MODE_PROMPT_INVARIANTS[mode].geminiOverlay[0]);
+
+        expect(overlay).not.toMatch(/^---/);
+        expectContainsAll(rendered, MODE_PROMPT_INVARIANTS[mode].default);
+        expectContainsAll(rendered, MODE_PROMPT_INVARIANTS[mode].geminiOverlay);
+        expectContainsAll(rendered, MODE_PROMPT_INVARIANTS[mode].geminiComposed);
+        expect(overlayPos).toBeGreaterThan(-1);
+
+        if (defaultBody.includes("<critical>")) {
+          expect(overlayPos).toBeLessThan(rendered.indexOf("<critical>"));
+        } else if (defaultBody.includes("</role>")) {
+          expect(overlayPos).toBeGreaterThan(rendered.indexOf("</role>"));
+        } else {
+          expect(rendered).toContain(`${overlay}\n<!-- /mode:${mode} -->`);
+        }
+      });
+    });
+  }
+});
 
 describe("fuxi clearance sequence", () => {
   describe("#given the mandatory plan generation sequence", () => {

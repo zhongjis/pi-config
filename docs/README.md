@@ -68,6 +68,8 @@ See [modes.md](modes.md) and [orchestration-flow.md](orchestration-flow.md) for 
 | [extension-model-usage.md](extension-model-usage.md) | Shared `tool_models.json` role schema for extension-owned LLM calls |
 | [model-selection-and-fallback.md](model-selection-and-fallback.md) | Model-chain parsing, profile filtering, and fallback behavior |
 | [modes.md](modes.md) | Agent modes design and switching behavior |
+| [mode-prompt-parity.md](mode-prompt-parity.md) | Upstream evidence and local invariants for mode prompt parity work |
+| [mode-prompt-audit-checklist.md](mode-prompt-audit-checklist.md) | Future prompt audit checklist for construction semantics, provenance, parity, and scope guardrails |
 | [orchestration-flow.md](orchestration-flow.md) | Planning-to-execution lifecycle |
 | [testing/README.md](testing/README.md) | Extension testing policy and two-tier model |
 | [testing/unit-test.md](testing/unit-test.md) | Unit test conventions |
