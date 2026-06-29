@@ -32,20 +32,6 @@ Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyr
 | `test/` | `test/AGENTS.md` | Root Vitest smoke/integration harness, fixtures, and stubs. |
 | `themes/` | `themes/AGENTS.md` | Theme JSON assets. |
 
-## Structure
-```
-./
-├── .agents/         # repo-local skills and skill source snapshots
-├── agents/          # custom agent definitions; Chinese mythology naming
-├── docs/            # design docs, standards, and reference material
-├── extensions/      # runtime Pi extensions; most active product code
-├── modes/           # mode prompt variants
-├── scripts/         # repo helper scripts used by root flows
-├── skills/          # repo-managed skills
-├── test/            # root Vitest smoke + integration harness
-└── themes/          # theme assets
-```
-
 ## Where to Look
 | Task | Location | Notes |
 |------|----------|-------|
