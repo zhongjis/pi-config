@@ -713,6 +713,14 @@ function formatCodeGraphNoMarkerStatus(project: ResolvedCodeGraphProject): strin
   ].join("\n");
 }
 
+function formatCodeGraphNoMarkerToolResult(project: ResolvedCodeGraphProject): string {
+  return [
+    `CodeGraph is not enabled for ${project.cwd}.`,
+    "No .codegraph marker was found at or above that directory, so this tool did not start CodeGraph.",
+    "Use read/rg/fd for this codebase instead. To enable CodeGraph, run `codegraph init` from the intended project root, then retry.",
+  ].join("\n");
+}
+
 async function requestCodeGraphTool(
   name: ToolName,
   args: ToolParams,
@@ -760,8 +768,10 @@ export async function callCodeGraphTool(
 
   const projectPath = typeof args.projectPath === "string" ? args.projectPath : undefined;
   const project = await resolveCodeGraphProject(projectPath);
-  if (name === "codegraph_status" && !project.hasCodeGraphMarker) {
-    return formatCodeGraphNoMarkerStatus(project);
+  if (!project.hasCodeGraphMarker) {
+    return name === "codegraph_status"
+      ? formatCodeGraphNoMarkerStatus(project)
+      : formatCodeGraphNoMarkerToolResult(project);
   }
 
   const mcpArgs = canonicalizeMcpToolArguments(args, project);

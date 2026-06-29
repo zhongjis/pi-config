@@ -410,6 +410,7 @@ describe("codegraph extension", () => {
   });
 
   it("normalizes absolute codegraph_files path inside ctx.cwd", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     const child = createChild();
     spawnMock.mockReturnValue(child);
     const mock = createMockPi();
@@ -752,18 +753,33 @@ describe("codegraph extension", () => {
     expect(secondServe.kill).toHaveBeenCalled();
   });
 
-  it("does not auto-init an uninitialized non-status query without a .codegraph marker", async () => {
-    const child = createChild({ toolError: true, resultText: "Project is not initialized" });
-    spawnMock.mockReturnValue(child);
+  it("short-circuits non-status queries without spawning when no .codegraph marker exists", async () => {
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
 
-    await expect(
-      mock.tools.get("codegraph_search")!.execute("tool-1", { query: "SymbolName" }, undefined, undefined, { cwd: tempRoot }),
-    ).rejects.toThrow("codegraph init <project-root>");
-    expect(getSpawnSubcommands()).toEqual(["serve"]);
-    expect(child.kill).toHaveBeenCalled();
+    const result = await mock.tools.get("codegraph_search")!.execute("tool-1", { query: "SymbolName" }, undefined, undefined, { cwd: tempRoot });
+    const text = result.content[0].text;
+
+    expect(text).toContain(`CodeGraph is not enabled for ${tempRoot}.`);
+    expect(text).toContain("this tool did not start CodeGraph");
+    expect(text).toContain("Use read/rg/fd for this codebase instead");
+    expect(text).toContain("codegraph init");
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits codegraph_files without spawning when no .codegraph marker exists", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_files")!.execute("tool-1", { path: "src" }, undefined, undefined, { cwd: tempRoot });
+    const text = result.content[0].text;
+
+    expect(text).toContain(`CodeGraph is not enabled for ${tempRoot}.`);
+    expect(text).toContain("this tool did not start CodeGraph");
+    expect(text).toContain("Use read/rg/fd for this codebase instead");
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it("does not auto-init a ready marker project when the first non-status query succeeds", async () => {
@@ -938,26 +954,21 @@ describe("codegraph extension", () => {
     expect(spawnMock).toHaveBeenCalledWith("codegraph", ["serve", "--mcp", "--path", worktreeRoot], expect.objectContaining({ cwd: worktreeRoot }));
   });
 
-  it("does not auto-init an uninitialized non-status query when only an invalid ancestor .codegraph exists", async () => {
+  it("short-circuits non-status queries when only an invalid ancestor .codegraph exists", async () => {
     await createInvalidGlobalCodeGraph(tempRoot);
     const repoRoot = path.join(tempRoot, "repo");
     const nested = path.join(repoRoot, "app");
     await mkdir(path.join(repoRoot, ".git"), { recursive: true });
     await mkdir(nested, { recursive: true });
-    const child = createChild({ toolError: true, resultText: "Project is not initialized" });
-    spawnMock.mockReturnValue(child);
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
 
-    await expect(
-      mock.tools.get("codegraph_search")!.execute("tool-1", { query: "SymbolName" }, undefined, undefined, { cwd: nested }),
-    ).rejects.toThrow("codegraph init <project-root>");
-    expect(getSpawnSubcommands()).toEqual(["serve"]);
-    expect(spawnMock.mock.calls[0]).toEqual([
-      "codegraph",
-      ["serve", "--mcp", "--path", nested],
-      expect.objectContaining({ cwd: nested }),
-    ]);
+    const result = await mock.tools.get("codegraph_search")!.execute("tool-1", { query: "SymbolName" }, undefined, undefined, { cwd: nested });
+    const text = result.content[0].text;
+
+    expect(text).toContain(`CodeGraph is not enabled for ${nested}.`);
+    expect(text).toContain("this tool did not start CodeGraph");
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 });
