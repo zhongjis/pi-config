@@ -1,8 +1,14 @@
 # Caveman
 
-Token-compression prompt injection. Prepends terse-communication rules to the system prompt on every agent turn. Three intensity levels: `lite` (professional but tight), `full` (classic caveman — no articles, fragments OK), `ultra` (abbreviations, arrows, one word when one word enough).
+Token-compression prompt injection for Pi. Appends terse-communication rules to top-level persisted session system prompts. Three local levels: `lite` (professional but tight), `full` (classic caveman), `ultra` (abbreviations, arrows, one word when enough).
 
-Only injected into top-level persisted sessions (not subagents).
+## Upstream
+
+- **Source:** https://github.com/JuliusBrussee/caveman
+- **Version:** `main` at `25d22f864ad68cc447a4cb93aefde918aa4aec9f`
+- **Synced:** 2026-06-29
+- **License:** MIT; copied in `LICENSE`
+- **Adapted:** Pi-native extension wrapper, persistent `~/.pi/agent/caveman.json` config, session-entry overrides, top-level session gate, and runtime prompt normalization for unimplemented upstream stop/off behavior.
 
 ## Commands
 
@@ -14,23 +20,16 @@ Only injected into top-level persisted sessions (not subagents).
 
 Persisted in `~/.pi/agent/caveman.json`:
 
-- `defaultLevel` — `lite`, `full`, or `ultra`
-- `statusVisibility` — show/hide status bar indicator
+- `defaultLevel` — `off`, `lite`, `full`, or `ultra`
+- `statusVisibility` — `active` or `hidden`
 
 ## Hooks
 
-- `before_agent_start` — injects the caveman prompt into the system message
-- `session_start` — restores saved state from config
+- `session_start` — restores config/session state and status
+- `before_agent_start` — appends the active caveman prompt to top-level persisted session system prompts
+- `session_shutdown` — clears status and runtime state
 
-## Files
+## Local Additions
 
-- `index.ts` — extension entry point
-- `config.ts` — persistence layer
-- `prompt.ts` — skill file parsing
-- `state.ts` — runtime state management
-- `session-gate.ts` — top-level session check
-- `upstream-caveman.SKILL.md` — vendored prompt content
-
-## Upstream
-
-Prompt content vendored from https://github.com/JuliusBrussee/caveman
+- `upstream-caveman.SKILL.md` stores the upstream skill body without YAML frontmatter.
+- `prompt.ts` parses upstream sections and injects only locally supported level behavior.
