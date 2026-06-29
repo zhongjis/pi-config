@@ -98,4 +98,4 @@ pnpm lint:typecheck             # typecheck
 bash install.sh    # symlinks allowlist of runtime items into ~/.pi/agent/
 ```
 
-Note: `install.sh` skips `AGENTS.md`, `settings.json`, and `skills` — those are managed by Home Manager / Nix.
+Note: `install.sh` skips `AGENTS.md` and `settings.json` — those are managed by Home Manager / Nix.

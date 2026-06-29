@@ -28,7 +28,6 @@ Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyr
 | `extensions/` | `extensions/AGENTS.md` | Runtime Pi extensions, shared extension rules, event contracts, and extension-local child docs. |
 | `modes/` | `modes/AGENTS.md` | Mode prompt variants and prompt-family construction rules. |
 | `scripts/` | `scripts/AGENTS.md` | Repo helper scripts used by install/test/maintenance flows. |
-| `skills/` | `skills/AGENTS.md` | Repo-managed skills; live sync is Nix/Home Manager constrained. |
 | `test/` | `test/AGENTS.md` | Root Vitest smoke/integration harness, fixtures, and stubs. |
 | `themes/` | `themes/AGENTS.md` | Theme JSON assets. |
 
@@ -104,11 +103,11 @@ Before registering any new tool, extension, or MCP server:
 ## Never
 - Do **not** recommend or use `pi install npm:...` in this repo; NixOS setup expects git/local/repo-managed wiring instead.
 - Do **not** assume `install.sh` syncs the whole repo; it symlinks an allowlist of runtime items only.
-- Do **not** expect edits to repo `AGENTS.md`, `settings.json`, or `skills` to propagate into `~/.pi/agent/`; those are Home Manager / Nix managed there.
+- Do **not** expect edits to repo `AGENTS.md` or `settings.json` to propagate into `~/.pi/agent/`; those are Home Manager / Nix managed there.
 - Do **not** commit runtime state: `auth.json`, session logs, or extension cache/data.
 
 ## Gotchas
-- `install.sh` skips `AGENTS.md`, `settings.json`, and `skills`; editing them here affects the repo, not the live Home Manager links.
+- `install.sh` skips `AGENTS.md` and `settings.json`; editing them here affects the repo, not the live Home Manager links.
 - Git packages under `~/.pi/agent/git/...` with `package.json` get dependency installs automatically during `bash install.sh`; repo test/build files stay local.
 - Root smoke coverage is centralized in `test/extensions.smoke.test.ts`; if a new extension needs custom discovery or setup, update that file with the extension.
 - For broad searches or pruning noise only, exclude runtime/generated paths: `.codex/`, `.omx/`, `.pi/tasks/`, `.direnv/`, `node_modules/`, and runtime file `auth.json`.

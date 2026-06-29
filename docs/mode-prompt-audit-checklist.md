@@ -47,7 +47,7 @@ Details from current parity evidence:
 
 - Superpowers source: `obra/superpowers` `skills/` at commit `896224c4b1879920ab573417e68fd51d2ccc9072`.
 - Task-specific embedded prompts exist, but they are not a global Superpowers agent profile.
-- Local Luban behavior comes from `skills/using-superpowers/SKILL.md` and workflow skills such as brainstorming, writing plans, subagent-driven development, executing plans, dispatching parallel agents, and verification-before-completion.
+- Local Luban behavior comes from `extensions/superpowers/skills/using-superpowers/SKILL.md` and workflow skills such as brainstorming, writing plans, subagent-driven development, executing plans, dispatching parallel agents, and verification-before-completion.
 
 ## Parity Review Checklist
 
