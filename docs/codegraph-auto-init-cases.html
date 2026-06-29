@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodeGraph Worktree Cold-Start Cases</title>
+<script>
+  (function () {
+    const saved = localStorage.getItem('theme');
+    const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', dark);
+  })();
+</script>
+<style>
+  :root {
+    --bg: #FAF9F5;
+    --surface: #FFFFFF;
+    --surface-2: #F0EEE6;
+    --surface-3: #E6E3DA;
+    --ink: #141413;
+    --body: #3D3D3A;
+    --muted: #87867F;
+    --line: #D1CFC5;
+    --line-soft: #E6E3DA;
+    --accent: #D97757;
+    --accent-soft: rgba(217, 119, 87, 0.12);
+    --ok: #788C5D;
+    --ok-soft: rgba(120, 140, 93, 0.14);
+    --warn: #C9A45C;
+    --warn-soft: rgba(201, 164, 92, 0.16);
+    --bad: #B04A3F;
+    --bad-soft: rgba(176, 74, 63, 0.12);
+    --blue: #5B7E96;
+    --blue-soft: rgba(91, 126, 150, 0.13);
+    --zone: rgba(20, 20, 19, 0.025);
+    --shadow: rgba(20, 20, 19, 0.10);
+    --serif: ui-serif, Georgia, "Times New Roman", serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  html.dark {
+    --bg: #141413;
+    --surface: #1F1F1D;
+    --surface-2: #2A2A28;
+    --surface-3: #353532;
+    --ink: #FAF9F5;
+    --body: #D1CFC5;
+    --muted: #87867F;
+    --line: #3D3D3A;
+    --line-soft: #2A2A28;
+    --accent: #E48A6E;
+    --accent-soft: rgba(228, 138, 110, 0.16);
+    --ok: #9DB07C;
+    --ok-soft: rgba(157, 176, 124, 0.16);
+    --warn: #D4B36F;
+    --warn-soft: rgba(212, 179, 111, 0.15);
+    --bad: #D06A60;
+    --bad-soft: rgba(208, 106, 96, 0.15);
+    --blue: #7FA3BC;
+    --blue-soft: rgba(127, 163, 188, 0.16);
+    --zone: rgba(250, 249, 245, 0.035);
+    --shadow: rgba(0, 0, 0, 0.28);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--body);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .bar {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--bg);
+  }
+  .title h1 {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .title .sub {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .spacer { flex: 1; }
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+  .chip, #themeToggle {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    border-radius: 999px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+  }
+  .chip:hover, #themeToggle:hover { color: var(--ink); border-color: var(--muted); }
+  .chip.on {
+    color: var(--bg);
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  #themeToggle { border-radius: 8px; }
+
+  .stage {
+    position: relative;
+    height: calc(100vh - 64px);
+    overflow: hidden;
+  }
+  svg {
+    display: block;
+    width: calc(100% - 456px);
+    height: 100%;
+  }
+
+  .bg { fill: var(--bg); }
+  .zone rect {
+    fill: var(--zone);
+    stroke: var(--line-soft);
+    stroke-width: 1.2;
+    stroke-dasharray: 7 6;
+  }
+  .zone text {
+    fill: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .lane { fill: none; stroke: var(--line-soft); stroke-width: 1; }
+  .node { cursor: pointer; transition: opacity .18s ease, transform .18s ease; }
+  .node rect, .node path, .node circle {
+    fill: var(--surface);
+    stroke: var(--line);
+    stroke-width: 1.5;
+    transition: fill .18s ease, stroke .18s ease, stroke-width .18s ease, filter .18s ease;
+  }
+  .node:hover rect, .node:hover path, .node:hover circle { stroke: var(--muted); filter: drop-shadow(0 6px 14px var(--shadow)); }
+  .node text { pointer-events: none; }
+  .node .t { fill: var(--ink); font-family: var(--sans); font-size: 16px; font-weight: 650; }
+  .node .m { fill: var(--muted); font-family: var(--mono); font-size: 11.8px; }
+  .node .k { fill: var(--accent); font-family: var(--mono); font-size: 10.6px; letter-spacing: .08em; text-transform: uppercase; }
+  .node.ok rect, .node.ok circle { fill: var(--ok-soft); stroke: var(--ok); }
+  .node.warn rect, .node.warn path { fill: var(--warn-soft); stroke: var(--warn); }
+  .node.bad rect { fill: var(--bad-soft); stroke: var(--bad); }
+  .node.blue rect { fill: var(--blue-soft); stroke: var(--blue); }
+  .node.marker rect { stroke-dasharray: 6 4; }
+  .node.selected rect, .node.selected path, .node.selected circle { stroke: var(--accent); stroke-width: 2.6; }
+
+  .edge {
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 1.7;
+    marker-end: url(#arrow-muted);
+    transition: opacity .18s ease, stroke .18s ease, stroke-width .18s ease;
+  }
+  .edge.soft { stroke: var(--line); marker-end: url(#arrow-line); }
+  .edge.ok { stroke: var(--ok); marker-end: url(#arrow-ok); }
+  .edge.warn { stroke: var(--warn); marker-end: url(#arrow-warn); }
+  .edge.bad { stroke: var(--bad); marker-end: url(#arrow-bad); }
+  .edge.dash { stroke-dasharray: 6 5; }
+  .elbl {
+    fill: var(--muted);
+    font-family: var(--mono);
+    font-size: 11.2px;
+    paint-order: stroke;
+    stroke: var(--bg);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+    transition: opacity .18s ease, fill .18s ease, stroke .18s ease;
+  }
+
+  .stage.flowing .node { opacity: .32; }
+  .stage.flowing .edge, .stage.flowing .elbl { opacity: .18; }
+  .stage.flowing .node.lit { opacity: 1; }
+  .stage.flowing .node.lit rect,
+  .stage.flowing .node.lit path,
+  .stage.flowing .node.lit circle { stroke: var(--accent); filter: drop-shadow(0 8px 20px var(--shadow)); }
+  .stage.flowing .edge.lit {
+    opacity: 1;
+    stroke: var(--accent);
+    stroke-width: 2.6;
+    marker-end: url(#arrow-accent);
+    stroke-dasharray: 9 6;
+    animation: march .85s linear infinite;
+  }
+  .stage.flowing .elbl.lit { opacity: 1; fill: var(--accent); stroke: var(--bg); }
+  @keyframes march { to { stroke-dashoffset: -15; } }
+  @media (prefers-reduced-motion: reduce) { .stage.flowing .edge.lit { animation: none; } }
+
+  .panel {
+    position: absolute;
+    right: 18px;
+    top: 18px;
+    width: min(420px, calc(100vw - 36px));
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 14px 40px var(--shadow);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+  }
+  .panel-head {
+    padding: 15px 17px 12px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .panel-head .eyebrow {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .panel-head h2 {
+    color: var(--ink);
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+  }
+  .panel-body { padding: 14px 17px 16px; display: grid; gap: 10px; }
+  .row {
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 10px 11px;
+    background: var(--surface);
+  }
+  .row .label {
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .row .value {
+    color: var(--body);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .row code {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 12px;
+  }
+  .legend {
+    position: absolute;
+    left: 18px;
+    bottom: 18px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    max-width: 620px;
+  }
+  .pill {
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    backdrop-filter: blur(8px);
+  }
+  .pill b { color: var(--ink); font-weight: 650; }
+
+  @media (max-width: 980px) {
+    body { overflow: auto; }
+    .bar { height: auto; min-height: 64px; align-items: flex-start; }
+    .stage { height: 820px; min-width: 980px; }
+    svg { width: 100%; height: 100%; }
+    .panel { position: fixed; top: auto; bottom: 12px; right: 12px; }
+    .legend { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <div class="title">
+    <h1>CodeGraph worktree cold-start</h1>
+    <div class="sub">marker · index · agent guidance · user-visible result</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="chips" id="chips" aria-label="Case picker">
+    <button class="chip on" data-case="ready">Ready</button>
+    <button class="chip" data-case="cold">Bare marker</button>
+    <button class="chip" data-case="absent">No marker</button>
+    <button class="chip" data-case="manual">Manual only</button>
+    <button class="chip" data-case="fail">Init fails</button>
+  </div>
+  <button id="themeToggle">Theme</button>
+</div>
+
+<div class="stage flowing" id="stage">
+<svg viewBox="0 0 1540 900" preserveAspectRatio="xMidYMid meet" role="img" aria-label="CodeGraph extension cases: what agent sees and what user sees">
+  <defs>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--muted)"/>
+    </marker>
+    <marker id="arrow-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--line)"/>
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--accent)"/>
+    </marker>
+    <marker id="arrow-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--ok)"/>
+    </marker>
+    <marker id="arrow-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--warn)"/>
+    </marker>
+    <marker id="arrow-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--bad)"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1540" height="900"/>
+
+  <g class="zone">
+    <rect x="45" y="90" width="250" height="625" rx="18"/>
+    <text x="65" y="120">repo / worktree</text>
+  </g>
+  <g class="zone">
+    <rect x="335" y="90" width="285" height="625" rx="18"/>
+    <text x="355" y="120">pi extension</text>
+  </g>
+  <g class="zone">
+    <rect x="660" y="90" width="310" height="625" rx="18"/>
+    <text x="680" y="120">codegraph cli</text>
+  </g>
+  <g class="zone">
+    <rect x="1010" y="90" width="230" height="625" rx="18"/>
+    <text x="1030" y="120">agent sees</text>
+  </g>
+  <g class="zone">
+    <rect x="1275" y="90" width="220" height="625" rx="18"/>
+    <text x="1295" y="120">user sees</text>
+  </g>
+
+  <path class="lane" d="M315,90 L315,715"/>
+  <path class="lane" d="M640,90 L640,715"/>
+  <path class="lane" d="M990,90 L990,715"/>
+  <path class="lane" d="M1260,90 L1260,715"/>
+
+  <!-- repository state -->
+  <g class="node marker" data-node="marker" transform="translate(75 150)">
+    <rect width="190" height="82" rx="12"/>
+    <text class="k" x="18" y="24">marker</text>
+    <text class="t" x="18" y="48">.codegraph/</text>
+    <text class="m" x="18" y="67">committed .gitignore</text>
+  </g>
+
+  <g class="node ok" data-node="index" transform="translate(75 275)">
+    <rect width="190" height="82" rx="12"/>
+    <text class="k" x="18" y="24">ready index</text>
+    <text class="t" x="18" y="48">DB + graph</text>
+    <text class="m" x="18" y="67">queryable now</text>
+  </g>
+
+  <g class="node warn" data-node="bare" transform="translate(75 400)">
+    <rect width="190" height="82" rx="12"/>
+    <text class="k" x="18" y="24">cold worktree</text>
+    <text class="t" x="18" y="48">bare marker</text>
+    <text class="m" x="18" y="67">needs local init</text>
+  </g>
+
+  <g class="node bad" data-node="disabled" transform="translate(75 525)">
+    <rect width="190" height="82" rx="12"/>
+    <text class="k" x="18" y="24">disabled / unsafe</text>
+    <text class="t" x="18" y="48">no marker</text>
+    <text class="m" x="18" y="67">or home/root/non-git</text>
+  </g>
+
+  <!-- extension state machine -->
+  <g class="node blue" data-node="resolve" transform="translate(365 150)">
+    <rect width="225" height="78" rx="12"/>
+    <text class="k" x="18" y="24">resolver</text>
+    <text class="t" x="18" y="48">classify project</text>
+    <text class="m" x="18" y="66">ready · cold · disabled</text>
+  </g>
+
+  <g class="node blue" data-node="guidance" transform="translate(365 280)">
+    <rect width="225" height="92" rx="12"/>
+    <text class="k" x="18" y="24">before_agent_start</text>
+    <text class="t" x="18" y="49">inject guidance</text>
+    <text class="m" x="18" y="68">marker enables guidance</text>
+    <text class="m" x="18" y="84">one cold-start note</text>
+  </g>
+
+  <g class="node blue" data-node="tool" transform="translate(365 425)">
+    <rect width="225" height="92" rx="12"/>
+    <text class="k" x="18" y="24">codegraph_* tool</text>
+    <text class="t" x="18" y="49">first non-status query</text>
+    <text class="m" x="18" y="68">queue by project root</text>
+    <text class="m" x="18" y="84">init + retry if needed</text>
+  </g>
+
+  <g class="node" data-node="status" transform="translate(365 565)">
+    <rect width="225" height="78" rx="12"/>
+    <text class="k" x="18" y="24">codegraph_status</text>
+    <text class="t" x="18" y="48">inspect only</text>
+    <text class="m" x="18" y="66">never auto-inits</text>
+  </g>
+
+  <!-- cli side -->
+  <g class="node warn" data-node="init" transform="translate(700 255)">
+    <rect width="230" height="86" rx="12"/>
+    <text class="k" x="18" y="24">cold-start action</text>
+    <text class="t" x="18" y="49">codegraph init</text>
+    <text class="m" x="18" y="68">target: project root</text>
+  </g>
+
+  <g class="node ok" data-node="serve" transform="translate(700 415)">
+    <rect width="230" height="86" rx="12"/>
+    <text class="k" x="18" y="24">query engine</text>
+    <text class="t" x="18" y="49">serve --mcp</text>
+    <text class="m" x="18" y="68">returns graph answer</text>
+  </g>
+
+  <g class="node bad" data-node="error" transform="translate(700 570)">
+    <rect width="230" height="86" rx="12"/>
+    <text class="k" x="18" y="24">fallback</text>
+    <text class="t" x="18" y="49">manual guidance</text>
+    <text class="m" x="18" y="68">init failed / unsafe</text>
+  </g>
+
+  <!-- agent/user outputs -->
+  <g class="node" data-node="agentStrong" transform="translate(1038 155)">
+    <rect width="174" height="98" rx="12"/>
+    <text class="k" x="16" y="24">agent msg</text>
+    <text class="t" x="16" y="48">Use CodeGraph</text>
+    <text class="m" x="16" y="68">before grep/read</text>
+    <text class="m" x="16" y="85">cold-start note</text>
+  </g>
+
+  <g class="node" data-node="agentNone" transform="translate(1038 315)">
+    <rect width="174" height="82" rx="12"/>
+    <text class="k" x="16" y="24">agent msg</text>
+    <text class="t" x="16" y="48">No CodeGraph push</text>
+    <text class="m" x="16" y="67">disabled / unsafe</text>
+  </g>
+
+  <g class="node ok" data-node="answer" transform="translate(1302 155)">
+    <rect width="165" height="88" rx="12"/>
+    <text class="k" x="16" y="24">user sees</text>
+    <text class="t" x="16" y="48">Normal answer</text>
+    <text class="m" x="16" y="67">maybe first call slower</text>
+  </g>
+
+  <g class="node warn" data-node="statusMsg" transform="translate(1302 315)">
+    <rect width="165" height="98" rx="12"/>
+    <text class="k" x="16" y="24">user sees</text>
+    <text class="t" x="16" y="48">Status only</text>
+    <text class="m" x="16" y="68">cold but enabled</text>
+    <text class="m" x="16" y="85">no init here</text>
+  </g>
+
+  <g class="node bad" data-node="manualMsg" transform="translate(1302 520)">
+    <rect width="165" height="110" rx="12"/>
+    <text class="k" x="16" y="24">user sees</text>
+    <text class="t" x="16" y="48">Manual fix</text>
+    <text class="m" x="16" y="68">init &lt;root&gt;</text>
+    <text class="m" x="16" y="85">codegraph status</text>
+  </g>
+
+  <!-- edges -->
+  <path class="edge" id="e-marker-resolve" d="M265,191 C310,191 322,189 365,189"/>
+  <path class="edge ok" id="e-index-serve" d="M265,316 C445,316 530,453 700,458"/>
+  <path class="edge warn" id="e-bare-init" d="M265,441 C435,441 515,298 700,298"/>
+  <path class="edge bad dash" id="e-disabled-none" d="M265,566 C610,566 762,356 1038,356"/>
+
+  <path class="edge" id="e-resolve-guidance" d="M478,228 L478,280"/>
+  <path class="edge" id="e-guidance-agent" d="M590,325 C760,325 820,204 1038,204"/>
+  <path class="edge" id="e-guidance-tool" d="M478,372 L478,425"/>
+  <path class="edge warn" id="e-tool-init" d="M590,471 C645,455 650,310 700,300"/>
+  <path class="edge ok" id="e-init-serve" d="M815,341 L815,415"/>
+  <path class="edge ok" id="e-tool-serve" d="M590,476 C640,476 650,458 700,458"/>
+  <path class="edge ok" id="e-serve-answer" d="M930,458 C1065,455 1175,204 1302,199"/>
+  <path class="edge warn" id="e-status-msg" d="M590,604 C840,604 1032,368 1302,368"/>
+  <path class="edge bad" id="e-init-error" d="M885,341 C960,380 948,579 930,610"/>
+  <path class="edge bad" id="e-error-manual" d="M930,613 C1060,615 1168,576 1302,576"/>
+
+  <text class="elbl" data-e="e-marker-resolve" x="286" y="176">marker means enabled</text>
+  <text class="elbl" data-e="e-index-serve" x="384" y="350">ready → skip init</text>
+  <text class="elbl" data-e="e-bare-init" x="396" y="409">bare marker → init project root</text>
+  <text class="elbl" data-e="e-disabled-none" x="522" y="542">no marker / unsafe → no push</text>
+  <text class="elbl" data-e="e-guidance-agent" x="775" y="260">agent gets same simple instruction</text>
+  <text class="elbl" data-e="e-tool-init" x="594" y="399">first non-status query</text>
+  <text class="elbl" data-e="e-status-msg" x="892" y="548">inspect-only</text>
+  <text class="elbl" data-e="e-error-manual" x="1048" y="638">actionable recovery</text>
+</svg>
+
+<aside class="panel" aria-live="polite">
+  <div class="panel-head">
+    <div class="eyebrow" id="caseTag">Case</div>
+    <h2 id="caseTitle">Ready index</h2>
+  </div>
+  <div class="panel-body">
+    <div class="row">
+      <div class="label">case</div>
+      <div class="value" id="caseText"></div>
+    </div>
+    <div class="row">
+      <div class="label">agent sees</div>
+      <div class="value" id="agentText"></div>
+    </div>
+    <div class="row">
+      <div class="label">extension does</div>
+      <div class="value" id="extensionText"></div>
+    </div>
+    <div class="row">
+      <div class="label">user sees</div>
+      <div class="value" id="userText"></div>
+    </div>
+  </div>
+</aside>
+
+<div class="legend">
+  <span class="pill"><b>.codegraph/</b> = repo/worktree enabled marker</span>
+  <span class="pill"><b>index DB</b> = ready to query</span>
+  <span class="pill"><b>cold</b> = extension runs init internally</span>
+  <span class="pill"><b>status</b> = inspect only, no write</span>
+</div>
+</div>
+
+<script>
+  const cases = {
+    ready: {
+      tag: 'Ready',
+      title: 'Marker + built index',
+      case: '<code>.codegraph/</code> exists and contains a usable graph DB.',
+      agent: '“Use CodeGraph before grep/read.” Includes one cold-start note; ready path skips init.',
+      extension: 'Resolve root → skip init → <code>codegraph serve --mcp</code> → return answer.',
+      user: 'Normal CodeGraph answer. No setup message.',
+      nodes: ['marker', 'index', 'resolve', 'guidance', 'tool', 'serve', 'agentStrong', 'answer'],
+      edges: ['e-marker-resolve', 'e-resolve-guidance', 'e-guidance-agent', 'e-guidance-tool', 'e-index-serve', 'e-tool-serve', 'e-serve-answer']
+    },
+    cold: {
+      tag: 'Bare marker',
+      title: 'Committed .codegraph/.gitignore only',
+      case: 'Worktree has <code>.codegraph/</code> marker, but no local index yet.',
+      agent: 'Same guidance plus one cold-start note; tool handles init.',
+      extension: 'First non-status query queues by project root → runs <code>codegraph init &lt;project-root&gt;</code> → retries original query.',
+      user: 'Normal answer if init succeeds; first call may be slower.',
+      nodes: ['marker', 'bare', 'resolve', 'guidance', 'tool', 'init', 'serve', 'agentStrong', 'answer'],
+      edges: ['e-marker-resolve', 'e-resolve-guidance', 'e-guidance-agent', 'e-guidance-tool', 'e-bare-init', 'e-tool-init', 'e-init-serve', 'e-serve-answer']
+    },
+    absent: {
+      tag: 'No marker',
+      title: 'No .codegraph marker',
+      case: 'Repo/worktree has no <code>.codegraph/</code>. Treat as not opted into CodeGraph guidance.',
+      agent: 'No CodeGraph-first system prompt.',
+      extension: 'No marker means no automatic init. Status does not spawn; uninitialized non-status calls return manual guidance.',
+      user: 'No setup noise. Normal non-CodeGraph behavior unless explicit tool call happens.',
+      nodes: ['disabled', 'resolve', 'agentNone'],
+      edges: ['e-disabled-none']
+    },
+    manual: {
+      tag: 'Manual only',
+      title: 'Unsafe / non-git / home-root path',
+      case: 'Path is non-git, inaccessible, home, filesystem root, or otherwise unsafe for implicit writes.',
+      agent: 'No CodeGraph-first guidance from startup.',
+      extension: 'Never auto-inits. Returns actionable command only when user/tool explicitly asks.',
+      user: 'Message says run <code>codegraph init &lt;project-root&gt;</code> and <code>codegraph status</code> manually.',
+      nodes: ['disabled', 'resolve', 'agentNone', 'error', 'manualMsg'],
+      edges: ['e-disabled-none', 'e-error-manual']
+    },
+    fail: {
+      tag: 'Init fails',
+      title: 'Cold marker but init cannot finish',
+      case: '<code>.codegraph/</code> marker exists, first query attempts init, CLI fails/aborts/times out.',
+      agent: 'Still gets simple CodeGraph-first guidance; failure belongs to tool result, not prompt policy.',
+      extension: 'Kill child on abort/timeout, clear shared promise, surface manual recovery.',
+      user: 'Sees exact failure plus <code>codegraph init &lt;project-root&gt;</code> / <code>codegraph status</code> recovery.',
+      nodes: ['marker', 'bare', 'resolve', 'guidance', 'tool', 'init', 'error', 'agentStrong', 'manualMsg'],
+      edges: ['e-marker-resolve', 'e-resolve-guidance', 'e-guidance-agent', 'e-guidance-tool', 'e-bare-init', 'e-tool-init', 'e-init-error', 'e-error-manual']
+    }
+  };
+
+  const stage = document.getElementById('stage');
+  const chips = document.getElementById('chips');
+  const nodeEls = [...document.querySelectorAll('.node')];
+  const edgeEls = [...document.querySelectorAll('.edge')];
+  const labelEls = [...document.querySelectorAll('.elbl')];
+
+  function setCase(key) {
+    const data = cases[key] || cases.ready;
+    document.querySelectorAll('.chip').forEach(btn => btn.classList.toggle('on', btn.dataset.case === key));
+    nodeEls.forEach(el => el.classList.toggle('lit', data.nodes.includes(el.dataset.node)));
+    edgeEls.forEach(el => el.classList.toggle('lit', data.edges.includes(el.id)));
+    labelEls.forEach(el => el.classList.toggle('lit', data.edges.includes(el.dataset.e)));
+    document.getElementById('caseTag').textContent = data.tag;
+    document.getElementById('caseTitle').textContent = data.title;
+    document.getElementById('caseText').innerHTML = data.case;
+    document.getElementById('agentText').innerHTML = data.agent;
+    document.getElementById('extensionText').innerHTML = data.extension;
+    document.getElementById('userText').innerHTML = data.user;
+    stage.classList.add('flowing');
+  }
+
+  chips.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-case]');
+    if (!btn) return;
+    setCase(btn.dataset.case);
+  });
+
+  document.querySelectorAll('[data-node]').forEach(node => {
+    node.addEventListener('click', () => {
+      const key = Object.entries(cases).find(([, value]) => value.nodes.includes(node.dataset.node));
+      if (key) setCase(key[0]);
+      nodeEls.forEach(el => el.classList.toggle('selected', el === node));
+    });
+  });
+
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const root = document.documentElement;
+    const next = !root.classList.contains('dark');
+    root.classList.toggle('dark', next);
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+  });
+
+  setCase('ready');
+</script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -37,6 +38,7 @@ class FakeStream extends EventEmitter {
 }
 
 type FakeChild = EventEmitter & {
+  kind: "serve" | "init";
   stdout: FakeStream;
   stderr: FakeStream;
   stdin: FakeStream;
@@ -63,10 +65,15 @@ function createMockPi(): MockPi {
 }
 
 type CreateChildOptions = {
+  kind?: "serve" | "init";
   errorOnInitialize?: Error;
+  exitCode?: number;
   resultText?: string;
   toolError?: boolean;
   toolResponseDelay?: Promise<void>;
+  initExitDelay?: Promise<void>;
+  initStdout?: string;
+  initStderr?: string;
 };
 
 function createChild(options: CreateChildOptions = {}): FakeChild {
@@ -80,6 +87,16 @@ function createChild(options: CreateChildOptions = {}): FakeChild {
     child.killed = true;
     return true;
   });
+  child.kind = options.kind ?? "serve";
+  if (child.kind === "init") {
+    queueMicrotask(async () => {
+      await options.initExitDelay;
+      if (options.initStdout) child.stdout.emit("data", options.initStdout);
+      if (options.initStderr) child.stderr.emit("data", options.initStderr);
+      child.emit("exit", options.exitCode ?? 0, null);
+      child.emit("close", options.exitCode ?? 0, null);
+    });
+  }
   child.stdin.write.mockImplementation((payload: string) => {
     const msg = JSON.parse(payload.trim()) as Record<string, unknown>;
     child.writes.push(msg);
@@ -120,10 +137,32 @@ async function waitFor(condition: () => boolean): Promise<void> {
   }
 }
 
+function getToolCall(child: FakeChild): { params: { name: string; arguments: Record<string, unknown> } } {
+  const toolCall = child.writes.find((msg) => msg.method === "tools/call") as
+    | { params: { name: string; arguments: Record<string, unknown> } }
+    | undefined;
+  expect(toolCall).toBeDefined();
+  return toolCall!;
+}
+
+function getSpawnSubcommands(): string[] {
+  return spawnMock.mock.calls.map(([, args]) => (args as string[])[0]);
+}
+
 async function loadExtension() {
   const module = await import("../index.js");
   return module;
 }
+
+const ExpectedBeforeAgentStartGuidance = [
+  "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph (codegraph_* tools) directly before grep/read.",
+  "First non-status CodeGraph query may initialize a cold worktree automatically if needed.",
+  "Use codegraph_explore first for broad questions, codegraph_search for symbol-name lookup, codegraph_files for project structure, codegraph_node for a known symbol, and codegraph_callers/codegraph_impact for impact and flow analysis.",
+  "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node before falling back to grep/read; symbol search may miss literal constants or generated names that still exist in source text.",
+  "Do not re-verify a CodeGraph result with grep/read, and do not re-open files whose source codegraph_explore or codegraph_node already returned.",
+  "Do not loop codegraph_node over many symbols — use codegraph_impact or codegraph_callers for breadth, and codegraph_explore to read several at once.",
+  "Otherwise use grep/read only after CodeGraph is insufficient or when the user asks for literal text matching.",
+].join("\n");
 
 describe("codegraph extension", () => {
   let tempRoot = "";
@@ -157,7 +196,7 @@ describe("codegraph extension", () => {
     ]);
   });
 
-  it("injects before_agent_start guidance for an indexed project without spawning CodeGraph", async () => {
+  it("injects concise before_agent_start guidance for a bare .codegraph marker without spawning CodeGraph", async () => {
     await mkdir(path.join(tempRoot, ".codegraph"));
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
@@ -166,14 +205,17 @@ describe("codegraph extension", () => {
     const handler = mock.handlers.get("before_agent_start");
     expect(handler).toBeDefined();
     const result = await handler!({ systemPrompt: "base" }, { cwd: tempRoot });
+    const promptLines = result.systemPrompt!.slice("base\n\n".length).split("\n");
 
-    expect(result.systemPrompt).toContain("base");
-    expect(result.systemPrompt).toContain("use CodeGraph (codegraph_* tools) directly before grep/read");
-    expect(result.systemPrompt).toContain("Do not re-verify a CodeGraph result");
+    expect(result.systemPrompt).toBe(`base\n\n${ExpectedBeforeAgentStartGuidance}`);
+    expect(promptLines).toEqual(ExpectedBeforeAgentStartGuidance.split("\n"));
+    expect(promptLines).toHaveLength(7);
+    expect(promptLines.filter((line) => line.includes("cold worktree"))).toHaveLength(1);
+    expect(result.systemPrompt).not.toContain("codegraph init");
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it("skips before_agent_start guidance when the project has no .codegraph index", async () => {
+  it("skips before_agent_start guidance when the project has no .codegraph marker", async () => {
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
 
@@ -186,7 +228,8 @@ describe("codegraph extension", () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it("uses ctx.cwd as default projectPath for codegraph_status", async () => {
+  it("uses ctx.cwd as default projectPath for ready codegraph_status", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     const child = createChild({ resultText: "status ok" });
     spawnMock.mockReturnValue(child);
     const mock = createMockPi();
@@ -204,8 +247,25 @@ describe("codegraph extension", () => {
     expect(child.kill).toHaveBeenCalled();
   });
 
+  it("returns no-marker codegraph_status without spawning or init guidance", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+    const text = result.content[0].text;
+
+    expect(text).toContain(`CodeGraph is not enabled for ${tempRoot}.`);
+    expect(text).toContain("No .codegraph marker was found");
+    expect(text).toContain("did not create or initialize an index");
+    expect(text).not.toContain("codegraph init");
+    expect(existsSync(path.join(tempRoot, ".codegraph"))).toBe(false);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it("lets explicit projectPath override ctx.cwd", async () => {
     const projectPath = await mkdtemp(path.join(tempRoot, "override-"));
+    await mkdir(path.join(projectPath, ".codegraph"));
     spawnMock.mockReturnValue(createChild());
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
@@ -234,7 +294,102 @@ describe("codegraph extension", () => {
     await expect(resolveProjectCwd(filePath)).rejects.toThrow("CodeGraph projectPath must point to a directory.");
   });
 
+  it("shares codegraph init by canonical root and spawns codegraph init <root>", async () => {
+    const projectRoot = await mkdtemp(path.join(tempRoot, "mono-"));
+    await mkdir(path.join(projectRoot, ".codegraph"));
+    const nested = path.join(projectRoot, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    let releaseInit!: () => void;
+    const initExitDelay = new Promise<void>((resolve) => {
+      releaseInit = resolve;
+    });
+    const child = createChild({ kind: "init", initExitDelay });
+    spawnMock.mockReturnValue(child);
+    const { initCodeGraphProject } = await loadExtension();
+
+    const first = initCodeGraphProject(nested);
+    const second = initCodeGraphProject(projectRoot);
+    await waitFor(() => spawnMock.mock.calls.length === 1);
+
+    expect(spawnMock).toHaveBeenCalledWith("codegraph", ["init", projectRoot], {
+      cwd: projectRoot,
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    releaseInit();
+    await Promise.all([first, second]);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("clears failed init promises and reports sanitized bounded diagnostics", async () => {
+    spawnMock
+      .mockImplementationOnce(() => createChild({
+        kind: "init",
+        exitCode: 1,
+        initStdout: `stdout ${"x".repeat(1200)}`,
+        initStderr: `\u001b[31mAPI_KEY=secret Bearer abcdef --password hunter2 ${"y".repeat(1200)}`,
+      }))
+      .mockImplementationOnce(() => createChild({ kind: "init" }));
+    const { initCodeGraphProject } = await loadExtension();
+
+    const message = await initCodeGraphProject(tempRoot).then(
+      () => "",
+      (error: unknown) => error instanceof Error ? error.message : String(error),
+    );
+
+    expect(message).toContain("exited with code 1");
+    expect(message).toContain("stderr:");
+    expect(message).toContain("stdout:");
+    expect(message).toContain("API_KEY=[redacted]");
+    expect(message).toContain("Bearer [redacted]");
+    expect(message).toContain("--[redacted]");
+    expect(message).not.toContain("\u001b[31m");
+    expect(message.length).toBeLessThan(2300);
+    await initCodeGraphProject(tempRoot);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses CODEGRAPH_INIT_TIMEOUT_MS independently, kills timed-out init, and clears the promise", async () => {
+    process.env.CODEGRAPH_TIMEOUT_MS = "1";
+    process.env.CODEGRAPH_INIT_TIMEOUT_MS = "20";
+    try {
+      const timedOutChild = createChild({ kind: "init", initExitDelay: new Promise<void>(() => { /* never settles */ }) });
+      spawnMock
+        .mockImplementationOnce(() => timedOutChild)
+        .mockImplementationOnce(() => createChild({ kind: "init" }));
+      const { initCodeGraphProject } = await loadExtension();
+
+      await expect(initCodeGraphProject(tempRoot)).rejects.toThrow("timed out after 20ms");
+      expect(timedOutChild.kill).toHaveBeenCalled();
+      await initCodeGraphProject(tempRoot);
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+    } finally {
+      delete process.env.CODEGRAPH_TIMEOUT_MS;
+      delete process.env.CODEGRAPH_INIT_TIMEOUT_MS;
+    }
+  });
+
+  it("kills init on abort and clears the aborted promise", async () => {
+    const abortedChild = createChild({ kind: "init", initExitDelay: new Promise<void>(() => { /* never settles */ }) });
+    spawnMock
+      .mockImplementationOnce(() => abortedChild)
+      .mockImplementationOnce(() => createChild({ kind: "init" }));
+    const controller = new AbortController();
+    const { initCodeGraphProject } = await loadExtension();
+
+    const result = initCodeGraphProject(tempRoot, controller.signal);
+    await waitFor(() => spawnMock.mock.calls.length === 1);
+    controller.abort(new Error("user abort"));
+
+    await expect(result).rejects.toThrow("user abort");
+    expect(abortedChild.kill).toHaveBeenCalled();
+    await initCodeGraphProject(tempRoot);
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not retry when the CodeGraph CLI cannot spawn", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     const child = createChild({ errorOnInitialize: new Error("spawn codegraph ENOENT") });
     spawnMock.mockReturnValue(child);
     const mock = createMockPi();
@@ -268,7 +423,36 @@ describe("codegraph extension", () => {
     expect(toolCall.params.arguments.path).toBe("src/index.ts");
   });
 
+  it("normalizes codegraph_files path and empty-result hint against marker root from nested cwd", async () => {
+    const projectRoot = await mkdtemp(path.join(tempRoot, "mono-"));
+    await mkdir(path.join(projectRoot, ".codegraph"));
+    const nested = path.join(projectRoot, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    const child = createChild({ resultText: "No files found matching the criteria." });
+    spawnMock.mockReturnValue(child);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const absolutePath = path.join(projectRoot, "src", "index.ts");
+
+    const result = await mock.tools.get("codegraph_files")!.execute(
+      "tool-1",
+      { path: absolutePath },
+      undefined,
+      undefined,
+      { cwd: nested },
+    );
+
+    expect(getToolCall(child).params).toEqual({
+      name: "codegraph_files",
+      arguments: { projectPath: projectRoot, path: "src/index.ts" },
+    });
+    expect(result.content[0].text).toContain("No files found matching the criteria.");
+    expect(result.content[0].text).toContain(`The filter "${absolutePath}" did not match any indexed path.`);
+  });
+
   it("cleans up pending MCP session on tool error", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     const child = createChild({ resultText: "tool failed", toolError: true });
     spawnMock.mockReturnValue(child);
     const mock = createMockPi();
@@ -283,6 +467,7 @@ describe("codegraph extension", () => {
   });
 
   it("serializes concurrent calls for the same project", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     let releaseFirst!: () => void;
     const firstToolResponse = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -313,6 +498,7 @@ describe("codegraph extension", () => {
   });
 
   it("continues same-project queue after a failed call", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     let spawnCount = 0;
     spawnMock.mockImplementation(() => {
       spawnCount += 1;
@@ -339,6 +525,8 @@ describe("codegraph extension", () => {
 
   it("does not serialize calls for different projects", async () => {
     const projectPath = await mkdtemp(path.join(tempRoot, "other-"));
+    await mkdir(path.join(tempRoot, ".codegraph"));
+    await mkdir(path.join(projectPath, ".codegraph"));
     let releaseTools!: () => void;
     const toolResponse = new Promise<void>((resolve) => {
       releaseTools = resolve;
@@ -375,6 +563,7 @@ describe("codegraph extension", () => {
   });
 
   it("retries once after a tools/call timeout, then succeeds and kills the first child", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     process.env.CODEGRAPH_TIMEOUT_MS = "30";
     vi.spyOn(Math, "random").mockReturnValue(0);
     try {
@@ -397,6 +586,7 @@ describe("codegraph extension", () => {
   });
 
   it("fails after two tools/call timeouts and kills both subprocesses", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     process.env.CODEGRAPH_TIMEOUT_MS = "30";
     vi.spyOn(Math, "random").mockReturnValue(0);
     try {
@@ -419,6 +609,7 @@ describe("codegraph extension", () => {
   });
 
   it("does not retry when aborted during tools/call timeout backoff", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
     process.env.CODEGRAPH_TIMEOUT_MS = "30";
     vi.spyOn(Math, "random").mockReturnValue(0);
     try {
@@ -440,15 +631,183 @@ describe("codegraph extension", () => {
     }
   });
 
-  it("adds index-init guidance when CodeGraph reports an uninitialized project", async () => {
-    spawnMock.mockReturnValue(createChild({ toolError: true, resultText: "Project is not initialized" }));
+  it("auto-inits a marker-only project on first non-status query, then retries the original tools/call", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
+    const firstServe = createChild({ toolError: true, resultText: "Project is not initialized" });
+    const secondServe = createChild({ resultText: "search ok" });
+    const serveChildren = [firstServe, secondServe];
+    const initChildren: FakeChild[] = [];
+
+    spawnMock.mockImplementation((_command: string, args: string[]) => {
+      if (args[0] === "serve") {
+        const child = serveChildren.shift();
+        if (!child) throw new Error("unexpected extra serve spawn");
+        return child;
+      }
+      if (args[0] === "init") {
+        const child = createChild({ kind: "init" });
+        initChildren.push(child);
+        return child;
+      }
+      throw new Error(`unexpected codegraph command: ${args.join(" ")}`);
+    });
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_search")!.execute(
+      "tool-1",
+      { query: "SymbolName" },
+      undefined,
+      undefined,
+      { cwd: tempRoot },
+    );
+
+    expect(result.content[0].text).toBe("search ok");
+    expect(getSpawnSubcommands()).toEqual(["serve", "init", "serve"]);
+    expect(spawnMock.mock.calls[0]).toEqual([
+      "codegraph",
+      ["serve", "--mcp", "--path", tempRoot],
+      expect.objectContaining({ cwd: tempRoot }),
+    ]);
+    expect(spawnMock.mock.calls[1]).toEqual(["codegraph", ["init", tempRoot], expect.objectContaining({ cwd: tempRoot })]);
+    expect(spawnMock.mock.calls[2]).toEqual([
+      "codegraph",
+      ["serve", "--mcp", "--path", tempRoot],
+      expect.objectContaining({ cwd: tempRoot }),
+    ]);
+    expect(initChildren).toHaveLength(1);
+    const originalToolCall = getToolCall(firstServe).params;
+    expect(originalToolCall).toEqual({
+      name: "codegraph_search",
+      arguments: { projectPath: tempRoot, query: "SymbolName" },
+    });
+    expect(getToolCall(secondServe).params).toEqual(originalToolCall);
+    expect(firstServe.kill).toHaveBeenCalled();
+    expect(secondServe.kill).toHaveBeenCalled();
+  });
+
+  it("auto-inits a nested marker project on normal-text unindexed output with canonical projectPath arguments", async () => {
+    const projectRoot = await mkdtemp(path.join(tempRoot, "mono-"));
+    await mkdir(path.join(projectRoot, ".codegraph"));
+    const nested = path.join(projectRoot, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    const firstServe = createChild({ resultText: `The project at ${projectRoot} isn't indexed with codegraph (no .codegraph/ directory found walking up from it). Run 'codegraph init'.` });
+    const secondServe = createChild({ resultText: "search ok" });
+    const serveChildren = [firstServe, secondServe];
+    const initChildren: FakeChild[] = [];
+
+    spawnMock.mockImplementation((_command: string, args: string[]) => {
+      if (args[0] === "serve") {
+        const child = serveChildren.shift();
+        if (!child) throw new Error("unexpected extra serve spawn");
+        return child;
+      }
+      if (args[0] === "init") {
+        const child = createChild({ kind: "init" });
+        initChildren.push(child);
+        return child;
+      }
+      throw new Error(`unexpected codegraph command: ${args.join(" ")}`);
+    });
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_search")!.execute(
+      "tool-1",
+      { projectPath: nested, query: "SymbolName", limit: 3 },
+      undefined,
+      undefined,
+      { cwd: tempRoot },
+    );
+
+    expect(result.content[0].text).toBe("search ok");
+    expect(getSpawnSubcommands()).toEqual(["serve", "init", "serve"]);
+    expect(spawnMock.mock.calls[0]).toEqual([
+      "codegraph",
+      ["serve", "--mcp", "--path", projectRoot],
+      expect.objectContaining({ cwd: projectRoot }),
+    ]);
+    expect(spawnMock.mock.calls[1]).toEqual(["codegraph", ["init", projectRoot], expect.objectContaining({ cwd: projectRoot })]);
+    expect(spawnMock.mock.calls[2]).toEqual([
+      "codegraph",
+      ["serve", "--mcp", "--path", projectRoot],
+      expect.objectContaining({ cwd: projectRoot }),
+    ]);
+    expect(initChildren).toHaveLength(1);
+    const originalToolCall = getToolCall(firstServe).params;
+    expect(originalToolCall).toEqual({
+      name: "codegraph_search",
+      arguments: { projectPath: projectRoot, query: "SymbolName", limit: 3 },
+    });
+    expect(getToolCall(secondServe).params).toEqual(originalToolCall);
+    expect(firstServe.kill).toHaveBeenCalled();
+    expect(secondServe.kill).toHaveBeenCalled();
+  });
+
+  it("does not auto-init an uninitialized non-status query without a .codegraph marker", async () => {
+    const child = createChild({ toolError: true, resultText: "Project is not initialized" });
+    spawnMock.mockReturnValue(child);
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
 
     await expect(
-      mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
-    ).rejects.toThrow("codegraph init -i");
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+      mock.tools.get("codegraph_search")!.execute("tool-1", { query: "SymbolName" }, undefined, undefined, { cwd: tempRoot }),
+    ).rejects.toThrow("codegraph init <project-root>");
+    expect(getSpawnSubcommands()).toEqual(["serve"]);
+    expect(child.kill).toHaveBeenCalled();
+  });
+
+  it("does not auto-init a ready marker project when the first non-status query succeeds", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
+    const child = createChild({ resultText: "ready search" });
+    spawnMock.mockReturnValue(child);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_search")!.execute(
+      "tool-1",
+      { query: "SymbolName" },
+      undefined,
+      undefined,
+      { cwd: tempRoot },
+    );
+
+    expect(result.content[0].text).toBe("ready search");
+    expect(getSpawnSubcommands()).toEqual(["serve"]);
+    expect(getToolCall(child).params).toEqual({
+      name: "codegraph_search",
+      arguments: { projectPath: tempRoot, query: "SymbolName" },
+    });
+    expect(child.kill).toHaveBeenCalled();
+  });
+
+  it("returns cold-enabled status text for marker root from normal-text unindexed output without auto-init", async () => {
+    const projectRoot = await mkdtemp(path.join(tempRoot, "mono-"));
+    await mkdir(path.join(projectRoot, ".codegraph"));
+    const nested = path.join(projectRoot, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    const child = createChild({ resultText: `The project at ${projectRoot} isn't indexed with codegraph (no .codegraph/ directory found walking up from it). Run 'codegraph init'.` });
+    spawnMock.mockReturnValue(child);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: nested });
+    const text = result.content[0].text;
+
+    expect(text).toContain(`CodeGraph is enabled for ${projectRoot}, but the index is not built yet.`);
+    expect(text).toContain("codegraph_status is inspect-only and did not run codegraph init.");
+    expect(text).toContain(`First non-status CodeGraph query will run: codegraph init ${projectRoot}`);
+    expect(text).not.toContain("init -i");
+    expect(getToolCall(child).params).toEqual({
+      name: "codegraph_status",
+      arguments: { projectPath: projectRoot },
+    });
+    expect(getSpawnSubcommands()).toEqual(["serve"]);
+    expect(child.kill).toHaveBeenCalled();
   });
 });

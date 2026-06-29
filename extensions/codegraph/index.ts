@@ -89,7 +89,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_status",
     label: "CodeGraph Status",
-    description: "Get CodeGraph index status.",
+    description: "Inspect CodeGraph index status without initializing or modifying the project.",
     parameters: Type.Object({
       projectPath: OptionalProjectPath,
     }),
@@ -121,9 +121,17 @@ type PendingJsonRpcRequests = Map<number, {
   reject: (error: Error) => void;
 }>;
 
+type DiagnosticBuffer = { value: string };
+type SharedCodeGraphInit = {
+  promise: Promise<void>;
+  abortController: AbortController;
+};
+
 const MaxDiagnosticLength = 1000;
 const projectQueues = new Map<string, Promise<void>>();
+const codeGraphInitPromises = new Map<string, SharedCodeGraphInit>();
 const RequestTimeoutMs = Number(process.env.CODEGRAPH_TIMEOUT_MS) || 30_000;
+const InitTimeoutMs = Number(process.env.CODEGRAPH_INIT_TIMEOUT_MS) || 120_000;
 const MaxToolCallAttempts = 2;
 const ToolCallRetryBackoffMinMs = 250;
 const ToolCallRetryBackoffJitterMs = 500;
@@ -148,6 +156,20 @@ function enqueueCodeGraphRequest<T>(cwd: string, task: () => Promise<T>): Promis
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isCodeGraphUninitializedMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return [
+    "not initialized",
+    "not indexed with codegraph",
+    "isn't indexed with codegraph",
+    "isn’t indexed with codegraph",
+    "no .codegraph",
+    "missing .codegraph",
+    "could not find .codegraph",
+    "cannot find .codegraph",
+  ].some((snippet) => lower.includes(snippet));
 }
 
 function isToolsCallTimeout(error: unknown): boolean {
@@ -221,18 +243,18 @@ export async function withCodeGraphMcp<T>(
   signal: AbortSignal | undefined,
   fn: (request: JsonRpcRequest) => Promise<T>,
 ): Promise<T> {
-  const cwd = await resolveProjectCwd(projectPath);
-  const child = spawn("codegraph", ["serve", "--mcp", "--path", cwd], {
-    cwd,
+  const project = await resolveCodeGraphProject(projectPath);
+  const child = spawn("codegraph", ["serve", "--mcp", "--path", project.cwd], {
+    cwd: project.cwd,
     env: process.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
 
-  return runJsonRpcSession(child, cwd, signal, fn);
+  return runJsonRpcSession(child, project.cwd, signal, fn);
 }
 
 function findCodeGraphRoot(startDir: string): string | undefined {
-  let current = startDir;
+  let current = path.resolve(startDir);
   let parent = path.dirname(current);
   while (current !== parent) {
     if (existsSync(path.join(current, ".codegraph"))) return current;
@@ -242,7 +264,14 @@ function findCodeGraphRoot(startDir: string): string | undefined {
   return existsSync(path.join(current, ".codegraph")) ? current : undefined;
 }
 
-export async function resolveProjectCwd(projectPath: string | undefined): Promise<string> {
+export type ResolvedCodeGraphProject = {
+  /** Canonical cwd used for CodeGraph serve/init and same-project queue keys. */
+  cwd: string;
+  /** True when cwd resolved from an existing .codegraph marker at or above the requested dir. */
+  hasCodeGraphMarker: boolean;
+};
+
+export async function resolveCodeGraphProject(projectPath: string | undefined): Promise<ResolvedCodeGraphProject> {
   const cwd = projectPath || process.cwd();
 
   if (!path.isAbsolute(cwd)) {
@@ -260,7 +289,137 @@ export async function resolveProjectCwd(projectPath: string | undefined): Promis
     throw new Error("CodeGraph projectPath must point to a directory.");
   }
 
-  return findCodeGraphRoot(cwd) ?? cwd;
+  const canonicalCwd = path.resolve(cwd);
+  const markerRoot = findCodeGraphRoot(canonicalCwd);
+  return {
+    cwd: markerRoot ?? canonicalCwd,
+    hasCodeGraphMarker: markerRoot !== undefined,
+  };
+}
+
+export async function resolveProjectCwd(projectPath: string | undefined): Promise<string> {
+  return (await resolveCodeGraphProject(projectPath)).cwd;
+}
+
+export async function initCodeGraphProject(root: string | undefined, signal?: AbortSignal): Promise<void> {
+  const project = await resolveCodeGraphProject(root);
+  const canonicalRoot = project.cwd;
+  throwIfAborted(signal);
+
+  let entry = codeGraphInitPromises.get(canonicalRoot);
+  if (!entry) {
+    const abortController = new AbortController();
+    const promise = runCodeGraphInit(canonicalRoot, abortController.signal).catch((error) => {
+      if (codeGraphInitPromises.get(canonicalRoot)?.promise === promise) {
+        codeGraphInitPromises.delete(canonicalRoot);
+      }
+      throw error;
+    });
+    entry = { promise, abortController };
+    codeGraphInitPromises.set(canonicalRoot, entry);
+  }
+
+  return waitForCodeGraphInit(entry, signal);
+}
+
+async function waitForCodeGraphInit(entry: SharedCodeGraphInit, signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) return entry.promise;
+
+  const onAbort = () => {
+    entry.abortController.abort(createAbortError(signal));
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
+  if (signal.aborted) onAbort();
+  return entry.promise.finally(() => signal.removeEventListener("abort", onAbort));
+}
+
+function runCodeGraphInit(root: string, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn("codegraph", ["init", root], {
+      cwd: root,
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const stdout: DiagnosticBuffer = { value: "" };
+    const stderr: DiagnosticBuffer = { value: "" };
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const finish = (error?: Error, killChild = false) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (killChild && !child.killed) child.kill();
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => {
+      finish(createCodeGraphInitAbortError(root, signal, stdout.value, stderr.value), true);
+    };
+    const timer = setTimeout(() => {
+      finish(createCodeGraphInitTimeoutError(root, stdout.value, stderr.value), true);
+    }, InitTimeoutMs);
+    timer.unref();
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    child.stdout.on("data", (chunk) => appendDiagnosticChunk(stdout, chunk));
+    child.stderr.on("data", (chunk) => appendDiagnosticChunk(stderr, chunk));
+    child.on("error", (error) => {
+      finish(createCodeGraphInitFailureError(root, error.message, stdout.value, stderr.value));
+    });
+    child.on("exit", (code, exitSignal) => {
+      if (code === 0) {
+        finish();
+        return;
+      }
+      const reason = code === null
+        ? `terminated by signal ${exitSignal ?? "unknown"}`
+        : `exited with code ${code}`;
+      finish(createCodeGraphInitFailureError(root, reason, stdout.value, stderr.value));
+    });
+  });
+}
+
+function appendDiagnosticChunk(target: DiagnosticBuffer, chunk: Buffer): void {
+  const next = `${target.value}${chunk.toString("utf-8")}`;
+  target.value = next.length > MaxDiagnosticLength * 2
+    ? next.slice(-MaxDiagnosticLength * 2)
+    : next;
+}
+
+function createCodeGraphInitAbortError(root: string, signal: AbortSignal, stdout: string, stderr: string): Error {
+  return createCodeGraphInitFailureError(
+    root,
+    `aborted: ${getErrorMessage(createAbortError(signal))}`,
+    stdout,
+    stderr,
+  );
+}
+
+function createCodeGraphInitTimeoutError(root: string, stdout: string, stderr: string): Error {
+  return createCodeGraphInitFailureError(root, `timed out after ${InitTimeoutMs}ms`, stdout, stderr);
+}
+
+function createCodeGraphInitFailureError(root: string, reason: string, stdout: string, stderr: string): Error {
+  const diagnostics = formatCodeGraphInitDiagnostics(stdout, stderr);
+  return new Error(`CodeGraph init failed for ${root}: ${reason}${diagnostics}`);
+}
+
+function formatCodeGraphInitDiagnostics(stdout: string, stderr: string): string {
+  const parts = [
+    formatCodeGraphDiagnosticStream("stderr", stderr),
+    formatCodeGraphDiagnosticStream("stdout", stdout),
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? `\n${parts.join("\n")}` : "";
+}
+
+function formatCodeGraphDiagnosticStream(label: "stdout" | "stderr", value: string): string | undefined {
+  const diagnostic = sanitizeDiagnostic(value.trim());
+  return diagnostic ? `${label}: ${diagnostic}` : undefined;
 }
 
 export function normalizeFilesPath(inputPath?: string, projectCwd?: string): string | undefined {
@@ -465,9 +624,9 @@ async function prepareToolArguments(
   if (name !== "codegraph_files") return { args: params };
 
   const projectPath = typeof params.projectPath === "string" ? params.projectPath : undefined;
-  const projectCwd = await resolveProjectCwd(projectPath);
+  const project = await resolveCodeGraphProject(projectPath);
   const originalFilesPath = typeof params.path === "string" ? params.path : undefined;
-  const normalizedPath = normalizeFilesPath(originalFilesPath, projectCwd);
+  const normalizedPath = normalizeFilesPath(originalFilesPath, project.cwd);
 
   const args: ToolParams = { ...params };
   if (normalizedPath === undefined) {
@@ -479,6 +638,76 @@ async function prepareToolArguments(
   return { args, originalFilesPath };
 }
 
+function canonicalizeMcpToolArguments(args: ToolParams, project: ResolvedCodeGraphProject): ToolParams {
+  if (!project.hasCodeGraphMarker || typeof args.projectPath !== "string") return args;
+  return { ...args, projectPath: project.cwd };
+}
+
+function getToolResultText(result: any): string {
+  return (result?.content || [])
+    .filter((part: any) => part?.type === "text")
+    .map((part: any) => part.text)
+    .join("\n");
+}
+
+function isUninitializedToolResult(result: any): boolean {
+  return isCodeGraphUninitializedMessage(getToolResultText(result));
+}
+
+function formatCodeGraphColdStatus(project: ResolvedCodeGraphProject): string {
+  return [
+    `CodeGraph is enabled for ${project.cwd}, but the index is not built yet.`,
+    "codegraph_status is inspect-only and did not run codegraph init.",
+    `First non-status CodeGraph query will run: codegraph init ${project.cwd}`,
+  ].join("\n");
+}
+
+function formatCodeGraphNoMarkerStatus(project: ResolvedCodeGraphProject): string {
+  return [
+    `CodeGraph is not enabled for ${project.cwd}.`,
+    "No .codegraph marker was found at or above that directory.",
+    "codegraph_status is inspect-only and did not create or initialize an index.",
+  ].join("\n");
+}
+
+async function requestCodeGraphTool(
+  name: ToolName,
+  args: ToolParams,
+  project: ResolvedCodeGraphProject,
+  signal: AbortSignal | undefined,
+): Promise<any> {
+  return withToolsCallTimeoutRetry(signal, () =>
+    withCodeGraphMcp(
+      project.cwd,
+      signal,
+      (request) =>
+        request("tools/call", {
+          name,
+          arguments: args,
+        }),
+    ),
+  );
+}
+
+async function callCodeGraphToolWithInitRetry(
+  name: ToolName,
+  args: ToolParams,
+  project: ResolvedCodeGraphProject,
+  signal: AbortSignal | undefined,
+): Promise<any> {
+  const shouldAutoInit = name !== "codegraph_status" && project.hasCodeGraphMarker;
+
+  try {
+    const result = await requestCodeGraphTool(name, args, project, signal);
+    if (!shouldAutoInit || !isUninitializedToolResult(result)) return result;
+  } catch (error) {
+    if (!shouldAutoInit || !isCodeGraphUninitializedMessage(getErrorMessage(error))) throw error;
+  }
+
+  await initCodeGraphProject(project.cwd, signal);
+  return requestCodeGraphTool(name, args, project, signal);
+}
+
 export async function callCodeGraphTool(
   name: ToolName,
   params: ToolParams,
@@ -487,27 +716,34 @@ export async function callCodeGraphTool(
   const { args, originalFilesPath } = await prepareToolArguments(name, params);
 
   const projectPath = typeof args.projectPath === "string" ? args.projectPath : undefined;
-  const projectCwd = await resolveProjectCwd(projectPath);
-  const result = await enqueueCodeGraphRequest(projectCwd, () =>
-    withToolsCallTimeoutRetry(signal, () =>
-      withCodeGraphMcp(
-        projectCwd,
-        signal,
-        (request) =>
-          request("tools/call", {
-            name,
-            arguments: args,
-          }),
-      ),
-    )
-  );
+  const project = await resolveCodeGraphProject(projectPath);
+  if (name === "codegraph_status" && !project.hasCodeGraphMarker) {
+    return formatCodeGraphNoMarkerStatus(project);
+  }
 
-  const text = (result?.content || [])
-    .filter((part: any) => part?.type === "text")
-    .map((part: any) => part.text)
-    .join("\n");
+  const mcpArgs = canonicalizeMcpToolArguments(args, project);
 
-  if (result?.isError) throw new Error(text || "CodeGraph tool failed.");
+  let result;
+  try {
+    result = await enqueueCodeGraphRequest(project.cwd, () =>
+      callCodeGraphToolWithInitRetry(name, mcpArgs, project, signal)
+    );
+  } catch (error) {
+    if (name === "codegraph_status" && isCodeGraphUninitializedMessage(getErrorMessage(error))) {
+      return formatCodeGraphColdStatus(project);
+    }
+    throw error;
+  }
+
+  const text = getToolResultText(result);
+
+  if (name === "codegraph_status" && isCodeGraphUninitializedMessage(text)) {
+    return formatCodeGraphColdStatus(project);
+  }
+
+  if (result?.isError) {
+    throw new Error(text || "CodeGraph tool failed.");
+  }
   const finalText = text || JSON.stringify(result);
   return name === "codegraph_files" ? annotateFilesResult(finalText, originalFilesPath) : finalText;
 }
@@ -526,11 +762,11 @@ export function formatCodeGraphError(error: unknown, toolName: string): string {
     ].join("\n");
   }
 
-  if (lower.includes("not initialized") || lower.includes(".codegraph")) {
+  if (isCodeGraphUninitializedMessage(message)) {
     return [
       `CodeGraph ${toolName} failed: ${message}`,
       "Build the index in the project root first:",
-      "  codegraph init -i",
+      "  codegraph init <project-root>",
       "  codegraph status",
     ].join("\n");
   }
@@ -540,13 +776,14 @@ export function formatCodeGraphError(error: unknown, toolName: string): string {
 
 export default function codegraphExtension(pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (event, ctx) => {
-    // Only steer toward CodeGraph when the active project actually has an index.
-    // This hook fires once per user turn and ctx.cwd is read fresh each time, so an
-    // index created mid-session (e.g. `codegraph init -i`) is picked up next turn.
+    // Only steer toward CodeGraph when the active project has a .codegraph marker.
+    // This hook fires once per user turn and ctx.cwd is read fresh each time, so a
+    // marker created mid-session is picked up next turn.
     if (!findCodeGraphRoot(ctx.cwd)) return {};
 
     const guidance = [
       "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph (codegraph_* tools) directly before grep/read.",
+      "First non-status CodeGraph query may initialize a cold worktree automatically if needed.",
       "Use codegraph_explore first for broad questions, codegraph_search for symbol-name lookup, codegraph_files for project structure, codegraph_node for a known symbol, and codegraph_callers/codegraph_impact for impact and flow analysis.",
       "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node before falling back to grep/read; symbol search may miss literal constants or generated names that still exist in source text.",
       "Do not re-verify a CodeGraph result with grep/read, and do not re-open files whose source codegraph_explore or codegraph_node already returned.",
