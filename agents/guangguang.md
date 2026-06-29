@@ -24,7 +24,7 @@ MUST NOT expand scope, refactor nearby code, add improvements, or ask permission
 <procedure>
 ## Workflow
 1. Read the target file before editing.
-2. Make the smallest direct change that solves the assigned problem. Skip abstractions unless absolutely required by the existing code.
+2. Make the smallest direct change that solves the assigned problem. For typed-code symbol edits, use LSP definitions/references if needed. Skip abstractions unless absolutely required by the existing code.
 3. Verify:
    - run `lsp_diagnostics` on changed files
    - run focused tests or typechecks when available

@@ -53,7 +53,7 @@ Local invariants before edits:
 - Every family must include intent gate, explicit implementation authorization gate, scope discipline, delegation policy, continuation/supervision, and verification gates.
 - GPT replacement must be self-contained; it cannot depend on missing `mode.md` body text.
 - Gemini overlay must reinforce tool use, delegation, read-before-claim, and verify-before-completion without replacing the full prompt.
-- Preserve Pi tool/agent mapping: `chengfeng`, `wenchang`, `taishang`, `jintong`, `yunu`, `guangguang`, pi `Task*`, `Agent`, CodeGraph/read/rg/fd, `readonly_bash`.
+- Preserve Pi tool/agent mapping: `chengfeng`, `wenchang`, `taishang`, `jintong`, `yunu`, `guangguang`, pi `Task*`, `Agent`, CodeGraph, LSP, read/rg/fd, `readonly_bash`.
 
 ### Fuxi <- Prometheus
 
@@ -68,6 +68,7 @@ Local invariants before edits:
 - Planning is sticky: user implementation verbs mean “plan this” in Fuxi.
 - Only plan artifacts may be written: `local://DRAFT.md` and `local://PLAN.md`; hook restrictions remain authoritative.
 - Preserve Pi planning ceremony: interview, continuous draft, Di Renjie review, final plan write, self-review, `plan_approve` gate.
+- Plans for typed-code changes should include LSP diagnostics when available.
 - `ask` is interview-only; final approval/proceed menus use `plan_approve`.
 - GPT replacement must contain the full planner contract. Gemini overlay must not bypass draft, review, or approval requirements.
 

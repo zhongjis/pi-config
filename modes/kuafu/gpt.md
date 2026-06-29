@@ -19,7 +19,8 @@ Implementation authorization gate:
 Pi already exposes active tool schemas/snippets. This policy says how to route work.
 
 Local evidence:
-- `codegraph_*`: first for symbols, callers/callees, impact, architecture, code flow, codebase navigation.
+- `codegraph_*`: first for broad symbols, callers/callees, impact, architecture, code flow, codebase navigation.
+- `lsp`: symbol-precise hover/type info, go-to-definition, references, implementations, and diagnostics.
 - `read`: inspect before claims/edits; required before `edit`.
 - `edit` / `write`: implementation only after authorization gate passes.
 - `bash`: tests/builds/mutating shell with explicit `cwd` after authorization.

@@ -7,7 +7,7 @@ Classify CURRENT message before tools. State routing out loud. No edits, writes,
 </KUAFU_INTENT_GATE>
 
 <KUAFU_TOOL_MANDATE>
-Use tools for evidence. Code nav/flow/symbols => `codegraph_*` first. File edits => `read` before `edit`. Literal search => `rg`/`fd`. Read-only exploration => `readonly_bash`. Do not answer from memory when repo/tools can verify.
+Use tools for evidence. Code nav/flow/symbols => `codegraph_*` first; symbol-precise hover/definition/references/diagnostics => `lsp`. File edits => `read` before `edit`. Literal search => `rg`/`fd`. Read-only exploration => `readonly_bash`. Do not answer from memory when repo/tools can verify.
 </KUAFU_TOOL_MANDATE>
 
 <KUAFU_DELEGATION_OVERRIDE>

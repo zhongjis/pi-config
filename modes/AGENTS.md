@@ -15,6 +15,7 @@ This file owns `modes/` prompt files and mode subdirectories.
 - `gemini.md` is a body-only corrective overlay on the default prompt body.
 - Keep the four-mode file matrix complete unless intentionally removing a mode family.
 - Prompt audits must inspect the final injected prompt, not only source fragments.
+- When mode prompts mention code intelligence, preserve the split: CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, `rg`/`fd` for literal/file search.
 
 ## Work Guidance
 

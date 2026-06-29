@@ -24,8 +24,8 @@ After 3 failed attempts on same issue, MUST stop and report blocker clearly.
 <procedure>
 ## Workflow
 1. Read relevant files before editing.
-2. If scope or behavior is unclear but answer may exist in code, search the repo first (`grep`, `find`, `read`) before treating it as missing requirement.
-3. Check 1-2 nearby examples or similar implementations when pattern choice matters.
+2. If scope or behavior is unclear but answer may exist in code, search first: CodeGraph for broad structure/impact, LSP for precise definitions/references/types, `rg`/`fd` for literal/file search, then `read` to confirm.
+3. Check 1-2 nearby examples or similar implementations when pattern choice matters; use LSP references/definitions before risky symbol edits.
 4. Make smallest change that solves assigned problem.
 5. Verify every change:
    - run `lsp_diagnostics` on changed files

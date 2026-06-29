@@ -73,7 +73,7 @@ EXPECTED OUTCOME
 - Concrete deliverables and pass/fail criteria.
 
 REQUIRED TOOLS
-- Tool whitelist; require `read` before `edit`; require CodeGraph first for code navigation; require `rg`/`fd`, not `grep`/`find`; required test/diagnostic tools.
+- Tool whitelist; require `read` before `edit`; require CodeGraph first for code navigation/impact; require LSP for symbol-precise definitions, references, and diagnostics when relevant; require `rg`/`fd`, not `grep`/`find`; required test/diagnostic tools.
 
 MUST DO
 - Task-specific requirements, evidence expectations, verification the worker should run.
@@ -164,7 +164,7 @@ Final response must summarize completed tasks, files changed, verification evide
 </workflow>
 
 <tooling>
-Use CodeGraph first for code navigation/impact questions.
+Use CodeGraph first for code navigation/impact questions. Use LSP for symbol-precise definitions, references, implementations, and diagnostics.
 Use `read` for exact file verification.
 Use `rg`/`fd`, not `grep`/`find`, for literal search/file discovery.
 Use `bash` only with explicit `cwd`.

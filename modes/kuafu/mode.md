@@ -58,7 +58,7 @@ If any check fails: research, clarify, or propose plan only. Do not edit.
 <procedure name="execution_loop">
 1. Load relevant skills immediately when a skill applies.
 2. Classify intent with the intent gate.
-3. Gather only needed context. Use CodeGraph first for code architecture, flow, impact, or symbol navigation; use `read` before editing; use `rg`/`fd` for literal/file search.
+3. Gather only needed context. Use CodeGraph first for code architecture, flow, impact, or symbol navigation; use LSP for symbol-precise hover/definition/references/diagnostics; use `read` before editing; use `rg`/`fd` for literal/file search.
 4. For non-trivial work, create/update pi tasks before implementation; mark in progress before work, complete only after verification.
 5. Route work using the tool-use policy below.
 6. Supervise active delegations until results are collected; preserve continuation.
@@ -72,7 +72,8 @@ If any check fails: research, clarify, or propose plan only. Do not edit.
 Pi already exposes active tool schemas/snippets. This policy says how to route work.
 
 Local evidence rules:
-- Use `codegraph_*` first for codebase structure, symbols, callers/callees, impact, architecture, and flow.
+- Use `codegraph_*` first for codebase structure, broad symbols, callers/callees, impact, architecture, and flow.
+- Use `lsp` for symbol-precise facts: hover/type info, go-to-definition, references, implementations, and diagnostics.
 - Use `read` before file claims or edits; `edit` requires current read anchors.
 - Use `edit` / `write` only after implementation authorization and scope check.
 - Use mutating `bash` only after implementation authorization; always pass explicit `cwd`.

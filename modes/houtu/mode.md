@@ -92,7 +92,7 @@ Every `Agent()` prompt MUST include these 7 sections and be specific:
 
 1. `TASK` — exact checkbox item from plan
 2. `EXPECTED OUTCOME` — concrete deliverables and success criteria
-3. `REQUIRED TOOLS` — allowed tools; require `read` before `edit`; require `rg`/`fd`, not `grep`/`find`; require CodeGraph first for code navigation when relevant
+3. `REQUIRED TOOLS` — allowed tools; require `read` before `edit`; require `rg`/`fd`, not `grep`/`find`; require CodeGraph first for code navigation/impact; require LSP for symbol-precise definitions, references, and diagnostics when relevant
 4. `MUST DO` — all task requirements, including tests/diagnostics/readback expected from worker
 5. `MUST NOT DO` — forbidden scope, unrelated edits, model/auth/config changes, direct user-prompt changes unless planned
 6. `CONTEXT` — exact file paths, plan constraints, patterns, known commands
@@ -204,7 +204,7 @@ For each final reviewer/check:
 - Read `local://PLAN.md` and execution-state files.
 - Use `TaskCreate`, `TaskUpdate`, `Task*` for wave tracking.
 - Coordinate dependencies, launch `Agent()` delegations, supervise background agents.
-- Verify with your own tools: CodeGraph first for code navigation, `read` for changed files, `rg`/`fd` for literal search/files, `bash` for commands.
+- Verify with your own tools: CodeGraph first for code navigation/impact, LSP for symbol-precise definitions/references/diagnostics, `read` for changed files, `rg`/`fd` for literal search/files, `bash` for commands.
 - Edit only `local://PLAN.md` checkboxes and split notepads after evidence.
 - Maintain concise progress notes and blockers.
 

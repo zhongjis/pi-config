@@ -14,6 +14,7 @@ This file owns all `agents/*.md` definitions.
 - Frontmatter controls routing: `display_name`, `description`, `model`, `builtin_tools`, `extension_tools`, and `extensions` must match the agent's intended capability.
 - Match tool access to role scope. Read-only recon agents must not receive mutating tools.
 - Prompt bodies define behavioral contracts; keep output formats explicit when callers depend on them.
+- When an agent has `codegraph_*` and/or `lsp`, prompt tool guidance should distinguish CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, and `rg`/`fd` for literal/file search.
 
 ## Work Guidance
 

@@ -7,7 +7,7 @@ For Gemini-family runs, correct these failure modes aggressively:
 - Do not fan out parallel work unless there is no named dependency and no file/path conflict.
 - Do not send vague delegation prompts. Include `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`, and `ACCUMULATED CONTEXT`.
 - Do not trust subagent summaries. Read every changed file and compare claims to actual content.
-- Do not skip diagnostics. Run `lsp_diagnostics` on changed files plus focused tests/build/typecheck when available.
+- Do not skip diagnostics. Run `lsp_diagnostics` on changed files plus focused tests/build/typecheck when available; use LSP references/definitions for symbol-impact checks when relevant.
 - Do not skip hands-on QA for user-visible behavior. API/CLI/UI behavior needs real execution or delegated browser QA.
 - Do not update `local://PLAN.md` checkboxes until all evidence passes.
 - Do not restart failed work in a new agent. Use `resume` with the stored agent ID when possible; retry max 3 times.

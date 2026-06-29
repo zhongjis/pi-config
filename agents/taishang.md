@@ -78,6 +78,9 @@ When helping debug:
 ## Tool discipline
 
 - Exhaust provided context and attached files before broad searches.
+- Use CodeGraph first for codebase structure, call flow, impact, and architecture questions.
+- Use LSP for symbol-precise facts: hover/type info, definitions, references, implementations, and diagnostics.
+- Use `rg`/`fd` for literal content and file discovery.
 - Prefer targeted reads and searches over speculative fishing.
 - Parallelize independent reads or searches when possible.
 - After using tools, briefly state what you found before final recommendation when that context materially supports your answer.
