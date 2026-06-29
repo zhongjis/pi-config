@@ -240,7 +240,17 @@ async function runScopedSessionReview(
     if (!ok) return { ok: false, review: `Preflight failed for ${scope.path}` };
 
     const prompt = buildScopedReviewPrompt(scope, reason);
-    const jobs = await planCodexReviewJobs(gitRunner(pi), scope.path, { prompt });
+    let jobs: CodexReviewJob[];
+    try {
+      jobs = await planCodexReviewJobs(gitRunner(pi), scope.path, { prompt });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("Could not determine a base ref")) {
+        skipped.push(`${scope.path}: ${message}`);
+        continue;
+      }
+      return { ok: false, review: `${scope.path}: ${message}` };
+    }
     if (jobs.length === 0) {
       skipped.push(`${scope.path}: no branch or dirty changes`);
       continue;
@@ -288,11 +298,11 @@ export default function secondOpinion(pi: ExtensionAPI) {
     ].join("\n"),
     parameters: SessionScopeParams,
     async execute(_id, params, _signal, _onUpdate, ctx) {
-      const { reason, repos } = parseScopes(params);
-      const invalid = validateScopes(repos);
-      if (invalid) return { content: [{ type: "text", text: invalid }] };
-
       try {
+        const { reason, repos } = parseScopes(params);
+        const invalid = validateScopes(repos);
+        if (invalid) return { content: [{ type: "text", text: invalid }] };
+
         const result = await runScopedSessionReview(pi, ctx as ExtensionCommandContext, reason, repos);
         if (!result.ok) {
           return { content: [{ type: "text", text: `Codex review failed: ${result.review}` }] };

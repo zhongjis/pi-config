@@ -16,6 +16,25 @@ export async function runCodexReview(
   widgetLabel = "codex review",
 ): Promise<{ ok: boolean; review: string }> {
   return new Promise((resolve) => {
+    let resolved = false;
+    let ticker: ReturnType<typeof setInterval> | undefined;
+    let off: (() => void) | undefined;
+
+    const finish = (result: { ok: boolean; review: string }) => {
+      if (resolved) return;
+      resolved = true;
+      try {
+        resolve(result);
+      } finally {
+        if (ticker !== undefined) clearInterval(ticker);
+        if (off !== undefined) off();
+        if (isTui(ctx)) {
+          ctx.ui.setWidget("codex-review", undefined);
+          ctx.ui.setStatus("codex-review", undefined);
+        }
+      }
+    };
+
     const child = spawn("codex", argv, {
       cwd,
       env: process.env,
@@ -27,8 +46,6 @@ export async function runCodexReview(
     let activity = "";
     let frameIdx = 0;
     const startMs = Date.now();
-    let ticker: ReturnType<typeof setInterval> | undefined;
-    let off: (() => void) | undefined;
     let tui: { requestRender(): void } | undefined;
     let widgetRegistered = false;
 
@@ -90,22 +107,17 @@ export async function runCodexReview(
       }
     });
 
+    child.on("error", (err) => {
+      finish({ ok: false, review: err instanceof Error ? err.message : String(err) });
+    });
+
     child.on("close", (code) => {
       const ok = code === 0;
       const review = ok
         ? stdoutBuf.trim()
         : stderrBuf.replace(ANSI_REGEX, "").replace(/\r/g, "").trim().slice(-2000) ||
           "Unknown error";
-      try {
-        resolve({ ok, review });
-      } finally {
-        if (ticker !== undefined) clearInterval(ticker);
-        if (off !== undefined) off();
-        if (isTui(ctx)) {
-          ctx.ui.setWidget("codex-review", undefined);
-          ctx.ui.setStatus("codex-review", undefined);
-        }
-      }
+      finish({ ok, review });
     });
   });
 }

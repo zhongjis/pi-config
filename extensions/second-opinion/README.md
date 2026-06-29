@@ -9,7 +9,7 @@ Runs `codex review` on current git changes or agent-selected session scope and p
 - Posts Codex output as a `second-opinion` message
 - After review, prompts whether the agent should address comments using a conservative address-comments workflow
 - Supports Escape / Ctrl-C to cancel a running review when in TUI mode
-- Reports preflight failures (Codex missing, not logged in, or not in a git repo) without starting a review
+- Reports preflight failures (Codex missing, login missing, or no git repo for the selected review target) without starting a review
 
 Requires `codex` CLI on PATH and a valid `codex login` session.
 
@@ -25,3 +25,9 @@ Requires `codex` CLI on PATH and a valid `codex login` session.
 | Tool | Caller | Purpose |
 |---|---|---|
 | `codex_review_session_scope` | Agent after `/codex:review session` | Runs Codex against confirmed repo scopes. Included/excluded paths are passed as prompt scope, not hard CLI path filters. |
+
+## Events
+
+| Event | When |
+|---|---|
+| `user-prompted` | Emitted before the post-review prompt asking whether the agent should address Codex comments. |
