@@ -237,9 +237,9 @@ export function buildInjectedPrompt(level: CavemanLevel): string {
     [
       firstParagraph(fragments.prelude),
       `Active level: ${level}. ${levelInstruction}`,
-      `Rules: ${collapseInline(firstParagraph(fragments.rules))}`,
-      `Auto-Clarity: ${collapseInline(firstParagraph(fragments.autoClarity))}`,
-      `Boundaries: ${collapseInline(firstParagraph(fragments.boundaries))}`,
+      `Rules: ${collapseInline(fragments.rules)}`,
+      `Auto-Clarity: ${collapseInline(beforeExampleBlock(fragments.autoClarity))}`,
+      `Boundaries: ${collapseInline(fragments.boundaries)}`,
     ].join("\n"),
   );
 }
@@ -278,6 +278,15 @@ function parseIntensityLevels(
 
 function firstParagraph(text: string): string {
   return text.split(/\n\s*\n/u)[0]?.trim() ?? "";
+}
+
+function beforeExampleBlock(text: string): string {
+  const match = text.match(/\n\s*Example\b/u);
+  if (!match || match.index === undefined) {
+    return text.trim();
+  }
+
+  return text.slice(0, match.index).trim();
 }
 
 function collapseInline(text: string): string {

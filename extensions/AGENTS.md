@@ -77,6 +77,7 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | Path | Owner Doc | Scope |
 |------|-----------|-------|
 | `boomerang/` | `boomerang/AGENTS.md` | Vendored Boomerang extension sync notes and local `/boomerang:commit` tweaks. |
+| `caveman/` | `caveman/AGENTS.md` | Caveman prompt injection, upstream skill sync notes, and local Pi behavior divergences. |
 | `codegraph/` | `codegraph/AGENTS.md` | Vendored CodeGraph tool extension, timeout/retry behavior, and teaching layer tweaks. |
 | `direnv/` | `direnv/AGENTS.md` | Vendored direnv extension sync notes and local lifecycle/status tweaks. |
 | `fast/` | `fast/AGENTS.md` | Vendored fast-mode provider profile merge and session-only state rules. |
