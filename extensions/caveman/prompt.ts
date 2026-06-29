@@ -280,8 +280,8 @@ function firstParagraph(text: string): string {
   return text.split(/\n\s*\n/u)[0]?.trim() ?? "";
 }
 
-function beforeExampleBlock(text: string): string {
-  const match = text.match(/\n\s*Example\b/u);
+export function beforeExampleBlock(text: string): string {
+  const match = text.match(/(?:^|\n)\s*Example\b/u);
   if (!match || match.index === undefined) {
     return text.trim();
   }

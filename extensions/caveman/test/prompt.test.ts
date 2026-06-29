@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildInjectedPrompt, loadRuntimePrompt } from "../prompt.js";
+import { beforeExampleBlock, buildInjectedPrompt, loadRuntimePrompt } from "../prompt.js";
 
 describe("caveman prompt", () => {
 	it("loads current upstream rules into the normalized runtime prompt", () => {
@@ -24,5 +24,10 @@ describe("caveman prompt", () => {
 		expect(injected).toContain("Compression itself creates technical ambiguity");
 		expect(injected).not.toContain("stop caveman");
 		expect(injected).not.toContain("normal mode");
+	});
+
+	it("trims text before an Example block even when Example starts the section", () => {
+		expect(beforeExampleBlock("Example: keep out\n\nUseful detail")).toBe("");
+		expect(beforeExampleBlock("Keep this\n\nExample: keep out")).toBe("Keep this");
 	});
 });
