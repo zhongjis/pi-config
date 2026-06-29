@@ -39,16 +39,16 @@ All tools accept optional `projectPath` to query another absolute CodeGraph-enab
 
 ## Hooks
 
-- `before_agent_start` — when the active project (`ctx.cwd`) or nearest ancestor has a `.codegraph/` marker, appends concise CodeGraph-first guidance, anti-patterns, and one cold-start note. Re-checked each turn, so a marker created mid-session is picked up on the next turn. No marker means no CodeGraph guidance.
+- `before_agent_start` — when the active project (`ctx.cwd`) or nearest in-repo ancestor has a valid `.codegraph/` project marker, appends concise CodeGraph-first guidance, anti-patterns, and one cold-start note. Re-checked each turn, so a marker created mid-session is picked up on the next turn. No marker means no CodeGraph guidance.
 
 ## Configuration / Requirements
 
 - `codegraph` CLI must be available on `PATH`; no new repo dependency is added.
-- A `.codegraph/` marker opts a project into guidance and marker-gated auto-init. No marker means no startup guidance and no automatic init.
+- A valid `.codegraph/` project marker opts a project into guidance and marker-gated auto-init. Valid markers are an empty `.codegraph/`, `.codegraph/.gitignore`, or `.codegraph/codegraph.db`; unrelated/global `.codegraph/` data is ignored. No marker means no startup guidance and no automatic init.
 - Non-status tools first query via `codegraph serve --mcp --path <project>`. If a marker project is uninitialized, the extension runs `codegraph init <project-root>` once, then retries the original query. Ready projects skip init.
 - `codegraph_status` is inspect-only: no-marker projects do not spawn `codegraph`; cold marker projects return cold-enabled text; ready marker projects query status. It never runs init.
 - Queries that need CodeGraph start an internal subprocess (`codegraph serve --mcp --path <project>`) for that call. This is not a root MCP server and adds no `settings.json` MCP config.
 - Same-project tool calls are serialized inside this extension to avoid CodeGraph MCP proxy races under parallel agent tool use; different `projectPath` values may still run concurrently.
-- Project paths resolve to the nearest ancestor directory containing `.codegraph/`, so launching pi inside a subdirectory of an indexed repo still works.
+- Project paths resolve to the nearest valid `.codegraph/` project marker at or above the requested directory, bounded by the containing git/worktree root when one exists. Launching pi inside a subdirectory of an indexed repo still works without accidentally using a parent home/global `.codegraph/`.
 - Each JSON-RPC request to the subprocess times out after 30s (override with the `CODEGRAPH_TIMEOUT_MS` env var); on timeout the subprocess is killed so a hung `codegraph` cannot block the agent or the same-project queue. If `tools/call` times out, the extension waits 250–750ms and retries once inside that same queue; initialize timeouts/failures, spawn errors, tool `isError` results other than marker-root uninitialized, aborts, invalid paths, and no-marker uninitialized projects are not retried.
 - When the `codegraph` CLI is missing from `PATH` or manual recovery is needed, tools return actionable guidance: run `codegraph init <project-root>` and then `codegraph status`.

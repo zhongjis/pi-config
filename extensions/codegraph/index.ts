@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -253,15 +253,58 @@ export async function withCodeGraphMcp<T>(
   return runJsonRpcSession(child, project.cwd, signal, fn);
 }
 
-function findCodeGraphRoot(startDir: string): string | undefined {
+function isDirectorySync(candidate: string): boolean {
+  try {
+    return statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isValidCodeGraphMarker(candidate: string): boolean {
+  if (!isDirectorySync(candidate)) return false;
+
+  let entries: string[];
+  try {
+    entries = readdirSync(candidate);
+  } catch {
+    return false;
+  }
+
+  return entries.length === 0 || entries.includes(".gitignore") || entries.includes("codegraph.db");
+}
+
+function findGitBoundary(startDir: string): string | undefined {
   let current = path.resolve(startDir);
   let parent = path.dirname(current);
   while (current !== parent) {
-    if (existsSync(path.join(current, ".codegraph"))) return current;
+    if (existsSync(path.join(current, ".git"))) return current;
     current = parent;
     parent = path.dirname(current);
   }
-  return existsSync(path.join(current, ".codegraph")) ? current : undefined;
+  return existsSync(path.join(current, ".git")) ? current : undefined;
+}
+
+function isImplicitUnsafeAncestor(candidate: string, startDir: string): boolean {
+  if (candidate === startDir) return false;
+  const parent = path.dirname(candidate);
+  return candidate === os.homedir() || candidate === parent;
+}
+
+function findCodeGraphRoot(startDir: string): string | undefined {
+  const canonicalStartDir = path.resolve(startDir);
+  const boundary = findGitBoundary(canonicalStartDir);
+  let current = canonicalStartDir;
+  let parent = path.dirname(current);
+
+  while (true) {
+    if (isValidCodeGraphMarker(path.join(current, ".codegraph"))) {
+      return isImplicitUnsafeAncestor(current, canonicalStartDir) ? undefined : current;
+    }
+    if (current === boundary || current === parent) return undefined;
+    current = parent;
+    parent = path.dirname(current);
+  }
 }
 
 export type ResolvedCodeGraphProject = {
@@ -776,7 +819,7 @@ export function formatCodeGraphError(error: unknown, toolName: string): string {
 
 export default function codegraphExtension(pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (event, ctx) => {
-    // Only steer toward CodeGraph when the active project has a .codegraph marker.
+    // Only steer toward CodeGraph when the active project has a valid .codegraph project marker.
     // This hook fires once per user turn and ctx.cwd is read fresh each time, so a
     // marker created mid-session is picked up next turn.
     if (!findCodeGraphRoot(ctx.cwd)) return {};

@@ -149,6 +149,12 @@ function getSpawnSubcommands(): string[] {
   return spawnMock.mock.calls.map(([, args]) => (args as string[])[0]);
 }
 
+async function createInvalidGlobalCodeGraph(root: string): Promise<void> {
+  const marker = path.join(root, ".codegraph");
+  await mkdir(path.join(marker, "daemons"), { recursive: true });
+  await writeFile(path.join(marker, "telemetry.json"), "{}\n");
+}
+
 async function loadExtension() {
   const module = await import("../index.js");
   return module;
@@ -809,5 +815,149 @@ describe("codegraph extension", () => {
     });
     expect(getSpawnSubcommands()).toEqual(["serve"]);
     expect(child.kill).toHaveBeenCalled();
+  });
+
+  it("ignores invalid ancestor .codegraph past a git directory boundary for status without spawning", async () => {
+    await createInvalidGlobalCodeGraph(tempRoot);
+    const repoRoot = path.join(tempRoot, "repo");
+    const nested = path.join(repoRoot, "app");
+    await mkdir(path.join(repoRoot, ".git"), { recursive: true });
+    await mkdir(nested, { recursive: true });
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: nested });
+    const text = result.content[0].text;
+
+    expect(text).toContain(`CodeGraph is not enabled for ${nested}.`);
+    expect(text).toContain("No .codegraph marker was found");
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("skips before_agent_start guidance for a git repo under an invalid ancestor .codegraph", async () => {
+    await createInvalidGlobalCodeGraph(tempRoot);
+    const repoRoot = path.join(tempRoot, "repo");
+    const nested = path.join(repoRoot, "app");
+    await mkdir(path.join(repoRoot, ".git"), { recursive: true });
+    await mkdir(nested, { recursive: true });
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const handler = mock.handlers.get("before_agent_start");
+    expect(handler).toBeDefined();
+
+    const result = await handler!({ systemPrompt: "base" }, { cwd: nested });
+
+    expect(result.systemPrompt).toBeUndefined();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid ancestor .codegraph markers even without a git boundary", async () => {
+    await createInvalidGlobalCodeGraph(tempRoot);
+    const nested = path.join(tempRoot, "loose", "app");
+    await mkdir(nested, { recursive: true });
+    const { resolveProjectCwd } = await loadExtension();
+
+    expect(await resolveProjectCwd(nested)).toBe(nested);
+  });
+
+  it("does not treat a valid home .codegraph as an implicit marker for non-git descendants", async () => {
+    const originalHome = process.env.HOME;
+    process.env.HOME = tempRoot;
+    try {
+      await mkdir(path.join(tempRoot, ".codegraph"));
+      await writeFile(path.join(tempRoot, ".codegraph", ".gitignore"), "*\n!.gitignore\n");
+      const nested = path.join(tempRoot, "loose", "app");
+      await mkdir(nested, { recursive: true });
+      const { resolveProjectCwd } = await loadExtension();
+
+      expect(await resolveProjectCwd(nested)).toBe(nested);
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+    }
+  });
+
+  it.each([
+    ["empty", async (marker: string) => {
+      await mkdir(marker);
+    }],
+    [".gitignore", async (marker: string) => {
+      await mkdir(marker);
+      await writeFile(path.join(marker, ".gitignore"), "*\n!.gitignore\n");
+    }],
+    ["codegraph.db", async (marker: string) => {
+      await mkdir(marker);
+      await writeFile(path.join(marker, "codegraph.db"), "");
+    }],
+  ])("accepts %s .codegraph marker at a git repo root from nested cwd", async (_name, createMarker) => {
+    const projectRoot = await mkdtemp(path.join(tempRoot, "repo-"));
+    await mkdir(path.join(projectRoot, ".git"));
+    await createMarker(path.join(projectRoot, ".codegraph"));
+    const nested = path.join(projectRoot, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    const { resolveProjectCwd } = await loadExtension();
+
+    expect(await resolveProjectCwd(nested)).toBe(projectRoot);
+  });
+
+  it("stops at a worktree .git file before an invalid ancestor .codegraph", async () => {
+    await createInvalidGlobalCodeGraph(tempRoot);
+    const worktreeRoot = path.join(tempRoot, "worktree");
+    const nested = path.join(worktreeRoot, "app");
+    await mkdir(nested, { recursive: true });
+    await writeFile(path.join(worktreeRoot, ".git"), "gitdir: /tmp/main/.git/worktrees/worktree\n");
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: nested });
+    const text = result.content[0].text;
+
+    expect(text).toContain(`CodeGraph is not enabled for ${nested}.`);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a marker inside a worktree with a .git file", async () => {
+    await createInvalidGlobalCodeGraph(tempRoot);
+    const worktreeRoot = path.join(tempRoot, "worktree");
+    const nested = path.join(worktreeRoot, "app");
+    await mkdir(path.join(worktreeRoot, ".codegraph"), { recursive: true });
+    await mkdir(nested, { recursive: true });
+    await writeFile(path.join(worktreeRoot, ".git"), "gitdir: /tmp/main/.git/worktrees/worktree\n");
+    const child = createChild({ resultText: "status ok" });
+    spawnMock.mockReturnValue(child);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const result = await mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: nested });
+
+    expect(result.content[0].text).toBe("status ok");
+    expect(spawnMock).toHaveBeenCalledWith("codegraph", ["serve", "--mcp", "--path", worktreeRoot], expect.objectContaining({ cwd: worktreeRoot }));
+  });
+
+  it("does not auto-init an uninitialized non-status query when only an invalid ancestor .codegraph exists", async () => {
+    await createInvalidGlobalCodeGraph(tempRoot);
+    const repoRoot = path.join(tempRoot, "repo");
+    const nested = path.join(repoRoot, "app");
+    await mkdir(path.join(repoRoot, ".git"), { recursive: true });
+    await mkdir(nested, { recursive: true });
+    const child = createChild({ toolError: true, resultText: "Project is not initialized" });
+    spawnMock.mockReturnValue(child);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    await expect(
+      mock.tools.get("codegraph_search")!.execute("tool-1", { query: "SymbolName" }, undefined, undefined, { cwd: nested }),
+    ).rejects.toThrow("codegraph init <project-root>");
+    expect(getSpawnSubcommands()).toEqual(["serve"]);
+    expect(spawnMock.mock.calls[0]).toEqual([
+      "codegraph",
+      ["serve", "--mcp", "--path", nested],
+      expect.objectContaining({ cwd: nested }),
+    ]);
   });
 });

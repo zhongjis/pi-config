@@ -389,7 +389,7 @@
     <rect width="190" height="82" rx="12"/>
     <text class="k" x="18" y="24">disabled / unsafe</text>
     <text class="t" x="18" y="48">no marker</text>
-    <text class="m" x="18" y="67">or home/root/non-git</text>
+    <text class="m" x="18" y="67">or invalid/global marker</text>
   </g>
 
   <!-- extension state machine -->
@@ -404,7 +404,7 @@
     <rect width="225" height="92" rx="12"/>
     <text class="k" x="18" y="24">before_agent_start</text>
     <text class="t" x="18" y="49">inject guidance</text>
-    <text class="m" x="18" y="68">marker enables guidance</text>
+    <text class="m" x="18" y="68">valid marker enables</text>
     <text class="m" x="18" y="84">one cold-start note</text>
   </g>
 
@@ -537,7 +537,7 @@
 </aside>
 
 <div class="legend">
-  <span class="pill"><b>.codegraph/</b> = repo/worktree enabled marker</span>
+  <span class="pill"><b>.codegraph/</b> = valid repo/worktree marker</span>
   <span class="pill"><b>index DB</b> = ready to query</span>
   <span class="pill"><b>cold</b> = extension runs init internally</span>
   <span class="pill"><b>status</b> = inspect only, no write</span>
@@ -578,8 +578,8 @@
     },
     manual: {
       tag: 'Manual only',
-      title: 'Unsafe / non-git / home-root path',
-      case: 'Path is non-git, inaccessible, home, filesystem root, or otherwise unsafe for implicit writes.',
+      title: 'Unsafe / invalid global marker',
+      case: 'Path is inaccessible, home/root without a project marker, or only has unrelated/global <code>.codegraph/</code> data such as telemetry/daemons.',
       agent: 'No CodeGraph-first guidance from startup.',
       extension: 'Never auto-inits. Returns actionable command only when user/tool explicitly asks.',
       user: 'Message says run <code>codegraph init &lt;project-root&gt;</code> and <code>codegraph status</code> manually.',
