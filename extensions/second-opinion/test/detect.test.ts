@@ -1,44 +1,92 @@
 import { describe, it, expect } from "vitest";
-import { parseTarget } from "../src/detect.js";
+import { parseReviewMode, planCodexReviewJobs, type GitRunner } from "../src/detect.js";
 
-describe("parseTarget", () => {
-  it("returns auto for empty args", () => {
-    expect(parseTarget("")).toEqual({ kind: "auto" });
-    expect(parseTarget("   ")).toEqual({ kind: "auto" });
+function fakeGit(outputs: Record<string, string | null>): GitRunner {
+  return async (args: string[]) => outputs[args.join(" ")] ?? null;
+}
+
+describe("parseReviewMode", () => {
+  it("returns default for empty args", () => {
+    expect(parseReviewMode("")).toEqual({ kind: "default" });
+    expect(parseReviewMode("   ")).toEqual({ kind: "default" });
   });
 
-  it("returns uncommitted for 'uncommitted'", () => {
-    expect(parseTarget("uncommitted")).toEqual({ kind: "uncommitted" });
+  it("returns session for 'session'", () => {
+    expect(parseReviewMode("session")).toEqual({ kind: "session" });
+    expect(parseReviewMode("SESSION")).toEqual({ kind: "session" });
   });
 
-  it("returns base with no ref when only 'base'", () => {
-    expect(parseTarget("base")).toEqual({ kind: "base", ref: undefined });
+  it("rejects old and unknown modes", () => {
+    expect(parseReviewMode("uncommitted").kind).toBe("invalid");
+    expect(parseReviewMode("base origin/main").kind).toBe("invalid");
+    expect(parseReviewMode("commit HEAD").kind).toBe("invalid");
+    expect(parseReviewMode("session extra").kind).toBe("invalid");
+    expect(parseReviewMode("unknown").kind).toBe("invalid");
+  });
+});
+
+describe("planCodexReviewJobs", () => {
+  it("plans branch and dirty jobs when both exist", async () => {
+    const jobs = await planCodexReviewJobs(fakeGit({
+      "rev-parse --abbrev-ref --symbolic-full-name @{upstream}": "origin/main",
+      "diff --name-only origin/main...HEAD": "src/feature.ts",
+      "status --porcelain": " M src/dirty.ts",
+    }), "/repo");
+
+    expect(jobs).toEqual([
+      { label: "branch changes vs origin/main", argv: ["review", "--base", "origin/main"] },
+      { label: "dirty working tree", argv: ["review", "--uncommitted"] },
+    ]);
   });
 
-  it("returns base with ref when 'base main'", () => {
-    expect(parseTarget("base main")).toEqual({ kind: "base", ref: "main" });
+  it("plans dirty job without a base", async () => {
+    const jobs = await planCodexReviewJobs(fakeGit({
+      "status --porcelain": "?? new.ts",
+    }), "/repo");
+
+    expect(jobs).toEqual([
+      { label: "dirty working tree", argv: ["review", "--uncommitted"] },
+    ]);
   });
 
-  it("returns base with ref when 'base origin/develop'", () => {
-    expect(parseTarget("base origin/develop")).toEqual({ kind: "base", ref: "origin/develop" });
+  it("uses origin HEAD fallback", async () => {
+    const jobs = await planCodexReviewJobs(fakeGit({
+      "symbolic-ref --quiet refs/remotes/origin/HEAD": "refs/remotes/origin/main",
+      "diff --name-only origin/main...HEAD": "src/feature.ts",
+      "status --porcelain": "",
+    }), "/repo");
+
+    expect(jobs).toEqual([
+      { label: "branch changes vs origin/main", argv: ["review", "--base", "origin/main"] },
+    ]);
   });
 
-  it("returns commit with no ref when only 'commit'", () => {
-    expect(parseTarget("commit")).toEqual({ kind: "commit", ref: undefined });
+  it("returns no jobs for clean branch with base", async () => {
+    const jobs = await planCodexReviewJobs(fakeGit({
+      "rev-parse --abbrev-ref --symbolic-full-name @{upstream}": "origin/main",
+      "diff --name-only origin/main...HEAD": "",
+      "status --porcelain": "",
+    }), "/repo");
+
+    expect(jobs).toEqual([]);
   });
 
-  it("returns commit with sha when 'commit abc123'", () => {
-    expect(parseTarget("commit abc123")).toEqual({ kind: "commit", ref: "abc123" });
+  it("adds scoped prompt to each job", async () => {
+    const jobs = await planCodexReviewJobs(fakeGit({
+      "rev-parse --abbrev-ref --symbolic-full-name @{upstream}": "origin/main",
+      "diff --name-only origin/main...HEAD": "src/feature.ts",
+      "status --porcelain": " M src/dirty.ts",
+    }), "/repo", { prompt: "Review only src/feature.ts" });
+
+    expect(jobs.map((job) => job.argv.at(-1))).toEqual([
+      "Review only src/feature.ts",
+      "Review only src/feature.ts",
+    ]);
   });
 
-  it("returns auto for unknown subcommand", () => {
-    expect(parseTarget("unknown")).toEqual({ kind: "auto" });
-    expect(parseTarget("foobar abc")).toEqual({ kind: "auto" });
-  });
-
-  it("is case-insensitive for subcommand", () => {
-    expect(parseTarget("UNCOMMITTED")).toEqual({ kind: "uncommitted" });
-    expect(parseTarget("BASE main")).toEqual({ kind: "base", ref: "main" });
-    expect(parseTarget("COMMIT abc")).toEqual({ kind: "commit", ref: "abc" });
+  it("throws when clean and no base exists", async () => {
+    await expect(planCodexReviewJobs(fakeGit({
+      "status --porcelain": "",
+    }), "/repo")).rejects.toThrow("Could not determine a base ref");
   });
 });

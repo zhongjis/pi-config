@@ -12,10 +12,12 @@ export async function runCodexReview(
   _pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   argv: string[],
+  cwd = ctx.cwd,
+  widgetLabel = "codex review",
 ): Promise<{ ok: boolean; review: string }> {
   return new Promise((resolve) => {
     const child = spawn("codex", argv, {
-      cwd: ctx.cwd,
+      cwd,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -33,7 +35,7 @@ export async function runCodexReview(
     const renderWidget = (t: { terminal: { columns: number } }, theme: Theme): string[] => {
       const truncate = (line: string) => truncateToWidth(line, t.terminal.columns);
       const elapsed = formatDuration(Date.now() - startMs);
-      const heading = `${theme.fg("accent", headingIcon(true))} ${theme.fg("accent", "codex review")}${theme.fg("dim", SEPARATOR + elapsed)}`;
+      const heading = `${theme.fg("accent", headingIcon(true))} ${theme.fg("accent", widgetLabel)}${theme.fg("dim", SEPARATOR + elapsed)}`;
       const act = activity.split("\n").find((l) => l.trim())?.trim() || "working…";
       return [
         truncate(heading),
