@@ -24,6 +24,22 @@ import { errorMessage } from './errors';
 import { registerLspTool, type ServerManagerService } from './tools';
 import type { ResolvedServerConfig } from './types';
 
+type LspStatusConfig = Pick<LoadedConfig, 'globalDisabled' | 'servers'>;
+
+export function formatLspStatus(cfg: LspStatusConfig | null, runningCount = 0): string {
+  if (!cfg) return 'LSP none';
+  if (cfg.globalDisabled) return 'LSP disabled';
+
+  const total = cfg.servers.length;
+  if (total === 0) return 'LSP none';
+
+  const safeRunning = Number.isFinite(runningCount)
+    ? Math.max(0, Math.min(total, Math.floor(runningCount)))
+    : 0;
+  if (safeRunning === 0) return `LSP 0/${total}`;
+  return `LSP ${safeRunning}/${total} running`;
+}
+
 export default function lspExtension(pi: ExtensionAPI) {
   let rootPath = '';
   let config: LoadedConfig | null = null;
@@ -55,28 +71,10 @@ export default function lspExtension(pi: ExtensionAPI) {
     ui: { setStatus: (key: string, value: string) => void },
     cfg: LoadedConfig | null,
   ) {
-    if (!cfg) {
-      ui.setStatus('lsp', 'LSP: no servers detected');
-      return;
-    }
-
-    if (cfg.globalDisabled) {
-      ui.setStatus('lsp', 'LSP: disabled');
-      return;
-    }
-
-    if (cfg.servers.length === 0) {
-      ui.setStatus('lsp', 'LSP: no servers detected');
-      return;
-    }
-
-    const running = cfg.servers.filter((server) => clients.get(server.name)?.isInitialized);
-    if (running.length > 0) {
-      ui.setStatus('lsp', `LSP: ${running.map((s) => s.name).join(', ')} (running)`);
-      return;
-    }
-
-    ui.setStatus('lsp', `LSP: ${cfg.servers.map((s) => s.name).join(', ')}`);
+    const runningCount = cfg?.globalDisabled
+      ? 0
+      : cfg?.servers.filter((server) => clients.get(server.name)?.isInitialized).length ?? 0;
+    ui.setStatus('lsp', formatLspStatus(cfg, runningCount));
   }
 
   // ── Server manager (passed to tool) ───────────────────────────────────
