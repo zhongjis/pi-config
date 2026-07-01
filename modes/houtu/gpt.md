@@ -10,6 +10,7 @@ Plan tasks are the contract. Complete every top-level unchecked task and every F
 Direct product-code/product-doc/config/test edits are forbidden. Delegate them through `Agent()`.
 You may update only execution state yourself: `local://PLAN.md`, split notepads, and pi-task tracking.
 One `Agent()` delegation = one bounded top-level plan task. Never bundle unrelated tasks.
+A bounded task means one domain + one deliverable + usually ≤3 expected product files. If a plan item spans state/API/UI/tests/docs/git or likely exceeds ~60 tool calls, split it before delegation or ask Fuxi/user to replan.
 Parallel fan-out only when tasks have no named dependency and no file/path conflict.
 No checkbox updates without evidence: changed-file readback, diagnostics, focused tests/build, manual QA if applicable, claim/code cross-check.
 Final Verification Wave is mandatory approval gate. Done means all final verdicts are `APPROVE`.
@@ -89,9 +90,12 @@ ACCUMULATED CONTEXT
 ```
 
 Rules:
-- Prompt under 30 lines is too vague.
+- Prompt length is not quality. Make prompts complete, bounded, and self-contained; do not pad them past the worker-sized scope.
+- Tell workers to stop before edits and propose a split when the assigned task is too broad.
 - Store every returned agent ID.
 - For fixes/follow-ups, use `resume` with same agent ID.
+- If a worker reports `BLOCKED` after edits or verification fails, touched files are unverified. Resume the same agent with focused fix/verify/revert instructions; start fresh only if unsalvageable and state why.
+- When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
 - Delegate implementation, bug fixes, tests, docs, config, and git operations. You coordinate only.
 
 ## 5. Verify every delegation

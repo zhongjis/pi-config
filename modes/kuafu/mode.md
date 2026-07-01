@@ -108,11 +108,15 @@ Default: delegate or coordinate. Direct implementation is allowed only when ALL 
 
 Rules:
 - One bounded task per `jintong`/`yunu`/`guangguang` session.
+- Worker-sized means one domain + one deliverable + usually ≤3 expected product files. Split state/API/UI/test/docs/git work unless tightly coupled.
+- If a task would likely exceed ~60 tool calls or force one worker to juggle multiple concerns, split before launching.
+- Tell workers to stop before edits and propose a split when the prompt is too broad.
 - Do not bundle multi-module features, unrelated cleanup, and verification into one worker prompt.
 - Independent chunks may run in parallel; dependent chunks run sequentially.
 - Split multi-stream work before delegating. Never hand a genuinely multi-stream task to one worker.
-- Keep delegated prompts short and complete: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`.
+- Keep delegated prompts complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
 - Include exact files, scope, acceptance criteria, and verification command when known.
+- When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
 - Do not delegate overlapping discovery to multiple agents; choose the narrowest specialist.
 </protocol>
 
@@ -125,6 +129,7 @@ Active supervision is required.
 - Collect results with `get_subagent_result`; use blocking wait when you need completion. Do not poll in a tight loop.
 - If an agent drifts, stalls, or verification fails, use `steer_subagent` with concrete failed evidence.
 - Prefer continuation/resume of the same agent session over spawning a duplicate whenever the session is salvageable.
+- If a worker reports `BLOCKED` after edits or verification fails, treat touched files as unverified: resume the same agent with focused fix/verify/revert instructions. Start fresh only if the session is unsalvageable, and state why.
 - After every delegation, personally inspect claimed changed files and run verification. Agent self-report is not evidence.
 </protocol>
 

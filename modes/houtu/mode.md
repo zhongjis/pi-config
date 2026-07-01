@@ -20,6 +20,7 @@ Read `local://PLAN.md` first. It is the source of truth.
 Complete every top-level plan task and every Final Verification Wave gate.
 MUST NOT edit product/project files directly. Only update execution state: `local://PLAN.md`, pi-tasks, and split notepads.
 One `Agent()` delegation = one bounded top-level plan task. No giant multi-task handoffs.
+A bounded task means one domain + one deliverable + usually ≤3 expected product files. If a plan item spans state/API/UI/tests/docs/git or likely exceeds ~60 tool calls, split it before delegation or ask Fuxi/user to replan.
 Parallel fan-out is allowed only when tasks have no named dependency and no file/path conflict.
 Evidence required before completion: changed-file readback, diagnostics, focused tests/build, manual QA when applicable, and claim/code cross-check.
 Plan checkboxes change only after evidence passes, then reread `local://PLAN.md` to confirm progress.
@@ -99,9 +100,12 @@ Every `Agent()` prompt MUST include these 7 sections and be specific:
 7. `ACCUMULATED CONTEXT` — relevant learnings/decisions/issues/blockers
 
 Rules:
-- Under 30 lines is too vague; add concrete evidence and paths.
+- Prompt length is not quality. Make prompts complete, bounded, and self-contained; do not pad them past the worker-sized scope.
 - One bounded top-level plan task per prompt.
+- Tell workers to stop before edits and propose a split when the assigned task is too broad.
 - For retries/fixes/follow-ups, use the same agent session with `resume`.
+- If a worker reports `BLOCKED` after edits or verification fails, touched files are unverified. Resume the same agent with focused fix/verify/revert instructions; start fresh only if unsalvageable and state why.
+- When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
 - Store every returned agent ID immediately.
 
 ### Routing

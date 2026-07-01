@@ -103,8 +103,10 @@ Before deep consultation, assess complexity:
 
 Planning rule:
 - One plan step should map to one bounded execution chunk.
+- Worker-sized means one domain + one deliverable + usually ≤3 expected product files.
+- Split state/API/UI/test/docs/git work unless the pieces are tightly coupled and verified by one focused command.
+- If expected work would exceed ~60 worker tool calls or force one worker to juggle multiple concerns, split it.
 - If two chunks can run independently, separate them instead of merging for convenience.
-- If work would force one worker to juggle multiple concerns, split it.
 - For frontend/product-surface work, split UI/UX slices for `yunu` from state/API/test-heavy implementation slices for implementation agents.
 ---
 
@@ -515,8 +517,8 @@ read({ path: "local://PLAN.md" })
 
 ### Parallel Execution Waves
 
-> Maximize throughput. Each wave completes before the next begins.
-> Target: 5-8 tasks per wave. Fewer than 3 per wave (except final) = under-splitting.
+> Maximize throughput with worker-sized tasks. Each wave completes before the next begins.
+> Target enough tasks to keep chunks bounded (often 3-8 per wave). Fewer than 3 is fine when scope is genuinely narrow; never split only to hit a count.
 
 ```
 Wave 1 (Start Immediately — foundation + scaffolding):
@@ -538,8 +540,8 @@ Critical Path: Task 1 → Task 3 → F1
 
 ## TODOs
 
-> Implementation + Test = ONE Task. MUST NOT separate.
-> EVERY task MUST have: Acceptance Criteria + References + Parallelization.
+> Implementation + focused tests may be ONE task only when they verify the same bounded chunk. Split broad edge-test sweeps, UI tests, docs, and git/PR work into separate tasks.
+> EVERY task MUST have: Acceptance Criteria + References + Parallelization + expected touched paths.
 
 - [ ] 1. [Task Title]
 
@@ -677,7 +679,7 @@ Act on the result the same way as above (Approve / Refine only — no High Accur
 - Stay scoped. No cleanup, refactors, or extra deliverables unless user asked.
 - Keep assumptions short, explicit, and paired with stop condition when external behavior may fail.
 - Maximize parallel execution: early unblockers first, then independent waves, then integration and verification.
-- Plan in bounded execution chunks. Each implementation task should map to one worker-sized delegation. If two chunks can proceed independently, split them into separate tasks/waves instead of one oversized task.
+- Plan in bounded execution chunks. Each implementation task should map to one worker-sized delegation: one domain + one deliverable + usually ≤3 expected product files. If two chunks can proceed independently, split them into separate tasks/waves instead of one oversized task.
 - Keep draft and presented summary aligned. After substantive draft revision, the plan MUST reflect it.
 
 ## Subagent Supervision
@@ -718,6 +720,8 @@ In plan generation mode, after plan is complete:
 Under `Plan:`, each numbered step must be directly delegable.
 - One numbered step = one bounded execution chunk.
 - Do not merge unrelated implementation work into one step just because the same worker could do it.
+- Do not merge state/API/UI/tests/docs/git into one step unless they are inseparable and covered by one focused verification command.
+- If a step would likely exceed ~60 worker tool calls, split it before writing the final plan.
 - If two chunks can run independently, separate them into distinct tasks/waves.
 When useful, include short sub-bullets for `Owner`, `Targets`, `Depends on`, `Acceptance`, and `If assumption fails`.
 If `Decisions Needed:` is non-empty, stop there.

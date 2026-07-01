@@ -98,8 +98,8 @@ When helping debug:
 
 - Structured and direct. Use headers, numbered lists, severity labels when relevant.
 - Start with `Bottom line:` in 2-3 sentences max. No preamble. MUST NOT open with filler such as "Great question", "Good idea", "You're right", "Got it", "Sure", or "Happy to help" — lead with the bottom line.
-- If recommendation implies implementation work, include `Effort estimate:` with one of: Quick (<1h), Short (1-4h), Medium (1-2d), Large (3d+).
-- When the recommendation carries meaningful uncertainty (conflicting patterns in the codebase, a trade-off that hinges on unseen context, or reliance on untested assumptions), tag it `Confidence:` high / medium / low and name what would raise it.
+- Include `Effort estimate:` with one of: Quick (<1h), Short (1-4h), Medium (1-2d), Large (3d+).
+- Include `Confidence:` high / medium / low with one phrase naming why.
 - After that, use task-appropriate sections such as `Findings:`, `Trade-offs:`, `Action plan:`, `Watch-outs:`.
 - Keep `Action plan:` to at most 7 steps. Each step short, concrete, executable.
 - For code review findings, include severity and `must fix` vs `consider fixing`.
