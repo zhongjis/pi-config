@@ -12,10 +12,31 @@ export async function runCodexReview(
   _pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   argv: string[],
+  cwd = ctx.cwd,
+  widgetLabel = "codex review",
 ): Promise<{ ok: boolean; review: string }> {
   return new Promise((resolve) => {
+    let resolved = false;
+    let ticker: ReturnType<typeof setInterval> | undefined;
+    let off: (() => void) | undefined;
+
+    const finish = (result: { ok: boolean; review: string }) => {
+      if (resolved) return;
+      resolved = true;
+      try {
+        resolve(result);
+      } finally {
+        if (ticker !== undefined) clearInterval(ticker);
+        if (off !== undefined) off();
+        if (isTui(ctx)) {
+          ctx.ui.setWidget("codex-review", undefined);
+          ctx.ui.setStatus("codex-review", undefined);
+        }
+      }
+    };
+
     const child = spawn("codex", argv, {
-      cwd: ctx.cwd,
+      cwd,
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -25,15 +46,13 @@ export async function runCodexReview(
     let activity = "";
     let frameIdx = 0;
     const startMs = Date.now();
-    let ticker: ReturnType<typeof setInterval> | undefined;
-    let off: (() => void) | undefined;
     let tui: { requestRender(): void } | undefined;
     let widgetRegistered = false;
 
     const renderWidget = (t: { terminal: { columns: number } }, theme: Theme): string[] => {
       const truncate = (line: string) => truncateToWidth(line, t.terminal.columns);
       const elapsed = formatDuration(Date.now() - startMs);
-      const heading = `${theme.fg("accent", headingIcon(true))} ${theme.fg("accent", "codex review")}${theme.fg("dim", SEPARATOR + elapsed)}`;
+      const heading = `${theme.fg("accent", headingIcon(true))} ${theme.fg("accent", widgetLabel)}${theme.fg("dim", SEPARATOR + elapsed)}`;
       const act = activity.split("\n").find((l) => l.trim())?.trim() || "working…";
       return [
         truncate(heading),
@@ -88,22 +107,17 @@ export async function runCodexReview(
       }
     });
 
+    child.on("error", (err) => {
+      finish({ ok: false, review: err instanceof Error ? err.message : String(err) });
+    });
+
     child.on("close", (code) => {
       const ok = code === 0;
       const review = ok
         ? stdoutBuf.trim()
         : stderrBuf.replace(ANSI_REGEX, "").replace(/\r/g, "").trim().slice(-2000) ||
           "Unknown error";
-      try {
-        resolve({ ok, review });
-      } finally {
-        if (ticker !== undefined) clearInterval(ticker);
-        if (off !== undefined) off();
-        if (isTui(ctx)) {
-          ctx.ui.setWidget("codex-review", undefined);
-          ctx.ui.setStatus("codex-review", undefined);
-        }
-      }
+      finish({ ok, review });
     });
   });
 }

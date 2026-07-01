@@ -3,8 +3,9 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 export async function preflight(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
+  options: { cwd?: string; requireGit?: boolean } = {},
 ): Promise<boolean> {
-  const cwd = ctx.cwd;
+  const cwd = options.cwd ?? ctx.cwd;
 
   const versionCheck = await pi.exec("codex", ["--version"], { cwd });
   if (versionCheck.code !== 0) {
@@ -19,10 +20,12 @@ export async function preflight(
     return false;
   }
 
-  const gitCheck = await pi.exec("git", ["rev-parse", "--is-inside-work-tree"], { cwd });
-  if (gitCheck.code !== 0) {
-    ctx.ui.notify("Not inside a git repository", "error");
-    return false;
+  if (options.requireGit ?? true) {
+    const gitCheck = await pi.exec("git", ["rev-parse", "--is-inside-work-tree"], { cwd });
+    if (gitCheck.code !== 0) {
+      ctx.ui.notify("Not inside a git repository", "error");
+      return false;
+    }
   }
 
   return true;
