@@ -45,25 +45,11 @@ function styleMuted(theme: ToolTheme, text: string): string {
   return theme.fg ? theme.fg('muted', text) : text;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 1) return '1 byte';
-  if (bytes < 1024) return `${bytes} bytes`;
-  const kilobytes = bytes / 1024;
-  if (kilobytes < 1024) return `${kilobytes.toFixed(1)} KB`;
-  return `${(kilobytes / 1024).toFixed(1)} MB`;
-}
-
-function formatCount(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
 
 function prefixTreeLines(lines: string[]): string[] {
   return lines.map((line, index) => `${index === lines.length - 1 ? '└─' : '├─'} ${line}`);
 }
 
-function pushUnique(lines: string[], line: string | undefined): void {
-  if (line && !lines.includes(line)) lines.push(line);
-}
 
 function truncateForSummary(value: string, maxLength = 120): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
@@ -110,38 +96,25 @@ function formatArgValue(value: unknown): string | undefined {
   return undefined;
 }
 
-function targetFromArgs(args: Partial<LspToolParams>): string | undefined {
-  const filePath = formatArgValue(args.filePath);
-  if (!filePath) return undefined;
-  if (typeof args.line === 'number' && typeof args.character === 'number') {
-    return `target: ${filePath}:${args.line}:${args.character}`;
-  }
-  if (typeof args.line === 'number') return `target: ${filePath}:${args.line}`;
-  return `target: ${filePath}`;
-}
 
-function queryFromArgs(args: Partial<LspToolParams>): string | undefined {
-  return typeof args.query === 'string' && args.query.trim() !== ''
-    ? `query: "${args.query}"`
-    : undefined;
+function renderCallTarget(args: Partial<LspToolParams>): string | undefined {
+  const filePath = formatArgValue(args.filePath);
+  if (filePath) {
+    if (typeof args.line === 'number' && typeof args.character === 'number') {
+      return `${filePath}:${args.line}:${args.character}`;
+    }
+    return filePath;
+  }
+
+  const query = formatArgValue(args.query);
+  return query ? `"${query}"` : undefined;
 }
 
 function renderLspCall(rawArgs: Partial<LspToolParams> | undefined, theme: ToolTheme): Text {
   const args = rawArgs && typeof rawArgs === 'object' ? rawArgs : {};
-  const parts: string[] = [];
-  const operation = formatArgValue(args.operation);
-  const filePath = formatArgValue(args.filePath);
-  const query = formatArgValue(args.query);
-
-  if (operation) parts.push(`operation: ${operation}`);
-  if (filePath) parts.push(`file: ${filePath}`);
-  if (typeof args.line === 'number' || typeof args.character === 'number') {
-    const line = typeof args.line === 'number' ? String(args.line) : '?';
-    const character = typeof args.character === 'number' ? String(args.character) : '?';
-    parts.push(`pos: ${line}:${character}`);
-  }
-  if (query) parts.push(`query: ${query}`);
-
+  const parts = [formatArgValue(args.operation), renderCallTarget(args)].filter(
+    (part): part is string => Boolean(part),
+  );
   const suffix = parts.length > 0 ? ` · ${styleMuted(theme, parts.join(' · '))}` : '';
   return new Text(`▸ ${styleToolTitle(theme, 'lsp')}${suffix}`, 0, 0);
 }
@@ -154,151 +127,144 @@ function getResultText(result: LspToolResult | undefined): string {
     .join('\n');
 }
 
-function countResultLines(text: string): number {
-  return text === '' ? 0 : text.split(/\r?\n/).length;
+function entryLabel(entry: string): string {
+  return truncateForSummary(
+    stripMarkdown(entry)
+      .replace(/\s+\[[^\]]+\]/g, '')
+      .replace(/\s+\([^)]+\).*$/, '')
+      .trim(),
+    80,
+  );
 }
 
-function summarizeDiagnostics(firstLine: string): string[] | undefined {
+function compactList(entries: string[], total: number): string {
+  const labels = entries.slice(0, 3).map(entryLabel).filter(Boolean);
+  const more = total > labels.length ? ` +${total - labels.length}` : '';
+  return labels.length > 0 ? ` · ${labels.join(', ')}${more}` : more;
+}
+
+function collectTopBodyEntries(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .slice(1)
+    .filter((line) => line.trim() && line === line.trim() && !line.startsWith('```'))
+    .slice(0, 3);
+}
+
+
+function summarizeDiagnostics(firstLine: string): string | undefined {
   let match = firstMatch(firstLine, /^(.+): No diagnostics — all clean ✓$/);
-  if (match) return ['diagnostics: clean', `target: ${match[1]}`];
+  if (match) return '✓ clean';
 
-  match = firstMatch(firstLine, /^Diagnostics for (.+): (.+)$/);
-  if (match) return [`diagnostics: ${match[2]}`, `target: ${match[1]}`];
+  match = firstMatch(firstLine, /^Diagnostics for .+: (.+)$/);
+  if (match) return match[1];
 
-  match = firstMatch(firstLine, /^(.+): No diagnostics from successful server\(s\): (.+)$/);
-  if (match) return ['diagnostics: incomplete clean', `target: ${match[1]}`, `servers: ${match[2]}`];
+  match = firstMatch(firstLine, /^.+: No diagnostics from successful server\(s\): (.+)$/);
+  if (match) return `incomplete clean · ${match[1]}`;
 
   return undefined;
 }
 
-function summarizeHover(firstLine: string, text: string): string[] | undefined {
-  let match = firstMatch(firstLine, /^Hover at (.+):(\d+):(\d+):$/);
-  if (match) {
-    const preview = collectBodyEntries(text)[0];
-    return [preview ? `hover: ${preview}` : 'hover: available', `target: ${match[1]}:${match[2]}:${match[3]}`];
+function summarizeHover(firstLine: string, text: string): string | undefined {
+  if (firstMatch(firstLine, /^Hover at .+:\d+:\d+:$/)) {
+    return collectBodyEntries(text)[0] ?? 'hover available';
   }
-
-  match = firstMatch(firstLine, /^No hover information at (.+):(\d+):(\d+)$/);
-  if (match) return ['hover: none', `target: ${match[1]}:${match[2]}:${match[3]}`];
-
+  if (firstMatch(firstLine, /^No hover information at .+:\d+:\d+$/)) return 'no hover';
   return undefined;
 }
 
-function summarizeLocations(firstLine: string, text: string): string[] | undefined {
+function locationNoun(kind: string, count: number): string {
+  const lower = kind.toLowerCase();
+  if (lower === 'references') return count === 1 ? 'reference' : 'references';
+  if (lower === 'definition') return count === 1 ? 'definition' : 'definitions';
+  if (lower === 'implementation') return count === 1 ? 'implementation' : 'implementations';
+  return lower;
+}
+
+function summarizeLocations(firstLine: string, text: string): string | undefined {
   let match = firstMatch(
     firstLine,
-    /^(Definition|References|Implementation) for symbol at (.+) \((\d+) results?\):$/,
+    /^(Definition|References|Implementation) for symbol at .+ \((\d+) results?\):$/,
   );
   if (match) {
-    const entries = collectNumberedEntries(text);
-    return [
-      `locations: ${match[1]} · ${formatCount(Number(match[3]), 'result')}`,
-      `target: ${match[2]}`,
-      entries.length > 0 ? `top: ${entries.join('; ')}` : undefined,
-    ].filter((line): line is string => Boolean(line));
+    const count = Number(match[2]);
+    return `${count} ${locationNoun(match[1], count)}${compactList(collectNumberedEntries(text), count)}`;
   }
 
-  match = firstMatch(firstLine, /^No (Definition|References|Implementation) found for symbol at (.+)$/);
-  if (match) return [`locations: ${match[1]} · none`, `target: ${match[2]}`];
+  match = firstMatch(firstLine, /^No (Definition|References|Implementation) found for symbol at .+$/);
+  if (match) return `no ${locationNoun(match[1], 0)}`;
 
   return undefined;
 }
 
-function summarizeDocumentSymbols(firstLine: string, text: string): string[] | undefined {
-  let match = firstMatch(firstLine, /^Symbols in (.+) \(([^)]+)\):$/);
+function firstInteger(value: string): number | undefined {
+  const match = /\d+/.exec(value);
+  return match ? Number(match[0]) : undefined;
+}
+
+function summarizeDocumentSymbols(firstLine: string, text: string): string | undefined {
+  let match = firstMatch(firstLine, /^Symbols in .+ \(([^)]+)\):$/);
   if (match) {
-    const entries = collectBodyEntries(text);
-    return [
-      `symbols: ${match[2]}`,
-      `target: ${match[1]}`,
-      entries.length > 0 ? `top: ${entries.join('; ')}` : undefined,
-    ].filter((line): line is string => Boolean(line));
+    const count = firstInteger(match[1]) ?? collectTopBodyEntries(text).length;
+    return `${count} ${count === 1 ? 'symbol' : 'symbols'}${compactList(collectTopBodyEntries(text), count)}`;
   }
 
-  match = firstMatch(firstLine, /^No symbols found in (.+)$/);
-  if (match) return ['symbols: none', `target: ${match[1]}`];
-
+  if (firstMatch(firstLine, /^No symbols found in .+$/)) return 'no symbols';
   return undefined;
 }
 
-function summarizeWorkspaceSymbols(firstLine: string, text: string): string[] | undefined {
-  let match = firstMatch(firstLine, /^No workspace symbols matching "(.+)"$/);
-  if (match) return ['workspace symbols: none', `query: "${match[1]}"`];
+function summarizeWorkspaceSymbols(firstLine: string, text: string): string | undefined {
+  if (firstMatch(firstLine, /^No workspace symbols matching ".+"$/)) return 'no workspace symbols';
 
-  match = firstMatch(firstLine, /^Workspace symbols matching "(.+)" \(([^)]+)\):$/);
+  const match = firstMatch(firstLine, /^Workspace symbols matching ".+" \((\d+)\):$/);
   if (match) {
-    const entries = collectNumberedEntries(text);
-    return [
-      `workspace symbols: ${match[2]} matches`,
-      `query: "${match[1]}"`,
-      entries.length > 0 ? `top: ${entries.join('; ')}` : undefined,
-    ].filter((line): line is string => Boolean(line));
+    const count = Number(match[1]);
+    return `${count} workspace ${count === 1 ? 'symbol' : 'symbols'}${compactList(collectNumberedEntries(text), count)}`;
   }
 
   return undefined;
 }
 
-function summarizeCalls(firstLine: string, text: string): string[] | undefined {
-  let match = firstMatch(firstLine, /^Call hierarchy at (.+):$/);
+function summarizeCalls(firstLine: string, text: string): string | undefined {
+  let match = firstMatch(firstLine, /^Call hierarchy at .+:$/);
   if (match) {
     const entries = collectNumberedEntries(text);
-    return [
-      `call hierarchy: ${formatCount(entries.length, 'item')}`,
-      `target: ${match[1]}`,
-      entries.length > 0 ? `top: ${entries.join('; ')}` : undefined,
-    ].filter((line): line is string => Boolean(line));
+    return `${entries.length} call ${entries.length === 1 ? 'item' : 'items'}${compactList(entries, entries.length)}`;
   }
 
   match = firstMatch(firstLine, /^Incoming calls to (.+) \((\d+)\):$/);
   if (match) {
-    const entries = collectNumberedEntries(text);
-    return [
-      `calls: incoming to ${match[1]} · ${match[2]}`,
-      entries.length > 0 ? `top: ${entries.join('; ')}` : undefined,
-    ].filter((line): line is string => Boolean(line));
+    const count = Number(match[2]);
+    return `${count} incoming${compactList(collectNumberedEntries(text), count)}`;
   }
 
   match = firstMatch(firstLine, /^Outgoing calls from (.+) \((\d+)\):$/);
   if (match) {
-    const entries = collectNumberedEntries(text, true);
-    return [
-      `calls: outgoing from ${match[1]} · ${match[2]}`,
-      entries.length > 0 ? `top: ${entries.join('; ')}` : undefined,
-    ].filter((line): line is string => Boolean(line));
+    const count = Number(match[2]);
+    return `${count} outgoing${compactList(collectNumberedEntries(text, true), count)}`;
   }
 
-  match = firstMatch(firstLine, /^No incoming calls to (.+)$/);
-  if (match) return [`calls: incoming to ${match[1]} · none`];
-
-  match = firstMatch(firstLine, /^No outgoing calls from (.+)$/);
-  if (match) return [`calls: outgoing from ${match[1]} · none`];
-
-  match = firstMatch(firstLine, /^No call hierarchy item at (.+)$/);
-  if (match) return ['call hierarchy: none', `target: ${match[1]}`];
+  if (firstMatch(firstLine, /^No incoming calls to .+$/)) return 'no incoming calls';
+  if (firstMatch(firstLine, /^No outgoing calls from .+$/)) return 'no outgoing calls';
+  if (firstMatch(firstLine, /^No call hierarchy item at .+$/)) return 'no call hierarchy item';
 
   return undefined;
 }
 
-function summarizeCodeActions(firstLine: string, text: string): string[] | undefined {
-  let match = firstMatch(firstLine, /^Code actions at (.+):(\d+) \((\d+) available\):$/);
+function summarizeCodeActions(firstLine: string, text: string): string | undefined {
+  let match = firstMatch(firstLine, /^Code actions at .+:\d+ \((\d+) available\):$/);
   if (match) {
-    const entries = collectNumberedEntries(text);
-    return [
-      `code actions: ${match[3]} available`,
-      `target: ${match[1]}:${match[2]}`,
-      entries.length > 0 ? `top: ${entries.join('; ')}` : undefined,
-    ].filter((line): line is string => Boolean(line));
+    const count = Number(match[1]);
+    return `${count} ${count === 1 ? 'action' : 'actions'}${compactList(collectNumberedEntries(text), count)}`;
   }
 
-  match = firstMatch(firstLine, /^No code actions available at (.+):(\d+)$/);
-  if (match) return ['code actions: none', `target: ${match[1]}:${match[2]}`];
-
+  if (firstMatch(firstLine, /^No code actions available at .+:\d+$/)) return 'no code actions';
   return undefined;
 }
 
-function summarizeLspResult(args: Partial<LspToolParams>, text: string): string[] {
+function summarizeLspResult(args: Partial<LspToolParams>, text: string): string {
   const firstLine = getFirstMeaningfulLine(text) ?? '';
-  const parsed =
+  return (
     summarizeDiagnostics(firstLine) ??
     summarizeHover(firstLine, text) ??
     summarizeLocations(firstLine, text) ??
@@ -306,16 +272,16 @@ function summarizeLspResult(args: Partial<LspToolParams>, text: string): string[
     summarizeWorkspaceSymbols(firstLine, text) ??
     summarizeCalls(firstLine, text) ??
     summarizeCodeActions(firstLine, text) ??
-    [];
-  const lines = [...parsed];
+    formatArgValue(args.operation) ??
+    stripMarkdown(firstLine) ??
+    'no output'
+  );
+}
 
-  if (lines.length === 0 && typeof args.operation === 'string') {
-    pushUnique(lines, `operation: ${args.operation}`);
-  }
-  if (!lines.some((line) => line.startsWith('target:'))) pushUnique(lines, targetFromArgs(args));
-  if (!lines.some((line) => line.startsWith('query:'))) pushUnique(lines, queryFromArgs(args));
-
-  return lines;
+function compactErrorSummary(text: string): string {
+  const firstLine = stripMarkdown(getFirstMeaningfulLine(text) ?? 'unknown error');
+  const serverError = /TypeScript Server Error \([^)]+\)/.exec(firstLine)?.[0];
+  return `✗ ${serverError ?? truncateForSummary(firstLine, 100)}`;
 }
 
 function renderLspResult(
@@ -328,22 +294,17 @@ function renderLspResult(
   if (options?.expanded) return new Text(text, 0, 0);
 
   const args = context.args && typeof context.args === 'object' ? context.args : {};
-  const details: string[] = [];
   const isError = Boolean(result?.isError || context.isError);
-  if (options?.isPartial) details.push('running');
-  if (isError) details.push('error');
-
-  if (isError) {
-    pushUnique(details, `error: ${stripMarkdown(getFirstMeaningfulLine(text) ?? 'unknown')}`);
-  }
-  for (const line of summarizeLspResult(args, text)) pushUnique(details, line);
   const serverFailures = Array.isArray(result?.details?.errors) ? result.details.errors.length : 0;
-  if (serverFailures > 0) pushUnique(details, `server failures: ${serverFailures}`);
+  const suffix = serverFailures > 0 ? ` · ${serverFailures} server failure${serverFailures === 1 ? '' : 's'}` : '';
+  const summary = isError
+    ? compactErrorSummary(text)
+    : options?.isPartial
+      ? `running ${formatArgValue(args.operation) ?? 'lsp'}`
+      : `${summarizeLspResult(args, text)}${suffix}`;
+  const lines = [summary, keyHint('app.tools.expand', 'to expand full result')];
 
-  details.push(`output: ${formatCount(countResultLines(text), 'line')} · ${formatBytes(Buffer.byteLength(text, 'utf8'))}`);
-  details.push(keyHint('app.tools.expand', 'to expand full result'));
-
-  return new Text(prefixTreeLines(details).map((line) => styleMuted(theme, line)).join('\n'), 0, 0);
+  return new Text(prefixTreeLines(lines).map((line) => styleMuted(theme, line)).join('\n'), 0, 0);
 }
 
 // ── Registration ────────────────────────────────────────────────────────────

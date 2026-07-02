@@ -55,7 +55,7 @@ function collapsed(
 }
 
 describe('pi-lsp tool rendering', () => {
-  it('renders compact calls with full tool name and useful args', () => {
+  it('renders first-glance calls with full tool name and compact target', () => {
     const tool = registerTool();
 
     const text = renderText(
@@ -65,10 +65,7 @@ describe('pi-lsp tool rendering', () => {
       ),
     );
 
-    expect(text).toContain('▸ lsp');
-    expect(text).toContain('operation: hover');
-    expect(text).toContain('file: extensions/pi-lsp/tools.ts');
-    expect(text).toContain('pos: 81:23');
+    expect(text).toBe('▸ lsp · hover · extensions/pi-lsp/tools.ts:81:23');
   });
 
   it('renders expanded raw output without changing content', () => {
@@ -86,7 +83,7 @@ describe('pi-lsp tool rendering', () => {
     expect(result.content[0].text).toBe(raw);
   });
 
-  it('summarizes hover output without duplicating the tool title or raw blob', () => {
+  it('keeps collapsed hover output glanceable and always shows expand hint', () => {
     const tool = registerTool();
     const raw = 'Hover at extensions/pi-lsp/tools.ts:81:23:\n\n```typescript\n(alias) lspToolProgram(raw: LspToolParams): Effect.Effect<ToolResult, LspExtensionError, ServerManager>\nimport lspToolProgram\n```';
 
@@ -98,22 +95,19 @@ describe('pi-lsp tool rendering', () => {
     });
 
     expect(text).not.toContain('▸ lsp');
-    expect(text).toContain('├─ hover: (alias) lspToolProgram(raw: LspToolParams): Effect.Effect<ToolResult, LspExtensionError, ServerManager>');
-    expect(text).toContain('├─ target: extensions/pi-lsp/tools.ts:81:23');
-    expect(text).toContain('├─ output: 6 lines');
+    expect(text).toContain('├─ (alias) lspToolProgram(raw: LspToolParams): Effect.Effect<ToolResult, LspExtensionError, ServerManager>');
     expect(text).toContain('└─ app.tools.expand to expand full result');
     expect(text).not.toContain('import lspToolProgram');
   });
 
-  it('summarizes diagnostics and server failures', () => {
+  it('summarizes diagnostics and server failures concisely', () => {
     const tool = registerTool();
 
     const clean = collapsed(tool, 'extensions/pi-lsp/types.ts: No diagnostics — all clean ✓', {
       operation: 'diagnostics',
       filePath: 'extensions/pi-lsp/types.ts',
     });
-    expect(clean).toContain('├─ diagnostics: clean');
-    expect(clean).toContain('├─ target: extensions/pi-lsp/types.ts');
+    expect(clean).toContain('├─ ✓ clean');
 
     const problems = renderText(
       tool.renderResult!(
@@ -126,33 +120,30 @@ describe('pi-lsp tool rendering', () => {
         { args: { operation: 'diagnostics', filePath: 'src/app.ts' } },
       ),
     );
-    expect(problems).toContain('├─ diagnostics: 2 errors, 1 warning');
-    expect(problems).toContain('├─ target: src/app.ts');
-    expect(problems).toContain('├─ server failures: 1');
+    expect(problems).toContain('├─ 2 errors, 1 warning · 1 server failure');
   });
 
-  it('summarizes location, symbol, workspace, call, and code-action outputs', () => {
+  it('summarizes operation outputs as one glance line plus ctrl+o', () => {
     const tool = registerTool();
 
     expect(collapsed(tool, 'References for symbol at extensions/pi-lsp/tools.ts:81:23 (3 results):\n\n1. extensions/pi-lsp/tools.ts:16:3\n2. extensions/pi-lsp/tools.ts:81:23\n3. extensions/pi-lsp/tools/programs.ts:138:17', { operation: 'findReferences' }))
-      .toContain('├─ locations: References · 3 results');
+      .toContain('├─ 3 references · extensions/pi-lsp/tools.ts:16:3, extensions/pi-lsp/tools.ts:81:23, extensions/pi-lsp/tools/programs.ts:138:17');
 
     expect(collapsed(tool, 'Symbols in extensions/pi-lsp/tools/programs.ts (14 top-level):\n\ncall (function) line 107:10\nCAPABILITY_MAP (constant) line 73:7\ncleanPath (function) line 89:10', { operation: 'documentSymbol' }))
-      .toContain('├─ symbols: 14 top-level');
+      .toContain('├─ 14 symbols · call, CAPABILITY_MAP, cleanPath +11');
 
     expect(collapsed(tool, 'Workspace symbols matching "clientsForFile" (2):\n\n1. clientsForFile (property) extensions/pi-lsp/tools/programs.ts:44:3\n2. clientsForFile (method) extensions/pi-lsp/index.ts:83:5', { operation: 'workspaceSymbol', query: 'clientsForFile' }))
-      .toContain('├─ workspace symbols: 2 matches');
+      .toContain('├─ 2 workspace symbols · clientsForFile, clientsForFile');
 
     expect(collapsed(tool, 'No workspace symbols matching "registerLspTool"', { operation: 'workspaceSymbol', query: 'registerLspTool' }))
-      .toContain('├─ workspace symbols: none');
+      .toContain('├─ no workspace symbols');
 
     const outgoing = collapsed(tool, 'Outgoing calls from lspToolProgram (4):\n\n1. registerTool (method) node_modules/pkg/index.d.ts:1\n2. validate (function) extensions/pi-lsp/tools/programs.ts:118\n3. cleanPath (function) extensions/pi-lsp/tools/programs.ts:89\n4. hover (method) extensions/pi-lsp/client.ts:402', { operation: 'outgoingCalls' });
-    expect(outgoing).toContain('├─ calls: outgoing from lspToolProgram · 4');
-    expect(outgoing).toContain('top: validate (function) extensions/pi-lsp/tools/programs.ts:118; cleanPath (function) extensions/pi-lsp/tools/programs.ts:89; hover (method) extensions/pi-lsp/client.ts:402');
-    expect(outgoing).not.toContain('top: registerTool');
+    expect(outgoing).toContain('├─ 4 outgoing · validate, cleanPath, hover +1');
+    expect(outgoing).not.toContain('registerTool');
 
     expect(collapsed(tool, 'Code actions at extensions/pi-lsp/tools.ts:28 (4 available):\n\n1. Convert named export to default export [refactor.rewrite.export.default]\n\n2. Move to a new file [refactor.move.newFile]', { operation: 'codeActions' }))
-      .toContain('├─ code actions: 4 available');
+      .toContain('├─ 4 actions · Convert named export to default export, Move to a new file +2');
   });
 
   it('renders partial and error states safely', () => {
@@ -163,13 +154,16 @@ describe('pi-lsp tool rendering', () => {
         args: { operation: 'workspaceSymbol', query: 'Foo' },
       }),
     );
-    expect(partial).toContain('├─ running');
-    expect(partial).toContain('├─ operation: workspaceSymbol');
-    expect(partial).toContain('├─ query: "Foo"');
+    expect(partial).toContain('├─ running workspaceSymbol');
+    expect(partial).toContain('└─ app.tools.expand to expand full result');
 
-    const error = collapsed(tool, 'LSP failed\nstack hidden', { operation: 'hover' }, { isError: true });
-    expect(error).toContain('├─ error');
-    expect(error).toContain('├─ error: LSP failed');
+    const error = collapsed(
+      tool,
+      'LSP codeActions (typescript) failed: LSP error 1: <semantic> TypeScript Server Error (5.9.3)\nstack hidden',
+      { operation: 'codeActions' },
+      { isError: true },
+    );
+    expect(error).toContain('├─ ✗ TypeScript Server Error (5.9.3)');
     expect(error).toContain('└─ app.tools.expand to expand full result');
   });
 });
