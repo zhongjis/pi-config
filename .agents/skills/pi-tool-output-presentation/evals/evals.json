@@ -1,0 +1,44 @@
+{
+  "skill_name": "pi-tool-output-presentation",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In this Pi extension, the `search_docs` tool returns a huge markdown list in collapsed output. Investigate the current tool registration and propose a concrete renderCall/renderResult plan. Do not implement yet.",
+      "expected_output": "A plan grounded in current tool result shapes, preserving model-visible content, with collapsed summaries, expanded raw output, tests, docs updates, and verification commands.",
+      "files": [],
+      "expectations": [
+        "Identifies model-visible content as a contract and says not to mutate it",
+        "Requires observing or fixture-capturing real output shapes before designing summaries",
+        "Specifies renderCall owns the header and renderResult avoids duplicate titles",
+        "Includes collapsed summaries and expanded raw output behavior",
+        "Lists tests and verification commands"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Implement nicer collapsed TUI output for a Pi `lsp` tool with operations diagnostics, hover, references, workspaceSymbol, outgoingCalls, and codeActions. The raw content must stay unchanged for the model.",
+      "expected_output": "A minimal implementation approach or code changes that add operation-aware renderers, keep expanded raw content exact, prioritize local paths, and include representative tests.",
+      "files": [],
+      "expectations": [
+        "Keeps result.content unchanged and returns raw content for expanded view",
+        "Adds or describes operation-aware collapsed summaries",
+        "Handles partial and error states safely",
+        "Prioritizes local project paths over dependency paths for location/call lists",
+        "Adds tests for expanded raw output, collapsed summaries, partial, and error cases"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Review this PR that adds `renderResult` to a Pi tool. I’m worried it might make the transcript pretty but hide failures or confuse the model. What should I check?",
+      "expected_output": "A review checklist focused on separation of model content vs TUI rendering, failure visibility, expansion behavior, parser safety, and regression tests.",
+      "files": [],
+      "expectations": [
+        "Checks that model-visible content is unchanged",
+        "Checks expanded view shows raw output",
+        "Looks for duplicate titles and global expansion forcing",
+        "Checks partial failures are not presented as clean success",
+        "Recommends tests with real or fixture output shapes"
+      ]
+    }
+  ]
+}

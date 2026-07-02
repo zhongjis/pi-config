@@ -31,4 +31,5 @@ This file owns `.agents/` except where a child `AGENTS.md` exists. Existing chil
 | Path | Owner Doc | Scope |
 |------|-----------|-------|
 | `skills/pi-docs-playbook/` | `skills/pi-docs-playbook/AGENTS.md` | Pi documentation playbook skill, local navigation aids, and mirrored upstream source rules. |
+| `skills/pi-tool-output-presentation/` | `skills/pi-tool-output-presentation/AGENTS.md` | Reusable Pi tool TUI output presentation workflow and eval prompts. |
 | `skills/pi-docs-playbook/source/` | `skills/pi-docs-playbook/source/AGENTS.md` | Mirrored upstream pi source snapshot rules. |
