@@ -5,8 +5,8 @@ Vendored `pi-boomerang` extension for token-efficient autonomous task execution.
 ## Upstream
 
 - Source: https://github.com/nicobailon/pi-boomerang
-- Last synced version: 0.6.5
-- Last synced commit: `ea543818f0d3b92bc427e179cfe75d0984553f36`
+- Last synced version: 0.6.6
+- Last synced commit: `c2fa351aeeaa773d574036ebbdfc656d7c812883`
 - License: not declared upstream
 - Local changes summary: copied into `extensions/boomerang/`, kept code/test behavior intact, replaced README with local repo format, omitted upstream package files because root dependencies already provide required packages.
 
@@ -43,7 +43,7 @@ Parameters:
 - `agent_end` — advances chains, starts queued tool tasks, collapses context.
 - `session_before_tree` — provides generated summary for tree navigation.
 - `session_before_compact` — prevents immediate compaction of freshly summarized branch state.
-- `session_start` / `session_switch` — clears transient boomerang state.
+- `session_start` / `session_shutdown` — clears transient boomerang state and cancels stale deferred handoffs.
 
 ## Settings / Configuration
 

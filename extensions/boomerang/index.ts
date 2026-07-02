@@ -22,6 +22,10 @@ interface BoomerangConfig {
   toolGuidance?: string | null;
 }
 
+const FALLBACK_RELOAD_IDLE_TIMEOUT_MS = 5000;
+const FALLBACK_RELOAD_IDLE_POLL_MS = 25;
+type FallbackReloadWaitResult = "idle" | "timeout" | "stale";
+
 function getConfigPath(): { dir: string; path: string } {
   const dir = join(homedir(), ".pi", "agent");
   return { dir, path: join(dir, "boomerang.json") };
@@ -588,6 +592,8 @@ export default function (pi: ExtensionAPI) {
   let autoBoomerangCandidate: { targetId: string | null; task: string } | null = null;
   let autoFallbackCollapse: { targetId: string | null; task: string } | null = null;
   let autoAwaitingAssistantAfterId: string | null = null;
+  let sessionGeneration = 0;
+  let fallbackReloadInProgress = false;
 
   function parseFrontmatter(content: string): { frontmatter: Record<string, string>; content: string } {
     const frontmatter: Record<string, string> = {};
@@ -1091,7 +1097,7 @@ export default function (pi: ExtensionAPI) {
     const expandedContent = substituteArgs(step.template.content, effectiveArgs);
     const leafBeforeSend = ctx.sessionManager.getLeafId();
 
-    pi.sendUserMessage(expandedContent);
+    pi.sendUserMessage(expandedContent, { deliverAs: "followUp" });
     markAwaitingAssistant(ctx, expandedContent, leafBeforeSend ?? chainState.targetId);
   }
 
@@ -1368,33 +1374,88 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  async function reloadFallbackChatDisplay(ctx: ExtensionContext): Promise<void> {
-    if (!isTui(ctx)) return;
+  function isCurrentSessionGeneration(generation: number): boolean {
+    return generation === sessionGeneration;
+  }
 
-    if (reloadFallbackDisplay) {
-      try {
-        await reloadFallbackDisplay();
-      } catch (error) {
-        ctx.ui.notify(`Boomerang summary created, but chat reload failed: ${String(error)}`, "warning");
-      }
-      return;
-    }
-
+  function notifyFallbackWarning(ctx: ExtensionContext, message: string): void {
     try {
-      await submitReloadThroughEditor(ctx);
-    } catch (error) {
-      ctx.ui.notify(`Boomerang summary created, but automatic /reload failed: ${String(error)}`, "warning");
+      if (ctx.hasUI) {
+        ctx.ui.notify(message, "warning");
+      }
+    } catch {
+      // Stale extension contexts can throw while their runtime is being replaced.
+    }
+  }
+
+  async function waitForIdleBeforeFallbackReload(ctx: ExtensionContext, generation: number): Promise<FallbackReloadWaitResult> {
+    const deadline = Date.now() + FALLBACK_RELOAD_IDLE_TIMEOUT_MS;
+
+    while (true) {
+      if (!isCurrentSessionGeneration(generation)) {
+        return "stale";
+      }
+      if (ctx.isIdle()) {
+        return "idle";
+      }
+      if (Date.now() >= deadline) {
+        return "timeout";
+      }
+      await new Promise((resolve) => setTimeout(resolve, FALLBACK_RELOAD_IDLE_POLL_MS));
+    }
+  }
+
+  async function reloadFallbackChatDisplay(ctx: ExtensionContext, generation: number): Promise<boolean> {
+    if (!isCurrentSessionGeneration(generation)) return false;
+    if (!isTui(ctx)) return true;
+
+    fallbackReloadInProgress = true;
+    try {
+      if (reloadFallbackDisplay) {
+        try {
+          await reloadFallbackDisplay();
+        } catch (error) {
+          if (isCurrentSessionGeneration(generation)) {
+            notifyFallbackWarning(ctx, `Boomerang summary created, but chat reload failed: ${String(error)}`);
+          }
+        }
+        return isCurrentSessionGeneration(generation);
+      }
+
+      try {
+        await submitReloadThroughEditor(ctx);
+      } catch (error) {
+        if (isCurrentSessionGeneration(generation)) {
+          notifyFallbackWarning(ctx, `Boomerang summary created, but automatic /reload failed: ${String(error)}`);
+        }
+      }
+      return isCurrentSessionGeneration(generation);
+    } finally {
+      fallbackReloadInProgress = false;
     }
   }
 
   function triggerFallbackOrchestratorHandoff(summary: string, ctx: ExtensionContext) {
+    const generation = sessionGeneration;
     setTimeout(() => {
       void (async () => {
         try {
-          await reloadFallbackChatDisplay(ctx);
+          const waitResult = await waitForIdleBeforeFallbackReload(ctx, generation);
+          if (waitResult === "stale") return;
+
+          if (waitResult === "idle") {
+            const sessionStillCurrent = await reloadFallbackChatDisplay(ctx, generation);
+            if (!sessionStillCurrent) return;
+          } else {
+            notifyFallbackWarning(ctx, "Boomerang summary created, but automatic /reload timed out waiting for the current response to finish.");
+            if (!isCurrentSessionGeneration(generation)) return;
+          }
+
           triggerHiddenOrchestratorHandoff(summary);
         } catch (error) {
-          ctx.ui.notify(`Boomerang handoff failed: ${String(error)}`, "warning");
+          if (isCurrentSessionGeneration(generation)) {
+            notifyFallbackWarning(ctx, `Boomerang handoff failed: ${String(error)}`);
+          }
         }
       })();
     }, 0);
@@ -1448,6 +1509,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   const READ_FILE_LIMIT = 12;
+  const SUMMARY_COMMAND_TEXT_LIMIT = 1000;
+  const SUMMARY_FAILURE_TEXT_LIMIT = 2000;
 
   function isValidationCommand(command: string): boolean {
     return /(^|\s)(npm|pnpm|yarn|bun)\s+(run\s+)?(test|check|lint|typecheck|verify)\b/.test(command)
@@ -1455,9 +1518,13 @@ export default function (pi: ExtensionAPI) {
       || /(^|\s)git\s+diff\s+--check\b/.test(command);
   }
 
+  function truncateSummaryText(text: string, retainedChars: number): string {
+    if (text.length <= retainedChars) return text;
+    return `${text.slice(0, retainedChars)}... [truncated ${text.length - retainedChars} chars]`;
+  }
+
   function formatCommand(command: string): string {
-    const singleLine = command.replace(/\s+/g, " ").trim();
-    return singleLine.length > 120 ? `${singleLine.slice(0, 117)}...` : singleLine;
+    return truncateSummaryText(command.replace(/\s+/g, " ").trim(), SUMMARY_COMMAND_TEXT_LIMIT);
   }
 
   function formatList(items: string[]): string {
@@ -1514,7 +1581,7 @@ export default function (pi: ExtensionAPI) {
               .filter(Boolean)
               .join(" ")
           : "";
-        const errorText = text.length > 160 ? `${text.slice(0, 157)}...` : text;
+        const errorText = truncateSummaryText(text, SUMMARY_FAILURE_TEXT_LIMIT);
         const failedCommand = bashCommandsById.get(msg.toolCallId);
         const operation = failedCommand ? `${msg.toolName} \`${failedCommand}\`` : msg.toolName;
         failedOperations.push(errorText ? `${operation}: ${errorText}` : operation);
@@ -2263,10 +2330,12 @@ export default function (pi: ExtensionAPI) {
       const workEntries = branch.slice(startIndex + 1);
       const generatedSummary = generateSummaryFromEntries(workEntries, fallbackCollapse.task);
       let shouldTriggerHandoff = false;
+      let fallbackCollapsedEntryId: string | null = null;
 
       try {
         keepBoomerangExpanded(ctx);
         const entryId = sm.branchWithSummary(fallbackCollapse.targetId, generatedSummary.summary, generatedSummary.details);
+        fallbackCollapsedEntryId = entryId;
         justCollapsedEntryId = entryId;
         ctx.ui.notify("Boomerang complete. Context summarized.", "info");
         shouldTriggerHandoff = true;
@@ -2276,6 +2345,9 @@ export default function (pi: ExtensionAPI) {
 
       await restoreModelAndThinking(ctx);
       clearTaskState();
+      if (fallbackCollapsedEntryId !== null) {
+        justCollapsedEntryId = fallbackCollapsedEntryId;
+      }
       updateStatus(ctx);
       if (shouldTriggerHandoff) {
         triggerFallbackOrchestratorHandoff(generatedSummary.summary, ctx);
@@ -2392,6 +2464,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   async function resetForSessionChange(ctx: ExtensionContext): Promise<void> {
+    sessionGeneration++;
     await restoreModelAndThinking(ctx);
     clearState();
     updateStatus(ctx);
@@ -2401,7 +2474,10 @@ export default function (pi: ExtensionAPI) {
     await resetForSessionChange(ctx);
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
+  pi.on("session_shutdown", async (event, ctx) => {
+    if (event.reason === "reload" && fallbackReloadInProgress) {
+      return;
+    }
     await resetForSessionChange(ctx);
   });
 }
