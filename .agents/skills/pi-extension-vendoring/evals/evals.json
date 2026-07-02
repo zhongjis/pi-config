@@ -1,0 +1,44 @@
+{
+  "skill_name": "pi-extension-vendoring",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Do a planning-only response for this scenario; do not edit files or clone anything. We want to vendor a Pi extension from https://github.com/example/pi-awesome-search into extensions/awesome-search. Keep it local to this repo, don't tell me to use pi install. Upstream has a package.json with lodash as a new dependency and registers a tool called awesome_search.",
+      "expected_output": "A vendoring plan or implementation that fetches upstream with git/package-native tooling, pins source provenance, chooses the smallest local layout, warns before adding lodash, writes README Upstream metadata, and creates a Local Tweaks manifest for any local adaptations.",
+      "files": [],
+      "expectations": [
+        "Uses first-time vendoring mode because extensions/awesome-search is new.",
+        "Does not recommend `pi install npm:...`.",
+        "Warns and pauses before adding a new non-built-in dependency named lodash.",
+        "Requires README Upstream metadata with source URL and immutable commit/version.",
+        "Requires AGENTS.md Local Tweaks entries for intentional local divergences."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Do a planning-only response for this scenario; do not edit files or fetch upstream. Update our existing extensions/subagent vendored copy to the latest upstream tag. It already has local changes for nested-agent permissions and background supervision; keep those intact. Read release notes first and tell me risks before editing",
+      "expected_output": "A sync workflow that reads the existing extension AGENTS.md Local Tweaks before upstream code, reads upstream release notes/changelog before diffing, preserves named local divergences, produces a vendored sync risk memo, and updates README/AGENTS after the merge.",
+      "files": [],
+      "expectations": [
+        "Uses existing sync/update mode because extensions/subagent exists.",
+        "Reads `extensions/subagent/AGENTS.md` and treats `## Local Tweaks` as authoritative before source edits.",
+        "Reads upstream changelog or release notes before code diff.",
+        "Preserves local nested-agent permission and background supervision behavior by default.",
+        "Produces a sync risk memo before editing."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Do a planning-only response for this scenario; do not edit files or fetch upstream. Re-vendor extensions/foo from upstream commit abc123. I don't see a Local Tweaks section anywhere but the code has definitely drifted locally. Please don't accidentally wipe our local behavior",
+      "expected_output": "A stale/missing manifest recovery workflow: reconstruct likely local divergences from git history, README/CHANGELOG, and upstream base diff; write/fix Local Tweaks before source edits; warn the user that the manifest was reconstructed; then continue with a cautious sync.",
+      "files": [],
+      "expectations": [
+        "Detects missing/stale Local Tweaks manifest as a blocker before source merge.",
+        "Reconstructs divergences from git history, README/CHANGELOG, and diff against documented upstream base.",
+        "Writes or updates the manifest before touching source files.",
+        "Warns the user that the manifest was missing/stale and reconstructed.",
+        "Preserves local behavior unless the user approves dropping it."
+      ]
+    }
+  ]
+}

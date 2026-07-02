@@ -137,5 +137,5 @@ This skill was vendored into panda-harness project-level `.agents/skills/`.
 上游本身镜像的 pi 文档快照见上文「来源」：`earendil-works/pi` @ `0201806`（tag `v0.80.2`；与本 vendoring commit 不同，前者是 pi 文档，后者是 playbook repo）。
 The upstream pi docs snapshot it mirrors is `earendil-works/pi` @ `0201806` (tag `v0.80.2`, see 来源 above) — distinct from the playbook repo commit `2f93257`.
 
-更新方式：用 skill-maintainer / pi-vendored-extension-sync 重新拉取上游，保留本地 `SKILL.md` 与本节。
+更新方式：用 skill-maintainer / pi-extension-vendoring 重新拉取上游，保留本地 `SKILL.md` 与本节。
 To update: re-pull upstream via skill-maintainer, preserving local `SKILL.md` and this section.
