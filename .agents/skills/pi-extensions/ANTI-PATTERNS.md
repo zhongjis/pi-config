@@ -372,7 +372,41 @@ pi.registerTool({
 
 ---
 
-## A15. Not Checking Model Availability Before Switching
+## A15. Repeating Tool Headers in `renderResult`
+
+**❌ Wrong:**
+```typescript
+pi.registerTool({
+  name: "big_lookup",
+  renderCall(args, theme) {
+    return new Text(`▸ big_lookup · query: ${args.query}`, 0, 0);
+  },
+  renderResult(result, _options, theme) {
+    return new Text(`▸ big_lookup · success\n${result.content[0].text}`, 0, 0);
+  },
+});
+```
+
+**✅ Correct:**
+```typescript
+pi.registerTool({
+  name: "big_lookup",
+  renderCall(args, theme) {
+    return new Text(`▸ big_lookup · query: ${args.query}`, 0, 0);
+  },
+  renderResult(result, { expanded }, theme) {
+    const text = result.content?.find((part) => part.type === "text")?.text ?? "";
+    if (expanded) return new Text(text, 0, 0);
+    return new Text(theme.fg("muted", "├─ output: 42 lines\n└─ ctrl+o to expand full result"), 0, 0);
+  },
+});
+```
+
+**Why:** Pi renders the call and result as one tool row. If `renderResult` repeats the tool name or title, the TUI shows two headers for the same tool call. Use `renderCall` for identity and args; use collapsed `renderResult` for summary details only, and expanded `renderResult` for raw output.
+
+---
+
+## A16. Not Checking Model Availability Before Switching
 
 **❌ Wrong:**
 ```typescript

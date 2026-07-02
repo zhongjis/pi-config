@@ -30,6 +30,7 @@
 - [P22. Compaction Hook](#p22-compaction-hook)
 - [P23. Model Switch on Command](#p23-model-switch-on-command)
 - [P24. Load State from Session](#p24-load-state-from-session)
+- [P25. Compact Tool Result Renderer](#p25-compact-tool-result-renderer)
 
 ---
 
@@ -583,3 +584,63 @@ pi.on("session_start", async (_event, ctx) => {
   }
 });
 ```
+
+---
+
+## P25. Compact Tool Result Renderer
+
+Use this when a tool returns large or detailed `content` but should stay readable in the TUI. Keep `execute()` output model-visible and unchanged; use `renderCall`/`renderResult` only for display.
+
+```typescript
+import { keyHint } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
+
+function getText(result: { content?: Array<{ type?: string; text?: string }> }): string {
+  return (result.content ?? [])
+    .filter((part) => part.type === "text")
+    .map((part) => part.text ?? "")
+    .join("\n");
+}
+
+function tree(lines: string[]): string {
+  return lines
+    .map((line, index) => `${index === lines.length - 1 ? "└─" : "├─"} ${line}`)
+    .join("\n");
+}
+
+pi.registerTool({
+  name: "big_lookup",
+  label: "Big Lookup",
+  parameters: Type.Object({ query: Type.String() }),
+
+  async execute(_id, params) {
+    const raw = await runLookup(params.query);
+    return { content: [{ type: "text", text: raw }], details: {} };
+  },
+
+  renderCall(args, theme) {
+    return new Text(`▸ ${theme.fg("toolTitle", "big_lookup")} · query: ${args.query}`, 0, 0);
+  },
+
+  renderResult(result, { expanded, isPartial }, theme, context) {
+    const text = getText(result);
+    if (expanded) return new Text(text, 0, 0);
+
+    const lines = [
+      ...(isPartial ? ["running"] : []),
+      `output: ${text.split(/\r?\n/).length} lines`,
+      "matches: " + countMatches(text),
+      keyHint("app.tools.expand", "to expand full result"),
+    ];
+    return new Text(theme.fg("muted", tree(lines)), 0, 0);
+  },
+});
+```
+
+Lessons from CodeGraph-style tools:
+- Let Pi own the single call header. Put the tool name, main args, and the `▸` prefix in `renderCall`; do not repeat that header in `renderResult`, or users see a confusing double title.
+- Respect the user's current expanded/collapsed state. Do not call `ctx.ui.setToolsExpanded(false)` to force your preference globally.
+- Treat `content` as the contract with the model and session. If you need compact display, summarize in `renderResult`; do not shrink or rewrite `execute()` output just to make the TUI prettier.
+- In collapsed view, show product-level facts users can act on: counts, top hits, project/path, status, and a final `keyHint("app.tools.expand", "to expand full result")`. Avoid generic “success” unless it conveys useful state.
+- In expanded view, return the raw text. The call header already explains the tool and args; expanded output should maximize detail, not add another wrapper.
+- Use real tree connectors (`├─` for intermediate rows, `└─` for the final hint) when rendering multi-line summaries. Repeating `└─` on every row looks broken.

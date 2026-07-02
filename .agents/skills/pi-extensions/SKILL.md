@@ -37,6 +37,7 @@ Local divergences from upstream are tracked in each vendored extension's `AGENTS
 
 - **Writing a new extension?** → Read [`ARCHITECTURE.md`](ARCHITECTURE.md) §1–§5, then copy the matching pattern from [`PATTERNS.md`](PATTERNS.md).
 - **Extension is broken?** → Check [`ANTI-PATTERNS.md`](ANTI-PATTERNS.md) first.
+- **Need custom tool rendering or compact tool output?** → [`PATTERNS.md`](PATTERNS.md) §P25, then [`ANTI-PATTERNS.md`](ANTI-PATTERNS.md) §A15.
 - **Need TUI component?** → [`PATTERNS.md`](PATTERNS.md) §P12–§P14, then [`guides/02-paradigms.md`](guides/02-paradigms.md) for narrative.
 - **Need custom provider/OAuth?** → [`PATTERNS.md`](PATTERNS.md) §P19–§P20, then [`guides/07-advanced-patterns.md`](guides/07-advanced-patterns.md).
 - **Need event semantics?** → [`ARCHITECTURE.md`](ARCHITECTURE.md) §5, then [`references/events.md`](references/events.md).

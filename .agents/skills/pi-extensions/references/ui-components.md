@@ -115,6 +115,8 @@ const wasExpanded = ctx.ui.getToolsExpanded();
 ctx.ui.setToolsExpanded(true);
 ```
 
+工具结果渲染时优先读取传入的 `expanded` 参数并尊重用户当前展开状态。不要为了让某个工具默认折叠而全局调用 `ctx.ui.setToolsExpanded(false)`；这会影响其他工具和用户偏好。
+
 ### 终端标题
 
 ```typescript
