@@ -11,8 +11,18 @@ vi.mock("node:child_process", async () => ({
   spawn: spawnMock,
 }));
 
+type RenderableText = { render?: () => string[]; text?: string };
+type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
+
 type ToolDefinition = {
   name: string;
+  renderCall?: (args: Record<string, unknown>, theme: PlainTheme, context?: unknown) => RenderableText;
+  renderResult?: (
+    result: { content?: Array<{ type: "text"; text: string }>; details?: Record<string, unknown>; isError?: boolean },
+    options: { expanded?: boolean; isPartial?: boolean },
+    theme: PlainTheme,
+    context?: { args?: Record<string, unknown>; isError?: boolean },
+  ) => RenderableText;
   execute: (
     toolCallId: string,
     params: Record<string, unknown>,
@@ -149,6 +159,16 @@ function getSpawnSubcommands(): string[] {
   return spawnMock.mock.calls.map(([, args]) => (args as string[])[0]);
 }
 
+const plainTheme = {
+  fg: vi.fn((_color: string, text: string) => text),
+  bold: vi.fn((text: string) => text),
+};
+
+function renderText(component: RenderableText): string {
+  if (typeof component.render === "function") return component.render().join("\n");
+  return component.text ?? "";
+}
+
 async function createInvalidGlobalCodeGraph(root: string): Promise<void> {
   const marker = path.join(root, ".codegraph");
   await mkdir(path.join(marker, "daemons"), { recursive: true });
@@ -200,6 +220,73 @@ describe("codegraph extension", () => {
       "codegraph_status",
       "codegraph_files",
     ]);
+  });
+
+  it("renders compact calls and collapsed/expanded results without changing content", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const tool = mock.tools.get("codegraph_explore")!;
+    const rawText = [
+      "Explored symbols for query Button",
+      "File `src/components/Button.tsx`",
+      "File `src/components/Button.test.tsx`",
+      "File `src/index.ts`",
+      "File `src/extra.ts`",
+      "- Button component",
+      "- renderButton helper",
+      "function Button() { return null; }",
+    ].join("\n");
+    const result = { content: [{ type: "text" as const, text: rawText }], details: {} };
+
+    const args = { query: "Button", projectPath: "/repo" };
+    const call = renderText(tool.renderCall!(args, plainTheme));
+    const collapsed = renderText(tool.renderResult!(result, { expanded: false, isPartial: false }, plainTheme, { args }));
+    const expanded = renderText(tool.renderResult!(result, { expanded: true, isPartial: false }, plainTheme, { args }));
+
+    expect(call).toContain("▸ codegraph_explore");
+    expect(call).toContain("query: Button");
+    expect(call).toContain("project: /repo");
+    expect(collapsed).toContain("▸ codegraph_explore · \"Button\"");
+    expect(collapsed).not.toContain("success");
+    expect(collapsed).toContain("├─ 8 lines");
+    expect(collapsed).toContain(`${Buffer.byteLength(rawText, "utf8")} bytes`);
+    expect(collapsed).toContain("├─ files: 4 · src/components/Button.tsx, src/components/Button.test.tsx, src/index.ts");
+    expect(collapsed).toContain("├─ items: 2");
+    expect(collapsed).toContain("├─ project: /repo");
+    expect(collapsed).toContain("└─ app.tools.expand to expand full result");
+    expect(collapsed).not.toContain("function Button() { return null; }");
+    expect(expanded).toContain("▸ codegraph_explore · \"Button\"");
+    expect(expanded).toContain(rawText);
+    expect(result.content[0].text).toBe(rawText);
+  });
+
+  it("renders partial and error CodeGraph results safely", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const tool = mock.tools.get("codegraph_search")!;
+
+    const partial = renderText(tool.renderResult!({ content: [] }, { expanded: false, isPartial: true }, plainTheme));
+    const error = renderText(tool.renderResult!(
+      { content: [{ type: "text" as const, text: "CodeGraph failed\nstack hidden" }] },
+      { expanded: false, isPartial: false },
+      plainTheme,
+      { isError: true },
+    ));
+    const expandedError = renderText(tool.renderResult!(
+      { content: [{ type: "text" as const, text: "CodeGraph failed\nstack hidden" }] },
+      { expanded: true, isPartial: false },
+      plainTheme,
+      { isError: true },
+    ));
+
+    expect(partial).toContain("▸ codegraph_search · running");
+    expect(partial).toContain("├─ 0 lines · 0 bytes");
+    expect(error).toContain("▸ codegraph_search · error");
+    expect(error).toContain("├─ error: CodeGraph failed");
+    expect(error).toContain("└─ app.tools.expand to expand full result");
+    expect(expandedError).toContain("CodeGraph failed\nstack hidden");
   });
 
   it("injects concise before_agent_start guidance for a bare .codegraph marker without spawning CodeGraph", async () => {

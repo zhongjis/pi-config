@@ -132,8 +132,8 @@ export function getSettingsListTheme() {
   };
 }
 
-export function keyHint(text: string): string {
-  return text;
+export function keyHint(_keybinding: string, description?: string): string {
+  return description ? `${_keybinding} ${description}` : _keybinding;
 }
 
 export function keyText(text: string): string {

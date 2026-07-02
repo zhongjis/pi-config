@@ -7,7 +7,9 @@ import { pathToFileURL } from "node:url";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Static } from "typebox";
 import { Type } from "typebox";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { keyHint, type AgentToolResult, type ExtensionAPI, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+// @ts-expect-error LSP may miss the repo tsconfig path for this vendored package; runtime/test alias resolves it.
+import { Text } from "@earendil-works/pi-tui";
 
 const OptionalProjectPath = Type.Optional(Type.String({
   description: "Path to a different project with .codegraph/ initialized. Defaults to the active Pi ctx.cwd.",
@@ -122,6 +124,11 @@ type PendingJsonRpcRequests = Map<number, {
 }>;
 
 type DiagnosticBuffer = { value: string };
+type CodeGraphToolDefinition = (typeof ToolDefinitions)[number];
+type ToolTheme = Pick<Theme, "fg" | "bold">;
+type ToolRenderResult = AgentToolResult<Record<string, unknown> | undefined> & { isError?: boolean };
+type CodeGraphRenderOptions = Pick<ToolRenderResultOptions, "expanded" | "isPartial">;
+type CodeGraphRenderContext = { args?: ToolParams; isError?: boolean };
 type SharedCodeGraphInit = {
   promise: Promise<void>;
   abortController: AbortController;
@@ -693,6 +700,166 @@ function getToolResultText(result: any): string {
     .join("\n");
 }
 
+function styleToolTitle(theme: ToolTheme, text: string): string {
+  const bold = theme.bold ? theme.bold(text) : text;
+  return theme.fg ? theme.fg("toolTitle", bold) : bold;
+}
+
+function styleMuted(theme: ToolTheme, text: string): string {
+  return theme.fg ? theme.fg("muted", text) : text;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 1024) return `${kilobytes.toFixed(1)} KB`;
+  return `${(kilobytes / 1024).toFixed(1)} MB`;
+}
+
+function shortenPathForDisplay(value: string): string {
+  const normalized = value.split(/[\\/]+/).filter(Boolean);
+  if (normalized.length <= 2) return value;
+  return normalized.slice(-2).join("/");
+}
+
+function formatArgValue(key: string, value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim() !== "") {
+    return key === "projectPath" ? shortenPathForDisplay(value) : value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
+function renderCodeGraphCall(tool: CodeGraphToolDefinition, args: ToolParams, theme: ToolTheme): Text {
+  const argOrder = ["query", "symbol", "path", "format", "includeCode", "projectPath"] as const;
+  const parts = argOrder
+    .map((key) => {
+      const value = formatArgValue(key, args[key]);
+      if (!value) return undefined;
+      return key === "projectPath" ? `project: ${value}` : `${key}: ${value}`;
+    })
+    .filter((part): part is string => Boolean(part));
+  const suffix = parts.length > 0 ? ` · ${styleMuted(theme, parts.join(" · "))}` : "";
+  return new Text(`▸ ${styleToolTitle(theme, tool.name)}${suffix}`, 0, 0);
+}
+
+function getResultText(result: ToolRenderResult | undefined): string {
+  return (result?.content || [])
+    .filter((part) => part?.type === "text")
+    .map((part) => part.text ?? "")
+    .join("\n");
+}
+
+function countResultLines(text: string): number {
+  return text === "" ? 0 : text.split(/\r?\n/).length;
+}
+
+function getFirstMeaningfulLine(text: string): string | undefined {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+}
+
+function stripMarkdown(value: string): string {
+  return value.replace(/\*\*([^*]+)\*\*/g, "$1").trim();
+}
+
+function parseMarkdownHeading(text: string): { name: string; kind?: string } | undefined {
+  const firstLine = getFirstMeaningfulLine(text);
+  if (!firstLine) return undefined;
+  const match = /^\*\*([^*]+)\*\*\s*(?:\(([^)]+)\))?/.exec(firstLine);
+  if (!match) return undefined;
+  return { name: match[1], kind: match[2] };
+}
+
+function collectBacktickedPaths(text: string): string[] {
+  const paths = new Set<string>();
+  const pathPattern = /`([^`\n]+)`/g;
+  let match = pathPattern.exec(text);
+  while (match !== null) {
+    const candidate = match[1];
+    if (candidate.includes("/") || /\.[A-Za-z0-9]+(?::\d+)?$/.test(candidate)) paths.add(candidate);
+    match = pathPattern.exec(text);
+  }
+  return [...paths];
+}
+
+function countObviousItems(text: string): number {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => /^\s*(?:[-*•]\s+|\d+[.)]\s+|[A-Za-z_.$][\w.$]*(?:\s+[-–—:]|\s+at\s+|\s*\())/.test(line))
+    .length;
+}
+
+function getPrimarySubject(tool: CodeGraphToolDefinition, args: ToolParams, text: string): string | undefined {
+  const heading = parseMarkdownHeading(text);
+  const query = formatArgValue("query", args.query);
+  const symbol = formatArgValue("symbol", args.symbol);
+  const pathArg = formatArgValue("path", args.path);
+  const format = formatArgValue("format", args.format);
+
+  if (symbol) return heading?.kind ? `${symbol} · ${heading.kind}` : symbol;
+  if (query) return `"${query}"`;
+  if (pathArg && format) return `${pathArg} · ${format}`;
+  if (pathArg) return pathArg;
+  if (format && tool.name === "codegraph_files") return format;
+  if (heading) return heading.kind ? `${heading.name} · ${heading.kind}` : heading.name;
+  return undefined;
+}
+
+function prefixTreeLines(lines: string[]): string[] {
+  return lines.map((line, index) => {
+    const prefix = index === lines.length - 1 ? "└─" : "├─";
+    return `${prefix} ${line}`;
+  });
+}
+
+function renderCodeGraphResult(
+  tool: CodeGraphToolDefinition,
+  result: ToolRenderResult | undefined,
+  options: CodeGraphRenderOptions,
+  theme: ToolTheme,
+  context: CodeGraphRenderContext = {},
+): Text {
+  const text = getResultText(result);
+  const args = context.args || {};
+  const isError = Boolean(result?.isError || context.isError);
+  const lineCount = countResultLines(text);
+  const byteCount = Buffer.byteLength(text, "utf8");
+  const status = isError ? "error" : options.isPartial ? "running" : undefined;
+  const subject = getPrimarySubject(tool, args, text);
+  const titleParts = [tool.name, subject, status].filter((part): part is string => Boolean(part));
+  const title = `▸ ${titleParts.join(" · ")}`;
+
+  if (options.expanded) {
+    return new Text(text ? `${styleToolTitle(theme, title)}\n${text}` : styleToolTitle(theme, title), 0, 0);
+  }
+
+  const paths = collectBacktickedPaths(text);
+  const itemCount = countObviousItems(text);
+  const firstLine = getFirstMeaningfulLine(text);
+  const projectPath = formatArgValue("projectPath", args.projectPath);
+  const details = [`${lineCount} lines · ${formatBytes(byteCount)}`];
+
+  if (paths.length > 0) {
+    details.push(`files: ${paths.length} · ${paths.slice(0, 3).join(", ")}`);
+  }
+  if (itemCount > 0) {
+    details.push(`items: ${itemCount}`);
+  }
+  if (projectPath) {
+    details.push(`project: ${projectPath}`);
+  }
+  if (firstLine && !parseMarkdownHeading(text)) {
+    details.push(`${isError ? "error" : "top"}: ${stripMarkdown(firstLine)}`);
+  }
+  details.push(keyHint("app.tools.expand", "to expand full result"));
+
+  const lines = [styleToolTitle(theme, title), ...prefixTreeLines(details).map((line) => styleMuted(theme, line))];
+  return new Text(lines.join("\n"), 0, 0);
+}
+
 function isUninitializedToolResult(result: any): boolean {
   return isCodeGraphUninitializedMessage(getToolResultText(result));
 }
@@ -855,6 +1022,12 @@ export default function codegraphExtension(pi: ExtensionAPI): void {
       label: tool.label,
       description: tool.description,
       parameters: tool.parameters,
+      renderCall(args: ToolParams, theme: ToolTheme) {
+        return renderCodeGraphCall(tool, args || {}, theme);
+      },
+      renderResult(result: ToolRenderResult, options: CodeGraphRenderOptions, theme: ToolTheme, context: CodeGraphRenderContext) {
+        return renderCodeGraphResult(tool, result, options || {}, theme, context);
+      },
       async execute(_toolCallId, params: Static<typeof tool.parameters>, signal, _onUpdate, ctx) {
         const toolParams = (params || {}) as ToolParams;
         try {
