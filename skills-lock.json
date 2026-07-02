@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "pi-extensions": {
+      "source": "Dwsy/pi-extensions-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "426044c7a6d06d06a74aedd39a22d3ee7c514d6a4f32d1ba377036d75fff6c96"
+    }
+  }
+}

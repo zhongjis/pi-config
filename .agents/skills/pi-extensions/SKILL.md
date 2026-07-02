@@ -3,7 +3,6 @@ name: pi-extensions
 description: |
   Pi extension development master reference.
   Use when: building pi extensions, debugging extension behavior, or choosing the right pattern.
-upstream: "https://github.com/Dwsy/pi-extensions-skill"
 ---
 
 # Pi Extensions — LLM Master Reference
@@ -18,29 +17,17 @@ upstream: "https://github.com/Dwsy/pi-extensions-skill"
 
 The `guides/` and `references/` directories contain deeper narratives and examples. Use them after scanning the three master docs above.
 
-## Working with Vendored Extensions
-
-If the task involves a vendored (upstream-sourced) extension under `extensions/`, route to the companion skill:
-
-| Task | Skill |
-|------|-------|
-| First-time vendoring: bringing an external Pi extension into this repo | `.agents/skills/pi-extension-vendoring/SKILL.md` |
-| Updating an already-vendored extension from upstream | `.agents/skills/pi-vendored-extension-sync/SKILL.md` |
-| Making surgical local changes to a vendored extension | [`guides/08-vendored-adaptation.md`](guides/08-vendored-adaptation.md) |
-| Writing or updating the `## Local Tweaks` manifest | [`references/local-tweaks-format.md`](references/local-tweaks-format.md) |
-
-Local divergences from upstream are tracked in each vendored extension's `AGENTS.md` under a `## Local Tweaks` table — the current-state snapshot. Upstream metadata lives in `README.md` `## Upstream`. Git log provides supporting history; the manifest is authoritative.
-
 ---
 
 ## One-Line Directives
 
 - **Writing a new extension?** → Read [`ARCHITECTURE.md`](ARCHITECTURE.md) §1–§5, then copy the matching pattern from [`PATTERNS.md`](PATTERNS.md).
 - **Extension is broken?** → Check [`ANTI-PATTERNS.md`](ANTI-PATTERNS.md) first.
-- **Need custom tool rendering or compact tool output?** → [`PATTERNS.md`](PATTERNS.md) §P25, then [`ANTI-PATTERNS.md`](ANTI-PATTERNS.md) §A15.
+- **Extension is slow to start?** → [`references/startup-optimization.md`](references/startup-optimization.md) — jiti bottleneck, .js vs .ts, discovery cost.
 - **Need TUI component?** → [`PATTERNS.md`](PATTERNS.md) §P12–§P14, then [`guides/02-paradigms.md`](guides/02-paradigms.md) for narrative.
+- **Need beautiful TUI rendering?** → [`references/tui-beautiful-rendering.md`](references/tui-beautiful-rendering.md) — box drawing, overlays, badges, SVG widgets.
+- **Need multi-agent patterns?** → [`references/extension-patterns-from-source.md`](references/extension-patterns-from-source.md) — agent coordination, tasks, feeds.
 - **Need custom provider/OAuth?** → [`PATTERNS.md`](PATTERNS.md) §P19–§P20, then [`guides/07-advanced-patterns.md`](guides/07-advanced-patterns.md).
-- **Need event semantics?** → [`ARCHITECTURE.md`](ARCHITECTURE.md) §5, then [`references/events.md`](references/events.md).
 - **Need RPC safety?** → [`ANTI-PATTERNS.md`](ANTI-PATTERNS.md) §A2, then [`guides/05-rpc-mode.md`](guides/05-rpc-mode.md).
 
 ---
@@ -77,6 +64,9 @@ I need RPC mode specifics
 I need pi internals (loader, runner, binding)
   └─► guides/06-internals.md
 
+I need startup optimization, speed up extension loading
+  └─► references/startup-optimization.md
+
 I need provider plugins, OAuth, overrides
   └─► guides/07-advanced-patterns.md
 ```
@@ -112,7 +102,7 @@ State is temporary cache? ─────────────────►
 | File | Purpose | Length |
 |------|---------|--------|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Mental model, execution flow, exact event semantics | ~9KB |
-| [`PATTERNS.md`](PATTERNS.md) | 24 copy-paste patterns with exact imports | ~14KB |
+| [`PATTERNS.md`](PATTERNS.md) | 38 copy-paste patterns with exact imports | ~17KB |
 | [`ANTI-PATTERNS.md`](ANTI-PATTERNS.md) | 15 common mistakes with corrections | ~9KB |
 
 ### Progressive Guides (Read as Needed)
@@ -126,7 +116,6 @@ State is temporary cache? ─────────────────►
 | [`guides/05-rpc-mode.md`](guides/05-rpc-mode.md) | 🔌 RPC | RPC mode compatibility and degradation |
 | [`guides/06-internals.md`](guides/06-internals.md) | ⚙️ Internals | Loader, runner, event dispatch, binding |
 | [`guides/07-advanced-patterns.md`](guides/07-advanced-patterns.md) | 🚀 Advanced | Provider plugins, OAuth, tool overrides, file mutation queues |
-| [`guides/08-vendored-adaptation.md`](guides/08-vendored-adaptation.md) | 📦 Vendoring | Surgical local changes to vendored extensions |
 
 ### Reference Docs
 
@@ -137,8 +126,15 @@ State is temporary cache? ─────────────────►
 | [`references/events.md`](references/events.md) | Full event reference |
 | [`references/examples.md`](references/examples.md) | Additional code examples |
 | [`references/ui-components.md`](references/ui-components.md) | TUI component catalog |
-| [`references/source-patterns.md`](references/source-patterns.md) | Patterns extracted from pi source |
-| [`references/local-tweaks-format.md`](references/local-tweaks-format.md) | `## Local Tweaks` manifest spec for vendored extensions |
+| [`references/extension-patterns-from-source.md`](references/extension-patterns-from-source.md) | Multi-agent, diff rendering, config patterns from 10+ extensions |
+| [`references/tui-beautiful-rendering.md`](references/tui-beautiful-rendering.md) | Beautiful TUI: box drawing, transcript, overlays, badges, SVG/HTML widgets |
+| [`references/startup-optimization.md`](references/startup-optimization.md) | Startup perf: jiti transpilation, .js vs .ts, measuring bottlenecks |
+
+### Tutorials
+
+| File | Topic |
+|------|-------|
+| [`tutorials/tool-browser.md`](tutorials/tool-browser.md) | Build a searchable tool list with fuzzy filtering |
 
 ### Examples
 
@@ -148,29 +144,16 @@ State is temporary cache? ─────────────────►
 
 ---
 
-
-## Panda Harness Layout Tiers
-
-Pick the simplest tier that fits:
-
-| Tier | Structure | When to use | Examples |
-|------|-----------|-------------|----------|
-| **Bare file** | `extensions/foo.ts` | Single-file, self-contained, no internal modules or tests | `exit.ts`, `direnv.ts`, `context.ts` |
-| **Directory** | `extensions/foo/index.ts` + siblings | Multi-file but flat — helpers, config, or types alongside entrypoint | `caveman/`, `handoff/`, `btw/` |
-| **Directory + `src/`** | `extensions/foo/index.ts` re-exports `./src/index.js` | Complex extension with internal module boundary; `src/` for impl, `test/` for unit tests | `modes/`, `pi-tasks/`, `subagent/` |
-
-Rules:
-- Entrypoint is always `extensions/foo.ts` or `extensions/foo/index.ts` — the smoke harness auto-discovers these two shapes only.
-- `src/` re-export pattern: `index.ts` contains only `export { default } from "./src/index.js";` — all logic lives in `src/`.
-- Start with bare file. Promote to directory when you need siblings. Add `src/` only when you need `test/` isolation or many internal modules.
-- Never nest deeper than `extensions/foo/src/` — no `src/lib/` or `src/utils/` subdirectories.
-
 ## 5-Minute Quick Test
 
+> **Prerequisite**: This skill is installed (cloned to `skills/pi-extensions`).
+> Below creates a **sample Extension**, placed in `~/.pi/agent/extensions/` — separate from the skill directory.
+
 ```bash
+# 1. Create the sample extension file
 mkdir -p ~/.pi/agent/extensions
 cat > ~/.pi/agent/extensions/hello.ts << 'EOF'
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("hello", {
@@ -182,8 +165,12 @@ export default function (pi: ExtensionAPI) {
 }
 EOF
 
+# 2. Test with -e flag (temporary load)
 pi -e ~/.pi/agent/extensions/hello.ts
 # Then type: /hello
+#
+# Tip: Extensions in ~/.pi/agent/extensions/ are auto-discovered.
+#      The -e flag is only needed for temporary testing.
 ```
 
 ---
@@ -192,18 +179,18 @@ pi -e ~/.pi/agent/extensions/hello.ts
 
 ```typescript
 // Core types
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 // Schema
 import { Type } from "@sinclair/typebox";
-import { StringEnum } from "@mariozechner/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 
 // TUI
-import { Container, Text, SelectList } from "@mariozechner/pi-tui";
+import { Container, Text, SelectList } from "@earendil-works/pi-tui";
 
 // Utilities
-import { withFileMutationQueue } from "@mariozechner/pi-coding-agent";
-import { isToolCallEventType, isBashToolResult } from "@mariozechner/pi-coding-agent";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { isToolCallEventType, isBashToolResult } from "@earendil-works/pi-coding-agent";
 ```
 
 ---
