@@ -17,6 +17,7 @@ This file owns `modes/` prompt files and mode subdirectories.
 - Prompt audits must inspect the final injected prompt, not only source fragments.
 - When mode prompts mention code intelligence, preserve the split: CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, `rg`/`fd` for literal/file search.
 - For orchestration modes, keep delegation chunks worker-sized: one domain, one deliverable, usually ≤3 expected product files; split state/API/UI/tests/docs/git unless tightly coupled.
+- Frontend/web UI implementation, styling, layout, components, visual behavior, and browser QA route to `yunu`; keep `jintong` as the non-UI implementation/debug/test worker.
 
 ## Work Guidance
 

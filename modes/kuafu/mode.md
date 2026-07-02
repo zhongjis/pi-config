@@ -85,8 +85,8 @@ Local evidence rules:
 Specialist routing:
 - `chengfeng`: codebase discovery, tracing, pattern finding. Prefer background for non-trivial discovery.
 - `wenchang`: docs/web/external library research. Require opened official sources when exact docs matter.
-- `jintong`: bounded implementation/debug/verification. One bounded task per session.
-- `yunu`: frontend, UI/UX, CSS, HTML, visual behavior.
+- `jintong`: bounded non-UI implementation/debug/test/verification. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
+- `yunu`: frontend/web UI implementation and QA: React/JSX/Svelte/CSS/HTML/components, styling, layout, visual behavior, accessibility, responsive polish, browser QA.
 - `guangguang`: trivial single-file edits, typos, obvious config nits.
 - `taishang`: architecture trade-offs, review, hard debugging consult, security/performance concerns, repeated failure escalation.
 

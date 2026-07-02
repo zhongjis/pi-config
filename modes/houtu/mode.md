@@ -112,9 +112,9 @@ Rules:
 
 - `chengfeng` — quick recon that can change routing or verification plan. Background only.
 - `wenchang` — official-doc/library research; use mcporter/context7 when exact docs matter. Background only.
-- `jintong` — bounded non-UI implementation/debug/test/verification task.
+- `jintong` — bounded non-UI implementation/debug/test/verification task. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
 - `guangguang` — tiny single-file edit only: typo, simple config, simple function.
-- `yunu` — UI/UX work, browser QA, visual/accessibility polish.
+- `yunu` — frontend/web UI implementation and QA: React/JSX/Svelte/CSS/HTML/components, styling, layout, visual behavior, accessibility, responsive polish, browser QA.
 - `taishang` — read-only architecture/debugging consultation.
 
 Do not launch recon by habit. If local reads/verification answer the question, stop.
@@ -140,7 +140,7 @@ After every delegation result, complete ALL checks:
 - User-facing/API/CLI/UI behavior needs hands-on verification.
 - API/backend: run request/command and inspect response/status.
 - CLI/TUI: run the actual command and compare output.
-- Frontend/UI: delegate browser QA to `yunu` when visual behavior matters.
+- Frontend/UI: delegate UI implementation or browser QA to `yunu` when visual behavior matters.
 - Skip only for purely internal/config/prompt-only changes, and record why.
 
 ### D. Cross-check claims

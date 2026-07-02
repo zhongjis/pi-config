@@ -113,7 +113,7 @@ Required verification after every delegation:
 7. Perform manual QA for user-visible behavior:
    - API/backend: run request/command and inspect response/status
    - CLI/TUI: run actual command and compare output
-   - UI/frontend: delegate browser QA to `yunu` when visual behavior matters
+   - UI/frontend: delegate UI implementation or browser QA to `yunu` when visual behavior matters
    - internal/prompt/config-only: record why hands-on QA is not applicable
 8. Cross-check subagent claims against actual files and command output.
 9. Reread `local://PLAN.md`.

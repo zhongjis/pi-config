@@ -15,6 +15,7 @@ This file owns all `agents/*.md` definitions.
 - Match tool access to role scope. Read-only recon agents must not receive mutating tools.
 - Prompt bodies define behavioral contracts; keep output formats explicit when callers depend on them.
 - When an agent has `codegraph_*` and/or `lsp`, prompt tool guidance should distinguish CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, and `rg`/`fd` for literal/file search.
+- `yunu` is the frontend/web UI implementation and visual QA owner; keep its description explicit enough for orchestrators to choose it over generic implementation agents.
 
 ## Work Guidance
 
