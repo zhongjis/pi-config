@@ -16,10 +16,10 @@ Intentional divergences from upstream. Preserve these on sync.
 
 ## Sync Notes
 
-- Last synced upstream version: `0.6.5`.
-- Last synced upstream commit: `ea543818f0d3b92bc427e179cfe75d0984553f36`.
+- Last synced upstream version: `0.6.6`.
+- Last synced upstream commit: `c2fa351aeeaa773d574036ebbdfc656d7c812883`.
 - Upstream license: not declared.
-- Required runtime deps are already present in root `package.json`: `typebox`, `@mariozechner/pi-agent-core`, `@mariozechner/pi-ai`, `@mariozechner/pi-coding-agent`.
+- Required runtime deps are already present in root `package.json`: `typebox`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-ai`, `@earendil-works/pi-coding-agent`.
 
 ## Child DOX Index
 
