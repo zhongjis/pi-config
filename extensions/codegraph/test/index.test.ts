@@ -247,16 +247,16 @@ describe("codegraph extension", () => {
     expect(call).toContain("▸ codegraph_explore");
     expect(call).toContain("query: Button");
     expect(call).toContain("project: /repo");
-    expect(collapsed).toContain("▸ codegraph_explore · \"Button\"");
+    expect(collapsed).not.toContain("codegraph_explore");
     expect(collapsed).not.toContain("success");
-    expect(collapsed).toContain("├─ 8 lines");
+    expect(collapsed).toContain("├─ output: 8 lines");
     expect(collapsed).toContain(`${Buffer.byteLength(rawText, "utf8")} bytes`);
     expect(collapsed).toContain("├─ files: 4 · src/components/Button.tsx, src/components/Button.test.tsx, src/index.ts");
-    expect(collapsed).toContain("├─ items: 2");
+    expect(collapsed).not.toContain("items: 2");
     expect(collapsed).toContain("├─ project: /repo");
     expect(collapsed).toContain("└─ app.tools.expand to expand full result");
     expect(collapsed).not.toContain("function Button() { return null; }");
-    expect(expanded).toContain("▸ codegraph_explore · \"Button\"");
+    expect(expanded).not.toContain("codegraph_explore");
     expect(expanded).toContain(rawText);
     expect(result.content[0].text).toBe(rawText);
   });
@@ -281,12 +281,53 @@ describe("codegraph extension", () => {
       { isError: true },
     ));
 
-    expect(partial).toContain("▸ codegraph_search · running");
-    expect(partial).toContain("├─ 0 lines · 0 bytes");
-    expect(error).toContain("▸ codegraph_search · error");
+    expect(partial).toContain("├─ running");
+    expect(partial).toContain("├─ output: 0 lines · 0 bytes");
+    expect(error).toContain("├─ error");
     expect(error).toContain("├─ error: CodeGraph failed");
     expect(error).toContain("└─ app.tools.expand to expand full result");
     expect(expandedError).toContain("CodeGraph failed\nstack hidden");
+  });
+
+  it("summarizes known CodeGraph output shapes per tool", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const render = (toolName: string, text: string, args: Record<string, unknown> = {}) => {
+      const tool = mock.tools.get(toolName)!;
+      return renderText(tool.renderResult!(
+        { content: [{ type: "text" as const, text }] },
+        { expanded: false, isPartial: false },
+        plainTheme,
+        { args },
+      ));
+    };
+
+    expect(render("codegraph_status", [
+      "**CodeGraph Status**",
+      "**Files indexed:** 339",
+      "**Total nodes:** 4471",
+      "**Database size:** 15.63 MB",
+      "**Backend:** node:sqlite (Node built-in) — full WAL + FTS5",
+      "**Languages:**",
+      "- typescript: 333",
+      "- yaml: 2",
+    ].join("\n"))).toContain("index: 339 files · 4471 nodes · 15.63 MB");
+
+    expect(render("codegraph_files", "**Project Structure (2 files)**", { path: "extensions/codegraph", format: "tree" }))
+      .toContain("structure: 2 files");
+    expect(render("codegraph_search", "**Search Results (1 found)**\n\n**renderCodeGraphResult** (function)"))
+      .toContain("matches: 1 found");
+    expect(render("codegraph_node", "**Location:** extensions/codegraph/index.ts:818\n**Calls →** a, b, +3 more\n**Called by ←** c"))
+      .toContain("calls: 5");
+    expect(render("codegraph_callers", "**Callers of renderCodeGraphResult (1 found)**\n\n- codegraphExtension (function) - extensions/codegraph/index.ts:997"))
+      .toContain("callers: 1 found");
+    expect(render("codegraph_callees", "**Callees of renderCodeGraphResult (8 found)**\n\n- getResultText (function)\n- countResultLines (function)"))
+      .toContain("callees: 8 found");
+    expect(render("codegraph_impact", "**Impact: \"renderCodeGraphResult\" affects 2 symbols**\n\n**extensions/codegraph/index.ts:**"))
+      .toContain("impact: 2 symbols");
+    expect(render("codegraph_explore", "Found 35 symbols across 2 files.\n\n**Blast radius — what depends on these**\n\n- renderCodeGraphResult\n- render\n\n**Source Code**"))
+      .toContain("found: 35 symbols · 2 files");
   });
 
   it("injects concise before_agent_start guidance for a bare .codegraph marker without spawning CodeGraph", async () => {

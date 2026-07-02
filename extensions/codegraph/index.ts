@@ -785,34 +785,145 @@ function collectBacktickedPaths(text: string): string[] {
   return [...paths];
 }
 
-function countObviousItems(text: string): number {
-  return text
-    .split(/\r?\n/)
-    .filter((line) => /^\s*(?:[-*•]\s+|\d+[.)]\s+|[A-Za-z_.$][\w.$]*(?:\s+[-–—:]|\s+at\s+|\s*\())/.test(line))
-    .length;
-}
-
-function getPrimarySubject(tool: CodeGraphToolDefinition, args: ToolParams, text: string): string | undefined {
-  const heading = parseMarkdownHeading(text);
-  const query = formatArgValue("query", args.query);
-  const symbol = formatArgValue("symbol", args.symbol);
-  const pathArg = formatArgValue("path", args.path);
-  const format = formatArgValue("format", args.format);
-
-  if (symbol) return heading?.kind ? `${symbol} · ${heading.kind}` : symbol;
-  if (query) return `"${query}"`;
-  if (pathArg && format) return `${pathArg} · ${format}`;
-  if (pathArg) return pathArg;
-  if (format && tool.name === "codegraph_files") return format;
-  if (heading) return heading.kind ? `${heading.name} · ${heading.kind}` : heading.name;
-  return undefined;
-}
 
 function prefixTreeLines(lines: string[]): string[] {
   return lines.map((line, index) => {
     const prefix = index === lines.length - 1 ? "└─" : "├─";
     return `${prefix} ${line}`;
   });
+}
+
+function firstMatch(text: string, pattern: RegExp): string | undefined {
+  return pattern.exec(text)?.[1];
+}
+
+function collectBoldEntries(text: string, limit: number): string[] {
+  const entries: string[] = [];
+  const pattern = /^\*\*([^*]+)\*\*(?: \(([^)]+)\))?/gm;
+  let match = pattern.exec(text);
+  while (match && entries.length < limit) {
+    entries.push(match[2] ? `${match[1]} (${match[2]})` : match[1]);
+    match = pattern.exec(text);
+  }
+  return entries;
+}
+
+function collectBulletEntries(text: string, limit: number): string[] {
+  const entries: string[] = [];
+  const pattern = /^-\s+(.+)$/gm;
+  let match = pattern.exec(text);
+  while (match && entries.length < limit) {
+    entries.push(stripMarkdown(match[1]));
+    match = pattern.exec(text);
+  }
+  return entries;
+}
+
+function countListWithMore(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const more = /\+(\d+) more/.exec(value)?.[1];
+  const visible = value.split(",").filter((part) => part.trim() && !part.includes("+"));
+  return visible.length + (more ? Number(more) : 0);
+}
+
+function getSection(text: string, start: string, end: string): string {
+  const startIndex = text.indexOf(start);
+  if (startIndex === -1) return "";
+  const endIndex = text.indexOf(end, startIndex + start.length);
+  return endIndex === -1 ? text.slice(startIndex) : text.slice(startIndex, endIndex);
+}
+
+function summarizeStatus(text: string): string[] {
+  const files = firstMatch(text, /\*\*Files indexed:\*\*\s*([^\n]+)/);
+  const nodes = firstMatch(text, /\*\*Total nodes:\*\*\s*([^\n]+)/);
+  const db = firstMatch(text, /\*\*Database size:\*\*\s*([^\n]+)/);
+  const backend = firstMatch(text, /\*\*Backend:\*\*\s*([^\n—]+)/);
+  const languages = collectBulletEntries(getSection(text, "**Languages:**", "\n\n"), 3);
+  return [
+    files && nodes ? `index: ${files} files · ${nodes} nodes${db ? ` · ${db}` : ""}` : undefined,
+    backend ? `backend: ${backend.trim()}` : undefined,
+    languages.length > 0 ? `languages: ${languages.join(", ")}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeFiles(text: string, args: ToolParams): string[] {
+  const count = firstMatch(text, /Project Structure \(([^)]+)\)/);
+  const pathArg = formatArgValue("path", args.path);
+  const format = formatArgValue("format", args.format);
+  return [
+    count ? `structure: ${count}` : undefined,
+    pathArg ? `path: ${pathArg}` : undefined,
+    format ? `format: ${format}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeSearch(text: string): string[] {
+  const count = firstMatch(text, /Search Results \(([^)]+)\)/);
+  const top = collectBoldEntries(text, 3);
+  return [
+    count ? `matches: ${count}` : undefined,
+    top.length > 0 ? `top: ${top.join(", ")}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeNode(text: string): string[] {
+  const location = firstMatch(text, /\*\*Location:\*\*\s*([^\n]+)/);
+  const calls = countListWithMore(firstMatch(text, /\*\*Calls →\*\*\s*([^\n]+)/));
+  const calledBy = countListWithMore(firstMatch(text, /\*\*Called by ←\*\*\s*([^\n]+)/));
+  return [
+    location ? `location: ${location}` : undefined,
+    calls !== undefined ? `calls: ${calls}` : undefined,
+    calledBy !== undefined ? `called by: ${calledBy}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeCallList(text: string, noun: string): string[] {
+  const count = firstMatch(text, /\(([^)]+)\)/);
+  const top = collectBulletEntries(text, 3);
+  return [
+    count ? `${noun}: ${count}` : undefined,
+    top.length > 0 ? `top: ${top.join(", ")}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeImpact(text: string): string[] {
+  const count = firstMatch(text, /affects ([^\n*]+)/);
+  const files = Array.from(text.matchAll(/^\*\*([^*]+):\*\*/gm)).map((match) => match[1]);
+  return [
+    count ? `impact: ${count.trim()}` : undefined,
+    files.length > 0 ? `files: ${files.length} · ${files.slice(0, 3).join(", ")}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeExplore(text: string): string[] {
+  const found = /Found (\d+) symbols across (\d+) files/.exec(text);
+  const blast = collectBulletEntries(getSection(text, "**Blast radius", "**Source Code**"), 20).length;
+  return [
+    found ? `found: ${found[1]} symbols · ${found[2]} files` : undefined,
+    blast > 0 ? `blast radius: ${blast} dependents` : undefined,
+    text.includes("**Source Code**") ? "source: included" : undefined,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function summarizeToolResult(tool: CodeGraphToolDefinition, args: ToolParams, text: string): string[] {
+  switch (tool.name) {
+    case "codegraph_status":
+      return summarizeStatus(text);
+    case "codegraph_files":
+      return summarizeFiles(text, args);
+    case "codegraph_search":
+      return summarizeSearch(text);
+    case "codegraph_node":
+      return summarizeNode(text);
+    case "codegraph_callers":
+      return summarizeCallList(text, "callers");
+    case "codegraph_callees":
+      return summarizeCallList(text, "callees");
+    case "codegraph_impact":
+      return summarizeImpact(text);
+    case "codegraph_explore":
+      return summarizeExplore(text);
+  }
 }
 
 function renderCodeGraphResult(
@@ -828,35 +939,33 @@ function renderCodeGraphResult(
   const lineCount = countResultLines(text);
   const byteCount = Buffer.byteLength(text, "utf8");
   const status = isError ? "error" : options.isPartial ? "running" : undefined;
-  const subject = getPrimarySubject(tool, args, text);
-  const titleParts = [tool.name, subject, status].filter((part): part is string => Boolean(part));
-  const title = `▸ ${titleParts.join(" · ")}`;
 
   if (options.expanded) {
-    return new Text(text ? `${styleToolTitle(theme, title)}\n${text}` : styleToolTitle(theme, title), 0, 0);
+    return new Text(text, 0, 0);
   }
 
   const paths = collectBacktickedPaths(text);
-  const itemCount = countObviousItems(text);
   const firstLine = getFirstMeaningfulLine(text);
   const projectPath = formatArgValue("projectPath", args.projectPath);
-  const details = [`${lineCount} lines · ${formatBytes(byteCount)}`];
+  const toolSummary = summarizeToolResult(tool, args, text);
+  const details = [
+    ...(status ? [status] : []),
+    ...toolSummary,
+    `output: ${lineCount} lines · ${formatBytes(byteCount)}`,
+  ];
 
-  if (paths.length > 0) {
+  if (paths.length > 0 && !toolSummary.some((line) => line.startsWith("files:"))) {
     details.push(`files: ${paths.length} · ${paths.slice(0, 3).join(", ")}`);
-  }
-  if (itemCount > 0) {
-    details.push(`items: ${itemCount}`);
   }
   if (projectPath) {
     details.push(`project: ${projectPath}`);
   }
-  if (firstLine && !parseMarkdownHeading(text)) {
+  if (firstLine && toolSummary.length === 0 && !parseMarkdownHeading(text)) {
     details.push(`${isError ? "error" : "top"}: ${stripMarkdown(firstLine)}`);
   }
   details.push(keyHint("app.tools.expand", "to expand full result"));
 
-  const lines = [styleToolTitle(theme, title), ...prefixTreeLines(details).map((line) => styleMuted(theme, line))];
+  const lines = prefixTreeLines(details).map((line) => styleMuted(theme, line));
   return new Text(lines.join("\n"), 0, 0);
 }
 
