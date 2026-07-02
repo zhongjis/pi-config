@@ -22,10 +22,9 @@ It hides low-value status keys (`thinking-steps`, `caveman`), strips decorative 
 
 Overrides the built-in `write` tool rendering only; file creation/overwrite behavior remains delegated to Pi's built-in write tool.
 
-- Call rendering shows `write <path> (<line count> lines)`.
-- Partial result rendering shows `Writing...`.
-- Success rendering shows `✓ Written`.
-- Error rendering shows the first error line.
+- Call rendering shows `▸ write · <path>` with long paths safely truncated.
+- Collapsed results show `status: written`, `size: N lines`, `error: <first line>`, or `status: writing`, plus the expand hint.
+- Expanded results show the raw built-in `write` result content exactly.
 
 ## Hooks and Tools
 

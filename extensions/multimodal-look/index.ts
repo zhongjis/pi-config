@@ -6,11 +6,14 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   getAgentDir,
+  keyHint,
   SessionManager,
   SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
+// @ts-expect-error LSP may miss the repo test/runtime alias for pi-tui; runtime/test alias resolves it.
+import { Text } from "@earendil-works/pi-tui";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import { parseModelChain, resolveFirstAvailable } from "../lib/model.js";
@@ -322,6 +325,179 @@ async function runVisionInspection(
   }
 }
 
+type LookAtRenderTheme = {
+  fg?: (color: string, text: string) => string;
+  bold?: (text: string) => string;
+};
+
+type LookAtRenderResult = {
+  content?: unknown;
+  details?: unknown;
+  isError?: boolean;
+};
+
+type LookAtRenderOptions = {
+  expanded?: boolean;
+  isPartial?: boolean;
+};
+
+type LookAtRenderContext = {
+  args?: Partial<LookAtParams>;
+  isError?: boolean;
+};
+
+const MAX_CALL_SOURCE_LENGTH = 30;
+const MAX_CALL_GOAL_LENGTH = 24;
+const MAX_SUMMARY_LENGTH = 76;
+
+function styleToolTitle(theme: LookAtRenderTheme, text: string): string {
+  const bold = theme.bold ? theme.bold(text) : text;
+  return theme.fg ? theme.fg("toolTitle", bold) : bold;
+}
+
+function styleMuted(theme: LookAtRenderTheme, text: string): string {
+  return theme.fg ? theme.fg("muted", text) : text;
+}
+
+function prefixTreeLines(lines: string[]): string[] {
+  return lines.map((line, index) => `${index === lines.length - 1 ? "└─" : "├─"} ${line}`);
+}
+
+function compactInline(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function truncateEnd(value: string, maxLength: number): string {
+  const chars = Array.from(value);
+  if (chars.length <= maxLength) return value;
+  if (maxLength <= 0) return "";
+  if (maxLength === 1) return "…";
+  return `${chars.slice(0, maxLength - 1).join("")}…`;
+}
+
+function truncateMiddle(value: string, maxLength: number): string {
+  const chars = Array.from(value);
+  if (chars.length <= maxLength) return value;
+  if (maxLength <= 0) return "";
+  if (maxLength === 1) return "…";
+  const keep = maxLength - 1;
+  const headLength = Math.ceil(keep / 2);
+  const tailLength = Math.floor(keep / 2);
+  return `${chars.slice(0, headLength).join("")}…${chars.slice(chars.length - tailLength).join("")}`;
+}
+
+function renderCallSource(args: Partial<LookAtParams>): string {
+  const filePath =
+    typeof args.file_path === "string" ? compactInline(args.file_path) : "";
+  if (filePath) return truncateMiddle(filePath, MAX_CALL_SOURCE_LENGTH);
+  return "image_data";
+}
+
+function renderLookAtCall(
+  rawArgs: Partial<LookAtParams> | undefined,
+  theme: LookAtRenderTheme,
+): Text {
+  const args = rawArgs && typeof rawArgs === "object" ? rawArgs : {};
+  const source = renderCallSource(args);
+  const goal =
+    typeof args.goal === "string"
+      ? truncateEnd(compactInline(args.goal), MAX_CALL_GOAL_LENGTH)
+      : "";
+  return new Text(
+    `▸ ${styleToolTitle(theme, "look_at")} · ${styleMuted(theme, `${source} · "${goal}"`)}`,
+    0,
+    0,
+  );
+}
+
+function getResultText(result: LookAtRenderResult | undefined): string {
+  const content = result?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        isRecord(part) && part.type === "text" && typeof part.text === "string",
+    )
+    .map((part) => part.text)
+    .join("\n");
+}
+
+function firstMeaningfulLine(text: string): string | undefined {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+}
+
+function formatBytes(bytes: unknown): string | undefined {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) {
+    return undefined;
+  }
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const kib = bytes / 1024;
+  if (kib < 1024) return `${Math.round(kib)} KB`;
+  const mib = kib / 1024;
+  return mib < 10 ? `${mib.toFixed(1)} MB` : `${Math.round(mib)} MB`;
+}
+
+function summarizeImage(details: Record<string, unknown>): string | undefined {
+  const mimeType =
+    typeof details.mimeType === "string" && details.mimeType.trim()
+      ? details.mimeType.trim()
+      : undefined;
+  const bytes = formatBytes(details.bytes);
+  const parts = [mimeType, bytes].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? `image: ${parts.join(" · ")}` : undefined;
+}
+
+function summarizeLookAtResult(
+  text: string,
+  details: Record<string, unknown>,
+): string[] {
+  const findings = firstMeaningfulLine(text) ?? "no text returned";
+  const lines = [`findings: ${truncateEnd(findings, MAX_SUMMARY_LENGTH)}`];
+  const image = summarizeImage(details);
+  if (image) lines.push(image);
+  if (typeof details.model === "string" && details.model.trim()) {
+    lines.push(`model: ${details.model.trim()}`);
+  }
+  if (details.fallback === true) lines.push("fallback: current model");
+  return lines;
+}
+
+function compactErrorSummary(text: string): string {
+  const firstLine = firstMeaningfulLine(text) ?? "unknown error";
+  return `error: ${truncateEnd(firstLine, MAX_SUMMARY_LENGTH)}`;
+}
+
+function renderLookAtResult(
+  result: LookAtRenderResult | undefined,
+  options: LookAtRenderOptions = {},
+  theme: LookAtRenderTheme,
+  context: LookAtRenderContext = {},
+): Text {
+  const text = getResultText(result);
+  if (options.expanded) return new Text(text, 0, 0);
+
+  const details = isRecord(result?.details) ? result.details : {};
+  const isError = Boolean(result?.isError || context.isError);
+  const lines = isError
+    ? [compactErrorSummary(text)]
+    : options.isPartial
+      ? ["status: running"]
+      : summarizeLookAtResult(text, details);
+  lines.push(keyHint("app.tools.expand", "to expand full result"));
+
+  return new Text(
+    prefixTreeLines(lines)
+      .map((line) => styleMuted(theme, line))
+      .join("\n"),
+    0,
+    0,
+  );
+}
+
 export default function multimodalLook(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "look_at",
@@ -358,6 +534,17 @@ export default function multimodalLook(pi: ExtensionAPI): void {
         description: "Specific visual question or extraction goal.",
       }),
     }),
+    renderCall(args: Partial<LookAtParams> | undefined, theme: LookAtRenderTheme) {
+      return renderLookAtCall(args, theme);
+    },
+    renderResult(
+      result: LookAtRenderResult | undefined,
+      options: LookAtRenderOptions | undefined,
+      theme: LookAtRenderTheme,
+      context: LookAtRenderContext | undefined,
+    ) {
+      return renderLookAtResult(result, options || {}, theme, context || {});
+    },
     async execute(
       _toolCallId: string,
       params: unknown,
