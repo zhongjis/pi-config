@@ -240,6 +240,22 @@ Real.`);
     expect(result.has("real")).toBe(true);
   });
 
+  it("ignores AGENTS.md context docs", () => {
+    const dir = join(tmpDir, ".pi", "agents");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "AGENTS.md"), "# Agent authoring docs");
+    writeFileSync(join(dir, "real.md"), `---
+description: Real Agent
+---
+
+Real.`);
+
+    const result = loadCustomAgents(tmpDir);
+    expect(result.size).toBe(1);
+    expect(result.has("AGENTS")).toBe(false);
+    expect(result.has("real")).toBe(true);
+  });
+
   it("allows agents with names matching defaults (overrides them)", () => {
     writeAgent("Explore", `---
 description: Custom Explore
@@ -483,12 +499,14 @@ No extension tools.`);
         join(globalAgentsDir, "via-env.md"),
         "---\ndescription: Discovered via env var\n---\n\nTest body.",
       );
+      writeFileSync(join(globalAgentsDir, "AGENTS.md"), "# Global agent authoring docs");
 
       const result = loadCustomAgents(tmpDir);
 
       // Agent is found at $PI_CODING_AGENT_DIR/agents, not at $HOME/.pi/agent/agents
       expect(result.has("via-env")).toBe(true);
       expect(result.get("via-env")!.description).toBe("Discovered via env var");
+      expect(result.has("AGENTS")).toBe(false);
     } finally {
       if (originalEnv == null) delete process.env.PI_CODING_AGENT_DIR;
       else process.env.PI_CODING_AGENT_DIR = originalEnv;

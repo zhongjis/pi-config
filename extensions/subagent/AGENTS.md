@@ -76,7 +76,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/types.ts` | Kept `modelLabel`, `waitingConsumers`, `isBackground`, `externalAbortCleanup`, `suppressNotification`, `lastSupervisionSteerAt/AbortAt` on `AgentRecord` | Background supervision + abort signal + widget display |
 | `src/agent-runner.ts` | `allowNesting` gate on `EXCLUDED_TOOL_NAMES` filter | Permits nested Agent tool when frontmatter opts in |
 | `src/agent-manager.ts` | External abort signal forwarding (`bindExternalAbortSignal`), `modelLabel`/`isBackground` on record, `getRecoveredResultText` fallback | Clean cancellation, widget display, non-streaming provider recovery |
-| `src/custom-agents.ts` | Parses shared agent frontmatter (`builtin_tools`, `extension_tools`, delegation fields, nesting, model) via `extensions/lib/agent-frontmatter.ts`; uses `normalizeThinkingLevel` | Shared schema with modes + thinking level compat |
+| `src/custom-agents.ts` | Parses shared agent frontmatter (`builtin_tools`, `extension_tools`, delegation fields, nesting, model) via `extensions/lib/agent-frontmatter.ts`; ignores exact `AGENTS.md` context docs in agent directories | Shared schema with modes; prevents DOX/context instructions from registering as an `AGENTS` agent |
 | `src/invocation-config.ts` | Uses `normalizeThinkingLevel` instead of raw cast | Thinking level compat |
 | `src/skill-loader.ts` | Entire file replaced | Pi-aware discovery: SKILL.md dir skills, ancestor `.agents/skills/`, frontmatter name matching, `sourcePath`/`baseDir` metadata |
 | `src/prompts.ts` | `skillBlocks` type includes `sourcePath`/`baseDir` | Enhanced skill-loader passes path metadata for relative reference resolution |

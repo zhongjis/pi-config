@@ -51,7 +51,7 @@ function loadFromDir(
 
   let files: string[];
   try {
-    files = readdirSync(dir).filter(f => f.endsWith(".md"));
+    files = readdirSync(dir).filter(f => f.endsWith(".md") && f !== "AGENTS.md");
   } catch {
     return;
   }
