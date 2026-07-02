@@ -95,7 +95,7 @@ describe('pi-lsp tool rendering', () => {
     });
 
     expect(text).not.toContain('▸ lsp');
-    expect(text).toContain('├─ (alias) lspToolProgram(raw: LspToolParams): Effect.Effect<ToolResult, LspExtensionError, ServerManager>');
+    expect(text).toContain('├─ hover: (alias) lspToolProgram(raw: LspToolParams): Effect.Effect<ToolResult, LspExtensionError, ServerManager>');
     expect(text).toContain('└─ app.tools.expand to expand full result');
     expect(text).not.toContain('import lspToolProgram');
   });
@@ -107,7 +107,7 @@ describe('pi-lsp tool rendering', () => {
       operation: 'diagnostics',
       filePath: 'extensions/pi-lsp/types.ts',
     });
-    expect(clean).toContain('├─ ✓ clean');
+    expect(clean).toContain('├─ diagnostics: clean');
 
     const problems = renderText(
       tool.renderResult!(
@@ -120,30 +120,30 @@ describe('pi-lsp tool rendering', () => {
         { args: { operation: 'diagnostics', filePath: 'src/app.ts' } },
       ),
     );
-    expect(problems).toContain('├─ 2 errors, 1 warning · 1 server failure');
+    expect(problems).toContain('├─ diagnostics: 2 errors, 1 warning · 1 server failure');
   });
 
   it('summarizes operation outputs as one glance line plus ctrl+o', () => {
     const tool = registerTool();
 
     expect(collapsed(tool, 'References for symbol at extensions/pi-lsp/tools.ts:81:23 (3 results):\n\n1. extensions/pi-lsp/tools.ts:16:3\n2. extensions/pi-lsp/tools.ts:81:23\n3. extensions/pi-lsp/tools/programs.ts:138:17', { operation: 'findReferences' }))
-      .toContain('├─ 3 references · extensions/pi-lsp/tools.ts:16:3, extensions/pi-lsp/tools.ts:81:23, extensions/pi-lsp/tools/programs.ts:138:17');
+      .toContain('├─ references: 3 · extensions/pi-lsp/tools.ts:16:3, extensions/pi-lsp/tools.ts:81:23, extensions/pi-lsp/tools/programs.ts:138:17');
 
     expect(collapsed(tool, 'Symbols in extensions/pi-lsp/tools/programs.ts (14 top-level):\n\ncall (function) line 107:10\nCAPABILITY_MAP (constant) line 73:7\ncleanPath (function) line 89:10', { operation: 'documentSymbol' }))
-      .toContain('├─ 14 symbols · call, CAPABILITY_MAP, cleanPath +11');
+      .toContain('├─ symbols: 14 · call, CAPABILITY_MAP, cleanPath +11');
 
     expect(collapsed(tool, 'Workspace symbols matching "clientsForFile" (2):\n\n1. clientsForFile (property) extensions/pi-lsp/tools/programs.ts:44:3\n2. clientsForFile (method) extensions/pi-lsp/index.ts:83:5', { operation: 'workspaceSymbol', query: 'clientsForFile' }))
-      .toContain('├─ 2 workspace symbols · clientsForFile, clientsForFile');
+      .toContain('├─ symbols: 2 workspace · clientsForFile, clientsForFile');
 
     expect(collapsed(tool, 'No workspace symbols matching "registerLspTool"', { operation: 'workspaceSymbol', query: 'registerLspTool' }))
-      .toContain('├─ no workspace symbols');
+      .toContain('├─ symbols: no workspace matches');
 
     const outgoing = collapsed(tool, 'Outgoing calls from lspToolProgram (4):\n\n1. registerTool (method) node_modules/pkg/index.d.ts:1\n2. validate (function) extensions/pi-lsp/tools/programs.ts:118\n3. cleanPath (function) extensions/pi-lsp/tools/programs.ts:89\n4. hover (method) extensions/pi-lsp/client.ts:402', { operation: 'outgoingCalls' });
-    expect(outgoing).toContain('├─ 4 outgoing · validate, cleanPath, hover +1');
+    expect(outgoing).toContain('├─ outgoing: 4 · validate, cleanPath, hover +1');
     expect(outgoing).not.toContain('registerTool');
 
     expect(collapsed(tool, 'Code actions at extensions/pi-lsp/tools.ts:28 (4 available):\n\n1. Convert named export to default export [refactor.rewrite.export.default]\n\n2. Move to a new file [refactor.move.newFile]', { operation: 'codeActions' }))
-      .toContain('├─ 4 actions · Convert named export to default export, Move to a new file +2');
+      .toContain('├─ actions: 4 · Convert named export to default export, Move to a new file +2');
   });
 
   it('renders partial and error states safely', () => {
@@ -154,7 +154,7 @@ describe('pi-lsp tool rendering', () => {
         args: { operation: 'workspaceSymbol', query: 'Foo' },
       }),
     );
-    expect(partial).toContain('├─ running workspaceSymbol');
+    expect(partial).toContain('├─ status: running workspaceSymbol');
     expect(partial).toContain('└─ app.tools.expand to expand full result');
 
     const error = collapsed(
@@ -163,7 +163,7 @@ describe('pi-lsp tool rendering', () => {
       { operation: 'codeActions' },
       { isError: true },
     );
-    expect(error).toContain('├─ ✗ TypeScript Server Error (5.9.3)');
+    expect(error).toContain('├─ error: TypeScript Server Error (5.9.3)');
     expect(error).toContain('└─ app.tools.expand to expand full result');
   });
 });

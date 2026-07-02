@@ -59,9 +59,10 @@ A good Pi tool presentation follows these rules:
 
 1. `renderCall` owns the visible header.
    - Use the full tool name, not a marketing label.
-   - Example: `▸ lsp · operation: hover · file: src/a.ts · pos: 10:5`.
+   - Keep args compact and positional when obvious.
+   - Example: `▸ lsp · hover · src/a.ts:10:5`.
 2. `renderResult` never repeats the tool title.
-3. Collapsed `renderResult` shows a small tree of useful facts.
+3. Collapsed `renderResult` uses short `keyword: content` lines.
 4. Expanded `renderResult` returns the exact raw text from `result.content`.
 5. Never mutate `result.content` to make the UI prettier.
 6. Never force global expansion/collapse with `setToolsExpanded`; user/Pi preference owns that.
@@ -71,9 +72,15 @@ A good Pi tool presentation follows these rules:
 Recommended collapsed shape:
 
 ```text
-├─ matches: 12
-├─ top: src/a.ts:10, src/b.ts:22
-├─ output: 38 lines · 4.2 KB
+├─ references: 14 results
+├─ matches: src/a.ts:10, src/b.ts:22 +12
+└─ app.tools.expand to expand full result
+```
+
+For very small results, one summary line plus the expand hint is enough:
+
+```text
+├─ diagnostics: clean
 └─ app.tools.expand to expand full result
 ```
 
@@ -85,11 +92,9 @@ Keep render helpers near the tool registration unless they grow too large. Split
 
 Typical helpers:
 
-- `getResultText(result)` — join text content parts.
-- `countResultLines(text)` and `formatBytes(bytes)`.
 - `renderToolCall(args, theme)`.
 - `renderToolResult(result, options, theme, context)`.
-- `summarizeToolResult(args, text, details)`.
+- `summarizeToolResult(args, text, details)` returning 1–3 `keyword: content` lines.
 - tiny parsers for known output headers.
 
 Expanded branch should be first and boring:
@@ -105,16 +110,25 @@ Then build collapsed details. Prefer stable structured metadata if the tool alre
 
 Design summaries around the user’s question: “Can I tell what happened without expanding?”
 
-Good collapsed lines:
+Good collapsed lines use `keyword: content`:
 
 - Count: `references: 14 results`
-- Target: `target: src/index.ts:20:7`
-- Query: `query: "Button"`
-- Top items: `top: Button, ButtonProps, renderButton`
+- Domain-specific preview: `matches: src/index.ts:20:7, src/view.ts:44:2 +12`
+- Query if not already in header: `query: "Button"`
 - Failure note: `server failures: 1`
 - Truncation note: `showing: 50 of 132`
-- Raw-size hint: `output: 81 lines · 9.4 KB`
+- Decisive error: `error: TypeScript Server Error (5.9.3)`
 
+Avoid generic `top:` unless no better domain word exists. Prefer operation-specific keywords:
+
+- references/definitions → `matches: ...`
+- symbols → `symbols: Button, ButtonProps, renderButton +9`
+- calls → `calls: validate, cleanPath, diagnosticsProgram +25`
+- code actions → `actions: Convert named export to default export +3`
+- diagnostics → `diagnostics: 2 errors, 1 warning`
+- hover → `hover: function registerLspTool(...)`
+
+Omit raw size (`output: 81 lines · 9.4 KB`) by default. Add it only when size itself helps explain why expansion matters.
 Bad collapsed lines:
 
 - Repeating the same title as `renderCall`.
@@ -130,18 +144,18 @@ Use this taxonomy as a starting point:
 
 | Output kind | Collapse to | Avoid |
 |---|---|---|
-| Search results | count, top 3, project/path | full snippets |
-| File tree | count, root/path, format | full tree |
-| Diagnostics | error/warn/info counts, failed sources | full messages unless first error is the point |
-| Hover/docs | first signature or first doc line | whole markdown/code fence |
-| Definitions/references | count, top local paths | every location |
-| Symbols | count, top symbols | nested tree |
-| Call graph | direction, count, top local calls | ranges, dependency noise |
-| Code actions | count, preferred/top actions | edit payload/newText |
-| Build/log output | status, first decisive error, output size | full logs |
-| JSON/API result | status/count/key fields | raw JSON |
+| Search results | `matches: N`, then `matches: item1, item2 +N` | full snippets |
+| File tree | `structure: N files`, root/path/format if not in header | full tree |
+| Diagnostics | `diagnostics: clean` or counts, failed sources | full messages unless first error is the point |
+| Hover/docs | `hover: <signature or first doc line>` | whole markdown/code fence |
+| Definitions/references | `definitions:` / `references:` count, then `matches:` paths | every location |
+| Symbols | `symbols: N`, then `symbols: name1, name2 +N` | nested tree |
+| Call graph | `incoming:` / `outgoing:` count, then `calls:` names | ranges, dependency noise |
+| Code actions | `actions: N`, then `actions: preferred/top action +N` | edit payload/newText |
+| Build/log output | `status:` / `error:` decisive line, output size only if meaningful | full logs |
+| JSON/API result | `status:` / `count:` / domain key fields | raw JSON |
 
-If an operation has a unique domain concept, name it directly. Example: `impact: 2 symbols`, not generic `items: 2`.
+If an operation has a unique domain concept, name it directly. Example: `impact: 2 symbols`, not generic `items: 2` or `top: ...`.
 
 ## Tests
 

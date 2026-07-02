@@ -154,22 +154,22 @@ function collectTopBodyEntries(text: string): string[] {
 
 function summarizeDiagnostics(firstLine: string): string | undefined {
   let match = firstMatch(firstLine, /^(.+): No diagnostics — all clean ✓$/);
-  if (match) return '✓ clean';
+  if (match) return 'diagnostics: clean';
 
   match = firstMatch(firstLine, /^Diagnostics for .+: (.+)$/);
-  if (match) return match[1];
+  if (match) return `diagnostics: ${match[1]}`;
 
   match = firstMatch(firstLine, /^.+: No diagnostics from successful server\(s\): (.+)$/);
-  if (match) return `incomplete clean · ${match[1]}`;
+  if (match) return `diagnostics: incomplete clean · ${match[1]}`;
 
   return undefined;
 }
 
 function summarizeHover(firstLine: string, text: string): string | undefined {
   if (firstMatch(firstLine, /^Hover at .+:\d+:\d+:$/)) {
-    return collectBodyEntries(text)[0] ?? 'hover available';
+    return `hover: ${collectBodyEntries(text)[0] ?? 'available'}`;
   }
-  if (firstMatch(firstLine, /^No hover information at .+:\d+:\d+$/)) return 'no hover';
+  if (firstMatch(firstLine, /^No hover information at .+:\d+:\d+$/)) return 'hover: none';
   return undefined;
 }
 
@@ -188,11 +188,12 @@ function summarizeLocations(firstLine: string, text: string): string | undefined
   );
   if (match) {
     const count = Number(match[2]);
-    return `${count} ${locationNoun(match[1], count)}${compactList(collectNumberedEntries(text), count)}`;
+    const noun = locationNoun(match[1], count);
+    return `${noun}: ${count}${compactList(collectNumberedEntries(text), count)}`;
   }
 
   match = firstMatch(firstLine, /^No (Definition|References|Implementation) found for symbol at .+$/);
-  if (match) return `no ${locationNoun(match[1], 0)}`;
+  if (match) return `${locationNoun(match[1], 0)}: none`;
 
   return undefined;
 }
@@ -206,20 +207,20 @@ function summarizeDocumentSymbols(firstLine: string, text: string): string | und
   let match = firstMatch(firstLine, /^Symbols in .+ \(([^)]+)\):$/);
   if (match) {
     const count = firstInteger(match[1]) ?? collectTopBodyEntries(text).length;
-    return `${count} ${count === 1 ? 'symbol' : 'symbols'}${compactList(collectTopBodyEntries(text), count)}`;
+    return `symbols: ${count}${compactList(collectTopBodyEntries(text), count)}`;
   }
 
-  if (firstMatch(firstLine, /^No symbols found in .+$/)) return 'no symbols';
+  if (firstMatch(firstLine, /^No symbols found in .+$/)) return 'symbols: none';
   return undefined;
 }
 
 function summarizeWorkspaceSymbols(firstLine: string, text: string): string | undefined {
-  if (firstMatch(firstLine, /^No workspace symbols matching ".+"$/)) return 'no workspace symbols';
+  if (firstMatch(firstLine, /^No workspace symbols matching ".+"$/)) return 'symbols: no workspace matches';
 
   const match = firstMatch(firstLine, /^Workspace symbols matching ".+" \((\d+)\):$/);
   if (match) {
     const count = Number(match[1]);
-    return `${count} workspace ${count === 1 ? 'symbol' : 'symbols'}${compactList(collectNumberedEntries(text), count)}`;
+    return `symbols: ${count} workspace${compactList(collectNumberedEntries(text), count)}`;
   }
 
   return undefined;
@@ -229,24 +230,24 @@ function summarizeCalls(firstLine: string, text: string): string | undefined {
   let match = firstMatch(firstLine, /^Call hierarchy at .+:$/);
   if (match) {
     const entries = collectNumberedEntries(text);
-    return `${entries.length} call ${entries.length === 1 ? 'item' : 'items'}${compactList(entries, entries.length)}`;
+    return `hierarchy: ${entries.length}${compactList(entries, entries.length)}`;
   }
 
   match = firstMatch(firstLine, /^Incoming calls to (.+) \((\d+)\):$/);
   if (match) {
     const count = Number(match[2]);
-    return `${count} incoming${compactList(collectNumberedEntries(text), count)}`;
+    return `incoming: ${count}${compactList(collectNumberedEntries(text), count)}`;
   }
 
   match = firstMatch(firstLine, /^Outgoing calls from (.+) \((\d+)\):$/);
   if (match) {
     const count = Number(match[2]);
-    return `${count} outgoing${compactList(collectNumberedEntries(text, true), count)}`;
+    return `outgoing: ${count}${compactList(collectNumberedEntries(text, true), count)}`;
   }
 
-  if (firstMatch(firstLine, /^No incoming calls to .+$/)) return 'no incoming calls';
-  if (firstMatch(firstLine, /^No outgoing calls from .+$/)) return 'no outgoing calls';
-  if (firstMatch(firstLine, /^No call hierarchy item at .+$/)) return 'no call hierarchy item';
+  if (firstMatch(firstLine, /^No incoming calls to .+$/)) return 'incoming: none';
+  if (firstMatch(firstLine, /^No outgoing calls from .+$/)) return 'outgoing: none';
+  if (firstMatch(firstLine, /^No call hierarchy item at .+$/)) return 'hierarchy: none';
 
   return undefined;
 }
@@ -255,10 +256,10 @@ function summarizeCodeActions(firstLine: string, text: string): string | undefin
   let match = firstMatch(firstLine, /^Code actions at .+:\d+ \((\d+) available\):$/);
   if (match) {
     const count = Number(match[1]);
-    return `${count} ${count === 1 ? 'action' : 'actions'}${compactList(collectNumberedEntries(text), count)}`;
+    return `actions: ${count}${compactList(collectNumberedEntries(text), count)}`;
   }
 
-  if (firstMatch(firstLine, /^No code actions available at .+:\d+$/)) return 'no code actions';
+  if (firstMatch(firstLine, /^No code actions available at .+:\d+$/)) return 'actions: none';
   return undefined;
 }
 
@@ -272,16 +273,16 @@ function summarizeLspResult(args: Partial<LspToolParams>, text: string): string 
     summarizeWorkspaceSymbols(firstLine, text) ??
     summarizeCalls(firstLine, text) ??
     summarizeCodeActions(firstLine, text) ??
-    formatArgValue(args.operation) ??
-    stripMarkdown(firstLine) ??
-    'no output'
+    (formatArgValue(args.operation) ? `result: ${formatArgValue(args.operation)}` : undefined) ??
+    (firstLine ? `result: ${stripMarkdown(firstLine)}` : undefined) ??
+    'result: no output'
   );
 }
 
 function compactErrorSummary(text: string): string {
   const firstLine = stripMarkdown(getFirstMeaningfulLine(text) ?? 'unknown error');
   const serverError = /TypeScript Server Error \([^)]+\)/.exec(firstLine)?.[0];
-  return `✗ ${serverError ?? truncateForSummary(firstLine, 100)}`;
+  return `error: ${serverError ?? truncateForSummary(firstLine, 100)}`;
 }
 
 function renderLspResult(
@@ -300,7 +301,7 @@ function renderLspResult(
   const summary = isError
     ? compactErrorSummary(text)
     : options?.isPartial
-      ? `running ${formatArgValue(args.operation) ?? 'lsp'}`
+      ? `status: running ${formatArgValue(args.operation) ?? 'lsp'}`
       : `${summarizeLspResult(args, text)}${suffix}`;
   const lines = [summary, keyHint('app.tools.expand', 'to expand full result')];
 
