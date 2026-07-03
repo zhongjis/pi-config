@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-6:xhigh,openai-codex/gpt-5.5:xhigh,opencode-go/de
 inherit_context: false
 run_in_background: false
 builtin_tools: read,write,edit
-extension_tools: ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,plan_approve,readonly_bash,look_at,context_*,lsp
+extension_tools: ask,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskUpdate,TaskList,TaskGet,TaskExecute,plan_approve,readonly_bash,look_at,context_*,lsp,condegraph_*
 extensions: true
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu,cangjie
 disallow_delegation_to: houtu
