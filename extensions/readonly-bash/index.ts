@@ -16,7 +16,9 @@ import { resolve } from "node:path";
 export const DEFAULT_READONLY_BASH_TIMEOUT_SECONDS = 30;
 
 const readonlyBashSchema = Type.Object({
-  command: Type.String({ description: "Restricted read-only shell command to execute" }),
+  command: Type.String({
+    description: "Restricted read-only shell command to execute",
+  }),
   timeout: Type.Optional(
     Type.Number({
       description: `Kill command after this many seconds (default ${DEFAULT_READONLY_BASH_TIMEOUT_SECONDS})`,
@@ -106,7 +108,13 @@ const MUTABLE_GIT_SUBCOMMANDS = new Set([
   "remote",
 ]);
 
-const MUTATING_FIND_ACTIONS = new Set(["-delete", "-fprint", "-fprint0", "-fprintf", "-fls"]);
+const MUTATING_FIND_ACTIONS = new Set([
+  "-delete",
+  "-fprint",
+  "-fprint0",
+  "-fprintf",
+  "-fls",
+]);
 
 const MUTATING_GIT_BRANCH_OPTIONS = new Set([
   "-d",
@@ -125,7 +133,7 @@ const MUTATING_GIT_BRANCH_OPTIONS = new Set([
 
 const GIT_OUTPUT_OPTIONS = new Set(["--output"]);
 
-const READ_ONLY_GH_TOP_LEVELS = new Set(["search", "repo"]);
+const READ_ONLY_GH_TOP_LEVELS = new Set(["search", "repo", "issue"]);
 const GH_SEARCH_READ_ONLY_KINDS = new Set(["repos", "code", "issues", "prs"]);
 const GH_REPO_READ_ONLY_SUBCOMMANDS = new Set(["view", "list"]);
 
@@ -142,7 +150,6 @@ const MUTABLE_GH_TOP_LEVELS = new Set([
   "extension",
   "gist",
   "gpg-key",
-  "issue",
   "label",
   "org",
   "pr",
@@ -169,6 +176,23 @@ const MUTABLE_GH_REPO_SUBCOMMANDS = new Set([
   "set-default",
   "sync",
   "unarchive",
+]);
+
+const GH_ISSUE_READ_ONLY_SUBCOMMANDS = new Set(["view", "list", "status"]);
+
+const MUTABLE_GH_ISSUE_SUBCOMMANDS = new Set([
+  "create",
+  "close",
+  "comment",
+  "delete",
+  "develop",
+  "edit",
+  "lock",
+  "pin",
+  "reopen",
+  "transfer",
+  "unlock",
+  "unpin",
 ]);
 
 const GH_BROWSER_OPTIONS = new Set(["--web", "-w"]);
@@ -240,7 +264,8 @@ function findRejectedShellSyntax(command: string): string | undefined {
         continue;
       }
       if (char === "`") return "command substitution is not allowed";
-      if (char === "$") return "parameter or command substitution is not allowed";
+      if (char === "$")
+        return "parameter or command substitution is not allowed";
       continue;
     }
 
@@ -255,7 +280,8 @@ function findRejectedShellSyntax(command: string): string | undefined {
 
     if (char === "|") return "pipes and command chaining are not allowed";
     if (char === ";") return "command chaining is not allowed";
-    if (char === "&") return "backgrounding and command chaining are not allowed";
+    if (char === "&")
+      return "backgrounding and command chaining are not allowed";
     if (char === ">" || char === "<") return "redirection is not allowed";
     if (char === "`") return "command substitution is not allowed";
     if (char === "$" && (next === "(" || next === "{")) {
@@ -312,7 +338,9 @@ export function tokenizeReadonlyBashCommand(command: string): string[] {
 
 function validateFind(argv: string[]): string | undefined {
   const args = argv.slice(1).map((arg) => arg.toLowerCase());
-  if (args.some((arg) => ["-exec", "-execdir", "-ok", "-okdir"].includes(arg))) {
+  if (
+    args.some((arg) => ["-exec", "-execdir", "-ok", "-okdir"].includes(arg))
+  ) {
     return "find command execution actions are not allowed";
   }
   if (args.some((arg) => MUTATING_FIND_ACTIONS.has(arg))) {
@@ -324,7 +352,9 @@ function validateFind(argv: string[]): string | undefined {
 function sedScriptHasWriteCommand(script: string): boolean {
   const address = String.raw`(?:\d+|\$|/[^/]*(?:\.[^/]*)*/)`;
   const addressRange = String.raw`(?:${address}(?:\s*,\s*${address})?)?`;
-  const writeCommand = new RegExp(String.raw`(^|[;{}\n])\s*${addressRange}\s*!?\s*w(?:\s|$)`);
+  const writeCommand = new RegExp(
+    String.raw`(^|[;{}\n])\s*${addressRange}\s*!?\s*w(?:\s|$)`,
+  );
   const substituteWithWriteFlag = /(^|[;{}\s])s([^A-Za-z0-9\s]).*\2w(?:\s|$)/;
   return writeCommand.test(script) || substituteWithWriteFlag.test(script);
 }
@@ -332,8 +362,11 @@ function sedScriptHasWriteCommand(script: string): boolean {
 function sedScriptHasShellExecutionCommand(script: string): boolean {
   const address = String.raw`(?:\d+|\$|/[^/]*(?:\.[^/]*)*/)`;
   const addressRange = String.raw`(?:${address}(?:\s*,\s*${address})?)?`;
-  const execCommand = new RegExp(String.raw`(^|[;{}\n])\s*${addressRange}\s*!?\s*e(?:\s|$)`);
-  const substituteWithExecFlag = /(^|[;{}\s])s([^A-Za-z0-9\s]).*\2[^;{}\s]*e[^;{}\s]*(?:[;{}\s]|$)/;
+  const execCommand = new RegExp(
+    String.raw`(^|[;{}\n])\s*${addressRange}\s*!?\s*e(?:\s|$)`,
+  );
+  const substituteWithExecFlag =
+    /(^|[;{}\s])s([^A-Za-z0-9\s]).*\2[^;{}\s]*e[^;{}\s]*(?:[;{}\s]|$)/;
   return execCommand.test(script) || substituteWithExecFlag.test(script);
 }
 
@@ -343,10 +376,17 @@ function isSedInPlaceOption(arg: string): boolean {
   if (arg === "-i" || arg.startsWith("-i")) return true;
 
   const optionGroup = arg.slice(1);
-  return /^[A-Za-z]+$/.test(optionGroup) && optionGroup.includes("n") && optionGroup.includes("i");
+  return (
+    /^[A-Za-z]+$/.test(optionGroup) &&
+    optionGroup.includes("n") &&
+    optionGroup.includes("i")
+  );
 }
 
-function sedScripts(argv: string[]): { scripts: string[]; rejectedReason?: string } {
+function sedScripts(argv: string[]): {
+  scripts: string[];
+  rejectedReason?: string;
+} {
   const scripts: string[] = [];
   let foundImplicitScript = false;
   for (let i = 1; i < argv.length; i += 1) {
@@ -404,14 +444,23 @@ function validateAwk(argv: string[]): string | undefined {
   if (args.some((arg) => arg.includes(">") || arg.includes("|"))) {
     return "awk output redirection is not allowed";
   }
-  if (args.some((arg) => /\b(system|fflush)\s*\(/.test(arg) || /\bgetline\b.*<|<.*\bgetline\b/.test(arg))) {
+  if (
+    args.some(
+      (arg) =>
+        /\b(system|fflush)\s*\(/.test(arg) ||
+        /\bgetline\b.*<|<.*\bgetline\b/.test(arg),
+    )
+  ) {
     return "awk side-effecting operations are not allowed";
   }
   return undefined;
 }
 
 function gitOptionMatches(arg: string, options: Set<string>): boolean {
-  return options.has(arg) || [...options].some((option) => arg.startsWith(`${option}=`));
+  return (
+    options.has(arg) ||
+    [...options].some((option) => arg.startsWith(`${option}=`))
+  );
 }
 
 function validateGit(argv: string[]): string | undefined {
@@ -424,10 +473,16 @@ function validateGit(argv: string[]): string | undefined {
     return `git ${subcommand} is outside the read-only allowlist`;
   }
   const args = argv.slice(2);
-  if (subcommand === "branch" && args.some((arg) => gitOptionMatches(arg, MUTATING_GIT_BRANCH_OPTIONS))) {
+  if (
+    subcommand === "branch" &&
+    args.some((arg) => gitOptionMatches(arg, MUTATING_GIT_BRANCH_OPTIONS))
+  ) {
     return "git branch mutation options are not allowed";
   }
-  if (["diff", "show"].includes(subcommand) && args.some((arg) => gitOptionMatches(arg, GIT_OUTPUT_OPTIONS))) {
+  if (
+    ["diff", "show"].includes(subcommand) &&
+    args.some((arg) => gitOptionMatches(arg, GIT_OUTPUT_OPTIONS))
+  ) {
     return `git ${subcommand} output options are not allowed`;
   }
   return undefined;
@@ -436,8 +491,10 @@ function validateGit(argv: string[]): string | undefined {
 function validateGh(argv: string[]): string | undefined {
   const topLevel = argv[1]?.toLowerCase();
   if (!topLevel) return "gh requires an explicit read-only subcommand";
-  if (MUTABLE_GH_TOP_LEVELS.has(topLevel)) return `gh ${topLevel} is not allowed`;
-  if (!READ_ONLY_GH_TOP_LEVELS.has(topLevel)) return `gh ${topLevel} is outside the read-only allowlist`;
+  if (MUTABLE_GH_TOP_LEVELS.has(topLevel))
+    return `gh ${topLevel} is not allowed`;
+  if (!READ_ONLY_GH_TOP_LEVELS.has(topLevel))
+    return `gh ${topLevel} is outside the read-only allowlist`;
 
   const args = argv.slice(2);
   if (args.some((arg) => gitOptionMatches(arg, GH_BROWSER_OPTIONS))) {
@@ -453,11 +510,25 @@ function validateGh(argv: string[]): string | undefined {
     return undefined;
   }
 
-  const repoSubcommand = argv[2]?.toLowerCase();
-  if (!repoSubcommand) return "gh repo requires an explicit read-only subcommand";
-  if (MUTABLE_GH_REPO_SUBCOMMANDS.has(repoSubcommand)) return `gh repo ${repoSubcommand} is not allowed`;
-  if (!GH_REPO_READ_ONLY_SUBCOMMANDS.has(repoSubcommand)) {
-    return `gh repo ${repoSubcommand} is outside the read-only allowlist`;
+  const subcommand = argv[2]?.toLowerCase();
+
+  if (topLevel === "issue") {
+    if (!subcommand)
+      return "gh issue requires an explicit read-only subcommand";
+    if (MUTABLE_GH_ISSUE_SUBCOMMANDS.has(subcommand))
+      return `gh issue ${subcommand} is not allowed`;
+    if (!GH_ISSUE_READ_ONLY_SUBCOMMANDS.has(subcommand)) {
+      return `gh issue ${subcommand} is outside the read-only allowlist`;
+    }
+    return undefined;
+  }
+
+  if (!subcommand)
+    return "gh repo requires an explicit read-only subcommand";
+  if (MUTABLE_GH_REPO_SUBCOMMANDS.has(subcommand))
+    return `gh repo ${subcommand} is not allowed`;
+  if (!GH_REPO_READ_ONLY_SUBCOMMANDS.has(subcommand)) {
+    return `gh repo ${subcommand} is outside the read-only allowlist`;
   }
   return undefined;
 }
@@ -589,22 +660,40 @@ const READONLY_BASH_GENERIC_HINTS = [
 const READONLY_BASH_HELP_SECTIONS: readonly ReadonlyBashHelpSection[] = [
   {
     label: "Local",
-    examples: ["ls -la", "rg \"pattern\" path", "cat file", "jq . file.json", "git status --short"],
+    examples: [
+      "ls -la",
+      'rg "pattern" path',
+      "cat file",
+      "jq . file.json",
+      "git status --short",
+    ],
   },
   {
     label: "GitHub",
     commands: ["gh"],
-    examples: ["gh search repos QUERY", "gh repo view OWNER/REPO", "gh repo list OWNER"],
+    examples: [
+      "gh search repos QUERY",
+      "gh repo view OWNER/REPO",
+      "gh repo list OWNER",
+    ],
   },
   {
     label: "Kubernetes",
     commands: ["kubectl"],
-    examples: ["kubectl get pods -A", "kubectl describe pod NAME -n NAMESPACE", "kubectl logs deployment/NAME"],
+    examples: [
+      "kubectl get pods -A",
+      "kubectl describe pod NAME -n NAMESPACE",
+      "kubectl logs deployment/NAME",
+    ],
   },
   {
     label: "Flux",
     commands: ["flux"],
-    examples: ["flux get kustomizations -A", "flux logs --kind HelmRelease --name NAME", "flux events"],
+    examples: [
+      "flux get kustomizations -A",
+      "flux logs --kind HelmRelease --name NAME",
+      "flux events",
+    ],
   },
 ] as const;
 
@@ -615,30 +704,47 @@ type SubcommandParseResult =
 function validateNixOrNh(argv: string[]): string | undefined {
   const name = commandName(argv[0] ?? "");
   const subcommand = argv[1]?.toLowerCase();
-  if (name === "nix" && ["build", "develop", "run"].includes(subcommand ?? "")) {
+  if (
+    name === "nix" &&
+    ["build", "develop", "run"].includes(subcommand ?? "")
+  ) {
     return `nix ${subcommand} is not allowed`;
   }
-  if (name === "nh" && subcommand === "os" && argv[2]?.toLowerCase() === "switch") {
+  if (
+    name === "nh" &&
+    subcommand === "os" &&
+    argv[2]?.toLowerCase() === "switch"
+  ) {
     return "nh os switch is not allowed";
   }
   return undefined;
 }
 
-function valueTakingGlobalMode(arg: string, options: Set<string>): "inline" | "separate" | undefined {
+function valueTakingGlobalMode(
+  arg: string,
+  options: Set<string>,
+): "inline" | "separate" | undefined {
   const equalIndex = arg.indexOf("=");
   if (equalIndex > 0) {
     const optionName = arg.slice(0, equalIndex);
-    if (options.has(optionName) && arg.slice(equalIndex + 1).length > 0) return "inline";
+    if (options.has(optionName) && arg.slice(equalIndex + 1).length > 0)
+      return "inline";
     return undefined;
   }
 
   if (options.has(arg)) return "separate";
-  if (options.has("-n") && arg.startsWith("-n") && arg.length > 2) return "inline";
+  if (options.has("-n") && arg.startsWith("-n") && arg.length > 2)
+    return "inline";
   return undefined;
 }
 
 function booleanGlobalMatches(arg: string, options: Set<string>): boolean {
-  return options.has(arg) || [...options].some((option) => option.startsWith("--") && arg.startsWith(`${option}=`));
+  return (
+    options.has(arg) ||
+    [...options].some(
+      (option) => option.startsWith("--") && arg.startsWith(`${option}=`),
+    )
+  );
 }
 
 function extractKubernetesSubcommand(
@@ -649,16 +755,27 @@ function extractKubernetesSubcommand(
 ): SubcommandParseResult {
   for (let i = 1; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--") return { ok: false, reason: `${cliName} end-of-options marker before subcommand is not allowed` };
+    if (arg === "--")
+      return {
+        ok: false,
+        reason: `${cliName} end-of-options marker before subcommand is not allowed`,
+      };
 
     if (arg.startsWith("-")) {
       if (booleanGlobalMatches(arg, booleanGlobals)) continue;
       const mode = valueTakingGlobalMode(arg, valueGlobals);
-      if (!mode) return { ok: false, reason: `${cliName} unknown pre-subcommand option ${arg} is not allowed` };
+      if (!mode)
+        return {
+          ok: false,
+          reason: `${cliName} unknown pre-subcommand option ${arg} is not allowed`,
+        };
       if (mode === "separate") {
         const value = argv[i + 1];
         if (!value || value.startsWith("-")) {
-          return { ok: false, reason: `${cliName} ${arg} requires a value before subcommand` };
+          return {
+            ok: false,
+            reason: `${cliName} ${arg} requires a value before subcommand`,
+          };
         }
         i += 1;
       }
@@ -668,11 +785,18 @@ function extractKubernetesSubcommand(
     return { ok: true, subcommand: arg.toLowerCase(), subcommandIndex: i };
   }
 
-  return { ok: false, reason: `${cliName} requires an explicit read-only subcommand` };
+  return {
+    ok: false,
+    reason: `${cliName} requires an explicit read-only subcommand`,
+  };
 }
 
 function hasOption(args: string[], options: Set<string>): boolean {
-  return args.some((arg) => options.has(arg) || [...options].some((option) => arg.startsWith(`${option}=`)));
+  return args.some(
+    (arg) =>
+      options.has(arg) ||
+      [...options].some((option) => arg.startsWith(`${option}=`)),
+  );
 }
 
 function hasFlag(args: string[], flags: Set<string>): boolean {
@@ -681,15 +805,24 @@ function hasFlag(args: string[], flags: Set<string>): boolean {
 
 function validateKubectl(argv: string[]): string | undefined {
   const args = argv.slice(1);
-  if (hasOption(args, KUBECTL_RAW_OPTIONS)) return "kubectl --raw is not allowed";
-  if (hasOption(args, KUBECTL_PROFILE_OPTIONS)) return "kubectl profiling options are not allowed";
-  if (hasOption(args, KUBECTL_CACHE_OPTIONS)) return "kubectl cache-dir options are not allowed";
+  if (hasOption(args, KUBECTL_RAW_OPTIONS))
+    return "kubectl --raw is not allowed";
+  if (hasOption(args, KUBECTL_PROFILE_OPTIONS))
+    return "kubectl profiling options are not allowed";
+  if (hasOption(args, KUBECTL_CACHE_OPTIONS))
+    return "kubectl cache-dir options are not allowed";
 
-  const parsed = extractKubernetesSubcommand(argv, "kubectl", KUBECTL_VALUE_GLOBALS, KUBECTL_BOOLEAN_GLOBALS);
+  const parsed = extractKubernetesSubcommand(
+    argv,
+    "kubectl",
+    KUBECTL_VALUE_GLOBALS,
+    KUBECTL_BOOLEAN_GLOBALS,
+  );
   if (!parsed.ok) return parsed.reason;
 
   const subcommand = parsed.subcommand;
-  if (MUTABLE_KUBECTL_SUBCOMMANDS.has(subcommand)) return `kubectl ${subcommand} is not allowed`;
+  if (MUTABLE_KUBECTL_SUBCOMMANDS.has(subcommand))
+    return `kubectl ${subcommand} is not allowed`;
   if (!KUBECTL_READ_ONLY_SUBCOMMANDS.has(subcommand)) {
     return `kubectl ${subcommand} is outside the read-only allowlist`;
   }
@@ -705,11 +838,17 @@ function validateKubectl(argv: string[]): string | undefined {
 
 function validateFlux(argv: string[]): string | undefined {
   const args = argv.slice(1);
-  const parsed = extractKubernetesSubcommand(argv, "flux", FLUX_VALUE_GLOBALS, FLUX_BOOLEAN_GLOBALS);
+  const parsed = extractKubernetesSubcommand(
+    argv,
+    "flux",
+    FLUX_VALUE_GLOBALS,
+    FLUX_BOOLEAN_GLOBALS,
+  );
   if (!parsed.ok) return parsed.reason;
 
   const subcommand = parsed.subcommand;
-  if (MUTABLE_FLUX_SUBCOMMANDS.has(subcommand)) return `flux ${subcommand} is not allowed`;
+  if (MUTABLE_FLUX_SUBCOMMANDS.has(subcommand))
+    return `flux ${subcommand} is not allowed`;
   if (!FLUX_READ_ONLY_SUBCOMMANDS.has(subcommand)) {
     return `flux ${subcommand} is outside the read-only allowlist`;
   }
@@ -723,12 +862,14 @@ function validateFlux(argv: string[]): string | undefined {
 function validateAllowedFamily(argv: string[]): string | undefined {
   const name = commandName(argv[0] ?? "");
 
-  if (PACKAGE_MANAGERS.has(name)) return `${name} package-manager commands are not allowed`;
+  if (PACKAGE_MANAGERS.has(name))
+    return `${name} package-manager commands are not allowed`;
   const nixOrNhReason = validateNixOrNh(argv);
   if (nixOrNhReason) return nixOrNhReason;
   if (name === ".") return "shell sourcing is not allowed";
   if (MUTATING_COMMANDS.has(name)) return `${name} is not allowed`;
-  if (!ALLOWED_COMMANDS.has(name)) return `${name || "command"} is outside the read-only allowlist`;
+  if (!ALLOWED_COMMANDS.has(name))
+    return `${name || "command"} is outside the read-only allowlist`;
 
   if (name === "find") return validateFind(argv);
   if (name === "sed") return validateSed(argv);
@@ -744,7 +885,10 @@ export function validateReadonlyBashCommand(command: string): ValidationResult {
   const trimmed = command.trim();
   if (!trimmed) return { ok: false, reason: "command is empty" };
   if (hasControlCharacter(command)) {
-    return { ok: false, reason: "newlines and control characters are not allowed" };
+    return {
+      ok: false,
+      reason: "newlines and control characters are not allowed",
+    };
   }
 
   const syntaxReason = findRejectedShellSyntax(trimmed);
@@ -757,14 +901,19 @@ export function validateReadonlyBashCommand(command: string): ValidationResult {
   return { ok: true, command: trimmed, argv };
 }
 
-function readonlyBashHelpSections(command: string): readonly ReadonlyBashHelpSection[] {
+function readonlyBashHelpSections(
+  command: string,
+): readonly ReadonlyBashHelpSection[] {
   const commandToken = tokenizeReadonlyBashCommand(command.trim())[0] ?? "";
   const name = commandName(commandToken);
-  const genericSections = READONLY_BASH_HELP_SECTIONS.filter((section) => !section.commands);
-  const commandSections = READONLY_BASH_HELP_SECTIONS.filter((section) => section.commands?.includes(name));
+  const genericSections = READONLY_BASH_HELP_SECTIONS.filter(
+    (section) => !section.commands,
+  );
+  const commandSections = READONLY_BASH_HELP_SECTIONS.filter((section) =>
+    section.commands?.includes(name),
+  );
   return [...genericSections, ...commandSections];
 }
-
 
 function readonlyBashFailureMessage(command: string, reason: string): string {
   const trimmed = command.trim() || "<empty>";
@@ -776,13 +925,20 @@ function readonlyBashFailureMessage(command: string, reason: string): string {
     "",
     "How to fix:",
     ...READONLY_BASH_GENERIC_HINTS.map((hint) => `- ${hint}`),
-    ...sections.map((section) => `- ${section.label} examples: ${section.examples.join("; ")}.`),
+    ...sections.map(
+      (section) =>
+        `- ${section.label} examples: ${section.examples.join("; ")}.`,
+    ),
   ].join("\n");
 }
 
-export function assertReadonlyBashCommand(command: string): { command: string; argv: string[] } {
+export function assertReadonlyBashCommand(command: string): {
+  command: string;
+  argv: string[];
+} {
   const result = validateReadonlyBashCommand(command);
-  if (result.ok === false) throw new Error(readonlyBashFailureMessage(command, result.reason));
+  if (result.ok === false)
+    throw new Error(readonlyBashFailureMessage(command, result.reason));
   return { command: result.command, argv: result.argv };
 }
 
@@ -795,7 +951,9 @@ type ReadonlyBashDetails = BashToolDetails & {
 type ReadonlyBashResult = AgentToolResult<ReadonlyBashDetails>;
 type BashResult = AgentToolResult<BashToolDetails | undefined>;
 
-function textContent(result: Pick<AgentToolResult<unknown>, "content">): string {
+function textContent(
+  result: Pick<AgentToolResult<unknown>, "content">,
+): string {
   return result.content
     .filter(
       (block): block is { type: "text"; text: string } =>
@@ -805,7 +963,10 @@ function textContent(result: Pick<AgentToolResult<unknown>, "content">): string 
     .join("");
 }
 
-function normalizeResult(result: BashResult, exitCode: number): ReadonlyBashResult {
+function normalizeResult(
+  result: BashResult,
+  exitCode: number,
+): ReadonlyBashResult {
   const stdout = textContent(result);
   return {
     ...result,
@@ -829,12 +990,17 @@ function resultWithVisibleExitCode(result: ReadonlyBashResult): BashResult {
     ...result,
     content: [
       ...result.content,
-      { type: "text", text: `${textContent(result) ? "\n\n" : ""}${statusText}` },
+      {
+        type: "text",
+        text: `${textContent(result) ? "\n\n" : ""}${statusText}`,
+      },
     ],
   };
 }
 
-function commandExitFromError(error: unknown): { output: string; exitCode: number } | undefined {
+function commandExitFromError(
+  error: unknown,
+): { output: string; exitCode: number } | undefined {
   if (!(error instanceof Error)) return undefined;
   const match = error.message.match(/\n\nCommand exited with code (\d+)$/);
   if (!match) return undefined;
@@ -910,7 +1076,9 @@ export default function readonlyBash(pi: ExtensionAPI): void {
       const timeout = params.timeout ?? DEFAULT_READONLY_BASH_TIMEOUT_SECONDS;
       const effectiveCwd = params.cwd ? resolve(ctx.cwd, params.cwd) : ctx.cwd;
       const bash = createBashToolDefinition(effectiveCwd);
-      const onBashUpdate: AgentToolUpdateCallback<BashToolDetails | undefined> | undefined = onUpdate
+      const onBashUpdate:
+        | AgentToolUpdateCallback<BashToolDetails | undefined>
+        | undefined = onUpdate
         ? (partialResult) => onUpdate(normalizeResult(partialResult, 0))
         : undefined;
 
@@ -928,7 +1096,9 @@ export default function readonlyBash(pi: ExtensionAPI): void {
         if (!commandExit) throw error;
         return normalizeResult(
           {
-            content: [{ type: "text", text: commandExit.output || "(no output)" }],
+            content: [
+              { type: "text", text: commandExit.output || "(no output)" },
+            ],
             details: undefined,
           },
           commandExit.exitCode,
@@ -937,4 +1107,3 @@ export default function readonlyBash(pi: ExtensionAPI): void {
     },
   });
 }
-
