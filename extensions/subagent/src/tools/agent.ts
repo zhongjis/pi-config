@@ -181,16 +181,22 @@ function getResultText(result: AgentToolResult<AgentDetails>): string {
     .join("\n");
 }
 
-function getStatusSummary(details: AgentDetails, isPartial?: boolean): string {
-  if (isPartial) return details.activity ?? "thinking";
-  if (details.status === "running") return details.activity ?? "thinking";
-  if (details.status === "background") return details.agentId ? `running in background (${details.agentId})` : "running in background";
+function getStatusSummary(details: AgentDetails): string {
+  if (details.status === "background") return "started";
   if (details.status === "steered") return "completed (turn limit)";
-  if (details.status === "aborted") return "aborted (max turns exceeded)";
-  if (details.status === "error") return details.error ? `error: ${details.error.split("\n")[0]}` : "error";
-  if (details.status === "stopped") return "stopped";
-  if (details.status === "queued") return "queued";
-  return "completed";
+  if (details.status === "aborted") return "aborted";
+  if (details.status === "error") return "error";
+  return details.status;
+}
+
+function getFirstContentLine(text: string): string | undefined {
+  return text.split("\n").map(line => line.trim()).find(Boolean);
+}
+
+function getActivitySummary(details: AgentDetails, isPartial?: boolean): string | undefined {
+  if (!isPartial && details.status !== "running") return undefined;
+  const activity = details.activity?.trim();
+  return activity && activity !== "thinking" ? activity : undefined;
 }
 
 function getModelSummary(details: AgentDetails): string | undefined {
@@ -201,9 +207,11 @@ function getModelSummary(details: AgentDetails): string | undefined {
 }
 
 function getToolsSummary(details: AgentDetails): string | undefined {
-  const parts = [`${details.toolUses ?? 0}`];
-  if (details.tokens) parts.push(`context ${details.tokens}`);
-  return parts.join(" · ");
+  return details.toolUses && details.toolUses > 0 ? `${details.toolUses}` : undefined;
+}
+
+function getContextSummary(details: AgentDetails): string | undefined {
+  return details.tokens?.trim() || undefined;
 }
 
 function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: string) => string }): Text {
@@ -232,12 +240,23 @@ export function renderAgentToolResult(
   const details = result.details as AgentDetails | undefined;
   if (!details) return new Text(rawText, 0, 0);
 
-  const lines = [`status: ${getStatusSummary(details, options.isPartial)}`];
+  const lines = [`status: ${getStatusSummary(details)}`];
+  const activitySummary = getActivitySummary(details, options.isPartial);
+  if (activitySummary) lines.push(`activity: ${activitySummary}`);
+  if ((details.status === "background" || details.status === "queued") && details.agentId) {
+    lines.push(`agent: ${details.agentId}`);
+    lines.push("next: get_subagent_result wait:false");
+  }
   const modelSummary = getModelSummary(details);
   if (modelSummary) lines.push(`model: ${modelSummary}`);
   const toolsSummary = getToolsSummary(details);
   if (toolsSummary) lines.push(`tools: ${toolsSummary}`);
-  if (details.durationMs != null && details.status !== "running") lines.push(`duration: ${formatMs(details.durationMs)}`);
+  const contextSummary = getContextSummary(details);
+  if (contextSummary) lines.push(`context: ${contextSummary}`);
+  const resultPreview = getFirstContentLine(rawText);
+  if (["completed", "steered", "stopped", "aborted"].includes(details.status) && resultPreview) lines.push(`result: ${resultPreview}`);
+  if (details.status === "error" && details.error) lines.push(`error: ${details.error.split("\n")[0]}`);
+  if (details.durationMs != null && details.durationMs > 0 && details.status !== "running" && details.status !== "background" && details.status !== "queued") lines.push(`duration: ${formatMs(details.durationMs)}`);
   return renderSummaryLines(lines, theme);
 }
 
@@ -519,7 +538,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           `\nYou will be notified when this agent completes.\n` +
           `Actively supervise it with get_subagent_result, steer_subagent, and resume as needed.\n` +
           `Do not duplicate this agent's work or leave it unattended for long.`,
-          { ...detailBase, toolUses: 0, tokens: "", durationMs: 0, status: "background" as const, agentId: id },
+          { ...detailBase, toolUses: 0, tokens: "", durationMs: 0, status: isQueued ? "queued" as const : "background" as const, agentId: id },
         );
       }
 

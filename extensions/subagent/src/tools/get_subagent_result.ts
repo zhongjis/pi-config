@@ -28,6 +28,7 @@ type ResultSummary = {
   tokens?: string;
   duration?: string;
   description?: string;
+  activity?: string;
   resultPreview?: string;
   error?: string;
 };
@@ -57,6 +58,10 @@ function parseTypeLine(line: string | undefined, summary: ResultSummary): void {
   }
 }
 
+function isBoilerplateLine(line: string): boolean {
+  return line.startsWith("Agent is still running.") || line.startsWith("Agent is queued and has not started yet.");
+}
+
 function getBodyPreview(text: string): string | undefined {
   const sections = text.split(/\n\n+/);
   let body = sections.slice(1).join("\n\n").trim();
@@ -64,13 +69,14 @@ function getBodyPreview(text: string): string | undefined {
   if (body.startsWith("Turns:")) {
     body = body.split(/\n\n+/).slice(1).join("\n\n").trim();
   }
-  return body.split("\n").find(line => line.trim())?.trim();
+  return body.split("\n").map(line => line.trim()).find(line => line && !isBoilerplateLine(line));
 }
 
 function parseResultSummary(text: string): ResultSummary {
   const summary: ResultSummary = {};
   summary.agentId = getHeaderValue(text, "Agent");
   summary.description = getHeaderValue(text, "Description");
+  summary.activity = getHeaderValue(text, "Current activity");
   parseTypeLine(text.split("\n").find(line => line.startsWith("Type: ")), summary);
   summary.resultPreview = getBodyPreview(text);
 
@@ -78,6 +84,19 @@ function parseResultSummary(text: string): ResultSummary {
     summary.error = text.split("\n").find(line => line.trim())?.trim();
   }
   return summary;
+}
+
+function isZeroStat(value: string | undefined): boolean {
+  return value === "0" || value === "0.0";
+}
+
+function isZeroDuration(value: string | undefined): boolean {
+  return value ? /^0(?:\.0)?s(?:\s|$)/.test(value) : false;
+}
+
+function getStatusSummary(status: string | undefined): string | undefined {
+  if (status === "steered") return "completed (turn limit)";
+  return status;
 }
 
 function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: string) => string }): Text {
@@ -108,13 +127,16 @@ export function renderGetSubagentResult(
   if (summary.error) return renderSummaryLines([`error: ${summary.error}`], theme);
 
   const lines: string[] = [];
-  if (summary.status) lines.push(`status: ${summary.status}`);
+  const status = getStatusSummary(summary.status);
+  if (status) lines.push(`status: ${status}`);
+  if ((summary.status === "running" || summary.status === "queued") && summary.activity) lines.push(`activity: ${summary.activity}`);
   if (summary.agentType) lines.push(`agent: ${summary.agentType}`);
-  const toolParts = [summary.toolUses, summary.tokens ? `context ${summary.tokens}` : undefined].filter(Boolean);
-  if (toolParts.length > 0) lines.push(`tools: ${toolParts.join(" · ")}`);
-  if (summary.turns) lines.push(`turns: ${summary.turns}`);
-  if (summary.duration) lines.push(`duration: ${summary.duration}`);
+  if (summary.toolUses && !isZeroStat(summary.toolUses)) lines.push(`tools: ${summary.toolUses}`);
+  if (summary.tokens) lines.push(`context: ${summary.tokens}`);
+  if (summary.turns && !isZeroStat(summary.turns)) lines.push(`turns: ${summary.turns}`);
+  if (summary.duration && !isZeroDuration(summary.duration)) lines.push(`duration: ${summary.duration}`);
   if (summary.resultPreview) lines.push(`result: ${summary.resultPreview}`);
+  if ((summary.status === "running" || summary.status === "queued") && !summary.resultPreview) lines.push("next: wait true or check back later");
   return renderSummaryLines(lines.length > 0 ? lines : ["status: checked"], theme);
 }
 

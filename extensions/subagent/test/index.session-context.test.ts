@@ -485,7 +485,8 @@ describe("subagent session UI rebinding", () => {
     const collapsed = renderText(agentTool.renderResult(result, { expanded: false, isPartial: false }, plainTheme));
     expect(collapsed).toContain("├─ status: completed");
     expect(collapsed).toContain("├─ model: ↻3≤10");
-    expect(collapsed).toContain("├─ tools: 2 · context 9.8k");
+    expect(collapsed).toContain("├─ tools: 2");
+    expect(collapsed).toContain("├─ context: 9.8k");
     expect(collapsed).toContain("└─ app.tools.expand to expand full result");
     expect(collapsed).not.toContain("Agent Patch renderer");
     expect(collapsed).not.toContain("Detailed result");
@@ -497,7 +498,9 @@ describe("subagent session UI rebinding", () => {
       content: [{ type: "text", text: "background" }],
       details: { ...details, status: "background", agentId: "agent-bg", durationMs: 0 },
     }, { expanded: false, isPartial: false }, plainTheme));
-    expect(background).toContain("├─ status: running in background (agent-bg)");
+    expect(background).toContain("├─ status: started");
+    expect(background).toContain("├─ agent: agent-bg");
+    expect(background).toContain("├─ next: get_subagent_result wait:false");
   });
 
   it("uses RenderScheduler cadence for foreground progress and flushes state boundaries", async () => {
