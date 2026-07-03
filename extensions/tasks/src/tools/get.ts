@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { filterBlockers } from "../../../lib/blocker.js";
 import { textResult } from "../lifecycle/store-glue.js";
+import { renderTaskToolCall, renderTaskToolResult } from "./rendering.js";
 import type { TaskToolDeps } from "./types.js";
 
 export function registerGetTool({ pi, runtime }: TaskToolDeps) {
@@ -31,6 +32,13 @@ Returns full task details:
     parameters: Type.Object({
       taskId: Type.String({ description: "The ID of the task to retrieve" }),
     }),
+
+    renderCall(args, theme) {
+      return renderTaskToolCall("TaskGet", args, theme);
+    },
+    renderResult(result, options, theme, context) {
+      return renderTaskToolResult("TaskGet", result, options, theme, context);
+    },
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const task = runtime.store.get(params.taskId);

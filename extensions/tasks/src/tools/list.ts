@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { filterBlockers } from "../../../lib/blocker.js";
 import { TASK_STATUS_ORDER } from "../constants.js";
 import { textResult } from "../lifecycle/store-glue.js";
+import { renderTaskToolCall, renderTaskToolResult } from "./rendering.js";
 import type { TaskToolDeps } from "./types.js";
 
 export function registerListTool({ pi, runtime }: TaskToolDeps) {
@@ -29,6 +30,13 @@ Returns a summary of each task:
 
 Use TaskGet with a specific task ID to view full details including description and comments.`,
     parameters: Type.Object({}),
+
+    renderCall(args, theme) {
+      return renderTaskToolCall("TaskList", args, theme);
+    },
+    renderResult(result, options, theme, context) {
+      return renderTaskToolResult("TaskList", result, options, theme, context);
+    },
 
     execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
       const tasks = runtime.store.list();

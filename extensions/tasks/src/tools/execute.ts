@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { runSpawn } from "../lifecycle/apply-commands.js";
 import { claimBlockerMessage, getClaimBlockerFailure, updateTask, warnClaimRejected } from "../lifecycle/fsm-dispatch.js";
 import { textResult } from "../lifecycle/store-glue.js";
+import { renderTaskToolCall, renderTaskToolResult } from "./rendering.js";
 import type { TaskToolDeps } from "./types.js";
 
 export function registerExecuteTool({ pi, runtime, bridge }: TaskToolDeps) {
@@ -31,6 +32,13 @@ export function registerExecuteTool({ pi, runtime, bridge }: TaskToolDeps) {
       model: Type.Optional(Type.String({ description: "Model override for agents" })),
       max_turns: Type.Optional(Type.Number({ description: "Max turns per agent", minimum: 1 })),
     }),
+
+    renderCall(args, theme) {
+      return renderTaskToolCall("TaskExecute", args, theme);
+    },
+    renderResult(result, options, theme, context) {
+      return renderTaskToolResult("TaskExecute", result, options, theme, context);
+    },
 
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       if (!runtime.subagentsAvailable) {

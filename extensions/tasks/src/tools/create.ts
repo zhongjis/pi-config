@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { buildTaskMetadata, type SessionStateContext, textResult } from "../lifecycle/store-glue.js";
+import { renderTaskToolCall, renderTaskToolResult } from "./rendering.js";
 import type { TaskToolDeps } from "./types.js";
 
 export function registerCreateTool({ pi, runtime }: TaskToolDeps) {
@@ -59,6 +60,13 @@ All tasks are created with status \`pending\`.
       agentType: Type.Optional(Type.String({ description: "Agent type for subagent execution (e.g., 'chengfeng' or another available custom subagent type). Tasks with agentType can be started via TaskExecute." })),
       metadata: Type.Optional(Type.Record(Type.String(), Type.Any(), { description: "Arbitrary metadata to attach to the task" })),
     }),
+
+    renderCall(args, theme) {
+      return renderTaskToolCall("TaskCreate", args, theme);
+    },
+    renderResult(result, options, theme, context) {
+      return renderTaskToolResult("TaskCreate", result, options, theme, context);
+    },
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       runtime.autoClear.resetBatchCountdown();

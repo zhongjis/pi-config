@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { textResult } from "../lifecycle/store-glue.js";
+import { renderTaskToolCall, renderTaskToolResult } from "./rendering.js";
 import type { TaskToolDeps } from "./types.js";
 
 export function registerStopTool({ pi, runner }: TaskToolDeps) {
@@ -15,6 +16,13 @@ export function registerStopTool({ pi, runner }: TaskToolDeps) {
       task_id: Type.Optional(Type.String({ description: "The ID of the background task to stop" })),
       shell_id: Type.Optional(Type.String({ description: "Deprecated: use task_id instead" })),
     }),
+
+    renderCall(args, theme) {
+      return renderTaskToolCall("TaskStop", args, theme);
+    },
+    renderResult(result, options, theme, context) {
+      return renderTaskToolResult("TaskStop", result, options, theme, context);
+    },
 
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const taskId = params.task_id ?? params.shell_id;

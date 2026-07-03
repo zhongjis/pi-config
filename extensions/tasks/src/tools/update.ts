@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { type TaskUpdateFields, updateTask } from "../lifecycle/fsm-dispatch.js";
 import { sanitizeUserMetadata, textResult } from "../lifecycle/store-glue.js";
+import { renderTaskToolCall, renderTaskToolResult } from "./rendering.js";
 import type { TaskToolDeps } from "./types.js";
 
 export function registerUpdateTool({ pi, runtime }: TaskToolDeps) {
@@ -100,6 +101,13 @@ Set up task dependencies:
       addBlocks: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that this task blocks" })),
       addBlockedBy: Type.Optional(Type.Array(Type.String(), { description: "Task IDs that block this task" })),
     }),
+
+    renderCall(args, theme) {
+      return renderTaskToolCall("TaskUpdate", args, theme);
+    },
+    renderResult(result, options, theme, context) {
+      return renderTaskToolResult("TaskUpdate", result, options, theme, context);
+    },
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { taskId, ...fields } = params;
