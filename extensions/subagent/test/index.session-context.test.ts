@@ -37,7 +37,7 @@ class MockAgentManager {
   clearCompleted = vi.fn();
   resetLifetimeCost = vi.fn();
   getLifetimeCost = vi.fn(() => 0);
-  listAgents = vi.fn(() => []);
+  listAgents = vi.fn((): any[] => []);
   abortAll = vi.fn();
   dispose = vi.fn();
   waitForAll = vi.fn();
@@ -77,7 +77,7 @@ vi.mock("../src/agent-manager.js", () => ({
     clearCompleted = vi.fn();
     resetLifetimeCost = vi.fn();
     getLifetimeCost = vi.fn(() => 0);
-    listAgents = vi.fn(() => []);
+    listAgents = vi.fn((): any[] => []);
     abortAll = vi.fn();
     dispose = vi.fn();
     waitForAll = vi.fn();
@@ -124,6 +124,7 @@ vi.mock("../src/agent-types.js", () => ({
   vi.mock("@earendil-works/pi-coding-agent", () => ({
   defineTool: (opts: any) => opts,
   getAgentDir: vi.fn(() => "/tmp/mock-agent-dir"),
+  keyHint: (_keybinding: string, description: string) => `${_keybinding} ${description}`,
 }));
 
 
@@ -461,7 +462,7 @@ describe("subagent session UI rebinding", () => {
     expect(expanded).toContain("  session: /tmp/session.jsonl");
   });
 
-  it("renders Agent results via summary renderer while preserving expanded details and background line", async () => {
+  it("renders Agent results with collapsed keyword summary and expanded raw text", async () => {
     const mock = createMockPi();
     await initExtension(mock);
     const agentTool = mock.registeredTools.get("Agent");
@@ -482,20 +483,21 @@ describe("subagent session UI rebinding", () => {
     };
 
     const collapsed = renderText(agentTool.renderResult(result, { expanded: false, isPartial: false }, plainTheme));
-    expect(collapsed).toContain("✓ Agent Patch renderer · ↻3≤10 · 2 tools · 9.8k · 1.2s");
-    expect(collapsed).toContain("└─ Done");
+    expect(collapsed).toContain("├─ status: completed");
+    expect(collapsed).toContain("├─ model: ↻3≤10");
+    expect(collapsed).toContain("├─ tools: 2 · context 9.8k");
+    expect(collapsed).toContain("└─ app.tools.expand to expand full result");
+    expect(collapsed).not.toContain("Agent Patch renderer");
     expect(collapsed).not.toContain("Detailed result");
 
     const expanded = renderText(agentTool.renderResult(result, { expanded: true, isPartial: false }, plainTheme));
-    expect(expanded).toContain("✓ Agent Patch renderer · ↻3≤10 · 2 tools · 9.8k · 1.2s");
-    expect(expanded).toContain("  Agent completed in 1.2s.");
-    expect(expanded).toContain("  Detailed result");
+    expect(expanded).toBe("Agent completed in 1.2s.\n\nDetailed result");
 
     const background = renderText(agentTool.renderResult({
       content: [{ type: "text", text: "background" }],
       details: { ...details, status: "background", agentId: "agent-bg", durationMs: 0 },
     }, { expanded: false, isPartial: false }, plainTheme));
-    expect(background).toBe("└─ Running in background (ID: agent-bg)");
+    expect(background).toContain("├─ status: running in background (agent-bg)");
   });
 
   it("uses RenderScheduler cadence for foreground progress and flushes state boundaries", async () => {

@@ -6,7 +6,7 @@
  */
 
 import { join } from "node:path";
-import { type AgentToolResult, type ExtensionContext, defineTool, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { type AgentToolResult, type ExtensionContext, defineTool, getAgentDir, keyHint } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { getDefaultMaxTurns, normalizeMaxTurns } from "../agent-runner.js";
@@ -35,8 +35,8 @@ import {
   getPromptModeLabel,
 } from "../ui/agent-widget.js";
 import { RenderScheduler } from "../ui/render-scheduler.js";
-import { renderAgentSummary } from "../ui-wiring/renderers.js";
 import type { AgentRecord, SubagentType } from "../types.js";
+import { formatTurns } from "../../../lib/widget-style.js";
 
 const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
 
@@ -174,6 +174,73 @@ function buildDetails(
   };
 }
 
+function getResultText(result: AgentToolResult<AgentDetails>): string {
+  return result.content
+    .filter(part => part.type === "text")
+    .map(part => part.text ?? "")
+    .join("\n");
+}
+
+function getStatusSummary(details: AgentDetails, isPartial?: boolean): string {
+  if (isPartial) return details.activity ?? "thinking";
+  if (details.status === "running") return details.activity ?? "thinking";
+  if (details.status === "background") return details.agentId ? `running in background (${details.agentId})` : "running in background";
+  if (details.status === "steered") return "completed (turn limit)";
+  if (details.status === "aborted") return "aborted (max turns exceeded)";
+  if (details.status === "error") return details.error ? `error: ${details.error.split("\n")[0]}` : "error";
+  if (details.status === "stopped") return "stopped";
+  if (details.status === "queued") return "queued";
+  return "completed";
+}
+
+function getModelSummary(details: AgentDetails): string | undefined {
+  const tags = details.tags?.map(tag => tag.replace(/^thinking:\s*/, "thinking ")) ?? [];
+  const turns = details.turnCount != null ? formatTurns(details.turnCount, details.maxTurns) : undefined;
+  const parts = [details.modelName, ...tags, turns].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+function getToolsSummary(details: AgentDetails): string | undefined {
+  const parts = [`${details.toolUses ?? 0}`];
+  if (details.tokens) parts.push(`context ${details.tokens}`);
+  return parts.join(" · ");
+}
+
+function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: string) => string }): Text {
+  const allLines = [...lines, keyHint("app.tools.expand", "to expand full result")];
+  const rendered = allLines
+    .map((line, index) => `${index === allLines.length - 1 ? "└─" : "├─"} ${line}`)
+    .map(line => theme.fg("muted", line))
+    .join("\n");
+  return new Text(rendered, 0, 0);
+}
+
+export function renderAgentToolCall(args: { subagent_type?: string; description?: string }, theme: { fg: (color: any, text: string) => string; bold: (text: string) => string }): Text {
+  const displayName = args.subagent_type ? getDisplayName(args.subagent_type) : "Agent";
+  const desc = args.description ?? "";
+  return new Text("▸ " + theme.fg("toolTitle", theme.bold(displayName)) + (desc ? " · " + theme.fg("muted", desc) : ""), 0, 0);
+}
+
+export function renderAgentToolResult(
+  result: AgentToolResult<AgentDetails>,
+  options: { expanded?: boolean; isPartial?: boolean },
+  theme: { fg: (color: any, text: string) => string },
+): Text {
+  const rawText = getResultText(result);
+  if (options.expanded) return new Text(rawText, 0, 0);
+
+  const details = result.details as AgentDetails | undefined;
+  if (!details) return new Text(rawText, 0, 0);
+
+  const lines = [`status: ${getStatusSummary(details, options.isPartial)}`];
+  const modelSummary = getModelSummary(details);
+  if (modelSummary) lines.push(`model: ${modelSummary}`);
+  const toolsSummary = getToolsSummary(details);
+  if (toolsSummary) lines.push(`tools: ${toolsSummary}`);
+  if (details.durationMs != null && details.status !== "running") lines.push(`duration: ${formatMs(details.durationMs)}`);
+  return renderSummaryLines(lines, theme);
+}
+
 export function registerAgentTool(ctx: SubagentRuntimeContext): void {
   const {
     pi,
@@ -243,71 +310,11 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
     // ---- Custom rendering: Claude Code style ----
 
     renderCall(args, theme) {
-      const displayName = args.subagent_type ? getDisplayName(args.subagent_type) : "Agent";
-      const desc = args.description ?? "";
-      return new Text("▸ " + theme.fg("toolTitle", theme.bold(displayName)) + (desc ? "  " + theme.fg("muted", desc) : ""), 0, 0);
+      return renderAgentToolCall(args, theme);
     },
 
-    renderResult(result, { expanded, isPartial }, theme) {
-      const details = result.details as AgentDetails | undefined;
-      if (!details) {
-        const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-        return new Text(text, 0, 0);
-      }
-
-      // ---- While running (streaming) ----
-      if (isPartial || details.status === "running") {
-        return new Text(renderAgentSummary(details, {
-          durationMs: undefined,
-          resultPreview: details.activity ?? "thinking…",
-        }).join("\n"), 0, 0);
-      }
-
-      // ---- Background agent launched ----
-      if (details.status === "background") {
-        return new Text(theme.fg("dim", `└─ Running in background (ID: ${details.agentId})`), 0, 0);
-      }
-
-      // ---- Completed / Steered ----
-      if (details.status === "completed" || details.status === "steered") {
-        const isSteered = details.status === "steered";
-        const doneText = isSteered ? "Wrapped up (turn limit)" : "Done";
-        const lines = renderAgentSummary(details, {
-          resultPreview: expanded ? undefined : doneText,
-        });
-
-        if (expanded) {
-          const resultText = result.content[0]?.type === "text" ? result.content[0].text : "";
-          if (resultText) {
-            const resultLines = resultText.split("\n");
-            for (const l of resultLines.slice(0, 50)) {
-              lines.push(theme.fg("dim", `  ${l}`));
-            }
-            if (resultLines.length > 50) {
-              lines.push(theme.fg("muted", "  ... (use get_subagent_result with verbose for full output)"));
-            }
-          }
-        }
-
-        return new Text(lines.join("\n"), 0, 0);
-      }
-
-      // ---- Stopped (user-initiated abort) ----
-      if (details.status === "stopped") {
-        return new Text(renderAgentSummary(details, {
-          durationMs: undefined,
-          resultPreview: "Stopped",
-        }).join("\n"), 0, 0);
-      }
-
-      // ---- Error / Aborted (hard max_turns) ----
-      const resultPreview = details.status === "error"
-        ? `Error: ${details.error ?? "unknown"}`
-        : "Aborted (max turns exceeded)";
-      return new Text(renderAgentSummary(details, {
-        durationMs: undefined,
-        resultPreview,
-      }).join("\n"), 0, 0);
+    renderResult(result, options, theme) {
+      return renderAgentToolResult(result as AgentToolResult<AgentDetails>, options, theme);
     },
 
     // ---- Execute ----

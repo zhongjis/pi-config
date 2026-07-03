@@ -2,13 +2,121 @@
  * `get_subagent_result` tool — check status / retrieve results from a background agent.
  */
 
-import { defineTool } from "@earendil-works/pi-coding-agent";
+import { defineTool, keyHint, type AgentToolResult } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { getAgentConversation } from "../agent-runner.js";
 import { getRecoveredResultText } from "../result-recovery.js";
 import { describeActivity, formatDuration, getDisplayName } from "../ui/agent-widget.js";
 import { safeFormatTokens, textResult } from "../lifecycle/supervision.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
+
+type GetSubagentResultArgs = {
+  agent_id: string;
+  wait?: boolean;
+  verbose?: boolean;
+};
+
+type TextToolResult = AgentToolResult<unknown>;
+
+type ResultSummary = {
+  agentId?: string;
+  agentType?: string;
+  status?: string;
+  turns?: string;
+  toolUses?: string;
+  tokens?: string;
+  duration?: string;
+  description?: string;
+  resultPreview?: string;
+  error?: string;
+};
+
+function getResultText(result: TextToolResult): string {
+  return result.content
+    .filter(part => part.type === "text")
+    .map(part => part.text ?? "")
+    .join("\n");
+}
+
+function getHeaderValue(text: string, label: string): string | undefined {
+  const match = text.match(new RegExp(`^${label}: (.+)$`, "m"));
+  return match?.[1]?.trim();
+}
+
+function parseTypeLine(line: string | undefined, summary: ResultSummary): void {
+  if (!line?.startsWith("Type: ")) return;
+  const parts = line.split(" | ").map(part => part.trim()).filter(Boolean);
+  for (const part of parts) {
+    if (part.startsWith("Type: ")) summary.agentType = part.slice("Type: ".length);
+    else if (part.startsWith("Status: ")) summary.status = part.slice("Status: ".length);
+    else if (part.startsWith("Turns: ")) summary.turns = part.slice("Turns: ".length);
+    else if (part.startsWith("Tool uses: ")) summary.toolUses = part.slice("Tool uses: ".length);
+    else if (part.startsWith("Duration: ")) summary.duration = part.slice("Duration: ".length);
+    else if (/^[\d.]+[kM]?$/.test(part)) summary.tokens = part;
+  }
+}
+
+function getBodyPreview(text: string): string | undefined {
+  const sections = text.split(/\n\n+/);
+  let body = sections.slice(1).join("\n\n").trim();
+  if (!body) return undefined;
+  if (body.startsWith("Turns:")) {
+    body = body.split(/\n\n+/).slice(1).join("\n\n").trim();
+  }
+  return body.split("\n").find(line => line.trim())?.trim();
+}
+
+function parseResultSummary(text: string): ResultSummary {
+  const summary: ResultSummary = {};
+  summary.agentId = getHeaderValue(text, "Agent");
+  summary.description = getHeaderValue(text, "Description");
+  parseTypeLine(text.split("\n").find(line => line.startsWith("Type: ")), summary);
+  summary.resultPreview = getBodyPreview(text);
+
+  if (!summary.agentId && text.trim()) {
+    summary.error = text.split("\n").find(line => line.trim())?.trim();
+  }
+  return summary;
+}
+
+function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: string) => string }): Text {
+  const allLines = [...lines, keyHint("app.tools.expand", "to expand full result")];
+  const rendered = allLines
+    .map((line, index) => `${index === allLines.length - 1 ? "└─" : "├─"} ${line}`)
+    .map(line => theme.fg("muted", line))
+    .join("\n");
+  return new Text(rendered, 0, 0);
+}
+
+export function renderGetSubagentResultCall(args: GetSubagentResultArgs, theme: { fg: (color: any, text: string) => string; bold: (text: string) => string }): Text {
+  const flags = [args.wait ? "wait" : undefined, args.verbose ? "verbose" : undefined].filter(Boolean);
+  const suffix = [args.agent_id, ...flags].filter(Boolean).join(" · ");
+  return new Text(`▸ ${theme.fg("toolTitle", theme.bold("get_subagent_result"))}${suffix ? ` · ${theme.fg("muted", suffix)}` : ""}`, 0, 0);
+}
+
+export function renderGetSubagentResult(
+  result: TextToolResult,
+  options: { expanded?: boolean; isPartial?: boolean },
+  theme: { fg: (color: any, text: string) => string },
+): Text {
+  const rawText = getResultText(result);
+  if (options.expanded) return new Text(rawText, 0, 0);
+  if (options.isPartial) return renderSummaryLines(["status: checking"], theme);
+
+  const summary = parseResultSummary(rawText);
+  if (summary.error) return renderSummaryLines([`error: ${summary.error}`], theme);
+
+  const lines: string[] = [];
+  if (summary.status) lines.push(`status: ${summary.status}`);
+  if (summary.agentType) lines.push(`agent: ${summary.agentType}`);
+  const toolParts = [summary.toolUses, summary.tokens ? `context ${summary.tokens}` : undefined].filter(Boolean);
+  if (toolParts.length > 0) lines.push(`tools: ${toolParts.join(" · ")}`);
+  if (summary.turns) lines.push(`turns: ${summary.turns}`);
+  if (summary.duration) lines.push(`duration: ${summary.duration}`);
+  if (summary.resultPreview) lines.push(`result: ${summary.resultPreview}`);
+  return renderSummaryLines(lines.length > 0 ? lines : ["status: checked"], theme);
+}
 
 export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void {
   const { pi, manager, agentActivity, getAbortSignal, bindTurnAbortSignal, waitForAgentCompletionWithSupervision } = ctx;
@@ -33,6 +141,12 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
         }),
       ),
     }),
+    renderCall(args, theme) {
+      return renderGetSubagentResultCall(args, theme);
+    },
+    renderResult(result, options, theme) {
+      return renderGetSubagentResult(result as TextToolResult, options, theme);
+    },
     execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
       const record = manager.getRecord(params.agent_id);
       if (!record) {
