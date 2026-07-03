@@ -168,3 +168,46 @@ describe("AgentWidget render scheduling", () => {
     expect(tui.requestRender).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("AgentWidget idle coloring", () => {
+  function renderRunning(lastProgressAt: number): string[] {
+    const record = {
+      id: "a1",
+      type: "general-purpose",
+      status: "running",
+      description: "Investigate",
+      toolUses: 0,
+      startedAt: Date.now(),
+    };
+    const activity = {
+      activeTools: new Map<string, string>(),
+      toolUses: 0,
+      tokens: "",
+      responseText: "",
+      turnCount: 1,
+      lastProgressAt,
+    };
+    const manager = { listAgents: vi.fn(() => [record]) };
+    const widget = new AgentWidget(manager as never, new Map([["a1", activity as never]]));
+    const uiCtx = { setStatus: vi.fn(), setWidget: vi.fn() };
+    widget.setUICtx(uiCtx);
+    widget.update();
+    const widgetFactory = uiCtx.setWidget.mock.calls[0][1];
+    const tui = { terminal: { columns: 200 }, requestRender: vi.fn() };
+    const theme = { fg: (color: string, text: string) => `<${color}>${text}</${color}>`, bold: (t: string) => t };
+    return widgetFactory(tui, theme).render();
+  }
+
+  it("colors a fresh running agent's row accent", () => {
+    const lines = renderRunning(Date.now());
+    const header = lines.find(l => l.includes("Investigate"));
+    expect(header).toContain("<accent>");
+  });
+
+  it("dims a running agent's row after the idle threshold", () => {
+    const lines = renderRunning(Date.now() - 61_000);
+    const header = lines.find(l => l.includes("Investigate"));
+    expect(header).toBeDefined();
+    expect(header).not.toContain("<accent>");
+  });
+});

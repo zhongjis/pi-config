@@ -25,6 +25,9 @@ export const SPINNER = STYLE_SPINNER;
 /** Minimum time between animation-only renders while active agents are unchanged. */
 const ACTIVE_RENDER_CADENCE_MS = 150;
 
+/** Dim a running agent's row after this much idle time (no progress signal) — a quiet "stuck" indicator. */
+const AGENT_IDLE_DIM_AFTER_MS = 5_000;
+
 /** Statuses that indicate an error/non-success outcome (used for linger behavior and icon rendering). */
 export const ERROR_STATUSES = new Set(["error", "aborted", "steered", "stopped"]);
 
@@ -329,9 +332,11 @@ export class AgentWidget {
         durationMs: Date.now() - a.startedAt,
       });
 
+      const idleMs = Date.now() - (bg?.lastProgressAt ?? a.startedAt);
+      const rowColor = idleMs >= AGENT_IDLE_DIM_AFTER_MS ? "dim" : "accent";
       runningLines.push([
-        truncate(`${theme.fg("dim", "├─")} ${summaryLines[0] ?? ""}`),
-        truncate(`${theme.fg("dim", "│  ")}${summaryLines[1] ?? "└─ thinking…"}`),
+        truncate(`${theme.fg("dim", "├─")} ${theme.fg(rowColor, summaryLines[0] ?? "")}`),
+        truncate(`${theme.fg("dim", "│  ")}${theme.fg("dim", summaryLines[1] ?? "└─ thinking…")}`),
       ]);
     }
 
