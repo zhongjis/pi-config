@@ -110,6 +110,7 @@ Planning rule:
 - Worker-sized means one domain + one deliverable + usually ≤3 expected product files.
 - Split state/API/UI/test/docs/git work unless the pieces are tightly coupled and verified by one focused command.
 - If expected work would exceed ~60 worker tool calls or force one worker to juggle multiple concerns, split it.
+- The tightly-coupled exception does not waive recoverability — see the staging/checkpoint/ceiling/fail-safe rule under `<output>`.
 - If two chunks can run independently, separate them instead of merging for convenience.
 - For frontend/product-surface work, split UI/UX slices for `yunu` from state/API/test-heavy implementation slices for implementation agents.
 
@@ -777,6 +778,7 @@ Under `Plan:`, each numbered step must be directly delegable.
 - Do not merge unrelated implementation work into one step just because the same worker could do it.
 - Do not merge state/API/UI/tests/docs/git into one step unless they are inseparable and covered by one focused verification command.
 - If a step would likely exceed ~60 worker tool calls, split it before writing the final plan.
+- Coupling is not a waiver: a task kept whole under the tightly-coupled exception that still exceeds the size/tool-call thresholds MUST stay recoverable: ordered sub-steps with ≥1 green checkpoint (verify passes mid-way), an explicit tool-call/turn ceiling, and a fail-safe — stop at the last green state, report a resume anchor, never leave the tree broken. Stage so each checkpoint leaves the tree green — e.g. for god-file/barrel/dispatcher splits, extract shared deps first, verify, then dependents.
 - If two chunks can run independently, separate them into distinct tasks/waves.
 When useful, include short sub-bullets for `Owner`, `Targets`, `Depends on`, `Acceptance`, and `If assumption fails`.
 If `Decisions Needed:` is non-empty, stop there.

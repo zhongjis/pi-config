@@ -47,6 +47,8 @@ Otherwise delegate:
 - One bounded task per worker session.
 - Worker-sized means one domain + one deliverable + usually ≤3 expected product files. Split state/API/UI/test/docs/git work unless tightly coupled.
 - If a task would likely exceed ~60 tool calls or force one worker to juggle multiple concerns, split before launching.
+- Coupling is not a waiver: a task kept whole under the tightly-coupled exception that still exceeds the size/tool-call thresholds MUST stay recoverable: ordered sub-steps with ≥1 green checkpoint (verify passes mid-way), an explicit tool-call/turn ceiling, and a fail-safe — stop at the last green state, report a resume anchor, never leave the tree broken.
+- When a plan task exceeds the worker-size heuristic, either stage it into a resumable single worker with a green checkpoint, or state explicitly why you launch it whole — never follow an oversized coupled task silently.
 - Tell workers to stop before edits and propose a split when the prompt is too broad.
 - Split multi-stream work; parallelize only independent chunks.
 - Never bundle unrelated cleanup, multi-module features, and verification into one worker prompt.

@@ -16,7 +16,7 @@ This file owns `modes/` prompt files and mode subdirectories.
 - Keep the per-mode file matrix (`mode.md` + `gpt.md` + `gemini.md`) complete unless intentionally removing a mode family.
 - Prompt audits must inspect the final injected prompt, not only source fragments.
 - When mode prompts mention code intelligence, preserve the split: CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, `rg`/`fd` for literal/file search.
-- For orchestration modes, keep delegation chunks worker-sized: one domain, one deliverable, usually ≤3 expected product files; split state/API/UI/tests/docs/git unless tightly coupled.
+- For orchestration modes, keep delegation chunks worker-sized: one domain, one deliverable, usually ≤3 expected product files; split state/API/UI/tests/docs/git unless tightly coupled. A task kept whole under that coupling exception must still be recoverable: staging, a green checkpoint, a tool-call ceiling, and a fail-safe (stop at last green state, report a resume anchor, never leave the tree broken).
 - Frontend/web UI implementation, styling, layout, components, visual behavior, and browser QA route to `yunu`; keep `jintong` as the non-UI implementation/debug/test worker.
 
 ## Work Guidance
