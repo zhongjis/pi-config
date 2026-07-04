@@ -194,6 +194,7 @@ describe("ModeStateManager", () => {
 		state.cachedConfigs["fuxi:default"] = { body: "" };
 		state.cachedConfigs["houtu:default"] = { body: "" };
 		state.cachedConfigs["luban:default"] = { body: "" };
+		state.cachedConfigs["shennong:default"] = { body: "" };
 
 		const ctx = {
 			hasUI: false,
@@ -209,7 +210,84 @@ describe("ModeStateManager", () => {
 		await state.cycleMode(ctx as never);
 		expect(state.currentMode).toBe("luban");
 		await state.cycleMode(ctx as never);
+		expect(state.currentMode).toBe("shennong");
+		await state.cycleMode(ctx as never);
 		expect(state.currentMode).toBe("kuafu");
+	});
+
+	it("reloads resources when switching from luban to shennong (both gated)", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.currentMode = "luban";
+		state.cachedConfigs["shennong:default"] = { body: "" };
+		const reload = vi.fn(async () => {});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("shennong", ctx as never);
+
+		expect(reload).toHaveBeenCalledTimes(1);
+	});
+
+	it("reloads resources when switching from shennong to kuafu (gated → non-gated)", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.currentMode = "shennong";
+		state.cachedConfigs["kuafu:default"] = { body: "" };
+		const reload = vi.fn(async () => {});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("kuafu", ctx as never);
+
+		expect(reload).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not reload when switching kuafu to fuxi (neither gated)", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs["fuxi:default"] = { body: "" };
+		const reload = vi.fn(async () => {});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("fuxi", ctx as never);
+
+		expect(reload).not.toHaveBeenCalled();
+	});
+
+	it("does not reload on same-mode no-op", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs["luban:default"] = { body: "" };
+		state.currentMode = "luban";
+		const reload = vi.fn(async () => {});
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("luban", ctx as never);
+
+		expect(reload).not.toHaveBeenCalled();
 	});
 
 	it("filters active tools from builtin_tools and extension_tools", async () => {

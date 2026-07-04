@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Mode prompt definitions and model-family prompt variants for Kua Fu, Fu Xi, Hou Tu, and Lu Ban.
+Mode prompt definitions and model-family prompt variants for Kua Fu, Fu Xi, Hou Tu, Lu Ban, and Shen Nong.
 
 ## Ownership
 
@@ -13,7 +13,7 @@ This file owns `modes/` prompt files and mode subdirectories.
 - `mode.md` carries canonical frontmatter plus default prompt body.
 - `gpt.md` is a body-only replacement; it inherits `mode.md` frontmatter and must be self-contained.
 - `gemini.md` is a body-only corrective overlay on the default prompt body.
-- Keep the four-mode file matrix complete unless intentionally removing a mode family.
+- Keep the per-mode file matrix (`mode.md` + `gpt.md` + `gemini.md`) complete unless intentionally removing a mode family.
 - Prompt audits must inspect the final injected prompt, not only source fragments.
 - When mode prompts mention code intelligence, preserve the split: CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, `rg`/`fd` for literal/file search.
 - For orchestration modes, keep delegation chunks worker-sized: one domain, one deliverable, usually ≤3 expected product files; split state/API/UI/tests/docs/git unless tightly coupled.
@@ -39,3 +39,4 @@ This file owns `modes/` prompt files and mode subdirectories.
 | `houtu/` | this file | Hou Tu execution mode prompt variants. |
 | `kuafu/` | this file | Kua Fu build-orchestrator mode prompt variants. |
 | `luban/` | this file | Lu Ban skill-first mode prompt variants. |
+| `shennong/` | this file | Shen Nong product-manager mode prompt variants. |

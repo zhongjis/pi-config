@@ -11,14 +11,14 @@ function colored(mode: Mode, text: string): string {
 export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager): void {
 	// CLI flag
 	pi.registerFlag("mode", {
-		description: "Agent mode: kuafu (build), fuxi (plan), houtu (execute), luban",
+		description: "Agent mode: kuafu (build), fuxi (plan), houtu (execute), luban, shennong (pm)",
 		type: "string",
 		default: "kuafu",
 	});
 
 	// /mode command
 	pi.registerCommand("mode", {
-		description: "Switch agent mode (kuafu/fuxi/houtu/luban)",
+		description: "Switch agent mode (kuafu/fuxi/houtu/luban/shennong)",
 		getArgumentCompletions: (prefix) => {
 			const query = prefix.trim().toLowerCase();
 			const filtered = MODES

@@ -71,7 +71,7 @@ function createMockPi() {
 }
 
 type PromptFamily = "default" | "gpt" | "gemini";
-type TestMode = "kuafu" | "fuxi" | "houtu" | "luban";
+type TestMode = "kuafu" | "fuxi" | "houtu" | "luban" | "shennong";
 
 type PromptConfig = {
 	body: string;
@@ -79,7 +79,7 @@ type PromptConfig = {
 	promptMode?: "replace" | "append";
 };
 
-const ALL_TEST_MODES: TestMode[] = ["kuafu", "fuxi", "houtu", "luban"];
+const ALL_TEST_MODES: TestMode[] = ["kuafu", "fuxi", "houtu", "luban", "shennong"];
 
 const MODE_PROMPT_FILES: Record<PromptFamily, string> = {
 	default: "mode.md",
@@ -141,6 +141,13 @@ const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
 		geminiOverlay: ["<LUBAN_GEMINI_CORRECTIVE_OVERLAY>", "Do not skip skill loading", "verify with readback"],
 		defaultOnlyInGptReplacement: "Consult the grain before the first cut",
 		overlayAnchor: "<LUBAN_GEMINI_CORRECTIVE_OVERLAY>",
+	},
+	shennong: {
+		default: ["No code, no implementation plans, no patching.", "Prioritization by LNO only", "Decision already made -> `to-prd` in place."],
+		gpt: ["PM-mode strategist for Pi decisions.", "One Leverage action max for next move", "Hand off with `/mode kuafu`."],
+		geminiOverlay: ["<SHENNONG_GEMINI_CORRECTIVE_OVERLAY>", "Use Shen Nong base behavior with strict PM correction:"],
+		defaultOnlyInGptReplacement: "You think in Shreyas-style PM mode:",
+		overlayAnchor: "<SHENNONG_GEMINI_CORRECTIVE_OVERLAY>",
 	},
 };
 

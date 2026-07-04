@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
-import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
+import { MODES, MODE_COLORS, MODE_META, RESET, SKILL_GATED_MODES } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
 import { getModePromptSource } from "../../lib/model-family.js";
 import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model.js";
@@ -170,7 +170,7 @@ export class ModeStateManager {
 		await this.applyMode(ctx);
 		this.persistState();
 		const reload = (ctx as ExtensionContext & { reload?: () => Promise<void> }).reload;
-		if ((previousMode === "luban") !== (mode === "luban") && typeof reload === "function") {
+		if (mode !== previousMode && (SKILL_GATED_MODES.has(previousMode) || SKILL_GATED_MODES.has(mode)) && typeof reload === "function") {
 			await reload();
 		}
 	}

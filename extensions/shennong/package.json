@@ -1,0 +1,16 @@
+{
+  "name": "@pi-config/shennong",
+  "private": true,
+  "type": "module",
+  "description": "Vendored PM skills gated to the shennong mode.",
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "piVendor": {
+    "upstream": "https://github.com/phuryn/pm-skills",
+    "commit": "18468a95b427e70e258b51389796367c6f684e7d",
+    "localTarget": "pm-skills",
+    "adaptedFor": "shennong PM mode"
+  }
+}

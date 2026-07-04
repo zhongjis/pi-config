@@ -146,8 +146,8 @@ Base mode body.`;
 		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
 	});
 
-	it("reads Houtu and Luban GPT/Gemini variant files when present", () => {
-		for (const mode of ["houtu", "luban"] as const) {
+	it("reads Houtu, Luban and Shennong GPT/Gemini variant files when present", () => {
+		for (const mode of ["houtu", "luban", "shennong"] as const) {
 			stubFiles({
 				[`${mode}/mode.md`]: `---
 prompt_mode: replace

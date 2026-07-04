@@ -82,7 +82,8 @@ Before registering any new tool, extension, or MCP server:
 | Code knowledge graph | `extensions/codegraph` |
 | Session handoff to new focused session | `extensions/handoff` |
 | Token-efficient background task execution | `extensions/boomerang` |
-| Agent modes (kuafu / fuxi / houtu / etc.) | `extensions/modes` |
+| Agent modes (kuafu / fuxi / houtu / luban / shennong) | `extensions/modes` |
+| Product-manager mode PM skill pack (神農, vendored pm-skills) | `extensions/shennong` |
 | AGENTS.md generation | `extensions/init` |
 | Mermaid diagram rendering | `pi-mermaid` package |
 | Thinking steps visualization | `pi-thinking-steps` package |
