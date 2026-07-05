@@ -107,6 +107,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/ui/conversation-viewer.ts` | `stopArmed` + `onStop` two-press `x` confirm | Stop agent from viewer (#0.10.0); aborts via `AgentManager.abort` → AgentRun pipeline (no new emission) |
 | `src/agent-runner.ts` | `extensionCanonicalName` + `buildExtensionsOverride` + `extensionsOverride` wiring | Revives dead `extensions: string[]` allowlist + adds `exclude_extensions` denylist (T2.3 Stage 1); `computeActiveToolNames` stays denylist-free |
 | `src/tools/{agent,get_subagent_result}.ts`, `test/agent-tool-renderer.test.ts` | Agent tool custom TUI renderers: `renderCall` owns tool/agent header; collapsed `renderResult` separates lifecycle `status:` from `activity:`/`result:`, suppresses zero stats, emits expand hint; expanded view returns raw result text | Prevent duplicate/noisy/misleading agent output while preserving model-visible content |
+| `src/local-uri-hint.ts`, `src/tools/{agent,steer_subagent}.ts`, `test/local-uri-hint.test.ts` | `localUriHint(...sources)` appends a non-blocking heads-up to Agent (spawn/resume) results and `steer_subagent` results when the caller's `prompt`/`message` contains `local://`. | `local://` storage is per-session, so a parent's files are invisible to the subagent's session; catches the mistake at delegation time instead of only reactively when the child's `read local://` fails. Legit `local://` writes are not blocked. |
 
 ## Child DOX Index
 

@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`local://` heads-up for delegated prompts.** New `src/local-uri-hint.ts` (`localUriHint(...sources)`) appends a non-blocking advisory to `Agent` (spawn/resume) and `steer_subagent` results when the caller's `prompt`/`message` references a `local://` path. Session-local storage is per-session, so a parent session's `local://` files are invisible to the subagent's own session; this catches the mistake at delegation time rather than only reactively when the child's `read local://` fails. Legit `local://` writes by the subagent are not blocked. Covered by `test/local-uri-hint.test.ts`.
+
 ### Removed
 - **Git-worktree isolation feature**: deleted `src/worktree.ts`, removed `isolation: "worktree"` from
   `AgentConfig`, `AgentRecord`, `SpawnOptions`, `invocation-config`, tool schema, and frontmatter.

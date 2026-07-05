@@ -8,6 +8,7 @@ import { steerAgent } from "../agent-runner.js";
 import { textResult } from "../lifecycle/supervision.js";
 import { SUBAGENTS_STEERED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
+import { localUriHint } from "../local-uri-hint.js";
 
 export function registerSteerSubagentTool(ctx: SubagentRuntimeContext): void {
   const { pi, manager } = ctx;
@@ -39,13 +40,13 @@ export function registerSteerSubagentTool(ctx: SubagentRuntimeContext): void {
         if (!record.pendingSteers) record.pendingSteers = [];
         record.pendingSteers.push(params.message);
         pi.events.emit(SUBAGENTS_STEERED, { id: record.id, message: params.message });
-        return textResult(`Steering message queued for agent ${record.id}. It will be delivered once the session initializes.`);
+        return textResult(`Steering message queued for agent ${record.id}. It will be delivered once the session initializes.` + localUriHint(params.message));
       }
 
       try {
         await steerAgent(record.session, params.message);
         pi.events.emit(SUBAGENTS_STEERED, { id: record.id, message: params.message });
-        return textResult(`Steering message sent to agent ${record.id}. The agent will process it after its current tool execution.`);
+        return textResult(`Steering message sent to agent ${record.id}. The agent will process it after its current tool execution.` + localUriHint(params.message));
       } catch (err) {
         return textResult(`Failed to steer agent: ${err instanceof Error ? err.message : String(err)}`);
       }

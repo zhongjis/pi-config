@@ -17,6 +17,7 @@ import { resolveAgentInvocationConfig } from "../invocation-config.js";
 import { resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
+import { localUriHint } from "../local-uri-hint.js";
 import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycle/supervision.js";
 import { buildAgentToolDescription } from "../agent-tool-description.js";
 import { getToolDescriptionMode, getScopeModels } from "../runtime-flags.js";
@@ -343,6 +344,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       widget.setUICtx(ctx.ui as UICtx);
       const parentSignal = getAbortSignal(ctx) ?? signal;
       bindTurnAbortSignal(parentSignal);
+      const localHint = localUriHint(params.prompt);
 
       const rawType = params.subagent_type as SubagentType;
       let subagentType: string;
@@ -455,7 +457,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           return textResult(`Failed to resume agent "${params.resume}".`);
         }
         return textResult(
-          getRecoveredResultText(record),
+          getRecoveredResultText(record) + localHint,
           buildDetails(detailBase, record),
         );
       }
@@ -537,7 +539,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           (isQueued ? `Position: queued (max ${manager.getMaxConcurrent()} concurrent)\n` : "") +
           `\nYou will be notified when this agent completes.\n` +
           `Actively supervise it with get_subagent_result, steer_subagent, and resume as needed.\n` +
-          `Do not duplicate this agent's work or leave it unattended for long.`,
+          `Do not duplicate this agent's work or leave it unattended for long.` + localHint,
           { ...detailBase, toolUses: 0, tokens: "", durationMs: 0, status: isQueued ? "queued" as const : "background" as const, agentId: id },
         );
       }
@@ -632,7 +634,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       const sessionLog = record.sessionFile ? `\nSession log: ${record.sessionFile}` : "";
 
       if (record.status === "error") {
-        return textResult(`Agent failed.${sessionLog}\n\n${getRecoveredResultText(record)}`, details);
+        return textResult(`Agent failed.${sessionLog}\n\n${getRecoveredResultText(record)}${localHint}`, details);
       }
 
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
@@ -641,7 +643,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       return textResult(
         `Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getStatusNote(record.status)}.\n` +
         `Agent ID: ${record.id} (resume with Agent(resume: "${record.id}")).${sessionLog}\n\n` +
-        getRecoveredResultText(record),
+        getRecoveredResultText(record) + localHint,
         details,
       );
     },
