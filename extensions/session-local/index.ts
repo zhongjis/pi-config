@@ -1,6 +1,7 @@
 declare function require(id: string): any;
 
-const { readdir, writeFile } = require("fs/promises") as {
+const { access, readdir, writeFile } = require("fs/promises") as {
+  access: (path: string) => Promise<void>;
   readdir: (
     path: string,
     options?: { withFileTypes?: boolean },
@@ -254,6 +255,22 @@ export default function sessionLocalTools(pi: ExtensionAPI): void {
     }
 
     const resolvedPath = await resolveSessionLocalTarget(ctx, requestedPath);
+
+    if (event.toolName === "read") {
+      let exists = true;
+      try {
+        await access(resolvedPath);
+      } catch {
+        exists = false;
+      }
+      if (!exists) {
+        return {
+          block: true,
+          reason: `${requestedPath} was not found in this session's local storage. local:// files are scoped to the current session, so a file written in another session (for example a parent agent that delegated this task to you) is not visible here. Fix: have the caller paste the content into your prompt, or write it to a real filesystem path the subagent can read. Run read path="local://" to see this session's local root and its backing path.`,
+        };
+      }
+    }
+
     event.input.path = resolvedPath;
     localResolutions.set(event.toolCallId, {
       localPath: requestedPath,

@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm } from "fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -94,6 +94,9 @@ describe("session-local extension composition", () => {
       toolName: "read",
       input: { path: "local://notes.md" },
     };
+
+    await mkdir(join(mockSessionLocalRoot, "session-1"), { recursive: true });
+    await writeFile(join(mockSessionLocalRoot, "session-1", "notes.md"), "hi", "utf8");
 
     await mock.fire("tool_call", event, ctx);
 
@@ -214,5 +217,24 @@ describe("session-local extension composition", () => {
         resolvedPath,
       },
     });
+  });
+
+  it("blocks read of a missing local:// file with actionable guidance", async () => {
+    const mock = createMockPi();
+    const ctx = createCtx();
+    sessionLocalTools(mock.pi as never);
+
+    const event = {
+      toolCallId: "read-missing-1",
+      toolName: "read",
+      input: { path: "local://missing.md" },
+    };
+
+    const [result] = await mock.fire("tool_call", event, ctx);
+
+    expect(result).toMatchObject({ block: true });
+    expect((result as { reason: string }).reason).toContain("scoped to the current session");
+    // input untouched — the read never proceeds
+    expect(event.input.path).toBe("local://missing.md");
   });
 });

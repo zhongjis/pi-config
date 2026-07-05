@@ -7,6 +7,7 @@ Session-local file storage via `local://` URI paths.
 - Intercepts `read`, `write`, and `edit` tool calls that target `local://` paths
 - Resolves `local://<path>` to a per-session storage directory under `~/.pi/agent/local/<session-id>/`
 - `read local://` (root) generates a directory listing of the session-local storage
+- Blocks `read` of a missing `local://` file with actionable guidance (storage is session-scoped, so a parent session's files are not visible to a delegated subagent — it must inline the content or use a real filesystem path)
 - Rewrites resolved paths back to `local://` in tool results so the LLM sees virtual paths
 - Validates paths to prevent escaping the session storage root (no `..` traversal)
 
