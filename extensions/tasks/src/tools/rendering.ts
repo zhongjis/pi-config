@@ -1,4 +1,4 @@
-import { type AgentToolResult, keyHint, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { type AgentToolResult, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
 type TaskToolName = "TaskCreate" | "TaskList" | "TaskGet" | "TaskUpdate" | "TaskOutput" | "TaskStop" | "TaskExecute";
@@ -17,9 +17,8 @@ function styleMuted(theme: Pick<ToolTheme, "fg">, text: string): string {
 }
 
 function renderSummaryLines(lines: string[], theme: Pick<ToolTheme, "fg">): Text {
-  const allLines = [...lines, keyHint("app.tools.expand", "to expand full result")];
-  const rendered = allLines
-    .map((line, index) => `${index === allLines.length - 1 ? "└─" : "├─"} ${line}`)
+  const rendered = lines
+    .map((line, index) => `${index === lines.length - 1 ? "└─" : "├─"} ${line}`)
     .map(line => styleMuted(theme, line))
     .join("\n");
   return new Text(rendered, 0, 0);
