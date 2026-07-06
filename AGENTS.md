@@ -78,6 +78,7 @@ Before registering any new tool, extension, or MCP server:
 | MCP tools proxy | `pi-mcporter` package → `mcporter` tool |
 | Git diff viewer | `extensions/diff` |
 | Session-local file storage (`local://`) | `extensions/session-local` |
+| GitHub issues/PRs/diffs as read paths (`pr://`, `issue://`) | `extensions/github-fs` |
 | Secrets redaction from tool outputs | `extensions/filter-outputs` |
 | Code knowledge graph | `extensions/codegraph` |
 | Session handoff to new focused session | `extensions/handoff` |
