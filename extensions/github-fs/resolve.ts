@@ -23,6 +23,8 @@ export interface RemoteRef {
   host: string;
   owner: string;
   repo: string;
+  /** True when parsed from an SSH remote, whose host may be a ~/.ssh/config alias. */
+  ssh: boolean;
 }
 
 /** Parse a git remote URL (scp-like or scheme URL) into host/owner/repo. */
@@ -31,18 +33,18 @@ export function parseRemoteUrl(url: string): RemoteRef | null {
   if (!trimmed) return null;
 
   const scp = /^[\w.-]+@([\w.-]+):(.+?)(?:\.git)?\/?$/.exec(trimmed);
-  if (scp) return splitOwnerRepo(scp[1], scp[2]);
+  if (scp) return splitOwnerRepo(scp[1], scp[2], true);
 
-  const scheme = /^[a-z]+:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/(.+?)(?:\.git)?\/?$/.exec(trimmed);
-  if (scheme) return splitOwnerRepo(scheme[1], scheme[2]);
+  const scheme = /^([a-z]+):\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/(.+?)(?:\.git)?\/?$/.exec(trimmed);
+  if (scheme) return splitOwnerRepo(scheme[2], scheme[3], scheme[1] === "ssh");
 
   return null;
 }
 
-function splitOwnerRepo(host: string, path: string): RemoteRef | null {
+function splitOwnerRepo(host: string, path: string, ssh: boolean): RemoteRef | null {
   const parts = path.split("/").filter((part) => part.length > 0);
   if (parts.length < 2) return null;
-  return { host, owner: parts[parts.length - 2], repo: parts[parts.length - 1] };
+  return { host, owner: parts[parts.length - 2], repo: parts[parts.length - 1], ssh };
 }
 
 export interface ResolveDeps {
@@ -51,6 +53,8 @@ export interface ResolveDeps {
   cache: GithubCache;
   /** Return the origin remote URL for a cwd, or null when not a git repo. */
   gitRemoteUrl: (cwd: string) => Promise<string | null>;
+  /** Canonicalize an SSH host alias to its real hostname (e.g. via `ssh -G`). */
+  resolveHostAlias: (host: string) => Promise<string>;
 }
 
 async function resolveHostAndRepo(
@@ -62,6 +66,11 @@ async function resolveHostAndRepo(
   if (!target.host || !target.repo) {
     const url = await deps.gitRemoteUrl(cwd);
     remote = url ? parseRemoteUrl(url) : null;
+    // An SSH remote host may be a ~/.ssh/config alias (e.g. github.com-work);
+    // resolve it to the real hostname so auth + gh target the right host.
+    if (remote?.ssh) {
+      remote = { ...remote, host: await deps.resolveHostAlias(remote.host) };
+    }
   }
 
   const host = target.host ?? remote?.host ?? GITHUB_DOT_COM;

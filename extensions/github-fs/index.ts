@@ -119,6 +119,26 @@ function rewriteDetails(
   return next;
 }
 
+// Canonicalize an SSH host alias (e.g. `github.com-work`) to its real hostname
+// via `ssh -G`. Falls back to the alias unchanged if ssh is unavailable or the
+// host has no `hostname` override.
+function createResolveHostAlias(): (host: string) => Promise<string> {
+  return (host) =>
+    new Promise<string>((resolvePromise) => {
+      let stdout = "";
+      const child = spawn("ssh", ["-G", host], {});
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.on("error", () => resolvePromise(host));
+      child.on("close", (code) => {
+        if (code !== 0) return resolvePromise(host);
+        const match = /^hostname\s+(\S+)/im.exec(stdout);
+        resolvePromise(match ? match[1] : host);
+      });
+    });
+}
+
 function createGitRemoteUrl(): (cwd: string) => Promise<string | null> {
   return (cwd) =>
     new Promise<string | null>((resolvePromise) => {
@@ -141,6 +161,7 @@ export default function githubFsTools(pi: ExtensionAPI): void {
     auth: createAuthResolver(run),
     cache: createCache(),
     gitRemoteUrl: createGitRemoteUrl(),
+    resolveHostAlias: createResolveHostAlias(),
   };
 
   pi.on("tool_call", async (rawEvent, ctx) => {

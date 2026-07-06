@@ -14,6 +14,7 @@ describe("parseRemoteUrl", () => {
       host: "github.com",
       owner: "octo",
       repo: "repo",
+      ssh: true,
     });
   });
 
@@ -22,6 +23,7 @@ describe("parseRemoteUrl", () => {
       host: "git.corp.adobe.com",
       owner: "team",
       repo: "service",
+      ssh: false,
     });
   });
 
@@ -30,11 +32,21 @@ describe("parseRemoteUrl", () => {
       host: "example.com",
       owner: "o",
       repo: "r",
+      ssh: true,
     });
   });
 
   it("takes the last two path segments (subgroups)", () => {
     expect(parseRemoteUrl("https://gitlab.com/group/sub/proj.git")).toMatchObject({ owner: "sub", repo: "proj" });
+  });
+
+  it("flags scp-form SSH-alias hosts as ssh (for later canonicalization)", () => {
+    expect(parseRemoteUrl("git@github.com-zshen_adobe:acme/app.git")).toEqual({
+      host: "github.com-zshen_adobe",
+      owner: "acme",
+      repo: "app",
+      ssh: true,
+    });
   });
 
   it("returns null for junk", () => {
@@ -71,6 +83,7 @@ describe("resolveGithubView", () => {
       auth,
       cache: createCache({ agentDir: dir }),
       gitRemoteUrl: async () => "git@github.com:octo/repo.git",
+      resolveHostAlias: async (host) => host,
       ...overrides,
     };
     return { deps, runCalls };
@@ -89,6 +102,17 @@ describe("resolveGithubView", () => {
     await resolveGithubView("/cwd", parseGithubPath("issue://7")!, deps);
     const viewCall = runCalls.find((a) => a[0] === "issue" && a[1] === "view");
     expect(viewCall).toContain("github.com/octo/repo");
+  });
+
+  it("canonicalizes an SSH-alias remote host before fetching", async () => {
+    const { deps, runCalls } = makeDeps({
+      gitRemoteUrl: async () => "git@github.com-zshen_adobe:acme/app.git",
+      resolveHostAlias: async (host) => (host === "github.com-zshen_adobe" ? "github.com" : host),
+    });
+    await resolveGithubView("/cwd", parseGithubPath("issue://7")!, deps);
+    const viewCall = runCalls.find((a) => a[0] === "issue" && a[1] === "view");
+    expect(viewCall).toContain("github.com/acme/app");
+    expect(viewCall).not.toContain("github.com-zshen_adobe/acme/app");
   });
 
   it("uses explicit owner/repo and ?host over the remote", async () => {

@@ -28,7 +28,7 @@ Query flags: `?comments=0` (hide comments), `?state=open|closed|merged|all`, `?l
 
 ## Host & Auth
 
-- Host: `?host=` override → cwd `origin` remote host → `github.com` fallback. Repo defaults to the cwd remote when the path omits `owner/repo`.
+- Host: `?host=` override → cwd `origin` remote host → `github.com` fallback. Repo defaults to the cwd remote when the path omits `owner/repo`. SSH remotes whose host is a `~/.ssh/config` alias (e.g. `github.com-work`) are canonicalized to the real hostname via `ssh -G`.
 - Multi-account: enumerates `gh auth status` accounts, probes `gh api repos/{owner}/{repo}` per account until one has access, and injects that account's token via per-spawn env (`GH_TOKEN` / `GH_ENTERPRISE_TOKEN`). Never runs `gh auth switch`; never logs tokens.
 
 ## Cache
