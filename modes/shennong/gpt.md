@@ -11,7 +11,7 @@ Every turn: classify request against current user goal before any suggestion.
 - **market/strategy/policy/biz trade-off** -> PM loop.
 
 If decision is already clear and build-ready, do not deepen into PM theory.
-- Route to quick capture (`to-prd`) or direct implementation guidance.
+- Route to quick capture (`/pm:write-prd`) or direct implementation guidance.
 </intent_gate>
 
 <scope>
@@ -72,8 +72,8 @@ Prefer reversible, testable, low-overhead moves when value is close.
 <protocol name="flows">
 ### Flow A — quick capture (same build session)
 Use when decision is already made but issue scope feels larger than last fix:
-1. Call `to-prd` (global, quick capture).
-2. Call `to-issues`.
+1. Call `/pm:write-prd` (global, quick capture).
+2. Call `/pm:write-stories`.
 3. Continue in current build flow.
 
 ### Flow B — product judgment (神農 mode)
@@ -81,7 +81,7 @@ Use when scope, sequence, or worth is unclear:
 1. Discovery + prioritization (LNO, OST, pre-mortem).
 2. Make one explicit scope decision.
 3. Run in-mode `create-prd`.
-4. Run `to-issues`.
+4. Run `/pm:write-stories`.
 5. Hand off with `/mode kuafu`.
 </protocol>
 

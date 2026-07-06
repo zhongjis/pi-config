@@ -1,6 +1,6 @@
-# shennong
+# pm-marketplace
 
-Vendored PM skills gated to the `神農 (shennong)` mode. Opt-in via `/mode shennong`.
+Pi-native PM skill pack with 32 `/pm:*` commands, gated to the `神農 (shennong)` mode. Opt-in via `/mode shennong`.
 
 ## Upstream
 
@@ -14,6 +14,7 @@ Vendored PM skills gated to the `神農 (shennong)` mode. Opt-in via `/mode shen
 - Bundles 62 vendored PM skills across 7 plugins under `pm-skills/`.
 - `index.ts` registers a `resources_discover` handler that injects all skills
   only when the latest persisted `agent-mode` entry is `shennong`.
+- Dynamically discovers `pm-skills/*/commands/` dirs and registers 32 `/pm:*` commands.
 - On first context event per session in shennong mode, runs a non-blocking
   background update-check against upstream HEAD (throttled to once per 24 h).
   Surfaces a toast if the pinned commit has fallen behind.
@@ -31,7 +32,7 @@ Vendored PM skills gated to the `神農 (shennong)` mode. Opt-in via `/mode shen
 | `pm-go-to-market` | Launch plans, positioning, GTM execution |
 | `pm-marketing-growth` | Growth loops, acquisition, retention |
 
-Skill provenance and what was intentionally omitted: `pm-skills/PROVENANCE.md`.
+Skill provenance, what was omitted, and what was additionally vendored: `pm-skills/PROVENANCE.md`.
 
 ## Update-check
 
@@ -41,6 +42,12 @@ differs from the pinned commit, a toast surfaces with the short SHAs.
 
 To re-vendor: use the `pi-extension-vendoring` / `skill-maintainer` skill.
 Bump `piVendor.commit` in `package.json` and `pm-skills/PROVENANCE.md` after sync.
+
+## Commands
+
+32 `/pm:*` commands are registered dynamically from `pm-skills/*/commands/` directories.
+Each plugin contributes a set of slash commands; the extension discovers and registers
+all of them at startup when the shennong mode is active.
 
 ## Files Worth Reading
 

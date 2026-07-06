@@ -143,7 +143,7 @@ const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
 		overlayAnchor: "<LUBAN_GEMINI_CORRECTIVE_OVERLAY>",
 	},
 	shennong: {
-		default: ["No code, no implementation plans, no patching.", "Prioritization by LNO only", "Decision already made -> `to-prd` in place."],
+		default: ["No code, no implementation plans, no patching.", "Prioritization by LNO only", "Decision already made -> `/pm:write-prd` in place."],
 		gpt: ["PM-mode strategist for Pi decisions.", "One Leverage action max for next move", "Hand off with `/mode kuafu`."],
 		geminiOverlay: ["<SHENNONG_GEMINI_CORRECTIVE_OVERLAY>", "Use Shen Nong base behavior with strict PM correction:"],
 		defaultOnlyInGptReplacement: "You think in Shreyas-style PM mode:",

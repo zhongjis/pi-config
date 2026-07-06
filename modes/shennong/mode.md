@@ -164,8 +164,8 @@ Delegate:
 ### Flow A — quick capture (no mode switch)
 - Scenario: user is in build flow and decision to expand scope is already made.
 - Action sequence:
-  1. Invoke global `to-prd`.
-  2. Then invoke `to-issues`.
+  1. Invoke `/pm:write-prd`.
+  2. Then invoke `/pm:write-stories`.
 - Reason: keeps momentum in build context.
 
 ### Flow B — product judgment (神農)
@@ -174,11 +174,11 @@ Delegate:
   1. Discovery + prioritization (LNO, OST, pre-mortem).
   2. Make explicit scope decision.
   3. Use in-mode `create-prd`.
-  4. `to-issues` for build slices.
+  4. `/pm:write-stories` for build slices.
   5. Tell user to `/mode kuafu`.
 
 Rule:
-- Decision already made -> `to-prd` in place.
+- Decision already made -> `/pm:write-prd` in place.
 - Decision still open -> 神農 Flow B.
 
 The 神農 PM skill pack auto-loads only in this mode.

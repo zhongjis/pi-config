@@ -1,4 +1,4 @@
-# shennong — Agent Guide
+# pm-marketplace — Agent Guide
 
 Vendored from https://github.com/phuryn/pm-skills. Opt-in via `/mode shennong`.
 See `README.md` for user-facing docs and `AGENTS.md` (this file) for maintainer rules.
@@ -13,13 +13,15 @@ Pinned SHA lives in `package.json` → `piVendor.commit` (and `pm-skills/PROVENA
 
 | File | What |
 |------|------|
-| `index.ts` | Mode-gated wrapper; `resources_discover` + background update-check |
+| `index.ts` | Mode-gated wrapper; `resources_discover` + 32 `/pm:*` command registration + background update-check |
+| Command registration logic | Dynamic discovery of `pm-skills/*/commands/` dirs; registers each as a `/pm:*` command |
 
 ## Re-vendoring
 
 Use the `pi-extension-vendoring` / `skill-maintainer` skill. Steps:
 1. Re-clone upstream at new SHA.
-2. Re-copy the 7 `skills/` subtrees into `pm-skills/`.
+1. Re-clone upstream at new SHA.
+2. Re-copy the 7 `skills/` and `commands/` subtrees into `pm-skills/`.
 3. Bump `piVendor.commit` in `package.json` and `pm-skills/PROVENANCE.md`.
 4. Run `pnpm lint:typecheck` and the extension tests.
 
@@ -34,7 +36,6 @@ Never run `git clone` inside this repo worktree. Use `/tmp`.
 
 - Do not hand-edit `pm-skills/` for Pi-specific content.
 - Do not add context injection or message mutation to `index.ts`.
-- Do not edit `modes/shennong/mode.md` — another owner controls it.
 
 ## References
 
@@ -44,4 +45,4 @@ Never run `git clone` inside this repo worktree. Use `/tmp`.
 
 ## Child DOX Index
 
-No child `AGENTS.md` files. This file owns all files under `extensions/shennong/`, including `pm-skills/`.
+No child `AGENTS.md` files. This file owns all files under `extensions/pm-marketplace/`, including `pm-skills/`.

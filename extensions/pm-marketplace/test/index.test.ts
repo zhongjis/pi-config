@@ -2,12 +2,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
-import shennongExtension from "../index.js";
+import pmMarketplaceExtension from "../index.js";
 
-describe("shennong extension", () => {
+describe("pm-marketplace extension", () => {
   function registeredHandler() {
     const mock = createMockPi();
-    shennongExtension(mock.pi as never);
+    pmMarketplaceExtension(mock.pi as never);
 
     const handlers = mock.lifecycleHandlers.get("resources_discover");
     expect(handlers).toBeDefined();
@@ -17,7 +17,7 @@ describe("shennong extension", () => {
 
   function setupExtension() {
     const mock = createMockPi();
-    shennongExtension(mock.pi as never);
+    pmMarketplaceExtension(mock.pi as never);
     return mock;
   }
 
@@ -42,18 +42,24 @@ describe("shennong extension", () => {
     expect(result.skillPaths).toEqual([]);
   });
 
-  it("points at the pm-skills dir when latest persisted mode is shennong", async () => {
+  it("returns 7 per-plugin skill paths when latest persisted mode is shennong", async () => {
     const handler = registeredHandler();
 
     const result = (await handler({ cwd: process.cwd(), reason: "startup" }, ctxWithMode("shennong"))) as {
       skillPaths: string[];
     };
 
-    expect(result.skillPaths).toHaveLength(1);
-    const skillsPath = result.skillPaths[0];
-    expect(skillsPath).toMatch(/extensions\/shennong\/pm-skills$/);
-    expect(existsSync(skillsPath)).toBe(true);
-    expect(existsSync(join(skillsPath, "pm-execution", "create-prd", "SKILL.md"))).toBe(true);
+    expect(result.skillPaths).toHaveLength(7);
+
+    for (const skillsPath of result.skillPaths) {
+      expect(skillsPath).toMatch(/pm-marketplace\/pm-skills\/[^/]+\/skills$/);
+      expect(existsSync(skillsPath)).toBe(true);
+    }
+
+    // Verify a known skill inside one of the paths exists
+    const execSkills = result.skillPaths.find((p) => p.includes("pm-execution"));
+    expect(execSkills).toBeDefined();
+    expect(existsSync(join(execSkills!, "create-prd", "SKILL.md"))).toBe(true);
   });
 
   it("uses the latest persisted agent-mode entry", async () => {
@@ -76,5 +82,40 @@ describe("shennong extension", () => {
     const handler = mock.lifecycleHandlers.get("context")![0]!;
     const result = await handler({ messages: [] }, ctxWithMode("kuafu"));
     expect(result).toBeUndefined();
+  });
+
+  // --- Frontmatter parsing (via command registration) ---
+
+  it("registers pm:* commands from frontmatter descriptions", () => {
+    const mock = setupExtension();
+    const commands = Array.from(mock.commands.keys());
+
+    // All commands use pm: prefix
+    expect(commands.every((c) => c.startsWith("pm:"))).toBe(true);
+    expect(commands.length).toBeGreaterThan(0);
+
+    // Known commands from pm-execution plugin
+    expect(commands).toContain("pm:write-prd");
+    expect(commands).toContain("pm:write-stories");
+
+    // Command from pm-product-discovery plugin
+    expect(commands).toContain("pm:discover");
+  });
+
+  it("registers commands from at least 3 different plugins", () => {
+    const mock = setupExtension();
+    const commands = Array.from(mock.commands.keys());
+
+    // pm-execution commands
+    expect(commands).toContain("pm:write-prd");
+    // pm-data-analytics commands
+    expect(commands).toContain("pm:analyze-cohorts");
+    // pm-market-research commands
+    expect(commands).toContain("pm:analyze-feedback");
+  });
+
+  it("total registered commands is at least 30", () => {
+    const mock = setupExtension();
+    expect(mock.commands.size).toBeGreaterThanOrEqual(30);
   });
 });

@@ -1,8 +1,8 @@
 {
-  "name": "@pi-config/shennong",
+  "name": "@pi-config/pm-marketplace",
   "private": true,
   "type": "module",
-  "description": "Vendored PM skills gated to the shennong mode.",
+  "description": "Pi-native PM skill pack and /pm:* command registry, gated to the shennong mode.",
   "license": "MIT",
   "pi": {
     "extensions": ["./index.ts"]
