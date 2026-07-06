@@ -143,6 +143,18 @@ const MaxToolCallAttempts = 2;
 const ToolCallRetryBackoffMinMs = 250;
 const ToolCallRetryBackoffJitterMs = 500;
 
+/**
+ * codegraph 1.1.3's multi-threaded parse worker pool crashes under Node 22
+ * (web-tree-sitter WASM load inside worker threads → workers die, `codegraph
+ * init`/index exits 1 with no error, only fd warnings). Force the single-worker
+ * path, which upstream documents as the conservative rollback, unless the user
+ * already set an explicit CODEGRAPH_PARSE_WORKERS override.
+ */
+const CodeGraphSpawnEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  CODEGRAPH_PARSE_WORKERS: process.env.CODEGRAPH_PARSE_WORKERS ?? "1",
+};
+
 export const codegraphToolNames = ToolDefinitions.map((tool) => tool.name);
 
 function enqueueCodeGraphRequest<T>(cwd: string, task: () => Promise<T>): Promise<T> {
@@ -253,7 +265,7 @@ export async function withCodeGraphMcp<T>(
   const project = await resolveCodeGraphProject(projectPath);
   const child = spawn("codegraph", ["serve", "--mcp", "--path", project.cwd], {
     cwd: project.cwd,
-    env: process.env,
+    env: CodeGraphSpawnEnv,
     stdio: ["pipe", "pipe", "pipe"],
   });
 
@@ -387,7 +399,7 @@ function runCodeGraphInit(root: string, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const child = spawn("codegraph", ["init", root], {
       cwd: root,
-      env: process.env,
+      env: CodeGraphSpawnEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
     const stdout: DiagnosticBuffer = { value: "" };

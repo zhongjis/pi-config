@@ -375,7 +375,7 @@ describe("codegraph extension", () => {
     expect(result.content[0].text).toBe("status ok");
     expect(spawnMock).toHaveBeenCalledWith("codegraph", ["serve", "--mcp", "--path", tempRoot], {
       cwd: tempRoot,
-      env: process.env,
+      env: expect.objectContaining({ CODEGRAPH_PARSE_WORKERS: "1" }),
       stdio: ["pipe", "pipe", "pipe"],
     });
     expect(child.kill).toHaveBeenCalled();
@@ -447,7 +447,7 @@ describe("codegraph extension", () => {
 
     expect(spawnMock).toHaveBeenCalledWith("codegraph", ["init", projectRoot], {
       cwd: projectRoot,
-      env: process.env,
+      env: expect.objectContaining({ CODEGRAPH_PARSE_WORKERS: "1" }),
       stdio: ["pipe", "pipe", "pipe"],
     });
     releaseInit();
