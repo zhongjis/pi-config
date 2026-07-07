@@ -276,6 +276,7 @@ export class AgentWidget {
       turnCount: activity?.turnCount,
       maxTurns: activity?.maxTurns,
       error: a.error,
+      compactionCount: a.compactionCount,
     };
     return renderSubagentSummary(summary)[0] ?? "";
   }
@@ -330,6 +331,7 @@ export class AgentWidget {
         toolUses,
         tokens: this.getSessionTokenText(a.id),
         durationMs: Date.now() - a.startedAt,
+        compactionCount: a.compactionCount,
       });
 
       const idleMs = Date.now() - (bg?.lastProgressAt ?? a.startedAt);
@@ -430,6 +432,7 @@ export class AgentWidget {
         agent.completedAt ?? "",
         agent.toolUses,
         agent.error ?? "",
+        agent.compactionCount ?? "",
         activity?.toolUses ?? "",
         activity?.tokens ?? "",
         activity?.responseText ?? "",

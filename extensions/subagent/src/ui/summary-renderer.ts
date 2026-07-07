@@ -1,5 +1,5 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { formatDuration, formatTokens, formatTools, formatTurns, SEPARATOR, SPINNER } from "../../../lib/widget-style.js";
+import { formatCompactions, formatDuration, formatTokens, formatTools, formatTurns, SEPARATOR, SPINNER } from "../../../lib/widget-style.js";
 
 export type SubagentSummaryStatus =
   | "queued"
@@ -26,6 +26,7 @@ export interface SubagentSummaryAgent {
   tags?: string[];
   turnCount?: number;
   maxTurns?: number | null;
+  compactionCount?: number;
   error?: string;
 }
 
@@ -130,6 +131,7 @@ function getAgentStats(agent: SubagentSummaryAgent): string {
   if (agent.modelName) parts.push(agent.modelName);
   if (agent.tags) parts.push(...agent.tags);
   if (agent.turnCount != null) parts.push(formatSummaryTurns(agent.turnCount, agent.maxTurns));
+  if (agent.compactionCount && agent.compactionCount > 0) parts.push(formatCompactions(agent.compactionCount));
   if (agent.toolUses && agent.toolUses > 0) parts.push(formatTools(agent.toolUses));
   const tokenText = getTokenText(agent);
   if (tokenText) parts.push(tokenText);

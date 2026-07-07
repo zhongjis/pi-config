@@ -74,6 +74,11 @@ export function formatTools(count: number): string {
   return `${count} tool${count === 1 ? "" : "s"}`;
 }
 
+/** Compaction counter: "⇲2" — number of times context was compacted. */
+export function formatCompactions(count: number): string {
+  return `⇲${count}`;
+}
+
 /**
  * Human-readable duration, compact for dense stat lines:
  *   < 10s  → "4.1s"

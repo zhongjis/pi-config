@@ -41,6 +41,24 @@ describe("renderSubagentSummary", () => {
     `);
   });
 
+  it("renders compaction count when greater than zero", () => {
+    expect(renderSubagentSummary({
+      displayName: "Explore",
+      description: "Long crawl",
+      status: "running",
+      activity: "reading files…",
+      spinnerFrame: 2,
+      turnCount: 8,
+      toolUses: 4,
+      compactionCount: 2,
+      totalTokens: 50_000,
+      durationMs: 5700,
+    })).toEqual([
+      "⠹ Explore Long crawl · ↻8 · ⇲2 · 4 tools · 50k · 5.7s",
+      "└─ reading files…",
+    ]);
+  });
+
   it("renders grouped summaries with child previews", () => {
     expect(renderSubagentSummary({
       title: "3 agents completed",

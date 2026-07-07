@@ -82,6 +82,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/prompts.ts` | `skillBlocks` type includes `sourcePath`/`baseDir` | Enhanced skill-loader passes path metadata for relative reference resolution |
 | `src/ui/agent-widget.ts` | Kept `lastProgressAt` on `AgentActivity`, `modelLabel` rendering in running/finished lines | Background supervision progress tracking, model display |
 | `src/ui/agent-widget.ts`, `src/index.ts`, `src/ui/conversation-viewer.ts`, `test/agent-widget.test.ts`, `README.md` | Nerd Font UI stats: tokens `󰾆 33.8k`, turns `⟳ 5`, tool uses `󱁤 3` | Local display preference; preserve after upstream syncs |
+| `extensions/lib/widget-style.ts`, `src/ui/summary-renderer.ts`, `src/ui/agent-widget.ts`, `test/summary-renderer.test.ts` | Agents widget shows per-agent compaction count (`⇲N`, hidden when 0) from `record.compactionCount` | Surface context-compaction pressure in the widget; count already collected on the record |
 | `src/index.ts` | Background supervision loop + timer, delegation policy enforcement, abort signal binding, result recovery calls, model label tracking, supervision-aware wait, `suppressNotification`/`waitingConsumers` checks | All local features integrated into the main hub |
 | `index.ts` | Wrapper re-export (`export default from "./src/index.js"`) | Harness convention: entry at `extensions/<name>/index.ts` |
 | `test/background-supervision.test.ts` | Local-only test | Covers supervision logic |
