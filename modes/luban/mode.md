@@ -4,7 +4,7 @@ description: Superpowers discipline mode. Loads relevant skills before acting, f
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/glm-5.1:high,llama-swap/qwen2.5-coder:14b:high
 inherit_context: false
 builtin_tools: read,bash,edit,write
-extension_tools: ask,readonly_bash,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,TaskCreate,Task*,codegraph_*,context_*,process,lsp
+extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,TaskCreate,Task*,codegraph_*,context_*,process,lsp
 allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,weizheng,cangjie
 allow_nesting: true
 ---
