@@ -431,7 +431,7 @@ export function buildPlanExecutionGoal(planPath: string): string {
     "",
     "Requirements:",
     "- Read the full plan before making changes.",
-    "- Break each unchecked plan item into concrete implementation tasks before editing.",
+    "- Register the plan as tracked pi-tasks and execute them through your task workflow.",
     "- Re-read relevant files from current repo state before changing anything.",
     "- For each task, identify files to change, expected behavior, and verification.",
     "- Execute step by step until complete or truly blocked.",

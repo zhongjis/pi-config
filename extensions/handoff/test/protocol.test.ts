@@ -56,7 +56,7 @@ describe("plan execution goal builder", () => {
     const goal = buildPlanExecutionGoal("/tmp/PLAN.md");
     expect(goal).toContain("/tmp/PLAN.md");
     expect(goal).toContain("Read the full plan before making changes.");
-    expect(goal).toContain("Break each unchecked plan item into concrete implementation tasks");
+    expect(goal).toContain("Register the plan as tracked pi-tasks and execute them through your task workflow");
     expect(goal).not.toContain("HANDOFF.json");
     expect(goal).not.toContain("__PI_HANDOFF_EXECUTE__");
   });
