@@ -4,6 +4,7 @@ description: Architecture decisions, code review, debugging. Read-only consultat
 model: anthropic/claude-opus-4-8:high,openai-codex/gpt-5.5:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
 inherit_context: false
 run_in_background: false
+skills: complexity
 builtin_tools: read
 extension_tools: readonly_bash,look_at,codegraph_*,lsp
 extensions: true
