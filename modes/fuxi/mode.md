@@ -263,7 +263,7 @@ edit({ path: "local://PLAN.md", ... })  // tasks 5-8
 read({ path: "local://PLAN.md" })       // verify
 ```
 
-Every task MUST have: What to do · Must NOT do · Parallelization (Wave / Blocks / Blocked By) · References (`path:lines` + URLs with why — the executor has NO context from your interview) · Acceptance Criteria (agent-executable exact commands, no human verification). Include a Final Verification Wave (F1 plan-compliance via `taishang`, F2 code-quality via `jintong`).
+Every task MUST have: What to do · Must NOT do · Parallelization (Wave / Blocks / Blocked By) · References (`path:lines` + URLs with why — the executor has NO context from your interview) · Acceptance Criteria (agent-executable exact commands, no human verification) · Recommended Max Turns (advisory per-task turn budget sized to the chunk — the executor uses it as the starting `max_turns` and may raise it). Include a Final Verification Wave (F1 plan-compliance via `taishang`, F2 code-quality via `jintong`).
 
 ## Self-Review (MANDATORY)
 

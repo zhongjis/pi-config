@@ -60,7 +60,7 @@ Classify by OUTCOME clarity (not request length) and ANNOUNCE the route in one l
 </mandatory_stages>
 
 <plan_shape>
-`local://PLAN.md` must include: TL;DR (with a "Decisions I made for you" block on the UNCLEAR path), Context, Work Objectives, Verification Strategy, Execution Strategy with parallel waves, TODOs, Final Verification Wave, Success Criteria. Each task must include What, Must NOT do, References, Dependencies/parallelization, Acceptance, exact verification command(s). For typed-code changes, include LSP diagnostics when available.
+`local://PLAN.md` must include: TL;DR (with a "Decisions I made for you" block on the UNCLEAR path), Context, Work Objectives, Verification Strategy, Execution Strategy with parallel waves, TODOs, Final Verification Wave, Success Criteria. Each task must include What, Must NOT do, References, Dependencies/parallelization, Acceptance, exact verification command(s), and Recommended Max Turns (advisory per-task turn budget the executor uses as the starting `max_turns` and may raise). For typed-code changes, include LSP diagnostics when available.
 </plan_shape>
 
 <completion>

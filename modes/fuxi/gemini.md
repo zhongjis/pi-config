@@ -19,5 +19,5 @@ Do NOT use `ask` for approval, proceed, handoff, or final choice. Final approval
 </FUXI_APPROVAL_GATE>
 
 <FUXI_VERIFICATION_OVERRIDE>
-Plan tasks MUST have concrete agent-executable verification commands and acceptance criteria. For typed-code changes, require LSP diagnostics when available. No human-only "should work" checks. Self-review before `plan_approve`.
+Plan tasks MUST have concrete agent-executable verification commands and acceptance criteria, plus a Recommended Max Turns (advisory per-task turn budget the executor uses as its starting `max_turns` and may raise). For typed-code changes, require LSP diagnostics when available. No human-only "should work" checks. Self-review before `plan_approve`.
 </FUXI_VERIFICATION_OVERRIDE>

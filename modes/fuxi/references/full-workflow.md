@@ -146,7 +146,8 @@ Critical Path: Task 1 → Task 3 → F1
 
 ## TODOs
 > Implementation + focused tests may be ONE task only when they verify the same bounded chunk. Split broad edge sweeps, UI tests, docs, git/PR into separate tasks.
-> EVERY task: What to do · Must NOT do · Parallelization (Can Run In Parallel / Wave / Blocks / Blocked By) · References (executor has NO interview context — exact `path:lines` + URLs with why) · Acceptance Criteria (agent-executable exact command, no human verification).
+> EVERY task: What to do · Must NOT do · Parallelization (Can Run In Parallel / Wave / Blocks / Blocked By) · References (executor has NO interview context — exact `path:lines` + URLs with why) · Acceptance Criteria (agent-executable exact command, no human verification) · Recommended Max Turns.
+> Recommended Max Turns: an advisory per-task turn budget sized to the chunk (a small edit ~20–30; a bounded ≤3-file task ~40–60; never above the split threshold). The executor (Hou Tu) uses it as the starting `max_turns` and may raise it — it is advisory, not a hard ceiling. It is also the executor's only cost guard, so size it realistically rather than tight.
 
 ## Final Verification Wave (after ALL implementation tasks)
 - F1. Plan Compliance Audit — `taishang`: each Must Have exists; each Must NOT Have absent (reject with file:line). Output: `Must Have [N/N] | Must NOT Have [N/N] | VERDICT`.

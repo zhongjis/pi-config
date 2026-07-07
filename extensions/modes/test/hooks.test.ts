@@ -113,12 +113,12 @@ const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
 	houtu: {
 		default: [
 			"You execute by coordinating, delegating, and verifying",
-			"One `Agent()` delegation = one bounded top-level plan task",
+			"One `TaskExecute` launch = one bounded plan task",
 			"Final Verification Wave is an approval gate",
 		],
 		gpt: [
 			"Read `local://PLAN.md` before doing anything else",
-			"One `Agent()` delegation = one bounded top-level plan task",
+			"One `TaskExecute` launch = one bounded plan task",
 			"Final Verification Wave is mandatory approval gate",
 			"APPROVE",
 		],
