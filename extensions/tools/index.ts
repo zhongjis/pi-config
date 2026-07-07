@@ -81,7 +81,7 @@ export default function toolsExtension(pi: ExtensionAPI): void {
         const settingsList = new SettingsList(
           items,
           Math.min(items.length + 2, 15),
-          getSettingsListTheme(),
+          { ...getSettingsListTheme(), cursor: "  " },
           (id, newValue) => {
             if (newValue === "enabled") {
               enabledTools.add(id);
@@ -95,6 +95,7 @@ export default function toolsExtension(pi: ExtensionAPI): void {
           () => {
             done(undefined);
           },
+          { enableSearch: true },
         );
 
         container.addChild(settingsList);
