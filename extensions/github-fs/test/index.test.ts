@@ -128,12 +128,14 @@ describe("tool_call — github:// content", () => {
     expect(resolveGithubView).toHaveBeenCalledOnce();
   });
 
-  it("preserves a line-range selector on the cache path", async () => {
+  it("strips the selector to a clean cache path and derives offset/limit", async () => {
     const mock = setup();
     const input: Record<string, unknown> = { path: "github://o/r/f.ts:10-20" };
     const [result] = await mock.fire("tool_call", { toolCallId: "g2", toolName: "read", input });
     expect(result).toBeUndefined();
-    expect(input.path).toBe("/cache/view.md:10-20");
+    expect(input.path).toBe("/cache/view.md"); // clean — selector NOT re-appended
+    expect(input.offset).toBe(10);
+    expect(input.limit).toBe(11);
     expect(resolveGithubView).toHaveBeenCalledOnce();
   });
 

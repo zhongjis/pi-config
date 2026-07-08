@@ -99,6 +99,18 @@ function splitGithubSelector(path: string): { base: string; selector: string } {
   return { base: path.slice(0, m.index), selector: m[1] };
 }
 
+// A materialized github:// cache file is a real file the read tool pages via
+// offset/limit — not a `:range` path suffix. Map a simple numeric selector to
+// offset/limit; return null for raw/conflicts/multi-range (whole-file read).
+function selectorToRange(selector: string): { offset: number; limit?: number } | null {
+  const m = /^:(\d+)(?:-(\d+)|\+(\d+))?$/.exec(selector);
+  if (!m) return null;
+  const start = Number(m[1]);
+  if (m[2]) return { offset: start, limit: Math.max(1, Number(m[2]) - start + 1) };
+  if (m[3]) return { offset: start, limit: Number(m[3]) };
+  return { offset: start };
+}
+
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -208,7 +220,15 @@ export default function githubFsTools(pi: ExtensionAPI): void {
       return { block: true, reason: `Could not read ${requestedPath}: ${describeError(error)}` };
     }
 
-    event.input.path = selector ? resolvedPath + selector : resolvedPath;
+    event.input.path = resolvedPath;
+    // The cache file is a real file read pages via offset/limit, not a `:range`
+    // path suffix. Translate a simple numeric selector unless the harness already
+    // derived a window; leave raw/conflicts/multi-range to a whole-file read.
+    const range = selector ? selectorToRange(selector) : null;
+    if (range && event.input.offset === undefined && event.input.limit === undefined) {
+      event.input.offset = range.offset;
+      if (range.limit !== undefined) event.input.limit = range.limit;
+    }
     resolutions.set(event.toolCallId, { input: base, resolvedPath });
     return undefined;
   });
