@@ -1,6 +1,7 @@
 ---
 name: faithfully-awesome-omo
 description: Faithfully update, polish, sync, audit, or re-adapt this repo's Pi-adapted omo agent and mode prompts. Use whenever working on prompts under `modes/` (Hou Tu / Fu Xi / Kua Fu ← omo Atlas / Prometheus / Sisyphus), `agents/` (Taishang / Di Renjie / Yanluo ← omo Oracle / Metis / Momus; Chengfeng / Wenchang ← omo explore / librarian; Guang Guang / Jin Tong / Ju Ling / Yu Nu ← omo Sisyphus-Junior categories quick / unspecified-low / unspecified-high / visual-engineering), or `extensions/ulw/` (ultrawork) — including requests like "sync X with upstream Atlas/Prometheus/omo", "what is missing from this omo-adapted prompt", "polish / re-faithful an adapted mode", "update the gpt or gemini variant", or "align a Pi persona with its omo source". Trigger even when only the Pi persona name is given (Hou Tu, Fu Xi, Kua Fu, Taishang, Di Renjie, Yanluo, Guang Guang, Chengfeng, Wenchang, Jin Tong, Ju Ling, Yu Nu) and the word "omo" is never said. Encodes the structural-faithfulness model, the omo→Pi substitution map, the mode.md / gpt.md / gemini.md family plus gemini-overlay injection anchors, the test-locked strings and DOX contracts to preserve, the recurring decision forks, and a MANDATORY proposal-first / confirm-before-apply gate. NOT for Lu Ban or Wei Zheng (Superpowers lineage), Shen Nong (product-manager lineage), or Cang Jie (native).
+disable-model-invocation: true
 ---
 
 # Faithfully Awesome omo
@@ -32,27 +33,34 @@ So the achievable target is **structural faithfulness**: adopt the upstream sect
 ## Workflow
 
 ### 0. Orient
+
 - Identify the target persona(s) and which prompt files they own (`references/lineage-map.md`).
 - Read the owning `AGENTS.md` chain top-down (root → `modes/` or `agents/` or `extensions/` → nearest owner). The nearest one controls local rules; parents still bind. This is mandatory before edits — it tells you what is contract vs. free.
 
 ### 1. Fetch upstream and diff
+
 - Fetch the current upstream source for the mapped persona (URLs in `references/lineage-map.md`). Open it — do not reconstruct upstream behavior from memory.
 - Diff upstream against the current Pi prompt **and its family variants** (`mode.md` + `gpt.md` + `gemini.md`, or the single agent `.md`, or `extensions/ulw/prompts/{default,gpt}.md`).
 
 ### 2. Classify every difference
+
 Sort each gap into one bucket — this classification is the real intellectual work:
+
 - **Real gap** — upstream has a concept Pi dropped by accident or omission. Candidate to restore.
 - **Runtime substitution** — same concept, different tool noun. Apply the map; not a fork.
 - **Intentional Pi divergence** — Pi deliberately differs (see the fork list in `references/constraints-and-forks.md`). Do not "fix" it silently; confirm whether to keep or revert.
 - **Upstream-only-runtime** — depends on an upstream runtime Pi lacks (e.g. `boulder.json` completion tracking). Usually drop; confirm.
 
 ### 3. Draft the adaptation
+
 - Apply `references/substitution-map.md` consistently.
 - Preserve, without exception: **test-locked strings**, **Pi agent/mode names**, **owning-`AGENTS.md` mechanics**, the **`<role>` / `<critical>` injection anchors** (see substitution map — the Gemini overlay is injected before the first `<critical>`, else after `</role>`; lose those anchors and the corrective overlay falls to the bottom of the prompt), and **attribution-only** upstream mentions.
 - Keep all three family variants aligned in intent (they may differ in wording per the Default / GPT / Gemini philosophy in `modes/MANIFESTO.md`).
 
 ### 4. Proposal + confirm gate — MANDATORY
+
 Never edit a persona prompt before the user approves the plan. This is the core discipline of this skill: these prompts are load-bearing and shared, and a wrong "faithful" call is expensive to unwind. Present, concisely:
+
 - the upstream→Pi section mapping and what changes,
 - files to be touched (all family variants),
 - test-locked strings you will preserve,
@@ -62,18 +70,21 @@ Never edit a persona prompt before the user approves the plan. This is the core 
 Then wait for an explicit go. If the plan needs a change to a locked contract file (e.g. `modes/AGENTS.md`) or a test, call that out as "Ask First" territory and get separate approval.
 
 ### 5. Implement the family in lockstep
+
 - Edit `mode.md` (canonical: frontmatter + default body), `gpt.md` (self-contained body-only replacement), and `gemini.md` (corrective overlay) together — never leave the matrix inconsistent.
 - For agents it is a single `.md`; for ulw it is `extensions/ulw/prompts/{default,gpt}.md`.
 - Match existing formatting; make the smallest change that satisfies the approved plan.
-- **Model + effort frontmatter is in scope too.** Align each agent/mode `model:` chain's effort (and versions) to its omo counterpart per `references/substitution-map.md` → *Model-chain alignment method*: keep order, `omo untagged → strip suffix`, Pi has no `:max` (use `:xhigh`), keep newest opus but bump `4-6 → 4-7`.
+- **Model + effort frontmatter is in scope too.** Align each agent/mode `model:` chain's effort (and versions) to its omo counterpart per `references/substitution-map.md` → _Model-chain alignment method_: keep order, `omo untagged → strip suffix`, Pi has no `:max` (use `:xhigh`), keep newest opus but bump `4-6 → 4-7`.
 
 ### 6. Verify (evidence, not vibes)
+
 - `pnpm vitest run test/fuxi-clearance.test.ts` (mode family matrix + locked strings). Add `extensions/ulw/test/` and `extensions/modes/test/` when those are touched.
 - `pnpm lint:typecheck`.
 - Grep for stray upstream mentions (only the sanctioned attribution line may remain) and stale substituted tokens (`ACCUMULATED CONTEXT`, `boulder`, `task(`, `.omo/`, `TodoWrite`, etc. — whichever you removed).
 - Reread the **final injected/composed prompt**, not just source fragments (per `modes/AGENTS.md`). Confirm the Gemini overlay lands before `<critical>`.
 
 ### 7. DOX pass
+
 - If you changed structure, ownership, a contract, section counts, or mechanics, update the nearest owning `AGENTS.md` and any parent/child index. If nothing contract-level changed, say so.
 
 ## References

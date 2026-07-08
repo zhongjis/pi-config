@@ -1,6 +1,7 @@
 ---
 name: pi-tool-output-presentation
 description: Use this skill whenever polishing, designing, reviewing, or debugging Pi tool output presentation for custom tools or extensions. Trigger on requests like "polish tool output", "make collapsed tool results nicer", "add renderCall/renderResult", "TUI summaries", "expanded raw output", "avoid noisy tool results", or when implementing a Pi extension tool whose result is too verbose, confusing, duplicated, or hard to scan. This skill turns real observed tool outputs into compact collapsed summaries while preserving model-visible content and raw expanded output.
+disable-model-invocation: true
 ---
 
 # Pi Tool Output Presentation
@@ -142,18 +143,18 @@ For location/call lists, prefer local project paths first. External dependency p
 
 Use this taxonomy as a starting point:
 
-| Output kind | Collapse to | Avoid |
-|---|---|---|
-| Search results | `matches: N`, then `matches: item1, item2 +N` | full snippets |
-| File tree | `structure: N files`, root/path/format if not in header | full tree |
-| Diagnostics | `diagnostics: clean` or counts, failed sources | full messages unless first error is the point |
-| Hover/docs | `hover: <signature or first doc line>` | whole markdown/code fence |
-| Definitions/references | `definitions:` / `references:` count, then `matches:` paths | every location |
-| Symbols | `symbols: N`, then `symbols: name1, name2 +N` | nested tree |
-| Call graph | `incoming:` / `outgoing:` count, then `calls:` names | ranges, dependency noise |
-| Code actions | `actions: N`, then `actions: preferred/top action +N` | edit payload/newText |
-| Build/log output | `status:` / `error:` decisive line, output size only if meaningful | full logs |
-| JSON/API result | `status:` / `count:` / domain key fields | raw JSON |
+| Output kind            | Collapse to                                                        | Avoid                                         |
+| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------- |
+| Search results         | `matches: N`, then `matches: item1, item2 +N`                      | full snippets                                 |
+| File tree              | `structure: N files`, root/path/format if not in header            | full tree                                     |
+| Diagnostics            | `diagnostics: clean` or counts, failed sources                     | full messages unless first error is the point |
+| Hover/docs             | `hover: <signature or first doc line>`                             | whole markdown/code fence                     |
+| Definitions/references | `definitions:` / `references:` count, then `matches:` paths        | every location                                |
+| Symbols                | `symbols: N`, then `symbols: name1, name2 +N`                      | nested tree                                   |
+| Call graph             | `incoming:` / `outgoing:` count, then `calls:` names               | ranges, dependency noise                      |
+| Code actions           | `actions: N`, then `actions: preferred/top action +N`              | edit payload/newText                          |
+| Build/log output       | `status:` / `error:` decisive line, output size only if meaningful | full logs                                     |
+| JSON/API result        | `status:` / `count:` / domain key fields                           | raw JSON                                      |
 
 If an operation has a unique domain concept, name it directly. Example: `impact: 2 symbols`, not generic `items: 2` or `top: ...`.
 
