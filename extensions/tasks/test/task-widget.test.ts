@@ -74,7 +74,7 @@ describe("TaskWidget", () => {
     const lines = renderWidget(ui.state);
     expect(lines).toHaveLength(2); // header + 1 task
     expect(lines[0]).toContain("Tasks");
-    expect(lines[0]).toContain("1 open");
+    expect(lines[0]).toContain("1 ready");
     expect(lines[1]).toContain("○");
     expect(lines[1]).toContain("Do something");
   });
@@ -134,6 +134,20 @@ describe("TaskWidget", () => {
     expect(blockedLine).not.toContain("blocked by");
   });
 
+  it("counts owner-assigned pending tasks as blocked, not ready", () => {
+    store.create("Open task", "Desc");
+    store.create("Claimed task", "Desc");
+    store.update("2", { owner: "agent-2" });
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    expect(lines[0]).toContain("1 ready");
+    expect(lines[0]).toContain("1 blocked");
+    expect(lines[1]).toContain("Open task");
+    expect(lines[2]).toContain("Claimed task");
+    expect(lines[2]).not.toContain("blocked by");
+  });
+
   it("shows status summary in header", () => {
     store.create("Task A", "Desc");
     store.create("Task B", "Desc");
@@ -145,8 +159,8 @@ describe("TaskWidget", () => {
     const lines = renderWidget(ui.state);
     expect(lines[0]).toContain("Tasks");
     expect(lines[0]).toContain("1 done");
-    expect(lines[0]).toContain("1 in progress");
-    expect(lines[0]).toContain("1 open");
+    expect(lines[0]).toContain("1 running");
+    expect(lines[0]).toContain("1 ready");
   });
 
   it("clears widget when all tasks are deleted", () => {
@@ -169,6 +183,39 @@ describe("TaskWidget", () => {
     // header + 10 tasks + "… and 5 more"
     expect(lines).toHaveLength(12);
     expect(lines[11]).toContain("5 more");
+  });
+
+  it("orders active work before completed overflow", () => {
+    for (let i = 0; i < 12; i++) {
+      store.create(`Completed ${i + 1}`, "Desc");
+      store.update(String(i + 1), { status: "completed" });
+    }
+    store.create("Running A", "Desc", "Doing A");
+    store.update("13", { status: "in_progress" });
+    store.create("Running B", "Desc");
+    store.update("14", { status: "in_progress" });
+    store.create("Ready A", "Desc");
+    store.create("Ready B", "Desc");
+    store.create("Blocker", "Desc");
+    store.create("Blocked", "Desc");
+    store.update("18", { addBlockedBy: ["17"] });
+    widget.setActiveTask("13", true);
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    expect(lines).toHaveLength(12); // header + 10 tasks + overflow
+    expect(lines[0]).toContain("2 running");
+    expect(lines[0]).toContain("3 ready");
+    expect(lines[0]).toContain("1 blocked");
+    expect(lines[0]).toContain("12 done");
+    expect(lines[1]).toContain("Doing A…");
+    expect(lines[2]).toContain("Running B");
+    expect(lines[3]).toContain("Ready A");
+    expect(lines[4]).toContain("Ready B");
+    const blockedLine = lines.find(l => l.includes("Blocked"));
+    expect(blockedLine).toContain("blocked by #17");
+    expect(lines[7]).toContain("Completed 1");
+    expect(lines[11]).toContain("8 more");
   });
 
   it("tracks token usage for active tasks", () => {

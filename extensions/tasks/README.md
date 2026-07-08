@@ -16,7 +16,7 @@ Claude Code-style task tracking with dependency management, persistent widget, b
 
 ### `TaskList`
 
-Lists all tasks with status, owner, and blocked-by info. Sorted: pending → in_progress → completed.
+Lists all tasks with status, owner, and blocked-by info. Non-empty output is grouped as Running, Ready, Blocked, then Completed. Ready means `pending`, no owner, and no unsatisfied blockers; ready tasks with `metadata.agentType` are marked executable for `TaskExecute`.
 
 ### `TaskGet`
 
@@ -65,13 +65,19 @@ Sends SIGTERM, waits 5s, then SIGKILL. For subagent tasks, sends a stop RPC.
 
 Tasks must be `pending`, have `agentType` set, and all blockers completed. Requires the `@panda/pi-subagents` extension (Phase 2 hard fork of the upstream `pi-subagents` package).
 
+When execution launches at least one task and other executable ready tasks remain unrequested, the result includes `Also ready: #...` with a tip to pass multiple `task_ids` when parallel execution is safe. This is advisory only; it does not change `autoCascade` or require parallel execution.
+
 ## Widget
 
+The widget appears while tasks exist. It shows counts for running, ready, blocked, and done tasks; active/running and ready work are listed before blocked and completed work when space is limited.
+
 ```
-Tasks  ✔2 ◼1 ◻3
- ✔ #1 Fix auth bug
- ✳ #2 Write unit tests (agent-1) 2m 14s · 8.2k tok
- ◻ #3 Update docs [blocked by #2]
+Tasks · 1 running · 2 ready · 1 blocked · 2 done
+├─ ◐ #2 Write unit tests (agent abc12)
+├─ ○ #3 Update docs
+├─ ○ #4 Review output
+├─ ○ #5 Release notes › blocked by #2
+└─ … and 2 more
 ```
 
 ## Commands

@@ -241,6 +241,64 @@ describe("TaskExecute", () => {
     expect(rpc.spawned[0].options.isBackground).toBe(true);
   });
 
+  it("warns when other executable ready tasks are unrequested", async () => {
+    for (const subject of ["One", "Two", "Three"]) {
+      await mock.executeTool("TaskCreate", {
+        subject,
+        description: "Desc",
+        agentType: "general-purpose",
+      });
+    }
+
+    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const text = result.content[0].text;
+
+    expect(text).toContain("Launched 1 agent");
+    expect(text).toContain("#1 → agent agent-1");
+    expect(text).toContain("Also ready: #2, #3");
+    expect(text).toContain("pass multiple task_ids to run executable ready tasks in parallel when safe");
+    expect(rpc.spawned).toHaveLength(1);
+  });
+
+  it("does not warn when all executable ready tasks are requested", async () => {
+    for (const subject of ["One", "Two", "Three"]) {
+      await mock.executeTool("TaskCreate", {
+        subject,
+        description: "Desc",
+        agentType: "general-purpose",
+      });
+    }
+
+    const result = await mock.executeTool("TaskExecute", { task_ids: ["1", "2", "3"] });
+    const text = result.content[0].text;
+
+    expect(text).toContain("Launched 3 agent");
+    expect(text).not.toContain("Also ready");
+    expect(rpc.spawned).toHaveLength(3);
+  });
+
+  it("does not warn for blocked completed in-progress no-agentType or owner-assigned tasks", async () => {
+    await mock.executeTool("TaskCreate", { subject: "Executable", description: "Desc", agentType: "general-purpose" });
+    await mock.executeTool("TaskCreate", { subject: "Blocker", description: "Desc" });
+    await mock.executeTool("TaskCreate", { subject: "Blocked", description: "Desc", agentType: "general-purpose" });
+    await mock.executeTool("TaskCreate", { subject: "Completed", description: "Desc", agentType: "general-purpose" });
+    await mock.executeTool("TaskCreate", { subject: "In progress", description: "Desc", agentType: "general-purpose" });
+    await mock.executeTool("TaskCreate", { subject: "No agent", description: "Desc" });
+    await mock.executeTool("TaskCreate", { subject: "Owned", description: "Desc", agentType: "general-purpose" });
+
+    await mock.executeTool("TaskUpdate", { taskId: "3", addBlockedBy: ["2"] });
+    await mock.executeTool("TaskUpdate", { taskId: "4", status: "completed" });
+    await mock.executeTool("TaskUpdate", { taskId: "5", status: "in_progress" });
+    await mock.executeTool("TaskUpdate", { taskId: "7", owner: "worker" });
+
+    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const text = result.content[0].text;
+
+    expect(text).toContain("Launched 1 agent");
+    expect(text).not.toContain("Also ready");
+    expect(rpc.spawned).toHaveLength(1);
+  });
+
   it("passes additional_context and max_turns to spawned agents", async () => {
     await mock.executeTool("TaskCreate", {
       subject: "Explore codebase",

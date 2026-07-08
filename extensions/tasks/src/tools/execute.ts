@@ -2,8 +2,17 @@ import { Type } from "typebox";
 import { runSpawn } from "../lifecycle/apply-commands.js";
 import { claimBlockerMessage, getClaimBlockerFailure, updateTask, warnClaimRejected } from "../lifecycle/fsm-dispatch.js";
 import { textResult } from "../lifecycle/store-glue.js";
+import type { Task } from "../types.js";
 import { renderTaskToolCall, renderTaskToolResult } from "./rendering.js";
 import type { TaskToolDeps } from "./types.js";
+
+function isExecutableReadyTask(task: Task, runtime: TaskToolDeps["runtime"]): boolean {
+  return task.status === "pending"
+    && !task.owner
+    && !getClaimBlockerFailure(runtime, task)
+    && typeof task.metadata.agentType === "string"
+    && task.metadata.agentType.trim() !== "";
+}
 
 export function registerExecuteTool({ pi, runtime, bridge }: TaskToolDeps) {
   pi.registerTool({
@@ -50,7 +59,10 @@ export function registerExecuteTool({ pi, runtime, bridge }: TaskToolDeps) {
 
       const results: string[] = [];
       const launched: string[] = [];
-
+      const requestedTaskIds = new Set(params.task_ids);
+      const unrequestedExecutableReady = runtime.store
+        .list()
+        .filter(task => !requestedTaskIds.has(task.id) && isExecutableReadyTask(task, runtime));
       for (const taskId of params.task_ids) {
         const task = runtime.store.get(taskId);
         if (!task) {
@@ -108,6 +120,10 @@ export function registerExecuteTool({ pi, runtime, bridge }: TaskToolDeps) {
         );
       }
       if (results.length > 0) lines.push(`Skipped:\n${results.join("\n")}`);
+      if (unrequestedExecutableReady.length > 0 && launched.length > 0) {
+        const ids = unrequestedExecutableReady.map(task => `#${task.id}`).join(", ");
+        lines.push(`Also ready: ${ids}. Tip: pass multiple task_ids to run executable ready tasks in parallel when safe.`);
+      }
       if (lines.length === 0) lines.push("No tasks to execute.");
 
       return textResult(lines.join("\n\n"));

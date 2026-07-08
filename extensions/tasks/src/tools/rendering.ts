@@ -104,31 +104,70 @@ function summarizeCreate(text: string): string[] | undefined {
   return [`task: #${match[1]} created · ${truncate(match[2])}`];
 }
 
+type TaskListSection = "Running" | "Ready" | "Blocked" | "Completed";
+
+const TASK_LIST_SECTIONS: TaskListSection[] = ["Running", "Ready", "Blocked", "Completed"];
+const TASK_LIST_PREVIEW_ORDER: TaskListSection[] = ["Ready", "Running", "Completed", "Blocked"];
+const TASK_LIST_LABELS: Record<TaskListSection, string> = {
+  Running: "running",
+  Ready: "ready",
+  Blocked: "blocked",
+  Completed: "completed",
+};
+
+function stripTaskAnnotations(subject: string): string {
+  return subject.replace(/ \[[^\]]+\]$/g, "");
+}
+
+function summarizeTaskPreview(lines: string[]): string {
+  const previews = lines.map(line => {
+    const match = line.match(/^#(\S+) \[[^\]]+\] (.+)$/);
+    if (!match) return undefined;
+    return `#${match[1]} ${truncate(stripTaskAnnotations(match[2]), 40)}`;
+  }).filter(Boolean) as string[];
+  const more = previews.length > 3 ? ` +${previews.length - 3}` : "";
+  return `${previews.slice(0, 3).join(", ")}${more}`;
+}
+
 function summarizeList(text: string): string[] | undefined {
   if (text.trim() === "No tasks found") return ["tasks: none"];
-  const taskLines = text.split(/\r?\n/).filter(line => /^#\S+ \[[^\]]+\]/.test(line));
-  if (taskLines.length === 0) return undefined;
+  const grouped = new Map<TaskListSection, string[]>();
+  let currentSection: TaskListSection | undefined;
+  const fallbackTaskLines: string[] = [];
 
-  const counts = new Map<string, number>();
-  const previews: string[] = [];
-  for (const line of taskLines) {
-    const match = line.match(/^#(\S+) \[([^\]]+)\] (.+)$/);
-    if (!match) continue;
-    const status = match[2];
-    counts.set(status, (counts.get(status) ?? 0) + 1);
-    previews.push(`#${match[1]} ${truncate(match[3].replace(/ \[[^\]]+\]$/, ""), 40)}`);
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if ((TASK_LIST_SECTIONS as string[]).includes(line)) {
+      currentSection = line as TaskListSection;
+      if (!grouped.has(currentSection)) grouped.set(currentSection, []);
+      continue;
+    }
+    if (!/^#\S+ \[[^\]]+\]/.test(line)) continue;
+    if (currentSection) {
+      grouped.get(currentSection)!.push(line);
+    } else {
+      fallbackTaskLines.push(line);
+    }
   }
 
-  const statusOrder = ["in_progress", "pending", "completed"];
-  const statusSummary = statusOrder
-    .filter(status => counts.has(status))
-    .map(status => `${counts.get(status)} ${status}`)
+  if (grouped.size === 0 && fallbackTaskLines.length === 0) return undefined;
+  if (grouped.size === 0) grouped.set("Ready", fallbackTaskLines);
+
+  const total = Array.from(grouped.values()).reduce((sum, lines) => sum + lines.length, 0);
+  const countSummary = TASK_LIST_SECTIONS
+    .filter(section => (grouped.get(section)?.length ?? 0) > 0)
+    .map(section => `${grouped.get(section)!.length} ${TASK_LIST_LABELS[section]}`)
     .join(", ");
-  const more = previews.length > 3 ? ` +${previews.length - 3}` : "";
-  return [
-    `tasks: ${taskLines.length} total${statusSummary ? ` · ${statusSummary}` : ""}`,
-    `tasks: ${previews.slice(0, 3).join(", ")}${more}`,
-  ];
+  const lines = [`tasks: ${total} total${countSummary ? ` · ${countSummary}` : ""}`];
+
+  for (const section of TASK_LIST_PREVIEW_ORDER) {
+    const sectionLines = grouped.get(section);
+    if (!sectionLines || sectionLines.length === 0) continue;
+    lines.push(`${TASK_LIST_LABELS[section]}: ${summarizeTaskPreview(sectionLines)}`);
+    if (lines.length >= 4) break;
+  }
+
+  return lines;
 }
 
 function summarizeGet(text: string): string[] | undefined {
@@ -201,7 +240,7 @@ function summarizeExecute(text: string): string[] | undefined {
     if (launchedRows.length > 0) lines.push(`tasks: ${launchedRows.slice(0, 3).join(", ")}${launchedRows.length > 3 ? ` +${launchedRows.length - 3}` : ""}`);
   }
 
-  const skipped = text.match(/(?:^|\n\n)Skipped:\n([\s\S]+)$/);
+  const skipped = text.match(/(?:^|\n\n)Skipped:\n([\s\S]*?)(?:\n\nAlso ready:|$)/);
   if (skipped) {
     const skippedRows = skipped[1].trim().split(/\r?\n/).filter(Boolean);
     if (skippedRows.length > 0) lines.push(`skipped: ${skippedRows.slice(0, 3).join(", ")}${skippedRows.length > 3 ? ` +${skippedRows.length - 3}` : ""}`);

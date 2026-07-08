@@ -84,14 +84,22 @@ describe("Task tool rendering", () => {
 
   it("keeps expanded output exact and leaves model-visible content unchanged", async () => {
     const tools = registerTools();
-    const tool = tools.get("TaskCreate")!;
-    const result = await tool.execute!("call-1", { subject: "Keep raw", description: "Desc" }, undefined, undefined, undefined);
-    const raw = result.content![0].text;
+    const create = tools.get("TaskCreate")!;
+    const list = tools.get("TaskList")!;
+    const createResult = await create.execute!("call-1", { subject: "Keep raw", description: "Desc" }, undefined, undefined, undefined);
+    await create.execute!("call-2", { subject: "List raw", description: "Desc" }, undefined, undefined, undefined);
+    const listResult = await list.execute!("call-3", {}, undefined, undefined, undefined);
+    const raw = listResult.content![0].text;
 
-    const expanded = renderText(tool.renderResult!(result, { expanded: true }, plainTheme, { args: { subject: "Keep raw" } }));
+    const expanded = renderText(list.renderResult!(listResult, { expanded: true }, plainTheme, {}));
 
     expect(expanded).toBe(raw);
-    expect(result.content![0].text).toBe("Task #1 created successfully: Keep raw");
+    expect(createResult.content![0].text).toBe("Task #1 created successfully: Keep raw");
+    expect(raw).toBe([
+      "Ready",
+      "#1 [pending] Keep raw",
+      "#2 [pending] List raw",
+    ].join("\n"));
   });
 
   it("summarizes create/list/get/update results as short keyword lines", () => {
@@ -101,13 +109,19 @@ describe("Task tool rendering", () => {
       .toContain("└─ task: #1 created · Polish task renderer");
 
     const list = collapsed(tools.get("TaskList")!, [
+      "Running",
       "#2 [in_progress] Implement renderer (agent)",
+      "Ready",
+      "#4 [pending] Verify tests [executable: jintong]",
+      "Blocked",
       "#1 [pending] Inspect output [blocked by #3]",
+      "Completed",
       "#3 [completed] Read docs",
-      "#4 [pending] Verify tests",
     ].join("\n"));
-    expect(list).toContain("├─ tasks: 4 total · 1 in_progress, 2 pending, 1 completed");
-    expect(list).toContain("└─ tasks: #2 Implement renderer (agent), #1 Inspect output, #3 Read docs +1");
+    expect(list).toContain("├─ tasks: 4 total · 1 running, 1 ready, 1 blocked, 1 completed");
+    expect(list).toContain("├─ ready: #4 Verify tests");
+    expect(list).toContain("├─ running: #2 Implement renderer (agent)");
+    expect(list).toContain("└─ completed: #3 Read docs");
     expect(list).not.toContain("▸ TaskList");
 
     const get = collapsed(tools.get("TaskGet")!, [
@@ -125,6 +139,62 @@ describe("Task tool rendering", () => {
 
     expect(collapsed(tools.get("TaskUpdate")!, "Updated task #2 status, owner (warning: reserved metadata keys ignored: _piWorkflowPhase)"))
       .toContain("└─ warning: reserved metadata keys ignored: _piWorkflowPhase");
+  });
+
+  it("groups TaskList raw output into running, ready, blocked, and completed sections", async () => {
+    const tools = registerTools();
+    const create = tools.get("TaskCreate")!;
+    const update = tools.get("TaskUpdate")!;
+    const list = tools.get("TaskList")!;
+
+    await create.execute!("call-1", { subject: "Run build", description: "desc" }, undefined, undefined, undefined);
+    await create.execute!("call-2", { subject: "Fix ready A", description: "desc", agentType: "jintong" }, undefined, undefined, undefined);
+    await create.execute!("call-3", { subject: "Fix ready B", description: "desc", agentType: "chengfeng" }, undefined, undefined, undefined);
+    await create.execute!("call-4", { subject: "Wait for build", description: "desc" }, undefined, undefined, undefined);
+    await create.execute!("call-5", { subject: "Document done", description: "desc" }, undefined, undefined, undefined);
+    await create.execute!("call-6", { subject: "Verify done", description: "desc" }, undefined, undefined, undefined);
+    await update.execute!("call-7", { taskId: "1", status: "in_progress", owner: "agent-1" }, undefined, undefined, undefined);
+    await update.execute!("call-8", { taskId: "4", addBlockedBy: ["1"] }, undefined, undefined, undefined);
+    await update.execute!("call-9", { taskId: "5", status: "completed" }, undefined, undefined, undefined);
+    await update.execute!("call-10", { taskId: "6", status: "completed" }, undefined, undefined, undefined);
+
+    const result = await list.execute!("call-11", {}, undefined, undefined, undefined);
+
+    expect(result.content![0].text).toBe([
+      "Running",
+      "#1 [in_progress] Run build (agent-1)",
+      "Ready",
+      "#2 [pending] Fix ready A [executable: jintong]",
+      "#3 [pending] Fix ready B [executable: chengfeng]",
+      "Blocked",
+      "#4 [pending] Wait for build [blocked by #1]",
+      "Completed",
+      "#5 [completed] Document done",
+      "#6 [completed] Verify done",
+    ].join("\n"));
+  });
+
+  it("excludes blocked and owner-assigned pending tasks from Ready", async () => {
+    const tools = registerTools();
+    const create = tools.get("TaskCreate")!;
+    const update = tools.get("TaskUpdate")!;
+    const list = tools.get("TaskList")!;
+
+    await create.execute!("call-1", { subject: "Blocking task", description: "desc" }, undefined, undefined, undefined);
+    await create.execute!("call-2", { subject: "Owner task", description: "desc" }, undefined, undefined, undefined);
+    await create.execute!("call-3", { subject: "Blocked task", description: "desc" }, undefined, undefined, undefined);
+    await update.execute!("call-4", { taskId: "2", owner: "agent-2" }, undefined, undefined, undefined);
+    await update.execute!("call-5", { taskId: "3", addBlockedBy: ["1"] }, undefined, undefined, undefined);
+
+    const result = await list.execute!("call-6", {}, undefined, undefined, undefined);
+
+    expect(result.content![0].text).toBe([
+      "Ready",
+      "#1 [pending] Blocking task",
+      "Blocked",
+      "#2 [pending] Owner task (agent-2)",
+      "#3 [pending] Blocked task [blocked by #1]",
+    ].join("\n"));
   });
 
   it("summarizes output/stop/execute results without dumping logs", () => {
@@ -155,6 +225,23 @@ describe("Task tool rendering", () => {
     expect(execute).toContain("├─ tasks: #1 → agent agent-a, #2 → agent agent-b");
     expect(execute).toContain("└─ skipped: #3: not pending (status: completed)");
     expect(execute).not.toContain("Do not spawn additional agents");
+
+    const executeWithAdvisory = collapsed(tools.get("TaskExecute")!, [
+      "Launched 1 agent(s):",
+      "#1 → agent agent-a",
+      "Use TaskOutput to check progress. Do not spawn additional agents for these tasks.",
+      "",
+      "Skipped:",
+      "#3: not pending (status: completed)",
+      "",
+      "Also ready:",
+      "#4 Ready task",
+    ].join("\n"));
+    expect(executeWithAdvisory).toContain("├─ agents: 1 launched");
+    expect(executeWithAdvisory).toContain("├─ tasks: #1 → agent agent-a");
+    expect(executeWithAdvisory).toContain("└─ skipped: #3: not pending (status: completed)");
+    expect(executeWithAdvisory).not.toContain("Also ready");
+    expect(executeWithAdvisory).not.toContain("#4 Ready task");
   });
 
   it("renders partial and error states safely", () => {

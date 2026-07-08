@@ -109,13 +109,27 @@ export class TaskWidget {
     const completed = groupedTasks.completed ?? [];
     const inProgress = groupedTasks.in_progress ?? [];
     const pending = groupedTasks.pending ?? [];
+    const pendingBlockers = new Map<string, string[]>();
+    const ready: typeof pending = [];
+    const blocked: typeof pending = [];
+
+    for (const task of pending) {
+      const { unsatisfied } = filterBlockers(task.blockedBy, this.store);
+      pendingBlockers.set(task.id, unsatisfied);
+      if (unsatisfied.length > 0 || task.owner) {
+        blocked.push(task);
+      } else {
+        ready.push(task);
+      }
+    }
 
     const summary = joinStats([
+      inProgress.length > 0 ? `${inProgress.length} running` : "",
+      ready.length > 0 ? `${ready.length} ready` : "",
+      blocked.length > 0 ? `${blocked.length} blocked` : "",
       completed.length > 0 ? `${completed.length} done` : "",
-      inProgress.length > 0 ? `${inProgress.length} in progress` : "",
-      pending.length > 0 ? `${pending.length} open` : "",
     ]);
-    const active = inProgress.length > 0 || pending.length > 0;
+    const active = inProgress.length > 0 || ready.length > 0 || blocked.length > 0;
     const headColor = active ? "accent" : "dim";
 
     const spinnerChar = spinnerGlyph(this.widgetFrame);
@@ -124,8 +138,9 @@ export class TaskWidget {
       : `${theme.fg(headColor, headingIcon(active))} ${theme.fg(headColor, "Tasks")}`;
     const lines: string[] = [truncate(heading)];
 
-    const hasOverflow = tasks.length > TASK_WIDGET_MAX_VISIBLE;
-    const visible = tasks.slice(0, TASK_WIDGET_MAX_VISIBLE);
+    const orderedTasks = [...inProgress, ...ready, ...blocked, ...completed];
+    const hasOverflow = orderedTasks.length > TASK_WIDGET_MAX_VISIBLE;
+    const visible = orderedTasks.slice(0, TASK_WIDGET_MAX_VISIBLE);
     for (let i = 0; i < visible.length; i++) {
       const task = visible[i];
       const isActive = this.activeTaskIds.has(task.id) && task.status === "in_progress";
@@ -143,12 +158,12 @@ export class TaskWidget {
         icon = theme.fg("dim", GLYPH.pending);
       }
 
-	      let suffix = "";
-	      if (task.status === "pending" && task.blockedBy.length > 0) {
-	        const { unsatisfied: openBlockers } = filterBlockers(task.blockedBy, this.store);
-	        if (openBlockers.length > 0) {
-	          suffix = theme.fg("dim", ` › blocked by ${openBlockers.map(id => "#" + id).join(", ")}`);
-	        }
+      let suffix = "";
+      if (task.status === "pending") {
+        const openBlockers = pendingBlockers.get(task.id) ?? filterBlockers(task.blockedBy, this.store).unsatisfied;
+        if (openBlockers.length > 0) {
+          suffix = theme.fg("dim", ` › blocked by ${openBlockers.map(id => "#" + id).join(", ")}`);
+        }
       }
 
       let text: string;
@@ -181,7 +196,7 @@ export class TaskWidget {
     }
 
     if (hasOverflow) {
-      lines.push(truncate(theme.fg("dim", `${TREE.last} … and ${tasks.length - TASK_WIDGET_MAX_VISIBLE} more`)));
+      lines.push(truncate(theme.fg("dim", `${TREE.last} … and ${orderedTasks.length - TASK_WIDGET_MAX_VISIBLE} more`)));
     }
 
     return lines;
