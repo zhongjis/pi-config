@@ -65,6 +65,7 @@ Then wait for an explicit go. If the plan needs a change to a locked contract fi
 - Edit `mode.md` (canonical: frontmatter + default body), `gpt.md` (self-contained body-only replacement), and `gemini.md` (corrective overlay) together — never leave the matrix inconsistent.
 - For agents it is a single `.md`; for ulw it is `extensions/ulw/prompts/{default,gpt}.md`.
 - Match existing formatting; make the smallest change that satisfies the approved plan.
+- **Model + effort frontmatter is in scope too.** Align each agent/mode `model:` chain's effort (and versions) to its omo counterpart per `references/substitution-map.md` → *Model-chain alignment method*: keep order, `omo untagged → strip suffix`, Pi has no `:max` (use `:xhigh`), keep newest opus but bump `4-6 → 4-7`.
 
 ### 6. Verify (evidence, not vibes)
 - `pnpm vitest run test/fuxi-clearance.test.ts` (mode family matrix + locked strings). Add `extensions/ulw/test/` and `extensions/modes/test/` when those are touched.
@@ -78,7 +79,7 @@ Then wait for an explicit go. If the plan needs a change to a locked contract fi
 ## References
 
 - `references/lineage-map.md` — which Pi persona ← which upstream persona, files, fetch URLs, out-of-scope, attribution-gap notes.
-- `references/substitution-map.md` — omo→Pi token map, family matrix, Gemini-overlay injection anchor rule, Default/GPT/Gemini philosophy.
+- `references/substitution-map.md` — omo→Pi token map, effort/reasoning-level mapping, model-chain alignment method, family matrix, Gemini-overlay injection anchor rule, Default/GPT/Gemini philosophy.
 - `references/constraints-and-forks.md` — test-locked strings, DOX contracts to respect, attribution rule, and the recurring decision forks with this repo's defaults.
 
 ## Verify commands (quick copy)

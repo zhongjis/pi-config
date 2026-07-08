@@ -40,6 +40,42 @@ Always rename upstream persona names to the Pi persona (except in a single sanct
 
 `agentType` routing quick reference: `jintong` (standard bounded non-UI impl/debug/test), `juling` (opus-tier complex/higher-risk non-UI impl), `yunu` (frontend/UI + browser QA), `guangguang` (tiny single-file edit), `taishang` (read-only architecture/review), `chengfeng` (recon, background `Agent()`), `wenchang` (doc/web research, background `Agent()`), `cangjie` (single-file Markdown/HTML report — out of omo scope but a valid route).
 
+## Effort / reasoning-level mapping (omo → Pi)
+
+The `model:<effort>` suffix does NOT mean the same thing in each project — translate, never copy blindly.
+
+- **Pi** — the suffix is a **ThinkingLevel** (source: `pi-ai` `EXTENDED_THINKING_LEVELS`, `cli/args.js` `VALID_THINKING_LEVELS`): `off, minimal, low, medium, high, xhigh`. **No `:max`; ceiling is `:xhigh`.** Pi maps the level to each provider internally (`api/anthropic-messages.js` `mapThinkingLevelTo…` + per-model `thinkingLevelMap` in `providers/anthropic.models.js`). An **untagged** model uses the session/agent **default** level — NOT off.
+- **omo** — `variant` / `reasoningEffort` (source: `oh-my-opencode.schema.json`): `none, minimal, low, medium, high, xhigh, max`. **`:max` is Opus-only** (sonnet/haiku clamp to `high`; OAuth/Copilot reject `max`/`xhigh`). Untagged ≈ no reasoning.
+
+Translation (omo → Pi suffix):
+
+| omo | Pi | note |
+|-----|-----|------|
+| `max` | `xhigh` | Pi has no `:max`; `:xhigh` is the ceiling and maps to Anthropic's max thinking budget for Opus. So Pi `opus:xhigh` **is** the faithful rendering of omo `opus:max` — not a drift. |
+| `xhigh` | `xhigh` | 1:1 (GPT; o-series downgrades to `high`) |
+| `high` | `high` | 1:1 |
+| `medium` | `medium` | 1:1 |
+| `low` | `low` | 1:1 |
+| `minimal` | `minimal` | 1:1 |
+| `none` / untagged | *(leave untagged — Pi default)* | Ratified rule: map omo-untagged → Pi-untagged (omit the suffix) so both fall to the provider/session default. Do NOT force `:off` (that disables reasoning). Use `:off` only when you explicitly want reasoning off. |
+
+Caveats: Pi's per-model `thinkingLevelMap` may clamp a level the model can't take (verify per target model); omo's untagged runtime default was not fully confirmed.
+
+## Model-chain alignment method
+
+Local agents use a **house provider-ladder** (`anthropic → openai-codex → opencode-go → llama-swap`) mapped to *this* repo's gateways; omo uses **role-specific raw-model chains** (glm-5, k2p5, minimax, big-pickle). Exact chain parity is infeasible and not the goal — align per-family, order-preserving.
+
+Source of truth for omo model + effort:
+- `packages/model-core/src/agent-model-requirements.ts` — standalone agents (oracle/metis/momus/explore/librarian) + sisyphus/atlas/prometheus/hephaestus.
+- `packages/model-core/src/category-model-requirements.ts` — Sisyphus-Junior categories (quick/unspecified-low/unspecified-high/visual-engineering).
+
+Rule for "align local model+effort to omo":
+1. **Keep order + provider slots.** Never reorder; never swap the local ladder. omo's primary family may differ (oracle/momus are GPT-primary) — do NOT flip local slots to match.
+2. **Align effort per same-family slot** via the effort table above: for each local slot, copy the (translated) effort of the omo model in the *same family* for that persona.
+3. **omo untagged → strip the suffix** (Pi default) — not `:off`.
+4. **Versions:** keep the repo's newest/available (e.g. `claude-opus-4-8`); bump only `opus-4-6 → opus-4-7` to match omo. Don't adopt versions the repo doesn't carry.
+5. **No-counterpart tail** (families omo doesn't use for that persona — `deepseek-v4-pro`, `qwen2.5-coder`, etc.): leave as-is; no omo signal to align to.
+
 ## Family matrix
 
 Each mode ships three variants; agents ship one file; ulw ships two. Keep variants aligned in intent.

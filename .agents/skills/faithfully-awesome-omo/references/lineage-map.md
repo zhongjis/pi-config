@@ -65,6 +65,7 @@ Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opene
   - `packages/omo-opencode/src/agents/` — e.g. `sisyphus-junior/default.ts`, `oracle.ts`, `builtin-agents.ts`
   - `packages/omo-opencode/src/tools/delegate-task/*-categories.ts` — per-family category prompt appends (e.g. `google-categories.ts` holds `visual-engineering` and `artistry`)
   - `packages/model-core/src/category-model-requirements.ts` — category → model + fallback chain
+  - `packages/model-core/src/agent-model-requirements.ts` — standalone agent + mode chains (oracle/metis/momus/explore/librarian, sisyphus/atlas/prometheus/hephaestus) → model + effort. Pair with `category-model-requirements.ts` for the full model/effort picture.
 
 Raw pattern: `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/<path>`. Use `fetch_content` on the GitHub tree/API first; `wenchang` can locate exact paths when the layout is unclear.
 

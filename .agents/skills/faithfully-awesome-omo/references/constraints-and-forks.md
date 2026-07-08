@@ -47,6 +47,16 @@ When upstream and the Pi architecture disagree on behavior, present the fork in 
 
 The last row is listed so you recognize it in upstream prose and substitute it automatically — it is not a choice.
 
+### Model + effort alignment forks
+
+Model/effort alignment (see `substitution-map.md` → *Effort / reasoning-level mapping* + *Model-chain alignment method*) has its own recurring calls:
+
+| Fork | Upstream | Repo default | Why |
+|------|----------|--------------|-----|
+| Opus version | uniformly `claude-opus-4-7` | **keep repo newest (`4-8`); bump only `4-6 → 4-7`** | repo standardizes on latest opus; never downgrade `4-8` |
+| Untagged effort | omo leaves most fallbacks untagged (≈ default) | **strip the Pi suffix (= default), NOT `:off`** | Pi untagged = provider/session default; forcing `:off` disables reasoning |
+| Chain composition | role-specific raw models (glm/kimi/minimax/big-pickle) | **house provider-ladder (deepseek/qwen2.5-coder); align per-family effort only, never reorder** | omo's raw models mostly don't exist in this repo's providers |
+
 ## Non-negotiables checklist (pre-proposal)
 
 - [ ] Every runtime token substituted (`references/substitution-map.md`)
