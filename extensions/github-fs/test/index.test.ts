@@ -118,6 +118,36 @@ describe("tool_call — write/edit are read-only", () => {
   });
 });
 
+describe("tool_call — github:// content", () => {
+  it("rewrites a github:// file read to the materialized cache file", async () => {
+    const mock = setup();
+    const input: Record<string, unknown> = { path: "github://o/r/f.ts" };
+    const [result] = await mock.fire("tool_call", { toolCallId: "g1", toolName: "read", input });
+    expect(result).toBeUndefined();
+    expect(input.path).toBe("/cache/view.md");
+    expect(resolveGithubView).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a line-range selector on the cache path", async () => {
+    const mock = setup();
+    const input: Record<string, unknown> = { path: "github://o/r/f.ts:10-20" };
+    const [result] = await mock.fire("tool_call", { toolCallId: "g2", toolName: "read", input });
+    expect(result).toBeUndefined();
+    expect(input.path).toBe("/cache/view.md:10-20");
+    expect(resolveGithubView).toHaveBeenCalledOnce();
+  });
+
+  it("blocks write to a github:// path with a read-only reason", async () => {
+    const mock = setup();
+    const [result] = await mock.fire("tool_call", {
+      toolCallId: "g3",
+      toolName: "write",
+      input: { path: "github://o/r/f.ts" },
+    });
+    expect(result).toMatchObject({ block: true, reason: expect.stringMatching(/read-only/) });
+  });
+});
+
 describe("tool_result rewrite", () => {
   it("rewrites the cache path back to the virtual path", async () => {
     const mock = setup();

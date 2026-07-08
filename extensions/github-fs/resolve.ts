@@ -11,10 +11,10 @@
  */
 
 import type { AuthResolver, GhRunner } from "./gh.js";
-import { ghList, ghPrDiff, ghViewSingle } from "./gh.js";
+import { ghContents, ghList, ghPrDiff, ghViewSingle } from "./gh.js";
 import type { GithubCache } from "./cache.js";
 import { isTerminalState } from "./cache.js";
-import { renderDiff, renderList, renderSingle } from "./render.js";
+import { renderContentStub, renderDiff, renderList, renderSingle, renderTree } from "./render.js";
 import type { ParsedGithubTarget, RepoRef } from "./parse.js";
 
 const GITHUB_DOT_COM = "github.com";
@@ -83,6 +83,11 @@ async function resolveHostAndRepo(
   );
 }
 
+function deriveExt(name: string): string {
+  const m = /\.([A-Za-z0-9]+)$/.exec(name);
+  return m && m[1].length <= 12 ? `.${m[1].toLowerCase()}` : ".txt";
+}
+
 function contentShape(target: ParsedGithubTarget): Record<string, unknown> {
   switch (target.kind) {
     case "single":
@@ -97,6 +102,8 @@ function contentShape(target: ParsedGithubTarget): Record<string, unknown> {
       };
     case "diff":
       return { kind: "diff", number: target.number, mode: target.mode, index: target.index ?? null };
+    case "content":
+      return { kind: "content", path: target.path, ref: target.ref ?? null };
   }
 }
 
@@ -106,7 +113,7 @@ async function fetchAndRender(
   host: string,
   repo: RepoRef,
   target: ParsedGithubTarget,
-): Promise<{ markdown: string; terminal: boolean }> {
+): Promise<{ markdown: string; terminal: boolean; ext: string }> {
   const shared = { host, owner: repo.owner, repo: repo.repo, token };
 
   if (target.kind === "single") {
@@ -118,6 +125,7 @@ async function fetchAndRender(
     return {
       markdown: renderSingle(target.scheme, json, repo),
       terminal: isTerminalState(typeof json.state === "string" ? json.state : undefined),
+      ext: ".md",
     };
   }
 
@@ -129,12 +137,20 @@ async function fetchAndRender(
       author: target.author,
       label: target.label,
     });
-    return { markdown: renderList(target.scheme, items, repo, target.state), terminal: false };
+    return { markdown: renderList(target.scheme, items, repo, target.state), terminal: false, ext: ".md" };
+  }
+
+  if (target.kind === "content") {
+    const res = await ghContents(deps.run, { ...shared, path: target.path, ref: target.ref });
+    const terminal = /^[0-9a-f]{40}$/i.test(target.ref ?? "");
+    if (res.kind === "dir") return { markdown: renderTree(res.entries, repo, target.path, target.ref), terminal, ext: ".md" };
+    if (res.kind === "file") return { markdown: res.text, terminal, ext: deriveExt(res.name) };
+    return { markdown: renderContentStub(res, repo, target.ref), terminal, ext: ".md" };
   }
 
   // diff (pr only)
   const diff = await ghPrDiff(deps.run, { ...shared, number: target.number });
-  return { markdown: renderDiff(diff, target.number, target.mode, target.index), terminal: false };
+  return { markdown: renderDiff(diff, target.number, target.mode, target.index), terminal: false, ext: ".md" };
 }
 
 /** Resolve a parsed target to a materialized `.md` path. */
@@ -154,6 +170,6 @@ export async function resolveGithubView(cwd: string, target: ParsedGithubTarget,
   const hit = await deps.cache.get(key, { refresh: target.refresh });
   if (hit) return hit;
 
-  const { markdown, terminal } = await fetchAndRender(deps, account.token, host, repo, target);
-  return deps.cache.put(key, markdown, { terminal });
+  const { markdown, terminal, ext } = await fetchAndRender(deps, account.token, host, repo, target);
+  return deps.cache.put(key, markdown, { terminal, ext });
 }

@@ -5,6 +5,7 @@ import {
   type GhRunner,
   type GhRunOptions,
   type GhRunResult,
+  ghContents,
   ghList,
   ghPrDiff,
   ghViewSingle,
@@ -223,6 +224,95 @@ describe("fetch primitives", () => {
     ).rejects.toThrow(/Could not resolve/);
     await expect(
       ghPrDiff(run, { host: "github.com", owner: "o", repo: "r", number: 9, token: "secret-token" }),
+    ).rejects.not.toThrow(/secret-token/);
+  });
+});
+
+describe("ghContents", () => {
+  it("returns a directory listing for an array response", async () => {
+    const { run } = fakeRunner([
+      {
+        when: argsAre(["api"]),
+        result: {
+          stdout: JSON.stringify([
+            { name: "index.ts", path: "src/index.ts", type: "file", size: 12 },
+            { name: "sub", path: "src/sub", type: "dir", size: 0 },
+          ]),
+        },
+      },
+    ]);
+    const res = await ghContents(run, { host: "github.com", owner: "o", repo: "r", path: "src", token: "t" });
+    expect(res.kind).toBe("dir");
+    if (res.kind === "dir") {
+      expect(res.entries).toHaveLength(2);
+      expect(res.entries[0]).toMatchObject({ name: "index.ts", type: "file", size: 12 });
+    }
+  });
+
+  it("decodes a base64 file to text and targets the endpoint with ref + hostname", async () => {
+    const { run, calls } = fakeRunner([
+      {
+        when: argsAre(["api"]),
+        result: {
+          stdout: JSON.stringify({
+            type: "file",
+            name: "b.ts",
+            path: "a/b.ts",
+            size: 5,
+            sha: "abc",
+            encoding: "base64",
+            content: Buffer.from("hello").toString("base64"),
+          }),
+        },
+      },
+    ]);
+    const res = await ghContents(run, { host: "github.com", owner: "o", repo: "r", path: "a/b.ts", ref: "main", token: "t" });
+    expect(res).toMatchObject({ kind: "file", text: "hello", name: "b.ts" });
+    expect(calls[0].args[1]).toBe("repos/o/r/contents/a/b.ts?ref=main");
+    expect(calls[0].args).toContain("--hostname");
+  });
+
+  it("classifies a file with a NUL byte as binary", async () => {
+    const { run } = fakeRunner([
+      {
+        when: argsAre(["api"]),
+        result: {
+          stdout: JSON.stringify({
+            type: "file",
+            name: "x.bin",
+            path: "x.bin",
+            size: 3,
+            sha: "def",
+            encoding: "base64",
+            content: Buffer.from("a\u0000b").toString("base64"),
+          }),
+        },
+      },
+    ]);
+    const res = await ghContents(run, { host: "github.com", owner: "o", repo: "r", path: "x.bin", token: "t" });
+    expect(res.kind).toBe("binary");
+  });
+
+  it("classifies a metadata-only large file as too-large", async () => {
+    const { run } = fakeRunner([
+      {
+        when: argsAre(["api"]),
+        result: {
+          stdout: JSON.stringify({ type: "file", name: "big", path: "big", size: 2_000_000, sha: "s", encoding: "none", content: "" }),
+        },
+      },
+    ]);
+    const res = await ghContents(run, { host: "github.com", owner: "o", repo: "r", path: "big", token: "t" });
+    expect(res.kind).toBe("too-large");
+  });
+
+  it("surfaces gh stderr on failure without leaking the token", async () => {
+    const { run } = fakeRunner([{ when: argsAre(["api"]), result: { code: 1, stderr: "HTTP 404: Not Found" } }]);
+    await expect(
+      ghContents(run, { host: "github.com", owner: "o", repo: "r", path: "missing", token: "secret-token" }),
+    ).rejects.toThrow(/404/);
+    await expect(
+      ghContents(run, { host: "github.com", owner: "o", repo: "r", path: "missing", token: "secret-token" }),
     ).rejects.not.toThrow(/secret-token/);
   });
 });

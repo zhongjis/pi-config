@@ -75,23 +75,47 @@ export interface DiffTarget extends CommonFields {
   index?: number;
 }
 
-export type ParsedGithubTarget = SingleTarget | ListTarget | DiffTarget;
+export interface ContentTarget {
+  scheme: "github";
+  kind: "content";
+  /** Explicit `?host=` override; undefined means "derive from cwd remote". */
+  host?: string;
+  /** Always fully-qualified for github:// paths. */
+  repo: RepoRef;
+  /** `?refresh=1` — bypass all cache TTLs. */
+  refresh: boolean;
+  /** The original input string, echoed back in output. */
+  input: string;
+  /** "" for repo root; slash-joined otherwise; no leading/trailing slash. */
+  path: string;
+  /** Undefined = default branch. */
+  ref?: string;
+}
+
+export type ParsedGithubTarget = SingleTarget | ListTarget | DiffTarget | ContentTarget;
 
 const SCHEME_PREFIXES: Record<GithubScheme, string> = {
   pr: "pr://",
   issue: "issue://",
 };
 
+const GITHUB_PREFIX = "github://";
+
 const SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
 const HOST_PATTERN = /^[A-Za-z0-9.-]+$/;
 const DIGITS_PATTERN = /^\d+$/;
+const REF_PATTERN = /^[A-Za-z0-9._/-]+$/;
 
 export const LIST_LIMIT_DEFAULT = 30;
 export const LIST_LIMIT_MAX = 100;
 
 /** Cheap prefix check used by the hook before committing to a full parse. */
 export function isGithubPath(target: string): boolean {
-  return target.startsWith(SCHEME_PREFIXES.pr) || target.startsWith(SCHEME_PREFIXES.issue);
+  return (
+    target.startsWith(SCHEME_PREFIXES.pr) ||
+    target.startsWith(SCHEME_PREFIXES.issue) ||
+    target.startsWith(GITHUB_PREFIX)
+  );
 }
 
 function detectScheme(target: string): { scheme: GithubScheme; remainder: string } | null {
@@ -197,6 +221,8 @@ function parseDiffSuffix(scheme: GithubScheme, suffix: string[]): { mode: DiffMo
  * github paths.
  */
 export function parseGithubPath(input: string): ParsedGithubTarget | null {
+  if (input.startsWith(GITHUB_PREFIX)) return parseGithubContentPath(input);
+
   const detected = detectScheme(input);
   if (!detected) return null;
   const { scheme } = detected;
@@ -285,5 +311,56 @@ export function parseGithubPath(input: string): ParsedGithubTarget | null {
     number,
     mode: diff.mode,
     index: diff.index,
+  };
+}
+
+/**
+ * Parse a `github://owner/repo[/path][?ref=…&host=…&refresh=1]` path into a
+ * {@link ContentTarget}. Fully-qualified only; throws for malformed input.
+ */
+function parseGithubContentPath(input: string): ContentTarget {
+  const remainder = input.slice(GITHUB_PREFIX.length);
+  const questionIndex = remainder.indexOf("?");
+  const pathPart = questionIndex >= 0 ? remainder.slice(0, questionIndex) : remainder;
+  const queryPart = questionIndex >= 0 ? remainder.slice(questionIndex + 1) : "";
+  const search = new URLSearchParams(queryPart);
+
+  const host = search.get("host") ?? undefined;
+  if (host !== undefined && !HOST_PATTERN.test(host)) {
+    throw new Error(`Invalid github:// host '${host}'.`);
+  }
+  const ref = search.get("ref") ?? undefined;
+  if (ref !== undefined && !REF_PATTERN.test(ref)) {
+    throw new Error(`Invalid github:// ref '${ref}'.`);
+  }
+  const refresh = search.get("refresh") === "1";
+
+  const segments = pathPart.split("/").filter((seg) => seg.length > 0);
+  if (segments.length < 2) {
+    throw new Error(`Invalid github:// path '${input}': expected github://owner/repo[/path].`);
+  }
+  if (!SEGMENT_PATTERN.test(segments[0])) {
+    throw new Error(`Invalid github:// owner segment '${segments[0]}'.`);
+  }
+  if (!SEGMENT_PATTERN.test(segments[1])) {
+    throw new Error(`Invalid github:// repo segment '${segments[1]}'.`);
+  }
+
+  const pathSegs = segments.slice(2);
+  for (const seg of pathSegs) {
+    if (seg === "." || seg === ".." || /[\u0000-\u001f]/.test(seg)) {
+      throw new Error(`Invalid github:// path segment '${seg}'.`);
+    }
+  }
+
+  return {
+    scheme: "github",
+    kind: "content",
+    host,
+    repo: { owner: segments[0], repo: segments[1] },
+    refresh,
+    input,
+    path: pathSegs.join("/"),
+    ref,
   };
 }

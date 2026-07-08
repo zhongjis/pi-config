@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderDiff, renderList, renderSingle, splitDiffFiles } from "../render.js";
+import { renderContentStub, renderDiff, renderList, renderSingle, renderTree, splitDiffFiles } from "../render.js";
 
 describe("renderSingle", () => {
   it("renders a PR with meta, body, and comments", () => {
@@ -117,5 +117,50 @@ describe("renderDiff", () => {
 
   it("mode=slice out of range explains", () => {
     expect(renderDiff(SAMPLE_DIFF, 5, "slice", 9)).toContain("No file at index 9");
+  });
+});
+
+describe("renderTree", () => {
+  it("lists directories before files with a drill hint", () => {
+    const out = renderTree(
+      [
+        { name: "z.ts", type: "file", size: 10 },
+        { name: "lib", type: "dir", size: 0 },
+        { name: "a.ts", type: "file", size: 20 },
+      ],
+      { owner: "o", repo: "r" },
+      "src",
+    );
+    const dirIndex = out.indexOf("- lib/");
+    const fileIndex = out.indexOf("- a.ts");
+    expect(dirIndex).toBeGreaterThan(-1);
+    expect(fileIndex).toBeGreaterThan(dirIndex);
+    expect(out).toContain("github://o/r/src/<name>");
+  });
+
+  it("marks an empty directory", () => {
+    expect(renderTree([], { owner: "o", repo: "r" }, "")).toContain("_(empty)_");
+  });
+});
+
+describe("renderContentStub", () => {
+  it("describes a binary file with size and sha", () => {
+    const out = renderContentStub(
+      { kind: "binary", name: "x.png", path: "img/x.png", size: 2048, sha: "deadbeef" },
+      { owner: "o", repo: "r" },
+    );
+    expect(out).toContain("binary file");
+    expect(out).toContain("2048 bytes");
+    expect(out).toContain("deadbeef");
+  });
+
+  it("describes a too-large file with size and sha", () => {
+    const out = renderContentStub(
+      { kind: "too-large", name: "big.bin", path: "big.bin", size: 2_000_000, sha: "cafe" },
+      { owner: "o", repo: "r" },
+    );
+    expect(out).toContain("too large");
+    expect(out).toContain("2000000 bytes");
+    expect(out).toContain("cafe");
   });
 });

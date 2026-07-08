@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -73,6 +73,21 @@ describe("resolveGithubView", () => {
       if (a === "pr" && b === "view") return { code: 0, stdout: JSON.stringify({ number: 7, title: "P", state: "MERGED" }), stderr: "" };
       if (a === "pr" && b === "list") return { code: 0, stdout: "[]", stderr: "" };
       if (a === "pr" && b === "diff") return { code: 0, stdout: "diff --git a/x b/x\n+y", stderr: "" };
+      if (a === "api" && typeof b === "string" && b.includes("/contents/")) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            type: "file",
+            name: "a.ts",
+            path: "src/a.ts",
+            size: 13,
+            sha: "sha1",
+            encoding: "base64",
+            content: Buffer.from("export const a = 1;\n").toString("base64"),
+          }),
+          stderr: "",
+        };
+      }
       return { code: 1, stdout: "", stderr: "unexpected" };
     };
     const auth: AuthResolver = {
@@ -138,5 +153,22 @@ describe("resolveGithubView", () => {
     await expect(resolveGithubView("/cwd", parseGithubPath("issue://7")!, deps)).rejects.toThrow(
       /Cannot determine a repository/,
     );
+  });
+
+  it("materializes a repo file with its real extension and decoded contents", async () => {
+    const { deps } = makeDeps();
+    const path = await resolveGithubView("/cwd", parseGithubPath("github://octo/repo/src/a.ts")!, deps);
+    expect(path.endsWith(".ts")).toBe(true);
+    expect(await readFile(path, "utf8")).toBe("export const a = 1;\n");
+  });
+
+  it("caches a full-SHA ref: second read does not re-fetch", async () => {
+    const { deps, runCalls } = makeDeps();
+    const sha = "a".repeat(40);
+    const target = () => parseGithubPath(`github://octo/repo/src/a.ts?ref=${sha}`)!;
+    await resolveGithubView("/cwd", target(), deps);
+    await resolveGithubView("/cwd", target(), deps);
+    const apiCalls = runCalls.filter((args) => args[0] === "api").length;
+    expect(apiCalls).toBe(1);
   });
 });

@@ -80,3 +80,20 @@ describe("isTerminalState", () => {
     expect(isTerminalState(undefined)).toBe(false);
   });
 });
+
+describe("content extension", () => {
+  it("materializes a content file with the given extension", async () => {
+    const cache = createCache({ agentDir: dir });
+    const key = cache.key({ x: "ext" });
+    const path = await cache.put(key, "const x = 1;", { terminal: false, ext: ".ts" });
+    expect(path.endsWith(".ts")).toBe(true);
+    expect(await cache.get(key, { refresh: false })).toBe(path);
+  });
+
+  it("defaults to .md when no ext is given", async () => {
+    const cache = createCache({ agentDir: dir });
+    const key = cache.key({ x: "default-ext" });
+    const path = await cache.put(key, "# md", { terminal: false });
+    expect(path.endsWith(".md")).toBe(true);
+  });
+});

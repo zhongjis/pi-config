@@ -325,3 +325,84 @@ export async function ghPrDiff(
   }
   return result.stdout;
 }
+
+const MAX_INLINE_BYTES = 1024 * 1024;
+
+function contentString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+export interface GhTreeEntry {
+  name: string;
+  path: string;
+  type: string;
+  size: number;
+}
+
+export type GhContents =
+  | { kind: "dir"; entries: GhTreeEntry[] }
+  | { kind: "file"; name: string; path: string; text: string; size: number; sha: string; htmlUrl?: string }
+  | { kind: "binary"; name: string; path: string; size: number; sha: string; htmlUrl?: string }
+  | { kind: "too-large"; name: string; path: string; size: number; sha: string; htmlUrl?: string }
+  | { kind: "other"; type: string; name: string; path: string; sha: string; htmlUrl?: string };
+
+/**
+ * Fetch a repo path via the GitHub contents API (`gh api repos/{o}/{r}/contents/{p}`).
+ * The JSON response shape drives classification: an array is a directory; an
+ * object is a single entry. Files are decoded from base64 in-process and
+ * classified as text / binary (NUL byte) / too-large (>1 MiB or metadata-only).
+ */
+export async function ghContents(
+  run: GhRunner,
+  args: { host: string; owner: string; repo: string; path: string; ref?: string; token: string; signal?: AbortSignal },
+): Promise<GhContents> {
+  const enc = args.path ? `/${args.path.split("/").map(encodeURIComponent).join("/")}` : "";
+  let endpoint = `repos/${args.owner}/${args.repo}/contents${enc}`;
+  if (args.ref) endpoint += `?ref=${encodeURIComponent(args.ref)}`;
+  const result = await run({
+    args: ["api", endpoint, "--hostname", args.host],
+    host: args.host,
+    token: args.token,
+    signal: args.signal,
+  });
+  const json = parseJson<unknown>(result, "contents");
+
+  if (Array.isArray(json)) {
+    const entries: GhTreeEntry[] = json.map((raw) => {
+      const e = (raw ?? {}) as Record<string, unknown>;
+      return {
+        name: contentString(e.name),
+        path: contentString(e.path),
+        type: contentString(e.type),
+        size: typeof e.size === "number" ? e.size : 0,
+      };
+    });
+    return { kind: "dir", entries };
+  }
+
+  const obj = (json ?? {}) as Record<string, unknown>;
+  const type = contentString(obj.type);
+  const name = contentString(obj.name);
+  const path = contentString(obj.path);
+  const sha = contentString(obj.sha);
+  const size = typeof obj.size === "number" ? obj.size : 0;
+  const htmlUrl = typeof obj.html_url === "string" ? obj.html_url : undefined;
+
+  if (type === "file") {
+    const encoding = contentString(obj.encoding);
+    const content = contentString(obj.content);
+    if (encoding !== "base64" || !content) {
+      return { kind: "too-large", name, path, size, sha, htmlUrl };
+    }
+    const buf = Buffer.from(content, "base64");
+    if (buf.includes(0)) {
+      return { kind: "binary", name, path, size, sha, htmlUrl };
+    }
+    if (buf.length > MAX_INLINE_BYTES) {
+      return { kind: "too-large", name, path, size, sha, htmlUrl };
+    }
+    return { kind: "file", name, path, text: buf.toString("utf8"), size, sha, htmlUrl };
+  }
+
+  return { kind: "other", type, name, path, sha, htmlUrl };
+}

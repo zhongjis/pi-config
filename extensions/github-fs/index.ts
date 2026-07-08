@@ -66,6 +66,8 @@ interface Resolution {
 
 const GITHUB_FS_TOOL_NAMES = new Set(["read", "write", "edit"]);
 
+const GITHUB_SELECTOR_RE = /(:(?:raw|conflicts|\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*(?::raw)?|raw:\d+(?:[-+]\d+)?))$/;
+
 const PROMPT_GUIDE = [
   "",
   "",
@@ -75,6 +77,8 @@ const PROMPT_GUIDE = [
   "- `issue://owner/repo/<n>` / `pr://owner/repo/<n>` — fully qualified",
   "- `issue://` / `pr://` (optionally `owner/repo`) — list recent items; filter with `?state=`, `?limit=`, `?author=`, `?label=`",
   "- `pr://<n>/diff` (file list), `pr://<n>/diff/all` (full diff), `pr://<n>/diff/<i>` (one file, 1-based)",
+  "- `github://owner/repo/path/to/file` — a repo file's contents; `github://owner/repo/path/to/dir` — one-level directory listing; `github://owner/repo` — repo root",
+  "- `?ref=<branch|tag|sha>` pins a version (default branch otherwise); line ranges work: `github://owner/repo/file.ts:20-60`",
   "- Query flags: `?comments=0` (hide comments), `?host=<ghe-host>`, `?refresh=1` (bypass cache)",
   "These are read-only views; use the gh CLI to create or modify. Page large diffs/lists with read's offset/limit.",
 ].join("\n");
@@ -86,6 +90,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function getRequestedPath(input: Record<string, unknown>): string | undefined {
   const value = input.path;
   return typeof value === "string" ? value : undefined;
+}
+
+function splitGithubSelector(path: string): { base: string; selector: string } {
+  if (!path.startsWith("github://")) return { base: path, selector: "" };
+  const m = GITHUB_SELECTOR_RE.exec(path);
+  if (!m) return { base: path, selector: "" };
+  return { base: path.slice(0, m.index), selector: m[1] };
 }
 
 function describeError(error: unknown): string {
@@ -176,13 +187,15 @@ export default function githubFsTools(pi: ExtensionAPI): void {
     if (event.toolName !== "read") {
       return {
         block: true,
-        reason: `${event.toolName} cannot modify ${requestedPath}. github-fs paths (pr://, issue://) are read-only views — use the gh CLI to create or change issues/PRs.`,
+        reason: `${event.toolName} cannot modify ${requestedPath}. github-fs paths (pr://, issue://, github://) are read-only views — use the gh CLI to create or change issues/PRs, or clone the repo to edit files.`,
       };
     }
 
+    const { base, selector } = splitGithubSelector(requestedPath);
+
     let target;
     try {
-      target = parseGithubPath(requestedPath);
+      target = parseGithubPath(base);
     } catch (error) {
       return { block: true, reason: describeError(error) };
     }
@@ -195,8 +208,8 @@ export default function githubFsTools(pi: ExtensionAPI): void {
       return { block: true, reason: `Could not read ${requestedPath}: ${describeError(error)}` };
     }
 
-    event.input.path = resolvedPath;
-    resolutions.set(event.toolCallId, { input: requestedPath, resolvedPath });
+    event.input.path = selector ? resolvedPath + selector : resolvedPath;
+    resolutions.set(event.toolCallId, { input: base, resolvedPath });
     return undefined;
   });
 

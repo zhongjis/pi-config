@@ -2,8 +2,8 @@
  * Cross-session file cache for rendered github-fs views.
  *
  * Layout under `<agentDir>/github-fs-cache/` (dir 0700, files 0600):
- *   <hash>.md    — rendered markdown the `read` tool consumes
- *   <hash>.json  — { fetchedAt, terminal }
+ *   <hash><ext>  — rendered content the `read` tool consumes (.md for views, real ext for files)
+ *   <hash>.json  — { fetchedAt, terminal, ext }
  *
  * The hash key includes the resolved account identity. That is a *consistency*
  * control (don't serve account A's cached 200 when the current resolution
@@ -48,15 +48,16 @@ const HARD_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 interface CacheMeta {
   fetchedAt: number;
   terminal: boolean;
+  ext: string;
 }
 
 export interface GithubCache {
   /** Compute a stable cache key hash from arbitrary structured parts. */
   key(parts: unknown): string;
-  /** Return the materialized `.md` path for a hit, or null for a miss. */
+  /** Return the materialized content path for a hit, or null for a miss. */
   get(key: string, options: { refresh: boolean }): Promise<string | null>;
-  /** Write markdown + metadata; return the materialized `.md` path. */
-  put(key: string, markdown: string, options: { terminal: boolean }): Promise<string>;
+  /** Write content + metadata; return the materialized content file path. */
+  put(key: string, content: string, options: { terminal: boolean; ext?: string }): Promise<string>;
 }
 
 export interface CacheOptions {
@@ -70,7 +71,7 @@ export function createCache(options: CacheOptions = {}): GithubCache {
   const cacheDir = resolve(baseDir, CACHE_DIR_NAME);
   const now = options.now ?? (() => Date.now());
 
-  const mdPath = (key: string) => join(cacheDir, `${key}.md`);
+  const contentPath = (key: string, ext: string) => join(cacheDir, `${key}${ext}`);
   const metaPath = (key: string) => join(cacheDir, `${key}.json`);
 
   async function ensureDir(): Promise<void> {
@@ -109,7 +110,7 @@ export function createCache(options: CacheOptions = {}): GithubCache {
           try {
             const info = await stat(join(cacheDir, name));
             if (info.mtimeMs < cutoff) {
-              await unlink(mdPath(key)).catch(() => {});
+              await unlink(contentPath(key, meta?.ext ?? ".md")).catch(() => {});
               await unlink(metaPath(key)).catch(() => {});
             }
           } catch {
@@ -130,21 +131,23 @@ export function createCache(options: CacheOptions = {}): GithubCache {
       if (!meta) return null;
       const fresh = meta.terminal || now() - meta.fetchedAt < SOFT_TTL_MS;
       if (!fresh) return null;
+      const p = contentPath(key, meta.ext ?? ".md");
       try {
-        await stat(mdPath(key)); // ensure the content file still exists
-        return mdPath(key);
+        await stat(p); // ensure the content file still exists
+        return p;
       } catch {
         return null;
       }
     },
 
-    async put(key, markdown, { terminal }) {
+    async put(key, content, { terminal, ext = ".md" }) {
       await ensureDir();
+      const p = contentPath(key, ext);
       // Content first, then metadata — a reader that sees metadata always finds content.
-      await atomicWrite(mdPath(key), markdown);
-      await atomicWrite(metaPath(key), JSON.stringify({ fetchedAt: now(), terminal } satisfies CacheMeta));
+      await atomicWrite(p, content);
+      await atomicWrite(metaPath(key), JSON.stringify({ fetchedAt: now(), terminal, ext } satisfies CacheMeta));
       void evictExpired();
-      return mdPath(key);
+      return p;
     },
   };
 }

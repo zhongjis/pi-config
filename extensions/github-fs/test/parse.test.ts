@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import { isGithubPath, LIST_LIMIT_DEFAULT, parseGithubPath } from "../parse.js";
 
 describe("isGithubPath", () => {
-  it("recognizes pr:// and issue://", () => {
+  it("recognizes pr://, issue://, and github://", () => {
     expect(isGithubPath("pr://123")).toBe(true);
     expect(isGithubPath("issue://123")).toBe(true);
+    expect(isGithubPath("github://o/r")).toBe(true);
   });
 
   it("rejects other paths", () => {
@@ -140,5 +141,48 @@ describe("parseGithubPath - malformed", () => {
 
   it("rejects bad host", () => {
     expect(() => parseGithubPath("pr://1?host=bad host")).toThrow(/host/);
+  });
+});
+
+describe("parseGithubPath - github content", () => {
+  it("parses github://owner/repo/path into a content target", () => {
+    expect(parseGithubPath("github://o/r/src/a.ts")).toMatchObject({
+      scheme: "github",
+      kind: "content",
+      repo: { owner: "o", repo: "r" },
+      path: "src/a.ts",
+    });
+  });
+
+  it("treats github://owner/repo as the repo root (empty path)", () => {
+    expect(parseGithubPath("github://o/r")).toMatchObject({ kind: "content", path: "" });
+  });
+
+  it("drops a trailing slash from the path", () => {
+    expect(parseGithubPath("github://o/r/src/")).toMatchObject({ kind: "content", path: "src" });
+  });
+
+  it("captures ?ref and allows slashes in the ref", () => {
+    expect(parseGithubPath("github://o/r/a.ts?ref=v1.2.3")).toMatchObject({ ref: "v1.2.3" });
+    expect(parseGithubPath("github://o/r/a.ts?ref=feature/x")).toMatchObject({ ref: "feature/x" });
+  });
+
+  it("honors ?host and ?refresh", () => {
+    expect(parseGithubPath("github://o/r/a.ts?host=ghe.example.com&refresh=1")).toMatchObject({
+      host: "ghe.example.com",
+      refresh: true,
+    });
+  });
+
+  it("rejects a path with fewer than two segments", () => {
+    expect(() => parseGithubPath("github://owner")).toThrow(/owner\/repo/);
+  });
+
+  it("rejects a '..' path segment", () => {
+    expect(() => parseGithubPath("github://o/r/../etc")).toThrow(/segment/);
+  });
+
+  it("rejects a bad ref", () => {
+    expect(() => parseGithubPath("github://o/r/a.ts?ref=bad ref")).toThrow(/ref/);
   });
 });

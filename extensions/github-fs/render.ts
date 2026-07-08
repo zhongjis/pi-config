@@ -165,3 +165,65 @@ export function renderDiff(diff: string, number: number, mode: DiffMode, index: 
   // mode === "all"
   return `# PR #${number} diff · ${files.length} file(s)\n\n${diff}`;
 }
+
+export function renderTree(
+  entries: Array<{ name: string; type: string; size: number }>,
+  repo: RepoRef | undefined,
+  path: string,
+  ref?: string,
+): string {
+  const label = `${repoLabel(repo)}${path ? `/${path}` : ""}`;
+  const lines: string[] = [
+    `# ${label} · tree${ref ? `@${ref}` : ""} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}`,
+    "",
+  ];
+  if (entries.length === 0) {
+    lines.push("_(empty)_");
+    return lines.join("\n");
+  }
+  const sorted = [...entries].sort((a, b) => {
+    const aDir = a.type === "dir";
+    const bDir = b.type === "dir";
+    if (aDir !== bDir) return aDir ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  for (const entry of sorted) {
+    lines.push(entry.type === "dir" ? `- ${entry.name}/` : `- ${entry.name}  (${entry.size} bytes)`);
+  }
+  lines.push("", `Read a file with \`github://${repoLabel(repo)}/${path ? `${path}/` : ""}<name>\`.`);
+  return lines.join("\n");
+}
+
+export function renderContentStub(
+  res: { kind: string; name: string; path: string; size?: number; sha: string; htmlUrl?: string; type?: string },
+  repo: RepoRef | undefined,
+  ref?: string,
+): string {
+  const label = `${repoLabel(repo)}/${res.path}${ref ? `@${ref}` : ""}`;
+  const meta: string[] = [];
+  if (typeof res.size === "number") meta.push(`${res.size} bytes`);
+  meta.push(`sha ${res.sha}`);
+  if (res.htmlUrl) meta.push(res.htmlUrl);
+  const metaLine = meta.join(" · ");
+
+  if (res.kind === "binary") {
+    return [`# ${label} · binary file`, "", metaLine, "", "_Not inlined. Open the URL or use the browser to view._"].join("\n");
+  }
+  if (res.kind === "too-large") {
+    return [
+      `# ${label} · too large to inline`,
+      "",
+      metaLine,
+      "",
+      "_GitHub does not inline files over 1 MiB. View on the web or fetch via gh/git._",
+    ].join("\n");
+  }
+  const type = res.type ?? "unknown";
+  return [
+    `# ${label} · ${type}`,
+    "",
+    metaLine,
+    "",
+    `_This entry is a ${type}; only file contents and directory listings are supported._`,
+  ].join("\n");
+}
