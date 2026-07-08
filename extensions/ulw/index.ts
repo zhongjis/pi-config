@@ -13,12 +13,12 @@
  *
  * Pi-native adaptation:
  *   - omo agent calls (task/subagent_type) → pi Agent tool names (chengfeng/wenchang/taishang/fuxi/jintong)
- *   - Model routing removed (pi manages model selection)
- *   - Loop mechanism removed (pi handles conversation continuation)
+ *   - Model-adapted prompt: Claude/default variant by default, OpenAI/GPT
+ *     variant when the active model is GPT-family (see prompt.ts)
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { ULTRAWORK_PROMPT } from "./prompt.js";
+import { getUltraworkPrompt } from "./prompt.js";
 
 // ---------------------------------------------------------------------------
 // Keyword detection
@@ -138,7 +138,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     return {
       message: {
         customType: "ultrawork",
-        content: ULTRAWORK_PROMPT,
+        content: getUltraworkPrompt(ctx.model),
         display: false,
       },
     };

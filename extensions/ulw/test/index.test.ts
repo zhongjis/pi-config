@@ -282,3 +282,47 @@ describe("ulw extension — unit tests", () => {
 		expect(statusCalls).toHaveLength(0);
 	});
 });
+
+describe("ulw extension — model-adapted prompt selection", () => {
+	let mock: ReturnType<typeof createMockPi>;
+
+	beforeEach(async () => {
+		mock = createMockPi();
+		const mod = await import("../index.js");
+		mod.default(mock.pi as never);
+	});
+
+	/** Mock kuafu-mode context with an explicit active model. */
+	function ctxWithModel(model?: { provider: string; id: string }) {
+		const ctx = createMockContext();
+		if (model) (ctx as any).model = model;
+		return ctx;
+	}
+
+	it("injects the OpenAI (GPT) variant for a GPT-family model", async () => {
+		await fireInput(mock, "ulw fix it");
+		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai", id: "gpt-5.5" }));
+		expect(result?.message?.content).toContain("<output_verbosity_spec>");
+		expect(result?.message?.content).not.toContain("ZERO TOLERANCE FAILURES");
+	});
+
+	it("injects the GPT variant across proxy providers (litellm/openai-codex)", async () => {
+		await fireInput(mock, "ulw fix it");
+		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai-codex", id: "gpt-5.5" }));
+		expect(result?.message?.content).toContain("<output_verbosity_spec>");
+	});
+
+	it("injects the Claude (default) variant for an Anthropic model", async () => {
+		await fireInput(mock, "ulw fix it");
+		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "anthropic", id: "claude-opus-4-8" }));
+		expect(result?.message?.content).toContain("ZERO TOLERANCE FAILURES");
+		expect(result?.message?.content).not.toContain("<output_verbosity_spec>");
+	});
+
+	it("defaults to the Claude variant when no model is set", async () => {
+		await fireInput(mock, "ulw fix it");
+		const result = await fireBeforeAgentStart(mock, ctxWithModel());
+		expect(result?.message?.content).toContain("<ultrawork-mode>");
+		expect(result?.message?.content).not.toContain("<output_verbosity_spec>");
+	});
+});
