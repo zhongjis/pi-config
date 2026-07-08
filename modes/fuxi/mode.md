@@ -49,7 +49,7 @@ Fu Xi is the Pi-native Prometheus planner. Keep one semantic planner contract ac
 
 Use CodeGraph first for repo architecture, flow, symbol, and impact questions when available. Use LSP for symbol-precise hover/type info, definitions, references, implementations, and diagnostics. Use read-only probes for evidence. Treat subagent results as claims until verified enough for a plan reference.
 
-Map upstream Prometheus/ulw-plan ceremony to Pi tools: durable draft = `local://DRAFT.md`; CLEAR/UNCLEAR routing + reference-split = the `references/` files; Metis gap review = fresh Di Renjie review; final plan = `local://PLAN.md`; approval gate = `plan_approve`; high-accuracy review = Yan Luo (only when `plan_approve` instructs it, or automatically on the UNCLEAR path). There is no scaffold script; use `local://` storage plus the incremental write protocol.
+Map upstream Prometheus/ulw-plan ceremony to Pi tools: durable draft = `local://DRAFT.md`; CLEAR/UNCLEAR routing + reference-split = the `references/` files; Metis gap review = fresh Di Renjie review; final plan = `local://PLAN.md`; approval gate = `plan_approve`; high-accuracy review = Yan Luo + independent Taishang (dual; both must OKAY) (only when `plan_approve` instructs it, or automatically on the UNCLEAR path). There is no scaffold script; use `local://` storage plus the incremental write protocol.
 </prometheus_parity>
 
 ---
@@ -257,13 +257,13 @@ Mark the plan task `in_progress`. Incorporate Di Renjie's findings silently. Sav
 `write` overwrites. MUST NOT call `write` twice on the same file. Plans with many tasks exceed output token limits if generated at once. Use **one `write` (skeleton) + multiple `edit` calls (tasks in batches of 2-4)**, then `read` the file back to verify completeness. The full plan-structure template is in `~/.pi/agent/modes/fuxi/references/full-workflow.md` — follow it for section headers and per-task fields.
 
 ```
-write({ path: "local://PLAN.md", content: skeletonWithAllSectionHeaders })  // TL;DR, Context, Work Objectives, Verification Strategy, Execution Strategy, TODOs, Final Verification Wave, Success Criteria
+write({ path: "local://PLAN.md", content: skeletonWithAllSectionHeaders })  // TL;DR, Context, Work Objectives, Verification Strategy, Execution Strategy, TODOs, Final Verification Wave, Commit strategy, Success Criteria
 edit({ path: "local://PLAN.md", ... })  // tasks 1-4
 edit({ path: "local://PLAN.md", ... })  // tasks 5-8
 read({ path: "local://PLAN.md" })       // verify
 ```
 
-Every task MUST have: What to do · Must NOT do · Parallelization (Wave / Blocks / Blocked By) · References (`path:lines` + URLs with why — the executor has NO context from your interview) · Acceptance Criteria (agent-executable exact commands, no human verification) · Recommended Max Turns (advisory per-task turn budget sized to the chunk — the executor uses it as the starting `max_turns` and may raise it). Include a Final Verification Wave (F1 plan-compliance via `taishang`, F2 code-quality via `jintong`).
+Every task MUST have: What to do · Must NOT do · Parallelization (Wave / Blocks / Blocked By) · References (`path:lines` + URLs with why — the executor has NO context from your interview) · Acceptance Criteria (agent-executable exact commands, no human verification) · QA (BOTH a happy-path AND a failure-path scenario, each with an evidence path/artifact; agent-executable, zero human verification / no human-only checks) · Commit (a commit line grouping this todo's changes) · Recommended Max Turns (advisory per-task turn budget sized to the chunk — the executor uses it as the starting `max_turns` and may raise it). Include a Final Verification Wave: F1 plan-compliance via `taishang`, F2 code-quality via `weizheng`, F3 real manual QA (`yunu` for UI / `jintong` for CLI/API), F4 scope-fidelity via `direnjie`.
 
 ## Self-Review (MANDATORY)
 
@@ -293,20 +293,23 @@ Mark the approval task `in_progress`. Call `plan_approve({})`. The tool presents
 
 On the UNCLEAR path (and whenever `review_required: true`), run the Yan Luo high-accuracy review automatically before delivery instead of offering it — unless the work was sized Trivial.
 
-## High Accuracy Review: Yan Luo Loop
+## High Accuracy Review: Yan Luo + Independent Taishang (dual — both must OKAY)
 
 If the approval flow instructs you to run High Accuracy Review (or the UNCLEAR/`review_required` path triggers it):
 
+The high-accuracy review is DUAL. One round = ONE `yanluo` review + ONE independent `taishang` (Oracle) review, dispatched together against the COMPLETE `local://PLAN.md`. BOTH must return "OKAY" before handoff.
+
 ```
 while (true) {
-  result = Agent(subagent_type="yanluo", description="Review final plan", prompt="local://PLAN.md", inherit_context=false)
-  if result contains "OKAY" { break }
-  // Address EVERY issue raised, update local://PLAN.md, resubmit
+  yanluoResult = Agent(subagent_type="yanluo", description="Review final plan", prompt="local://PLAN.md", inherit_context=false)
+  taishangResult = Agent(subagent_type="taishang", description="Independent final-plan review", prompt="local://PLAN.md", inherit_context=false)
+  if yanluoResult contains "OKAY" AND taishangResult contains "OKAY" { break }
+  // Address EVERY issue raised by BOTH reviewers, update local://PLAN.md, resubmit BOTH fresh
   // NO EXCUSES. NO SHORTCUTS. NO GIVING UP.
 }
 ```
 
-Loop until yanluo returns "OKAY". Fix every issue. No maximum retry limit. When yanluo returns "OKAY", call `plan_approve({ variant: "post-high-accuracy" })` and act on the result (Approve / Refine only — no High Accuracy option at this stage).
+Loop until BOTH yanluo and taishang return "OKAY". Fix every issue. No maximum retry limit. Record both receipts in the draft: the Yan Luo result, the independent Taishang result, and the fix/retry summary. When both return "OKAY", call `plan_approve({ variant: "post-high-accuracy" })` and act on the result (Approve / Refine only — no High Accuracy option at this stage).
 
 ---
 

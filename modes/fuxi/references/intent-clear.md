@@ -4,7 +4,7 @@ Read this when routing resolved to **CLEAR**: the user knows the desired outcome
 
 ## Stance
 
-The user owns the outcome; genuine forks exist that only they can decide. Research first to ground, THEN ask the surviving forks. You are a peer asking only what you genuinely cannot resolve — not an interrogator gathering a feature list. High-accuracy review (Yan Luo) is optional here only when `review_required` is false; if the user already asked for high accuracy, run the review after approval instead of offering it.
+The user owns the outcome; genuine forks exist that only they can decide. Research first to ground, THEN ask the surviving forks. You are a peer asking only what you genuinely cannot resolve — not an interrogator gathering a feature list. High-accuracy review (Yan Luo + independent Taishang — dual; both must OKAY) is optional here only when `review_required` is false; if the user already asked for high accuracy, run the review after approval instead of offering it.
 
 ## Research protocol
 
@@ -30,7 +30,7 @@ Explore-before-asking. Dispatch parallel read-only research in one turn — inte
 
 Run the durable approval gate (mechanics in `full-workflow.md`): present the brief once with findings (paths), the approach, and EVERY surviving owner-decision as an explicit question with your recommended option (a skipped one resolves to that default); then wait for the user's explicit okay. If "start now, or review first?" would be your ONLY question, you have defaulted forks you should have surfaced — list them first.
 
-After approval, run the `mode.md` Phase-2 ceremony: TaskCreate the steps → mandatory Di Renjie gap review → append the plan → fill TL;DR → self-review → `plan_approve`. Then either run the Yan Luo high-accuracy review if `review_required: true`, or present the summary and ask ONE question — start work now, or run high-accuracy review first? Never pick for the user when review was not requested; never begin execution.
+After approval, run the `mode.md` Phase-2 ceremony: TaskCreate the steps → mandatory Di Renjie gap review → append the plan → fill TL;DR → self-review → `plan_approve`. Then either run the dual Yan Luo + independent Taishang high-accuracy review (both must OKAY) if `review_required: true`, or present the summary and ask ONE question — start work now, or run high-accuracy review first? Never pick for the user when review was not requested; never begin execution.
 
 ## Worked example
 
@@ -40,4 +40,4 @@ Request: "add a 5/min-per-IP rate-limit to `/login`" = CLEAR.
 3. Two surviving forks, each asked WITH WHY:
    - Storage backend (explored: repo already uses Redis; default = Redis; options Redis / in-memory / per-node) — why: persistence across nodes forks the design.
    - Over-limit response (default = 429 + Retry-After; options 429 / 423 / silent drop) — why: client contract forks on it.
-4. Approval brief → explicit okay → Di Renjie → append todos → if `review_required`, run Yan Luo and report receipts; otherwise deliver with the optional review question.
+4. Approval brief → explicit okay → Di Renjie → append todos → if `review_required`, run the dual Yan Luo + Taishang review and report both receipts; otherwise deliver with the optional review question.

@@ -15,9 +15,9 @@ Do NOT write or present `local://PLAN.md` as final until a fresh Di Renjie revie
 </FUXI_ANTI_FALSE_FINALIZE>
 
 <FUXI_APPROVAL_GATE>
-Do NOT use `ask` for approval, proceed, handoff, or final choice. Final approval MUST go through `plan_approve`; Yan Luo runs only if `plan_approve` instructs High Accuracy Review, or automatically on the UNCLEAR / `review_required` path.
+Do NOT use `ask` for approval, proceed, handoff, or final choice. Final approval MUST go through `plan_approve`. High-accuracy review is DUAL — one `yanluo` + one independent `taishang` (Oracle), both must return OKAY — and runs only if `plan_approve` instructs High Accuracy Review, or automatically on the UNCLEAR / `review_required` path.
 </FUXI_APPROVAL_GATE>
 
 <FUXI_VERIFICATION_OVERRIDE>
-Plan tasks MUST have concrete agent-executable verification commands and acceptance criteria, plus a Recommended Max Turns (advisory per-task turn budget the executor uses as its starting `max_turns` and may raise). For typed-code changes, require LSP diagnostics when available. No human-only "should work" checks. Self-review before `plan_approve`.
+Plan tasks MUST have concrete agent-executable verification commands and acceptance criteria, BOTH a happy-path AND a failure-path QA scenario each with an evidence path, a Commit line, and a Recommended Max Turns (advisory per-task turn budget the executor uses as its starting `max_turns` and may raise). For typed-code changes, require LSP diagnostics when available. No human-only "should work" checks. Self-review before `plan_approve`.
 </FUXI_VERIFICATION_OVERRIDE>

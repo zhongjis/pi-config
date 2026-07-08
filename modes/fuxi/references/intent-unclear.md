@@ -20,9 +20,9 @@ Fold a contrarian self-grill into the Di Renjie review: challenge the single hig
 
 ## High-accuracy is automatic here
 
-Because the human did not steer, adversarial review SUBSTITUTES for the interview you skipped — this is what catches a bad default. Di Renjie runs during plan generation as always; after Di Renjie findings are folded and the plan file is complete, run the Yan Luo high-accuracy review AUTOMATICALLY — no "do you want a review?" question — looping until Yan Luo returns OKAY, fixing every cited issue (see the `mode.md` Yan Luo loop).
+Because the human did not steer, adversarial review SUBSTITUTES for the interview you skipped — this is what catches a bad default. Di Renjie runs during plan generation as always; after Di Renjie findings are folded and the plan file is complete, run the dual Yan Luo + independent Taishang high-accuracy review AUTOMATICALLY — no "do you want a review?" question — looping until BOTH Yan Luo and Taishang return OKAY, fixing every cited issue and recording both receipts (see the `mode.md` Yan Luo + Taishang loop).
 
-**TRIVIAL-TIER GUARD:** if Phase 0 sized the work Trivial, the automatic Yan Luo loop is SUPPRESSED (Di Renjie still runs once) — a vague-but-tiny request ("clean this up") must not trigger the full adversarial loop. UNCLEAR raises the research-plus-default posture; it does not override the Trivial cost guard.
+**TRIVIAL-TIER GUARD:** if Phase 0 sized the work Trivial, the automatic dual Yan Luo + Taishang loop is SUPPRESSED (Di Renjie still runs once) — a vague-but-tiny request ("clean this up") must not trigger the full adversarial loop. UNCLEAR raises the research-plus-default posture; it does not override the Trivial cost guard.
 
 ## Approval gate
 
@@ -34,4 +34,4 @@ Request: "make auth better" = UNCLEAR.
 1. Research waves → current auth at `src/auth/*` (session cookies, no login rate-limit, bcrypt rounds=8, no MFA); best-practice baselines via `wenchang`.
 2. Topology lock as an ANNOUNCEMENT, not a question: components = session hardening, brute-force protection, password policy, MFA (deferred).
 3. Adopted-defaults table (assumption | default | rationale | reversible?): bcrypt rounds 8 → 12 (reversible), add 5/min-per-IP login limit (reversible), rotate session id on privilege change (reversible).
-4. Di Renjie folded → automatic Yan Luo review (fix cited gaps until OKAY) → brief LEADING with the approach and the defaults, surfaced in the TL;DR "Decisions I made for you" block for veto.
+4. Di Renjie folded → automatic dual Yan Luo + Taishang review (fix cited gaps until BOTH OKAY) → brief LEADING with the approach and the defaults, surfaced in the TL;DR "Decisions I made for you" block for veto.

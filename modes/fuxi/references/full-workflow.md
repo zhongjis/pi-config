@@ -146,12 +146,17 @@ Critical Path: Task 1 → Task 3 → F1
 
 ## TODOs
 > Implementation + focused tests may be ONE task only when they verify the same bounded chunk. Split broad edge sweeps, UI tests, docs, git/PR into separate tasks.
-> EVERY task: What to do · Must NOT do · Parallelization (Can Run In Parallel / Wave / Blocks / Blocked By) · References (executor has NO interview context — exact `path:lines` + URLs with why) · Acceptance Criteria (agent-executable exact command, no human verification) · Recommended Max Turns.
+> EVERY task: What to do · Must NOT do · Parallelization (Can Run In Parallel / Wave / Blocks / Blocked By) · References (executor has NO interview context — exact `path:lines` + URLs with why) · Acceptance Criteria (agent-executable exact command, no human verification) · QA (BOTH a happy-path AND a failure-path scenario, each with an evidence path/artifact; agent-executable, zero human verification / no human-only checks) · Commit (a commit line grouping this todo's changes) · Recommended Max Turns.
 > Recommended Max Turns: an advisory per-task turn budget sized to the chunk (a small edit ~20–30; a bounded ≤3-file task ~40–60; never above the split threshold). The executor (Hou Tu) uses it as the starting `max_turns` and may raise it — it is advisory, not a hard ceiling. It is also the executor's only cost guard, so size it realistically rather than tight.
 
 ## Final Verification Wave (after ALL implementation tasks)
 - F1. Plan Compliance Audit — `taishang`: each Must Have exists; each Must NOT Have absent (reject with file:line). Output: `Must Have [N/N] | Must NOT Have [N/N] | VERDICT`.
 - F2. Code Quality Review — `weizheng`: type check + linter + tests; scan changed files for `as any`/`@ts-ignore`, empty catches, stray logs, dead code, unused imports. Output: `Build [PASS/FAIL] | Lint | Tests | VERDICT`.
+- F3. Real Manual QA — agent-executed exercise of the user-facing surface (`yunu` for UI; `jintong` for CLI/API): exact tool + invocation + evidence artifact (screenshot / tmux / curl / stdout). No "should work".
+- F4. Scope Fidelity Audit — `direnjie`: delivered scope matches plan objectives, no scope creep / silent additions (reject with file:line).
+
+## Commit strategy
+> How the todos' changes group into commits: each todo carries a `Commit:` line; group tightly-coupled todos into one commit boundary, sequence commits along the critical path, and keep every commit independently reviewable and revertable.
 
 ## Success Criteria
 ### Verification Commands (command # Expected: output)
@@ -174,6 +179,6 @@ Every delegated prompt is complete but bounded: `[CONTEXT]`, `[GOAL]`, `[DOWNSTR
 
 ## Stop rules
 
-- Plan file exists, template filled, every todo has references + acceptance + QA, dependency matrix consistent, required review receipts recorded: present the summary, then (CLEAR without `review_required`) ask the start-or-high-accuracy question, or (CLEAR with `review_required` / UNCLEAR) report the review result — and stop. Never begin execution yourself.
+- Plan file exists, template filled, every todo has references + acceptance + QA + commit, dependency matrix consistent, required review receipts recorded: present the summary, then (CLEAR without `review_required`) ask the start-or-high-accuracy question, or (CLEAR with `review_required` / UNCLEAR) report the review result — and stop. Never begin execution yourself.
 - Brief presented and `status: awaiting-approval` recorded: wait. Do not re-explore unless the user changes scope.
 - Two research waves with no new useful facts: stop exploring, present the brief.
