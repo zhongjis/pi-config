@@ -52,11 +52,17 @@ describe("handoff argument parsing", () => {
 });
 
 describe("plan execution goal builder", () => {
-  it("produces execution guidance without handoff protocol details", () => {
+  it("produces Hou Tu-aligned execution guidance without handoff protocol details", () => {
     const goal = buildPlanExecutionGoal("/tmp/PLAN.md");
     expect(goal).toContain("/tmp/PLAN.md");
     expect(goal).toContain("Read the full plan before making changes.");
-    expect(goal).toContain("Register the plan as tracked pi-tasks and execute them through your task workflow");
+    expect(goal).toContain("one pi-task per top-level plan task plus final verification gates");
+    expect(goal).toContain("Treat waves as labels; derive runnable work from the dependency graph.");
+    expect(goal).toContain("batch all independent runnable tasks in one TaskExecute call");
+    expect(goal).toContain("If running fewer than all runnable tasks, record the specific dependency or file/path conflict");
+    expect(goal).toContain("pi-task completed is not proof");
+    expect(goal).toContain("every Final Verification Wave verdict is APPROVE");
+    expect(goal).not.toContain("Execute step by step");
     expect(goal).not.toContain("HANDOFF.json");
     expect(goal).not.toContain("__PI_HANDOFF_EXECUTE__");
   });

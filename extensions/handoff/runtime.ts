@@ -431,10 +431,15 @@ export function buildPlanExecutionGoal(planPath: string): string {
     "",
     "Requirements:",
     "- Read the full plan before making changes.",
-    "- Register the plan as tracked pi-tasks and execute them through your task workflow.",
+    "- Register the plan as tracked pi-tasks: one pi-task per top-level plan task plus final verification gates.",
+    "- Treat waves as labels; derive runnable work from the dependency graph.",
+    "- Execute plan tasks through TaskExecute only.",
+    "- For each runnable set, batch all independent runnable tasks in one TaskExecute call when they have no named dependency and no file/path conflict.",
+    "- If running fewer than all runnable tasks, record the specific dependency or file/path conflict that forced serialization.",
     "- Re-read relevant files from current repo state before changing anything.",
     "- For each task, identify files to change, expected behavior, and verification.",
-    "- Execute step by step until complete or truly blocked.",
+    "- Verify each completed pi-task yourself before checking off PLAN.md; pi-task completed is not proof.",
+    "- Continue until every normal task is verified and every Final Verification Wave verdict is APPROVE, or until truly blocked.",
   ].join("\n");
 }
 
