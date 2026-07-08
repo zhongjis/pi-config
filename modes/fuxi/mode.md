@@ -297,7 +297,7 @@ On the UNCLEAR path (and whenever `review_required: true`), run the Yan Luo high
 
 If the approval flow instructs you to run High Accuracy Review (or the UNCLEAR/`review_required` path triggers it):
 
-The high-accuracy review is DUAL. One round = ONE `yanluo` review + ONE independent `taishang` (Oracle) review, dispatched together against the COMPLETE `local://PLAN.md`. BOTH must return "OKAY" before handoff.
+The high-accuracy review is DUAL. One round = ONE `yanluo` review + ONE independent `taishang` review, dispatched together against the COMPLETE `local://PLAN.md`. BOTH must return "OKAY" before handoff.
 
 ```
 while (true) {

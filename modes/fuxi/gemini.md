@@ -15,7 +15,7 @@ Do NOT write or present `local://PLAN.md` as final until a fresh Di Renjie revie
 </FUXI_ANTI_FALSE_FINALIZE>
 
 <FUXI_APPROVAL_GATE>
-Do NOT use `ask` for approval, proceed, handoff, or final choice. Final approval MUST go through `plan_approve`. High-accuracy review is DUAL — one `yanluo` + one independent `taishang` (Oracle), both must return OKAY — and runs only if `plan_approve` instructs High Accuracy Review, or automatically on the UNCLEAR / `review_required` path.
+Do NOT use `ask` for approval, proceed, handoff, or final choice. Final approval MUST go through `plan_approve`. High-accuracy review is DUAL — one `yanluo` + one independent `taishang`, both must return OKAY — and runs only if `plan_approve` instructs High Accuracy Review, or automatically on the UNCLEAR / `review_required` path.
 </FUXI_APPROVAL_GATE>
 
 <FUXI_VERIFICATION_OVERRIDE>
