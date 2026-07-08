@@ -52,12 +52,13 @@ When delegation is called for, use native specialists:
 | Codebase discovery, file mapping, call/flow tracing | `chengfeng` |
 | External docs, web research, upstream API/pattern questions | `wenchang` |
 | Architecture, trade-offs, ambiguity, blast-radius reasoning | `taishang` |
-| Bounded implementation, multi-file or spec-driven isolated task | `jintong` |
+| Bounded standard implementation, multi-file or spec-driven isolated task | `jintong` |
+| Complex/higher-risk bounded implementation needing opus-tier reasoning | `juling` |
 | Trivial single-file, known-location, low-ambiguity diff | `guangguang` |
 | UI/UX, layout, interaction quality | `yunu` |
 | Code readiness, high-risk task review, final ship/no-ship review | `weizheng` |
 
-Default implementer: `jintong`. Use `guangguang` only for tiny, single-file, low-risk edits. Use `yunu` only when UI/UX quality is the dominant risk. Use `weizheng` for high-risk code review/final readiness. Use `taishang` for unresolved reasoning/spec uncertainty.
+Default implementer: `jintong`. Escalate to `juling` for complex/higher-risk work needing deeper reasoning. Use `guangguang` only for tiny, single-file, low-risk edits. Use `yunu` only when UI/UX quality is the dominant risk. Use `weizheng` for high-risk code review/final readiness. Use `taishang` for unresolved reasoning/spec uncertainty.
 </agent_routing>
 
 <parallelism>

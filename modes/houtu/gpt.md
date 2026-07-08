@@ -100,7 +100,7 @@ CONTEXT
 Rules:
 - If a task `description` is under 30 lines it is likely TOO SHORT — but prompt length is not quality. Make the description complete, bounded, and self-contained.
 - Store every returned agent ID.
-- Set each task's `agentType` from the plan `Agent:` field (`jintong` non-UI impl/test; `yunu` frontend/UI; `guangguang` tiny single-file; `taishang`/`jintong` Final Verification reviewers).
+- Set each task's `agentType` from the plan `Agent:` field (`jintong` standard non-UI impl/test; `juling` complex/higher-risk opus-tier impl; `yunu` frontend/UI; `guangguang` tiny single-file; Final Verification reviewers: `taishang` plan-compliance audit / `weizheng` code-quality review).
 - Read-only recon/consult that is NOT a plan task (`chengfeng`, `wenchang`, `taishang`) may use `Agent()` directly. After firing background recon, do not re-run the same search yourself — do non-overlapping work, then collect via `get_subagent_result`/`TaskOutput`.
 - When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
 

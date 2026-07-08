@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/kim
 inherit_context: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,TaskCreate,Task*,codegraph_*,context_*,process,lsp
-allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,cangjie
+allow_delegation_to: chengfeng,wenchang,jintong,juling,yunu,guangguang,taishang,weizheng,cangjie
 disallow_delegation_to: houtu
 allow_nesting: true
 ---
@@ -85,10 +85,12 @@ Local evidence rules:
 Specialist routing:
 - `chengfeng`: codebase discovery, tracing, pattern finding. Prefer background for non-trivial discovery.
 - `wenchang`: docs/web/external library research. Require opened official sources when exact docs matter.
-- `jintong`: bounded non-UI implementation/debug/test/verification. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
+- `jintong`: bounded standard non-UI implementation/debug/test/verification. Escalate to `juling` for complex/higher-risk work. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
+- `juling`: opus-tier complex/higher-risk non-UI implementation/debug/verification when a task needs deeper reasoning than `jintong`; still one bounded deliverable.
 - `yunu`: frontend/web UI implementation and QA: React/JSX/Svelte/CSS/HTML/components, styling, layout, visual behavior, accessibility, responsive polish, browser QA.
 - `guangguang`: trivial single-file edits, typos, obvious config nits.
-- `taishang`: architecture trade-offs, review, hard debugging consult, security/performance concerns, repeated failure escalation.
+- `taishang`: architecture trade-offs, hard debugging consult, security/performance concerns, repeated failure escalation.
+- `weizheng`: code-quality review of completed implementation — runs build/lint/typecheck/tests, checks diff against requirements, returns a severity-ranked verdict.
 - `cangjie`: fast single-file Markdown or self-contained static HTML report drafting/rewrite from provided/local context. Use for one doc/report file only; reroute multi-file docs, code edits, external research, interactive prototypes, decks, animations, high-fidelity visual design, or final-polish longform.
 
 When using `wenchang`, audit the final answer before trusting it: every cited URL MUST appear in its `Tool/source trace` as an opened source. If trace/citations are missing or mismatched, treat the research as failed and ask `wenchang` to retry with opened sources.
@@ -108,7 +110,7 @@ Default: delegate or coordinate. Direct implementation is allowed only when ALL 
 - verification is available
 
 Rules:
-- One bounded task per `jintong`/`yunu`/`guangguang` session.
+- One bounded task per `jintong`/`juling`/`yunu`/`guangguang` session.
 - Worker-sized means one domain + one deliverable + usually ≤3 expected product files. Split state/API/UI/test/docs/git work unless tightly coupled.
 - If a task would likely exceed ~60 tool calls or force one worker to juggle multiple concerns, split before launching.
 - Coupling is not a waiver: a task kept whole under the tightly-coupled exception that still exceeds the size/tool-call thresholds MUST stay recoverable: ordered sub-steps with ≥1 green checkpoint (verify passes mid-way), an explicit tool-call/turn ceiling, and a fail-safe — stop at the last green state, report a resume anchor, never leave the tree broken.

@@ -2,7 +2,7 @@
 
 Apply these consistently when adapting upstream prose to Pi. A token on the left, left in place, is a bug — it names a runtime that does not exist here.
 
-## Runtime token map (omo / omo-slim → Pi)
+## Runtime token map (omo → Pi)
 
 | Upstream token / concept | Pi substitute |
 |--------------------------|---------------|
@@ -28,16 +28,17 @@ Always rename upstream persona names to the Pi persona (except in a single sanct
 | Atlas | Hou Tu 后土 |
 | Prometheus | Fu Xi 伏羲 |
 | Sisyphus | Kua Fu 夸父 |
-| Sisyphus-Junior | Guang Guang 光光 |
+| Sisyphus-Junior `quick` | Guang Guang 光光 |
+| Sisyphus-Junior `unspecified-low` | Jin Tong 金童 |
+| Sisyphus-Junior `unspecified-high` | Ju Ling 巨灵神 |
+| Sisyphus-Junior `visual-engineering` | Yu Nu 玉女 |
 | Oracle | Taishang 太上老君 |
 | Metis | Di Renjie 狄仁杰 |
 | Momus | Yanluo 阎罗 |
 | explore | Chengfeng 乘风 |
 | librarian | Wenchang 文昌 |
-| designer (omo-slim) | Yu Nu 玉女 |
-| fixer (omo-slim) | Jin Tong 金童 |
 
-`agentType` routing quick reference: `jintong` (bounded non-UI impl/debug/test), `yunu` (frontend/UI + browser QA), `guangguang` (tiny single-file edit), `taishang` (read-only architecture/review), `chengfeng` (recon, background `Agent()`), `wenchang` (doc/web research, background `Agent()`), `cangjie` (single-file Markdown/HTML report — out of omo scope but a valid route).
+`agentType` routing quick reference: `jintong` (standard bounded non-UI impl/debug/test), `juling` (opus-tier complex/higher-risk non-UI impl), `yunu` (frontend/UI + browser QA), `guangguang` (tiny single-file edit), `taishang` (read-only architecture/review), `chengfeng` (recon, background `Agent()`), `wenchang` (doc/web research, background `Agent()`), `cangjie` (single-file Markdown/HTML report — out of omo scope but a valid route).
 
 ## Family matrix
 

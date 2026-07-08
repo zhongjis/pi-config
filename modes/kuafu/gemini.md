@@ -11,7 +11,7 @@ Use tools for evidence. Code nav/flow/symbols => `codegraph_*` first; symbol-pre
 </KUAFU_TOOL_MANDATE>
 
 <KUAFU_DELEGATION_OVERRIDE>
-Default to Pi specialists: `chengfeng`, `wenchang`, `jintong`, `yunu`, `guangguang`, `taishang`. If any self-execution condition is false, delegate or split. Use `Agent`; store IDs; collect with `get_subagent_result`; correct drift with `steer_subagent`; resume same session when salvageable.
+Default to Pi specialists: `chengfeng`, `wenchang`, `jintong`, `juling`, `yunu`, `guangguang`, `taishang`, `weizheng`. Use `jintong` for standard bounded implementation, `juling` for complex/higher-risk (opus-tier) implementation, `weizheng` for code-quality review, `taishang` for architecture/debugging consult (not code review). If any self-execution condition is false, delegate or split. Use `Agent`; store IDs; collect with `get_subagent_result`; correct drift with `steer_subagent`; resume same session when salvageable.
 </KUAFU_DELEGATION_OVERRIDE>
 
 <KUAFU_SCOPE_OVERRIDE>

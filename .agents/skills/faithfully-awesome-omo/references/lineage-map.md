@@ -1,66 +1,77 @@
 # Lineage map
 
-Which Pi persona is adapted from which upstream persona, the local files it owns, and where to fetch the upstream source. All local paths are relative to the repo root.
+Which Pi persona is adapted from which upstream persona/category, the local files it owns, and where to fetch the upstream source. All local paths are relative to the repo root.
 
-## Upstreams
+## Upstream
+
+One upstream. Everything in scope is **omo**.
 
 | Tag | Repo | License |
 |-----|------|---------|
 | **omo** | `code-yeongyu/oh-my-openagent` | SUL 1.0 — non-commercial/internal, attribution required |
-| **omo-slim** | `alvinunreal/oh-my-opencode-slim` | SUL 1.0 — non-commercial/internal, attribution required |
 
-Never strip provenance. Cross-check with `modes/MANIFESTO.md` (which carries the omo attribution header) and `extensions/ulw/README.md` (Upstream section).
+Never strip provenance. Cross-check with `modes/MANIFESTO.md` (carries the omo attribution header) and `extensions/ulw/README.md` (Upstream section).
 
-## In-scope personas
+## In-scope: standalone omo agents/modes → Pi
 
-### omo → Pi
-
-| Pi persona | Upstream | Local files |
-|-----------|----------|-------------|
+| Pi persona | omo | Local files |
+|-----------|-----|-------------|
 | Hou Tu 后土 | Atlas (orchestrator) | `modes/houtu/{mode,gpt,gemini}.md` |
-| Fu Xi 伏羲 | Prometheus (planner) | `modes/fuxi/{mode,gpt,gemini}.md` + `modes/fuxi/references/*.md` |
-| Kua Fu 夸父 | Sisyphus (senior eng / build) | `modes/kuafu/{mode,gpt,gemini}.md` |
+| Fu Xi 伏羲 | Prometheus (planner) | `modes/fuxi/{mode,gpt,gemini}.md` + `references/*.md` |
+| Kua Fu 夸父 | Sisyphus (senior eng — the primary coding agent) | `modes/kuafu/{mode,gpt,gemini}.md` |
 | Taishang 太上老君 | Oracle (read-only consult) | `agents/taishang.md` |
 | Di Renjie 狄仁杰 | Metis (gap analyzer) | `agents/direnjie.md` |
 | Yanluo 阎罗 | Momus (plan reviewer) | `agents/yanluo.md` |
-| Guang Guang 光光 | Sisyphus-Junior (trivial worker) | `agents/guangguang.md` |
 | Chengfeng 乘风 | explore (recon) | `agents/chengfeng.md` |
 | Wenchang 文昌 | librarian (doc/web research) | `agents/wenchang.md` |
 | ultrawork (ulw) | ultrawork | `extensions/ulw/prompts/{default,gpt}.md` |
 
-### omo-slim → Pi
+Note on Taishang: realigned toward Oracle — read-only architecture/debug consult + plan-compliance audit at `:medium` effort (Oracle runs medium). Code-quality review was moved out to `weizheng` (a Pi-local reviewer, not an omo persona — omo does code review inline in Atlas/Sisyphus at the working tier, with no dedicated reviewer). Taishang keeps richer inspection tools (`readonly_bash`/`codegraph_*`/`lsp`) than Oracle — an intentional Pi enhancement. This is close to Oracle; not a drift to "fix".
 
-| Pi persona | Upstream | Local files |
-|-----------|----------|-------------|
-| Yu Nu 玉女 | designer (frontend/UI) | `agents/yunu.md` |
-| Jin Tong 金童 | fixer (bounded impl/debug) | `agents/jintong.md` |
+## In-scope: Sisyphus-Junior categories → Pi worker agents
+
+Key correction: **Sisyphus-Junior is not an agent with named "variants."** It is a single **category-spawned executor** — one base worker whose model, fallback chain, and prompt append are selected by the **task category** passed to it. omo defines 8 built-in categories. The Pi worker agents are Pi adaptations of individual categories:
+
+| Pi agent | omo Sisyphus-Junior category | omo category model | Local file |
+|----------|------------------------------|--------------------|------------|
+| Guang Guang 光光 | `quick` | gpt-5.4-mini | `agents/guangguang.md` |
+| Jin Tong 金童 | `unspecified-low` | claude-sonnet | `agents/jintong.md` |
+| Ju Ling 巨灵神 | `unspecified-high` | claude-opus (max) | `agents/juling.md` |
+| Yu Nu 玉女 | `visual-engineering` | gemini-3.1-pro (high) | `agents/yunu.md` |
+
+**Unclaimed omo categories** (no Pi persona — map deliberately if a need arises):
+- `artistry` (gemini high) — wild/unconventional creative exploration; distinct from `visual-engineering`'s prescriptive design-system-first discipline.
+- `deep` (gpt-5.5 medium) — autonomous problem-solving.
+- `ultrabrain` (gpt-5.5 xhigh) — maximum reasoning.
+- `writing` (gemini-3-flash) — docs/prose. (Cang Jie is a *native* doc writer, not this category — see out of scope.)
+
+`visual-engineering` vs `artistry` (recurring confusion): visual-engineering = prescriptive + systemic (design system → tokens → consistency); artistry = exploratory + unconventional (radical directions, break patterns). Yu Nu maps to visual-engineering.
 
 ## Out of scope (do NOT treat as omo)
 
 | Persona | Actual lineage |
 |---------|----------------|
-| Lu Ban 鲁班 | Superpowers (`modes/luban/`) — prompt explicitly says do not claim Sisyphus/Prometheus/Atlas parity |
+| Lu Ban 鲁班 | Superpowers (`modes/luban/`) — explicitly disclaims Sisyphus/Prometheus/Atlas parity |
 | Wei Zheng 魏征 | Superpowers (`agents/weizheng.md`) |
 | Shen Nong 神農 | product-manager / pm-marketplace (`modes/shennong/`) |
 | Cang Jie 仓颉 | native Pi (`agents/cangjie.md`) |
 
-If the target is one of these, this skill does not apply.
-
 ## Fetching upstream
 
-Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opened upstream sources).
+Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opened upstream sources). Two roots matter:
 
-- **omo** prompt bodies were observed at `packages/prompts-core/prompts/<persona>/default.md` on the `dev` branch — e.g. Atlas at `packages/prompts-core/prompts/atlas/default.md`. Raw form:
-  `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/packages/prompts-core/prompts/<persona>/default.md`
-  Confirm the exact per-persona path/branch by browsing the repo — layout may drift, and some personas (explore, librarian, sisyphus-junior, ultrawork) may sit under different names or files. Use `fetch_content` on the repo tree first.
-- **omo-slim** layout is not yet verified in this repo. Browse `alvinunreal/oh-my-opencode-slim` to locate the designer and fixer prompts before diffing.
+- **Prompt markdown** — `packages/prompts-core/prompts/<persona>/default.md`. Confirmed present: `atlas`, `prometheus`, `ultrawork`, and `mode/` (hyperplan, team). Confirm exact per-persona paths by browsing; layout drifts.
+- **Agent + category code** (where Sisyphus-Junior, Oracle, and the category models/prompts live):
+  - `packages/omo-opencode/src/agents/` — e.g. `sisyphus-junior/default.ts`, `oracle.ts`, `builtin-agents.ts`
+  - `packages/omo-opencode/src/tools/delegate-task/*-categories.ts` — per-family category prompt appends (e.g. `google-categories.ts` holds `visual-engineering` and `artistry`)
+  - `packages/model-core/src/category-model-requirements.ts` — category → model + fallback chain
 
-Prefer `fetch_content` for raw prompt files and GitHub trees. `wenchang` can locate the exact upstream paths if the layout is unclear.
+Raw pattern: `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/<path>`. Use `fetch_content` on the GitHub tree/API first; `wenchang` can locate exact paths when the layout is unclear.
 
 ## Attribution gap (known, not auto-fixed)
 
-In-file attribution is currently **inconsistent**:
-- Present: `taishang` ("inspired by Oh My Open Agent's Oracle"), `direnjie` (Metis), `yanluo` (Momus), `fuxi` (Prometheus), `houtu` ("Pi-adapted Atlas execution conductor"), `guangguang` (description "Adapted from OmO Sisyphus-Junior"), `extensions/ulw/README.md` (Upstream section).
-- **Missing**: `chengfeng` (explore), `wenchang` (librarian), `yunu` (omo-slim designer), `jintong` (omo-slim fixer) carry no lineage line.
+In-file attribution is **inconsistent**:
+- Present: `taishang` (Oracle), `direnjie` (Metis), `yanluo` (Momus), `fuxi` (Prometheus), `houtu` ("Pi-adapted Atlas execution conductor"), `guangguang` (desc "Adapted from OmO Sisyphus-Junior"), `juling` (desc "Pi mapping of omo Sisyphus-Junior's `unspecified-high` category"), `extensions/ulw/README.md`.
+- **Missing**: `chengfeng` (explore), `wenchang` (librarian), `yunu` (Sisyphus-Junior `visual-engineering`), `jintong` (Sisyphus-Junior `unspecified-low`).
 
-When you next edit one of the missing ones, propose adding a one-line attribution in the same "(inspired by …)" / "Adapted from …" style — but only as part of an approved change, and confirm the exact upstream persona name against the opened source.
+When you next edit one of the missing ones, propose adding a one-line attribution ("(inspired by omo's …)" / "Pi mapping of omo Sisyphus-Junior's `<category>` category"), verified against the opened source, as part of an approved change.

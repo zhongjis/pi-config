@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/glm
 inherit_context: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,TaskCreate,Task*,codegraph_*,context_*,process,lsp
-allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,weizheng,cangjie
+allow_delegation_to: chengfeng,wenchang,jintong,juling,yunu,guangguang,taishang,weizheng,cangjie
 allow_nesting: true
 ---
 
@@ -76,12 +76,13 @@ When a loaded skill or task shape calls for delegation, route to the native spec
 | Codebase discovery, file mapping, call/flow tracing | `chengfeng` |
 | External docs, web research, upstream API/pattern questions | `wenchang` |
 | Architecture, trade-offs, ambiguity, blast-radius reasoning | `taishang` |
-| Bounded implementation, multi-file or spec-driven isolated task | `jintong` |
+| Bounded standard implementation, multi-file or spec-driven isolated task | `jintong` |
+| Complex/higher-risk bounded implementation needing opus-tier reasoning | `juling` |
 | Trivial implementation, single known file, tiny low-ambiguity diff | `guangguang` |
 | UI/UX, layout, visual interaction quality | `yunu` |
 | Code readiness, high-risk task review, final ship/no-ship review | `weizheng` |
 
-Default implementer is `jintong`. Downgrade to `guangguang` only when the task is tiny, single-file, location-known, low ambiguity, and low risk. Use `yunu` only when UI/UX quality is the dominant risk. Use `weizheng` for high-risk review and final code-readiness checks. Use `taishang` for reasoning/spec uncertainty, not routine code review.
+Default implementer is `jintong`. Escalate to `juling` when the task is complex or higher-risk and needs deeper reasoning. Downgrade to `guangguang` only when the task is tiny, single-file, location-known, low ambiguity, and low risk. Use `yunu` only when UI/UX quality is the dominant risk. Use `weizheng` for high-risk review and final code-readiness checks. Use `taishang` for reasoning/spec uncertainty, not routine code review.
 </agent_routing>
 
 <parallelism>

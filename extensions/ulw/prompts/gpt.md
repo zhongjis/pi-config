@@ -63,7 +63,7 @@ Before acting, survey the skills available in this system: scan their descriptio
 | wenchang agent | External library docs, OSS examples | `Agent(subagent_type="wenchang", run_in_background=true, ...)` |
 | taishang agent | Stuck on architecture/debugging after 2+ attempts | `Agent(subagent_type="taishang", run_in_background=false, ...)` |
 | fuxi agent | Complex multi-step with dependencies (5+ steps) | `Agent(subagent_type="fuxi", run_in_background=false, ...)` |
-| jintong / yunu / guangguang | Specialized bounded implementation work | `Agent(subagent_type="...", run_in_background=true)` |
+| jintong / juling / yunu / guangguang | Specialized bounded implementation work (`jintong` standard, `juling` complex/higher-risk opus-tier) | `Agent(subagent_type="...", run_in_background=true)` |
 
 <tool_usage_rules>
 - Prefer tools over internal knowledge for fresh or user-specific data

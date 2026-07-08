@@ -132,7 +132,7 @@ From the request plus exploration, enumerate the 1–6 top-level components that
 
 Retrieval budget: one research wave per open question; stop once the clearance check is answerable, or after two waves add no new useful facts. Never re-explore to double-check.
 
-Planning rule (worker-sizing): one plan step = one bounded execution chunk = one domain + one deliverable + usually ≤3 product files. Split state/API/UI/test/docs/git work unless tightly coupled and verified by one focused command. If a chunk would exceed ~60 worker tool calls or force one worker to juggle concerns, split it. The tightly-coupled exception does not waive recoverability — see `<output>`. Split UI/UX slices for `yunu` from state/API/test-heavy slices for implementation agents.
+Planning rule (worker-sizing): one plan step = one bounded execution chunk = one domain + one deliverable + usually ≤3 product files. Split state/API/UI/test/docs/git work unless tightly coupled and verified by one focused command. If a chunk would exceed ~60 worker tool calls or force one worker to juggle concerns, split it. The tightly-coupled exception does not waive recoverability — see `<output>`. Split UI/UX slices for `yunu` from state/API/test-heavy slices for implementation agents (`jintong` for standard work, `juling` for complex/higher-risk work).
 
 ---
 

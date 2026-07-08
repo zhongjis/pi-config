@@ -151,14 +151,14 @@ Critical Path: Task 1 → Task 3 → F1
 
 ## Final Verification Wave (after ALL implementation tasks)
 - F1. Plan Compliance Audit — `taishang`: each Must Have exists; each Must NOT Have absent (reject with file:line). Output: `Must Have [N/N] | Must NOT Have [N/N] | VERDICT`.
-- F2. Code Quality Review — `jintong`: type check + linter + tests; scan changed files for `as any`/`@ts-ignore`, empty catches, stray logs, dead code, unused imports. Output: `Build [PASS/FAIL] | Lint | Tests | VERDICT`.
+- F2. Code Quality Review — `weizheng`: type check + linter + tests; scan changed files for `as any`/`@ts-ignore`, empty catches, stray logs, dead code, unused imports. Output: `Build [PASS/FAIL] | Lint | Tests | VERDICT`.
 
 ## Success Criteria
 ### Verification Commands (command # Expected: output)
 ### Final Checklist ([ ] all Must Have present · [ ] all Must NOT Have absent · [ ] tests pass)
 ```
 
-Worker-sizing rules (mirror `mode.md`): one plan step = one bounded execution chunk = one domain + one deliverable + usually ≤3 product files. Split state/API/UI/test/docs/git unless tightly coupled and covered by one focused verification command. If a step would exceed ~60 worker tool calls or force one worker to juggle concerns, split it. Coupling is not a waiver — a task kept whole under the coupling exception must stay recoverable: ordered sub-steps with ≥1 green checkpoint, an explicit tool-call/turn ceiling, and a fail-safe (stop at last green state, report a resume anchor, never leave the tree broken). Split UI/UX slices for `yunu` from state/API/test-heavy slices for implementation agents.
+Worker-sizing rules (mirror `mode.md`): one plan step = one bounded execution chunk = one domain + one deliverable + usually ≤3 product files. Split state/API/UI/test/docs/git unless tightly coupled and covered by one focused verification command. If a step would exceed ~60 worker tool calls or force one worker to juggle concerns, split it. Coupling is not a waiver — a task kept whole under the coupling exception must stay recoverable: ordered sub-steps with ≥1 green checkpoint, an explicit tool-call/turn ceiling, and a fail-safe (stop at last green state, report a resume anchor, never leave the tree broken). Split UI/UX slices for `yunu` from state/API/test-heavy slices for implementation agents (`jintong` for standard work, `juling` for complex/higher-risk work).
 
 ## Delegation discipline (Pi-native)
 

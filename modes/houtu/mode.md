@@ -6,7 +6,7 @@ inherit_context: false
 run_in_background: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,TaskCreate,Task*,TaskUpdate,TaskOutput,TaskStop,TaskExecute,codegraph_*,context_*,process,lsp
-allow_delegation_to: chengfeng,wenchang,jintong,yunu,guangguang,taishang,cangjie
+allow_delegation_to: chengfeng,wenchang,jintong,juling,yunu,guangguang,taishang,weizheng,cangjie
 allow_nesting: true
 ---
 
@@ -69,10 +69,12 @@ Do NOT create per-wave pi-tasks. A "wave" is a human-readable grouping; the runn
 ### Routing
 
 Set each task's `agentType` to the plan's `Agent:` value:
-- `jintong` — bounded non-UI implementation/debug/test/verification task. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
+- `jintong` — bounded standard non-UI implementation/debug/test/verification task; use `juling` instead for complex/higher-risk work. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
+- `juling` — opus-tier complex/higher-risk non-UI implementation/debug/verification task needing deeper reasoning than `jintong`; one bounded deliverable.
 - `yunu` — frontend/web UI implementation and QA: React/JSX/Svelte/CSS/HTML/components, styling, layout, visual behavior, accessibility, responsive polish, browser QA.
 - `guangguang` — tiny single-file edit only: typo, simple config, simple function.
-- `taishang` — read-only architecture/debugging/plan-compliance review (Final Verification Wave).
+- `taishang` — read-only architecture/debugging consult + plan-compliance audit (Final Verification Wave F1).
+- `weizheng` — code-quality review of completed implementation: build/lint/typecheck/tests + diff-vs-requirements, severity verdict (Final Verification Wave F2).
 - `chengfeng` — quick recon that can change routing or verification plan. Read-only, via `Agent()` background, not a pi-task.
 - `wenchang` — official-doc/library research; use mcporter/context7 when exact docs matter. Read-only, via `Agent()` background, not a pi-task.
 
@@ -268,7 +270,7 @@ Loop Step 3 until every top-level TODO task is verified and checked in `local://
 
 ## Step 4: Final Verification Wave
 
-Final Wave tasks are approval gates, not normal implementation tasks. They are registered as pi-tasks (agentType `taishang` / `jintong`) blocked by all implementation tasks.
+Final Wave tasks are approval gates, not normal implementation tasks. They are registered as pi-tasks (agentType `taishang` for plan-compliance audit / `weizheng` for code-quality review) blocked by all implementation tasks.
 
 For each final reviewer/check:
 1. `TaskExecute` the reviewer task exactly as planned.

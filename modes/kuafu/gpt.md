@@ -32,10 +32,12 @@ Local evidence:
 Specialists:
 - `chengfeng`: codebase discovery/tracing/patterns; use background for non-trivial discovery.
 - `wenchang`: docs/web/external patterns; require opened official sources when exact docs matter.
-- `jintong`: bounded non-UI implementation/debug/test/verification. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
+- `jintong`: bounded standard non-UI implementation/debug/test/verification; escalate to `juling` for complex/higher-risk work. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
+- `juling`: opus-tier complex/higher-risk non-UI implementation/debug/verification needing deeper reasoning than `jintong`; one bounded deliverable.
 - `yunu`: frontend/web UI implementation and QA: React/JSX/Svelte/CSS/HTML/components, styling, layout, visual behavior, accessibility, responsive polish, browser QA.
 - `guangguang`: trivial single-file edits/typos/simple config.
-- `taishang`: architecture/review/security/performance/hard debugging/repeated failure escalation.
+- `taishang`: architecture/security/performance/hard debugging/repeated failure escalation.
+- `weizheng`: code-quality review of completed implementation — build/lint/typecheck/tests + diff-vs-requirements, severity verdict.
 
 When using `wenchang`, audit the final answer before trusting it: every cited URL MUST appear in its `Tool/source trace` as an opened source. If trace/citations are missing or mismatched, treat the research as failed and ask `wenchang` to retry with opened sources.
 </tool_use_policy>

@@ -22,7 +22,8 @@
 1. **THINK DEEPLY** - What is the user's TRUE intent? What problem are they REALLY trying to solve?
 2. **EXPLORE THOROUGHLY** - Fire chengfeng (codebase recon) and wenchang (external research) agents to gather ALL relevant context
 3. **CONSULT SPECIALISTS** - For hard/complex tasks, DO NOT struggle alone. Delegate:
-   - **taishang**: Architecture, debugging, complex logic, security, review
+   - **taishang**: Architecture, debugging, complex logic, security
+   - **weizheng**: Code-quality review of completed work (build/lint/typecheck/tests + diff scan)
    - **fuxi**: Planning, decomposition, multi-stream work
 4. **ASK THE USER** - If ambiguity remains after exploration, ASK. Don't guess.
 
@@ -146,9 +147,11 @@ Agent(subagent_type="fuxi", resume="<agentId>", run_in_background=false, prompt=
 | Codebase exploration | `Agent(subagent_type="chengfeng", run_in_background=true)` | Parallel, context-efficient |
 | Documentation / web lookup | `Agent(subagent_type="wenchang", run_in_background=true)` | Specialized knowledge, cited sources |
 | Planning | `Agent(subagent_type="fuxi", run_in_background=false)` | Parallel task graph + structured TODO list |
-| Hard problem / review | `Agent(subagent_type="taishang", run_in_background=false)` | Architecture, debugging, complex logic |
+| Hard problem / architecture | `Agent(subagent_type="taishang", run_in_background=false)` | Architecture, debugging, complex logic |
+| Code-quality review | `Agent(subagent_type="weizheng", run_in_background=false)` | Build/lint/typecheck/tests + diff-vs-requirements verdict |
 | Frontend / visual work | `Agent(subagent_type="yunu", run_in_background=true)` | UI, styling, browser QA |
-| Bounded implementation | `Agent(subagent_type="jintong", run_in_background=true)` | Isolated build/debug/test work |
+| Bounded implementation (standard) | `Agent(subagent_type="jintong", run_in_background=true)` | Isolated build/debug/test work |
+| Bounded implementation (complex/higher-risk) | `Agent(subagent_type="juling", run_in_background=true)` | Opus-tier isolated build/debug needing deeper reasoning |
 | Trivial single-file change | `Agent(subagent_type="guangguang", run_in_background=true)` | Fast, low-overhead edits |
 
 **CODEGRAPH-FIRST:** When `codegraph_*` tools exist, use `codegraph_explore` for codebase how/where/what/flow questions and before edits; if absent, inactive/uninitialized, or cold-start unavailable, continue with chengfeng agents, `read`/`rg`/`fd`/`lsp`, and the ast-grep skill.
@@ -158,8 +161,9 @@ Agent(subagent_type="fuxi", resume="<agentId>", run_in_background=false, prompt=
 // Frontend work
 Agent(subagent_type="yunu", run_in_background=true)
 
-// Bounded implementation / complex logic
+// Bounded implementation — standard `jintong`, complex/higher-risk `juling`
 Agent(subagent_type="jintong", run_in_background=true)
+Agent(subagent_type="juling", run_in_background=true)
 
 // Quick fixes
 Agent(subagent_type="guangguang", run_in_background=true)
@@ -187,7 +191,7 @@ Agent(subagent_type="guangguang", run_in_background=true)
 1. Analyze the request and identify required capabilities
 2. Spawn chengfeng + wenchang via `Agent(run_in_background=true)` in PARALLEL for exploration and research
 3. Use fuxi with gathered context to create a detailed work breakdown
-4. Execute by delegating to jintong / yunu / guangguang, with continuous verification against original requirements
+4. Execute by delegating to jintong / juling / yunu / guangguang, with continuous verification against original requirements
 
 ## VERIFICATION GUARANTEE (NON-NEGOTIABLE)
 
@@ -325,7 +329,7 @@ THE USER ASKED FOR X. DELIVER EXACTLY X. NOT A SUBSET. NOT A DEMO. NOT A STARTIN
 
 1. EXPLORE (chengfeng + wenchang in parallel background)
 2. GATHER → SPAWN fuxi FOR PLANNING
-3. WORK BY DELEGATING TO jintong / yunu / guangguang
+3. WORK BY DELEGATING TO jintong / juling / yunu / guangguang
 
 NOW.
 

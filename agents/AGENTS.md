@@ -16,6 +16,8 @@ This file owns all `agents/*.md` definitions.
 - Prompt bodies define behavioral contracts; keep output formats explicit when callers depend on them.
 - When an agent has `codegraph_*` and/or `lsp`, prompt tool guidance should distinguish CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, and `rg`/`fd` for literal/file search.
 - `yunu` is the frontend/web UI implementation and visual QA owner; keep its description explicit enough for orchestrators to choose it over generic implementation agents.
+- `jintong` (sonnet, standard) and `juling` (opus, complex/higher-risk) are the two non-UI implementation tiers; keep their descriptions distinct so orchestrators route by task complexity.
+- `taishang` is architecture/debugging consult + plan-compliance audit (read-only, Oracle-aligned); it does NOT do code-quality review. `weizheng` owns code-quality review (build/lint/typecheck/tests + diff-vs-requirements). Keep that split when editing either.
 
 ## Work Guidance
 

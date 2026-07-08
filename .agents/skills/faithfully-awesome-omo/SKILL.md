@@ -1,20 +1,19 @@
 ---
 name: faithfully-awesome-omo
-description: Faithfully update, polish, sync, audit, or re-adapt this repo's Pi-adapted omo / omo-slim agent and mode prompts. Use whenever working on prompts under `modes/` (Hou Tu / Fu Xi / Kua Fu ← omo Atlas / Prometheus / Sisyphus), `agents/` (Taishang / Di Renjie / Yanluo / Guang Guang / Chengfeng / Wenchang ← omo; Yu Nu / Jin Tong ← omo-slim), or `extensions/ulw/` (ultrawork) — including requests like "sync X with upstream Atlas/Prometheus/omo", "what is missing from this omo-adapted prompt", "polish / re-faithful an adapted mode", "update the gpt or gemini variant", or "align a Pi persona with its omo/omo-slim source". Trigger even when only the Pi persona name is given (Hou Tu, Fu Xi, Kua Fu, Taishang, Di Renjie, Yanluo, Guang Guang, Chengfeng, Wenchang, Yu Nu, Jin Tong) and the word "omo" is never said. Encodes the structural-faithfulness model, the omo→Pi substitution map, the mode.md / gpt.md / gemini.md family plus gemini-overlay injection anchors, the test-locked strings and DOX contracts to preserve, the recurring decision forks, and a MANDATORY proposal-first / confirm-before-apply gate. NOT for Lu Ban or Wei Zheng (Superpowers lineage), Shen Nong (product-manager lineage), or Cang Jie (native).
+description: Faithfully update, polish, sync, audit, or re-adapt this repo's Pi-adapted omo agent and mode prompts. Use whenever working on prompts under `modes/` (Hou Tu / Fu Xi / Kua Fu ← omo Atlas / Prometheus / Sisyphus), `agents/` (Taishang / Di Renjie / Yanluo ← omo Oracle / Metis / Momus; Chengfeng / Wenchang ← omo explore / librarian; Guang Guang / Jin Tong / Ju Ling / Yu Nu ← omo Sisyphus-Junior categories quick / unspecified-low / unspecified-high / visual-engineering), or `extensions/ulw/` (ultrawork) — including requests like "sync X with upstream Atlas/Prometheus/omo", "what is missing from this omo-adapted prompt", "polish / re-faithful an adapted mode", "update the gpt or gemini variant", or "align a Pi persona with its omo source". Trigger even when only the Pi persona name is given (Hou Tu, Fu Xi, Kua Fu, Taishang, Di Renjie, Yanluo, Guang Guang, Chengfeng, Wenchang, Jin Tong, Ju Ling, Yu Nu) and the word "omo" is never said. Encodes the structural-faithfulness model, the omo→Pi substitution map, the mode.md / gpt.md / gemini.md family plus gemini-overlay injection anchors, the test-locked strings and DOX contracts to preserve, the recurring decision forks, and a MANDATORY proposal-first / confirm-before-apply gate. NOT for Lu Ban or Wei Zheng (Superpowers lineage), Shen Nong (product-manager lineage), or Cang Jie (native).
 ---
 
 # Faithfully Awesome omo
 
-This repo's agent personas are Pi-native adaptations of two upstream projects. This skill keeps them **honest to their upstream source** while staying **runnable on Pi** — because a naive verbatim copy breaks the runtime and the test suite, and a lazy paraphrase silently drops upstream intent. The whole job is threading that needle deliberately, then getting a human to sign off before anything lands.
+This repo's agent personas are Pi-native adaptations of the upstream omo project (`code-yeongyu/oh-my-openagent`). This skill keeps them **honest to their upstream source** while staying **runnable on Pi** — because a naive verbatim copy breaks the runtime and the test suite, and a lazy paraphrase silently drops upstream intent. The whole job is threading that needle deliberately, then getting a human to sign off before anything lands.
 
 All paths below are relative to the repo root (`pi-config`).
 
 ## Provenance & scope
 
-Two upstreams, both **SUL 1.0** (non-commercial / internal use, **attribution required** — never strip provenance):
+One upstream, **SUL 1.0** (non-commercial / internal use, **attribution required** — never strip provenance):
 
 - **omo** — `code-yeongyu/oh-my-openagent`
-- **omo-slim** — `alvinunreal/oh-my-opencode-slim`
 
 A persona is **in scope only if it appears in `references/lineage-map.md`**. Read that file first — it maps each Pi persona to its exact upstream persona, upstream repo, and the local files you will touch.
 
@@ -79,7 +78,7 @@ Then wait for an explicit go. If the plan needs a change to a locked contract fi
 ## References
 
 - `references/lineage-map.md` — which Pi persona ← which upstream persona, files, fetch URLs, out-of-scope, attribution-gap notes.
-- `references/substitution-map.md` — omo/omo-slim→Pi token map, family matrix, Gemini-overlay injection anchor rule, Default/GPT/Gemini philosophy.
+- `references/substitution-map.md` — omo→Pi token map, family matrix, Gemini-overlay injection anchor rule, Default/GPT/Gemini philosophy.
 - `references/constraints-and-forks.md` — test-locked strings, DOX contracts to respect, attribution rule, and the recurring decision forks with this repo's defaults.
 
 ## Verify commands (quick copy)
