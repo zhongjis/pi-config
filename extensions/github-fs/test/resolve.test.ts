@@ -74,16 +74,19 @@ describe("resolveGithubView", () => {
       if (a === "pr" && b === "list") return { code: 0, stdout: "[]", stderr: "" };
       if (a === "pr" && b === "diff") return { code: 0, stdout: "diff --git a/x b/x\n+y", stderr: "" };
       if (a === "api" && typeof b === "string" && b.includes("/contents/")) {
+        const file = b.split("/contents/")[1].split("?")[0];
+        const name = file.split("/").pop() ?? file;
+        const body = name.endsWith(".json") ? '{"ok":true}\n' : "export const a = 1;\n";
         return {
           code: 0,
           stdout: JSON.stringify({
             type: "file",
-            name: "a.ts",
-            path: "src/a.ts",
-            size: 13,
+            name,
+            path: file,
+            size: body.length,
             sha: "sha1",
             encoding: "base64",
-            content: Buffer.from("export const a = 1;\n").toString("base64"),
+            content: Buffer.from(body).toString("base64"),
           }),
           stderr: "",
         };
@@ -170,5 +173,12 @@ describe("resolveGithubView", () => {
     await resolveGithubView("/cwd", target(), deps);
     const apiCalls = runCalls.filter((args) => args[0] === "api").length;
     expect(apiCalls).toBe(1);
+  });
+
+  it("returns the decoded body of a .json file, not the cache metadata", async () => {
+    const { deps } = makeDeps();
+    const path = await resolveGithubView("/cwd", parseGithubPath("github://octo/repo/package.json")!, deps);
+    expect(path.endsWith(".json")).toBe(true);
+    expect(await readFile(path, "utf8")).toBe('{"ok":true}\n');
   });
 });

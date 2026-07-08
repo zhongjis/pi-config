@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -95,5 +95,14 @@ describe("content extension", () => {
     const key = cache.key({ x: "default-ext" });
     const path = await cache.put(key, "# md", { terminal: false });
     expect(path.endsWith(".md")).toBe(true);
+  });
+
+  it("does not clobber a .json content file with its metadata sidecar", async () => {
+    const cache = createCache({ agentDir: dir });
+    const key = cache.key({ x: "json-collision" });
+    const body = '{"name":"pkg","version":"1.0.0"}';
+    const path = await cache.put(key, body, { terminal: false, ext: ".json" });
+    expect(await cache.get(key, { refresh: false })).toBe(path);
+    expect(await readFile(path, "utf8")).toBe(body);
   });
 });

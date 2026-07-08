@@ -3,7 +3,7 @@
  *
  * Layout under `<agentDir>/github-fs-cache/` (dir 0700, files 0600):
  *   <hash><ext>  — rendered content the `read` tool consumes (.md for views, real ext for files)
- *   <hash>.json  — { fetchedAt, terminal, ext }
+ *   <hash>.meta.json  — { fetchedAt, terminal, ext }
  *
  * The hash key includes the resolved account identity. That is a *consistency*
  * control (don't serve account A's cached 200 when the current resolution
@@ -72,7 +72,7 @@ export function createCache(options: CacheOptions = {}): GithubCache {
   const now = options.now ?? (() => Date.now());
 
   const contentPath = (key: string, ext: string) => join(cacheDir, `${key}${ext}`);
-  const metaPath = (key: string) => join(cacheDir, `${key}.json`);
+  const metaPath = (key: string) => join(cacheDir, `${key}.meta.json`);
 
   async function ensureDir(): Promise<void> {
     await mkdir(cacheDir, { recursive: true, mode: DIR_MODE });
@@ -102,9 +102,9 @@ export function createCache(options: CacheOptions = {}): GithubCache {
     const cutoff = now() - HARD_TTL_MS;
     await Promise.all(
       entries
-        .filter((name) => name.endsWith(".json"))
+        .filter((name) => name.endsWith(".meta.json"))
         .map(async (name) => {
-          const key = name.slice(0, -".json".length);
+          const key = name.slice(0, -".meta.json".length);
           const meta = await readMeta(key);
           if (meta && meta.terminal) return; // keep immutable entries
           try {
