@@ -128,6 +128,7 @@ export class AgentManager {
       parentSessionId: options.parentSessionId,
       sessionDir: options.sessionDir,
       lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 } satisfies LifetimeUsage,
+      lifetimeCost: 0,
       compactionCount: 0,
     };
     record.run = new AgentRun(id);
@@ -201,6 +202,7 @@ export class AgentManager {
       },
       onAssistantUsage: (usage) => {
         if (record.lifetimeUsage) addUsage(record.lifetimeUsage, usage);
+        record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
         this.lifetimeCost += usage.cost ?? 0;
       },
       onSessionCreated: (session) => {

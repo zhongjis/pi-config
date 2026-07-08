@@ -79,6 +79,11 @@ export function formatCompactions(count: number): string {
   return `⇲${count}`;
 }
 
+/** Cost in USD: "$0.340" — matches the footer's cost format (.toFixed(3)). */
+export function formatCost(cost: number): string {
+  return `$${cost.toFixed(3)}`;
+}
+
 /**
  * Human-readable duration, compact for dense stat lines:
  *   < 10s  → "4.1s"

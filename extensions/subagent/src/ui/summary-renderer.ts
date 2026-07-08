@@ -20,6 +20,8 @@ export interface SubagentSummaryAgent {
   toolUses?: number;
   tokens?: string | number;
   totalTokens?: number;
+  /** Pre-formatted cost segment (e.g. "$0.340" or "$0.340 (sub)"). */
+  cost?: string;
   durationMs?: number;
   spinnerFrame?: number;
   modelName?: string;
@@ -135,6 +137,7 @@ function getAgentStats(agent: SubagentSummaryAgent): string {
   if (agent.toolUses && agent.toolUses > 0) parts.push(formatTools(agent.toolUses));
   const tokenText = getTokenText(agent);
   if (tokenText) parts.push(tokenText);
+  if (agent.cost) parts.push(agent.cost);
   if (agent.durationMs != null) parts.push(formatSummaryMs(agent.durationMs));
   return formatSummaryStats(parts);
 }

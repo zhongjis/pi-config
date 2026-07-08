@@ -129,12 +129,9 @@ export class ConversationViewer implements Component {
     const headerParts: string[] = [duration];
     const toolUses = this.activity?.toolUses ?? this.record.toolUses;
     if (toolUses > 0) headerParts.unshift(formatTools(toolUses));
-    if (this.activity?.session) {
-      try {
-        const tokens = this.activity.session.getSessionStats().tokens.total;
-        if (tokens > 0) headerParts.push(formatTokens(tokens));
-      } catch { /* */ }
-    }
+    const lt = this.record.lifetimeUsage;
+    const ltTotal = lt ? lt.input + lt.output + lt.cacheWrite : 0;
+    if (ltTotal > 0) headerParts.push(formatTokens(ltTotal));
 
     lines.push(row(
       `${statusIcon} ${th.bold(name)}${modeTag}  ${th.fg("muted", this.record.description)} ${th.fg("dim", "·")} ${th.fg("dim", headerParts.join(" · "))}`,

@@ -120,6 +120,8 @@ export interface AgentRecord {
   run?: AgentRun;
   /** Accumulated token usage excluding cacheRead inflation. */
   lifetimeUsage?: LifetimeUsage;
+  /** Accumulated per-message cost (USD, list pricing, includes cacheRead). Monotonic; survives compaction. */
+  lifetimeCost?: number;
   /** Number of successful compactions for this agent's session. */
   compactionCount?: number;
 }

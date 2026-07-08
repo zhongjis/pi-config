@@ -37,7 +37,8 @@ import {
 } from "../ui/agent-widget.js";
 import { RenderScheduler } from "../ui/render-scheduler.js";
 import type { AgentRecord, SubagentType } from "../types.js";
-import { formatTurns } from "../../../lib/widget-style.js";
+import { formatCost, formatTurns } from "../../../lib/widget-style.js";
+import { formatLifetimeTokens } from "../usage.js";
 
 const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
 
@@ -342,6 +343,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
     execute: async (toolCallId, params, signal, onUpdate, ctx) => {
       // Ensure we have UI context for widget rendering
       widget.setUICtx(ctx.ui as UICtx);
+      widget.setUsingSubscription(ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false);
       const parentSignal = getAbortSignal(ctx) ?? signal;
       bindTurnAbortSignal(parentSignal);
       const localHint = localUriHint(params.prompt);
@@ -626,9 +628,17 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       }
 
       // Get final token count
-      const tokenText = safeFormatTokens(fgState.session);
+      // Final token/cost: lifetime accumulators (monotonic, compaction-safe, no cacheRead inflation).
+      const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
+      const ltUsage = record.lifetimeUsage;
+      const tokenTotal = ltUsage ? ltUsage.input + ltUsage.output + ltUsage.cacheWrite : 0;
+      const tokenText = tokenTotal > 0 ? formatLifetimeTokens(ltUsage!) : "";
+      const costValue = record.lifetimeCost ?? 0;
+      const costText = costValue > 0
+        ? (usingSubscription ? `${formatCost(costValue)} (sub)` : formatCost(costValue))
+        : undefined;
 
-      const details = buildDetails(detailBase, record, fgState, { tokens: tokenText });
+      const details = buildDetails(detailBase, record, fgState, { tokens: tokenText, cost: costText });
 
 
       const sessionLog = record.sessionFile ? `\nSession log: ${record.sessionFile}` : "";

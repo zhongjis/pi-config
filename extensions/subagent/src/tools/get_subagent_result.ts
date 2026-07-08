@@ -8,7 +8,8 @@ import { Type } from "typebox";
 import { getAgentConversation } from "../agent-runner.js";
 import { getRecoveredResultText } from "../result-recovery.js";
 import { describeActivity, formatDuration, getDisplayName } from "../ui/agent-widget.js";
-import { safeFormatTokens, textResult } from "../lifecycle/supervision.js";
+import { textResult } from "../lifecycle/supervision.js";
+import { formatLifetimeTokens } from "../usage.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 
 type GetSubagentResultArgs = {
@@ -189,7 +190,9 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
 
       const displayName = getDisplayName(record.type);
       const duration = formatDuration(record.startedAt, record.completedAt);
-      const tokens = safeFormatTokens(record.session);
+      const ltUsage = record.lifetimeUsage;
+      const ltTotal = ltUsage ? ltUsage.input + ltUsage.output + ltUsage.cacheWrite : 0;
+      const tokens = ltTotal > 0 ? formatLifetimeTokens(ltUsage!) : "";
       const toolStats = tokens ? `Tool uses: ${record.toolUses} | ${tokens}` : `Tool uses: ${record.toolUses}`;
       const runtimeActivity = agentActivity.get(record.id);
       const maxTurns = runtimeActivity?.maxTurns;

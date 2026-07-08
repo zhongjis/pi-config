@@ -6,7 +6,8 @@
  */
 
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { formatTokens as styleTokens, formatTurns as styleTurns, joinStats, SEPARATOR, SPINNER as STYLE_SPINNER } from "../../../lib/widget-style.js";
+import { formatCost, formatTokens as styleTokens, formatTurns as styleTurns, joinStats, SEPARATOR, SPINNER as STYLE_SPINNER } from "../../../lib/widget-style.js";
+import { formatLifetimeTokens, type LifetimeUsage } from "../usage.js";
 import { groupByStatus } from "../../../lib/status-group.js";
 import type { AgentManager } from "../agent-manager.js";
 import { getAgentConfig } from "../agent-types.js";
@@ -82,6 +83,8 @@ export interface AgentDetails {
   subagentType: string;
   toolUses: number;
   tokens: string;
+  /** Pre-formatted cost segment (e.g. "$0.340" or "$0.340 (sub)"). */
+  cost?: string;
   durationMs: number;
   status: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error" | "background";
   /** Human-readable description of what the agent is currently doing. */
@@ -196,6 +199,8 @@ export class AgentWidget {
   private lastRenderSignature: string | undefined;
   /** Last time an animation-only render was requested. */
   private lastRenderAt = 0;
+  /** Whether the current session bills via subscription/OAuth (cost shown as estimate). */
+  private usingSubscription = false;
 
   constructor(
     private manager: AgentManager,
@@ -214,6 +219,11 @@ export class AgentWidget {
       this.lastRenderSignature = undefined;
       this.lastRenderAt = 0;
     }
+  }
+
+  /** Update whether the current session bills via subscription/OAuth (affects cost display). */
+  setUsingSubscription(usingSubscription: boolean) {
+    this.usingSubscription = usingSubscription;
   }
 
   /**
@@ -256,10 +266,16 @@ export class AgentWidget {
     return modeLabel ? `${name} (${modeLabel})` : name;
   }
 
-  private getSessionTokenText(agentId: string): string | undefined {
-    const activity = this.agentActivity.get(agentId);
-    if (!activity?.session) return undefined;
-    try { return formatTokens(activity.session.getSessionStats().tokens.total); } catch { return undefined; }
+  private lifetimeTokenText(usage?: LifetimeUsage): string | undefined {
+    if (!usage) return undefined;
+    const total = usage.input + usage.output + usage.cacheWrite;
+    return total > 0 ? formatLifetimeTokens(usage) : undefined;
+  }
+
+  private costText(cost?: number): string | undefined {
+    if (!cost || cost <= 0) return undefined;
+    const base = formatCost(cost);
+    return this.usingSubscription ? `${base} (sub)` : base;
   }
 
   /** Render a finished agent line. */
@@ -270,7 +286,8 @@ export class AgentWidget {
       description: a.description,
       status: a.status as SubagentSummaryStatus,
       toolUses: a.toolUses,
-      tokens: this.getSessionTokenText(a.id),
+      tokens: this.lifetimeTokenText(a.lifetimeUsage),
+      cost: this.costText(a.lifetimeCost),
       durationMs: (a.completedAt ?? Date.now()) - a.startedAt,
       modelName: a.modelLabel,
       turnCount: activity?.turnCount,
@@ -329,7 +346,8 @@ export class AgentWidget {
         turnCount: bg?.turnCount,
         maxTurns: bg?.maxTurns,
         toolUses,
-        tokens: this.getSessionTokenText(a.id),
+        tokens: this.lifetimeTokenText(a.lifetimeUsage),
+        cost: this.costText(a.lifetimeCost),
         durationMs: Date.now() - a.startedAt,
         compactionCount: a.compactionCount,
       });

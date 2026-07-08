@@ -69,6 +69,7 @@ export function renderAgentSummary(details: AgentDetails, overrides: Partial<Sub
     resultPreview: details.activity,
     toolUses: details.toolUses,
     tokens: details.tokens || undefined,
+    cost: details.cost,
     durationMs: details.durationMs,
     spinnerFrame: details.spinnerFrame,
     modelName: details.modelName,

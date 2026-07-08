@@ -157,13 +157,12 @@ function escapeXml(s: string): string {
 function formatTaskNotification(record: AgentRecord, resultMaxLen: number): string {
   const status = getStatusLabel(record.status, record.error);
   const durationMs = record.completedAt ? record.completedAt - record.startedAt : 0;
-  let totalTokens = 0;
+  const lt = record.lifetimeUsage;
+  const totalTokens = lt ? lt.input + lt.output + lt.cacheWrite : 0;
   let contextPercent: number | null = null;
   try {
     if (record.session) {
-      const stats = record.session.getSessionStats();
-      totalTokens = stats.tokens?.total ?? 0;
-      contextPercent = stats.contextUsage?.percent ?? null;
+      contextPercent = record.session.getSessionStats().contextUsage?.percent ?? null;
     }
   } catch (err) {
     void err;
@@ -193,13 +192,12 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
 
 /** Build notification details for the custom message renderer. */
 function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, activity?: AgentActivity): NotificationDetails {
-  let totalTokens = 0;
+  const lt = record.lifetimeUsage;
+  const totalTokens = lt ? lt.input + lt.output + lt.cacheWrite : 0;
   let contextPercent: number | null = null;
   try {
     if (record.session) {
-      const stats = record.session.getSessionStats();
-      totalTokens = stats.tokens?.total ?? 0;
-      contextPercent = stats.contextUsage?.percent ?? null;
+      contextPercent = record.session.getSessionStats().contextUsage?.percent ?? null;
     }
   } catch (err) {
     void err;

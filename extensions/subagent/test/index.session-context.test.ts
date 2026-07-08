@@ -26,6 +26,7 @@ let lastOnStart: ((record: any) => void) | undefined;
 
 class MockAgentWidget {
   setUICtx = vi.fn();
+  setUsingSubscription = vi.fn();
   update = vi.fn();
   onTurnStart = vi.fn();
   ensureTimer = vi.fn();
@@ -52,6 +53,7 @@ class MockAgentManager {
 vi.mock("../src/ui/agent-widget.js", () => ({
   AgentWidget: class {
     setUICtx = vi.fn();
+    setUsingSubscription = vi.fn();
     update = vi.fn();
     onTurnStart = vi.fn();
     ensureTimer = vi.fn();
