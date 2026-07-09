@@ -27,7 +27,7 @@ export const SPINNER = STYLE_SPINNER;
 const ACTIVE_RENDER_CADENCE_MS = 150;
 
 /** Dim a running agent's row after this much idle time (no progress signal) — a quiet "stuck" indicator. */
-const AGENT_IDLE_DIM_AFTER_MS = 5_000;
+const AGENT_IDLE_DIM_AFTER_MS = 15_000;
 
 /** Statuses that indicate an error/non-success outcome (used for linger behavior and icon rendering). */
 export const ERROR_STATUSES = new Set(["error", "aborted", "steered", "stopped"]);
