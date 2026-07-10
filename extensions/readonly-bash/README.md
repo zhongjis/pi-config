@@ -34,9 +34,15 @@ extensions: readonly_bash
 
 Read-only cluster commands can still expose Secrets, ConfigMaps, logs, events, node metadata, and any RBAC-visible resources. This extension is not a confidentiality sandbox.
 
+## Composition
+
+- A single pipe (`|`) chain of read-only commands is allowed; every stage is validated independently (e.g. `git show --stat HEAD | head -60`, `rg foo . | sort | uniq -c`).
+- Redirection is rejected **except** to `/dev/null` (e.g. `git show HEAD 2>/dev/null`), which is stripped before validation.
+- Any pipe stage that fails the allowlist rejects the whole command.
+
 ## Rejected
 
-- Pipes, chaining (`&&`, `||`, `;`), redirection (`>`, `>>`)
+- Chaining (`&&`, `||`, `;`), backgrounding (`&`), redirection to anything other than `/dev/null`
 - Command/process substitution (`$(...)`, backticks)
 - `xargs`, `sudo`
 - Mutating commands (`rm`, `mv`, `cp`, `mkdir`, `chmod`, `chown`, `touch`)

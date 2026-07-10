@@ -246,52 +246,115 @@ function hasControlCharacter(value: string): boolean {
   return /[\x00-\x1f\x7f]/.test(value);
 }
 
-function findRejectedShellSyntax(command: string): string | undefined {
-  let quote: "single" | "double" | undefined;
+type PipelineSplit =
+  | { ok: true; segments: string[] }
+  | { ok: false; reason: string };
 
-  for (let i = 0; i < command.length; i += 1) {
+const REDIRECT_FD_PREFIX = /(^|\s)[0-2]$/;
+
+// Splits a command into pipeline segments on top-level single pipes, rejecting
+// every other shell operator. Redirection is rejected unless it targets
+// /dev/null (which is stripped so the segment validates as a plain command).
+function splitReadonlyPipeline(command: string): PipelineSplit {
+  const segments: string[] = [];
+  let current = "";
+  let quote: "single" | "double" | undefined;
+  let i = 0;
+
+  while (i < command.length) {
     const char = command[i];
     const next = command[i + 1];
 
     if (quote === "single") {
       if (char === "'") quote = undefined;
+      current += char;
+      i += 1;
       continue;
     }
 
     if (quote === "double") {
       if (char === '"') {
         quote = undefined;
+        current += char;
+        i += 1;
         continue;
       }
-      if (char === "`") return "command substitution is not allowed";
+      if (char === "`")
+        return { ok: false, reason: "command substitution is not allowed" };
       if (char === "$")
-        return "parameter or command substitution is not allowed";
+        return {
+          ok: false,
+          reason: "parameter or command substitution is not allowed",
+        };
+      current += char;
+      i += 1;
       continue;
     }
 
     if (char === "'") {
       quote = "single";
+      current += char;
+      i += 1;
       continue;
     }
     if (char === '"') {
       quote = "double";
+      current += char;
+      i += 1;
       continue;
     }
 
-    if (char === "|") return "pipes and command chaining are not allowed";
-    if (char === ";") return "command chaining is not allowed";
-    if (char === "&")
-      return "backgrounding and command chaining are not allowed";
-    if (char === ">" || char === "<") return "redirection is not allowed";
-    if (char === "`") return "command substitution is not allowed";
-    if (char === "$" && (next === "(" || next === "{")) {
-      return "parameter or command substitution is not allowed";
+    if (char === "|") {
+      if (next === "|")
+        return { ok: false, reason: "pipes and command chaining are not allowed" };
+      segments.push(current);
+      current = "";
+      i += 1;
+      continue;
     }
-    if (char === "\\") return "shell escapes are not allowed";
+    if (char === ";") return { ok: false, reason: "command chaining is not allowed" };
+    if (char === "&")
+      return {
+        ok: false,
+        reason: "backgrounding and command chaining are not allowed",
+      };
+    if (char === "`")
+      return { ok: false, reason: "command substitution is not allowed" };
+    if (char === "$" && (next === "(" || next === "{")) {
+      return {
+        ok: false,
+        reason: "parameter or command substitution is not allowed",
+      };
+    }
+    if (char === "\\") return { ok: false, reason: "shell escapes are not allowed" };
+    if (char === "<") return { ok: false, reason: "redirection is not allowed" };
+
+    if (char === ">") {
+      let j = i + 1;
+      if (command[j] === ">") j += 1;
+      while (command[j] === " ") j += 1;
+      let target = "";
+      while (j < command.length && !/\s/.test(command[j]) && command[j] !== "|") {
+        target += command[j];
+        j += 1;
+      }
+      if (target !== "/dev/null") {
+        return { ok: false, reason: "redirection is not allowed" };
+      }
+      if (REDIRECT_FD_PREFIX.test(current)) {
+        current = current.slice(0, -1);
+      }
+      i = j;
+      continue;
+    }
+
+    current += char;
+    i += 1;
   }
 
-  if (quote) return "unterminated quote";
-  return undefined;
+  if (quote) return { ok: false, reason: "unterminated quote" };
+  segments.push(current);
+  return { ok: true, segments };
 }
 
 export function tokenizeReadonlyBashCommand(command: string): string[] {
@@ -653,7 +716,7 @@ type ReadonlyBashHelpSection = {
 };
 
 const READONLY_BASH_GENERIC_HINTS = [
-  "Use one non-mutating command only; no pipes, &&/||, ;, redirection, substitution, or shell escapes.",
+  "Use read-only commands only; a single pipe (|) chain is allowed, but no &&/||, ;, backgrounding, substitution, shell escapes, or redirection except 2>/dev/null.",
   "readonly_bash will not run mutating or streaming commands; use a different approved workflow for changes.",
 ] as const;
 
@@ -891,14 +954,22 @@ export function validateReadonlyBashCommand(command: string): ValidationResult {
     };
   }
 
-  const syntaxReason = findRejectedShellSyntax(trimmed);
-  if (syntaxReason) return { ok: false, reason: syntaxReason };
+  const split = splitReadonlyPipeline(trimmed);
+  if (!split.ok) return { ok: false, reason: split.reason };
 
-  const argv = tokenizeReadonlyBashCommand(trimmed);
-  const familyReason = validateAllowedFamily(argv);
-  if (familyReason) return { ok: false, reason: familyReason };
+  let firstArgv: string[] | undefined;
+  for (const segment of split.segments) {
+    const stage = segment.trim();
+    if (!stage) {
+      return { ok: false, reason: "empty command in pipeline is not allowed" };
+    }
+    const argv = tokenizeReadonlyBashCommand(stage);
+    const familyReason = validateAllowedFamily(argv);
+    if (familyReason) return { ok: false, reason: familyReason };
+    if (!firstArgv) firstArgv = argv;
+  }
 
-  return { ok: true, command: trimmed, argv };
+  return { ok: true, command: trimmed, argv: firstArgv ?? [] };
 }
 
 function readonlyBashHelpSections(
@@ -1016,7 +1087,7 @@ export default function readonlyBash(pi: ExtensionAPI): void {
     name: "readonly_bash",
     label: "readonly_bash",
     description:
-      "Execute a restricted read-only shell command in a directory. ALWAYS use `cwd` to set the working directory — NEVER use `cd dir && command` in the command string. Returns stdout and stderr, truncated to last 2000 lines or 50KB. Set `timeout` in seconds to limit execution time. This is a best-effort accidental-mutation guard, not a security sandbox.",
+      "Execute a restricted read-only shell command in a directory. ALWAYS use `cwd` to set the working directory — NEVER use `cd dir && command` in the command string. Returns stdout and stderr, truncated to last 2000 lines or 50KB. Set `timeout` in seconds to limit execution time. You may chain read-only commands with a single pipe (`|`); other operators (`&&`, `||`, `;`, backgrounding, substitution, and redirection except `2>/dev/null`) are rejected. This is a best-effort accidental-mutation guard, not a security sandbox.",
     parameters: readonlyBashSchema,
 
     promptGuidelines: [
@@ -1024,6 +1095,7 @@ export default function readonlyBash(pi: ExtensionAPI): void {
       "GOOD: readonly_bash({command: 'ls -la', cwd: '/repo'}).  BAD: readonly_bash({command: 'cd /repo && ls -la'}).",
       "`cwd` is safer than `cd`: `cd` silently continues in the wrong directory on failure; `cwd` fails explicitly with a clear error.",
       "For commands in multiple directories, use separate readonly_bash calls each with its own `cwd`.",
+      "Chain read-only commands with a single pipe (|) when useful (e.g. `git show --stat HEAD | head -60`); do NOT use `&&`, `||`, `;`, or redirection other than `2>/dev/null` — split multi-step work into separate calls.",
     ],
 
     renderCall(

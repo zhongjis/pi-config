@@ -184,6 +184,13 @@ describe("readonly-bash validator", () => {
     "flux version",
     "flux check",
     "flux export source git app",
+    "git show --stat HEAD | head -60",
+    "git log --oneline -12 origin/main | head",
+    "cat file | grep foo | wc -l",
+    "rg pattern . | sort | uniq -c",
+    "git show aeeb064 2>/dev/null",
+    "git show aeeb064 2>/dev/null | head -60",
+    "git status --short 2> /dev/null",
   ])("allows read-only command: %s", async (command) => {
     const { validateReadonlyBashCommand } = await import("../index.js");
 
@@ -197,7 +204,7 @@ describe("readonly-bash validator", () => {
     ["rm -rf .", "rm is not allowed"],
     ["cat file > out", "redirection is not allowed"],
     ["cat < file", "redirection is not allowed"],
-    ["echo hi | sh", "pipes and command chaining are not allowed"],
+    ["echo hi | sh", "echo is outside the read-only allowlist"],
     ["pwd; rm -rf .", "command chaining is not allowed"],
     ["pwd && rm -rf .", "backgrounding and command chaining are not allowed"],
     ["pwd || rm -rf .", "pipes and command chaining are not allowed"],
@@ -274,6 +281,14 @@ describe("readonly-bash validator", () => {
     ["flux get kustomizations --watch=true", "flux watch/follow flags are not allowed"],
     ["flux logs --follow", "flux watch/follow flags are not allowed"],
     ["flux completion bash", "flux completion is not allowed"],
+    ["cat file | rm -rf .", "rm is not allowed"],
+    ["git show HEAD | tee out", "tee is outside the read-only allowlist"],
+    ["cat a || cat b", "pipes and command chaining are not allowed"],
+    ["git show HEAD > out.txt", "redirection is not allowed"],
+    ["git show HEAD 2>&1", "redirection is not allowed"],
+    ["git status |", "empty command in pipeline is not allowed"],
+    ["| git status", "empty command in pipeline is not allowed"],
+    ["echo hi | cat", "echo is outside the read-only allowlist"],
   ])("denies unsafe command: %s", async (command, reason) => {
     const { assertReadonlyBashCommand, validateReadonlyBashCommand } = await import(
       "../index.js",
@@ -298,7 +313,7 @@ describe("readonly-bash validator", () => {
     expect(message).toContain("readonly_bash blocked: kubectl delete is not allowed");
     expect(message).toContain("Command: kubectl delete pod web");
     expect(message).toContain("How to fix:");
-    expect(message).toContain("Use one non-mutating command only");
+    expect(message).toContain("Use read-only commands only");
     expect(message).toContain("Local examples: ls -la");
     expect(message).toContain("Kubernetes examples: kubectl get pods -A");
     expect(message).not.toContain("Flux examples:");
