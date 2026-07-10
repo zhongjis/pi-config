@@ -119,6 +119,10 @@ function asSupervisedActivity(activity: AgentActivity | undefined): SupervisedAg
   return activity;
 }
 
+function resolveSupervisionActivity(record: AgentRecord, fallback: AgentActivity | undefined): SupervisedAgentActivity | undefined {
+  return record.run?.activity ?? asSupervisedActivity(fallback);
+}
+
 /** Tool execute return value for a text response. */
 export function textResult(msg: string, details?: AgentDetails): AgentToolResult<AgentDetails | undefined> {
   return { content: [{ type: "text", text: msg }], details };
@@ -319,7 +323,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
 
   function sendStaleAgentReminder(record: AgentRecord, idleMs: number, action: "steer" | "abort") {
     if (parentBusy || record.resultConsumed || record.suppressNotification) return;
-    const activity = agentActivity.get(record.id);
+    const activity = resolveSupervisionActivity(record, agentActivity.get(record.id));
     const idleSeconds = Math.round(idleMs / 1000);
     const currentActivity = activity ? describeActivity(activity.activeTools, activity.responseText) : "waiting";
     const transcript =
@@ -483,7 +487,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     const supervisionMode = parseBackgroundSupervisionMode();
     const ceilingMs = parseSubagentSupervisionCeilingMs();
     for (const record of manager.listAgents()) {
-      const activity = agentActivity.get(record.id);
+      const activity = resolveSupervisionActivity(record, agentActivity.get(record.id));
       const { action, idleMs, reasonClass, markNonStreaming } = getBackgroundSupervisionAction({
         record,
         activity,
@@ -708,7 +712,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   async function waitForAgentCompletionWithSupervision(record: AgentRecord, signal?: AbortSignal) {
     let idleWrapUpSent = false;
     while (record.status === "running" && record.promise) {
-      const activity = agentActivity.get(record.id);
+      const activity = resolveSupervisionActivity(record, agentActivity.get(record.id));
       const supervisionMode = parseBackgroundSupervisionMode();
       const ceilingMs = parseSubagentSupervisionCeilingMs();
       const { action, idleMs, reasonClass } = getBackgroundSupervisionAction({

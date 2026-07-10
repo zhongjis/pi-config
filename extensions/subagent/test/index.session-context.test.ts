@@ -40,6 +40,7 @@ class MockAgentManager {
   getLifetimeCost = vi.fn(() => 0);
   listAgents = vi.fn((): any[] => []);
   abortAll = vi.fn();
+  abort = vi.fn();
   dispose = vi.fn();
   waitForAll = vi.fn();
   hasRunning = vi.fn(() => false);
@@ -81,6 +82,7 @@ vi.mock("../src/agent-manager.js", () => ({
     getLifetimeCost = vi.fn(() => 0);
     listAgents = vi.fn((): any[] => []);
     abortAll = vi.fn();
+    abort = vi.fn();
     dispose = vi.fn();
     waitForAll = vi.fn();
     hasRunning = vi.fn(() => false);
@@ -327,6 +329,52 @@ describe("subagent session UI rebinding", () => {
         sessionDir: "/tmp/mock-agent-dir/subagent-sessions/parent-session-1",
       }),
     );
+  });
+
+  it("supervises RPC-equivalent records from AgentRun activity without a UI-map entry", async () => {
+    const startedAt = 1_000_000;
+    vi.setSystemTime(startedAt);
+    const mock = createMockPi();
+    await initExtension(mock);
+    const { AgentRun } = await import("../src/agent-run.js");
+    const { BACKGROUND_STALE_ABORT_AFTER_MS, BACKGROUND_STALE_STEER_AFTER_MS } = await import("../src/constants.js");
+    const manager = managerInstances[0]!;
+    const run = new AgentRun("rpc-agent");
+    run.publish({
+      kind: "created",
+      type: "general-purpose",
+      description: "RPC worker",
+      isBackground: true,
+      startedAt: startedAt - BACKGROUND_STALE_ABORT_AFTER_MS * 2,
+    });
+    run.publish({ kind: "started", startedAt });
+    expect(run.activity.lastProgressAt).toBe(startedAt);
+    run.publish({ kind: "tool", phase: "start", toolName: "bash" });
+    const record: any = {
+      id: "rpc-agent",
+      type: "general-purpose",
+      description: "RPC worker",
+      status: "running",
+      toolUses: 0,
+      startedAt,
+      isBackground: true,
+      run,
+    };
+    manager.listAgents.mockReturnValue([record]);
+
+    await vi.advanceTimersByTimeAsync(BACKGROUND_STALE_STEER_AFTER_MS);
+    expect(record.lastSupervisionSteerAt).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(BACKGROUND_STALE_ABORT_AFTER_MS - BACKGROUND_STALE_STEER_AFTER_MS);
+    expect(manager.abort).not.toHaveBeenCalled();
+
+    run.publish({ kind: "tool", phase: "end", toolName: "bash" });
+    run.publish({ kind: "progress" });
+    await vi.advanceTimersByTimeAsync(BACKGROUND_STALE_STEER_AFTER_MS);
+    expect(record.lastSupervisionSteerAt).toBe(startedAt + BACKGROUND_STALE_ABORT_AFTER_MS + BACKGROUND_STALE_STEER_AFTER_MS);
+
+    await vi.advanceTimersByTimeAsync(BACKGROUND_STALE_ABORT_AFTER_MS - BACKGROUND_STALE_STEER_AFTER_MS);
+    expect(manager.abort).toHaveBeenCalledWith("rpc-agent");
   });
 
   it("does not send a notification at agent_end when result was consumed before idle", async () => {

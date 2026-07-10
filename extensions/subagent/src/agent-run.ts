@@ -333,6 +333,7 @@ export class AgentRun {
       case "started":
         this.status = "running";
         this.startedAt = event.startedAt;
+        this.activity.lastProgressAt = event.startedAt;
         break;
       case "resumed":
         // Reopen a terminal run (mirrors AgentManager.resume): clear completion state.
