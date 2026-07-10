@@ -16,7 +16,7 @@ export interface Location {
   range: Range;
 }
 
-export const enum DiagnosticSeverity {
+export enum DiagnosticSeverity {
   Error = 1,
   Warning = 2,
   Information = 3,
@@ -78,7 +78,7 @@ export interface PublishDiagnosticsParams {
 
 // ── Symbol types ────────────────────────────────────────────────────────────
 
-export const enum SymbolKind {
+export enum SymbolKind {
   File = 1,
   Module = 2,
   Namespace = 3,
