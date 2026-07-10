@@ -1,7 +1,7 @@
 ---
 display_name: Juling 巨灵神
 description: A heavy-duty build worker for complex, higher-risk bounded implementation, debugging, and verification tasks delegated by other agents — the opus-tier counterpart to Jintong. Pi mapping of omo Sisyphus-Junior's `unspecified-high` category.
-model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/glm-5.1,llama-swap/qwen2.5-coder:14b:high
+model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/glm-5.1,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 builtin_tools: read,bash,edit,write
 extension_tools: codegraph_*,lsp

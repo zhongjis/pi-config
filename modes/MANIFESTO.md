@@ -18,7 +18,7 @@ Prompting strategies must align with these inherent model characteristics.
 | Family | Representative Models | Prompt Style | Why |
 |--------|----------------------|--------------|-----|
 | **Default** (Claude-like) | `anthropic/claude-opus-4-8`, `opencode-go/kimi-k2.6`, GLM, Qwen | Mechanics-driven: rigid protocols, explicit constraints, sequenced steps | Trained on extensive instruction sets; requires granular procedural detail for stable output |
-| **GPT** | `openai-codex/gpt-5.5`, `openai/gpt-4o` | Principle-driven: high-level objectives, decision frameworks, minimal XML | Optimized for goal-following; dense instructions add noise; principle-based prompts facilitate cleaner execution |
+| **GPT** | `openai-codex/gpt-5.6-sol`, `openai/gpt-4o` | Principle-driven: high-level objectives, decision frameworks, minimal XML | Optimized for goal-following; dense instructions add noise; principle-based prompts facilitate cleaner execution |
 | **Gemini** | `google/gemini-*`, `google-vertex/gemini-*` | Corrective overlays: precise overrides inserted at key structural points | Prone to specific agentic failures (see Section 3); overlays fix errors without rewriting the base prompt |
 
 ## Gemini-Specific Failure Modes
@@ -36,11 +36,12 @@ Short, forceful overlays maintain context while mitigating these known weaknesse
 | Mode | Role | Default Model | GPT Variant | Gemini Variant |
 |------|------|--------------|-------------|----------------|
 | **kuafu** | Build orchestrator | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **fuxi** | Strategic planner | `anthropic/claude-opus-4-6:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **houtu** | Plan executor | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
+| **fuxi** | Strategic planner | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
+| **houtu** | Plan executor | `anthropic/claude-sonnet-4-6` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **luban** | Superpowers discipline | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
+| **shennong** | Product judgment | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 
-All four primary modes have default/GPT/Gemini prompt coverage. GPT files are standalone replacement bodies; Gemini files are corrective overlays on default bodies.
+All five modes have default/GPT/Gemini prompt coverage. GPT files are standalone replacement bodies; Gemini files are corrective overlays on default bodies.
 
 ## Local Addition: Small Models as Corrective
 

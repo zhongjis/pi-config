@@ -153,6 +153,20 @@ flowchart TD
    - Kua Fu reads changed files itself, runs diagnostics and focused checks, then confirms the request is fully satisfied.
    - Delegation does not count as verification.
 
+
+## GPT-5.6 orchestration tier guidance
+
+These are the current GPT-5.6 frontmatter defaults for mode and agent model chains. Non-OpenAI fallback providers remain in each chain for availability/profile fallback.
+
+| Surface | Duty shape | Recommended GPT-5.6 target | Rationale |
+|---|---|---|---|
+| `fuxi`, `yanluo` | decision-complete planning and final high-accuracy plan review | `openai-codex/gpt-5.6-sol:xhigh` | Highest consequence reasoning; failures create bad downstream work. |
+| `taishang`, `direnjie`, `juling`, `yunu`, `luban`, `shennong` | deep consult, gap analysis, complex implementation, UI judgment, skill discipline, product judgment | `openai-codex/gpt-5.6-sol:high` | These roles depend on trade-off judgment and catching subtle risks. |
+| `kuafu` | default orchestrator: intent gate, delegation, supervision, verification | `openai-codex/gpt-5.6-sol:medium` by default; raise to `:high` for large/multi-stream work | After prompt audit, Kua Fu is too judgment-heavy for Terra by default, but it runs often enough that `medium` is the cost/speed guard. |
+| `houtu`, `jintong`, `weizheng` | execution conductor, bounded implementation, evidence-based code review | `openai-codex/gpt-5.6-terra:medium` | Terra beats GPT-5.5 on coding-agent benchmarks while keeping routine execution/review cost lower than Sol. |
+
+`chengfeng`, `wenchang`, `guangguang`, and `cangjie` retain their prior OpenAI models. `gpt-5.6-luna` is present in Pi 0.80.5's catalog but failed runtime resolution during migration health checks, so Luna adoption is deferred.
+
 ## Shared subagent foundation
 
 Both workflows depend on the subagent extension.

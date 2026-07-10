@@ -1,7 +1,7 @@
 ---
 display_name: Yunu 玉女
 description: "Use for frontend/web UI implementation and visual QA: React/JSX/Svelte/CSS/HTML/components, styling, design-system/tokens, accessibility, responsive behavior, and browser verification."
-model: gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.5:high,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high
+model: gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 skills: impeccable,react-best-practices,agent-browser
 builtin_tools: read,bash,edit,write
