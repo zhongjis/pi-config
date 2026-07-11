@@ -59,4 +59,3 @@ When either field is blank or missing, `smart-sessions` resolves `smart-sessions
 ## Related docs
 
 - [`model-selection-and-fallback.md`](./model-selection-and-fallback.md) — model chain parsing/resolution details.
-- [`opencode-agent-models.md`](./opencode-agent-models.md) — per-agent fallback chains.

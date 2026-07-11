@@ -67,4 +67,4 @@ Agent frontmatter uses a single comma-separated `model:` chain covering all prof
 model: gpt-5.4-mini, claude-haiku-4-5, opencode-go/qwen3.5-plus, llama-swap/qwen2.5-coder:7b
 ```
 
-pi's `resolveModel` walks the chain and returns the first entry whose provider is in the active profile's allowlist. See [`docs/opencode-agent-models.md`](../../docs/opencode-agent-models.md) for the opencode-profile mapping.
+pi's `resolveModel` walks the chain and returns the first entry whose provider is in the active profile's allowlist. Model assignments are defined in agent frontmatter.

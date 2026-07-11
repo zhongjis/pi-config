@@ -37,7 +37,7 @@ Before prompt edits, record:
 - missing-path or negative evidence when a global prompt/profile is absent;
 - local adaptation source and Pi-native tool mapping.
 
-Use `docs/mode-prompt-parity.md` as the current provenance baseline. Preserve behavior parity and Pi tool adaptation; do not present local prompts as exact upstream copies.
+Use `docs/specs/mode-prompt-parity.md` as the current provenance baseline. Preserve behavior parity and Pi tool adaptation; do not present local prompts as exact upstream copies.
 
 ## Luban / Superpowers Finding
 

@@ -38,10 +38,10 @@ Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyr
 | Build or debug a Pi extension | `extensions/AGENTS.md` | Child file covers layout tiers, events, smoke-test assumptions |
 | Change subagent orchestration | `extensions/subagent/AGENTS.md` | Eventbus RPC + background-agent lifecycle |
 | Change task tracking flow | `extensions/tasks/AGENTS.md` | Task DAG, storage, subagent bridge |
-| Change web search/fetch tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local extension; model wiring → `docs/extension-model-usage.md` |
-| Change shared extension model roles | `extensions/lib/tool-models.ts`, `docs/extension-model-usage.md` | `tool_models.json` roles bind extension-owned LLM calls to model chains |
+| Change web search/fetch tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local extension; model wiring → `docs/specs/extension-model-usage.md` |
+| Change shared extension model roles | `extensions/lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` roles bind extension-owned LLM calls to model chains |
 | Change install/symlink behavior | `install.sh` | Allowlist + Nix-managed skip rules |
-| Change repo-wide tests | `docs/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
+| Change repo-wide tests | `docs/specs/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
 
 ## Commands
 ```bash
@@ -96,7 +96,7 @@ Before registering any new tool, extension, or MCP server:
 - Keep root guidance repo-wide only; push extension-only rules into `extensions/AGENTS.md`.
 - Treat root Vitest as two tiers: unit tests use stubs from `test/stubs/`; integration tests in `test/integration/` use the real pi runtime via `pi-test-harness`.
 - Follow `extensions/CONVENTIONS.md` for `pi.events`: `user-prompted` for same-run blocking tool prompts, `awaitingUserAction.suppressContinuationReminder` for persisted waits, `<namespace>:rpc:<method>` plus `:reply:${requestId}` for RPC.
-- Keep extension entrypoints as directories (`extensions/foo/index.ts`); no bare `.ts` files at the extensions root. Every extension directory must have a `README.md` (see `docs/extensions.md`).
+- Keep extension entrypoints as directories (`extensions/foo/index.ts`); no bare `.ts` files at the extensions root. Every extension directory must have a `README.md` (see `docs/specs/extensions.md`).
 
 ## Ask First
 - Broadening this repo from personal harness to shared/general-purpose harness.
@@ -118,6 +118,6 @@ Before registering any new tool, extension, or MCP server:
 ## References
 - Extension-wide rules: `@extensions/AGENTS.md`
 - Harness design overview: `@docs/README.md`
-- Extension README standard: `@docs/extensions.md`
-- Testing overview: `@docs/testing/README.md`
+- Extension README standard: `@docs/specs/extensions.md`
+- Testing overview: `@docs/specs/testing/README.md`
 - Event conventions: `@extensions/CONVENTIONS.md`

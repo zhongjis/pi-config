@@ -2,6 +2,13 @@
 
 Design notes, standards, and reference material for this Pi harness.
 
+## Documentation Buckets
+
+- `ideas/` — speculative, non-binding notes. Every document carries `Status: idea`.
+- `specs/` — Panda Harness contracts, whether shipped, planned, or draft.
+- `decisions/` — append-only ADRs: one decision per document, including why X was chosen over Y.
+- `references/` — stable, citable external material.
+
 ## What This Harness Is
 
 Panda Harness is a personal [Pi](https://github.com/mariozechner/pi-coding-agent) configuration repository. It bundles custom agents, runtime extensions, and a Nix-managed development environment into one place.
@@ -58,22 +65,23 @@ Four agent personas switch context and tool access:
 - **Hou Tu 后土** (execute) — plan execution after handoff
 - **Lu Ban 鲁班** (luban) — skill-first discipline mode adapted from obra/superpowers
 
-See [modes.md](modes.md) and [orchestration-flow.md](orchestration-flow.md) for details.
+See [modes.md](specs/modes.md) and [orchestration-flow.md](specs/orchestration-flow.md) for details.
 
-## Documentation Index
+## Specification Index
 
 | Document | Purpose |
 |----------|---------|
-| [extensions.md](extensions.md) | Extension README standard — what every extension README must contain |
-| [extension-model-usage.md](extension-model-usage.md) | Shared `tool_models.json` role schema for extension-owned LLM calls |
-| [model-selection-and-fallback.md](model-selection-and-fallback.md) | Model-chain parsing, profile filtering, and fallback behavior |
-| [modes.md](modes.md) | Agent modes design and switching behavior |
-| [mode-prompt-parity.md](mode-prompt-parity.md) | Upstream evidence and local invariants for mode prompt parity work |
-| [mode-prompt-audit-checklist.md](mode-prompt-audit-checklist.md) | Future prompt audit checklist for construction semantics, provenance, parity, and scope guardrails |
-| [orchestration-flow.md](orchestration-flow.md) | Planning-to-execution lifecycle |
-| [testing/README.md](testing/README.md) | Extension testing policy and two-tier model |
-| [testing/unit-test.md](testing/unit-test.md) | Unit test conventions |
-| [testing/integration-test.md](testing/integration-test.md) | Integration test approach |
+| [extensions.md](specs/extensions.md) | Extension README standard — what every extension README must contain |
+| [extension-model-usage.md](specs/extension-model-usage.md) | Shared `tool_models.json` role schema for extension-owned LLM calls |
+| [model-selection-and-fallback.md](specs/model-selection-and-fallback.md) | Model-chain parsing, profile filtering, and fallback behavior |
+| [modes.md](specs/modes.md) | Agent modes design and switching behavior |
+| [mode-prompt-parity.md](specs/mode-prompt-parity.md) | Upstream evidence and local invariants for mode prompt parity work |
+| [mode-prompt-audit-checklist.md](specs/mode-prompt-audit-checklist.md) | Future prompt audit checklist for construction semantics, provenance, parity, and scope guardrails |
+| [orchestration-flow.md](specs/orchestration-flow.md) | Planning-to-execution lifecycle |
+| [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Planned restore-first continuation for persisted subagent sessions |
+| [testing/README.md](specs/testing/README.md) | Extension testing policy and two-tier model |
+| [testing/unit-test.md](specs/testing/unit-test.md) | Unit test conventions |
+| [testing/integration-test.md](specs/testing/integration-test.md) | Integration test approach |
 
 ## Event Conventions
 

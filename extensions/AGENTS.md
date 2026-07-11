@@ -8,7 +8,7 @@ Runtime Pi extensions. All extensions live in directories with `index.ts` entryp
 extensions/
 ├── <name>/              # each extension in its own directory
 │   ├── index.ts         # entrypoint (required)
-│   └── README.md        # documentation (required, see docs/extensions.md)
+│   └── README.md        # documentation (required, see docs/specs/extensions.md)
 ├── lib/                 # shared utilities (not an extension)
 ├── CONVENTIONS.md       # repo-wide event bus contract
 └── AGENTS.md            # this file
@@ -25,7 +25,7 @@ extensions/
 | Tasks | `tasks/AGENTS.md` | File-backed task store + RPC bridge |
 | Web research tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local `extensions/` dir |
 | Provider failover | `clauderock/` | Anthropic → AWS Bedrock fallback on quota/rate-limit; uses `lib/stream-fallback.ts` |
-| Shared model roles | `lib/tool-models.ts`, `docs/extension-model-usage.md` | `tool_models.json` role schema for extension-owned LLM calls |
+| Shared model roles | `lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` role schema for extension-owned LLM calls |
 | Shared failover primitives | `lib/provider-errors.ts`, `lib/fallback-cache.ts`, `lib/stream-fallback.ts`, `lib/notify-once.ts` | Pure utilities; no extension state |
 
 ## Commands

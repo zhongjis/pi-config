@@ -16,6 +16,6 @@ Current file matrix:
 | houtu | Yes | Yes | Yes |
 | luban | Yes | Yes | Yes |
 
-Prompt audits must review the final injected prompt, not only source files. See `../docs/mode-prompt-audit-checklist.md`.
+Prompt audits must review the final injected prompt, not only source files. See `../docs/specs/mode-prompt-audit-checklist.md`.
 
 Install: `bash install.sh` symlinks this directory to `~/.pi/agent/modes/`.

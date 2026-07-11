@@ -10,9 +10,8 @@ selection works, not *which* model a given agent or extension uses.
 Companion docs:
 
 - [`extension-model-usage.md`](./extension-model-usage.md) — `tool_models.json` roles for extension-owned LLM calls.
-- [`opencode-agent-models.md`](./opencode-agent-models.md) — per-agent model assignments on the `opencode` profile.
-- [`../extensions/profiles/README.md`](../extensions/profiles/README.md) — profile commands, flags, and config fields.
-- [`./modes.md`](./modes.md) — mode switching and frontmatter.
+- [`../../extensions/profiles/README.md`](../../extensions/profiles/README.md) — profile commands, flags, and config fields.
+- [`modes.md`](./modes.md) — mode switching and frontmatter.
 Source is authoritative. Where a catalog doc disagrees with code, trust the code paths cited here.
 
 ---
@@ -23,11 +22,11 @@ Each surface decides a different question. They compose; none replaces another.
 
 | Surface | Decides | Mechanism | Source |
 |---|---|---|---|
-| **Shared library** | How a spec string resolves to a model | `parseModelChain` + `resolveModel` + `resolveFirstAvailable` | [`extensions/lib/model.ts`](../extensions/lib/model.ts) |
-| **Profiles** | Which models are visible at all | Patches `registry.getAvailable()` to a provider allowlist; force-switches the session model | [`extensions/profiles/index.ts`](../extensions/profiles/index.ts) |
-| **Modes** | Which model the main session uses per mode | Applies mode-frontmatter `model:` through the shared library | [`extensions/modes/src/`](../extensions/modes/src/) |
-| **Subagents** | Which model each agent runs on | Resolves the `model` param or agent-config chain, falling back to the parent model | [`extensions/subagent/src/`](../extensions/subagent/src/) |
-| **Tool model roles** | Which model extension-owned background LLM calls use | `tool_models.json` maps tool keys to role chains, then resolves through the shared library | [`extensions/lib/tool-models.ts`](../extensions/lib/tool-models.ts), [`extension-model-usage.md`](./extension-model-usage.md) |
+| **Shared library** | How a spec string resolves to a model | `parseModelChain` + `resolveModel` + `resolveFirstAvailable` | [`extensions/lib/model.ts`](../../extensions/lib/model.ts) |
+| **Profiles** | Which models are visible at all | Patches `registry.getAvailable()` to a provider allowlist; force-switches the session model | [`extensions/profiles/index.ts`](../../extensions/profiles/index.ts) |
+| **Modes** | Which model the main session uses per mode | Applies mode-frontmatter `model:` through the shared library | [`extensions/modes/src/`](../../extensions/modes/src/) |
+| **Subagents** | Which model each agent runs on | Resolves the `model` param or agent-config chain, falling back to the parent model | [`extensions/subagent/src/`](../../extensions/subagent/src/) |
+| **Tool model roles** | Which model extension-owned background LLM calls use | `tool_models.json` maps tool keys to role chains, then resolves through the shared library | [`extensions/lib/tool-models.ts`](../../extensions/lib/tool-models.ts), [`extension-model-usage.md`](./extension-model-usage.md) |
 
 The profile filter sits under everything: every `getAvailable()` call the other
 surfaces make already returns a profile-filtered list.
@@ -47,7 +46,7 @@ level are optional. A comma joins specs into a chain.
 gpt-5.4-mini, claude-haiku-4-5, opencode-go/qwen3.5-plus:high, llama-swap/qwen2.5-coder:7b
 ```
 
-Two functions parse this ([`model.ts:41-62`](../extensions/lib/model.ts)):
+Two functions parse this ([`model.ts:41-62`](../../extensions/lib/model.ts)):
 
 - **`parseModelPattern(segment)`** splits the trailing `:level` suffix when the
   suffix is a valid thinking level. It uses `lastIndexOf(":")`, so a model id
@@ -62,7 +61,7 @@ Two functions parse this ([`model.ts:41-62`](../extensions/lib/model.ts)):
 ## Resolution engine
 
 `resolveModel(input, registry)` turns one spec into a model instance, or returns
-an error string ([`model.ts:77-141`](../extensions/lib/model.ts)). It reads from
+an error string ([`model.ts:77-141`](../../extensions/lib/model.ts)). It reads from
 `registry.getAvailable?.() ?? registry.getAll()`, so it sees only authed,
 profile-allowed models.
 
@@ -89,7 +88,7 @@ register that id, the fuzzy pass may pick the wrong one. Prefix the provider
 
 **`resolveFirstAvailable(candidates, registry)`** walks a parsed chain and
 returns the first candidate that resolves, with its thinking level
-([`model.ts:147-158`](../extensions/lib/model.ts)). It returns `undefined` when
+([`model.ts:147-158`](../../extensions/lib/model.ts)). It returns `undefined` when
 the whole chain fails. This is the core fallback primitive — every chain-aware
 caller uses it.
 
@@ -101,7 +100,7 @@ A profile narrows the visible provider set. The `opencode` profile, for
 example, hides every model except OpenCode Go's.
 
 **Registry patch.** `installModelRegistryFilter` wraps `registry.getAvailable`
-once ([`profiles/index.ts:178-199`](../extensions/profiles/index.ts)). When a
+once ([`profiles/index.ts:178-199`](../../extensions/profiles/index.ts)). When a
 profile is active, the wrapped method filters the original result to the
 profile's allowed providers. When no profile is active, it returns the original
 list untouched. Every selection path that calls `getAvailable()` — the `/model`
@@ -110,14 +109,14 @@ filter for free.
 
 **Force-switch.** When a profile activates and the current session model sits
 outside the allowlist, `forceProfileModel` moves the session onto a profile
-model ([`profiles/index.ts:252-270`](../extensions/profiles/index.ts)):
+model ([`profiles/index.ts:252-270`](../../extensions/profiles/index.ts)):
 
 1. If the current model's provider is already allowed, do nothing.
 2. Otherwise resolve the profile's `defaultModel` through `resolveModel`.
 3. If that fails, take the first available model from an allowed provider.
 4. If nothing is available, notify `Profiles: no model available for providers: …` and leave the model unchanged.
 
-Built-in profile configs ([`profiles/index.ts:68-102`](../extensions/profiles/index.ts)):
+Built-in profile configs ([`profiles/index.ts:68-102`](../../extensions/profiles/index.ts)):
 
 | Profile | Allowed providers | `defaultModel` |
 |---|---|---|
@@ -129,7 +128,7 @@ The `local` profile also blocks the `wenchang` agent and the web tools, and
 injects an offline system prompt.
 
 **Activation precedence**, first match wins
-([`profiles/index.ts`, `resolveInitialProfile`](../extensions/profiles/index.ts)):
+([`profiles/index.ts`, `resolveInitialProfile`](../../extensions/profiles/index.ts)):
 
 1. `--profile <name>` CLI flag.
 2. `panda:profile` session-journal entry (from a prior `/profile` or `--profile`).
@@ -142,8 +141,8 @@ injects an offline system prompt.
 
 A subagent picks its model in strict priority order: explicit invocation param,
 then agent-config chain, then the parent model
-([`agent-runner.ts:51-91`](../extensions/subagent/src/agent-runner.ts),
-[`invocation-config.ts:29-31`](../extensions/subagent/src/invocation-config.ts)).
+([`agent-runner.ts:51-91`](../../extensions/subagent/src/agent-runner.ts),
+[`invocation-config.ts:29-31`](../../extensions/subagent/src/invocation-config.ts)).
 
 `resolveAgentInvocationConfig` computes the raw model and records its origin:
 
@@ -156,7 +155,7 @@ The agent config wins over the tool param. The `modelFromParams` flag matters
 only for how a *failed* chain behaves.
 
 **When the chain fails, the origin decides the outcome**
-([`index.ts:1059-1079`](../extensions/subagent/src/index.ts)):
+([`index.ts:1059-1079`](../../extensions/subagent/src/index.ts)):
 
 | Chain origin | All candidates fail | Result |
 |---|---|---|
@@ -168,13 +167,13 @@ default degrades quietly so a missing model never blocks delegation.
 
 **One extra config-chain fallback.** `resolveDefaultModel` adds a step beyond
 `resolveFirstAvailable`
-([`agent-runner.ts:55-91`](../extensions/subagent/src/agent-runner.ts)): if the
+([`agent-runner.ts:55-91`](../../extensions/subagent/src/agent-runner.ts)): if the
 chain resolves nothing through `getAvailable()`, it retries each
 `provider/modelId` candidate against `registry.find()` directly, bypassing the
 availability filter. Only then does it fall back to the parent model with a
 `[subagent] Could not resolve any model … Falling back to parent model` warning.
 
-**Agent-type defaults** ([`default-agents.ts`](../extensions/subagent/src/default-agents.ts)):
+**Agent-type defaults** ([`agent-types.ts`](../../extensions/subagent/src/agent-types.ts)):
 
 | Built-in agent | Model |
 |---|---|
@@ -184,7 +183,7 @@ availability filter. Only then does it fall back to the parent model with a
 
 User `.md` agents with the same name override these defaults. An unknown or
 disabled agent type falls back to `general-purpose`
-([`agent-types.ts`](../extensions/subagent/src/agent-types.ts)).
+([`agent-types.ts`](../../extensions/subagent/src/agent-types.ts)).
 
 ---
 
@@ -192,11 +191,11 @@ disabled agent type falls back to `general-purpose`
 
 A mode can pin the main session's model through its frontmatter `model:` field,
 read from `~/.pi/agent/agents/<mode>.md`
-([`config-loader.ts`](../extensions/modes/src/config-loader.ts)). On mode switch,
+([`config-loader.ts`](../../extensions/modes/src/config-loader.ts)). On mode switch,
 `applyModelFromConfig` parses the chain, calls `resolveFirstAvailable`, and sets
 the session model through `pi.setModel()`
-([`mode-state.ts`](../extensions/modes/src/mode-state.ts),
-[`hooks.ts`](../extensions/modes/src/hooks.ts)).
+([`mode-state.ts`](../../extensions/modes/src/mode-state.ts),
+[`hooks.ts`](../../extensions/modes/src/hooks.ts)).
 
 Mode overrides never touch subagents. The hook returns early for subagent
 sessions — `if (isSubagentSession(ctx)) return;` — because a subagent already
@@ -233,9 +232,9 @@ Some extensions make background LLM calls outside the main session model/mode pa
 These use `tool_models.json` where possible, then pass the resulting chain through
 the shared resolver:
 
-- **`smart-sessions`** ([`index.ts`](../extensions/smart-sessions/index.ts)) — legacy explicit `provider`+`model` still wins; blank/missing fields resolve `smart-sessions.summary` → `summary.session`.
-- **`boomerang`** ([`commit.ts`](../extensions/boomerang/commit.ts)) — resolves `boomerang.commit` → `commit`, then applies its context-window eligibility gate before choosing a target model.
-- **`multimodal-look`** ([`index.ts`](../extensions/multimodal-look/index.ts)) — vision chain, falling back to the current model only when it accepts image input.
+- **`smart-sessions`** ([`index.ts`](../../extensions/smart-sessions/index.ts)) — legacy explicit `provider`+`model` still wins; blank/missing fields resolve `smart-sessions.summary` → `summary.session`.
+- **`boomerang`** ([`commit.ts`](../../extensions/boomerang/commit.ts)) — resolves `boomerang.commit` → `commit`, then applies its context-window eligibility gate before choosing a target model.
+- **`multimodal-look`** ([`index.ts`](../../extensions/multimodal-look/index.ts)) — vision chain, falling back to the current model only when it accepts image input.
 - **`web-access`** (external `pi-web-access` git package — `index.ts`, `summary-review.ts`) — profile-bypassing: tests `getApiKeyAndHeaders` against a candidate list rather than reading `getAvailable()`. Known gap until those selectors migrate to shared role config.
 
 ---
@@ -246,15 +245,15 @@ Everything above resolves a model *before* a turn runs. `clauderock` is
 different: it swaps the provider *during* the stream, after a request has
 already failed. It installs by overriding the Anthropic provider's stream
 function — `pi.registerProvider("anthropic", { streamSimple: streamWithFallback })`
-([`index.ts:962-965`](../extensions/clauderock/index.ts)) — so it wraps every
+([`index.ts:962-965`](../../extensions/clauderock/index.ts)) — so it wraps every
 Anthropic call without changing which model the session selected.
 
 **Trigger.** Inside the stream, an error switches to Bedrock only when all of
-these hold ([`index.ts:361-392`](../extensions/clauderock/index.ts)):
+these hold ([`index.ts:361-392`](../../extensions/clauderock/index.ts)):
 
 1. The error is a quota or rate-limit error (`isQuotaError` / `isRateLimitError`).
 2. No response content has streamed yet (`!hasResponseContent`) — a mid-stream failure is forwarded, never retried.
-3. The current model has a Bedrock mapping in `ANTHROPIC_TO_BEDROCK` ([`index.ts:25-32`](../extensions/clauderock/index.ts)).
+3. The current model has a Bedrock mapping in `ANTHROPIC_TO_BEDROCK` ([`index.ts:25-32`](../../extensions/clauderock/index.ts)).
 
 Without a mapping, the error passes through and fallback stays off. The mapping
 covers `claude-sonnet-4-6`, `claude-opus-4-6/4-7/4-8`, and `claude-haiku-4-5`.
@@ -263,12 +262,12 @@ covers `claude-sonnet-4-6`, `claude-opus-4-6/4-7/4-8`, and `claude-haiku-4-5`.
 `clauderock-state.json` cache is written under the agent dir. While active, the
 wrapper routes every Bedrock-mapped call straight to Bedrock with no Anthropic
 attempt, and the flag **persists across sessions** — session start reads the
-cache back and re-arms failover ([`index.ts:590-603`](../extensions/clauderock/index.ts)).
+cache back and re-arms failover ([`index.ts:590-603`](../../extensions/clauderock/index.ts)).
 Reset it with `/clauderock off`; force it on with `/clauderock on`.
 
 **ID normalization.** If a Bedrock-style id leaks into pi state (e.g. after a
 mode switch), `normalizeModelId` recovers the clean Anthropic id before
-resolving the mapping ([`index.ts:50-52`](../extensions/clauderock/index.ts)),
+resolving the mapping ([`index.ts:50-52`](../../extensions/clauderock/index.ts)),
 and outgoing events are patched back to the original id so the UI shows the
 model the user picked.
 

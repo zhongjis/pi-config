@@ -26,14 +26,14 @@ Relevant prompt sources located:
 
 Accepted, applied local mappings:
 
-- [`agents/chengfeng.md`](../agents/chengfeng.md) maps omo Explorer-style read-only reconnaissance to Chengfeng, preserves Pi CodeGraph/LSP/literal-search contracts, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
-- [`agents/wenchang.md`](../agents/wenchang.md) maps omo Librarian-style external research to Wenchang, preserves opened-source citation safeguards, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
-- [`agents/jintong.md`](../agents/jintong.md) uses `opencode-go/glm-5.2:high` for its OpenCode Go implementation-worker mapping.
-- [`agents/juling.md`](../agents/juling.md) uses `opencode-go/glm-5.2` for its OpenCode Go complex implementation-worker mapping.
+- [`agents/chengfeng.md`](../../agents/chengfeng.md) maps omo Explorer-style read-only reconnaissance to Chengfeng, preserves Pi CodeGraph/LSP/literal-search contracts, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
+- [`agents/wenchang.md`](../../agents/wenchang.md) maps omo Librarian-style external research to Wenchang, preserves opened-source citation safeguards, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
+- [`agents/jintong.md`](../../agents/jintong.md) uses `opencode-go/glm-5.2:high` for its OpenCode Go implementation-worker mapping.
+- [`agents/juling.md`](../../agents/juling.md) uses `opencode-go/glm-5.2` for its OpenCode Go complex implementation-worker mapping.
 
 `opencode-go/glm-5.2` availability was verified before these mappings were accepted.
 
-Audit-only findings for [`agents/yanluo.md`](../agents/yanluo.md), [`modes/kuafu/gpt.md`](../modes/kuafu/gpt.md), and [`modes/fuxi/gpt.md`](../modes/fuxi/gpt.md) are not applied changes and are intentionally excluded from the accepted mapping baseline.
+Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md), [`modes/kuafu/gpt.md`](../../modes/kuafu/gpt.md), and [`modes/fuxi/gpt.md`](../../modes/fuxi/gpt.md) are not applied changes and are intentionally excluded from the accepted mapping baseline.
 
 ## Local Construction Semantics
 

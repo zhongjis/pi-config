@@ -32,6 +32,6 @@ This file owns `test/`. Extension-local tests remain owned by their extension di
 | Path | Owner Doc | Scope |
 |------|-----------|-------|
 | `fixtures/` | this file | Shared mock Pi/context builders. |
-| `integration/` | this file + `docs/testing/integration-test.md` | Real Pi runtime integration tests. |
+| `integration/` | this file + `docs/specs/testing/integration-test.md` | Real Pi runtime integration tests. |
 | `stubs/` | this file | Stubbed Pi packages for unit tests. |
 | `types/` | this file | Test-only type declarations. |

@@ -29,7 +29,7 @@ This file owns `modes/` prompt files and mode subdirectories.
 - Change the narrowest prompt variant that matches the target model family.
 - Preserve frontmatter in `mode.md` unless changing runtime mode registration.
 - Keep model-family overrides aligned in intent, even when wording differs.
-- Use `docs/mode-prompt-audit-checklist.md` for broad prompt audits.
+- Use `docs/specs/mode-prompt-audit-checklist.md` for broad prompt audits.
 
 ## Verification
 
