@@ -86,8 +86,8 @@ sequenceDiagram
    - The runtime opens a child session, seeds `agent-mode: houtu`, preloads a deterministic execution prompt, and waits for the user to press Enter.
 
 7. **Hou Tu execution**
-   - Hou Tu reads `local://PLAN.md`, creates wave-level pi-tasks, initializes split notepads, and analyzes top-level task checkboxes.
-   - For each plan task, Hou Tu delegates one bounded task to the right specialist. It does not implement product changes directly.
+   - Hou Tu reads `local://PLAN.md`, creates one pi-task per top-level plan task, wires the dependency DAG, initializes split notepads, and analyzes runnable tasks.
+   - Each task ID identifies one bounded plan task. One `TaskExecute` batch may carry multiple independent task IDs; Hou Tu does not implement product changes directly.
    - Hou Tu verifies every delegation with diagnostics, builds/tests where applicable, manual readback, plan-state checks, and hands-on QA when needed.
    - After verification, Hou Tu updates plan checkboxes and continues through final verification gates.
 
@@ -154,16 +154,17 @@ flowchart TD
    - Delegation does not count as verification.
 
 
-## GPT-5.6 orchestration tier guidance
+## GPT orchestration tier guidance
 
-These are the current GPT-5.6 frontmatter defaults for mode and agent model chains. Non-OpenAI fallback providers remain in each chain for availability/profile fallback.
+These are the current GPT frontmatter defaults for mode and agent model chains. Non-OpenAI fallback providers remain in each chain for availability/profile fallback. Hou Tu follows upstream Atlas at GPT-5.5 medium; other listed surfaces use GPT-5.6.
 
-| Surface | Duty shape | Recommended GPT-5.6 target | Rationale |
+| Surface | Duty shape | Recommended GPT target | Rationale |
 |---|---|---|---|
 | `fuxi`, `yanluo` | decision-complete planning and final high-accuracy plan review | `openai-codex/gpt-5.6-sol:xhigh` | Highest consequence reasoning; failures create bad downstream work. |
 | `taishang`, `direnjie`, `juling`, `yunu`, `luban`, `shennong` | deep consult, gap analysis, complex implementation, UI judgment, skill discipline, product judgment | `openai-codex/gpt-5.6-sol:high` | These roles depend on trade-off judgment and catching subtle risks. |
 | `kuafu` | default orchestrator: intent gate, delegation, supervision, verification | `openai-codex/gpt-5.6-sol:medium` by default; raise to `:high` for large/multi-stream work | After prompt audit, Kua Fu is too judgment-heavy for Terra by default, but it runs often enough that `medium` is the cost/speed guard. |
-| `houtu`, `jintong`, `weizheng` | execution conductor, bounded implementation, evidence-based code review | `openai-codex/gpt-5.6-terra:medium` | Terra beats GPT-5.5 on coding-agent benchmarks while keeping routine execution/review cost lower than Sol. |
+| `houtu` | Atlas-aligned execution conductor | `openai-codex/gpt-5.5:medium` | Matches upstream Atlas GPT-family model and effort while preserving the local provider ladder. |
+| `jintong`, `weizheng` | bounded implementation and evidence-based code review | `openai-codex/gpt-5.6-terra:medium` | Terra suits routine implementation/review while keeping cost below Sol. |
 
 `chengfeng`, `wenchang`, `guangguang`, and `cangjie` retain their prior OpenAI models. `gpt-5.6-luna` is present in Pi 0.80.5's catalog but failed runtime resolution during migration health checks, so Luna adoption is deferred.
 

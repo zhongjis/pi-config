@@ -88,17 +88,23 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
     default: [
       "You execute by coordinating, delegating, and verifying",
       "One `TaskExecute` launch = one bounded plan task",
+      "Each task ID identifies one bounded plan task",
+      "one `TaskExecute` batch may carry multiple independent task IDs",
       "Final Verification Wave is an approval gate",
     ],
     gpt: [
       "Read `local://PLAN.md` before doing anything else",
       "One `TaskExecute` launch = one bounded plan task",
+      "Each task ID identifies one bounded plan task",
+      "one `TaskExecute` batch may carry multiple independent task IDs",
       "Final Verification Wave is mandatory approval gate",
       "APPROVE",
     ],
     geminiOverlay: [
       "<gemini-corrective-overlay>",
       "Do not become the implementer",
+      "Each task ID identifies one bounded plan task",
+      "one `TaskExecute` batch may carry multiple independent task IDs",
       "Final Verification Wave requires explicit `APPROVE`",
     ],
     geminiComposed: [
@@ -228,6 +234,12 @@ describe("mode prompt family matrix", () => {
       });
     });
   }
+});
+
+describe("houtu Atlas parity", () => {
+  it("maps the GPT slot to GPT-5.5 medium", () => {
+    expect(readModePrompt("houtu", "default")).toContain("openai-codex/gpt-5.5:medium");
+  });
 });
 
 describe("fuxi clearance sequence", () => {
