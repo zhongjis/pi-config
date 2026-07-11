@@ -451,6 +451,8 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
         });
       } catch { /* already warned; do not break started handling */ }
     }
+    // Refresh queued → running transitions immediately.
+    widget.update();
   }, (record, data) => {
     emitCompactedContract(pi, record, {
       reason: data.reason,
@@ -569,7 +571,11 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     manager: {
       spawn: (piRef, ctxRef, type, prompt, options) => {
         const resolvedType = requireSpawnableType(type);
-        return manager.spawn(piRef as ExtensionAPI, ctxRef as ExtensionContext, resolvedType, prompt, options);
+        const id = manager.spawn(piRef as ExtensionAPI, ctxRef as ExtensionContext, resolvedType, prompt, options);
+        // RPC callers (including TaskExecute) do not execute the Agent tool's UI hooks.
+        widget.ensureTimer();
+        widget.update();
+        return id;
       },
       abort: (id) => manager.abort(id),
       getRecord: (id) => manager.getRecord(id),

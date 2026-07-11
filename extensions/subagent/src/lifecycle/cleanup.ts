@@ -12,6 +12,7 @@ export function registerCleanup(ctx: SubagentRuntimeContext): void {
   const {
     pi,
     manager,
+    widget,
     unsubRpcHandlers,
     setCurrentCtx,
     releaseManager,
@@ -27,5 +28,6 @@ export function registerCleanup(ctx: SubagentRuntimeContext): void {
     manager.abortAll();
     clearBackgroundSupervision();
     manager.dispose();
+    widget.dispose();
   });
 }

@@ -23,6 +23,7 @@ const widgetInstances: MockAgentWidget[] = [];
 const managerInstances: MockAgentManager[] = [];
 let lastOnComplete: ((record: any) => void) | undefined;
 let lastOnStart: ((record: any) => void) | undefined;
+let lastRpcDeps: any;
 
 class MockAgentWidget {
   setUICtx = vi.fn();
@@ -100,12 +101,15 @@ vi.mock("../src/agent-manager.js", () => ({
 }));
 
 vi.mock("../src/cross-extension-rpc.js", () => ({
-  registerRpcHandlers: vi.fn(() => ({
-    unsubPing: vi.fn(),
-    unsubSpawn: vi.fn(),
-    unsubStop: vi.fn(),
-    unsubConsume: vi.fn(),
-  })),
+  registerRpcHandlers: vi.fn((deps: any) => {
+    lastRpcDeps = deps;
+    return {
+      unsubPing: vi.fn(),
+      unsubSpawn: vi.fn(),
+      unsubStop: vi.fn(),
+      unsubConsume: vi.fn(),
+    };
+  }),
 }));
 
 vi.mock("../src/custom-agents.js", () => ({
@@ -208,6 +212,7 @@ describe("subagent session UI rebinding", () => {
     managerInstances.length = 0;
     lastOnComplete = undefined;
     lastOnStart = undefined;
+    lastRpcDeps = undefined;
     customAgentLoaderState.result = { agents: new Map(), diagnostics: [] };
     agentTypeState.allTypes = ["general-purpose"];
     agentTypeState.availableTypes = ["general-purpose"];
@@ -242,6 +247,46 @@ describe("subagent session UI rebinding", () => {
     expect(managerInstances[0]?.clearCompleted).toHaveBeenCalledTimes(1);
     expect(widgetInstances[0]?.setUICtx).toHaveBeenCalledWith(ctx.ui);
     expect(widgetInstances[0]?.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("activates the Agents widget for an RPC-only TaskExecute spawn and queued start", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    await mock.fire("session_start", { reason: "new" }, ctx);
+    const widget = widgetInstances[0]!;
+    widget.ensureTimer.mockClear();
+    widget.update.mockClear();
+
+    lastRpcDeps.manager.spawn(mock.pi, ctx, "general-purpose", "execute task", {
+      description: "TaskExecute worker",
+      isBackground: true,
+    });
+
+    expect(widget.ensureTimer).toHaveBeenCalledTimes(1);
+    expect(widget.update).toHaveBeenCalledTimes(1);
+
+    widget.update.mockClear();
+    managerInstances[0]!.invokeOnStart({
+      id: "agent-1",
+      type: "general-purpose",
+      description: "TaskExecute worker",
+      status: "running",
+      isBackground: true,
+    });
+    expect(widget.update).toHaveBeenCalledTimes(1);
+    expect(widget.setUICtx).toHaveBeenCalledTimes(1);
+  });
+
+  it("disposes the Agents widget on session shutdown", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    await mock.fire("session_start", { reason: "new" }, ctx);
+
+    await mock.fire("session_shutdown", {}, ctx);
+
+    expect(widgetInstances[0]?.dispose).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces custom agent diagnostics in the /agents menu", async () => {
