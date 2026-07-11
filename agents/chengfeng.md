@@ -1,6 +1,6 @@
 ---
 display_name: Cheng Feng 乘风
-description: A fast read-only codebase reconnaissance agent. Use this agent to locate files, trace patterns, confirm where code lives, and return evidence-backed findings without modifying anything. Adapted from omo's explorer agent.
+description: A fast read-only codebase reconnaissance agent. Use this agent to locate files, trace patterns, confirm where code lives, and return evidence-backed findings without modifying anything.
 model: claude-haiku-4-5,openai-codex/gpt-5.6-terra:medium,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b
 builtin_tools: read
 extension_tools: readonly_bash,codegraph_*,lsp
