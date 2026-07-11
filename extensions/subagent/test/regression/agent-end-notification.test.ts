@@ -213,6 +213,21 @@ describe("agent_end-gated consolidated notifications", () => {
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
   });
 
+  it("restored prior completion state never emits an old notification", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const restored = bgRecord("restored-a1", {
+      resumeSource: "restored",
+      resultConsumed: true,
+      notified: true,
+    });
+    managerInstances[0].listAgents.mockReturnValue([restored]);
+
+    await mock.fire("agent_end", {}, createCtx());
+
+    expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+  });
+
   it("idempotency: 2nd agent_end fires 0 notifications because notified=true after 1st", async () => {
     const mock = createMockPi();
     await initExtension(mock);

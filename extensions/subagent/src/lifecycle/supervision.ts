@@ -10,6 +10,7 @@
  *   /agents                 — Interactive agent management menu
  */
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { defineTool, type AgentToolResult, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
@@ -50,7 +51,7 @@ import {
   parseSubagentSupervisionCeilingMs,
   type BackgroundSupervisionReasonClass,
 } from "../background-supervision.js";
-import { type AgentConfig, type AgentDefinitionDiagnostic, type AgentRecord, type NotificationDetails, type SubagentType } from "../types.js";
+import { type AgentConfig, type AgentDefinitionDiagnostic, type AgentRecord, type NotificationDetails, type ResumeTargetV1, type SubagentType } from "../types.js";
 import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "../delegation-policy.js";
 import {
   type AgentActivity,
@@ -121,6 +122,23 @@ function asSupervisedActivity(activity: AgentActivity | undefined): SupervisedAg
 
 function resolveSupervisionActivity(record: AgentRecord, fallback: AgentActivity | undefined): SupervisedAgentActivity | undefined {
   return record.run?.activity ?? asSupervisedActivity(fallback);
+}
+
+function readSessionSnapshot(sessionFile: string): Pick<ResumeTargetV1, "entryCount" | "activeLeafId" | "sessionSha256"> | undefined {
+  try {
+    const bytes = readFileSync(sessionFile);
+    const rows = bytes.toString("utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    const entries = rows.slice(1);
+    const leaf = entries.at(-1);
+    if (rows[0]?.type !== "session" || rows[0]?.version !== 3 || !leaf || typeof leaf.id !== "string") return undefined;
+    return {
+      entryCount: entries.length,
+      activeLeafId: leaf.id,
+      sessionSha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Tool execute return value for a text response. */
@@ -281,6 +299,7 @@ export interface SubagentRuntimeContext {
   unsubRpcHandlers: () => void;
   releaseManager: () => void;
   clearBackgroundSupervision: () => void;
+  persistResumeTargetSnapshot: (record: AgentRecord) => Promise<void>;
 }
 
 export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
@@ -318,6 +337,32 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
 
   function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function persistResumeTargetSnapshot(record: AgentRecord): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const current = persistentRegistry.getResumeTarget(record.id);
+      if (!current) return;
+      const sessionSnapshot = readSessionSnapshot(record.sessionFile ?? current.sessionFile);
+      const updated = await persistentRegistry.updateResumeTarget(
+        record.id,
+        { generation: current.generation, revision: current.revision },
+        {
+          ...(sessionSnapshot ?? {}),
+          updatedAt: Date.now(),
+          state: {
+            status: record.status,
+            resultConsumed: !!record.resultConsumed,
+            notified: !!record.notified,
+            toolUses: record.toolUses,
+            lifetimeUsage: { ...(record.lifetimeUsage ?? current.state.lifetimeUsage) },
+            lifetimeCost: record.lifetimeCost ?? current.state.lifetimeCost,
+            compactionCount: record.compactionCount ?? current.state.compactionCount,
+          },
+        },
+      );
+      if (updated) return;
+    }
   }
 
 
@@ -426,6 +471,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
           lastSeenTs: record.completedAt ?? Date.now(),
         });
       } catch { /* already warned; do not break completion handling */ }
+      void persistResumeTargetSnapshot(record);
     }
 
     // Widget cleanup — notification is consolidated at agent_end via emitCompletionNotificationsAtIdle.
@@ -459,6 +505,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       tokensBefore: data.tokensBefore,
       compactionCount: record.compactionCount ?? 0,
     });
+    void persistResumeTargetSnapshot(record);
   });
 
   const turnAbortSignals = new WeakSet<AbortSignal>();
@@ -655,6 +702,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       details,
     }, { deliverAs: "followUp", triggerTurn: true });
     for (const r of pending) r.run?.publish({ kind: "notified" });
+    for (const r of pending) void persistResumeTargetSnapshot(r);
   }
 
 
@@ -802,6 +850,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     unsubRpcHandlers,
     releaseManager,
     clearBackgroundSupervision,
+    persistResumeTargetSnapshot,
   };
 
   // ---- Wire tool surface, renderers, message/lifecycle handlers, and cleanup ----

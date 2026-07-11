@@ -17,6 +17,8 @@ const agentTypeState = vi.hoisted<{
   isValidType: () => true,
 }));
 
+import { writeFileSync } from "node:fs";
+import type { AgentRecord, ResumeRuntimeSnapshot } from "../src/types.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const widgetInstances: MockAgentWidget[] = [];
@@ -46,8 +48,9 @@ class MockAgentManager {
   waitForAll = vi.fn();
   hasRunning = vi.fn(() => false);
   spawn = vi.fn(() => "agent-1");
-  getRecord = vi.fn(() => undefined);
+  getRecord = vi.fn((_id: string): AgentRecord | undefined => undefined);
   spawnAndWait = vi.fn();
+  resume = vi.fn();
   invokeOnComplete(record: any) { lastOnComplete?.(record); }
   invokeOnStart(record: any) { lastOnStart?.(record); }
 }
@@ -88,8 +91,9 @@ vi.mock("../src/agent-manager.js", () => ({
     waitForAll = vi.fn();
     hasRunning = vi.fn(() => false);
     spawn = vi.fn(() => "agent-1");
-    getRecord = vi.fn(() => undefined);
+    getRecord = vi.fn((_id: string): AgentRecord | undefined => undefined);
     spawnAndWait = vi.fn();
+    resume = vi.fn();
     constructor(onComplete?: any, _onError?: any, onStart?: any) {
       lastOnComplete = onComplete;
       lastOnStart = onStart;
@@ -128,6 +132,27 @@ vi.mock("../src/agent-types.js", () => ({
   registerAgents: vi.fn(),
   resolveType: vi.fn((type?: string) => agentTypeState.resolveType(type)),
 }));
+
+vi.mock("../src/agent-runner.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/agent-runner.js")>();
+  const runtime: ResumeRuntimeSnapshot = {
+    piVersion: "test",
+    model: { provider: "test", id: "test", api: "test" },
+    thinkingLevel: "off",
+    promptMode: "replace",
+    isolated: false,
+    inheritContext: false,
+    systemPromptHash: "1".repeat(64),
+    resourcePolicyHash: "2".repeat(64),
+    agentConfigHash: "3".repeat(64),
+    extensionIdentities: [],
+    activeToolNames: [],
+  };
+  return {
+    ...actual,
+    prepareAgentRestoreRuntime: vi.fn(async () => ({ runtime, restore: vi.fn() })),
+  };
+});
 
   vi.mock("@earendil-works/pi-coding-agent", () => ({
   defineTool: (opts: any) => opts,
@@ -190,7 +215,7 @@ function createCtx() {
     },
     modelRegistry: {},
     model: undefined,
-    cwd: "/repo",
+    cwd: "/tmp",
     sessionManager: { getEntries: vi.fn(() => []), getSessionId: vi.fn(() => "parent-session-1") },
   };
 }
@@ -219,6 +244,13 @@ describe("subagent session UI rebinding", () => {
     agentTypeState.resolveType = (type?: string) => type ?? "general-purpose";
     agentTypeState.isValidType = () => true;
   });
+    const sessionJsonl = [
+      { type: "session", version: 3, id: "child-session", timestamp: "2026-01-01T00:00:00Z", cwd: "/tmp" },
+      { type: "model_change", id: "model", parentId: null, timestamp: "2026-01-01T00:00:01Z", provider: "test", modelId: "test" },
+      { type: "thinking_level_change", id: "think", parentId: "model", timestamp: "2026-01-01T00:00:02Z", thinkingLevel: "off" },
+      { type: "message", id: "leaf-1", parentId: "think", timestamp: "2026-01-01T00:00:03Z", message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" } },
+    ].map((row) => JSON.stringify(row)).join("\n") + "\n";
+    for (const path of ["/tmp/session.jsonl", "/tmp/fresh-1.jsonl", "/tmp/fresh-2.jsonl"]) writeFileSync(path, sessionJsonl);
 
   afterEach(() => {
     vi.clearAllTimers();
@@ -462,7 +494,7 @@ describe("subagent session UI rebinding", () => {
       notified: false,
       suppressNotification: false,
     };
-    managerInstances[0]?.getRecord.mockReturnValue(record);
+    managerInstances[0]?.getRecord.mockReturnValue(record as unknown as AgentRecord);
 
     // Parent polls without waiting — sets lastPolledAt
     const pollResult = await mock.registeredTools.get("get_subagent_result").execute(
@@ -499,7 +531,7 @@ describe("subagent session UI rebinding", () => {
       startedAt: Date.now(),
       promise: new Promise(() => {}),
     };
-    managerInstances[0]?.getRecord.mockReturnValue(record);
+    managerInstances[0]?.getRecord.mockReturnValue(record as unknown as AgentRecord);
     managerInstances[0]?.listAgents.mockReturnValue([record]);
     managerInstances[0]?.abortAll.mockImplementation(() => {
       record.status = "stopped";
@@ -615,6 +647,8 @@ describe("subagent session UI rebinding", () => {
       completedAt: Date.now() + 1000,
       result: "done",
       session,
+      parentSessionId: "parent-session-1",
+      sessionDir: "/tmp",
     };
     let finish!: (record: any) => void;
     const finished = new Promise<any>((resolve) => { finish = resolve; });
@@ -675,6 +709,8 @@ describe("subagent session UI rebinding", () => {
       result: "ACK",
       sessionFile: "/tmp/session.jsonl",
       session,
+      parentSessionId: "parent-session-1",
+      sessionDir: "/tmp",
     };
 
     manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
@@ -698,6 +734,151 @@ describe("subagent session UI rebinding", () => {
     expect(text).toContain('Agent(resume: "fg-record-42")');
     expect(text).toContain("ACK");
     expect(result.details.agentId).toBe("fg-record-42");
+  });
+
+  it("fails closed when foreground resume-target persistence fails", async () => {
+    const mock = createMockPi();
+    mock.pi.appendEntry.mockImplementation((customType: string) => {
+      if (customType === "subagents:resume-target-v1") throw new Error("append failed");
+    });
+    await initExtension(mock);
+    const manager = managerInstances[0]!;
+    const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: "/tmp/session.jsonl" };
+    const record = {
+      id: "fg-persist-failure", type: "general-purpose", description: "Persist target",
+      status: "completed", toolUses: 0, startedAt: Date.now(), completedAt: Date.now(), result: "done",
+      session, sessionFile: session.sessionFile, sessionDir: "/tmp", parentSessionId: "parent-session-1",
+    };
+    manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
+      manager.listAgents.mockReturnValue([record]);
+      options.onSessionCreated(session);
+      return record;
+    });
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-persist-failure",
+      { prompt: "do it", description: "Persist target", subagent_type: "general-purpose" },
+      undefined, vi.fn(), createCtx(),
+    );
+
+    expect(result.content[0].text).toBe("Agent failed to persist resume target: append failed");
+    expect(result.content[0].text).not.toContain("resume with Agent");
+    expect(result.details.status).toBe("error");
+    expect(result.details.error).toBe("append failed");
+  });
+
+  it("does not claim background resumability before target persistence", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-background",
+      { prompt: "do it", description: "Background", subagent_type: "general-purpose", run_in_background: true },
+      undefined, vi.fn(), createCtx(),
+    );
+
+    expect(result.content[0].text).not.toContain("resume");
+    expect(result.content[0].text).toContain("get_subagent_result and steer_subagent");
+  });
+
+  it("keeps explicit no-resume calls on independent fresh-spawn paths", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const agentTool = mock.registeredTools.get("Agent");
+    const manager = managerInstances[0]!;
+    const makeRecord = (id: string, result: string) => ({
+      id,
+      type: "general-purpose",
+      description: result,
+      status: "completed",
+      toolUses: 0,
+      startedAt: Date.now(),
+      completedAt: Date.now(),
+      result,
+      sessionFile: `/tmp/${id}.jsonl`,
+      session: { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: `/tmp/${id}.jsonl` },
+      parentSessionId: "parent-session-1",
+      sessionDir: "/tmp",
+    });
+    manager.spawnAndWait
+      .mockResolvedValueOnce(makeRecord("fresh-1", "first"))
+      .mockResolvedValueOnce(makeRecord("fresh-2", "second"));
+
+    const first = await agentTool.execute(
+      "tool-fresh-1",
+      { prompt: "first independent task", description: "first", subagent_type: "general-purpose" },
+      undefined,
+      vi.fn(),
+      createCtx(),
+    );
+    const second = await agentTool.execute(
+      "tool-fresh-2",
+      { prompt: "second independent task", description: "second", subagent_type: "general-purpose" },
+      undefined,
+      vi.fn(),
+      createCtx(),
+    );
+
+    expect(manager.spawnAndWait).toHaveBeenCalledTimes(2);
+    expect(manager.spawnAndWait.mock.calls.map((call) => call[3])).toEqual([
+      "first independent task",
+      "second independent task",
+    ]);
+    expect(manager.resume).not.toHaveBeenCalled();
+    expect(first.details.agentId).toBe("fresh-1");
+    expect(second.details.agentId).toBe("fresh-2");
+  });
+
+  it("does not replace a stale resume with a fresh spawn", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const agentTool = mock.registeredTools.get("Agent");
+    const manager = managerInstances[0]!;
+    manager.getRecord.mockReturnValue(undefined);
+
+    const result = await agentTool.execute(
+      "tool-stale",
+      { prompt: "continue", description: "stale", subagent_type: "general-purpose", resume: "missing-agent" },
+      undefined,
+      vi.fn(),
+      createCtx(),
+    );
+
+    expect(result.content[0].text).toContain('Failed to resume agent "missing-agent": target_unknown.');
+    expect(manager.resume).not.toHaveBeenCalled();
+    expect(manager.spawnAndWait).not.toHaveBeenCalled();
+  });
+
+  it("routes a live resume before spawn config and consumes its returned result", async () => {
+    agentTypeState.resolveType = () => undefined;
+    agentTypeState.isValidType = () => false;
+    const mock = createMockPi();
+    await initExtension(mock);
+    const manager = managerInstances[0]!;
+    const publish = vi.fn();
+    const record = {
+      id: "live-agent", type: "general-purpose", description: "Original task",
+      parentSessionId: "parent-session-1", status: "completed", toolUses: 1,
+      startedAt: Date.now(), completedAt: Date.now(), result: "continued",
+      session: { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })) },
+      run: { publish },
+    };
+    manager.getRecord.mockReturnValue(record as unknown as AgentRecord);
+    manager.resume.mockResolvedValue({ status: "resumed_live", id: "live-agent" });
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-resume",
+      { prompt: "continue", description: "ignored", subagent_type: "GENERAL-PURPOSE", resume: "live-agent" },
+      undefined, vi.fn(), createCtx(),
+    );
+
+    expect(manager.resume).toHaveBeenCalledWith("live-agent", "continue", expect.objectContaining({
+      parentSessionId: "parent-session-1", expectedType: "general-purpose",
+    }));
+    expect(manager.spawn).not.toHaveBeenCalled();
+    expect(manager.spawnAndWait).not.toHaveBeenCalled();
+    expect(publish).toHaveBeenCalledWith({ kind: "consumed" });
+    expect(result.content[0].text).toContain("continued");
   });
 
 });

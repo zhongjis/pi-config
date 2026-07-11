@@ -39,6 +39,19 @@ installs. The agent dir respects `$PI_CODING_AGENT_DIR` (default `~/.pi/agent`).
 
 Subagent session JSONL logs are stored outside the main Pi session tree under `$PI_CODING_AGENT_DIR/subagent-sessions/<parent-session-id>/`; notifications and persisted `subagents:record` entries include the exact `sessionFile` path.
 
+### Spawn and resume outcomes
+
+`Agent` returns one of four invocation statuses:
+
+- `started_new` — no `resume` ID was supplied; a fresh child session and new logical agent ID were created.
+- `resumed_live` — `resume` matched a completed live session still held by this runtime.
+- `restored_session` — no live session remained; the same logical agent ID was restored from its persisted child-session JSONL, then continued.
+- `failed` — the requested resume target was unknown, busy, outside the current parent/type scope, unsafe, incompatible, corrupt, unavailable, or could not be initialized/persisted.
+
+Fresh and resume semantics are explicit: omit `resume` to start new; supply `resume` to continue that exact logical agent. A failed resume is safe and final for that invocation—`Agent` does not silently fall back to a fresh agent.
+
+Restored lookup is durable and parent-scoped. Versioned resume-target metadata is persisted in the parent session log; it points to child JSONL under `$PI_CODING_AGENT_DIR/subagent-sessions/<parent-session-id>/`. Restoration requires the same parent session and agent type, validates the session and current runtime before opening it, and preserves the logical agent ID.
+
 ## Default Agent Types
 
 | Type | Built-ins | Extensions | Model | Prompt Mode |

@@ -12,7 +12,8 @@ ${typeListText}
 Guidelines:
 - For parallel work, use run_in_background: true on each agent. Foreground calls run sequentially — only one executes at a time.
 - Leave max_turns unset unless you need an explicit cap. Unset is the normal unlimited-by-default behavior.
-- Background agents require active supervision: check progress with get_subagent_result, use steer_subagent for mid-run course correction, and use resume to continue the same agent instead of starting duplicate work.
+- Use resume only for the same workstream: a follow-up, correction, or recheck. Start a fresh agent for independent or unrelated work. If resume fails, report the failure; do not automatically fall back to a fresh call.
+- Background agents require active supervision: check progress with get_subagent_result, use steer_subagent for mid-run course correction, and use resume only as described above to continue the same agent instead of starting duplicate work.
 - If a background agent is still useful, keep supervising it rather than launching overlapping duplicate work or leaving it unattended for long periods.
 - Choose an available custom agent whose description matches the task.
 - Provide clear, detailed prompts so the agent can work autonomously.
@@ -29,7 +30,7 @@ function compactDescription(compactTypeListText: string): string {
 Available agent types:
 ${compactTypeListText}
 
-Notes: run_in_background:true runs in parallel — supervise with get_subagent_result / steer_subagent / resume. Optional params: model ("provider/modelId" or fuzzy), thinking, max_turns, isolated, inherit_context.`;
+Notes: run_in_background:true runs in parallel — supervise with get_subagent_result / steer_subagent. Resume only the same workstream (follow-up, correction, recheck); start fresh for independent/unrelated work; on resume failure, report it and do not auto-fallback to fresh. Optional params: model ("provider/modelId" or fuzzy), thinking, max_turns, isolated, inherit_context.`;
 }
 
 export function buildAgentToolDescription(

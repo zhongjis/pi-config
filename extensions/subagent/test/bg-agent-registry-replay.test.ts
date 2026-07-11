@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type ResumeTargetV1 } from "../src/types.js";
 import {
   BG_AGENT_REGISTRY_ENTRY_TYPE,
   type BgAgentRegistryEntry,
   PersistentBgAgentRegistry,
+  RESUME_TARGET_ENTRY_TYPE,
   TASK_CLAIM_ENTRY_TYPE,
 } from "../src/lifecycle/registry-persistence.js";
 
@@ -15,6 +17,62 @@ function createSessionLog() {
     }),
   };
   return { entries, pi };
+}
+
+const HASH_A = "a".repeat(64);
+const HASH_B = "b".repeat(64);
+
+function resumeTarget(
+  id: string,
+  generation: number,
+  revision: number,
+  overrides: Partial<ResumeTargetV1> = {},
+): ResumeTargetV1 {
+  return {
+    version: 1,
+    id,
+    generation,
+    revision,
+    parentSessionId: "parent-1",
+    sessionFile: `/sessions/${id}.jsonl`,
+    sessionDir: "/sessions",
+    childSessionId: `child-${id}`,
+    entryCount: 12,
+    activeLeafId: "leaf-1",
+    sessionSha256: HASH_A,
+    type: "jintong",
+    description: "Fix exact resume schema",
+    cwd: "/repo",
+    isBackground: true,
+    createdAt: 100,
+    updatedAt: 200,
+    runtime: {
+      piVersion: "1.2.3",
+      model: { provider: "provider", id: "model", api: "messages" },
+      thinkingLevel: "off",
+      promptMode: "system_instructions",
+      isolated: false,
+      inheritContext: true,
+      systemPromptHash: HASH_B,
+      resourcePolicyHash: HASH_A,
+      agentConfigHash: HASH_B,
+      extensionIdentities: [
+        { name: "ext-z", contentHash: HASH_A },
+        { name: "ext-a", contentHash: HASH_B },
+      ],
+      activeToolNames: ["write", "read", "write"],
+    },
+    state: {
+      status: "completed",
+      resultConsumed: false,
+      notified: true,
+      toolUses: 4,
+      lifetimeUsage: { input: 10, output: 20, cacheWrite: 30 },
+      lifetimeCost: 1.25,
+      compactionCount: 2,
+    },
+    ...overrides,
+  };
 }
 
 describe("PersistentBgAgentRegistry — boot replay", () => {
@@ -67,7 +125,7 @@ describe("PersistentBgAgentRegistry — boot replay", () => {
 
     expect(count).toBe(3);
     const replayedCall = warnSpy.mock.calls.find(
-      (call) => typeof call[1] === "string" && call[1].includes("subagent.recovery.replayed"),
+      (call: unknown[]) => typeof call[1] === "string" && call[1].includes("subagent.recovery.replayed"),
     );
     expect(replayedCall).toBeDefined();
     expect(JSON.parse(replayedCall![1] as string)).toMatchObject({
@@ -108,5 +166,86 @@ describe("PersistentBgAgentRegistry — boot replay", () => {
     // Replaying an empty (fresh-session) log clears the cache.
     expect(registry.replay([])).toBe(0);
     expect(registry.listAgents()).toHaveLength(0);
+  });
+
+  it("replays resume targets by highest generation/revision and uses physical order only for exact ties", () => {
+    const registry = new PersistentBgAgentRegistry(createSessionLog().pi);
+    const entries = [
+      resumeTarget("agent-a", 1, 8, { sessionFile: "/old-high-revision" }),
+      resumeTarget("agent-a", 2, 0, { sessionFile: "/new-generation" }),
+      resumeTarget("agent-a", 1, 99, { sessionFile: "/stale-generation" }),
+      resumeTarget("agent-a", 2, 0, { sessionFile: "/exact-tie-later" }),
+    ].map((data) => ({ type: "custom" as const, customType: RESUME_TARGET_ENTRY_TYPE, data }));
+
+    expect(registry.replay(entries)).toBe(4);
+    expect(registry.getResumeTarget("agent-a")?.sessionFile).toBe("/exact-tie-later");
+    expect(registry.getResumeTarget("agent-a")?.runtime).toMatchObject({
+      extensionIdentities: [
+        { name: "ext-z", contentHash: HASH_A },
+        { name: "ext-a", contentHash: HASH_B },
+      ],
+      activeToolNames: ["read", "write"],
+    });
+    expect(registry.getResumeTarget("agent-a")).toMatchObject({
+      childSessionId: "child-agent-a",
+      entryCount: 12,
+      activeLeafId: "leaf-1",
+      sessionSha256: HASH_A,
+      description: "Fix exact resume schema",
+      createdAt: 100,
+      updatedAt: 200,
+      state: { lifetimeUsage: { input: 10, output: 20, cacheWrite: 30 }, lifetimeCost: 1.25, compactionCount: 2 },
+    });
+  });
+
+  it("warns and excludes malformed, uppercase-hash, and version-mismatched rows", () => {
+    const registry = new PersistentBgAgentRegistry(createSessionLog().pi);
+    const badHash = resumeTarget("bad-hash", 1, 0, { sessionSha256: "A".repeat(64) });
+    const badExtensionHash = resumeTarget("bad-extension-hash", 1, 0);
+    badExtensionHash.runtime.extensionIdentities[0].contentHash = "A".repeat(64);
+    const missingField = { ...resumeTarget("missing", 1, 0) } as Partial<ResumeTargetV1>;
+    delete missingField.sessionDir;
+    const wrongVersion = { ...resumeTarget("wrong-version", 1, 0), version: 2 };
+
+    expect(registry.replay([
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: badHash },
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: badExtensionHash },
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: missingField },
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: wrongVersion },
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: { version: 1, id: "partial" } },
+    ])).toBe(0);
+    expect(registry.listResumeTargets()).toEqual([]);
+    expect(warnSpy.mock.calls.filter((call: unknown[]) => String(call[1]).includes("subagent.resume-target.invalid-row"))).toHaveLength(5);
+  });
+
+  it("keeps foreground and background targets independent", () => {
+    const registry = new PersistentBgAgentRegistry(createSessionLog().pi);
+    registry.replay([
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: resumeTarget("foreground", 1, 0, { isBackground: false }) },
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: resumeTarget("background", 1, 0) },
+    ]);
+
+    expect(registry.getResumeTarget("foreground")?.isBackground).toBe(false);
+    expect(registry.getResumeTarget("background")?.isBackground).toBe(true);
+  });
+
+  it("orders guarded consumed/notified writes and rejects stale generations", async () => {
+    const log = createSessionLog();
+    const registry = new PersistentBgAgentRegistry(log.pi);
+    await registry.recordResumeTarget(resumeTarget("agent-a", 2, 0, { state: {
+      ...resumeTarget("agent-a", 2, 0).state, resultConsumed: false, notified: false,
+    } }));
+    const consumed = await registry.updateResumeTarget("agent-a", { generation: 2, revision: 0 }, {
+      updatedAt: 201, state: { ...registry.getResumeTarget("agent-a")!.state, resultConsumed: true },
+    });
+    expect(consumed?.revision).toBe(1);
+    expect(await registry.updateResumeTarget("agent-a", { generation: 2, revision: 0 }, { updatedAt: 202 })).toBeUndefined();
+    const notified = await registry.updateResumeTarget("agent-a", { generation: 2, revision: 1 }, {
+      updatedAt: 203, state: { ...consumed!.state, notified: true },
+    });
+    expect(notified?.state).toMatchObject({ resultConsumed: true, notified: true });
+    expect(await registry.recordResumeTarget(resumeTarget("agent-a", 1, 99))).toBe(false);
+    expect(registry.getResumeTarget("agent-a")).toMatchObject({ generation: 2, revision: 2 });
+    expect(log.entries.filter((entry) => entry.customType === RESUME_TARGET_ENTRY_TYPE)).toHaveLength(3);
   });
 });

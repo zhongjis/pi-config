@@ -6,7 +6,7 @@
  */
 
 import { pandaWarn } from "../../../lib/warn.js";
-import { BG_AGENT_REGISTRY_ENTRY_TYPE, TASK_CLAIM_ENTRY_TYPE } from "../lifecycle/registry-persistence.js";
+import { BG_AGENT_REGISTRY_ENTRY_TYPE, RESUME_TARGET_ENTRY_TYPE, TASK_CLAIM_ENTRY_TYPE } from "../lifecycle/registry-persistence.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 import type { UICtx } from "../ui/agent-widget.js";
 
@@ -63,6 +63,7 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
       ts: Date.now(),
       registrySize: persistentRegistry.listAgents().length,
       claimsSize: persistentRegistry.listClaims().length,
+      resumeTargetsSize: persistentRegistry.listResumeTargets().length,
     });
   });
 
@@ -75,6 +76,9 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
     }
     for (const claim of persistentRegistry.listClaims()) {
       pi.appendEntry(TASK_CLAIM_ENTRY_TYPE, claim);
+    }
+    for (const target of persistentRegistry.listResumeTargets()) {
+      pi.appendEntry(RESUME_TARGET_ENTRY_TYPE, target);
     }
   });
 

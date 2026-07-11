@@ -5,11 +5,12 @@
  * helpers that only the Agent tool consumes.
  */
 
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { type AgentToolResult, type ExtensionContext, defineTool, getAgentDir, keyHint } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { getDefaultMaxTurns, normalizeMaxTurns } from "../agent-runner.js";
+import { prepareAgentRestoreRuntime, getDefaultMaxTurns, normalizeMaxTurns } from "../agent-runner.js";
 import { getAgentConfig, getAvailableTypes } from "../agent-types.js";
 import { SUBAGENT_FOREGROUND_RENDER_CADENCE_MS } from "../constants.js";
 import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "../delegation-policy.js";
@@ -22,6 +23,7 @@ import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycl
 import { buildAgentToolDescription } from "../agent-tool-description.js";
 import { getToolDescriptionMode, getScopeModels } from "../runtime-flags.js";
 import { readEnabledModels, resolveEnabledModels, decideModelScope, type ModelRegistryRef } from "../enabled-models.js";
+import { SessionRestoreError, stableSha256, validatePersistedChildSession } from "../session-restoration.js";
 import { SUBAGENTS_CREATED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext, SupervisedAgentActivity } from "../lifecycle/supervision.js";
 import type { AgentRun } from "../agent-run.js";
@@ -36,7 +38,7 @@ import {
   getPromptModeLabel,
 } from "../ui/agent-widget.js";
 import { RenderScheduler } from "../ui/render-scheduler.js";
-import type { AgentRecord, SubagentType } from "../types.js";
+import type { AgentInvocationStatus, AgentRecord, RestoreFailureReason, ResumeRuntimeSnapshot, ResumeTargetV1, SubagentType } from "../types.js";
 import { formatCost, formatTurns } from "../../../lib/widget-style.js";
 import { formatLifetimeTokens } from "../usage.js";
 
@@ -53,6 +55,76 @@ function getParentSessionId(ctx: ExtensionContext): string | undefined {
 
 function createSubagentSessionDir(parentSessionId: string | undefined): string {
   return join(getAgentDir(), SUBAGENT_SESSION_DIR_NAME, safePathSegment(parentSessionId));
+}
+
+const EMPTY_USAGE = { input: 0, output: 0, cacheWrite: 0 };
+
+function placeholderRuntime(): ResumeRuntimeSnapshot {
+  return {
+    piVersion: "pending",
+    model: { provider: "pending", id: "pending", api: "pending" },
+    thinkingLevel: "off",
+    promptMode: "replace",
+    isolated: false,
+    inheritContext: false,
+    systemPromptHash: "0".repeat(64),
+    resourcePolicyHash: "0".repeat(64),
+    agentConfigHash: "0".repeat(64),
+    extensionIdentities: [],
+    activeToolNames: [],
+  };
+}
+
+function captureResumeTarget(
+  record: AgentRecord,
+  runtime: ResumeRuntimeSnapshot,
+  cwd: string,
+  previous?: ResumeTargetV1,
+ ): ResumeTargetV1 {
+  if (!record.sessionFile || !record.sessionDir || !record.parentSessionId) {
+    throw new Error("Agent session metadata is incomplete");
+  }
+  const bytes = readFileSync(record.sessionFile);
+  const rows = bytes.toString("utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  const header = rows[0];
+  const entries = rows.slice(1);
+  const leaf = entries.at(-1);
+  if (header?.type !== "session" || header.version !== 3 || typeof header.id !== "string" ||
+      !leaf || typeof leaf.id !== "string") {
+    throw new Error("Agent session JSONL is not a valid v3 session");
+  }
+  const now = Date.now();
+  const target: ResumeTargetV1 = {
+    version: 1,
+    id: record.id,
+    generation: previous?.generation ?? 0,
+    revision: previous ? previous.revision + 1 : 0,
+    parentSessionId: record.parentSessionId,
+    sessionFile: record.sessionFile,
+    sessionDir: record.sessionDir,
+    childSessionId: header.id,
+    entryCount: entries.length,
+    activeLeafId: leaf.id,
+    sessionSha256: stableSha256(bytes),
+    type: record.type,
+    description: record.description,
+    cwd,
+    isBackground: !!record.isBackground,
+    createdAt: previous?.createdAt ?? record.startedAt,
+    updatedAt: now,
+    runtime,
+    state: {
+      status: record.status,
+      resultConsumed: !!record.resultConsumed,
+      notified: !!record.notified,
+      toolUses: record.toolUses,
+      lifetimeUsage: { ...(record.lifetimeUsage ?? EMPTY_USAGE) },
+      lifetimeCost: record.lifetimeCost ?? 0,
+      compactionCount: record.compactionCount ?? 0,
+    },
+  };
+  validatePersistedChildSession(target, runtime);
+  return target;
 }
 
 /**
@@ -176,6 +248,26 @@ function buildDetails(
   };
 }
 
+function buildInvocationFailureDetails(
+  subagentType: string,
+  description: string,
+  failureReason: RestoreFailureReason,
+  agentId?: string,
+): AgentDetails {
+  return {
+    displayName: getDisplayName(subagentType),
+    description,
+    subagentType,
+    toolUses: 0,
+    tokens: "",
+    durationMs: 0,
+    status: "error",
+    agentId,
+    invocationStatus: "failed",
+    failureReason,
+  };
+}
+
 function getResultText(result: AgentToolResult<AgentDetails>): string {
   return result.content
     .filter(part => part.type === "text")
@@ -216,8 +308,26 @@ function getContextSummary(details: AgentDetails): string | undefined {
   return details.tokens?.trim() || undefined;
 }
 
+function sanitizeCollapsedText(text: string): string {
+  return text
+    .replace(/(?:[A-Za-z]:\\|\/)(?:[^\s/\\]+[/\\])+[^\s/\\]*/g, "[redacted path]")
+    .split("\n")[0]
+    .trim();
+}
+
+function renderExpandHint(): string {
+  try {
+    return keyHint("app.tools.expand", "to expand full result");
+  } catch (error) {
+    if (error instanceof Error && error.message === "Theme not initialized. Call initTheme() first.") {
+      return "app.tools.expand to expand full result";
+    }
+    throw error;
+  }
+}
+
 function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: string) => string }): Text {
-  const allLines = [...lines, keyHint("app.tools.expand", "to expand full result")];
+  const allLines = [...lines, renderExpandHint()];
   const rendered = allLines
     .map((line, index) => `${index === allLines.length - 1 ? "└─" : "├─"} ${line}`)
     .map(line => theme.fg("muted", line))
@@ -256,8 +366,10 @@ export function renderAgentToolResult(
   const contextSummary = getContextSummary(details);
   if (contextSummary) lines.push(`context: ${contextSummary}`);
   const resultPreview = getFirstContentLine(rawText);
-  if (["completed", "steered", "stopped", "aborted"].includes(details.status) && resultPreview) lines.push(`result: ${resultPreview}`);
-  if (details.status === "error" && details.error) lines.push(`error: ${details.error.split("\n")[0]}`);
+  if (["completed", "steered", "stopped", "aborted"].includes(details.status) && resultPreview) lines.push(`result: ${sanitizeCollapsedText(resultPreview)}`);
+  if (details.invocationStatus && details.invocationStatus !== "started_new") lines.push(`continuation: ${details.invocationStatus}`);
+  if (details.failureReason) lines.push(`reason: ${details.failureReason}`);
+  else if (details.status === "error" && details.error) lines.push(`error: ${sanitizeCollapsedText(details.error)}`);
   if (details.durationMs != null && details.durationMs > 0 && details.status !== "running" && details.status !== "background" && details.status !== "queued") lines.push(`duration: ${formatMs(details.durationMs)}`);
   return renderSummaryLines(lines, theme);
 }
@@ -268,6 +380,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
     widget,
     manager,
     agentActivity,
+    persistentRegistry,
     requireSpawnableType,
     bindTurnAbortSignal,
     getAbortSignal,
@@ -348,6 +461,98 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       bindTurnAbortSignal(parentSignal);
       const localHint = localUriHint(params.prompt);
 
+      const currentParentSessionId = getParentSessionId(ctx) ?? "";
+      const currentDelegatorType = getCurrentDelegatorType(ctx.sessionManager.getEntries() as Array<{ type?: string; customType?: string; data?: { mode?: unknown } }>);
+      const enforceDelegationPolicy = (targetType: string, requestedType: string) => {
+        if (!currentDelegatorType) return undefined;
+        const delegatorConfig = getAgentConfig(currentDelegatorType);
+        if (!delegatorConfig || !hasDelegationPolicy(delegatorConfig)) return undefined;
+        const delegation = resolveDelegationRequest(delegatorConfig, targetType, getAvailableTypes());
+        return delegation.allowed
+          ? undefined
+          : buildDelegationBlockedMessage(currentDelegatorType, requestedType, delegation.requestedType, delegation.permittedTypes);
+      };
+
+      // Explicit resume is routed before spawn-only config. It never falls back to spawn.
+      if (params.resume) {
+        const live = manager.getRecord(params.resume);
+        const durable = persistentRegistry.getResumeTarget(params.resume);
+        const targetType = live?.type ?? durable?.type;
+        if (!targetType) {
+          return textResult(
+            `Failed to resume agent "${params.resume}": target_unknown.`,
+            buildInvocationFailureDetails(params.subagent_type, params.description, "target_unknown", params.resume),
+          );
+        }
+        if (targetType.toLocaleLowerCase() !== params.subagent_type.toLocaleLowerCase()) {
+          return textResult(
+            `Failed to resume agent "${params.resume}": scope_mismatch.`,
+            buildInvocationFailureDetails(targetType, params.description, "scope_mismatch", params.resume),
+          );
+        }
+        const targetParentSessionId = live?.parentSessionId ?? durable?.parentSessionId ?? "";
+        if (targetParentSessionId !== currentParentSessionId) {
+          return textResult(
+            `Failed to resume agent "${params.resume}": scope_mismatch.`,
+            buildInvocationFailureDetails(targetType, params.description, "scope_mismatch", params.resume),
+          );
+        }
+        const blocked = enforceDelegationPolicy(targetType, targetType);
+        if (blocked) return textResult(blocked);
+
+        let restoreSession: (target: ResumeTargetV1) => Promise<any> = async () => {
+          throw new Error("Durable restoration is unavailable without a persisted target");
+        };
+        let persist: ((target: ResumeTargetV1, record: AgentRecord) => Promise<void>) | undefined;
+        if (!live?.session && durable) {
+          try {
+            const restoredModel = ctx.modelRegistry.find(durable.runtime.model.provider, durable.runtime.model.id);
+            const prepared = await prepareAgentRestoreRuntime(ctx, targetType, {
+              pi, target: durable, model: restoredModel,
+              isolated: durable.runtime.isolated,
+              inheritContext: durable.runtime.inheritContext,
+              thinkingLevel: durable.runtime.thinkingLevel,
+            });
+            restoreSession = async () => prepared.restore();
+            persist = async (target, record) => {
+              const next = captureResumeTarget(record, prepared.runtime, ctx.cwd, target);
+              await persistentRegistry.recordResumeTarget(next);
+            };
+          } catch (error) {
+            const reason: RestoreFailureReason = error instanceof SessionRestoreError ? error.reason : "runtime_initialization_failed";
+            return textResult(
+              `Failed to resume agent "${params.resume}": ${reason}.`,
+              buildInvocationFailureDetails(targetType, params.description, reason, params.resume),
+            );
+          }
+        }
+        const outcome = await manager.resume(params.resume, params.prompt, {
+          parentSessionId: currentParentSessionId,
+          expectedType: targetType,
+          target: durable,
+          signal: parentSignal,
+          restoreSession,
+          persist,
+        });
+        if (outcome.status === "failed") {
+          return textResult(
+            `Failed to resume agent "${params.resume}": ${outcome.reason}.`,
+            buildInvocationFailureDetails(targetType, params.description, outcome.reason, params.resume),
+          );
+        }
+        const record = manager.getRecord(outcome.id)!;
+        record.run?.publish({ kind: "consumed" });
+        const resumedBase = {
+          displayName: getDisplayName(targetType),
+          description: record.description,
+          subagentType: targetType,
+        };
+        return textResult(
+          getRecoveredResultText(record) + localHint,
+          buildDetails(resumedBase, record, undefined, { invocationStatus: outcome.status }),
+        );
+      }
+
       const rawType = params.subagent_type as SubagentType;
       let subagentType: string;
       try {
@@ -356,22 +561,9 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         return textResult(err instanceof Error ? err.message : String(err));
       }
       const displayName = getDisplayName(subagentType);
-
       const customConfig = getAgentConfig(subagentType);
-
-      const currentDelegatorType = getCurrentDelegatorType(ctx.sessionManager.getEntries() as Array<{ type?: string; customType?: string; data?: { mode?: unknown } }>);
-      if (currentDelegatorType) {
-        const delegatorConfig = getAgentConfig(currentDelegatorType);
-        if (delegatorConfig && hasDelegationPolicy(delegatorConfig)) {
-          const delegation = resolveDelegationRequest(delegatorConfig, subagentType, getAvailableTypes());
-          if (!delegation.allowed) {
-            return textResult(
-              buildDelegationBlockedMessage(currentDelegatorType, rawType, delegation.requestedType, delegation.permittedTypes),
-            );
-          }
-        }
-      }
-
+      const blocked = enforceDelegationPolicy(subagentType, rawType);
+      if (blocked) return textResult(blocked);
       const resolvedConfig = resolveAgentInvocationConfig(customConfig, params);
 
       // Resolve model: fallback chain from agent config; tool-call params replace chain.
@@ -443,28 +635,11 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         subagentType,
         modelName: agentModelName,
         tags: agentTags.length > 0 ? agentTags : undefined,
+        invocationStatus: "started_new" as AgentInvocationStatus,
       };
 
-      // Resume existing agent
-      if (params.resume) {
-        const existing = manager.getRecord(params.resume);
-        if (!existing) {
-          return textResult(`Agent not found: "${params.resume}". It may have been cleaned up.`);
-        }
-        if (!existing.session) {
-          return textResult(`Agent "${params.resume}" has no active session to resume.`);
-        }
-        const record = await manager.resume(params.resume, params.prompt, parentSignal);
-        if (!record) {
-          return textResult(`Failed to resume agent "${params.resume}".`);
-        }
-        return textResult(
-          getRecoveredResultText(record) + localHint,
-          buildDetails(detailBase, record),
-        );
-      }
 
-      const parentSessionId = getParentSessionId(ctx);
+      const parentSessionId = currentParentSessionId || undefined;
       const subagentSessionDir = createSubagentSessionDir(parentSessionId);
 
       // Shared spawn options for both paths. Background adds isBackground + bg callbacks;
@@ -480,6 +655,25 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         thinkingLevel: thinking,
         parentSessionId,
         sessionDir: subagentSessionDir,
+      };
+
+      const persistFreshResumeTarget = async (record: AgentRecord) => {
+        if (!record.sessionFile) return;
+        const provisional: ResumeTargetV1 = {
+          version: 1, id: record.id, generation: 0, revision: 0,
+          parentSessionId: record.parentSessionId ?? "", sessionFile: record.sessionFile,
+          sessionDir: record.sessionDir ?? dirname(record.sessionFile), childSessionId: "pending",
+          entryCount: 0, activeLeafId: "pending", sessionSha256: "0".repeat(64),
+          type: record.type, description: record.description, cwd: ctx.cwd,
+          isBackground: !!record.isBackground, createdAt: record.startedAt, updatedAt: Date.now(),
+          runtime: placeholderRuntime(),
+          state: { status: record.status, resultConsumed: false, notified: false, toolUses: record.toolUses, lifetimeUsage: EMPTY_USAGE, lifetimeCost: 0, compactionCount: 0 },
+        };
+        const prepared = await prepareAgentRestoreRuntime(ctx, record.type, {
+          pi, target: provisional, model, isolated, inheritContext, thinkingLevel: thinking,
+        });
+        const target = captureResumeTarget(record, prepared.runtime, ctx.cwd);
+        await persistentRegistry.recordResumeTarget(target);
       };
 
       // Background execution
@@ -500,6 +694,11 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           // Capture persistent session JSONL path for discoverability.
           if (rec && typeof session.sessionFile === "string") {
             rec.sessionFile = session.sessionFile;
+          }
+          if (rec) {
+            queueMicrotask(() => {
+              void rec.promise?.then(() => persistFreshResumeTarget(rec)).catch(() => undefined);
+            });
           }
         };
 
@@ -540,7 +739,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           (record?.sessionFile ? `Session file: ${record.sessionFile}\n` : "") +
           (isQueued ? `Position: queued (max ${manager.getMaxConcurrent()} concurrent)\n` : "") +
           `\nYou will be notified when this agent completes.\n` +
-          `Actively supervise it with get_subagent_result, steer_subagent, and resume as needed.\n` +
+          `Actively supervise it with get_subagent_result and steer_subagent.\n` +
           `Do not duplicate this agent's work or leave it unattended for long.` + localHint,
           { ...detailBase, toolUses: 0, tokens: "", durationMs: 0, status: isQueued ? "queued" as const : "background" as const, agentId: id },
         );
@@ -605,7 +804,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         flushStreamUpdate();
       };
 
-      let record!: AgentRecord;
+      let record: AgentRecord;
       try {
         flushStreamUpdate();
         record = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
@@ -625,6 +824,14 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
             widget.markFinished(fgId);
           }
         }
+      }
+
+      try {
+        await persistFreshResumeTarget(record);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const details = buildDetails(detailBase, record, fgState, { status: "error", error: message });
+        return textResult(`Agent failed to persist resume target: ${message}`, details);
       }
 
       // Get final token count

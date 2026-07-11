@@ -33,6 +33,11 @@ function fakeSession() {
 
 const PI = {} as any;
 const CTX = { cwd: process.cwd() } as any;
+const LIVE_RESUME = {
+  parentSessionId: "",
+  expectedType: "general-purpose",
+  restoreSession: async () => { throw new Error("unexpected restore"); },
+};
 
 describe("D2 — project() writes terminal fields via run (foreground spawnAndWait)", () => {
   afterEach(() => {
@@ -141,8 +146,8 @@ describe("D2 — project() writes terminal fields via run (resume path)", () => 
       expect(record.run?.status).toBe("completed");
 
       // Resume the agent
-      const resumed = await manager.resume(id, "follow-up");
-      expect(resumed).toBe(record); // same record object
+      const resumed = await manager.resume(id, "follow-up", LIVE_RESUME);
+      expect(resumed).toEqual({ status: "resumed_live", id }); // same record retained
 
       expect(record.status).toBe("completed");
       expect(record.result).toBe("resumed answer");
@@ -165,8 +170,8 @@ describe("D2 — project() writes terminal fields via run (resume path)", () => 
       const record = manager.getRecord(id)!;
       await record.promise;
 
-      const resumed = await manager.resume(id, "follow-up");
-      expect(resumed).toBe(record);
+      const resumed = await manager.resume(id, "follow-up", LIVE_RESUME);
+      expect(resumed).toEqual({ status: "resumed_live", id });
 
       expect(record.status).toBe("error");
       expect(record.error).toBe("resume failed");

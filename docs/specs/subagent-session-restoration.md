@@ -1,18 +1,18 @@
 # Subagent Session Restoration
 
-**Status:** planned
+**Status:** implemented
 
 ## Problem Statement
 
-Panda Harness persists each subagent conversation as a Pi session JSONL file, but the `Agent` tool can resume only while the corresponding `AgentSession` remains in memory. Completed agent records are cleaned up after a retention period or during session lifecycle cleanup. The parent conversation may still contain the valid agent ID and the tool result may still advertise that ID as resumable, yet a later resume returns `Agent not found` even though the child session file remains on disk.
+Originally, Panda Harness persisted each subagent conversation as a Pi session JSONL file, but the `Agent` tool could resume only while the corresponding `AgentSession` remained in memory. Completed agent records were cleaned up after a retention period or during session lifecycle cleanup. The parent conversation could still contain the valid agent ID and the tool result could still advertise that ID as resumable, yet a later resume returned `Agent not found` even though the child session file remained on disk.
 
-This breaks an expected orchestration flow: a parent agent asks a specialist to review work, applies changes, then asks the same specialist to recheck them. The parent should recover the specialist's persisted conversation instead of losing continuity because an in-memory cache expired.
+This broke an expected orchestration flow: a parent agent asked a specialist to review work, applied changes, then asked the same specialist to recheck them. The parent should recover the specialist's persisted conversation instead of losing continuity because an in-memory cache expired.
 
 The runtime also needs a clear boundary between continuing prior work and starting independent work. It must not silently replace an unrestorable session with a fresh agent because that would discard context while presenting false continuity. A fresh session remains an explicit caller decision.
 
 ## Solution
 
-When the caller requests `Agent(resume: agentId)`, the subagent runtime will resolve the agent in this order:
+When the caller requests `Agent(resume: agentId)`, the subagent runtime resolves the agent in this order:
 
 1. If the live `AgentSession` still exists, continue it directly.
 2. Otherwise, use durable parent-to-child metadata to locate the persisted child session JSONL, validate the restoration environment, recreate compatible runtime dependencies, open the session through Pi's session API, and continue from its active leaf.
@@ -73,24 +73,22 @@ The parent and UI receive a concise status that distinguishes `resumed_live`, `r
 
 - The persisted Pi session JSONL is the durable source for child conversation history. No separate checkpoint or generated-summary fallback is part of this feature.
 - The in-memory `AgentSession` remains the fast path. Existing live resume behavior stays unchanged.
-- Durable lookup metadata will map the stable agent ID to its parent session, child session file, agent type, cwd, creation configuration, terminal state, and compatibility identifiers needed to rebuild runtime dependencies.
-- Lookup metadata must survive child-record cleanup, parent compaction, and process restart. It must remain scoped to the parent session.
-- A resumable result must not be advertised until the child session file and durable lookup metadata are available.
-- Restoration will open the existing session through Pi's session-management API, rebuild the same subagent resource-loader policy, bind extensions, restore the active tool policy, and then send the new prompt.
+- Versioned `subagents:resume-target-v1` metadata maps the stable agent ID to its parent session, child session file, agent type, cwd, generation/revision, terminal state, and compatibility snapshot. Replay and guarded writes use generation/revision ordering; writes for one target are serialized so stale or concurrent updates cannot overwrite newer durable state.
+- Lookup metadata survives child-record cleanup, parent compaction, and process restart. It remains scoped to the parent session and agent type.
+- A resumable result is not advertised until the child session file and durable lookup metadata are available. Persistence failure leaves the prior durable/in-memory target unchanged and returns `persistence_failed`.
+- Restoration accepts only a matching Pi session v3 JSONL. It performs read-only path, cwd, tree, active-branch, interrupted-operation, and runtime-compatibility checks before `SessionManager.open`; older or malformed formats fail as `session_corrupt_or_unsupported`.
+- Runtime compatibility is intentionally split around open: model, agent configuration, tools, extensions, and persisted-session integrity are checked before open; session identity, entry count, active leaf, and file hash are rechecked after open before tool policy is bound.
 - Concrete tools, model objects, credentials, extension handlers, and resource loaders are runtime dependencies; they are recreated, not serialized in the child JSONL.
-- Restoration validates that required runtime dependencies are compatible. Missing or incompatible dependencies produce a typed failure rather than a degraded continuation.
-- Successful restoration continues the existing child session and stable agent ID. It does not create a new logical agent identity.
-- The lifecycle status returned to the parent uses four user-relevant outcomes: `resumed_live`, `restored_session`, `started_new`, and `failed`.
-- A resume request may return `resumed_live`, `restored_session`, or `failed`. It never returns `started_new`.
-- `started_new` applies only to an `Agent` invocation without `resume`.
-- Restore failure reasons use stable machine-readable codes. Initial reasons cover unknown target, scope mismatch, missing session file, corrupt or unsupported session, unavailable cwd, unavailable agent configuration, unavailable model, incompatible tools/extensions, and interrupted unsafe operation.
+- Each session file has process-local single-flight plus a filesystem restore lock. Concurrent restoration or mutation during validation returns `target_busy`.
+- Successful restoration continues the existing child session and stable agent ID. It does not create a new logical agent identity or replay spawn lifecycle events.
+- The lifecycle status returned to the parent uses four outcomes: `resumed_live`, `restored_session`, `started_new`, and `failed`. A resume request may return `resumed_live`, `restored_session`, or `failed`; `started_new` applies only when `resume` is omitted.
+- Restore failure reasons are exactly `target_unknown`, `target_busy`, `scope_mismatch`, `session_file_missing`, `session_corrupt_or_unsupported`, `cwd_unavailable`, `agent_config_unavailable`, `model_unavailable`, `tools_extensions_incompatible`, `unsafe_interrupted_operation`, `persistence_failed`, and `runtime_initialization_failed`.
 - Model-visible errors include a concise explanation and valid next actions. Detailed paths and internal diagnostics remain in traces or expandable details.
-- The restored child receives no synthetic “you were restored” prompt when runtime compatibility is exact. The parent and UI receive restoration metadata.
-- If exact compatibility cannot be established, the runtime fails restoration. This specification does not define partial-continuity or checkpoint behavior.
-- The parent model decides reuse versus new work from task semantics. Prompts and tool documentation will state: reuse for the same workstream; start new for independent or unrelated work; never reuse based only on agent type.
-- Completed sessions are safe to continue because prior completed tool calls remain historical messages and are not replayed. Recovery of a session that ended during an unfinished provider request or tool call remains conservative and must not retry uncertain work automatically.
+- The restored child receives no synthetic “you were restored” prompt. If exact compatibility cannot be established, restoration fails; no partial-continuity or checkpoint behavior is defined.
+- The parent model decides reuse versus new work from task semantics: reuse for the same workstream; start new for independent or unrelated work; never reuse based only on agent type.
+- Completed tool calls remain historical messages and are not replayed. Sessions ending in an unfinished provider response or tool operation fail conservatively with `unsafe_interrupted_operation`.
 - Existing agent-run lifecycle projection remains the single source of truth for status changes. Restoration adds explicit lifecycle transitions rather than writing record fields independently.
-- Existing completion notification, consumption, supervision, and event-bus behavior remains unchanged except where needed to represent restoration status.
+- Existing completion notification, consumption, supervision, and event-bus behavior remains unchanged. Notification delivery is still non-atomic with session/registry persistence and retains existing idle-time, deduplication, and consumption semantics.
 - Public event or RPC payload changes require backward-compatible versioning and the repository's existing approval process.
 - Live-session cleanup remains bounded. This feature preserves durable identity and lookup state rather than retaining every live session indefinitely.
 - Explicit session deletion makes the child unrestorable. The runtime reports failure and does not recreate it.
@@ -101,21 +99,21 @@ The parent and UI receive a concise status that distinguishes `resumed_live`, `r
 - The primary seam is the registered `Agent` tool exercised through the real subagent runtime with a temporary persisted session directory. This is the highest seam that covers tool arguments, durable lookup, cleanup, Pi session reopening, runtime reconstruction, prompting, and returned status in one test path.
 - Existing subagent integration and agent-run parity tests provide prior art for tool-level continuation and lifecycle consistency.
 - Focused manager/session tests cover failure classification that is expensive to trigger through the full tool seam, including corrupt files, missing runtime dependencies, scope mismatch, and unsafe interrupted operations.
-- A live-resume characterization test runs before implementation and remains green: spawn, complete, resume before cleanup, observe `resumed_live`, and confirm prior context is available.
-- A restoration regression test runs red before implementation: spawn, complete, dispose the live record through the production cleanup path, resume by stable ID, observe `restored_session`, and confirm the child answers using prior-session context.
+- A live-resume characterization test covers spawn, completion, resume before cleanup, `resumed_live`, and prior-context continuity.
+- A restoration regression test covers spawn, completion, production cleanup, resume by stable ID, `restored_session`, and prior-session context continuity.
 - A process-restart test reconstructs the extension from persisted parent registry entries, resumes the child, and confirms restoration without relying on the original in-memory manager.
 - A parent-compaction test confirms durable lookup entries survive compaction and still resolve the child session.
 - A parent-session-switch test confirms cross-session child IDs cannot be restored from the wrong parent scope.
 - A missing-file test confirms a known child with a deleted JSONL returns `failed` with `session_file_missing` and launches no replacement.
 - An unknown-ID test confirms `target_unknown` is distinct from a known target whose file is missing.
 - A corrupt-session test confirms restoration fails cleanly, does not crash the parent, and does not launch a replacement.
-- A compatibility test changes required agent configuration, model availability, tool policy, extension set, or cwd and confirms restoration either rebuilds an equivalent runtime or returns the corresponding typed incompatibility.
-- An interrupted-tool test confirms uncertain prior side effects are not replayed automatically.
-- A notification regression test confirms restoring a consumed completed agent does not re-notify the old completion and emits only the new continuation result.
+- Compatibility tests cover the split boundary: model, agent configuration, tools/extensions, cwd, session format/tree, interruption state, and pre-open mutation fail before open; changed identity, entry count, active leaf, or hash after open fails initialization.
+- Restore-lock and single-flight tests confirm concurrent restoration returns `target_busy`; persistence tests cover generation/revision ordering, stale guarded updates, serialized writes, replay, and immutable state after write failure.
+- Notification regression tests confirm restoration does not re-notify an old completion or replay spawn lifecycle events. Existing notification delivery remains non-atomic and retains its idle-time, consumption, and deduplication behavior.
 - Foreground and background variants confirm shared restoration semantics and status vocabulary.
 - Fresh-spawn tests confirm an invocation without `resume` still starts a new session and reports `started_new`.
 - Independent-review behavior is tested at the tool-contract level: a fresh invocation cannot inherit another agent's conversation merely because the same agent type is selected.
-- Verification includes the subagent unit suite, typecheck, lint, build, and repository extension smoke tests.
+- Verification covers the exact 12-code failure matrix, live and restored continuity, stable logical identity, restart/replay, v3-only validation, fresh-spawn isolation, and full extension and integration suites.
 
 ## Out of Scope
 
@@ -133,8 +131,8 @@ The parent and UI receive a concise status that distinguishes `resumed_live`, `r
 
 ## Further Notes
 
-The current failure is not caused by missing conversation persistence. Child JSONL already exists. The missing capability is durable resolution from an agent ID to that session file plus reconstruction of compatible runtime dependencies after the in-memory record is disposed.
+The original failure was not caused by missing conversation persistence. Child JSONL already existed. The missing capability was durable resolution from an agent ID to that session file plus reconstruction of compatible runtime dependencies after the in-memory record was disposed.
 
-Pi provides the required session primitive through `SessionManager.open`. Panda Harness must persist the child linkage and recreate the non-serializable runtime environment. Persisted conversation history is sufficient for completed idle sessions; it is not sufficient to resume an in-flight provider stream or safely infer whether an unfinished external side effect should run again.
+Pi provides the required session primitive through `SessionManager.open`. Panda Harness now persists the child linkage and recreates the non-serializable runtime environment. Persisted conversation history is sufficient for completed idle sessions; it is not sufficient to resume an in-flight provider stream or safely infer whether an unfinished external side effect should run again.
 
 The design intentionally treats restore failure as failure. If callers want independent work after failure, they can make a second explicit `Agent` invocation without `resume`. This keeps continuity claims truthful and prevents accidental duplicate work.

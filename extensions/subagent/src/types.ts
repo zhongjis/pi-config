@@ -9,8 +9,87 @@ import type { LifetimeUsage } from "./usage.js";
 
 export type { ThinkingLevel };
 
+/** Parent-visible outcome of a fresh invocation or resume attempt. */
+export type AgentInvocationStatus = "started_new" | "resumed_live" | "restored_session" | "failed";
+
+/** Stable machine-readable reason why persisted session restoration failed. */
+export type RestoreFailureReason =
+  | "target_unknown"
+  | "target_busy"
+  | "scope_mismatch"
+  | "session_file_missing"
+  | "session_corrupt_or_unsupported"
+  | "cwd_unavailable"
+  | "agent_config_unavailable"
+  | "model_unavailable"
+  | "tools_extensions_incompatible"
+  | "unsafe_interrupted_operation"
+  | "persistence_failed"
+  | "runtime_initialization_failed";
+
+/** Typed result of an explicit resume request; resume never starts a replacement. */
+export type AgentResumeResult =
+  | { status: "resumed_live"; id: string }
+  | { status: "restored_session"; id: string }
+  | { status: "failed"; id: string; reason: RestoreFailureReason; error: string };
+
 /** Agent type: any string name (built-in defaults or user-defined). */
 export type SubagentType = string;
+
+/** Serializable extension identity used for runtime compatibility checks. */
+export interface ResumeExtensionIdentity {
+  name: string;
+  contentHash: string;
+}
+
+/** Serializable runtime snapshot used to reject incompatible restored sessions. */
+export interface ResumeRuntimeSnapshot {
+  piVersion: string;
+  model: { provider: string; id: string; api: string };
+  thinkingLevel: ThinkingLevel;
+  promptMode: "replace" | "append" | "system_instructions";
+  isolated: boolean;
+  inheritContext: boolean;
+  systemPromptHash: string;
+  resourcePolicyHash: string;
+  agentConfigHash: string;
+  extensionIdentities: ResumeExtensionIdentity[];
+  activeToolNames: string[];
+}
+
+/** Last durable execution state for a resume target. */
+export interface ResumeTargetState {
+  status: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
+  resultConsumed: boolean;
+  notified: boolean;
+  toolUses: number;
+  lifetimeUsage: LifetimeUsage;
+  lifetimeCost: number;
+  compactionCount: number;
+}
+
+/** Version 1 durable lookup metadata for one logical child conversation. */
+export interface ResumeTargetV1 {
+  version: 1;
+  id: string;
+  generation: number;
+  revision: number;
+  parentSessionId: string;
+  sessionFile: string;
+  sessionDir: string;
+  childSessionId: string;
+  entryCount: number;
+  activeLeafId: string;
+  sessionSha256: string;
+  type: SubagentType;
+  description: string;
+  cwd: string;
+  isBackground: boolean;
+  createdAt: number;
+  updatedAt: number;
+  runtime: ResumeRuntimeSnapshot;
+  state: ResumeTargetState;
+}
 
 
 /** Structured diagnostic emitted while loading agent frontmatter. */
@@ -79,6 +158,10 @@ export interface AgentRecord {
   toolUses: number;
   startedAt: number;
   completedAt?: number;
+  /** Source of the current continuation epoch, when resumed. */
+  resumeSource?: "live" | "restored";
+  /** Stable restore failure code for the latest failed attempt. */
+  restoreFailureReason?: RestoreFailureReason;
   session?: AgentSession;
   abortController?: AbortController;
   promise?: Promise<string>;

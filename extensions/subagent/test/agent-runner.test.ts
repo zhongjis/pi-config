@@ -16,10 +16,14 @@ const {
   getAgentDir: vi.fn(() => "/mock/agent-dir"),
   getConfig: vi.fn(),
   sessionManagerCreate: vi.fn(() => ({ kind: "created-session-manager" })),
-  settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager" })),
+  settingsManagerCreate: vi.fn(() => ({
+    kind: "settings-manager",
+    getDefaultThinkingLevel: () => undefined,
+  })),
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
+  VERSION: "test-version",
   createAgentSession,
   DefaultResourceLoader: class {
     constructor(options: any) {
@@ -27,6 +31,10 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     }
 
     async reload() {}
+
+    getExtensions() {
+      return { extensions: [], errors: [], runtime: {} };
+    }
   },
   getAgentDir,
   SessionManager: { create: sessionManagerCreate },
@@ -52,7 +60,8 @@ vi.mock("../src/skill-loader.js", () => ({
   preloadSkills: vi.fn(() => []),
 }));
 
-import { resumeAgent, runAgent } from "../src/agent-runner.js";
+import { prepareAgentRestoreRuntime, resumeAgent, runAgent } from "../src/agent-runner.js";
+import type { ResumeTargetV1 } from "../src/types.js";
 
 type MockExtensionContext = Pick<ExtensionContext, "cwd" | "model" | "modelRegistry" | "getSystemPrompt" | "sessionManager">;
 
@@ -128,6 +137,24 @@ beforeEach(() => {
   sessionManagerCreate.mockClear();
   settingsManagerCreate.mockClear();
 });
+
+function restoreTarget(): ResumeTargetV1 {
+  return {
+    version: 1, id: "agent-1", generation: 1, revision: 1, parentSessionId: "parent",
+    sessionFile: "/tmp/child.jsonl", sessionDir: "/tmp", childSessionId: "child-1",
+    entryCount: 1, activeLeafId: "leaf", sessionSha256: "0".repeat(64),
+    type: "Explore", description: "Explore", cwd: "/tmp", isBackground: true,
+    createdAt: 1, updatedAt: 2,
+    runtime: {
+      piVersion: "old", model: { provider: "old", id: "old", api: "old" }, thinkingLevel: "off",
+      promptMode: "replace", isolated: false, inheritContext: false,
+      systemPromptHash: "0".repeat(64), resourcePolicyHash: "0".repeat(64),
+      agentConfigHash: "0".repeat(64), extensionIdentities: [], activeToolNames: [],
+    },
+    state: { status: "completed", resultConsumed: false, notified: false, toolUses: 0,
+      lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, lifetimeCost: 0, compactionCount: 0 },
+  };
+}
 
 describe("agent-runner final output capture", () => {
   it("returns the final assistant text even when no text_delta events were streamed", async () => {
@@ -264,6 +291,37 @@ describe("agent-runner final output capture", () => {
 
     expect(session.setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
   });
+  it("prepares exact runtime snapshot and rejects mismatch before session creation", async () => {
+    const model = { provider: "provider", id: "model", api: "api" };
+    const first = await prepareAgentRestoreRuntime(ctx, "Explore", {
+      pi,
+      target: restoreTarget(),
+      model: model as never,
+    });
+
+    expect(first.runtime).toMatchObject({
+      model,
+      thinkingLevel: "off",
+      promptMode: "replace",
+      isolated: false,
+      inheritContext: false,
+      extensionIdentities: [],
+      activeToolNames: ["read"],
+    });
+
+    const target = { ...restoreTarget(), runtime: first.runtime };
+    const mismatched = await prepareAgentRestoreRuntime(ctx, "Explore", {
+      pi,
+      target,
+      model: { ...model, api: "other-api" } as never,
+    });
+    createAgentSession.mockClear();
+    await expect(mismatched.restore()).rejects.toEqual(
+      expect.objectContaining({ reason: "model_unavailable" }),
+    );
+    expect(createAgentSession).not.toHaveBeenCalled();
+  });
+
   it("resumeAgent also falls back to the final assistant message text", async () => {
     const { session } = createSession("RESUMED");
 

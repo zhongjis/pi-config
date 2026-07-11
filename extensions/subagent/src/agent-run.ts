@@ -14,7 +14,8 @@
  * verified mapping to the current implementation.
  */
 
-import type { AgentRecord } from "./types.js";
+import type { AgentRecord, RestoreFailureReason, ResumeTargetState } from "./types.js";
+import type { LifetimeUsage } from "./usage.js";
 import { SUBAGENTS_COMPLETED, SUBAGENTS_CREATED, SUBAGENTS_FAILED, SUBAGENTS_STARTED, SUBAGENTS_STEERED } from "../../lib/subagent-channels.js";
 
 /**
@@ -55,7 +56,22 @@ export type AgentRunEvent =
       modelLabel?: string;
     }
   | { kind: "started"; startedAt: number }
-  | { kind: "resumed"; startedAt?: number }
+  | {
+      kind: "hydrated";
+      type: string;
+      description: string;
+      isBackground: boolean;
+      parentSessionId: string;
+      sessionDir: string;
+      sessionFile: string;
+      session: unknown;
+      createdAt: number;
+      completedAt?: number;
+      state: ResumeTargetState;
+    }
+  | { kind: "restore_started"; at?: number }
+  | { kind: "resumed"; source?: "live" | "restored"; startedAt?: number; at?: number }
+  | { kind: "restore_failed"; reason: RestoreFailureReason; at?: number }
   | { kind: "session_created"; session: unknown }
   | { kind: "output_file_ready"; outputFile?: string; sessionFile?: string }
   | { kind: "message_start" }
@@ -213,8 +229,17 @@ export class AgentRun {
   waitingConsumers = 0;
   resultConsumed = false;
   notified = false;
+  lifetimeUsage: LifetimeUsage = { input: 0, output: 0, cacheWrite: 0 };
+  lifetimeCost = 0;
+  compactionCount = 0;
   lastSupervisionSteerAt?: number;
   lastSupervisionAbortAt?: number;
+  resumeSource?: "live" | "restored";
+  restoreFailureReason?: RestoreFailureReason;
+  restoreStartedAt?: number;
+  resumedAt?: number;
+  restoreFailedAt?: number;
+  restoreLatencyMs?: number;
   readonly activity: AgentRunActivity = {
     activeTools: new Map<string, string>(),
     toolUses: 0,
@@ -330,20 +355,59 @@ export class AgentRun {
         this.modelLabel = event.modelLabel;
         this.status = "queued";
         break;
+      case "hydrated":
+        this.type = event.type;
+        this.description = event.description;
+        this.isBackground = event.isBackground;
+        this.parentSessionId = event.parentSessionId;
+        this.sessionDir = event.sessionDir;
+        this.sessionFile = event.sessionFile;
+        this.session = event.session;
+        this.startedAt = event.createdAt;
+        this.completedAt = event.completedAt;
+        this.status = event.state.status;
+        this.resultConsumed = event.state.resultConsumed;
+        this.notified = event.state.notified;
+        this.activity.toolUses = event.state.toolUses;
+        this.lifetimeUsage = { ...event.state.lifetimeUsage };
+        this.lifetimeCost = event.state.lifetimeCost;
+        this.compactionCount = event.state.compactionCount;
+        this.activity.lastProgressAt = event.createdAt;
+        break;
       case "started":
         this.status = "running";
         this.startedAt = event.startedAt;
         this.activity.lastProgressAt = event.startedAt;
         break;
-      case "resumed":
-        // Reopen a terminal run (mirrors AgentManager.resume): clear completion state.
+      case "restore_started":
+        this.restoreStartedAt = event.at ?? this.now();
+        this.restoreFailureReason = undefined;
+        this.restoreFailedAt = undefined;
+        this.restoreLatencyMs = undefined;
+        break;
+      case "resumed": {
+        // A continuation epoch preserves identity, counters, mode, and notification flags.
+        const at = event.at ?? this.now();
         this.status = "running";
+        this.resumeSource = event.source ?? "live";
+        this.restoreFailureReason = undefined;
+        this.resumedAt = at;
+        this.restoreFailedAt = undefined;
+        this.restoreLatencyMs = this.restoreStartedAt === undefined ? undefined : Math.max(0, at - this.restoreStartedAt);
         if (event.startedAt !== undefined) this.startedAt = event.startedAt;
         this.completedAt = undefined;
         this.result = undefined;
         this.error = undefined;
         this.markProgress();
         break;
+      }
+      case "restore_failed": {
+        const at = event.at ?? this.now();
+        this.restoreFailureReason = event.reason;
+        this.restoreFailedAt = at;
+        this.restoreLatencyMs = this.restoreStartedAt === undefined ? undefined : Math.max(0, at - this.restoreStartedAt);
+        break;
+      }
       case "session_created":
         this.session = event.session;
         this.markProgress();
@@ -444,4 +508,6 @@ export function project(run: AgentRun, record: AgentRecord): void {
   record.startedAt = run.startedAt;
   record.resultConsumed = run.resultConsumed;
   record.notified = run.notified;
+  record.resumeSource = run.resumeSource;
+  record.restoreFailureReason = run.restoreFailureReason;
 }

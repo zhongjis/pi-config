@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type ResumeTargetV1 } from "../src/types.js";
 import {
   BG_AGENT_REGISTRY_ENTRY_TYPE,
   PersistentBgAgentRegistry,
+  RESUME_TARGET_ENTRY_TYPE,
   TASK_CLAIM_ENTRY_TYPE,
 } from "../src/lifecycle/registry-persistence.js";
 
@@ -14,6 +16,21 @@ function createSessionLog() {
     }),
   };
   return { entries, pi };
+}
+
+function resumeTarget(): ResumeTargetV1 {
+  const hash = "a".repeat(64);
+  return {
+    version: 1, id: "agent-a", generation: 1, revision: 2, parentSessionId: "sess-1",
+    sessionFile: "/sessions/agent-a.jsonl", sessionDir: "/sessions", childSessionId: "child-a",
+    entryCount: 4, activeLeafId: "leaf-a", sessionSha256: hash, type: "jintong",
+    description: "persist lifecycle", cwd: "/repo", isBackground: true, createdAt: 1, updatedAt: 2,
+    runtime: { piVersion: "1", model: { provider: "p", id: "m", api: "a" }, thinkingLevel: "off",
+      promptMode: "replace", isolated: false, inheritContext: false, systemPromptHash: hash,
+      resourcePolicyHash: hash, agentConfigHash: hash, extensionIdentities: [], activeToolNames: [] },
+    state: { status: "completed", resultConsumed: true, notified: true, toolUses: 3,
+      lifetimeUsage: { input: 1, output: 2, cacheWrite: 3 }, lifetimeCost: 0.5, compactionCount: 1 },
+  };
 }
 
 /**
@@ -39,6 +56,9 @@ function onCompact(pi: { appendEntry: (t: string, d?: unknown) => void }, regist
   for (const claim of registry.listClaims()) {
     pi.appendEntry(TASK_CLAIM_ENTRY_TYPE, claim);
   }
+  for (const target of registry.listResumeTargets()) {
+    pi.appendEntry(RESUME_TARGET_ENTRY_TYPE, target);
+  }
 }
 
 describe("Compaction survival hooks (Task 28)", () => {
@@ -52,7 +72,7 @@ describe("Compaction survival hooks (Task 28)", () => {
     warnSpy.mockRestore();
   });
 
-  it("survives compaction: post-compact baseline replays to the same state", () => {
+  it("survives compaction: post-compact baseline replays to the same state", async () => {
     const log = createSessionLog();
     const registry = new PersistentBgAgentRegistry(log.pi);
 
@@ -62,11 +82,14 @@ describe("Compaction survival hooks (Task 28)", () => {
     registry.recordAgent({ id: "agent-c", parentSessionId: "sess-2", status: "running", claimedTaskIds: ["t2"], lastSeenTs: 3000 });
     registry.claimTask({ taskId: "t1", sessionId: "sess-1", ts: 1500 });
     registry.claimTask({ taskId: "t2", sessionId: "sess-2", ts: 2500 });
+    await registry.recordResumeTarget(resumeTarget());
 
     const preCompactAgents = registry.listAgents();
     const preCompactClaims = registry.listClaims();
+    const preCompactTargets = registry.listResumeTargets();
     expect(preCompactAgents).toHaveLength(3);
     expect(preCompactClaims).toHaveLength(2);
+    expect(preCompactTargets).toHaveLength(1);
 
     // ---- session_before_compact: an informational marker is written ----
     onBeforeCompact(log.pi, registry);
@@ -83,14 +106,16 @@ describe("Compaction survival hooks (Task 28)", () => {
     // Only the re-emitted baseline rows remain in the post-compact log.
     expect(log.entries.filter((e) => e.customType === BG_AGENT_REGISTRY_ENTRY_TYPE)).toHaveLength(3);
     expect(log.entries.filter((e) => e.customType === TASK_CLAIM_ENTRY_TYPE)).toHaveLength(2);
+    expect(log.entries.filter((e) => e.customType === RESUME_TARGET_ENTRY_TYPE)).toHaveLength(1);
 
     // ---- A fresh registry replays ONLY the post-compact entries ----
     const recovered = new PersistentBgAgentRegistry(log.pi);
     const count = recovered.replay(log.entries);
 
-    expect(count).toBe(5);
+    expect(count).toBe(6);
     expect(recovered.listAgents()).toHaveLength(3);
     expect(recovered.listClaims()).toHaveLength(2);
+    expect(recovered.listResumeTargets()).toEqual(preCompactTargets);
     expect([...recovered.listAgents()].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
       [...preCompactAgents].sort((a, b) => a.id.localeCompare(b.id)),
     );
@@ -110,6 +135,7 @@ describe("Compaction survival hooks (Task 28)", () => {
     expect(marker!.data).toMatchObject({ registrySize: 0, claimsSize: 0 });
     expect(log.entries.filter((e) => e.customType === BG_AGENT_REGISTRY_ENTRY_TYPE)).toHaveLength(0);
     expect(log.entries.filter((e) => e.customType === TASK_CLAIM_ENTRY_TYPE)).toHaveLength(0);
+    expect(log.entries.filter((e) => e.customType === RESUME_TARGET_ENTRY_TYPE)).toHaveLength(0);
   });
 
   it("both hooks complete well under the 100ms latency budget", () => {

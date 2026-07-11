@@ -22,7 +22,13 @@ import { detectEnv } from "./env.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import { parseModelChain, resolveFirstAvailable, type ModelRegistry } from "./model-resolver.js";
-import type { SubagentType, ThinkingLevel } from "./types.js";
+import type { ResumeTargetV1, SubagentType, ThinkingLevel } from "./types.js";
+import {
+  buildRuntimeCompatibilitySnapshot,
+  prepareAgentSessionRestore,
+  SessionRestoreError,
+  type PreparedAgentSessionRestore,
+} from "./session-restoration.js";
 
 
 /** Default max turns. undefined = unlimited (no turn limit). */
@@ -115,7 +121,6 @@ export interface RunOptions {
   /** Called when a new assistant message starts. */
   onMessageStart?: () => void;
   onSessionCreated?: (session: AgentSession) => void;
-  /** Called at the end of each agentic turn with the cumulative count. */
   /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
   /** Called on each completed assistant message with token usage (excludes cacheRead) plus per-message cost (USD, includes cacheRead). */
@@ -221,6 +226,163 @@ export function buildExtensionsOverride(opts: {
   });
 }
 
+export interface AgentSessionRuntimeOptions {
+  cwd: string;
+  agentDir: string;
+  sessionManager: SessionManager;
+  settingsManager: ReturnType<typeof SettingsManager.create>;
+  modelRegistry: ExtensionContext["modelRegistry"];
+  model: Model<any> | undefined;
+  resourceLoader: DefaultResourceLoader;
+  thinkingLevel?: ThinkingLevel;
+  builtinToolNames: string[];
+  extensions: true | string[] | false;
+  extensionToolNames?: string[];
+  allowNesting?: boolean;
+  isolated?: boolean;
+  onExtensionError?: (extensionPath: string) => void;
+}
+
+/** Shared fresh/open initialization: session construction, extension binding, exact tool policy. */
+export async function buildAgentSessionRuntime(options: AgentSessionRuntimeOptions): Promise<AgentSession> {
+  const sessionOpts: NonNullable<Parameters<typeof createAgentSession>[0]> = {
+    cwd: options.cwd,
+    agentDir: options.agentDir,
+    sessionManager: options.sessionManager,
+    settingsManager: options.settingsManager,
+    modelRegistry: options.modelRegistry,
+    model: options.model,
+    resourceLoader: options.resourceLoader,
+  };
+  if (options.thinkingLevel) sessionOpts.thinkingLevel = options.thinkingLevel;
+  const { session } = await createAgentSession(sessionOpts);
+  await session.bindExtensions({
+    onError: (err) => options.onExtensionError?.(err.extensionPath),
+  });
+  const activeTools = computeActiveToolNames({
+    availableToolNames: session.getActiveToolNames(),
+    builtinToolNames: options.builtinToolNames,
+    builtinToolUniverse: BUILTIN_TOOL_NAMES,
+    extensions: options.extensions,
+    extensionTools: options.extensionToolNames,
+    allowNesting: options.allowNesting,
+    isolated: options.isolated,
+  });
+  session.setActiveToolsByName(activeTools);
+  return session;
+}
+
+export interface PrepareAgentRestoreRuntimeOptions
+  extends Pick<RunOptions, "pi" | "model" | "isolated" | "inheritContext" | "thinkingLevel" | "onToolActivity"> {
+  target: ResumeTargetV1;
+}
+
+/** Prepare exact current runtime compatibility plus a strict restore callback. */
+export async function prepareAgentRestoreRuntime(
+  ctx: ExtensionContext,
+  type: SubagentType,
+  options: PrepareAgentRestoreRuntimeOptions,
+ ): Promise<PreparedAgentSessionRestore> {
+  const config = getConfig(type);
+  const agentConfig = getAgentConfig(type);
+  if (!agentConfig) {
+    throw new SessionRestoreError("agent_config_unavailable", `Agent type '${type}' is unavailable`);
+  }
+
+  const effectiveCwd = ctx.cwd;
+  const env = await detectEnv(options.pi, effectiveCwd);
+  const extras: PromptExtras = {};
+  const extensions = options.isolated ? false : config.extensions;
+  const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
+  const skills = options.isolated ? false : config.skills;
+  if (Array.isArray(skills)) {
+    const loaded = preloadSkills(skills, effectiveCwd);
+    if (loaded.length > 0) extras.skillBlocks = loaded;
+  }
+  const systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, ctx.getSystemPrompt(), extras);
+  const noSkills = skills === false || Array.isArray(skills);
+  const agentDir = getAgentDir();
+  const settingsManager = SettingsManager.create(effectiveCwd, agentDir);
+  const resourcePolicy = {
+    noExtensions: extensions === false,
+    extensions,
+    excludeExtensions,
+    noSkills,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: options.isolated || agentConfig.promptMode !== "system_instructions",
+  };
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: effectiveCwd,
+    agentDir,
+    noExtensions: resourcePolicy.noExtensions,
+    extensionsOverride: buildExtensionsOverride({ extensions, excludeExtensions, isolated: !!options.isolated }),
+    noSkills,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: resourcePolicy.noContextFiles,
+    systemPromptOverride: () => systemPrompt,
+    appendSystemPromptOverride: () => [],
+  });
+  await resourceLoader.reload();
+
+  const model = options.model ?? resolveDefaultModel(ctx.model, ctx.modelRegistry, agentConfig.model);
+  if (!model) throw new SessionRestoreError("model_unavailable", "Agent model is unavailable in current runtime");
+  const thinkingLevel = options.thinkingLevel ?? settingsManager.getDefaultThinkingLevel() ?? "off";
+  const loadedExtensions = resourceLoader.getExtensions().extensions;
+  const availableToolNames = [
+    ...BUILTIN_TOOL_NAMES,
+    ...loadedExtensions.flatMap((extension) => [...extension.tools.keys()]),
+  ];
+  const activeToolNames = computeActiveToolNames({
+    availableToolNames,
+    builtinToolNames: config.builtinToolNames,
+    builtinToolUniverse: BUILTIN_TOOL_NAMES,
+    extensions,
+    extensionTools: agentConfig.extensionToolNames,
+    allowNesting: agentConfig.allowNesting,
+    isolated: options.isolated,
+  });
+  const runtime = buildRuntimeCompatibilitySnapshot({
+    model: { provider: model.provider, id: model.id, api: model.api },
+    thinkingLevel,
+    promptMode: agentConfig.promptMode,
+    isolated: !!options.isolated,
+    inheritContext: !!options.inheritContext,
+    systemPrompt,
+    resourcePolicy,
+    agentConfig,
+    extensions: loadedExtensions.map((extension) => ({
+      name: extensionCanonicalName(extension.path),
+      path: extension.resolvedPath,
+    })),
+    activeToolNames,
+  });
+
+  return prepareAgentSessionRestore({
+    target: options.target,
+    runtime,
+    createSession: (sessionManager) => buildAgentSessionRuntime({
+      cwd: effectiveCwd,
+      agentDir,
+      sessionManager,
+      settingsManager,
+      modelRegistry: ctx.modelRegistry,
+      model,
+      resourceLoader,
+      thinkingLevel: options.thinkingLevel,
+      builtinToolNames: config.builtinToolNames,
+      extensions,
+      extensionToolNames: agentConfig.extensionToolNames,
+      allowNesting: agentConfig.allowNesting,
+      isolated: options.isolated,
+      onExtensionError: (extensionPath) => {
+        options.onToolActivity?.({ type: "end", toolName: `extension-error:${extensionPath}` });
+      },
+    }),
+  });
+}
+
 export async function runAgent(
   ctx: ExtensionContext,
   type: SubagentType,
@@ -305,46 +467,24 @@ export async function runAgent(
   // Resolve thinking level: explicit option > undefined (inherit)
   const thinkingLevel = options.thinkingLevel;
 
-  const sessionOpts: Parameters<typeof createAgentSession>[0] = {
+  const session = await buildAgentSessionRuntime({
     cwd: effectiveCwd,
     agentDir,
-    // Persist session to disk. subagent callers pass a separate sessionDir so
-    // subagent JSONL files stay out of the main agent session tree while still
-    // using pi's native session format.
     sessionManager: SessionManager.create(effectiveCwd, options.sessionDir),
     settingsManager: SettingsManager.create(effectiveCwd, agentDir),
     modelRegistry: ctx.modelRegistry,
     model,
     resourceLoader: loader,
-  };
-  if (thinkingLevel) {
-    sessionOpts.thinkingLevel = thinkingLevel;
-  }
-
-  const { session } = await createAgentSession(sessionOpts);
-
-  // Bind extensions first so extension tools are visible, then apply the final
-  // exact active-tool policy. Do not pass `tools` to createAgentSession here:
-  // that SDK allowlist is built-in-only and would pre-strip extension tools.
-  await session.bindExtensions({
-    onError: (err) => {
-      options.onToolActivity?.({
-        type: "end",
-        toolName: `extension-error:${err.extensionPath}`,
-      });
-    },
-  });
-
-  const activeTools = computeActiveToolNames({
-    availableToolNames: session.getActiveToolNames(),
+    thinkingLevel,
     builtinToolNames: toolNames,
-    builtinToolUniverse: BUILTIN_TOOL_NAMES,
     extensions,
-    extensionTools: agentConfig?.extensionToolNames,
+    extensionToolNames: agentConfig?.extensionToolNames,
     allowNesting: agentConfig?.allowNesting,
     isolated: options.isolated,
+    onExtensionError: (extensionPath) => {
+      options.onToolActivity?.({ type: "end", toolName: `extension-error:${extensionPath}` });
+    },
   });
-  session.setActiveToolsByName(activeTools);
 
   options.onSessionCreated?.(session);
 

@@ -95,6 +95,38 @@ describe("Agent tool TUI rendering", () => {
     expect(rendered).toBe(raw);
   });
 
+  it("renders typed continuation outcomes while keeping expanded raw text exact", () => {
+    const raw = "Agent failed to restore /home/user/private/session.jsonl.\nError: internal stack";
+    const failedDetails: AgentDetails = {
+      ...runningDetails,
+      status: "error",
+      invocationStatus: "failed",
+      failureReason: "session_corrupt_or_unsupported",
+      error: "Internal restore error at /home/user/private/session.jsonl\nstack",
+    };
+    const collapsed = textOf(renderAgentToolResult(result(raw, failedDetails), { expanded: false }, theme));
+    const expanded = textOf(renderAgentToolResult(result(raw, failedDetails), { expanded: true }, theme));
+
+    expect(collapsed).toContain("├─ status: error");
+    expect(collapsed).toContain("├─ continuation: failed");
+    expect(collapsed).toContain("├─ reason: session_corrupt_or_unsupported");
+    expect(collapsed).not.toContain("/home/user/private/session.jsonl");
+    expect(collapsed).not.toContain("Internal restore error");
+    expect(expanded).toBe(raw);
+  });
+
+  it.each(["resumed_live", "restored_session"] as const)("renders %s continuation outcome", invocationStatus => {
+    const rendered = textOf(renderAgentToolResult(result("continued", {
+      ...runningDetails,
+      status: "completed",
+      activity: undefined,
+      invocationStatus,
+    }), { expanded: false }, theme));
+
+    expect(rendered).toContain(`├─ continuation: ${invocationStatus}`);
+    expect(rendered).not.toContain("reason:");
+  });
+
   it("keeps terminal states concise when collapsed", () => {
     const completed = textOf(renderAgentToolResult(result("final answer\nmore detail", { ...runningDetails, status: "completed", activity: undefined, durationMs: 1500 }), {}, theme));
     const errored = textOf(renderAgentToolResult(result("failed", { ...runningDetails, status: "error", error: "boom\nstack", activity: undefined }), {}, theme));

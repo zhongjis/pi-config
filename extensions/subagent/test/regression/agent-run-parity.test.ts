@@ -25,6 +25,11 @@ function fakeSession() {
 
 const PI = {} as any;
 const CTX = { cwd: process.cwd() } as any;
+const LIVE_RESUME = {
+  parentSessionId: "",
+  expectedType: "GENERAL-PURPOSE",
+  restoreSession: async () => { throw new Error("unexpected restore"); },
+};
 
 describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
   afterEach(() => {
@@ -129,7 +134,7 @@ describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
       await record.promise;
       await vi.waitFor(() => expect(record.run?.status).toBe("completed"));
 
-      await manager.resume(id, "again");
+      await manager.resume(id, "again", LIVE_RESUME);
       expect(record.status).toBe("completed");
       expect(record.run?.status).toBe("completed");
       expect(record.run?.result).toBe(record.result);

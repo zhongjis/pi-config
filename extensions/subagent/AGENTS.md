@@ -13,6 +13,8 @@ Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents
 | LLM tool definitions | `src/tools/` | `agent.ts`, `get_subagent_result.ts`, `steer_subagent.ts`; `stop_subagent.ts` is a reserved stub |
 | Event listeners, `/agents` command, tool renderers | `src/ui-wiring/` | `messages.ts` (pi.on lifecycle), `commands.ts` (`/agents` menu + CRUD), `renderers.ts` |
 | Durable background-agent registry | `src/lifecycle/registry-persistence.ts` | `appendEntry` write-through; replayed on `session_start`, survives compaction |
+| Persisted resume-target metadata | `src/lifecycle/registry-persistence.ts` | Versioned parent-session entries; validated generation/revision replay and guarded write-through |
+| Persisted child-session restoration | `src/session-restoration.ts` | Strict preflight, runtime compatibility, restore lock, post-open integrity revalidation, typed failures |
 | Execution / resume / max-turn behavior | `src/agent-runner.ts` | Session creation + graceful wrap-up |
 | Queueing / active-state bookkeeping | `src/agent-manager.ts` | Running vs queued agents |
 | Cross-extension RPC | `src/cross-extension-rpc.ts` | `ping`, `spawn`, `stop` handlers |
@@ -26,6 +28,7 @@ Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents
 | Delegation policy | `src/delegation-policy.ts` | Allow/deny agent delegation rules (local) |
 | Result recovery | `src/result-recovery.ts` | Fallback text extraction (local) |
 | Regression coverage | `test/*.test.ts` | Keep behavior changes paired with tests |
+| Restoration regression seams | `test/{session-restoration,agent-runner,agent-manager,bg-agent-registry-replay}.test.ts`, `test/regression/{lifecycle-contract,agent-end-notification}.test.ts` | Restore safety, typed outcomes, persistence replay, lifecycle and notification invariants |
 
 ## Commands
 Run from `extensions/subagent/`.
@@ -43,6 +46,9 @@ pnpm run build
 - Use the standard reply envelope everywhere: `{ success: true, data? } | { success: false, error: string }`.
 - Treat agent frontmatter as authoritative. Loader/default logic may fill omissions, but should not silently override explicit config.
 - Preserve case-insensitive agent-type resolution and fuzzy model matching unless changing that behavior intentionally across docs/tests.
+- Treat `Agent` invocation outcomes as a typed contract: `started_new`, `resumed_live`, `restored_session`, or `failed`. A failed explicit resume must never spawn a fresh replacement.
+- Keep durable resume lookup parent-scoped and type-scoped. Persist resume-target changes through `registry-persistence.ts`; restore child JSONL only through `session-restoration.ts`.
+- Keep restoration changes paired with session preflight/runner/manager tests plus lifecycle and notification regression coverage; restoration must not replay spawn lifecycle events or duplicate completion notifications.
 
 ## Ask First
 - Changing `subagents:*` payload shape, RPC method names, or reply envelope fields.
@@ -75,7 +81,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/types.ts` | Added `allowDelegationTo`, `disallowDelegationTo`, `allowNesting` to `AgentConfig` | delegation-policy.ts reads these fields |
 | `src/types.ts` | Kept `modelLabel`, `waitingConsumers`, `isBackground`, `externalAbortCleanup`, `suppressNotification`, `lastSupervisionSteerAt/AbortAt` on `AgentRecord` | Background supervision + abort signal + widget display |
 | `src/agent-runner.ts` | `allowNesting` gate on `EXCLUDED_TOOL_NAMES` filter | Permits nested Agent tool when frontmatter opts in |
-| `src/agent-manager.ts` | External abort signal forwarding (`bindExternalAbortSignal`), `modelLabel`/`isBackground` on record, `getRecoveredResultText` fallback | Clean cancellation, widget display, non-streaming provider recovery |
+| `src/agent-manager.ts` | External abort signal forwarding, model label/background metadata, result recovery, live-first typed resume, stable-ID durable rehydration | Clean cancellation, widget display, non-streaming provider recovery, restart-safe continuation without spawn/lifecycle replay |
 | `src/custom-agents.ts` | Parses shared agent frontmatter (`builtin_tools`, `extension_tools`, delegation fields, nesting, model) via `extensions/lib/agent-frontmatter.ts`; ignores exact `AGENTS.md` context docs in agent directories | Shared schema with modes; prevents DOX/context instructions from registering as an `AGENTS` agent |
 | `src/invocation-config.ts` | Uses `normalizeThinkingLevel` instead of raw cast | Thinking level compat |
 | `src/skill-loader.ts` | Entire file replaced | Pi-aware discovery: SKILL.md dir skills, ancestor `.agents/skills/`, frontmatter name matching, `sourcePath`/`baseDir` metadata |
@@ -103,6 +109,8 @@ Intentional divergences from upstream. Preserve these on sync.
 | `test/regression/{agent-run-parity,lifecycle-contract,external-contract-adapter,run-activity-view,supervision-ignore-waiters,agent-end-notification}.test.ts`, `test/agent-run.test.ts` | New characterization + parity tests | Lock C/D revamp behavior + frozen contract + agent_end notification |
 | `src/agent-run.ts`, `src/tools/get_subagent_result.ts`, `src/lifecycle/supervision.ts`, `src/tools/agent.ts` | `consumed`/`notified` AgentRun events; completion notification consolidated into `emitCompletionNotificationsAtIdle`, triggered by `agent_end` AND a `parentBusy`-gated supervision-timer idle flush (both `notified`-deduped); group-join/batch cluster (`group-join.ts`, `enqueueBackgroundBatch`, `finalizeBatch`) retired | Fixes duplicate-notification spam (follow-ups are deferred-until-idle + non-retractable); idle flush preserves walk-away notify; finishes the AgentRun sole-writer migration for consumption/notification state |
 | `src/lifecycle/supervision.ts`, `src/lifecycle/cleanup.ts`, `test/index.session-context.test.ts` | RPC-only spawns (including `TaskExecute`) activate the Agents widget immediately, queued → running transitions refresh it, and shutdown disposes it. | Keeps widget activation owned by subagent runtime without rebinding session UI context or coupling tasks internals. |
+| `src/types.ts`, `src/lifecycle/registry-persistence.ts`, `test/{bg-agent-registry-replay,task-claim-write-through}.test.ts` | Added versioned `subagents:resume-target-v1` persistence with generation/revision LWW replay, validated compatibility snapshots, serialized guarded writes, and immutable write-failure behavior | Preserves lightweight restoration lookup metadata after live child cleanup without changing existing registry, task-claim, RPC, or event contracts. |
+| `src/session-restoration.ts`, `src/agent-runner.ts`, `test/{session-restoration,agent-runner}.test.ts` | Added strict read-only v3 session preflight, runtime compatibility hashing, typed restore failures, post-open integrity checks, and shared fresh/open session initialization | Restores persisted child sessions without opening or mutating untrusted/incompatible JSONL |
 | `src/settings.ts`, `src/runtime-flags.ts` | Added `toolDescriptionMode` (`full`/`compact`) + `scopeModels` settings, module-level runtime flags | Ported upstream toolDescriptionMode (#0.10.2) + scopeModels (#0.9.0) in fork vocabulary |
 | `src/agent-tool-description.ts` | Local-only file | `buildAgentToolDescription(mode, full, compact)` — full byte-identical to prior inline literal; compact ≈75% smaller |
 | `src/enabled-models.ts` | Ported from upstream + local `decideModelScope` | scopeModels guardrail; caller-param out-of-scope blocks, frontmatter/inherited warns (frontmatter authoritative) |

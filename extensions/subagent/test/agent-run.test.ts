@@ -129,6 +129,54 @@ describe("AgentRun reducer — terminal idempotency & resume", () => {
     expect(run.result).toBe("second");
   });
 
+  it("live and restored resumes share epoch reset semantics while recording source and latency", () => {
+    for (const source of ["live", "restored"] as const) {
+      const { run, setClock } = makeRun();
+      run.publish(created({ isBackground: true }));
+      run.publish({ kind: "completed", result: "old", status: "completed" });
+      run.publish({ kind: "consumed" });
+      run.publish({ kind: "notified" });
+      run.activity.toolUses = 3;
+
+      setClock(2000);
+      run.publish({ kind: "restore_started" });
+      setClock(2075);
+      run.publish({ kind: "resumed", source });
+
+      expect(run.id).toBe("a1");
+      expect(run.status).toBe("running");
+      expect(run.resumeSource).toBe(source);
+      expect(run.result).toBeUndefined();
+      expect(run.error).toBeUndefined();
+      expect(run.completedAt).toBeUndefined();
+      expect(run.activity.toolUses).toBe(3);
+      expect(run.isBackground).toBe(true);
+      expect(run.resultConsumed).toBe(true);
+      expect(run.notified).toBe(true);
+      expect(run.restoreStartedAt).toBe(2000);
+      expect(run.resumedAt).toBe(2075);
+      expect(run.restoreLatencyMs).toBe(75);
+    }
+  });
+
+  it("records typed restore failure without reopening or weakening terminal protection", () => {
+    const { run, setClock } = makeRun();
+    run.publish(created());
+    run.publish({ kind: "completed", result: "first", status: "completed" });
+    setClock(2000);
+    run.publish({ kind: "restore_started" });
+    setClock(2012);
+    run.publish({ kind: "restore_failed", reason: "session_file_missing" });
+    run.publish({ kind: "failed", error: "late terminal" });
+
+    expect(run.status).toBe("completed");
+    expect(run.result).toBe("first");
+    expect(run.restoreFailureReason).toBe("session_file_missing");
+    expect(run.restoreFailedAt).toBe(2012);
+    expect(run.restoreLatencyMs).toBe(12);
+    expect(run.events().filter((event) => event.kind === "failed")).toHaveLength(0);
+  });
+
   it("result_amended on a non-terminal run is a no-op (pre-terminal guard)", () => {
     const { run } = makeRun();
     run.publish(created());
@@ -385,7 +433,10 @@ describe("toExternalEffects — frozen contract mapping", () => {
 
   it("emits no external effects for internal-only events", () => {
     const internalOnly: AgentRunEvent[] = [
-      { kind: "resumed" },
+      { kind: "restore_started" },
+      { kind: "resumed", source: "live" },
+      { kind: "resumed", source: "restored" },
+      { kind: "restore_failed", reason: "session_corrupt_or_unsupported" },
       { kind: "session_created", session: {} },
       { kind: "output_file_ready", outputFile: "/o" },
       { kind: "message_start" },

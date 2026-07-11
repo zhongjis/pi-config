@@ -10,6 +10,10 @@ describe("buildAgentToolDescription", () => {
     expect(out).toContain("- general-purpose: Does everything.");
     expect(out).toContain("- For parallel work, use run_in_background");
     expect(out).toContain("inherit_context");
+    expect(out).toContain("resume only for the same workstream");
+    expect(out).toContain("follow-up, correction, or recheck");
+    expect(out).toContain("fresh agent for independent or unrelated work");
+    expect(out).toContain("do not automatically fall back to a fresh call");
   });
 
   it("compact mode is materially shorter and uses the compact list", () => {
@@ -18,5 +22,9 @@ describe("buildAgentToolDescription", () => {
     expect(compactOut.length).toBeLessThan(fullOut.length * 0.6);
     expect(compactOut).toContain("- general-purpose: Does everything.");
     expect(compactOut).not.toContain("Available agents:");
+    expect(compactOut).toContain("Resume only the same workstream");
+    expect(compactOut).toContain("follow-up, correction, recheck");
+    expect(compactOut).toContain("fresh for independent/unrelated work");
+    expect(compactOut).toContain("do not auto-fallback to fresh");
   });
 });

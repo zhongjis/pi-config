@@ -12,9 +12,11 @@ import type { AgentSession, AgentSessionEvent, ExtensionAPI, ExtensionContext } 
 import { SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS, SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS, SUBAGENT_BACKGROUND_MAX_CONCURRENT } from "./constants.js";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
-import type { AgentRecord, SubagentType, ThinkingLevel } from "./types.js";
+import type { AgentRecord, AgentResumeResult, RestoreFailureReason, ResumeTargetV1, SubagentType, ThinkingLevel } from "./types.js";
 import { getRecoveredResultText } from "./result-recovery.js";
 import { AgentRun, project } from "./agent-run.js";
+import { SessionRestoreError } from "./session-restoration.js";
+import { pandaWarn } from "../../lib/warn.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
@@ -28,6 +30,17 @@ interface SpawnArgs {
   type: SubagentType;
   prompt: string;
   options: SpawnOptions;
+}
+
+export interface AgentRestoreRequest {
+  parentSessionId: string;
+  expectedType: SubagentType;
+  target?: ResumeTargetV1;
+  signal?: AbortSignal;
+  /** Opens the validated durable target through the T3 restoration service. */
+  restoreSession: (target: ResumeTargetV1) => Promise<AgentSession>;
+  /** Optional durable generation writer; called before prompt and after settlement. */
+  persist?: (target: ResumeTargetV1, record: AgentRecord) => Promise<void>;
 }
 
 interface SpawnOptions {
@@ -66,6 +79,8 @@ export class AgentManager {
   private onStart?: OnAgentStart;
   private onCompact?: (record: AgentRecord, data: { reason: string; tokensBefore: number }) => void;
   private maxConcurrent: number;
+  /** IDs currently opening or continuing; prevents duplicate prompts/restores. */
+  private resumeInFlight = new Set<string>();
 
   /** Queue of background agents waiting to start. */
   private queue: { id: string; args: SpawnArgs }[] = [];
@@ -373,36 +388,173 @@ export class AgentManager {
     return record;
   }
 
-  /**
-   * Resume an existing agent session with a new prompt.
-   */
+  /** Resume a live session first, otherwise rehydrate the same logical ID from a durable target. */
   async resume(
     id: string,
     prompt: string,
-    signal?: AbortSignal,
-  ): Promise<AgentRecord | undefined> {
-    const record = this.agents.get(id);
-    if (!record?.session) return undefined;
-
-    const startedAt = Date.now();
-    record.run?.publish({ kind: "resumed", startedAt });
-
-    try {
-      const responseText = await resumeAgent(record.session, prompt, {
-        onToolActivity: (activity) => {
-          if (activity.type === "end") record.toolUses++;
-        },
-        signal,
-      });
-      const finalResult = responseText.trim() || getRecoveredResultText({ ...record, status: "completed" });
-      record.run?.publish({ kind: "completed", result: finalResult, status: "completed" });
-    } catch (err) {
-      const finalError = err instanceof Error ? err.message : String(err);
-      const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
-      record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
+    request: AgentRestoreRequest,
+  ): Promise<AgentResumeResult> {
+    const live = this.agents.get(id);
+    if (this.resumeInFlight.has(id) || live?.status === "running" || live?.status === "queued") {
+      return this.resumeFailure(id, "target_busy", "Agent is already running");
+    }
+    if (live?.session) {
+      if (!this.matchesResumeScope(live.parentSessionId, live.type, request)) {
+        return this.resumeFailure(id, "scope_mismatch", "Resume target does not match parent session or agent type", live);
+      }
+      this.resumeInFlight.add(id);
+      try {
+        await this.continueRecord(live, prompt, request.signal, "live", request.target, request.persist);
+        return { status: "resumed_live", id };
+      } finally {
+        this.resumeInFlight.delete(id);
+      }
     }
 
+    const target = request.target;
+    if (!target || target.id !== id) {
+      return this.resumeFailure(id, "target_unknown", "Durable resume target was not found");
+    }
+    if (target.parentSessionId !== request.parentSessionId ||
+        target.type.toLocaleLowerCase() !== request.expectedType.toLocaleLowerCase()) {
+      return this.resumeFailure(id, "scope_mismatch", "Resume target does not match parent session or agent type");
+    }
+
+    const restoreStartedAt = Date.now();
+    const sessionLabel = this.redactSessionId(target.childSessionId);
+    pandaWarn("subagent.restore.started", { id, parent: request.parentSessionId, session: sessionLabel, status: target.state.status, elapsed: 0 });
+    this.resumeInFlight.add(id);
+    let record: AgentRecord | undefined;
+    try {
+      const session = await request.restoreSession(target);
+      record = this.hydrateRecord(target, session);
+      this.agents.set(id, record);
+      if (request.persist) {
+        try {
+          await request.persist(target, record);
+        } catch {
+          throw new SessionRestoreError("persistence_failed", "Failed to persist running restored generation");
+        }
+      }
+      await this.continueRecord(record, prompt, request.signal, "restored", target, request.persist);
+      pandaWarn("subagent.restore.succeeded", {
+        id, parent: request.parentSessionId, session: sessionLabel, status: record.status, elapsed: Date.now() - restoreStartedAt,
+      });
+      return { status: "restored_session", id };
+    } catch (error) {
+      const reason = error instanceof SessionRestoreError ? error.reason : "runtime_initialization_failed";
+      const message = error instanceof Error ? error.message : String(error);
+      if (record && !(error instanceof SessionRestoreError)) {
+        // Prompt failures are normal run failures after a successful open, never restore failures.
+        pandaWarn("subagent.restore.succeeded", {
+          id, parent: request.parentSessionId, session: sessionLabel, status: record.status, elapsed: Date.now() - restoreStartedAt,
+        });
+        return { status: "restored_session", id };
+      }
+      pandaWarn("subagent.restore.failed", {
+        id, parent: request.parentSessionId, session: sessionLabel, status: target.state.status, reason, elapsed: Date.now() - restoreStartedAt,
+      });
+      return this.resumeFailure(id, reason, message, record);
+    } finally {
+      this.resumeInFlight.delete(id);
+    }
+  }
+
+  private matchesResumeScope(parentSessionId: string | undefined, type: string, request: AgentRestoreRequest): boolean {
+    return (parentSessionId ?? "") === request.parentSessionId && type.toLocaleLowerCase() === request.expectedType.toLocaleLowerCase();
+  }
+
+  private resumeFailure(id: string, reason: RestoreFailureReason, error: string, record?: AgentRecord): AgentResumeResult {
+    record?.run?.publish({ kind: "restore_failed", reason });
+    return { status: "failed", id, reason, error };
+  }
+
+  private redactSessionId(sessionId: string): string {
+    return sessionId.length <= 8 ? "[redacted]" : `…${sessionId.slice(-8)}`;
+  }
+
+  private hydrateRecord(target: ResumeTargetV1, session: AgentSession): AgentRecord {
+    const record: AgentRecord = {
+      id: target.id,
+      type: target.type,
+      description: target.description,
+      status: target.state.status,
+      toolUses: target.state.toolUses,
+      startedAt: target.createdAt,
+      resultConsumed: target.state.resultConsumed,
+      notified: target.state.notified,
+      session,
+      abortController: new AbortController(),
+      isBackground: target.isBackground,
+      parentSessionId: target.parentSessionId,
+      sessionDir: target.sessionDir,
+      sessionFile: target.sessionFile,
+      lifetimeUsage: { ...target.state.lifetimeUsage },
+      lifetimeCost: target.state.lifetimeCost,
+      compactionCount: target.state.compactionCount,
+    };
+    record.run = new AgentRun(target.id);
+    record.run.subscribe((_event, run) => project(run, record));
+    record.run.publish({
+      kind: "hydrated",
+      type: target.type,
+      description: target.description,
+      isBackground: target.isBackground,
+      parentSessionId: target.parentSessionId,
+      sessionDir: target.sessionDir,
+      sessionFile: target.sessionFile,
+      session,
+      createdAt: target.createdAt,
+      completedAt: target.state.status === "completed" || target.state.status === "steered" ||
+        target.state.status === "aborted" || target.state.status === "stopped" || target.state.status === "error"
+        ? target.updatedAt
+        : undefined,
+      state: target.state,
+    });
+    record.run.publish({ kind: "restore_started" });
     return record;
+  }
+
+  private async continueRecord(
+    record: AgentRecord,
+    prompt: string,
+    signal: AbortSignal | undefined,
+    source: "live" | "restored",
+    target?: ResumeTargetV1,
+    persist?: AgentRestoreRequest["persist"],
+  ): Promise<void> {
+    record.abortController = new AbortController();
+    record.run?.publish({ kind: "resumed", source, startedAt: Date.now() });
+    const continuation = resumeAgent(record.session!, prompt, {
+      onToolActivity: (activity) => {
+        if (activity.type === "end") record.toolUses++;
+        record.run?.publish({ kind: "tool", phase: activity.type, toolName: activity.toolName });
+      },
+      signal,
+    })
+      .then((responseText) => {
+        const finalResult = responseText.trim() || getRecoveredResultText({ ...record, status: "completed" });
+        record.run?.publish({ kind: "completed", result: finalResult, status: "completed" });
+        return responseText;
+      })
+      .catch((error) => {
+        const finalError = error instanceof Error ? error.message : String(error);
+        const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
+        record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
+        return "";
+      })
+      .then(async (responseText) => {
+        if (target && persist) {
+          try {
+            await persist(target, record);
+          } catch {
+            throw new SessionRestoreError("persistence_failed", "Failed to persist terminal restored generation");
+          }
+        }
+        return responseText;
+      });
+    record.promise = continuation;
+    await continuation;
   }
 
   getRecord(id: string): AgentRecord | undefined {

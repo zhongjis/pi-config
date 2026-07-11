@@ -11,7 +11,7 @@ import { formatLifetimeTokens, type LifetimeUsage } from "../usage.js";
 import { groupByStatus } from "../../../lib/status-group.js";
 import type { AgentManager } from "../agent-manager.js";
 import { getAgentConfig } from "../agent-types.js";
-import type { SubagentType } from "../types.js";
+import type { AgentInvocationStatus, RestoreFailureReason, SubagentType } from "../types.js";
 import { renderSubagentSummary } from "./summary-renderer.js";
 import type { SubagentSummaryAgent, SubagentSummaryStatus } from "./summary-renderer.js";
 
@@ -100,6 +100,10 @@ export interface AgentDetails {
   /** Effective max turns (undefined = unlimited). */
   maxTurns?: number;
   agentId?: string;
+  /** How this Agent invocation was routed. */
+  invocationStatus?: AgentInvocationStatus;
+  /** Stable machine-readable reason for a failed continuation. */
+  failureReason?: RestoreFailureReason;
   error?: string;
 }
 
