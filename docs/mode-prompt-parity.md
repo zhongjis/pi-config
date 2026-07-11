@@ -1,13 +1,15 @@
 # Mode Prompt Parity Spec
 
-Purpose: pin upstream evidence and local behavioral invariants before any mode prompt edits. This is a behavior-parity guide, not an exact-copy mandate.
+Purpose: record accepted Oh My OpenAgent (omo) synchronization baselines and local behavioral invariants. This is a behavior-parity guide, not an exact-copy mandate.
 
-## Verified Upstream Baselines
+## Upstream Baseline
 
-- Oh My OpenAgent repo: `https://github.com/code-yeongyu/oh-my-openagent`, commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`.
+- Accepted omo release baseline: `v4.16.3`.
+- Upstream repo: `https://github.com/code-yeongyu/oh-my-openagent`.
+- Earlier path-level audit evidence used commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`; it remains evidence for the paths below, not the current release baseline.
 - Superpowers repo: `https://github.com/obra/superpowers`, `main` inspected at commit `896224c4b1879920ab573417e68fd51d2ccc9072`, path `skills/`.
 
-Required upstream paths verified at `f7ec55526b2a3603665c5c0308b031a4f14900b0`:
+Required upstream paths verified in the earlier `f7ec55526b2a3603665c5c0308b031a4f14900b0` audit:
 
 - `packages/omo-opencode/src/agents/sisyphus-agent-factory.ts`
 - `packages/omo-opencode/src/agents/prometheus/system-prompt.ts`
@@ -19,6 +21,19 @@ Relevant prompt sources located:
 - Sisyphus: no `packages/prompts-core/prompts/sisyphus/*.md` files found. Prompt sources are TypeScript builders under `packages/omo-opencode/src/agents/sisyphus/`, especially `default.ts`, `gpt-5-5.ts`, `gemini.ts`, plus `AGENTS.md` as variant reference.
 - Prometheus: `packages/prompts-core/prompts/prometheus/default.md`.
 - Atlas: `packages/prompts-core/prompts/atlas/default.md`, `gpt.md`, `gemini.md`, plus non-local-scope variants `glm.md`, `kimi.md`, `kimi-k2-7.md`, `opus-4-7.md`.
+
+## Applied v4.16.3 Agent Mappings
+
+Accepted, applied local mappings:
+
+- [`agents/chengfeng.md`](../agents/chengfeng.md) maps omo Explorer-style read-only reconnaissance to Chengfeng, preserves Pi CodeGraph/LSP/literal-search contracts, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
+- [`agents/wenchang.md`](../agents/wenchang.md) maps omo Librarian-style external research to Wenchang, preserves opened-source citation safeguards, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
+- [`agents/jintong.md`](../agents/jintong.md) uses `opencode-go/glm-5.2:high` for its OpenCode Go implementation-worker mapping.
+- [`agents/juling.md`](../agents/juling.md) uses `opencode-go/glm-5.2` for its OpenCode Go complex implementation-worker mapping.
+
+`opencode-go/glm-5.2` availability was verified before these mappings were accepted.
+
+Audit-only findings for [`agents/yanluo.md`](../agents/yanluo.md), [`modes/kuafu/gpt.md`](../modes/kuafu/gpt.md), and [`modes/fuxi/gpt.md`](../modes/fuxi/gpt.md) are not applied changes and are intentionally excluded from the accepted mapping baseline.
 
 ## Local Construction Semantics
 
@@ -115,7 +130,7 @@ Local invariants before edits:
 ## Non-Goals
 
 - No model families beyond local default/GPT/Gemini.
-- No model-chain, provider, auth, or registry changes.
+- No model-chain, provider, auth, or registry changes beyond accepted mappings recorded above.
 - No wholesale upstream prompt clone.
 - No exact-copy claim. Target final injected behavior parity where applicable, with Pi-native tools and constraints.
-- No prompt, test, or implementation edits in this spec task.
+- Audit-only proposals remain unapplied until separately approved.
