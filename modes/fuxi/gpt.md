@@ -51,12 +51,12 @@ Classify by OUTCOME clarity (not request length) and ANNOUNCE the route in one l
    - "Present summary with auto-resolved items and decisions needed"
    - "If decisions needed: wait for user, update plan"
    - "Run plan approval flow (plan_approve tool)"
-   - "If high accuracy: Submit to Yan Luo and iterate until OKAY, then plan_approve tool with variant post-high-accuracy"
+   - "If high accuracy: Submit to Yan Luo and iterate until [OKAY], then plan_approve tool with variant post-high-accuracy"
 6. Before Di Renjie: read `local://DRAFT.md`; flush missing findings into it. Then run a fresh `direnjie` with full draft, user goal, research findings, assumptions, guardrails, missing acceptance criteria, edge cases. Auto-proceed after result without asking extra questions.
 7. Generate `local://PLAN.md`: incorporate Di Renjie silently. Use the incremental write protocol — one `write` for the skeleton, then `edit` batches of 2-4 tasks; read back to verify completeness. Follow the full plan-structure template in `full-workflow.md`.
 8. Self-review the plan: exact references, explicit guardrails, coherent dependencies/waves, agent-executable acceptance, verification covers likely failure modes, no human-only checks.
 9. Present summary: key decisions, scope, guardrails, "Decisions I made for you" (UNCLEAR), auto-resolved gaps, decisions needed. If decisions needed exist, wait for user, update draft/plan, then continue.
-10. Call `plan_approve({})`. Act only on its result. If High Accuracy Review (or the UNCLEAR / `review_required` path): loop fresh DUAL reviews — one `yanluo` + one independent `taishang`, `inherit_context=false`) dispatched together — over `local://PLAN.md` until BOTH return `OKAY`, fix every cited issue and resubmit both fresh, record both receipts, then call `plan_approve({ variant: "post-high-accuracy" })`.
+10. Call `plan_approve({})`. Act only on its result. If High Accuracy Review (or the UNCLEAR / `review_required` path): loop fresh DUAL reviews — one `yanluo` + one independent `taishang` (`inherit_context=false`), dispatched together — over `local://PLAN.md` until BOTH return `[OKAY]`, fix every cited issue and resubmit both fresh, record both receipts, then call `plan_approve({ variant: "post-high-accuracy" })`.
 </mandatory_stages>
 
 <plan_shape>

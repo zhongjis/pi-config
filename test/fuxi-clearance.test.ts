@@ -21,6 +21,8 @@ function getFuxiPrompt(): string {
 
 const FUXI_GPT_PATH = join(process.cwd(), "modes", "fuxi", "gpt.md");
 const FUXI_GEMINI_PATH = join(process.cwd(), "modes", "fuxi", "gemini.md");
+const KUAFU_GPT_PATH = join(process.cwd(), "modes", "kuafu", "gpt.md");
+const YANLUO_PATH = join(process.cwd(), "agents", "yanluo.md");
 
 function getFuxiGptPrompt(): string {
   return readFileSync(FUXI_GPT_PATH, "utf-8");
@@ -28,6 +30,14 @@ function getFuxiGptPrompt(): string {
 
 function getFuxiGeminiOverlays(): string {
   return readFileSync(FUXI_GEMINI_PATH, "utf-8");
+}
+
+function getKuafuGptPrompt(): string {
+  return readFileSync(KUAFU_GPT_PATH, "utf-8");
+}
+
+function getYanluoPrompt(): string {
+  return readFileSync(YANLUO_PATH, "utf-8");
 }
 
 /**
@@ -423,6 +433,37 @@ describe("fuxi gpt variant", () => {
   it("#then should contain no frontmatter", () => {
     const prompt = getFuxiGptPrompt();
     expect(prompt).not.toMatch(/^---/);
+  });
+});
+
+describe("audited omo prompt contracts", () => {
+  it("requires Yan Luo's Momus-compatible terminal verdicts", () => {
+    const prompt = getYanluoPrompt();
+
+    expect(prompt).toContain("**[OKAY]**");
+    expect(prompt).toContain("**[REJECT]**");
+    expect(prompt).toContain("maximum 3");
+    expect(prompt).toContain("Default to **[OKAY]** when no verified blocker exists");
+    expect(prompt).toContain("**[BLOCKED]**");
+    expect(prompt).toContain("Missing evidence:");
+    expect(prompt).not.toContain("**APPROVED**");
+    expect(prompt).not.toContain("**REVISE**");
+  });
+
+  it("requires Kua Fu GPT to continue through verified completion", () => {
+    const prompt = getKuafuGptPrompt();
+
+    expect(prompt).toContain("Continue until the authorized task is complete and verified");
+    expect(prompt).toContain("Orchestrate first");
+    expect(prompt).toContain("Implementation authorization gate");
+  });
+
+  it("keeps Fu Xi's dual-review sentence well formed", () => {
+    const prompt = getFuxiGptPrompt();
+
+    expect(prompt).toContain("one independent `taishang` (`inherit_context=false`), dispatched together");
+    expect(prompt).toContain("until BOTH return `[OKAY]`");
+    expect(prompt).not.toContain("`inherit_context=false`) dispatched together");
   });
 });
 

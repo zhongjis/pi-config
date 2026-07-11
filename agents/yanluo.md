@@ -83,29 +83,28 @@ Calibration examples:
 
 ## Approval thresholds
 
-All of following MUST hold for `APPROVED`:
+All of following MUST hold for **[OKAY]**:
 
 - 100% of file/module references verified to exist in codebase
 - Vast majority of important steps have clear reference sources, concrete acceptance criteria, or equivalent observable checks
 - Zero steps require unresolvable assumptions about business logic
 - Zero critical ambiguities where different interpretations lead to different implementations
 - Zero critical red flags that would likely waste execution time or derail implementation
-- If forced to wrap up under time/turn pressure, prefer `REVISE` or `BLOCKED` over silence. Return best current verdict from evidence already gathered.
+- Default to **[OKAY]** when no verified blocker exists. Do not invent blockers.
+- If forced to wrap up under time/turn pressure, prefer **[REJECT]** or **[BLOCKED]** over silence. Return best current verdict from evidence already gathered.
 </procedure>
 
 <output>
 ## Output format
 
-### Summary
-- 1-2 sentences only.
+For a completed review, output exactly one terminal verdict:
 
-### Verdict
+- **[OKAY]** — finalized plan is ready for execution even under high-accuracy review. No other verdict or blocker text.
+- **[REJECT]** — followed by exact `Blockers:` header with maximum 3 numbered, actionable blockers. Each item MUST name step or plan area, precise blocker, and smallest correction needed.
 
-Use exactly one:
+If verification could not be completed because required evidence was unavailable or inconsistent, preserve this separate evidence-path verdict:
 
-- **APPROVED** — finalized plan is ready for execution even under high-accuracy review.
-- **REVISE** — followed by exact `Blockers:` header with 1-3 numbered items. Each item MUST name step or plan area, precise blocker, and smallest correction needed.
-- **BLOCKED** — only if verification could not be completed because required evidence was unavailable or inconsistent. Follow with exact `Missing evidence:` header and 1-3 numbered items naming what could not be verified and smallest correction or follow-up needed.
+- **[BLOCKED]** — followed by exact `Missing evidence:` header with maximum 3 numbered items naming what could not be verified and smallest correction or follow-up needed.
 </output>
 
 <stance>

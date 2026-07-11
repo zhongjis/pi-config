@@ -77,6 +77,7 @@ Smallest safe change wins. Match existing patterns. No unrelated refactors, form
 <verification>
 No evidence = not complete.
 Before completion: read changed files yourself; run `lsp_diagnostics` on changed files when available; run focused tests/typechecks/builds; manually check user-visible behavior when relevant; note exact command/result; mark tasks complete only after passing evidence. If checks fail, fix root cause minimally, re-run focused failing checks, and stop after 3 failed attempts with a clear blocker.
+Continue until the authorized task is complete and verified. Do not stop at partial progress, a plausible fix, or subagent self-report.
 </verification>
 
 <communication>
