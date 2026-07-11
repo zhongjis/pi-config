@@ -16,8 +16,10 @@ import {
 import { loadHandoffConfig, updateHandoffConfig } from "./config.js";
 import { isTui } from "../lib/mode.js";
 import { rpcCall, registerRpcHandler } from "../lib/rpc.js";
+import { MODE_ALIASES, MODES } from "../modes/src/constants.js";
+import type { Mode } from "../modes/src/types.js";
 
-export type HandoffMode = "kuafu" | "fuxi" | "houtu";
+export type HandoffMode = Mode;
 type HandoffModeState = { mode?: HandoffMode };
 type PendingPreparedHandoff = {
   sessionFile: string;
@@ -88,12 +90,8 @@ const HANDOFF_STARTUP_PROMPT_KEY = Symbol.for(
 // DIRECT_HANDOFF_BRIDGE_CHANNEL removed — channel name is built internally by rpcCall/registerRpcHandler
 const DIRECT_HANDOFF_BRIDGE_TIMEOUT_MS = 1000;
 const DIRECT_HANDOFF_COMMAND = "/handoff:start-work";
-const HANDOFF_MODES: HandoffMode[] = ["kuafu", "fuxi", "houtu"];
-const HANDOFF_MODE_ALIASES: Record<string, HandoffMode> = {
-  build: "kuafu",
-  plan: "fuxi",
-  execute: "houtu",
-};
+const HANDOFF_MODES: readonly HandoffMode[] = MODES;
+const HANDOFF_MODE_ALIASES: Record<string, HandoffMode> = MODE_ALIASES;
 const SUMMARY_SYSTEM_PROMPT = `You are a context transfer assistant. Given a conversation history and the user's goal for a new thread, generate a focused prompt that:
 
 1. Summarizes relevant context from the conversation (decisions made, approaches taken, key findings)

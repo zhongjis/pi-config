@@ -1,3 +1,4 @@
+import { MODES } from "../../extensions/modes/src/constants.js";
 import { describe, it, expect, afterEach } from "vitest";
 import {
 	createTestSession,
@@ -47,6 +48,42 @@ describe("handoff extension — integration", () => {
 		const commandNames = commands.map((c: { name: string }) => c.name);
 		expect(commandNames).toContain("handoff");
 		expect(commandNames).toContain("handoff:start-work");
+	});
+
+	it("completes every canonical mode and seeds shennong handoffs", async () => {
+		t = await createTestSession({
+			extensions: [EXTENSION],
+			mockTools: MOCK_TOOLS,
+		});
+
+		const runner = (t.session as any).extensionRunner;
+		const commands = runner.getRegisteredCommands() as Array<{
+			name: string;
+			getArgumentCompletions?: (prefix: string) => Array<{ value: string; label: string }> | null;
+			handler: (args: string, ctx: any) => Promise<void>;
+		}>;
+		const handoffModeCmd = commands.find((command) => command.name === "handoff:mode");
+		expect(handoffModeCmd).toBeDefined();
+		expect(handoffModeCmd!.getArgumentCompletions!("")?.map(({ value }) => value)).toEqual(MODES);
+
+		const seededEntries: Array<{ type: string; data: unknown }> = [];
+		await handoffModeCmd!.handler("shennong -no-summarize define requirements", {
+			hasUI: true,
+			sessionManager: {
+				getSessionFile: () => "/tmp/test.jsonl",
+				getBranch: () => [],
+			},
+			waitForIdle: async () => {},
+			newSession: async ({ setup }: { setup: (sessionManager: { appendCustomEntry: (type: string, data: unknown) => void }) => Promise<void> }) => {
+				await setup({
+					appendCustomEntry: (type, data) => seededEntries.push({ type, data }),
+				});
+				return { cancelled: false };
+			},
+			ui: { notify: () => {} },
+		});
+
+		expect(seededEntries).toEqual([{ type: "agent-mode", data: { mode: "shennong" } }]);
 	});
 
 	// ── Direct handoff bridge event flow ────────────────────────

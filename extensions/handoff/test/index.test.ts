@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MODES } from "../../modes/src/constants.js";
 
 const completeMock = vi.fn();
 
@@ -21,6 +22,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 type CommandDefinition = {
 	description: string;
+	argumentHint?: string;
+	getArgumentCompletions?: (prefix: string) => Array<{ value: string; label: string }> | null;
 	handler: (args: string, ctx: any) => Promise<void> | void;
 };
 
@@ -66,6 +69,9 @@ function createMockPi() {
 	return {
 		pi,
 		sendUserMessage,
+		getCommand(name: string) {
+			return commands.get(name);
+		},
 		async executeCommand(name: string, args: string, ctx: unknown) {
 			const command = commands.get(name);
 			if (!command) {
@@ -179,6 +185,60 @@ describe("handoff extension", () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+	});
+
+	it("registers handoff command argument hints", async () => {
+		const mock = createMockPi();
+		await initExtension(mock);
+
+		expect(mock.getCommand("handoff")?.argumentHint).toBe("[-mode <mode>] [-no-summarize] <content>");
+		expect(mock.getCommand("handoff:mode")?.argumentHint).toBe("<mode> <content>");
+	});
+
+	it("completes handoff modes", async () => {
+		const mock = createMockPi();
+		await initExtension(mock);
+		const complete = mock.getCommand("handoff:mode")?.getArgumentCompletions;
+
+		expect(complete?.("")?.map((item) => item.value)).toEqual(MODES);
+		expect(complete?.("fu")?.map((item) => item.value)).toEqual(["fuxi"]);
+		expect(complete?.("fuxi continue work")).toBeNull();
+	});
+
+	it("hands off immediately with the target mode from handoff:mode", async () => {
+		await withTempHome(async () => {
+			const mock = createMockPi();
+			await initExtension(mock);
+			const { ctx, replacementUi, appendedCustomEntries } = createCommandContext();
+
+			await mock.executeCommand("handoff:mode", 'fuxi -no-summarize "ship feature"', ctx);
+
+			expect(ctx.newSession).toHaveBeenCalledTimes(1);
+			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "fuxi" } }]);
+			expect(replacementUi.setEditorText.mock.calls[0][0]).toContain("ship feature");
+		});
+	});
+
+	it("rejects handoff:mode without a mode and content", async () => {
+		const mock = createMockPi();
+		await initExtension(mock);
+		const { ctx, ui } = createCommandContext();
+
+		await mock.executeCommand("handoff:mode", "", ctx);
+
+		expect(ctx.newSession).not.toHaveBeenCalled();
+		expect(ui.notify).toHaveBeenCalledWith("Usage: /handoff:mode <mode> <content>", "error");
+	});
+
+	it("rejects handoff:mode when content is missing", async () => {
+		const mock = createMockPi();
+		await initExtension(mock);
+		const { ctx, ui } = createCommandContext();
+
+		await mock.executeCommand("handoff:mode", "fuxi", ctx);
+
+		expect(ctx.newSession).not.toHaveBeenCalled();
+		expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining("Usage: /handoff"), "error");
 	});
 
 	it("creates a child session and populates editor with deterministic prompt when summarization is disabled", async () => {
