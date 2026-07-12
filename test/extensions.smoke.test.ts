@@ -89,6 +89,15 @@ describe("extension entrypoints", () => {
     }
   });
 
+  it("leaves session resume hints to Pi core", async () => {
+    const mock = createMockPi();
+    const mod = await import("../extensions/visuals/index.js");
+
+    mod.default(mock.pi as never);
+
+    expect(mock.lifecycleHandlers.has("session_shutdown")).toBe(false);
+  });
+
   for (const entry of extensionEntries) {
     it(`loads ${entry} and registers without throwing`, async () => {
       const mock = createMockPi();

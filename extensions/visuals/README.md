@@ -16,7 +16,7 @@ Replaces the default footer with up to three compact lines:
 2. Context usage/window · model/thinking level · latest tok/s · cost/subscription state · token I/O/cache totals.
 3. Extension statuses on the left and infrastructure statuses such as MCP/LSP on the right.
 
-It hides low-value status keys (`thinking-steps`, `caveman`), strips decorative leading glyphs from selected status text, color-codes context/cost thresholds, and prints a `pi --session <id>` continuation hint on user-initiated exits.
+It hides low-value status keys (`thinking-steps`, `caveman`), strips decorative leading glyphs from selected status text, and color-codes context/cost thresholds.
 
 ## Write Tool Override
 
@@ -32,7 +32,6 @@ Hooks:
 
 - `session_start` — install the footer.
 - `model_select` — reinstall the footer so model/thinking display stays current.
-- `session_shutdown` — print the continuation hint for user exits.
 
 Tools:
 

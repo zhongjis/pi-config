@@ -369,22 +369,6 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
     installFooter(ctx);
   });
 
-  // Print continuation hint when user exits pi (Ctrl+C, Ctrl+D, /quit, SIGHUP, SIGTERM).
-  // Skip internal transitions: reload, new, resume, fork.
-  pi.on("session_shutdown", async (event, ctx) => {
-    const reason = (event as { reason?: string }).reason;
-    if (reason && reason !== "quit") return;
-
-    const sessionId = ctx.sessionManager.getSessionId();
-    if (!sessionId) return;
-
-    // Defer to next tick so the message lands after TUI teardown.
-    setImmediate(() => {
-      const cmd = `pi --session ${sessionId}`;
-      process.stdout.write(`\nContinue the session with: ${cmd}\n`);
-    });
-  });
-
   // Keep currentCtx reference updated (silences unused-var lint if added later).
   void currentCtx;
 }
