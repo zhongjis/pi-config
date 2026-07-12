@@ -127,6 +127,35 @@ describe("Agent tool TUI rendering", () => {
     expect(rendered).not.toContain("reason:");
   });
 
+  it("renders policy denial semantics without calling it a continuation failure", () => {
+    const colors: Array<{ color: string; text: string }> = [];
+    const semanticTheme = {
+      fg: (color: string, text: string) => { colors.push({ color, text }); return text; },
+      bold: (text: string) => text,
+    };
+    const raw = "Delegation policy denied agent target.\nFull policy detail.";
+    const deniedDetails: AgentDetails = {
+      ...runningDetails,
+      status: "error",
+      invocationStatus: "failed",
+      category: "delegation_policy_denied",
+      permittedTypes: ["jintong", "yunu"],
+    };
+
+    const collapsed = textOf(renderAgentToolResult(result(raw, deniedDetails), { expanded: false }, semanticTheme));
+    const expanded = textOf(renderAgentToolResult(result(raw, deniedDetails), { expanded: true }, semanticTheme));
+
+    expect(collapsed).toContain("├─ status: denied");
+    expect(collapsed).toContain("├─ invocation: failed");
+    expect(collapsed).toContain("├─ reason: delegation_policy_denied");
+    expect(collapsed).toContain("├─ permitted: jintong, yunu");
+    expect(collapsed).not.toContain("continuation:");
+    expect(colors).toContainEqual({ color: "error", text: "├─ status: denied" });
+    expect(colors).toContainEqual({ color: "toolOutput", text: "├─ reason: delegation_policy_denied" });
+    expect(colors).toContainEqual({ color: "muted", text: "└─ app.tools.expand to expand full result" });
+    expect(expanded).toBe(raw);
+  });
+
   it("keeps terminal states concise when collapsed", () => {
     const completed = textOf(renderAgentToolResult(result("final answer\nmore detail", { ...runningDetails, status: "completed", activity: undefined, durationMs: 1500 }), {}, theme));
     const errored = textOf(renderAgentToolResult(result("failed", { ...runningDetails, status: "error", error: "boom\nstack", activity: undefined }), {}, theme));

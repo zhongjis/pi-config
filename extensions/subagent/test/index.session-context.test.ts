@@ -8,11 +8,13 @@ const customAgentLoaderState = vi.hoisted(() => ({
 const agentTypeState = vi.hoisted<{
   allTypes: string[];
   availableTypes: string[];
+  configs: Record<string, { description: string; promptMode: "replace"; allowDelegationTo?: string[]; disallowDelegationTo?: string[] }>;
   resolveType: (type?: string) => string | undefined;
   isValidType: () => boolean;
 }>(() => ({
   allTypes: ["general-purpose"],
   availableTypes: ["general-purpose"],
+  configs: { "general-purpose": { description: "Mock agent", promptMode: "replace" } },
   resolveType: (type?: string) => type ?? "general-purpose",
   isValidType: () => true,
 }));
@@ -122,10 +124,7 @@ vi.mock("../src/custom-agents.js", () => ({
 
 vi.mock("../src/agent-types.js", () => ({
   BUILTIN_TOOL_NAMES: [],
-  getAgentConfig: vi.fn(() => ({
-    description: "Mock agent",
-    promptMode: "replace",
-  })),
+  getAgentConfig: vi.fn((type: string) => agentTypeState.configs[type]),
   getAllTypes: vi.fn(() => agentTypeState.allTypes),
   getAvailableTypes: vi.fn(() => agentTypeState.availableTypes),
   isValidType: vi.fn(() => agentTypeState.isValidType()),
@@ -216,7 +215,18 @@ function createCtx() {
     modelRegistry: {},
     model: undefined,
     cwd: "/tmp",
-    sessionManager: { getEntries: vi.fn(() => []), getSessionId: vi.fn(() => "parent-session-1") },
+    sessionManager: { getEntries: vi.fn((): any[] => []), getSessionId: vi.fn(() => "parent-session-1") },
+  };
+}
+
+function modeEntry(allowDelegationTo: string[], disallowDelegationTo: string[] = []) {
+  return {
+    type: "custom",
+    customType: "agent-mode",
+    data: {
+      mode: "mode",
+      delegationPolicy: { version: 1, allowDelegationTo, disallowDelegationTo },
+    },
   };
 }
 
@@ -243,6 +253,7 @@ describe("subagent session UI rebinding", () => {
     agentTypeState.availableTypes = ["general-purpose"];
     agentTypeState.resolveType = (type?: string) => type ?? "general-purpose";
     agentTypeState.isValidType = () => true;
+    agentTypeState.configs = { "general-purpose": { description: "Mock agent", promptMode: "replace" } };
   });
     const sessionJsonl = [
       { type: "session", version: 3, id: "child-session", timestamp: "2026-01-01T00:00:00Z", cwd: "/tmp" },
@@ -281,7 +292,7 @@ describe("subagent session UI rebinding", () => {
     expect(widgetInstances[0]?.update).toHaveBeenCalledTimes(1);
   });
 
-  it("activates the Agents widget for an RPC-only TaskExecute spawn and queued start", async () => {
+  it("activates the Agents widget for an allowed checked RPC bridge spawn and queued start", async () => {
     const mock = createMockPi();
     await initExtension(mock);
     const ctx = createCtx();
@@ -308,6 +319,264 @@ describe("subagent session UI rebinding", () => {
     });
     expect(widget.update).toHaveBeenCalledTimes(1);
     expect(widget.setUICtx).toHaveBeenCalledTimes(1);
+  });
+
+  it("denies the checked RPC bridge used by TaskExecute before manager execution", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      modeEntry(["allowed"]),
+    ]);
+    await mock.fire("session_start", { reason: "new" }, ctx);
+
+    expect(() => lastRpcDeps.manager.spawn(mock.pi, ctx, "forbidden", "execute task", {}))
+      .toThrow("delegation_policy_denied");
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+  });
+
+  it("allows the checked RPC bridge to preserve manager spawn behavior", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      modeEntry(["allowed"]),
+    ]);
+    await mock.fire("session_start", { reason: "new" }, ctx);
+
+    expect(lastRpcDeps.manager.spawn(mock.pi, ctx, "allowed", "execute task", {})).toBe("agent-1");
+    expect(managerInstances[0]!.spawn).toHaveBeenCalledTimes(1);
+    expect(managerInstances[0]!.spawn).toHaveBeenCalledWith(mock.pi, ctx, "allowed", "execute task", {});
+  });
+
+  it("allows persisted-policy delegation through the global manager bridge", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([modeEntry(["allowed"])]);
+    const bridge = (globalThis as any)[Symbol.for("pi-subagents:manager")];
+
+    expect(bridge.spawn(mock.pi, ctx, "allowed", "execute task", {})).toBe("agent-1");
+    expect(managerInstances[0]!.spawn).toHaveBeenCalledWith(mock.pi, ctx, "allowed", "execute task", {});
+  });
+
+  it("denies persisted-policy delegation through the global manager bridge without manager effects", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([modeEntry(["allowed"])]);
+    const bridge = (globalThis as any)[Symbol.for("pi-subagents:manager")];
+
+    expect(() => bridge.spawn(mock.pi, ctx, "forbidden", "execute task", {}))
+      .toThrow("delegation_policy_denied");
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+    expect(widgetInstances[0]!.ensureTimer).not.toHaveBeenCalled();
+  });
+
+  it("authorizes RPC spawn from passed ctxRef session and ignores forged option context", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const currentCtx = createCtx();
+    currentCtx.sessionManager.getEntries.mockReturnValue([modeEntry(["allowed"])]);
+    await mock.fire("session_start", { reason: "new" }, currentCtx);
+    const passedCtx = createCtx();
+    passedCtx.sessionManager.getEntries.mockReturnValue([modeEntry(["forbidden"])]);
+
+    expect(() => lastRpcDeps.manager.spawn(mock.pi, passedCtx, "allowed", "execute task", { ctxRef: currentCtx }))
+      .toThrow("delegation_policy_denied");
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("denies direct Agent execution before manager side effects (background=%s)", async (runInBackground) => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    agentTypeState.configs.forbidden = { description: "Forbidden", promptMode: "replace" };
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([modeEntry(["allowed"])]);
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-1",
+      { prompt: "do it", description: "Do it", subagent_type: "forbidden", run_in_background: runInBackground },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.content[0].text).toContain("delegation_policy_denied");
+    expect(result.content[0].text).toContain("Allowed targets: allowed");
+    expect(result.details).toMatchObject({
+      category: "delegation_policy_denied",
+      activeMode: "mode",
+      requestedType: "forbidden",
+      permittedTypes: ["allowed"],
+    });
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+    expect(managerInstances[0]!.spawnAndWait).not.toHaveBeenCalled();
+  });
+
+  it("allows direct foreground Agent execution under active mode policy", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    agentTypeState.configs.allowed = { description: "Allowed", promptMode: "replace" };
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      modeEntry(["allowed"]),
+    ]);
+    managerInstances[0]!.spawnAndWait.mockResolvedValue({
+      id: "agent-fg", type: "allowed", description: "Allowed foreground", status: "completed",
+      toolUses: 0, startedAt: Date.now(), completedAt: Date.now(), result: "done",
+      parentSessionId: "parent-session-1",
+    } as AgentRecord);
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-fg",
+      { prompt: "do it", description: "Allowed foreground", subagent_type: "allowed" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.content[0].text).toContain("done");
+    expect(managerInstances[0]!.spawnAndWait).toHaveBeenCalledTimes(1);
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+  });
+
+  it("allows direct background Agent execution under active mode policy", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    agentTypeState.configs.allowed = { description: "Allowed", promptMode: "replace" };
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      modeEntry(["allowed"]),
+    ]);
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-bg",
+      { prompt: "do it", description: "Allowed background", subagent_type: "allowed", run_in_background: true },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.content[0].text).toContain("Agent ID: agent-1");
+    expect(managerInstances[0]!.spawn).toHaveBeenCalledTimes(1);
+    expect(managerInstances[0]!.spawnAndWait).not.toHaveBeenCalled();
+  });
+
+  it("denies Agent resume under current mode policy without manager side effects", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      modeEntry(["allowed"]),
+    ]);
+    managerInstances[0]!.getRecord.mockReturnValue({
+      id: "agent-forbidden",
+      type: "forbidden",
+      parentSessionId: "parent-session-1",
+      session: {},
+    } as AgentRecord);
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-resume",
+      { prompt: "continue", description: "Continue", subagent_type: "forbidden", resume: "agent-forbidden" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.content[0].text).toContain("delegation_policy_denied");
+    expect(result.content[0].text).toContain("Allowed targets: allowed");
+    expect(result.details).toMatchObject({
+      category: "delegation_policy_denied",
+      activeMode: "mode",
+      requestedType: "forbidden",
+      permittedTypes: ["allowed"],
+    });
+    expect(managerInstances[0]!.resume).not.toHaveBeenCalled();
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+    expect(managerInstances[0]!.spawnAndWait).not.toHaveBeenCalled();
+  });
+
+  it("allows Agent resume under current active-mode policy", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      modeEntry(["allowed"]),
+    ]);
+    const record = {
+      id: "agent-allowed", type: "allowed", description: "Allowed resume", status: "completed",
+      toolUses: 0, startedAt: Date.now(), completedAt: Date.now(), result: "continued",
+      parentSessionId: "parent-session-1", session: {},
+    } as AgentRecord;
+    managerInstances[0]!.getRecord.mockReturnValue(record);
+    managerInstances[0]!.resume.mockResolvedValue({ status: "resumed_live", id: "agent-allowed" });
+
+    const result = await mock.registeredTools.get("Agent").execute(
+      "tool-resume",
+      { prompt: "continue", description: "Allowed resume", subagent_type: "allowed", resume: "agent-allowed" },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.content[0].text).toContain("continued");
+    expect(managerInstances[0]!.resume).toHaveBeenCalledTimes(1);
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+    expect(managerInstances[0]!.spawnAndWait).not.toHaveBeenCalled();
+  });
+
+
+  it("does not cache a global target list in Agent guidance", async () => {
+    agentTypeState.availableTypes = ["allowed", "forbidden"];
+    const mock = createMockPi();
+    await initExtension(mock);
+    const tool = mock.registeredTools.get("Agent");
+
+    expect(tool.description).toContain("active mode at execution time");
+    expect(tool.description).not.toContain("- forbidden:");
+    expect(tool.parameters.properties.subagent_type.description).not.toContain("forbidden");
+  });
+
+  it("fails closed for RPC spawn when persisted active mode config is unavailable", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      { type: "custom", customType: "agent-mode", data: { mode: "missing" } },
+    ]);
+    await mock.fire("session_start", { reason: "resume" }, ctx);
+
+    expect(() => lastRpcDeps.manager.spawn(mock.pi, ctx, "general-purpose", "execute task", {}))
+      .toThrow("delegation_policy_denied");
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+  });
+
+  it("fails closed at RPC ingress when active mode config has no delegation policy", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const ctx = createCtx();
+    ctx.sessionManager.getEntries.mockReturnValue([
+      { type: "custom", customType: "agent-mode", data: { mode: "mode" } },
+    ]);
+    await mock.fire("session_start", { reason: "resume" }, ctx);
+
+    expect(() => lastRpcDeps.manager.spawn(mock.pi, ctx, "general-purpose", "execute task", {}))
+      .toThrow("delegation_policy_denied");
+    expect(managerInstances[0]!.spawn).not.toHaveBeenCalled();
+    expect(widgetInstances[0]!.ensureTimer).not.toHaveBeenCalled();
+    expect(widgetInstances[0]!.update).toHaveBeenCalledTimes(1);
   });
 
   it("disposes the Agents widget on session shutdown", async () => {

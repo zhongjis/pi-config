@@ -3,12 +3,16 @@ export interface DelegationPolicy {
 	disallowDelegationTo?: string[];
 }
 
-interface ModeStateEntryLike {
+export interface ModeStateEntryLike {
 	type?: string;
 	customType?: string;
-	data?: {
-		mode?: unknown;
-	};
+	data?: unknown;
+}
+
+interface VersionedDelegationPolicyV1 {
+	version: 1;
+	allowDelegationTo: string[];
+	disallowDelegationTo: string[];
 }
 
 function buildCanonicalTypeMap(availableTypes: string[]): Map<string, string> {
@@ -90,6 +94,152 @@ export function resolveDelegationRequest(
 	};
 }
 
+export const DELEGATION_POLICY_DENIED = "delegation_policy_denied" as const;
+
+export interface ResolvedDelegationPolicy {
+	status: "unrestricted" | "resolved" | "unresolved";
+	activeMode: string | undefined;
+	permittedTypes: string[];
+	decision: {
+		allowed: boolean;
+		category: typeof DELEGATION_POLICY_DENIED | undefined;
+		requestedType: string;
+	};
+}
+
+/** Pure session-policy resolver. An identified mode without an explicit policy fails closed. */
+export function resolveDelegationPolicy(input: {
+	activeMode: string | undefined;
+	policy?: DelegationPolicy;
+	availableTypes: string[];
+	requestedType: string;
+}): ResolvedDelegationPolicy {
+	const { activeMode, policy, availableTypes, requestedType } = input;
+	if (!activeMode) {
+		const requested =
+			resolveCanonicalType(requestedType, buildCanonicalTypeMap(availableTypes)) ??
+			requestedType;
+		return {
+			status: "unrestricted",
+			activeMode: undefined,
+			permittedTypes: [...availableTypes],
+			decision: { allowed: true, category: undefined, requestedType: requested },
+		};
+	}
+
+	if (!policy || !hasDelegationPolicy(policy)) {
+		return {
+			status: "unresolved",
+			activeMode,
+			permittedTypes: [],
+			decision: {
+				allowed: false,
+				category: DELEGATION_POLICY_DENIED,
+				requestedType,
+			},
+		};
+	}
+
+	const resolved = resolveDelegationRequest(policy, requestedType, availableTypes);
+	return {
+		status: "resolved",
+		activeMode,
+		permittedTypes: resolved.permittedTypes,
+		decision: {
+			allowed: resolved.allowed,
+			category: resolved.allowed ? undefined : DELEGATION_POLICY_DENIED,
+			requestedType: resolved.requestedType,
+		},
+	};
+}
+
+function unresolvedDelegationPolicy(
+	activeMode: string | undefined,
+	requestedType: string,
+): ResolvedDelegationPolicy {
+	return {
+		status: "unresolved",
+		activeMode,
+		permittedTypes: [],
+		decision: {
+			allowed: false,
+			category: DELEGATION_POLICY_DENIED,
+			requestedType,
+		},
+	};
+}
+
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function parsePersistedModeState(data: unknown): {
+	activeMode: string;
+	policy: VersionedDelegationPolicyV1;
+} | undefined {
+	if (!data || typeof data !== "object") return undefined;
+	const state = data as Record<string, unknown>;
+	if (typeof state.mode !== "string" || !state.mode.trim()) return undefined;
+	if (!state.delegationPolicy || typeof state.delegationPolicy !== "object") return undefined;
+	const policy = state.delegationPolicy as Record<string, unknown>;
+	if (policy.version !== 1 || !isStringArray(policy.allowDelegationTo) || !isStringArray(policy.disallowDelegationTo)) {
+		return undefined;
+	}
+	return {
+		activeMode: state.mode,
+		policy: {
+			version: 1,
+			allowDelegationTo: policy.allowDelegationTo,
+			disallowDelegationTo: policy.disallowDelegationTo,
+		},
+	};
+}
+
+/** Resolve delegation authority from the latest persisted agent-mode entry only. */
+export function resolvePersistedDelegationPolicy(input: {
+	entries: readonly ModeStateEntryLike[];
+	availableTypes: string[];
+	requestedType: string;
+}): ResolvedDelegationPolicy {
+	const latestEntry = [...input.entries].reverse().find(
+		(entry) => entry.type === "custom" && entry.customType === "agent-mode",
+	);
+	if (!latestEntry) {
+		return resolveDelegationPolicy({
+			activeMode: undefined,
+			availableTypes: input.availableTypes,
+			requestedType: input.requestedType,
+		});
+	}
+
+	const persisted = parsePersistedModeState(latestEntry.data);
+	if (!persisted) {
+		const data = latestEntry.data && typeof latestEntry.data === "object"
+			? latestEntry.data as Record<string, unknown>
+			: undefined;
+		const activeMode = typeof data?.mode === "string" && data.mode.trim() ? data.mode : undefined;
+		return unresolvedDelegationPolicy(activeMode, input.requestedType);
+	}
+
+	return resolveDelegationPolicy({
+		activeMode: persisted.activeMode,
+		policy: persisted.policy,
+		availableTypes: input.availableTypes,
+		requestedType: input.requestedType,
+	});
+}
+
+export function formatDelegationPolicyDenial(
+	policy: ResolvedDelegationPolicy,
+	requestedType: string,
+): string {
+	const mode = policy.activeMode ?? "unknown";
+	if (policy.status === "unresolved") {
+		return `${DELEGATION_POLICY_DENIED}: Active mode "${mode}" delegation policy is unavailable. No delegation targets are permitted.`;
+	}
+	return `${DELEGATION_POLICY_DENIED}: ${buildDelegationBlockedMessage(mode, requestedType, policy.decision.requestedType, policy.permittedTypes)}`;
+}
+
 export function buildDelegationBlockedMessage(
 	delegatorType: string,
 	requestedType: string,
@@ -114,9 +264,9 @@ export function getCurrentDelegatorType(
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
 		if (entry.type !== "custom" || entry.customType !== "agent-mode") continue;
-		if (typeof entry.data?.mode === "string" && entry.data.mode.trim()) {
-			return entry.data.mode;
-		}
+		if (!entry.data || typeof entry.data !== "object") return undefined;
+		const mode = (entry.data as Record<string, unknown>).mode;
+		return typeof mode === "string" && mode.trim() ? mode : undefined;
 	}
 
 	return undefined;

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-	buildDelegationBlockedMessage,
-	getCurrentDelegatorType,
-	getPermittedDelegationTypes,
-	hasDelegationPolicy,
-	resolveDelegationRequest,
+  buildDelegationBlockedMessage,
+  getPermittedDelegationTypes,
+  hasDelegationPolicy,
+  resolveDelegationPolicy,
+  resolveDelegationRequest,
+  resolvePersistedDelegationPolicy,
 } from "../src/delegation-policy.js";
 
 describe("delegation-policy", () => {
@@ -74,14 +75,89 @@ describe("delegation-policy", () => {
 		);
 	});
 
-	it("reads the latest agent-mode session entry", () => {
+	it("uses policy from the latest agent-mode session entry", () => {
 		expect(
-			getCurrentDelegatorType([
-				{ type: "custom", customType: "agent-mode", data: { mode: "kuafu" } },
-				{ type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
-			]),
-		).toBe("fuxi");
+			resolvePersistedDelegationPolicy({
+				entries: [
+					{ type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 1, allowDelegationTo: ["chengfeng"], disallowDelegationTo: [] } } },
+					{ type: "custom", customType: "agent-mode", data: { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } } },
+				],
+				availableTypes,
+				requestedType: "jintong",
+			}),
+		).toMatchObject({
+			status: "resolved",
+			activeMode: "fuxi",
+			permittedTypes: ["jintong"],
+			decision: { allowed: true },
+		});
 	});
+
+	it("keeps sessions without an agent-mode entry unrestricted", () => {
+		expect(resolvePersistedDelegationPolicy({
+			entries: [{ type: "custom", customType: "other", data: {} }],
+			availableTypes,
+			requestedType: "jintong",
+		})).toMatchObject({ status: "unrestricted", decision: { allowed: true } });
+	});
+
+	it.each([
+		["missing policy", { mode: "fuxi" }],
+		["unknown version", { mode: "fuxi", delegationPolicy: { version: 2, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } }],
+		["malformed allowlist", { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: "jintong", disallowDelegationTo: [] } }],
+		["malformed denylist member", { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [1] } }],
+		["missing mode", { delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } }],
+	])("fails closed for latest entry with %s", (_label, data) => {
+		expect(resolvePersistedDelegationPolicy({
+			entries: [
+				{ type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } } },
+				{ type: "custom", customType: "agent-mode", data },
+			],
+			availableTypes,
+			requestedType: "jintong",
+		})).toMatchObject({ status: "unresolved", permittedTypes: [], decision: { allowed: false, category: "delegation_policy_denied" } });
+	});
+
+	it("keeps no active mode unrestricted", () => {
+		expect(resolveDelegationPolicy({ activeMode: undefined, availableTypes, requestedType: "jintong" })).toEqual({
+			status: "unrestricted",
+			activeMode: undefined,
+			permittedTypes: availableTypes,
+			decision: { allowed: true, category: undefined, requestedType: "jintong" },
+		});
+	});
+
+	it("fails closed when an active mode config has no delegation policy", () => {
+		expect(resolveDelegationPolicy({ activeMode: "fuxi", policy: {}, availableTypes, requestedType: "jintong" })).toEqual({
+			status: "unresolved",
+			activeMode: "fuxi",
+			permittedTypes: [],
+			decision: { allowed: false, category: "delegation_policy_denied", requestedType: "jintong" },
+		});
+	});
+
+	it("fails closed when an identified active mode config is unavailable", () => {
+		expect(resolveDelegationPolicy({ activeMode: "missing", policy: undefined, availableTypes, requestedType: "jintong" })).toEqual({
+			status: "unresolved",
+			activeMode: "missing",
+			permittedTypes: [],
+			decision: { allowed: false, category: "delegation_policy_denied", requestedType: "jintong" },
+		});
+	});
+
+  it("uses one resolved policy decision with deterministic permitted ordering", () => {
+    expect(resolveDelegationPolicy({
+      activeMode: "fuxi",
+      policy: { allowDelegationTo: ["TAISHANG", "chengfeng", "missing"], disallowDelegationTo: ["taishang"] },
+      availableTypes,
+      requestedType: "chengfeng",
+    })).toEqual({
+      status: "resolved",
+      activeMode: "fuxi",
+      permittedTypes: ["chengfeng"],
+      decision: { allowed: true, category: undefined, requestedType: "chengfeng" },
+    });
+  });
 
 	it("formats a blocked delegation message with fallback info", () => {
 		expect(

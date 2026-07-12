@@ -6,66 +6,8 @@ import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLo
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
 import type { ModeStateManager } from "./mode-state.js";
-import type { Mode, ModeConfig, ModeState } from "./types.js";
+import type { Mode, ModeState } from "./types.js";
 
-// ─── Absorbed helpers ────────────────────────────────────────────────────────
-function dedupeCaseInsensitive(values: string[]): string[] {
-	const seen = new Set<string>();
-	const deduped: string[] = [];
-	for (const value of values) {
-		const key = value.toLowerCase();
-		if (seen.has(key)) continue;
-		seen.add(key);
-		deduped.push(value);
-	}
-	return deduped;
-}
-
-function getPermittedDelegationTargets(
-	config: Pick<ModeConfig, "allowDelegationTo" | "disallowDelegationTo">,
-): string[] | undefined {
-	if (!config.allowDelegationTo?.length) return undefined;
-
-	const allowlisted = dedupeCaseInsensitive(config.allowDelegationTo);
-	if (!config.disallowDelegationTo?.length) {
-		return allowlisted;
-	}
-
-	const disallowed = new Set(
-		config.disallowDelegationTo.map((value) => value.toLowerCase()),
-	);
-	return allowlisted.filter((value) => !disallowed.has(value.toLowerCase()));
-}
-
-function isDelegationAllowed(
-	config: Pick<ModeConfig, "allowDelegationTo" | "disallowDelegationTo">,
-	target: string,
-): {
-	allowed: boolean;
-	permittedTargets?: string[];
-} {
-	const normalizedTarget = target.trim().toLowerCase();
-
-	const permittedTargets = getPermittedDelegationTargets(config);
-	if (permittedTargets) {
-		return {
-			allowed: permittedTargets.some(
-				(value) => value.toLowerCase() === normalizedTarget,
-			),
-			permittedTargets,
-		};
-	}
-
-	if (config.disallowDelegationTo?.length) {
-		return {
-			allowed: !config.disallowDelegationTo.some(
-				(value) => value.toLowerCase() === normalizedTarget,
-			),
-		};
-	}
-
-	return { allowed: true };
-}
 
 // ─── Plan write detection ────────────────────────────────────────────────────
 
@@ -237,21 +179,6 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
 	pi.on("tool_call", async (event, ctx) => {
-		const config = state.loadConfig(state.currentMode);
-
-		if (event.toolName === "Agent") {
-			const requestedType = (event.input as { subagent_type?: string }).subagent_type ?? "";
-			const delegation = isDelegationAllowed(config, requestedType);
-			if (!delegation.allowed) {
-				const allowedText = delegation.permittedTargets?.length
-					? delegation.permittedTargets.join(", ")
-					: "all except targets blocked by disallow_delegation_to";
-				return {
-					block: true,
-					reason: `Mode ${state.currentMode}: delegation to "${requestedType}" is blocked by frontmatter policy. Allowed targets: ${allowedText}`,
-				};
-			}
-		}
 
 		if (state.currentMode !== "fuxi") return;
 

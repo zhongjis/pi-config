@@ -23,6 +23,7 @@ This file owns `modes/` prompt files and mode subdirectories.
 - Code-quality review (build/lint/typecheck/tests + diff-vs-requirements) routes to `weizheng`; `taishang` is architecture/debugging consult + plan-compliance audit only, not code review (realigned to omo's Oracle, which does not review code).
 - Hou Tu executes `local://PLAN.md` with strict lifecycle separation. Pi-tasks are logical DAG tracking only: `TaskCreate` one task per top-level plan item, wire dependencies with `TaskUpdate addBlockedBy`, mark `in_progress` before delegation, and mark `completed` only after Hou Tu independently verifies evidence. Plan work runs directly through `Agent`; supervision uses `get_subagent_result`/`steer_subagent`, with `Agent(resume)` for salvageable workstreams. Hou Tu never uses `TaskExecute`, `TaskOutput`, or `TaskStop`, and never stores agent IDs/runtime state in task owner/metadata. Independent tasks launch as separate background agents; task status and PLAN checkboxes remain the authoritative verified-work state.
 - Fu Xi emits a per-task `Recommended Max Turns` advisory. Hou Tu uses it when sizing direct `Agent` runs and may raise it; workers remain bounded by one domain and one deliverable.
+- Delegation frontmatter is canonically parsed into a versioned policy snapshot persisted in `agent-mode` state. `subagent` consumes that snapshot as authorization authority for direct `Agent` and RPC requests; modes hooks retain non-`Agent` guards only, while static `Agent` guidance stays generic and non-stale.
 
 ## Work Guidance
 

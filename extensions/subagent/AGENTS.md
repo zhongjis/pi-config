@@ -75,7 +75,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | File | What | Why |
 |------|------|-----|
 | `src/background-supervision.ts` | Local-only file | Auto-steer idle agents after timeout, auto-abort after prolonged inactivity |
-| `src/delegation-policy.ts` | Local-only file | `allow_delegation_to` / `disallow_delegation_to` / `allow_nesting` enforcement |
+| `src/delegation-policy.ts`, `src/agent-policy-denial-result.ts`, `src/tools/agent.ts`, `src/lifecycle/supervision.ts` | Versioned latest-`agent-mode` resolver; direct foreground/background/resume, RPC/`TaskExecute`, and global manager-bridge authority; structured direct denial metadata; `tool_result` error promotion | Uses one validated persisted policy at every spawn-capable ingress, preserves unrestricted no-entry sessions, fails closed on identified missing/malformed policy before manager effects, keeps RPC's frozen error-only envelope with a stable denial prefix, and gives policy denials Pi's native error shell without discarding details |
 | `src/result-recovery.ts` | Local-only file | Fallback text extraction from session history when `record.result` is empty |
 | `src/thinking-level.ts` | Local-only file | Normalizes legacy `"none"` → `"off"` for backward compat with existing agent frontmatter |
 | `src/types.ts` | Added `allowDelegationTo`, `disallowDelegationTo`, `allowNesting` to `AgentConfig` | delegation-policy.ts reads these fields |

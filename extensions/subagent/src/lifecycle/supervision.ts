@@ -18,6 +18,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { buildEjectedAgentMarkdown, buildGenerateAgentPrompt, buildManualAgentMarkdown } from "../agent-definition-authoring.js";
 import { AgentManager } from "../agent-manager.js";
+import { registerAgentPolicyDenialResultHook } from "../agent-policy-denial-result.js";
 import {
   BACKGROUND_STALE_ABORT_AFTER_MS,
   BACKGROUND_STALE_STEER_AFTER_MS,
@@ -39,7 +40,7 @@ import { emitCompactedContract, emitTerminalContract } from "../external-contrac
 import { loadCustomAgentsWithDiagnostics } from "../custom-agents.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged } from "../settings.js";
 import { setToolDescriptionMode, getToolDescriptionMode, setScopeModels } from "../runtime-flags.js";
-import { type ModelRegistry, parseModelChain, resolveModel } from "../model-resolver.js";
+import { type ModelRegistry, resolveModel } from "../model-resolver.js";
 import { SUBAGENTS_READY, SUBAGENTS_STARTED } from "../../../lib/subagent-channels.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
@@ -52,7 +53,7 @@ import {
   type BackgroundSupervisionReasonClass,
 } from "../background-supervision.js";
 import { type AgentConfig, type AgentDefinitionDiagnostic, type AgentRecord, type NotificationDetails, type ResumeTargetV1, type SubagentType } from "../types.js";
-import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "../delegation-policy.js";
+import { formatDelegationPolicyDenial, resolvePersistedDelegationPolicy } from "../delegation-policy.js";
 import {
   type AgentActivity,
   type AgentDetails,
@@ -586,6 +587,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     hasRunning: () => manager.hasRunning(),
     spawn: (piRef, ctxRef, type, prompt, options) => {
       const resolvedType = requireSpawnableType(type);
+      authorizeDelegation(ctxRef, resolvedType);
       return manager.spawn(piRef, ctxRef, resolvedType, prompt, options);
     },
     getRecord: (id: string) => manager.getRecord(id),
@@ -611,6 +613,17 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   // --- Cross-extension RPC via pi.events ---
   let currentCtx: ExtensionContext | undefined;
 
+  function authorizeDelegation(ctxRef: ExtensionContext, type: string): void {
+    const delegation = resolvePersistedDelegationPolicy({
+      entries: ctxRef.sessionManager.getEntries(),
+      availableTypes: getAvailableTypes(),
+      requestedType: type,
+    });
+    if (!delegation.decision.allowed) {
+      throw new Error(formatDelegationPolicyDenial(delegation, type));
+    }
+  }
+
   const { unsubPing: unsubPingRpc, unsubSpawn: unsubSpawnRpc, unsubStop: unsubStopRpc, unsubConsume: unsubConsumeRpc } = registerRpcHandlers({
     events: pi.events,
     pi,
@@ -618,6 +631,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     manager: {
       spawn: (piRef, ctxRef, type, prompt, options) => {
         const resolvedType = requireSpawnableType(type);
+        authorizeDelegation(ctxRef as ExtensionContext, resolvedType);
         const id = manager.spawn(piRef as ExtensionAPI, ctxRef as ExtensionContext, resolvedType, prompt, options);
         // RPC callers (including TaskExecute) do not execute the Agent tool's UI hooks.
         widget.ensureTimer();
@@ -706,38 +720,11 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   }
 
 
-  /** Build the full type list text dynamically from the custom-agent registry. */
-  const buildTypeListText = () => {
-    const names = getAvailableTypes();
-    const lines = names.map((name) => {
-      const cfg = getAgentConfig(name);
-      const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(parseModelChain(cfg.model)[0]?.model ?? cfg.model)})` : "";
-      return `- ${name}: ${cfg?.description ?? name}${modelSuffix}`;
-    });
-    return [
-      ...lines,
-      "",
-      `Agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones.`,
-    ].join("\n");
-  };
 
-  const firstSentence = (s: string): string => {
-    const m = s.match(/^.*?[.!?](\s|$)/);
-    return (m ? m[0] : s).trim();
-  };
-
-  /** Compact agent list: first-sentence-only descriptions, no model suffix, no footer. */
-  const buildCompactTypeListText = () => {
-    return getAvailableTypes()
-      .map((name) => {
-        const cfg = getAgentConfig(name);
-        return `- ${name}: ${firstSentence(cfg?.description ?? name)}`;
-      })
-      .join("\n");
-  };
-
-  const typeListText = buildTypeListText();
-  const compactTypeListText = buildCompactTypeListText();
+  // Pi tool registration descriptions cannot refresh after mode switches. Avoid a stale
+  // global target list; execution returns current permitted targets on policy denial.
+  const typeListText = "Targets are resolved from the current agent registry and active mode at execution time.";
+  const compactTypeListText = typeListText;
 
   async function waitForAgentPoll(record: AgentRecord, signal?: AbortSignal): Promise<"settled" | "tick" | "aborted"> {
     if (signal?.aborted) return "aborted";
@@ -856,6 +843,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   // ---- Wire tool surface, renderers, message/lifecycle handlers, and cleanup ----
   registerSubagentRenderers(runtimeContext);
   registerAgentTool(runtimeContext);
+  registerAgentPolicyDenialResultHook(pi);
   registerGetSubagentResultTool(runtimeContext);
   registerSteerSubagentTool(runtimeContext);
   registerSubagentMessageHandlers(runtimeContext);

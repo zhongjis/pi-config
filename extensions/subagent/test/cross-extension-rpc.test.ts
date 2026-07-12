@@ -128,6 +128,24 @@ describe("cross-extension RPC", () => {
       expect(reply).toHaveBeenCalledWith({ success: false, error: "unknown agent type" });
     });
 
+    it("preserves stable delegation denial prefix in standard error-only envelope", async () => {
+      (manager.spawn as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        throw new Error("delegation_policy_denied: target forbidden");
+      });
+      registerRpcHandlers(deps);
+      const reply = vi.fn();
+      events.on("subagents:rpc:spawn:reply:req-policy", reply);
+      events.emit("subagents:rpc:spawn", {
+        requestId: "req-policy", type: "forbidden", prompt: "x",
+      });
+
+      await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+      expect(reply).toHaveBeenCalledWith({
+        success: false,
+        error: "delegation_policy_denied: target forbidden",
+      });
+    });
+
     it("scopes replies — other requestIds do not receive it", async () => {
       registerRpcHandlers(deps);
       const wrongReply = vi.fn();

@@ -24,6 +24,13 @@ export interface AwaitingUserActionState {
 	suppressContinuationReminder?: boolean;
 }
 
+export interface VersionedDelegationPolicy {
+	version: 1;
+	allowDelegationTo: string[];
+	disallowDelegationTo: string[];
+}
+
+
 export interface ModeState {
 	mode: Mode;
 	planTitle?: string;
@@ -35,6 +42,7 @@ export interface ModeState {
 	planReviewApproved?: boolean;
 	planReviewFeedback?: string;
 	modelOverride?: string;
+	delegationPolicy: VersionedDelegationPolicy;
 }
 
 export interface PlanReviewState {

@@ -13,7 +13,7 @@ import { Type } from "typebox";
 import { prepareAgentRestoreRuntime, getDefaultMaxTurns, normalizeMaxTurns } from "../agent-runner.js";
 import { getAgentConfig, getAvailableTypes } from "../agent-types.js";
 import { SUBAGENT_FOREGROUND_RENDER_CADENCE_MS } from "../constants.js";
-import { buildDelegationBlockedMessage, getCurrentDelegatorType, hasDelegationPolicy, resolveDelegationRequest } from "../delegation-policy.js";
+import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, resolvePersistedDelegationPolicy, type ResolvedDelegationPolicy } from "../delegation-policy.js";
 import { resolveAgentInvocationConfig } from "../invocation-config.js";
 import { resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
@@ -268,6 +268,27 @@ function buildInvocationFailureDetails(
   };
 }
 
+function buildDelegationPolicyDenialDetails(
+  policy: ResolvedDelegationPolicy,
+  requestedType: string,
+  description: string,
+): AgentDetails {
+  return {
+    displayName: getDisplayName(policy.decision.requestedType),
+    description,
+    subagentType: policy.decision.requestedType,
+    toolUses: 0,
+    tokens: "",
+    durationMs: 0,
+    status: "error",
+    invocationStatus: "failed",
+    category: DELEGATION_POLICY_DENIED,
+    activeMode: policy.activeMode,
+    requestedType,
+    permittedTypes: policy.permittedTypes,
+  };
+}
+
 function getResultText(result: AgentToolResult<AgentDetails>): string {
   return result.content
     .filter(part => part.type === "text")
@@ -335,6 +356,25 @@ function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: str
   return new Text(rendered, 0, 0);
 }
 
+function formatPermittedTypes(types: string[] | undefined): string | undefined {
+  if (!types || types.length === 0) return undefined;
+  const visible = types.slice(0, 4);
+  return visible.join(", ") + (types.length > visible.length ? ` +${types.length - visible.length}` : "");
+}
+
+function renderPolicyDenialSummary(details: AgentDetails, theme: { fg: (color: any, text: string) => string }): Text {
+  const primary = theme.fg("error", "├─ status: denied");
+  const detailLines = [
+    "invocation: failed",
+    `reason: ${details.category}`,
+  ];
+  const permitted = formatPermittedTypes(details.permittedTypes);
+  if (permitted) detailLines.push(`permitted: ${permitted}`);
+  const detail = detailLines.map(line => theme.fg("toolOutput", `├─ ${line}`));
+  const hint = theme.fg("muted", `└─ ${renderExpandHint()}`);
+  return new Text([primary, ...detail, hint].join("\n"), 0, 0);
+}
+
 export function renderAgentToolCall(args: { subagent_type?: string; description?: string }, theme: { fg: (color: any, text: string) => string; bold: (text: string) => string }): Text {
   const displayName = args.subagent_type ? getDisplayName(args.subagent_type) : "Agent";
   const desc = args.description ?? "";
@@ -351,6 +391,7 @@ export function renderAgentToolResult(
 
   const details = result.details as AgentDetails | undefined;
   if (!details) return new Text(rawText, 0, 0);
+  if (details.category === DELEGATION_POLICY_DENIED) return renderPolicyDenialSummary(details, theme);
 
   const lines = [`status: ${getStatusSummary(details)}`];
   const activitySummary = getActivitySummary(details, options.isPartial);
@@ -400,7 +441,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         description: "A short (3-5 word) description of the task (shown in UI).",
       }),
       subagent_type: Type.String({
-        description: `The type of specialized agent to use. Available types: ${getAvailableTypes().join(", ")}. Custom agents from .pi/agents/*.md (project) or ${getAgentDir()}/agents/*.md (global) are also available.`,
+        description: "Specialized agent type. Runtime resolves current registry plus active-mode delegation policy; denied calls return current permitted targets.",
       }),
       model: Type.Optional(
         Type.String({
@@ -462,15 +503,14 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       const localHint = localUriHint(params.prompt);
 
       const currentParentSessionId = getParentSessionId(ctx) ?? "";
-      const currentDelegatorType = getCurrentDelegatorType(ctx.sessionManager.getEntries() as Array<{ type?: string; customType?: string; data?: { mode?: unknown } }>);
-      const enforceDelegationPolicy = (targetType: string, requestedType: string) => {
-        if (!currentDelegatorType) return undefined;
-        const delegatorConfig = getAgentConfig(currentDelegatorType);
-        if (!delegatorConfig || !hasDelegationPolicy(delegatorConfig)) return undefined;
-        const delegation = resolveDelegationRequest(delegatorConfig, targetType, getAvailableTypes());
-        return delegation.allowed
-          ? undefined
-          : buildDelegationBlockedMessage(currentDelegatorType, requestedType, delegation.requestedType, delegation.permittedTypes);
+      const delegationEntries = ctx.sessionManager.getEntries();
+      const enforceDelegationPolicy = (targetType: string) => {
+        const delegation = resolvePersistedDelegationPolicy({
+          entries: delegationEntries,
+          availableTypes: getAvailableTypes(),
+          requestedType: targetType,
+        });
+        return delegation.decision.allowed ? undefined : delegation;
       };
 
       // Explicit resume is routed before spawn-only config. It never falls back to spawn.
@@ -497,8 +537,13 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
             buildInvocationFailureDetails(targetType, params.description, "scope_mismatch", params.resume),
           );
         }
-        const blocked = enforceDelegationPolicy(targetType, targetType);
-        if (blocked) return textResult(blocked);
+        const denial = enforceDelegationPolicy(targetType);
+        if (denial) {
+          return textResult(
+            formatDelegationPolicyDenial(denial, targetType),
+            buildDelegationPolicyDenialDetails(denial, targetType, params.description),
+          );
+        }
 
         let restoreSession: (target: ResumeTargetV1) => Promise<any> = async () => {
           throw new Error("Durable restoration is unavailable without a persisted target");
@@ -562,8 +607,13 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       }
       const displayName = getDisplayName(subagentType);
       const customConfig = getAgentConfig(subagentType);
-      const blocked = enforceDelegationPolicy(subagentType, rawType);
-      if (blocked) return textResult(blocked);
+      const denial = enforceDelegationPolicy(subagentType);
+      if (denial) {
+        return textResult(
+          formatDelegationPolicyDenial(denial, rawType),
+          buildDelegationPolicyDenialDetails(denial, rawType, params.description),
+        );
+      }
       const resolvedConfig = resolveAgentInvocationConfig(customConfig, params);
 
       // Resolve model: fallback chain from agent config; tool-call params replace chain.

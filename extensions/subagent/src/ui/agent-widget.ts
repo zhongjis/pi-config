@@ -104,6 +104,11 @@ export interface AgentDetails {
   invocationStatus?: AgentInvocationStatus;
   /** Stable machine-readable reason for a failed continuation. */
   failureReason?: RestoreFailureReason;
+  /** Stable delegation-policy denial metadata. */
+  category?: "delegation_policy_denied";
+  activeMode?: string;
+  requestedType?: string;
+  permittedTypes?: string[];
   error?: string;
 }
 

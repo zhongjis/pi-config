@@ -80,6 +80,29 @@ describe("ModeStateManager", () => {
 		return pi;
 	}
 
+	it("persists normalized versioned delegation policy from mode config", () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs["kuafu:default"] = {
+			body: "build",
+			allowDelegationTo: [" jintong ", "chengfeng", "jintong", ""],
+			disallowDelegationTo: [" houtu ", "houtu", ""],
+		};
+
+		state.persistState();
+
+		expect(pi.appendEntry).toHaveBeenCalledWith(
+			"agent-mode",
+			expect.objectContaining({
+				delegationPolicy: {
+					version: 1,
+					allowDelegationTo: ["jintong", "chengfeng"],
+					disallowDelegationTo: ["houtu"],
+				},
+			}),
+		);
+	});
+
 	it("switches mode and persists state", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);

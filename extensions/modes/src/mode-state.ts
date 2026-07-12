@@ -4,7 +4,7 @@ import { MODES, MODE_COLORS, MODE_META, RESET, SKILL_GATED_MODES } from "./const
 import { loadAgentConfig } from "./config-loader.js";
 import { getModePromptSource } from "../../lib/model-family.js";
 import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model.js";
-import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource } from "./types.js";
+import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource, VersionedDelegationPolicy } from "./types.js";
 
 function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
@@ -31,6 +31,27 @@ function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
   const set = new Set(a);
   for (const t of b) if (!set.has(t)) return false;
   return true;
+}
+
+function normalizeDelegationTargets(targets: readonly string[] | undefined): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const target of targets ?? []) {
+    const value = target.trim();
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
+function delegationPolicyFromConfig(config: ModeConfig): VersionedDelegationPolicy {
+  return {
+    version: 1,
+    allowDelegationTo: normalizeDelegationTargets(config.allowDelegationTo),
+    disallowDelegationTo: normalizeDelegationTargets(config.disallowDelegationTo),
+  };
 }
 
 export function resolveModelFromStr(
@@ -77,6 +98,7 @@ export class ModeStateManager {
 			planReviewApproved: this.planReviewApproved,
 			planReviewFeedback: this.planReviewFeedback,
 			modelOverride: this.modelOverride,
+			delegationPolicy: delegationPolicyFromConfig(this.loadConfig(this.currentMode)),
 		});
 	}
 

@@ -17,6 +17,7 @@ vi.mock("@earendil-works/pi-tui", () => ({
 	matchesKey: () => false,
 }));
 
+
 vi.mock("../src/config-loader.js", () => ({
 	loadAgentConfig: () => ({ body: "" }),
 }));
@@ -69,6 +70,7 @@ function createMockPi() {
 		},
 	};
 }
+
 
 type PromptFamily = "default" | "gpt" | "gemini";
 type TestMode = "kuafu" | "fuxi" | "houtu" | "luban" | "shennong";
@@ -305,48 +307,7 @@ describe("mode hooks", () => {
 		}
 	});
 
-	it("blocks delegation when frontmatter disallows target", async () => {
-		const mock = createMockPi();
-		const state = new ModeStateManager(mock.pi as never);
-		state.currentMode = "kuafu";
-		state.cachedConfigs["kuafu:default"] = {
-			body: "build prompt",
-			allowDelegationTo: ["jintong", "chengfeng"],
-		};
 
-		registerModeHooks(mock.pi as never, state);
-
-		const [result] = await mock.fire(
-			"tool_call",
-			{ toolName: "Agent", input: { subagent_type: "taishang" } },
-			{},
-		);
-
-		expect(result).toMatchObject({
-			block: true,
-			reason: expect.stringContaining("delegation to \"taishang\" is blocked"),
-		});
-	});
-
-	it("allows delegation when target is in allow list", async () => {
-		const mock = createMockPi();
-		const state = new ModeStateManager(mock.pi as never);
-		state.currentMode = "kuafu";
-		state.cachedConfigs["kuafu:default"] = {
-			body: "build prompt",
-			allowDelegationTo: ["jintong", "chengfeng"],
-		};
-
-		registerModeHooks(mock.pi as never, state);
-
-		const [result] = await mock.fire(
-			"tool_call",
-			{ toolName: "Agent", input: { subagent_type: "jintong" } },
-			{},
-		);
-
-		expect(result).toBeUndefined();
-	});
 
 	it("HTML marker round-trip: strips mode A body when switching to mode B", async () => {
 		const mock = createMockPi();
