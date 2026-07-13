@@ -168,7 +168,11 @@ export async function requestDirectHandoffBridge(
   request: DirectHandoffBridgeRequest,
 ): Promise<DirectHandoffBridgeReply> {
   try {
-    const data = await rpcCall<{ command: string; sessionFile: string; source?: string }>(
+    const data = await rpcCall<{
+      command: string;
+      sessionFile: string;
+      source?: string;
+    }>(
       pi,
       "handoff",
       "prepare",
@@ -185,21 +189,16 @@ export async function requestDirectHandoffBridge(
 }
 
 export function registerDirectHandoffBridge(pi: ExtensionAPI): () => void {
-  return registerRpcHandler(
-    pi,
-    "handoff",
-    "prepare",
-    (raw, _requestId) => {
-      const params = raw as { request?: DirectHandoffBridgeRequest } | null;
-      const pending = normalizeDirectHandoffBridgeRequest(params?.request);
-      setPendingPreparedHandoff(pending);
-      return {
-        command: DIRECT_HANDOFF_COMMAND,
-        sessionFile: pending.sessionFile,
-        ...(pending.source ? { source: pending.source } : {}),
-      };
-    },
-  );
+  return registerRpcHandler(pi, "handoff", "prepare", (raw, _requestId) => {
+    const params = raw as { request?: DirectHandoffBridgeRequest } | null;
+    const pending = normalizeDirectHandoffBridgeRequest(params?.request);
+    setPendingPreparedHandoff(pending);
+    return {
+      command: DIRECT_HANDOFF_COMMAND,
+      sessionFile: pending.sessionFile,
+      ...(pending.source ? { source: pending.source } : {}),
+    };
+  });
 }
 
 export async function runPreparedHandoffCommand(
@@ -320,7 +319,10 @@ export async function runHandoffCommand(
       withSession: async (replacementCtx: ExtensionContext) => {
         if (!replacementCtx.hasUI) return;
         replacementCtx.ui.setEditorText(finalPrompt);
-        replacementCtx.ui.notify("Handoff ready. Press Enter to start.", "info");
+        replacementCtx.ui.notify(
+          "Handoff ready. Press Enter to start.",
+          "info",
+        );
       },
     });
 
@@ -374,7 +376,14 @@ function buildHandoffDocument(
   if (parentSession) {
     sections.push(`**Parent session:** \`${parentSession}\``);
   }
-  sections.push(`**Goal:** ${goal || "(not specified)"}`, "", "---", "", body.trim(), "");
+  sections.push(
+    `**Goal:** ${goal || "(not specified)"}`,
+    "",
+    "---",
+    "",
+    body.trim(),
+    "",
+  );
   return sections.join("\n");
 }
 
@@ -431,7 +440,6 @@ export function buildPlanExecutionGoal(planPath: string): string {
     "- Read the full plan before making changes.",
     "- Register the plan as tracked pi-tasks: one pi-task per top-level plan task plus final verification gates.",
     "- Treat waves as labels; derive runnable work from the dependency graph.",
-    "- Execute plan tasks through TaskExecute only.",
     "- For each runnable set, batch all independent runnable tasks in one TaskExecute call when they have no named dependency and no file/path conflict.",
     "- If running fewer than all runnable tasks, record the specific dependency or file/path conflict that forced serialization.",
     "- Re-read relevant files from current repo state before changing anything.",
