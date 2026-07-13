@@ -41,7 +41,7 @@ Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyr
 | Change web search/fetch tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local extension; model wiring → `docs/specs/extension-model-usage.md` |
 | Change shared extension model roles | `extensions/lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` roles bind extension-owned LLM calls to model chains |
 | Change install/symlink behavior | `install.sh` | Allowlist + Nix-managed skip rules |
-| Change repo-wide tests | `docs/specs/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
+| Change repo-wide tests | `docs/guides/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
 
 ## Commands
 ```bash
@@ -119,5 +119,5 @@ Before registering any new tool, extension, or MCP server:
 - Extension-wide rules: `@extensions/AGENTS.md`
 - Harness design overview: `@docs/README.md`
 - Extension README standard: `@docs/specs/extensions.md`
-- Testing overview: `@docs/specs/testing/README.md`
+- Testing overview: `@docs/guides/testing/README.md`
 - Event conventions: `@extensions/CONVENTIONS.md`

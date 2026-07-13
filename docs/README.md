@@ -5,9 +5,23 @@ Design notes, standards, and reference material for this Pi harness.
 ## Documentation Buckets
 
 - `ideas/` — speculative, non-binding notes. Every document carries `Status: idea`.
-- `specs/` — Panda Harness contracts, whether shipped, planned, or draft.
-- `decisions/` — append-only ADRs: one decision per document, including why X was chosen over Y.
+- `specs/` — Panda Harness contracts (`draft` / `planned` / `shipped` / `superseded` / `retired`).
+- `adr/` — append-only ADRs: one decision per `NNNN-short-title.md`, including why X was chosen over Y.
+- `guides/` — task-oriented instructions (e.g. testing).
 - `references/` — stable, citable external material.
+- `rules/` — locked execution policy imported by root `AGENTS.md`; created when the first rule is adopted.
+
+## Canonical Vocabulary
+
+Domain language lives in [`CONTEXT.md`](../CONTEXT.md) — authoritative for terminology, not system behavior.
+
+## Authority Order
+
+Behavioral conflicts resolve: `rules/` → `adr/` → shipped `specs/` → `guides/` → `ideas/`. `references/` is evidence, never policy.
+
+## Lifecycle Statuses
+
+`idea` · `draft` · `planned` · `shipped` · `superseded` · `retired`. Ideas always use exact `Status: idea`. Supersede an ADR with a new ADR plus reciprocal `Supersedes` / `Superseded by` links; never edit ADR history.
 
 ## What This Harness Is
 
@@ -79,9 +93,9 @@ See [modes.md](specs/modes.md) and [orchestration-flow.md](specs/orchestration-f
 | [mode-prompt-audit-checklist.md](specs/mode-prompt-audit-checklist.md) | Future prompt audit checklist for construction semantics, provenance, parity, and scope guardrails |
 | [orchestration-flow.md](specs/orchestration-flow.md) | Planning-to-execution lifecycle |
 | [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Planned restore-first continuation for persisted subagent sessions |
-| [testing/README.md](specs/testing/README.md) | Extension testing policy and two-tier model |
-| [testing/unit-test.md](specs/testing/unit-test.md) | Unit test conventions |
-| [testing/integration-test.md](specs/testing/integration-test.md) | Integration test approach |
+| [testing/README.md](guides/testing/README.md) | Extension testing policy and two-tier model |
+| [testing/unit-test.md](guides/testing/unit-test.md) | Unit test conventions |
+| [testing/integration-test.md](guides/testing/integration-test.md) | Integration test approach |
 
 ## Event Conventions
 
