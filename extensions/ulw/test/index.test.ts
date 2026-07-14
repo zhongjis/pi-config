@@ -80,18 +80,18 @@ describe("ulw extension — unit tests", () => {
 		expect(result).toEqual({ action: "continue" });
 	});
 
-	it("detects 'ulw' at start of message", async () => {
+	it("detects 'ulw' at start and preserves the user message", async () => {
 		const result = await fireInput(mock, "ulw fix the bug");
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toBe("fix the bug");
+		expect((result as any).text).toBe("ulw fix the bug");
 		// Prompt is NOT in user message — it's injected via before_agent_start
 		expect((result as any).text).not.toContain("<ultrawork-mode>");
 	});
 
-	it("detects 'ultrawork' at start of message", async () => {
+	it("detects 'ultrawork' at start and preserves the user message", async () => {
 		const result = await fireInput(mock, "ultrawork fix the bug");
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toContain("fix the bug");
+		expect((result as any).text).toBe("ultrawork fix the bug");
 	});
 
 	it("detects keyword case-insensitively", async () => {
@@ -104,10 +104,10 @@ describe("ulw extension — unit tests", () => {
 		expect(result?.action).toBe("transform");
 	});
 
-	it("detects keyword mid-sentence", async () => {
+	it("detects keyword mid-sentence and preserves the user message", async () => {
 		const result = await fireInput(mock, "please use ulw mode");
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toBe("please use mode");
+		expect((result as any).text).toBe("please use ulw mode");
 		expect((result as any).text).not.toContain("<ultrawork-mode>");
 	});
 
@@ -154,10 +154,10 @@ describe("ulw extension — unit tests", () => {
 		expect(result).toEqual({ action: "continue" });
 	});
 
-	it("strips only first keyword occurrence", async () => {
+	it("preserves every keyword occurrence", async () => {
 		const result = await fireInput(mock, "ulw fix the ulw bug");
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toBe("fix the ulw bug");
+		expect((result as any).text).toBe("ulw fix the ulw bug");
 	});
 
 	// ── Message injection via before_agent_start ───────────────
@@ -200,7 +200,7 @@ describe("ulw extension — unit tests", () => {
 	it("activates in kuafu mode (default)", async () => {
 		const result = await fireInput(mock, "ulw fix it");
 		expect(result?.action).toBe("transform");
-		expect((result as any).text).toBe("fix it");
+		expect((result as any).text).toBe("ulw fix it");
 		const bas = await fireBeforeAgentStart(mock);
 		expect(bas?.message?.content).toContain("<ultrawork-mode>");
 	});

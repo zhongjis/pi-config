@@ -10,7 +10,7 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 ## What It Does
 
 - Detects "ultrawork" or "ulw" keyword in user messages (case-insensitive, word-boundary)
-- Strips the keyword from user text in kuafu mode
+- Preserves the keyword in user text in kuafu mode
 - Injects the ultrawork prompt via `before_agent_start` as a collapsed context message
 - Model-adapted: injects the Claude/default variant by default, and the OpenAI/GPT variant when the active model is GPT-family (`isGptModel` from `lib/model-family`) — Claude is the default
 - Only triggers in kuafu (build) mode — other modes pass through untouched
@@ -19,7 +19,7 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 
 ## Hooks
 
-- `input` — Detect keyword in kuafu mode, strip from text, set pending flag
+- `input` — Detect keyword in kuafu mode, preserve user text, set pending flag
 - `before_agent_start` — Inject ultrawork prompt as collapsed message
 
 ## Files Worth Reading

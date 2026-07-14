@@ -6,7 +6,7 @@
  *
  * Behaviour:
  *   - User message contains "ultrawork" or "ulw" anywhere (case-insensitive)
- *   - Extension strips the keyword from user text and injects the ultrawork
+ *   - Extension preserves the keyword in user text and injects the ultrawork
  *     prompt as a separate context message via before_agent_start (collapsed,
  *     not visible in user message — similar to how skills inject context)
  *   - Notification shown on activation
@@ -60,10 +60,6 @@ function hasUlwKeyword(text: string): boolean {
   return ULW_KEYWORD_RE.test(sanitize(text));
 }
 
-/** Strip only the first occurrence of the keyword from the raw text. */
-function stripUlwKeyword(text: string): string {
-  return text.replace(ULW_KEYWORD_RE, "").replace(/ {2,}/g, " ").trim();
-}
 
 // ---------------------------------------------------------------------------
 // Mode detection
@@ -87,9 +83,9 @@ function getCurrentMode(ctx: ExtensionContext): string {
 // Extension entry
 // ---------------------------------------------------------------------------
 // Two-phase approach:
-//   1. input handler: detect keyword, strip it, set pending flag
+//   1. input handler: detect keyword, preserve the input, set pending flag
 //   2. before_agent_start handler: inject ultrawork prompt as collapsed message
-// This keeps the ultrawork prompt out of the user message (cleaner context).
+// This keeps the ultrawork prompt separate from the user message.
 // Ultrawork only activates in kuafu mode — other modes have their own flow.
 
 export default function ulwExtension(pi: ExtensionAPI): void {
@@ -109,7 +105,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
       return { action: "continue" };
     }
 
-    const stripped = stripUlwKeyword(raw);
+    const keywordOnly = /^(ultrawork|ulw)$/i.test(raw.trim());
 
     if (ctx.hasUI) {
       ctx.ui.notify("⚡ Ultrawork Mode Activated", "success");
@@ -119,7 +115,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     // Set flag for before_agent_start to inject the prompt
     pendingUltrawork = true;
 
-    if (!stripped) {
+    if (keywordOnly) {
       // Keyword only, no task
       return {
         action: "transform",
@@ -127,7 +123,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
       };
     }
 
-    return { action: "transform", text: stripped };
+    return { action: "transform", text: raw };
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
