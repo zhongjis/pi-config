@@ -4,18 +4,36 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@earendil-works/pi-agent-core':
+      specifier: 0.79.0
+      version: 0.79.0
+    '@earendil-works/pi-ai':
+      specifier: 0.79.0
+      version: 0.79.0
+    '@earendil-works/pi-coding-agent':
+      specifier: 0.79.0
+      version: 0.79.0
+    '@earendil-works/pi-tui':
+      specifier: 0.79.0
+      version: 0.79.0
+    typebox:
+      specifier: 1.1.24
+      version: 1.1.24
+
 importers:
 
   .:
     devDependencies:
       '@earendil-works/pi-agent-core':
-        specifier: 0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@earendil-works/pi-ai':
-        specifier: 0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@earendil-works/pi-coding-agent':
-        specifier: 0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@marcfargas/pi-test-harness':
         specifier: git+https://github.com/marcfargas/pi-test-harness.git#v0.6.1
@@ -24,7 +42,7 @@ importers:
         specifier: ^24.6.0
         version: 24.12.2
       typebox:
-        specifier: 1.1.24
+        specifier: 'catalog:'
         version: 1.1.24
       typescript:
         specifier: ^5.9.3
@@ -36,34 +54,34 @@ importers:
   extensions/pi-lsp:
     dependencies:
       '@earendil-works/pi-ai':
-        specifier: 0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@earendil-works/pi-coding-agent':
-        specifier: 0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       effect:
         specifier: ^3.21.2
         version: 3.21.4
       typebox:
-        specifier: 1.1.24
+        specifier: 'catalog:'
         version: 1.1.24
 
   extensions/subagent:
     dependencies:
       '@earendil-works/pi-agent-core':
-        specifier: ^0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@earendil-works/pi-ai':
-        specifier: ^0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@earendil-works/pi-coding-agent':
-        specifier: ^0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@earendil-works/pi-tui':
-        specifier: ^0.79.0
+        specifier: 'catalog:'
         version: 0.79.0
       typebox:
-        specifier: ^1.0.0
+        specifier: 'catalog:'
         version: 1.1.24
     devDependencies:
       '@types/node':
@@ -79,13 +97,13 @@ importers:
   extensions/tasks:
     dependencies:
       '@earendil-works/pi-coding-agent':
-        specifier: ^0.79.0
+        specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
       '@earendil-works/pi-tui':
-        specifier: ^0.79.0
+        specifier: 'catalog:'
         version: 0.79.0
       typebox:
-        specifier: ^1.1.24
+        specifier: 'catalog:'
         version: 1.1.24
     devDependencies:
       '@types/node':

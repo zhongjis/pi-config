@@ -22,9 +22,9 @@
     "coordination"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.79.0",
-    "@earendil-works/pi-tui": "^0.79.0",
-    "typebox": "^1.1.24"
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@earendil-works/pi-tui": "catalog:",
+    "typebox": "catalog:"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": { "optional": true },

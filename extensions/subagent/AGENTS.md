@@ -121,6 +121,7 @@ Intentional divergences from upstream. Preserve these on sync.
 | `src/tools/{agent,get_subagent_result}.ts`, `test/agent-tool-renderer.test.ts` | Agent tool custom TUI renderers: `renderCall` owns tool/agent header; collapsed `renderResult` separates lifecycle `status:` from `activity:`/`result:`, suppresses zero stats, emits expand hint; expanded view returns raw result text | Prevent duplicate/noisy/misleading agent output while preserving model-visible content |
 | `src/local-uri-hint.ts`, `src/tools/{agent,steer_subagent}.ts`, `test/local-uri-hint.test.ts` | `localUriHint(...sources)` appends a non-blocking heads-up to Agent (spawn/resume) results and `steer_subagent` results when the caller's `prompt`/`message` contains `local://`. | `local://` storage is per-session, so a parent's files are invisible to the subagent's session; catches the mistake at delegation time instead of only reactively when the child's `read local://` fails. Legit `local://` writes are not blocked. |
 
+| `package.json` | `peerDependencies` for pi packages (+typebox) use pnpm `catalog:` | Versions centralized in root `pnpm-workspace.yaml` `catalog:`. Re-apply after upstream sync (upstream ships literal ranges). |
 ## Child DOX Index
 
 No child `AGENTS.md` files. This file owns all files under `extensions/subagent/`.

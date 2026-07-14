@@ -19,6 +19,7 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 | `client.ts` | Resets initialization, document, diagnostic, capability, and pending state when a server exits. | Restarted servers need fresh initialize and didOpen state. |
 | `index.ts` | Status/help/scaffold text points to managed and project config paths; footer status is compact counts (`LSP 0/N`, `LSP R/N running`) while `/lsp` keeps full server detail. | UI must match local config search order and avoid long footer status lines. |
 | `test/` | Local Vitest coverage for config precedence, compact status formatting, diagnostics failure handling, and protocol respawn. | Guards local runtime divergences from upstream regressions. |
+| `package.json` | `peerDependencies` for pi packages (+typebox) use pnpm `catalog:` | Versions centralized in root `pnpm-workspace.yaml` `catalog:`. Re-apply after upstream sync (upstream ships literal ranges). |
 
 ## Child DOX Index
 

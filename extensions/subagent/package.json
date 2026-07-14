@@ -21,11 +21,11 @@
     "autonomous"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.79.0",
-    "@earendil-works/pi-tui": "^0.79.0",
-    "@earendil-works/pi-ai": "^0.79.0",
-    "@earendil-works/pi-agent-core": "^0.79.0",
-    "typebox": "^1.0.0"
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "@earendil-works/pi-tui": "catalog:",
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-agent-core": "catalog:",
+    "typebox": "catalog:"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": { "optional": true },

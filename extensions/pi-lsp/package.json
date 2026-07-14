@@ -22,9 +22,9 @@
     "effect": "^3.21.2"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "0.79.0",
-    "@earendil-works/pi-coding-agent": "0.79.0",
-    "typebox": "1.1.24"
+    "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-coding-agent": "catalog:",
+    "typebox": "catalog:"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-ai": {

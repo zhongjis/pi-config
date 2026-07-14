@@ -54,6 +54,7 @@ pnpm run build
 | `src/task-runner.ts`, `src/tools/output.ts`, `src/tools/stop.ts` | Process-only `TaskRunner` seam. | Unit-testable output/stop dispatch. |
 | `src/tools/rendering.ts`, `src/tools/list.ts`, `src/ui/task-widget.ts` | Compact grouped tool/widget output. | Better TUI scanability without changing model-visible content. |
 | `package.json`, `README.md` | Repo-local package/test wiring and concise docs. | Root dependency/test model; no npm install guidance. |
+| `package.json` | `peerDependencies` for pi packages (+typebox) use pnpm `catalog:` | Versions centralized in root `pnpm-workspace.yaml` `catalog:`. Re-apply after upstream sync (upstream ships literal ranges). |
 
 ## Child DOX Index
 No child `AGENTS.md` files.

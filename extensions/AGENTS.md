@@ -47,6 +47,7 @@ pnpm lint:typecheck
 - Promote layout gradually: flat directory → `src/` package. Do not skip straight to deep nesting.
 - For `src/` packages, keep `index.ts` as a re-export shim; implementation lives under `src/`, tests under `test/`.
 - Extension-specific unit tests belong with the extension under `extensions/foo/test/`; root `test/` is for shared smoke, fixtures, stubs, and other harness coverage.
+- Pi package versions (`@earendil-works/pi-*`) + `typebox` are centralized in root `pnpm-workspace.yaml` `catalog:`; workspace manifests reference `catalog:`. Bump the catalog, not individual manifests.
 - Follow `CONVENTIONS.md` exactly for events:
   - `user-prompted` once before first blocking tool UI prompt
   - `awaitingUserAction.suppressContinuationReminder` for persisted waiting state
