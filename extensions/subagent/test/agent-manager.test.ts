@@ -52,6 +52,19 @@ describe("AgentManager", () => {
     resumeAgentMock.mockReset();
   });
 
+  it("does not keep the process alive with its cleanup timer and still clears it on dispose", async () => {
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+    const manager = new AgentManager();
+    const timer = (manager as unknown as { cleanupInterval: NodeJS.Timeout }).cleanupInterval;
+    const keptProcessAlive = timer.hasRef();
+
+    await manager.dispose();
+
+    expect(keptProcessAlive).toBe(false);
+    expect(clearIntervalSpy).toHaveBeenCalledWith(timer);
+    clearIntervalSpy.mockRestore();
+  });
+
   it("stops a foreground agent when the outer tool signal aborts", async () => {
     const session = { steer: vi.fn(), abort: vi.fn(), dispose: vi.fn() } as any;
     runAgentMock.mockImplementation((_ctx: any, _type: any, _prompt: any, options: any) => {
@@ -97,7 +110,7 @@ describe("AgentManager", () => {
       expect(record.completedAt).toBeTypeOf("number");
       expect(runAgentMock).toHaveBeenCalledOnce();
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -141,7 +154,7 @@ describe("AgentManager", () => {
       expect(record.completedAt).toBeTypeOf("number");
       expect(runAgentMock).not.toHaveBeenCalled();
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -191,11 +204,11 @@ describe("AgentManager", () => {
       expect(record.completedAt).toBeTypeOf("number");
       expect(runAgentMock).toHaveBeenCalledOnce();
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
-  it("stops a queued background agent when the outer tool signal aborts", () => {
+  it("stops a queued background agent when the outer tool signal aborts", async () => {
     const manager = new AgentManager(undefined, 0);
     const controller = new AbortController();
 
@@ -221,12 +234,95 @@ describe("AgentManager", () => {
       expect(record.completedAt).toBeTypeOf("number");
       expect(runAgentMock).not.toHaveBeenCalled();
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });
 
 describe("AgentManager.clearCompleted", () => {
+  it("retains a completed session until removal, then shuts it down before dispose", async () => {
+    const order: string[] = [];
+    const emit = vi.fn(async (event: unknown) => {
+      order.push("shutdown");
+      expect(event).toEqual({ type: "session_shutdown", reason: "quit" });
+    });
+    const session = {
+      steer: vi.fn(),
+      abort: vi.fn(),
+      extensionRunner: { hasHandlers: vi.fn(() => true), emit },
+      dispose: vi.fn(() => order.push("dispose")),
+    } as any;
+    runAgentMock.mockResolvedValue({ responseText: "done", session, aborted: false, steered: false });
+
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn({} as any, { cwd: process.cwd() } as any, "general-purpose", "Test", { description: "bg", isBackground: true });
+      const record = manager.getRecord(id)!;
+      await record.promise;
+
+      expect(manager.getRecord(id)).toBe(record);
+      expect(record.session).toBe(session);
+      expect(order).toEqual([]);
+
+      await manager.clearCompleted();
+
+      expect(manager.getRecord(id)).toBeUndefined();
+      expect(record.session).toBeUndefined();
+      expect(order).toEqual(["shutdown", "dispose"]);
+    } finally {
+      await manager.dispose();
+    }
+  });
+
+  it("still disposes a removed session when its shutdown hook rejects", async () => {
+    const emit = vi.fn().mockRejectedValue(new Error("shutdown failed"));
+    const session = {
+      steer: vi.fn(),
+      abort: vi.fn(),
+      extensionRunner: { hasHandlers: vi.fn(() => true), emit },
+      dispose: vi.fn(),
+    } as any;
+    runAgentMock.mockResolvedValue({ responseText: "done", session, aborted: false, steered: false });
+
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn({} as any, { cwd: process.cwd() } as any, "general-purpose", "Test", { description: "bg", isBackground: true });
+      await manager.getRecord(id)!.promise;
+
+      await manager.clearCompleted();
+
+      expect(emit).toHaveBeenCalledOnce();
+      expect(session.dispose).toHaveBeenCalledOnce();
+    } finally {
+      await manager.dispose();
+    }
+  });
+
+  it("does not shut down or dispose a session twice during overlapping teardown", async () => {
+    let recordDuringShutdown: any;
+    const emit = vi.fn(async () => {
+      expect(recordDuringShutdown.session).toBeUndefined();
+      await Promise.resolve();
+    });
+    const session = {
+      steer: vi.fn(),
+      abort: vi.fn(),
+      extensionRunner: { hasHandlers: vi.fn(() => true), emit },
+      dispose: vi.fn(),
+    } as any;
+    runAgentMock.mockResolvedValue({ responseText: "done", session, aborted: false, steered: false });
+
+    const manager = new AgentManager();
+    const id = manager.spawn({} as any, { cwd: process.cwd() } as any, "general-purpose", "Test", { description: "bg", isBackground: true });
+    recordDuringShutdown = manager.getRecord(id)!;
+    await recordDuringShutdown.promise;
+
+    await Promise.all([manager.clearCompleted(), manager.dispose()]);
+
+    expect(emit).toHaveBeenCalledOnce();
+    expect(session.dispose).toHaveBeenCalledOnce();
+  });
+
   it("clearCompleted() removes all non-running records", async () => {
     const session = { steer: vi.fn(), abort: vi.fn(), dispose: vi.fn() } as any;
     runAgentMock.mockResolvedValue({ responseText: "", session, aborted: false, steered: false });
@@ -238,10 +334,10 @@ describe("AgentManager.clearCompleted", () => {
       await record.promise;
       expect(record.status).toBe("completed");
 
-      manager.clearCompleted();
+      await manager.clearCompleted();
       expect(manager.listAgents()).toHaveLength(0);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -257,11 +353,11 @@ describe("AgentManager.clearCompleted", () => {
       expect(record.status).toBe("completed");
       // resultConsumed is undefined → unconsumed
 
-      manager.clearCompleted(true);
+      await manager.clearCompleted(true);
       expect(manager.listAgents()).toHaveLength(1);
       expect(manager.getRecord(id)).toBeDefined();
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -277,10 +373,10 @@ describe("AgentManager.clearCompleted", () => {
       expect(record.status).toBe("completed");
       record.resultConsumed = true;
 
-      manager.clearCompleted(true);
+      await manager.clearCompleted(true);
       expect(manager.getRecord(id)).toBeUndefined();
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -352,7 +448,7 @@ describe("AgentManager durable resume", () => {
       expect(record.run?.events().map((event) => event.kind)).toEqual(["hydrated", "restore_started", "resumed", "completed"]);
       const restoreEvents = record.run?.events().filter((event) => event.kind !== "completed") ?? [];
       expect(restoreEvents.flatMap((event) => toExternalEffects(event, { isBackground: true }))).toEqual([]);
-    } finally { manager.dispose(); }
+    } finally { await manager.dispose(); }
   });
 
   it.each([
@@ -367,7 +463,7 @@ describe("AgentManager durable resume", () => {
       expect(outcome).toMatchObject({ status: "failed", reason });
       expect(restoreSession).not.toHaveBeenCalled();
       expect(runAgentMock).not.toHaveBeenCalled();
-    } finally { manager.dispose(); }
+    } finally { await manager.dispose(); }
   });
 
   it("maps restore callback failure and leaves no hydrated record", async () => {
@@ -381,7 +477,7 @@ describe("AgentManager durable resume", () => {
       expect(outcome).toEqual({ status: "failed", id: target.id, reason: "runtime_initialization_failed", error: "open failed" });
       expect(manager.getRecord(target.id)).toBeUndefined();
       expect(resumeAgentMock).not.toHaveBeenCalled();
-    } finally { manager.dispose(); }
+    } finally { await manager.dispose(); }
   });
 
   it("maps restored-generation write failure to persistence_failed", async () => {
@@ -399,7 +495,7 @@ describe("AgentManager durable resume", () => {
       expect(outcome).toMatchObject({ status: "failed", id: target.id, reason: "persistence_failed" });
       expect(resumeAgentMock).not.toHaveBeenCalled();
       expect(runAgentMock).not.toHaveBeenCalled();
-    } finally { manager.dispose(); }
+    } finally { await manager.dispose(); }
   });
 
   it("single-flights continuation as target_busy", async () => {
@@ -418,7 +514,7 @@ describe("AgentManager durable resume", () => {
       release("done");
       await first;
       expect(resumeAgentMock).toHaveBeenCalledOnce();
-    } finally { manager.dispose(); }
+    } finally { await manager.dispose(); }
   });
 });
 });

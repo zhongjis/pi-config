@@ -52,7 +52,7 @@ describe("regression: result recovery after supervision abort", () => {
       expect(record.result).toContain("Agent was stopped before producing a final answer.");
       expect(record.result).toContain("Auto-stopped after 301s of inactivity.");
     } finally {
-      manager.dispose();
+      await manager.dispose();
       runAgentMock.mockReset();
     }
   });

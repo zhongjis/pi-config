@@ -80,7 +80,7 @@ describe("finalizeRun parity — stopped idempotency", () => {
       expect(kinds).not.toContain("failed");
       expect(record.status).toBe("stopped");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -105,7 +105,7 @@ describe("finalizeRun parity — stopped idempotency", () => {
       expect(kinds).not.toContain("failed");
       expect(record.status).toBe("stopped");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });

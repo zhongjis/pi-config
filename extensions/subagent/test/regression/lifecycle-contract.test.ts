@@ -63,11 +63,11 @@ describe("AgentManager lifecycle contracts (Phase 0 characterization)", () => {
       resolvers[1]();
       await vi.waitFor(() => expect(onComplete).toHaveBeenCalledTimes(2));
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
-  it("flushes steers queued before the session was ready, then clears pendingSteers", () => {
+  it("flushes steers queued before the session was ready, then clears pendingSteers", async () => {
     let captured: any;
     runAgentMock.mockImplementation((_ctx: any, _type: any, _prompt: any, options: any) => {
       captured = options; // capture the manager's wrapped options; do NOT signal session yet
@@ -89,7 +89,7 @@ describe("AgentManager lifecycle contracts (Phase 0 characterization)", () => {
       expect(session.steer).toHaveBeenNthCalledWith(2, "second");
       expect(record.pendingSteers).toBeUndefined();
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -116,7 +116,7 @@ describe("AgentManager lifecycle contracts (Phase 0 characterization)", () => {
       expect(onComplete).toHaveBeenCalledTimes(1); // background only
       expect(onComplete.mock.calls[0][0].isBackground).toBe(true);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });

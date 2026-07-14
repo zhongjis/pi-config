@@ -133,6 +133,20 @@ describe("describeActivity", () => {
 });
 
 describe("AgentWidget render scheduling", () => {
+  it("does not keep the process alive with its render timer and still clears it on dispose", () => {
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+    const widget = new AgentWidget({ listAgents: () => [] } as never, new Map());
+
+    widget.ensureTimer();
+    const timer = (widget as unknown as { widgetInterval: NodeJS.Timeout }).widgetInterval;
+    const keptProcessAlive = timer.hasRef();
+    widget.dispose();
+
+    expect(keptProcessAlive).toBe(false);
+    expect(clearIntervalSpy).toHaveBeenCalledWith(timer);
+    clearIntervalSpy.mockRestore();
+  });
+
   it("does not request another render when active agent state is unchanged before the animation cadence", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);

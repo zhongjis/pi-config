@@ -81,6 +81,8 @@ export class AgentManager {
   private maxConcurrent: number;
   /** IDs currently opening or continuing; prevents duplicate prompts/restores. */
   private resumeInFlight = new Set<string>();
+  /** Child-session teardowns already detached from records but not yet settled. */
+  private pendingTeardowns = new Set<Promise<void>>();
 
   /** Queue of background agents waiting to start. */
   private queue: { id: string; args: SpawnArgs }[] = [];
@@ -94,6 +96,7 @@ export class AgentManager {
     this.maxConcurrent = maxConcurrent;
     // Cleanup completed agents after 10 minutes (but keep sessions for resume)
     this.cleanupInterval = setInterval(() => this.cleanup(), SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS);
+    this.cleanupInterval.unref?.();
   }
 
   /** Update the max concurrent background agents limit. */
@@ -584,24 +587,50 @@ export class AgentManager {
     return true;
   }
 
-  /** Dispose a record's session and remove it from the map. */
-  private removeRecord(id: string, record: AgentRecord): void {
+  /** Shut down and dispose a record's child session exactly once. */
+  private teardownRecord(record: AgentRecord): Promise<void> {
     if (record.externalAbortCleanup) {
       record.externalAbortCleanup();
       record.externalAbortCleanup = undefined;
     }
-    record.session?.dispose?.();
+
+    const session = record.session;
     record.session = undefined;
-    this.agents.delete(id);
+    if (!session) return Promise.resolve();
+
+    const teardown = (async () => {
+      try {
+        const runner = session.extensionRunner;
+        if (runner?.hasHandlers("session_shutdown")) {
+          await runner.emit({ type: "session_shutdown", reason: "quit" });
+        }
+      } finally {
+        session.dispose();
+      }
+    })();
+    this.pendingTeardowns.add(teardown);
+    teardown.then(
+      () => this.pendingTeardowns.delete(teardown),
+      () => this.pendingTeardowns.delete(teardown),
+    );
+    return teardown;
   }
 
-  private cleanup() {
+  /** Remove a record immediately, then await its detached child-session teardown. */
+  private removeRecord(id: string, record: AgentRecord): Promise<void> {
+    this.agents.delete(id);
+    return this.teardownRecord(record);
+  }
+
+  private cleanup(): void {
     const cutoff = Date.now() - SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS;
+    const teardowns: Promise<void>[] = [];
     for (const [id, record] of this.agents) {
       if (record.status === "running" || record.status === "queued") continue;
       if ((record.completedAt ?? 0) >= cutoff) continue;
-      this.removeRecord(id, record);
+      teardowns.push(this.removeRecord(id, record));
     }
+    void Promise.allSettled(teardowns);
   }
 
   /**
@@ -609,12 +638,14 @@ export class AgentManager {
    * Called on session start/switch so tasks from a prior session don't persist.
    * @param skipUnconsumed - when true, skip records whose result has not been consumed yet
    */
-  clearCompleted(skipUnconsumed = false): void {
+  async clearCompleted(skipUnconsumed = false): Promise<void> {
+    const teardowns: Promise<void>[] = [];
     for (const [id, record] of this.agents) {
       if (record.status === "running" || record.status === "queued") continue;
       if (skipUnconsumed && !record.resultConsumed) continue;
-      this.removeRecord(id, record);
+      teardowns.push(this.removeRecord(id, record));
     }
+    await Promise.allSettled(teardowns);
   }
 
   /** Whether any agents are still running or queued. */
@@ -662,17 +693,10 @@ export class AgentManager {
     }
   }
 
-  dispose() {
+  async dispose(): Promise<void> {
     clearInterval(this.cleanupInterval);
-    // Clear queue
     this.queue = [];
-    for (const record of this.agents.values()) {
-      if (record.externalAbortCleanup) {
-        record.externalAbortCleanup();
-        record.externalAbortCleanup = undefined;
-      }
-      record.session?.dispose();
-    }
-    this.agents.clear();
+    const teardowns = [...this.agents.entries()].map(([id, record]) => this.removeRecord(id, record));
+    await Promise.allSettled([...teardowns, ...this.pendingTeardowns]);
   }
 }

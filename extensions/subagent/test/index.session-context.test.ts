@@ -579,15 +579,40 @@ describe("subagent session UI rebinding", () => {
     expect(widgetInstances[0]!.update).toHaveBeenCalledTimes(1);
   });
 
-  it("disposes the Agents widget on session shutdown", async () => {
+  it("awaits manager disposal before disposing the Agents widget on session shutdown", async () => {
     const mock = createMockPi();
     await initExtension(mock);
     const ctx = createCtx();
     await mock.fire("session_start", { reason: "new" }, ctx);
+    let releaseDispose!: () => void;
+    managerInstances[0]!.dispose.mockImplementation(() => new Promise<void>((resolve) => {
+      releaseDispose = resolve;
+    }));
 
-    await mock.fire("session_shutdown", {}, ctx);
+    const shutdown = mock.fire("session_shutdown", {}, ctx);
+    await vi.waitFor(() => expect(managerInstances[0]!.dispose).toHaveBeenCalledTimes(1));
+    expect(widgetInstances[0]?.dispose).not.toHaveBeenCalled();
 
+    releaseDispose();
+    await shutdown;
     expect(widgetInstances[0]?.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not keep the process alive with background supervision and still clears it on shutdown", async () => {
+    vi.useRealTimers();
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
+    const mock = createMockPi();
+
+    await initExtension(mock);
+    const timer = setIntervalSpy.mock.results[0]?.value as NodeJS.Timeout;
+    const keptProcessAlive = timer.hasRef();
+    await mock.fire("session_shutdown", {}, createCtx());
+
+    expect(keptProcessAlive).toBe(false);
+    expect(clearIntervalSpy).toHaveBeenCalledWith(timer);
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
   });
 
   it("surfaces custom agent diagnostics in the /agents menu", async () => {

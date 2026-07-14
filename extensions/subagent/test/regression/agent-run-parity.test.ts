@@ -60,7 +60,7 @@ describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
       expect(record.run?.session).toBeDefined();
       expect(record.run?.isBackground).toBe(true);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -77,7 +77,7 @@ describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
       expect(record.status).toBe("steered");
       expect(record.run?.result).toBe(record.result);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -92,7 +92,7 @@ describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
       expect(record.status).toBe("error");
       expect(record.run?.error).toBe(record.error);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -116,7 +116,7 @@ describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
       expect(record.status).toBe("stopped");
       expect(record.run?.status).toBe("stopped");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -140,7 +140,7 @@ describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
       expect(record.run?.result).toBe(record.result);
       expect(record.run?.result).toBe("second");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -170,7 +170,7 @@ describe("AgentRun ⇄ AgentRecord parity (Phase 1 dormant shadow)", () => {
       resolvers[1]();
       await vi.waitFor(() => expect(r2.run?.status).toBe("completed"));
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });

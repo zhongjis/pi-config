@@ -63,7 +63,7 @@ describe("D2 — project() writes terminal fields via run (foreground spawnAndWa
       expect(record.run?.result).toBe(record.result);
       expect(record.run?.completedAt).toBe(record.completedAt);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -80,7 +80,7 @@ describe("D2 — project() writes terminal fields via run (foreground spawnAndWa
       expect(record.run?.status).toBe("steered");
       expect(record.run?.result).toBe("partial");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -100,7 +100,7 @@ describe("D2 — project() writes terminal fields via run (foreground spawnAndWa
       expect(record.run?.result).toBe(record.result);
       expect(record.run?.completedAt).toBe(record.completedAt);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -119,7 +119,7 @@ describe("D2 — project() writes terminal fields via run (foreground spawnAndWa
       expect(record.run?.result).toBe(record.result);
       expect(record.run?.completedAt).toBe(record.completedAt);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });
@@ -155,7 +155,7 @@ describe("D2 — project() writes terminal fields via run (resume path)", () => 
       expect(record.run?.result).toBe("resumed answer");
       expect(record.run?.completedAt).toBe(record.completedAt);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 
@@ -180,7 +180,7 @@ describe("D2 — project() writes terminal fields via run (resume path)", () => 
       expect(record.run?.error).toBe("resume failed");
       expect(record.run?.result).toBe(record.result);
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });
@@ -217,7 +217,7 @@ describe("D2 — stopped path leaves terminal state from publishRunStop (not pro
       // run also reflects stopped (from publishRunStop)
       expect(record.run?.status).toBe("stopped");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });
@@ -258,7 +258,7 @@ describe("D3a — abort() / publishRunStop interleave: stopped status wins over 
       expect(record.error).toBe("Agent was stopped while running.");
       expect(record.run?.status).toBe("stopped");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });
@@ -297,7 +297,7 @@ describe("D4a — result_amended: stopped result flows via run after late settle
       // completedAt stamped at abort time, not settle time
       expect(record.completedAt).toBeTypeOf("number");
     } finally {
-      manager.dispose();
+      await manager.dispose();
     }
   });
 });

@@ -30,7 +30,7 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
   // Pi 0.70 folds session replacement notifications into session_start reasons
   // (startup/reload/new/resume/fork), so this covers the old switch path too.
   pi.on("session_start", async (_event, ctx) => {
-    manager.clearCompleted();           // preserve existing behavior
+    await manager.clearCompleted();     // preserve existing behavior
     manager.resetLifetimeCost();        // new session → reset per-session subagent cost total
     // Boot recovery: rebuild the durable bg-agent registry + task claims from this
     // session's appendEntry log (emits subagent.recovery.replayed with { count }).
@@ -82,7 +82,7 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
     }
   });
 
-  pi.on("session_before_switch", () => { manager.clearCompleted(true); });
+  pi.on("session_before_switch", async () => { await manager.clearCompleted(true); });
 
   // Grab UI context from first tool execution + clear lingering widget on new turn
   pi.on("tool_execution_start", async (_event, ctx) => {

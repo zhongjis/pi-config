@@ -578,6 +578,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     // parent sat idle between prompts (no agent_end fires then). notified-gated → one-shot.
     if (!parentBusy) emitCompletionNotificationsAtIdle();
   }, BACKGROUND_SUPERVISION_INTERVAL_MS);
+  backgroundSupervisionTimer.unref?.();
 
   // Expose manager via Symbol.for() global registry for cross-package access.
   // Standard Node.js pattern for cross-package singletons (used by OpenTelemetry, etc.).

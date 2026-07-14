@@ -252,6 +252,7 @@ export class AgentWidget {
   ensureTimer() {
     if (!this.widgetInterval) {
       this.widgetInterval = setInterval(() => this.update(), ACTIVE_RENDER_CADENCE_MS);
+      this.widgetInterval.unref?.();
     }
   }
 

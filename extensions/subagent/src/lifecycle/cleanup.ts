@@ -27,7 +27,7 @@ export function registerCleanup(ctx: SubagentRuntimeContext): void {
     releaseManager();
     manager.abortAll();
     clearBackgroundSupervision();
-    manager.dispose();
+    await manager.dispose();
     widget.dispose();
   });
 }
