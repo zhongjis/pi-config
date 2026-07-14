@@ -18,12 +18,13 @@ describe("research agent prompt contract", () => {
 		expect(prompt).toContain("Every URL in `Sources:` MUST appear here as an opened source");
 	});
 
-	it("keeps recon agents on the GPT-5.6 medium fallback with omo attribution", () => {
+	it("keeps recon agents on the lightweight fallback model contract", () => {
 		for (const path of ["agents/chengfeng.md", "agents/wenchang.md"]) {
 			const prompt = repoFile(path);
 
-			expect(prompt).toContain("openai-codex/gpt-5.6-terra:medium");
-			expect(prompt).toContain("Adapted from omo");
+			expect(prompt).toMatch(/^model: .*gpt-5\.4-mini/m);
+			expect(prompt).not.toContain("gpt-5.6-terra");
+			expect(prompt).not.toContain("Adapted from omo");
 		}
 	});
 

@@ -294,7 +294,7 @@ describe("subagent tool access — integration", () => {
 		expect(wenchangTools).toContain("fetch_content");
 		expect(wenchangTools).toContain("get_search_content");
 		expect(wenchangTools).toContain("mcporter");
-		expect(wenchangTools).toContain("mcp");
+		expect(wenchangTools).not.toContain("mcp");
 		expect(wenchangTools).not.toContain("bash");
 		expect(wenchangTools).not.toContain("edit");
 		expect(wenchangTools).not.toContain("write");
