@@ -41,6 +41,7 @@ So the achievable target is **structural faithfulness**: adopt the upstream sect
 
 - Fetch the current upstream source for the mapped persona (URLs in `references/lineage-map.md`). Open it — do not reconstruct upstream behavior from memory.
 - Diff upstream against the current Pi prompt **and its family variants** (`mode.md` + `gpt.md` + `gemini.md`, or the single agent `.md`, or `extensions/ulw/prompts/{default,gpt}.md`).
+- If the adaptation hinges on a **Pi runtime behavior** (delegation blocking vs concurrency, Gemini overlay injection, pi-task/agent lifecycle), verify it against the actual Pi extension source (`extensions/subagent`, `extensions/modes`, `extensions/tasks`) — not the tool description or memory. Generic tool blurbs undersell real behavior: e.g. background `Agent` workers run concurrently while a foreground one blocks, so a fan-out that looks "sequential" from the blurb is actually parallel. Ground the claim before you encode it in a prompt.
 
 ### 2. Classify every difference
 
@@ -56,6 +57,8 @@ Sort each gap into one bucket — this classification is the real intellectual w
 - Apply `references/substitution-map.md` consistently.
 - Preserve, without exception: **test-locked strings**, **Pi agent/mode names**, **owning-`AGENTS.md` mechanics**, the **`<role>` / `<critical>` injection anchors** (see substitution map — the Gemini overlay is injected before the first `<critical>`, else after `</role>`; lose those anchors and the corrective overlay falls to the bottom of the prompt), and **attribution-only** upstream mentions.
 - Keep all three family variants aligned in intent (they may differ in wording per the Default / GPT / Gemini philosophy in `modes/MANIFESTO.md`).
+- **Mirror the upstream top-level section order exactly** for shared sections (verify side-by-side in step 6). A Pi-only section with no upstream analog (e.g. the pi-task tracking contract) is allowed, but place it at its nearest upstream structural analog and justify it — never scatter it or let it break the shared sequence. Mirroring section *names* must not delete the Pi Gemini `<critical>` anchor (see substitution map): keep an early `<critical>` even where upstream uses `<identity>`/`<mission>`.
+- **Port upstream _policy_ verbatim; keep _mechanics_ lean.** Adopt upstream's prose, tone, order, and rules for tool-agnostic policy. Do NOT restate what the `Agent` tool or harness already enforces or documents — concurrency caps, queue drain, collect-loops. `modes/AGENTS.md` mandates that static `Agent` guidance stay generic and non-stale; a hardcoded runtime number (e.g. the background concurrency cap) is a leak that rots.
 
 ### 4. Proposal + confirm gate — MANDATORY
 
@@ -81,7 +84,9 @@ Then wait for an explicit go. If the plan needs a change to a locked contract fi
 - `pnpm vitest run test/fuxi-clearance.test.ts` (mode family matrix + locked strings). Add `extensions/ulw/test/` and `extensions/modes/test/` when those are touched.
 - `pnpm lint:typecheck`.
 - Grep for stray upstream mentions (only the sanctioned attribution line may remain) and stale substituted tokens (`ACCUMULATED CONTEXT`, `boulder`, `task(`, `.omo/`, `TodoWrite`, etc. — whichever you removed).
-- Reread the **final injected/composed prompt**, not just source fragments (per `modes/AGENTS.md`). Confirm the Gemini overlay lands before `<critical>`.
+- Reread the **final injected/composed prompt**, not just source fragments (per `modes/AGENTS.md`). Confirm the Gemini overlay lands at its anchor — before `<critical>`, or after `</role>` when the body has no `<critical>`.
+- **Section-order parity check:** dump both section sequences (`rg -oE '^<[a-z_]+>' <adapted-body>` and the same on the upstream body) and confirm the shared sections line up 1:1.
+- **Baseline discipline:** capture the touched tests' pass/fail *before* editing, then re-run after — prove *no regression*, not merely "green". A pre-existing failure (e.g. a `model:` string the frontmatter no longer matches) stays flagged and out of scope unless the user asks; never let a new failure hide behind a pre-existing one, and never claim a fix you did not make.
 
 ### 7. DOX pass
 

@@ -11,10 +11,10 @@ These tests assert exact substrings in the composed prompts. Break a string → 
 - `extensions/ulw/test/index.test.ts` — ulw prompt assertions.
 
 Worked example (houtu, so you see the shape):
-- `default`: `You execute by coordinating, delegating, and verifying` · `One \`TaskExecute\` launch = one bounded plan task` · `Final Verification Wave is an approval gate`
-- `gpt`: `Read \`local://PLAN.md\` before doing anything else` · `One \`TaskExecute\` launch = one bounded plan task` · `Final Verification Wave is mandatory approval gate` · `APPROVE`
-- `geminiOverlay`: `<gemini-corrective-overlay>` · `Do not become the implementer` · `Final Verification Wave requires explicit \`APPROVE\``
-- `defaultOnlyInGptReplacement`: `TASK ANALYSIS:` (must be in `mode.md`, must NOT be in `gpt.md`)
+- `default`: `You execute by coordinating, delegating, and verifying` · `Pi-tasks track plan identity, dependencies, and verified status only` · `Delegate all plan work directly with \`Agent\`` · `Never use \`TaskExecute\`, \`TaskOutput\`, or \`TaskStop\`` · `Final Verification Wave gate`
+- `gpt`: `Read \`local://PLAN.md\` before doing anything else` · `Use pi-tasks only for logical tracking` · `Launch plan work with \`Agent\`` · `Never use \`TaskExecute\`, \`TaskOutput\`, or \`TaskStop\`` · `Final Verification Wave is a mandatory approval gate` · `APPROVE`
+- `geminiOverlay`: `<gemini-corrective-overlay>` · `Hou Tu coordinates only` · `Pi-tasks track logical PLAN work only` · `Delegate one bounded plan task per \`Agent\` session` · `Final Verification Wave reviewer returns explicit \`APPROVE\``
+- `defaultOnlyInGptReplacement`: `<tracking_contract>` (must be in `mode.md`, must NOT be in `gpt.md`)
 
 Before finalizing, grep the test for the mode you touched and confirm every locked string still appears (and the `defaultOnly…` string is absent from `gpt.md`).
 
@@ -22,7 +22,7 @@ Before finalizing, grep the test for the mode you touched and confirm every lock
 
 The owning `AGENTS.md` files encode binding architecture. Do not weaken them, and get explicit approval before editing them.
 
-- `modes/AGENTS.md` — the heavy one. For **Hou Tu**: per-task pi-task DAG (not per-wave), `TaskCreate`→`TaskUpdate addBlockedBy`→`TaskExecute`, the **6-section** delegation contract, `max_turns` as the only cost guard, retries re-run fresh (never `Agent(resume)`), `autoCascade` OFF, and the invariant `One TaskExecute launch = one bounded plan task` (test-asserted). For **Fu Xi**: exactly 7 planning steps, the reference-split router, and plan-ceremony strings that must stay in the router files (not the `references/`). Also: keep the CodeGraph / LSP / `rg`,`fd` tool-split; frontend→`yunu`, non-UI impl→`jintong`.
+- `modes/AGENTS.md` — the heavy one. For **Hou Tu**: strict pi-task/agent lifecycle separation — pi-tasks are logical DAG only (`TaskCreate` per top-level item → `TaskUpdate addBlockedBy` → `in_progress` before delegation → `completed` only after Hou Tu independently verifies evidence); plan work runs **directly through `Agent`**, supervised via `get_subagent_result`/`steer_subagent`, with `Agent(resume)` for salvageable workstreams; **never `TaskExecute`/`TaskOutput`/`TaskStop`**, never store agent IDs/runtime state in task metadata; the **6-section** delegation contract; independent tasks launch as separate background agents; task status + PLAN checkboxes are the authoritative verified-work state. For **Fu Xi**: exactly 7 planning steps, the reference-split router, and plan-ceremony strings that must stay in the router files (not the `references/`). Also: keep the CodeGraph / LSP / `rg`,`fd` tool-split; frontend→`yunu`, non-UI impl→`jintong`, code-review→`weizheng`, architecture/audit→`taishang`.
 - `agents/AGENTS.md` — agent frontmatter + prompt conventions.
 - `extensions/AGENTS.md` and `extensions/ulw/` docs — ulw event/prompt rules.
 
@@ -38,12 +38,12 @@ When upstream and the Pi architecture disagree on behavior, present the fork in 
 
 | Fork | Upstream | Repo default | Why the default |
 |------|----------|--------------|-----------------|
-| Retry policy | "no cap, push through, no excuses" | **≤3 retries, then log blocker + move to independent work** | `max_turns` is the only runaway guard on Pi; unbounded retry risks cost blowup + loops |
+| Retry policy | "no cap, push through, no excuses" | **no cap — resume/repair until verified; only stop for a genuine external blocker** | Atlas-faithful; per-run `max_turns`/turn limits are the runaway guard, so an outer attempt cap is unneeded and would abandon unverified work |
 | Delegation contract sections | 6 sections (Inherited Wisdom as a `CONTEXT` sub-part) | **6 sections** (Hou Tu folded a prior 7→6; Inherited Wisdom lives in `CONTEXT`) | matches upstream count and Pi register-early/refresh-late model |
 | Upstream-runtime-only sections (boulder completion, elapsed summary) | present | **drop**, replace with plain final summary | no Pi boulder runtime |
-| Parallel framing | aggressive "PARALLEL by default; what is BLOCKING me from firing all in one message?" | **restore the aggressive framing** | throughput; Pi `TaskExecute` supports multi-`task_ids` batches |
-| 30-line prompt cue | "if under 30 lines it's TOO SHORT" | **restore as a cue**, balanced with "length ≠ quality" | nudges completeness without encouraging padding |
-| Resume mechanic | resume same session via `task_id` | **fresh re-run via `TaskExecute`, never `Agent(resume)`** | NOT a fork — runtime-forced + contract-locked; always Pi-side |
+| Parallel framing | aggressive "PARALLEL by default; what is BLOCKING me from firing all in one message?" | **restore the aggressive framing** | throughput; independent workers fan out as parallel background `Agent` calls, collected with `get_subagent_result` |
+| 30-line prompt cue | "if under 30 lines it's TOO SHORT" | **drop the hard floor; require completeness — "self-contained, everything the stateless worker needs and nothing it does not"** | line-count is a poor proxy; completeness is the real target and avoids padding |
+| Resume mechanic | resume same session via `task_id` | **resume via `Agent(resume: agentId)` for salvageable workstreams; fresh worker only when unsalvageable** | NOT a fork — runtime + contract; `Agent(resume)` is the Pi mechanism and `TaskExecute` is forbidden |
 
 The last row is listed so you recognize it in upstream prose and substitute it automatically — it is not a choice.
 
@@ -60,7 +60,7 @@ Model/effort alignment (see `substitution-map.md` → *Effort / reasoning-level 
 ## Non-negotiables checklist (pre-proposal)
 
 - [ ] Every runtime token substituted (`references/substitution-map.md`)
-- [ ] `<role>` + early `<critical>` anchors preserved in adapted mode bodies
+- [ ] Gemini overlay anchor kept: an early `<critical>` (preferred — peak-attention) or at least `</role>` (fallback). Upstream tag names alone (`<identity>`/`<mission>`/`<critical_overrides>`) do NOT match `indexOf("<critical>")`
 - [ ] Test-locked strings for the touched mode preserved; `defaultOnly…` string absent from `gpt.md`
 - [ ] Pi persona names kept; only the sanctioned attribution line mentions upstream
 - [ ] All family variants (`mode`/`gpt`/`gemini`, or agent `.md`, or ulw pair) changed in lockstep

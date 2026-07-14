@@ -6,14 +6,15 @@ Apply these consistently when adapting upstream prose to Pi. A token on the left
 
 | Upstream token / concept | Pi substitute |
 |--------------------------|---------------|
-| `task(category=…, subagent_type=…, load_skills=…, run_in_background=…)` | `TaskExecute` (plan-task execution) / `TaskCreate` (registration) / `Agent()` (read-only recon) — pick by context |
+| `task(category=…, subagent_type=…, load_skills=…, run_in_background=…)` | `Agent()` — every worker delegation (implementation, recon, reviewers). `TaskCreate`/`TaskUpdate` register the logical pi-task DAG only; `TaskExecute`/`TaskOutput`/`TaskStop` are **forbidden** in orchestration modes |
 | category + `load_skills` delegation model | fixed `agentType` routing (see personas below); no dynamic skill loading in the delegation call |
 | `TodoWrite` tracking | pi-tasks via `TaskCreate` / `TaskUpdate` |
 | `.omo/plans/<name>.md` | `local://PLAN.md` |
 | `.omo/notepads/<name>/*.md` | `local://NOTEPAD.learnings.md` / `.decisions.md` / `.issues.md` / `.blockers.md` |
-| `background_output(task_id="bg_…")` | `get_subagent_result` / `TaskOutput` |
-| `background_cancel(…)` | no direct equivalent — never bulk-cancel agents whose output is uncollected |
-| resume same session via `task_id` (`ses_…`) | NOT available on `TaskExecute`. Re-run fresh: re-open with `TaskUpdate(status:"pending")`, sharpen `description`, `TaskExecute` again. **Never `Agent(resume)`** for plan tasks (runtime-forced + contract-locked; this is not a fork) |
+| `background_output(task_id="bg_…")` | `get_subagent_result` (blocking `wait:true` to collect a running worker) |
+| `background_cancel(…)` | `steer_subagent` / `stop_subagent`; never bulk-cancel agents whose output is uncollected |
+| background concurrency limit / queue drain | runtime-enforced (`extensions/subagent`, `SUBAGENT_BACKGROUND_MAX_CONCURRENT`) — never hardcode the cap or a collect-loop in a prompt; fan out independent workers, collect with `get_subagent_result` |
+| resume same session via `task_id` (`ses_…`) | `Agent(resume: agentId)` for a salvageable workstream (keeps the worker's context); fresh worker only when unsalvageable. Runtime + contract, not a fork — `TaskExecute` is forbidden |
 | `boulder.json` / `completeBoulder()` / boulder-complete nudge | drop — no Pi runtime. Replace any completion-summary section with a plain final summary |
 | `interactive_bash` | `bash` with explicit `cwd` |
 | `/playwright` browser QA | delegate UI/browser QA to `yunu` |
