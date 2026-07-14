@@ -163,9 +163,9 @@ lsp_diagnostics catches type errors only. Logic bugs, missing behavior, broken f
 Name the exact tool + exact invocation per scenario (literal `curl` / `send-keys` / `page.click` + inputs + binary observable). Register every QA-spawned resource teardown as its own todo (scripts, tmux, browser, PIDs, ports, temp dirs), execute it, capture the receipt. "This should work" / "tests pass" / "lsp clean" / a leftover process are NOT done — the surface artifact + clean teardown are.
 </MANUAL_QA_MANDATE>
 
-## REVIEWER GATE (triggered)
+## ORCHESTRATOR-OWNED CODE-QUALITY GATE (triggered)
 
-Trigger if user said "엄밀"/"strictly"/"rigorously"/"properly review", or task touches 3+ files OR ran 20+ turns OR 30+ min, or it's a refactor/migration/perf/security change. Spawn a high-rigor reviewer via `Agent(subagent_type="weizheng", run_in_background=false, prompt="<goal + scenarios + evidence + diff>")`. Reviewer verdict is BINDING; "looks good but..." = rejection. Re-submit until UNCONDITIONAL approval before declaring done.
+Trigger if user said "엄밀"/"strictly"/"rigorously"/"properly review", or task touches 3+ files OR ran 20+ turns OR 30+ min, or it's a refactor/migration/perf/security change. Run the `orchestrator-owned code-quality gate` directly: inspect the complete diff against requirements and run all applicable build, lint, typecheck, and test commands. Fix every concern; repeat until clean. Never spawn a code-quality reviewer. Taishang remains architecture/debugging consult and F1 plan-compliance only, NEVER code-quality reviewer.
 
 ## COMPLETION CRITERIA
 
@@ -173,7 +173,7 @@ Done when ALL of:
 1. Every scenario PASSES with RED→GREEN proof AND real-surface artifact captured.
 2. Full test suite green; lsp_diagnostics clean on changed files.
 3. Code matches existing patterns; no scope creep.
-4. Reviewer gate (if triggered) returned unconditional approval.
+4. The orchestrator-owned code-quality gate (if triggered) passed with a clean diff-vs-requirements review and applicable checks.
 
 **Deliver exactly what was asked. No more, no less.**
 

@@ -22,8 +22,8 @@ Apply the adaptation rules while you transform: `substitution-map.md`, section-o
 - `gemini.md` — corrective **overlay**, not a full body. **Distill** `<agent>/gemini.md`'s Gemini-specific corrections (tool-grounding, never-implement, scope-lock, premature-termination) into the overlay. A verbatim copy of the full upstream gemini body would break the injector — the distilled overlay is the faithful adaptation for that slot.
 - agents: a single `.md`. ulw: `extensions/ulw/prompts/{default,gpt}.md`.
 
-## Review gate (rebuild / promotion)
-Before promoting a rebuilt default body, consult `taishang` (read-only architecture review): faithfulness to upstream, Pi-runtime correctness against the extension source, internal consistency, `allow_delegation_to` coverage, and promotion-readiness. Fix every BLOCKER/MAJOR before promoting.
+## Architecture gate (rebuild / promotion)
+Before promoting a rebuilt default body, consult `taishang` for read-only architecture review: faithfulness to upstream, Pi-runtime correctness against the extension source, internal consistency, `allow_delegation_to` coverage, and promotion-readiness. Taishang remains an architecture/debugging consult and F1 plan-compliance auditor only, NEVER code-quality reviewer. The orchestrator retains the **orchestrator-owned code-quality gate**, including executable checks and diff-vs-requirements review. Fix every BLOCKER/MAJOR before promoting.
 
 ## Promote (full rebuild)
 - Swap the scratch into place (`mv mode-v2.md mode.md`) — swap-ready because it carries the test-locked strings.
@@ -35,7 +35,7 @@ Before promoting a rebuilt default body, consult `taishang` (read-only architect
 - **Substitution sweep:** `rg -n 'task\(|\.omo/|bg_|ses_|TodoWrite|boulder|background_output|subagent_type="explore"|subagent_type="librarian"' <adapted>` → none.
 - **Test-locked strings present** — grep each straight from the test file (the test is the source of truth, not any copy in these references).
 - **No upstream-name leak:** `rg -ni 'atlas|ohmyopencode|prometheus|sisyphus|oracle' <adapted>` → none (bar a sanctioned attribution line).
-- **`allow_delegation_to` ⊇ every plan-specified reviewer** (constraints-and-forks → reviewer map). A missing reviewer is a silent runtime denial, not a build failure.
+- **`allow_delegation_to` ⊇ every plan-specified delegated reviewer/worker** (constraints-and-forks → gate map). A missing delegated agent is a silent runtime denial, not a build failure; F2 stays orchestrator-owned.
 - **Baseline / no-regression:** capture the modes test trio (`fuxi-clearance` + `hooks` + `config-loader`) pass/fail BEFORE editing; prove no regression AFTER. A pre-existing red stays flagged and out of scope unless the user asks.
 
 ## Worked example — Hou Tu 后土 (← Atlas)

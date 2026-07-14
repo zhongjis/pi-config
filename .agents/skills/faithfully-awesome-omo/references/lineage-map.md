@@ -26,7 +26,7 @@ Never strip provenance. Cross-check with `modes/MANIFESTO.md` (carries the omo a
 | Wenchang 文昌 | librarian (doc/web research) | `agents/wenchang.md` |
 | ultrawork (ulw) | ultrawork | `extensions/ulw/prompts/{default,gpt}.md` |
 
-Note on Taishang: realigned toward Oracle — read-only architecture/debug consult + plan-compliance audit at `:medium` effort (Oracle runs medium). Code-quality review was moved out to `weizheng` (a Pi-local reviewer, not an omo persona — omo does code review inline in Atlas/Sisyphus at the working tier, with no dedicated reviewer). Taishang keeps richer inspection tools (`readonly_bash`/`codegraph_*`/`lsp`) than Oracle — an intentional Pi enhancement. This is close to Oracle; not a drift to "fix".
+Note on Taishang: realigned toward Oracle — read-only architecture/debugging consult + F1 plan-compliance only at `:medium` effort (Oracle runs medium), NEVER code-quality reviewer. F2 is the **orchestrator-owned code-quality gate**: the orchestrator runs executable checks and performs diff-vs-requirements review. omo likewise keeps code review inline in Atlas/Sisyphus, with no dedicated reviewer. Taishang keeps richer inspection tools (`readonly_bash`/`codegraph_*`/`lsp`) than Oracle — an intentional Pi enhancement. This is close to Oracle; not a drift to "fix".
 
 ## In-scope: Sisyphus-Junior categories → Pi worker agents
 
@@ -52,7 +52,6 @@ Key correction: **Sisyphus-Junior is not an agent with named "variants."** It is
 | Persona | Actual lineage |
 |---------|----------------|
 | Lu Ban 鲁班 | Superpowers (`modes/luban/`) — explicitly disclaims Sisyphus/Prometheus/Atlas parity |
-| Wei Zheng 魏征 | Superpowers (`agents/weizheng.md`) |
 | Shen Nong 神農 | product-manager / pm-marketplace (`modes/shennong/`) |
 | Cang Jie 仓颉 | native Pi (`agents/cangjie.md`) |
 

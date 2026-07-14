@@ -113,7 +113,7 @@ flowchart TD
     J -->|bounded impl| Jintong[jintong]
     J -->|trivial single-file| Guangguang[guangguang]
     J -->|UI / UX risk| Yunu[yunu]
-    J -->|architecture / review| Taishang[taishang]
+    J -->|architecture / debugging / plan compliance| Taishang[taishang]
     Chengfeng --> K[Supervise + collect result]
     Wenchang --> K
     Jintong --> K
@@ -142,7 +142,7 @@ flowchart TD
 3. **Task routing**
    - One bounded chunk goes to one specialist.
    - Independent chunks are split into parallel delegations.
-   - Kua Fu routes discovery to `chengfeng`, external research to `wenchang`, bounded implementation to `jintong`, trivial single-file edits to `guangguang`, UI/UX risk to `yunu`, and architecture/review/debug escalation to `taishang`.
+   - Kua Fu routes discovery to `chengfeng`, external research to `wenchang`, bounded implementation to `jintong`, trivial single-file edits to `guangguang`, UI/UX risk to `yunu`, and architecture, debugging, or plan-compliance escalation to `taishang`.
    - Kua Fu may delegate to Fu Xi for planning. It does not delegate to Hou Tu.
 
 4. **Supervision**
@@ -150,7 +150,7 @@ flowchart TD
    - Failed delegated work should resume the same agent when useful, instead of spawning duplicate context.
 
 5. **Verification**
-   - Kua Fu reads changed files itself, runs diagnostics and focused checks, then confirms the request is fully satisfied.
+   - Kua Fu reads changed files itself, runs diagnostics and focused checks, then applies the orchestrator-owned code-quality gate before confirming the request is fully satisfied.
    - Delegation does not count as verification.
 
 
@@ -164,7 +164,7 @@ These are the current GPT frontmatter defaults for mode and agent model chains. 
 | `taishang`, `direnjie`, `juling`, `yunu`, `luban`, `shennong` | deep consult, gap analysis, complex implementation, UI judgment, skill discipline, product judgment | `openai-codex/gpt-5.6-sol:high` | These roles depend on trade-off judgment and catching subtle risks. |
 | `kuafu` | default orchestrator: intent gate, delegation, supervision, verification | `openai-codex/gpt-5.6-sol:medium` by default; raise to `:high` for large/multi-stream work | After prompt audit, Kua Fu is too judgment-heavy for Terra by default, but it runs often enough that `medium` is the cost/speed guard. |
 | `houtu` | Atlas-aligned execution conductor | `openai-codex/gpt-5.5:medium` | Matches upstream Atlas GPT-family model and effort while preserving the local provider ladder. |
-| `jintong`, `weizheng` | bounded implementation and evidence-based code review | `openai-codex/gpt-5.6-terra:medium` | Terra suits routine implementation/review while keeping cost below Sol. |
+| `jintong` | bounded implementation | `openai-codex/gpt-5.6-terra:medium` | Terra suits routine implementation while keeping cost below Sol. |
 
 `chengfeng`, `wenchang`, `guangguang`, and `cangjie` retain their prior OpenAI models. `gpt-5.6-luna` is present in Pi 0.80.5's catalog but failed runtime resolution during migration health checks, so Luna adoption is deferred.
 

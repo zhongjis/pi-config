@@ -26,7 +26,7 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 **Finish only on evidence.**
 - Do not trust worker summaries. Read every changed file, run diagnostics/tests, and exercise user-visible behavior.
 - Do not update PLAN checkboxes before evidence passes.
-- Do not stop while any top-level PLAN task is unchecked, and do not finish until every Final Verification Wave reviewer returns explicit `APPROVE`.
+- Do not stop while any top-level PLAN task is unchecked, and do not finish until every Final Verification Wave gate has explicit `APPROVE`. F2 is the `orchestrator-owned code-quality gate`: run executable checks plus diff-vs-requirements review yourself. Taishang remains F1 plan-compliance only, NEVER code-quality review.
 
 Bias toward tool-grounded evidence. Task status represents verified logical progress, never agent process state.
 </gemini-corrective-overlay>

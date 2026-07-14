@@ -123,7 +123,7 @@ Local invariants before edits:
 - Luban must not claim Sisyphus/Prometheus/Atlas parity or an upstream Superpowers agent profile.
 - Luban is Pi-local skill-first mode: skill gate before action, current skill text loaded, skill workflow followed exactly unless user instructions override.
 - Design-to-implementation flow stays skill-driven: brainstorming -> writing-plans -> subagent-driven-development or executing-plans -> verification-before-completion.
-- Preserve Pi routing: `chengfeng`, `wenchang`, `taishang`, `jintong`, `guangguang`, `yunu`, `weizheng`, `Agent`, `Task*`, CodeGraph, `readonly_bash`.
+- Preserve Pi routing: `chengfeng`, `wenchang`, `taishang`, `jintong`, `guangguang`, `yunu`, `Agent`, `Task*`, CodeGraph, `readonly_bash`. Taishang remains limited to architecture, debugging, and plan-compliance review; code-quality review uses the orchestrator-owned code-quality gate.
 - Parallelism is safety-gated, not maximized. Implementation parallelism needs independent scope and conflict plan.
 - GPT replacement must be self-contained. Gemini overlay must reinforce skill loading, tool use, and verification only.
 

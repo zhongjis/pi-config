@@ -5,7 +5,7 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 ## Upstream
 
 - **Source:** https://github.com/code-yeongyu/oh-my-openagent
-- **Adapted:** Pi-native adaptation. Replaced omo agent calls with pi agent names (chengfeng/wenchang/taishang/fuxi/jintong/juling/yunu/guangguang/weizheng) and pi tools (`Agent`/`get_subagent_result`/`steer_subagent`, `codegraph_*`, `rg`/`read`/`fd`/`lsp`). Two prompt variants are adapted faithfully from upstream `ultrawork/default.md` (Claude) and `ultrawork/gpt.md` (OpenAI). Loop mechanism removed (pi handles continuation). Two-phase detection (input → before_agent_start) keeps prompt out of user message.
+- **Adapted:** Pi-native adaptation. Replaced omo agent calls with pi agent names (chengfeng/wenchang/taishang/fuxi/jintong/juling/yunu/guangguang) and pi tools (`Agent`/`get_subagent_result`/`steer_subagent`, `codegraph_*`, `rg`/`read`/`fd`/`lsp`). Code-quality review uses an `orchestrator-owned code-quality gate`: the orchestrator inspects the diff against requirements and runs applicable checks directly; Taishang remains architecture/debugging consult and F1 plan-compliance only, never code-quality reviewer. Two prompt variants are adapted faithfully from upstream `ultrawork/default.md` (Claude) and `ultrawork/gpt.md` (OpenAI). Loop mechanism removed (pi handles continuation). Two-phase detection (input → before_agent_start) keeps prompt out of user message.
 
 ## What It Does
 

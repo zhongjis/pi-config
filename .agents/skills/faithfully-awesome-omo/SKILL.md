@@ -1,6 +1,6 @@
 ---
 name: faithfully-awesome-omo
-description: Faithfully update, polish, sync, audit, or re-adapt this repo's Pi-adapted omo agent and mode prompts. Use whenever working on omo-derived prompts under `modes/` (Hou Tu/Fu Xi/Kua Fu), `agents/` (Taishang/Di Renjie/Yanluo, Chengfeng/Wenchang, Guang Guang/Jin Tong/Ju Ling/Yu Nu), or `extensions/ulw/`; or when the user says sync with upstream Atlas/Prometheus/omo, find missing upstream content, re-faithful an adapted mode, update gpt/gemini variants, or align a Pi persona with its omo source. Trigger even when only Pi persona name appears and "omo" is absent. Covers structural faithfulness, omo→Pi substitutions, prompt family alignment, gemini overlay anchors, locked strings, DOX contracts, decision forks, and proposal-first confirm gate. Not for Lu Ban, Wei Zheng, Shen Nong, or Cang Jie.
+description: Faithfully update, polish, sync, audit, or re-adapt this repo's Pi-adapted omo agent and mode prompts. Use whenever working on omo-derived prompts under `modes/` (Hou Tu/Fu Xi/Kua Fu), `agents/` (Taishang/Di Renjie/Yanluo, Chengfeng/Wenchang, Guang Guang/Jin Tong/Ju Ling/Yu Nu), or `extensions/ulw/`; or when the user says sync with upstream Atlas/Prometheus/omo, find missing upstream content, re-faithful an adapted mode, update gpt/gemini variants, or align a Pi persona with its omo source. Trigger even when only Pi persona name appears and "omo" is absent. Covers structural faithfulness, omo→Pi substitutions, prompt family alignment, gemini overlay anchors, locked strings, DOX contracts, decision forks, and proposal-first confirm gate. Not for Lu Ban, Shen Nong, or Cang Jie.
 disable-model-invocation: true
 ---
 
@@ -18,7 +18,7 @@ One upstream, **SUL 1.0** (non-commercial / internal use, **attribution required
 
 A persona is **in scope only if it appears in `references/lineage-map.md`**. Read that file first — it maps each Pi persona to its exact upstream persona, upstream repo, and the local files you will touch.
 
-Out of scope (different lineage — do not treat as omo): **Lu Ban** and **Wei Zheng** (Superpowers), **Shen Nong** (product-manager / pm-marketplace), **Cang Jie** (native). If the target is one of these, this skill does not apply — say so instead of forcing an omo frame.
+Out of scope (different lineage — do not treat as omo): **Lu Ban** (Superpowers), **Shen Nong** (product-manager / pm-marketplace), **Cang Jie** (native). If the target is one of these, this skill does not apply — say so instead of forcing an omo frame.
 
 ## Why "faithful" is not "verbatim"
 
@@ -88,7 +88,7 @@ Then wait for an explicit go. If the plan needs a change to a locked contract fi
 - Reread the **final injected/composed prompt**, not just source fragments (per `modes/AGENTS.md`). Confirm the Gemini overlay lands at its anchor — before `<critical>`, or after `</role>` when the body has no `<critical>`.
 - **Section-order parity check:** dump both section sequences (`rg -oE '^<[a-z_]+>' <adapted-body>` and the same on the upstream body) and confirm the shared sections line up 1:1.
 - **Baseline discipline:** capture the touched tests' pass/fail *before* editing, then re-run after — prove *no regression*, not merely "green". A pre-existing failure (e.g. a `model:` string the frontmatter no longer matches) stays flagged and out of scope unless the user asks; never let a new failure hide behind a pre-existing one, and never claim a fix you did not make.
-- **`allow_delegation_to` ⊇ every plan-specified reviewer.** A reviewer the persona is told to delegate to but that is missing from the mode's `allow_delegation_to` is denied at **runtime**, not at build — the Final Wave silently stalls (e.g. Fu Xi's F4 `direnjie` was absent). Cross-check the allowlist against the reviewer map in `references/constraints-and-forks.md`.
+- **`allow_delegation_to` ⊇ every plan-specified delegated reviewer/worker.** A persona told to delegate to an agent missing from the mode's `allow_delegation_to` is denied at **runtime**, not at build — the Final Wave silently stalls (e.g. Fu Xi's F4 `direnjie` was absent). Cross-check the allowlist against the gate map in `references/constraints-and-forks.md`; F2 is orchestrator-owned and requires no reviewer delegation.
 - **Sync duplicate test tables.** Per-mode invariants live in BOTH `test/fuxi-clearance.test.ts` and `extensions/modes/test/hooks.test.ts`; they drift independently, so update both when a locked string changes.
 - For a full rebuild/promotion, consult `taishang` (read-only architecture review) before promoting and fix every BLOCKER/MAJOR (`references/adapt-and-promote.md`).
 

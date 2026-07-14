@@ -150,8 +150,8 @@ Critical Path: Task 1 → Task 3 → F1
 > Recommended Max Turns: an advisory per-task turn budget sized to the chunk (a small edit ~20–30; a bounded ≤3-file task ~40–60; never above the split threshold). The executor (Hou Tu) uses it as the starting `max_turns` and may raise it — it is advisory, not a hard ceiling. It is also the executor's only cost guard, so size it realistically rather than tight.
 
 ## Final Verification Wave (after ALL implementation tasks)
-- F1. Plan Compliance Audit — `taishang`: each Must Have exists; each Must NOT Have absent (reject with file:line). Output: `Must Have [N/N] | Must NOT Have [N/N] | VERDICT`.
-- F2. Code Quality Review — `weizheng`: type check + linter + tests; scan changed files for `as any`/`@ts-ignore`, empty catches, stray logs, dead code, unused imports. Output: `Build [PASS/FAIL] | Lint | Tests | VERDICT`.
+- F1. Plan Compliance Audit — `taishang` (F1-only): each Must Have exists; each Must NOT Have absent (reject with file:line). Output: `Must Have [N/N] | Must NOT Have [N/N] | VERDICT`. Taishang MUST NEVER act as code-quality reviewer.
+- F2. Code Quality — explicit `orchestrator-owned code-quality gate`: Hou Tu runs type check, linter, tests, and diff-vs-requirements review itself; scan changed files for `as any`/`@ts-ignore`, empty catches, stray logs, dead code, and unused imports. Output: `Build [PASS/FAIL] | Lint | Tests | Diff Review | VERDICT`.
 - F3. Real Manual QA — agent-executed exercise of the user-facing surface (`yunu` for UI; `jintong` for CLI/API): exact tool + invocation + evidence artifact (screenshot / tmux / curl / stdout). No "should work".
 - F4. Scope Fidelity Audit — `direnjie`: delivered scope matches plan objectives, no scope creep / silent additions (reject with file:line).
 

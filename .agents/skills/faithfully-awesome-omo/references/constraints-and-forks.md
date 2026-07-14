@@ -22,24 +22,24 @@ Before finalizing, grep the test for the mode you touched and confirm every lock
 
 The owning `AGENTS.md` files encode binding architecture. Do not weaken them, and get explicit approval before editing them.
 
-- `modes/AGENTS.md` — the heavy one. For **Hou Tu**: strict pi-task/agent lifecycle separation — pi-tasks are logical DAG only (`TaskCreate` per top-level item → `TaskUpdate addBlockedBy` → `in_progress` before delegation → `completed` only after Hou Tu independently verifies evidence); plan work runs **directly through `Agent`**, supervised via `get_subagent_result`/`steer_subagent`, with `Agent(resume)` for salvageable workstreams; **never `TaskExecute`/`TaskOutput`/`TaskStop`**, never store agent IDs/runtime state in task metadata; the **6-section** delegation contract; independent tasks launch as separate background agents; task status + PLAN checkboxes are the authoritative verified-work state. For **Fu Xi**: exactly 7 planning steps, the reference-split router, and plan-ceremony strings that must stay in the router files (not the `references/`). Also: keep the CodeGraph / LSP / `rg`,`fd` tool-split; frontend→`yunu`, non-UI impl→`jintong`, code-review→`weizheng`, architecture/audit→`taishang`.
+- `modes/AGENTS.md` — the heavy one. For **Hou Tu**: strict pi-task/agent lifecycle separation — pi-tasks are logical DAG only (`TaskCreate` per top-level item → `TaskUpdate addBlockedBy` → `in_progress` before delegation → `completed` only after Hou Tu independently verifies evidence); plan work runs **directly through `Agent`**, supervised via `get_subagent_result`/`steer_subagent`, with `Agent(resume)` for salvageable workstreams; **never `TaskExecute`/`TaskOutput`/`TaskStop`**, never store agent IDs/runtime state in task metadata; the **6-section** delegation contract; independent tasks launch as separate background agents; task status + PLAN checkboxes are the authoritative verified-work state. For **Fu Xi**: exactly 7 planning steps, the reference-split router, and plan-ceremony strings that must stay in the router files (not the `references/`). Also: keep the CodeGraph / LSP / `rg`,`fd` tool-split; frontend→`yunu`, non-UI impl→`jintong`; Taishang remains architecture/debugging consult + F1 plan-compliance only, NEVER code-quality reviewer.
 - `agents/AGENTS.md` — agent frontmatter + prompt conventions.
 - `extensions/AGENTS.md` and `extensions/ulw/` docs — ulw event/prompt rules.
 
 After a contract-level change (structure, section count, mechanics, ownership), update the nearest owning `AGENTS.md`. If nothing contract-level changed, say so.
 
-## Plan-specified reviewers (`allow_delegation_to` must cover them)
+## Final verification gates (`allow_delegation_to` must cover delegated agents)
 
-An orchestration/execution mode can only delegate to agents listed in its frontmatter `allow_delegation_to`; anything else is **denied at runtime** by the delegation policy — a silent stall at run time, not a build error. Fu Xi's plans pin the Final Verification Wave reviewers (`modes/fuxi/mode.md`):
+An orchestration/execution mode can only delegate to agents listed in its frontmatter `allow_delegation_to`; anything else is **denied at runtime** by the delegation policy — a silent stall at run time, not a build error. Fu Xi's plans pin the Final Verification Wave gates (`modes/fuxi/mode.md`). F2 is the **orchestrator-owned code-quality gate**: the orchestrator runs executable checks and performs diff-vs-requirements review; it does not delegate F2 to a dedicated reviewer.
 
-| Gate | Reviewer |
-|------|----------|
-| F1 plan-compliance | `taishang` |
-| F2 code-quality | `weizheng` |
+| Gate | Owner |
+|------|-------|
+| F1 plan-compliance | `taishang` — F1 only; NEVER code-quality reviewer |
+| F2 code-quality | orchestrator |
 | F3 real manual QA | `yunu` (UI) / `jintong` (CLI/API) |
 | F4 scope-fidelity | `direnjie` |
 
-So Hou Tu (and any execution persona) MUST list all of these in `allow_delegation_to` — the F4 `direnjie` gap silently stalled the Final Wave until caught. When adapting any orchestration/execution persona, cross-check its allowlist against every reviewer/worker its body tells it to delegate to.
+So Hou Tu (and any execution persona) MUST list every delegated F1/F3/F4 agent in `allow_delegation_to` — the F4 `direnjie` gap silently stalled the Final Wave until caught. When adapting any orchestration/execution persona, cross-check its allowlist against every reviewer/worker its body tells it to delegate to.
 
 ## Attribution rule
 
@@ -79,5 +79,5 @@ Model/effort alignment (see `substitution-map.md` → *Effort / reasoning-level 
 - [ ] All family variants (`mode`/`gpt`/`gemini`, or agent `.md`, or ulw pair) changed in lockstep
 - [ ] Each decision fork surfaced with a recommended default
 - [ ] Any locked-contract / test edit called out as "Ask First"
-- [ ] `allow_delegation_to` ⊇ every reviewer/worker the body delegates to (esp. Final Wave F1–F4)
+- [ ] `allow_delegation_to` ⊇ every delegated reviewer/worker (Final Wave F1/F3/F4; F2 stays orchestrator-owned)
 - [ ] Both invariant tables synced (`fuxi-clearance.test.ts` + `hooks.test.ts`) if any locked string changed

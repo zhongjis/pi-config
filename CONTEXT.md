@@ -90,6 +90,8 @@ Product-manager mode, backed by the PM skill pack.
 
 ## Subagents
 
+Code quality uses an **orchestrator-owned code-quality gate**: no dedicated code-quality persona exists; orchestrators run checks and review diffs against requirements.
+
 **Chengfeng 乘风**:
 Codebase discovery, tracing, and pattern finding.
 
@@ -109,10 +111,7 @@ Frontend and web-UI implementation plus visual QA.
 Trivial single-file edits, typos, and obvious config nits.
 
 **Taishang 太上**:
-Read-only architecture/debugging consult and plan-compliance audit; does not do code-quality review.
-
-**Weizheng 魏征**:
-Code-quality review — runs build/lint/typecheck/tests and checks the diff against requirements.
+Read-only architecture/debugging consult and plan-compliance audit only; does not do code-quality review.
 
 **Cangjie 仓颉**:
 Single-file Markdown or self-contained static-HTML draft/rewrite from provided context.

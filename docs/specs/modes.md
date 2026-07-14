@@ -18,7 +18,7 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 
 ### Lu Ban Validation Policy
 
-Lu Ban follows Superpowers skill gates, then validates implementation by risk. Low-risk work uses implementer self-checks plus focused verification. High-risk work uses Wei Zheng for code-readiness review after implementation, and Taishang only when spec, architecture, blast radius, or intent alignment is uncertain.
+Lu Ban follows Superpowers skill gates, then validates implementation by risk. Low-risk work uses implementer self-checks plus focused verification. High-risk work uses the orchestrator-owned code-quality gate after implementation. Taishang is reserved for architecture, debugging, or plan-compliance uncertainty.
 
 User approval is reserved for product intent: unclear goals, missing success criteria, scope decomposition, high-risk expansion beyond the approved spec, unresolved ambiguity, or destructive actions. Routine technical validation stays inside the agent loop.
 
