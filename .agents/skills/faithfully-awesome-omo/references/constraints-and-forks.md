@@ -7,7 +7,7 @@ What you must not break, and the judgment calls that recur every time you adapt 
 These tests assert exact substrings in the composed prompts. Break a string → red build. **Read the test before editing** — the lists drift, so treat the test file as authoritative rather than trusting any copy here.
 
 - `test/fuxi-clearance.test.ts` — the mode family matrix. Per mode it locks `default[]`, `gpt[]`, `geminiOverlay[]`, `geminiComposed[]`, and `defaultOnlyInGptReplacement` (a string that must be in `mode.md` but absent from `gpt.md`). Covers `kuafu`, `fuxi`, `houtu`, `luban`.
-- `extensions/modes/test/hooks.test.ts` — mirrors the overlay injection (anchor positioning) and per-mode overlay strings.
+- `extensions/modes/test/hooks.test.ts` — **carries its own copy** of the per-mode invariant table (`default`/`gpt`/`geminiOverlay`/`defaultOnly`) plus overlay-anchor positioning. It drifts independently from `fuxi-clearance.test.ts` — when a locked string changes, **sync both** or one stays red.
 - `extensions/ulw/test/index.test.ts` — ulw prompt assertions.
 
 Worked example (houtu, so you see the shape):
@@ -27,6 +27,19 @@ The owning `AGENTS.md` files encode binding architecture. Do not weaken them, an
 - `extensions/AGENTS.md` and `extensions/ulw/` docs — ulw event/prompt rules.
 
 After a contract-level change (structure, section count, mechanics, ownership), update the nearest owning `AGENTS.md`. If nothing contract-level changed, say so.
+
+## Plan-specified reviewers (`allow_delegation_to` must cover them)
+
+An orchestration/execution mode can only delegate to agents listed in its frontmatter `allow_delegation_to`; anything else is **denied at runtime** by the delegation policy — a silent stall at run time, not a build error. Fu Xi's plans pin the Final Verification Wave reviewers (`modes/fuxi/mode.md`):
+
+| Gate | Reviewer |
+|------|----------|
+| F1 plan-compliance | `taishang` |
+| F2 code-quality | `weizheng` |
+| F3 real manual QA | `yunu` (UI) / `jintong` (CLI/API) |
+| F4 scope-fidelity | `direnjie` |
+
+So Hou Tu (and any execution persona) MUST list all of these in `allow_delegation_to` — the F4 `direnjie` gap silently stalled the Final Wave until caught. When adapting any orchestration/execution persona, cross-check its allowlist against every reviewer/worker its body tells it to delegate to.
 
 ## Attribution rule
 
@@ -66,3 +79,5 @@ Model/effort alignment (see `substitution-map.md` → *Effort / reasoning-level 
 - [ ] All family variants (`mode`/`gpt`/`gemini`, or agent `.md`, or ulw pair) changed in lockstep
 - [ ] Each decision fork surfaced with a recommended default
 - [ ] Any locked-contract / test edit called out as "Ask First"
+- [ ] `allow_delegation_to` ⊇ every reviewer/worker the body delegates to (esp. Final Wave F1–F4)
+- [ ] Both invariant tables synced (`fuxi-clearance.test.ts` + `hooks.test.ts`) if any locked string changed

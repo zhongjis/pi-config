@@ -1,19 +1,38 @@
-# omo Atlas prompts (reference)
+# omo upstream prompts (vendored reference)
 
-Verbatim copies of the Atlas orchestrator prompt variants from oh-my-openagent, kept for citation and comparison against this repo's `modes/houtu/` prompts.
+Byte-identical, commit-pinned copies of upstream omo (`code-yeongyu/oh-my-openagent`) prompts, kept for citation and as the **diff baseline** when adapting a persona into its Pi counterpart. Used by the `faithfully-awesome-omo` skill; the persona↔upstream mapping lives in that skill's `references/lineage-map.md`.
 
-## Provenance
+## Layout convention (generic — every omo persona)
 
-- Source repo: https://github.com/code-yeongyu/oh-my-openagent
-- Commit: `830ec1e294afa9823bd193b931c39cd67897c30f` (2026-07-14)
+One subdirectory per upstream persona/agent; one file per variant:
+
+```
+omo-prompts/<agent>/*.md
+# modes with variants:  <agent>/{default,gpt,gemini}.md
+# single-file agents:   <agent>/default.md
+```
+
+`<agent>` is the upstream name (e.g. `atlas`, `prometheus`, `sisyphus`, `oracle`, `metis`, `momus`, `explore`, `librarian`), not the Pi persona name. Copies are byte-identical to upstream — never edit them.
+
+## Vendoring a new persona
+
+1. Look up the upstream name + source path in `faithfully-awesome-omo/references/lineage-map.md`.
+2. Copy every variant into `omo-prompts/<agent>/` and pin the commit under **Vendored sets** below.
+3. `cmp` each copy against source (or verify via the fetch), then diff it against the current Pi prompt to drive the adaptation.
+
+Re-copy from a pinned commit to refresh; never hand-edit a vendored file.
+
+## Vendored sets
+
+### `atlas/` — Atlas orchestrator (→ Hou Tu 后土)
+
+- Source: https://github.com/code-yeongyu/oh-my-openagent — commit `830ec1e294afa9823bd193b931c39cd67897c30f` (2026-07-14)
 - Upstream path: `packages/prompts-core/prompts/atlas/`
-
-## Files
 
 | File | Upstream |
 |------|----------|
-| `atlas-default.md` | `packages/prompts-core/prompts/atlas/default.md` |
-| `atlas-gpt.md` | `packages/prompts-core/prompts/atlas/gpt.md` |
-| `atlas-gemini.md` | `packages/prompts-core/prompts/atlas/gemini.md` |
+| `atlas/default.md` | `packages/prompts-core/prompts/atlas/default.md` |
+| `atlas/gpt.md` | `packages/prompts-core/prompts/atlas/gpt.md` |
+| `atlas/gemini.md` | `packages/prompts-core/prompts/atlas/gemini.md` |
 
-Copies are byte-identical to upstream. Do not edit; re-copy from the pinned commit to refresh.
+_(Add a section here for each new persona you vendor.)_

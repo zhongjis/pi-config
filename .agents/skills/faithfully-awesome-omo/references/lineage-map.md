@@ -69,6 +69,8 @@ Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opene
 
 Raw pattern: `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/<path>`. Use `fetch_content` on the GitHub tree/API first; `wenchang` can locate exact paths when the layout is unclear.
 
+After fetching, **vendor** the persona's variants into `docs/references/omo-prompts/<agent>/*.md` (byte-identical, commit-pinned — see that dir's README) so the diff baseline is a fixed, reproducible artifact rather than an ephemeral fetch. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. The full vendor → adapt → promote flow lives in `references/adapt-and-promote.md`.
+
 ## Attribution gap (known, not auto-fixed)
 
 In-file attribution is **inconsistent**:
