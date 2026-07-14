@@ -12,7 +12,7 @@
  *   - Notification shown on activation
  *
  * Pi-native adaptation:
- *   - omo agent calls (task/subagent_type) → pi Agent tool names (chengfeng/wenchang/taishang/fuxi/jintong)
+ *   - omo agent calls (task/subagent_type) → pi Agent tool names (chengfeng/wenchang/taishang/xuannv/jintong)
  *   - Model-adapted prompt: Claude/default variant by default, OpenAI/GPT
  *     variant when the active model is GPT-family (see prompt.ts)
  */

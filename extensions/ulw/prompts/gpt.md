@@ -62,7 +62,7 @@ Before acting, survey the skills available in this system: scan their descriptio
 | chengfeng agent | Need codebase patterns you don't have | `Agent(subagent_type="chengfeng", run_in_background=true, ...)` |
 | wenchang agent | External library docs, OSS examples | `Agent(subagent_type="wenchang", run_in_background=true, ...)` |
 | taishang agent | Stuck on architecture/debugging after 2+ attempts | `Agent(subagent_type="taishang", run_in_background=false, ...)` |
-| fuxi agent | Complex multi-step with dependencies (5+ steps) | `Agent(subagent_type="fuxi", run_in_background=false, ...)` |
+| xuannv agent | Tactical planning advisor for multi-step implementation | `Agent(subagent_type="xuannv", run_in_background=false, ...)` |
 | jintong / juling / yunu / guangguang | Specialized bounded implementation work (`jintong` standard, `juling` complex/higher-risk opus-tier) | `Agent(subagent_type="...", run_in_background=true)` |
 
 <tool_usage_rules>
@@ -97,10 +97,10 @@ deep_context = get_subagent_result(agent_id=...)
 // Merge ALL findings for comprehensive understanding
 ```
 
-**fuxi (size the scope first):**
+**xuannv (size scope first):**
 - Count distinct surfaces, files, steps. Invoke for 5+ interdependent steps / multi-file / unclear scope; skip only for genuinely trivial single-step work.
-- Invoke AFTER gathering context from both tracks.
-- Then execute in fuxi's exact wave order + parallel grouping and run the verification it specifies.
+- Invoke AFTER gathering context from direct tools and any background research.
+- Then execute from xuannv's plan text and run the verification it specifies.
 
 **Execute:**
 - Surgical, minimal changes matching existing patterns

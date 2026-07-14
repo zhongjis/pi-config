@@ -18,6 +18,7 @@ This file owns all `agents/*.md` definitions.
 - `yunu` is the frontend/web UI implementation and visual QA owner; keep its description explicit enough for orchestrators to choose it over generic implementation agents.
 - `jintong` (sonnet, standard) and `juling` (opus, complex/higher-risk) are the two non-UI implementation tiers; keep their descriptions distinct so orchestrators route by task complexity.
 - `taishang` is architecture/debugging consult + plan-compliance audit only (read-only, Oracle-aligned); it does NOT do code-quality review. No dedicated code-quality persona exists: the `orchestrator-owned code-quality gate` requires orchestrators to run checks and review diffs against requirements.
+- `xuannv` is the callable tactical planning advisor. Keep it advisory, text-returning, separate from Fu Xi mode ceremony, and limited to read-only consultant delegation.
 
 ## Work Guidance
 
