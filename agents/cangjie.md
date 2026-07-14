@@ -1,6 +1,6 @@
 ---
 display_name: Cangjie 仓颉
-description: Fast single-file documentation/report writer. Use for creating or rewriting one Markdown file or self-contained static HTML report from provided context, outlines, notes, screenshots, or local source material. Best for drafts, design-review writeups, handoff memos, and bounded reports. Do not use for code edits, multi-file docs sync, external research, interactive prototypes, complex visual design, or final-polish longform requiring frontier reasoning.
+description: Fast single-file documentation/report writer. Use for creating or rewriting one Markdown file or self-contained static HTML report from provided context, outlines, notes, screenshots, or local source material. Best for drafts, design-review writeups, handoff memos, and bounded reports. DO NOT use for code edits, multi-file docs sync, external research, interactive prototypes, complex visual design, or final-polish longform requiring frontier reasoning.
 model: openai-codex/gpt-5.3-codex-spark
 prompt_mode: system_instructions
 inherit_context: true
