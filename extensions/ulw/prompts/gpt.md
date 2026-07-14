@@ -114,7 +114,7 @@ deep_context = get_subagent_result(agent_id=...)
 
 ## DURABLE NOTEPAD
 
-At start, run `NOTE=$(mktemp -t ulw-$(date +%Y%m%d-%H%M%S).XXXXXX.md)` and echo the path. APPEND (never rewrite) to sections: Plan, Scenarios, Now, Todo, Findings (file:line refs), Learnings. If context is lost, re-read and resume.
+At start, create a session-local notepad at `local://ulw/<goal-slug>.md` (short kebab-case slug of the goal) with the `write` tool and echo the path. APPEND with the `edit` append op (never rewrite) to sections: Plan, Scenarios, Now, Todo, Findings (file:line refs), Learnings. If context is lost, `read local://ulw/<goal-slug>.md` and resume; `read local://` lists this session's notepads.
 
 ## SCENARIO CONTRACT (binding, defined BEFORE coding)
 

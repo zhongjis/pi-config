@@ -207,7 +207,7 @@ Each scenario MUST specify, upfront:
 
 ### Durable Notepad (survives context loss)
 
-Run once at start: `NOTE=$(mktemp -t ulw-$(date +%Y%m%d-%H%M%S).XXXXXX.md)`. Echo the path. Initialise with these sections and APPEND (never rewrite) as you work:
+Run once at start: create a session-local notepad at `local://ulw/<goal-slug>.md` (a short kebab-case slug of the goal, e.g. `local://ulw/migrate-auth-tokens.md`) with the `write` tool, and echo the path. Initialise it with these sections and APPEND with the `edit` tool's append op (never rewrite) as you work. `read local://` lists every notepad from this session:
 
 ```
 # Ultrawork Notepad — <one-line goal>
@@ -221,7 +221,7 @@ Started: <ISO timestamp>
 ## Learnings (patterns / pitfalls for next turn)
 ```
 
-If context is lost, you re-read the notepad and resume. Do not skip this — it is the only durable memory across turns.
+If context is lost, `read local://ulw/<goal-slug>.md` and resume. Do not skip this — it is the only durable memory across turns, scoped to this session (subagents get their own local:// storage, so hand workers inlined context, never this path).
 
 ### Execution & Evidence Requirements
 
