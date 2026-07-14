@@ -44,4 +44,20 @@ Re-copy from a pinned commit to refresh; never hand-edit a vendored file.
 |------|----------|
 | `prometheus/default.md` | `packages/prompts-core/prompts/prometheus/default.md` |
 
+### `ulw-plan/` — ultrawork planner skill baseline
+
+- Source: https://github.com/code-yeongyu/oh-my-openagent — commit `830ec1e294afa9823bd193b931c39cd67897c30f` (2026-07-14)
+- Upstream path: `packages/shared-skills/skills/ulw-plan/`
+- License: SUL-1.0 (`LICENSE.md` at the same commit)
+- Note: this directory is an inactive byte-identical reference baseline. The modified Pi runtime adaptation lives at `modes/fuxi/skills/-plan/` and carries the upstream license and modification notice.
+
+| File | Upstream |
+|------|----------|
+| `ulw-plan/SKILL.md` | `packages/shared-skills/skills/ulw-plan/SKILL.md` |
+| `ulw-plan/agents/openai.yaml` | `packages/shared-skills/skills/ulw-plan/agents/openai.yaml` |
+| `ulw-plan/references/full-workflow.md` | `packages/shared-skills/skills/ulw-plan/references/full-workflow.md` |
+| `ulw-plan/references/intent-clear.md` | `packages/shared-skills/skills/ulw-plan/references/intent-clear.md` |
+| `ulw-plan/references/intent-unclear.md` | `packages/shared-skills/skills/ulw-plan/references/intent-unclear.md` |
+| `ulw-plan/scripts/scaffold-plan.mjs` | `packages/shared-skills/skills/ulw-plan/scripts/scaffold-plan.mjs` |
+
 _(Add a section here for each new persona you vendor.)_

@@ -5,6 +5,7 @@ import { isTui } from "../../lib/mode.js";
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
+import { firstNonCompactionSummaryIndex, getActiveModeFromContext, getModeSkillBootstrapContent, getModeSkillPaths, messageContainsModeSkillBootstrap } from "./mode-skills.js";
 import type { ModeStateManager } from "./mode-state.js";
 import type { Mode, ModeState } from "./types.js";
 
@@ -178,6 +179,7 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 // ─── Hook registration ───────────────────────────────────────────────────────
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
+	let injectModeSkillBootstrap = true;
 	pi.on("tool_call", async (event, ctx) => {
 
 		if (state.currentMode !== "fuxi") return;
@@ -221,6 +223,11 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		state.plannotatorUnavailableReason = undefined;
 	});
 
+	pi.on("resources_discover", async (_event, ctx) => {
+		const activeMode = getActiveModeFromContext(ctx, state.currentMode);
+		return { skillPaths: getModeSkillPaths(activeMode) };
+	});
+
 	function bindActiveSessionContext(ctx: ExtensionContext): void {
 		state.activeCtx = ctx;
 		state.plannotatorAvailable = undefined;
@@ -244,8 +251,36 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		return { systemPrompt };
 	});
 
+	pi.on("context" as any, async (event: any, ctx: ExtensionContext) => {
+		const activeMode = getActiveModeFromContext(ctx, state.currentMode);
+		if (!injectModeSkillBootstrap) return;
+		if (getModeSkillPaths(activeMode).length === 0) return;
+
+		const messages = (event as { messages?: unknown[] }).messages ?? [];
+		if (messages.some((message) => messageContainsModeSkillBootstrap(message, activeMode))) return;
+
+		const bootstrap = getModeSkillBootstrapContent(activeMode);
+		if (!bootstrap) return;
+
+		const bootstrapMessage = {
+			role: "user" as const,
+			content: [{ type: "text" as const, text: bootstrap }],
+			timestamp: Date.now(),
+		};
+
+		const insertAt = firstNonCompactionSummaryIndex(messages);
+		return {
+			messages: [
+				...messages.slice(0, insertAt),
+				bootstrapMessage,
+				...messages.slice(insertAt),
+			],
+		};
+	});
+
 	pi.on("agent_end", async (_event, ctx) => {
 		bindActiveSessionContext(ctx);
+		injectModeSkillBootstrap = false;
 	});
 
 	pi.on("model_select", async (event, ctx) => {
@@ -256,6 +291,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		injectModeSkillBootstrap = true;
 		bindActiveSessionContext(ctx);
 
 		if (isSubagentSession(ctx)) {
@@ -284,6 +320,10 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 	pi.on("session_tree" as any, async (_event: any, ctx: ExtensionContext) => {
 		bindActiveSessionContext(ctx);
+	});
+
+	pi.on("session_compact", async () => {
+		injectModeSkillBootstrap = true;
 	});
 
 	pi.on("session_shutdown", async () => {

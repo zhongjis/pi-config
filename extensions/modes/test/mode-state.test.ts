@@ -156,7 +156,7 @@ describe("ModeStateManager", () => {
 		expect(reload).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not reload resources when switch stays outside luban", async () => {
+	it("reloads resources when switching into fuxi", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["fuxi:default"] = { body: "" };
@@ -171,7 +171,7 @@ describe("ModeStateManager", () => {
 
 		await state.switchMode("fuxi", ctx as never);
 
-		expect(reload).not.toHaveBeenCalled();
+		expect(reload).toHaveBeenCalledTimes(1);
 	});
 
 	it("persists luban boundary mode before reloading resources", async () => {
@@ -276,7 +276,7 @@ describe("ModeStateManager", () => {
 		expect(reload).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not reload when switching kuafu to fuxi (neither gated)", async () => {
+	it("reloads when switching kuafu to skill-gated fuxi", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["fuxi:default"] = { body: "" };
@@ -291,7 +291,7 @@ describe("ModeStateManager", () => {
 
 		await state.switchMode("fuxi", ctx as never);
 
-		expect(reload).not.toHaveBeenCalled();
+		expect(reload).toHaveBeenCalledTimes(1);
 	});
 
 	it("does not reload on same-mode no-op", async () => {

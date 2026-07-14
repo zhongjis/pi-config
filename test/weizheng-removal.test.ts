@@ -19,9 +19,8 @@ const ACTIVE_PROMPT_AND_CONTRACT_ROOTS = [
 const SINGLE_CONTRACT_FILES = ["CONTEXT.md", "extensions/subagent/AGENTS.md"];
 
 const ORCHESTRATOR_GATE_FILES = [
-  "modes/fuxi/mode.md",
-  "modes/fuxi/gpt.md",
-  "modes/fuxi/references/full-workflow.md",
+  "modes/fuxi/skills/-plan/SKILL.md",
+  "modes/fuxi/skills/-plan/references/full-workflow.md",
   "modes/houtu/mode.md",
   "modes/houtu/gpt.md",
   "modes/kuafu/mode.md",

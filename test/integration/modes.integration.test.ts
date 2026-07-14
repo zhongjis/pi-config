@@ -60,6 +60,31 @@ describe("modes extension — integration", () => {
 		expect(toolNames).toContain("plan_approve");
 	});
 
+	it("exposes and injects the Fu Xi ulw-plan skill only while Fu Xi is active", async () => {
+		t = await createTestSession({
+			extensions: [EXTENSION],
+			mockTools: MOCK_TOOLS,
+		});
+
+		const runner = (t.session as any).extensionRunner;
+		const fuxiSkillsDir = path.resolve(PROJECT_ROOT, "modes/fuxi/skills");
+		const discoveredPaths = async () => {
+			const resources = await runner.emitResourcesDiscover(PROJECT_ROOT, "reload");
+			return resources.skillPaths.map((resource: { path: string }) => resource.path);
+		};
+
+		expect(await discoveredPaths()).not.toContain(fuxiSkillsDir);
+
+		await switchMode(t, "fuxi");
+		expect(await discoveredPaths()).toContain(fuxiSkillsDir);
+		const injected = await runner.emitContext([]);
+		expect(JSON.stringify(injected)).toContain("mode-skill-bootstrap:fuxi");
+		expect(JSON.stringify(injected)).toContain("# ulw-plan");
+
+		await switchMode(t, "kuafu");
+		expect(await discoveredPaths()).not.toContain(fuxiSkillsDir);
+	});
+
 	// ── Default mode (kuafu) allows writes ──────────────────────
 
 	it("kuafu mode allows write to arbitrary files", async () => {

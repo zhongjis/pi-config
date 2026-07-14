@@ -1,11 +1,8 @@
 /**
- * Fuxi clearance sequence tests
+ * Fu Xi thin-prompt and injected ulw-plan contract tests.
  *
- * Mirrors prometheus/system-prompt.test.ts structure.
- * Validates that agents/fuxi.md contains the required clearance sequence
- * patterns after the Prometheus-style refactor: TaskCreate-based step
- * registration, direnjie gap check, ask final choice, yanluo loop,
- * and absence of the removed tools.
+ * The mode prompt family stays thin: planner-only guardrails plus the
+ * preloaded ulw-plan skill, without restating the full workflow.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -14,6 +11,21 @@ import { describe, expect, it } from "vitest";
 import { parseModeAgentConfig } from "../extensions/modes/src/config-loader.js";
 
 const FUXI_PATH = join(process.cwd(), "modes", "fuxi", "mode.md");
+const FUXI_PLAN_SKILL_PATH = join(process.cwd(), "modes", "fuxi", "skills", "-plan", "SKILL.md");
+const FUXI_PLAN_REFERENCE_PATHS = [
+  join(process.cwd(), "modes", "fuxi", "skills", "-plan", "references", "intent-clear.md"),
+  join(process.cwd(), "modes", "fuxi", "skills", "-plan", "references", "intent-unclear.md"),
+  join(process.cwd(), "modes", "fuxi", "skills", "-plan", "references", "full-workflow.md"),
+] as const;
+const FUXI_PLAN_STAGE_LABELS = [
+  "Interview: create/update local://DRAFT.md (if not already current)",
+  "Consult Di Renjie for gap analysis using local://DRAFT.md (auto-proceed)",
+  "Generate work plan to local://PLAN.md",
+  "Self-review: classify gaps (critical/minor/ambiguous)",
+  "Present summary with auto-resolved items and decisions needed",
+  "If decisions needed: wait for user, update plan",
+  "Run plan approval flow (plan_approve; dual high-accuracy review when required)",
+] as const;
 
 function getFuxiPrompt(): string {
   return readFileSync(FUXI_PATH, "utf-8");
@@ -90,37 +102,38 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
   fuxi: {
     default: [
       "Plan only. MUST NOT implement",
-      "gather the MAXIMUM relevant information",
-      "not directly and not by proxy",
+      "Plan mode is sticky",
       "separate worker session that only the user starts",
-      "Your FIRST action",
+      "ulw-plan",
+      "preloaded",
+      "MUST NOT restate or inline the planning workflow",
       "local://DRAFT.md",
+      "local://PLAN.md",
       "plan_approve",
     ],
     gpt: [
+      "Plan only. MUST NOT implement",
       "Plan mode is sticky",
-      "gather the MAXIMUM relevant information",
-      "not directly and not by proxy",
       "separate worker session that only the user starts",
-      "Your FIRST action",
+      "ulw-plan",
+      "preloaded",
+      "MUST NOT restate or inline the planning workflow",
       "local://DRAFT.md",
-      "Di Renjie",
+      "local://PLAN.md",
       "plan_approve",
-      "No product-code patches",
     ],
     geminiOverlay: [
-      "<FUXI_DRAFT_MANDATE>",
-      "not directly and not by proxy",
-      "FIRST action",
+      "<FUXI_INTENT_GATE>",
       "<FUXI_APPROVAL_GATE>",
+      "<FUXI_VERIFICATION_OVERRIDE>",
     ],
     geminiComposed: [
       "Plan only. MUST NOT implement",
-      "gather the MAXIMUM relevant information",
-      "<FUXI_ANTI_FALSE_FINALIZE>",
+      "ulw-plan",
+      "<FUXI_INTENT_GATE>",
       "plan_approve",
     ],
-    defaultOnlyInGptReplacement: "ADVISORY SUBPLAN MODE",
+    defaultOnlyInGptReplacement: "MANDATORY PLAN GENERATION SEQUENCE",
   },
   houtu: {
     default: [
@@ -280,189 +293,76 @@ describe("houtu Atlas parity", () => {
   });
 });
 
-describe("fuxi clearance sequence", () => {
-  describe("#given the mandatory plan generation sequence", () => {
-    it("#then should require TaskCreate for step registration immediately on trigger", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("TaskCreate");
-      expect(prompt).toContain("IMMEDIATELY");
-    });
+describe("fuxi thin prompt contract", () => {
+  it("keeps the default prompt thin and delegates workflow mechanics to preloaded ulw-plan", () => {
+    const prompt = getFuxiPrompt();
 
-    it("#then should register exactly 7 planning steps", () => {
-      const prompt = getFuxiPrompt();
-      // The 7 step labels that must be registered as tasks
-      expect(prompt).toContain("Consult Di Renjie for gap analysis");
-      expect(prompt).toContain("Generate work plan to local://PLAN.md");
-      expect(prompt).toContain("Self-review: classify gaps");
-      expect(prompt).toContain("Present summary with auto-resolved items");
-      expect(prompt).toContain("If decisions needed: wait for user, update plan");
-      expect(prompt).toContain("Run plan approval flow (plan_approve tool)");
-      expect(prompt).toContain("If high accuracy: Submit to Yan Luo and iterate until OKAY");
-    });
-
-    it("#then should require marking tasks in_progress before starting and completed after", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("in_progress");
-      expect(prompt).toContain("completed");
-      expect(prompt).toContain("TaskUpdate");
-    });
+    expectContainsAll(prompt, MODE_PROMPT_INVARIANTS.fuxi.default);
+    expect(prompt).not.toContain("~/.pi/agent/modes/fuxi/references/");
+    expect(prompt).not.toContain("modes/fuxi/references");
+    expect(prompt).not.toContain("MANDATORY PLAN GENERATION SEQUENCE");
+    expect(prompt).not.toContain("ADVISORY SUBPLAN MODE");
+    expect(prompt).not.toContain("PHASE 1: INTERVIEW MODE");
+    expect(prompt).not.toContain("PHASE 2: PLAN GENERATION");
   });
 
-  describe("#given the direnjie gap check step", () => {
-    it("#then should auto-proceed after direnjie result without asking additional user questions", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("direnjie");
-      expect(prompt).toContain("Auto-proceed after result without asking additional user questions");
-    });
+  it("keeps the GPT prompt thin and self-contained", () => {
+    const prompt = getFuxiGptPrompt();
 
-    it("#then should specify what to send direnjie", () => {
-      const prompt = getFuxiPrompt();
-      // Direnjie needs: goal, what was discussed, interpretation, research findings
-      expect(prompt).toContain("user's goal");
-      expect(prompt).toContain("research findings");
-      expect(prompt).toContain("questions you should have asked but didn't");
-      expect(prompt).toContain("guardrails");
-    });
+    expect(prompt).not.toMatch(/^---/);
+    expectContainsAll(prompt, MODE_PROMPT_INVARIANTS.fuxi.gpt);
+    expect(prompt).not.toContain("~/.pi/agent/modes/fuxi/references/");
+    expect(prompt).not.toContain("modes/fuxi/references");
+    expect(prompt).not.toContain("MANDATORY PLAN GENERATION SEQUENCE");
+    expect(prompt).not.toContain("ADVISORY SUBPLAN MODE");
   });
 
-  describe("#given the plan generation step", () => {
-    it("#then should save plan to local://PLAN.md", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("local://PLAN.md");
-    });
+  it("keeps the active ulw-plan skill and its three references authoritative", () => {
+    expect(existsSync(FUXI_PLAN_SKILL_PATH), "ulw-plan skill missing").toBe(true);
+    for (const path of FUXI_PLAN_REFERENCE_PATHS) {
+      expect(existsSync(path), `${path} missing`).toBe(true);
+    }
 
-    it("#then should include incremental write protocol for large plans", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("incremental write protocol");
-      expect(prompt).toContain("skeleton");
-      expect(prompt).toContain("edit");
-    });
+    const skill = readFileSync(FUXI_PLAN_SKILL_PATH, "utf-8");
+    const references = FUXI_PLAN_REFERENCE_PATHS.map((path) => readFileSync(path, "utf-8"));
+    const combined = [skill, ...references].join("\n");
+
+    expect(FUXI_PLAN_STAGE_LABELS).toHaveLength(7);
+    for (const label of FUXI_PLAN_STAGE_LABELS) {
+      expect(skill).toContain(label);
+    }
+
+    expectContainsAll(combined, [
+      "local://DRAFT.md",
+      "local://PLAN.md",
+      "Di Renjie",
+      "plan_approve",
+      "dual Yan Luo + independent Taishang",
+      "Full scope is the default",
+      "5–8",
+      "Final Verification Wave",
+    ]);
   });
 
-  describe("#given the final choice presentation", () => {
-    it("#then should use /plan:approve command for final choice", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("plan_approve");
-    });
+  it("keeps old modes/fuxi/references from being the authoritative runtime source", () => {
+    const prompt = getFuxiPrompt();
 
-    it("#then should present High Accuracy Review and Approve options", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("Approve");
-      expect(prompt).toContain("High Accuracy Review");
-    });
-
-    it("#then should present post-high-accuracy variant after yanluo", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("variant: \"post-high-accuracy\"");
-    });
-  });
-
-  describe("#given the high accuracy review path", () => {
-    it("#then should run yanluo in a loop until OKAY", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("yanluo");
-      expect(prompt).toContain("while (true)");
-      expect(prompt).toContain("OKAY");
-    });
-
-    it("#then should pass local://PLAN.md to yanluo", () => {
-      const prompt = getFuxiPrompt();
-      // yanluo invocation uses the plan path
-      expect(prompt).toMatch(/yanluo.*local:\/\/PLAN\.md|local:\/\/PLAN\.md.*yanluo/s);
-    });
-
-    it("#then should prohibit shortcuts in the loop", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).toContain("NO EXCUSES");
-      expect(prompt).toContain("NO SHORTCUTS");
-    });
-  });
-
-  describe("#given removed tools", () => {
-    it("#then should not reference gap_review_complete", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).not.toContain("gap_review_complete");
-    });
-
-    it("#then should not reference finalize_plan", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).not.toContain("finalize_plan");
-    });
-
-    it("#then should not reference exit_plan_mode", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).not.toContain("exit_plan_mode");
-    });
-
-    it("#then should not reference high_accuracy_review_complete", () => {
-      const prompt = getFuxiPrompt();
-      expect(prompt).not.toContain("high_accuracy_review_complete");
-    });
-  });
-
-  describe("#given extensions frontmatter", () => {
-    it("#then should not list removed tools in extensions", () => {
-      const prompt = getFuxiPrompt();
-      const frontmatterMatch = prompt.match(/^---\n([\s\S]*?)\n---/);
-      expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch![1];
-      expect(frontmatter).not.toContain("gap_review_complete");
-      expect(frontmatter).not.toContain("finalize_plan");
-      expect(frontmatter).not.toContain("exit_plan_mode");
-      expect(frontmatter).not.toContain("high_accuracy_review_complete");
-    });
-
-    it("#then should list Task* in extensions", () => {
-      const prompt = getFuxiPrompt();
-      const frontmatterMatch = prompt.match(/^---\n([\s\S]*?)\n---/);
-      expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch![1];
-      expect(frontmatter).toContain("Task*");
-      expect(frontmatter).not.toContain("TaskCreate");
-      expect(frontmatter).not.toContain("TaskUpdate");
-      expect(frontmatter).not.toContain("TaskList");
-      expect(frontmatter).not.toContain("TaskGet");
-      expect(frontmatter).not.toContain("TaskExecute");
-    });
-
-    it("#then should list ask in extensions (needed for user interview/clarification)", () => {
-      const prompt = getFuxiPrompt();
-      const frontmatterMatch = prompt.match(/^---\n([\s\S]*?)\n---/);
-      expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch![1];
-      // ask is required for clarifying plan requirements with the user
-      expect(frontmatter).toMatch(/\bask\b/);
-    });
+    expect(prompt).not.toContain("~/.pi/agent/modes/fuxi/references/");
+    expect(prompt).not.toContain("modes/fuxi/references");
   });
 });
 
 describe("fuxi gpt variant", () => {
-  it("#then should require Di Renjie consultation requirement", () => {
+  it("stays thin and points at injected ulw-plan mechanics", () => {
     const prompt = getFuxiGptPrompt();
-    expect(prompt).toMatch(/direnjie|Di Renjie/i);
+
+    expectContainsAll(prompt, MODE_PROMPT_INVARIANTS.fuxi.gpt);
+    expect(prompt).not.toContain("MANDATORY PLAN GENERATION SEQUENCE");
+    expect(prompt).not.toContain("ADVISORY SUBPLAN MODE");
+    expect(prompt).not.toContain("~/.pi/agent/modes/fuxi/references/");
   });
 
-  it("#then should require plan approval flow", () => {
-    const prompt = getFuxiGptPrompt();
-    expect(prompt).toMatch(/plan_approve/);
-  });
-
-  it("#then should require draft management", () => {
-    const prompt = getFuxiGptPrompt();
-    expect(prompt).toMatch(/DRAFT\.md|local:\/\/DRAFT/);
-  });
-
-  it("#then should enforce scope boundary (plan only, no implementation)", () => {
-    const prompt = getFuxiGptPrompt();
-    expect(prompt).toMatch(/PLAN ONLY|plan only|NOT implement|no implementation|read.only/i);
-  });
-
-  it("#then should require interview phase", () => {
-    const prompt = getFuxiGptPrompt();
-    expect(prompt).toMatch(/interview|ask.*tool|Interview Phase/i);
-  });
-
-  it("#then should contain no frontmatter", () => {
+  it("contains no frontmatter", () => {
     const prompt = getFuxiGptPrompt();
     expect(prompt).not.toMatch(/^---/);
   });
@@ -488,14 +388,6 @@ describe("audited omo prompt contracts", () => {
     expect(prompt).toContain("Continue until the authorized task is complete and verified");
     expect(prompt).toContain("Orchestrate first");
     expect(prompt).toContain("Implementation authorization gate");
-  });
-
-  it("keeps Fu Xi's dual-review sentence well formed", () => {
-    const prompt = getFuxiGptPrompt();
-
-    expect(prompt).toContain("one independent `taishang` (`inherit_context=false`), dispatched together");
-    expect(prompt).toContain("until BOTH return `[OKAY]`");
-    expect(prompt).not.toContain("`inherit_context=false`) dispatched together");
   });
 });
 

@@ -17,7 +17,7 @@ Never strip provenance. Cross-check with `modes/MANIFESTO.md` (carries the omo a
 | Pi persona | omo | Local files |
 |-----------|-----|-------------|
 | Hou Tu 后土 | Atlas (orchestrator) | `modes/houtu/{mode,gpt,gemini}.md` |
-| Fu Xi 伏羲 | Prometheus (planner) | `modes/fuxi/{mode,gpt,gemini}.md` + `references/*.md` |
+| Fu Xi 伏羲 | Prometheus (planner) + `ulw-plan` runtime skill ceremony | thin routers `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/-plan/{SKILL.md,references/*}`; pinned raw baselines `docs/references/omo-prompts/{prometheus,ulw-plan}` |
 | Kua Fu 夸父 | Sisyphus (senior eng — the primary coding agent) | `modes/kuafu/{mode,gpt,gemini}.md` |
 | Taishang 太上老君 | Oracle (read-only consult) | `agents/taishang.md` |
 | Di Renjie 狄仁杰 | Metis (gap analyzer) | `agents/direnjie.md` |
@@ -68,7 +68,7 @@ Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opene
 
 Raw pattern: `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/<path>`. Use `fetch_content` on the GitHub tree/API first; `wenchang` can locate exact paths when the layout is unclear.
 
-After fetching, **vendor** the persona's variants into `docs/references/omo-prompts/<agent>/*.md` (byte-identical, commit-pinned — see that dir's README) so the diff baseline is a fixed, reproducible artifact rather than an ephemeral fetch. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. The full vendor → adapt → promote flow lives in `references/adapt-and-promote.md`.
+After fetching, **vendor** the persona's variants into `docs/references/omo-prompts/<agent>/*.md` (byte-identical, commit-pinned — see that dir's README) so the diff baseline is a fixed, reproducible artifact rather than an ephemeral fetch. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. For Fu Xi, the active baseline is split: Prometheus prompt at `docs/references/omo-prompts/prometheus/` plus `ulw-plan` skill snapshot at `docs/references/omo-prompts/ulw-plan/`. The adapted runtime skill lives under `modes/fuxi/skills/-plan/`; Fu Xi's mode files stay thin routers. The full vendor → adapt → promote flow lives in `references/adapt-and-promote.md`.
 
 ## Attribution gap (known, not auto-fixed)
 

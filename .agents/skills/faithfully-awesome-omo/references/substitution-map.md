@@ -79,13 +79,16 @@ Rule for "align local model+effort to omo":
 
 ## Family matrix
 
-Each mode ships three variants; agents ship one file; ulw ships two. Keep variants aligned in intent.
+Each mode ships three router variants; agents ship one file; ulw ships two. Keep variants aligned in intent. Fu Xi is special: the mode family is deliberately thin, and the full seven-stage planning ceremony lives in the runtime skill loaded by the modes extension.
 
 | File | Role |
 |------|------|
-| `mode.md` | Canonical: YAML frontmatter + default (Claude-family) body. Owns the frontmatter the other variants inherit. |
-| `gpt.md` | Body-only, **self-contained** replacement (inherits `mode.md` frontmatter). Principle-driven; must not start with `---`. |
-| `gemini.md` | Body-only **corrective overlay** injected into the default body. Short, forceful overrides only. |
+| `modes/<mode>/mode.md` | Canonical: YAML frontmatter + default (Claude-family) body. Owns the frontmatter the other variants inherit. |
+| `modes/<mode>/gpt.md` | Body-only, **self-contained** replacement (inherits `mode.md` frontmatter). Principle-driven; must not start with `---`. |
+| `modes/<mode>/gemini.md` | Body-only **corrective overlay** injected into the default body. Short, forceful overrides only. |
+| `modes/fuxi/{mode,gpt,gemini}.md` | Thin router family only. Runtime injection is handled by the modes extension; deep planning material is not stored beside the routers. |
+| `modes/fuxi/skills/-plan/{SKILL.md,references/*}` | Adapted Fu Xi runtime skill. Owns the seven-stage ceremony and its supporting reference material. |
+| `docs/references/omo-prompts/{prometheus,ulw-plan}` | Pinned raw upstream baselines for Fu Xi prompt + skill lineage. Reference only; do not edit during adaptation. |
 | `agents/<name>.md` | Single file: frontmatter (incl. `model:` family fallback list) + body. |
 | `extensions/ulw/prompts/{default,gpt}.md` | ulw default + GPT variant. |
 
