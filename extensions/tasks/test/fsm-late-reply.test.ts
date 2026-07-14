@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SUBAGENTS_READY } from "../../lib/subagent-channels.js";
 import initExtension from "../src/index.js";
 
 // Drive the production entry without installing the real file sink so [panda-warn]
@@ -69,36 +68,6 @@ function mockPi() {
   };
 }
 
-function installSubagentsMock(pi: { events: MockEventBus }) {
-  const spawned: string[] = [];
-
-  const unsubscribePing = pi.events.on("subagents:rpc:ping", (data: unknown) => {
-    const { requestId } = data as { requestId: string };
-    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: 2 } });
-  });
-
-  const unsubscribeSpawn = pi.events.on("subagents:rpc:spawn", (data: unknown) => {
-    const { requestId } = data as { requestId: string };
-    const id = `agent-${spawned.length + 1}`;
-    spawned.push(id);
-    pi.events.emit(`subagents:rpc:spawn:reply:${requestId}`, { success: true, data: { id } });
-  });
-
-  const unsubscribeStop = pi.events.on("subagents:rpc:stop", (data: unknown) => {
-    const { requestId } = data as { requestId: string };
-    pi.events.emit(`subagents:rpc:stop:reply:${requestId}`, { success: true });
-  });
-
-  pi.events.emit(SUBAGENTS_READY, {});
-
-  return {
-    dispose() {
-      unsubscribePing();
-      unsubscribeSpawn();
-      unsubscribeStop();
-    },
-  };
-}
 
 async function callUpdateRpc(pi: { events: MockEventBus }, params: Record<string, unknown>) {
   const requestId = "late-reply-test";
@@ -115,16 +84,13 @@ describe("tasks:rpc:update late reply guard", () => {
   it("drops RPC status regression after internal completion cleanup", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const mock = mockPi();
-    const subagents = installSubagentsMock(mock.pi);
     initExtension(mock.pi as any);
 
     await mock.executeTool("TaskCreate", {
-      subject: "Stoppable agent task",
+      subject: "Completed task",
       description: "Desc",
-      agentType: "general-purpose",
     });
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
-    await mock.executeTool("TaskStop", { task_id: "1" });
+    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
 
     const reply = await callUpdateRpc(mock.pi, { taskId: "1", status: "pending" });
 
@@ -138,7 +104,6 @@ describe("tasks:rpc:update late reply guard", () => {
     const result = await mock.executeTool("TaskGet", { taskId: "1" });
     expect(result.content[0].text).toContain("Status: completed");
 
-    subagents.dispose();
     warnSpy.mockRestore();
   });
 });

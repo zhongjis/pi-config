@@ -19,7 +19,7 @@ export function textResult(msg: string) {
   return { content: [{ type: "text" as const, text: msg }], details: undefined as any };
 }
 
-export const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskOutput", "TaskStop", "TaskExecute"]);
+export const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskOutput", "TaskStop"]);
 
 export type SessionStateContext = {
   sessionManager: {
@@ -107,10 +107,6 @@ export type TaskRuntime = {
   widget: TaskWidget;
   autoClear: AutoClearManager;
   latestCtx: ExtensionContext | undefined;
-  cascadeConfig: { additionalContext?: string; model?: string; maxTurns?: number } | undefined;
-  agentTaskMap: Map<string, string>;
-  subagentsAvailable: boolean;
-  pendingWarning: string | undefined;
   storeUpgraded: boolean;
   persistedTasksShown: boolean;
   currentTurn: number;
@@ -133,10 +129,6 @@ export function createTaskRuntime(): TaskRuntime {
     widget: undefined as unknown as TaskWidget,
     autoClear: undefined as unknown as AutoClearManager,
     latestCtx: undefined,
-    cascadeConfig: undefined,
-    agentTaskMap: new Map<string, string>(),
-    subagentsAvailable: false,
-    pendingWarning: undefined,
     storeUpgraded: false,
     persistedTasksShown: false,
     currentTurn: 0,
@@ -221,7 +213,7 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
         if (tasks.length > 0) {
           const stagnation = runtime.continuationCooldown.consumeStagnationWarning();
           if (stagnation) {
-            pandaWarn("subagent.continuation.stagnation-cap", { attempt: stagnation.attempt, cap: stagnation.cap });
+            pandaWarn("tasks.continuation.stagnation-cap", { attempt: stagnation.attempt, cap: stagnation.cap });
             runtime.lastTaskToolUseTurn = runtime.currentTurn;
           }
         }
@@ -234,7 +226,7 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
 
     const meta = runtime.continuationCooldown.recordFire();
     runtime.lastTaskToolUseTurn = runtime.currentTurn;
-    pandaWarn("subagent.continuation.reminder", { attempt: meta.attempt, intervalMs: meta.intervalMs });
+    pandaWarn("tasks.continuation.reminder", { attempt: meta.attempt, intervalMs: meta.intervalMs });
     // Queue the reminder for transient delivery via the `context` hook below.
     // We deliberately do NOT append it to this tool result: doing so persists a
     // now-stale <system-reminder> into session history (it reappears on every
@@ -268,10 +260,6 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
     runtime.widget.setUICtx(ctx.ui as UICtx);
     upgradeStoreIfNeeded(runtime, ctx);
     showPersistedTasks(runtime);
-    if (runtime.pendingWarning) {
-      ctx.ui.notify(runtime.pendingWarning, "warning");
-      runtime.pendingWarning = undefined;
-    }
   });
 
   pi.on("session_switch" as any, async (event: any, ctx: ExtensionContext) => {

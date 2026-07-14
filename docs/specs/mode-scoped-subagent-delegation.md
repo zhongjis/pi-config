@@ -13,7 +13,7 @@ Introduce one shared, pure delegation-policy resolver. Given session entries and
 Use the resolver in two layers:
 
 - **Affordance:** keep the registered `Agent` description generic and non-stale; it advertises no global target list. Mode prompts supply routing guidance, while denial responses report the current permitted targets.
-- **Authority:** check the resolved policy at every spawn-capable ingress: direct `Agent` execution, RPC requests used by `TaskExecute`, and the global manager bridge. No request may reach manager spawn/resume until the authoritative check passes.
+- **Authority:** check the resolved policy at every spawn-capable ingress: direct `Agent` execution, checked RPC requests, and the global manager bridge. No request may reach manager spawn/resume until the authoritative check passes.
 
 Modes do not authorize `Agent` calls in `tool_call`. Subagent direct, checked RPC, and global manager-bridge spawn paths are sole authorities: they consume the latest persisted snapshot and validate before spawn or resume. Direct `Agent` denial returns structured tool details; RPC retains its frozen `{ success: false, error: string }` envelope with `delegation_policy_denied:` as the stable machine-detectable prefix. Sessions with no active agent mode preserve existing unrestricted delegation; an identified active mode with unavailable config or no explicit delegation fields fails closed.
 
@@ -28,10 +28,10 @@ Modes do not authorize `Agent` calls in `tool_call`. Subagent direct, checked RP
 7. As a parent agent, I want a denied direct delegation to return a concise reason and permitted targets, so that I can recover without guessing.
 8. As a parent agent, I want direct foreground and background delegation to use identical authorization, so that run mode cannot bypass policy.
 9. As a parent agent, I want resumed delegation checked consistently with the target agent type and current mode, so that resume is not an alternate spawn authority.
-10. As a task orchestrator, I want `TaskExecute` delegation to obey active mode policy, so that task automation cannot exceed direct `Agent` permissions.
+10. As a task orchestrator, I want task tracking and delegation to remain separate, so task automation cannot bypass direct `Agent` permissions.
 11. As an RPC caller, I want spawn requests rejected before manager execution when the target is forbidden, so that lower-level access does not bypass mode rules.
 12. As an RPC caller, I want denial errors to retain a stable machine-detectable prefix within the standard error-only envelope, so integrations preserve protocol compatibility without parsing arbitrary prose.
-13. As a user, I want equivalent direct and task-driven requests to have the same outcome, so that behavior is predictable.
+13. As a user, I want equivalent direct and RPC delegation requests to have the same outcome, so behavior is predictable.
 14. As a user, I want forbidden delegation to produce no child session or lifecycle side effects, so that denial is complete.
 15. As a user, I want allowed delegation to preserve current prompts, lifecycle events, foreground/background behavior, and results, so that policy enforcement does not alter normal execution.
 16. As a maintainer, I want one pure resolver to own allowlist/blocklist precedence, so that ingress checks cannot drift.
@@ -39,11 +39,11 @@ Modes do not authorize `Agent` calls in `tool_call`. Subagent direct, checked RP
 18. As a maintainer, I want no duplicate modes-hook authorization branch, so direct, RPC, and global bridge execution share subagent authority.
 19. As a maintainer, I want direct `Agent` execution to recheck policy authoritatively, so that hook omission or alternate invocation cannot bypass enforcement.
 20. As a maintainer, I want RPC and global manager-bridge spawn handling to recheck policy authoritatively, so alternate manager access is not an authorization shortcut.
-21. As a maintainer, I want the checked RPC transport used by `TaskExecute` covered for allowed and denied targets, so that future transport changes cannot reopen the bypass.
+21. As a maintainer, I want checked RPC transport covered for allowed and denied targets, so future transport changes cannot reopen the bypass.
 22. As a maintainer, I want policy resolution independent of spawning and UI state, so that precedence and edge cases are cheap to unit test.
 23. As a maintainer, I want sessions with no active agent mode to preserve current unrestricted delegation, while an identified mode with missing or invalid policy fails closed, so that compatibility is preserved without widening access after configuration failure.
 24. As a maintainer, I want denied requests to expose a stable error category without starting an agent, so that policy failures are diagnosable without false lifecycle records.
-25. As an extension consumer, I want existing successful RPC and task result contracts preserved, so that this change is backward-compatible for allowed requests.
+25. As an extension consumer, I want existing successful RPC result contracts preserved, so this change remains backward-compatible for allowed requests.
 26. As an extension consumer, I want denied requests use one stable error category across ingresses, so that callers can handle policy failures uniformly.
 27. As a test author, I want registered `Agent` tool tests to invoke real execution seams, so that policy authority is verified without claiming unsupported dynamic schema refresh.
 28. As a test author, I want checked RPC and global manager-bridge tests to assert allowed and denied targets, so alternate spawn transports cannot reopen the bypass.
@@ -59,7 +59,7 @@ Modes do not authorize `Agent` calls in `tool_call`. Subagent direct, checked RP
 - Registered Pi tool schemas cannot refresh safely after mode switches. The `Agent` description and `subagent_type` schema therefore stay generic and advertise no target list. Mode prompts provide routing; current permitted targets appear in policy denial output.
 - Modes `tool_call` hooks retain non-`Agent` mode guards only; they do not duplicate delegation authorization.
 - Direct `Agent` execution performs an authoritative snapshot check immediately before any new spawn or resume manager operation. Foreground and background calls share this check; denial remains a structured tool observation.
-- RPC spawn and the global `Symbol.for("pi-subagents:manager")` spawn bridge perform the same authoritative check before calling the manager. `TaskExecute` uses checked RPC transport rather than a direct manager-spawn shortcut.
+- RPC spawn and the global `Symbol.for("pi-subagents:manager")` spawn bridge perform the same authoritative check before calling the manager.
 - Resume requests must not become a policy bypass. Authorization resolves the resumed record's agent type and applies current active-mode policy before manager continuation.
 - Direct `Agent` denial returns structured details with `category`, `activeMode`, `requestedType`, and `permittedTypes`. RPC denial preserves the frozen error-only envelope and starts `error` with `delegation_policy_denied:`. Denial creates no child session, background record, spawn lifecycle event, or manager spawn/resume call.
 - Allowed requests retain existing spawn, prompt, supervision, lifecycle, result, and restoration behavior.
@@ -96,4 +96,4 @@ Modes do not authorize `Agent` calls in `tool_call`. Subagent direct, checked RP
 
 The design follows existing seams rather than adding parallel policy layers: canonical mode parsing persists the versioned policy snapshot; delegation-policy helpers resolve it in subagent; mode prompts provide routing; static `Agent` schema stays generic; direct `Agent` execution and RPC spawn handling provide authoritative enforcement. Modes `tool_call` hooks retain unrelated mode guards, not delegation authorization.
 
-Review should reject any implementation where modes re-authorizes `Agent`, an ingress computes policy independently, accepts caller-forged mode context, or can reach manager spawn/resume before snapshot authorization. The target invariant is simple: same persisted mode snapshot plus same agent type produces the same decision through direct `Agent` and checked RPC bridge used by `TaskExecute`.
+Review should reject any implementation where modes re-authorizes `Agent`, an ingress computes policy independently, accepts caller-forged mode context, or can reach manager spawn/resume before snapshot authorization. The target invariant is simple: the same persisted mode snapshot plus the same agent type produces the same decision through direct `Agent` and checked RPC delegation.

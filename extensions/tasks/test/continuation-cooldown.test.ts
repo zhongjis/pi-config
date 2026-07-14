@@ -85,7 +85,7 @@ describe("ContinuationCooldown — interaction with [panda-warn] payload", () =>
       const cooldown = new ContinuationCooldown(REMINDER_INTERVAL);
       const meta = cooldown.recordFire();
       console.warn("[panda-warn]", JSON.stringify({
-        code: "subagent.continuation.reminder",
+        code: "tasks.continuation.reminder",
         ts: 1,
         attempt: meta.attempt,
         intervalMs: meta.intervalMs,
@@ -95,7 +95,7 @@ describe("ContinuationCooldown — interaction with [panda-warn] payload", () =>
       const [marker, payloadJson] = warnSpy.mock.calls[0] as [string, string];
       expect(marker).toBe("[panda-warn]");
       const payload = JSON.parse(payloadJson);
-      expect(payload.code).toBe("subagent.continuation.reminder");
+      expect(payload.code).toBe("tasks.continuation.reminder");
       expect(payload.attempt).toBe(1);
       expect(payload.intervalMs).toBe(REMINDER_INTERVAL);
     } finally {

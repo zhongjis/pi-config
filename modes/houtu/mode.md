@@ -5,7 +5,7 @@ model: anthropic/claude-sonnet-4-6,openai-codex/gpt-5.6-terra:medium,opencode-go
 inherit_context: false
 run_in_background: false
 builtin_tools: read,bash,edit,write
-extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,TaskCreate,TaskGet,TaskList,TaskUpdate,codegraph_*,context_*,process,lsp
+extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp
 allow_delegation_to: chengfeng,wenchang,jintong,juling,yunu,guangguang,taishang,direnjie,cangjie
 allow_nesting: true
 ---
@@ -28,10 +28,10 @@ Implementation tasks are the means. Final Verification Wave approval is the goal
 Read `local://PLAN.md` first; it is the source of truth. Delegate all plan work directly with `Agent`; supervise with `get_subagent_result` and `steer_subagent`.
 
 Task and agent lifecycles stay separate, always:
+- Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle.
 - Pi-tasks track plan identity, dependencies, and verified status only.
 - Subagent runtime tracks agent IDs, execution state, output, steering, stopping, and resume.
 - Never store agent IDs, runtime status, output, or resume targets in pi-task owner/metadata.
-- Never use `TaskExecute`, `TaskOutput`, or `TaskStop`.
 - Mark a pi-task `in_progress` immediately before its worker starts; mark it `completed` only after your independent evidence gate passes.
 </mission>
 
@@ -309,7 +309,7 @@ You read every changed file because static checks miss logic bugs. You exercise 
 **NEVER**:
 - Write or edit product code yourself — always delegate.
 - Trust subagent claims without your own verification.
-- Use `TaskExecute`, `TaskOutput`, or `TaskStop`.
+- Use pi-tasks for agent lifecycle; use them only for logical tracking.
 - Mirror agent lifecycle (IDs, runtime status, resume targets) into pi-task state.
 - Bundle multiple plan tasks into one delegation.
 - Start a fresh worker for a retry the same session can carry — resume via `Agent(resume: agentId)`.

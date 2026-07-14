@@ -6,7 +6,6 @@ import { JSON_PRETTY_PRINT_SPACES } from "./constants.js";
 
 export interface TasksConfig {
   taskScope?: "memory" | "session" | "project";  // default: "session"
-  autoCascade?: boolean;   // default: false
   autoClearCompleted?: "never" | "on_list_complete" | "on_task_complete";  // default: "on_list_complete"
 }
 

@@ -58,7 +58,7 @@ describe("plan execution goal builder", () => {
     expect(goal).toContain("Read the full plan before making changes.");
     expect(goal).toContain("one pi-task per top-level plan task plus final verification gates");
     expect(goal).toContain("Treat waves as labels; derive runnable work from the dependency graph.");
-    expect(goal).toContain("batch all independent runnable tasks in one TaskExecute call");
+    expect(goal).toContain("launch each independent runnable task through a separate background Agent call");
     expect(goal).toContain("If running fewer than all runnable tasks, record the specific dependency or file/path conflict");
     expect(goal).toContain("pi-task completed is not proof");
     expect(goal).toContain("every Final Verification Wave verdict is APPROVE");

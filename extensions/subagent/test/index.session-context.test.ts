@@ -302,7 +302,7 @@ describe("subagent session UI rebinding", () => {
     widget.update.mockClear();
 
     lastRpcDeps.manager.spawn(mock.pi, ctx, "general-purpose", "execute task", {
-      description: "TaskExecute worker",
+      description: "RPC worker",
       isBackground: true,
     });
 
@@ -313,7 +313,7 @@ describe("subagent session UI rebinding", () => {
     managerInstances[0]!.invokeOnStart({
       id: "agent-1",
       type: "general-purpose",
-      description: "TaskExecute worker",
+      description: "RPC worker",
       status: "running",
       isBackground: true,
     });
@@ -321,7 +321,7 @@ describe("subagent session UI rebinding", () => {
     expect(widget.setUICtx).toHaveBeenCalledTimes(1);
   });
 
-  it("denies the checked RPC bridge used by TaskExecute before manager execution", async () => {
+  it("denies the checked RPC bridge before manager execution", async () => {
     agentTypeState.availableTypes = ["allowed", "forbidden"];
     const mock = createMockPi();
     await initExtension(mock);

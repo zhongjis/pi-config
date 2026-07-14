@@ -45,10 +45,6 @@ function groupTasks(tasks: Task[], store: { get(id: string): Task | undefined })
 function formatTaskLine(task: Task, store: { get(id: string): Task | undefined }): string {
   let line = `#${task.id} [${task.status}] ${task.subject}`;
   if (task.owner) line += ` (${task.owner})`;
-  const agentType = task.metadata.agentType;
-  if (task.status === "pending" && !task.owner && typeof agentType === "string" && agentType.trim() !== "" && !hasUnsatisfiedBlockers(task, store)) {
-    line += ` [executable: ${agentType}]`;
-  }
   if (task.blockedBy.length > 0) {
     const { unsatisfied: openBlockers } = filterBlockers(task.blockedBy, store);
     if (openBlockers.length > 0) line += ` [blocked by ${openBlockers.map(id => "#" + id).join(", ")}]`;
@@ -77,7 +73,6 @@ Returns tasks grouped into Running, Ready, Blocked, and Completed sections when 
 - **Ready**: pending tasks with no owner and no unsatisfied blockers
 - **Blocked**: pending tasks with an owner or unsatisfied blockers
 - **Completed**: tasks with status 'completed'
-- Ready tasks with **metadata.agentType** are marked executable for TaskExecute
 - Each task line includes **id**, **status**, **subject**, owner when assigned, and open blockers when present
 Use TaskGet with a specific task ID to view full details including description and comments.`,
     parameters: Type.Object({}),

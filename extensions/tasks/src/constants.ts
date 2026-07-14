@@ -12,47 +12,6 @@ export const REMINDER_INTERVAL = 4;
  */
 export const AUTO_CLEAR_DELAY = 4;
 
-/**
- * unit: ms
- * source: extensions/tasks/src/index.ts:350
- * rationale: preserve the TaskExecute spawn RPC timeout.
- */
-export const SUBAGENT_SPAWN_TIMEOUT_MS = 30_000;
-
-/**
- * unit: ms
- * source: extensions/tasks/src/index.ts:356
- * rationale: preserve the TaskExecute stop RPC timeout.
- */
-export const SUBAGENT_STOP_TIMEOUT_MS = 10_000;
-
-/**
- * unit: ms
- * source: extensions/tasks/src/bridge/subagent-bridge.ts
- * rationale: preserve the TaskOutput consume RPC timeout.
- */
-export const SUBAGENT_CONSUME_TIMEOUT_MS = 10_000;
-
-/**
- * unit: number
- * source: extensions/tasks/src/index.ts:360
- * rationale: preserve the subagent protocol version contract.
- */
-export const PROTOCOL_VERSION = 2;
-
-/**
- * unit: ms
- * source: extensions/tasks/src/index.ts:367
- * rationale: preserve the ping reply timeout.
- */
-export const PROTOCOL_PING_TIMEOUT_MS = 5_000;
-
-/**
- * unit: chars
- * source: extensions/tasks/src/index.ts:407
- * rationale: preserve dependency-result truncation in TaskExecute.
- */
-export const DEPENDENCY_RESULT_TRUNCATION_CHARS = 4_000;
 
 /**
  * unit: count

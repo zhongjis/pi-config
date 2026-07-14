@@ -98,7 +98,7 @@ describe("ContinuationCooldown — simulated stagnation episode with [panda-warn
         if (cooldown.shouldFire(turnsSinceProgress)) {
           const meta = cooldown.recordFire();
           console.warn("[panda-warn]", JSON.stringify({
-            code: "subagent.continuation.reminder",
+            code: "tasks.continuation.reminder",
             ts: turn,
             attempt: meta.attempt,
             intervalMs: meta.intervalMs,
@@ -112,7 +112,7 @@ describe("ContinuationCooldown — simulated stagnation episode with [panda-warn
           const stagnation = cooldown.consumeStagnationWarning();
           if (stagnation) {
             const payload = {
-              code: "subagent.continuation.stagnation-cap",
+              code: "tasks.continuation.stagnation-cap",
               ts: turn,
               attempt: stagnation.attempt,
               cap: stagnation.cap,
@@ -128,7 +128,7 @@ describe("ContinuationCooldown — simulated stagnation episode with [panda-warn
       expect(fires).toBe(CAP);
       expect(stagnationWarns).toBe(1);
       expect(lastWarnPayload).toMatchObject({
-        code: "subagent.continuation.stagnation-cap",
+        code: "tasks.continuation.stagnation-cap",
         attempt: CAP,
         cap: CAP,
       });
@@ -136,7 +136,7 @@ describe("ContinuationCooldown — simulated stagnation episode with [panda-warn
       const stagnationCalls = warnSpy.mock.calls.filter(
         (call) =>
           typeof call[1] === "string" &&
-          (call[1] as string).includes("subagent.continuation.stagnation-cap"),
+          (call[1] as string).includes("tasks.continuation.stagnation-cap"),
       );
       expect(stagnationCalls).toHaveLength(1);
     } finally {

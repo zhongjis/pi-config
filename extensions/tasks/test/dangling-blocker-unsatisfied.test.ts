@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SUBAGENTS_READY } from "../../lib/subagent-channels.js";
 import initExtension from "../src/index.js";
 import { TaskStore } from "../src/task-store.js";
 import type { Task } from "../src/types.js";
@@ -13,10 +12,6 @@ vi.mock("../../lib/warn.js", async (importOriginal) => ({
 
 beforeEach(() => { process.env.PI_TASKS = "off"; });
 
-type MockEventBus = {
-  on: (channel: string, handler: (data: unknown) => void) => () => void;
-  emit: (channel: string, data: unknown) => void;
-};
 
 function mockCtx() {
   return {
@@ -71,36 +66,11 @@ function mockPi() {
   };
 }
 
-function installSubagentsMock(pi: { events: MockEventBus }) {
-  const spawned: string[] = [];
-
-  const unsubscribePing = pi.events.on("subagents:rpc:ping", (data: unknown) => {
-    const { requestId } = data as { requestId: string };
-    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: 2 } });
-  });
-
-  const unsubscribeSpawn = pi.events.on("subagents:rpc:spawn", (data: unknown) => {
-    const { requestId } = data as { requestId: string };
-    const id = `agent-${spawned.length + 1}`;
-    spawned.push(id);
-    pi.events.emit(`subagents:rpc:spawn:reply:${requestId}`, { success: true, data: { id } });
-  });
-
-  pi.events.emit(SUBAGENTS_READY, {});
-
-  return {
-    spawned,
-    dispose() {
-      unsubscribePing();
-      unsubscribeSpawn();
-    },
-  };
-}
 
 function parsePandaWarns(warnSpy: ReturnType<typeof vi.spyOn>) {
   return warnSpy.mock.calls
-    .filter(call => call[0] === "[panda-warn]")
-    .map(call => JSON.parse(String(call[1])));
+    .filter((call: unknown[]) => call[0] === "[panda-warn]")
+    .map((call: unknown[]) => JSON.parse(String(call[1])));
 }
 
 function captureCreatedTasks() {
@@ -125,7 +95,6 @@ describe("dangling blocker claim semantics", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { tasks, createSpy } = captureCreatedTasks();
     const mock = mockPi();
-    const subagents = installSubagentsMock(mock.pi);
     initExtension(mock.pi as any);
 
     await mock.executeTool("TaskCreate", { subject: "Blocked", description: "Desc" });
@@ -145,37 +114,8 @@ describe("dangling blocker claim semantics", () => {
       }),
     ]));
 
-    subagents.dispose();
     createSpy.mockRestore();
     warnSpy.mockRestore();
   });
 
-  it("rejects TaskExecute claim when blocker ID is missing instead of treating it as satisfied", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { tasks, createSpy } = captureCreatedTasks();
-    const mock = mockPi();
-    const subagents = installSubagentsMock(mock.pi);
-    initExtension(mock.pi as any);
-
-    await mock.executeTool("TaskCreate", { subject: "Blocked", description: "Desc", agentType: "general-purpose" });
-    tasks[0].blockedBy.push("999");
-
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
-
-    expect(result.content[0].text).toContain("tasks.claim.blocker-not-satisfied");
-    expect(result.content[0].text).toContain("blocked by #999 (dangling)");
-    expect(subagents.spawned).toEqual([]);
-    expect(parsePandaWarns(warnSpy)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        code: "tasks.claim.rejected",
-        taskId: "1",
-        blockerId: "999",
-        reason: "dangling",
-      }),
-    ]));
-
-    subagents.dispose();
-    createSpy.mockRestore();
-    warnSpy.mockRestore();
-  });
 });

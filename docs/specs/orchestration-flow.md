@@ -87,7 +87,7 @@ sequenceDiagram
 
 7. **Hou Tu execution**
    - Hou Tu reads `local://PLAN.md`, creates one pi-task per top-level plan task, wires the dependency DAG, initializes split notepads, and analyzes runnable tasks.
-   - Each task ID identifies one bounded plan task. One `TaskExecute` batch may carry multiple independent task IDs; Hou Tu does not implement product changes directly.
+   - Each task ID identifies one bounded plan task. Hou Tu delegates execution through `Agent`; independent tasks may run as separate background agents.
    - Hou Tu verifies every delegation with diagnostics, builds/tests where applicable, manual readback, plan-state checks, and hands-on QA when needed.
    - After verification, Hou Tu updates plan checkboxes and continues through final verification gates.
 

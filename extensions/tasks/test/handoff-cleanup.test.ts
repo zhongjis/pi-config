@@ -89,12 +89,6 @@ function mockCtx(sessionId = "session-1", entries: any[] = [], uiOverrides: Reco
   };
 }
 
-function installPingMock(pi: { events: MockEventBus }) {
-  return pi.events.on("subagents:rpc:ping", (data: unknown) => {
-    const { requestId } = data as { requestId: string };
-    pi.events.emit(`subagents:rpc:ping:reply:${requestId}`, { success: true, data: { version: 2 } });
-  });
-}
 
 async function callClearPlanningTasksRpc(pi: { events: MockEventBus }, sessionId: string) {
   const requestId = `req-${Math.random().toString(36).slice(2)}`;
@@ -111,33 +105,6 @@ async function callClearPlanningTasksRpc(pi: { events: MockEventBus }, sessionId
   });
 }
 
-function installSubagentRpcMocks(
-  pi: { events: MockEventBus },
-  options: { spawnId?: string; onStop?: (agentId: string) => void } = {},
-) {
-  const spawnId = options.spawnId ?? "agent-123";
-  const stopped: string[] = [];
-
-  const unsubscribeSpawn = pi.events.on("subagents:rpc:spawn", (data: unknown) => {
-    const { requestId } = data as { requestId: string };
-    pi.events.emit(`subagents:rpc:spawn:reply:${requestId}`, { success: true, data: { id: spawnId } });
-  });
-
-  const unsubscribeStop = pi.events.on("subagents:rpc:stop", (data: unknown) => {
-    const { requestId, agentId } = data as { requestId: string; agentId: string };
-    stopped.push(agentId);
-    options.onStop?.(agentId);
-    pi.events.emit(`subagents:rpc:stop:reply:${requestId}`, { success: true });
-  });
-
-  return {
-    stopped,
-    dispose() {
-      unsubscribeSpawn();
-      unsubscribeStop();
-    },
-  };
-}
 
 async function initFreshExtension(mock: ReturnType<typeof mockPi>) {
   vi.resetModules();
@@ -174,7 +141,6 @@ describe("tasks:rpc:clear-planning-tasks", () => {
   it("removes only current-session planning tasks and preserves everything else", async () => {
     process.env.PI_TASKS = "off";
     const mock = mockPi();
-    installPingMock(mock.pi);
     const currentPlanningSession = mockCtx("session-1", [
       { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
     ]);
@@ -218,7 +184,6 @@ describe("tasks:rpc:clear-planning-tasks", () => {
   it("returns already_clean when the current session has no planning tasks", async () => {
     process.env.PI_TASKS = "off";
     const mock = mockPi();
-    installPingMock(mock.pi);
     const otherPlanningSession = mockCtx("session-2", [
       { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
     ]);
@@ -243,59 +208,9 @@ describe("tasks:rpc:clear-planning-tasks", () => {
     });
   });
 
-  it("stops active subagent bindings before deleting in-progress planning tasks", async () => {
-    process.env.PI_TASKS = "off";
-    const mock = mockPi();
-    installPingMock(mock.pi);
-    const session = mockCtx("session-stop", [
-      { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
-    ]);
-    const order: string[] = [];
-    const subagents = installSubagentRpcMocks(mock.pi, {
-      spawnId: "agent-stop-1",
-      onStop: (agentId) => order.push(`stop:${agentId}`),
-    });
-
-    await initFreshExtension(mock);
-    await mock.fireLifecycle("before_agent_start", {}, session.ctx);
-
-    await mock.executeTool(
-      "TaskCreate",
-      {
-        subject: "Plan execute",
-        description: "Desc",
-        agentType: "jintong",
-      },
-      session.ctx,
-    );
-
-    const { TaskStore } = await import("../src/task-store.js");
-    const originalDelete = TaskStore.prototype.delete;
-    vi.spyOn(TaskStore.prototype, "delete").mockImplementation(function (this: InstanceType<typeof TaskStore>, id: string) {
-      order.push(`delete:${id}`);
-      return originalDelete.call(this, id);
-    });
-
-    const executeResult = await mock.executeTool("TaskExecute", { task_ids: ["1"] }, session.ctx);
-    expect(executeResult.content[0].text).toContain("Launched 1 agent(s)");
-
-    const reply = await callClearPlanningTasksRpc(mock.pi, "session-stop");
-
-    expect(reply).toEqual({
-      success: true,
-      data: { status: "cleared", removed: 1, removedIncomplete: 1 },
-    });
-    expect(subagents.stopped).toEqual(["agent-stop-1"]);
-    expect(order).toEqual(["stop:agent-stop-1", "delete:1"]);
-    expect((await mock.executeTool("TaskGet", { taskId: "1" })).content[0].text).toBe("Task not found");
-    expect(session.state.widgets.get("tasks")?.content).toBeUndefined();
-
-    subagents.dispose();
-  });
 
   it("deletes the empty session task file when the last planning task is removed", async () => {
     const mock = mockPi();
-    installPingMock(mock.pi);
     const sessionId = "session-file-test";
     const session = mockCtx(sessionId, [
       { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
@@ -339,7 +254,6 @@ describe("Fu Xi planning provenance", () => {
 
   it("stamps planning provenance on TaskCreate during fuxi mode", async () => {
     const mock = mockPi();
-    installPingMock(mock.pi);
     const session = mockCtx("session-fuxi", [
       { type: "custom", customType: "agent-mode", data: { mode: "kuafu" } },
       { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
@@ -367,7 +281,6 @@ describe("Fu Xi planning provenance", () => {
 
   it("strips reserved provenance keys from non-fuxi task creation", async () => {
     const mock = mockPi();
-    installPingMock(mock.pi);
     const session = mockCtx("session-kuafu", [
       { type: "custom", customType: "agent-mode", data: { mode: "kuafu" } },
     ]);
@@ -394,7 +307,6 @@ describe("Fu Xi planning provenance", () => {
 
   it("ignores reserved provenance keys on TaskUpdate metadata merges", async () => {
     const mock = mockPi();
-    installPingMock(mock.pi);
     const session = mockCtx("session-update", [
       { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
     ]);
@@ -430,7 +342,6 @@ describe("Fu Xi planning provenance", () => {
 
   it("stamps planning provenance for /tasks createTask during fuxi mode", async () => {
     const mock = mockPi();
-    installPingMock(mock.pi);
     const session = mockCtx(
       "session-command",
       [{ type: "custom", customType: "agent-mode", data: { mode: "fuxi" } }],

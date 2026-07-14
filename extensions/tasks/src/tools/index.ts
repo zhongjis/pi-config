@@ -1,6 +1,5 @@
 import { registerTasksCommand } from "./command.js";
 import { registerCreateTool } from "./create.js";
-import { registerExecuteTool } from "./execute.js";
 import { registerGetTool } from "./get.js";
 import { registerListTool } from "./list.js";
 import { registerOutputTool } from "./output.js";
@@ -15,6 +14,5 @@ export function registerTaskTools(deps: TaskToolDeps) {
   registerUpdateTool(deps);
   registerOutputTool(deps);
   registerStopTool(deps);
-  registerExecuteTool(deps);
   registerTasksCommand(deps);
 }

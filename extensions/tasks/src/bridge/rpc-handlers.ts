@@ -3,7 +3,7 @@ import { registerRpcHandler } from "../../../lib/rpc.js";
 import type { TransitionTarget } from "../fsm.js";
 import type { TaskUpdateFields } from "../lifecycle/fsm-dispatch.js";
 import { updateTaskFromRpc } from "../lifecycle/fsm-dispatch.js";
-import { sanitizeUserMetadata, type TaskRuntime } from "../lifecycle/store-glue.js";
+import { isPlanningTaskMetadataForSession, sanitizeUserMetadata, type TaskRuntime } from "../lifecycle/store-glue.js";
 
 export type ClearPlanningTasksReply =
   | { status: "cleared"; removed: number; removedIncomplete: number }
@@ -22,14 +22,28 @@ export type UpdateTaskRpcParams = {
   addBlockedBy?: string[];
 };
 
-export function registerTaskRpcHandlers(
-  pi: ExtensionAPI,
-  runtime: TaskRuntime,
-  clearPlanningTasksForHandoff: (sessionId: string) => Promise<ClearPlanningTasksReply>,
-) {
+function clearPlanningTasksForHandoff(runtime: TaskRuntime, sessionId: string): ClearPlanningTasksReply {
+  const planningTasks = runtime.store.list().filter(task => isPlanningTaskMetadataForSession(task.metadata, sessionId));
+  let removed = 0;
+  let removedIncomplete = 0;
+
+  for (const task of planningTasks) {
+    if (task.status !== "completed") removedIncomplete++;
+    runtime.widget.setActiveTask(task.id, false);
+    if (runtime.store.delete(task.id)) removed++;
+  }
+
+  if (runtime.taskScope === "session") runtime.store.deleteFileIfEmpty();
+  runtime.widget.update();
+  return removed > 0
+    ? { status: "cleared", removed, removedIncomplete }
+    : { status: "already_clean", removed: 0, removedIncomplete: 0 };
+}
+
+export function registerTaskRpcHandlers(pi: ExtensionAPI, runtime: TaskRuntime) {
   registerRpcHandler(pi as any, "tasks", "clear-planning-tasks", (raw) => {
     const { sessionId } = raw as { sessionId: string };
-    return clearPlanningTasksForHandoff(sessionId);
+    return clearPlanningTasksForHandoff(runtime, sessionId);
   });
 
   registerRpcHandler(pi as any, "tasks", "update", (raw) => {

@@ -440,7 +440,7 @@ export function buildPlanExecutionGoal(planPath: string): string {
     "- Read the full plan before making changes.",
     "- Register the plan as tracked pi-tasks: one pi-task per top-level plan task plus final verification gates.",
     "- Treat waves as labels; derive runnable work from the dependency graph.",
-    "- For each runnable set, batch all independent runnable tasks in one TaskExecute call when they have no named dependency and no file/path conflict.",
+    "- For each runnable set, launch each independent runnable task through a separate background Agent call when it has no named dependency or file/path conflict.",
     "- If running fewer than all runnable tasks, record the specific dependency or file/path conflict that forced serialization.",
     "- Re-read relevant files from current repo state before changing anything.",
     "- For each task, identify files to change, expected behavior, and verification.",

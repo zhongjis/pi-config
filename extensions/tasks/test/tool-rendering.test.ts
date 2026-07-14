@@ -38,7 +38,6 @@ function registerTools(): Map<string, ToolDefinition> {
     getOutput: vi.fn().mockResolvedValue(""),
     stop: vi.fn().mockResolvedValue(""),
   };
-  const bridge = {};
   const pi = {
     registerTool(tool: ToolDefinition) {
       tools.set(tool.name, tool);
@@ -46,7 +45,7 @@ function registerTools(): Map<string, ToolDefinition> {
     registerCommand: vi.fn(),
   };
 
-  registerTaskTools({ pi, runtime, runner, bridge } as never);
+  registerTaskTools({ pi, runtime, runner } as never);
   return tools;
 }
 
@@ -74,12 +73,10 @@ describe("Task tool rendering", () => {
   it("renders compact calls with full Task* names", () => {
     const tools = registerTools();
 
-    expect(renderText(tools.get("TaskCreate")!.renderCall!({ subject: "Polish renderer", agentType: "jintong" }, plainTheme)))
-      .toBe('▸ TaskCreate · "Polish renderer" · agent: jintong');
-    expect(renderText(tools.get("TaskUpdate")!.renderCall!({ taskId: "7", status: "in_progress", owner: "agent" }, plainTheme)))
+    expect(renderText(tools.get("TaskCreate")!.renderCall!({ subject: "Polish renderer" }, plainTheme)))
+      .toBe('▸ TaskCreate · "Polish renderer"');
+    expect(renderText(tools.get("TaskUpdate")!.renderCall!({ taskId: "7", status: "in_progress", owner: "worker" }, plainTheme)))
       .toBe("▸ TaskUpdate · #7 · status, owner");
-    expect(renderText(tools.get("TaskExecute")!.renderCall!({ task_ids: ["1", "2"], model: "sonnet" }, plainTheme)))
-      .toBe("▸ TaskExecute · #1, #2 · model: sonnet");
   });
 
   it("keeps expanded output exact and leaves model-visible content unchanged", async () => {
@@ -112,7 +109,7 @@ describe("Task tool rendering", () => {
       "Running",
       "#2 [in_progress] Implement renderer (agent)",
       "Ready",
-      "#4 [pending] Verify tests [executable: jintong]",
+      "#4 [pending] Verify tests",
       "Blocked",
       "#1 [pending] Inspect output [blocked by #3]",
       "Completed",
@@ -131,7 +128,7 @@ describe("Task tool rendering", () => {
       "Description: long noisy details",
       "Blocked by: #1",
       "Blocks: #4",
-      "Metadata: {\"agentId\":\"agent-1\"}",
+      "Metadata: {\"lane\":\"docs\"}",
     ].join("\n"));
     expect(get).toContain("├─ task: #2 Implement renderer");
     expect(get).toContain("└─ status: in_progress · owner agent-1 · blocked by #1 · blocks #4");
@@ -148,8 +145,8 @@ describe("Task tool rendering", () => {
     const list = tools.get("TaskList")!;
 
     await create.execute!("call-1", { subject: "Run build", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-2", { subject: "Fix ready A", description: "desc", agentType: "jintong" }, undefined, undefined, undefined);
-    await create.execute!("call-3", { subject: "Fix ready B", description: "desc", agentType: "chengfeng" }, undefined, undefined, undefined);
+    await create.execute!("call-2", { subject: "Fix ready A", description: "desc" }, undefined, undefined, undefined);
+    await create.execute!("call-3", { subject: "Fix ready B", description: "desc" }, undefined, undefined, undefined);
     await create.execute!("call-4", { subject: "Wait for build", description: "desc" }, undefined, undefined, undefined);
     await create.execute!("call-5", { subject: "Document done", description: "desc" }, undefined, undefined, undefined);
     await create.execute!("call-6", { subject: "Verify done", description: "desc" }, undefined, undefined, undefined);
@@ -164,8 +161,8 @@ describe("Task tool rendering", () => {
       "Running",
       "#1 [in_progress] Run build (agent-1)",
       "Ready",
-      "#2 [pending] Fix ready A [executable: jintong]",
-      "#3 [pending] Fix ready B [executable: chengfeng]",
+      "#2 [pending] Fix ready A",
+      "#3 [pending] Fix ready B",
       "Blocked",
       "#4 [pending] Wait for build [blocked by #1]",
       "Completed",
@@ -197,7 +194,7 @@ describe("Task tool rendering", () => {
     ].join("\n"));
   });
 
-  it("summarizes output/stop/execute results without dumping logs", () => {
+  it("summarizes process output and stop results without dumping logs", () => {
     const tools = registerTools();
 
     const output = collapsed(tools.get("TaskOutput")!, "Task #9 (completed) exit code: 0\n\nfirst output line\nsecond output line");
@@ -205,43 +202,8 @@ describe("Task tool rendering", () => {
     expect(output).toContain("└─ output: first output line");
     expect(output).not.toContain("second output line");
 
-    const subagent = collapsed(tools.get("TaskOutput")!, "Task #3 [completed] — subagent agent-123\n\nFinal answer line\nmore detail");
-    expect(subagent).toContain("├─ status: completed · subagent agent-123");
-    expect(subagent).toContain("└─ result: Final answer line");
-
     expect(collapsed(tools.get("TaskStop")!, "Task #3 stopped successfully"))
       .toContain("└─ task: #3 stopped");
-
-    const execute = collapsed(tools.get("TaskExecute")!, [
-      "Launched 2 agent(s):",
-      "#1 → agent agent-a",
-      "#2 → agent agent-b",
-      "Use TaskOutput to check progress. Do not spawn additional agents for these tasks.",
-      "",
-      "Skipped:",
-      "#3: not pending (status: completed)",
-    ].join("\n"));
-    expect(execute).toContain("├─ agents: 2 launched");
-    expect(execute).toContain("├─ tasks: #1 → agent agent-a, #2 → agent agent-b");
-    expect(execute).toContain("└─ skipped: #3: not pending (status: completed)");
-    expect(execute).not.toContain("Do not spawn additional agents");
-
-    const executeWithAdvisory = collapsed(tools.get("TaskExecute")!, [
-      "Launched 1 agent(s):",
-      "#1 → agent agent-a",
-      "Use TaskOutput to check progress. Do not spawn additional agents for these tasks.",
-      "",
-      "Skipped:",
-      "#3: not pending (status: completed)",
-      "",
-      "Also ready:",
-      "#4 Ready task",
-    ].join("\n"));
-    expect(executeWithAdvisory).toContain("├─ agents: 1 launched");
-    expect(executeWithAdvisory).toContain("├─ tasks: #1 → agent agent-a");
-    expect(executeWithAdvisory).toContain("└─ skipped: #3: not pending (status: completed)");
-    expect(executeWithAdvisory).not.toContain("Also ready");
-    expect(executeWithAdvisory).not.toContain("#4 Ready task");
   });
 
   it("renders partial and error states safely", () => {

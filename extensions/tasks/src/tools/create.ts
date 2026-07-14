@@ -46,8 +46,7 @@ All tasks are created with status \`pending\`.
 - Create tasks with clear, specific subjects that describe the outcome
 - Include enough detail in the description for another agent to understand and complete the task
 - After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
-- Check TaskList first to avoid creating duplicate tasks
-- Include \`agentType\` (e.g., "chengfeng" or another available custom subagent type) to mark tasks for subagent execution via TaskExecute`,
+- Check TaskList first to avoid creating duplicate tasks`,
     promptGuidelines: [
       "When working on complex multi-step tasks, use TaskCreate to track progress and TaskUpdate to update status.",
       "Mark tasks as in_progress before starting work and completed when done.",
@@ -57,7 +56,6 @@ All tasks are created with status \`pending\`.
       subject: Type.String({ description: "A brief title for the task" }),
       description: Type.String({ description: "A detailed description of what needs to be done" }),
       activeForm: Type.Optional(Type.String({ description: "Present continuous form shown in spinner when in_progress (e.g., 'Running tests')" })),
-      agentType: Type.Optional(Type.String({ description: "Agent type for subagent execution (e.g., 'chengfeng' or another available custom subagent type). Tasks with agentType can be started via TaskExecute." })),
       metadata: Type.Optional(Type.Record(Type.String(), Type.Any(), { description: "Arbitrary metadata to attach to the task" })),
     }),
 
@@ -70,10 +68,8 @@ All tasks are created with status \`pending\`.
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       runtime.autoClear.resetBatchCountdown();
-      const baseMetadata = params.metadata ? { ...params.metadata } : {};
-      if (params.agentType) baseMetadata.agentType = params.agentType;
       const { metadata } = buildTaskMetadata(
-        Object.keys(baseMetadata).length > 0 ? baseMetadata : undefined,
+        params.metadata,
         (_ctx ?? runtime.latestCtx) as SessionStateContext | undefined,
       );
       const task = runtime.store.create(params.subject, params.description, params.activeForm, metadata);

@@ -127,14 +127,14 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "You execute by coordinating, delegating, and verifying",
       "Pi-tasks track plan identity, dependencies, and verified status only",
       "Delegate all plan work directly with `Agent`",
-      "Never use `TaskExecute`, `TaskOutput`, or `TaskStop`",
+      "Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle",
       "Final Verification Wave gate",
     ],
     gpt: [
       "Read `local://PLAN.md` before doing anything else",
-      "Use pi-tasks only for logical tracking",
-      "Launch plan work with `Agent`",
-      "Never use `TaskExecute`, `TaskOutput`, or `TaskStop`",
+      "Pi-tasks: `TaskCreate` one task per top-level PLAN item",
+      "Agent lifecycle: launch plan work with `Agent`",
+      "Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle",
       "Final Verification Wave is a mandatory approval gate",
       "APPROVE",
     ],
@@ -143,7 +143,7 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "Hou Tu coordinates only",
       "Pi-tasks track logical PLAN work only",
       "Delegate one bounded plan task per `Agent` session",
-      "Final Verification Wave reviewer returns explicit `APPROVE`",
+      "every Final Verification Wave gate has explicit `APPROVE`",
     ],
     geminiComposed: [
       "You execute by coordinating, delegating, and verifying",
@@ -412,13 +412,17 @@ describe("fuxi clearance sequence", () => {
       expect(frontmatter).not.toContain("high_accuracy_review_complete");
     });
 
-    it("#then should list TaskCreate and TaskUpdate in extensions", () => {
+    it("#then should list Task* in extensions", () => {
       const prompt = getFuxiPrompt();
       const frontmatterMatch = prompt.match(/^---\n([\s\S]*?)\n---/);
       expect(frontmatterMatch).not.toBeNull();
       const frontmatter = frontmatterMatch![1];
-      expect(frontmatter).toContain("TaskCreate");
-      expect(frontmatter).toContain("TaskUpdate");
+      expect(frontmatter).toContain("Task*");
+      expect(frontmatter).not.toContain("TaskCreate");
+      expect(frontmatter).not.toContain("TaskUpdate");
+      expect(frontmatter).not.toContain("TaskList");
+      expect(frontmatter).not.toContain("TaskGet");
+      expect(frontmatter).not.toContain("TaskExecute");
     });
 
     it("#then should list ask in extensions (needed for user interview/clarification)", () => {
@@ -523,5 +527,37 @@ describe("fuxi gemini composed", () => {
     expect(composed).toContain("plan_approve");
     expect(composed).toMatch(/DRAFT\.md|local:\/\/DRAFT/);
     expect(composed).toMatch(/direnjie|Di Renjie/i);
+  });
+});
+
+describe("mode frontmatter task selector wildcard", () => {
+  const MODE_PATHS = [
+    join(process.cwd(), "modes", "fuxi", "mode.md"),
+    join(process.cwd(), "modes", "houtu", "mode.md"),
+    join(process.cwd(), "modes", "kuafu", "mode.md"),
+    join(process.cwd(), "modes", "luban", "mode.md"),
+    join(process.cwd(), "modes", "shennong", "mode.md"),
+  ];
+
+  it("uses Task* as the sole task-tool selector in every mode frontmatter", () => {
+    for (const path of MODE_PATHS) {
+      const prompt = readFileSync(path, "utf-8");
+      const frontmatterMatch = prompt.match(/^---\n([\s\S]*?)\n---/);
+      expect(frontmatterMatch).not.toBeNull();
+
+      const frontmatter = frontmatterMatch![1];
+      const extensionLine = frontmatter
+        .split("\n")
+        .find((line) => line.startsWith("extension_tools:"));
+
+      expect(extensionLine, path).toBeDefined();
+      expect(extensionLine, path).toContain("Task*");
+      expect((extensionLine.match(/Task\*/g) ?? []).length, path).toBe(1);
+      expect(extensionLine, path).not.toContain("TaskCreate");
+      expect(extensionLine, path).not.toContain("TaskGet");
+      expect(extensionLine, path).not.toContain("TaskList");
+      expect(extensionLine, path).not.toContain("TaskUpdate");
+      expect(extensionLine, path).not.toContain("TaskExecute");
+    }
   });
 });

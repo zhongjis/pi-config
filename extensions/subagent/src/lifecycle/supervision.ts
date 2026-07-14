@@ -633,7 +633,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
         const resolvedType = requireSpawnableType(type);
         authorizeDelegation(ctxRef as ExtensionContext, resolvedType);
         const id = manager.spawn(piRef as ExtensionAPI, ctxRef as ExtensionContext, resolvedType, prompt, options);
-        // RPC callers (including TaskExecute) do not execute the Agent tool's UI hooks.
+        // RPC callers do not execute the Agent tool's UI hooks.
         widget.ensureTimer();
         widget.update();
         return id;

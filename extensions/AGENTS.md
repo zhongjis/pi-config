@@ -22,7 +22,7 @@ extensions/
 | Add complex extension | `extensions/foo/index.ts` + `src/` + `test/` + `package.json` + `README.md` | Package tier (vendored) |
 | Shared event semantics | `CONVENTIONS.md` | Source of truth for `pi.events` usage |
 | Subagents | `subagent/AGENTS.md` | High-coupling runtime/event surface |
-| Tasks | `tasks/AGENTS.md` | File-backed task store + RPC bridge |
+| Tasks | `tasks/AGENTS.md` | File-backed DAG + process tracking + planning cleanup RPC |
 | Web research tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local `extensions/` dir |
 | Provider failover | `clauderock/` | Anthropic → AWS Bedrock fallback on quota/rate-limit; uses `lib/stream-fallback.ts` |
 | Shared model roles | `lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` role schema for extension-owned LLM calls |
@@ -87,4 +87,4 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | `smart-sessions/` | `smart-sessions/AGENTS.md` | Vendored session-summary behavior and model-role compatibility notes. |
 | `subagent/` | `subagent/AGENTS.md` | Subagent runtime, tool surface, RPC, lifecycle, and local fork manifest. |
 | `superpowers/` | `superpowers/AGENTS.md` | Vendored superpowers skill tree, overlay workflow, and sync script rules. |
-| `tasks/` | `tasks/AGENTS.md` | Task DAG, process tracking, subagent bridge, and task-local fork manifest. |
+| `tasks/` | `tasks/AGENTS.md` | Task DAG, process tracking, planning cleanup, and task-local fork manifest. |

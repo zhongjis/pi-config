@@ -8,13 +8,12 @@ export function registerOutputTool({ pi, runner }: TaskToolDeps) {
   pi.registerTool({
     name: "TaskOutput",
     label: "TaskOutput",
-    description: `- Retrieves output from a running or completed task (background shell, agent, or remote session)
+    description: `- Retrieves output from a tracked background process
 - Takes a task_id parameter identifying the task
-- Returns the task output along with status information
-- Use block=true (default) to wait for task completion
-- Use block=false for non-blocking check of current status
-- Task IDs can be found using the /tasks command
-- Works with all task types: background shells, async agents, and remote sessions`,
+- Returns the process output along with status information
+- Use block=true (default) to wait for process completion
+- Use block=false for a non-blocking check of current status
+- Task IDs can be found using the /tasks command`,
     parameters: Type.Object({
       task_id: Type.String({ description: "The task ID to get output from" }),
       block: Type.Boolean({ description: "Whether to wait for completion", default: true }),

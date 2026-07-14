@@ -1,7 +1,7 @@
 import { type AgentToolResult, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
-type TaskToolName = "TaskCreate" | "TaskList" | "TaskGet" | "TaskUpdate" | "TaskOutput" | "TaskStop" | "TaskExecute";
+type TaskToolName = "TaskCreate" | "TaskList" | "TaskGet" | "TaskUpdate" | "TaskOutput" | "TaskStop";
 type ToolTheme = Pick<Theme, "fg" | "bold">;
 type TaskRenderOptions = Pick<ToolRenderResultOptions, "expanded" | "isPartial">;
 type TaskRenderContext = { args?: object; isError?: boolean };
@@ -48,19 +48,12 @@ function formatArgValue(value: unknown): string | undefined {
   return undefined;
 }
 
-function formatTaskIds(value: unknown): string | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const ids = value.filter((id): id is string => typeof id === "string" && id.trim() !== "");
-  if (ids.length === 0) return undefined;
-  return ids.slice(0, 4).map(id => `#${id}`).join(", ") + (ids.length > 4 ? ` +${ids.length - 4}` : "");
-}
 
 function formatCallArgs(toolName: TaskToolName, args: Record<string, unknown>): string[] {
   switch (toolName) {
     case "TaskCreate": {
       const subject = formatArgValue(args.subject);
-      const agentType = formatArgValue(args.agentType);
-      return [subject ? `"${truncate(subject, 60)}"` : undefined, agentType ? `agent: ${agentType}` : undefined].filter(Boolean) as string[];
+      return subject ? [`"${truncate(subject, 60)}"`] : [];
     }
     case "TaskList":
       return [];
@@ -82,11 +75,6 @@ function formatCallArgs(toolName: TaskToolName, args: Record<string, unknown>): 
     case "TaskStop": {
       const id = formatArgValue(args.task_id) ?? formatArgValue(args.shell_id);
       return id ? [`#${id}`] : [];
-    }
-    case "TaskExecute": {
-      const ids = formatTaskIds(args.task_ids);
-      const model = formatArgValue(args.model);
-      return [ids, model ? `model: ${model}` : undefined].filter(Boolean) as string[];
     }
   }
 }
@@ -201,23 +189,12 @@ function summarizeUpdate(text: string): string[] | undefined {
 }
 
 function summarizeOutput(text: string): string[] | undefined {
-  let match = text.match(/^Task #(\S+) \(([^)]+)\)(?: exit code: (\S+))?/);
-  if (match) {
-    const lines = [`status: ${match[2]}${match[3] ? ` · exit code ${match[3]}` : ""}`];
-    const preview = firstBodyLine(text);
-    if (preview) lines.push(`output: ${truncate(preview)}`);
-    return lines;
-  }
-
-  match = text.match(/^Task #(\S+) \[([^\]]+)\] — subagent (\S+)/);
-  if (match) {
-    const lines = [`status: ${match[2]} · subagent ${match[3]}`];
-    const preview = firstBodyLine(text);
-    if (preview) lines.push(`${preview.startsWith("Error:") ? "error" : "result"}: ${truncate(preview.replace(/^Error:\s*/, ""))}`);
-    return lines;
-  }
-
-  return undefined;
+  const match = text.match(/^Task #(\S+) \(([^)]+)\)(?: exit code: (\S+))?/);
+  if (!match) return undefined;
+  const lines = [`status: ${match[2]}${match[3] ? ` · exit code ${match[3]}` : ""}`];
+  const preview = firstBodyLine(text);
+  if (preview) lines.push(`output: ${truncate(preview)}`);
+  return lines;
 }
 
 function summarizeStop(text: string): string[] | undefined {
@@ -226,33 +203,11 @@ function summarizeStop(text: string): string[] | undefined {
   return [`task: #${match[1]} stopped`];
 }
 
-function summarizeExecute(text: string): string[] | undefined {
-  if (text.startsWith("Subagent execution is currently unavailable.")) {
-    return ["error: Subagent execution is currently unavailable"];
-  }
-  if (text.trim() === "No tasks to execute.") return ["tasks: none to execute"];
-
-  const lines: string[] = [];
-  const launched = text.match(/^Launched (\d+) agent\(s\):\n([\s\S]*?)(?:\nUse TaskOutput|\n\nSkipped:|$)/);
-  if (launched) {
-    const launchedRows = launched[2].trim().split(/\r?\n/).filter(Boolean);
-    lines.push(`agents: ${launched[1]} launched`);
-    if (launchedRows.length > 0) lines.push(`tasks: ${launchedRows.slice(0, 3).join(", ")}${launchedRows.length > 3 ? ` +${launchedRows.length - 3}` : ""}`);
-  }
-
-  const skipped = text.match(/(?:^|\n\n)Skipped:\n([\s\S]*?)(?:\n\nAlso ready:|$)/);
-  if (skipped) {
-    const skippedRows = skipped[1].trim().split(/\r?\n/).filter(Boolean);
-    if (skippedRows.length > 0) lines.push(`skipped: ${skippedRows.slice(0, 3).join(", ")}${skippedRows.length > 3 ? ` +${skippedRows.length - 3}` : ""}`);
-  }
-
-  return lines.length > 0 ? lines : undefined;
-}
 
 function summarizeFallback(toolName: TaskToolName, text: string): string[] {
   const firstLine = text.split(/\r?\n/).map(line => line.trim()).find(Boolean);
   if (!firstLine) return ["status: complete"];
-  const keyword = toolName === "TaskOutput" ? "output" : toolName === "TaskExecute" ? "result" : "status";
+  const keyword = toolName === "TaskOutput" ? "output" : "status";
   return [`${keyword}: ${truncate(firstLine)}`];
 }
 
@@ -264,7 +219,6 @@ function summarizeResult(toolName: TaskToolName, text: string): string[] {
     case "TaskUpdate": return summarizeUpdate(text) ?? summarizeFallback(toolName, text);
     case "TaskOutput": return summarizeOutput(text) ?? summarizeFallback(toolName, text);
     case "TaskStop": return summarizeStop(text) ?? summarizeFallback(toolName, text);
-    case "TaskExecute": return summarizeExecute(text) ?? summarizeFallback(toolName, text);
   }
 }
 
