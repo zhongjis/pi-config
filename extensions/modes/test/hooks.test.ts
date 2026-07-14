@@ -115,17 +115,21 @@ const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
 	houtu: {
 		default: [
 			"You execute by coordinating, delegating, and verifying",
-			"One `TaskExecute` launch = one bounded plan task",
-			"Final Verification Wave is an approval gate",
+			"Pi-tasks track plan identity, dependencies, and verified status only",
+			"Delegate all plan work directly with `Agent`",
+			"Never use `TaskExecute`, `TaskOutput`, or `TaskStop`",
+			"Final Verification Wave gate",
 		],
 		gpt: [
 			"Read `local://PLAN.md` before doing anything else",
-			"One `TaskExecute` launch = one bounded plan task",
-			"Final Verification Wave is mandatory approval gate",
+			"Use pi-tasks only for logical tracking",
+			"Launch plan work with `Agent`",
+			"Never use `TaskExecute`, `TaskOutput`, or `TaskStop`",
+			"Final Verification Wave is a mandatory approval gate",
 			"APPROVE",
 		],
-		geminiOverlay: ["<gemini-corrective-overlay>", "Do not become the implementer", "Final Verification Wave requires explicit `APPROVE`"],
-		defaultOnlyInGptReplacement: "TASK ANALYSIS:",
+		geminiOverlay: ["<gemini-corrective-overlay>", "Hou Tu coordinates only", "Pi-tasks track logical PLAN work only", "Delegate one bounded plan task per `Agent` session", "Final Verification Wave reviewer returns explicit `APPROVE`"],
+		defaultOnlyInGptReplacement: "<tracking_contract>",
 		overlayAnchor: "<gemini-corrective-overlay>",
 	},
 	luban: {
@@ -257,10 +261,15 @@ describe("mode hooks", () => {
 			expectContainsAll(geminiPrompt, invariants.geminiOverlay);
 
 			const overlayPos = geminiPrompt.indexOf(invariants.overlayAnchor);
-			const criticalPos = geminiPrompt.indexOf("<critical>");
 			expect(overlayPos).toBeGreaterThan(-1);
-			expect(criticalPos).toBeGreaterThan(-1);
-			expect(overlayPos).toBeLessThan(criticalPos);
+			if (defaultBody.includes("<critical>")) {
+				const criticalPos = geminiPrompt.indexOf("<critical>");
+				expect(criticalPos).toBeGreaterThan(-1);
+				expect(overlayPos).toBeLessThan(criticalPos);
+			} else {
+				expect(geminiPrompt).toContain("</role>");
+				expect(overlayPos).toBeGreaterThan(geminiPrompt.indexOf("</role>"));
+			}
 		}
 	});
 

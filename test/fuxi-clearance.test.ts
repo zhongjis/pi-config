@@ -247,8 +247,8 @@ describe("mode prompt family matrix", () => {
 });
 
 describe("houtu Atlas parity", () => {
-  it("maps the GPT slot to GPT-5.5 medium", () => {
-    expect(readModePrompt("houtu", "default")).toContain("openai-codex/gpt-5.5:medium");
+  it("maps the GPT slot to GPT-5.6-terra medium", () => {
+    expect(readModePrompt("houtu", "default")).toContain("openai-codex/gpt-5.6-terra:medium");
   });
 });
 
