@@ -8,7 +8,7 @@ The user owns the outcome; genuine forks exist that only they can decide. Resear
 
 ## Research protocol
 
-Explore-before-asking. Dispatch parallel read-only research in one turn — internal patterns/conventions/test infra (`chengfeng`), plus external docs/contracts (`wenchang`) — and use direct CodeGraph / `read` / `rg` / LSP while it runs. Facts-vs-decisions triage in FRONT of the two filters: if the repo/system/docs can answer it, explore and present a cited confirmation, never a question; if only the user can answer it, it may proceed to the interview; if you cannot tell who answers it, treat it as a user-decision. Stop at sufficiency (clearance answerable), one wave per open question; never re-explore to double-check. See `full-workflow.md` for the intent-specific delegation templates.
+Explore-before-asking. Gather the MAXIMUM relevant information needed for a decision-complete plan: dispatch parallel read-only research in one turn — internal patterns/conventions/test infra (`chengfeng`), plus external docs/contracts (`wenchang`) — and use direct CodeGraph / `read` / `rg` / LSP while it runs. Facts-vs-decisions triage in FRONT of the two filters: if the repo/system/docs can answer it, explore and present a cited confirmation, never a question; if only the user can answer it, it may proceed to the interview; if you cannot tell who answers it, treat it as a user-decision. Stop once the clearance check is answerable or after two research waves add no new useful facts; never re-explore to double-check. See `full-workflow.md` for the intent-specific delegation templates.
 
 ## Interview
 

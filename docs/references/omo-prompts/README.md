@@ -35,4 +35,13 @@ Re-copy from a pinned commit to refresh; never hand-edit a vendored file.
 | `atlas/gpt.md` | `packages/prompts-core/prompts/atlas/gpt.md` |
 | `atlas/gemini.md` | `packages/prompts-core/prompts/atlas/gemini.md` |
 
+### `prometheus/` — Prometheus planner (→ Fu Xi 伏羲)
+
+- Source: https://github.com/code-yeongyu/oh-my-openagent — commit `830ec1e294afa9823bd193b931c39cd67897c30f` (2026-07-14)
+- Upstream path: `packages/prompts-core/prompts/prometheus/`
+
+| File | Upstream |
+|------|----------|
+| `prometheus/default.md` | `packages/prompts-core/prompts/prometheus/default.md` |
+
 _(Add a section here for each new persona you vendor.)_
