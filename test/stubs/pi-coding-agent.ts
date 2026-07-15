@@ -28,6 +28,12 @@ export class CustomEditor {
   }
 }
 
+export class SkillInvocationMessageComponent {
+  constructor(..._args: unknown[]) {}
+
+  setExpanded(_expanded: boolean): void {}
+}
+
 export class DynamicBorder {
   constructor(..._args: unknown[]) {}
 }

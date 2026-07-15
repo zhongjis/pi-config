@@ -83,6 +83,7 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | `direnv/` | `direnv/AGENTS.md` | Vendored direnv extension sync notes and local lifecycle/status tweaks. |
 | `fast/` | `fast/AGENTS.md` | Vendored fast-mode provider profile merge and session-only state rules. |
 | `init/` | `init/AGENTS.md` | AGENTS.md/DOX initialization command extension, `/init-deep` preservation, and template layout. |
+| `inline-skills/` | `inline-skills/AGENTS.md` | Vendored inline `/skill` autocomplete + per-turn skill loading; provenance and test-infra shim notes. |
 | `pi-lsp/` | `pi-lsp/AGENTS.md` | Vendored dreki LSP extension sync notes and local package-layout tweaks. |
 | `pm-marketplace/` | `pm-marketplace/AGENTS.md` | Pi-native PM skill pack + /pm:* command registry gated to the 神農 shennong mode; provenance + update-check. |
 | `smart-sessions/` | `smart-sessions/AGENTS.md` | Vendored session-summary behavior and model-role compatibility notes. |

@@ -19,6 +19,7 @@ function createUi() {
   const theme = createTheme();
 
   return {
+    addAutocompleteProvider() {},
     custom: async () => undefined,
     notify() {},
     onTerminalInput: () => () => {},
