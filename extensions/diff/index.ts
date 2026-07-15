@@ -19,7 +19,7 @@
  *   /diff <ref>      working tree compared against a ref (HEAD, branch, sha)
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { isTui } from "../lib/mode.js";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,10 +30,11 @@ interface CommandArgumentCompletion {
   label: string;
 }
 
-interface HunkComment {
+export interface HunkComment {
   file: string;
   line: number | null;
   summary: string;
+  source: string | null;
 }
 
 interface HunkRawComment {
@@ -46,6 +47,71 @@ interface HunkRawComment {
   old_line?: number | string;
   summary?: string;
   comment?: string;
+  noteId?: string;
+  commentId?: string;
+  source?: string;
+  newRange?: number[];
+  body?: string;
+  line?: number | string;
+}
+
+// Parse `hunk session comment list --json`. Handles both the legacy schema
+// (summary/line/commentId, no source) and the new schema
+// (body/newRange/noteId/source), plus {comments:[...]} and bare-array shapes.
+// Returns null when stdout is not valid JSON (query/parse failure); returns []
+// when the JSON is valid but holds no usable comments (success-empty).
+export function parseHunkComments(stdout: string): HunkComment[] | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const arr: HunkRawComment[] = Array.isArray(raw)
+    ? (raw as HunkRawComment[])
+    : ((raw as { comments?: HunkRawComment[] })?.comments ?? []);
+  return arr
+    .map((c) => {
+      const file = String(c.filePath ?? c.file_path ?? c.file ?? "");
+      const lineValue =
+        Array.isArray(c.newRange) && c.newRange.length
+          ? Number(c.newRange[0])
+          : Number(c.newLine ?? c.new_line ?? c.line ?? c.oldLine ?? c.old_line ?? NaN);
+      const line = Number.isFinite(lineValue) ? lineValue : null;
+      const summary = String(c.body ?? c.summary ?? c.comment ?? "").trim();
+      const source = c.source != null ? String(c.source) : null;
+      return { file, line, summary, source };
+    })
+    .filter((c) => c.file !== "" && c.summary !== "");
+}
+
+// Echo-prevention: keep only human-authored notes. Legacy comments have no
+// source (null) and are always human; new-schema notes must be source==="user".
+// Agent/ai/mcp notes are dropped so the agent never re-ingests its own output.
+export function keepUserAuthored(comments: HunkComment[]): HunkComment[] {
+  return comments.filter((c) => c.source === null || c.source === "user");
+}
+
+// Keep the latest SUCCESSFUL snapshot. A null `next` means the poll failed —
+// keep the previous snapshot. An array `next` (even empty) is a success and
+// REPLACES the previous one (comment list returns the full set each call).
+export function mergeSnapshot(
+  prev: HunkComment[] | null,
+  next: HunkComment[] | null,
+): HunkComment[] | null {
+  return next === null ? prev : next;
+}
+
+// Format harvested comments into a prompt instructing the agent to act on them.
+export function formatReviewPrompt(comments: HunkComment[]): string {
+  const lines = comments.map(
+    (c) => `- ${c.file}${c.line ? `:${c.line}` : ""} — ${c.summary}`,
+  );
+  return [
+    "I left these inline review comments in hunk. Address each one in the code:",
+    "",
+    ...lines,
+  ].join("\n");
 }
 
 const SUBCOMMANDS: CommandArgumentCompletion[] = [
@@ -96,40 +162,28 @@ export default function (pi: ExtensionAPI) {
     return null;
   };
 
-  // Harvest inline review comments left in the live hunk session for this repo.
-  // Returns [] on any failure (no session, parse error, hunk missing).
-  const harvestHunkComments = async (cwd: string): Promise<HunkComment[]> => {
-    const r = await pi.exec(
+  // Harvest inline review comments from the LIVE hunk session for this repo.
+  // hunk deregisters the session the instant its TUI quits, so this must run
+  // while hunk is still open. Returns null on query/parse failure; [] when the
+  // session has no human comments; otherwise the human-authored comments.
+  const harvestHunkComments = async (repoRoot: string): Promise<HunkComment[] | null> => {
+    let r = await pi.exec(
       "hunk",
-      ["session", "comment", "list", "--repo", cwd, "--json"],
-      { cwd },
+      ["session", "comment", "list", "--repo", repoRoot, "--type", "all", "--json"],
+      { cwd: repoRoot, timeout: 3000 },
     );
-    if (r.code !== 0 || !r.stdout) return [];
-    try {
-      const raw = JSON.parse(r.stdout) as HunkRawComment[] | { comments?: HunkRawComment[] };
-      const arr: HunkRawComment[] = Array.isArray(raw) ? raw : (raw.comments ?? []);
-      return arr
-        .map((c) => ({
-          file: String(c.filePath ?? c.file_path ?? c.file ?? ""),
-          line: Number(c.newLine ?? c.new_line ?? c.oldLine ?? c.old_line ?? 0) || null,
-          summary: String(c.summary ?? c.comment ?? "").trim(),
-        }))
-        .filter((c) => c.file !== "" && c.summary !== "");
-    } catch {
-      return [];
+    if (r.code !== 0 || !r.stdout) {
+      // Fall back to legacy hunk without --type support.
+      r = await pi.exec(
+        "hunk",
+        ["session", "comment", "list", "--repo", repoRoot, "--json"],
+        { cwd: repoRoot, timeout: 3000 },
+      );
     }
-  };
-
-  // Format harvested comments into a prompt instructing the agent to act on them.
-  const formatReviewPrompt = (comments: HunkComment[]): string => {
-    const lines = comments.map(
-      (c) => `- ${c.file}${c.line ? `:${c.line}` : ""} — ${c.summary}`,
-    );
-    return [
-      "I left these inline review comments in hunk. Address each one in the code:",
-      "",
-      ...lines,
-    ].join("\n");
+    if (r.code !== 0 || !r.stdout) return null;
+    const parsed = parseHunkComments(r.stdout);
+    if (parsed === null) return null;
+    return keepUserAuthored(parsed);
   };
 
   // Build the prompt that kicks off an agent-narrated PR walkthrough: analyze the
@@ -169,33 +223,61 @@ export default function (pi: ExtensionAPI) {
       };
     },
     hunkArgs: string[],
-  ): Promise<string | undefined> => {
+  ): Promise<{ error?: string; comments: HunkComment[] }> => {
+    const repoRoot = (await git(["rev-parse", "--show-toplevel"], ctx.cwd)) || ctx.cwd;
     let launchError: string | undefined;
+    let latest: HunkComment[] | null = null;
     await ctx.ui.custom<void>((tui, _theme, _keybindings, done) => {
+      let finished = false;
+      let polling = false;
+      let poll: ReturnType<typeof setInterval> | undefined;
+      // Single-fire teardown: exit the alternate screen, restore pi's TUI, and
+      // resolve exactly once (child error/close and spawn failure all route here).
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (poll) clearInterval(poll);
+        process.stdout.write("\x1b[?1049l");
+        tui.start();
+        tui.requestRender(true);
+        done();
+      };
       try {
         tui.stop();
         // Enter alternate screen so hunk output doesn't pollute scrollback.
         process.stdout.write("\x1b[?1049h");
-        const result = spawnSync("hunk", hunkArgs, {
+        const child = spawn("hunk", hunkArgs, {
           stdio: "inherit",
           cwd: ctx.cwd,
           shell: process.platform === "win32",
         });
-        if (result.error) {
-          launchError = result.error.message;
-        }
-      } finally {
-        // Exit alternate screen, then restore pi's TUI.
-        process.stdout.write("\x1b[?1049l");
-        tui.start();
-        tui.requestRender(true);
+        // Poll the LIVE session while hunk is open (grace period is 0 on quit).
+        // The in-flight guard prevents overlapping queries; snapshots REPLACE.
+        poll = setInterval(() => {
+          if (polling || finished) return;
+          polling = true;
+          harvestHunkComments(repoRoot)
+            .then((snap) => {
+              if (!finished) latest = mergeSnapshot(latest, snap);
+            })
+            .catch(() => {})
+            .finally(() => {
+              polling = false;
+            });
+        }, 600);
+        child.on("error", (err) => {
+          launchError = err.message;
+          finish();
+        });
+        child.on("close", () => finish());
+      } catch (e) {
+        launchError = e instanceof Error ? e.message : String(e);
+        finish();
       }
-      // Resolve after the TUI is fully restored — avoids a "Working..." flash.
-      done();
       // Placeholder component — never visible, the TUI is stopped synchronously.
       return { width: 0, height: 0, draw() {} } as any;
     });
-    return launchError;
+    return { error: launchError, comments: latest ?? [] };
   };
 
   pi.registerCommand("diff", {
@@ -319,15 +401,11 @@ export default function (pi: ExtensionAPI) {
         hunkArgs = ["diff", arg];
       }
 
-      const launchError = await launchHunk(ctx, hunkArgs);
+      const { error: launchError, comments } = await launchHunk(ctx, hunkArgs);
       if (launchError) {
         ctx.ui.notify(`Failed to launch hunk: ${launchError}`, "error");
         return;
       }
-
-      // Auto-harvest any inline comments left during the review and hand them
-      // to the agent to act on.
-      const comments = await harvestHunkComments(ctx.cwd);
       if (comments.length > 0) {
         const prompt = formatReviewPrompt(comments);
         const idle = typeof ctx.isIdle === "function" ? ctx.isIdle() : true;
@@ -384,7 +462,7 @@ export default function (pi: ExtensionAPI) {
         return { content: [{ type: "text", text: "Missing sha to diff against." }] };
       }
       pi.events.emit("user-prompted", { tool: "open_pr_walkthrough" });
-      const launchError = await launchHunk(ctx, [
+      const { error: launchError, comments } = await launchHunk(ctx, [
         "diff",
         sha,
         "--agent-context",
@@ -397,7 +475,6 @@ export default function (pi: ExtensionAPI) {
       // Review opened — retire the tool from the active set until the next
       // /diff pr-walkthrough re-enables it (keeps the agent's tool list clean).
       pi.setActiveTools(pi.getActiveTools().filter((t) => t !== "open_pr_walkthrough"));
-      const comments = await harvestHunkComments(ctx.cwd);
       if (comments.length === 0) {
         return {
           content: [{ type: "text", text: "Walkthrough closed — the user left no comments." }],

@@ -8,7 +8,7 @@ Opens [hunk](https://github.com/modem-dev/hunk) to review git changes — the wo
 - For the default and `staged` views, checks first whether there is anything to review and exits early if not
 - Suspends pi's TUI and hands the terminal to hunk (interactive multi-file review: sidebar navigation, syntax highlighting, untracked files)
 - Resumes pi's TUI when hunk exits
-- **Harvests any inline comments** you left in hunk (`hunk session comment list --json`) and sends them to the agent as a follow-up so it addresses them
+- **Harvests the inline comments** you leave in hunk by polling the live session while it is open (`hunk session comment list --type all`), then hands the human-authored ones to the agent as a follow-up so it addresses them
 
 Requires `hunk` on PATH and interactive (TUI) mode.
 
@@ -34,9 +34,9 @@ Requires `hunk` on PATH and interactive (TUI) mode.
 
 ## Review loop
 
-After every `/diff` review, the extension queries the live hunk session for inline comments. If you left any, they are formatted as `file:line — summary` and sent to the agent as a user message instructing it to address each one — turning the diff view into a two-way review channel. No comments left → nothing is sent.
+While hunk is open, the extension polls the live session (~600ms) and keeps the latest snapshot of the inline comments you leave — hunk deregisters the session the instant its TUI quits (zero grace period), so a post-exit query would find nothing. On close, any human-authored comments are formatted as `file:line — summary` and sent to the agent as a user message instructing it to address each one — turning the diff view into a two-way review channel. No comments left → nothing is sent.
 
-Comments are owned by hunk; the extension keeps no separate comment store. Querying when no session/comment exists is a silent no-op.
+Comments are owned by hunk; the extension keeps no separate comment store. It filters to human-authored notes (`source: "user"`, or legacy comments that carry no source) so the agent never re-ingests its own `--agent-context` annotations. Any query/parse failure is a silent no-op.
 
 ## PR walkthrough (agent-narrated)
 
