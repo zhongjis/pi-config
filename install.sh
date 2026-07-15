@@ -1,5 +1,3 @@
-# Native npm modules like node-pty may fall back to local compilation in the install shell.
-# Keep a small shared toolchain available for all Node package-manager installs.
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -7,8 +5,6 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$HOME/.pi/agent"
 EXTENSIONS_TARGET="$TARGET/extensions"
 REPO_EXTENSIONS_DIR="$REPO_DIR/extensions"
-SKILLS_TARGET="$TARGET/skills"
-REPO_SKILLS_DIR="$REPO_DIR/skills"
 
 # Nix-managed files — do NOT symlink these (handled by Home Manager)
 NIX_MANAGED=(
@@ -44,6 +40,8 @@ ALLOWED_ITEMS=(
   "themes"
 )
 
+# Native npm modules like node-pty may fall back to local compilation in the install shell.
+# Keep a small shared toolchain available for all Node package-manager installs.
 NODE_BUILD_SHELL=(
   nix shell
   nixpkgs#nodejs
@@ -51,6 +49,8 @@ NODE_BUILD_SHELL=(
   nixpkgs#gnumake
   nixpkgs#gcc
   nixpkgs#pkg-config
+  nixpkgs#pnpm
+  nixpkgs#bun
 )
 
 contains_item() {
@@ -150,64 +150,6 @@ sync_repo_extensions() {
   done
 }
 
-sync_repo_skills() {
-  local item
-  local name
-  local target_path
-  local link_target
-
-  if [ ! -d "$REPO_SKILLS_DIR" ]; then
-    return 0
-  fi
-
-  mkdir -p "$SKILLS_TARGET"
-
-  # Clean stale repo-managed symlinks (skip Nix-store symlinks — they point elsewhere)
-  find "$SKILLS_TARGET" -mindepth 1 -maxdepth 1 -type l -print0 | while IFS= read -r -d '' item; do
-    name="$(basename "$item")"
-    link_target="$(readlink "$item")"
-
-    case "$link_target" in
-      "$REPO_SKILLS_DIR"/*)
-        if [ ! -e "$REPO_SKILLS_DIR/$name" ]; then
-          rm "$item"
-          echo "Removed stale skill symlink: $name"
-        fi
-        ;;
-    esac
-  done
-
-  for item in "$REPO_SKILLS_DIR"/*; do
-    [ -e "$item" ] || continue
-    [ -d "$item" ] || continue
-
-    name="$(basename "$item")"
-    target_path="$SKILLS_TARGET/$name"
-
-    # If a non-symlink (e.g., Nix-managed real dir) sits at this name, leave it alone
-    if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
-      echo "Skipping skill (non-symlink at target, likely Nix-managed): $name"
-      continue
-    fi
-
-    # If a symlink exists but doesn't point into our repo, leave it alone (Nix-store link)
-    if [ -L "$target_path" ]; then
-      link_target="$(readlink "$target_path")"
-      case "$link_target" in
-        "$REPO_SKILLS_DIR"/*) ;;
-        *)
-          echo "Skipping skill (symlink points outside repo, likely Nix-managed): $name"
-          continue
-          ;;
-      esac
-      rm "$target_path"
-    fi
-
-    ln -s "$item" "$target_path"
-    echo "Linked skill $name"
-  done
-}
-
 install_git_package_deps() {
   local git_root="$TARGET/git"
 
@@ -216,29 +158,35 @@ install_git_package_deps() {
     return 0
   fi
 
-  find "$git_root" -mindepth 3 -maxdepth 3 -type d -print0 | while IFS= read -r -d '' repo_dir; do
-    local package_json="$repo_dir/package.json"
+  # Enter the shared Node build toolchain once, then install/build every git
+  # package inside that single shell (avoids re-resolving the flake per package).
+  # $vars in the script below intentionally expand in the inner shell, not here.
+  # shellcheck disable=SC2016
+  "${NODE_BUILD_SHELL[@]}" -c bash -lc '
+    set -euo pipefail
+    git_root="$1"
+    find "$git_root" -mindepth 3 -maxdepth 3 -type d -print0 |
+      while IFS= read -r -d "" repo_dir; do
+        package_json="$repo_dir/package.json"
+        [ -f "$package_json" ] || continue
 
-    if [ ! -f "$package_json" ]; then
-      continue
-    fi
+        if [ -f "$repo_dir/pnpm-lock.yaml" ]; then
+          echo "Installing pnpm dependencies in $repo_dir"
+          ( cd "$repo_dir" && pnpm install --ignore-workspace )
+        elif [ -f "$repo_dir/bun.lock" ] || [ -f "$repo_dir/bun.lockb" ]; then
+          echo "Installing bun dependencies in $repo_dir"
+          ( cd "$repo_dir" && bun install )
+        else
+          echo "Installing npm dependencies in $repo_dir"
+          ( cd "$repo_dir" && npm install )
+        fi
 
-    if [ -f "$repo_dir/pnpm-lock.yaml" ]; then
-      echo "Installing pnpm dependencies in $repo_dir"
-      "${NODE_BUILD_SHELL[@]}" nixpkgs#pnpm -c bash -lc "cd '$repo_dir' && pnpm install --ignore-workspace"
-    elif [ -f "$repo_dir/bun.lock" ] || [ -f "$repo_dir/bun.lockb" ]; then
-      echo "Installing bun dependencies in $repo_dir"
-      "${NODE_BUILD_SHELL[@]}" nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun install"
-    else
-      echo "Installing npm dependencies in $repo_dir"
-      "${NODE_BUILD_SHELL[@]}" -c bash -lc "cd '$repo_dir' && npm install"
-    fi
-
-    if grep -q '"build:pi"' "$package_json"; then
-      echo "Running build:pi in $repo_dir"
-      "${NODE_BUILD_SHELL[@]}" nixpkgs#bun -c bash -lc "cd '$repo_dir' && bun run build:pi"
-    fi
-  done
+        if grep -q "\"build:pi\"" "$package_json"; then
+          echo "Running build:pi in $repo_dir"
+          ( cd "$repo_dir" && bun run build:pi )
+        fi
+      done
+  ' bash "$git_root"
 }
 
 # If ~/.pi/agent is a symlink to this repo (old install), remove it
@@ -273,13 +221,13 @@ done
 
 migrate_repo_sessions_to_target
 
-# Phase 2 hard fork: rename pre-fork upstream package to @panda/pi-subagents.
-# Defensive cleanup of any legacy pi-installed symlink under ~/.pi/agent/git/.
-# Subagent itself stays symlinked through sync_repo_extensions ->
-# $EXTENSIONS_TARGET/subagent, so no positive recreation is needed here.
-remove_legacy_git_subagent_symlinks() {
-  local legacy_scope="@tintinweb"
-  local legacy_package="pi-subagents"
+# Phase 2 hard fork: defensive cleanup of legacy pi-installed git symlinks under
+# ~/.pi/agent/git/ for packages that were renamed/forked. The forked extensions
+# themselves stay symlinked through sync_repo_extensions -> $EXTENSIONS_TARGET/<name>,
+# so no positive recreation is needed here.
+remove_legacy_git_symlink() {
+  local legacy_scope="$1"
+  local legacy_package="$2"
   local legacy_path="$TARGET/git/$legacy_scope/$legacy_package"
   if [ -L "$legacy_path" ]; then
     rm "$legacy_path"
@@ -293,29 +241,8 @@ remove_legacy_git_subagent_symlinks() {
     echo "Removed empty legacy scope directory: $legacy_scope"
   fi
 }
-remove_legacy_git_subagent_symlinks
-
-# Phase 2 hard fork: defensive cleanup of any legacy pi-installed symlink for
-# the tasks extension under ~/.pi/agent/git/. Tasks extension itself stays
-# symlinked through sync_repo_extensions -> $EXTENSIONS_TARGET/tasks, so no
-# positive recreation is needed here.
-remove_legacy_git_tasks_symlinks() {
-  local legacy_scope="@tintinweb"
-  local legacy_package="pi-tasks"
-  local legacy_path="$TARGET/git/$legacy_scope/$legacy_package"
-  if [ -L "$legacy_path" ]; then
-    rm "$legacy_path"
-    echo "Removed legacy git symlink: $legacy_scope/$legacy_package"
-  elif [ -e "$legacy_path" ]; then
-    echo "Note: legacy path exists but is not a symlink: $legacy_path (leaving alone)"
-  fi
-  local legacy_dir="$TARGET/git/$legacy_scope"
-  if [ -d "$legacy_dir" ] && [ -z "$(ls -A "$legacy_dir" 2>/dev/null)" ]; then
-    rmdir "$legacy_dir"
-    echo "Removed empty legacy scope directory: $legacy_scope"
-  fi
-}
-remove_legacy_git_tasks_symlinks
+remove_legacy_git_symlink "@tintinweb" "pi-subagents"
+remove_legacy_git_symlink "@tintinweb" "pi-tasks"
 
 # Symlink only allowlisted items from repo into ~/.pi/agent/
 for name in "${ALLOWED_ITEMS[@]}"; do
@@ -342,7 +269,6 @@ for name in "${ALLOWED_ITEMS[@]}"; do
 done
 
 sync_repo_extensions
-sync_repo_skills
 install_git_package_deps
 
 echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; excluded extension items: ${EXCLUDED_EXTENSION_ITEMS[*]}; allowed: ${ALLOWED_ITEMS[*]}"
