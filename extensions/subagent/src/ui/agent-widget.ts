@@ -210,6 +210,8 @@ export class AgentWidget {
   private lastRenderAt = 0;
   /** Whether the current session bills via subscription/OAuth (cost shown as estimate). */
   private usingSubscription = false;
+  /** When true, a full-screen overlay owns the screen and widget repaints are skipped. */
+  private suspended = false;
 
   constructor(
     private manager: AgentManager,
@@ -254,6 +256,19 @@ export class AgentWidget {
       this.widgetInterval = setInterval(() => this.update(), ACTIVE_RENDER_CADENCE_MS);
       this.widgetInterval.unref?.();
     }
+  }
+
+  /** Suspend widget repaints while a full-screen overlay (e.g. the conversation
+   *  viewer) owns the screen and the above-editor widget is hidden. */
+  suspend() {
+    this.suspended = true;
+  }
+
+  /** Resume repaints and force an immediate refresh to redraw the widget. */
+  resume() {
+    if (!this.suspended) return;
+    this.suspended = false;
+    this.update();
   }
 
   /** Check if a finished agent should still be shown in the widget. */
@@ -551,6 +566,11 @@ export class AgentWidget {
     const stateChanged = renderSignature !== this.lastRenderSignature;
     const cadenceElapsed = hasActive && now - this.lastRenderAt >= ACTIVE_RENDER_CADENCE_MS;
     if (!stateChanged && !cadenceElapsed) return;
+
+    // A full-screen overlay (e.g. the conversation viewer) owns the screen — the
+    // above-editor widget is hidden, so skip repaints (including the spinner
+    // animation) until resume() forces a refresh.
+    if (this.suspended) return;
 
     this.widgetFrame++;
     this.lastRenderSignature = renderSignature;

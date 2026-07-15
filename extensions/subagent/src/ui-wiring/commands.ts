@@ -26,6 +26,7 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
     agentActivity,
     reloadCustomAgents,
     getLatestDiagnostics,
+    widget,
   } = ctx;
 
   const projectAgentsDir = () => join(process.cwd(), ".pi", "agents");
@@ -199,17 +200,24 @@ export function registerAgentsCommand(ctx: SubagentRuntimeContext): void {
     const session = record.session;
     const activity = agentActivity.get(record.id);
 
-    await ctx.ui.custom<undefined>(
-      (tui, theme, _keybindings, done) => {
-        return new ConversationViewer(tui, session, record, activity, theme, done, () => {
-          manager.abort(record.id);
-        });
-      },
-      {
-        overlay: true,
-        overlayOptions: { anchor: "center", width: "90%" },
-      },
-    );
+    // Pause the above-editor agent widget while the overlay owns the screen so
+    // its spinner animation does not repaint behind the viewer (flicker source).
+    widget.suspend();
+    try {
+      await ctx.ui.custom<undefined>(
+        (tui, theme, _keybindings, done) => {
+          return new ConversationViewer(tui, session, record, activity, theme, done, () => {
+            manager.abort(record.id);
+          });
+        },
+        {
+          overlay: true,
+          overlayOptions: { anchor: "center", width: "90%" },
+        },
+      );
+    } finally {
+      widget.resume();
+    }
   }
 
   async function showAgentDetail(ctx: ExtensionCommandContext, name: string) {

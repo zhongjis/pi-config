@@ -13,10 +13,13 @@ import type { AgentRecord } from "../types.js";
 import type { Theme } from "./agent-widget.js";
 import { formatTools } from "../../../lib/widget-style.js";
 import { type AgentActivity, describeActivity, formatDuration, formatTokens, getDisplayName, getPromptModeLabel } from "./agent-widget.js";
+import { RenderScheduler } from "./render-scheduler.js";
 
 /** Lines consumed by chrome: top border + header + header sep + footer sep + footer + bottom border. */
 const CHROME_LINES = 6;
 const MIN_VIEWPORT = 3;
+/** Coalesce live session-event renders onto this cadence to avoid per-chunk flicker. */
+const VIEWER_RENDER_CADENCE_MS = 100;
 
 export class ConversationViewer implements Component {
   private scrollOffset = 0;
@@ -25,6 +28,8 @@ export class ConversationViewer implements Component {
   private lastInnerW = 0;
   private closed = false;
   private stopArmed = false;
+  private readonly renderScheduler: RenderScheduler;
+  private contentCache: { key: string; lines: string[] } | undefined;
 
   constructor(
     private tui: TUI,
@@ -35,9 +40,13 @@ export class ConversationViewer implements Component {
     private done: (result: undefined) => void,
     private onStop?: () => void,
   ) {
-    this.unsubscribe = session.subscribe(() => {
+    this.renderScheduler = new RenderScheduler(() => {
       if (this.closed) return;
       this.tui.requestRender();
+    }, VIEWER_RENDER_CADENCE_MS);
+    this.unsubscribe = session.subscribe(() => {
+      if (this.closed) return;
+      this.renderScheduler.requestRender();
     });
   }
 
@@ -61,7 +70,7 @@ export class ConversationViewer implements Component {
       return;
     }
 
-    const totalLines = this.buildContentLines(this.lastInnerW).length;
+    const totalLines = this.getContentLines(this.lastInnerW).length;
     const viewportHeight = this.viewportHeight();
     const maxScroll = Math.max(0, totalLines - viewportHeight);
 
@@ -152,7 +161,7 @@ export class ConversationViewer implements Component {
     lines.push(hrMid);
 
     // Content area — rebuild every render (live data, no cache needed)
-    const contentLines = this.buildContentLines(innerW);
+    const contentLines = this.getContentLines(innerW);
     const viewportHeight = this.viewportHeight();
     const maxScroll = Math.max(0, contentLines.length - viewportHeight);
 
@@ -183,10 +192,15 @@ export class ConversationViewer implements Component {
     return lines;
   }
 
-  invalidate(): void { /* no cached state to clear */ }
+  invalidate(): void {
+    // Cached lines pre-bake theme colors; drop them so the next render rebuilds
+    // with the current theme (also called by the TUI on theme change).
+    this.contentCache = undefined;
+  }
 
   dispose(): void {
     this.closed = true;
+    this.renderScheduler.dispose();
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = undefined;
@@ -201,6 +215,36 @@ export class ConversationViewer implements Component {
 
   private viewportHeight(): number {
     return Math.max(MIN_VIEWPORT, this.tui.terminal.rows - CHROME_LINES);
+  }
+
+  /** Cached wrapper around buildContentLines. Rebuilds only when the width or the
+   *  live message/streaming signature changes; invalidate() clears the cache. */
+  private getContentLines(width: number): string[] {
+    const key = this.contentSignature(width);
+    if (this.contentCache && this.contentCache.key === key) {
+      return this.contentCache.lines;
+    }
+    const lines = this.buildContentLines(width);
+    this.contentCache = { key, lines };
+    return lines;
+  }
+
+  /** Cheap signature capturing everything buildContentLines() depends on. */
+  private contentSignature(width: number): string {
+    const messages = this.session.messages;
+    const last = messages[messages.length - 1];
+    let lastLen = 0;
+    if (last) {
+      try {
+        lastLen = JSON.stringify(last).length;
+      } catch {
+        lastLen = -1;
+      }
+    }
+    const streaming = this.record.status === "running" && this.activity
+      ? `${this.activity.responseText.length}:${Array.from(this.activity.activeTools.values()).join(",")}`
+      : "";
+    return `${width}|${messages.length}|${lastLen}|${this.record.status}|${streaming}`;
   }
 
   private buildContentLines(width: number): string[] {

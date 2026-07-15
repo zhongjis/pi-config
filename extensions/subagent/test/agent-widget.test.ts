@@ -181,6 +181,41 @@ describe("AgentWidget render scheduling", () => {
     widget.update();
     expect(tui.requestRender).toHaveBeenCalledTimes(1);
   });
+
+  it("suspends animation repaints while an overlay owns the screen, and resumes after", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    const record = {
+      id: "agent-1",
+      type: "general-purpose",
+      status: "running",
+      description: "Investigate blinking",
+      toolUses: 0,
+      startedAt: 0,
+    };
+    const manager = { listAgents: vi.fn(() => [record]) };
+    const widget = new AgentWidget(manager as never, new Map());
+    const uiCtx = { setStatus: vi.fn(), setWidget: vi.fn() };
+
+    widget.setUICtx(uiCtx);
+    widget.update();
+
+    const widgetFactory = uiCtx.setWidget.mock.calls[0][1];
+    const tui = { terminal: { columns: 120 }, requestRender: vi.fn() };
+    const theme = { fg: vi.fn((_color: string, text: string) => text), bold: vi.fn((text: string) => text) };
+    widgetFactory(tui, theme).render();
+
+    // Overlay opens: suspend. Even after the animation cadence, no repaint.
+    widget.suspend();
+    vi.advanceTimersByTime(250);
+    widget.update();
+    expect(tui.requestRender).not.toHaveBeenCalled();
+
+    // Overlay closes: resume forces exactly one repaint.
+    widget.resume();
+    expect(tui.requestRender).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("AgentWidget idle coloring", () => {
