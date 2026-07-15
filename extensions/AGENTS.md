@@ -82,6 +82,7 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | `codegraph/` | `codegraph/AGENTS.md` | Vendored CodeGraph tool extension, timeout/retry behavior, and teaching layer tweaks. |
 | `direnv/` | `direnv/AGENTS.md` | Vendored direnv extension sync notes and local lifecycle/status tweaks. |
 | `fast/` | `fast/AGENTS.md` | Vendored fast-mode provider profile merge and session-only state rules. |
+| `goal/` | `goal/AGENTS.md` | Vendored rich Codex-style goal extension (oh-my-openagent `packages/pi-goal`): blocked/budget statuses, `@mariozechner`→`@earendil-works` scope + `bun:test`→`vitest` migrations, and shared mock-context fixture dependency. |
 | `init/` | `init/AGENTS.md` | AGENTS.md/DOX initialization command extension, `/init-deep` preservation, and template layout. |
 | `inline-skills/` | `inline-skills/AGENTS.md` | Vendored inline `/skill` autocomplete + per-turn skill loading; provenance and test-infra shim notes. |
 | `pi-lsp/` | `pi-lsp/AGENTS.md` | Vendored dreki LSP extension sync notes and local package-layout tweaks. |

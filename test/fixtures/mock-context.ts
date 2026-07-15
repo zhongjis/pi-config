@@ -39,6 +39,7 @@ function createSessionManager() {
     getBranch: () => [],
     getEntries: () => [],
     getLeafId: () => "leaf",
+    getSessionDir: () => `${process.cwd()}/.pi/sessions`,
     getSessionFile: () => `${process.cwd()}/.pi/sessions/mock.jsonl`,
     getSessionId: () => "mock-session-id"
   };
@@ -52,7 +53,9 @@ export function createMockContext() {
     cwd: process.cwd(),
     getContextUsage: () => ({ contextWindow: 200_000, percent: 0, tokens: 0 }),
     getSystemPrompt: () => "",
+    hasPendingMessages: () => false,
     hasUI: true,
+    isIdle: () => true,
     model: { id: "mock-model", provider: "mock" },
     modelRegistry: {
       getApiKeyAndHeaders: async () => ({ apiKey: "mock-key", headers: {}, ok: true }),

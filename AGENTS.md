@@ -87,6 +87,8 @@ Before registering any new tool, extension, or MCP server:
 | Product-manager mode PM skill pack + /pm:* commands (神農, vendored pm-skills) | `extensions/pm-marketplace` |
 | AGENTS.md generation | `extensions/init` |
 | Inline `/skill` autocomplete + per-turn skill loading | `extensions/inline-skills` |
+| Persistent Codex-style goal tracking (`/goal`, `create_goal`/`get_goal`/`update_goal`) | `extensions/goal` |
+| Persistent Codex-style goal tracking (`/goal`, `create_goal`/`get_goal`/`update_goal`) | `extensions/goal` |
 | Mermaid diagram rendering | `pi-mermaid` package |
 | Thinking steps visualization | `pi-thinking-steps` package |
 | Guardrails | `pi-guardrails` package |

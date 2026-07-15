@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
 import { basename } from "node:path";
@@ -134,6 +134,29 @@ function getSubagentCost(): number {
   }
 }
 
+// The goal extension publishes its current footer indicator on this Symbol.for() bridge
+// instead of installing its own footer (only one footer slot exists). We claim ownership
+// via VISUALS_FOOTER_OWNER_KEY (set in installFooterVisuals) so goal defers to us, then read
+// the indicator here. Read defensively: returns null when goal is absent, has no active
+// goal, or is an older build without the bridge.
+const GOAL_FOOTER_BRIDGE_KEY = Symbol.for("pi-goal:footer");
+const VISUALS_FOOTER_OWNER_KEY = Symbol.for("pi-visuals:footer");
+
+function getGoalIndicator(): { text: string; color: ThemeColor } | null {
+  try {
+    const bridge = (globalThis as Record<symbol, unknown>)[GOAL_FOOTER_BRIDGE_KEY] as
+      | { getIndicator?: () => { text: string; color: ThemeColor } | null }
+      | undefined;
+    const indicator = bridge?.getIndicator?.();
+    if (!indicator || typeof indicator.text !== "string" || indicator.text.length === 0) {
+      return null;
+    }
+    return indicator;
+  } catch {
+    return null;
+  }
+}
+
 function getContextSegment(ctx: ExtensionContext, theme: ExtensionContext["ui"]["theme"]): string {
   const usage = ctx.getContextUsage();
   const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
@@ -238,6 +261,9 @@ function fitSegmentsByPriority(
 }
 
 export function installFooterVisuals(pi: ExtensionAPI): void {
+  // Claim the single footer slot so cooperating extensions (e.g. goal) publish their state
+  // via a bridge and defer to us instead of calling setFooter() themselves.
+  (globalThis as Record<symbol, unknown>)[VISUALS_FOOTER_OWNER_KEY] = true;
   let currentCtx: ExtensionContext | null = null;
 
   function installFooter(ctx: ExtensionContext): void {
@@ -353,6 +379,18 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
               const pad = Math.max(0, width - visibleWidth(infraRight));
               lines.push(" ".repeat(pad) + infraRight);
             }
+          }
+
+          // Goal indicator (published by the goal extension via the bridge) on its own line.
+          const goalIndicator = getGoalIndicator();
+          if (goalIndicator) {
+            lines.push(
+              truncateToWidth(
+                theme.fg(goalIndicator.color, goalIndicator.text),
+                width,
+                theme.fg("dim", "..."),
+              ),
+            );
           }
 
           return lines;
