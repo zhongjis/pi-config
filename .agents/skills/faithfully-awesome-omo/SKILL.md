@@ -1,6 +1,6 @@
 ---
 name: faithfully-awesome-omo
-description: Faithfully update, polish, sync, audit, or re-adapt this repo's Pi-adapted omo agent and mode prompts. Use whenever working on omo-derived prompts under `modes/` (Hou Tu/Fu Xi/Kua Fu), `agents/` (Taishang/Di Renjie/Yanluo, Chengfeng/Wenchang, Guang Guang/Jin Tong/Ju Ling/Yu Nu), or `extensions/ulw/`; or when the user says sync with upstream Atlas/Prometheus/omo, find missing upstream content, re-faithful an adapted mode, update gpt/gemini variants, or align a Pi persona with its omo source. Trigger even when only Pi persona name appears and "omo" is absent. Covers structural faithfulness, omo→Pi substitutions, prompt family alignment, gemini overlay anchors, locked strings, DOX contracts, decision forks, and proposal-first confirm gate. Not for Lu Ban, Shen Nong, or Cang Jie.
+description: Faithfully update, polish, sync, audit, or re-adapt this repo's Pi-adapted omo agent and mode prompts. Use whenever working on omo-derived prompts under `modes/` (Hou Tu/Fu Xi/Kua Fu), `agents/` (Taishang/Di Renjie/Yanluo, Chengfeng/Wenchang, Guang Guang/Jin Tong/Ju Ling/Yu Nu), or `extensions/ulw/`; or when the user says sync with upstream Atlas/Prometheus/omo, find missing upstream content, re-faithful an adapted mode, update gpt/gemini variants, or align a Pi persona with its omo source. Trigger even when only Pi persona name appears and "omo" is absent. Covers structural faithfulness, omo→Pi substitutions, prompt family alignment, gemini overlay anchors, locked strings, DOX contracts, decision forks, and proposal-first confirm gate. Not for Lu Ban or Shen Nong.
 disable-model-invocation: true
 ---
 
@@ -18,7 +18,7 @@ One upstream, **SUL 1.0** (non-commercial / internal use, **attribution required
 
 A persona is **in scope only if it appears in `references/lineage-map.md`**. Read that file first — it maps each Pi persona to its exact upstream persona, upstream repo, and the local files you will touch.
 
-Out of scope (different lineage — do not treat as omo): **Lu Ban** (Superpowers), **Shen Nong** (product-manager / pm-marketplace), **Cang Jie** (native). If the target is one of these, this skill does not apply — say so instead of forcing an omo frame.
+Out of scope (different lineage — do not treat as omo): **Lu Ban** (Superpowers), **Shen Nong** (product-manager / pm-marketplace). If the target is one of these, this skill does not apply — say so instead of forcing an omo frame.
 
 ## Why "faithful" is not "verbatim"
 

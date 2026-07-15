@@ -166,7 +166,7 @@ These are the current GPT frontmatter defaults for mode and agent model chains. 
 | `houtu` | Atlas-aligned execution conductor | `openai-codex/gpt-5.5:medium` | Matches upstream Atlas GPT-family model and effort while preserving the local provider ladder. |
 | `jintong` | bounded implementation | `openai-codex/gpt-5.6-terra:medium` | Terra suits routine implementation while keeping cost below Sol. |
 
-`chengfeng`, `wenchang`, `guangguang`, and `cangjie` retain their prior OpenAI models. `gpt-5.6-luna` is present in Pi 0.80.5's catalog but failed runtime resolution during migration health checks, so Luna adoption is deferred.
+`chengfeng`, `wenchang`, and `guangguang` retain their prior OpenAI models. `gpt-5.6-luna` is present in Pi 0.80.5's catalog but failed runtime resolution during migration health checks, so Luna adoption is deferred.
 
 ## Shared subagent foundation
 

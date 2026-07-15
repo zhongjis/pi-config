@@ -49,7 +49,7 @@ Re-copy from a pinned commit to refresh; never hand-edit a vendored file.
 - Source: https://github.com/code-yeongyu/oh-my-openagent — commit `830ec1e294afa9823bd193b931c39cd67897c30f` (2026-07-14)
 - Upstream path: `packages/shared-skills/skills/ulw-plan/`
 - License: SUL-1.0 (`LICENSE.md` at the same commit)
-- Note: this directory is an inactive byte-identical reference baseline. The modified Pi runtime adaptation lives at `modes/fuxi/skills/-plan/` and carries the upstream license and modification notice.
+- Note: this directory is an inactive byte-identical reference baseline. The modified Pi runtime adaptation lives at `modes/fuxi/skills/ulw-plan/` and carries the upstream license and modification notice.
 
 | File | Upstream |
 |------|----------|

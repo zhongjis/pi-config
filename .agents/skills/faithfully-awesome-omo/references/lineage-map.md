@@ -17,7 +17,7 @@ Never strip provenance. Cross-check with `modes/MANIFESTO.md` (carries the omo a
 | Pi persona | omo | Local files |
 |-----------|-----|-------------|
 | Hou Tu 后土 | Atlas (orchestrator) | `modes/houtu/{mode,gpt,gemini}.md` |
-| Fu Xi 伏羲 | Prometheus (planner) + `ulw-plan` runtime skill ceremony | thin routers `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/-plan/{SKILL.md,references/*}`; pinned raw baselines `docs/references/omo-prompts/{prometheus,ulw-plan}` |
+| Fu Xi 伏羲 | Prometheus (planner) + `ulw-plan` runtime skill ceremony | thin routers `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}`; pinned raw baselines `docs/references/omo-prompts/{prometheus,ulw-plan}` |
 | Kua Fu 夸父 | Sisyphus (senior eng — the primary coding agent) | `modes/kuafu/{mode,gpt,gemini}.md` |
 | Taishang 太上老君 | Oracle (read-only consult) | `agents/taishang.md` |
 | Di Renjie 狄仁杰 | Metis (gap analyzer) | `agents/direnjie.md` |
@@ -43,7 +43,7 @@ Key correction: **Sisyphus-Junior is not an agent with named "variants."** It is
 - `artistry` (gemini high) — wild/unconventional creative exploration; distinct from `visual-engineering`'s prescriptive design-system-first discipline.
 - `deep` (gpt-5.5 medium) — autonomous problem-solving.
 - `ultrabrain` (gpt-5.5 xhigh) — maximum reasoning.
-- `writing` (gemini-3-flash) — docs/prose. (Cang Jie is a *native* doc writer, not this category — see out of scope.)
+- `writing` (gemini-3-flash) — docs/prose.
 
 `visual-engineering` vs `artistry` (recurring confusion): visual-engineering = prescriptive + systemic (design system → tokens → consistency); artistry = exploratory + unconventional (radical directions, break patterns). Yu Nu maps to visual-engineering.
 
@@ -53,7 +53,6 @@ Key correction: **Sisyphus-Junior is not an agent with named "variants."** It is
 |---------|----------------|
 | Lu Ban 鲁班 | Superpowers (`modes/luban/`) — explicitly disclaims Sisyphus/Prometheus/Atlas parity |
 | Shen Nong 神農 | product-manager / pm-marketplace (`modes/shennong/`) |
-| Cang Jie 仓颉 | native Pi (`agents/cangjie.md`) |
 
 ## Fetching upstream
 
@@ -68,7 +67,7 @@ Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opene
 
 Raw pattern: `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/<path>`. Use `fetch_content` on the GitHub tree/API first; `wenchang` can locate exact paths when the layout is unclear.
 
-After fetching, **vendor** the persona's variants into `docs/references/omo-prompts/<agent>/*.md` (byte-identical, commit-pinned — see that dir's README) so the diff baseline is a fixed, reproducible artifact rather than an ephemeral fetch. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. For Fu Xi, the active baseline is split: Prometheus prompt at `docs/references/omo-prompts/prometheus/` plus `ulw-plan` skill snapshot at `docs/references/omo-prompts/ulw-plan/`. The adapted runtime skill lives under `modes/fuxi/skills/-plan/`; Fu Xi's mode files stay thin routers. The full vendor → adapt → promote flow lives in `references/adapt-and-promote.md`.
+After fetching, **vendor** the persona's variants into `docs/references/omo-prompts/<agent>/*.md` (byte-identical, commit-pinned — see that dir's README) so the diff baseline is a fixed, reproducible artifact rather than an ephemeral fetch. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. For Fu Xi, the active baseline is split: Prometheus prompt at `docs/references/omo-prompts/prometheus/` plus `ulw-plan` skill snapshot at `docs/references/omo-prompts/ulw-plan/`. The adapted runtime skill lives under `modes/fuxi/skills/ulw-plan/`; Fu Xi's mode files stay thin routers. The full vendor → adapt → promote flow lives in `references/adapt-and-promote.md`.
 
 ## Attribution gap (known, not auto-fixed)
 

@@ -11,11 +11,11 @@ import { describe, expect, it } from "vitest";
 import { parseModeAgentConfig } from "../extensions/modes/src/config-loader.js";
 
 const FUXI_PATH = join(process.cwd(), "modes", "fuxi", "mode.md");
-const FUXI_PLAN_SKILL_PATH = join(process.cwd(), "modes", "fuxi", "skills", "-plan", "SKILL.md");
+const FUXI_PLAN_SKILL_PATH = join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", "SKILL.md");
 const FUXI_PLAN_REFERENCE_PATHS = [
-  join(process.cwd(), "modes", "fuxi", "skills", "-plan", "references", "intent-clear.md"),
-  join(process.cwd(), "modes", "fuxi", "skills", "-plan", "references", "intent-unclear.md"),
-  join(process.cwd(), "modes", "fuxi", "skills", "-plan", "references", "full-workflow.md"),
+  join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", "references", "intent-clear.md"),
+  join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", "references", "intent-unclear.md"),
+  join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", "references", "full-workflow.md"),
 ] as const;
 const FUXI_PLAN_STAGE_LABELS = [
   "Interview: create/update local://DRAFT.md (if not already current)",

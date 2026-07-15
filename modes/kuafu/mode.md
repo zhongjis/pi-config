@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:medium,opencode-
 inherit_context: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp
-allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,cangjie,direnjie
+allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
 disallow_delegation_to: houtu
 allow_nesting: true
 ---
@@ -91,7 +91,6 @@ Specialist routing:
 - `guangguang`: trivial single-file edits, typos, obvious config nits.
 - `taishang`: architecture trade-offs, hard debugging consult, security/performance concerns, repeated failure escalation.
 - The orchestrator-owned code-quality gate stays with you: run build, lint, typecheck, and tests; inspect the diff against requirements; severity-rank findings before completion.
-- `cangjie`: fast single-file Markdown or self-contained static HTML report drafting/rewrite from provided/local context. Use for one doc/report file only; reroute multi-file docs, code edits, external research, interactive prototypes, decks, animations, high-fidelity visual design, or final-polish longform.
 
 When using `wenchang`, audit the final answer before trusting it: every cited URL MUST appear in its `Tool/source trace` as an opened source. If trace/citations are missing or mismatched, treat the research as failed and ask `wenchang` to retry with opened sources.
 </directives>

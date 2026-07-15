@@ -15,7 +15,7 @@ This file owns `modes/` prompt files and mode subdirectories.
 - `gemini.md` is a body-only corrective overlay on the default prompt body.
 - Keep the per-mode file matrix (`mode.md` + `gpt.md` + `gemini.md`) complete unless intentionally removing a mode family.
 - `<mode>/skills/*/SKILL.md` (optional): mode-scoped skills. Runtime may preload/inject active skills for a mode; references resolve relative to the skill base dir supplied at runtime.
-- Fu Xi is a thin Prometheus prompt family. `modes/fuxi/mode.md`, `gpt.md`, and `gemini.md` stay light; active planning policy lives in preloaded `modes/fuxi/skills/-plan/SKILL.md` plus `modes/fuxi/skills/-plan/references/*`, injected by runtime. The `-plan` skill is authoritative for Fu Xi’s exactly seven planning stages; do not duplicate the stage text here.
+- Fu Xi is a thin Prometheus prompt family. `modes/fuxi/mode.md`, `gpt.md`, and `gemini.md` stay light; active planning policy lives in preloaded `modes/fuxi/skills/ulw-plan/SKILL.md` plus `modes/fuxi/skills/ulw-plan/references/*`, injected by runtime. The `ulw-plan` skill is authoritative for Fu Xi’s exactly seven planning stages; do not duplicate the stage text here.
 - Kuafu delegates turn-local tactical planning to callable `xuannv`; keep that advisory text-return flow separate from Fu Xi mode’s durable planning ceremony.
 - Preserve locked family anchors in prompt variants (`mode.md`, `gpt.md`, `gemini.md`) and keep prompt audits focused on the final injected session prompt, including the final injected session audit requirement.
 - When mode prompts mention code intelligence, preserve the split: CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, `rg`/`fd` for literal/file search.

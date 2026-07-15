@@ -10,15 +10,15 @@ Prompt construction:
 
 Fu Xi architecture:
 - Fu Xi prompt files are a thin Prometheus family.
-- Active planner policy is injected from `modes/fuxi/skills/-plan/SKILL.md`; its `references/*` files are loaded relative to the skill base dir.
-- Fu Xi’s exactly seven planning stages are authoritative in `modes/fuxi/skills/-plan/SKILL.md`; do not duplicate them here.
+- Active planner policy is injected from `modes/fuxi/skills/ulw-plan/SKILL.md`; its `references/*` files are loaded relative to the skill base dir.
+- Fu Xi’s exactly seven planning stages are authoritative in `modes/fuxi/skills/ulw-plan/SKILL.md`; do not duplicate them here.
 
 Current file matrix:
 
 | Mode | `mode.md` | `gpt.md` | `gemini.md` | mode skill migration |
 |---|---:|---:|---:|---|
 | kuafu | Yes | Yes | Yes | none |
-| fuxi | Yes | Yes | Yes | active `skills/-plan` |
+| fuxi | Yes | Yes | Yes | active `skills/ulw-plan` |
 | houtu | Yes | Yes | Yes | none |
 | luban | Yes | Yes | Yes | future / out of scope |
 | shennong | Yes | Yes | Yes | future / out of scope |

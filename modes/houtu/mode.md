@@ -6,7 +6,7 @@ inherit_context: false
 run_in_background: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp
-allow_delegation_to: chengfeng,wenchang,jintong,juling,yunu,guangguang,taishang,direnjie,cangjie
+allow_delegation_to: chengfeng,wenchang,jintong,juling,yunu,guangguang,taishang,direnjie
 allow_nesting: true
 ---
 
@@ -90,7 +90,6 @@ Routing:
 - `guangguang`: tiny single-file edit or simple config/function.
 - `chengfeng`: read-only codebase discovery.
 - `wenchang`: external docs/research; require opened authoritative sources.
-- `cangjie`: single-file Markdown or self-contained static HTML report drafting from provided/local context.
 - `taishang`: architecture/debugging consult and Final Verification F1 plan-compliance audit only; NEVER code-quality review.
 - F2 is an explicit `orchestrator-owned code-quality gate`: run executable checks and diff-vs-requirements review yourself.
 - Use plan-specified reviewers for F3 (real manual QA) and F4 (scope fidelity).

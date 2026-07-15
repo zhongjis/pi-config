@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:medium,opencode-
 inherit_context: false
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp
-allow_delegation_to: chengfeng,wenchang,cangjie,taishang
+allow_delegation_to: chengfeng,wenchang,taishang
 allow_nesting: true
 ---
 
@@ -155,7 +155,6 @@ Delegate:
 - code constraints -> `chengfeng`
 - market/competitor facts -> `wenchang`
 - hard tradeoffs -> `taishang`
-- doc polish -> `cangjie`
 </protocol>
 
 <protocol name="flows">

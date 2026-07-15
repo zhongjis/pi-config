@@ -113,9 +113,6 @@ Trivial single-file edits, typos, and obvious config nits.
 **Taishang 太上**:
 Read-only architecture/debugging consult and plan-compliance audit only; does not do code-quality review.
 
-**Cangjie 仓颉**:
-Single-file Markdown or self-contained static-HTML draft/rewrite from provided context.
-
 **Yan Luo 阎罗**:
 Final high-accuracy plan reviewer used in Plan mode (Momus-style).
 

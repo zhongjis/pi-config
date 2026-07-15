@@ -6,7 +6,7 @@ vi.mock("node:fs", async () => {
 		...actual,
 		readFileSync(path: Parameters<typeof actual.readFileSync>[0], options?: Parameters<typeof actual.readFileSync>[1]) {
 			const normalizedPath = String(path).replace(/\\/g, "/");
-			if (normalizedPath.endsWith("/modes/fuxi/skills/-plan/SKILL.md")) {
+			if (normalizedPath.endsWith("/modes/fuxi/skills/ulw-plan/SKILL.md")) {
 				return "---\nname: ulw-plan\n---\nFu Xi plan skill body";
 			}
 			return actual.readFileSync(path, options as never);

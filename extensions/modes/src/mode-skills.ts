@@ -14,7 +14,7 @@ type ModeSkillBootstrap = {
 };
 
 const MODE_SKILL_BOOTSTRAPS: Partial<Record<Mode, ModeSkillBootstrap>> = {
-	fuxi: { skillName: "-plan" },
+	fuxi: { skillName: "ulw-plan" },
 };
 
 type ModeStateEntry = {

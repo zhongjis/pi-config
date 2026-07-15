@@ -22,7 +22,7 @@ Before finalizing, grep the test for the mode you touched and confirm every lock
 
 The owning `AGENTS.md` files encode binding architecture. Do not weaken them, and get explicit approval before editing them.
 
-- `modes/AGENTS.md` — the heavy one. For **Hou Tu**: strict pi-task/agent lifecycle separation — pi-tasks are logical DAG only (`TaskCreate` per top-level item → `TaskUpdate addBlockedBy` → `in_progress` before delegation → `completed` only after Hou Tu independently verifies evidence); plan work runs **directly through `Agent`**, supervised via `get_subagent_result`/`steer_subagent`, with `Agent(resume)` for salvageable workstreams; **never `TaskExecute`/`TaskOutput`/`TaskStop`**, never store agent IDs/runtime state in task metadata; the **6-section** delegation contract; independent tasks launch as separate background agents; task status + PLAN checkboxes are the authoritative verified-work state. For **Fu Xi**: thin router files `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/-plan/{SKILL.md,references/*}`; pinned raw baselines `docs/references/omo-prompts/{prometheus,ulw-plan}`; runtime injection via the modes extension; exactly 7 planning steps in the skill; no Fu Xi reference material beside the router files. Also: keep the CodeGraph / LSP / `rg`,`fd` tool-split; frontend→`yunu`, non-UI impl→`jintong`; Taishang remains architecture/debugging consult + F1 plan-compliance only, NEVER code-quality reviewer.
+- `modes/AGENTS.md` — the heavy one. For **Hou Tu**: strict pi-task/agent lifecycle separation — pi-tasks are logical DAG only (`TaskCreate` per top-level item → `TaskUpdate addBlockedBy` → `in_progress` before delegation → `completed` only after Hou Tu independently verifies evidence); plan work runs **directly through `Agent`**, supervised via `get_subagent_result`/`steer_subagent`, with `Agent(resume)` for salvageable workstreams; **never `TaskExecute`/`TaskOutput`/`TaskStop`**, never store agent IDs/runtime state in task metadata; the **6-section** delegation contract; independent tasks launch as separate background agents; task status + PLAN checkboxes are the authoritative verified-work state. For **Fu Xi**: thin router files `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}`; pinned raw baselines `docs/references/omo-prompts/{prometheus,ulw-plan}`; runtime injection via the modes extension; exactly 7 planning steps in the skill; no Fu Xi reference material beside the router files. Also: keep the CodeGraph / LSP / `rg`,`fd` tool-split; frontend→`yunu`, non-UI impl→`jintong`; Taishang remains architecture/debugging consult + F1 plan-compliance only, NEVER code-quality reviewer.
 - `agents/AGENTS.md` — agent frontmatter + prompt conventions.
 - `extensions/AGENTS.md` and `extensions/ulw/` docs — ulw event/prompt rules.
 
@@ -30,7 +30,7 @@ After a contract-level change (structure, section count, mechanics, ownership), 
 
 ## Final verification gates (`allow_delegation_to` must cover delegated agents)
 
-An orchestration/execution mode can only delegate to agents listed in its frontmatter `allow_delegation_to`; anything else is **denied at runtime** by the delegation policy — a silent stall at run time, not a build error. Fu Xi's injected `modes/fuxi/skills/-plan/SKILL.md` pins the Final Verification Wave gates. F2 is the **orchestrator-owned code-quality gate**: the orchestrator runs executable checks and performs diff-vs-requirements review; it does not delegate F2 to a dedicated reviewer.
+An orchestration/execution mode can only delegate to agents listed in its frontmatter `allow_delegation_to`; anything else is **denied at runtime** by the delegation policy — a silent stall at run time, not a build error. Fu Xi's injected `modes/fuxi/skills/ulw-plan/SKILL.md` pins the Final Verification Wave gates. F2 is the **orchestrator-owned code-quality gate**: the orchestrator runs executable checks and performs diff-vs-requirements review; it does not delegate F2 to a dedicated reviewer.
 
 | Gate | Owner |
 |------|-------|
@@ -76,7 +76,7 @@ Model/effort alignment (see `substitution-map.md` → *Effort / reasoning-level 
 - [ ] Gemini overlay anchor kept: an early `<critical>` (preferred — peak-attention) or at least `</role>` (fallback). Upstream tag names alone (`<identity>`/`<mission>`/`<critical_overrides>`) do NOT match `indexOf("<critical>")`
 - [ ] Test-locked strings for the touched mode preserved; `defaultOnly…` string absent from `gpt.md`
 - [ ] Pi persona names kept; only the sanctioned attribution line mentions upstream
-- [ ] All family variants (`mode`/`gpt`/`gemini`, agent `.md`, ulw pair, or Fu Xi router + `skills/-plan` runtime skill) changed in lockstep
+- [ ] All family variants (`mode`/`gpt`/`gemini`, agent `.md`, ulw pair, or Fu Xi router + `skills/ulw-plan` runtime skill) changed in lockstep
 - [ ] Each decision fork surfaced with a recommended default
 - [ ] Any locked-contract / test edit called out as "Ask First"
 - [ ] `allow_delegation_to` ⊇ every delegated reviewer/worker (Final Wave F1/F3/F4; F2 stays orchestrator-owned)

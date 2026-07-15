@@ -39,7 +39,7 @@ Always rename upstream persona names to the Pi persona (except in a single sanct
 | explore | Chengfeng 乘风 |
 | librarian | Wenchang 文昌 |
 
-`agentType` routing quick reference: `jintong` (standard bounded non-UI impl/debug/test), `juling` (opus-tier complex/higher-risk non-UI impl), `yunu` (frontend/UI + browser QA), `guangguang` (tiny single-file edit), `taishang` (read-only architecture/review), `chengfeng` (recon, background `Agent()`), `wenchang` (doc/web research, background `Agent()`), `cangjie` (single-file Markdown/HTML report — out of omo scope but a valid route).
+`agentType` routing quick reference: `jintong` (standard bounded non-UI impl/debug/test), `juling` (opus-tier complex/higher-risk non-UI impl), `yunu` (frontend/UI + browser QA), `guangguang` (tiny single-file edit), `taishang` (read-only architecture/review), `chengfeng` (recon, background `Agent()`), `wenchang` (doc/web research, background `Agent()`).
 
 ## Effort / reasoning-level mapping (omo → Pi)
 
@@ -87,7 +87,7 @@ Each mode ships three router variants; agents ship one file; ulw ships two. Keep
 | `modes/<mode>/gpt.md` | Body-only, **self-contained** replacement (inherits `mode.md` frontmatter). Principle-driven; must not start with `---`. |
 | `modes/<mode>/gemini.md` | Body-only **corrective overlay** injected into the default body. Short, forceful overrides only. |
 | `modes/fuxi/{mode,gpt,gemini}.md` | Thin router family only. Runtime injection is handled by the modes extension; deep planning material is not stored beside the routers. |
-| `modes/fuxi/skills/-plan/{SKILL.md,references/*}` | Adapted Fu Xi runtime skill. Owns the seven-stage ceremony and its supporting reference material. |
+| `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}` | Adapted Fu Xi runtime skill. Owns the seven-stage ceremony and its supporting reference material. |
 | `docs/references/omo-prompts/{prometheus,ulw-plan}` | Pinned raw upstream baselines for Fu Xi prompt + skill lineage. Reference only; do not edit during adaptation. |
 | `agents/<name>.md` | Single file: frontmatter (incl. `model:` family fallback list) + body. |
 | `extensions/ulw/prompts/{default,gpt}.md` | ulw default + GPT variant. |
