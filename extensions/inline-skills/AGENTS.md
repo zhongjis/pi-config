@@ -1,6 +1,6 @@
 # inline-skills
 
-Vendored Pi extension: inline `/skill` autocomplete and per-turn skill loading.
+Vendored Pi extension: inline `$skill:` autocomplete and per-turn skill loading.
 Provenance (source URL, version, commit, license) lives in `README.md` `## Upstream`.
 
 ## Local Tweaks
@@ -9,7 +9,8 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 
 | File | What | Why |
 |------|------|-----|
-| `index.ts` | Upstream `src/index.ts` vendored verbatim at repo root of the extension (not under `src/`) | Repo flat-tier layout: `extensions/<name>/index.ts`, no bare `.ts`, no nested `src/` for a single-file extension |
+| `index.ts` | **Not verbatim.** Invocation token changed from upstream `/name` to `$skill:<name>`: `SKILL_TOKEN_RE` matches `$skill:<name>`; autocomplete trigger/context/prefix key off `$`; the bare-delimiter guard is `"$"`; autocomplete item `value` + `label` are both `$skill:<name>`; the `input` early-out requires `event.text.includes("$skill:")`; bare `$` opens the full skill list; `stripNativeSkillItems` removes pi-native `skill:` entries from deferred (`/`) suggestions. Also vendored at the extension root, not `src/`. | User UX (Option B): `$` is the sole skill trigger, `$skill:` is stamped on confirm, `/` stays commands-only. Flat-tier layout: no bare `.ts`, no nested `src/`. |
+| `test/inline-skills.test.ts` | Local-only file (not in upstream) | Pins the `$skill:` grammar: submit-injection, autocomplete label/insert, bare-`$` list, `/` native-skill stripping, bare-`$name` rejection |
 | `README.md` | Replaced upstream README (dropped install instructions, badges, screenshots) | Repo README spec: concise, factual, no `pi install npm:` guidance |
 | (omitted) | Upstream `package.json`, `tsconfig.json`, `CHANGELOG.md`, `assets/` not vendored | Flat-tier extension; deps are `catalog:` Pi built-ins, no local package/toolchain |
 
@@ -17,6 +18,7 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 
 - Upstream is a monorepo package `packages/pi-inline-skills`. Read its `CHANGELOG.md` before syncing.
 - No `1.0.5` git tag was pushed upstream; pin to a master commit SHA that contains the target version.
+- **Upstream uses `/name` tokens; this fork uses `$skill:<name>`.** On sync, do NOT let upstream's `/` token logic overwrite the `$skill:` divergence in `index.ts` — re-apply it (see Local Tweaks). Upstream has no native-skill stripping; keep `stripNativeSkillItems`.
 - Imports use `@earendil-works/pi-coding-agent` + `@earendil-works/pi-tui` (root `catalog:`). Bump the catalog, not a local manifest.
 - On sync, re-verify these exports exist in the installed Pi: `CustomEditor`, `SkillInvocationMessageComponent`, `ParsedSkillBlock`, `ExtensionAPI.addAutocompleteProvider`, `registerMessageRenderer`, `appendEntry`.
 

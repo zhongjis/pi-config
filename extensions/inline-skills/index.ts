@@ -79,8 +79,8 @@ const LOADED_SKILL_ENTRY_TYPE = "loaded-skill"
 const INLINE_SKILL_MESSAGE_TYPE = "inline-skill"
 const MAX_SUGGESTIONS = 30
 const SKILL_TOKEN_RE =
-  /(^|[\s([{,])\/([a-z0-9][a-z0-9-]{0,63})(?![a-z0-9-]|[:/])/gi
-const SLASH_SKILL_CONTEXT_RE = /(?:^|[\s([{,])\/[a-z0-9-]*$/i
+  /(^|[\s([{,])\$skill:([a-z0-9][a-z0-9-]{0,63})(?![a-z0-9-]|[:/])/gi
+const SLASH_SKILL_CONTEXT_RE = /(?:^|[\s([{,])\$[a-z0-9-]*$/i
 
 function fuzzyScore(value: string, query: string): number {
   const target = value.toLowerCase()
@@ -311,7 +311,7 @@ function findInlineSkills(
 }
 
 function extractSlashSkillPrefix(textBeforeCursor: string): string | undefined {
-  const match = textBeforeCursor.match(/(?:^|[\s([{,])\/([a-z0-9-]*)$/i)
+  const match = textBeforeCursor.match(/(?:^|[\s([{,])\$([a-z0-9-]*)$/i)
   return match?.[1]
 }
 
@@ -356,11 +356,44 @@ function mergeAutocompleteItems(options: {
   }
 }
 
+type SlashTriggerEditor = {
+  isShowingAutocomplete?: () => boolean
+  state?: { cursorLine: number; cursorCol: number; lines: string[] }
+  tryTriggerAutocomplete?: () => void
+}
+
+function runSlashAutocompleteTrigger(
+  editor: SlashTriggerEditor,
+  data: string,
+): void {
+  if (
+    editor.isShowingAutocomplete?.() ||
+    !editor.state ||
+    typeof editor.tryTriggerAutocomplete !== "function"
+  )
+    return
+  if (!/^[a-zA-Z0-9\-_$]$/.test(data)) return
+
+  const currentLine = editor.state.lines[editor.state.cursorLine] ?? ""
+  const textBeforeCursor = currentLine.slice(0, editor.state.cursorCol)
+  if (SLASH_SKILL_CONTEXT_RE.test(textBeforeCursor)) {
+    editor.tryTriggerAutocomplete()
+  }
+}
+
 function installSlashAutocompleteTrigger(): void {
   const proto = CustomEditor.prototype as unknown as {
     handleInput(data: string): void
     inlineSkillsSlashTriggerInstalled?: boolean
+    inlineSkillsSlashTrigger?: (editor: SlashTriggerEditor, data: string) => void
   }
+
+  // Refresh the trigger implementation on every load so `/reload` (which re-runs
+  // extensions in-process) picks up the current logic. The prototype wrapper is
+  // installed only once (guarded below); without this indirection a reload would
+  // keep the first-loaded trigger and, e.g., ignore the `$` delimiter.
+  proto.inlineSkillsSlashTrigger = runSlashAutocompleteTrigger
+
   if (proto.inlineSkillsSlashTriggerInstalled) return
 
   const originalHandleInput = proto.handleInput
@@ -368,28 +401,22 @@ function installSlashAutocompleteTrigger(): void {
     this: unknown,
     data: string,
   ): void {
-    const editor = this as {
-      isShowingAutocomplete?: () => boolean
-      state?: { cursorLine: number; cursorCol: number; lines: string[] }
-      tryTriggerAutocomplete?: () => void
-    }
-
     originalHandleInput.call(this, data)
-    if (
-      editor.isShowingAutocomplete?.() ||
-      !editor.state ||
-      typeof editor.tryTriggerAutocomplete !== "function"
-    )
-      return
-    if (!/^[a-zA-Z0-9\-_/]$/.test(data)) return
-
-    const currentLine = editor.state.lines[editor.state.cursorLine] ?? ""
-    const textBeforeCursor = currentLine.slice(0, editor.state.cursorCol)
-    if (SLASH_SKILL_CONTEXT_RE.test(textBeforeCursor)) {
-      editor.tryTriggerAutocomplete()
-    }
+    proto.inlineSkillsSlashTrigger?.(this as SlashTriggerEditor, data)
   }
   proto.inlineSkillsSlashTriggerInstalled = true
+}
+
+function stripNativeSkillItems(
+  suggestions: AutocompleteSuggestions | null,
+): AutocompleteSuggestions | null {
+  if (!suggestions) return suggestions
+  return {
+    ...suggestions,
+    items: suggestions.items.filter(
+      (item) => !item.label.startsWith("skill:"),
+    ),
+  }
 }
 
 function createSlashSkillAutocompleteProvider(
@@ -406,8 +433,14 @@ function createSlashSkillAutocompleteProvider(
       const currentLine = lines[cursorLine] ?? ""
       const textBeforeCursor = currentLine.slice(0, cursorCol)
       const query = extractSlashSkillPrefix(textBeforeCursor)
-      if (query === undefined || (query === "" && textBeforeCursor === "/")) {
-        return current.getSuggestions(lines, cursorLine, cursorCol, options)
+      if (query === undefined) {
+        const deferred = await current.getSuggestions(
+          lines,
+          cursorLine,
+          cursorCol,
+          options,
+        )
+        return stripNativeSkillItems(deferred)
       }
 
       const currentSuggestions = await current.getSuggestions(
@@ -429,8 +462,8 @@ function createSlashSkillAutocompleteProvider(
 
       const skillItems = matches.map((skill): AutocompleteItem => {
         const item: AutocompleteItem = {
-          value: `/${skill.name}`,
-          label: `skill:${skill.name}`,
+          value: `$skill:${skill.name}`,
+          label: `$skill:${skill.name}`,
         }
         const description = prefixAutocompleteDescription(skill)
         if (description) item.description = description
@@ -454,10 +487,10 @@ function createSlashSkillAutocompleteProvider(
       const currentLine = lines[cursorLine] ?? ""
       const slashPrefixStart = cursorCol - prefix.length - 1
       const isSlashSkillCompletion =
-        item.label.startsWith("skill:") &&
-        item.value.startsWith("/") &&
+        item.label.startsWith("$skill:") &&
+        item.value.startsWith("$skill:") &&
         slashPrefixStart >= 0 &&
-        currentLine[slashPrefixStart] === "/"
+        currentLine[slashPrefixStart] === "$"
 
       if (!isSlashSkillCompletion) {
         return current.applyCompletion(
@@ -579,7 +612,7 @@ export default function (pi: ExtensionAPI): void {
     pendingInlineSkillNames = []
     pendingInlineSkillBlocks = []
     loadedSkills = restoreLoadedSkills(ctx)
-    if (event.source === "extension" || !event.text.includes("/")) {
+    if (event.source === "extension" || !event.text.includes("$skill:")) {
       return { action: "continue" }
     }
     if (hasStartingCommandConflict(pi, event.text)) {
