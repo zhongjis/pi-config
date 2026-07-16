@@ -5,7 +5,7 @@ model: anthropic/claude-sonnet-4-6,openai-codex/gpt-5.6-terra:medium,opencode-go
 inherit_context: false
 run_in_background: false
 builtin_tools: read,bash,edit,write
-extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal
+extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp
 allow_delegation_to: chengfeng,wenchang,jintong,juling,yunu,guangguang,taishang,direnjie
 allow_nesting: true
 ---
