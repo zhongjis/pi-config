@@ -162,13 +162,13 @@ describe("ulw extension — unit tests", () => {
 
 	// ── Message injection via before_agent_start ───────────────
 
-	it("injects ultrawork prompt as collapsed message via before_agent_start", async () => {
+	it("injects ultrawork prompt as a displayed (renderer-compacted) message via before_agent_start", async () => {
 		await fireInput(mock, "ulw fix the bug");
 		const result = await fireBeforeAgentStart(mock);
 		expect(result?.message).toBeDefined();
 		expect(result!.message!.customType).toBe("ultrawork");
 		expect(result!.message!.content).toContain("<ultrawork-mode>");
-		expect(result!.message!.display).toBe(false);
+		expect(result!.message!.display).toBe(true);
 	});
 
 	it("does NOT inject prompt on before_agent_start without prior keyword", async () => {
@@ -255,20 +255,21 @@ describe("ulw extension — unit tests", () => {
 		expect(bas?.message?.content).toContain("<ultrawork-mode>");
 	});
 
-	// ── Notification ────────────────────────────────────────────
+	// ── Activation visual (message renderer banner) ─────────────
 
-	it("calls notify and setStatus on activation", async () => {
+	it("registers a message renderer for the ultrawork banner", () => {
+		expect(mock.renderers.has("ultrawork")).toBe(true);
+	});
+
+	it("does not notify or set a footer status on activation", async () => {
 		const ctx = createMockContext();
 		const notifyCalls: Array<{ text: string; level: string }> = [];
 		const statusCalls: Array<{ id: string; text: string | undefined }> = [];
 		ctx.ui.notify = ((text: string, level: string) => { notifyCalls.push({ text, level }); }) as any;
 		ctx.ui.setStatus = ((id: string, text: string | undefined) => { statusCalls.push({ id, text }); }) as any;
 		await fireInput(mock, "ulw fix it", ctx);
-		expect(notifyCalls).toHaveLength(1);
-		expect(notifyCalls[0].text).toContain("Ultrawork Mode Activated");
-		expect(notifyCalls[0].level).toBe("success");
-		expect(statusCalls).toHaveLength(1);
-		expect(statusCalls[0]).toEqual({ id: "ultrawork", text: "⚡ Ultrawork" });
+		expect(notifyCalls).toHaveLength(0);
+		expect(statusCalls).toHaveLength(0);
 	});
 
 	it("does not notify or set status when ignored in non-kuafu mode", async () => {

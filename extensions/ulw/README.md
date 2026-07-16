@@ -11,16 +11,16 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 
 - Detects "ultrawork" or "ulw" keyword in user messages (case-insensitive, word-boundary)
 - Preserves the keyword in user text in kuafu mode
-- Injects the ultrawork prompt via `before_agent_start` as a collapsed context message
+- Injects the ultrawork prompt via `before_agent_start` as a displayed context message (`display: true`) rendered through a custom message renderer as a compact one-line activation banner (`⚡ [ultrawork] mode activated` — `ctrl+o` to expand the full directive)
 - Model-adapted: injects the Claude/default variant by default, and the OpenAI/GPT variant when the active model is GPT-family (`isGptModel` from `lib/model-family`) — Claude is the default
 - Only triggers in kuafu (build) mode — other modes pass through untouched
 - Sanitizes detection: ignores keywords inside code blocks, inline code, `@file` references, and the ultrawork prompt block itself
-- Shows "⚡ Ultrawork Mode Activated" notification and status bar indicator
+- Shows a compact inline activation banner in the transcript at the point of activation (via `pi.registerMessageRenderer`) — no global notification and no persistent footer status badge
 
 ## Hooks
 
 - `input` — Detect keyword in kuafu mode, preserve user text, set pending flag
-- `before_agent_start` — Inject ultrawork prompt as collapsed message
+- `before_agent_start` — Inject ultrawork prompt as a displayed message; `pi.registerMessageRenderer("ultrawork", ...)` renders it as a compact banner
 
 ## Files Worth Reading
 

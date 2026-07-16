@@ -19,6 +19,8 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getUltraworkPrompt } from "./prompt.js";
+// @ts-expect-error repo test/runtime alias resolves @earendil-works/pi-tui; LSP may miss it.
+import { Box, Text } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
 // Keyword detection
@@ -92,6 +94,29 @@ export default function ulwExtension(pi: ExtensionAPI): void {
   // Flag: ultrawork was triggered for the current input, pending injection
   let pendingUltrawork = false;
 
+  // Compact activation banner rendered in the transcript when ultrawork fires.
+  // The injected prompt message (display: true) renders through this instead of
+  // dumping the full directive; ctrl+o expands it. Replaces the old footer status
+  // badge + global notification (both removed).
+  pi.registerMessageRenderer("ultrawork", (message, { expanded }, theme) => {
+    const label = theme.fg("customMessageLabel", "\x1b[1m⚡ [ultrawork]\x1b[22m");
+    const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
+    box.addChild(
+      new Text(
+        `${label} ${theme.fg("customMessageText", "mode activated")}${theme.fg("dim", " (ctrl+o to expand)")}`,
+        0,
+        0,
+      ),
+    );
+    if (expanded) {
+      const content = (message as { content?: unknown }).content;
+      if (typeof content === "string" && content.length > 0) {
+        box.addChild(new Text(theme.fg("dim", content), 0, 0));
+      }
+    }
+    return box;
+  });
+
   pi.on("input", async (event, ctx) => {
     const raw = event.text ?? "";
     if (!hasUlwKeyword(raw)) {
@@ -106,11 +131,6 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     }
 
     const keywordOnly = /^(ultrawork|ulw)$/i.test(raw.trim());
-
-    if (ctx.hasUI) {
-      ctx.ui.notify("⚡ Ultrawork Mode Activated", "success");
-      ctx.ui.setStatus("ultrawork", "⚡ Ultrawork");
-    }
 
     // Set flag for before_agent_start to inject the prompt
     pendingUltrawork = true;
@@ -135,7 +155,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
       message: {
         customType: "ultrawork",
         content: getUltraworkPrompt(ctx.model),
-        display: false,
+        display: true,
       },
     };
   });
