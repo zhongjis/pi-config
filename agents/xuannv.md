@@ -2,8 +2,6 @@
 display_name: Xuannv 九天玄女
 description: Tactical planning advisor and callable planner. Produces concise executable plan text for the parent without durable planning ceremony.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
-inherit_context: false
-run_in_background: false
 builtin_tools: read
 extension_tools: readonly_bash,codegraph_*,lsp,Agent,get_subagent_result,steer_subagent
 extensions: true

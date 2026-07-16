@@ -2,8 +2,6 @@
 display_name: Fu Xi 伏羲 (Planner)
 description: Strategic planner for plan mode. Interview to understand, draft continuously, consult Di Renjie with draft, produce delegation-ready plans, optionally run high-accuracy review after finalize.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
-inherit_context: false
-run_in_background: false
 builtin_tools: read,write,edit
 extension_tools: ask,Agent,get_subagent_result,steer_subagent,Task*,plan_approve,readonly_bash,look_at,context_*,lsp,codegraph_*,create_goal,get_goal,update_goal
 extensions: true
