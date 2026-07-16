@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { homedir } from "node:os";
 
 const builtInWrite = vi.hoisted(() => {
   const execute = vi.fn(async () => ({
@@ -141,18 +142,19 @@ describe("visuals write tool rendering", () => {
     ).toBe(true);
   });
 
-  it("renders call header with full tool name and short truncated path", () => {
+  it("renders call header aligned with edit: home-shortened, untruncated path", () => {
     const tool = installTool();
     const shortCall = renderText(tool.renderCall!({ path: "src/app.ts", content: "" }, plainTheme));
-    const longPath = `src/${"nested/".repeat(12)}final-file.ts`;
 
+    const homePath = `${homedir()}/personal/pi-config/docs/guides/agent-orchestration.md`;
+    const homeCall = renderText(tool.renderCall!({ path: homePath, content: "" }, plainTheme));
+
+    const longPath = `src/${"nested/".repeat(12)}final-file.ts`;
     const longCall = renderText(tool.renderCall!({ path: longPath, content: "" }, plainTheme));
-    const renderedPath = longCall.slice("▸ write · ".length);
 
     expect(shortCall).toBe("▸ write · src/app.ts");
-    expect(longCall).toMatch(/^▸ write · /);
-    expect(longCall).toContain("…");
-    expect(longCall).not.toContain(longPath);
-    expect(Array.from(renderedPath).length).toBeLessThanOrEqual(48);
+    expect(homeCall).toBe("▸ write · ~/personal/pi-config/docs/guides/agent-orchestration.md");
+    expect(longCall).toBe(`▸ write · ${longPath}`);
+    expect(longCall).not.toContain("…");
   });
 });

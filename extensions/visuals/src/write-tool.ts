@@ -1,6 +1,7 @@
 import { createWriteTool, keyHint, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 // @ts-expect-error LSP may miss the repo test/runtime alias for pi-tui; runtime/test alias resolves it.
 import { Text } from "@earendil-works/pi-tui";
+import { homedir } from "node:os";
 
 type BuiltInWriteTool = {
   description: string;
@@ -37,7 +38,6 @@ type RenderResultContext = {
 type ToolTheme = ExtensionContext["ui"]["theme"];
 type ToolThemeColor = Parameters<ToolTheme["fg"]>[0];
 
-const WRITE_CALL_PATH_MAX_CHARS = 44;
 const WRITE_SUMMARY_MAX_CHARS = 76;
 const ELLIPSIS = "…";
 
@@ -49,15 +49,9 @@ function styleToolTitle(theme: ToolTheme, text: string): string {
   return style(theme, "toolTitle", theme.bold(text));
 }
 
-function truncateMiddle(text: string, maxChars: number): string {
-  const chars = Array.from(text);
-  if (chars.length <= maxChars) return text;
-  if (maxChars <= ELLIPSIS.length) return ELLIPSIS.slice(0, maxChars);
-
-  const keep = maxChars - ELLIPSIS.length;
-  const head = Math.ceil(keep / 2);
-  const tail = Math.floor(keep / 2);
-  return `${chars.slice(0, head).join("")}${ELLIPSIS}${chars.slice(chars.length - tail).join("")}`;
+function shortenPath(path: string): string {
+  const home = homedir();
+  return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
 function truncateEnd(text: string, maxChars: number): string {
@@ -120,7 +114,7 @@ export function installWriteToolVisual(pi: ExtensionAPI): void {
 
     renderCall(args: Partial<WriteToolArgs> | undefined, theme: ToolTheme) {
       const rawPath = typeof args?.path === "string" ? args.path : "";
-      const path = truncateMiddle(rawPath, WRITE_CALL_PATH_MAX_CHARS);
+      const path = shortenPath(rawPath);
       return new Text(
         `▸ ${styleToolTitle(theme, "write")} ${style(theme, "dim", "·")} ${style(theme, "accent", path)}`,
         0,

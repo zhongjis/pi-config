@@ -30,7 +30,7 @@ Only one extension can own the single `ctx.ui.setFooter()` slot. This extension 
 
 Overrides the built-in `write` tool rendering only; file creation/overwrite behavior remains delegated to Pi's built-in write tool.
 
-- Call rendering shows `▸ write · <path>` with long paths safely truncated.
+- Call rendering shows `▸ write · <path>`, home-shortened to `~` and left untruncated to match the built-in `edit` tool's path display.
 - Collapsed results show `status: written`, `size: N lines`, `error: <first line>`, or `status: writing`, plus the expand hint.
 - Expanded results show the raw built-in `write` result content exactly.
 
