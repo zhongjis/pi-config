@@ -99,11 +99,11 @@ export default function ulwExtension(pi: ExtensionAPI): void {
   // dumping the full directive; ctrl+o expands it. Replaces the old footer status
   // badge + global notification (both removed).
   pi.registerMessageRenderer("ultrawork", (message, { expanded }, theme) => {
-    const label = theme.fg("customMessageLabel", "\x1b[1m⚡ [ultrawork]\x1b[22m");
+    const label = theme.fg("customMessageLabel", "\x1b[1m[ultrawork]\x1b[22m");
     const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
     box.addChild(
       new Text(
-        `${label} ${theme.fg("customMessageText", "mode activated")}${theme.fg("dim", " (ctrl+o to expand)")}`,
+        `${label} ${theme.fg("customMessageText", "ᕦ(ò_óˇ)ᕤ mode enabled")}${theme.fg("dim", " (ctrl+o to expand)")}`,
         0,
         0,
       ),
