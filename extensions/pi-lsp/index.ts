@@ -13,6 +13,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Effect } from 'effect';
 
 import { LspClient } from './client';
+import { getGlobalClientPool } from './client-pool';
 import {
   loadConfigEffect,
   scaffoldGlobalConfigEffect,
@@ -43,7 +44,7 @@ export function formatLspStatus(cfg: LspStatusConfig | null, runningCount = 0): 
 export default function lspExtension(pi: ExtensionAPI) {
   let rootPath = '';
   let config: LoadedConfig | null = null;
-  const clients = new Map<string, LspClient>();
+  const clientOwner = getGlobalClientPool().createOwner();
   const runtimeLayer = makeRuntimeLayer();
 
   function runLsp<A, E>(program: Effect.Effect<A, E, LspServices>): Promise<A> {
@@ -53,18 +54,11 @@ export default function lspExtension(pi: ExtensionAPI) {
   // ── Client management ───────────────────────────────────────────────
 
   function getOrCreateClient(serverConfig: ResolvedServerConfig): LspClient {
-    const existing = clients.get(serverConfig.name);
-    if (existing) return existing;
-
-    const client = new LspClient(serverConfig, rootPath);
-    clients.set(serverConfig.name, client);
-    return client;
+    return clientOwner.acquire(rootPath, serverConfig);
   }
 
-  async function shutdownAll(): Promise<void> {
-    const shutdowns = [...clients.values()].map((c) => c.shutdown().catch(() => {}));
-    await Promise.all(shutdowns);
-    clients.clear();
+  function shutdownAll() {
+    return clientOwner.releaseAll();
   }
 
   function refreshStatus(
@@ -73,7 +67,8 @@ export default function lspExtension(pi: ExtensionAPI) {
   ) {
     const runningCount = cfg?.globalDisabled
       ? 0
-      : cfg?.servers.filter((server) => clients.get(server.name)?.isInitialized).length ?? 0;
+      : cfg?.servers.filter((server) => clientOwner.existing(rootPath, server)?.isInitialized)
+          .length ?? 0;
     ui.setStatus('lsp', formatLspStatus(cfg, runningCount));
   }
 
@@ -100,7 +95,7 @@ export default function lspExtension(pi: ExtensionAPI) {
 
     anyClient(): LspClient | null {
       // Return first initialized client, or first available
-      for (const client of clients.values()) {
+      for (const client of clientOwner.values()) {
         if (client.isInitialized) return client;
       }
       // Try to create one from config
@@ -120,6 +115,8 @@ export default function lspExtension(pi: ExtensionAPI) {
   // ── Session lifecycle ─────────────────────────────────────────────────
 
   pi.on('session_start', async (_event, ctx) => {
+    await shutdownAll();
+    config = null;
     rootPath = ctx.cwd;
 
     const scaffolded = await runLsp(scaffoldGlobalConfigEffect(rootPath)).catch((err) => {
@@ -165,7 +162,7 @@ export default function lspExtension(pi: ExtensionAPI) {
         lines.push('  Add servers to ~/.pi/agent/lsp.json or .pi/lsp.json');
       } else {
         for (const server of cfg.servers) {
-          const client = clients.get(server.name);
+          const client = clientOwner.existing(rootPath, server);
           const status = client?.isInitialized ? 'running' : 'available (lazy start)';
           const exts = server.extensions.join(', ');
           lines.push(`  ${server.name}: ${status} — handles ${exts}`);
@@ -182,14 +179,22 @@ export default function lspExtension(pi: ExtensionAPI) {
   });
 
   pi.registerCommand('lsp-restart', {
-    description: 'Restart all LSP servers',
+    description: 'Restart LSP servers for this session',
     handler: async (_args, ctx) => {
-      await shutdownAll();
+      const released = await shutdownAll();
       config = null;
       rootPath = ctx.cwd;
       config = await runLsp(loadConfigEffect(ctx.cwd));
       refreshStatus(ctx.ui, config);
-      ctx.ui.notify('LSP servers stopped. Will reinitialize on next tool use.', 'info');
+
+      const parts = ['LSP reset for this session.'];
+      if (released.stopped > 0) parts.push(`${released.stopped} server(s) stopped.`);
+      if (released.shared > 0) {
+        parts.push(`${released.shared} shared server(s) remain in use by other sessions.`);
+      }
+      if (released.failures > 0) parts.push(`${released.failures} server(s) failed to stop.`);
+      parts.push('Will reinitialize on next tool use.');
+      ctx.ui.notify(parts.join(' '), released.failures > 0 ? 'warning' : 'info');
     },
   });
 }

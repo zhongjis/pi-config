@@ -14,12 +14,13 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 | `package.json` | Local package metadata points `pi.extensions` to `./index.ts`, keeps only runtime dependency `effect`, and records `piVendor` provenance. | Fits repo extension layout without adding root dependencies/scripts/tsconfig changes. |
 | `config.ts` | Uses managed global config at `~/.pi/agent/lsp.json` and project overrides at `.pi/lsp.json`; scaffolds only to the managed path. | Matches Home Manager-owned LSP config and avoids stale upstream config shadowing it. |
 | `tools/programs.ts` | Diagnostics now returns typed no-server/all-fail errors and avoids false clean output when some servers fail. | Prevents agents from trusting incomplete diagnostic checks. |
+| `client-pool.ts` | Process-global canonical-root + resolved-config client pooling with refcounts; shared clients stay alive across sessions until final holder release triggers shutdown. | Prevents duplicate LSP processes for the same canonical root/config identity and makes final-holder lifecycle explicit. |
 | `tools.ts` | Adds custom `renderCall` / `renderResult` for compact TUI summaries while preserving raw `content` for the model and expanded view. | Matches local CodeGraph-style tool polish without changing LSP behavior or forcing global expansion state. |
 | `protocol.ts` | Clears current child/buffer and rejects pending requests on current process exit/error while ignoring stale child events. | Allows safe LSP respawn without stale processes clobbering new connections. |
 | `client.ts` | Resets initialization, document, diagnostic, capability, and pending state when a server exits. | Restarted servers need fresh initialize and didOpen state. |
-| `index.ts` | Status/help/scaffold text points to managed and project config paths; footer status is compact counts (`LSP 0/N`, `LSP R/N running`) while `/lsp` keeps full server detail. | UI must match local config search order and avoid long footer status lines. |
-| `test/` | Local Vitest coverage for config precedence, compact status formatting, diagnostics failure handling, and protocol respawn. | Guards local runtime divergences from upstream regressions. |
-| `package.json` | `peerDependencies` for pi packages (+typebox) use pnpm `catalog:` | Versions centralized in root `pnpm-workspace.yaml` `catalog:`. Re-apply after upstream sync (upstream ships literal ranges). |
+| `index.ts` | Status/help/scaffold text points to managed and project config paths; footer status stays compact (`LSP 0/N`, `LSP R/N running`); `/lsp-restart` releases only this session's leases while shared servers stay up until the final holder exits. | UI must match local config search order, avoid long footer lines, and preserve session-lease restart semantics. |
+| `test/` | Local Vitest coverage for config precedence, compact status formatting, diagnostics failure handling, protocol respawn, client-pool refcounting, and activation lifecycle release/shutdown. | Guards local runtime divergences from upstream regressions. |
+| `package.json` | `peerDependencies` for Pi packages (+typebox) use pnpm `catalog:`. | Versions are centralized in root `pnpm-workspace.yaml`; re-apply after upstream sync because upstream ships literal ranges. |
 
 ## Child DOX Index
 

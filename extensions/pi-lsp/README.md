@@ -16,19 +16,18 @@ Language Server Protocol extension for Pi. Registers one `lsp` tool plus `/lsp` 
 ### `lsp`
 
 Unified LSP tool. Parameters: `operation`, optional `filePath`, `line`, `character`, `query`.
-
 Operations: `diagnostics`, `hover`, `goToDefinition`, `findReferences`, `goToImplementation`, `documentSymbol`, `workspaceSymbol`, `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`, `codeActions`.
 
 ## Commands
 
 - `/lsp` — Show configured servers and lazy/running status.
-- `/lsp-restart` — Stop active language servers; next tool call starts them again.
+- `/lsp-restart` — Reset this session's leases; servers shared with other sessions remain running until the final activation releases them.
 
 ## Hooks
 
-- `session_start` — Scaffold starter managed config at `~/.pi/agent/lsp.json` if no managed or project config exists; load config and set status.
+- `session_start` — Release prior activation leases, scaffold a starter managed config at `~/.pi/agent/lsp.json` if no managed or project config exists, load config, and set status.
 - `tool_execution_end` — Refresh status after `lsp` tool calls.
-- `session_shutdown` — Shutdown running language-server processes.
+- `session_shutdown` — Release this activation's leases; the final holder stops shared language-server processes.
 
 ## Settings / Configuration
 
@@ -46,6 +45,8 @@ Dreki config search paths, low to high precedence:
 - `~/.pi/agent/lsp.json` — Home Manager-generated Pi-agent LSP config.
 - `.pi/lsp.json` — project-local overrides.
 Config shape: `lsp` may be `false` or a server map. Each server supports `command`, `extensions`, `disabled`, `env`, and `initialization`.
+
+Clients are shared process-wide only when the canonical workspace root and full resolved server configuration match.
 
 ## Local Tweaks
 
