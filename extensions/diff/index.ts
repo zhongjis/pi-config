@@ -108,7 +108,7 @@ export function formatReviewPrompt(comments: HunkComment[]): string {
     (c) => `- ${c.file}${c.line ? `:${c.line}` : ""} — ${c.summary}`,
   );
   return [
-    "I left these inline review comments in hunk. Address each one in the code:",
+    "Address the following code comments in the code:",
     "",
     ...lines,
   ].join("\n");

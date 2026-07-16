@@ -88,7 +88,7 @@ describe("formatReviewPrompt", () => {
       { file: "file.txt", line: 4, summary: "Fix this", source: "user" },
     ]);
     expect(prompt).toContain(
-      "I left these inline review comments in hunk. Address each one in the code:",
+      "Address the following code comments in the code:",
     );
     expect(prompt).toContain("- file.txt:4 — Fix this");
   });
