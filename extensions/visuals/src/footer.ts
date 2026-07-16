@@ -157,6 +157,21 @@ function getGoalIndicator(): { text: string; color: ThemeColor } | null {
   }
 }
 
+// Style one infrastructure status entry for the right of line 3. LSP (from the pi-lsp
+// extension) is special-cased: its status text is "LSP N/M running" only when N servers are
+// active, and "LSP 0/M" / "LSP none" / "LSP disabled" otherwise. We show it only when at
+// least one server is active, drop the trailing "running" phrase, and convey the active
+// state by color. Non-LSP infra (MCP, ...) keeps the muted "KEY detail" form.
+export function styleInfraEntry(text: string, theme: ExtensionContext["ui"]["theme"]): string | null {
+  const cleaned = stripAnsi(sanitizeStatusText(text));
+  if (/^LSP\b/.test(cleaned)) {
+    const runningMatch = cleaned.match(/^LSP\s+(\d+)\/(\d+)\s+running$/);
+    if (!runningMatch) return null; // none / disabled / 0 active → hide
+    return theme.fg("success", `LSP ${runningMatch[1]}/${runningMatch[2]}`);
+  }
+  return theme.fg("muted", simplifyStatusText(text));
+}
+
 function getContextSegment(ctx: ExtensionContext, theme: ExtensionContext["ui"]["theme"]): string {
   const usage = ctx.getContextUsage();
   const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
@@ -340,14 +355,25 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
             .filter(([key]) => !HIDDEN_STATUS_KEYS.has(key))
             .sort(([a], [b]) => a.localeCompare(b));
 
-          // Infrastructure statuses (MCP, LSP, etc.) go far-right on line 3
+          // Infrastructure statuses (MCP, LSP, etc.) go far-right on line 3.
           const infraPattern = /^(MCP|LSP)\b/;
           const infraEntries = statusEntries.filter(([, text]) =>
             infraPattern.test(stripAnsi(sanitizeStatusText(text))),
           );
-          const infraRight = infraEntries
-            .map(([, text]) => theme.fg("muted", simplifyStatusText(text)))
-            .join(theme.fg("dim", " \u00b7 "));
+
+          // Right-aligned group: the goal indicator sits at the left of this group (i.e. to
+          // the left of LSP), followed by the infra statuses. LSP is colorized and only
+          // shown when it has active servers; other infra keeps its muted "KEY detail" form.
+          const rightParts: string[] = [];
+          const goalIndicator = getGoalIndicator();
+          if (goalIndicator) {
+            rightParts.push(theme.fg(goalIndicator.color, goalIndicator.text));
+          }
+          for (const [, text] of infraEntries) {
+            const styled = styleInfraEntry(text, theme);
+            if (styled) rightParts.push(styled);
+          }
+          const infraRight = rightParts.join(theme.fg("dim", " \u00b7 "));
 
           const extraEntries = statusEntries.filter(([, text]) => {
             const cleaned = stripAnsi(sanitizeStatusText(text));
@@ -379,18 +405,6 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
               const pad = Math.max(0, width - visibleWidth(infraRight));
               lines.push(" ".repeat(pad) + infraRight);
             }
-          }
-
-          // Goal indicator (published by the goal extension via the bridge) on its own line.
-          const goalIndicator = getGoalIndicator();
-          if (goalIndicator) {
-            lines.push(
-              truncateToWidth(
-                theme.fg(goalIndicator.color, goalIndicator.text),
-                width,
-                theme.fg("dim", "..."),
-              ),
-            );
           }
 
           return lines;
