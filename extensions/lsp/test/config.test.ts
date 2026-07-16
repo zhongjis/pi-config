@@ -52,10 +52,10 @@ function runConfig<T>(
   );
 }
 
-describe('pi-lsp config paths', () => {
+describe('lsp config paths', () => {
   const originalHome = process.env.HOME;
-  const home = '/tmp/pi-lsp-test-home';
-  const cwd = '/tmp/pi-lsp-test-project';
+  const home = '/tmp/lsp-test-home';
+  const cwd = '/tmp/lsp-test-project';
   const managedPath = join(home, '.pi', 'agent', 'lsp.json');
   const projectPath = join(cwd, '.pi', 'lsp.json');
 

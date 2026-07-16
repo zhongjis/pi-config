@@ -20,7 +20,7 @@ It hides low-value status keys (`thinking-steps`, `caveman`), strips decorative 
 
 ### LSP indicator
 
-The LSP status comes from the [`pi-lsp`](../pi-lsp/) extension, which emits `LSP N/M running` only when `N` servers are active (otherwise `LSP 0/M`, `LSP none`, or `LSP disabled`). The footer shows LSP **only when at least one server is active**, drops the `running` phrase, and colorizes the label (active state is conveyed by color, not text). Other infra (MCP, …) keeps its muted `KEY detail` form.
+The LSP status comes from the [`lsp`](../lsp/) extension, which emits `LSP N/M running` only when `N` servers are active (otherwise `LSP 0/M`, `LSP none`, or `LSP disabled`). The footer shows LSP **only when at least one server is active**, drops the `running` phrase, and colorizes the label (active state is conveyed by color, not text). Other infra (MCP, …) keeps its muted `KEY detail` form.
 
 ### Goal integration
 

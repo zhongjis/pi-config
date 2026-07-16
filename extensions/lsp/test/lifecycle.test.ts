@@ -94,7 +94,7 @@ function sessionContext(cwd = '/workspace') {
   };
 }
 
-describe('pi-lsp extension lifecycle', () => {
+describe('lsp extension lifecycle', () => {
   beforeEach(() => {
     mocks.clients.length = 0;
     mocks.managers.length = 0;

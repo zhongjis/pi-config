@@ -43,7 +43,7 @@
     "version": "0.4.1",
     "commit": "524efa3c9a28291a578d820c460c6637b200fb02",
     "integrity": "sha512-urhY/MTG30p93eq/r748d3/OnCRy9Bc1YABi8pLQA/Cl51U9Ydlwqr8NRXlM7E7FWJnBj8OxGDptPQcUSieJ0A==",
-    "localTarget": "extensions/pi-lsp",
+    "localTarget": "extensions/lsp",
     "adaptedFor": "panda-harness extensions layout"
   }
 }

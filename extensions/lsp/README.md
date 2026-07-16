@@ -1,4 +1,4 @@
-# pi-lsp
+# lsp
 
 Language Server Protocol extension for Pi. Registers one `lsp` tool plus `/lsp` status and `/lsp-restart` commands for diagnostics, hover, definitions, references, symbols, call hierarchy, and code actions.
 
@@ -34,7 +34,7 @@ Operations: `diagnostics`, `hover`, `goToDefinition`, `findReferences`, `goToImp
 Current managed setup:
 
 - Home Manager writes `~/.pi/agent/lsp.json` from `/home/zshen/personal/nix-config/modules/home-manager/features/ai-tools/common/lsp.nix`; that common module owns LSP server definitions, not extension loading.
-- `install.sh` links `extensions/pi-lsp/` into `~/.pi/agent/extensions/pi-lsp`; do not add `pi-lsp` to `settings.json` packages.
+- `install.sh` links `extensions/lsp/` into `~/.pi/agent/extensions/lsp`; do not add `lsp` to `settings.json` packages.
 - Pi currently enables only the TypeScript pilot from the common module. OpenCode consumes the full LSP set from the same module.
 - Repo root `lsp.json` was removed; do not recreate it.
 - `.pi-lsp.json` is preserved non-dreki state. It is not the active dreki project override; use `.pi/lsp.json` for project-local dreki overrides.

@@ -85,7 +85,7 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | `goal/` | `goal/AGENTS.md` | Vendored rich Codex-style goal extension (oh-my-openagent `packages/pi-goal`): blocked/budget statuses, `@mariozechner`→`@earendil-works` scope + `bun:test`→`vitest` migrations, and shared mock-context fixture dependency. |
 | `init/` | `init/AGENTS.md` | AGENTS.md/DOX initialization command extension, `/init-deep` preservation, and template layout. |
 | `inline-skills/` | `inline-skills/AGENTS.md` | Vendored inline `/skill` autocomplete + per-turn skill loading; provenance and test-infra shim notes. |
-| `pi-lsp/` | `pi-lsp/AGENTS.md` | Vendored dreki LSP extension sync notes and local package-layout tweaks. |
+| `lsp/` | `lsp/AGENTS.md` | Vendored dreki LSP extension sync notes and local package-layout tweaks. |
 | `pm-marketplace/` | `pm-marketplace/AGENTS.md` | Pi-native PM skill pack + /pm:* command registry gated to the 神農 shennong mode; provenance + update-check. |
 | `smart-sessions/` | `smart-sessions/AGENTS.md` | Vendored session-summary behavior and model-role compatibility notes. |
 | `subagent/` | `subagent/AGENTS.md` | Subagent runtime, tool surface, RPC, lifecycle, and local fork manifest. |

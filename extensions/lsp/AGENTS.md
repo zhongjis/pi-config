@@ -1,4 +1,4 @@
-# pi-lsp
+# lsp
 
 Vendored from `https://github.com/dreki-gg/pi-extensions/tree/524efa3c9a28291a578d820c460c6637b200fb02/packages/lsp` / `@dreki-gg/pi-lsp@0.4.1`.
 
@@ -24,4 +24,4 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 
 ## Child DOX Index
 
-No child `AGENTS.md` files. This file owns all files under `extensions/pi-lsp/`.
+No child `AGENTS.md` files. This file owns all files under `extensions/lsp/`.

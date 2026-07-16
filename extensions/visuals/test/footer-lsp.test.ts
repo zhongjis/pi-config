@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatLspStatus } from "../../pi-lsp/index.js";
+import { formatLspStatus } from "../../lsp/index.js";
 import { styleInfraEntry } from "../src/footer.js";
 
 // Theme stub that records the color applied so we can assert LSP is colorized.
@@ -22,7 +22,7 @@ describe("visuals footer — LSP infra styling", () => {
 
 	it("shows a colorized LSP without the 'running' phrase when servers are active", () => {
 		const styled = styleInfraEntry(formatLspStatus(lspConfig(false, ["a", "b", "c"]), 2), theme);
-		// pi-lsp emits "LSP 2/3 running"; footer drops "running" and colorizes.
+		// lsp emits "LSP 2/3 running"; footer drops "running" and colorizes.
 		expect(styled).toBe("<success>LSP 2/3");
 		expect(styled).not.toContain("running");
 	});

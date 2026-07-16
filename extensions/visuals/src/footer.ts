@@ -157,7 +157,7 @@ function getGoalIndicator(): { text: string; color: ThemeColor } | null {
   }
 }
 
-// Style one infrastructure status entry for the right of line 3. LSP (from the pi-lsp
+// Style one infrastructure status entry for the right of line 3. LSP (from the lsp
 // extension) is special-cased: its status text is "LSP N/M running" only when N servers are
 // active, and "LSP 0/M" / "LSP none" / "LSP disabled" otherwise. We show it only when at
 // least one server is active, drop the trailing "running" phrase, and convey the active
