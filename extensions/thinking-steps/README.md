@@ -1,7 +1,6 @@
 # Thinking Steps
 
-Three-mode rendering of assistant thinking blocks in Pi's interactive TUI: `collapsed`, `summary`, and `expanded`. It parses raw thinking text into semantic steps (plan / inspect / verify / decision / …) and replaces Pi's native raw-Markdown thinking view with a structured, summarized component. Mode is switchable live and can be persisted per project or globally.
-
+Three-mode rendering of assistant thinking blocks in Pi's interactive TUI only: `collapsed`, `summary`, and `expanded`. It parses raw thinking text into semantic steps (plan / inspect / verify / decision / …) and replaces Pi's native raw-Markdown thinking view with a structured, summarized component. Mode is switchable live and can be persisted per project or globally.
 ## Upstream
 
 - Source: https://github.com/fluxgear/pi-thinking-steps
@@ -19,7 +18,7 @@ Three-mode rendering of assistant thinking blocks in Pi's interactive TUI: `coll
 
 ## Hooks
 
-- `session_start` — installs the `AssistantMessageComponent` prototype patch (UI sessions only) and restores the saved view mode.
+- `session_start` — installs the `AssistantMessageComponent` prototype patch and restores the saved view mode (interactive TUI sessions only).
 - `message_start` / `message_update` / `message_end` / `agent_end` — track active thinking state for the live "Thinking…" indicator.
 - `session_shutdown` — releases the patch and clears per-scope state.
 

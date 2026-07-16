@@ -194,13 +194,30 @@ function reportPatchError(ctx: ExtensionContext, error: unknown): void {
 	notifyUser(ctx, `Thinking steps patch error: ${error instanceof Error ? error.message : String(error)}`, "warning");
 }
 
+type ThinkingPatchRelease = Awaited<ReturnType<typeof retainThinkingStepsPatch>>;
+
 export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	let sessionScopeKey = getCurrentThinkingScopeKey();
+	let participating = false;
+	let ownedPatchRelease: ThinkingPatchRelease | undefined;
 	const degradedSessionScopes = new Set<string>();
 	const setSessionScopeKey = (scopeKey: string): string => {
 		sessionScopeKey = scopeKey;
 		setCurrentThinkingScopeKey(scopeKey);
 		return sessionScopeKey;
+	};
+	const takeOwnedPatchRelease = (scopeKey: string): ThinkingPatchRelease | undefined => {
+		if (!ownedPatchRelease) return undefined;
+		const skippedReleases: ThinkingPatchRelease[] = [];
+		let releasePatch = takeThinkingPatchRelease(scopeKey);
+		while (releasePatch && releasePatch !== ownedPatchRelease) {
+			skippedReleases.push(releasePatch);
+			releasePatch = takeThinkingPatchRelease(scopeKey);
+		}
+		for (let index = skippedReleases.length - 1; index >= 0; index -= 1) {
+			registerThinkingPatchRelease(scopeKey, skippedReleases[index]!);
+		}
+		return releasePatch;
 	};
 	const markSessionDegraded = (scopeKey: string, degraded: boolean): void => {
 		if (degraded) {
@@ -212,7 +229,6 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	const isSessionDegraded = (scopeKey: string): boolean => degradedSessionScopes.has(scopeKey);
 	const degradedSessionMessage = (): string => "Thinking steps is using Pi's native thinking renderer for this session; live mode switching is disabled.";
 	const futureCompatibleSessionMessage = (scope: PersistedThinkingStepsPreferenceScope, action: "saved" | "cleared"): string => `${action === "saved" ? "Saved" : "Cleared"} ${scope} thinking view default for future compatible sessions; the current session is using Pi's native thinking renderer.`;
-
 	pi.registerCommand("thinking-steps", {
 		description: "Switch thinking view or set/clear project/global defaults",
 		getArgumentCompletions: thinkingModeCompletions,
@@ -282,15 +298,20 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		const activeScopeKey = setSessionScopeKey(ctx.cwd);
-		clearActiveThinkingState(undefined, activeScopeKey);
-		if (!ctx.hasUI) {
+		if (ctx.mode !== "tui") {
 			return;
 		}
+		const activeScopeKey = setSessionScopeKey(ctx.cwd);
+		clearActiveThinkingState(undefined, activeScopeKey);
 		try {
-			registerThinkingPatchRelease(activeScopeKey, await retainThinkingStepsPatch(ctx.ui.theme));
+			const releasePatch = await retainThinkingStepsPatch(ctx.ui.theme);
+			registerThinkingPatchRelease(activeScopeKey, releasePatch);
+			ownedPatchRelease = releasePatch;
+			participating = true;
 			markSessionDegraded(activeScopeKey, false);
 		} catch (error) {
+			participating = false;
+			ownedPatchRelease = undefined;
 			markSessionDegraded(activeScopeKey, true);
 			reportPatchError(ctx, error);
 			notifyUser(ctx, degradedSessionMessage(), "warning");
@@ -302,6 +323,7 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("message_start", async (event) => {
+		if (!participating) return;
 		if (event.message.role === "assistant") {
 			recordThinkingMessageScope(event.message, sessionScopeKey);
 			const ownerScopeKey = resolveThinkingMessageScope(event.message, sessionScopeKey);
@@ -313,6 +335,7 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("message_update", async (event) => {
+		if (!participating) return;
 		if (event.message.role !== "assistant") return;
 		recordThinkingMessageScope(event.message, sessionScopeKey);
 		const ownerScopeKey = resolveThinkingMessageScope(event.message, sessionScopeKey);
@@ -340,6 +363,7 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("message_end", async (event) => {
+		if (!participating) return;
 		if (event.message.role === "assistant") {
 			recordThinkingMessageScope(event.message, sessionScopeKey);
 			const ownerScopeKey = resolveThinkingMessageScope(event.message, sessionScopeKey);
@@ -351,25 +375,31 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("agent_end", async () => {
+		if (!participating) return;
 		clearActiveThinkingState(undefined, sessionScopeKey);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		const activeScopeKey = setSessionScopeKey(ctx.cwd);
-		clearActiveThinkingState(undefined, activeScopeKey);
-		clearThinkingMessageOwnership(activeScopeKey);
-		markSessionDegraded(activeScopeKey, false);
-		if (ctx.hasUI) {
-			ctx.ui.setStatus("thinking-steps", undefined);
+		if (ctx.mode !== "tui") {
+			return;
 		}
-
-		const releasePatch = takeThinkingPatchRelease(activeScopeKey);
+		if (!participating || ownedPatchRelease === undefined) {
+			return;
+		}
+		const activeScopeKey = setSessionScopeKey(ctx.cwd);
+		const releasePatch = takeOwnedPatchRelease(activeScopeKey);
 		if (!releasePatch) {
 			return;
 		}
+		clearActiveThinkingState(undefined, activeScopeKey);
+		clearThinkingMessageOwnership(activeScopeKey);
+		markSessionDegraded(activeScopeKey, false);
+		ctx.ui.setStatus("thinking-steps", undefined);
 
 		try {
 			await releasePatch();
+			ownedPatchRelease = undefined;
+			participating = false;
 		} catch (error) {
 			registerThinkingPatchRelease(activeScopeKey, releasePatch);
 			reportPatchError(ctx, error);

@@ -88,6 +88,7 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | `lsp/` | `lsp/AGENTS.md` | Vendored dreki LSP extension sync notes and local package-layout tweaks. |
 | `pm-marketplace/` | `pm-marketplace/AGENTS.md` | Pi-native PM skill pack + /pm:* command registry gated to the 神農 shennong mode; provenance + update-check. |
 | `smart-sessions/` | `smart-sessions/AGENTS.md` | Vendored session-summary behavior and model-role compatibility notes. |
+| `thinking-steps/` | `thinking-steps/AGENTS.md` | Thinking Steps renderer sync notes, TUI-only lifecycle ownership, and native renderer compatibility. |
 | `subagent/` | `subagent/AGENTS.md` | Subagent runtime, tool surface, RPC, lifecycle, and local fork manifest. |
 | `superpowers/` | `superpowers/AGENTS.md` | Vendored superpowers skill tree, overlay workflow, and sync script rules. |
 | `tasks/` | `tasks/AGENTS.md` | Task DAG, process tracking, planning cleanup, and task-local fork manifest. |

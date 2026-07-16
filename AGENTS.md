@@ -90,7 +90,7 @@ Before registering any new tool, extension, or MCP server:
 | Persistent Codex-style goal tracking (`/goal`, `create_goal`/`get_goal`/`update_goal`) | `extensions/goal` |
 | Persistent Codex-style goal tracking (`/goal`, `create_goal`/`get_goal`/`update_goal`) | `extensions/goal` |
 | Mermaid diagram rendering | `pi-mermaid` package |
-| Thinking steps visualization | `pi-thinking-steps` package |
+| `Thinking Steps` renderer | `extensions/thinking-steps` |
 | Guardrails | `pi-guardrails` package |
 | Autoresearch experiment loop | `pi-autoresearch` package |
 | Plan annotation | `plannotator` package |

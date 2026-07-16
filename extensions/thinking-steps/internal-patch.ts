@@ -1,6 +1,6 @@
 import type { AssistantMessage, ThinkingContent } from "@earendil-works/pi-ai";
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
-import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { Box, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { decrementPatchRefCount, getPatchCleanup, getPatchInstallPromise, incrementPatchRefCount, resolveThinkingMessageScope, setPatchCleanup, setPatchInstallPromise } from "./state.js";
 import { ThinkingStepsComponent } from "./render.js";
 import type { ThinkingSourceBlock, ThinkingThemeLike } from "./types.js";
@@ -17,6 +17,8 @@ interface AssistantMessageComponentPrototype {
 	hideThinkingBlock: boolean;
 	markdownTheme: unknown;
 	hiddenThinkingLabel: string;
+	outputPad: number;
+	hasToolCalls: boolean;
 }
 
 export function assertPatchableAssistantMessageComponent(value: unknown): { prototype: AssistantMessageComponentPrototype } {
@@ -217,12 +219,14 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 
 			for (const content of message.content) {
 				if (content.type === "text" && content.text.trim()) {
-					this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme as any));
+					this.contentContainer.addChild(new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme as any));
 					continue;
 				}
 
 				if (content.type === "thinking" && thinkingBlocks.length > 0 && !renderedThinking) {
-					this.contentContainer.addChild(new ThinkingStepsComponent(theme, message.timestamp, thinkingBlocks, resolveThinkingMessageScope(message)));
+					const thinkingBox = new Box(this.outputPad, 0);
+					thinkingBox.addChild(new ThinkingStepsComponent(theme, message.timestamp, thinkingBlocks, resolveThinkingMessageScope(message)));
+					this.contentContainer.addChild(thinkingBox);
 					renderedThinking = true;
 					if (hasVisibleTextAfterThinking) {
 						this.contentContainer.addChild(new Spacer(1));
@@ -231,18 +235,22 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 			}
 
 			const hasToolCalls = message.content.some((content) => content.type === "toolCall");
-			if (!hasToolCalls) {
+			this.hasToolCalls = hasToolCalls;
+			if (message.stopReason === "length") {
+				this.contentContainer.addChild(new Spacer(1));
+				this.contentContainer.addChild(new Text(theme.fg("error", "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete."), this.outputPad, 0));
+			} else if (!hasToolCalls) {
 				if (message.stopReason === "aborted") {
 					const abortMessage =
 						message.errorMessage && message.errorMessage !== "Request was aborted"
 							? message.errorMessage
 							: "Operation aborted";
 					this.contentContainer.addChild(new Spacer(1));
-					this.contentContainer.addChild(new Text(theme.fg("error", abortMessage), 1, 0));
+					this.contentContainer.addChild(new Text(theme.fg("error", abortMessage), this.outputPad, 0));
 				} else if (message.stopReason === "error") {
 					const errorMessage = message.errorMessage || "Unknown error";
 					this.contentContainer.addChild(new Spacer(1));
-					this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
+					this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), this.outputPad, 0));
 				}
 			}
 		} catch (error) {
