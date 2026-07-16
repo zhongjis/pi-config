@@ -17,7 +17,10 @@
  *     variant when the active model is GPT-family (see prompt.ts)
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { getUltraworkPrompt } from "./prompt.js";
 // @ts-expect-error repo test/runtime alias resolves @earendil-works/pi-tui; LSP may miss it.
 import { Box, Text } from "@earendil-works/pi-tui";
@@ -62,7 +65,6 @@ function hasUlwKeyword(text: string): boolean {
   return ULW_KEYWORD_RE.test(sanitize(text));
 }
 
-
 // ---------------------------------------------------------------------------
 // Mode detection
 // ---------------------------------------------------------------------------
@@ -72,7 +74,10 @@ function getCurrentMode(ctx: ExtensionContext): string {
   try {
     const entries = ctx.sessionManager.getEntries();
     const modeEntry = entries
-      .filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "agent-mode")
+      .filter(
+        (e: { type: string; customType?: string }) =>
+          e.type === "custom" && e.customType === "agent-mode",
+      )
       .pop() as { data?: { mode?: string } } | undefined;
     return modeEntry?.data?.mode ?? "kuafu";
   } catch {
@@ -103,7 +108,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
     box.addChild(
       new Text(
-        `${label} ${theme.fg("customMessageText", "ᕦ(ò_óˇ)ᕤ mode enabled")}${theme.fg("dim", " (ctrl+o to expand)")}`,
+        `${label} ${theme.fg("customMessageText", "mode enabled ᕦ(ò_óˇ)ᕤ")}${theme.fg("dim", " (ctrl+o to expand)")}`,
         0,
         0,
       ),
