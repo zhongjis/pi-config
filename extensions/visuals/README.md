@@ -24,7 +24,7 @@ The LSP status comes from the [`lsp`](../lsp/) extension, which emits `LSP N/M r
 
 ### Goal integration
 
-Only one extension can own the single `ctx.ui.setFooter()` slot. This extension claims that slot and advertises ownership on the `Symbol.for("pi-visuals:footer")` global. The [`goal`](../goal/) extension sees that flag and, instead of installing its own competing footer, publishes its current indicator on the `Symbol.for("pi-goal:footer")` global (a `{ getIndicator(): { text, color } | null }` bridge). The footer reads that bridge each render and places the goal indicator on line 3, to the left of the LSP/infra group, colored by goal status. This mirrors the `Symbol.for("pi-subagents:manager")` bridge already read for subagent cost. When `visuals` is absent, `goal` falls back to installing its own footer.
+Only one extension can own the single `ctx.ui.setFooter()` slot. This extension claims that slot and advertises ownership on the `Symbol.for("pi-visuals:footer")` global. The [`goal`](../goal/) extension sees that flag and, instead of installing its own competing footer, publishes its current indicator on the `Symbol.for("pi-goal:footer")` global (a `{ getIndicator(isIdle): { text, color } | null }` bridge). The footer passes current idle state while reading that bridge on each natural TUI render, so busy elapsed time advances monotonically while idle elapsed time freezes; no footer timer is installed. The goal indicator appears on line 3 to the left of the LSP/infra group. When `visuals` is absent, `goal` uses the same elapsed semantics in its standalone footer.
 
 ## Write Tool Override
 

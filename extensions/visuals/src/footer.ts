@@ -142,12 +142,12 @@ function getSubagentCost(): number {
 const GOAL_FOOTER_BRIDGE_KEY = Symbol.for("pi-goal:footer");
 const VISUALS_FOOTER_OWNER_KEY = Symbol.for("pi-visuals:footer");
 
-function getGoalIndicator(): { text: string; color: ThemeColor } | null {
+function getGoalIndicator(ctx: Pick<ExtensionContext, "isIdle">): { text: string; color: ThemeColor } | null {
   try {
     const bridge = (globalThis as Record<symbol, unknown>)[GOAL_FOOTER_BRIDGE_KEY] as
-      | { getIndicator?: () => { text: string; color: ThemeColor } | null }
+      | { getIndicator?: (isIdle: boolean) => { text: string; color: ThemeColor } | null }
       | undefined;
-    const indicator = bridge?.getIndicator?.();
+    const indicator = bridge?.getIndicator?.(ctx.isIdle());
     if (!indicator || typeof indicator.text !== "string" || indicator.text.length === 0) {
       return null;
     }
@@ -365,7 +365,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           // the left of LSP), followed by the infra statuses. LSP is colorized and only
           // shown when it has active servers; other infra keeps its muted "KEY detail" form.
           const rightParts: string[] = [];
-          const goalIndicator = getGoalIndicator();
+          const goalIndicator = getGoalIndicator(ctx);
           if (goalIndicator) {
             rightParts.push(theme.fg(goalIndicator.color, goalIndicator.text));
           }

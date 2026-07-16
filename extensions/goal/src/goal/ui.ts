@@ -39,14 +39,63 @@ const GOAL_FOOTER_BRIDGE_KEY = Symbol.for("pi-goal:footer");
 const VISUALS_FOOTER_OWNER_KEY = Symbol.for("pi-visuals:footer");
 
 type GoalFooterBridge = {
-	getIndicator(): GoalFooterIndicator | null;
+	getIndicator(isIdle: boolean): GoalFooterIndicator | null;
 };
 
-let currentGoal: Goal | null = null;
+type GoalPresentationObservation = {
+	goal: Goal;
+	elapsedMilliseconds: number;
+	observedAtMilliseconds: number;
+};
+
+let currentGoalObservation: GoalPresentationObservation | null = null;
+
+function materializeGoalForPresentation(isIdle: boolean, now = Date.now()): Goal | null {
+	const observation = currentGoalObservation;
+	if (observation === null) return null;
+
+	if (observation.goal.status === "active" && !isIdle) {
+		observation.elapsedMilliseconds += Math.max(0, now - observation.observedAtMilliseconds);
+	}
+	observation.observedAtMilliseconds = now;
+
+	return {
+		...observation.goal,
+		timeUsedSeconds: Math.max(
+			observation.goal.timeUsedSeconds,
+			Math.round(observation.elapsedMilliseconds / 1000),
+		),
+	};
+}
+
+function observeGoalForPresentation(goal: Goal | null, isIdle: boolean): void {
+	const now = Date.now();
+	materializeGoalForPresentation(isIdle, now);
+	if (goal === null) {
+		currentGoalObservation = null;
+		return;
+	}
+
+	const persistedElapsedMilliseconds = Math.max(0, goal.timeUsedSeconds * 1000);
+	const elapsedMilliseconds =
+		currentGoalObservation?.goal.id === goal.id
+			? Math.max(currentGoalObservation.elapsedMilliseconds, persistedElapsedMilliseconds)
+			: persistedElapsedMilliseconds;
+	currentGoalObservation = {
+		goal: { ...goal },
+		elapsedMilliseconds,
+		observedAtMilliseconds: now,
+	};
+}
+
+function currentGoalIndicator(isIdle: boolean): GoalFooterIndicator | null {
+	const goal = materializeGoalForPresentation(isIdle);
+	return goal === null ? null : goalFooterIndicator(goal);
+}
 
 function publishGoalFooterBridge(): void {
 	const bridge: GoalFooterBridge = {
-		getIndicator: () => (currentGoal === null ? null : goalFooterIndicator(currentGoal)),
+		getIndicator: currentGoalIndicator,
 	};
 	(globalThis as Record<symbol, unknown>)[GOAL_FOOTER_BRIDGE_KEY] = bridge;
 }
@@ -61,7 +110,7 @@ export function updateGoalUi(ctx: ExtensionContext, goal: Goal | null): void {
 	ctx.ui.setWidget(LEGACY_WIDGET_KEY, undefined);
 	ctx.ui.setStatus(STATUS_KEY, undefined);
 
-	currentGoal = goal;
+	observeGoalForPresentation(goal, ctx.isIdle());
 	publishGoalFooterBridge();
 
 	// When the visuals extension owns the single footer slot it renders the goal
@@ -78,7 +127,7 @@ export function updateGoalUi(ctx: ExtensionContext, goal: Goal | null): void {
 	}
 
 	goalFooterInstalled = true;
-	ctx.ui.setFooter((_tui, theme, footerData) => new GoalFooterComponent(ctx, footerData, theme, goal));
+	ctx.ui.setFooter((_tui, theme, footerData) => new GoalFooterComponent(ctx, footerData, theme));
 }
 
 export function goalFooterIndicator(goal: Goal): GoalFooterIndicator {
@@ -120,27 +169,19 @@ export function composeFooterStatusLine(leftText: string, rightText: string, wid
 }
 
 class GoalFooterComponent implements Component {
-	private readonly observedAtMilliseconds = Date.now();
-
 	constructor(
 		private readonly ctx: ExtensionContext,
 		private readonly footerData: ReadonlyFooterDataProvider,
 		private readonly theme: Theme,
-		private readonly goal: Goal,
 	) {}
 
 	render(width: number): string[] {
-		const goal = this.renderedGoal();
+		const goal = materializeGoalForPresentation(this.ctx.isIdle());
+		if (goal === null) return [this.workingDirectoryLine(width), this.statsLine(width)];
 		return [this.workingDirectoryLine(width), this.statsLine(width), this.goalStatusLine(goal, width)];
 	}
 
 	invalidate(): void {}
-
-	private renderedGoal(): Goal {
-		if (this.goal.status !== "active" || this.ctx.isIdle()) return this.goal;
-		const elapsedSeconds = Math.max(0, Math.round((Date.now() - this.observedAtMilliseconds) / 1000));
-		return { ...this.goal, timeUsedSeconds: this.goal.timeUsedSeconds + elapsedSeconds };
-	}
 
 	private workingDirectoryLine(width: number): string {
 		let workingDirectory = this.ctx.sessionManager.getCwd();
