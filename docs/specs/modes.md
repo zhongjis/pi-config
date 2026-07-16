@@ -1,6 +1,6 @@
 # Modes Extension
 
-The modes extension implements agent persona switching for four modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), **Hou Tu 后土** (execute), and **Lu Ban 鲁班** (luban). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
+The modes extension implements agent persona switching for five modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), **Hou Tu 后土** (execute), **Lu Ban 鲁班** (luban), and **Shen Nong 神農** (pm/product). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
 
 For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.md).
 
@@ -14,6 +14,7 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 | `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is blocked and read-only shell inspection uses `readonly_bash` when exactly allowlisted via `extension_tools: readonly_bash`. |
 | `houtu` | `execute` | Plan execution after handoff. Receives a prepared execution prompt in a child session. |
 | `luban` | — | Skill-first discipline mode adapted from obra/superpowers. |
+| `shennong` | `pm` | Product mode. Problem framing, prioritization, and de-risking before implementation; hands off to Kua Fu via `/mode kuafu`. |
 
 
 ### Lu Ban Validation Policy
@@ -33,7 +34,7 @@ Six ways to switch modes:
 |--------|---------|-------|
 | **`/mode` command** | `/mode fuxi` | Interactive selector when called with no arguments. Accepts mode names or aliases. |
 | **`/mode:<name>` shortcut** | `/mode:plan do the thing` | Switches mode, then delivers any trailing text as a follow-up message. Works with names (`fuxi`) and aliases (`plan`). |
-| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → luban → kuafu. |
+| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → luban → shennong → kuafu. |
 | **Tab in empty editor** | Press `Tab` with no text | Same cycle behavior as Ctrl+Shift+M. |
 | **Bare word input** | Type `fuxi` or `plan` | Transformed into `/mode:fuxi` before submission. Recognized words: all mode names and aliases. |
 | **CLI `--mode` flag** | `pi --mode fuxi` | Sets the initial mode at startup. Overrides session-restored mode. |
@@ -56,7 +57,7 @@ The override is persisted in the session JSONL as `modelOverride` and survives `
 
 ## Mode Configuration
 
-Each mode reads its prompt and settings from `~/.pi/agent/agents/<mode>.md`. The file uses YAML frontmatter for configuration and markdown body for the system prompt injection.
+Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` (repo source `modes/<mode>/mode.md`). The file uses YAML frontmatter for configuration and a markdown body for the system prompt injection. Model-family variants (`gpt.md`, `gemini.md`) live beside it and reuse the `mode.md` frontmatter.
 
 ### Frontmatter Fields
 
@@ -231,7 +232,7 @@ On session start, if a pending Plannotator review ID exists in restored state, r
 extensions/modes/src/
   types.ts                Type definitions (Mode, ModeConfig, ModeState, plan/review types)
   constants.ts            Mode lists, aliases, colors, file names
-  config-loader.ts        Reads and parses agents/<mode>.md frontmatter and body
+  config-loader.ts        Reads and parses modes/<mode>/mode.md frontmatter and body (+ gpt.md/gemini.md variants)
   mode-state.ts           ModeStateManager class — state, persistence, mode switching, tool filtering
   commands.ts             /mode command, /mode:<name> commands, bare word input, Ctrl+Shift+M, Tab, --mode flag
   hooks.ts                tool_call restrictions, tool_result plan-write detection, prompt injection, session lifecycle

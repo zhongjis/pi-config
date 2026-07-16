@@ -1,10 +1,10 @@
 # modes
 
-Agent modes extension with four personas — switch behavior, prompt, and tool sets per mode.
+Agent modes extension with five personas — switch behavior, prompt, and tool sets per mode.
 
 ## What It Does
 
-Four modes with distinct agent personas:
+Five modes with distinct agent personas:
 
 | Mode | Alias | Description |
 |------|-------|-------------|
@@ -12,8 +12,9 @@ Four modes with distinct agent personas:
 | Fu Xi 伏羲 | `plan` | Planning and decomposition. Drafts plans with gap review. |
 | Hou Tu 后土 | `execute` | Focused execution worker. Runs plans step by step. |
 | Lu Ban 鲁班 | — | Skill-first discipline mode adapted from obra/superpowers. |
+| Shen Nong 神農 | `pm` | Product mode. Frames the problem, prioritizes, and de-risks; hands off to Kua Fu. |
 
-Each mode reads its prompt from `agents/<mode>.md`. Global AGENTS.md rules stay active in all modes.
+Each mode reads its prompt from `modes/<mode>/mode.md`. Global AGENTS.md rules stay active in all modes.
 
 ### Plan flow (Fu Xi mode)
 
@@ -24,7 +25,7 @@ Each mode reads its prompt from `agents/<mode>.md`. Global AGENTS.md rules stay 
 
 ### Mode frontmatter
 
-Mode prompts live in `agents/<mode>.md` and use the shared agent frontmatter schema:
+Mode prompts live in `modes/<mode>/mode.md` and use the shared agent frontmatter schema:
 
 - `builtin_tools` — exact built-in allowlist (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; `none` for none)
 - `extensions` — extension availability/source scope; `false`/`none` disables extension tools
@@ -44,7 +45,7 @@ Present the plan approval menu after plan generation is complete.
 
 ## Commands
 
-- `/mode [kuafu|fuxi|houtu|luban|build|plan|execute]` — Switch agent mode
+- `/mode [kuafu|fuxi|houtu|luban|shennong|build|plan|execute]` — Switch agent mode
 - `/mode-model` — Show or override the mode's model
 - `/mode-model <provider/modelId>` — Set a session-scoped model override
 - `/mode-model --reset` — Clear the model override and revert to mode's chain
@@ -53,7 +54,7 @@ Present the plan approval menu after plan generation is complete.
 
 ## Model Override
 
-By default, each mode selects its model from the `model` frontmatter chain in `agents/<mode>.md`. The `/mode-model` command lets you temporarily override this choice for the current session:
+By default, each mode selects its model from the `model` frontmatter chain in `modes/<mode>/mode.md`. The `/mode-model` command lets you temporarily override this choice for the current session:
 
 - `/mode-model` — Shows current mode, override (if any), configured fallback chain, and active model.
 - `/mode-model anthropic/claude-sonnet-4:high` — Sets a session-scoped override. Validates the model exists in the registry before applying.

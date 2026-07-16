@@ -19,7 +19,7 @@ flowchart LR
     M -->|Default build mode| K[Kua Fu: classify turn]
     K -->|answer / assess| R[Research or respond]
     K -->|bounded impl| T[Create pi-tasks + delegate]
-    K -->|large / unclear| FP["Delegate Fu Xi in [DELEGATED] mode"]
+    K -->|large / unclear| FP["Consult xuannv for tactical plan"]
     FP --> T
     T --> V[Verify changed files + checks]
 ```
@@ -103,8 +103,8 @@ flowchart TD
     B -->|bounded implementation| E[Create / update pi-tasks]
     B -->|open-ended or multi-stream| F[Assess codebase shape]
     F --> G{Need plan decomposition?}
-    G -->|yes| H["Delegate Fu Xi with [DELEGATED], max_turns 40"]
-    H --> I[Parse TODOs into pi-tasks]
+    G -->|yes| H["Consult xuannv for tactical plan"]
+    H --> I[Turn returned plan into pi-tasks]
     G -->|no| E
     I --> E
     E --> J{Route work}
@@ -137,13 +137,13 @@ flowchart TD
 2. **Recon and planning**
    - For non-trivial codebase questions, Kua Fu starts `chengfeng` in the background unless the exact location is already known.
    - For external-library or pattern questions, it starts `wenchang` when outside context improves correctness.
-   - For large, sequential, or unclear work, Kua Fu delegates to Fu Xi in `[DELEGATED]` mode, passes gathered context, sets `max_turns: 40`, and later converts Fu Xi's TODOs into pi-tasks.
+   - For large, sequential, or unclear work, Kua Fu consults `xuannv` for a tactical plan (passing gathered context) and converts the returned plan into pi-tasks. For full plan-first execution the user switches to Fu Xi (`/mode fuxi`); Kua Fu does not spawn Fu Xi as a subagent.
 
 3. **Task routing**
    - One bounded chunk goes to one specialist.
    - Independent chunks are split into parallel delegations.
    - Kua Fu routes discovery to `chengfeng`, external research to `wenchang`, bounded implementation to `jintong`, trivial single-file edits to `guangguang`, UI/UX risk to `yunu`, and architecture, debugging, or plan-compliance escalation to `taishang`.
-   - Kua Fu may delegate to Fu Xi for planning. It does not delegate to Hou Tu.
+   - Kua Fu may consult `xuannv` for tactical planning. `fuxi` and `houtu` are modes, not subagent types, so Kua Fu does not delegate to them (its frontmatter omits `fuxi` and explicitly disallows `houtu`).
 
 4. **Supervision**
    - Background agents must be polled with `get_subagent_result` and steered with `steer_subagent` if they drift or stall.
@@ -191,7 +191,7 @@ flowchart LR
 - `extensions/subagent/src/index.ts` registers `Agent`, background execution, resume, `get_subagent_result`, and `steer_subagent`.
 - `extensions/subagent/src/custom-agents.ts` loads agent markdown from project `.pi/agents/*.md` and global `~/.pi/agent/agents/*.md`; project agents override global agents.
 - `extensions/subagent/src/prompts.ts` builds prompts from agent frontmatter. `replace` gives the child a fresh prompt; `append` wraps the parent prompt with sub-agent context and the child instructions; `system_instructions` returns the same prompt as `replace` and lets pi auto-inject AGENTS.md (project guardrails) without parent identity bleed — see `agent-runner.ts` `inheritContextFiles`.
-- `agents/fuxi.md`, `agents/houtu.md`, and `agents/kuafu.md` are the prompt contracts that define the workflows above.
+- `modes/fuxi/mode.md`, `modes/houtu/mode.md`, and `modes/kuafu/mode.md` are the prompt contracts that define the workflows above.
 
 ## Ownership by file
 
@@ -223,17 +223,17 @@ Custom agent loader. It scans project and global agent markdown, parses frontmat
 
 Prompt builder. It renders `replace`, `append`, and `system_instructions` prompt modes and injects skill/memory extras.
 
-### `agents/fuxi.md`
+### `modes/fuxi/mode.md`
 
-Fu Xi's planning protocol. It defines the interview draft workflow, Di Renjie review, `local://PLAN.md` structure, approval flow, Yan Luo loop, and delegated planning mode.
+Fu Xi's planning protocol. It defines the interview draft workflow, Di Renjie review, `local://PLAN.md` structure, approval flow, and the Yan Luo high-accuracy loop.
 
-### `agents/houtu.md`
+### `modes/houtu/mode.md`
 
 Hou Tu's execution protocol. It defines plan-wave task registration, one-task-per-delegation execution, verification gates, notepad updates, retry/resume behavior, and final review gates.
 
-### `agents/kuafu.md`
+### `modes/kuafu/mode.md`
 
-Kua Fu's build protocol. It defines intent gating, orchestration-first routing, Fu Xi delegated planning, subagent supervision, task usage, and verification requirements.
+Kua Fu's build protocol. It defines intent gating, orchestration-first routing, `xuannv` tactical-planning consults, subagent supervision, task usage, and verification requirements.
 
 ## Boundary rules
 
@@ -241,5 +241,5 @@ Kua Fu's build protocol. It defines intent gating, orchestration-first routing, 
 - `/handoff:start-work` opens and preloads a child session; execution starts only after the user sends the preloaded prompt.
 - Di Renjie and Yan Luo are prompt/protocol gates, not hard runtime state machines.
 - Hou Tu executes approved plans; Kua Fu handles general build work in the current session.
-- Kua Fu may ask Fu Xi for a delegated plan, but that path does not use the `/handoff:start-work` bridge unless the user is in the explicit Fu Xi approval flow.
+- Kua Fu does not spawn Fu Xi as a subagent (`fuxi` is a mode, not a delegation target). For tactical planning Kua Fu consults `xuannv`; for plan-first execution the user switches to Fu Xi (`/mode fuxi`), and only that approval flow uses the `/handoff:start-work` bridge.
 - Both workflows rely on personal verification after delegation. Agent self-reports are never enough.
