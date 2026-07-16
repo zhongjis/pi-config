@@ -9,6 +9,7 @@ import { parseGoalCommand } from "./goal/command.js";
 import { shouldQueueGoalContinuationAfterAgentEnd, shouldQueueGoalContinuationWhenIdle } from "./goal/continuation.js";
 import { formatGoalForTool, formatGoalToolResponse, goalStatusLabel } from "./goal/format.js";
 import { buildBudgetLimitedPrompt, buildContinuationPrompt } from "./goal/prompt.js";
+import { renderGoalCall, renderGoalResult } from "./goal/render.js";
 import { GoalAlreadyExistsError } from "./goal/errors.js";
 import { accountGoalUsage, clearGoal, createGoal, readGoal, updateGoal } from "./goal/store.js";
 import type { Goal, GoalAccountingMode, GoalStoreRef, TokenUsageSnapshot } from "./goal/types.js";
@@ -72,6 +73,12 @@ export default function (pi: ExtensionAPI): void {
 			updateGoalUi(ctx, goal);
 			return toolText(formatGoalToolResponse(goal, false));
 		},
+		renderCall(args, theme) {
+			return renderGoalCall("create_goal", args, theme);
+		},
+		renderResult(result, options, theme, context) {
+			return renderGoalResult(result, options, theme, context);
+		},
 	});
 
 	pi.registerTool({
@@ -108,6 +115,12 @@ export default function (pi: ExtensionAPI): void {
 			updateGoalUi(ctx, goal);
 			return toolText(formatGoalToolResponse(goal, params.status === "complete"));
 		},
+		renderCall(args, theme) {
+			return renderGoalCall("update_goal", args, theme);
+		},
+		renderResult(result, options, theme, context) {
+			return renderGoalResult(result, options, theme, context);
+		},
 	});
 
 	pi.registerTool({
@@ -120,6 +133,12 @@ export default function (pi: ExtensionAPI): void {
 			const goal = await readGoal(goalStoreRef(ctx));
 			updateGoalUi(ctx, goal);
 			return toolText(formatGoalToolResponse(goal, false));
+		},
+		renderCall(args, theme) {
+			return renderGoalCall("get_goal", args, theme);
+		},
+		renderResult(result, options, theme, context) {
+			return renderGoalResult(result, options, theme, context);
 		},
 	});
 
