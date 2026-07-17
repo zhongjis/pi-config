@@ -114,6 +114,7 @@ Before registering any new tool, extension, or MCP server:
 ## Gotchas
 - `install.sh` skips `AGENTS.md` and `settings.json`; editing them here affects the repo, not the live Home Manager links.
 - Git packages under `~/.pi/agent/git/...` with `package.json` get dependency installs automatically during `bash install.sh`; repo test/build files stay local.
+- `bash install.sh` runs a repo workspace `pnpm install` (via `install_repo_extension_deps`) so local workspace extensions with real runtime deps (e.g. `extensions/lsp` -> `effect`) resolve when pi loads the symlinked extension; without it, `node_modules` for those deps is never materialized.
 - Root smoke coverage is centralized in `test/extensions.smoke.test.ts`; if a new extension needs custom discovery or setup, update that file with the extension.
 - For broad searches or pruning noise only, exclude runtime/generated paths: `.codex/`, `.omx/`, `.pi/tasks/`, `.direnv/`, `node_modules/`, and runtime file `auth.json`.
 - Do not delete runtime state unless user explicitly asks.

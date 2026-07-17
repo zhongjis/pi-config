@@ -189,6 +189,26 @@ install_git_package_deps() {
   ' bash "$git_root"
 }
 
+install_repo_extension_deps() {
+  # Local workspace extensions (see pnpm-workspace.yaml) declare real runtime
+  # dependencies (e.g. lsp -> effect) that pi must resolve when it loads the
+  # symlinked extension. A workspace install materializes them in the repo
+  # node_modules; git packages under $TARGET/git are handled separately.
+  if [ ! -f "$REPO_DIR/pnpm-workspace.yaml" ]; then
+    echo "No pnpm workspace at $REPO_DIR; skipping workspace dependency install"
+    return 0
+  fi
+
+  echo "Installing repo workspace dependencies in $REPO_DIR"
+  # $1 intentionally expands in the inner shell, not here.
+  # shellcheck disable=SC2016
+  "${NODE_BUILD_SHELL[@]}" -c bash -lc '
+    set -euo pipefail
+    cd "$1"
+    pnpm install
+  ' bash "$REPO_DIR"
+}
+
 # If ~/.pi/agent is a symlink to this repo (old install), remove it
 if [ -L "$TARGET" ]; then
   echo "Removing old whole-directory symlink: $TARGET -> $(readlink "$TARGET")"
@@ -269,6 +289,7 @@ for name in "${ALLOWED_ITEMS[@]}"; do
 done
 
 sync_repo_extensions
+install_repo_extension_deps
 install_git_package_deps
 
 echo "Done. Nix manages: ${NIX_MANAGED[*]}; extension entries: ${NIX_MANAGED_EXTENSIONS[*]}; excluded extension items: ${EXCLUDED_EXTENSION_ITEMS[*]}; allowed: ${ALLOWED_ITEMS[*]}"
