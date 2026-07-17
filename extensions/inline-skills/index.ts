@@ -7,7 +7,7 @@ import {
   SkillInvocationMessageComponent,
   type ParsedSkillBlock,
 } from "@earendil-works/pi-coding-agent"
-import { Box, Container, Text } from "@earendil-works/pi-tui"
+import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui"
 
 type AutocompleteItem = {
   value: string
@@ -550,7 +550,10 @@ export default function (pi: ExtensionAPI): void {
 
       if (details?.skills?.length) {
         const container = new Container()
+        let first = true
         for (const skill of details.skills) {
+          if (!first) container.addChild(new Spacer(1))
+          first = false
           const component = new SkillInvocationMessageComponent(skill)
           component.setExpanded(expanded)
           container.addChild(component)

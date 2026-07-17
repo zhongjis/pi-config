@@ -36,6 +36,10 @@ export class Box {
   constructor(children: unknown[] = []) {
     this.children = children;
   }
+
+  addChild(child: unknown): void {
+    this.children.push(child);
+  }
 }
 
 export class Container {
@@ -43,6 +47,10 @@ export class Container {
 
   constructor(children: unknown[] = []) {
     this.children = children;
+  }
+
+  addChild(child: unknown): void {
+    this.children.push(child);
   }
 }
 

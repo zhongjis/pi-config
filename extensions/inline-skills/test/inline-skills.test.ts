@@ -59,10 +59,17 @@ function createHarness(defs: SkillDef[]) {
   const lifecycle = new Map<string, Handler[]>();
   const appended: Array<{ type: string; data: unknown }> = [];
   let autocompleteFactory: AutocompleteFactory | undefined;
+  let messageRenderer:
+    | ((message: unknown, opts: { expanded: boolean }, theme: unknown) => {
+        children: unknown[];
+      })
+    | undefined;
 
   const pi = {
     getCommands: () => makeCommands(defs),
-    registerMessageRenderer: () => {},
+    registerMessageRenderer: (_type: string, renderer: unknown) => {
+      messageRenderer = renderer as typeof messageRenderer;
+    },
     registerCommand: () => {},
     appendEntry: (type: string, data: unknown) => {
       appended.push({ type, data });
@@ -99,6 +106,7 @@ function createHarness(defs: SkillDef[]) {
   return {
     fire,
     getProvider: () => autocompleteFactory,
+    getRenderer: () => messageRenderer,
   };
 }
 
@@ -255,5 +263,42 @@ describe("inline-skills ($skill: token)", () => {
     proto.handleInput.call(fakeEditor, "$");
 
     expect(freshTrigger).toHaveBeenCalledWith(fakeEditor, "$");
+  });
+
+  it("inserts a Spacer between adjacent skills so their gap matches message spacing", () => {
+    const h = createHarness([{ name: "tdd", path: tddPath }]);
+    const renderer = h.getRenderer();
+    expect(typeof renderer).toBe("function");
+
+    const theme = {
+      fg: (_key: string, text: string) => text,
+      bg: (_key: string, text: string) => text,
+    };
+    const message = {
+      details: {
+        names: ["one", "two", "three"],
+        skills: [
+          { name: "one", location: "/a", content: "body one" },
+          { name: "two", location: "/b", content: "body two" },
+          { name: "three", location: "/c", content: "body three" },
+        ],
+      },
+    };
+
+    const container = renderer!(message, { expanded: false }, theme);
+    const kinds = container.children.map(
+      (child) => (child as { constructor: { name: string } }).constructor.name,
+    );
+
+    // A single Spacer sits between each pair of skill components, and never
+    // before the first — that extra blank line makes the on-screen gap 3 lines,
+    // matching the spacing pi inserts between separate messages.
+    expect(kinds).toEqual([
+      "SkillInvocationMessageComponent",
+      "Spacer",
+      "SkillInvocationMessageComponent",
+      "Spacer",
+      "SkillInvocationMessageComponent",
+    ]);
   });
 });

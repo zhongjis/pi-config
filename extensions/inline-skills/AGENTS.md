@@ -10,7 +10,8 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 | File | What | Why |
 |------|------|-----|
 | `index.ts` | **Not verbatim.** Invocation token changed from upstream `/name` to `$skill:<name>`: `SKILL_TOKEN_RE` matches `$skill:<name>`; autocomplete trigger/context/prefix key off `$`; the bare-delimiter guard is `"$"`; autocomplete trigger/context/prefix regexes accept an optional `skill:` segment so autocomplete also fires inside an existing `$skill:<name>` token, and `applyCompletion` locates the token start (`$` or `$skill:`) and consumes trailing name chars to replace the whole token (edit/switch a selected skill); autocomplete item `value` + `label` are both `$skill:<name>`; the `input` early-out requires `event.text.includes("$skill:")`; bare `$` opens the full skill list; `stripNativeSkillItems` removes pi-native `skill:` entries from deferred (`/`) suggestions. Also vendored at the extension root, not `src/`. | User UX (Option B): `$` is the sole skill trigger, `$skill:` is stamped on confirm, `/` stays commands-only. Flat-tier layout: no bare `.ts`, no nested `src/`. |
-| `test/inline-skills.test.ts` | Local-only file (not in upstream) | Pins the `$skill:` grammar: submit-injection, autocomplete label/insert, bare-`$` list, `/` native-skill stripping, bare-`$name` rejection, re-editing an existing `$skill:<name>` token (switch + mid-name replace) |
+| `index.ts` (message renderer) | Collapsed multi-skill render inserts a `Spacer(1)` between adjacent `SkillInvocationMessageComponent`s in the `Container` | Each component is a `Box(paddingY=1)`, so two back-to-back render with only a 2-blank-line gap; the spacer makes it 3, matching the gap pi inserts between separate messages. Preserve on sync. |
+| `test/inline-skills.test.ts` | Local-only file (not in upstream) | Pins the `$skill:` grammar: submit-injection, autocomplete label/insert, bare-`$` list, `/` native-skill stripping, bare-`$name` rejection, re-editing an existing `$skill:<name>` token (switch + mid-name replace); and the collapsed multi-skill render inserting a `Spacer` between adjacent skills |
 | `README.md` | Replaced upstream README (dropped install instructions, badges, screenshots) | Repo README spec: concise, factual, no `pi install npm:` guidance |
 | (omitted) | Upstream `package.json`, `tsconfig.json`, `CHANGELOG.md`, `assets/` not vendored | Flat-tier extension; deps are `catalog:` Pi built-ins, no local package/toolchain |
 
@@ -28,5 +29,6 @@ Root smoke discovery (`test/extensions.smoke.test.ts`) loads this extension and 
 
 - `test/fixtures/mock-context.ts`: `ui.addAutocompleteProvider` (no-op).
 - `test/stubs/pi-coding-agent.ts`: `SkillInvocationMessageComponent` class stub.
+- `test/stubs/pi-tui.ts`: `Box`/`Container` `addChild()` (used by the message-renderer spacing test) plus the `Spacer` class stub.
 
 Keep both when syncing; removing them breaks this extension's smoke case.
