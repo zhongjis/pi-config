@@ -80,7 +80,7 @@ const INLINE_SKILL_MESSAGE_TYPE = "inline-skill"
 const MAX_SUGGESTIONS = 30
 const SKILL_TOKEN_RE =
   /(^|[\s([{,])\$skill:([a-z0-9][a-z0-9-]{0,63})(?![a-z0-9-]|[:/])/gi
-const SLASH_SKILL_CONTEXT_RE = /(?:^|[\s([{,])\$[a-z0-9-]*$/i
+const SLASH_SKILL_CONTEXT_RE = /(?:^|[\s([{,])\$(?:skill:)?[a-z0-9-]*$/i
 
 function fuzzyScore(value: string, query: string): number {
   const target = value.toLowerCase()
@@ -311,7 +311,7 @@ function findInlineSkills(
 }
 
 function extractSlashSkillPrefix(textBeforeCursor: string): string | undefined {
-  const match = textBeforeCursor.match(/(?:^|[\s([{,])\$([a-z0-9-]*)$/i)
+  const match = textBeforeCursor.match(/(?:^|[\s([{,])\$(?:skill:)?([a-z0-9-]*)$/i)
   return match?.[1]
 }
 
@@ -485,14 +485,17 @@ function createSlashSkillAutocompleteProvider(
 
     applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
       const currentLine = lines[cursorLine] ?? ""
-      const slashPrefixStart = cursorCol - prefix.length - 1
+      const prefixStart = cursorCol - prefix.length
+      const beforePrefix =
+        prefixStart >= 0 ? currentLine.slice(0, prefixStart) : ""
+      const tokenMatch = beforePrefix.match(/\$(?:skill:)?$/i)
       const isSlashSkillCompletion =
         item.label.startsWith("$skill:") &&
         item.value.startsWith("$skill:") &&
-        slashPrefixStart >= 0 &&
-        currentLine[slashPrefixStart] === "$"
+        prefixStart >= 0 &&
+        tokenMatch !== null
 
-      if (!isSlashSkillCompletion) {
+      if (!isSlashSkillCompletion || !tokenMatch) {
         return current.applyCompletion(
           lines,
           cursorLine,
@@ -502,16 +505,19 @@ function createSlashSkillAutocompleteProvider(
         )
       }
 
-      const beforePrefix = currentLine.slice(0, slashPrefixStart)
-      const afterCursor = currentLine.slice(cursorCol)
+      const tokenStart = beforePrefix.length - tokenMatch[0].length
+      const beforeToken = currentLine.slice(0, tokenStart)
+      // Consume any trailing skill-name characters so re-editing an existing
+      // `$skill:<name>` token (cursor anywhere inside it) replaces the whole token.
+      const afterCursor = currentLine.slice(cursorCol).replace(/^[a-z0-9-]*/i, "")
       const suffix = afterCursor.startsWith(" ") ? "" : " "
       const nextLines = [...lines]
       nextLines[cursorLine] =
-        `${beforePrefix}${item.value}${suffix}${afterCursor}`
+        `${beforeToken}${item.value}${suffix}${afterCursor}`
       return {
         lines: nextLines,
         cursorLine,
-        cursorCol: beforePrefix.length + item.value.length + suffix.length,
+        cursorCol: beforeToken.length + item.value.length + suffix.length,
       }
     },
 

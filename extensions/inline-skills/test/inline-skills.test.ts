@@ -178,6 +178,40 @@ describe("inline-skills ($skill: token)", () => {
     expect(labels).toContain("$skill:tdd");
   });
 
+  it("autocomplete re-edits an existing $skill:<name> token", async () => {
+    const h = createHarness([
+      { name: "tdd", path: tddPath },
+      { name: "testing-two", path: tddPath },
+    ]);
+    await h.fire("session_start");
+
+    const provider = h.getProvider()!(currentStub(null));
+    const signal = new AbortController().signal;
+
+    // Cursor inside the token, right after "$skill:test".
+    const sugg = await provider.getSuggestions(["$skill:test"], 0, 11, {
+      signal,
+    });
+    const labels = (sugg?.items ?? []).map((i) => i.label);
+    expect(labels).toContain("$skill:testing-two");
+
+    const item = sugg!.items.find((i) => i.value === "$skill:testing-two")!;
+    // Switch a full existing token to the newly picked skill.
+    const applied = provider.applyCompletion(["$skill:tdd"], 0, 10, item, "tdd");
+    expect(applied.lines[0]).toBe("$skill:testing-two ");
+  });
+
+  it("replaces the whole token when the cursor is mid-name", async () => {
+    const h = createHarness([{ name: "testing-two", path: tddPath }]);
+    await h.fire("session_start");
+
+    const provider = h.getProvider()!(currentStub(null));
+    const item = { value: "$skill:testing-two", label: "$skill:testing-two" };
+    // Cursor after "$skill:t" in "$skill:tdd"; trailing "dd" must be consumed.
+    const applied = provider.applyCompletion(["$skill:tdd"], 0, 8, item, "t");
+    expect(applied.lines[0]).toBe("$skill:testing-two ");
+  });
+
   it("slash context strips native skill entries so $ is the only skill path", async () => {
     const h = createHarness([{ name: "tdd", path: tddPath }]);
     await h.fire("session_start");

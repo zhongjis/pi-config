@@ -5,7 +5,9 @@ from autocomplete (rows shown as `$skill:<name>`), and keep writing. On confirm
 the editor stamps the token `$skill:<name>`; on submit the visible prompt is left
 unchanged and the matching skill content is injected for that turn. `$skill:`
 tokens stay in the prompt text, so rewinding and editing earlier prompts still
-works. `/` is reserved for commands — skills never appear under `/`.
+works. To switch an already-inserted skill, put the cursor inside its
+`$skill:<name>` token and autocomplete will replace the whole token with the
+newly picked skill. `/` is reserved for commands — skills never appear under `/`.
 Already-loaded skills are not injected again on the same session branch, and
 skills with `disable-model-invocation: true` work because the extension reads
 skill files directly.
