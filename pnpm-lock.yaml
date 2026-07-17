@@ -35,6 +35,9 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: 'catalog:'
         version: 0.79.0(ws@8.20.0)(zod@4.3.6)
+      '@earendil-works/pi-tui':
+        specifier: 'catalog:'
+        version: 0.79.0
       '@marcfargas/pi-test-harness':
         specifier: git+https://github.com/marcfargas/pi-test-harness.git#v0.6.1
         version: https://codeload.github.com/marcfargas/pi-test-harness/tar.gz/72af5484cdc4bac1c421c86929782fa8a45db959(@earendil-works/pi-agent-core@0.79.0(ws@8.20.0)(zod@4.3.6))(@earendil-works/pi-ai@0.79.0(ws@8.20.0)(zod@4.3.6))(@earendil-works/pi-coding-agent@0.79.0(ws@8.20.0)(zod@4.3.6))
