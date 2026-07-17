@@ -3,41 +3,84 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Do a planning-only response for this scenario; do not edit files or clone anything. We want to vendor a Pi extension from https://github.com/example/pi-awesome-search into extensions/awesome-search. Keep it local to this repo, don't tell me to use pi install. Upstream has a package.json with lodash as a new dependency and registers a tool called awesome_search.",
-      "expected_output": "A vendoring plan or implementation that fetches upstream with git/package-native tooling, pins source provenance, chooses the smallest local layout, warns before adding lodash, writes README Upstream metadata, and creates a Local Tweaks manifest for any local adaptations.",
+      "prompt": "Planning only; do not edit or clone. Vendor https://github.com/example/pi-awesome-search into extensions/awesome-search. Keep local; no pi install. Upstream adds lodash and awesome_search.",
+      "expected_output": "First-time planning response with directory layout, immutable provenance, dependency stop, README Upstream, conditional Local Tweaks.",
       "files": [],
       "expectations": [
-        "Uses first-time vendoring mode because extensions/awesome-search is new.",
-        "Does not recommend `pi install npm:...`.",
-        "Warns and pauses before adding a new non-built-in dependency named lodash.",
-        "Requires README Upstream metadata with source URL and immutable commit/version.",
-        "Requires AGENTS.md Local Tweaks entries for intentional local divergences."
+        "Names first-time operation mode and planning scope.",
+        "Does not recommend pi install.",
+        "Targets extensions/awesome-search/index.ts plus README, never a bare TypeScript file.",
+        "Plans native inspection and immutable identity before edits.",
+        "Stops for approval before lodash.",
+        "Requires README Upstream and conditional Local Tweaks."
       ]
     },
     {
       "id": 2,
-      "prompt": "Do a planning-only response for this scenario; do not edit files or fetch upstream. Update our existing extensions/subagent vendored copy to the latest upstream tag. It already has local changes for nested-agent permissions and background supervision; keep those intact. Read release notes first and tell me risks before editing",
-      "expected_output": "A sync workflow that reads the existing extension AGENTS.md Local Tweaks before upstream code, reads upstream release notes/changelog before diffing, preserves named local divergences, produces a vendored sync risk memo, and updates README/AGENTS after the merge.",
+      "prompt": "Planning only; do not edit or fetch. Update existing extensions/subagent to latest tag. Preserve nested-agent permissions and background supervision. Release notes before diff; tell risks.",
+      "expected_output": "Existing-sync plan reading local manifest first, scheduling release inspection, immutable checkout, local-drift preservation, risk memo.",
       "files": [],
       "expectations": [
-        "Uses existing sync/update mode because extensions/subagent exists.",
-        "Reads `extensions/subagent/AGENTS.md` and treats `## Local Tweaks` as authoritative before source edits.",
-        "Reads upstream changelog or release notes before code diff.",
-        "Preserves local nested-agent permission and background supervision behavior by default.",
-        "Produces a sync risk memo before editing."
+        "Names existing-sync operation mode and planning scope.",
+        "Treats target Local Tweaks as authoritative before upstream code.",
+        "Plans release-note inspection before diff and fallback if absent.",
+        "Plans immutable SHA pin before implementation.",
+        "Preserves both named local behaviors.",
+        "Produces one risk memo before edits."
       ]
     },
     {
       "id": 3,
-      "prompt": "Do a planning-only response for this scenario; do not edit files or fetch upstream. Re-vendor extensions/foo from upstream commit abc123. I don't see a Local Tweaks section anywhere but the code has definitely drifted locally. Please don't accidentally wipe our local behavior",
-      "expected_output": "A stale/missing manifest recovery workflow: reconstruct likely local divergences from git history, README/CHANGELOG, and upstream base diff; write/fix Local Tweaks before source edits; warn the user that the manifest was reconstructed; then continue with a cautious sync.",
+      "prompt": "Planning only; do not edit or fetch. Re-vendor extensions/foo from abc123. Local Tweaks missing but code drifted. Preserve local behavior.",
+      "expected_output": "Blocked stale-manifest plan reconstructing, writing, presenting, confirming manifest before source merge.",
       "files": [],
       "expectations": [
-        "Detects missing/stale Local Tweaks manifest as a blocker before source merge.",
-        "Reconstructs divergences from git history, README/CHANGELOG, and diff against documented upstream base.",
-        "Writes or updates the manifest before touching source files.",
-        "Warns the user that the manifest was missing/stale and reconstructed.",
-        "Preserves local behavior unless the user approves dropping it."
+        "Uses existing-sync mode under planning scope.",
+        "Treats missing manifest as hard stop.",
+        "Reconstructs from git history, README/CHANGELOG, upstream-base comparison.",
+        "Writes manifest before source edits.",
+        "Asks user to confirm before continuing.",
+        "Reports blocked until confirmation."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Planning only; do not edit. extensions/direnv upstream unchanged. Rename README section and add local guard in index.ts. No dependency or sync.",
+      "expected_output": "Local-only plan preserving provenance, avoiding fetch, updating Local Tweaks, naming validation.",
+      "files": [],
+      "expectations": [
+        "Names local-only mode and planning scope.",
+        "States no upstream fetch or merge.",
+        "Keeps Upstream provenance unless inaccurate.",
+        "Plans Local Tweaks update for guard.",
+        "Gates dependency, layout, or public-surface change."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Dry-run first-time blueprint; do not edit. Inspected upstream has package.json, LICENSE, README, src/index.ts, simple_clock command, only Node built-ins plus repo-present Pi APIs, known immutable SHA. Show extensions/simple-clock conversion.",
+      "expected_output": "No-edit blueprint with artifacts, provenance mapping, conditional Local Tweaks, no dependency, exact checks and pass criteria.",
+      "files": [],
+      "expectations": [
+        "Names first-time mode and dry-run planning scope without claiming edits.",
+        "Proposes root index.ts and README, never bare extension file.",
+        "Maps source, SHA, version, author, license, repository/homepage.",
+        "Adds no dependency.",
+        "Creates Local Tweaks only for divergence.",
+        "Names exact focused and broad checks with pass criteria, explicitly not run."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Implement update if safe. Upstream requires left-pad; only test fails TypeScript. Dependency not approved. Finish if possible.",
+      "expected_output": "Blocked report: no silent dependency edit, no success claim with missing approval or failed validation.",
+      "files": [],
+      "expectations": [
+        "Identifies left-pad as approval-gated dependency.",
+        "Does not silently modify package config.",
+        "Treats failed required validation as blocked.",
+        "Does not claim success.",
+        "Reports blocker and touched unverified files."
       ]
     }
   ]
