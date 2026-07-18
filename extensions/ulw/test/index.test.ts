@@ -188,7 +188,7 @@ describe("ulw extension — unit tests", () => {
 		const result = await fireInput(mock, "ulw");
 		expect(result?.action).toBe("transform");
 		const text = (result as any).text as string;
-		expect(text).toContain("What task should I work on?");
+		expect(text).toContain("Ultrawork mode is now active.");
 		// Prompt still injected via before_agent_start, not in user message
 		expect(text).not.toContain("<ultrawork-mode>");
 		const bas = await fireBeforeAgentStart(mock);
