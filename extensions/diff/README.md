@@ -34,7 +34,7 @@ Requires `hunk` on PATH and interactive (TUI) mode.
 
 ## Review loop
 
-While hunk is open, the extension polls the live session (~600ms) and keeps the latest snapshot of the inline comments you leave — hunk deregisters the session the instant its TUI quits (zero grace period), so a post-exit query would find nothing. On close, any human-authored comments are formatted as `file:line — summary` and sent to the agent as a user message instructing it to address each one — turning the diff view into a two-way review channel. No comments left → nothing is sent.
+While hunk is open, the extension polls the live session (~250ms, self-rescheduling) and keeps the latest snapshot of the inline comments you leave — hunk deregisters the session the instant its TUI quits (zero grace period), so a post-exit query would find nothing. Each poll queries the hunk daemon directly over its loopback HTTP API (~10ms), falling back to the `hunk session comment list` CLI (~340ms to cold-start) if the daemon isn't reachable — so a comment left just before you quit is captured before the session disappears. On close, any human-authored comments are formatted as `file:line — summary` and sent to the agent as a user message instructing it to address each one — turning the diff view into a two-way review channel. No comments left → nothing is sent.
 
 Comments are owned by hunk; the extension keeps no separate comment store. It filters to human-authored notes (`source: "user"`, or legacy comments that carry no source) so the agent never re-ingests its own `--agent-context` annotations. Any query/parse failure is a silent no-op.
 

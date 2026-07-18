@@ -92,6 +92,27 @@ export function keepUserAuthored(comments: HunkComment[]): HunkComment[] {
   return comments.filter((c) => c.source === null || c.source === "user");
 }
 
+// Parse the hunk daemon's HTTP `comment-list` response. The daemon returns the
+// SAME JSON shape as the CLI `--json`, so we reuse parseHunkComments. But unlike
+// the CLI (errors go to stderr + non-zero exit), the HTTP endpoint answers 200
+// with an `{ "error": ... }` body if the (undocumented) action/selector ever
+// drift. Guard that: only a bare array or an object carrying a `comments` array
+// is a real result; anything else returns null so a drifted API degrades to a
+// failed poll (keep previous snapshot) instead of masquerading as success-empty.
+export function parseHttpComments(text: string): HunkComment[] | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const hasComments =
+    Array.isArray(raw) ||
+    Array.isArray((raw as { comments?: unknown } | null)?.comments);
+  if (!hasComments) return null;
+  return parseHunkComments(text);
+}
+
 // Keep the latest SUCCESSFUL snapshot. A null `next` means the poll failed —
 // keep the previous snapshot. An array `next` (even empty) is a success and
 // REPLACES the previous one (comment list returns the full set each call).
@@ -162,24 +183,53 @@ export default function (pi: ExtensionAPI) {
     return null;
   };
 
-  // Harvest inline review comments from the LIVE hunk session for this repo.
-  // hunk deregisters the session the instant its TUI quits, so this must run
-  // while hunk is still open. Returns null on query/parse failure; [] when the
-  // session has no human comments; otherwise the human-authored comments.
-  const harvestHunkComments = async (repoRoot: string): Promise<HunkComment[] | null> => {
-    let r = await pi.exec(
+  // The hunk daemon (the loopback service the `hunk` CLI wraps) answers comment
+  // queries over HTTP in ~10ms, versus ~340ms to cold-start the 83MB CLI binary
+  // on every poll. Harvest HTTP-first so a comment left just before the user
+  // quits is captured before hunk deregisters its session (zero grace on quit).
+  // Port override via HUNK_MCP_PORT (hunk's own convention); default 47657.
+  const HUNK_DAEMON_PORT = Number(process.env.HUNK_MCP_PORT) || 47657;
+
+  // Query the daemon's (undocumented) `comment-list` action. It returns the same
+  // JSON shape as the CLI --json. Any failure — connection refused, timeout,
+  // non-200, drifted action/selector, unparseable body — returns null so the
+  // caller falls back to the CLI (and mergeSnapshot keeps the previous snapshot).
+  // Never throws.
+  const harvestViaHttp = async (repoRoot: string): Promise<HunkComment[] | null> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 400);
+    try {
+      const res = await fetch(`http://127.0.0.1:${HUNK_DAEMON_PORT}/session-api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "comment-list",
+          selector: { repoRoot },
+          type: "all",
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      const parsed = parseHttpComments(await res.text());
+      return parsed === null ? null : keepUserAuthored(parsed);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // Harvest inline review comments from the LIVE hunk session via the CLI. hunk
+  // deregisters the session the instant its TUI quits, so this must run while
+  // hunk is still open. Returns null on query/parse failure; [] when the session
+  // has no human comments; otherwise the human-authored comments. Used as the
+  // fallback when the daemon HTTP path is unavailable.
+  const harvestViaCli = async (repoRoot: string): Promise<HunkComment[] | null> => {
+    const r = await pi.exec(
       "hunk",
       ["session", "comment", "list", "--repo", repoRoot, "--type", "all", "--json"],
       { cwd: repoRoot, timeout: 3000 },
     );
-    if (r.code !== 0 || !r.stdout) {
-      // Fall back to legacy hunk without --type support.
-      r = await pi.exec(
-        "hunk",
-        ["session", "comment", "list", "--repo", repoRoot, "--json"],
-        { cwd: repoRoot, timeout: 3000 },
-      );
-    }
     if (r.code !== 0 || !r.stdout) return null;
     const parsed = parseHunkComments(r.stdout);
     if (parsed === null) return null;
@@ -227,16 +277,31 @@ export default function (pi: ExtensionAPI) {
     const repoRoot = (await git(["rev-parse", "--show-toplevel"], ctx.cwd)) || ctx.cwd;
     let launchError: string | undefined;
     let latest: HunkComment[] | null = null;
+    // HTTP-first harvest, disabled for the rest of this review after the first
+    // structural HTTP failure (unreachable daemon / drifted API); transient HTTP
+    // blips once HTTP has worked fall through to one CLI poll but keep HTTP on.
+    let httpViable: boolean | undefined;
+    const harvest = async (): Promise<HunkComment[] | null> => {
+      if (httpViable !== false) {
+        const viaHttp = await harvestViaHttp(repoRoot);
+        if (viaHttp !== null) {
+          httpViable = true;
+          return viaHttp;
+        }
+        if (httpViable === undefined) httpViable = false;
+      }
+      return harvestViaCli(repoRoot);
+    };
     await ctx.ui.custom<void>((tui, _theme, _keybindings, done) => {
       let finished = false;
       let polling = false;
-      let poll: ReturnType<typeof setInterval> | undefined;
+      let poll: ReturnType<typeof setTimeout> | undefined;
       // Single-fire teardown: exit the alternate screen, restore pi's TUI, and
       // resolve exactly once (child error/close and spawn failure all route here).
       const finish = () => {
         if (finished) return;
         finished = true;
-        if (poll) clearInterval(poll);
+        if (poll) clearTimeout(poll);
         process.stdout.write("\x1b[?1049l");
         tui.start();
         tui.requestRender(true);
@@ -251,20 +316,25 @@ export default function (pi: ExtensionAPI) {
           cwd: ctx.cwd,
           shell: process.platform === "win32",
         });
-        // Poll the LIVE session while hunk is open (grace period is 0 on quit).
-        // The in-flight guard prevents overlapping queries; snapshots REPLACE.
-        poll = setInterval(() => {
+        // Poll the LIVE session while hunk is open (hunk deregisters with zero
+        // grace on quit, so a comment survives only if a poll completes first).
+        // Self-reschedule back-to-back (~250ms) rather than a fixed interval so
+        // the loss window tracks harvest latency; the in-flight guard plus
+        // reschedule-only-while-open keep it single-flight. Snapshots REPLACE.
+        const runPoll = () => {
           if (polling || finished) return;
           polling = true;
-          harvestHunkComments(repoRoot)
+          harvest()
             .then((snap) => {
               if (!finished) latest = mergeSnapshot(latest, snap);
             })
             .catch(() => {})
             .finally(() => {
               polling = false;
+              if (!finished) poll = setTimeout(runPoll, 250);
             });
-        }, 600);
+        };
+        runPoll(); // first harvest right after spawn
         child.on("error", (err) => {
           launchError = err.message;
           finish();
