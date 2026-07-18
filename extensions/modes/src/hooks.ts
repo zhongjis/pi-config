@@ -252,15 +252,13 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	});
 
 	pi.on("context" as any, async (event: any, ctx: ExtensionContext) => {
-		const activeMode = getActiveModeFromContext(ctx, state.currentMode);
 		if (!injectModeSkillBootstrap) return;
-		if (getModeSkillPaths(activeMode).length === 0) return;
+		const activeMode = getActiveModeFromContext(ctx, state.currentMode);
+		const bootstrap = getModeSkillBootstrapContent(activeMode);
+		if (!bootstrap) return;
 
 		const messages = (event as { messages?: unknown[] }).messages ?? [];
 		if (messages.some((message) => messageContainsModeSkillBootstrap(message, activeMode))) return;
-
-		const bootstrap = getModeSkillBootstrapContent(activeMode);
-		if (!bootstrap) return;
 
 		const bootstrapMessage = {
 			role: "user" as const,

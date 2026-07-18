@@ -20,7 +20,7 @@ Current file matrix:
 | kuafu | Yes | Yes | Yes | none |
 | fuxi | Yes | Yes | Yes | active `skills/ulw-plan` |
 | houtu | Yes | Yes | Yes | none |
-| luban | Yes | Yes | Yes | future / out of scope |
+| luban | Yes | Yes | Yes | active 14-skill Superpowers snapshot; Luban-only discovery |
 | shennong | Yes | Yes | Yes | future / out of scope |
 
 Prompt audits must review the final injected prompt, not only source files, and preserve locked family anchors plus the final injected session audit requirement. See `../docs/specs/mode-prompt-audit-checklist.md`.

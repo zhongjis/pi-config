@@ -99,6 +99,45 @@ describe("mode-specific skill bootstrap", () => {
 		expect(kuafuContext).toBeUndefined();
 	});
 
+	it("discovers Luban skills without injecting a context bootstrap", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "luban";
+		state.cachedConfigs["luban:default"] = { body: "" };
+		registerModeHooks(mock.pi as never, state);
+
+		const lubanCtx = createContext("luban");
+		await mock.fire("session_start", {}, lubanCtx);
+
+		const [discover] = await mock.fire("resources_discover", {}, lubanCtx);
+		expect(discover).toMatchObject({
+			skillPaths: [expect.stringMatching(/modes\/luban\/skills$/)],
+		});
+
+		const [firstContext] = await mock.fire("context", { messages: [] }, lubanCtx);
+		expect(firstContext).toBeUndefined();
+
+		await mock.fire("session_compact", {}, lubanCtx);
+		const [afterCompact] = await mock.fire(
+			"context",
+			{ messages: [{ role: "compactionSummary", content: "summary" }] },
+			lubanCtx,
+		);
+		expect(afterCompact).toBeUndefined();
+	});
+
+	it("restores persisted Luban skill discovery during a cold resource reload", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		registerModeHooks(mock.pi as never, state);
+
+		const [discover] = await mock.fire("resources_discover", {}, createContext("luban"));
+
+		expect(discover).toMatchObject({
+			skillPaths: [expect.stringMatching(/modes\/luban\/skills$/)],
+		});
+	});
+
 	it("reloads when switching into or out of Fu Xi", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);

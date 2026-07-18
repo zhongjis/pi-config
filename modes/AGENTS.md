@@ -14,8 +14,9 @@ This file owns `modes/` prompt files and mode subdirectories.
 - `gpt.md` is a body-only replacement; it inherits `mode.md` frontmatter and must be self-contained.
 - `gemini.md` is a body-only corrective overlay on the default prompt body.
 - Keep the per-mode file matrix (`mode.md` + `gpt.md` + `gemini.md`) complete unless intentionally removing a mode family.
-- `<mode>/skills/*/SKILL.md` (optional): mode-scoped skills. Runtime may preload/inject active skills for a mode; references resolve relative to the skill base dir supplied at runtime.
+- `<mode>/skills/*/SKILL.md` (optional): mode-scoped skills discovered only while that mode is active. Context bootstrap is separate and must be configured explicitly; references resolve relative to the skill base dir supplied at runtime.
 - Fu Xi is a thin Prometheus prompt family. `modes/fuxi/mode.md`, `gpt.md`, and `gemini.md` stay light; active planning policy lives in preloaded `modes/fuxi/skills/ulw-plan/SKILL.md` plus `modes/fuxi/skills/ulw-plan/references/*`, injected by runtime. The `ulw-plan` skill is authoritative for Fu Xi’s exactly seven planning stages; do not duplicate the stage text here.
+- Lu Ban owns the 14-skill Superpowers snapshot under `modes/luban/skills/`; `UPSTREAM.md` and `LICENSE` preserve provenance. Runtime discovery is Luban-only, with no eager context bootstrap.
 - Kuafu delegates turn-local tactical planning to callable `xuannv`; keep that advisory text-return flow separate from Fu Xi mode’s durable planning ceremony.
 - Preserve locked family anchors in prompt variants (`mode.md`, `gpt.md`, `gemini.md`) and keep prompt audits focused on the final injected session prompt, including the final injected session audit requirement.
 - When mode prompts mention code intelligence, preserve the split: CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, `rg`/`fd` for literal/file search.
@@ -45,5 +46,5 @@ This file owns `modes/` prompt files and mode subdirectories.
 | `fuxi/` | this file | Fu Xi planning mode prompt variants. |
 | `houtu/` | this file | Hou Tu execution mode prompt variants. |
 | `kuafu/` | this file | Kua Fu build-orchestrator mode prompt variants. |
-| `luban/` | this file | Lu Ban skill-first mode prompt variants. |
+| `luban/` | this file | Lu Ban prompt variants, mode-owned Superpowers skill snapshot, and provenance. |
 | `shennong/` | this file | Shen Nong product-manager mode prompt variants. |

@@ -67,6 +67,8 @@ The override is persisted in the session JSONL and survives `/reload`. It does *
 - `session_start`, `session_tree` — Restore mode state
 - `before_agent_start` — Inject mode-specific prompt
 - `model_select` — Re-apply mode model when session restores a saved model
+- `resources_discover` — Expose Fu Xi or Luban mode-owned skills only while that mode is active
+- `context`, `session_compact` — Eagerly inject and restore only the configured Fu Xi `ulw-plan` bootstrap; Luban relies on its mode prompt skill gate
 - `input` — Handle mode switching keywords
 - Status bar shows current mode with color coding
 
@@ -76,6 +78,7 @@ The override is persisted in the session JSONL and survives `/reload`. It does *
 - `src/hooks.ts` — Lifecycle hooks and prompt injection
 - `src/commands.ts` — Mode switching commands
 - `src/mode-state.ts` — Mode state management and persistence
+- `src/mode-skills.ts` — Active-mode skill discovery and explicit bootstrap configuration
 - `src/plan-approval.ts` — Plan review approval flow
 - `src/constants.ts` — Mode definitions, aliases, colors
 - `src/types.ts` — Type definitions

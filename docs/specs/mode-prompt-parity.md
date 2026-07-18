@@ -115,8 +115,8 @@ Superpowers finding:
 
 Local persona/behavior source:
 
-- Primary source: `extensions/superpowers/skills/using-superpowers/SKILL.md` — invoke relevant skills before any response/action; 1% applicability triggers skill use; Superpowers skills override default system behavior, while user instructions remain highest priority.
-- Workflow sources: `extensions/superpowers/skills/brainstorming/SKILL.md`, `extensions/superpowers/skills/writing-plans/SKILL.md`, `extensions/superpowers/skills/subagent-driven-development/SKILL.md`, `extensions/superpowers/skills/executing-plans/SKILL.md`, `extensions/superpowers/skills/dispatching-parallel-agents/SKILL.md`, `extensions/superpowers/skills/verification-before-completion/SKILL.md`.
+- Primary source: `modes/luban/skills/using-superpowers/SKILL.md` — invoke relevant skills before any response/action; 1% applicability triggers skill use; Superpowers skills override default system behavior, while user instructions remain highest priority.
+- Workflow sources: `modes/luban/skills/brainstorming/SKILL.md`, `modes/luban/skills/writing-plans/SKILL.md`, `modes/luban/skills/subagent-driven-development/SKILL.md`, `modes/luban/skills/executing-plans/SKILL.md`, `modes/luban/skills/dispatching-parallel-agents/SKILL.md`, `modes/luban/skills/verification-before-completion/SKILL.md`.
 
 Local invariants before edits:
 

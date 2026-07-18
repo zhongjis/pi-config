@@ -8,6 +8,7 @@ const BOOTSTRAP_MARKER_PREFIX = "mode-skill-bootstrap:";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const modesRoot = resolve(sourceDir, "..", "..", "..", "modes");
+const MODES_WITH_SKILLS: ReadonlySet<Mode> = new Set(["fuxi", "luban"]);
 
 type ModeSkillBootstrap = {
 	skillName: string;
@@ -24,7 +25,7 @@ type ModeStateEntry = {
 };
 
 export function getModeSkillPaths(mode: Mode): string[] {
-	if (!MODE_SKILL_BOOTSTRAPS[mode]) return [];
+	if (!MODES_WITH_SKILLS.has(mode)) return [];
 	return [getModeSkillsDir(mode)];
 }
 
@@ -78,8 +79,8 @@ function latestPersistedMode(ctx: ExtensionContext): Mode | undefined {
 	if (typeof getEntries !== "function") return undefined;
 
 	const entries = getEntries.call(ctx.sessionManager) as ModeStateEntry[];
-	for (let i = entries.length - 1; i >= 0; i--) {
-		const entry = entries[i];
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
 		if (entry.type !== "custom" || entry.customType !== "agent-mode") continue;
 		return parseMode(entry.data?.mode);
 	}

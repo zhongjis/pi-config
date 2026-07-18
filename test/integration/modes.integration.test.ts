@@ -85,6 +85,40 @@ describe("modes extension — integration", () => {
 		expect(await discoveredPaths()).not.toContain(fuxiSkillsDir);
 	});
 
+	it("discovers Luban skills only while Luban is active without context bootstrap", async () => {
+		t = await createTestSession({
+			extensions: [EXTENSION],
+			mockTools: MOCK_TOOLS,
+		});
+
+		const runner = (t.session as any).extensionRunner;
+		const lubanSkillsDir = path.resolve(PROJECT_ROOT, "modes/luban/skills");
+		const oldSuperpowersSkillsDir = path.resolve(PROJECT_ROOT, "extensions/superpowers/skills");
+		const discoveredPaths = async () => {
+			const resources = await runner.emitResourcesDiscover(PROJECT_ROOT, "reload");
+			return resources.skillPaths.map((resource: { path: string }) => resource.path);
+		};
+		const expectNoLubanBootstrap = async () => {
+			const context = JSON.stringify(await runner.emitContext([]));
+			expect(context).not.toContain("mode-skill-bootstrap:luban");
+			expect(context).not.toContain("superpowers:using-superpowers bootstrap for pi");
+		};
+
+		expect(await discoveredPaths()).not.toContain(lubanSkillsDir);
+		expect(await discoveredPaths()).not.toContain(oldSuperpowersSkillsDir);
+		await expectNoLubanBootstrap();
+
+		await switchMode(t, "luban");
+		expect(await discoveredPaths()).toContain(lubanSkillsDir);
+		expect(await discoveredPaths()).not.toContain(oldSuperpowersSkillsDir);
+		await expectNoLubanBootstrap();
+
+		await switchMode(t, "kuafu");
+		expect(await discoveredPaths()).not.toContain(lubanSkillsDir);
+		expect(await discoveredPaths()).not.toContain(oldSuperpowersSkillsDir);
+		await expectNoLubanBootstrap();
+	});
+
 	// ── Default mode (kuafu) allows writes ──────────────────────
 
 	it("kuafu mode allows write to arbitrary files", async () => {

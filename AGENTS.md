@@ -26,7 +26,7 @@ Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyr
 | `agents/` | `agents/AGENTS.md` | Custom subagent definitions and prompt/frontmatter conventions. |
 | `docs/` | `docs/AGENTS.md` | Human-facing design docs, testing notes, and references. |
 | `extensions/` | `extensions/AGENTS.md` | Runtime Pi extensions, shared extension rules, event contracts, and extension-local child docs. |
-| `modes/` | `modes/AGENTS.md` | Mode prompt variants and prompt-family construction rules. |
+| `modes/` | `modes/AGENTS.md` | Mode prompt variants, prompt-family rules, mode-scoped skills, and provenance. |
 | `scripts/` | `scripts/AGENTS.md` | Repo helper scripts used by install/test/maintenance flows. |
 | `test/` | `test/AGENTS.md` | Root Vitest smoke/integration harness, fixtures, and stubs. |
 | `themes/` | `themes/AGENTS.md` | Theme JSON assets. |
