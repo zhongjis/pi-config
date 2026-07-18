@@ -164,6 +164,17 @@ function getLastAssistantText(session: AgentSession): string {
   return "";
 }
 
+/** Last assistant text from messages appended at index >= `start` (snapshot-bounded — avoids the full-history leak). */
+function getLastAssistantTextSince(session: AgentSession, start: number): string {
+  for (let i = session.messages.length - 1; i >= start; i--) {
+    const msg = session.messages[i];
+    if (msg.role !== "assistant") continue;
+    const text = extractText(msg.content).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 /**
  * Wire an AbortSignal to abort a session.
  * Returns a cleanup function to remove the listener.
@@ -557,14 +568,23 @@ export async function runAgent(
   return { responseText, session, aborted, steered: softLimitReached };
 }
 
+/** Discriminated result of a resumed turn: usable fresh text, or a real failure. */
+export type ResumeOutcome = { ok: true; text: string } | { ok: false; reason: string };
+
 /**
  * Send a new prompt to an existing session (resume).
+ *
+ * Returns a discriminated outcome so an empty or failed resumed turn surfaces as a
+ * real failure instead of silently echoing a prior assistant summary. Previously a
+ * stale resume that produced no fresh output fell through to getLastAssistantText,
+ * which scans the WHOLE history and leaked the prior turn's summary as a
+ * false-positive success.
  */
 export async function resumeAgent(
   session: AgentSession,
   prompt: string,
   options: { onToolActivity?: (activity: ToolActivity) => void; signal?: AbortSignal } = {},
-): Promise<string> {
+): Promise<ResumeOutcome> {
   const collector = collectResponseText(session);
   const cleanupAbort = forwardAbortSignal(session, options.signal);
 
@@ -575,6 +595,7 @@ export async function resumeAgent(
       })
     : () => {};
 
+  const before = session.messages.length;
   try {
     await session.prompt(prompt);
   } finally {
@@ -583,7 +604,31 @@ export async function resumeAgent(
     cleanupAbort();
   }
 
-  return collector.getText().trim() || getLastAssistantText(session);
+  const reason = "empty_or_failed_resume_turn";
+
+  // (1) The resumed turn appended no assistant message at all.
+  let newest: AgentSession["messages"][number] | undefined;
+  for (let i = session.messages.length - 1; i >= before; i--) {
+    if (session.messages[i].role === "assistant") {
+      newest = session.messages[i];
+      break;
+    }
+  }
+  if (!newest) return { ok: false, reason };
+
+  // (2) The newest terminal assistant message ended abnormally.
+  const stopReason = (newest as { stopReason?: string }).stopReason;
+  if (stopReason === "error" || stopReason === "aborted" || stopReason === "length") {
+    return { ok: false, reason };
+  }
+
+  // (3) No streamed text and the turn produced no usable content. The fallback is
+  // snapshot-bounded (index >= before): never scan prior history — that is the leak.
+  const collectorText = collector.getText().trim();
+  const text = collectorText || getLastAssistantTextSince(session, before);
+  if (!text) return { ok: false, reason };
+
+  return { ok: true, text };
 }
 
 /**

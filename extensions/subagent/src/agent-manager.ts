@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession, AgentSessionEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { SUBAGENT_BACKGROUND_CLEANUP_AFTER_MS, SUBAGENT_BACKGROUND_CLEANUP_INTERVAL_MS, SUBAGENT_BACKGROUND_MAX_CONCURRENT } from "./constants.js";
-import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
+import { resumeAgent, runAgent, type ResumeOutcome, type ToolActivity } from "./agent-runner.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
 import type { AgentRecord, AgentResumeResult, RestoreFailureReason, ResumeTargetV1, SubagentType, ThinkingLevel } from "./types.js";
 import { getRecoveredResultText } from "./result-recovery.js";
@@ -20,6 +20,9 @@ import { pandaWarn } from "../../lib/warn.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
+
+/** Outcome of a resumed continuation, so resume() can branch success vs. real failure. */
+type ContinueOutcome = { ok: boolean; reason?: RestoreFailureReason; error?: string };
 
 /** Default max concurrent background agents. */
 const DEFAULT_MAX_CONCURRENT = SUBAGENT_BACKGROUND_MAX_CONCURRENT;
@@ -407,7 +410,8 @@ export class AgentManager {
       }
       this.resumeInFlight.add(id);
       try {
-        await this.continueRecord(live, prompt, request.signal, "live", request.target, request.persist);
+        const outcome = await this.continueRecord(live, prompt, request.signal, "live", request.target, request.persist);
+        if (!outcome.ok) return this.resumeFailure(id, outcome.reason, outcome.error, live);
         return { status: "resumed_live", id };
       } finally {
         this.resumeInFlight.delete(id);
@@ -439,7 +443,13 @@ export class AgentManager {
           throw new SessionRestoreError("persistence_failed", "Failed to persist running restored generation");
         }
       }
-      await this.continueRecord(record, prompt, request.signal, "restored", target, request.persist);
+      const outcome = await this.continueRecord(record, prompt, request.signal, "restored", target, request.persist);
+      if (!outcome.ok) {
+        pandaWarn("subagent.restore.failed", {
+          id, parent: request.parentSessionId, session: sessionLabel, status: target.state.status, reason: outcome.reason, elapsed: Date.now() - restoreStartedAt,
+        });
+        return this.resumeFailure(id, outcome.reason, outcome.error, record);
+      }
       pandaWarn("subagent.restore.succeeded", {
         id, parent: request.parentSessionId, session: sessionLabel, status: record.status, elapsed: Date.now() - restoreStartedAt,
       });
@@ -525,7 +535,7 @@ export class AgentManager {
     source: "live" | "restored",
     target?: ResumeTargetV1,
     persist?: AgentRestoreRequest["persist"],
-  ): Promise<void> {
+  ): Promise<ContinueOutcome> {
     record.abortController = new AbortController();
     record.run?.publish({ kind: "resumed", source, startedAt: Date.now() });
     const continuation = resumeAgent(record.session!, prompt, {
@@ -535,18 +545,33 @@ export class AgentManager {
       },
       signal,
     })
-      .then((responseText) => {
-        const finalResult = responseText.trim() || getRecoveredResultText({ ...record, status: "completed" });
+      .then((result): ContinueOutcome => {
+        // Legacy callers/mocks may still resolve resumeAgent with a bare string; treat it as a
+        // successful turn. Production always returns the discriminated ResumeOutcome.
+        const outcome: ResumeOutcome = typeof result === "string" ? { ok: true, text: result } : result;
+        if (!outcome.ok) {
+          // Empty/failed RESOLVED turn: publish a real failure so resume() reports it to the tool
+          // and never echoes the prior summary. record.status becomes error BEFORE the persist
+          // below, so the durable target is never written as a forced-completed generation.
+          const finalError = "Resumed turn produced no fresh output";
+          const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
+          record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
+          return { ok: false, reason: "runtime_initialization_failed", error: finalError };
+        }
+        const finalResult = outcome.text.trim() || getRecoveredResultText({ ...record, status: "completed" });
         record.run?.publish({ kind: "completed", result: finalResult, status: "completed" });
-        return responseText;
+        return { ok: true };
       })
-      .catch((error) => {
+      .catch((error): ContinueOutcome => {
         const finalError = error instanceof Error ? error.message : String(error);
         const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
         record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
-        return "";
+        // A THROWN resume is the pre-existing run-failure path: publish the failure but keep the
+        // legacy resumed_live/restored_session return. Only an empty/aborted RESOLVED turn surfaces
+        // to the tool as failed.
+        return { ok: true };
       })
-      .then(async (responseText) => {
+      .then(async (outcome): Promise<ContinueOutcome> => {
         if (target && persist) {
           try {
             await persist(target, record);
@@ -554,10 +579,10 @@ export class AgentManager {
             throw new SessionRestoreError("persistence_failed", "Failed to persist terminal restored generation");
           }
         }
-        return responseText;
+        return outcome;
       });
-    record.promise = continuation;
-    await continuation;
+    record.promise = continuation.then(() => "", () => "");
+    return await continuation;
   }
 
   getRecord(id: string): AgentRecord | undefined {

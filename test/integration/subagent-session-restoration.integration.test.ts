@@ -330,4 +330,26 @@ describe.sequential("subagent session restoration — integration", () => {
 		expect(faux.contexts[1]).toContain(secondPrompt);
 		expect(faux.contexts[1]).not.toContain(firstPrompt);
 	});
+
+	it("empty resumed turn surfaces as failure and never echoes the prior summary (issue #10 secondary defect)", async () => {
+		await createIsolatedSession();
+		const faux = nativeFauxHandle();
+		const firstPrompt = "Remember sentinel RESUME-STALE-42.";
+		faux.appendResponse("Completed: stored RESUME-STALE-42 summary.");
+		const firstResult = await invokeAgent("Start stale-resume probe", agentParams(firstPrompt));
+		const id = agentIdFrom(firstResult);
+		expect(manager!.getRecord(id)?.status).toBe("completed");
+
+		// Resume with a NEW correction, but the resumed turn produces no fresh output.
+		// Today resumeAgent falls back to getLastAssistantText and echoes the prior
+		// COMPLETED summary as a false-positive resumed_live success (the confirmed
+		// defect from archived session 019f6f3e). The fix must surface a failure and
+		// never return the stale summary.
+		const correction = "Second verification REJECT: apply the correction now.";
+		faux.appendResponse("");
+		const resumedResult = await invokeAgent("Resume stale-resume probe", agentParams(correction, id));
+
+		expect(resumedResult.text).not.toContain("stored RESUME-STALE-42 summary");
+		expect(invocationDetails(resumedResult).invocationStatus).toBe("failed");
+	});
 });

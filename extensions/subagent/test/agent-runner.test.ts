@@ -322,11 +322,63 @@ describe("agent-runner final output capture", () => {
     expect(createAgentSession).not.toHaveBeenCalled();
   });
 
-  it("resumeAgent also falls back to the final assistant message text", async () => {
+  it("resumeAgent returns fresh appended text as an ok outcome", async () => {
+    // createSession starts from an empty history and appends the assistant text on prompt,
+    // so "RESUMED" is a legitimate new message from the resumed turn (snapshot-bounded).
     const { session } = createSession("RESUMED");
 
     const result = await resumeAgent(session as unknown as AgentSession, "Continue");
 
-    expect(result).toBe("RESUMED");
+    expect(result).toEqual({ ok: true, text: "RESUMED" });
+  });
+});
+
+describe("resumeAgent staleness (issue #10 secondary defect)", () => {
+  // Repro of the confirmed stale Agent(resume) defect (archived Hou Tu session
+  // 019f6f3e, resume #2 == #3 byte-identical COMPLETED summaries). The agent
+  // already completed once (prior summary in history); a resume whose turn
+  // yields NO fresh usable output must NOT echo the prior assistant summary as
+  // a false-positive success. Today resumeAgent returns it via
+  // getLastAssistantText scanning back over history.
+  function createResumedSession(priorText: string, mode: "empty-error" | "no-message") {
+    const session = {
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: priorText }], stopReason: "stop" },
+      ] as AgentSession["messages"],
+      subscribe: vi.fn(() => () => {}),
+      prompt: vi.fn(async () => {
+        if (mode === "empty-error") {
+          // pi-agent-core handleRunFailure swallow: empty-text assistant msg, error stop.
+          session.messages.push({
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+          } as AgentSession["messages"][number]);
+        }
+        // mode "no-message": resumed turn appends nothing at all.
+      }),
+      abort: vi.fn(),
+      steer: vi.fn(),
+      getActiveToolNames: vi.fn(() => ["read"]),
+      setActiveToolsByName: vi.fn(),
+      bindExtensions: vi.fn(async () => {}),
+    };
+    return session;
+  }
+
+  it("Case A: swallowed failed turn (empty-text error msg) must not echo the prior summary", async () => {
+    const session = createResumedSession("PRIOR SUMMARY", "empty-error");
+
+    const result = await resumeAgent(session as unknown as AgentSession, "Second verification REJECT, PLAN 3: fix v1 exclusivity");
+
+    expect(result).not.toBe("PRIOR SUMMARY");
+  });
+
+  it("Case B: resumed turn that appends no message must not echo the prior summary", async () => {
+    const session = createResumedSession("PRIOR SUMMARY", "no-message");
+
+    const result = await resumeAgent(session as unknown as AgentSession, "Second verification REJECT, PLAN 3: fix v1 exclusivity");
+
+    expect(result).not.toBe("PRIOR SUMMARY");
   });
 });
