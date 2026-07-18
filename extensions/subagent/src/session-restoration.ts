@@ -312,7 +312,10 @@ function confinedPath(target: ResumeTargetV1): { file: string; dir: string } {
   } catch {
     fail("scope_mismatch", "Persisted session directory is unavailable");
   }
-  if (dir !== target.sessionDir) fail("scope_mismatch", "Persisted session directory is not canonical");
+  // A symlinked ANCESTOR (e.g. macOS /var -> /private/var, or a symlinked HOME / PI_CODING_AGENT_DIR)
+  // is benign: confinement is enforced below on the realpath'd pair (dirname(file) === dir), which
+  // still rejects any session file that is a symlink escaping its recorded directory. Do not re-add a
+  // "stored path must equal its own realpath" check here — it breaks legitimate symlinked dirs.
   if (!existsSync(target.sessionFile)) fail("session_file_missing", "Persisted child session is missing");
   let file: string;
   try {
@@ -321,7 +324,7 @@ function confinedPath(target: ResumeTargetV1): { file: string; dir: string } {
     fail("session_file_missing", "Persisted child session is unavailable");
   }
   const rel = relative(dir, file);
-  if (file !== target.sessionFile || !rel || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel) || dirname(file) !== dir) {
+  if (!rel || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel) || dirname(file) !== dir) {
     fail("scope_mismatch", "Session file is outside its recorded directory or uses a symlink");
   }
   return { file, dir };

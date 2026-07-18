@@ -18,6 +18,7 @@ import { resolveAgentInvocationConfig } from "../invocation-config.js";
 import { resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
+import { pandaWarn } from "../../../lib/warn.js";
 import { localUriHint } from "../local-uri-hint.js";
 import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycle/supervision.js";
 import { buildAgentToolDescription } from "../agent-tool-description.js";
@@ -747,7 +748,15 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           }
           if (rec) {
             queueMicrotask(() => {
-              void rec.promise?.then(() => persistFreshResumeTarget(rec)).catch(() => undefined);
+              void rec.promise?.then(() => persistFreshResumeTarget(rec)).catch((error) => {
+                // Best-effort background persist: the agent already ran, so never fail the spawn — but
+                // never swallow silently either (a swallowed capture failure hid the resume-target bug).
+                pandaWarn("subagent.recovery.persist-failed", {
+                  id: rec.id,
+                  phase: "background-capture",
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              });
             });
           }
         };
