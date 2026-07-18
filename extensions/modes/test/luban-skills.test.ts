@@ -48,7 +48,7 @@ const expectedSupportAssets = [
 	"systematic-debugging/test-pressure-3.md",
 	"test-driven-development/testing-anti-patterns.md",
 	"using-superpowers/references/antigravity-tools.md",
-	"using-superpowers/references/claude-code-tools.md",
+	"using-superpowers/references/codex-tools.md",
 	"writing-plans/plan-document-reviewer-prompt.md",
 	"writing-skills/anthropic-best-practices.md",
 	"writing-skills/examples/CLAUDE_MD_TESTING.md",
@@ -138,8 +138,8 @@ describe("Luban mode-owned skills", () => {
 	it("records full upstream provenance and license", () => {
 		const upstream = readFileSync(join(lubanRoot, "UPSTREAM.md"), "utf8");
 		expect(upstream).toContain("https://github.com/obra/superpowers");
-		expect(upstream).toContain("6.0.3");
-		expect(upstream).toContain("896224c4b1879920ab573417e68fd51d2ccc9072");
+		expect(upstream).toContain("6.1.1");
+		expect(upstream).toContain("d884ae04edebef577e82ff7c4e143debd0bbec99");
 		expect(upstream).toContain("MIT");
 
 		const license = readFileSync(join(lubanRoot, "LICENSE"), "utf8");

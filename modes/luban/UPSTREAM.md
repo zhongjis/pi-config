@@ -1,6 +1,6 @@
 # Superpowers Snapshot
 
 - Source: https://github.com/obra/superpowers
-- Version: 6.0.3
-- Commit: 896224c4b1879920ab573417e68fd51d2ccc9072
+- Version: 6.1.1
+- Commit: d884ae04edebef577e82ff7c4e143debd0bbec99
 - License: MIT; see `LICENSE` (Copyright (c) 2025 Jesse Vincent)
