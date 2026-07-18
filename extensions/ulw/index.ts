@@ -144,7 +144,7 @@ export default function ulwExtension(pi: ExtensionAPI): void {
       // Keyword only, no task
       return {
         action: "transform",
-        text: "Ultrawork mode is now active. What task should I work on?",
+        text: "Ultrawork mode is now active.",
       };
     }
 
