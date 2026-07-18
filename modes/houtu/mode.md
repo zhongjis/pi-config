@@ -79,7 +79,7 @@ Agent(subagent_type="chengfeng", run_in_background: true, ...)
 <delegation_system>
 ## How to Delegate
 
-Delegate one bounded plan task with `Agent(subagent_type=…)`: one domain, one deliverable, usually no more than three expected product files. Split broader state/API/UI/tests/docs/git work unless tightly coupled. If kept coupled, require staged checkpoints, a tool-call/turn ceiling, and a fail-safe that preserves the last green state.
+Delegate one bounded plan task per `Agent(subagent_type=…)` session — one domain and one deliverable, as the plan already sized it. Do not re-split a plan item into separate delegations. A plan item too large for one session runs as one resumable worker session (staged checkpoints, a tool-call/turn ceiling, a fail-safe preserving the last green state) and is continued in place with `Agent(resume)` until its whole requirement verifies.
 
 Routing:
 - `jintong`: bounded standard non-UI implementation/debug/test.
@@ -129,7 +129,7 @@ Every `Agent` prompt MUST include all six sections:
 [What previous tasks built that this one relies on.]
 ```
 
-The prompt must be complete and self-contained — everything a stateless worker needs and nothing it does not. Completeness is the target, not a line count. Tell workers to stop before edits and propose a split if scope exceeds one bounded deliverable. For `yunu`, reference its preloaded `impeccable` router; never hardcode skill paths.
+The prompt must be complete and self-contained — everything a stateless worker needs and nothing it does not. Completeness is the target, not a line count. Tell workers to stop and ask only when a task is genuinely ambiguous; a worker that runs long stops at its last green state and reports a resume anchor as `BLOCKED`, never reporting partial work as complete. For `yunu`, reference its preloaded `impeccable` router; never hardcode skill paths.
 </delegation_system>
 
 <auto_continue>

@@ -158,9 +158,9 @@ Implementation plus focused tests may share one todo only when both verify the s
 
 ### Worker sizing and recoverability
 
-One todo is one domain, one deliverable, and usually no more than three expected product files. Split state, API, UI, tests, docs, and git unless tightly coupled and covered by one focused verification command. Route standard non-UI implementation/debug/test work to `jintong`, complex or higher-risk non-UI work to `juling`, frontend/UI/browser work to `yunu`, and truly tiny single-file work to `guangguang` when authorized.
+One todo is one domain and one deliverable; implementation plus its focused tests are one todo. Target 5-8 todos per wave; split state, API, UI, tests, docs, and git by domain or coupling, not by a fixed file count, unless tightly coupled and covered by one focused verification command. Route standard non-UI implementation/debug/test work to `jintong`, complex or higher-risk non-UI work to `juling`, frontend/UI/browser work to `yunu`, and truly tiny single-file work to `guangguang` when authorized.
 
-If a todo would exceed roughly 60 worker tool calls, exceed its realistic turn budget, or force one worker to juggle concerns, split it. Tight coupling is not a waiver. Any larger indivisible todo must define ordered substeps, at least one green checkpoint, an explicit turn/tool-call ceiling, and this fail-safe: stop at the last green state, leave the tree unbroken, and report an exact resume anchor.
+If a todo would exceed roughly 60 worker tool calls, exceed its realistic turn budget, or force one worker to juggle concerns, split it into separate worker-sized todos at plan time. Tight coupling is not a waiver. A larger indivisible todo instead runs as one resumable worker session: define ordered substeps, at least one green checkpoint, an explicit turn/tool-call ceiling, and this fail-safe — stop at the last green state, leave the tree unbroken, and report an exact resume anchor.
 
 ### Final Verification Wave (after ALL implementation todos)
 

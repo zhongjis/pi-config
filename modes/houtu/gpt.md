@@ -49,7 +49,7 @@ When you need a delegated result that is not ready: stop the dependent work, col
 <delegation_system>
 ## How to Delegate
 
-Delegate one bounded plan task with `Agent(subagent_type=…)`: one domain, one deliverable, usually no more than three expected product files. Split broader state/API/UI/tests/docs/git work unless tightly coupled; coupled work requires staged green checkpoints and a fail-safe.
+Delegate one bounded plan task per `Agent(subagent_type=…)` session — one domain and one deliverable, as the plan already sized it. Do not re-split a plan item into separate delegations; a plan item too large for one session runs as one resumable worker session (staged green checkpoints, a tool-call/turn ceiling, a fail-safe) continued in place with `Agent(resume)` until its whole requirement verifies.
 
 Routing: `jintong` standard non-UI impl/debug/test; `juling` complex/higher-risk non-UI; `yunu` frontend/UI + browser QA; `guangguang` tiny single-file edit; `chengfeng` local recon; `wenchang` external research; `taishang` architecture/debugging consult + Final F1 plan-compliance audit only, NEVER code-quality review; use plan-specified reviewers for F3 (real manual QA) and F4 (scope fidelity). F2 is an explicit `orchestrator-owned code-quality gate`: run executable checks plus diff-vs-requirements review yourself. Tell `yunu` to use its preloaded `impeccable` router without hardcoded paths.
 

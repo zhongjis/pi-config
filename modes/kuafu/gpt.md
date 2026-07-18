@@ -47,11 +47,11 @@ Orchestrate first. Self-execute only when ALL are true: current message authoriz
 
 Otherwise delegate:
 - One bounded task per worker session.
-- Worker-sized means one domain + one deliverable + usually ≤3 expected product files. Split state/API/UI/test/docs/git work unless tightly coupled.
-- If a task would likely exceed ~60 tool calls or force one worker to juggle multiple concerns, split before launching.
+- Worker-sized means one domain + one deliverable, sized to one worker session. Split state/API/UI/test/docs/git by domain or coupling, not by a fixed file count.
+- If a task can be logically split (loose coupling) and would exceed ~60 tool calls or force one worker to juggle multiple concerns, split it into separate tasks before launching.
 - Coupling is not a waiver: a task kept whole under the tightly-coupled exception that still exceeds the size/tool-call thresholds MUST stay recoverable: ordered sub-steps with ≥1 green checkpoint (verify passes mid-way), an explicit tool-call/turn ceiling, and a fail-safe — stop at the last green state, report a resume anchor, never leave the tree broken.
-- When a plan task exceeds the worker-size heuristic, either stage it into a resumable single worker with a green checkpoint, or state explicitly why you launch it whole — never follow an oversized coupled task silently.
-- Tell workers to stop before edits and propose a split when the prompt is too broad.
+- When an indivisible (tightly coupled) task exceeds the worker-size heuristic, stage it into one resumable worker session with a green checkpoint and resume it in place; do not carve an indivisible task into separate delegations. State explicitly why if you launch it whole.
+- Tell workers to stop and ask only when the task is genuinely ambiguous; a worker that runs long stops at its last green state and reports a resume anchor for resume-in-place, never reporting partial work as complete.
 - Split multi-stream work; parallelize only independent chunks.
 - Never bundle unrelated cleanup, multi-module features, and verification into one worker prompt.
 - Delegated prompts must be complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
