@@ -57,11 +57,28 @@ function fixture(entries?: unknown[]) {
   return { root, file, rows, target, runtime };
 }
 
+function appendRows(file: string, rows: unknown[]): void {
+  writeFileSync(file, `${readFileSync(file, "utf8")}${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+}
+
 function managerFor(target: ResumeTargetV1, leaf = target.activeLeafId) {
   return {
     getSessionId: () => target.childSessionId,
     getEntries: () => Array(target.entryCount).fill({}),
     getLeafId: () => leaf,
+  };
+}
+
+function managerForFile(target: ResumeTargetV1) {
+  const entries = () => readFileSync(target.sessionFile, "utf8")
+    .trimEnd()
+    .split("\n")
+    .slice(1)
+    .map((line) => JSON.parse(line) as { id: string });
+  return {
+    getSessionId: () => target.childSessionId,
+    getEntries: () => entries(),
+    getLeafId: () => entries().at(-1)?.id ?? null,
   };
 }
 
@@ -97,6 +114,46 @@ describe("strict read-only persisted child session preflight", () => {
     expect(validated.activeLeafId).toBe("leaf");
     expect(readFileSync(file)).toEqual(before);
     expect(readdirSync(root).sort()).toEqual(files);
+  });
+
+  it("accepts only a direct well-formed session_info suffix for a completed snapshot", () => {
+    const data = fixture();
+    const title = {
+      type: "session_info", id: "title", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", name: "Completed probe",
+    };
+    appendRows(data.file, [title]);
+
+    const validated = validatePersistedChildSession(data.target);
+
+    expect(validated).toMatchObject({
+      entryCount: data.target.entryCount + 1,
+      activeLeafId: "title",
+      sessionSha256: stableSha256(readFileSync(data.file)),
+      reconciledDescendant: true,
+    });
+  });
+
+  it("authenticates the exact stored raw prefix before accepting terminal metadata", () => {
+    const data = fixture();
+    const tampered = readFileSync(data.file, "utf8").replace('"text":"done"', '"text":"fake"');
+    writeFileSync(data.file, tampered);
+    appendRows(data.file, [{
+      type: "session_info", id: "title", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", name: "Probe",
+    }]);
+
+    expectValidationReason(data.target, "session_corrupt_or_unsupported");
+  });
+
+  it.each([
+    ["malformed session_info", { type: "session_info", id: "suffix", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", name: 7 }],
+    ["branched session_info", { type: "session_info", id: "suffix", parentId: "think", timestamp: "2026-01-01T00:00:04Z", name: "Probe" }],
+    ["terminal custom", { type: "custom", id: "suffix", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", customType: "agent-mode", data: {} }],
+    ["terminal message", { type: "message", id: "suffix", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [], stopReason: "stop" } }],
+  ] as const)("rejects %s suffixes for completed snapshots", (_name, suffix) => {
+    const data = fixture();
+    appendRows(data.file, [suffix]);
+
+    expectValidationReason(data.target, "session_corrupt_or_unsupported");
   });
 
   it("rejects missing and empty files", () => {
@@ -205,6 +262,56 @@ describe("active-branch interruption and runtime safety", () => {
   });
 });
 
+describe("authenticated running descendants", () => {
+  it("accepts a direct safe execution descendant and returns its current snapshot", () => {
+    const data = fixture();
+    data.target.state.status = "running";
+    appendRows(data.file, [{
+      type: "message", id: "next", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z",
+      message: { role: "assistant", content: [{ type: "text", text: "continued" }], stopReason: "stop" },
+    }]);
+
+    const validated = validatePersistedChildSession(data.target);
+
+    expect(validated).toMatchObject({
+      entryCount: data.target.entryCount + 1,
+      activeLeafId: "next",
+      sessionSha256: stableSha256(readFileSync(data.file)),
+      reconciledDescendant: true,
+    });
+  });
+
+  it("rejects running descendants with a tampered prefix or nonlinear suffix", () => {
+    const tampered = fixture();
+    tampered.target.state.status = "running";
+    writeFileSync(tampered.file, readFileSync(tampered.file, "utf8").replace('"text":"done"', '"text":"fake"'));
+    appendRows(tampered.file, [{
+      type: "message", id: "next", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z",
+      message: { role: "assistant", content: [], stopReason: "stop" },
+    }]);
+    expectValidationReason(tampered.target, "session_corrupt_or_unsupported");
+
+    const branched = fixture();
+    branched.target.state.status = "running";
+    appendRows(branched.file, [{
+      type: "message", id: "next", parentId: "think", timestamp: "2026-01-01T00:00:04Z",
+      message: { role: "assistant", content: [], stopReason: "stop" },
+    }]);
+    expectValidationReason(branched.target, "session_corrupt_or_unsupported");
+  });
+
+  it("keeps interrupted running descendants unsafe", () => {
+    const data = fixture();
+    data.target.state.status = "running";
+    appendRows(data.file, [{
+      type: "message", id: "next", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z",
+      message: { role: "user", content: "unfinished" },
+    }]);
+
+    expectValidationReason(data.target, "unsafe_interrupted_operation");
+  });
+});
+
 describe("cooperative restore locking and safe open", () => {
   it("opens only after validation, verifies manager state, binds, and removes owned lock", async () => {
     const data = fixture();
@@ -220,6 +327,56 @@ describe("cooperative restore locking and safe open", () => {
     expect(order).toEqual(["open", "create", "bind"]);
     expect(readdirSync(data.root)).toEqual(["child.jsonl"]);
   });
+
+  it("reconciles a trusted linear custom entry appended during bind", async () => {
+    const data = fixture();
+    const manager = managerForFile(data.target);
+    const session = { sessionManager: manager, dispose: vi.fn() };
+
+    const restored = await restoreAgentSession({
+      target: data.target,
+      runtime: data.runtime,
+      sessionManagerOpen: (() => manager) as never,
+      createSession: async () => session as never,
+      bindAndApplyPolicy: async () => appendRows(data.file, [{
+        type: "custom", id: "mode", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z",
+        customType: "agent-mode", data: { mode: "probe" },
+      }]),
+    });
+
+    expect(restored).toBe(session);
+    expect(manager.getEntries()).toHaveLength(data.target.entryCount + 1);
+    expect(manager.getLeafId()).toBe("mode");
+    expect(session.dispose).not.toHaveBeenCalled();
+  });
+
+  it.each(["prefix mutation", "branched append", "manager-file divergence"] as const)(
+    "fails closed and disposes once when bind causes %s",
+    async (failure) => {
+      const data = fixture();
+      const manager = managerForFile(data.target);
+      const session = { sessionManager: manager, dispose: vi.fn() };
+
+      await expect(restoreAgentSession({
+        target: data.target,
+        runtime: data.runtime,
+        sessionManagerOpen: (() => manager) as never,
+        createSession: async () => session as never,
+        bindAndApplyPolicy: async () => {
+          if (failure === "prefix mutation") {
+            writeFileSync(data.file, readFileSync(data.file, "utf8").replace('"text":"done"', '"text":"fake"'));
+          }
+          appendRows(data.file, [{
+            type: "custom", id: "mode", parentId: failure === "branched append" ? "think" : "leaf",
+            timestamp: "2026-01-01T00:00:04Z", customType: "agent-mode", data: { mode: "probe" },
+          }]);
+          if (failure === "manager-file divergence") manager.getEntries = () => [];
+        },
+      })).rejects.toEqual(expect.objectContaining({ reason: "runtime_initialization_failed" }));
+
+      expect(session.dispose).toHaveBeenCalledOnce();
+    },
+  );
 
   it("rejects a live owner lock before open", async () => {
     const data = fixture();

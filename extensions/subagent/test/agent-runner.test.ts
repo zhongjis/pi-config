@@ -60,7 +60,13 @@ vi.mock("../src/skill-loader.js", () => ({
   preloadSkills: vi.fn(() => []),
 }));
 
-import { prepareAgentRestoreRuntime, resumeAgent, runAgent } from "../src/agent-runner.js";
+import {
+  bindAndApplyAgentSessionPolicy,
+  createUnboundAgentSessionRuntime,
+  prepareAgentRestoreRuntime,
+  resumeAgent,
+  runAgent,
+} from "../src/agent-runner.js";
 import type { ResumeTargetV1 } from "../src/types.js";
 
 type MockExtensionContext = Pick<ExtensionContext, "cwd" | "model" | "modelRegistry" | "getSystemPrompt" | "sessionManager">;
@@ -384,6 +390,34 @@ describe("agent-runner final output capture", () => {
 
     expect(session.setActiveToolsByName).toHaveBeenCalledWith(["read", "bash"]);
   });
+  it("creates an unbound session, then binds extensions and applies exact tool policy", async () => {
+    const { session } = createSession("PHASED", ["read", "bash", "readonly_bash"]);
+    createAgentSession.mockResolvedValue({ session });
+    const options = {
+      cwd: "/tmp",
+      agentDir: "/mock/agent-dir",
+      sessionManager: { kind: "opened-session-manager" },
+      settingsManager: { kind: "settings-manager" },
+      modelRegistry: ctx.modelRegistry,
+      model: undefined,
+      resourceLoader: {},
+      builtinToolNames: ["read"],
+      extensions: true as const,
+      extensionToolNames: ["readonly_bash"],
+    };
+
+    const unbound = await createUnboundAgentSessionRuntime(options as never);
+
+    expect(unbound).toBe(session);
+    expect(session.bindExtensions).not.toHaveBeenCalled();
+    expect(session.setActiveToolsByName).not.toHaveBeenCalled();
+
+    await bindAndApplyAgentSessionPolicy(unbound, options as never);
+
+    expect(session.bindExtensions).toHaveBeenCalledOnce();
+    expect(session.setActiveToolsByName).toHaveBeenCalledWith(["read", "readonly_bash"]);
+  });
+
   it("prepares exact runtime snapshot and rejects mismatch before session creation", async () => {
     const model = { provider: "provider", id: "model", api: "api" };
     const first = await prepareAgentRestoreRuntime(ctx, "Explore", {

@@ -172,7 +172,12 @@ export function compareRuntimeCompatibilitySnapshot(
   }
 }
 
-function strictJsonLines(bytes: Buffer): unknown[] {
+interface StrictJsonLines {
+  values: unknown[];
+  lineEnds: number[];
+}
+
+function strictJsonLines(bytes: Buffer): StrictJsonLines {
   if (bytes.length === 0) fail("session_corrupt_or_unsupported", "Session file is empty");
   let text: string;
   try {
@@ -185,8 +190,13 @@ function strictJsonLines(bytes: Buffer): unknown[] {
   if (lines.length === 0 || lines.some((line) => line.length === 0)) {
     fail("session_corrupt_or_unsupported", "Session file contains empty or missing JSONL entries");
   }
+  const lineEnds: number[] = [];
+  for (let index = 0; index < bytes.length; index++) {
+    if (bytes[index] === 0x0a) lineEnds.push(index + 1);
+  }
+  if (bytes.at(-1) !== 0x0a) lineEnds.push(bytes.length);
   try {
-    return lines.map((line) => JSON.parse(line));
+    return { values: lines.map((line) => JSON.parse(line)), lineEnds };
   } catch {
     fail("session_corrupt_or_unsupported", "Session file contains invalid JSONL");
   }
@@ -338,6 +348,28 @@ function validateCwd(cwd: string): void {
   }
 }
 
+function validateAuthenticatedSuffix(entries: SessionEntry[], target: ResumeTargetV1): boolean {
+  if (!Number.isSafeInteger(target.entryCount) || target.entryCount < 1 || entries.length < target.entryCount) {
+    fail("session_corrupt_or_unsupported", "Persisted child session has an invalid snapshot boundary");
+  }
+
+  const suffix = entries.slice(target.entryCount);
+  let parentId = target.activeLeafId;
+  for (const entry of suffix) {
+    if (entry.parentId !== parentId) {
+      fail("session_corrupt_or_unsupported", "Persisted child session suffix is not direct linear ancestry");
+    }
+    parentId = entry.id;
+  }
+  if (target.state.status !== "running" && suffix.some((entry) =>
+    entry.type !== "session_info" || typeof entry.timestamp !== "string" || !entry.timestamp ||
+    ("name" in entry && entry.name !== undefined && typeof entry.name !== "string")
+  )) {
+    fail("session_corrupt_or_unsupported", "Completed child session has unsupported trailing entries");
+  }
+  return suffix.length > 0;
+}
+
 export function validatePersistedChildSession(
   target: ResumeTargetV1,
   runtime: ResumeRuntimeSnapshot = target.runtime,
@@ -352,13 +384,20 @@ export function validatePersistedChildSession(
     fail("target_busy", "Persisted child session changed during validation");
   }
   const raw = strictJsonLines(bytes);
-  const entries = validateTree(raw, target, runtime);
+  const rawEntries = raw.values.slice(1);
+  if (rawEntries.length < target.entryCount) {
+    fail("session_corrupt_or_unsupported", "Persisted child session is shorter than its snapshot");
+  }
+  const rawBoundary = rawEntries[target.entryCount - 1];
+  const prefixEnd = raw.lineEnds[target.entryCount];
+  if (!isRecord(rawBoundary) || rawBoundary.id !== target.activeLeafId || prefixEnd === undefined ||
+      stableSha256(bytes.subarray(0, prefixEnd)) !== target.sessionSha256) {
+    fail("session_corrupt_or_unsupported", "Persisted child session prefix does not match its snapshot");
+  }
+  const entries = validateTree(raw.values, target, runtime);
+  const descendant = validateAuthenticatedSuffix(entries, target);
   const activeLeafId = entries.at(-1)!.id;
   const sessionSha256 = stableSha256(bytes);
-  const exact = entries.length === target.entryCount && activeLeafId === target.activeLeafId && sessionSha256 === target.sessionSha256;
-  const targetIndex = entries.findIndex((entry) => entry.id === target.activeLeafId);
-  const descendant = target.state.status === "running" && targetIndex >= 0 && entries.length > target.entryCount && targetIndex === target.entryCount - 1;
-  if (!exact && !descendant) fail("session_corrupt_or_unsupported", "Persisted child session no longer matches its snapshot");
   return {
     sessionFile: file,
     sessionDir: dir,
@@ -440,6 +479,43 @@ function revalidateBeforeOpen(validated: ValidatedChildSession): void {
   }
 }
 
+function reconcileAfterBind(
+  validated: ValidatedChildSession,
+  target: ResumeTargetV1,
+  runtime: ResumeRuntimeSnapshot,
+  manager: SessionManager,
+): void {
+  const before = statSync(validated.sessionFile);
+  const bytes = readFileSync(validated.sessionFile);
+  const after = statSync(validated.sessionFile);
+  if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ino !== after.ino) {
+    throw new Error("Restored session changed during post-bind reconciliation");
+  }
+  const raw = strictJsonLines(bytes);
+  const rawEntries = raw.values.slice(1);
+  const boundary = rawEntries[validated.entryCount - 1];
+  const prefixEnd = raw.lineEnds[validated.entryCount];
+  if (!isRecord(boundary) || boundary.id !== validated.activeLeafId || prefixEnd === undefined ||
+      stableSha256(bytes.subarray(0, prefixEnd)) !== validated.sessionSha256) {
+    throw new Error("Bind changed the authenticated pre-bind prefix");
+  }
+
+  const entries = validateTree(raw.values, target, runtime);
+  let parentId = validated.activeLeafId;
+  for (const entry of entries.slice(validated.entryCount)) {
+    if (entry.parentId !== parentId) throw new Error("Bind appended nonlinear session entries");
+    parentId = entry.id;
+  }
+  const currentLeafId = entries.at(-1)!.id;
+  const currentHash = stableSha256(bytes);
+  if (manager.getSessionId() !== target.childSessionId ||
+      manager.getEntries().length !== entries.length ||
+      manager.getLeafId() !== currentLeafId ||
+      stableSha256(readFileSync(validated.sessionFile)) !== currentHash) {
+    throw new Error("Bound session manager differs from reconciled session file");
+  }
+}
+
 export async function restoreAgentSession(options: RestoreAgentSessionOptions): Promise<AgentSession> {
   const key = resolve(options.target.sessionFile);
   if (inFlight.has(key)) fail("target_busy", "Persisted child session is already being restored");
@@ -464,6 +540,11 @@ export async function restoreAgentSession(options: RestoreAgentSessionOptions): 
       fail("runtime_initialization_failed", "Opened session differs from validated session");
     }
     await options.bindAndApplyPolicy?.(session);
+    try {
+      reconcileAfterBind(validated, options.target, options.runtime, openedManager);
+    } catch {
+      fail("runtime_initialization_failed", "Bound session differs from authenticated session");
+    }
     return session;
   } catch (error) {
     session?.dispose?.();

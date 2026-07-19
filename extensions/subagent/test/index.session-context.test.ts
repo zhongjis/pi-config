@@ -19,9 +19,12 @@ const agentTypeState = vi.hoisted<{
   isValidType: () => true,
 }));
 
-import { writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AgentRun, project } from "../src/agent-run.js";
 import type { AgentRecord, ResumeRuntimeSnapshot } from "../src/types.js";
+import { stableSha256 } from "../src/session-restoration.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const widgetInstances: MockAgentWidget[] = [];
@@ -1159,6 +1162,54 @@ describe("subagent session UI rebinding", () => {
     expect(text).toContain('Agent(resume: "fg-record-42")');
     expect(text).toContain("ACK");
     expect(result.details.agentId).toBe("fg-record-42");
+  });
+
+  it("persists validator-reconciled current metadata count, leaf, hash, and canonical paths", async () => {
+    const root = mkdtempSync(join(tmpdir(), "resume-target-capture-"));
+    const realDir = join(root, "real");
+    const linkedDir = join(root, "linked");
+    mkdirSync(realDir);
+    try {
+      const file = join(realDir, "child.jsonl");
+      const linkedFile = join(linkedDir, "child.jsonl");
+      writeFileSync(file, `${sessionJsonl}${JSON.stringify({
+        type: "session_info", id: "title", parentId: "leaf-1",
+        timestamp: "2026-01-01T00:00:04Z", name: "Completed probe",
+      })}\n`, { flag: "wx" });
+      symlinkSync(realDir, linkedDir, "dir");
+
+      const mock = createMockPi();
+      await initExtension(mock);
+      const manager = managerInstances[0]!;
+      const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: linkedFile };
+      const record = {
+        id: "captured-current", type: "general-purpose", description: "Capture current",
+        status: "completed", toolUses: 0, startedAt: Date.now(), completedAt: Date.now(), result: "done",
+        session, sessionFile: linkedFile, sessionDir: linkedDir, parentSessionId: "parent-session-1",
+      };
+      manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
+        options.onSessionCreated(session);
+        return record;
+      });
+
+      await mock.registeredTools.get("Agent").execute(
+        "tool-capture-current",
+        { prompt: "do it", description: "Capture current", subagent_type: "general-purpose" },
+        undefined, vi.fn(), createCtx(),
+      );
+
+      const persisted = mock.pi.appendEntry.mock.calls
+        .find(([customType]) => customType === "subagents:resume-target-v1")?.[1];
+      expect(persisted).toMatchObject({
+        sessionFile: realpathSync(file),
+        sessionDir: realpathSync(realDir),
+        entryCount: 4,
+        activeLeafId: "title",
+        sessionSha256: stableSha256(readFileSync(file)),
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("fails closed when foreground resume-target persistence fails", async () => {

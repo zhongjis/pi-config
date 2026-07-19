@@ -93,6 +93,7 @@ function installFixture(): { cwd: string; wrapperPath: string } {
 	const wrapperPath = path.join(wrapperDir, "subagent-native-faux.ts");
 	mkdirSync(cwd, { recursive: true });
 	mkdirSync(path.join(agentDir, "agents"), { recursive: true });
+	mkdirSync(path.join(agentDir, "extensions"), { recursive: true });
 	mkdirSync(wrapperDir, { recursive: true });
 	writeFileSync(
 		path.join(agentDir, "agents", `${AGENT_TYPE}.md`),
@@ -100,11 +101,21 @@ function installFixture(): { cwd: string; wrapperPath: string } {
 description: Deterministic session restoration probe
 prompt_mode: replace
 builtin_tools: read
-extensions: false
+extensions: true
 ---
 
 Answer only from this conversation.
 `,
+	);
+	writeFileSync(
+		path.join(agentDir, "extensions", "bind-mode.ts"),
+		`import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+export default function(pi: ExtensionAPI) {
+  pi.on("session_start", () => {
+    pi.appendEntry("agent-mode", { mode: "restoration-probe", delegationPolicy: { version: 1, allowDelegationTo: [], disallowDelegationTo: [] } });
+  });
+}
+		`,
 	);
 
 	let subagentImport = path.relative(wrapperDir, SUBAGENT_SOURCE).split(path.sep).join("/");
@@ -183,7 +194,6 @@ function agentParams(prompt: string, resume?: string): Record<string, unknown> {
 		description: "characterize persisted child context",
 		subagent_type: AGENT_TYPE,
 		model: `${FAUX_PROVIDER}/${FAUX_MODEL_ID}`,
-		isolated: true,
 		...(resume ? { resume } : {}),
 	};
 }
@@ -212,6 +222,16 @@ function sessionFileFor(id: string): string {
 	const sessionFile = manager?.getRecord(id)?.sessionFile;
 	if (!sessionFile) throw new Error("Agent record omitted sessionFile");
 	return sessionFile;
+}
+
+function appendLateTitle(sessionFile: string): void {
+	const rows = readFileSync(sessionFile, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+	const parentId = rows.at(-1)?.id;
+	if (typeof parentId !== "string") throw new Error("Child session has no leaf for title metadata");
+	writeFileSync(sessionFile, `${readFileSync(sessionFile, "utf8")}${JSON.stringify({
+		type: "session_info", id: `late-title-${Date.now()}`, parentId,
+		timestamp: new Date().toISOString(), name: "Restoration probe complete",
+	})}\n`);
 }
 
 async function emitProductionSessionStart(session: SessionLike): Promise<void> {
@@ -298,6 +318,7 @@ describe.sequential("subagent session restoration — integration", () => {
 		const childDir = path.dirname(sessionFile);
 		const filesBefore = readdirSync(childDir).sort();
 
+		appendLateTitle(sessionFile);
 		await emitProductionSessionStart(session);
 		expect(manager!.getRecord(id)).toBeUndefined();
 		const followUp = "Repeat the stale sentinel after cleanup.";
@@ -310,6 +331,35 @@ describe.sequential("subagent session restoration — integration", () => {
 		expect(faux.contexts).toHaveLength(2);
 		expect(faux.contexts[1]).toContain(firstPrompt);
 		expect(faux.contexts[1]).toContain(followUp);
+		const restoredRows = readFileSync(sessionFile, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+		expect(restoredRows.filter((row) => row.type === "session_info")).toHaveLength(1);
+		expect(restoredRows.filter((row) => row.type === "custom" && row.customType === "agent-mode").length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("rejects a tampered durable prefix without spawning or continuing", async () => {
+		const session = await createIsolatedSession();
+		const faux = nativeFauxHandle();
+		faux.appendResponse("Stored TAMPER-SENTINEL-31.");
+		const firstResult = await invokeAgent("Start tamper probe", agentParams("Remember TAMPER-SENTINEL-31."));
+		const id = agentIdFrom(firstResult);
+		const sessionFile = sessionFileFor(id);
+		const childDir = path.dirname(sessionFile);
+		const filesBefore = readdirSync(childDir).sort();
+
+		await emitProductionSessionStart(session);
+		expect(manager!.getRecord(id)).toBeUndefined();
+		writeFileSync(sessionFile, readFileSync(sessionFile, "utf8").replace("TAMPER-SENTINEL-31", "TAMPER-SENTINEL-XX"));
+
+		const result = await invokeAgent("Reject tampered restoration", agentParams("Continue", id));
+
+		expect(result.text).toContain("session_corrupt_or_unsupported");
+		expect(invocationDetails(result)).toMatchObject({
+			agentId: id, invocationStatus: "failed", failureReason: "session_corrupt_or_unsupported",
+		});
+		expect(faux.callCount()).toBe(1);
+		expect(faux.pendingResponses()).toBe(0);
+		expect(manager!.getRecord(id)).toBeUndefined();
+		expect(readdirSync(childDir).sort()).toEqual(filesBefore);
 	});
 
 	it("explicit fresh calls create independent child sessions", async () => {

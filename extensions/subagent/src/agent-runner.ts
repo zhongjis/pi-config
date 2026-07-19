@@ -268,8 +268,8 @@ export interface AgentSessionRuntimeOptions {
   onExtensionError?: (extensionPath: string) => void;
 }
 
-/** Shared fresh/open initialization: session construction, extension binding, exact tool policy. */
-export async function buildAgentSessionRuntime(options: AgentSessionRuntimeOptions): Promise<AgentSession> {
+/** Create an opened/fresh session without binding extensions or applying tool policy. */
+export async function createUnboundAgentSessionRuntime(options: AgentSessionRuntimeOptions): Promise<AgentSession> {
   const sessionOpts: NonNullable<Parameters<typeof createAgentSession>[0]> = {
     cwd: options.cwd,
     agentDir: options.agentDir,
@@ -281,6 +281,14 @@ export async function buildAgentSessionRuntime(options: AgentSessionRuntimeOptio
   };
   if (options.thinkingLevel) sessionOpts.thinkingLevel = options.thinkingLevel;
   const { session } = await createAgentSession(sessionOpts);
+  return session;
+}
+
+/** Bind extensions, then apply exact tool policy to an already-created session. */
+export async function bindAndApplyAgentSessionPolicy(
+  session: AgentSession,
+  options: AgentSessionRuntimeOptions,
+): Promise<void> {
   await session.bindExtensions({
     onError: (err) => options.onExtensionError?.(err.extensionPath),
   });
@@ -294,6 +302,12 @@ export async function buildAgentSessionRuntime(options: AgentSessionRuntimeOptio
     isolated: options.isolated,
   });
   session.setActiveToolsByName(activeTools);
+}
+
+/** Shared fresh initialization: construction, extension binding, exact tool policy. */
+export async function buildAgentSessionRuntime(options: AgentSessionRuntimeOptions): Promise<AgentSession> {
+  const session = await createUnboundAgentSessionRuntime(options);
+  await bindAndApplyAgentSessionPolicy(session, options);
   return session;
 }
 
@@ -384,27 +398,36 @@ export async function prepareAgentRestoreRuntime(
     activeToolNames,
   });
 
+  const runtimeOptions = (sessionManager: SessionManager): AgentSessionRuntimeOptions => ({
+    cwd: effectiveCwd,
+    agentDir,
+    sessionManager,
+    settingsManager,
+    modelRegistry: ctx.modelRegistry,
+    model,
+    resourceLoader,
+    thinkingLevel: options.thinkingLevel,
+    builtinToolNames: config.builtinToolNames,
+    extensions,
+    extensionToolNames: agentConfig.extensionToolNames,
+    allowNesting: agentConfig.allowNesting,
+    isolated: options.isolated,
+    onExtensionError: (extensionPath) => {
+      options.onToolActivity?.({ type: "end", toolName: `extension-error:${extensionPath}` });
+    },
+  });
+  let openedManager: SessionManager | undefined;
   return prepareAgentSessionRestore({
     target: options.target,
     runtime,
-    createSession: (sessionManager) => buildAgentSessionRuntime({
-      cwd: effectiveCwd,
-      agentDir,
-      sessionManager,
-      settingsManager,
-      modelRegistry: ctx.modelRegistry,
-      model,
-      resourceLoader,
-      thinkingLevel: options.thinkingLevel,
-      builtinToolNames: config.builtinToolNames,
-      extensions,
-      extensionToolNames: agentConfig.extensionToolNames,
-      allowNesting: agentConfig.allowNesting,
-      isolated: options.isolated,
-      onExtensionError: (extensionPath) => {
-        options.onToolActivity?.({ type: "end", toolName: `extension-error:${extensionPath}` });
-      },
-    }),
+    createSession: (sessionManager) => {
+      openedManager = sessionManager;
+      return createUnboundAgentSessionRuntime(runtimeOptions(sessionManager));
+    },
+    bindAndApplyPolicy: (session) => {
+      if (!openedManager) throw new Error("Restored session manager is unavailable");
+      return bindAndApplyAgentSessionPolicy(session, runtimeOptions(openedManager));
+    },
   });
 }
 

@@ -124,8 +124,15 @@ function captureResumeTarget(
       compactionCount: record.compactionCount ?? 0,
     },
   };
-  validatePersistedChildSession(target, runtime);
-  return target;
+  const validated = validatePersistedChildSession(target, runtime);
+  return {
+    ...target,
+    sessionFile: validated.sessionFile,
+    sessionDir: validated.sessionDir,
+    entryCount: validated.entryCount,
+    activeLeafId: validated.activeLeafId,
+    sessionSha256: validated.sessionSha256,
+  };
 }
 
 /**
