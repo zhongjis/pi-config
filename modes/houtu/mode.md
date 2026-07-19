@@ -231,10 +231,10 @@ A task is sequential ONLY if it has a NAMED blocking dependency:
 
 ```typescript
 // CORRECT: 4 independent tasks → 4 Agent calls in ONE response
-Agent(subagent_type="jintong", run_in_background: true, ...)  // task A
-Agent(subagent_type="jintong", run_in_background: true, ...)  // task B
-Agent(subagent_type="juling",  run_in_background: true, ...)  // task C
-Agent(subagent_type="yunu",    run_in_background: false, ...)  // task D, always have one task run in foreground so you do not idle waiting
+Agent(subagent_type="jintong", run_in_background: false, ...)  // task A
+Agent(subagent_type="jintong", run_in_background: false, ...)  // task B
+Agent(subagent_type="juling",  run_in_background: false, ...)  // task C
+Agent(subagent_type="yunu",    run_in_background: false, ...)  // task D
 
 // WRONG: the same 4 tasks dispatched one per turn 
 // You are wasting wall-clock and parallel capacity

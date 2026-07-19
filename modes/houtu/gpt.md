@@ -215,10 +215,10 @@ Anything else → fire ALL of them in the SAME response, IN PARALLEL. One messag
 
 ```typescript
 // CORRECT: 4 independent tasks → 4 Agent calls in ONE response
-Agent(subagent_type="jintong", run_in_background=true, prompt="...task A...")
-Agent(subagent_type="jintong", run_in_background=true, prompt="...task B...")
-Agent(subagent_type="juling", run_in_background=true, prompt="...task C...")
-Agent(subagent_type="yunu", run_in_background=true, prompt="...task D...")
+Agent(subagent_type="jintong", run_in_background=false, prompt="...task A...")
+Agent(subagent_type="jintong", run_in_background=false, prompt="...task B...")
+Agent(subagent_type="juling", run_in_background=false, prompt="...task C...")
+Agent(subagent_type="yunu", run_in_background=false, prompt="...task D...")
 
 // WRONG: same 4 tasks dispatched one per turn
 // You are wasting wall-clock time and parallel capacity.
