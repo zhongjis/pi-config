@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { registerAgents } from "../src/agent-types.js";
-import { renderAgentToolCall, renderAgentToolResult } from "../src/tools/agent.js";
+import { formatAgentFailureOutput, renderAgentToolCall, renderAgentToolResult } from "../src/tools/agent.js";
 import { renderGetSubagentResult, renderGetSubagentResultCall } from "../src/tools/get_subagent_result.js";
 import type { AgentDetails } from "../src/ui/agent-widget.js";
 
@@ -154,6 +154,63 @@ describe("Agent tool TUI rendering", () => {
     expect(colors).toContainEqual({ color: "toolOutput", text: "├─ reason: delegation_policy_denied" });
     expect(colors).toContainEqual({ color: "muted", text: "└─ app.tools.expand to expand full result" });
     expect(expanded).toBe(raw);
+  });
+
+  it("formats model-visible failures with error before labeled partial output", () => {
+    const text = formatAgentFailureOutput({
+      status: "error",
+      error: "provider stream failed",
+      result: "PARTIAL OUTPUT",
+      toolUses: 0,
+    });
+
+    expect(text).toBe(
+      "Agent failed: provider stream failed\n\n" +
+      "Partial output before the failure:\nPARTIAL OUTPUT",
+    );
+  });
+
+  it("formats synthesized recovery diagnostics unlabeled when result already matches recovery", () => {
+    const recovered = [
+      "Agent failed before producing a final answer.",
+      "Error: provider unavailable",
+      "Tool uses before exit: 3",
+      "Transcript file: /tmp/agent-output.jsonl",
+    ].join("\n\n");
+    const text = formatAgentFailureOutput({
+      status: "error",
+      error: "provider unavailable",
+      result: recovered,
+      toolUses: 3,
+      outputFile: "/tmp/agent-output.jsonl",
+    }, "\nSession log: child-session.jsonl", "\nHint: local:// is parent-scoped");
+
+    expect(text).toBe(
+      "Agent failed: provider unavailable\nSession log: child-session.jsonl\n\n" +
+      recovered +
+      "\nHint: local:// is parent-scoped",
+    );
+    expect(text).not.toContain("Partial output before the failure");
+  });
+
+  it("formats missing model-visible failures with computed recovery diagnostics unlabeled", () => {
+    const text = formatAgentFailureOutput({
+      status: "error",
+      error: "provider unavailable",
+      result: undefined,
+      toolUses: 3,
+      outputFile: "/tmp/agent-output.jsonl",
+    }, "\nSession log: child-session.jsonl", "\nHint: local:// is parent-scoped");
+
+    expect(text).toBe(
+      "Agent failed: provider unavailable\nSession log: child-session.jsonl\n\n" +
+      "Agent failed before producing a final answer.\n\n" +
+      "Error: provider unavailable\n\n" +
+      "Tool uses before exit: 3\n\n" +
+      "Transcript file: /tmp/agent-output.jsonl" +
+      "\nHint: local:// is parent-scoped",
+    );
+    expect(text).not.toContain("Partial output before the failure");
   });
 
   it("keeps terminal states concise when collapsed", () => {

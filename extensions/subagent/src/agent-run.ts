@@ -498,7 +498,7 @@ export class AgentRun {
  * so record stays consistent with the run (D2/D3b contract). Pure — no events,
  * no side effects.
  *
- * Fields projected: status, result, error, completedAt, startedAt.
+ * Fields projected: status, result, error, completedAt, startedAt, waiter/notification state.
  */
 export function project(run: AgentRun, record: AgentRecord): void {
   record.status = run.status;
@@ -510,4 +510,5 @@ export function project(run: AgentRun, record: AgentRecord): void {
   record.notified = run.notified;
   record.resumeSource = run.resumeSource;
   record.restoreFailureReason = run.restoreFailureReason;
+  record.waitingConsumers = run.waitingConsumers;
 }

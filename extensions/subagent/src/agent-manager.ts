@@ -22,7 +22,7 @@ export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
 
 /** Outcome of a resumed continuation, so resume() can branch success vs. real failure. */
-type ContinueOutcome = { ok: boolean; reason?: RestoreFailureReason; error?: string };
+type ContinueOutcome = { ok: true } | { ok: false; reason: RestoreFailureReason; error: string };
 
 /** Default max concurrent background agents. */
 const DEFAULT_MAX_CONCURRENT = SUBAGENT_BACKGROUND_MAX_CONCURRENT;
@@ -246,7 +246,7 @@ export class AgentManager {
         options.onSessionCreated?.(session);
       },
     })
-      .then(({ responseText, session, aborted, steered }) => {
+      .then(({ responseText, session, failure, aborted, steered }) => {
         record.session = session;
         // Read the stop discriminator once; AgentRun owns status past this point.
         const stopped = record.status === "stopped";
@@ -254,6 +254,7 @@ export class AgentManager {
           source: "settled",
           stopped,
           responseText,
+          failure,
           aborted,
           steered,
         });
@@ -302,7 +303,7 @@ export class AgentManager {
     ctx: ExtensionContext,
     description: string,
     outcome:
-      | { source: "settled"; stopped: boolean; responseText: string; aborted: boolean; steered: boolean }
+      | { source: "settled"; stopped: boolean; responseText: string; failure?: string; aborted: boolean; steered: boolean }
       | { source: "rejected"; stopped: boolean; error: unknown },
   ): void {
     // Flush any streaming output file (common to every terminal path).
@@ -321,14 +322,19 @@ export class AgentManager {
     }
 
     if (outcome.source === "settled") {
-      const finalStatus = outcome.aborted ? "aborted" : outcome.steered ? "steered" : "completed";
-      const base = outcome.responseText.trim() || getRecoveredResultText({ ...record, status: finalStatus });
-      const finalResult = base;
-      if (finalStatus === "completed" || finalStatus === "steered") {
-        record.run?.publish({ kind: "completed", result: finalResult, status: finalStatus });
-      } else {
+      const responseText = outcome.responseText.trim();
+      if (outcome.aborted) {
+        const finalResult = responseText || getRecoveredResultText({ ...record, status: "aborted" });
         record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns", result: finalResult });
+        return;
       }
+      if (outcome.failure) {
+        record.run?.publish({ kind: "failed", error: outcome.failure, result: responseText || undefined });
+        return;
+      }
+      const finalStatus = outcome.steered ? "steered" : "completed";
+      const finalResult = responseText || getRecoveredResultText({ ...record, status: finalStatus });
+      record.run?.publish({ kind: "completed", result: finalResult, status: finalStatus });
       return;
     }
 

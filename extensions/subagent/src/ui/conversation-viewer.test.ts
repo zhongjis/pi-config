@@ -1,28 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRecord } from "../types.js";
 
-// ── Mock wrapTextWithAnsi ──────────────────────────────────────────────
-// We need to control what wrapTextWithAnsi returns to simulate the
-// upstream bug (returning lines wider than requested width).
-// vi.mock is hoisted and intercepts before conversation-viewer.ts binds
-// its import.
-
+// Use pi-tui's real Unicode/ANSI width semantics while retaining one seam for
+// simulating upstream wrapTextWithAnsi regressions.
 let wrapOverride: ((text: string, width: number) => string[]) | null = null;
+const realTui = await import("../../../../node_modules/@earendil-works/pi-tui/dist/index.js");
 
-vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@earendil-works/pi-tui")>();
-  return {
-    ...original,
-    wrapTextWithAnsi: (...args: [string, number]) => {
-      if (wrapOverride) return wrapOverride(...args);
-      return original.wrapTextWithAnsi(...args);
-    },
-  };
-});
+vi.doMock("@earendil-works/pi-tui", () => ({
+  ...realTui,
+  wrapTextWithAnsi: (...args: [string, number]) => {
+    if (wrapOverride) return wrapOverride(...args);
+    return realTui.wrapTextWithAnsi(...args);
+  },
+}));
 
-// Must import AFTER vi.mock declaration (vitest hoists vi.mock but the
-// dynamic import of the test subject must happen after)
-const { visibleWidth } = await import("@earendil-works/pi-tui");
+const { visibleWidth } = realTui;
 const { ConversationViewer } = await import("./conversation-viewer.js");
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -232,6 +224,35 @@ describe("ConversationViewer", () => {
           mockTui(30, w), mockSession(messages), mockRecord(), undefined, ansiTheme(), vi.fn(),
         );
         assertAllLinesFit(viewer.render(w), w);
+      }
+    });
+
+    it("keeps bordered rows at exact width across narrow CJK boundaries", () => {
+      expect(visibleWidth("界")).toBe(2);
+
+      const cases = [
+        { label: "normal", description: "normal row" },
+        { label: "CJK", description: "界".repeat(24) },
+      ];
+
+      for (const { label, description } of cases) {
+        for (let width = 8; width <= 80; width++) {
+          const viewer = new ConversationViewer(
+            mockTui(30, width),
+            mockSession([]),
+            mockRecord({ description }),
+            undefined,
+            ansiTheme(),
+            vi.fn(),
+          );
+
+          for (const [lineIndex, line] of viewer.render(width).entries()) {
+            expect(
+              visibleWidth(line),
+              `${label} row ${lineIndex} at terminal width ${width}: ${JSON.stringify(line)}`,
+            ).toBe(width);
+          }
+        }
       }
     });
   });

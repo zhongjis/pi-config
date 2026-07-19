@@ -237,6 +237,64 @@ describe("AgentManager", () => {
       await manager.dispose();
     }
   });
+  it("publishes one failed terminal event for a resolved runner failure and preserves partial output", async () => {
+    const session = { steer: vi.fn(), abort: vi.fn(), dispose: vi.fn() } as any;
+    runAgentMock.mockResolvedValue({
+      responseText: "PARTIAL OUTPUT",
+      session,
+      aborted: false,
+      steered: false,
+      failure: "provider stream failed",
+    });
+    const manager = new AgentManager();
+
+    try {
+      const record = await manager.spawnAndWait(
+        {} as any,
+        { cwd: process.cwd() } as any,
+        "general-purpose",
+        "Test prompt",
+        { description: "provider failure" },
+      );
+
+      expect(record.status).toBe("error");
+      expect(record.error).toBe("provider stream failed");
+      expect(record.result).toBe("PARTIAL OUTPUT");
+      expect(record.run?.events().filter(event => event.kind === "failed")).toHaveLength(1);
+      expect(record.run?.events().some(event => event.kind === "completed")).toBe(false);
+    } finally {
+      await manager.dispose();
+    }
+  });
+
+  it("keeps hard-abort precedence over a resolved runner failure", async () => {
+    const session = { steer: vi.fn(), abort: vi.fn(), dispose: vi.fn() } as any;
+    runAgentMock.mockResolvedValue({
+      responseText: "PARTIAL OUTPUT",
+      session,
+      aborted: true,
+      steered: true,
+      failure: "provider stream failed",
+    });
+    const manager = new AgentManager();
+
+    try {
+      const record = await manager.spawnAndWait(
+        {} as any,
+        { cwd: process.cwd() } as any,
+        "general-purpose",
+        "Test prompt",
+        { description: "hard abort" },
+      );
+
+      expect(record.status).toBe("aborted");
+      expect(record.run?.events().filter(event => event.kind === "aborted")).toHaveLength(1);
+      expect(record.run?.events().some(event => event.kind === "failed")).toBe(false);
+    } finally {
+      await manager.dispose();
+    }
+  });
+
 });
 
 describe("AgentManager.clearCompleted", () => {

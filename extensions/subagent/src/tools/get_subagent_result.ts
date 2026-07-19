@@ -177,14 +177,22 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
       }
       record.lastPolledAt = Date.now();
       // Wait for completion if requested, but keep a supervision window instead of a blind block.
-      if (params.wait && record.status === "running" && record.promise) {
-        record.waitingConsumers = (record.waitingConsumers ?? 0) + 1;
+      if (params.wait && (record.status === "running" || record.status === "queued")) {
+        if (record.run) {
+          record.run.publish({ kind: "waiter", delta: 1 });
+        } else {
+          record.waitingConsumers = (record.waitingConsumers ?? 0) + 1;
+        }
         try {
           const waitSignal = getAbortSignal(ctx) ?? signal;
           bindTurnAbortSignal(waitSignal);
           await waitForAgentCompletionWithSupervision(record, waitSignal);
         } finally {
-          record.waitingConsumers = Math.max(0, (record.waitingConsumers ?? 1) - 1);
+          if (record.run) {
+            record.run.publish({ kind: "waiter", delta: -1 });
+          } else {
+            record.waitingConsumers = Math.max(0, (record.waitingConsumers ?? 1) - 1);
+          }
         }
       }
 

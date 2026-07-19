@@ -65,7 +65,11 @@ import type { ResumeTargetV1 } from "../src/types.js";
 
 type MockExtensionContext = Pick<ExtensionContext, "cwd" | "model" | "modelRegistry" | "getSystemPrompt" | "sessionManager">;
 
-function createSession(finalText: string, activeToolNames = ["read"]) {
+function createSession(
+  finalText: string,
+  activeToolNames = ["read"],
+  terminal: { stopReason?: string; errorMessage?: string; content?: unknown[] } = {},
+) {
   const listeners: Array<(event: AgentSessionEvent) => void> = [];
   const session = {
     messages: [] as AgentSession["messages"],
@@ -76,7 +80,9 @@ function createSession(finalText: string, activeToolNames = ["read"]) {
     prompt: vi.fn(async () => {
       session.messages.push({
         role: "assistant",
-        content: [{ type: "text", text: finalText }],
+        content: terminal.content ?? [{ type: "text", text: finalText }],
+        stopReason: terminal.stopReason ?? "stop",
+        errorMessage: terminal.errorMessage,
       } as AgentSession["messages"][number]);
     }),
     abort: vi.fn(),
@@ -122,7 +128,7 @@ const ctx = {
   modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
   getSystemPrompt: vi.fn(() => "parent prompt"),
   sessionManager: { getBranch: vi.fn(() => []) },
-} as MockExtensionContext as ExtensionContext;
+} as unknown as MockExtensionContext as ExtensionContext;
 
 const pi = {} as Partial<ExtensionAPI> as ExtensionAPI;
 
@@ -164,6 +170,93 @@ describe("agent-runner final output capture", () => {
     const result = await runAgent(ctx, "Explore", "Say LOCKED", { pi });
 
     expect(result.responseText).toBe("LOCKED");
+  });
+
+  it("returns a failure for an empty provider-error assistant message", async () => {
+    const { session } = createSession("", ["read"], {
+      stopReason: "error",
+      errorMessage: "provider unavailable",
+    });
+    createAgentSession.mockResolvedValue({ session });
+
+    const result = await runAgent(ctx, "Explore", "Fail", { pi });
+
+    expect(result.responseText).toBe("");
+    expect(result.failure).toContain("provider unavailable");
+  });
+
+  it("returns a failure while preserving provider-error partial text", async () => {
+    const { session } = createSession("PARTIAL ANSWER", ["read"], {
+      stopReason: "error",
+      errorMessage: "stream disconnected",
+    });
+    createAgentSession.mockResolvedValue({ session });
+
+    const result = await runAgent(ctx, "Explore", "Fail after partial", { pi });
+
+    expect(result.responseText).toBe("PARTIAL ANSWER");
+    expect(result.failure).toContain("stream disconnected");
+  });
+
+  it("returns a failure for an empty length-limited assistant message", async () => {
+    const { session } = createSession("", ["read"], { stopReason: "length" });
+    createAgentSession.mockResolvedValue({ session });
+
+    const result = await runAgent(ctx, "Explore", "Hit limit", { pi });
+
+    expect(result.responseText).toBe("");
+    expect(result.failure).toContain("length");
+  });
+
+  it("does not classify an aborted assistant stop alone as a provider failure", async () => {
+    const { session } = createSession("PARTIAL ABORTED TEXT", ["read"], {
+      stopReason: "aborted",
+      errorMessage: "request aborted",
+    });
+    createAgentSession.mockResolvedValue({ session });
+
+    const result = await runAgent(ctx, "Explore", "Abort", { pi });
+
+    expect(result.responseText).toBe("PARTIAL ABORTED TEXT");
+    expect(result.failure).toBeUndefined();
+  });
+
+  it("keeps a length-limited assistant message with text successful", async () => {
+    const { session } = createSession("USABLE ANSWER", ["read"], { stopReason: "length" });
+    createAgentSession.mockResolvedValue({ session });
+
+    const result = await runAgent(ctx, "Explore", "Hit limit", { pi });
+
+    expect(result.responseText).toBe("USABLE ANSWER");
+    expect(result.failure).toBeUndefined();
+  });
+
+  it.each([
+    ["clean empty", { stopReason: "stop" }],
+    ["tool-only", { stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }],
+  ])("keeps %s assistant completion behavior successful", async (_name, terminal) => {
+    const { session } = createSession("", ["read"], terminal);
+    createAgentSession.mockResolvedValue({ session });
+
+    const result = await runAgent(ctx, "Explore", "Complete cleanly", { pi });
+
+    expect(result.responseText).toBe("");
+    expect(result.failure).toBeUndefined();
+  });
+
+  it("bounds fallback text to messages created by the current invocation", async () => {
+    const { session } = createSession("", ["read"], { stopReason: "stop" });
+    session.messages.push({
+      role: "assistant",
+      content: [{ type: "text", text: "STALE PRIOR ANSWER" }],
+      stopReason: "stop",
+    } as AgentSession["messages"][number]);
+    createAgentSession.mockResolvedValue({ session });
+
+    const result = await runAgent(ctx, "Explore", "Fresh invocation", { pi });
+
+    expect(result.responseText).toBe("");
+    expect(result.failure).toBeUndefined();
   });
 
   it("binds extensions before prompting", async () => {
@@ -353,7 +446,7 @@ describe("resumeAgent staleness (issue #10 secondary defect)", () => {
             role: "assistant",
             content: [],
             stopReason: "error",
-          } as AgentSession["messages"][number]);
+          } as unknown as AgentSession["messages"][number]);
         }
         // mode "no-message": resumed turn appends nothing at all.
       }),

@@ -130,6 +130,8 @@ export interface RunOptions {
 export interface RunResult {
   responseText: string;
   session: AgentSession;
+  /** Provider/runtime failure resolved by the session instead of thrown. */
+  failure?: string;
   /** True if the agent was hard-aborted (max_turns + grace exceeded). */
   aborted: boolean;
   /** True if the agent was steered to wrap up (hit soft turn limit) but finished in time. */
@@ -153,15 +155,15 @@ function collectResponseText(session: AgentSession) {
   return { getText: () => text, unsubscribe };
 }
 
-/** Get the last assistant text from the completed session history. */
-function getLastAssistantText(session: AgentSession): string {
-  for (let i = session.messages.length - 1; i >= 0; i--) {
+type AssistantSessionMessage = Extract<AgentSession["messages"][number], { role: "assistant" }>;
+
+/** Last assistant message appended at index >= `start` (snapshot-bounded). */
+function getLastAssistantMessageSince(session: AgentSession, start: number): AssistantSessionMessage | undefined {
+  for (let i = session.messages.length - 1; i >= start; i--) {
     const msg = session.messages[i];
-    if (msg.role !== "assistant") continue;
-    const text = extractText(msg.content).trim();
-    if (text) return text;
+    if (msg.role === "assistant") return msg as AssistantSessionMessage;
   }
-  return "";
+  return undefined;
 }
 
 /** Last assistant text from messages appended at index >= `start` (snapshot-bounded — avoids the full-history leak). */
@@ -173,6 +175,18 @@ function getLastAssistantTextSince(session: AgentSession, start: number): string
     if (text) return text;
   }
   return "";
+}
+
+function getResolvedRunFailure(message: AssistantSessionMessage | undefined, responseText: string): string | undefined {
+  if (!message) return undefined;
+  const providerError = message.errorMessage?.trim();
+  if (message.stopReason === "error") {
+    return providerError || "Assistant response ended with stop reason \"error\".";
+  }
+  if (message.stopReason === "length" && !responseText) {
+    return providerError || "Assistant response ended with stop reason \"length\" without usable text.";
+  }
+  return undefined;
 }
 
 /**
@@ -556,6 +570,7 @@ export async function runAgent(
     }
   }
 
+  const invocationStart = session.messages.length;
   try {
     await session.prompt(effectivePrompt);
   } finally {
@@ -564,8 +579,9 @@ export async function runAgent(
     cleanupAbort();
   }
 
-  const responseText = collector.getText().trim() || getLastAssistantText(session);
-  return { responseText, session, aborted, steered: softLimitReached };
+  const responseText = collector.getText().trim() || getLastAssistantTextSince(session, invocationStart);
+  const failure = getResolvedRunFailure(getLastAssistantMessageSince(session, invocationStart), responseText);
+  return { responseText, session, failure, aborted, steered: softLimitReached };
 }
 
 /** Discriminated result of a resumed turn: usable fresh text, or a real failure. */

@@ -56,6 +56,8 @@ export function writeInitialEntry(path: string, agentId: string, prompt: string,
 
 /**
  * Subscribe to session events and flush new messages to the output file on each turn_end.
+ * Compaction flushes pending pre-compact messages before history rewrites, then
+ * successful compaction re-anchors the cursor after pi settles session.messages.
  * Returns a cleanup function that does a final flush and unsubscribes.
  */
 export function streamToOutputFile(
@@ -86,7 +88,12 @@ export function streamToOutputFile(
   };
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
-    if (event.type === "turn_end") flush();
+    if (event.type === "turn_end" || event.type === "compaction_start") flush();
+    if (event.type === "compaction_end" && !event.aborted && event.result) {
+      queueMicrotask(() => {
+        writtenCount = session.messages.length;
+      });
+    }
   });
 
   return () => {

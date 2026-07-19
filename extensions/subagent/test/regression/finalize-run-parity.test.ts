@@ -36,7 +36,7 @@ const PI = {} as any;
 const CTX = { cwd: process.cwd() } as any;
 
 /** runAgent that settles (resolve or reject) only once the agent's abort signal fires. */
-function settleOnAbort(mode: "resolve" | "reject", responseText = "") {
+function settleOnAbort(mode: "resolve" | "reject", responseText = "", failure?: string) {
   return (_c: any, _t: any, _p: any, options: any) => {
     options.onSessionCreated?.(fakeSession());
     return new Promise((resolve, reject) => {
@@ -44,7 +44,7 @@ function settleOnAbort(mode: "resolve" | "reject", responseText = "") {
         "abort",
         () =>
           mode === "resolve"
-            ? resolve({ responseText, session: fakeSession(), aborted: false, steered: false })
+            ? resolve({ responseText, session: fakeSession(), aborted: false, steered: false, failure })
             : reject(new Error("aborted")),
         { once: true },
       );
@@ -60,7 +60,7 @@ afterEach(() => {
 
 describe("finalizeRun parity — stopped idempotency", () => {
   it("then-stopped (runAgent resolves after abort): exactly one result_amended, no completed/failed", async () => {
-    runAgentMock.mockImplementation(settleOnAbort("resolve", "late output"));
+    runAgentMock.mockImplementation(settleOnAbort("resolve", "late output", "provider failed after stop"));
 
     const manager = new AgentManager(undefined, 4);
     const controller = new AbortController();

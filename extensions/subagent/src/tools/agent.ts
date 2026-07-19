@@ -297,6 +297,32 @@ function getResultText(result: AgentToolResult<AgentDetails>): string {
     .join("\n");
 }
 
+type AgentFailureOutputRecord = Pick<AgentRecord, "status" | "error" | "result" | "toolUses"> &
+  Partial<Pick<AgentRecord, "outputFile" | "session">>;
+
+export function formatAgentFailureOutput(
+  record: AgentFailureOutputRecord,
+  sessionLog = "",
+  localHint = "",
+): string {
+  const error = record.error?.trim() || "Unknown error";
+  const recoveredFailure = getRecoveredResultText({
+    status: record.status,
+    result: undefined,
+    error: record.error,
+    toolUses: record.toolUses,
+    outputFile: record.outputFile,
+    session: record.session,
+  });
+  const partialOutput = record.result?.trim();
+  const failureDetails = partialOutput && partialOutput !== recoveredFailure
+    ? `\n\nPartial output before the failure:\n${partialOutput}`
+    : recoveredFailure
+      ? `\n\n${recoveredFailure}`
+      : "";
+  return `Agent failed: ${error}${sessionLog}${failureDetails}${localHint}`;
+}
+
 function getStatusSummary(details: AgentDetails): string {
   if (details.status === "background") return "started";
   if (details.status === "steered") return "completed (turn limit)";
@@ -910,7 +936,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       const sessionLog = record.sessionFile ? `\nSession log: ${record.sessionFile}` : "";
 
       if (record.status === "error") {
-        return textResult(`Agent failed.${sessionLog}\n\n${getRecoveredResultText(record)}${localHint}`, details);
+        return textResult(formatAgentFailureOutput(record, sessionLog, localHint), details);
       }
 
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;

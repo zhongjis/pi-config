@@ -739,21 +739,34 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
         })
       : undefined;
 
+    let unsubscribeRun = () => {};
     try {
       const waits: Promise<"settled" | "tick" | "aborted">[] = [
-        record.promise!.then(() => "settled" as const, () => "settled" as const),
         delay(SUBAGENT_POLL_INTERVAL_MS).then(() => "tick" as const),
       ];
+      if (record.run) {
+        const run = record.run;
+        const terminalPromise = new Promise<"settled">((resolve) => {
+          unsubscribeRun = run.subscribe((_event, current) => {
+            if (current.isTerminal()) resolve("settled");
+          });
+          if (run.isTerminal()) resolve("settled");
+        });
+        waits.push(terminalPromise);
+      } else if (record.promise) {
+        waits.push(record.promise.then(() => "settled" as const, () => "settled" as const));
+      }
       if (abortPromise) waits.push(abortPromise);
       return await Promise.race(waits);
     } finally {
       cleanupAbort();
+      unsubscribeRun();
     }
   }
 
   async function waitForAgentCompletionWithSupervision(record: AgentRecord, signal?: AbortSignal) {
     let idleWrapUpSent = false;
-    while (record.status === "running" && record.promise) {
+    while (record.status === "running" || record.status === "queued") {
       const activity = resolveSupervisionActivity(record, agentActivity.get(record.id));
       const supervisionMode = parseBackgroundSupervisionMode();
       const ceilingMs = parseSubagentSupervisionCeilingMs();

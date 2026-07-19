@@ -20,6 +20,7 @@ const agentTypeState = vi.hoisted<{
 }));
 
 import { writeFileSync } from "node:fs";
+import { AgentRun, project } from "../src/agent-run.js";
 import type { AgentRecord, ResumeRuntimeSnapshot } from "../src/types.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -811,6 +812,136 @@ describe("subagent session UI rebinding", () => {
     await mock.fire("agent_end", {}, createCtx());
     expect(mock.pi.sendMessage).not.toHaveBeenCalled();
   })
+
+  it("wait:true stays pending while queued, survives start, returns terminal result, and clears waiters", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const run = new AgentRun("agent-queued", { now: () => Date.now() });
+    const record: any = {
+      id: "agent-queued",
+      type: "general-purpose",
+      description: "Queued work",
+      status: "queued",
+      toolUses: 0,
+      startedAt: Date.now(),
+      isBackground: true,
+      run,
+    };
+    run.subscribe((_event, current) => project(current, record));
+    run.publish({
+      kind: "created",
+      type: "general-purpose",
+      description: "Queued work",
+      isBackground: true,
+      startedAt: record.startedAt,
+    });
+    managerInstances[0]?.getRecord.mockReturnValue(record as unknown as AgentRecord);
+
+    let settled = false;
+    const resultPromise = mock.registeredTools.get("get_subagent_result").execute(
+      "tool-1",
+      { agent_id: "agent-queued", wait: true },
+      undefined,
+      undefined,
+      createCtx(),
+    ).then((result: any) => {
+      settled = true;
+      return result;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(run.waitingConsumers).toBe(1);
+    expect(record.waitingConsumers).toBe(1);
+
+    run.publish({ kind: "started", startedAt: Date.now() });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    run.publish({ kind: "completed", result: "final payload", status: "completed" });
+    const result = await resultPromise;
+
+    expect(result.content[0].text).toContain("Status: completed");
+    expect(result.content[0].text).toContain("final payload");
+    expect(run.waitingConsumers).toBe(0);
+    expect(record.waitingConsumers).toBe(0);
+  });
+
+  it("uses cancellable AgentRun subscriptions while wait:true polls a queued run", async () => {
+    const mock = createMockPi();
+    await initExtension(mock);
+    const { SUBAGENT_POLL_INTERVAL_MS } = await import("../src/constants.js");
+    const run = new AgentRun("agent-multipoll", { now: () => Date.now() });
+    const record: any = {
+      id: "agent-multipoll",
+      type: "general-purpose",
+      description: "Queued multipoll work",
+      status: "queued",
+      toolUses: 0,
+      startedAt: Date.now(),
+      isBackground: true,
+      run,
+    };
+    run.subscribe((_event, current) => project(current, record));
+    run.publish({
+      kind: "created",
+      type: "general-purpose",
+      description: "Queued multipoll work",
+      isBackground: true,
+      startedAt: record.startedAt,
+    });
+    managerInstances[0]?.getRecord.mockReturnValue(record as unknown as AgentRecord);
+
+    let activeTerminalSubscriptions = 0;
+    let cleanupCount = 0;
+    const originalSubscribe = run.subscribe.bind(run);
+    const subscribeSpy = vi.spyOn(run, "subscribe").mockImplementation((listener) => {
+      activeTerminalSubscriptions++;
+      const unsubscribe = originalSubscribe(listener);
+      return () => {
+        cleanupCount++;
+        activeTerminalSubscriptions--;
+        unsubscribe();
+      };
+    });
+    let resolvedCount = 0;
+    const resultPromise = mock.registeredTools.get("get_subagent_result").execute(
+      "tool-1",
+      { agent_id: "agent-multipoll", wait: true },
+      undefined,
+      undefined,
+      createCtx(),
+    ).then((result: any) => {
+      resolvedCount++;
+      return result;
+    });
+
+    await Promise.resolve();
+    expect(record.waitingConsumers).toBe(1);
+    expect(activeTerminalSubscriptions).toBe(1);
+    for (let i = 0; i < 3; i++) {
+      await vi.advanceTimersByTimeAsync(SUBAGENT_POLL_INTERVAL_MS);
+      await Promise.resolve();
+      expect(resolvedCount).toBe(0);
+      expect(cleanupCount).toBe(i + 1);
+      expect(activeTerminalSubscriptions).toBe(1);
+    }
+    expect(subscribeSpy).toHaveBeenCalledTimes(4);
+
+    run.publish({ kind: "started", startedAt: Date.now() });
+    await Promise.resolve();
+    expect(resolvedCount).toBe(0);
+    run.publish({ kind: "completed", result: "final multipoll payload", status: "completed" });
+    const result = await resultPromise;
+
+    expect(resolvedCount).toBe(1);
+    expect(result.content[0].text).toContain("Status: completed");
+    expect(result.content[0].text).toContain("final multipoll payload");
+    expect(activeTerminalSubscriptions).toBe(0);
+    expect(cleanupCount).toBe(subscribeSpy.mock.calls.length);
+    expect(run.waitingConsumers).toBe(0);
+    expect(record.waitingConsumers).toBe(0);
+  });
 
   it("stops running agents and rejects when waiting result is cancelled", async () => {
     const mock = createMockPi();
