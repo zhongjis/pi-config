@@ -17,6 +17,7 @@ This file owns `docs/` except child docs listed below. Root `AGENTS.md` still ow
 - Every document under `ideas/` is non-binding and carries `Status: idea`.
 - Treat `adr/` as append-only ADRs: one decision per document, including why the chosen option won.
 - Keep `references/` for stable, citable external material only.
+- Oh My OpenAgent final prompt archive lives in `references/oh-my-openagent/final-prompts/`; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, and never hand-edit generated prompt files.
 
 ## Work Guidance
 

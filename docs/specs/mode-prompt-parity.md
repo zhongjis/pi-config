@@ -4,8 +4,9 @@ Purpose: record accepted Oh My OpenAgent (omo) synchronization baselines and loc
 
 ## Upstream Baseline
 
-- Accepted omo release baseline: `v4.16.3`.
+- Accepted omo release baseline: `v4.19.0`.
 - Upstream repo: `https://github.com/code-yeongyu/oh-my-openagent`.
+- Current generated final-prompt archive: `docs/references/oh-my-openagent/final-prompts/`; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, never hand-edit generated files. The archive README pins the source SHA.
 - Earlier path-level audit evidence used commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`; it remains evidence for the paths below, not the current release baseline.
 - Superpowers repo: `https://github.com/obra/superpowers`, `main` inspected at commit `896224c4b1879920ab573417e68fd51d2ccc9072`, path `skills/`.
 
@@ -16,11 +17,11 @@ Required upstream paths verified in the earlier `f7ec55526b2a3603665c5c0308b031a
 - `packages/omo-opencode/src/agents/atlas/agent.ts`
 - `packages/prompts-core/src/atlas-prompts.ts`
 
-Relevant prompt sources located:
+Relevant generated final prompt baselines located:
 
-- Sisyphus: no `packages/prompts-core/prompts/sisyphus/*.md` files found. Prompt sources are TypeScript builders under `packages/omo-opencode/src/agents/sisyphus/`, especially `default.ts`, `gpt-5-5.ts`, `gemini.ts`, plus `AGENTS.md` as variant reference.
-- Prometheus: `packages/prompts-core/prompts/prometheus/default.md`.
-- Atlas: `packages/prompts-core/prompts/atlas/default.md`, `gpt.md`, `gemini.md`, plus non-local-scope variants `glm.md`, `kimi.md`, `kimi-k2-7.md`, `opus-4-7.md`.
+- Sisyphus: `docs/references/oh-my-openagent/final-prompts/sisyphus/*.md` (model-family final prompts generated from TypeScript builders).
+- Prometheus: `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`.
+- Atlas: `docs/references/oh-my-openagent/final-prompts/atlas/{default,gpt,gemini,glm,kimi,kimi-k2-7,opus-4-7}.md`.
 
 ## Applied v4.16.3 Agent Mappings
 
@@ -75,7 +76,7 @@ Local invariants before edits:
 Evidence:
 
 - `prometheus/system-prompt.ts` loads only `prometheusPromptVariants.default`; `getPrometheusPrompt()` ignores model and disabled tools.
-- `prompts/prometheus/default.md` says Prometheus is a planning consultant, planner-only, writes plan artifacts under `.omo/`, never edits product code, and must load/follow `ulw-plan`.
+- `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` says Prometheus is a planning consultant, planner-only, writes plan artifacts under `.omo/`, never edits product code, and must load/follow `ulw-plan`.
 
 Local invariants before edits:
 
@@ -92,7 +93,7 @@ Local invariants before edits:
 Evidence:
 
 - `atlas/agent.ts` routes model variants through `getAtlasPromptSource()`, loads prompt bodies from `atlasPromptVariants`, and creates Atlas as master orchestrator.
-- `atlas-prompts.ts` maps Atlas prompt markdown files. Local scope uses only `default.md`, `gpt.md`, `gemini.md`.
+- Generated Atlas final prompts live under `docs/references/oh-my-openagent/final-prompts/atlas/`. Local scope uses only `default.md`, `gpt.md`, `gemini.md`.
 - Atlas prompts define conductor identity: delegate, coordinate, verify; never write code; complete every plan task; parallelize independent work; verify every delegation; update plan state only after evidence; run final verification wave.
 
 Local invariants before edits:

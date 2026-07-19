@@ -15,7 +15,7 @@ real session: 70 of 74 logical tasks unfinished with no technical or external bl
   before edits and propose a smaller split" — plus a matching "≤3 expected product files"
   sizing proxy in the Fu Xi planner, the Kua Fu / Hou Tu orchestrators, and the
   `modes/AGENTS.md` contract. **Upstream omo has no such guard** (verified against the
-  pinned baseline in `docs/references/omo-prompts/` and upstream Sisyphus-Junior).
+  generated final prompts in `docs/references/oh-my-openagent/final-prompts/` and upstream Sisyphus-Junior).
 - Hou Tu kept Atlas's post-delegation rule verbatim: "after EVERY verified `Agent`
   completion → mark the pi-task completed + check the PLAN box + do not launch the next
   task first."

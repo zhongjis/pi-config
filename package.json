@@ -11,7 +11,9 @@
     "test:integration": "vitest run --project integration",
     "lint": "biome check",
     "typecheck": "pnpm exec tsc --noEmit -p tsconfig.json",
-    "lint:typecheck": "node ./scripts/lint-typecheck.mjs"
+    "lint:typecheck": "node ./scripts/lint-typecheck.mjs",
+    "sync:oh-my-openagent-prompts": "node ./scripts/sync-oh-my-openagent-final-prompts.mjs sync",
+    "check:oh-my-openagent-prompts": "node ./scripts/sync-oh-my-openagent-final-prompts.mjs check"
   },
   "devDependencies": {
     "@marcfargas/pi-test-harness": "git+https://github.com/marcfargas/pi-test-harness.git#v0.6.1",

@@ -14,6 +14,7 @@ This file owns `scripts/`.
 - Do not add global installs or host-mutating setup as a default path; prefer Nix/project-scoped execution.
 - Keep sync scripts explicit about temp directories, upstream source, and files intentionally ignored.
 - Preserve executable semantics when editing shell scripts.
+- Oh My OpenAgent prompt archive updates run through `pnpm sync:oh-my-openagent-prompts`; verify with `pnpm check:oh-my-openagent-prompts`.
 
 ## Work Guidance
 

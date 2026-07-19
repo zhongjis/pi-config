@@ -22,6 +22,7 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               biome
+              bun
               git
               nodejs_22
               pnpm
@@ -30,7 +31,7 @@
 
             shellHook = ''
               echo "Panda Harness dev shell"
-              echo "Run pnpm install once, then use pnpm test:extensions or pnpm lint:typecheck"
+              echo "Run pnpm install once, then use pnpm test:extensions, pnpm lint:typecheck, or prompt archive sync/check commands"
             '';
           };
         });

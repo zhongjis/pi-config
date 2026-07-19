@@ -17,7 +17,7 @@ Never strip provenance. Cross-check with `modes/MANIFESTO.md` (carries the omo a
 | Pi persona | omo | Local files |
 |-----------|-----|-------------|
 | Hou Tu 后土 | Atlas (orchestrator) | `modes/houtu/{mode,gpt,gemini}.md` |
-| Fu Xi 伏羲 | Prometheus (planner) + `ulw-plan` runtime skill ceremony | thin routers `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}`; pinned raw baselines `docs/references/omo-prompts/{prometheus,ulw-plan}` |
+| Fu Xi 伏羲 | Prometheus (planner) + `ulw-plan` runtime skill ceremony | thin routers `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}`; generated final Prometheus prompt archive `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` (no archived `ulw-plan` snapshot) |
 | Kua Fu 夸父 | Sisyphus (senior eng — the primary coding agent) | `modes/kuafu/{mode,gpt,gemini}.md` |
 | Taishang 太上老君 | Oracle (read-only consult) | `agents/taishang.md` |
 | Di Renjie 狄仁杰 | Metis (gap analyzer) | `agents/direnjie.md` |
@@ -54,11 +54,11 @@ Key correction: **Sisyphus-Junior is not an agent with named "variants."** It is
 | Lu Ban 鲁班 | Superpowers (`modes/luban/`) — explicitly disclaims Sisyphus/Prometheus/Atlas parity |
 | Shen Nong 神農 | product-manager / pm-marketplace (`modes/shennong/`) |
 
-## Fetching upstream
+## Upstream source and generated prompt archive
 
 Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opened upstream sources). Two roots matter:
 
-- **Prompt markdown** — `packages/prompts-core/prompts/<persona>/default.md`. Confirmed present: `atlas`, `prometheus`, `ultrawork`, and `mode/` (hyperplan, team). Confirm exact per-persona paths by browsing; layout drifts.
+- **Prompt source markdown** — `packages/prompts-core/prompts/<persona>/default.md`. Confirmed present: `atlas`, `prometheus`, `ultrawork`, and `mode/` (hyperplan, team). Confirm exact per-persona paths by browsing; layout drifts. Use this for source context, not as the adaptation baseline.
 - **Agent + category code** (where Sisyphus-Junior, Oracle, and the category models/prompts live):
   - `packages/omo-opencode/src/agents/` — e.g. `sisyphus-junior/default.ts`, `oracle.ts`, `builtin-agents.ts`
   - `packages/omo-opencode/src/tools/delegate-task/*-categories.ts` — per-family category prompt appends (e.g. `google-categories.ts` holds `visual-engineering` and `artistry`)
@@ -67,7 +67,7 @@ Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opene
 
 Raw pattern: `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/<path>`. Use `fetch_content` on the GitHub tree/API first; `wenchang` can locate exact paths when the layout is unclear.
 
-After fetching, **vendor** the persona's variants into `docs/references/omo-prompts/<agent>/*.md` (byte-identical, commit-pinned — see that dir's README) so the diff baseline is a fixed, reproducible artifact rather than an ephemeral fetch. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. For Fu Xi, the active baseline is split: Prometheus prompt at `docs/references/omo-prompts/prometheus/` plus `ulw-plan` skill snapshot at `docs/references/omo-prompts/ulw-plan/`. The adapted runtime skill lives under `modes/fuxi/skills/ulw-plan/`; Fu Xi's mode files stay thin routers. The full vendor → adapt → promote flow lives in `references/adapt-and-promote.md`.
+For adaptation baselines, use the generated final rendered prompts under `docs/references/oh-my-openagent/final-prompts/<agent>/<variant>.md`. Refresh with `pnpm sync:oh-my-openagent-prompts`; verify with `pnpm check:oh-my-openagent-prompts`. The archive is generated from the pinned SHA documented in `docs/references/oh-my-openagent/README.md`; never hand-edit it. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. For Fu Xi, compare against `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`; there is no archived `ulw-plan` snapshot. The adapted runtime skill lives under `modes/fuxi/skills/ulw-plan/`; Fu Xi's mode files stay thin routers. The full generated archive → adapt → promote flow lives in `references/adapt-and-promote.md`.
 
 ## Attribution gap (known, not auto-fixed)
 
