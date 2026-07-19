@@ -27,6 +27,8 @@ const JINTONG = read("agents", "jintong.md");
 const JULING = read("agents", "juling.md");
 const HOUTU_DEFAULT = read("modes", "houtu", "mode.md");
 const HOUTU_GPT = read("modes", "houtu", "gpt.md");
+const HOUTU_GEMINI = read("modes", "houtu", "gemini.md");
+const HOUTU_GEMINI_EFFECTIVE = `${HOUTU_DEFAULT}\n${HOUTU_GEMINI}`;
 const FUXI_SKILL = read("modes", "fuxi", "skills", "ulw-plan", "SKILL.md");
 const FUXI_WORKFLOW = read("modes", "fuxi", "skills", "ulw-plan", "references", "full-workflow.md");
 const KUAFU_DEFAULT = read("modes", "kuafu", "mode.md");
@@ -71,7 +73,7 @@ describe("issue #10 S2: Hou Tu keeps the inherited Atlas rule and resumes in pla
       expect(body).toContain("After EVERY verified `Agent` completion");
     });
     it(`${name}: Section 3.5 resume-in-place is present`, () => {
-      expect(body).toContain("3.5 Handle failures");
+      expect(body).toMatch(/3\.5 Handle [Ff]ailures/);
       expect(body).toContain("Agent(resume");
     });
     it(`${name}: forbids re-splitting a plan item and drops the file-count proxy`, () => {
@@ -148,5 +150,107 @@ describe("Hou Tu prompt contract accepted fixes", () => {
     expect(MODES_CONTRACT).toContain("executes `PLAN.md`");
     expect(ORCHESTRATION_FLOW).not.toContain("Hou Tu reads `local://PLAN.md`");
     expect(ORCHESTRATION_FLOW).toContain("Hou Tu reads `PLAN.md` at the approved plan path supplied by `/handoff:start-work`");
+  });
+});
+
+describe("Hou Tu GPT/Gemini accepted prompt-contract parity", () => {
+  for (const [name, body] of [
+    ["houtu/gpt replacement", HOUTU_GPT],
+    ["houtu/gemini effective prompt", HOUTU_GEMINI_EFFECTIVE],
+  ] as const) {
+    it(`${name}: uses the handoff-supplied bare PLAN.md path`, () => {
+      expect(body).not.toContain("local://PLAN.md");
+      expect(body).toContain("`PLAN.md`");
+      expect(body).toContain("/handoff:start-work");
+      expect(body).toContain("buildPlanExecutionGoal(planPath)");
+    });
+
+    it(`${name}: preserves strict worker prompts and exact QA language`, () => {
+      expect(body).toContain("under 30 lines");
+      expect(body).toContain("TOO SHORT");
+      expect(body).toContain("Subagents lie");
+      expect(body).toContain("/skills:agent-browser");
+      expect(body).toContain("`interactive_bash`");
+      expect(body).toContain("`curl`");
+      expect(body).toContain("LSP diagnostics, rg, fd");
+    });
+
+    it(`${name}: uses canonical task-relevant notepads and Pi-native resume`, () => {
+      expect(body).toContain("local://{plan-name}/notepads/");
+      expect(body).not.toContain("local://NOTEPAD.");
+      expect(body).not.toContain("notepads/{plan-name}");
+      expect(body).not.toContain("<need-update>");
+      expect(body).not.toContain("task_id");
+      expect(body).toContain("Agent(resume)");
+    });
+  }
+
+  it("Gemini overlay corrects rather than re-splitting an approved plan item", () => {
+    expect(HOUTU_GEMINI).toContain("<gemini-corrective-overlay>");
+    expect(HOUTU_GEMINI).not.toContain("Split multi-domain or oversized work before launch");
+    expect(HOUTU_GEMINI).toContain("Do not re-split");
+  });
+
+  it("keeps Atlas GPT structure and detail while using settled Hou Tu adaptations", () => {
+    expect(HOUTU_GPT.split("\n").length).toBeGreaterThanOrEqual(500);
+
+    const orderedSections = [
+      "<agent-identity>",
+      "<identity>",
+      "<mission>",
+      "<gpt_calibration>",
+      "<anti_duplication>",
+      "<delegation_system>",
+      "<auto_continue>",
+      "<parallel_execution>",
+      "<workflow>",
+      "<notepad_protocol>",
+      "<verification_philosophy>",
+      "<boundaries>",
+      "<critical_rules>",
+      "<post_delegation_rule>",
+      "<completion_response>",
+    ];
+    let previous = -1;
+    for (const section of orderedSections) {
+      const position = HOUTU_GPT.indexOf(section);
+      expect(position, `${section} missing or out of order`).toBeGreaterThan(previous);
+      previous = position;
+    }
+
+    expect(HOUTU_GPT).toContain("### Plan Owner Decision Matrix");
+    expect(HOUTU_GPT).toContain("### MANDATORY: Plan Assignment Protocol");
+    expect(HOUTU_GPT).toContain("### Worker Domain Matching (ZERO TOLERANCE)");
+    expect(HOUTU_GPT).toContain("#### PHASE 1: READ THE CODE FIRST");
+    expect(HOUTU_GPT).toContain("## When the plan completes");
+  });
+
+  it("uses canonical Hou Tu identity, handoff, task tracking, and agent lifecycle only", () => {
+    expect(HOUTU_GPT).toContain('Your designated identity for this session is "Hou Tu"');
+    expect(HOUTU_GPT).toContain("always identify as Hou Tu");
+    expect(HOUTU_GPT).not.toContain("always identify as Atlas");
+    expect(HOUTU_GPT).toContain("/handoff:start-work");
+    expect(HOUTU_GPT).toContain("buildPlanExecutionGoal(planPath)");
+    expect(HOUTU_GPT).toContain("TaskCreate");
+    expect(HOUTU_GPT).toContain("TaskUpdate addBlockedBy");
+    expect(HOUTU_GPT).toContain("TaskList");
+    expect(HOUTU_GPT).toContain("get_subagent_result");
+    expect(HOUTU_GPT).toContain("steer_subagent");
+
+    for (const stale of [
+      "task()",
+      "task_id",
+      "background_output",
+      "background_cancel",
+      "TodoWrite",
+      ".omo/",
+      "boulder.json",
+      "BOULDER COMPLETE",
+      "Atlas",
+      "load_skills",
+      "category=",
+    ]) {
+      expect(HOUTU_GPT, `stale OMO contract: ${stale}`).not.toContain(stale);
+    }
   });
 });

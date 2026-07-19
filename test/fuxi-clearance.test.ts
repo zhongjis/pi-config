@@ -144,7 +144,8 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "Final Verification Wave gate",
     ],
     gpt: [
-      "Read `local://PLAN.md` before doing anything else",
+      "Read `PLAN.md` before doing anything else",
+      "buildPlanExecutionGoal(planPath)",
       "Pi-tasks: `TaskCreate` one task per top-level PLAN item",
       "Agent lifecycle: launch plan work with `Agent`",
       "Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle",

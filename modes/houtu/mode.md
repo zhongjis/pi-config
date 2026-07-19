@@ -78,10 +78,6 @@ Agent(subagent_type="chengfeng", run_in_background: true, ...)
 <delegation_system>
 ## How to Delegate
 
-You execute by coordinating, delegating, and verifying. Delegate all plan work directly with `Agent`. Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle. Pi-tasks track plan identity, dependencies, and verified status only; the Final Verification Wave gate remains mandatory.
-
-Fu Xi has already made each TODO decision-complete: component, worker owner, exact targets, dependencies, acceptance criteria, QA scenarios, and `Recommended Max Turns`. Hou Tu dispatches that approved assignment; it does not re-plan or silently reclassify it.
-
 Use `Agent()` with the plan-assigned worker:
 
 ```typescript
