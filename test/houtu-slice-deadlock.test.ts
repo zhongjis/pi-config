@@ -32,6 +32,7 @@ const FUXI_WORKFLOW = read("modes", "fuxi", "skills", "ulw-plan", "references", 
 const KUAFU_DEFAULT = read("modes", "kuafu", "mode.md");
 const KUAFU_GPT = read("modes", "kuafu", "gpt.md");
 const MODES_CONTRACT = read("modes", "AGENTS.md");
+const ORCHESTRATION_FLOW = read("docs", "specs", "orchestration-flow.md");
 
 // Old divergent strings that must disappear.
 const OLD_WORKER_GUARD = "more than 3 expected product files";
@@ -106,5 +107,46 @@ describe("issue #10 S3: sizing is by granularity, not a fixed file count", () =>
   it("modes/AGENTS.md contract drops the file-count proxy", () => {
     expect(MODES_CONTRACT).not.toContain(OLD_ORCH_PROXY);
     expect(MODES_CONTRACT).toContain(GRANULARITY_MARKER);
+  });
+});
+
+describe("Hou Tu prompt contract accepted fixes", () => {
+  it("uses bare PLAN.md because /handoff:start-work supplies the actual plan path", () => {
+    expect(HOUTU_DEFAULT).not.toContain("local://PLAN.md");
+    expect(HOUTU_DEFAULT).toContain("Complete every task in `PLAN.md`");
+    expect(HOUTU_DEFAULT).toContain("/handoff:start-work");
+    expect(HOUTU_DEFAULT).toContain("buildPlanExecutionGoal(planPath)");
+  });
+
+  it("keeps notepads under the plan-specific local directory without mandating all files", () => {
+    expect(HOUTU_DEFAULT).toContain("local://{plan-name}/notepads/");
+    expect(HOUTU_DEFAULT).not.toContain("Read notepad files");
+    expect(HOUTU_DEFAULT).not.toContain("notepads/{plan-name}/*.md");
+  });
+
+  it("uses Agent resume for failures and final-wave fixes", () => {
+    expect(HOUTU_DEFAULT).not.toContain("<need-update>");
+    expect(HOUTU_DEFAULT).not.toContain('subagent_type: "chengfeng", // must match original type');
+    expect(HOUTU_DEFAULT).not.toContain("delegate via `task()` with `task_id`");
+    expect(HOUTU_DEFAULT).toContain("subagent_type: \"[original-worker]\"");
+    expect(HOUTU_DEFAULT).toContain("Agent(resume)");
+  });
+
+  it("keeps QA wording and Pi-native boundary tools exact", () => {
+    expect(HOUTU_DEFAULT).toContain("Subagents lie");
+    expect(HOUTU_DEFAULT).toContain("Browser via /skills:agent-browser");
+    expect(HOUTU_DEFAULT).toContain("`interactive_bash`");
+    expect(HOUTU_DEFAULT).toContain("real requests via `curl`");
+    expect(HOUTU_DEFAULT).not.toContain("#### A. Automated verification**");
+    expect(HOUTU_DEFAULT).not.toContain("#### B. Manual code review (NON-NEGOTIABLE)**");
+    expect(HOUTU_DEFAULT).not.toContain("#### D. Read the plan file directly**");
+    expect(HOUTU_DEFAULT).toContain("Use LSP diagnostics, rg, fd");
+  });
+
+  it("docs describe bare PLAN.md with the handoff-supplied approved plan path", () => {
+    expect(MODES_CONTRACT).not.toContain("executes `local://PLAN.md`");
+    expect(MODES_CONTRACT).toContain("executes `PLAN.md`");
+    expect(ORCHESTRATION_FLOW).not.toContain("Hou Tu reads `local://PLAN.md`");
+    expect(ORCHESTRATION_FLOW).toContain("Hou Tu reads `PLAN.md` at the approved plan path supplied by `/handoff:start-work`");
   });
 });

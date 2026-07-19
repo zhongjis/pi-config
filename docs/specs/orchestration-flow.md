@@ -78,7 +78,7 @@ sequenceDiagram
 
 5. **Approved handoff preparation**
    - Approval marks the plan review state approved.
-   - The modes extension prepares handoff args with `mode: "houtu"`, `summarize: false`, and a goal built from the plan path.
+   - The modes extension prepares handoff args with `mode: "houtu"`, `summarize: false`, and a goal built from the approved plan path via `buildPlanExecutionGoal(planPath)`.
    - The current editor is prefilled with `/handoff:start-work`; implementation has not started yet.
 
 6. **Handoff command**
@@ -86,7 +86,7 @@ sequenceDiagram
    - The runtime opens a child session, seeds `agent-mode: houtu`, preloads a deterministic execution prompt, and waits for the user to press Enter.
 
 7. **Hou Tu execution**
-   - Hou Tu reads `local://PLAN.md`, creates one pi-task per top-level plan task, wires the dependency DAG, initializes split notepads, and analyzes runnable tasks.
+   - Hou Tu reads `PLAN.md` at the approved plan path supplied by `/handoff:start-work`, creates one pi-task per top-level plan task, wires the dependency DAG, initializes split notepads, and analyzes runnable tasks.
    - Each task ID identifies one bounded plan task. Hou Tu delegates execution through `Agent`; independent tasks may run as separate background agents.
    - Hou Tu verifies every delegation with diagnostics, builds/tests where applicable, manual readback, plan-state checks, and hands-on QA when needed.
    - After verification, Hou Tu updates plan checkboxes and continues through final verification gates.
