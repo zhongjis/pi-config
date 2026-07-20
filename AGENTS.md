@@ -42,7 +42,7 @@ Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyr
 | Change shared extension model roles | `extensions/lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` roles bind extension-owned LLM calls to model chains |
 | Change install/symlink behavior | `install.sh` | Allowlist + Nix-managed skip rules |
 | Change repo-wide tests | `docs/guides/testing/README.md`, `vitest.config.ts`, `test/` | Unit uses stubs; integration uses real pi runtime |
-| Refresh Oh My OpenAgent final prompt archive | `docs/references/oh-my-openagent/README.md`, `scripts/sync-oh-my-openagent-final-prompts.mjs` | `pnpm sync:oh-my-openagent-prompts` updates generated prompts; `pnpm check:oh-my-openagent-prompts` verifies without writing |
+| Refresh Oh My OpenAgent reference archive | `docs/references/oh-my-openagent/README.md`, `scripts/sync-oh-my-openagent-final-prompts.mjs` | `pnpm sync:oh-my-openagent-prompts` updates generated final prompts plus the raw `skills/ulw-plan/` snapshot; `pnpm check:oh-my-openagent-prompts` verifies without writing |
 
 ## Commands
 ```bash

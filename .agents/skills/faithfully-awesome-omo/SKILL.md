@@ -37,10 +37,10 @@ So the achievable target is **structural faithfulness**: adopt the upstream sect
 - Identify the target persona(s) and which prompt files they own (`references/lineage-map.md`).
 - Read the owning `AGENTS.md` chain top-down (root → `modes/` or `agents/` or `extensions/` → nearest owner). The nearest one controls local rules; parents still bind. This is mandatory before edits — it tells you what is contract vs. free.
 
-### 1. Use generated archive and diff
+### 1. Use reference archive and diff
 
-- Run `pnpm sync:oh-my-openagent-prompts` when refreshing the archive; verify with `pnpm check:oh-my-openagent-prompts`. For mapped agent/persona prompts, compare against `docs/references/oh-my-openagent/final-prompts/<agent>/<variant>.md` — the generated final rendered prompt at the pinned SHA — not raw source markdown, an ephemeral fetch, or memory. For ultrawork, no final prompt is archived; fetch the direct commit-pinned upstream source per `references/lineage-map.md`. Never hand-edit generated files under the archive.
-- Diff the right baseline against the current Pi prompt **and its family variants**: generated final prompt for agent/mode personas (`mode.md` + `gpt.md` + `gemini.md`, or the single agent `.md`), direct pinned upstream source for `extensions/ulw/prompts/{default,gpt}.md`.
+- Run `pnpm sync:oh-my-openagent-prompts` when refreshing the archive; verify with `pnpm check:oh-my-openagent-prompts`. For mapped agent/persona prompts, compare against `docs/references/oh-my-openagent/final-prompts/<agent>/<variant>.md` — the generated final rendered prompt at the pinned SHA — not raw source markdown, an ephemeral fetch, or memory. For Fu Xi's upstream `ulw-plan` runtime skill, compare against the byte-identical local snapshot at `docs/references/oh-my-openagent/skills/ulw-plan/`. Never hand-edit archive files.
+- Diff the right baseline against the current Pi prompt **and its family variants**: generated final prompt for agent/mode personas (`mode.md` + `gpt.md` + `gemini.md`, or the single agent `.md`) and the archived raw `ulw-plan` snapshot for Fu Xi's runtime skill.
 - If the adaptation hinges on a **Pi runtime behavior** (delegation blocking vs concurrency, Gemini overlay injection, pi-task/agent lifecycle), verify it against the actual Pi extension source (`extensions/subagent`, `extensions/modes`, `extensions/tasks`) — not the tool description or memory. Generic tool blurbs undersell real behavior: e.g. background `Agent` workers run concurrently while a foreground one blocks, so a fan-out that looks "sequential" from the blurb is actually parallel. Ground the claim before you encode it in a prompt.
 
 ### 2. Classify every difference
@@ -75,7 +75,7 @@ Then wait for an explicit go. If the plan needs a change to a locked contract fi
 ### 5. Implement the family in lockstep
 
 - Edit `mode.md` (canonical: frontmatter + default body), `gpt.md` (self-contained body-only replacement), and `gemini.md` (corrective overlay) together — never leave the matrix inconsistent.
-- **Method by change size:** large change → copy the baseline over the target and adapt in place (generated final prompt for agent/mode personas; direct pinned upstream source for ulw). For a full default rebuild, use a scratch `mode-v2.md` you promote after review; small change → edit in place. Full rebuild + promote recipe: `references/adapt-and-promote.md`.
+- **Method by change size:** large change → copy the baseline over the target and adapt in place (generated final prompt for agent/mode personas; archived raw `ulw-plan` snapshot for Fu Xi's runtime skill). For a full default rebuild, use a scratch `mode-v2.md` you promote after review; small change → edit in place. Full rebuild + promote recipe: `references/adapt-and-promote.md`.
 - For agents it is a single `.md`; for ulw it is `extensions/ulw/prompts/{default,gpt}.md`.
 - Match existing formatting; make the smallest change that satisfies the approved plan.
 - **Model + effort frontmatter is in scope too.** Align each agent/mode `model:` chain's effort (and versions) to its omo counterpart per `references/substitution-map.md` → _Model-chain alignment method_: keep order, `omo untagged → strip suffix`, Pi has no `:max` (use `:xhigh`), keep newest opus but bump `4-6 → 4-7`.
@@ -101,7 +101,7 @@ Then wait for an explicit go. If the plan needs a change to a locked contract fi
 - `references/lineage-map.md` — which Pi persona ← which upstream persona, files, fetch URLs, out-of-scope, attribution-gap notes.
 - `references/substitution-map.md` — omo→Pi token map, effort/reasoning-level mapping, model-chain alignment method, family matrix, Gemini-overlay injection anchor rule, Default/GPT/Gemini philosophy.
 - `references/constraints-and-forks.md` — test-locked strings, DOX contracts to respect, attribution rule, and the recurring decision forks with this repo's defaults.
-- `references/adapt-and-promote.md` — the generated archive → adapt → verify → promote flow: copy-then-adapt vs edit-in-place, variant shapes (default/gpt/gemini), the `taishang` review gate, promotion + duplicate-test-table sync, and the verification recipe.
+- `references/adapt-and-promote.md` — the reference archive → adapt → verify → promote flow: copy-then-adapt vs edit-in-place, variant shapes (default/gpt/gemini/runtime skill), the `taishang` review gate, promotion + duplicate-test-table sync, and the verification recipe.
 
 ## Verify commands (quick copy)
 

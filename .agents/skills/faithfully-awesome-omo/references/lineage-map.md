@@ -17,7 +17,7 @@ Never strip provenance. Cross-check with `modes/MANIFESTO.md` (carries the omo a
 | Pi persona | omo | Local files |
 |-----------|-----|-------------|
 | Hou Tu 后土 | Atlas (orchestrator) | `modes/houtu/{mode,gpt,gemini}.md` |
-| Fu Xi 伏羲 | Prometheus (planner) + `ulw-plan` runtime skill ceremony | thin routers `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}`; generated final Prometheus prompt archive `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` (no archived `ulw-plan` snapshot) |
+| Fu Xi 伏羲 | Prometheus (planner) + `ulw-plan` runtime skill ceremony | thin routers `modes/fuxi/{mode,gpt,gemini}.md`; adapted runtime skill `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}`; generated final Prometheus prompt archive `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`; byte-identical upstream `ulw-plan` baseline `docs/references/oh-my-openagent/skills/ulw-plan/` |
 | Kua Fu 夸父 | Sisyphus (senior eng — the primary coding agent) | `modes/kuafu/{mode,gpt,gemini}.md` |
 | Taishang 太上老君 | Oracle (read-only consult) | `agents/taishang.md` |
 | Di Renjie 狄仁杰 | Metis (gap analyzer) | `agents/direnjie.md` |
@@ -54,7 +54,7 @@ Key correction: **Sisyphus-Junior is not an agent with named "variants."** It is
 | Lu Ban 鲁班 | Superpowers (`modes/luban/`) — explicitly disclaims Sisyphus/Prometheus/Atlas parity |
 | Shen Nong 神農 | product-manager / pm-marketplace (`modes/shennong/`) |
 
-## Upstream source and generated prompt archive
+## Upstream source and reference archive
 
 Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opened upstream sources). Two roots matter:
 
@@ -67,7 +67,7 @@ Open the source; do not reconstruct from memory (`.agents/AGENTS.md`: cite opene
 
 Raw pattern: `https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/<path>`. Use `fetch_content` on the GitHub tree/API first; `wenchang` can locate exact paths when the layout is unclear.
 
-For adaptation baselines, use the generated final rendered prompts under `docs/references/oh-my-openagent/final-prompts/<agent>/<variant>.md`. Refresh with `pnpm sync:oh-my-openagent-prompts`; verify with `pnpm check:oh-my-openagent-prompts`. The archive is generated from the pinned SHA documented in `docs/references/oh-my-openagent/README.md`; never hand-edit it. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. For Fu Xi, compare against `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`; there is no archived `ulw-plan` snapshot. The adapted runtime skill lives under `modes/fuxi/skills/ulw-plan/`; Fu Xi's mode files stay thin routers. The full generated archive → adapt → promote flow lives in `references/adapt-and-promote.md`.
+For adaptation baselines, use the generated final rendered prompts under `docs/references/oh-my-openagent/final-prompts/<agent>/<variant>.md` and the byte-identical raw upstream `ulw-plan` snapshot under `docs/references/oh-my-openagent/skills/ulw-plan/`. Refresh with `pnpm sync:oh-my-openagent-prompts`; verify with `pnpm check:oh-my-openagent-prompts`. The archive is generated and copied from the pinned SHA documented in `docs/references/oh-my-openagent/README.md`; never hand-edit it. `<agent>` is the upstream name (`atlas`, `prometheus`, …), not the Pi persona. For Fu Xi, compare the router against `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` and the runtime skill against `docs/references/oh-my-openagent/skills/ulw-plan/`. The adapted runtime skill lives under `modes/fuxi/skills/ulw-plan/`; Fu Xi's mode files stay thin routers. The full reference archive → adapt → promote flow lives in `references/adapt-and-promote.md`.
 
 ## Attribution gap (known, not auto-fixed)
 

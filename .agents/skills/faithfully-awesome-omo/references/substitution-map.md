@@ -88,7 +88,8 @@ Each mode ships three router variants; agents ship one file; ulw ships two. Keep
 | `modes/<mode>/gemini.md` | Body-only **corrective overlay** injected into the default body. Short, forceful overrides only. |
 | `modes/fuxi/{mode,gpt,gemini}.md` | Thin router family only. Runtime injection is handled by the modes extension; deep planning material is not stored beside the routers. |
 | `modes/fuxi/skills/ulw-plan/{SKILL.md,references/*}` | Adapted Fu Xi runtime skill. Owns the seven-stage ceremony and its supporting reference material. |
-| `docs/references/oh-my-openagent/final-prompts/<agent>/<variant>.md` | Generated final rendered omo prompt at the pinned SHA. Reference only; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, and never hand-edit generated files. |
+| `docs/references/oh-my-openagent/final-prompts/<agent>/<variant>.md` | Generated final rendered omo prompt at the pinned SHA. Reference only; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, and never hand-edit archive files. |
+| `docs/references/oh-my-openagent/skills/ulw-plan/` | Byte-identical raw upstream `ulw-plan` skill snapshot at the pinned SHA. Reference baseline for Fu Xi's adapted runtime skill; refresh/check with the same archive commands, never hand-edit. |
 | `agents/<name>.md` | Single file: frontmatter (incl. `model:` family fallback list) + body. |
 | `extensions/ulw/prompts/{default,gpt}.md` | ulw default + GPT variant. |
 
