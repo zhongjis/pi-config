@@ -1,0 +1,10 @@
+{
+  "name": "pi-extensions-skill",
+  "version": "1.0.0",
+  "description": "A comprehensive learning guide for building Pi coding agent extensions",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "skills": ["."]
+  }
+}
