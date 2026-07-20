@@ -1,4 +1,13 @@
-import { withFileMutationQueue, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+	keyHint,
+	withFileMutationQueue,
+	type AgentToolResult,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type Theme,
+	type ToolRenderResultOptions,
+} from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { ModeStateManager } from "./mode-state.js";
 import {
@@ -276,6 +285,68 @@ function formatResult(artifacts: PlanScaffoldArtifact[], draftOnly: boolean): st
 	return lines.join("\n");
 }
 
+type PlanScaffoldToolResult = AgentToolResult<{ artifacts?: PlanScaffoldArtifact[] }> & { isError?: boolean };
+type PlanScaffoldTheme = Pick<Theme, "fg" | "bold">;
+type PlanScaffoldRenderContext = { args?: Partial<PlanScaffoldParams>; isError?: boolean };
+
+function getResultText(result: PlanScaffoldToolResult | undefined): string {
+	return (result?.content ?? [])
+		.filter((part) => part?.type === "text")
+		.map((part) => typeof part.text === "string" ? part.text : "")
+		.join("\n");
+}
+
+function renderSummary(lines: string[], theme: PlanScaffoldTheme): Text {
+	const details = [...lines, keyHint("app.tools.expand", "to expand full result")];
+	return new Text(
+		details
+			.map((line, index) => `${index === details.length - 1 ? "└─" : "├─"} ${theme.fg("muted", line)}`)
+			.join("\n"),
+		0,
+		0,
+	);
+}
+
+function renderPlanScaffoldCall(args: Partial<PlanScaffoldParams> | undefined, theme: PlanScaffoldTheme): Text {
+	const mode = args?.draftOnly === true ? "draft only" : "draft + plan";
+	const slug = typeof args?.slug === "string" ? ` · ${theme.fg("muted", `"${args.slug}"`)}` : "";
+	const intent = args?.intent ? ` · ${theme.fg("muted", args.intent)}` : "";
+	const flags = [
+		args?.reviewRequired === true ? "review required" : undefined,
+		args?.reset === true ? "reset" : undefined,
+		args?.force === true ? "force" : undefined,
+	].filter((flag): flag is string => Boolean(flag));
+	const suffix = flags.length > 0 ? ` · ${theme.fg("muted", flags.join(" · "))}` : "";
+	return new Text(`▸ ${theme.fg("toolTitle", theme.bold("plan_scaffold"))} · ${theme.fg("muted", mode)}${slug}${intent}${suffix}`, 0, 0);
+}
+
+function renderPlanScaffoldResult(
+	result: PlanScaffoldToolResult | undefined,
+	options: Partial<Pick<ToolRenderResultOptions, "expanded" | "isPartial">> = {},
+	theme: PlanScaffoldTheme,
+	context: PlanScaffoldRenderContext = {},
+): Text {
+	const text = getResultText(result);
+	if (options.expanded) return new Text(text, 0, 0);
+
+	if (options.isPartial) {
+		const target = context.args?.draftOnly === true ? "draft" : "draft + plan";
+		return renderSummary([`status: creating ${target}`], theme);
+	}
+
+	if (context.isError || result?.isError) {
+		const firstLine = text.split(/\r?\n/u).map((line) => line.trim()).find(Boolean) ?? "unknown error";
+		return renderSummary([`error: ${firstLine}`], theme);
+	}
+
+	const artifacts = result?.details?.artifacts ?? [];
+	const artifactSummary = artifacts.length > 0
+		? artifacts.map((artifact) => `${artifact.path.replace("local://", "")} ${artifact.status}`).join(" · ")
+		: "none";
+	const next = context.args?.draftOnly === true ? "populate DRAFT.md" : "populate PLAN.md";
+	return renderSummary([`artifacts: ${artifactSummary}`, `next: ${next}`], theme);
+}
+
 export function registerPlanScaffoldTool(pi: ExtensionAPI, state: ModeStateManager): void {
 	pi.registerTool({
 		name: "plan_scaffold",
@@ -289,6 +360,17 @@ export function registerPlanScaffoldTool(pi: ExtensionAPI, state: ModeStateManag
 			reset: Type.Optional(Type.Boolean()),
 			force: Type.Optional(Type.Boolean()),
 		}, { additionalProperties: false }),
+		renderCall(args, theme) {
+			return renderPlanScaffoldCall(args as Partial<PlanScaffoldParams>, theme);
+		},
+		renderResult(result, options, theme, context) {
+			return renderPlanScaffoldResult(
+				result as PlanScaffoldToolResult,
+				options,
+				theme,
+				context as PlanScaffoldRenderContext,
+			);
+		},
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const artifacts = await scaffold(ctx, state, params as PlanScaffoldParams);
 			return {

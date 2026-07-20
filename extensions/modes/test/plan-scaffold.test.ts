@@ -142,10 +142,35 @@ ${FINAL_VERIFICATION_ITEMS.map((item) => `- [ ] ${item}`).join("\n")}
 `;
 }
 
+type RenderableText = { render?: () => string[]; text?: string };
+type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
+type ToolResult = {
+	content?: Array<{ type: "text"; text: string }>;
+	details?: { artifacts?: Array<{ path: string; status: string }> };
+	isError?: boolean;
+};
+
 type RegisteredTool = {
 	parameters: { additionalProperties?: boolean; properties?: Record<string, unknown>; required?: string[] };
 	execute: (...args: any[]) => Promise<any>;
+	renderCall?: (args: Record<string, unknown>, theme: PlainTheme) => RenderableText;
+	renderResult?: (
+		result: ToolResult,
+		options: { expanded?: boolean; isPartial?: boolean },
+		theme: PlainTheme,
+		context?: { args?: Record<string, unknown>; isError?: boolean },
+	) => RenderableText;
 };
+
+const plainTheme: PlainTheme = {
+	fg: vi.fn((_color: string, text: string) => text),
+	bold: vi.fn((text: string) => text),
+};
+
+function renderText(component: RenderableText): string {
+	if (typeof component.render === "function") return component.render().join("\n");
+	return component.text ?? "";
+}
 
 function createMockPi() {
 	const tools = new Map<string, RegisteredTool>();
@@ -204,6 +229,63 @@ describe("plan_scaffold", () => {
 		};
 		return { ...runtime, ctx, tool };
 	}
+
+	it("renders distinct draft-only and plan call headers", async () => {
+		const { tool } = await setup();
+		const draft = renderText(tool.renderCall!({ slug: "ship-widget", intent: "clear", draftOnly: true }, plainTheme));
+		const plan = renderText(tool.renderCall!({ slug: "ship-widget", intent: "clear" }, plainTheme));
+
+		expect(draft).toBe('▸ plan_scaffold · draft only · "ship-widget" · clear');
+		expect(plan).toBe('▸ plan_scaffold · draft + plan · "ship-widget" · clear');
+	});
+
+	it("summarizes artifact statuses without changing raw content", async () => {
+		const { ctx, tool } = await setup();
+		await execute(tool, ctx, { slug: "ship-widget", intent: "clear", draftOnly: true });
+		const result = await execute(tool, ctx, { slug: "ship-widget", intent: "clear" });
+		const raw = result.content[0].text;
+		const content = result.content;
+
+		const collapsed = renderText(tool.renderResult!(result, {}, plainTheme, {
+			args: { slug: "ship-widget", intent: "clear" },
+		}));
+
+		expect(collapsed).toContain("artifacts: DRAFT.md exists · PLAN.md created");
+		expect(collapsed).toContain("next: populate PLAN.md");
+		expect(collapsed).toContain("to expand full result");
+		expect(collapsed).not.toContain("▸ plan_scaffold");
+		expect(result.content).toBe(content);
+		expect(result.content[0].text).toBe(raw);
+	});
+
+	it("preserves exact expanded output", async () => {
+		const { ctx, tool } = await setup();
+		const result = await execute(tool, ctx, { slug: "expanded-plan", intent: "unclear", draftOnly: true });
+		const raw = result.content[0].text;
+
+		expect(renderText(tool.renderResult!(result, { expanded: true }, plainTheme))).toBe(raw);
+	});
+
+	it("renders partial and error states safely", async () => {
+		const { tool } = await setup();
+		const partial = renderText(tool.renderResult!(
+			{ content: [] },
+			{ isPartial: true },
+			plainTheme,
+			{ args: { slug: "ship-widget", draftOnly: true } },
+		));
+		const error = renderText(tool.renderResult!(
+			{ content: [{ type: "text", text: "refused: local://PLAN.md has edits\nstack hidden" }], isError: true },
+			{},
+			plainTheme,
+			{ isError: true },
+		));
+
+		expect(partial).toContain("status: creating draft");
+		expect(error).toContain("error: refused: local://PLAN.md has edits");
+		expect(error).not.toContain("stack hidden");
+		expect(error).toContain("to expand full result");
+	});
 
 	async function execute(tool: RegisteredTool, ctx: unknown, params: Record<string, unknown>) {
 		return tool.execute("tool-plan-scaffold", params, undefined, undefined, ctx);
