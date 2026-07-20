@@ -7,6 +7,7 @@ import {
 	type TestSession,
 } from "@marcfargas/pi-test-harness";
 import * as path from "node:path";
+import { readFile, rm } from "node:fs/promises";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const EXTENSION = path.resolve(PROJECT_ROOT, "extensions/modes/src/index.ts");
@@ -58,6 +59,36 @@ describe("modes extension — integration", () => {
 		tools = (t.session.agent as any).state.tools as Array<{ name: string }>;
 		toolNames = tools.map((tool) => tool.name);
 		expect(toolNames).toContain("plan_approve");
+	});
+
+	it("scaffolds canonical session-local artifacts and feeds plan approval", async () => {
+		t = await createTestSession({
+			extensions: [EXTENSION],
+			mockTools: MOCK_TOOLS,
+		});
+		await switchMode(t, "fuxi");
+
+		const runner = (t.session as any).extensionRunner;
+		const tool = runner.getToolDefinition("plan_scaffold");
+		expect(tool).toBeDefined();
+		const result = await tool.execute(
+			"tool-plan-scaffold",
+			{ slug: "integration-plan", intent: "clear" },
+			undefined,
+			undefined,
+			runner.createContext(),
+		);
+		const artifacts = result.details.artifacts as Array<{ path: string; backingPath: string; status: string }>;
+		const draft = artifacts.find((artifact) => artifact.path === "local://DRAFT.md");
+		const plan = artifacts.find((artifact) => artifact.path === "local://PLAN.md");
+		expect(draft?.status).toBe("created");
+		expect(plan?.status).toBe("created");
+		expect(await readFile(plan!.backingPath, "utf8")).toContain("## Todos");
+		expect(await readFile(plan!.backingPath, "utf8")).toContain("## Final verification wave");
+		const approval = await executePlanApprove(t);
+		expect(approval.details).toEqual({ variant: "post-gap-review" });
+		expect(approval.content[0]?.text).not.toContain("Error: No plan found");
+		await rm(path.dirname(plan!.backingPath), { recursive: true, force: true });
 	});
 
 	it("discovers only active-mode skills without context bootstrap", async () => {

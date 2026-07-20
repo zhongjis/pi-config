@@ -9,7 +9,6 @@ export const PINNED_REPOSITORY = "https://github.com/code-yeongyu/oh-my-openagen
 export const PINNED_SHA = "14083b89f1cbf4680be13493a6c4afd67c957e8a";
 export const PINNED_VERSION = "4.19.0";
 export const DEFAULT_TARGET_DIR = "docs/references/oh-my-openagent/final-prompts";
-export const DEFAULT_ULW_PLAN_TARGET_DIR = "docs/references/oh-my-openagent/skills/ulw-plan";
 export const MANIFEST_FILE = ".omo-final-prompts.json";
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -63,17 +62,7 @@ export const FINAL_PROMPT_PATHS = Object.freeze([
   "sisyphus/kimi-k3.md"
   ]);
 
-export const ULW_PLAN_PATHS = Object.freeze([
-  "SKILL.md",
-  "agents/openai.yaml",
-  "references/full-workflow.md",
-  "references/intent-clear.md",
-  "references/intent-unclear.md",
-  "scripts/scaffold-plan.mjs"
-]);
-
 const expectedFinalPromptPathSet = new Set(FINAL_PROMPT_PATHS);
-const expectedUlwPlanPathSet = new Set(ULW_PLAN_PATHS);
 
 export async function checkFinalPrompts({
   generatedDir,
@@ -143,119 +132,6 @@ export async function syncFinalPrompts({ generatedDir, targetDir = DEFAULT_TARGE
   }
 }
 
-export async function checkOhMyOpenAgentArchive({
-  generatedDir,
-  skillSourceDir,
-  targetDir = DEFAULT_TARGET_DIR,
-  skillTargetDir = DEFAULT_ULW_PLAN_TARGET_DIR,
-  tempRoot
-  } = {}) {
-  ensureFixtureOptions(generatedDir, skillSourceDir);
-  if (generatedDir) {
-    const generated = resolveRequiredDir(generatedDir, "generatedDir");
-    const skillSource = resolveRequiredDir(skillSourceDir, "skillSourceDir");
-    await validateGeneratedDir(generated);
-    await validateSkillSourceDir(skillSource);
-    return combineArchiveChecks(
-      await compareFinalPrompts(generated, resolve(targetDir)),
-      await compareUlwPlanSkill(skillSource, resolve(skillTargetDir))
-    );
-  }
-
-  const tempParent = resolve(tempRoot ?? tmpdir());
-  await mkdir(tempParent, { recursive: true });
-  const workDir = await mkdtemp(join(tempParent, "omo-archive-check-"));
-  const cleanup = trackCleanup(() => rm(workDir, { recursive: true, force: true }));
-  const generated = join(workDir, "generated");
-  const skillSource = join(workDir, "ulw-plan");
-  try {
-    await generatePinnedOhMyOpenAgentArchive({ promptsDir: generated, skillDir: skillSource, tempRoot: workDir });
-    await validateGeneratedDir(generated);
-    await validateSkillSourceDir(skillSource);
-    return combineArchiveChecks(
-      await compareFinalPrompts(generated, resolve(targetDir)),
-      await compareUlwPlanSkill(skillSource, resolve(skillTargetDir))
-    );
-  } finally {
-    await cleanup();
-  }
-}
-
-export async function syncOhMyOpenAgentArchive({
-  generatedDir,
-  skillSourceDir,
-  targetDir = DEFAULT_TARGET_DIR,
-  skillTargetDir = DEFAULT_ULW_PLAN_TARGET_DIR,
-  tempRoot
-  } = {}) {
-  ensureFixtureOptions(generatedDir, skillSourceDir);
-  const target = resolve(targetDir);
-  const skillTarget = resolve(skillTargetDir);
-  await assertTargetIsSafe(target);
-  await assertTargetIsSafe(skillTarget);
-
-  const tempParent = resolve(tempRoot ?? tmpdir());
-  await mkdir(tempParent, { recursive: true });
-  const workDir = await mkdtemp(join(tempParent, "omo-archive-sync-"));
-  const generated = generatedDir ? resolve(generatedDir) : join(workDir, "generated");
-  const skillSource = skillSourceDir ? resolve(skillSourceDir) : join(workDir, "ulw-plan");
-  const replacements = [];
-  let finished = false;
-  const cleanup = trackCleanup(async () => {
-    if (!finished) {
-      for (const replacement of [...replacements].reverse()) await replacement.rollback();
-    }
-    for (const replacement of replacements) await replacement.cleanup();
-    await rm(workDir, { recursive: true, force: true });
-  });
-
-  try {
-    if (!generatedDir) {
-      await generatePinnedOhMyOpenAgentArchive({ promptsDir: generated, skillDir: skillSource, tempRoot: workDir });
-    }
-
-    await validateGeneratedDir(generated);
-    await validateSkillSourceDir(skillSource);
-
-    replacements.push(await prepareDirectoryReplacement({
-      sourceRoot: generated,
-      target,
-      paths: FINAL_PROMPT_PATHS,
-      stagePrefix: ".final-prompts-stage-"
-    }));
-    replacements.push(await prepareDirectoryReplacement({
-      sourceRoot: skillSource,
-      target: skillTarget,
-      paths: ULW_PLAN_PATHS,
-      stagePrefix: ".ulw-plan-stage-"
-    }));
-
-    for (const replacement of replacements) await replacement.commit();
-    finished = true;
-    return {
-      ok: true,
-      targetDir,
-      skillTargetDir,
-      written: { finalPrompts: [...FINAL_PROMPT_PATHS], ulwPlan: [...ULW_PLAN_PATHS] }
-    };
-  } finally {
-    await cleanup();
-  }
-}
-
-function combineArchiveChecks(finalPrompts, ulwPlan) {
-  return { ok: finalPrompts.ok && ulwPlan.ok, finalPrompts, ulwPlan };
-}
-
-function ensureFixtureOptions(generatedDir, skillSourceDir) {
-  if (Boolean(generatedDir) !== Boolean(skillSourceDir)) {
-    throw new Error("--generated and --skill-source are required together");
-  }
-}
-
-async function compareUlwPlanSkill(skillSource, target) {
-  return await compareExpectedFiles(skillSource, target, ULW_PLAN_PATHS, expectedUlwPlanPathSet);
-}
 
 async function compareExpectedFiles(sourceRoot, target, paths, expectedPathSet) {
   const missing = [];
@@ -301,14 +177,6 @@ export async function generatePinnedFinalPrompts({ outputDir, tempRoot, commandR
   });
 }
 
-export async function generatePinnedOhMyOpenAgentArchive({ promptsDir, skillDir, tempRoot, commandRunner = runCommand } = {}) {
-  if (!promptsDir) throw new Error("promptsDir is required");
-  if (!skillDir) throw new Error("skillDir is required");
-  await withPinnedCheckout(tempRoot, commandRunner, async (sourceDir) => {
-    await runPromptExporter(sourceDir, promptsDir, commandRunner);
-    await copyUlwPlanSkillFromCheckout(sourceDir, skillDir);
-  });
-}
 
 async function withPinnedCheckout(tempRoot, commandRunner, callback) {
   const tempParent = resolve(tempRoot ?? tmpdir());
@@ -356,14 +224,6 @@ async function runPromptExporter(sourceDir, outputDir, commandRunner) {
   ], { cwd: sourceDir });
 }
 
-async function copyUlwPlanSkillFromCheckout(sourceDir, skillDir) {
-  const sourceRoot = join(sourceDir, "packages/shared-skills/skills/ulw-plan");
-  await validateSkillSourceDir(sourceRoot);
-  await mkdir(skillDir, { recursive: true });
-  for (const path of ULW_PLAN_PATHS) {
-    await copyExpectedFile(sourceRoot, skillDir, path);
-  }
-}
 
 async function validateGeneratedDir(generatedDir) {
   const manifestPath = safeJoin(generatedDir, MANIFEST_FILE);
@@ -388,19 +248,6 @@ async function validateGeneratedDir(generatedDir) {
   }
 }
 
-async function validateSkillSourceDir(skillSourceDir) {
-  for (const path of ULW_PLAN_PATHS) {
-    const file = safeJoin(skillSourceDir, path);
-    const stat = await lstat(file).catch((error) => {
-      if (error?.code === "ENOENT") return null;
-      throw error;
-    });
-    if (!stat) throw new Error(`ulw-plan source file missing: ${path}`);
-    if (!stat.isFile()) throw new Error(`ulw-plan source file must be a regular file: ${path}`);
-  }
-  const extra = (await listFiles(skillSourceDir)).filter((path) => !expectedUlwPlanPathSet.has(path)).sort();
-  if (extra.length > 0) throw new Error(`ulw-plan source unexpected file: ${extra.join(", ")}`);
-}
 
 async function prepareDirectoryReplacement({ sourceRoot, target, paths, stagePrefix }) {
   const targetParent = dirname(target);
@@ -584,16 +431,8 @@ function parseArgs(argv) {
       options.generatedDir = rest[++index];
       continue;
     }
-    if (arg === "--skill-source") {
-      options.skillSourceDir = rest[++index];
-      continue;
-    }
     if (arg === "--target") {
       options.targetDir = rest[++index];
-      continue;
-    }
-    if (arg === "--skill-target") {
-      options.skillTargetDir = rest[++index];
       continue;
     }
     if (arg === "--temp-root") {
@@ -608,43 +447,35 @@ function parseArgs(argv) {
 async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   if (options.command === "check") {
-    const result = await checkOhMyOpenAgentArchive({
+    const result = await checkFinalPrompts({
       generatedDir: options.generatedDir,
-      skillSourceDir: options.skillSourceDir,
       targetDir: options.targetDir,
-      skillTargetDir: options.skillTargetDir,
       tempRoot: options.tempRoot
     });
     if (options.json) {
       console.log(JSON.stringify(result));
     } else if (result.ok) {
-      console.log("oh my openagent archive matches pinned upstream");
+      console.log("oh my openagent final prompts match pinned upstream");
     } else {
-      console.log(`final prompts missing: ${result.finalPrompts.missing.join(", ") || "-"}`);
-      console.log(`final prompts changed: ${result.finalPrompts.changed.join(", ") || "-"}`);
-      console.log(`final prompts extra: ${result.finalPrompts.extra.join(", ") || "-"}`);
-      console.log(`ulw-plan missing: ${result.ulwPlan.missing.join(", ") || "-"}`);
-      console.log(`ulw-plan changed: ${result.ulwPlan.changed.join(", ") || "-"}`);
-      console.log(`ulw-plan extra: ${result.ulwPlan.extra.join(", ") || "-"}`);
+      console.log(`final prompts missing: ${result.missing.join(", ") || "-"}`);
+      console.log(`final prompts changed: ${result.changed.join(", ") || "-"}`);
+      console.log(`final prompts extra: ${result.extra.join(", ") || "-"}`);
     }
     process.exitCode = result.ok ? 0 : 1;
     return;
   }
 
   if (options.command === "sync") {
-    const result = await syncOhMyOpenAgentArchive({
+    const result = await syncFinalPrompts({
       generatedDir: options.generatedDir,
-      skillSourceDir: options.skillSourceDir,
       targetDir: options.targetDir,
-      skillTargetDir: options.skillTargetDir,
       tempRoot: options.tempRoot
     });
-    const written = result.written.finalPrompts.length + result.written.ulwPlan.length;
-    console.log(`synced ${written} files to ${result.targetDir} and ${result.skillTargetDir}`);
+    console.log(`synced ${result.written.length} files to ${result.targetDir}`);
     return;
   }
 
-  throw new Error("usage: sync-oh-my-openagent-final-prompts.mjs <check|sync> [--generated <dir> --skill-source <dir>] [--target <dir>] [--skill-target <dir>] [--temp-root <dir>] [--json]");
+  throw new Error("usage: sync-oh-my-openagent-final-prompts.mjs <check|sync> [--generated <dir>] [--target <dir>] [--temp-root <dir>] [--json]");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {

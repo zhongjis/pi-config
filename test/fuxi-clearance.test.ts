@@ -17,14 +17,13 @@ const FUXI_PLAN_REFERENCE_PATHS = [
   join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", "references", "intent-unclear.md"),
   join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", "references", "full-workflow.md"),
 ] as const;
-const FUXI_PLAN_STAGE_LABELS = [
-  "Interview: create/update local://DRAFT.md (if not already current)",
-  "Consult Di Renjie for gap analysis using local://DRAFT.md (auto-proceed)",
-  "Generate work plan to local://PLAN.md",
-  "Self-review: classify gaps (critical/minor/ambiguous)",
-  "Present summary with auto-resolved items and decisions needed",
-  "If decisions needed: wait for user, update plan",
-  "Run plan approval flow (plan_approve; dual high-accuracy review when required)",
+const FUXI_PLAN_INVENTORY = [
+  "SKILL.md",
+  "agents/openai.yaml",
+  "references/full-workflow.md",
+  "references/intent-clear.md",
+  "references/intent-unclear.md",
+  "scripts/scaffold-plan.mjs",
 ] as const;
 
 function getFuxiPrompt(): string {
@@ -101,26 +100,22 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
   },
   fuxi: {
     default: [
-      "Plan only. MUST NOT implement",
+      "You are a PLANNER.",
       "Plan mode is sticky",
       "separate worker session that only the user starts",
       "ulw-plan",
-      "Load the `ulw-plan` skill before planning",
-      "MUST NOT restate or inline the planning workflow",
-      "local://DRAFT.md",
-      "local://PLAN.md",
-      "plan_approve",
+      "LOAD the ulw-plan skill",
+      "local://",
+      "/handoff:start-work",
     ],
     gpt: [
-      "Plan only. MUST NOT implement",
+      "You are a PLANNER.",
       "Plan mode is sticky",
       "separate worker session that only the user starts",
       "ulw-plan",
-      "Load the `ulw-plan` skill before planning",
-      "MUST NOT restate or inline the planning workflow",
-      "local://DRAFT.md",
-      "local://PLAN.md",
-      "plan_approve",
+      "LOAD the ulw-plan skill",
+      "local://",
+      "/handoff:start-work",
     ],
     geminiOverlay: [
       "<FUXI_INTENT_GATE>",
@@ -128,20 +123,23 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "<FUXI_VERIFICATION_OVERRIDE>",
     ],
     geminiComposed: [
-      "Plan only. MUST NOT implement",
+      "You are a PLANNER.",
       "ulw-plan",
       "<FUXI_INTENT_GATE>",
-      "plan_approve",
+      "/handoff:start-work",
     ],
     defaultOnlyInGptReplacement: "MANDATORY PLAN GENERATION SEQUENCE",
   },
   houtu: {
     default: [
-      "You execute by coordinating, delegating, and verifying",
-      "Pi-tasks track plan identity, dependencies, and verified status only",
-      "Delegate all plan work directly with `Agent`",
-      "Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle",
-      "Final Verification Wave gate",
+      "Complete every task in `PLAN.md`",
+      "TaskCreate",
+      "Agent",
+      "orchestrator-owned code-quality gate",
+      "`## Todos`",
+      "`## Final verification wave`",
+      "legacy `## TODOs`",
+      "legacy `## Final Verification Wave`",
     ],
     gpt: [
       "Read `PLAN.md` before doing anything else",
@@ -149,7 +147,10 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "Pi-tasks: `TaskCreate` one task per top-level PLAN item",
       "Agent lifecycle: launch plan work with `Agent`",
       "Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle",
-      "Final Verification Wave is a mandatory approval gate",
+      "`## Todos`",
+      "`## Final verification wave`",
+      "legacy `## TODOs`",
+      "legacy `## Final Verification Wave`",
       "APPROVE",
     ],
     geminiOverlay: [
@@ -157,12 +158,15 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "Hou Tu coordinates only",
       "Pi-tasks track logical PLAN work only",
       "Delegate one bounded plan task per `Agent` session",
-      "every Final Verification Wave gate has explicit `APPROVE`",
+      "`## Todos`",
+      "`## Final verification wave`",
+      "legacy `## TODOs`",
+      "legacy `## Final Verification Wave`",
     ],
     geminiComposed: [
-      "You execute by coordinating, delegating, and verifying",
+      "Complete every task in `PLAN.md`",
       "Hou Tu coordinates only",
-      "Delegate all plan work directly with `Agent`",
+      "Agent",
     ],
     defaultOnlyInGptReplacement: "<tracking_contract>",
   },
@@ -294,6 +298,18 @@ describe("houtu Atlas parity", () => {
   });
 });
 
+  it("parses canonical upstream plan headings while retaining legacy compatibility", () => {
+    for (const family of ["default", "gpt", "gemini"] as const) {
+      const prompt = readModePrompt("houtu", family);
+      expectContainsAll(prompt, [
+        "`## Todos`",
+        "`## Final verification wave`",
+        "legacy `## TODOs`",
+        "legacy `## Final Verification Wave`",
+      ]);
+    }
+  });
+
 describe("fuxi thin prompt contract", () => {
   it("keeps the default prompt thin and delegates workflow mechanics to discovered ulw-plan", () => {
     const prompt = getFuxiPrompt();
@@ -318,31 +334,106 @@ describe("fuxi thin prompt contract", () => {
     expect(prompt).not.toContain("ADVISORY SUBPLAN MODE");
   });
 
-  it("keeps the active ulw-plan skill and its three references authoritative", () => {
+  it("preserves the canonical upstream plan contract with Pi-native bindings", () => {
     expect(existsSync(FUXI_PLAN_SKILL_PATH), "ulw-plan skill missing").toBe(true);
     for (const path of FUXI_PLAN_REFERENCE_PATHS) {
       expect(existsSync(path), `${path} missing`).toBe(true);
+    }
+    for (const relativePath of FUXI_PLAN_INVENTORY) {
+      expect(
+        existsSync(join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", relativePath)),
+        `${relativePath} missing`,
+      ).toBe(true);
     }
 
     const skill = readFileSync(FUXI_PLAN_SKILL_PATH, "utf-8");
     const references = FUXI_PLAN_REFERENCE_PATHS.map((path) => readFileSync(path, "utf-8"));
     const combined = [skill, ...references].join("\n");
+    const fullWorkflow = references[2];
+    const clearIntent = references[0];
+    const unclearIntent = references[1];
+    const openAiMetadata = readFileSync(
+      join(process.cwd(), "modes", "fuxi", "skills", "ulw-plan", "agents", "openai.yaml"),
+      "utf-8",
+    );
 
-    expect(FUXI_PLAN_STAGE_LABELS).toHaveLength(7);
-    for (const label of FUXI_PLAN_STAGE_LABELS) {
-      expect(skill).toContain(label);
-    }
+    expectContainsAll(skill, [
+      "upstream-commit: 14083b89f1cbf4680be13493a6c4afd67c957e8a",
+      "upstream-version: 4.19.0",
+      "upstream-path: packages/shared-skills/skills/ulw-plan/",
+      "license: SUL-1.0",
+      "adaptation: Fu Xi identity and Pi runtime mechanics",
+    ]);
+    expect(fullWorkflow.split("\n").length).toBeGreaterThanOrEqual(210);
+    expectContainsAll(fullWorkflow, [
+      "ulw-plan-review-request-state-contract",
+      "ulw-plan-review-round-state-contract",
+      "ulw-plan-review-lifecycle-state-contract",
+      "completion_cas",
+      "launch_interrupted",
+      "resume_after_compaction",
+      "rejected_completions",
+      "receipt_identity=session",
+      "live_plan_sha256=plan_sha256",
+      "complete literal PLAN content",
+      "backing path `local://PLAN.md`",
+      "get_subagent_result",
+      "steer_subagent",
+      "Agent(resume",
+    ]);
+    expectContainsAll(clearIntent, ["TOPOLOGY LOCK", "FOGGIEST-GAP targeting", "ASK WITH WHY"]);
+    expectContainsAll(unclearIntent, [
+      "WIDER fan-out than the clear path",
+      "contrarian self-grill",
+      "chengfeng",
+      "wenchang",
+      "direnjie",
+      "yanluo",
+      "taishang",
+    ]);
+    expectContainsAll(openAiMetadata, [
+      "display_name: \"ulw-plan (omo)\"",
+      "Use $ulw-plan",
+    ]);
 
     expectContainsAll(combined, [
+      "You are **Fu Xi 伏羲**",
       "local://DRAFT.md",
       "local://PLAN.md",
-      "Di Renjie",
+      "plan_scaffold",
       "plan_approve",
-      "dual Yan Luo + independent Taishang",
-      "Full scope is the default",
-      "5–8",
-      "Final Verification Wave",
+      "/handoff:start-work",
+      "## TL;DR (For humans)",
+      "## Scope",
+      "## Verification strategy",
+      "## Execution strategy",
+      "## Todos",
+      "## Final verification wave",
+      "## Commit strategy",
+      "## Success criteria",
+      "- [ ] N. <title>",
+      "- [ ] F<number>. <title>",
+      "**CodeGraph first when present.** Use `codegraph_explore` for repo how/where/what/flow questions before wider reads; if codegraph_* tools are absent, inactive/uninitialized, or cold-start unavailable, continue with Read/Grep/Glob/LSP and the ast-grep skill.",
+      "**Explore to sufficiency, then STOP.** One research wave per open question; stop when the clearance check is answerable; never re-explore to double-check.",
+      "**Parallel-dispatch** independent research in ONE turn and keep working while it runs. Subagent outputs are CLAIMS until you independently verify them.",
+      "**Agent-executed QA per todo** (happy + failure, exact tool + invocation, evidence path).",
+      "Agent",
+      "get_subagent_result",
+      "steer_subagent",
+      "chengfeng",
+      "wenchang",
+      "direnjie",
+      "yanluo",
+      "taishang",
+      "orchestrator-owned code-quality gate",
+      "complete literal PLAN content",
+      "backing path `local://PLAN.md`",
     ]);
+
+    expect(combined).not.toContain("task(subagent_type=");
+    expect(combined).not.toContain(".omo/drafts/");
+    expect(combined).not.toContain(".omo/plans/");
+    expect(combined).not.toContain("$start-work");
   });
 
   it("keeps old modes/fuxi/references from being the authoritative runtime source", () => {
@@ -417,9 +508,9 @@ describe("fuxi gemini composed", () => {
   it("#then safety clauses from base body should be preserved in composed prompt", () => {
     const composed = composeFuxiGeminiPrompt();
     // Key safety requirements from modes/fuxi/mode.md must survive composition
-    expect(composed).toContain("plan_approve");
-    expect(composed).toMatch(/DRAFT\.md|local:\/\/DRAFT/);
-    expect(composed).toMatch(/direnjie|Di Renjie/i);
+    expect(composed).toContain("/handoff:start-work");
+    expect(composed).toContain("local://");
+    expect(composed).toMatch(/ulw-plan/i);
   });
 });
 

@@ -68,6 +68,19 @@ export function defineTool<T>(definition: T): T {
   return definition;
 }
 
+const fileMutationQueues = new Map<string, Promise<void>>();
+
+export function withFileMutationQueue<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  const previous = fileMutationQueues.get(filePath) ?? Promise.resolve();
+  const result = previous.then(fn, fn);
+  const tail = result.then(() => undefined, () => undefined);
+  fileMutationQueues.set(filePath, tail);
+  void tail.finally(() => {
+    if (fileMutationQueues.get(filePath) === tail) fileMutationQueues.delete(filePath);
+  });
+  return result;
+}
+
 export function createBashTool() {
   return {};
 }

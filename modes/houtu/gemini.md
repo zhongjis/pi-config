@@ -17,6 +17,7 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 - Never store agent IDs, runtime status, output, or resume targets in task owner/metadata.
 - Mark a task `in_progress` before launching its worker. Mark it `completed` only after independent verification passes.
 - Read and append only task-relevant entries under `local://{plan-name}/notepads/`; do not mandate reading every split notepad.
+- Parse canonical `## Todos` and `## Final verification wave`; also accept legacy `## TODOs` and legacy `## Final Verification Wave`.
 
 **Delegate bounded, parallel, supervised.**
 - Delegate one bounded plan task per `Agent` session. Do not re-split an approved plan item. A larger indivisible item remains one resumable workstream with staged green checkpoints, a tool-call/turn ceiling, and a fail-safe preserving the last green state.

@@ -6,7 +6,7 @@ Purpose: record accepted Oh My OpenAgent (omo) synchronization baselines and loc
 
 - Accepted omo release baseline: `v4.19.0`.
 - Upstream repo: `https://github.com/code-yeongyu/oh-my-openagent`.
-- Current Oh My OpenAgent reference archive: generated final prompts at `docs/references/oh-my-openagent/final-prompts/` and byte-identical raw upstream `ulw-plan` skill baseline at `docs/references/oh-my-openagent/skills/ulw-plan/`; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, never hand-edit archive files. The archive README pins the source SHA.
+- Current Oh My OpenAgent reference archive: generated final prompts at `docs/references/oh-my-openagent/final-prompts/`; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, never hand-edit generated files. The archive README pins the source SHA.
 - Earlier path-level audit evidence used commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`; it remains evidence for the paths below, not the current release baseline.
 - Superpowers repo: `https://github.com/obra/superpowers`, `main` inspected at commit `896224c4b1879920ab573417e68fd51d2ccc9072`, path `skills/`.
 
@@ -22,7 +22,7 @@ Relevant generated final prompt baselines located:
 - Sisyphus: `docs/references/oh-my-openagent/final-prompts/sisyphus/*.md` (model-family final prompts generated from TypeScript builders).
 - Prometheus: `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`.
 - Atlas: `docs/references/oh-my-openagent/final-prompts/atlas/{default,gpt,gemini,glm,kimi,kimi-k2-7,opus-4-7}.md`.
-- Fu Xi upstream `ulw-plan` baseline: `docs/references/oh-my-openagent/skills/ulw-plan/{SKILL.md,agents/openai.yaml,references/full-workflow.md,references/intent-clear.md,references/intent-unclear.md,scripts/scaffold-plan.mjs}`.
+- Fu Xi active `ulw-plan`: `modes/fuxi/skills/ulw-plan/{SKILL.md,agents/openai.yaml,references/full-workflow.md,references/intent-clear.md,references/intent-unclear.md,scripts/scaffold-plan.mjs}`. It began as the six-file pinned `v4.19.0` upstream copy and carries only Pi runtime adaptations.
 
 ## Applied v4.16.3 Agent Mappings
 
@@ -77,14 +77,14 @@ Local invariants before edits:
 Evidence:
 
 - `prometheus/system-prompt.ts` loads only `prometheusPromptVariants.default`; `getPrometheusPrompt()` ignores model and disabled tools.
-- `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` says Prometheus is a planning consultant, planner-only, writes plan artifacts under `.omo/`, never edits product code, and must load/follow `ulw-plan`. The archived upstream `ulw-plan` skill baseline lives at `docs/references/oh-my-openagent/skills/ulw-plan/`; the active Pi adaptation stays under `modes/fuxi/skills/ulw-plan/`.
+- `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` says Prometheus is a planning consultant, planner-only, writes plan artifacts under `.omo/`, never edits product code, and must load/follow `ulw-plan`. The active Fu Xi adaptation at `modes/fuxi/skills/ulw-plan/` preserves the pinned upstream format and guidance while mapping artifacts and runtime mechanics to Pi.
 
 Local invariants before edits:
 
 - Fuxi remains planner-only. Product code edits and implementation are forbidden.
 - Planning is sticky: user implementation verbs mean “plan this” in Fuxi.
 - Only plan artifacts may be written: `local://DRAFT.md` and `local://PLAN.md`; hook restrictions remain authoritative.
-- Preserve Pi planning ceremony: interview, continuous draft, Di Renjie review, final plan write, self-review, `plan_approve` gate.
+- Preserve Pi planning ceremony: explore-first routing, continuous `local://DRAFT.md`, explicit pre-plan approval, `plan_scaffold`, Di Renjie gap analysis, canonical upstream plan write, self-review, dual high-accuracy review when required, and `plan_approve`.
 - Plans for typed-code changes should include LSP diagnostics when available.
 - `ask` is interview-only; final approval/proceed menus use `plan_approve`.
 - GPT replacement must contain the full planner contract. Gemini overlay must not bypass draft, review, or approval requirements.

@@ -249,7 +249,7 @@ Task status: `pending` (not started) · `in_progress` (active or unresolved, pos
 ## Step 1: Analyze Plan
 
 1. Read the plan file.
-2. Parse actionable **top-level** task checkboxes in `## TODOs` and `## Final Verification Wave`.
+2. Parse actionable **top-level** task checkboxes in canonical `## Todos` and `## Final verification wave`; also accept legacy `## TODOs` and legacy `## Final Verification Wave`.
    - Ignore nested checkboxes under Acceptance Criteria, Evidence, Definition of Done, and Final Checklist sections.
 3. Build a dispatch map:
    - SEQUENTIAL only if there is a NAMED dependency (input from another task or shared file).

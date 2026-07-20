@@ -68,6 +68,7 @@ describe("ModeStateManager", () => {
 				{ name: "get_subagent_result" },
 				{ name: "steer_subagent" },
 				{ name: "plan_approve" },
+				{ name: "plan_scaffold" },
 			],
 			getActiveTools: () => activeTools,
 			setActiveTools: vi.fn((toolNames: string[]) => {
@@ -368,8 +369,8 @@ describe("ModeStateManager", () => {
 		expect(pi.setActiveTools).not.toHaveBeenCalled();
 	});
 
-	it("exposes plan_approve only in fuxi mode", async () => {
-		const pi = createMockPi(["read", "write", "plan_approve"]);
+	it("exposes Fu Xi-only planning tools only in fuxi mode", async () => {
+		const pi = createMockPi(["read", "write", "plan_approve", "plan_scaffold"]);
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = { body: "build" };
 		state.cachedConfigs["fuxi:default"] = { body: "plan" };
@@ -385,7 +386,7 @@ describe("ModeStateManager", () => {
 
 		pi.setActiveTools.mockClear();
 		await state.switchMode("fuxi", ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "plan_approve"]);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "plan_approve", "plan_scaffold"]);
 	});
 
 	it("resets plan review state", () => {

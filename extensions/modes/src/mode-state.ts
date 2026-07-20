@@ -18,12 +18,17 @@ function hasToolPolicy(config: ModeConfig): boolean {
   );
 }
 
-const PLAN_APPROVE_TOOL_NAME = "plan_approve";
+const FU_XI_ONLY_TOOL_NAMES = ["plan_approve", "plan_scaffold"] as const;
 
-function applyPlanApproveAccess(mode: Mode, toolNames: readonly string[], allToolNames: readonly string[]): string[] {
-  const withoutPlanApprove = toolNames.filter((toolName) => toolName !== PLAN_APPROVE_TOOL_NAME);
-  if (mode !== "fuxi" || !allToolNames.includes(PLAN_APPROVE_TOOL_NAME)) return withoutPlanApprove;
-  return [...withoutPlanApprove, PLAN_APPROVE_TOOL_NAME];
+function applyFuXiOnlyToolAccess(mode: Mode, toolNames: readonly string[], allToolNames: readonly string[]): string[] {
+  const withoutFuXiOnlyTools = toolNames.filter(
+    (toolName) => !FU_XI_ONLY_TOOL_NAMES.includes(toolName as (typeof FU_XI_ONLY_TOOL_NAMES)[number]),
+  );
+  if (mode !== "fuxi") return withoutFuXiOnlyTools;
+  return [
+    ...withoutFuXiOnlyTools,
+    ...FU_XI_ONLY_TOOL_NAMES.filter((toolName) => allToolNames.includes(toolName)),
+  ];
 }
 
 function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
@@ -127,7 +132,7 @@ export class ModeStateManager {
 			});
 		}
 
-		nextActiveToolNames = applyPlanApproveAccess(this.currentMode, nextActiveToolNames, allToolNames);
+		nextActiveToolNames = applyFuXiOnlyToolAccess(this.currentMode, nextActiveToolNames, allToolNames);
 		if (!sameToolSet(nextActiveToolNames, activeToolNames)) {
 			this.pi.setActiveTools(nextActiveToolNames);
 		}

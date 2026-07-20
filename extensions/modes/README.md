@@ -43,6 +43,15 @@ Present the plan approval menu after plan generation is complete.
 **Parameters:**
 - `variant` (optional): `"post-gap-review"` (default, includes High Accuracy Review option) or `"post-high-accuracy"` (after Yan Luo already approved)
 
+### `plan_scaffold`
+
+Create canonical upstream-format `local://DRAFT.md` and, unless `draftOnly` is set, `local://PLAN.md`. Existing scaffold artifacts are resume-safe no-ops; destructive reset of edited content requires both `reset` and `force`.
+
+**Parameters:**
+- `slug`: lowercase letters, digits, and hyphens (maximum 80 characters)
+- `intent`: `"clear"` or `"unclear"`
+- `draftOnly`, `reviewRequired`, `reset`, `force` (optional booleans)
+
 ## Commands
 
 - `/mode [kuafu|fuxi|houtu|luban|shennong|build|plan|execute]` — Switch agent mode
@@ -73,7 +82,7 @@ The override is persisted in the session JSONL and survives `/reload`. It does *
 
 ## Files Worth Reading
 
-- `src/index.ts` — Extension entry, plan_approve tool registration
+- `src/index.ts` — Extension entry and planning tool registration
 - `src/hooks.ts` — Lifecycle hooks and prompt injection
 - `src/commands.ts` — Mode switching commands
 - `src/mode-state.ts` — Mode state management and persistence

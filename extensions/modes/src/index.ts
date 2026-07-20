@@ -21,6 +21,7 @@ import { registerModeHooks } from "./hooks.js";
 import { ModeStateManager } from "./mode-state.js";
 import { runPlanApprovalFlow } from "./plan-approval.js";
 import { getLocalPlanPath } from "./plan-storage.js";
+import { registerPlanScaffoldTool } from "./plan-scaffold.js";
 export default function modesExtension(pi: ExtensionAPI): void {
 	const state = new ModeStateManager(pi);
 
@@ -65,6 +66,7 @@ export default function modesExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	registerPlanScaffoldTool(pi, state);
 	registerModeCommands(pi, state);
 	registerModeHooks(pi, state);
 }

@@ -255,7 +255,7 @@ collect every worker with `get_subagent_result` (blocking `wait:true` when you n
 
 <workflow>
 ## Step 0: Register tracking
-Read PLAN, `TaskCreate` one tracking task per top-level TODO and each Final Verification gate per the tracking contract above, wire dependencies with `TaskUpdate addBlockedBy`, then call `TaskList`. Ignore nested acceptance/evidence checkboxes.
+Read PLAN, parse canonical `## Todos` and `## Final verification wave` sections (also accept legacy `## TODOs` and legacy `## Final Verification Wave`), then `TaskCreate` one tracking task per top-level todo and each final-verification gate per the tracking contract above, wire dependencies with `TaskUpdate addBlockedBy`, and call `TaskList`. Ignore nested acceptance/evidence checkboxes.
 
 ## Step 1: Analyze the plan
 
