@@ -453,7 +453,9 @@ function extractCandidates(value: string): SummaryCandidate[] {
 		if (cleanLines.length === 0) return;
 
 		const structuredLines = cleanLines.filter((line) => LIST_ITEM_RE.test(line) || HEADING_RE.test(line));
-		structuredLines.forEach((line) => pushCandidate(line, HEADING_RE.test(line) ? "heading" : "bullet"));
+		structuredLines.forEach((line) => {
+			pushCandidate(line, HEADING_RE.test(line) ? "heading" : "bullet");
+		});
 
 		const prose = cleanLines.filter((line) => !LIST_ITEM_RE.test(line) && !HEADING_RE.test(line)).join(" " );
 		if (!prose) return;
@@ -463,7 +465,9 @@ function extractCandidates(value: string): SummaryCandidate[] {
 				|| /[;:]|\s+\b(?:but|so|and then)\b/i.test(sentence)
 				|| CLAUSE_BOUNDARY_COMMA_RE.test(sentence);
 			const clauseCandidates = shouldSplitClauses ? splitClauses(sentence) : [sentence];
-			clauseCandidates.forEach((candidate) => pushCandidate(candidate, clauseCandidates.length > 1 ? "clause" : "sentence"));
+			clauseCandidates.forEach((candidate) => {
+				pushCandidate(candidate, clauseCandidates.length > 1 ? "clause" : "sentence");
+			});
 		}
 	});
 
