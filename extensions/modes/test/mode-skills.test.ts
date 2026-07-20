@@ -49,32 +49,38 @@ function createContext(mode: string) {
 }
 
 describe("mode skill discovery", () => {
-	it("discovers every mode skill directory regardless of active mode", async () => {
+	it("discovers only the active mode skill directory", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		registerModeHooks(mock.pi as never, state);
+		const cases = [
+			{ mode: "kuafu", expected: [] },
+			{ mode: "houtu", expected: [] },
+			{ mode: "shennong", expected: [] },
+			{ mode: "fuxi", expected: ["modes/fuxi/skills"] },
+			{ mode: "luban", expected: ["modes/luban/skills"] },
+		] as const;
 
-		for (const activeMode of ["kuafu", "fuxi", "luban"]) {
-			state.currentMode = activeMode as "kuafu" | "fuxi" | "luban";
-			const [discover] = await mock.fire("resources_discover", {}, createContext(activeMode));
+		for (const { mode, expected } of cases) {
+			state.currentMode = mode;
+			const [discover] = await mock.fire("resources_discover", {}, createContext(mode));
 			const skillPaths = (discover as { skillPaths: string[] }).skillPaths;
+			const relativePaths = skillPaths.map((path) => path.replace(/^.*\/modes\//, "modes/"));
 
-			expect(skillPaths).toEqual([
-				expect.stringMatching(/modes\/fuxi\/skills$/),
-				expect.stringMatching(/modes\/luban\/skills$/),
-			]);
+			expect(relativePaths).toEqual(expected);
 		}
 	});
 
-	it("returns only existing skill directories", async () => {
+	it("returns only an existing active-mode skill directory", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
 		registerModeHooks(mock.pi as never, state);
 
-		const [discover] = await mock.fire("resources_discover", {}, createContext("kuafu"));
+		const [discover] = await mock.fire("resources_discover", {}, createContext("fuxi"));
 		const skillPaths = (discover as { skillPaths: string[] }).skillPaths;
 
-		expect(skillPaths).toHaveLength(2);
+		expect(skillPaths).toHaveLength(1);
 		expect(skillPaths.every((path) => statSync(path).isDirectory())).toBe(true);
 	});
 
@@ -90,7 +96,7 @@ describe("mode skill discovery", () => {
 		expect(await mock.fire("context", { messages: [{ role: "compactionSummary" }] }, ctx)).toEqual([]);
 	});
 
-	it("does not reload globally discovered skills when switching modes", async () => {
+	it("reloads mode-local skills when switching into or out of Fu Xi", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.cachedConfigs["kuafu:default"] = { body: "" };
@@ -101,6 +107,6 @@ describe("mode skill discovery", () => {
 		await state.switchMode("fuxi", ctx as never);
 		await state.switchMode("kuafu", ctx as never);
 
-		expect(ctx.reload).not.toHaveBeenCalled();
+		expect(ctx.reload).toHaveBeenCalledTimes(2);
 	});
 });

@@ -60,36 +60,35 @@ describe("modes extension — integration", () => {
 		expect(toolNames).toContain("plan_approve");
 	});
 
-	it("discovers all mode skills globally without context bootstrap", async () => {
+	it("discovers only active-mode skills without context bootstrap", async () => {
 		t = await createTestSession({
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
 		});
 
-		const runner = (t.session as any).extensionRunner;
 		const fuxiSkillsDir = path.resolve(PROJECT_ROOT, "modes/fuxi/skills");
 		const lubanSkillsDir = path.resolve(PROJECT_ROOT, "modes/luban/skills");
-		const oldSuperpowersSkillsDir = path.resolve(PROJECT_ROOT, "extensions/superpowers/skills");
 		const discoveredPaths = async () => {
+			const runner = (t.session as any).extensionRunner;
 			const resources = await runner.emitResourcesDiscover(PROJECT_ROOT, "reload");
 			return resources.skillPaths.map((resource: { path: string }) => resource.path);
 		};
-		const expectGlobalDiscoveryOnly = async () => {
-			const paths = await discoveredPaths();
-			expect(paths).toContain(fuxiSkillsDir);
-			expect(paths).toContain(lubanSkillsDir);
-			expect(paths).not.toContain(oldSuperpowersSkillsDir);
+		const expectPaths = async (expected: string[]) => {
+			expect(await discoveredPaths()).toEqual(expected);
+			const runner = (t.session as any).extensionRunner;
 			const context = JSON.stringify(await runner.emitContext([]));
 			expect(context).not.toContain("mode-skill-bootstrap:");
 		};
 
-		await expectGlobalDiscoveryOnly();
+		await expectPaths([]);
 		await switchMode(t, "fuxi");
-		await expectGlobalDiscoveryOnly();
+		await expectPaths([fuxiSkillsDir]);
 		await switchMode(t, "luban");
-		await expectGlobalDiscoveryOnly();
+		await expectPaths([lubanSkillsDir]);
+		await switchMode(t, "houtu");
+		await expectPaths([]);
 		await switchMode(t, "kuafu");
-		await expectGlobalDiscoveryOnly();
+		await expectPaths([]);
 	});
 
 	// ── Default mode (kuafu) allows writes ──────────────────────

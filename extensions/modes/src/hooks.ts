@@ -223,7 +223,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 	});
 
 	pi.on("resources_discover", async () => {
-		return { skillPaths: getModeSkillPaths() };
+		return { skillPaths: getModeSkillPaths(state.currentMode) };
 	});
 
 	function bindActiveSessionContext(ctx: ExtensionContext): void {

@@ -67,7 +67,7 @@ The override is persisted in the session JSONL and survives `/reload`. It does *
 - `session_start`, `session_tree` — Restore mode state
 - `before_agent_start` — Inject mode-specific prompt
 - `model_select` — Re-apply mode model when session restores a saved model
-- `resources_discover` — Expose every existing `modes/<mode>/skills` directory to all agent sessions loading this extension
+- `resources_discover` — Expose only the active mode's existing `modes/<mode>/skills` directory
 - `input` — Handle mode switching keywords
 - Status bar shows current mode with color coding
 
@@ -77,7 +77,7 @@ The override is persisted in the session JSONL and survives `/reload`. It does *
 - `src/hooks.ts` — Lifecycle hooks and prompt injection
 - `src/commands.ts` — Mode switching commands
 - `src/mode-state.ts` — Mode state management and persistence
-- `src/mode-skills.ts` — Global discovery of existing mode-owned skill directories
+- `src/mode-skills.ts` — Active-mode discovery of existing mode-owned skill directories
 - `src/plan-approval.ts` — Plan review approval flow
 - `src/constants.ts` — Mode definitions, aliases, colors
 - `src/types.ts` — Type definitions

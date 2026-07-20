@@ -119,12 +119,9 @@ describe("ModeStateManager", () => {
 		expect(pi.appendEntry).toHaveBeenCalled();
 	});
 
-	it("does not reload resources when switching globally discovered skill modes", async () => {
+	it("reloads resources across mode-local skill boundaries", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["luban:default"] = { body: "" };
-		state.cachedConfigs["kuafu:default"] = { body: "" };
-		state.cachedConfigs["fuxi:default"] = { body: "" };
 		const reload = vi.fn(async () => {});
 		const ctx = {
 			hasUI: false,
@@ -136,11 +133,12 @@ describe("ModeStateManager", () => {
 		await state.switchMode("luban", ctx as never);
 		await state.switchMode("kuafu", ctx as never);
 		await state.switchMode("fuxi", ctx as never);
+		await state.switchMode("luban", ctx as never);
 
-		expect(reload).not.toHaveBeenCalled();
+		expect(reload).toHaveBeenCalledTimes(4);
 	});
 
-	it("does not require reload support when switching to a globally discovered skill mode", async () => {
+	it("does not require reload support when switching to a mode-local skill mode", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["luban:default"] = { body: "" };
@@ -220,7 +218,7 @@ describe("ModeStateManager", () => {
 		expect(reload).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not reload when switching kuafu to globally discovered fuxi", async () => {
+	it("reloads when switching kuafu to mode-local fuxi", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["fuxi:default"] = { body: "" };
@@ -234,6 +232,23 @@ describe("ModeStateManager", () => {
 		};
 
 		await state.switchMode("fuxi", ctx as never);
+
+		expect(reload).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not reload between modes without scoped skills", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		const reload = vi.fn(async () => {});
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			reload,
+		};
+
+		await state.switchMode("houtu", ctx as never);
+		await state.switchMode("kuafu", ctx as never);
 
 		expect(reload).not.toHaveBeenCalled();
 	});
