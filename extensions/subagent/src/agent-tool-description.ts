@@ -1,6 +1,6 @@
 import type { ToolDescriptionMode } from "./settings.js";
 
-/** Full Claude-Code-style description — byte-identical to the pre-feature inline literal. */
+/** Full Agent tool description. */
 function fullDescription(typeListText: string): string {
   return `Launch a new agent to handle complex, multi-step tasks autonomously.
 
@@ -10,7 +10,7 @@ Available agent types:
 ${typeListText}
 
 Guidelines:
-- For parallel work, use run_in_background: true on each agent. Foreground calls run sequentially — only one executes at a time.
+- run_in_background: false waits for completion; true returns an agent ID immediately. This flag controls result delivery, not serialization: Agent calls dispatched concurrently can overlap in either mode.
 - Leave max_turns unset unless you need an explicit cap. Unset is the normal unlimited-by-default behavior.
 - Use resume only for the same workstream: a follow-up, correction, or recheck. Start a fresh agent for independent or unrelated work. If resume fails, report the failure; do not automatically fall back to a fresh call.
 - Background agents require active supervision: check progress with get_subagent_result, use steer_subagent for mid-run course correction, and use resume only as described above to continue the same agent instead of starting duplicate work.
@@ -30,7 +30,7 @@ function compactDescription(compactTypeListText: string): string {
 Available agent types:
 ${compactTypeListText}
 
-Notes: run_in_background:true runs in parallel — supervise with get_subagent_result / steer_subagent. Resume only the same workstream (follow-up, correction, recheck); start fresh for independent/unrelated work; on resume failure, report it and do not auto-fallback to fresh. Optional params: model ("provider/modelId" or fuzzy), thinking, max_turns, isolated, inherit_context.`;
+Notes: run_in_background:false waits for completion; true returns an agent ID immediately. It controls result delivery, not serialization: concurrently dispatched Agent calls can overlap in either mode. Supervise background agents with get_subagent_result / steer_subagent. Resume only the same workstream (follow-up, correction, recheck); start fresh for independent/unrelated work; on resume failure, report it and do not auto-fallback to fresh. Optional params: model ("provider/modelId" or fuzzy), thinking, max_turns, isolated, inherit_context.`;
 }
 
 export function buildAgentToolDescription(

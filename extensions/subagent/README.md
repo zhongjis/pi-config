@@ -32,7 +32,7 @@ installs. The agent dir respects `$PI_CODING_AGENT_DIR` (default `~/.pi/agent`).
 
 ## Tools and Commands
 
-- `Agent` — spawn a new agent or resume an existing one. Required params: `prompt`, `description`. Optional params: `subagent_type` (default `general-purpose`), `run_in_background`, `resume`, `model` (fuzzy `"haiku"`, `"sonnet"`, or full `"provider/modelId"`), `thinking`, `max_turns`, `inherit_context`, `isolated`.
+- `Agent` — spawn a new agent or resume an existing one. Required params: `prompt`, `description`. Optional params: `subagent_type` (default `general-purpose`), `run_in_background`, `resume`, `model` (fuzzy `"haiku"`, `"sonnet"`, or full `"provider/modelId"`), `thinking`, `max_turns`, `inherit_context`, `isolated`. `run_in_background: false` waits for completion; `true` returns an agent ID immediately. Concurrently dispatched calls can overlap in either mode.
 - `get_subagent_result` — check status or wait for a background agent. Params: `agent_id` (required), `wait`, `verbose`.
 - `steer_subagent` — inject a message into a running agent. Params: `agent_id` (required), `message` (required).
 - `/agents` — browse running agents, view conversations, create/edit/eject/disable custom agents, configure settings.
@@ -129,7 +129,7 @@ Migration notes:
 
 ## Settings
 
-Configured via `/agents` → Settings. Persisted to `<cwd>/.pi/subagents.json` (project) with global defaults from `~/.pi/agent/subagents.json`. Defaults: max concurrency 4, max turns unlimited, grace turns 5, join mode `smart`.
+Configured via `/agents` → Settings. Persisted to `<cwd>/.pi/subagents.json` (project) with global defaults from `~/.pi/agent/subagents.json`. Defaults: max background concurrency 4, max turns unlimited, grace turns 5, join mode `smart`.
 
 Environment overrides:
 
