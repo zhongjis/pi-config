@@ -1,18 +1,5 @@
+import { statSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-
-vi.mock("node:fs", async () => {
-	const actual = await vi.importActual("node:fs") as typeof import("node:fs");
-	return {
-		...actual,
-		readFileSync(path: Parameters<typeof actual.readFileSync>[0], options?: Parameters<typeof actual.readFileSync>[1]) {
-			const normalizedPath = String(path).replace(/\\/g, "/");
-			if (normalizedPath.endsWith("/modes/fuxi/skills/ulw-plan/SKILL.md")) {
-				return "---\nname: ulw-plan\n---\nFu Xi plan skill body";
-			}
-			return actual.readFileSync(path, options as never);
-		},
-	};
-});
 
 import { registerModeHooks } from "../src/hooks.js";
 import { ModeStateManager } from "../src/mode-state.js";
@@ -61,84 +48,49 @@ function createContext(mode: string) {
 	};
 }
 
-function hasInjectedPlanSkill(result: unknown): boolean {
-	const messages = (result as { messages?: unknown[] } | undefined)?.messages;
-	return Boolean(JSON.stringify(messages).includes("Fu Xi plan skill body"));
-}
+describe("mode skill discovery", () => {
+	it("discovers every mode skill directory regardless of active mode", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		registerModeHooks(mock.pi as never, state);
 
-describe("mode-specific skill bootstrap", () => {
-	it("discovers and injects Fu Xi mode skills only while Fu Xi is active", async () => {
+		for (const activeMode of ["kuafu", "fuxi", "luban"]) {
+			state.currentMode = activeMode as "kuafu" | "fuxi" | "luban";
+			const [discover] = await mock.fire("resources_discover", {}, createContext(activeMode));
+			const skillPaths = (discover as { skillPaths: string[] }).skillPaths;
+
+			expect(skillPaths).toEqual([
+				expect.stringMatching(/modes\/fuxi\/skills$/),
+				expect.stringMatching(/modes\/luban\/skills$/),
+			]);
+		}
+	});
+
+	it("returns only existing skill directories", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		registerModeHooks(mock.pi as never, state);
+
+		const [discover] = await mock.fire("resources_discover", {}, createContext("kuafu"));
+		const skillPaths = (discover as { skillPaths: string[] }).skillPaths;
+
+		expect(skillPaths).toHaveLength(2);
+		expect(skillPaths.every((path) => statSync(path).isDirectory())).toBe(true);
+	});
+
+	it("does not eagerly inject skill content into context", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "" };
 		registerModeHooks(mock.pi as never, state);
+		const ctx = createContext("fuxi");
 
-		const fuxiCtx = createContext("fuxi");
-		const [discover] = await mock.fire("resources_discover", {}, fuxiCtx);
-		expect(discover).toMatchObject({
-			skillPaths: [expect.stringMatching(/modes\/fuxi\/skills$/)],
-		});
-
-		await mock.fire("session_start", {}, fuxiCtx);
-		const [firstContext] = await mock.fire("context", { messages: [] }, fuxiCtx);
-		expect(hasInjectedPlanSkill(firstContext)).toBe(true);
-
-		const [duplicateContext] = await mock.fire("context", { messages: (firstContext as { messages: unknown[] }).messages }, fuxiCtx);
-		expect(duplicateContext).toBeUndefined();
-
-		await mock.fire("session_compact", {}, fuxiCtx);
-		const [afterCompact] = await mock.fire("context", { messages: [{ role: "compactionSummary", content: "summary" }] }, fuxiCtx);
-		expect(hasInjectedPlanSkill(afterCompact)).toBe(true);
-
-		const kuafuCtx = createContext("kuafu");
-		state.currentMode = "kuafu";
-		const [kuafuDiscover] = await mock.fire("resources_discover", {}, kuafuCtx);
-		expect(kuafuDiscover).toEqual({ skillPaths: [] });
-		const [kuafuContext] = await mock.fire("context", { messages: [] }, kuafuCtx);
-		expect(kuafuContext).toBeUndefined();
+		expect(await mock.fire("context", { messages: [] }, ctx)).toEqual([]);
+		await mock.fire("session_compact", {}, ctx);
+		expect(await mock.fire("context", { messages: [{ role: "compactionSummary" }] }, ctx)).toEqual([]);
 	});
 
-	it("discovers Luban skills without injecting a context bootstrap", async () => {
-		const mock = createMockPi();
-		const state = new ModeStateManager(mock.pi as never);
-		state.currentMode = "luban";
-		state.cachedConfigs["luban:default"] = { body: "" };
-		registerModeHooks(mock.pi as never, state);
-
-		const lubanCtx = createContext("luban");
-		await mock.fire("session_start", {}, lubanCtx);
-
-		const [discover] = await mock.fire("resources_discover", {}, lubanCtx);
-		expect(discover).toMatchObject({
-			skillPaths: [expect.stringMatching(/modes\/luban\/skills$/)],
-		});
-
-		const [firstContext] = await mock.fire("context", { messages: [] }, lubanCtx);
-		expect(firstContext).toBeUndefined();
-
-		await mock.fire("session_compact", {}, lubanCtx);
-		const [afterCompact] = await mock.fire(
-			"context",
-			{ messages: [{ role: "compactionSummary", content: "summary" }] },
-			lubanCtx,
-		);
-		expect(afterCompact).toBeUndefined();
-	});
-
-	it("restores persisted Luban skill discovery during a cold resource reload", async () => {
-		const mock = createMockPi();
-		const state = new ModeStateManager(mock.pi as never);
-		registerModeHooks(mock.pi as never, state);
-
-		const [discover] = await mock.fire("resources_discover", {}, createContext("luban"));
-
-		expect(discover).toMatchObject({
-			skillPaths: [expect.stringMatching(/modes\/luban\/skills$/)],
-		});
-	});
-
-	it("reloads when switching into or out of Fu Xi", async () => {
+	it("does not reload globally discovered skills when switching modes", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.cachedConfigs["kuafu:default"] = { body: "" };
@@ -147,9 +99,8 @@ describe("mode-specific skill bootstrap", () => {
 		const ctx = { ...createContext("kuafu"), reload: vi.fn(async () => undefined) };
 
 		await state.switchMode("fuxi", ctx as never);
-		expect(ctx.reload).toHaveBeenCalledTimes(1);
-
 		await state.switchMode("kuafu", ctx as never);
-		expect(ctx.reload).toHaveBeenCalledTimes(2);
+
+		expect(ctx.reload).not.toHaveBeenCalled();
 	});
 });

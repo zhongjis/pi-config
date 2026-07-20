@@ -22,7 +22,7 @@ Outcome-first: explore enough to settle facts, ask few sharp questions—or none
 
 ## Runtime and reference loading
 
-This skill is preloaded by the Fu Xi mode runtime. The runtime strips frontmatter and injects this full body; `resources_discover` also exposes the skill. Do not invoke another skill loader for it.
+The modes runtime exposes this skill through `resources_discover`; load it before planning. Full content remains out of context until loaded.
 
 Use `read` to load references relative to the **Base directory** supplied for this skill. Never construct an absolute reference path.
 

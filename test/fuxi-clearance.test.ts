@@ -1,8 +1,8 @@
 /**
- * Fu Xi thin-prompt and injected ulw-plan contract tests.
+ * Fu Xi thin-prompt and discovered ulw-plan contract tests.
  *
- * The mode prompt family stays thin: planner-only guardrails plus the
- * preloaded ulw-plan skill, without restating the full workflow.
+ * The mode prompt family stays thin: planner-only guardrails plus an explicit
+ * instruction to load ulw-plan, without restating the full workflow.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -105,7 +105,7 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "Plan mode is sticky",
       "separate worker session that only the user starts",
       "ulw-plan",
-      "preloaded",
+      "Load the `ulw-plan` skill before planning",
       "MUST NOT restate or inline the planning workflow",
       "local://DRAFT.md",
       "local://PLAN.md",
@@ -116,7 +116,7 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
       "Plan mode is sticky",
       "separate worker session that only the user starts",
       "ulw-plan",
-      "preloaded",
+      "Load the `ulw-plan` skill before planning",
       "MUST NOT restate or inline the planning workflow",
       "local://DRAFT.md",
       "local://PLAN.md",
@@ -295,7 +295,7 @@ describe("houtu Atlas parity", () => {
 });
 
 describe("fuxi thin prompt contract", () => {
-  it("keeps the default prompt thin and delegates workflow mechanics to preloaded ulw-plan", () => {
+  it("keeps the default prompt thin and delegates workflow mechanics to discovered ulw-plan", () => {
     const prompt = getFuxiPrompt();
 
     expectContainsAll(prompt, MODE_PROMPT_INVARIANTS.fuxi.default);
@@ -354,7 +354,7 @@ describe("fuxi thin prompt contract", () => {
 });
 
 describe("fuxi gpt variant", () => {
-  it("stays thin and points at injected ulw-plan mechanics", () => {
+  it("stays thin and points at discovered ulw-plan mechanics", () => {
     const prompt = getFuxiGptPrompt();
 
     expectContainsAll(prompt, MODE_PROMPT_INVARIANTS.fuxi.gpt);

@@ -111,7 +111,7 @@ const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
 			"Plan mode is sticky",
 			"separate worker session that only the user starts",
 			"ulw-plan",
-			"preloaded",
+			"Load the `ulw-plan` skill before planning",
 			"MUST NOT restate or inline the planning workflow",
 			"local://DRAFT.md",
 			"local://PLAN.md",
@@ -122,7 +122,7 @@ const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
 			"Plan mode is sticky",
 			"separate worker session that only the user starts",
 			"ulw-plan",
-			"preloaded",
+			"Load the `ulw-plan` skill before planning",
 			"MUST NOT restate or inline the planning workflow",
 			"local://DRAFT.md",
 			"local://PLAN.md",
@@ -241,6 +241,31 @@ describe("mode hooks", () => {
 		expect(result).toEqual({
 			systemPrompt: "Base prompt\n\n<!-- mode:fuxi -->\nFu Xi prompt\n<!-- /mode:fuxi -->",
 		});
+	});
+
+	it("instructs Fu Xi to load the discovered ulw-plan skill in every prompt family", async () => {
+		const defaultBody = readModePromptBody("fuxi", "default");
+		const gptBody = readModePromptBody("fuxi", "gpt");
+		const geminiOverlay = readModePromptBody("fuxi", "gemini");
+		const prompts = [
+			await renderInjectedPrompt({ mode: "fuxi", defaultConfig: { body: defaultBody } }),
+			await renderInjectedPrompt({
+				mode: "fuxi",
+				family: "gpt",
+				defaultConfig: { body: defaultBody },
+				familyConfig: { body: gptBody },
+			}),
+			await renderInjectedPrompt({
+				mode: "fuxi",
+				family: "gemini",
+				defaultConfig: { body: defaultBody },
+				familyConfig: { body: defaultBody, overlays: geminiOverlay },
+			}),
+		];
+
+		for (const prompt of prompts) {
+			expect(prompt).toContain("Load the `ulw-plan` skill before planning");
+		}
 	});
 
 	it("renders actual default, GPT, and Gemini final prompts for every mode", async () => {
