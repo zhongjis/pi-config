@@ -12,6 +12,19 @@ function formatSessionMetadata(
   ].join("\n");
 }
 
+function tryNotify(
+  ctx: any,
+  message: string,
+  type: "success" | "error",
+): boolean {
+  try {
+    ctx.ui.notify(message, type);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function copySessionIdExtension(pi: ExtensionAPI): void {
   pi.registerCommand("session:copy-id", {
     description: "Copy current session ID and session log path to clipboard",
@@ -20,17 +33,23 @@ export default function copySessionIdExtension(pi: ExtensionAPI): void {
       const sessionLogPath = ctx.sessionManager.getSessionFile();
       const payload = formatSessionMetadata(sessionId, sessionLogPath);
 
+      let backend: string;
       try {
-        const backend = await writeClipboard(payload);
-        ctx.ui.notify(
-          `Copied session metadata to clipboard via ${backend}`,
-          "success",
-        );
+        backend = await writeClipboard(payload);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.log(payload);
-        ctx.ui.notify(`Clipboard copy failed: ${message}\n${payload}`, "error");
+        if (!tryNotify(ctx, `Clipboard copy failed: ${message}\n${payload}`, "error")) {
+          console.error(`Clipboard copy failed: ${message}`);
+        }
+        return;
       }
+
+      tryNotify(
+        ctx,
+        `Copied session metadata to clipboard via ${backend}`,
+        "success",
+      );
     },
   });
 }
