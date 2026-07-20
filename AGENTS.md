@@ -126,3 +126,17 @@ Before registering any new tool, extension, or MCP server:
 - Extension README standard: `@docs/specs/extensions.md`
 - Testing overview: `@docs/guides/testing/README.md`
 - Event conventions: `@extensions/CONVENTIONS.md`
+
+## Agent skills
+
+### Issue tracker
+
+Issues tracked in GitHub Issues on `zhongjis/pi-config` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles, label strings unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
