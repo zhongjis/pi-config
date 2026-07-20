@@ -13,8 +13,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 }));
 
 vi.mock("@earendil-works/pi-tui", () => ({
-	Key: { tab: "tab" },
-	matchesKey: () => false,
+	Key: { tab: "tab", ctrlShift: (key: string) => `ctrl+shift+${key}` },
+	matchesKey: (candidate: unknown, expected: unknown) => candidate === expected,
 }));
 
 
@@ -53,6 +53,7 @@ function createMockPi() {
 				handlers.set(event, next);
 			},
 			getAllTools: () => [{ name: "read" }, { name: "write" }, { name: "edit" }, { name: "bash" }, { name: "Agent" }],
+			getActiveTools: () => ["read", "write", "edit", "bash", "Agent"],
 			setActiveTools: vi.fn(),
 			setModel: vi.fn(),
 			appendEntry: vi.fn(),
@@ -423,6 +424,76 @@ describe("mode hooks", () => {
 
 		await mock.fire("session_tree", {}, treeCtx);
 		expect(state.activeCtx).toBe(treeCtx as never);
+	});
+
+	it("empty-editor Tab submits the next /mode through the editor command path", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		const switchMode = vi.spyOn(state, "switchMode").mockResolvedValue(false);
+		let editorFactory: ((tui: unknown, theme: unknown, keybindings: unknown) => unknown) | undefined;
+		const onSubmit = vi.fn(async (_text: string) => {});
+		const ctx = {
+			mode: "tui",
+			hasUI: true,
+			cwd: process.cwd(),
+			ui: {
+				setStatus: vi.fn(),
+				setEditorComponent: vi.fn((factory: typeof editorFactory) => {
+					editorFactory = factory;
+				}),
+			},
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+			sessionManager: { getEntries: () => [], getSessionId: () => "mode-hooks-tab-test" },
+		};
+
+		registerModeHooks(mock.pi as never, state);
+		await mock.fire("session_start", {}, ctx);
+		expect(editorFactory).toBeDefined();
+		const editor = editorFactory?.({}, {}, {}) as { handleInput(data: string): void; onSubmit?: typeof onSubmit };
+		editor.onSubmit = onSubmit;
+
+		editor.handleInput("tab");
+
+		expect(switchMode).not.toHaveBeenCalled();
+		expect(onSubmit).toHaveBeenCalledWith("/mode:fuxi");
+	});
+
+	it("Ctrl+Shift+M submits the next /mode through ModeEditor and preserves drafted text", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		const switchMode = vi.spyOn(state, "switchMode").mockResolvedValue(false);
+		let editorFactory: ((tui: unknown, theme: unknown, keybindings: unknown) => unknown) | undefined;
+		const onSubmit = vi.fn(async (_text: string) => {});
+		const ctx = {
+			mode: "tui",
+			hasUI: true,
+			cwd: process.cwd(),
+			ui: {
+				setStatus: vi.fn(),
+				setEditorComponent: vi.fn((factory: typeof editorFactory) => {
+					editorFactory = factory;
+				}),
+			},
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+			sessionManager: { getEntries: () => [], getSessionId: () => "mode-hooks-shortcut-test" },
+		};
+
+		registerModeHooks(mock.pi as never, state);
+		await mock.fire("session_start", {}, ctx);
+		expect(editorFactory).toBeDefined();
+		const editor = editorFactory?.({}, {}, {}) as {
+			handleInput(data: string): void;
+			getText(): string;
+			onSubmit?: typeof onSubmit;
+		};
+		editor.onSubmit = onSubmit;
+		editor.getText = vi.fn(() => "draft text");
+
+		editor.handleInput("ctrl+shift+m");
+
+		expect(switchMode).not.toHaveBeenCalled();
+		expect(onSubmit).toHaveBeenCalledWith("/mode:fuxi");
+		expect(editor.getText()).toBe("draft text");
 	});
 
 	it("re-applies mode model on model_select restore", async () => {

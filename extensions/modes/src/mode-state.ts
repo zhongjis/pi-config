@@ -189,23 +189,19 @@ export class ModeStateManager {
 		this.lastStatusMode = this.currentMode;
 	}
 
-	async switchMode(mode: Mode, ctx: ExtensionContext): Promise<void> {
+	async switchMode(mode: Mode, ctx: ExtensionContext): Promise<boolean> {
 		const previousMode = this.currentMode;
 		this.currentMode = mode;
 		this.cachedConfigs = {};
 		this.resolvedFamily = "default";
 		await this.applyMode(ctx);
 		this.persistState();
-		const reload = (ctx as ExtensionContext & { reload?: () => Promise<void> }).reload;
-		if (mode !== previousMode && (SKILL_GATED_MODES.has(previousMode) || SKILL_GATED_MODES.has(mode)) && typeof reload === "function") {
-			await reload();
-		}
+		return mode !== previousMode && (SKILL_GATED_MODES.has(previousMode) || SKILL_GATED_MODES.has(mode));
 	}
 
-	async cycleMode(ctx: ExtensionContext): Promise<void> {
+	nextMode(): Mode {
 		const idx = MODES.indexOf(this.currentMode);
-		const next = MODES[(idx + 1) % MODES.length];
-		await this.switchMode(next, ctx);
+		return MODES[(idx + 1) % MODES.length];
 	}
 
 	hasPendingReview(): boolean {

@@ -23,6 +23,7 @@ extensions/
 | Shared event semantics | `CONVENTIONS.md` | Source of truth for `pi.events` usage |
 | Subagents | `subagent/AGENTS.md` | High-coupling runtime/event surface |
 | Tasks | `tasks/AGENTS.md` | File-backed DAG + process tracking + planning cleanup RPC |
+| Agent modes | `modes/src/commands.ts`, `modes/src/hooks.ts`, `modes/src/mode-state.ts` | Mode-owned resource transitions submit through command context; reload is terminal. |
 | Web research tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local `extensions/` dir |
 | Provider failover | `clauderock/` | Anthropic → AWS Bedrock fallback on quota/rate-limit; uses `lib/stream-fallback.ts` |
 | Shared model roles | `lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` role schema for extension-owned LLM calls |

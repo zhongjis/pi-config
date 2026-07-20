@@ -1,11 +1,32 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Key } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { MODE_COLORS, MODES, MODE_ALIASES, MODE_META, RESET } from "./constants.js";
 import { resolveModelFromStr, type ModeStateManager } from "./mode-state.js";
 import type { Mode } from "./types.js";
 
 function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
+}
+
+async function switchModeCommand(
+	pi: ExtensionAPI,
+	state: ModeStateManager,
+	mode: Mode,
+	ctx: ExtensionCommandContext,
+	prompt?: string,
+): Promise<void> {
+	const requiresReload = await state.switchMode(mode, ctx);
+	const followUpPrompt = prompt?.trim();
+	if (requiresReload) {
+		if (followUpPrompt) {
+			ctx.ui.notify(`Mode changed to ${mode}. Please resubmit your prompt after reload.`, "info");
+		}
+		await ctx.reload();
+		return;
+	}
+
+	if (followUpPrompt) {
+		pi.sendUserMessage(followUpPrompt, { deliverAs: "followUp" });
+	}
 }
 
 export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager): void {
@@ -37,7 +58,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				if (!choice) return;
 				const selectedIndex = items.indexOf(choice);
 				const selected = selectedIndex >= 0 ? MODES[selectedIndex] : undefined;
-				if (selected) await state.switchMode(selected, ctx);
+				if (selected) await switchModeCommand(pi, state, selected, ctx);
 				return;
 			}
 
@@ -47,7 +68,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				ctx.ui.notify(`Unknown mode: "${name}". Available: ${MODES.join(", ")}`, "error");
 				return;
 			}
-			await state.switchMode(resolved, ctx);
+			await switchModeCommand(pi, state, resolved, ctx);
 		},
 	});
 
@@ -76,7 +97,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				state.modelOverride = undefined;
 				await state.applyMode(ctx);
 				state.persistState();
-				ctx.ui.notify("Model override cleared", "success");
+				ctx.ui.notify("Model override cleared", "success" as never);
 				return;
 			}
 
@@ -89,7 +110,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 			state.modelOverride = arg;
 			await state.applyMode(ctx);
 			state.persistState();
-			ctx.ui.notify(`Model override set: ${arg}`, "success");
+			ctx.ui.notify(`Model override set: ${arg}`, "success" as never);
 		},
 	});
 
@@ -98,11 +119,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 		pi.registerCommand(`mode:${mode}`, {
 			description: `Switch to ${mode} mode`,
 			handler: async (args, ctx) => {
-				await state.switchMode(mode, ctx);
-				const prompt = args?.trim();
-				if (prompt) {
-					pi.sendUserMessage(prompt, { deliverAs: "followUp" });
-				}
+				await switchModeCommand(pi, state, mode, ctx, args);
 			},
 		});
 	}
@@ -110,11 +127,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 		pi.registerCommand(`mode:${alias}`, {
 			description: `Switch to ${target} mode`,
 			handler: async (args, ctx) => {
-				await state.switchMode(target, ctx);
-				const prompt = args?.trim();
-				if (prompt) {
-					pi.sendUserMessage(prompt, { deliverAs: "followUp" });
-				}
+				await switchModeCommand(pi, state, target, ctx, args);
 			},
 		});
 	}
@@ -129,11 +142,4 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 		return { action: "continue" as const };
 	});
 
-	// Ctrl+Shift+M always cycles regardless of editor state
-	pi.registerShortcut(Key.ctrlShift("m"), {
-		description: "Cycle agent mode (Ctrl+Shift+M)",
-		handler: async (ctx) => {
-			await state.cycleMode(ctx);
-		},
-	});
 }

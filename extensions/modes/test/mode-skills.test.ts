@@ -96,7 +96,7 @@ describe("mode skill discovery", () => {
 		expect(await mock.fire("context", { messages: [{ role: "compactionSummary" }] }, ctx)).toEqual([]);
 	});
 
-	it("reloads mode-local skills when switching into or out of Fu Xi", async () => {
+	it("reports resource reload requirements when switching into or out of Fu Xi", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.cachedConfigs["kuafu:default"] = { body: "" };
@@ -104,9 +104,9 @@ describe("mode skill discovery", () => {
 
 		const ctx = { ...createContext("kuafu"), reload: vi.fn(async () => undefined) };
 
-		await state.switchMode("fuxi", ctx as never);
-		await state.switchMode("kuafu", ctx as never);
+		await expect(state.switchMode("fuxi", ctx as never)).resolves.toBe(true);
+		await expect(state.switchMode("kuafu", ctx as never)).resolves.toBe(true);
 
-		expect(ctx.reload).toHaveBeenCalledTimes(2);
+		expect(ctx.reload).not.toHaveBeenCalled();
 	});
 });

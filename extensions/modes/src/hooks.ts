@@ -128,11 +128,17 @@ function setupModeEditor(ctx: ExtensionContext, state: ModeStateManager): void {
 		const BaseEditor = CustomEditor as unknown as new (...args: unknown[]) => {
 			handleInput(data: string): void;
 			getText(): string;
+			onSubmit?: (text: string) => void | Promise<void>;
 		};
 		class ModeEditor extends BaseEditor {
 			handleInput(data: string): void {
+				if (matchesKey(data, Key.ctrlShift("m"))) {
+					void this.onSubmit?.(`/mode:${state.nextMode()}`);
+					return;
+				}
+
 				if (matchesKey(data, Key.tab) && !this.getText().trim()) {
-					if (state.activeCtx) state.cycleMode(state.activeCtx);
+					void this.onSubmit?.(`/mode:${state.nextMode()}`);
 					return;
 				}
 				super.handleInput(data);

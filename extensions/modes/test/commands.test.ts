@@ -1,17 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@earendil-works/pi-tui", () => ({
-	Key: { ctrlShift: (key: string) => `ctrl+shift+${key}` },
-}));
-
 import { registerModeCommands } from "../src/commands.js";
 import type { ModeStateManager } from "../src/mode-state.js";
 import type { Mode } from "../src/types.js";
 
 interface RegisteredCommand {
 	description: string;
-	handler: (args: string, ctx: { ui: { select: ReturnType<typeof vi.fn> } }) => Promise<void>;
+	handler: (args: string, ctx: { ui: { notify?: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> }; reload?: ReturnType<typeof vi.fn>; }) => Promise<void>;
 }
+
 
 function createMockPi() {
 	const commands = new Map<string, RegisteredCommand>();
@@ -36,7 +33,6 @@ describe("registerModeCommands", () => {
 		const state = {
 			currentMode: "kuafu" as Mode,
 			switchMode: vi.fn(async () => {}),
-			cycleMode: vi.fn(async () => {}),
 		};
 
 		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
@@ -50,6 +46,46 @@ describe("registerModeCommands", () => {
 		expect(select).toHaveBeenCalledWith("Agent Mode", expect.any(Array));
 		expect(state.switchMode).toHaveBeenCalledWith("luban", { ui: { select } });
 	});
+
+	it("terminally reloads resource-changing prompt switches and asks for resubmission", async () => {
+		const mock = createMockPi();
+		const notify = vi.fn();
+		const reload = vi.fn(async () => {});
+		const state = {
+			currentMode: "kuafu" as Mode,
+			switchMode: vi.fn(async () => true),
+		};
+
+		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
+		const command = mock.commands.get("mode:fuxi");
+
+		await command?.handler("draft next plan", { ui: { notify, select: vi.fn() }, reload });
+
+		expect(state.switchMode).toHaveBeenCalledWith("fuxi", expect.any(Object));
+		expect(reload).toHaveBeenCalledTimes(1);
+		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("resubmit"), "info");
+	});
+
+	it("preserves follow-up prompt behavior when mode switch does not require resource reload", async () => {
+		const mock = createMockPi();
+		const notify = vi.fn();
+		const reload = vi.fn(async () => {});
+		const state = {
+			currentMode: "kuafu" as Mode,
+			switchMode: vi.fn(async () => false),
+		};
+
+		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
+		const command = mock.commands.get("mode:houtu");
+
+		await command?.handler("continue existing task", { ui: { notify, select: vi.fn() }, reload });
+
+		expect(reload).not.toHaveBeenCalled();
+		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith("continue existing task", { deliverAs: "followUp" });
+		expect(notify).not.toHaveBeenCalledWith(expect.stringContaining("resubmit"), expect.any(String));
+	});
+
 
 	it("shows mode model info with no args", async () => {
 		const mock = createMockPi();

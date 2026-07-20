@@ -58,8 +58,10 @@ Create canonical upstream-format `local://DRAFT.md` and, unless `draftOnly` is s
 - `/mode-model` — Show or override the mode's model
 - `/mode-model <provider/modelId>` — Set a session-scoped model override
 - `/mode-model --reset` — Clear the model override and revert to mode's chain
-- Tab / Ctrl+Shift+M — Cycle modes
+- Tab / Ctrl+Shift+M — Submit through the `/mode` command path
 - `--mode <name>` flag on session start
+- Mode changes that touch mode-owned skill resources reload the terminal.
+- Prompt args on those transitions do not auto-run; resubmit after reload.
 
 ## Model Override
 

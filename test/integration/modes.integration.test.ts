@@ -11,6 +11,7 @@ import { readFile, rm } from "node:fs/promises";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const EXTENSION = path.resolve(PROJECT_ROOT, "extensions/modes/src/index.ts");
+const INLINE_SKILLS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/inline-skills/index.ts");
 
 const MOCK_TOOLS = {
 	bash: (params: Record<string, unknown>) => `$ ${params.command}\nok`,
@@ -28,11 +29,36 @@ async function switchMode(t: TestSession, mode: string): Promise<void> {
 	await (t.session as any).prompt(`/mode ${mode}`);
 }
 
+async function switchModeCommand(t: TestSession, mode: string): Promise<void> {
+	await (t.session as any).prompt(`/mode:${mode}`);
+}
+
 async function executePlanApprove(t: TestSession): Promise<any> {
 	const runner = (t.session as any).extensionRunner;
 	const tool = runner.getToolDefinition("plan_approve");
 	expect(tool).toBeDefined();
 	return tool.execute("tool-plan-approve", { variant: "post-gap-review" }, undefined, undefined, runner.createContext());
+}
+
+function skillNames(t: TestSession): string[] {
+	return [...((t.session as any).resourceLoader.getSkills().skills as Array<{ name: string }>)]
+		.map((skill) => skill.name)
+		.sort();
+}
+
+async function bindReloadCommandContext(t: TestSession): Promise<void> {
+	await (t.session as any).bindExtensions({
+		commandContextActions: {
+			waitForIdle: async () => {},
+			newSession: async () => ({ cancelled: false }),
+			fork: async () => ({ cancelled: false }),
+			navigateTree: async () => ({ cancelled: false }),
+			switchSession: async () => ({ cancelled: false }),
+			reload: async () => {
+				await (t.session as any).reload();
+			},
+		},
+	});
 }
 
 describe("modes extension — integration", () => {
@@ -120,6 +146,35 @@ describe("modes extension — integration", () => {
 		await expectPaths([]);
 		await switchMode(t, "kuafu");
 		await expectPaths([]);
+	});
+
+	it("updates mode-owned skill inventory after real /mode reload with inline-skills loaded", async () => {
+		t = await createTestSession({
+			extensions: [EXTENSION, INLINE_SKILLS_EXTENSION],
+			mockTools: MOCK_TOOLS,
+		});
+		await bindReloadCommandContext(t);
+		const runner = (t.session as any).extensionRunner;
+		expect(runner.getCommand("loaded-skills")).toBeDefined();
+
+		let names = skillNames(t);
+		expect(names).not.toContain("ulw-plan");
+		expect(names).not.toContain("brainstorming");
+
+		await switchModeCommand(t, "fuxi");
+		names = skillNames(t);
+		expect(names).toContain("ulw-plan");
+		expect(names).not.toContain("brainstorming");
+
+		await switchModeCommand(t, "luban");
+		names = skillNames(t);
+		expect(names).not.toContain("ulw-plan");
+		expect(names).toContain("brainstorming");
+
+		await switchModeCommand(t, "houtu");
+		names = skillNames(t);
+		expect(names).not.toContain("ulw-plan");
+		expect(names).not.toContain("brainstorming");
 	});
 
 	// ── Default mode (kuafu) allows writes ──────────────────────
