@@ -17,7 +17,8 @@ function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     description: "Test agent",
     builtinToolNames: ["read", "grep"],
     extensions: false,
-    skills: false,
+    discoverSkills: false,
+    preloadSkills: [],
     systemPrompt: "You are a test agent.",
     promptMode: "replace",
     inheritContext: false,
@@ -103,7 +104,8 @@ describe("agent type registry", () => {
         description: "Security auditor",
         builtinToolNames: ["read", "grep"],
         extensions: false,
-        skills: true,
+        discoverSkills: true,
+        preloadSkills: [],
       })]]);
       registerAgents(agents);
 
@@ -112,20 +114,23 @@ describe("agent type registry", () => {
       expect(config.description).toBe("Security auditor");
       expect(config.builtinToolNames).toEqual(["read", "grep"]);
       expect(config.extensions).toBe(false);
-      expect(config.skills).toBe(true);
+      expect(config.discoverSkills).toBe(true);
+      expect(config.preloadSkills).toEqual([]);
     });
 
     it("getConfig returns extension source scope for user agents", () => {
       const agents = new Map([["partial", makeAgentConfig({
         name: "partial",
         extensions: ["web-search"],
-        skills: ["planning"],
+        discoverSkills: false,
+        preloadSkills: ["planning"],
       })]]);
       registerAgents(agents);
 
       const config = getConfig("partial");
       expect(config.extensions).toEqual(["web-search"]);
-      expect(config.skills).toEqual(["planning"]);
+      expect(config.discoverSkills).toBe(false);
+      expect(config.preloadSkills).toEqual(["planning"]);
     });
 
     it("getToolNamesForType works for user agents", () => {

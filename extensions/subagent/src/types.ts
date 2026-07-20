@@ -127,8 +127,10 @@ export interface AgentConfig {
   /** true = inherit all, string[] = only listed, false = none */
   extensions: true | string[] | false;
   excludeExtensions?: string[];
-  /** true = inherit all, string[] = only listed, false = none */
-  skills: true | string[] | false;
+  /** When true, pi's skill catalog is discoverable on demand. Default true. */
+  discoverSkills: boolean;
+  /** Skill names whose full content is eagerly injected into the system prompt. Default []. */
+  preloadSkills: string[];
   model?: string;
   maxTurns?: number;
   thinking?: ThinkingLevel;

@@ -333,13 +333,14 @@ export async function prepareAgentRestoreRuntime(
   const extras: PromptExtras = {};
   const extensions = options.isolated ? false : config.extensions;
   const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
-  const skills = options.isolated ? false : config.skills;
-  if (Array.isArray(skills)) {
-    const loaded = preloadSkills(skills, effectiveCwd);
+  const discoverSkills = options.isolated ? false : config.discoverSkills;
+  const preloadList = options.isolated ? [] : config.preloadSkills;
+  if (preloadList.length > 0) {
+    const loaded = preloadSkills(preloadList, effectiveCwd);
     if (loaded.length > 0) extras.skillBlocks = loaded;
   }
   const systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, ctx.getSystemPrompt(), extras);
-  const noSkills = skills === false || Array.isArray(skills);
+  const noSkills = !discoverSkills;
   const agentDir = getAgentDir();
   const settingsManager = SettingsManager.create(effectiveCwd, agentDir);
   const resourcePolicy = {
@@ -453,11 +454,13 @@ export async function runAgent(
   // Resolve extensions/skills: isolated overrides to false
   const extensions = options.isolated ? false : config.extensions;
   const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
-  const skills = options.isolated ? false : config.skills;
+  const discoverSkills = options.isolated ? false : config.discoverSkills;
+  const preloadList = options.isolated ? [] : config.preloadSkills;
 
-  // Skill preloading: when skills is string[], preload their content into prompt
-  if (Array.isArray(skills)) {
-    const loaded = preloadSkills(skills, effectiveCwd);
+  // Skill preloading: eagerly inject listed skills' content into the prompt.
+  // Independent of discoverSkills — the catalog can be on while some skills are preloaded.
+  if (preloadList.length > 0) {
+    const loaded = preloadSkills(preloadList, effectiveCwd);
     if (loaded.length > 0) {
       extras.skillBlocks = loaded;
     }
@@ -474,9 +477,9 @@ export async function runAgent(
     throw new Error(`Agent type '${type}' not found. Available: ${available.join(', ') || '(none)'}`);
   }
 
-  // When skills is string[], we've already preloaded them into the prompt.
-  // Still pass noSkills: true since we don't need the skill loader to load them again.
-  const noSkills = skills === false || Array.isArray(skills);
+  // noSkills is driven only by discoverSkills; preloaded skills (if any) are already
+  // injected into the prompt and are independent of the on-demand skill catalog.
+  const noSkills = !discoverSkills;
 
   const agentDir = getAgentDir();
 
@@ -487,7 +490,7 @@ export async function runAgent(
   // isolated overrides to false (true isolation means no project context).
   const inheritContextFiles = !options.isolated && agentConfig?.promptMode === "system_instructions";
 
-  // Load extensions/skills: true or string[] → load; false → don't.
+  // Load extensions: true/string[] → load, false → don't. Skill catalog is gated by noSkills (= !discoverSkills).
   // Suppress AGENTS.md/CLAUDE.md (unless system_instructions) and APPEND_SYSTEM.md — upstream's
   // buildSystemPrompt() re-appends both AFTER systemPromptOverride, which would defeat
   // prompt_mode: replace and isolated: true. Parent context, if wanted, reaches the subagent via

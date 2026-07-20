@@ -59,7 +59,7 @@ The parser normalizes values consistently across all fields:
 | CSV string | Comma-separated list, trimmed, empties dropped | `read,bash,edit` |
 | `none` | Explicit empty list (distinct from omitting) | `extension_tools: none` |
 | `true` / omitted | Inherit-all | `extensions: true` |
-| `false` / `none` | Inherit-nothing | `skills: false` |
+| `false` / `none` | Inherit-nothing | `extensions: false` |
 | Boolean | `true` only; anything else is falsy | `allow_nesting: true` |
 | Wildcard | Trailing `_*` / `*` prefix match (extension tools only) | `codegraph_*` |
 
@@ -81,7 +81,8 @@ Consumed by the subagent extension. Only include fields that differ from the def
 | `extension_tools` | CSV / wildcards \| `none` | all available | Exact extension/MCP tool allowlist after extensions load. Supports `foo_*` prefix wildcards. `none` = no extension tools. Cannot grant built-ins. |
 | `extensions` | `true` \| `false`/`none` \| CSV | `true` | Whether extension/MCP tools are available at all. `false`/`none` disables them. A **CSV value is currently treated as "enabled" (equivalent to `true`)** at the active-tool layer — it does not scope tools to those sources. Use `extension_tools` for per-tool filtering and `exclude_extensions` for per-source exclusion. (`inherit_extensions` is an accepted alias.) |
 | `exclude_extensions` | CSV | — | Extension source names to exclude. |
-| `skills` | `true` \| `false`/`none` \| CSV | `true` | Skills to preload into the prompt. `true` = inherit all, `false`/`none` = none, CSV = named skills. (`inherit_skills` alias.) |
+| `discover_skills` | boolean | `true` | Whether pi's skill **catalog** is discoverable on demand (drives runtime `noSkills = !discover_skills`). `false`/`none` disables the catalog. |
+| `preload_skills` | CSV \| `none` | — | Skill names whose full body is eagerly injected into the system prompt (via `preloadSkills()` → `skillBlocks`). Independent of `discover_skills` — the catalog can be on while some skills are preloaded. |
 | `prompt_mode` | `replace` \| `append` \| `system_instructions` | `replace` | How the body forms the system prompt (see [prompt_mode](#prompt_mode)). |
 | `allow_delegation_to` | CSV | unrestricted | Agent names this agent may spawn via `Agent`. |
 | `disallow_delegation_to` | CSV | — | Agent names this agent may not spawn. Applied as exclusions after `allow_delegation_to`. |
@@ -130,10 +131,10 @@ These commonly appear in `mode.md` frontmatter for parity/documentation but are
   [`extensions/modes/src/constants.ts`](../../extensions/modes/src/constants.ts),
   not the frontmatter.
 - `inherit_context`, `run_in_background`, `isolated`, `max_turns`,
-  `skills`, `enabled` — ignored by `parseModeAgentConfig`.
+  `discover_skills`, `preload_skills`, `enabled` — ignored by `parseModeAgentConfig`.
 
 Mode-scoped skills are handled separately through `<mode>/skills/*/SKILL.md`
-(see [`modes/AGENTS.md`](../../modes/AGENTS.md)), not the `skills:` frontmatter key.
+(see [`modes/AGENTS.md`](../../modes/AGENTS.md)), not the `discover_skills`/`preload_skills` frontmatter keys.
 
 ### Mode prompt variant files
 
@@ -250,6 +251,8 @@ error diagnostic and skips the agent, and a mode config becomes `null`:
 - `tools` → use `builtin_tools` + `extension_tools` instead.
 - `disallowed_tools`, `disallow_tools` → no denylist exists; use explicit
   `builtin_tools`/`extension_tools` allowlists.
+- `skills`, `inherit_skills` → split into `discover_skills` (catalog on/off) and
+  `preload_skills` (eager-inject names).
 
 There is intentionally **no tool denylist**. Tool selection is allowlist-only.
 
@@ -266,7 +269,8 @@ description: Architecture decisions and debugging. Read-only consultation with d
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high
 inherit_context: false
 run_in_background: false
-skills: complexity
+discover_skills: false
+preload_skills: complexity
 builtin_tools: read
 extension_tools: readonly_bash,look_at,codegraph_*,lsp
 extensions: true
@@ -321,7 +325,7 @@ comes from `MODE_META` and `inherit_context` is inert for modes.
 There is no repo-local automated validator for agent/mode markdown. After editing:
 
 1. Re-read the changed frontmatter and body for internal consistency.
-2. Confirm no obsolete fields (`tools`, `disallowed_tools`, `disallow_tools`) remain.
+2. Confirm no obsolete fields (`tools`, `disallowed_tools`, `disallow_tools`, `skills`, `inherit_skills`) remain.
 3. Confirm tool access matches role scope (read-only agents get no mutating tools).
 4. For subagents, test by launching through the `Agent` tool.
 5. For modes, exercise the relevant integration coverage

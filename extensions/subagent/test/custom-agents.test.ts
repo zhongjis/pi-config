@@ -78,7 +78,8 @@ Just a prompt.`);
     expect(agent.description).toBe("minimal"); // defaults to filename
     expect(agent.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES); // all tools
     expect(agent.extensions).toBe(true); // inherit all
-    expect(agent.skills).toBe(true); // inherit all
+    expect(agent.discoverSkills).toBe(true); // catalog on by default
+    expect(agent.preloadSkills).toEqual([]); // nothing preloaded by default
     expect(agent.model).toBeUndefined();
     expect(agent.thinking).toBeUndefined();
     expect(agent.maxTurns).toBeUndefined();
@@ -115,7 +116,6 @@ No tools.`);
   it("handles extensions: false → no extensions", () => {
     writeAgent("noext", `---
 extensions: false
-skills: false
 ---
 
 No extensions.`);
@@ -123,13 +123,11 @@ No extensions.`);
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("noext")!;
     expect(agent.extensions).toBe(false);
-    expect(agent.skills).toBe(false);
   });
 
   it("preserves extensions CSV source scope", () => {
     writeAgent("partial", `---
 extensions: web-search, mcp-server
-skills: planning, review
 ---
 
 Partial access.`);
@@ -137,7 +135,6 @@ Partial access.`);
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("partial")!;
     expect(agent.extensions).toEqual(["web-search", "mcp-server"]);
-    expect(agent.skills).toEqual(["planning", "review"]);
   });
 
   it("keeps only canonical names from builtin_tools", () => {
@@ -288,7 +285,6 @@ builtin_tools: read
   it("supports inherit_extensions as alternative to extensions", () => {
     writeAgent("altkey", `---
 inherit_extensions: false
-inherit_skills: false
 ---
 
 Alt keys.`);
@@ -296,13 +292,11 @@ Alt keys.`);
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("altkey")!;
     expect(agent.extensions).toBe(false);
-    expect(agent.skills).toBe(false);
   });
 
   it("extensions: none → false", () => {
     writeAgent("extnone", `---
 extensions: none
-skills: none
 ---
 
 None.`);
@@ -310,13 +304,11 @@ None.`);
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("extnone")!;
     expect(agent.extensions).toBe(false);
-    expect(agent.skills).toBe(false);
   });
 
   it("extensions: true → true (inherit all)", () => {
     writeAgent("exttrue", `---
 extensions: true
-skills: true
 ---
 
 All.`);
@@ -324,7 +316,6 @@ All.`);
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("exttrue")!;
     expect(agent.extensions).toBe(true);
-    expect(agent.skills).toBe(true);
   });
 
   it("handles enabled: false frontmatter", () => {
@@ -512,5 +503,95 @@ No extension tools.`);
       else process.env.PI_CODING_AGENT_DIR = originalEnv;
       rmSync(altAgentDir, { recursive: true, force: true });
     }
+  });
+
+  it("S1: omitted skill fields default to catalog on, no preload", () => {
+    writeAgent("s1", `---
+description: Defaults
+---
+
+Body.`);
+
+    const agent = loadCustomAgents(tmpDir).get("s1")!;
+    expect(agent.discoverSkills).toBe(true);
+    expect(agent.preloadSkills).toEqual([]);
+  });
+
+  it("S2: discover_skills false with preload_skills list", () => {
+    writeAgent("s2", `---
+discover_skills: false
+preload_skills: a, b
+---
+
+Body.`);
+
+    const agent = loadCustomAgents(tmpDir).get("s2")!;
+    expect(agent.discoverSkills).toBe(false);
+    expect(agent.preloadSkills).toEqual(["a", "b"]);
+  });
+
+  it("S3: discover_skills true with preload_skills (catalog on AND preload)", () => {
+    writeAgent("s3", `---
+discover_skills: true
+preload_skills: a
+---
+
+Body.`);
+
+    const agent = loadCustomAgents(tmpDir).get("s3")!;
+    expect(agent.discoverSkills).toBe(true);
+    expect(agent.preloadSkills).toEqual(["a"]);
+  });
+
+  it("S4: discover_skills false with no preload_skills", () => {
+    writeAgent("s4", `---
+discover_skills: false
+---
+
+Body.`);
+
+    const agent = loadCustomAgents(tmpDir).get("s4")!;
+    expect(agent.discoverSkills).toBe(false);
+    expect(agent.preloadSkills).toEqual([]);
+  });
+
+  it("S5: legacy skills field is invalid and skips the agent", () => {
+    const file = writeAgent("s5", `---
+skills: complexity
+---
+
+Body.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(result.agents.has("s5")).toBe(false);
+    expect(result.diagnostics).toEqual([
+      {
+        file,
+        agentName: "s5",
+        field: "skills",
+        severity: "error",
+        message: "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.",
+      },
+    ]);
+  });
+
+  it("S5b: legacy inherit_skills field is invalid and skips the agent", () => {
+    const file = writeAgent("s5b", `---
+inherit_skills: false
+---
+
+Body.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(result.agents.has("s5b")).toBe(false);
+    expect(result.diagnostics).toEqual([
+      {
+        file,
+        agentName: "s5b",
+        field: "inherit_skills",
+        severity: "error",
+        message: "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.",
+      },
+    ]);
   });
 });

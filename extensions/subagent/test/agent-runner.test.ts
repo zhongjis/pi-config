@@ -106,7 +106,8 @@ function defaultConfig(overrides: Record<string, unknown> = {}) {
     description: "Explore",
     builtinToolNames: ["read"],
     extensions: false,
-    skills: false,
+    discoverSkills: false,
+    preloadSkills: [],
     promptMode: "replace",
     ...overrides,
   };
@@ -118,7 +119,8 @@ function defaultAgentConfig(overrides: Record<string, unknown> = {}) {
     description: "Explore",
     builtinToolNames: ["read"],
     extensions: false,
-    skills: false,
+    discoverSkills: false,
+    preloadSkills: [],
     systemPrompt: "You are Explore.",
     promptMode: "replace",
     inheritContext: false,
@@ -307,6 +309,34 @@ describe("agent-runner final output capture", () => {
     // The override returns an empty list so any loaded sources are discarded.
     const ctorArgs = defaultResourceLoaderCtor.mock.calls[0][0];
     expect(ctorArgs.appendSystemPromptOverride(["would-be-loaded"])).toEqual([]);
+  });
+
+  it("preloads skills independently of the discoverable skill catalog (S3 combo)", async () => {
+    const { preloadSkills } = await import("../src/skill-loader.js");
+    const { buildAgentPrompt } = await import("../src/prompts.js");
+    vi.mocked(preloadSkills).mockReturnValueOnce([
+      { name: "impeccable", content: "impeccable body" },
+    ]);
+    getConfig.mockReturnValue(defaultConfig({ discoverSkills: true, preloadSkills: ["impeccable"] }));
+    const { session } = createSession("COMBO");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "Say COMBO", { pi });
+
+    // noSkills is driven ONLY by !discoverSkills, so the catalog stays available...
+    expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(
+      expect.objectContaining({ noSkills: false }),
+    );
+    // ...and the preloaded skill is still injected into the prompt (independent of the catalog).
+    expect(buildAgentPrompt).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        skillBlocks: [{ name: "impeccable", content: "impeccable body" }],
+      }),
+    );
   });
 
 

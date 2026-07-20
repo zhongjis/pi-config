@@ -24,7 +24,8 @@ registerAgents(new Map([["taishang", {
   displayName: "Taishang 太上老君",
   description: "",
   extensions: true,
-  skills: true,
+  discoverSkills: true,
+  preloadSkills: [],
   systemPrompt: "",
   promptMode: "replace",
 }]]));

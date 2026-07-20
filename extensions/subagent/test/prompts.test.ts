@@ -18,7 +18,7 @@ const envNoGit: EnvInfo = {
 describe("buildAgentPrompt", () => {
   it("includes cwd and git info", () => {
     const config: AgentConfig = {
-      name: "test-agent", description: "Test", extensions: true, skills: true,
+      name: "test-agent", description: "Test", extensions: true, discoverSkills: true, preloadSkills: [],
       systemPrompt: "", promptMode: "append",
     };
     const prompt = buildAgentPrompt(config, "/workspace", env);
@@ -29,7 +29,7 @@ describe("buildAgentPrompt", () => {
 
   it("handles non-git repos", () => {
     const config: AgentConfig = {
-      name: "test-agent", description: "Test", extensions: true, skills: true,
+      name: "test-agent", description: "Test", extensions: true, discoverSkills: true, preloadSkills: [],
       systemPrompt: "You are a test.", promptMode: "replace",
     };
     const prompt = buildAgentPrompt(config, "/workspace", envNoGit);
@@ -39,7 +39,7 @@ describe("buildAgentPrompt", () => {
 
   it("append mode with parent prompt is a twin", () => {
     const config: AgentConfig = {
-      name: "test-agent", description: "Test", extensions: true, skills: true,
+      name: "test-agent", description: "Test", extensions: true, discoverSkills: true, preloadSkills: [],
       systemPrompt: "", promptMode: "append",
     };
     const parentPrompt = "You are a parent coding agent with full powers.";
@@ -54,7 +54,7 @@ describe("buildAgentPrompt", () => {
 
   it("append mode without parent prompt falls back to generic base", () => {
     const config: AgentConfig = {
-      name: "test-agent", description: "Test", extensions: true, skills: true,
+      name: "test-agent", description: "Test", extensions: true, discoverSkills: true, preloadSkills: [],
       systemPrompt: "", promptMode: "append",
     };
     const prompt = buildAgentPrompt(config, "/workspace", env);
@@ -68,7 +68,7 @@ describe("buildAgentPrompt", () => {
       description: "Appender",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "Extra custom instructions here.",
       promptMode: "append",
       inheritContext: false,
@@ -91,7 +91,7 @@ describe("buildAgentPrompt", () => {
       description: "Appender",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "Extra custom instructions here.",
       promptMode: "append",
       inheritContext: false,
@@ -110,7 +110,7 @@ describe("buildAgentPrompt", () => {
       description: "Clone",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "",
       promptMode: "append",
       inheritContext: false,
@@ -131,7 +131,7 @@ describe("buildAgentPrompt", () => {
       description: "Custom",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "You are a specialized agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -150,7 +150,7 @@ describe("buildAgentPrompt", () => {
       description: "Standalone",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "You are a standalone agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -165,7 +165,7 @@ describe("buildAgentPrompt", () => {
 
   it("append mode bridge contains tool reminders", () => {
     const config = {
-      name: "test-agent", description: "Test", extensions: true as const, skills: true as const,
+      name: "test-agent", description: "Test", extensions: true as const, discoverSkills: true, preloadSkills: [] as const,
       systemPrompt: "", promptMode: "append" as const,
     };
     const prompt = buildAgentPrompt(config, "/workspace", env, "Parent prompt.");
@@ -180,7 +180,7 @@ describe("buildAgentPrompt", () => {
       description: "No parent",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "Extra stuff.",
       promptMode: "append",
       inheritContext: false,
@@ -201,7 +201,7 @@ describe("buildAgentPrompt", () => {
       description: "Order test",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "",
       promptMode: "append",
       inheritContext: false,
@@ -223,7 +223,7 @@ describe("buildAgentPrompt", () => {
       description: "Skill Agent",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "You are a skill agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -250,7 +250,7 @@ describe("buildAgentPrompt", () => {
       description: "Plain",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true, preloadSkills: [],
       systemPrompt: "Plain agent.",
       promptMode: "replace",
       inheritContext: false,

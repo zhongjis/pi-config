@@ -81,7 +81,8 @@ export function getConfig(type: string): {
   description: string;
   builtinToolNames: string[];
   extensions: true | string[] | false;
-  skills: true | string[] | false;
+  discoverSkills: boolean;
+  preloadSkills: string[];
   promptMode: "replace" | "append" | "system_instructions";
   excludeExtensions?: string[];
 } {
@@ -93,7 +94,8 @@ export function getConfig(type: string): {
       description: config.description,
       builtinToolNames: config.builtinToolNames ?? BUILTIN_TOOL_NAMES,
       extensions: config.extensions,
-      skills: config.skills,
+      discoverSkills: config.discoverSkills,
+      preloadSkills: config.preloadSkills,
       promptMode: config.promptMode,
       excludeExtensions: config.excludeExtensions,
     };

@@ -17,8 +17,8 @@ export function buildEjectedAgentMarkdown(cfg: AgentConfig): string {
   fmFields.push(`prompt_mode: ${cfg.promptMode}`);
   if (cfg.extensions === false) fmFields.push("extensions: false");
   else if (Array.isArray(cfg.extensions)) fmFields.push(`extensions: ${cfg.extensions.join(", ")}`);
-  if (cfg.skills === false) fmFields.push("skills: false");
-  else if (Array.isArray(cfg.skills)) fmFields.push(`skills: ${cfg.skills.join(", ")}`);
+  if (!cfg.discoverSkills) fmFields.push("discover_skills: false");
+  if (cfg.preloadSkills.length > 0) fmFields.push(`preload_skills: ${cfg.preloadSkills.join(", ")}`);
   if (cfg.inheritContext) fmFields.push("inherit_context: true");
   if (cfg.runInBackground) fmFields.push("run_in_background: true");
   if (cfg.isolated) fmFields.push("isolated: true");
@@ -66,7 +66,8 @@ model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5-2
 thinking: <optional thinking level: none, minimal, low, medium, high, xhigh. Omit to inherit>
 max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
 prompt_mode: <"replace" (body IS the full system prompt; no parent identity, no AGENTS.md), "append" (body appended to parent system prompt incl. parent identity + AGENTS.md), or "system_instructions" (body IS the full system prompt; pi auto-injects AGENTS.md as a '# Project Context' block after the body — no parent identity bleed). Default: replace>
-skills: <true (inherit all), false (none), or comma-separated skill names to preload into prompt. Default: true>
+discover_skills: <true (skill catalog discoverable on demand) or false (no catalog). Default: true>
+preload_skills: <optional comma-separated skill names whose full content is eagerly injected into the prompt. Independent of discover_skills. Default: none>
 allow_delegation_to: <comma-separated agent names this agent may delegate to via Agent. Omit for unrestricted delegation>
 disallow_delegation_to: <comma-separated agent names this agent may not delegate to via Agent. Omit for none>
 inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>

@@ -15,7 +15,8 @@ describe("/agents authoring surfaces", () => {
       extensionToolNames: [],
       disallowedTools: ["write"],
       extensions: ["web-search"],
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "Review carefully.",
       promptMode: "replace",
     };
@@ -44,7 +45,8 @@ describe("/agents authoring surfaces", () => {
       description: "Uses all extension tools",
       builtinToolNames: ["read"],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "Read only.",
       promptMode: "append",
     };
