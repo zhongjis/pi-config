@@ -514,6 +514,11 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
         }),
       ),
+      skills: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Skill names to inject (preload full skill content) into the subagent for THIS call. Subagents cannot discover skills on their own, so inject any skill essential to the task. Names must exactly match the skill's `name`. Injected in addition to the agent's own preloaded skills. Inject only what the task needs — each skill adds its full body to the prompt.",
+        }),
+      ),
     }),
 
     // ---- Custom rendering: Claude Code style ----
@@ -739,6 +744,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         thinkingLevel: thinking,
         parentSessionId,
         sessionDir: subagentSessionDir,
+        skills: params.skills,
       };
 
       const persistFreshResumeTarget = async (record: AgentRecord) => {

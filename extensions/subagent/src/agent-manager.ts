@@ -71,6 +71,8 @@ interface SpawnOptions {
   onSessionCreated?: (session: AgentSession) => void;
   /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
+  /** Skill names to inject (preload) into the subagent for this call only. See RunOptions.skills. */
+  skills?: string[];
 }
 
 export class AgentManager {
@@ -203,6 +205,7 @@ export class AgentManager {
       inheritContext: options.inheritContext,
       thinkingLevel: options.thinkingLevel,
       sessionDir: options.sessionDir,
+      skills: options.skills,
       signal: record.abortController!.signal,
       onToolActivity: (activity) => {
         if (activity.type === "end") record.toolUses++;

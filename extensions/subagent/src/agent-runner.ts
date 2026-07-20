@@ -112,6 +112,8 @@ export interface RunOptions {
   thinkingLevel?: ThinkingLevel;
   /** Directory for persistent subagent session JSONL files. Defaults to pi's normal session tree. */
   sessionDir?: string;
+  /** Skill names to inject (preload) into this subagent for this call only. Union with frontmatter preload_skills (frontmatter-first, deduped). Ignored when isolated: true. */
+  skills?: string[];
   /** Called on tool start/end with activity info. */
   onToolActivity?: (activity: ToolActivity) => void;
   /** Called on streaming text deltas from the assistant response. */
@@ -455,7 +457,7 @@ export async function runAgent(
   const extensions = options.isolated ? false : config.extensions;
   const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
   const discoverSkills = options.isolated ? false : config.discoverSkills;
-  const preloadList = options.isolated ? [] : config.preloadSkills;
+  const preloadList = options.isolated ? [] : [...new Set([...config.preloadSkills, ...(options.skills ?? [])])];
 
   // Skill preloading: eagerly inject listed skills' content into the prompt.
   // Independent of discoverSkills — the catalog can be on while some skills are preloaded.

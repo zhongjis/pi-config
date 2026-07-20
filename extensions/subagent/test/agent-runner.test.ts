@@ -340,6 +340,72 @@ describe("agent-runner final output capture", () => {
   });
 
 
+  describe("per-call skills injection via options.skills", () => {
+    it("P1 (fresh spawn injects): options.skills injected when config has empty preload", async () => {
+      const { preloadSkills } = await import("../src/skill-loader.js");
+      const { buildAgentPrompt } = await import("../src/prompts.js");
+      vi.mocked(preloadSkills).mockClear();
+      vi.mocked(buildAgentPrompt).mockClear();
+      vi.mocked(preloadSkills).mockReturnValueOnce([
+        { name: "x", content: "x body" },
+      ]);
+      getConfig.mockReturnValue(defaultConfig({ discoverSkills: false, preloadSkills: [] }));
+      const { session } = createSession("P1");
+      createAgentSession.mockResolvedValue({ session });
+
+      await runAgent(ctx, "Explore", "P1", { pi, skills: ["x"] });
+
+      // noSkills stays true — discoverSkills:false is unchanged by skills injection
+      expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(
+        expect.objectContaining({ noSkills: true }),
+      );
+      // preloadSkills called with ["x"]
+      expect(vi.mocked(preloadSkills)).toHaveBeenCalledWith(["x"], "/tmp");
+      // skillBlocks injected into prompt extras
+      expect(vi.mocked(buildAgentPrompt)).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+        expect.objectContaining({ skillBlocks: [{ name: "x", content: "x body" }] }),
+      );
+    });
+
+    it("P2 (union + order + dedupe): frontmatter-first, options.skills appended, duplicates removed", async () => {
+      const { preloadSkills } = await import("../src/skill-loader.js");
+      vi.mocked(preloadSkills).mockClear();
+      getConfig.mockReturnValue(defaultConfig({ discoverSkills: false, preloadSkills: ["y"] }));
+      const { session } = createSession("P2");
+      createAgentSession.mockResolvedValue({ session });
+
+      await runAgent(ctx, "Explore", "P2", { pi, skills: ["x", "y"] });
+
+      // frontmatter "y" first, then "x" from options.skills; "y" deduped (appears once)
+      expect(vi.mocked(preloadSkills)).toHaveBeenCalledWith(["y", "x"], "/tmp");
+    });
+
+    it("P3 (isolated ignores): options.skills ignored when isolated: true", async () => {
+      const { preloadSkills } = await import("../src/skill-loader.js");
+      vi.mocked(preloadSkills).mockClear();
+      getConfig.mockReturnValue(defaultConfig({ discoverSkills: false, preloadSkills: [] }));
+      const { session } = createSession("P3");
+      createAgentSession.mockResolvedValue({ session });
+
+      await runAgent(ctx, "Explore", "P3", { pi, isolated: true, skills: ["x"] });
+
+      expect(vi.mocked(preloadSkills)).not.toHaveBeenCalled();
+    });
+
+    it("P4 (no param = unchanged baseline): options.skills undefined uses only config.preloadSkills", async () => {
+      const { preloadSkills } = await import("../src/skill-loader.js");
+      vi.mocked(preloadSkills).mockClear();
+      getConfig.mockReturnValue(defaultConfig({ discoverSkills: false, preloadSkills: ["y"] }));
+      const { session } = createSession("P4");
+      createAgentSession.mockResolvedValue({ session });
+
+      await runAgent(ctx, "Explore", "P4", { pi });
+
+      expect(vi.mocked(preloadSkills)).toHaveBeenCalledWith(["y"], "/tmp");
+    });
+  });
+
   it("keeps selected built-ins and exact extension tools without pre-stripping via session tools", async () => {
     getConfig.mockReturnValue(defaultConfig({ builtinToolNames: ["read"], extensions: true }));
     getAgentConfig.mockReturnValue(defaultAgentConfig({

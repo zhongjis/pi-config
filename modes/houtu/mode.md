@@ -86,6 +86,7 @@ Agent(
   description="[3-5 word task label]",
   max_turns=[Recommended Max Turns],
   run_in_background=true,
+  skills=["[optional: task-essential skills to inject]"],
   prompt="[complete six-section prompt]"
 )
 ```
@@ -130,7 +131,7 @@ Confirm the assigned owner matches the decision matrix. If valid, dispatch exact
 
 **STEP 3: Build the Delegation**
 
-Use the plan owner as `subagent_type`, the plan budget as the starting `max_turns`, and the complete six-section prompt below. Agent skills are configured by the selected agent's frontmatter; `Agent()` has no `load_skills` parameter. Do not imitate Atlas's category + skill arguments in the prompt.
+Use the plan owner as `subagent_type`, the plan budget as the starting `max_turns`, and the complete six-section prompt below. Inject any task-essential skills per-call via the `Agent()` `skills` parameter (names must match the skill's `name`).
 
 **STEP 4: Preserve One Plan Item = One Workstream**
 

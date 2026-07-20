@@ -20,7 +20,8 @@ Guidelines:
 - Agent results are returned as text; summarize them for the user.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
 - Use thinking to control extended thinking level.
-- Use inherit_context if the agent needs the parent conversation history.`;
+- Use inherit_context if the agent needs the parent conversation history.
+- Use skills to inject named skills (full content) into the subagent for this call; subagents cannot discover skills themselves, so pass any skill the task requires.`;
 }
 
 /** ~75% smaller: terse intro, first-sentence-only agent list, one notes line. */
@@ -30,7 +31,7 @@ function compactDescription(compactTypeListText: string): string {
 Available agent types:
 ${compactTypeListText}
 
-Notes: run_in_background:false waits for completion; true returns an agent ID immediately. It controls result delivery, not serialization: concurrently dispatched Agent calls can overlap in either mode. Supervise background agents with get_subagent_result / steer_subagent. Resume only the same workstream (follow-up, correction, recheck); start fresh for independent/unrelated work; on resume failure, report it and do not auto-fallback to fresh. Optional params: model ("provider/modelId" or fuzzy), thinking, max_turns, isolated, inherit_context.`;
+Notes: run_in_background:false waits for completion; true returns an agent ID immediately. It controls result delivery, not serialization: concurrently dispatched Agent calls can overlap in either mode. Supervise background agents with get_subagent_result / steer_subagent. Resume only the same workstream (follow-up, correction, recheck); start fresh for independent/unrelated work; on resume failure, report it and do not auto-fallback to fresh. Optional params: model ("provider/modelId" or fuzzy), thinking, max_turns, isolated, inherit_context, skills (per-call skill injection; subagents cannot discover skills on their own).`;
 }
 
 export function buildAgentToolDescription(
