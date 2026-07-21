@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RestoreFailureReason } from "../src/types.js";
+import type { AgentRecord, RestoreFailureReason, ResumeTargetV1 } from "../src/types.js";
 
 const runAgentMock = vi.fn();
 const resumeAgentMock = vi.fn();
@@ -463,7 +463,7 @@ describe("AgentManager durable resume", () => {
     const session = { dispose: vi.fn(), subscribe: vi.fn(() => () => {}) } as any;
     const restoreSession = vi.fn().mockResolvedValue(session);
     const persistedSnapshots: any[] = [];
-    const persist = vi.fn(async (_target, record) => {
+    const persist = vi.fn(async (previous, record) => {
       persistedSnapshots.push({
         record: {
           status: record.status, isBackground: record.isBackground, resultConsumed: record.resultConsumed, notified: record.notified,
@@ -479,6 +479,7 @@ describe("AgentManager durable resume", () => {
           parentSessionId: record.run.parentSessionId, session: record.run.session, events: record.run.events().map((event: any) => event.kind),
         },
       });
+      return { ...previous, revision: previous.revision + 1 };
     });
     try {
       const outcome = await manager.resume(target.id, "continue", {
@@ -506,6 +507,35 @@ describe("AgentManager durable resume", () => {
       expect(record.run?.events().map((event) => event.kind)).toEqual(["hydrated", "restore_started", "resumed", "completed"]);
       const restoreEvents = record.run?.events().filter((event) => event.kind !== "completed") ?? [];
       expect(restoreEvents.flatMap((event) => toExternalEffects(event, { isBackground: true }))).toEqual([]);
+    } finally { await manager.dispose(); }
+  });
+
+  it("chains terminal persistence from the accepted pre-run restored snapshot", async () => {
+    resumeAgentMock.mockResolvedValue("restored answer");
+    const manager = new AgentManager();
+    const target = durableTarget();
+    const persistedRevisions: number[] = [];
+    const persist = vi.fn(async (previous: ResumeTargetV1, record: AgentRecord): Promise<ResumeTargetV1> => {
+      const next: ResumeTargetV1 = {
+        ...previous,
+        revision: previous.revision + 1,
+        state: { ...previous.state, status: record.status },
+      };
+      persistedRevisions.push(next.revision);
+      return next;
+    });
+    try {
+      const outcome = await manager.resume(target.id, "continue", {
+        parentSessionId: target.parentSessionId,
+        expectedType: target.type,
+        target,
+        restoreSession: vi.fn().mockResolvedValue({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }),
+        persist,
+      });
+
+      expect(outcome).toEqual({ status: "restored_session", id: target.id });
+      expect(persistedRevisions).toEqual([target.revision + 1, target.revision + 2]);
+      expect(persist.mock.calls[1]?.[0].revision).toBe(target.revision + 1);
     } finally { await manager.dispose(); }
   });
 

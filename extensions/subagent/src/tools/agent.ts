@@ -587,7 +587,8 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         let restoreSession: (target: ResumeTargetV1) => Promise<any> = async () => {
           throw new Error("Durable restoration is unavailable without a persisted target");
         };
-        let persist: ((target: ResumeTargetV1, record: AgentRecord) => Promise<void>) | undefined;
+        let persistenceRuntime = durable?.runtime;
+        let persist: ((target: ResumeTargetV1, record: AgentRecord) => Promise<ResumeTargetV1>) | undefined;
         if (!live?.session && durable) {
           try {
             const restoredModel = ctx.modelRegistry.find(durable.runtime.model.provider, durable.runtime.model.id);
@@ -598,10 +599,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
               thinkingLevel: durable.runtime.thinkingLevel,
             });
             restoreSession = async () => prepared.restore();
-            persist = async (target, record) => {
-              const next = captureResumeTarget(record, prepared.runtime, ctx.cwd, target);
-              await persistentRegistry.recordResumeTarget(next);
-            };
+            persistenceRuntime = prepared.runtime;
           } catch (error) {
             const reason: RestoreFailureReason = error instanceof SessionRestoreError ? error.reason : "runtime_initialization_failed";
             return textResult(
@@ -609,6 +607,15 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
               buildInvocationFailureDetails(targetType, params.description, reason, params.resume),
             );
           }
+        }
+        const runtimeForPersistence = persistenceRuntime;
+        if (durable && runtimeForPersistence) {
+          persist = async (target, record) => {
+            const next = captureResumeTarget(record, runtimeForPersistence, ctx.cwd, target);
+            const accepted = await persistentRegistry.recordResumeTarget(next);
+            if (!accepted) throw new Error("Resume target write was rejected as stale");
+            return next;
+          };
         }
         const outcome = await manager.resume(params.resume, params.prompt, {
           parentSessionId: currentParentSessionId,

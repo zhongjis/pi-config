@@ -10,6 +10,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
+import { stableSha256 } from "../../extensions/subagent/src/session-restoration.js";
+import type { ResumeTargetV1 } from "../../extensions/subagent/src/types.js";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const SUBAGENT_SOURCE = path.join(PROJECT_ROOT, "extensions/subagent/index.ts");
@@ -37,6 +39,7 @@ interface SessionLike {
 	setModel(model: Model<any>): Promise<void>;
 	abort?: () => void;
 	dispose?: () => void;
+	sessionManager?: { getEntries(): Array<{ type: string; customType?: string; data?: unknown }> };
 }
 
 interface AgentRecordLike {
@@ -83,6 +86,14 @@ function getManager(): SubagentManagerLike {
 		throw new Error("Subagent manager was not registered");
 	}
 	return candidate as SubagentManagerLike;
+}
+
+function persistedResumeTargets(id: string): ResumeTargetV1[] {
+	const session = t?.session as SessionLike | undefined;
+	return (session?.sessionManager?.getEntries() ?? [])
+		.filter((entry) => entry.type === "custom" && entry.customType === "subagents:resume-target-v1")
+		.map((entry) => entry.data as ResumeTargetV1)
+		.filter((target) => target.id === id);
 }
 
 function installFixture(): { cwd: string; wrapperPath: string } {
@@ -286,6 +297,7 @@ describe.sequential("subagent session restoration — integration", () => {
 		const originalSession = originalRecord?.session;
 		expect(originalRecord?.status).toBe("completed");
 		expect(originalSession).toBeDefined();
+		const initialTarget = persistedResumeTargets(id).at(-1)!;
 
 		const followUp = "Repeat the sentinel from the prior turn.";
 		faux.appendResponse("RESTORE-CONTEXT-17");
@@ -305,6 +317,25 @@ describe.sequential("subagent session restoration — integration", () => {
 		const persisted = readFileSync(sessionFile, "utf8");
 		expect(persisted).toContain(firstPrompt);
 		expect(persisted).toContain(followUp);
+		const liveRows = persisted.trimEnd().split("\n").map((line) => JSON.parse(line));
+		const liveTarget = persistedResumeTargets(id).at(-1)!;
+		expect(liveTarget).toMatchObject({
+			generation: initialTarget.generation,
+			revision: initialTarget.revision + 1,
+			entryCount: liveRows.length - 1,
+			activeLeafId: liveRows.at(-1)?.id,
+			sessionSha256: stableSha256(readFileSync(sessionFile)),
+			state: { status: "completed" },
+		});
+
+		await emitProductionSessionStart(t!.session as SessionLike);
+		expect(manager!.getRecord(id)).toBeUndefined();
+		const restoredPrompt = "Repeat the sentinel after live cleanup.";
+		faux.appendResponse("RESTORE-CONTEXT-17 restored after live cleanup");
+		const restoredResult = await invokeAgent("Restore after live resume", agentParams(restoredPrompt, id));
+		expect(restoredResult.isError).toBe(false);
+		expect(invocationDetails(restoredResult)).toMatchObject({ agentId: id, invocationStatus: "restored_session" });
+		expect(readFileSync(sessionFile, "utf8")).toContain(restoredPrompt);
 	});
 
 	it("restores a completed child after production session-start cleanup", async () => {
@@ -334,6 +365,28 @@ describe.sequential("subagent session restoration — integration", () => {
 		const restoredRows = readFileSync(sessionFile, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
 		expect(restoredRows.filter((row) => row.type === "session_info")).toHaveLength(1);
 		expect(restoredRows.filter((row) => row.type === "custom" && row.customType === "agent-mode").length).toBeGreaterThanOrEqual(2);
+		const acceptedRestoredTargets = persistedResumeTargets(id).slice(-2);
+		expect(acceptedRestoredTargets).toHaveLength(2);
+		expect(acceptedRestoredTargets[1]).toMatchObject({
+			generation: acceptedRestoredTargets[0]!.generation,
+			revision: acceptedRestoredTargets[0]!.revision + 1,
+			entryCount: restoredRows.length - 1,
+			activeLeafId: restoredRows.at(-1)?.id,
+			sessionSha256: stableSha256(readFileSync(sessionFile)),
+			state: { status: "completed" },
+		});
+
+		await emitProductionSessionStart(session);
+		expect(manager!.getRecord(id)).toBeUndefined();
+		const secondRestoredPrompt = "Repeat the stale sentinel after another cleanup.";
+		faux.appendResponse("RESTORE-CONTEXT-17 restored twice");
+		const secondRestoredResult = await invokeAgent(
+			"Resume restored probe again",
+			agentParams(secondRestoredPrompt, id),
+		);
+		expect(secondRestoredResult.isError).toBe(false);
+		expect(invocationDetails(secondRestoredResult)).toMatchObject({ agentId: id, invocationStatus: "restored_session" });
+		expect(readFileSync(sessionFile, "utf8")).toContain(secondRestoredPrompt);
 	});
 
 	it("rejects a tampered durable prefix without spawning or continuing", async () => {

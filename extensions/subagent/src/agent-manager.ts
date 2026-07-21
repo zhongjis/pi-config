@@ -42,8 +42,8 @@ export interface AgentRestoreRequest {
   signal?: AbortSignal;
   /** Opens the validated durable target through the T3 restoration service. */
   restoreSession: (target: ResumeTargetV1) => Promise<AgentSession>;
-  /** Optional durable generation writer; called before prompt and after settlement. */
-  persist?: (target: ResumeTargetV1, record: AgentRecord) => Promise<void>;
+  /** Optional durable generation writer; returns the accepted snapshot for the next write. */
+  persist?: (target: ResumeTargetV1, record: AgentRecord) => Promise<ResumeTargetV1>;
 }
 
 interface SpawnOptions {
@@ -420,8 +420,11 @@ export class AgentManager {
       this.resumeInFlight.add(id);
       try {
         const outcome = await this.continueRecord(live, prompt, request.signal, "live", request.target, request.persist);
-        if (!outcome.ok) return this.resumeFailure(id, outcome.reason, outcome.error, live);
+        if (outcome.ok === false) return this.resumeFailure(id, outcome.reason, outcome.error, live);
         return { status: "resumed_live", id };
+      } catch (error) {
+        if (!(error instanceof SessionRestoreError)) throw error;
+        return this.resumeFailure(id, error.reason, error.message, live);
       } finally {
         this.resumeInFlight.delete(id);
       }
@@ -445,15 +448,16 @@ export class AgentManager {
       const session = await request.restoreSession(target);
       record = this.hydrateRecord(target, session);
       this.agents.set(id, record);
+      let continuationTarget = target;
       if (request.persist) {
         try {
-          await request.persist(target, record);
+          continuationTarget = await request.persist(target, record);
         } catch {
           throw new SessionRestoreError("persistence_failed", "Failed to persist running restored generation");
         }
       }
-      const outcome = await this.continueRecord(record, prompt, request.signal, "restored", target, request.persist);
-      if (!outcome.ok) {
+      const outcome = await this.continueRecord(record, prompt, request.signal, "restored", continuationTarget, request.persist);
+      if (outcome.ok === false) {
         pandaWarn("subagent.restore.failed", {
           id, parent: request.parentSessionId, session: sessionLabel, status: target.state.status, reason: outcome.reason, elapsed: Date.now() - restoreStartedAt,
         });
@@ -585,7 +589,7 @@ export class AgentManager {
           try {
             await persist(target, record);
           } catch {
-            throw new SessionRestoreError("persistence_failed", "Failed to persist terminal restored generation");
+            throw new SessionRestoreError("persistence_failed", "Failed to persist terminal resumed generation");
           }
         }
         return outcome;
