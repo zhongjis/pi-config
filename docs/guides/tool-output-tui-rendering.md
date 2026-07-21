@@ -38,8 +38,8 @@ Keep these boundaries explicit:
 
 **Collapse is not truncation.** Collapse hides human-facing detail without changing the
 tool result. Truncation changes available content and must occur deliberately before the
-result reaches the model. If output is truncated, say so and preserve a route to the full
-artifact when one exists.
+result reaches the model. Name the omitted scale and preserve a route to the full artifact
+when one exists. If execution discarded the source data, state that full output is unavailable.
 
 ---
 
@@ -86,8 +86,8 @@ unknown duration, or labels that add no decision value.
 
 ### Expanded mode
 
-Expanded output is a structured report. It shows all promised content or explicitly
-discloses remaining omission and the full-output path. Order sections by state:
+Expanded output is a structured report. It shows all content retained for human rendering.
+Any remaining omission names its scale and full-output route. Order sections by state:
 
 - **Successful terminal result:** result first, then run metadata and artifacts.
 - **Running result:** current activity first, then available run metadata.
@@ -96,6 +96,9 @@ discloses remaining omission and the full-output path. Order sections by state:
 
 Use lightweight headings and separators inside Pi's existing tool container. Avoid a
 nested outer box.
+
+The fixed separators and aligned metadata below assume a wide viewport. Implementations
+derive separator length from the supplied width and stack metadata when it does not fit.
 
 ```text
 ✓ Completed                                             1m 08s
@@ -133,8 +136,11 @@ separates concepts that are often incorrectly overloaded:
 
 ```typescript
 interface ToolPresentation {
-  lifecycle: "queued" | "running" | "completed" | "stopped" | "aborted" | "failed";
-  outcome?: "started" | "resumed" | "restored" | "delivered" | "denied" | "missing";
+  lifecycle: "queued" | "running" | "terminal";
+  outcome?: "completed" | "stopped" | "aborted" | "failed" | "denied" | "missing";
+  invocation?: "started" | "resumed" | "restored";
+  acknowledgement?: "delivered";
+  completionReason?: "normal" | "turn-limit";
   delivery?: "foreground" | "background";
   activity?: string;
   result?: string;
@@ -156,7 +162,8 @@ Important distinctions:
 
 - Background is a delivery mode, not a lifecycle state.
 - Queued is not running.
-- Completion at a configured limit is not the same as failure.
+- Invocation, acknowledgement, and terminal outcome are separate facts.
+- Completion at a configured limit is an outcome plus completion reason, not failure.
 - User stop, external stop, hard-limit abort, policy denial, and runtime failure are
   different outcomes and may require different recovery text.
 - Aggregate usage is `tokens`; use `context` only for measured context-window occupancy.
@@ -298,9 +305,11 @@ If the message preview is truncated, expansion should reveal the complete instru
 Long output has two independent budgets:
 
 1. **Model budget:** enforced during execution. The model must be told when its result is
-   incomplete and where full output can be read.
+   incomplete and where full output can be read. If execution discarded the source data,
+   label source truncation and state that full output is unavailable.
 2. **Display budget:** enforced by the renderer. Collapsed presentation may omit detail;
-   expanded presentation must either reveal it or explicitly disclose remaining omission.
+   expanded presentation shows all renderer-retained content or explicitly names any
+   remaining omission and its full-output route.
 
 Good omission markers carry quantity:
 
@@ -359,6 +368,130 @@ than model name; `Running` matters more than token count.
 
 ---
 
+## Build production-safe components
+
+Tool-result renderers should usually remain passive. Use an interactive component, overlay,
+or persistent widget only when users need navigation, filtering, scrolling, input, or
+ongoing status that cannot fit a historical tool row.
+
+### Width-safe helpers
+
+Prefer Pi's width-aware helpers over string length:
+
+- `visibleWidth` for final terminal-cell measurement.
+- `truncateToWidth` for collapsed previews and framed rows.
+- `wrapTextWithAnsi` for preserving ANSI state while wrapping.
+- `matchesKey` for fixed `Key.*` input matching.
+- An injected `KeybindingsManager` for configurable actions and displayed bindings.
+
+A framed row must normalize width, flatten multiline content, then reserve border width
+before truncation and pad the remaining interior:
+
+```typescript
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+
+function frameRow(content: string, width: number, theme: Theme): string {
+  const safeWidth = Number.isFinite(width) ? Math.max(0, Math.floor(width)) : 0;
+  const singleLine = content.replace(/\r\n?|\n/g, " ");
+
+  if (safeWidth === 0) return "";
+  if (safeWidth === 1) return truncateToWidth(singleLine, 1, "");
+
+  const innerWidth = safeWidth - 2;
+  const clipped = truncateToWidth(singleLine, innerWidth, "");
+  const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)));
+  return theme.fg("border", "│") + clipped + padding + theme.fg("border", "│");
+}
+```
+
+At width `1`, an indivisible two-cell grapheme may yield an empty line; never split it or
+overflow the supplied width. At width `2`, an empty framed row is `││`. Treat this as a
+minimum pattern, not a universal box abstraction. Tool rows already have Pi-owned chrome;
+reserve custom borders for overlays and standalone panels.
+
+Guard `wrapTextWithAnsi` at widths narrower than the widest indivisible grapheme. Measure
+every wrapped result and use `truncateToWidth` to omit any grapheme that cannot fit rather
+than returning an over-width line.
+
+Guard all arithmetic. A progress bar must handle `total <= 0`, non-finite values,
+`current > total`, and widths smaller than its fixed labels. At very narrow widths, replace
+the bar with compact text rather than constructing a negative-width fill.
+
+### Lifecycle, invalidation, and redraw
+
+Keep Pi's lifecycle concepts separate:
+
+- `Component.invalidate()` clears render caches. It does not request a redraw.
+- `ToolRenderContext.invalidate()` schedules the containing tool row to redraw.
+- Custom UI surfaces request redraw through `tui.requestRender()` or their injected
+  `requestRender()` handle.
+
+Components that subscribe, poll, debounce, cache themed lines, or own child processes need
+explicit ownership:
+
+- Prefer event-driven updates. Poll only for information that genuinely changes with time,
+  such as elapsed duration.
+- Throttle or coalesce frequent extension-side updates, then call the appropriate redraw API
+  described above. Pi does not provide a generic render scheduler.
+- Clear intervals, timeouts, subscriptions, listeners, and child resources when the surface
+  closes or the session changes.
+- `unref()` may stop an optional Node.js timer from keeping the process alive; it does not
+  replace cleanup.
+- Every custom `Component` implements `invalidate()`. Use a no-op for stateless components;
+  otherwise clear or rebuild cached theme- or width-dependent output.
+- Ignore scheduled callbacks after disposal; they must not request another render.
+
+Custom `setWidget` components may implement `dispose()`; Pi invokes it when the widget is
+replaced, cleared, or reset. Tool-result components have no generic disposal hook, so avoid
+long-lived resources there or own cleanup through the extension's `session_shutdown` path.
+For overlays and other custom surfaces, verify the owning API's disposal contract and test
+that cleanup runs.
+
+### Scrolling and follow mode
+
+Interactive viewers should keep scroll behavior predictable:
+
+- Derive width from `render(width)`. Do not substitute terminal column globals.
+- Recompute viewport height when terminal dimensions change.
+- Clamp cursor and scroll offsets after filtering, completion, or data removal.
+- Auto-follow only while the user is already at the end.
+- Disable auto-follow when the user scrolls upward; restore it on End or when they return to
+  the final row.
+- Use `matchesKey` for fixed `Key.*` controls. For configurable actions, use the injected
+  `KeybindingsManager.matches()` and display bindings through `getKeys()` or `keyHint()`.
+- Report position or remaining content when the viewport hides rows.
+
+Tool-result expansion itself should not become focusable merely to support long text. Use an
+existing transcript/output viewer when that surface already owns scrolling and control.
+
+### Persistent widget ownership
+
+A persistent widget is useful when background work must remain visible after its original
+tool row scrolls away. Keep responsibilities separate:
+
+- The historical tool row records invocation and result.
+- The widget summarizes current background state.
+- The overlay or viewer owns interactive transcript navigation and stop controls.
+
+Hide the widget when it has nothing useful to report. Summarize overflow instead of growing
+without bound. Clearing or replacing a `setWidget` component invokes its `dispose()`; still
+remove the widget explicitly during extension/session teardown.
+
+### Defensive formatting
+
+Reusable formatters still need domain guards:
+
+- Shorten a home path only at a path-segment boundary; `/home/alice2` is not inside
+  `/home/alice`.
+- Reject or normalize negative and non-finite token, cost, duration, and progress values.
+- Use pluralization based on the displayed value.
+- Keep duration based on monotonic elapsed time where runtime code supplies it.
+- Preserve complete paths in expanded output or artifacts even when collapsed output uses
+  `~`, basenames, or middle truncation.
+
+---
+
 ## Use restrained, redundant visual cues
 
 Status must remain understandable without color:
@@ -387,8 +520,9 @@ Other rules:
 
 ## Make expansion discoverable
 
-Use Pi's configured keybinding hint for `app.tools.expand`; do not hard-code a shortcut
-in prose. Show the hint only when expansion adds meaningful content.
+Resolve `app.tools.expand` through Pi's keybinding APIs; do not hard-code a shortcut.
+Use `getKeys()` or `keyHint()` for displayed bindings, and show the hint only when expansion
+adds meaningful content.
 
 ```text
 └─ Ctrl+O details
@@ -448,6 +582,10 @@ Avoid these patterns:
 - **Duplicated transcript viewer:** link to or preserve the deeper inspection surface.
 - **Zero telemetry:** omit facts that convey no information.
 - **Logical-line limits:** wrapping can turn one logical line into many terminal rows.
+- **Unsafe helper snippets:** padding without truncation, fixed-width separators, and
+  unguarded progress arithmetic can overflow or throw.
+- **Unowned refresh work:** timers, subscriptions, or scheduled renders that survive their
+  component leak resources and redraw stale UI.
 
 ---
 
@@ -483,13 +621,17 @@ width.
 - Foreground and background delivery when supported.
 - Empty result, malformed details, and raw fallback.
 - Long result with explicit omission and artifact recovery.
-- Expanded result retains all promised content.
+- Expanded result retains all renderer-retained content and discloses source/display
+  truncation plus the available full-output route.
 - Expand hint appears only when useful.
 - Model-facing `content` and `isError` remain unchanged.
+- Interactive/persistent surfaces clean up timers, subscriptions, listeners, and widgets.
+- Scroll offsets remain valid after resize, filtering, completion, and data removal.
 
 ### Width matrix
 
-Render at representative widths such as `8`, `20`, `40`, `80`, and `120` columns with:
+Render at representative widths such as `0`, `1`, `2`, `8`, `20`, `40`, `80`, and `120`
+columns with:
 
 - CJK text.
 - Emoji and combining characters.
@@ -497,9 +639,12 @@ Render at representative widths such as `8`, `20`, `40`, `80`, and `120` columns
 - Long unbroken path, URL, and hash.
 - Markdown list and code block.
 - Empty and oversized values.
+- Embedded CR/LF passed to a single-row helper.
+- `wrapTextWithAnsi` with a two-cell grapheme at width `1`.
 
 Assert every final line fits its visible width. Assert collapsed limits in rendered rows
-after wrapping.
+after wrapping. At width `1`, an indivisible two-cell grapheme may be omitted but must not
+be split or overflow.
 
 ### Real-surface check
 
@@ -533,6 +678,8 @@ Before shipping a renderer, confirm:
 - [ ] Every line is width-safe with Unicode and ANSI styling.
 - [ ] Configured expand key hint is used.
 - [ ] Model-facing content, errors, side effects, and persistence are unchanged.
+- [ ] Interactive components clamp scroll state and expose active navigation bindings.
+- [ ] Timers, subscriptions, listeners, widgets, and scheduled renders are cleaned up.
 - [ ] Component tests and real TUI capture both pass.
 
 ---
