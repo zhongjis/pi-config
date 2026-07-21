@@ -91,7 +91,7 @@ Agent(
   description="[3-5 word task label]",
   max_turns=[Recommended Max Turns],
   run_in_background=true,
-  skills=["[optional: task-essential skills to inject]"],
+  skills=["skill-1", "skill-2"],  // Include ALL relevant skills - ESPECIALLY user-installed ones
   prompt="[complete six-section prompt]"
 )
 ```
@@ -122,7 +122,15 @@ Confirm the assigned owner matches the decision matrix. If valid, dispatch exact
 
 **STEP 3: Build the Delegation**
 
-Use the plan owner as `subagent_type`, the plan budget as the starting `max_turns`, and the complete six-section prompt below. Inject any task-essential skills per-call via the `Agent()` `skills` parameter (names must match the skill's `name`).
+Use the plan owner as `subagent_type`, the plan budget as the starting `max_turns`, and the complete six-section prompt below.
+
+Then evaluate ALL skills. Review every available skill and its description. For EVERY skill, ask:
+> "Does this skill's expertise domain overlap with this task?"
+
+- If YES → INCLUDE in the `Agent()` `skills=[...]` parameter (names must match the skill's `name`)
+- If NO → OMIT (no justification needed)
+
+Include ALL relevant skills - ESPECIALLY user-installed ones. An empty `skills=[]` without justification will produce poor results.
 
 **STEP 4: Preserve One Plan Item = One Workstream**
 

@@ -12,6 +12,7 @@ Use tools for evidence. Code nav/flow/symbols => `codegraph_*` first; symbol-pre
 
 <KUAFU_DELEGATION_OVERRIDE>
 Default to Pi specialists: `chengfeng`, `wenchang`, `jintong`, `juling`, `yunu`, `guangguang`, `taishang`. Use `jintong` for standard bounded implementation, `juling` for complex/higher-risk (opus-tier) implementation, and `taishang` for architecture/debugging consult only. The orchestrator-owned code-quality gate stays with you: run checks and inspect the diff against requirements before completion. If any self-execution condition is false, delegate or split. Use `Agent`; store IDs; collect with `get_subagent_result`; correct drift with `steer_subagent`; resume same session when salvageable.
+Before each delegation, evaluate every available skill and inject each relevant one via `Agent(skills=[...])`; skills are cheap to load and costly to omit, so when in doubt include rather than omit.
 </KUAFU_DELEGATION_OVERRIDE>
 
 <KUAFU_SCOPE_OVERRIDE>

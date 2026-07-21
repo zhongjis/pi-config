@@ -119,6 +119,7 @@ Rules:
 - Split multi-stream work before delegating. Never hand a genuinely multi-stream task to one worker.
 - Keep delegated prompts complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
 - Include exact files, scope, acceptance criteria, and verification command when known.
+- Before every `Agent()` delegation, evaluate every available skill and inject each one whose domain even loosely connects via the `skills=[...]` parameter (names must match the skill's `name`). Skills are CHEAP to load, COSTLY to omit.
 - When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
 - Do not delegate overlapping discovery to multiple agents; choose the narrowest specialist.
 </protocol>
