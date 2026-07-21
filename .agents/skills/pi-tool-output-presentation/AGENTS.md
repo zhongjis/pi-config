@@ -6,7 +6,7 @@ Repo-local skill for Pi tool TUI output presentation: `renderCall` / `renderResu
 
 ## Local Contracts
 
-- Keep `SKILL.md` operational and source-grounded in observed CodeGraph/LSP renderer work.
+- Keep `SKILL.md` a thin operational entrypoint to the canonical `docs/guides/tool-output-tui-rendering.md`; keep rendering guidance in that guide.
 - Keep eval prompts under `evals/evals.json`; they test planning, implementation, and review use cases.
 - Do not add scripts unless repeated eval/verification work justifies them.
 
