@@ -97,7 +97,7 @@ Use `run_in_background: true` for independent tasks in a parallel wave. A single
 
 - `jintong`: bounded standard non-UI implementation/debug/test; CLI/API manual QA.
 - `juling`: complex or higher-risk non-UI implementation/debug/test.
-- `yunu`: frontend/UI implementation, accessibility, responsive behavior, browser/manual visual QA.
+- `yunu`: frontend/UI implementation, accessibility, responsive behavior (implementation only; visual/browser QA is Hou Tu's own gate, never delegated to `yunu`).
 - `guangguang`: truly tiny single-file edit or simple config/function.
 - `chengfeng`: read-only codebase discovery.
 - `wenchang`: external docs/research; require opened authoritative sources.
@@ -111,12 +111,12 @@ Use `run_in_background: true` for independent tasks in a parallel wave. A single
 |---|---|
 | Standard non-UI implementation/debug/test | `jintong` |
 | Complex or higher-risk non-UI implementation/debug/test | `juling` |
-| Frontend/UI/browser work | `yunu` |
+| Frontend/UI implementation | `yunu` |
 | Truly tiny single-file work | `guangguang` |
 | Repository discovery | `chengfeng` |
 | External documentation/research | `wenchang` |
 | F1 plan compliance | `taishang` |
-| F3 real manual QA | `yunu` for UI/browser; `jintong` for CLI/API |
+| F3 real manual QA | Hou Tu itself — drive the surface (look_at / webapp-testing / agent-browser for UI/browser, bash/curl for CLI/API) |
 | F4 scope fidelity | `direnjie` |
 
 ### MANDATORY: Plan Assignment Protocol
@@ -149,7 +149,7 @@ Delegate one bounded plan task per `Agent` session — one domain and one delive
 
 Every delegation MUST use the worker owner assigned by Fu Xi and validated against the task domain.
 
-**FRONTEND/UI/BROWSER WORK = ALWAYS `yunu`. NO EXCEPTIONS.**
+**FRONTEND/UI IMPLEMENTATION = ALWAYS `yunu`. NO EXCEPTIONS.** Visual/browser QA is Hou Tu's own Manual QA Gate, never delegated to a worker.
 
 Never route visual work to `guangguang`, `jintong`, or another non-visual worker merely because the change appears small. When an assignment is questionable, validate against the plan and decision matrix; do not default to the quickest worker.
 

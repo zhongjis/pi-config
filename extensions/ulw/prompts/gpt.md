@@ -154,8 +154,8 @@ lsp_diagnostics catches type errors only. Logic bugs, missing behavior, broken f
 | Adds/modifies a CLI command | Run it with Bash. Show output. |
 | Changes build output | Run build. Verify output files. |
 | Modifies API behavior | Call the endpoint. Show response. |
-| Renders/changes a page | Delegate to yunu or load the webapp-testing skill to drive the page (use the agent-browser skill when no browser is wired). Screenshot + action log. |
-| Changes UI rendering or a TUI/terminal layout (incl. CJK/Korean/Japanese/Chinese text) | Delegate visual QA to yunu (or load the webapp-testing / before-and-after skill): capture reference + actual screenshots (web) or `tmux capture-pane` (TUI), diff them, and record the verdict artifact (design-system + functional integrity, visual fidelity + CJK precision). |
+| Renders/changes a page | Do it yourself: load the webapp-testing skill to drive the page (use the agent-browser skill when no browser is wired). Screenshot + action log. |
+| Changes UI rendering or a TUI/terminal layout (incl. CJK/Korean/Japanese/Chinese text) | Do visual QA yourself (load the webapp-testing / before-and-after skill): capture reference + actual screenshots (web) or `tmux capture-pane` (TUI), diff them, and record the verdict artifact (design-system + functional integrity, visual fidelity + CJK precision). |
 | Drives a desktop GUI | OS-level GUI automation against the running app. Action log + screenshot. |
 | Adds tool/hook/feature | Test end-to-end in a real scenario. |
 | Modifies config handling | Load config. Verify parsed shape. |

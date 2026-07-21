@@ -86,7 +86,7 @@ Specialist routing:
 - `wenchang`: docs/web/external library research. Require opened official sources when exact docs matter.
 - `jintong`: bounded standard non-UI implementation/debug/test/verification. Escalate to `juling` for complex/higher-risk work. If the task touches frontend/UI/CSS/HTML/React/JSX/Svelte/components/visual behavior, use `yunu`, not `jintong`.
 - `juling`: opus-tier complex/higher-risk non-UI implementation/debug/verification when a task needs deeper reasoning than `jintong`; still one bounded deliverable.
-- `yunu`: frontend/web UI implementation and QA: React/JSX/Svelte/CSS/HTML/components, styling, layout, visual behavior, accessibility, responsive polish, browser QA.
+- `yunu`: frontend/web UI implementation: React/JSX/Svelte/CSS/HTML/components, styling, layout, visual behavior, accessibility, responsive polish. Implementation only — visual/browser QA is NOT delegated to `yunu`; you own it via the Manual QA Gate (drive the surface yourself with look_at / webapp-testing / agent-browser).
 - `guangguang`: trivial single-file edits, typos, obvious config nits.
 - `taishang`: architecture trade-offs, hard debugging consult, security/performance concerns, repeated failure escalation.
 - The orchestrator-owned code-quality gate stays with you: run build, lint, typecheck, and tests; inspect the diff against requirements; severity-rank findings before completion.

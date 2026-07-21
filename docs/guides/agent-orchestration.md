@@ -60,7 +60,7 @@ Orchestrators route to these leaf specialists. Only `xuannv` can itself delegate
 | `guangguang` | Trivial single-file edits | yes | no |
 | `jintong` | Standard bounded implementation | yes | no |
 | `juling` | Complex/higher-risk implementation (opus-tier) | yes | no |
-| `yunu` | Frontend/UI implementation + visual QA | yes | no |
+| `yunu` | Frontend/UI implementation (implementation only; visual/browser QA stays with the orchestrator) | yes | no |
 
 Roles and tool posture are defined in each `agents/<name>.md`; see
 [agent-frontmatter.md](agent-frontmatter.md).
@@ -88,7 +88,7 @@ this table is a convenience snapshot.
 | houtu | ✗ | ✗ | — | — | — |
 
 Notes: `shennong` lists no code writers (planning only); `fuxi` allows only `yunu`
-among writers (for UI feasibility/visual QA), not general implementation; `yanluo` is
+among writers (for UI feasibility input), not general implementation; `yanluo` is
 fuxi-only, `xuannv` is kuafu-only; **Hou Tu is never a delegation target** — it is
 reached through the approval → `/handoff:start-work` bridge, not by delegation.
 

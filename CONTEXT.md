@@ -105,7 +105,7 @@ Standard bounded non-UI implementation, debug, and test (sonnet tier).
 Complex or higher-risk non-UI implementation (opus tier).
 
 **Yunu 玉女**:
-Frontend and web-UI implementation plus visual QA.
+Frontend and web-UI implementation (implementation only; visual/browser QA stays with the orchestrator).
 
 **Guangguang 光光**:
 Trivial single-file edits, typos, and obvious config nits.

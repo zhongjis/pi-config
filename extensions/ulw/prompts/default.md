@@ -140,7 +140,7 @@ Resume the SAME xuannv session for follow-ups via `Agent(subagent_type="xuannv",
 | Planning | `Agent(subagent_type="xuannv", run_in_background=false)` | Tactical task waves + verification strategy |
 | Hard problem / architecture | `Agent(subagent_type="taishang", run_in_background=false)` | Architecture/debugging consult and F1 plan-compliance only; NEVER code-quality reviewer |
 | Code-quality review | Direct `orchestrator-owned code-quality gate` | Orchestrator inspects diff vs requirements and runs build/lint/typecheck/tests |
-| Frontend / visual work | `Agent(subagent_type="yunu", run_in_background=true)` | UI, styling, browser QA |
+| Frontend / visual work | `Agent(subagent_type="yunu", run_in_background=true)` | UI, styling, visual implementation (QA stays with you) |
 | Bounded implementation (standard) | `Agent(subagent_type="jintong", run_in_background=true)` | Isolated build/debug/test work |
 | Bounded implementation (complex/higher-risk) | `Agent(subagent_type="juling", run_in_background=true)` | Opus-tier isolated build/debug needing deeper reasoning |
 | Trivial single-file change | `Agent(subagent_type="guangguang", run_in_background=true)` | Fast, low-overhead edits |
@@ -248,8 +248,8 @@ Tests are the FLOOR (always required). Surface artifact is the CEILING (also req
 | Adds/modifies a CLI command | Run the command with Bash. Show the output. |
 | Changes build output | Run the build. Verify the output files exist and are correct. |
 | Modifies API behavior | Call the endpoint. Show the response. |
-| Changes UI rendering | Delegate to yunu or load the webapp-testing skill to drive the REAL page (or the agent-browser skill when no browser is wired). Capture screenshot + action log. |
-| Changes UI rendering or a TUI/terminal layout (incl. CJK/Korean/Japanese/Chinese text) | Delegate visual QA to yunu (or load the webapp-testing / before-and-after skill): capture reference + actual screenshots (web) or `tmux capture-pane` (TUI), diff them, and record the verdict artifact (design-system + functional integrity, visual fidelity + CJK precision). |
+| Changes UI rendering | Do it yourself: load the webapp-testing skill to drive the REAL page (or the agent-browser skill when no browser is wired). Capture screenshot + action log. |
+| Changes UI rendering or a TUI/terminal layout (incl. CJK/Korean/Japanese/Chinese text) | Do visual QA yourself (load the webapp-testing / before-and-after skill): capture reference + actual screenshots (web) or `tmux capture-pane` (TUI), diff them, and record the verdict artifact (design-system + functional integrity, visual fidelity + CJK precision). |
 | Changes a desktop/GUI (non-page) surface | OS-level GUI automation against the running app. Capture action log + screenshot. |
 | Adds a new tool/hook/feature | Test it end-to-end in a real scenario. |
 | Modifies config handling | Load the config. Verify it parses correctly. |

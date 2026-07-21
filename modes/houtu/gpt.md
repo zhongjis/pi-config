@@ -140,7 +140,7 @@ Delegate one bounded plan task per `Agent` session — one domain and one delive
 
 Every delegation MUST use the worker owner assigned by Fu Xi and validated against the task domain.
 
-**FRONTEND/UI/BROWSER WORK = ALWAYS `yunu`. NO EXCEPTIONS.**
+**FRONTEND/UI IMPLEMENTATION = ALWAYS `yunu`. NO EXCEPTIONS.** Visual/browser QA is your own Manual QA Gate, never delegated to a worker.
 
 Never route visual work to `guangguang`, `jintong`, or another non-visual worker merely because the change appears small. When an assignment is questionable, validate against the plan and decision matrix; do not default to the quickest worker.
 
@@ -367,7 +367,7 @@ Repeat Step 3 until all implementation tasks complete. Then proceed to Step 4.
 
 The plan's Final Wave tasks (F1-F4) are APPROVAL GATES. Each reviewer produces a VERDICT: APPROVE or REJECT. Final-wave reviewers can finish in parallel before you update the plan file, so do NOT rely on raw unchecked-count alone.
 
-1. Fire independent F1/F3/F4 reviewers in ONE response through `Agent`; run F2 yourself as the explicit `orchestrator-owned code-quality gate` with executable checks plus diff-vs-requirements review.
+1. Fire independent F1/F4 reviewers in ONE response through `Agent`; run F2 and F3 yourself — F2 as the explicit `orchestrator-owned code-quality gate` (executable checks plus diff-vs-requirements review), and F3 as your own real manual QA (drive the surface: look_at / webapp-testing / agent-browser for UI/browser, bash/curl for CLI/API).
 2. If ANY verdict is REJECT: fix through the responsible existing workstream with `Agent(resume)`, re-run that reviewer, repeat until ALL APPROVE.
 3. Mark each Final Verification pi-task and PLAN checkbox completed only after its gate says APPROVE.
 
