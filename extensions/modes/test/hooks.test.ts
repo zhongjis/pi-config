@@ -269,6 +269,42 @@ describe("mode hooks", () => {
 		}
 	});
 
+	it("keeps Hou Tu implementation foreground while exploration remains background", async () => {
+		const defaultBody = readModePromptBody("houtu", "default");
+		const gptBody = readModePromptBody("houtu", "gpt");
+		const geminiOverlay = readModePromptBody("houtu", "gemini");
+		const prompts = [
+			await renderInjectedPrompt({ mode: "houtu", defaultConfig: { body: defaultBody } }),
+			await renderInjectedPrompt({
+				mode: "houtu",
+				family: "gpt",
+				defaultConfig: { body: defaultBody },
+				familyConfig: { body: gptBody },
+			}),
+			await renderInjectedPrompt({
+				mode: "houtu",
+				family: "gemini",
+				defaultConfig: { body: defaultBody },
+				familyConfig: { body: defaultBody, overlays: geminiOverlay },
+			}),
+		];
+
+		for (const prompt of prompts) {
+			expect(prompt).toContain("2. **Wait for the completion notification** - the system will trigger your next turn");
+			expect(prompt).toContain("3. **Then** collect results via `get_subagent_result(agent_id=\"...\")`");
+			expect(prompt).toContain("**Exploration** (`chengfeng`, `wenchang`): `run_in_background=true` — non-blocking research");
+			expect(prompt).toContain("**Task execution** (`Agent(...)`): `run_in_background=false` — blocks for verification");
+			expect(prompt).toContain("**Background management:**");
+			expect(prompt).toContain("Collect with background agent IDs: `get_subagent_result(agent_id=\"...\")`");
+			expect(prompt).toContain("Continue follow-ups with agent IDs: `Agent(resume=\"...\")`");
+			const foregroundRuns = prompt.match(/run_in_background(?:\s*:\s*|=)false/g) ?? [];
+			expect(foregroundRuns.length).toBeGreaterThanOrEqual(4);
+			expect(prompt).not.toContain("Stop the dependent work");
+			expect(prompt).not.toContain("Use background for exploration AND for every parallel implementation batch");
+			expect(prompt).not.toContain("Launch independent, conflict-free tasks as separate background agents");
+		}
+	});
+
 	it("renders actual default, GPT, and Gemini final prompts for every mode", async () => {
 		for (const mode of ALL_TEST_MODES) {
 			const invariants = MODE_PROMPT_INVARIANTS[mode];

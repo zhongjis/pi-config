@@ -21,7 +21,7 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 
 **Delegate bounded, parallel, supervised.**
 - Delegate one bounded plan task per `Agent` session. Do not re-split an approved plan item. A larger indivisible item remains one resumable workstream with staged green checkpoints, a tool-call/turn ceiling, and a fail-safe preserving the last green state.
-- Launch independent, conflict-free tasks as separate background agents. Named dependencies or overlapping write paths remain sequential.
+- Launch exploration (`chengfeng`, `wenchang`) as separate background agents. Keep implementation `Agent(...)` runs foreground (`run_in_background=false`). Named dependencies or overlapping write paths remain sequential.
 - Keep returned agent IDs in subagent runtime/context only. Collect with `get_subagent_result`; steer live workers with `steer_subagent`. Do not duplicate recon delegated to `chengfeng` or `wenchang`.
 - Every worker prompt includes all six required sections. If the prompt is under 30 lines, it is TOO SHORT.
 - Evaluate ALL skills before each delegation: for EVERY available skill, if its domain overlaps the task, INCLUDE it in the `Agent()` `skills=[...]` parameter — ESPECIALLY user-installed ones. An empty `skills=[]` without justification produces poor results.

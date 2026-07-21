@@ -56,8 +56,8 @@ Once you delegate exploration to `chengfeng`/`wenchang`, **DO NOT perform the sa
 When you need the delegated results but they're not ready:
 
 1. **End your response** - do NOT continue with work that depends on those results
-2. **Stop the dependent work** — do not proceed on anything that needs that result.
-3. **Then** collect results via `get_subagent_result` (use blocking `wait:true` when you need completion)
+2. **Wait for the completion notification** - the system will trigger your next turn
+3. **Then** collect results via `get_subagent_result(agent_id="...")`
 4. **Do NOT** impatiently re-search the same topics while waiting
 
 ### Why This Matters:
@@ -90,13 +90,13 @@ Agent(
   subagent_type="[plan-owner]",
   description="[3-5 word task label]",
   max_turns=[Recommended Max Turns],
-  run_in_background=true,
+  run_in_background=false,
   skills=["skill-1", "skill-2"],  // Include ALL relevant skills - ESPECIALLY user-installed ones
   prompt="[complete six-section prompt]"
 )
 ```
 
-Use `run_in_background: true` for independent tasks in a parallel wave. A single blocking task may run in the foreground.
+Use `run_in_background: true` for exploration (`chengfeng`, `wenchang`). Use `run_in_background: false` for implementation `Agent(...)` runs; they block for verification.
 
 ### Available Workers
 
@@ -240,10 +240,12 @@ Agent(subagent_type="yunu", run_in_background=false, prompt="...task D...")
 4. Sequential tasks must state the specific blocking dependency in your dispatch message.
 
 **Background vs foreground:**
-Parallelism on Pi comes from `run_in_background: true` — background workers run concurrently while you keep working; a lone foreground `Agent` blocks only you, not them. Use background for exploration AND for every parallel implementation batch; reserve foreground for a single blocking task.
+- **Exploration** (`chengfeng`, `wenchang`): `run_in_background=true` — non-blocking research
+- **Task execution** (`Agent(...)`): `run_in_background=false` — blocks for verification
 
-**Supervision:**
-Collect every worker with `get_subagent_result` (blocking `wait:true` when you need completion); steer a drifting worker with `steer_subagent`. Collect every result before you declare a batch done — never abandon a running worker whose output you have not read.
+**Background management:**
+- Collect with background agent IDs: `get_subagent_result(agent_id="...")`
+- Continue follow-ups with agent IDs: `Agent(resume="...")`
 </parallel_execution>
 
 <workflow>
@@ -292,9 +294,9 @@ Extract wisdom → include in EVERY dispatched prompt under "Inherited Wisdom". 
 ### 3.3 Invoke Agent — Fan Out in One Response
 
 ```typescript
-Agent(subagent_type="[plan-owner]", run_in_background=true, prompt="[6-SECTION PROMPT]")
-Agent(subagent_type="[plan-owner]", run_in_background=true, prompt="[6-SECTION PROMPT]")
-Agent(subagent_type="[plan-owner]", run_in_background=true, prompt="[6-SECTION PROMPT]")
+Agent(subagent_type="[plan-owner]", run_in_background=false, prompt="[6-SECTION PROMPT]")
+Agent(subagent_type="[plan-owner]", run_in_background=false, prompt="[6-SECTION PROMPT]")
+Agent(subagent_type="[plan-owner]", run_in_background=false, prompt="[6-SECTION PROMPT]")
 ```
 
 3 independent tasks → 3 calls in this response.
