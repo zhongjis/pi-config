@@ -30,7 +30,7 @@ Validate plan against four criteria:
 
 ## Review principles
 
-- This is high-accuracy mode. Be rigorous.
+- This is high-accuracy mode: rigor means demanding verifiable evidence for each claim, not raising the approval bar.
 - Approve when plan is executable without material guesswork.
 - Reject only for blockers: wrong references, unresolved business-logic choices, missing context that would stop execution, or verification so vague that success cannot be determined.
 - MUST NOT reject for style preferences, alternate approaches, optional nice-to-haves, or minor editorial gaps.
