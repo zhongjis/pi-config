@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestSession, type TestSession } from "@marcfargas/pi-test-harness";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
 import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagent/src/ui/agent-widget.js";
 
@@ -96,6 +97,14 @@ describe("subagent TUI rendering — integration", () => {
 	});
 
 	it("loads the real extension and renders mixed foreground/background Agent states", async () => {
+		const previousPackageDir = process.env.PI_PACKAGE_DIR;
+		process.env.PI_PACKAGE_DIR = path.resolve(PROJECT_ROOT, "node_modules/@earendil-works/pi-coding-agent");
+		try {
+			initTheme(undefined, false);
+		} finally {
+			if (previousPackageDir === undefined) delete process.env.PI_PACKAGE_DIR;
+			else process.env.PI_PACKAGE_DIR = previousPackageDir;
+		}
 		t = await createTestSession({
 			extensions: [SUBAGENT_EXTENSION],
 			propagateErrors: false,

@@ -7,6 +7,7 @@ export function createMockPi() {
   const busHandlers = new Map<string, EventHandler[]>();
   const commands = new Map<string, unknown>();
   const tools = new Map<string, unknown>();
+  const toolRegistrations: Array<{ name: string }> = [];
   const shortcuts = new Map<string, unknown>();
   const providers = new Map<string, unknown>();
   const flags = new Map<string, unknown>();
@@ -60,6 +61,7 @@ export function createMockPi() {
       shortcuts.set(String(name), definition);
     },
     registerTool(definition: { name: string }) {
+      toolRegistrations.push(definition);
       tools.set(definition.name, definition);
     },
     registerUiWidget(name: string, definition: unknown) {
@@ -94,6 +96,7 @@ export function createMockPi() {
     renderers,
     shortcuts,
     tools,
+    toolRegistrations,
     widgets
   };
 }
