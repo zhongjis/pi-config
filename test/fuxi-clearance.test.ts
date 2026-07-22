@@ -133,7 +133,7 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
   houtu: {
     default: [
       "Complete every task in `PLAN.md`",
-      "TaskCreate",
+      "Read PLAN, parse canonical `## Todos` and `## Final verification wave` sections (also accept legacy `## TODOs` and legacy `## Final Verification Wave`), then `TaskCreate` one tracking task per top-level todo and each final-verification gate per the tracking contract above, wire dependencies with `TaskUpdate addBlockedBy`, and call `TaskList`. Ignore nested acceptance/evidence checkboxes.",
       "Agent",
       "orchestrator-owned code-quality gate",
       "`## Todos`",
@@ -144,9 +144,8 @@ const MODE_PROMPT_INVARIANTS: Record<ModeName, ModePromptInvariants> = {
     gpt: [
       "Read `PLAN.md` before doing anything else",
       "buildPlanExecutionGoal(planPath)",
-      "Pi-tasks: `TaskCreate` one task per top-level PLAN item",
-      "Agent lifecycle: launch plan work with `Agent`",
-      "Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle",
+      "Manage pi-tasks for logical DAG tracking only",
+      "Use pi-tasks for agent lifecycle",
       "`## Todos`",
       "`## Final verification wave`",
       "legacy `## TODOs`",
