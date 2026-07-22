@@ -73,6 +73,8 @@ interface SpawnOptions {
   onTurnEnd?: (turnCount: number) => void;
   /** Skill names to inject (preload) into the subagent for this call only. See RunOptions.skills. */
   skills?: string[];
+  /** Awaited after child session binding/policy, before first prompt. */
+  onBeforePrompt?: () => void | Promise<void>;
 }
 
 export class AgentManager {
@@ -86,6 +88,8 @@ export class AgentManager {
   private maxConcurrent: number;
   /** IDs currently opening or continuing; prevents duplicate prompts/restores. */
   private resumeInFlight = new Set<string>();
+  /** IDs whose fresh execution has started but not fully settled. */
+  private executionInFlight = new Set<string>();
   /** Child-session teardowns already detached from records but not yet settled. */
   private pendingTeardowns = new Set<Promise<void>>();
 
@@ -181,7 +185,9 @@ export class AgentManager {
 
     record.externalAbortCleanup = this.bindExternalAbortSignal(record, options.signal);
     if (record.status === "stopped") {
-      record.promise = Promise.resolve("");
+      const stopped = Promise.resolve("").finally(() => this.executionInFlight.delete(id));
+      this.executionInFlight.add(id);
+      record.promise = stopped;
       return id;
     }
 
@@ -196,7 +202,7 @@ export class AgentManager {
     if (options.isBackground) this.runningBackground++;
     this.onStart?.(record);
 
-
+    this.executionInFlight.add(id);
     const promise = runAgent(ctx, type, prompt, {
       pi,
       model: options.model,
@@ -229,6 +235,7 @@ export class AgentManager {
         record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
         this.lifetimeCost += usage.cost ?? 0;
       },
+      onBeforePrompt: options.onBeforePrompt,
       onSessionCreated: (session) => {
         record.session = session;
         record.run?.publish({ kind: "session_created", session });
@@ -283,6 +290,7 @@ export class AgentManager {
           record.externalAbortCleanup();
           record.externalAbortCleanup = undefined;
         }
+        this.executionInFlight.delete(id);
       });
 
     record.promise = promise;
@@ -410,7 +418,7 @@ export class AgentManager {
     request: AgentRestoreRequest,
   ): Promise<AgentResumeResult> {
     const live = this.agents.get(id);
-    if (this.resumeInFlight.has(id) || live?.status === "running" || live?.status === "queued") {
+    if (this.resumeInFlight.has(id) || this.executionInFlight.has(id) || live?.status === "running" || live?.status === "queued") {
       return this.resumeFailure(id, "target_busy", "Agent is already running");
     }
     if (live?.session) {
@@ -657,6 +665,7 @@ export class AgentManager {
   /** Remove a record immediately, then await its detached child-session teardown. */
   private removeRecord(id: string, record: AgentRecord): Promise<void> {
     this.agents.delete(id);
+    this.executionInFlight.delete(id);
     return this.teardownRecord(record);
   }
 

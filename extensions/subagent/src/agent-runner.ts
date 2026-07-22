@@ -123,6 +123,8 @@ export interface RunOptions {
   /** Called when a new assistant message starts. */
   onMessageStart?: () => void;
   onSessionCreated?: (session: AgentSession) => void;
+  /** Awaited after child session binding/policy, before the first prompt. */
+  onBeforePrompt?: () => void | Promise<void>;
   /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
   /** Called on each completed assistant message with token usage (excludes cacheRead) plus per-message cost (USD, includes cacheRead). */
@@ -600,6 +602,12 @@ export async function runAgent(
 
   const invocationStart = session.messages.length;
   try {
+    try {
+      await options.onBeforePrompt?.();
+    } catch (error) {
+      session.dispose?.();
+      throw error;
+    }
     await session.prompt(effectivePrompt);
   } finally {
     unsubTurns();

@@ -46,6 +46,16 @@ function durableTarget(id = "stable-agent") {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("AgentManager", () => {
   afterEach(() => {
     runAgentMock.mockReset();
@@ -602,6 +612,64 @@ describe("AgentManager durable resume", () => {
       release("done");
       await first;
       expect(resumeAgentMock).toHaveBeenCalledOnce();
+    } finally { await manager.dispose(); }
+  });
+
+  it("keeps an already-aborted fresh run busy until its stopped settlement clears", async () => {
+    const manager = new AgentManager();
+    const controller = new AbortController();
+    controller.abort();
+
+    try {
+      const id = manager.spawn(
+        {} as never,
+        { cwd: process.cwd() } as never,
+        "general-purpose",
+        "p",
+        { description: "d", signal: controller.signal },
+      );
+
+      const request = { parentSessionId: "", expectedType: "general-purpose", restoreSession: vi.fn() };
+      await expect(manager.resume(id, "again", request)).resolves.toMatchObject({ status: "failed", reason: "target_busy" });
+
+      await manager.getRecord(id)?.promise;
+      await expect(manager.resume(id, "again", request)).resolves.toMatchObject({ status: "failed", reason: "target_unknown" });
+      expect(runAgentMock).not.toHaveBeenCalled();
+    } finally { await manager.dispose(); }
+  });
+
+  it("clears the fresh execution latch after resolve, reject, abort, and teardown", async () => {
+    const manager = new AgentManager();
+    const request = { parentSessionId: "", expectedType: "general-purpose", restoreSession: vi.fn() };
+
+    try {
+      runAgentMock.mockResolvedValueOnce({ responseText: "done", session: { dispose: vi.fn() }, aborted: false, steered: false });
+      const resolvedId = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", { description: "resolve" });
+      await manager.getRecord(resolvedId)?.promise;
+      resumeAgentMock.mockResolvedValueOnce("again");
+      await expect(manager.resume(resolvedId, "again", request)).resolves.toMatchObject({ status: "resumed_live" });
+
+      runAgentMock.mockRejectedValueOnce(new Error("boom"));
+      const rejectedId = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", { description: "reject" });
+      await manager.getRecord(rejectedId)?.promise;
+      await expect(manager.resume(rejectedId, "again", request)).resolves.toMatchObject({ status: "failed", reason: "target_unknown" });
+
+      const aborted = deferred<{ responseText: string; session: { dispose: () => void }; aborted: boolean; steered: boolean }>();
+      runAgentMock.mockReturnValueOnce(aborted.promise);
+      const abortId = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", { description: "abort" });
+      manager.abort(abortId);
+      await expect(manager.resume(abortId, "again", request)).resolves.toMatchObject({ status: "failed", reason: "target_busy" });
+      aborted.resolve({ responseText: "", session: { dispose: vi.fn() }, aborted: false, steered: false });
+      await manager.getRecord(abortId)?.promise;
+      resumeAgentMock.mockResolvedValueOnce("again");
+      await expect(manager.resume(abortId, "again", request)).resolves.toMatchObject({ status: "resumed_live" });
+
+      const tornDown = deferred<{ responseText: string; session: { dispose: () => void }; aborted: boolean; steered: boolean }>();
+      runAgentMock.mockReturnValueOnce(tornDown.promise);
+      const teardownId = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", { description: "teardown" });
+      await manager.dispose();
+      await expect(manager.resume(teardownId, "again", request)).resolves.toMatchObject({ status: "failed", reason: "target_unknown" });
+      tornDown.resolve({ responseText: "", session: { dispose: vi.fn() }, aborted: false, steered: false });
     } finally { await manager.dispose(); }
   });
 });

@@ -96,6 +96,7 @@ function createSession(
     getActiveToolNames: vi.fn(() => activeToolNames),
     setActiveToolsByName: vi.fn(),
     bindExtensions: vi.fn(async () => {}),
+    dispose: vi.fn(),
   };
   return { session, listeners };
 }
@@ -139,6 +140,16 @@ const ctx = {
 } as unknown as MockExtensionContext as ExtensionContext;
 
 const pi = {} as Partial<ExtensionAPI> as ExtensionAPI;
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 beforeEach(() => {
   createAgentSession.mockReset();
@@ -281,6 +292,46 @@ describe("agent-runner final output capture", () => {
     const bindOrder = session.bindExtensions.mock.invocationCallOrder[0];
     const promptOrder = session.prompt.mock.invocationCallOrder[0];
     expect(bindOrder).toBeLessThan(promptOrder);
+  });
+
+  it("awaits the pre-prompt gate after binding and before prompting", async () => {
+    const gate = deferred<void>();
+    const { session } = createSession("GATED");
+    createAgentSession.mockResolvedValue({ session });
+
+    const run = runAgent(ctx, "Explore", "Say GATED", {
+      pi,
+      onBeforePrompt: () => gate.promise,
+    });
+
+    await vi.waitFor(() => expect(session.bindExtensions).toHaveBeenCalledOnce());
+    expect(session.prompt).not.toHaveBeenCalled();
+
+    gate.resolve();
+    const result = await run;
+
+    expect(result.responseText).toBe("GATED");
+    const bindOrder = session.bindExtensions.mock.invocationCallOrder[0];
+    const promptOrder = session.prompt.mock.invocationCallOrder[0];
+    expect(bindOrder).toBeLessThan(promptOrder);
+  });
+
+  it("disposes the bound child session when the pre-prompt gate rejects", async () => {
+    const { session } = createSession("NEVER");
+    let providerCount = 1;
+    session.dispose.mockImplementation(() => { providerCount = 0; });
+    createAgentSession.mockResolvedValue({ session });
+    const gateError = new Error("gate rejected");
+
+    await expect(runAgent(ctx, "Explore", "Say NEVER", {
+      pi,
+      onBeforePrompt: async () => { throw gateError; },
+    })).rejects.toBe(gateError);
+
+    expect(session.bindExtensions).toHaveBeenCalledOnce();
+    expect(session.prompt).not.toHaveBeenCalled();
+    expect(session.dispose).toHaveBeenCalledOnce();
+    expect(providerCount).toBe(0);
   });
 
   it("uses a custom session directory when provided", async () => {
