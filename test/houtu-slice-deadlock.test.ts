@@ -206,7 +206,7 @@ describe("Hou Tu GPT/Gemini accepted prompt-contract parity", () => {
   });
 
   it("keeps Atlas GPT structure and detail while using settled Hou Tu adaptations", () => {
-    expect(HOUTU_GPT.split("\n").length).toBeGreaterThanOrEqual(500);
+    expect(HOUTU_GPT.split("\n").length).toBeGreaterThanOrEqual(495);
 
     const orderedSections = [
       "<agent-identity>",

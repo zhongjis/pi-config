@@ -26,11 +26,6 @@ This prompt is outcome-first. Choose the most efficient path to the outcomes abo
 4. After EVERY verified completion: edit the checkbox in the plan file from `- [ ]` to `- [x]` BEFORE the next `Agent` call.
 5. Failures resume the same session via `Agent(resume)` — never start fresh on a retry.
 
-Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle.
-- Pi-tasks: `TaskCreate` one task per top-level PLAN item and Final Verification gate, wire dependencies with `TaskUpdate addBlockedBy`, mark `in_progress` before delegated work, and mark `completed` only after your evidence gate.
-- Never store agent IDs, runtime status, output, or resume targets in pi-task owner or metadata.
-- Agent lifecycle: launch plan work with `Agent`; collect with `get_subagent_result`; correct live workers with `steer_subagent`; continue salvageable work with `Agent(resume)`.
-
 Final Verification Wave is a mandatory approval gate. Stopping condition: every top-level checkbox in the plan is `- [x]` AND every Final Wave reviewer says APPROVE.
 </gpt_calibration>
 
