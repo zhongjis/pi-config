@@ -10,8 +10,7 @@
  *   /agents                 — Interactive agent management menu
  */
 
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { defineTool, type AgentToolResult, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -71,7 +70,8 @@ import { renderSubagentSummary } from "../ui/summary-renderer.js";
 import type { SubagentSummaryAgent, SubagentSummaryStatus } from "../ui/summary-renderer.js";
 import { RenderScheduler } from "../ui/render-scheduler.js";
 import { BG_AGENT_REGISTRY_ENTRY_TYPE, PersistentBgAgentRegistry, TASK_CLAIM_ENTRY_TYPE } from "./registry-persistence.js";
-import { lifecycleSnapshotInput } from "./agent-lifecycle-store.js";
+import type { AgentLifecycleLease } from "./agent-lifecycle-store.js";
+import { createLifecycleCheckpointHandle } from "./compaction-checkpoint.js";
 import { pandaWarn } from "../../../lib/warn.js";
 import { registerAgentTool } from "../tools/agent.js";
 import { registerGetSubagentResultTool } from "../tools/get_subagent_result.js";
@@ -124,23 +124,6 @@ function asSupervisedActivity(activity: AgentActivity | undefined): SupervisedAg
 
 function resolveSupervisionActivity(record: AgentRecord, fallback: AgentActivity | undefined): SupervisedAgentActivity | undefined {
   return record.run?.activity ?? asSupervisedActivity(fallback);
-}
-
-function readSessionSnapshot(sessionFile: string): Pick<ResumeTargetV1, "entryCount" | "activeLeafId" | "sessionSha256"> | undefined {
-  try {
-    const bytes = readFileSync(sessionFile);
-    const rows = bytes.toString("utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-    const entries = rows.slice(1);
-    const leaf = entries.at(-1);
-    if (rows[0]?.type !== "session" || rows[0]?.version !== 3 || !leaf || typeof leaf.id !== "string") return undefined;
-    return {
-      entryCount: entries.length,
-      activeLeafId: leaf.id,
-      sessionSha256: createHash("sha256").update(bytes).digest("hex"),
-    };
-  } catch {
-    return undefined;
-  }
 }
 
 /** Tool execute return value for a text response. */
@@ -301,7 +284,8 @@ export interface SubagentRuntimeContext {
   unsubRpcHandlers: () => void;
   releaseManager: () => void;
   clearBackgroundSupervision: () => void;
-  persistResumeTargetSnapshot: (record: AgentRecord) => Promise<void>;
+  persistResumeTargetDelivery: (record: AgentRecord) => Promise<void>;
+  checkpointAllResumeTargets: () => Promise<void>;
 }
 
 export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
@@ -341,39 +325,42 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function persistResumeTargetSnapshot(record: AgentRecord): Promise<void> {
+  async function persistResumeTargetDelivery(record: AgentRecord): Promise<void> {
     const store = persistentRegistry.getLifecycleStore(record.id);
     const lease = record.lifecycleLease;
     const current = store?.getSnapshot();
-    if (!store || !lease || !current) return;
+    if (!store || !lease || !current || current.state.status === "running") return;
+    if (record.resultConsumed && !current.state.resultConsumed) await store.markConsumed(lease, Date.now());
+    const afterConsumed = store.getSnapshot();
+    if (record.notified && !afterConsumed?.state.notified) await store.markNotified(lease, Date.now());
+  }
 
-    if (current.state.status !== "running") {
-      if (record.resultConsumed && !current.state.resultConsumed) await store.markConsumed(lease, Date.now());
-      const afterConsumed = store.getSnapshot();
-      if (record.notified && !afterConsumed?.state.notified) await store.markNotified(lease, Date.now());
-      return;
+  async function checkpointAllResumeTargets(): Promise<void> {
+    const sources = manager.listAgents().flatMap((record) => {
+      const lease = record.lifecycleLease;
+      const current = persistentRegistry.getResumeTarget(record.id);
+      return lease && current?.state.status === "running" ? [{ record, lease }] : [];
+    });
+    const handles = await Promise.all(sources.map(({ record, lease }) =>
+      createLifecycleCheckpointHandle(persistentRegistry, record, lease),
+    ));
+    const snapshots = await persistentRegistry.checkpointAll(handles);
+    for (let index = 0; index < snapshots.length; index++) {
+      const snapshot = snapshots[index];
+      const source = sources[index];
+      if (snapshot && source) source.record.compactionCount = snapshot.state.compactionCount;
     }
+  }
 
-    const sessionSnapshot = readSessionSnapshot(record.sessionFile ?? current.sessionFile);
-    const input = {
-      ...lifecycleSnapshotInput(current),
-      ...(sessionSnapshot ?? {}),
-      updatedAt: Date.now(),
-      state: {
-        status: record.status,
-        resultConsumed: !!record.resultConsumed,
-        notified: !!record.notified,
-        toolUses: record.toolUses,
-        lifetimeUsage: { ...(record.lifetimeUsage ?? current.state.lifetimeUsage) },
-        lifetimeCost: record.lifetimeCost ?? current.state.lifetimeCost,
-        compactionCount: record.compactionCount ?? current.state.compactionCount,
-      },
-    };
-    if (record.status === "running") {
-      await store.checkpoint(lease, input);
-    } else {
-      await store.commitTerminal(lease, input);
-    }
+  async function checkpointChildCompaction(
+    record: AgentRecord,
+    lease: AgentLifecycleLease,
+  ): Promise<ResumeTargetV1> {
+    const handle = await createLifecycleCheckpointHandle(persistentRegistry, record, lease, true);
+    const [snapshot] = await persistentRegistry.checkpointAll([handle]);
+    if (!snapshot) throw new Error(`Lifecycle checkpoint ${record.id} did not return a snapshot`);
+    record.compactionCount = snapshot.state.compactionCount;
+    return snapshot;
   }
 
 
@@ -482,7 +469,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
           lastSeenTs: record.completedAt ?? Date.now(),
         });
       } catch { /* already warned; do not break completion handling */ }
-      void persistResumeTargetSnapshot(record);
+      void persistResumeTargetDelivery(record);
     }
 
     // Widget cleanup — notification is consolidated at agent_end via emitCompletionNotificationsAtIdle.
@@ -511,12 +498,18 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     // Refresh queued → running transitions immediately.
     widget.update();
   }, (record, data) => {
-    emitCompactedContract(pi, record, {
-      reason: data.reason,
-      tokensBefore: data.tokensBefore,
-      compactionCount: record.compactionCount ?? 0,
+    void checkpointChildCompaction(record, data.lease).then((snapshot) => {
+      emitCompactedContract(pi, record, {
+        reason: data.reason,
+        tokensBefore: data.tokensBefore,
+        compactionCount: snapshot.state.compactionCount,
+      });
+    }).catch((error) => {
+      pandaWarn("subagent.compaction.checkpoint-failed", {
+        id: record.id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
     });
-    void persistResumeTargetSnapshot(record);
   });
 
   const turnAbortSignals = new WeakSet<AbortSignal>();
@@ -727,7 +720,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       details,
     }, { deliverAs: "followUp", triggerTurn: true });
     for (const r of pending) r.run?.publish({ kind: "notified" });
-    for (const r of pending) void persistResumeTargetSnapshot(r);
+    for (const r of pending) void persistResumeTargetDelivery(r);
   }
 
 
@@ -861,7 +854,8 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     unsubRpcHandlers,
     releaseManager,
     clearBackgroundSupervision,
-    persistResumeTargetSnapshot,
+    persistResumeTargetDelivery,
+    checkpointAllResumeTargets,
   };
 
   // ---- Wire tool surface, renderers, message/lifecycle handlers, and cleanup ----

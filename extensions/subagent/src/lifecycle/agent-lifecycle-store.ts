@@ -240,7 +240,11 @@ export class AgentLifecycleStore {
     });
   }
 
-  checkpoint(lease: AgentLifecycleLease, input: AgentLifecycleSnapshotInput): Promise<ResumeTargetV1> {
+  checkpoint(
+    lease: AgentLifecycleLease,
+    input: AgentLifecycleSnapshotInput,
+    options: { incrementCompaction?: boolean } = {},
+  ): Promise<ResumeTargetV1> {
     return this.serialize(async () => {
       const current = this.requireLease(lease);
       if (current.state.status !== "running") {
@@ -249,7 +253,23 @@ export class AgentLifecycleStore {
       if (input.state.status !== "running" || input.state.resultConsumed !== current.state.resultConsumed || input.state.notified !== current.state.notified) {
         throw new AgentLifecycleTransitionError(`Checkpoint cannot change lifecycle state for ${this.id}`);
       }
-      const snapshot = this.normalize({ ...input, createdAt: current.createdAt }, current.generation, current.revision + 1);
+      const snapshot = this.normalize({
+        ...input,
+        createdAt: current.createdAt,
+        state: {
+          ...input.state,
+          toolUses: Math.max(current.state.toolUses, input.state.toolUses),
+          lifetimeUsage: {
+            input: Math.max(current.state.lifetimeUsage.input, input.state.lifetimeUsage.input),
+            output: Math.max(current.state.lifetimeUsage.output, input.state.lifetimeUsage.output),
+            cacheWrite: Math.max(current.state.lifetimeUsage.cacheWrite, input.state.lifetimeUsage.cacheWrite),
+          },
+          lifetimeCost: Math.max(current.state.lifetimeCost, input.state.lifetimeCost),
+          compactionCount: options.incrementCompaction
+            ? current.state.compactionCount + 1
+            : Math.max(current.state.compactionCount, input.state.compactionCount),
+        },
+      }, current.generation, current.revision + 1);
       await this.append(snapshot);
       this.current = snapshot;
       return cloneSnapshot(snapshot);

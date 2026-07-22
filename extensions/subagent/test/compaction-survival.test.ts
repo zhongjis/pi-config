@@ -1,164 +1,238 @@
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type ResumeTargetV1 } from "../src/types.js";
+import { lifecycleSnapshotInput, type AgentLifecycleSnapshotInput } from "../src/lifecycle/agent-lifecycle-store.js";
 import {
-  BG_AGENT_REGISTRY_ENTRY_TYPE,
-  PersistentBgAgentRegistry,
-  RESUME_TARGET_ENTRY_TYPE,
-  TASK_CLAIM_ENTRY_TYPE,
-} from "../src/lifecycle/registry-persistence.js";
-import type { AgentLifecycleSnapshotInput } from "../src/lifecycle/agent-lifecycle-store.js";
+  captureSessionFingerprint,
+  createLifecycleCheckpointHandle,
+} from "../src/lifecycle/compaction-checkpoint.js";
+import { PersistentBgAgentRegistry, RESUME_TARGET_ENTRY_TYPE } from "../src/lifecycle/registry-persistence.js";
+import { awaitParentCompactionCheckpoint } from "../src/ui-wiring/messages.js";
+import type { AgentRecord, ResumeTargetV1 } from "../src/types.js";
 
-/** A mutable session JSONL log that records appended CustomEntry rows. */
-function createSessionLog() {
-  const entries: Array<{ type: "custom"; customType: string; data?: unknown }> = [];
-  const pi = {
-    appendEntry: vi.fn((customType: string, data?: unknown) => {
-      entries.push({ type: "custom", customType, data });
-    }),
-  };
-  return { entries, pi };
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
-function resumeTarget(): ResumeTargetV1 {
+function sessionBytes(leafId = "leaf-1"): Buffer {
+  return Buffer.from([
+    JSON.stringify({ type: "session", version: 3, id: "child-session" }),
+    JSON.stringify({ type: "message", id: leafId, parentId: null, message: { role: "assistant", content: [] } }),
+    "",
+  ].join("\n"));
+}
+
+function target(id = "agent-a", status: ResumeTargetV1["state"]["status"] = "running"): ResumeTargetV1 {
   const hash = "a".repeat(64);
   return {
-    version: 1, id: "agent-a", generation: 1, revision: 2, parentSessionId: "sess-1",
-    sessionFile: "/sessions/agent-a.jsonl", sessionDir: "/sessions", childSessionId: "child-a",
-    entryCount: 4, activeLeafId: "leaf-a", sessionSha256: hash, type: "jintong",
+    version: 1, id, generation: 0, revision: 0, parentSessionId: "parent-1",
+    sessionFile: `/sessions/${id}.jsonl`, sessionDir: "/sessions", childSessionId: `child-${id}`,
+    entryCount: 1, activeLeafId: "leaf-0", sessionSha256: hash, type: "jintong",
     description: "persist lifecycle", cwd: "/repo", isBackground: true, createdAt: 1, updatedAt: 2,
-    runtime: { piVersion: "1", model: { provider: "p", id: "m", api: "a" }, thinkingLevel: "off",
+    runtime: {
+      piVersion: "1", model: { provider: "p", id: "m", api: "a" }, thinkingLevel: "off",
       promptMode: "replace", isolated: false, inheritContext: false, systemPromptHash: hash,
-      resourcePolicyHash: hash, agentConfigHash: hash, extensionIdentities: [], activeToolNames: [] },
-    state: { status: "completed", resultConsumed: true, notified: true, toolUses: 3,
-      lifetimeUsage: { input: 1, output: 2, cacheWrite: 3 }, lifetimeCost: 0.5, compactionCount: 1 },
+      resourcePolicyHash: hash, agentConfigHash: hash, extensionIdentities: [], activeToolNames: [],
+    },
+    state: { status, resultConsumed: false, notified: false, toolUses: 3,
+      lifetimeUsage: { input: 1, output: 2, cacheWrite: 3 }, lifetimeCost: 0.5, compactionCount: 0 },
   };
 }
 
-function lifecycleInput(target: ResumeTargetV1): AgentLifecycleSnapshotInput {
-  const { version: _version, generation: _generation, revision: _revision, ...input } = target;
-  return input;
+function input(snapshot: ResumeTargetV1): AgentLifecycleSnapshotInput {
+  return lifecycleSnapshotInput(snapshot);
 }
 
-/**
- * Mirrors the `session_before_compact` handler registered in
- * `supervision.ts` (Task 28): writes a single informational marker.
- */
-function onBeforeCompact(pi: { appendEntry: (t: string, d?: unknown) => void }, registry: PersistentBgAgentRegistry) {
-  pi.appendEntry("subagents:pre-compact-marker", {
-    ts: Date.now(),
-    registrySize: registry.listAgents().length,
-    claimsSize: registry.listClaims().length,
-  });
+function recordFor(snapshot: ResumeTargetV1, sessionFile: string): AgentRecord {
+  return {
+    id: snapshot.id, type: snapshot.type, description: snapshot.description, status: "running",
+    toolUses: snapshot.state.toolUses, startedAt: snapshot.createdAt, sessionFile, sessionDir: snapshot.sessionDir,
+    parentSessionId: snapshot.parentSessionId, isBackground: snapshot.isBackground,
+    lifetimeUsage: { ...snapshot.state.lifetimeUsage }, lifetimeCost: snapshot.state.lifetimeCost,
+    compactionCount: snapshot.state.compactionCount,
+  };
 }
 
-/**
- * Mirrors the `session_compact` handler registered in `supervision.ts`
- * (Task 28): re-emits every live registry/claim row as a fresh baseline.
- */
-async function onCompact(pi: { appendEntry: (t: string, d?: unknown) => void }, registry: PersistentBgAgentRegistry) {
-  for (const agent of registry.listAgents()) {
-    pi.appendEntry(BG_AGENT_REGISTRY_ENTRY_TYPE, agent);
-  }
-  for (const claim of registry.listClaims()) {
-    pi.appendEntry(TASK_CLAIM_ENTRY_TYPE, claim);
-  }
-  await registry.reemitResumeTargets();
-}
-
-describe("Compaction survival hooks (Task 28)", () => {
+describe("store-owned compaction checkpoints", () => {
+  let root: string;
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "subagent-compaction-"));
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     warnSpy.mockRestore();
+    rmSync(root, { recursive: true, force: true });
   });
 
-  it("survives compaction: post-compact baseline replays to the same state", async () => {
-    const log = createSessionLog();
-    const registry = new PersistentBgAgentRegistry(log.pi);
+  it("checkpoints one successful child compaction from one exact byte snapshot", async () => {
+    const file = join(root, "child.jsonl");
+    const bytes = sessionBytes("leaf-after-compact");
+    writeFileSync(file, bytes);
+    const appendEntry = vi.fn();
+    const registry = new PersistentBgAgentRegistry({ appendEntry });
+    const snapshot = target();
+    snapshot.sessionFile = file;
+    snapshot.sessionDir = root;
+    const begun = await registry.getOrCreateLifecycleStore(snapshot.id).initialize(input(snapshot));
+    const record = recordFor(snapshot, file);
 
-    // ---- Pre-compact: populate the durable registry (write-through) ----
-    registry.recordAgent({ id: "agent-a", parentSessionId: "sess-1", status: "running", claimedTaskIds: ["t1"], lastSeenTs: 1000 });
-    registry.recordAgent({ id: "agent-b", parentSessionId: "sess-1", status: "completed", claimedTaskIds: [], lastSeenTs: 2000 });
-    registry.recordAgent({ id: "agent-c", parentSessionId: "sess-2", status: "running", claimedTaskIds: ["t2"], lastSeenTs: 3000 });
-    registry.claimTask({ taskId: "t1", sessionId: "sess-1", ts: 1500 });
-    registry.claimTask({ taskId: "t2", sessionId: "sess-2", ts: 2500 });
-    await registry.getOrCreateLifecycleStore("agent-a").initialize(lifecycleInput(resumeTarget()));
+    const handle = await createLifecycleCheckpointHandle(registry, record, begun.lease, true);
+    const [checkpoint] = await registry.checkpointAll([handle]);
 
-    const preCompactAgents = registry.listAgents();
-    const preCompactClaims = registry.listClaims();
-    const preCompactTargets = registry.listResumeTargets();
-    expect(preCompactAgents).toHaveLength(3);
-    expect(preCompactClaims).toHaveLength(2);
-    expect(preCompactTargets).toHaveLength(1);
+    expect(checkpoint).toMatchObject({
+      generation: 0, revision: 1, entryCount: 1, activeLeafId: "leaf-after-compact",
+      sessionSha256: createHash("sha256").update(bytes).digest("hex"),
+      state: { status: "running", compactionCount: 1 },
+    });
+    expect(appendEntry).toHaveBeenCalledTimes(2);
+  });
 
-    // ---- session_before_compact: an informational marker is written ----
-    onBeforeCompact(log.pi, registry);
-    const marker = log.entries.find((e) => e.customType === "subagents:pre-compact-marker");
-    expect(marker).toBeDefined();
-    expect(marker!.data).toMatchObject({ registrySize: 3, claimsSize: 2 });
+  it("retries only a transient partial final line for three microtask attempts", async () => {
+    const complete = sessionBytes("leaf-complete");
+    const partial = complete.subarray(0, complete.length - 4);
+    const readBytes = vi.fn()
+      .mockReturnValueOnce(partial)
+      .mockReturnValueOnce(partial)
+      .mockReturnValueOnce(complete);
 
-    // ---- Compaction discards old entries: the durable log is wiped ----
-    log.entries.length = 0;
+    await expect(captureSessionFingerprint("ignored", readBytes)).resolves.toMatchObject({
+      entryCount: 1, activeLeafId: "leaf-complete",
+    });
+    expect(readBytes).toHaveBeenCalledTimes(3);
+  });
 
-    // ---- session_compact: re-emit the live state as a fresh baseline ----
-    await onCompact(log.pi, registry);
+  it("rejects permanent parse faults immediately and exhausted partial-line retries", async () => {
+    const malformedMiddle = Buffer.from([
+      JSON.stringify({ type: "session", version: 3, id: "child" }),
+      "not-json",
+      JSON.stringify({ type: "message", id: "leaf" }),
+      "",
+    ].join("\n"));
+    const permanentReader = vi.fn(() => malformedMiddle);
+    await expect(captureSessionFingerprint("ignored", permanentReader)).rejects.toThrow("invalid JSONL row");
+    expect(permanentReader).toHaveBeenCalledOnce();
 
-    // Only the re-emitted baseline rows remain in the post-compact log.
-    expect(log.entries.filter((e) => e.customType === BG_AGENT_REGISTRY_ENTRY_TYPE)).toHaveLength(3);
-    expect(log.entries.filter((e) => e.customType === TASK_CLAIM_ENTRY_TYPE)).toHaveLength(2);
-    expect(log.entries.filter((e) => e.customType === RESUME_TARGET_ENTRY_TYPE)).toHaveLength(1);
+    const partial = sessionBytes().subarray(0, sessionBytes().length - 4);
+    const partialReader = vi.fn(() => partial);
+    await expect(captureSessionFingerprint("ignored", partialReader)).rejects.toThrow("partial JSONL row");
+    expect(partialReader).toHaveBeenCalledTimes(3);
+  });
 
-    // ---- A fresh registry replays ONLY the post-compact entries ----
-    const recovered = new PersistentBgAgentRegistry(log.pi);
-    const count = recovered.replay(log.entries);
+  it("snapshots repository handles so later iterable mutation does not add checkpoint work", async () => {
+    const appendGate = deferred();
+    const appendEntry = vi.fn((_type: string, data?: unknown) => {
+      const row = data as ResumeTargetV1;
+      if (row.revision === 1) return appendGate.promise;
+    });
+    const registry = new PersistentBgAgentRegistry({ appendEntry });
+    const firstStore = registry.getOrCreateLifecycleStore("agent-a");
+    const secondStore = registry.getOrCreateLifecycleStore("agent-b");
+    const first = await firstStore.initialize(input(target("agent-a")));
+    const second = await secondStore.initialize(input(target("agent-b")));
+    const handles = [
+      registry.createCheckpointHandle("agent-a", first.lease, { ...input(first.snapshot), updatedAt: 3 }),
+    ];
 
-    expect(count).toBe(6);
-    expect(recovered.listAgents()).toHaveLength(3);
-    expect(recovered.listClaims()).toHaveLength(2);
-    expect(recovered.listResumeTargets()).toEqual(preCompactTargets);
-    expect([...recovered.listAgents()].sort((a, b) => a.id.localeCompare(b.id))).toEqual(
-      [...preCompactAgents].sort((a, b) => a.id.localeCompare(b.id)),
+    const pending = registry.checkpointAll(handles);
+    handles.push(registry.createCheckpointHandle("agent-b", second.lease, { ...input(second.snapshot), updatedAt: 3 }));
+    await Promise.resolve();
+    expect(appendEntry).toHaveBeenCalledTimes(3);
+    appendGate.resolve();
+    await pending;
+
+    expect(firstStore.getSnapshot()?.revision).toBe(1);
+    expect(secondStore.getSnapshot()?.revision).toBe(0);
+  });
+
+  it("rejects a stale-generation child callback without touching the resumed generation", async () => {
+    const file = join(root, "stale.jsonl");
+    writeFileSync(file, sessionBytes("old-leaf"));
+    const appendEntry = vi.fn();
+    const registry = new PersistentBgAgentRegistry({ appendEntry });
+    const store = registry.getOrCreateLifecycleStore("agent-a");
+    const first = await store.initialize(input(target()));
+    const staleHandle = await createLifecycleCheckpointHandle(
+      registry, recordFor(first.snapshot, file), first.lease, true,
     );
-    expect([...recovered.listClaims()].sort((a, b) => a.taskId.localeCompare(b.taskId))).toEqual(
-      [...preCompactClaims].sort((a, b) => a.taskId.localeCompare(b.taskId)),
-    );
+    const terminal = await store.commitTerminal(first.lease, {
+      ...input(first.snapshot), updatedAt: 3, state: { ...first.snapshot.state, status: "completed" },
+    });
+    const resumed = await store.beginResume({
+      ...input(terminal), updatedAt: 4, state: { ...terminal.state, status: "running" },
+    });
+    const callsBefore = appendEntry.mock.calls.length;
+
+    await expect(registry.checkpointAll([staleHandle])).rejects.toThrow("stale lifecycle lease");
+    expect(appendEntry).toHaveBeenCalledTimes(callsBefore);
+    expect(store.getSnapshot()).toEqual(resumed.snapshot);
   });
 
-  it("re-emits nothing for an empty registry and the marker reports zero sizes", async () => {
-    const log = createSessionLog();
-    const registry = new PersistentBgAgentRegistry(log.pi);
+  it("parent checkpoint does not wait for active provider or advisory work", async () => {
+    const provider = deferred();
+    const advisory = deferred();
+    const appendEntry = vi.fn();
+    const registry = new PersistentBgAgentRegistry({ appendEntry });
+    const store = registry.getOrCreateLifecycleStore("agent-a");
+    const begun = await store.initialize(input(target()));
+    const checkpoint = registry.checkpointAll([
+      registry.createCheckpointHandle("agent-a", begun.lease, { ...input(begun.snapshot), updatedAt: 3 }),
+    ]).then((snapshots) => {
+      void advisory.promise;
+      return snapshots;
+    });
+    void provider.promise;
 
-    onBeforeCompact(log.pi, registry);
-    await onCompact(log.pi, registry);
-
-    const marker = log.entries.find((e) => e.customType === "subagents:pre-compact-marker");
-    expect(marker!.data).toMatchObject({ registrySize: 0, claimsSize: 0 });
-    expect(log.entries.filter((e) => e.customType === BG_AGENT_REGISTRY_ENTRY_TYPE)).toHaveLength(0);
-    expect(log.entries.filter((e) => e.customType === TASK_CLAIM_ENTRY_TYPE)).toHaveLength(0);
-    expect(log.entries.filter((e) => e.customType === RESUME_TARGET_ENTRY_TYPE)).toHaveLength(0);
+    await expect(checkpoint).resolves.toMatchObject([{ revision: 1 }]);
   });
 
-  it("both hooks complete well under the 100ms latency budget", async () => {
-    const log = createSessionLog();
-    const registry = new PersistentBgAgentRegistry(log.pi);
-    for (let i = 0; i < 50; i++) {
-      registry.recordAgent({ id: `agent-${i}`, status: "running", claimedTaskIds: [], lastSeenTs: i });
-      registry.claimTask({ taskId: `task-${i}`, sessionId: "sess", ts: i });
-    }
+  it("cancels parent compaction on append failure, abort, and the internal five-second ceiling", async () => {
+    await expect(awaitParentCompactionCheckpoint(
+      () => Promise.reject(new Error("append failed")), new AbortController().signal,
+    )).resolves.toEqual({ cancel: true });
 
-    const startBefore = Date.now();
-    onBeforeCompact(log.pi, registry);
-    const beforeLatency = Date.now() - startBefore;
+    const aborted = new AbortController();
+    aborted.abort();
+    const abortedCheckpoint = vi.fn(() => Promise.resolve());
+    await expect(awaitParentCompactionCheckpoint(abortedCheckpoint, aborted.signal)).resolves.toEqual({ cancel: true });
+    expect(abortedCheckpoint).not.toHaveBeenCalled();
 
-    const startCompact = Date.now();
-    await onCompact(log.pi, registry);
-    const compactLatency = Date.now() - startCompact;
+    vi.useFakeTimers();
+    const never = deferred();
+    const timedOut = awaitParentCompactionCheckpoint(() => never.promise, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(timedOut).resolves.toEqual({ cancel: true });
+  });
 
-    expect(beforeLatency).toBeLessThan(100);
-    expect(compactLatency).toBeLessThan(100);
+  it("re-emits exact current V1 snapshots and replays the post-compact row", async () => {
+    const entries: Array<{ type: "custom"; customType: string; data?: unknown }> = [];
+    const appendEntry = vi.fn((customType: string, data?: unknown) => {
+      entries.push({ type: "custom", customType, data });
+    });
+    const registry = new PersistentBgAgentRegistry({ appendEntry });
+    const store = registry.getOrCreateLifecycleStore("agent-a");
+    const begun = await store.initialize(input(target()));
+    const checkpoint = await store.checkpoint(begun.lease, {
+      ...input(begun.snapshot), updatedAt: 3, activeLeafId: "current-leaf", sessionSha256: "b".repeat(64),
+    });
+    entries.length = 0;
+
+    await registry.reemitAll();
+
+    expect(entries).toEqual([{ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: checkpoint }]);
+    const replayed = new PersistentBgAgentRegistry({ appendEntry: vi.fn() });
+    expect(replayed.replay(entries)).toBe(1);
+    expect(replayed.getResumeTarget("agent-a")).toEqual(checkpoint);
   });
 });

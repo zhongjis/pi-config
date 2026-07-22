@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AgentRunTerminalEvent } from "../src/agent-run.js";
+import type { AgentLifecycleLease } from "../src/lifecycle/agent-lifecycle-store.js";
 import { AgentLifecycleStore, lifecycleSnapshotInput } from "../src/lifecycle/agent-lifecycle-store.js";
 import type { AgentRecord, RestoreFailureReason, ResumeTargetV1 } from "../src/types.js";
 
@@ -858,6 +860,61 @@ describe("AgentManager durable resume", () => {
       ]);
       expect(record).toMatchObject({ status: "completed", result: "after repair" });
     } finally { await manager.dispose(); }
+  });
+
+  it("forwards only successful child compactions with the lease captured by the session callback", async () => {
+    let subscriber: ((event: AgentSessionEvent) => void) | undefined;
+    const session = {
+      subscribe: vi.fn((listener: (event: AgentSessionEvent) => void) => { subscriber = listener; return () => {}; }),
+      dispose: vi.fn(),
+    };
+    const provider = deferred<{ responseText: string; session: typeof session; aborted: boolean; steered: boolean }>();
+    const lease = Object.freeze({ agentId: "agent-a", generation: 0 }) satisfies AgentLifecycleLease;
+    const compacted = vi.fn();
+    runAgentMock.mockImplementation(async (
+      _ctx: unknown,
+      _type: unknown,
+      _prompt: unknown,
+      options: {
+        onSessionCreated?: (created: typeof session) => void;
+        onBeforePrompt?: () => Promise<void>;
+      },
+    ) => {
+      options.onSessionCreated?.(session);
+      await options.onBeforePrompt?.();
+      return provider.promise;
+    });
+    const manager = new AgentManager(undefined, 4, undefined, compacted);
+    try {
+      const id = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "prompt", {
+        description: "compaction lease",
+        onBeforePrompt: async (record) => { record.lifecycleLease = lease; },
+      });
+      await vi.waitFor(() => expect(subscriber).toBeDefined());
+      const record = manager.getRecord(id)!;
+
+      subscriber?.({
+        type: "compaction_end", aborted: true, willRetry: false,
+        result: { summary: "", firstKeptEntryId: "leaf-1", tokensBefore: 100 }, reason: "manual",
+      });
+      subscriber?.({
+        type: "compaction_end", reason: "manual", result: undefined, aborted: false, willRetry: false,
+      });
+      subscriber?.({
+        type: "compaction_end", aborted: false, willRetry: false,
+        result: { summary: "", firstKeptEntryId: "leaf-2", tokensBefore: 200 }, reason: "threshold",
+      });
+
+      expect(compacted).toHaveBeenCalledOnce();
+      expect(compacted).toHaveBeenCalledWith(record, {
+        reason: "threshold", tokensBefore: 200, lease,
+      });
+      expect(record.compactionCount).toBe(0);
+      provider.resolve({ responseText: "done", session, aborted: false, steered: false });
+      await record.promise;
+    } finally {
+      await manager.dispose();
+    }
   });
 
 });

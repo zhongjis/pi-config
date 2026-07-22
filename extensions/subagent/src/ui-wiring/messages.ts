@@ -6,15 +6,54 @@
  */
 
 import { pandaWarn } from "../../../lib/warn.js";
-import { BG_AGENT_REGISTRY_ENTRY_TYPE, TASK_CLAIM_ENTRY_TYPE } from "../lifecycle/registry-persistence.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 import type { UICtx } from "../ui/agent-widget.js";
+
+const PARENT_COMPACTION_CHECKPOINT_TIMEOUT_MS = 5_000;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function awaitParentCompactionCheckpoint(
+  checkpointAll: () => Promise<void>,
+  signal: AbortSignal,
+  timeoutMs = PARENT_COMPACTION_CHECKPOINT_TIMEOUT_MS,
+): Promise<{ cancel: true } | undefined> {
+  if (signal.aborted) {
+    pandaWarn("subagent.compaction.checkpoint-failed", { reason: "aborted" });
+    return { cancel: true };
+  }
+
+  let abortCheckpoint: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abortCheckpoint = () => reject(new Error("Parent compaction checkpoint aborted"));
+    signal.addEventListener("abort", abortCheckpoint, { once: true });
+  });
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error("Parent compaction checkpoint timed out")), timeoutMs);
+    timeoutHandle.unref?.();
+  });
+
+  try {
+    await Promise.race([checkpointAll(), aborted, timedOut]);
+    return undefined;
+  } catch (error) {
+    pandaWarn("subagent.compaction.checkpoint-failed", { reason: errorMessage(error) });
+    return { cancel: true };
+  } finally {
+    if (abortCheckpoint) signal.removeEventListener("abort", abortCheckpoint);
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
 
 export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): void {
   const {
     pi,
     manager,
     persistentRegistry,
+    checkpointAllResumeTargets,
     widget,
     bindTurnAbortSignal,
     getAbortSignal,
@@ -51,33 +90,27 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
     syncSessionContext(ctx);
   });
 
-  // ---- Compaction survival hooks (Phase 4 / Task 28) ----
-  // The durable bg-agent registry lives in the appendEntry log, which survives compaction;
-  // these hooks keep replay correct across a compaction boundary.
-  //
-  // session_before_compact: drop an informational marker recording where compaction happened
-  // and how large the live registry/claim caches were at that point. Sync + fast (in-memory
-  // reads only); never blocks compaction.
-  pi.on("session_before_compact", () => {
+  // Parent compaction cannot discard the current durable baseline until every active child
+  // lifecycle checkpoint has crossed its store append barrier. Provider/listener/advisory work
+  // is deliberately outside this bounded wait.
+  pi.on("session_before_compact", async (event) => awaitParentCompactionCheckpoint(async () => {
+    await checkpointAllResumeTargets();
     pi.appendEntry("subagents:pre-compact-marker", {
       ts: Date.now(),
       registrySize: persistentRegistry.listAgents().length,
       claimsSize: persistentRegistry.listClaims().length,
       resumeTargetsSize: persistentRegistry.listResumeTargets().length,
     });
-  });
+  }, event.signal));
 
-  // session_compact: pi has compacted and pre-compact entries may be gone. Re-emit every live
-  // registry/claim row as a fresh appendEntry so future replays rebuild from this post-compact
-  // baseline instead of relying on entries compaction may have discarded. Sync + fast.
+  // Pi emits this only after successful compaction. Re-emit repository state through store-owned
+  // APIs so exact current V1 snapshots become the new post-compaction replay baseline.
   pi.on("session_compact", async () => {
-    for (const agent of persistentRegistry.listAgents()) {
-      pi.appendEntry(BG_AGENT_REGISTRY_ENTRY_TYPE, agent);
+    try {
+      await persistentRegistry.reemitAll();
+    } catch (error) {
+      pandaWarn("subagent.compaction.reemit-failed", { reason: errorMessage(error) });
     }
-    for (const claim of persistentRegistry.listClaims()) {
-      pi.appendEntry(TASK_CLAIM_ENTRY_TYPE, claim);
-    }
-    await persistentRegistry.reemitResumeTargets();
   });
 
   pi.on("session_before_switch", async () => { await manager.clearCompleted(true); });

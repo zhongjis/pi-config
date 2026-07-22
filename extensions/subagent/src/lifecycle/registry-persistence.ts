@@ -24,6 +24,8 @@ import type { ResumeTargetV1 } from "../types.js";
 import { pandaWarn } from "../../../lib/warn.js";
 import {
   AgentLifecycleStore,
+  type AgentLifecycleLease,
+  type AgentLifecycleSnapshotInput,
   compareResumeTargetVersions,
   parseResumeTargetV1,
   RESUME_TARGET_ENTRY_TYPE,
@@ -50,6 +52,14 @@ export interface TaskClaim {
   taskId: string;
   sessionId?: string;
   ts: number;
+}
+
+/** Immutable command handle consumed by repository-wide checkpoint barriers. */
+export interface AgentLifecycleCheckpointHandle {
+  readonly store: AgentLifecycleStore;
+  readonly lease: AgentLifecycleLease;
+  readonly input: AgentLifecycleSnapshotInput;
+  readonly incrementCompaction: boolean;
 }
 
 /** Minimal session-entry shape we read during replay (matches `CustomEntry`). */
@@ -160,8 +170,33 @@ export class PersistentBgAgentRegistry {
       .filter((target): target is ResumeTargetV1 => target !== undefined);
   }
 
-  async reemitResumeTargets(): Promise<void> {
-    await Promise.all([...this.lifecycleStores.values()].map((store) => store.reemitCurrent()));
+  createCheckpointHandle(
+    id: string,
+    lease: AgentLifecycleLease,
+    input: AgentLifecycleSnapshotInput,
+    incrementCompaction = false,
+  ): AgentLifecycleCheckpointHandle {
+    const store = this.lifecycleStores.get(id);
+    if (!store) throw new Error(`Lifecycle store ${id} is unavailable`);
+    return Object.freeze({ store, lease, input, incrementCompaction });
+  }
+
+  async checkpointAll(handles: Iterable<AgentLifecycleCheckpointHandle>): Promise<ResumeTargetV1[]> {
+    const snapshotHandles = [...handles];
+    return Promise.all(snapshotHandles.map((handle) => handle.store.checkpoint(
+      handle.lease,
+      handle.input,
+      { incrementCompaction: handle.incrementCompaction },
+    )));
+  }
+
+  async reemitAll(): Promise<void> {
+    const agents = this.listAgents();
+    const claims = this.listClaims();
+    const stores = [...this.lifecycleStores.values()];
+    for (const agent of agents) this.pi.appendEntry(BG_AGENT_REGISTRY_ENTRY_TYPE, agent);
+    for (const claim of claims) this.pi.appendEntry(TASK_CLAIM_ENTRY_TYPE, claim);
+    await Promise.all(stores.map((store) => store.reemitCurrent()));
   }
 
   getAgent(id: string): BgAgentRegistryEntry | undefined {

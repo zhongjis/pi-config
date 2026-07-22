@@ -139,7 +139,7 @@ export function renderGetSubagentResult(
 }
 
 export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void {
-  const { pi, manager, agentActivity, getAbortSignal, bindTurnAbortSignal, waitForAgentCompletionWithSupervision, persistResumeTargetSnapshot } = ctx;
+  const { pi, manager, agentActivity, getAbortSignal, bindTurnAbortSignal, waitForAgentCompletionWithSupervision, persistResumeTargetDelivery } = ctx;
 
   pi.registerTool(defineTool({
     name: "get_subagent_result",
@@ -245,7 +245,7 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
         } else {
           record.resultConsumed = true;
         }
-        await persistResumeTargetSnapshot(record);
+        await persistResumeTargetDelivery(record);
       }
 
       // Verbose: include full conversation

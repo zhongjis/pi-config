@@ -17,6 +17,7 @@ import { getRecoveredResultText } from "./result-recovery.js";
 import { AgentRun, project, type AgentRunTerminalEvent } from "./agent-run.js";
 import { SessionRestoreError } from "./session-restoration.js";
 import { pandaWarn } from "../../lib/warn.js";
+import type { AgentLifecycleLease } from "./lifecycle/agent-lifecycle-store.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
@@ -88,7 +89,7 @@ export class AgentManager {
   private cleanupInterval: ReturnType<typeof setInterval>;
   private onComplete?: OnAgentComplete;
   private onStart?: OnAgentStart;
-  private onCompact?: (record: AgentRecord, data: { reason: string; tokensBefore: number }) => void;
+  private onCompact?: (record: AgentRecord, data: { reason: string; tokensBefore: number; lease: AgentLifecycleLease }) => void;
   private maxConcurrent: number;
   /** IDs currently opening or continuing; prevents duplicate prompts/restores. */
   private resumeInFlight = new Set<string>();
@@ -104,7 +105,7 @@ export class AgentManager {
   /** Number of currently running background agents. */
   private runningBackground = 0;
 
-  constructor(onComplete?: OnAgentComplete, maxConcurrent = DEFAULT_MAX_CONCURRENT, onStart?: OnAgentStart, onCompact?: (record: AgentRecord, data: { reason: string; tokensBefore: number }) => void) {
+  constructor(onComplete?: OnAgentComplete, maxConcurrent = DEFAULT_MAX_CONCURRENT, onStart?: OnAgentStart, onCompact?: (record: AgentRecord, data: { reason: string; tokensBefore: number; lease: AgentLifecycleLease }) => void) {
     this.onComplete = onComplete;
     this.onStart = onStart;
     this.onCompact = onCompact;
@@ -250,13 +251,7 @@ export class AgentManager {
       onSessionCreated: (session) => {
         record.session = session;
         record.run?.publish({ kind: "session_created", session });
-        // Subscribe to compaction events for observability
-        session.subscribe?.((event: AgentSessionEvent) => {
-          if (event.type === "compaction_end" && !event.aborted && event.result) {
-            record.compactionCount = (record.compactionCount ?? 0) + 1;
-            this.onCompact?.(record, { reason: event.reason, tokensBefore: event.result.tokensBefore });
-          }
-        });
+        this.subscribeToCompaction(record, session);
         // Flush any steers that arrived before the session was ready
         if (record.pendingSteers?.length) {
           for (const msg of record.pendingSteers) {
@@ -311,6 +306,19 @@ export class AgentManager {
       });
 
     record.promise = promise;
+  }
+
+  private subscribeToCompaction(record: AgentRecord, session: AgentSession): void {
+    session.subscribe?.((event: AgentSessionEvent) => {
+      if (event.type !== "compaction_end" || event.aborted || !event.result) return;
+      const lease = record.lifecycleLease;
+      if (!lease) return;
+      this.onCompact?.(record, {
+        reason: event.reason,
+        tokensBefore: event.result.tokensBefore,
+        lease,
+      });
+    });
   }
 
   /**
@@ -557,6 +565,7 @@ export class AgentManager {
       lifetimeCost: target.state.lifetimeCost,
       compactionCount: target.state.compactionCount,
     };
+    this.subscribeToCompaction(record, session);
     record.run = new AgentRun(target.id);
     record.run.subscribe((_event, run) => project(run, record));
     record.run.publish({
