@@ -218,8 +218,12 @@ describe("Hou Tu GPT/Gemini accepted prompt-contract parity", () => {
       previous = position;
     }
 
-    expect(HOUTU_GPT).toContain("### Plan Owner Decision Matrix");
-    expect(HOUTU_GPT).toContain("### MANDATORY: Plan Assignment Protocol");
+    expect(HOUTU_GPT).toContain("### Available Workers");
+    expect(HOUTU_GPT).toContain("### MANDATORY: Worker + Skill Selection Protocol");
+    expect(HOUTU_GPT).toContain("### Delegation Pattern");
+    expect(HOUTU_GPT).not.toContain("### MANDATORY: Plan Assignment Protocol");
+    expect(HOUTU_GPT).not.toContain('subagent_type="[plan-owner]"');
+    expect(HOUTU_GPT).toContain('Agent(subagent_type="jintong", skills=[...], run_in_background=false');
     expect(HOUTU_GPT).toContain("### Worker Domain Matching (ZERO TOLERANCE)");
     expect(HOUTU_GPT).toContain("#### PHASE 1: READ THE CODE FIRST");
     expect(HOUTU_GPT).toContain("## When the plan completes");
