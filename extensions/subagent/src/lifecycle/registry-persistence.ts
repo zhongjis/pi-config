@@ -19,17 +19,22 @@
  *   - `subagents:task-claim`        — one entry per task claim.
  */
 
-import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ResumeTargetV1 } from "../types.js";
 import { pandaWarn } from "../../../lib/warn.js";
+import {
+  AgentLifecycleStore,
+  compareResumeTargetVersions,
+  parseResumeTargetV1,
+  RESUME_TARGET_ENTRY_TYPE,
+} from "./agent-lifecycle-store.js";
+
+export { RESUME_TARGET_ENTRY_TYPE } from "./agent-lifecycle-store.js";
 
 /** Stable custom-entry type for bg-agent registry rows. */
 export const BG_AGENT_REGISTRY_ENTRY_TYPE = "subagents:bg-agent-registry";
 /** Stable custom-entry type for task-claim rows. */
 export const TASK_CLAIM_ENTRY_TYPE = "subagents:task-claim";
-/** Stable custom-entry type for version 1 resume targets. */
-export const RESUME_TARGET_ENTRY_TYPE = "subagents:resume-target-v1";
 
 /** Durable shape for a background-agent registry entry. */
 export interface BgAgentRegistryEntry {
@@ -61,110 +66,8 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-const SHA256_RE = /^[0-9a-f]{64}$/;
-const RESUME_STATUSES = new Set(["queued", "running", "completed", "steered", "aborted", "stopped", "error"]);
-const PROMPT_MODES = new Set(["replace", "append", "system_instructions"]);
-
-type ResumeTargetPatch = Partial<Omit<ResumeTargetV1, "version" | "id" | "generation" | "revision">>;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isNonNegativeNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}
-
-function isCanonicalPath(value: unknown): value is string {
-  return isNonEmptyString(value) && resolve(value) === value;
-}
-
-function parseResumeTarget(value: unknown): ResumeTargetV1 | undefined {
-  if (!isRecord(value) || value.version !== 1) return undefined;
-  const runtime = value.runtime;
-  const state = value.state;
-  if (!isRecord(runtime) || !isRecord(state) || !isRecord(runtime.model) || !isRecord(state.lifetimeUsage)) return undefined;
-
-  const extensionIdentities = runtime.extensionIdentities;
-  const activeToolNames = runtime.activeToolNames;
-  if (
-    !isNonEmptyString(value.id) || !isNonNegativeInteger(value.generation) || !isNonNegativeInteger(value.revision) ||
-    !isNonEmptyString(value.parentSessionId) || !isCanonicalPath(value.sessionFile) || !isCanonicalPath(value.sessionDir) ||
-    !isNonEmptyString(value.childSessionId) || !isNonNegativeInteger(value.entryCount) || !isNonEmptyString(value.activeLeafId) ||
-    !SHA256_RE.test(String(value.sessionSha256)) || !isNonEmptyString(value.type) || !isNonEmptyString(value.description) ||
-    !isNonEmptyString(value.cwd) || typeof value.isBackground !== "boolean" ||
-    !isNonNegativeInteger(value.createdAt) || !isNonNegativeInteger(value.updatedAt) ||
-    !isNonEmptyString(runtime.piVersion) || !isNonEmptyString(runtime.model.provider) ||
-    !isNonEmptyString(runtime.model.id) || !isNonEmptyString(runtime.model.api) ||
-    typeof runtime.thinkingLevel !== "string" || !PROMPT_MODES.has(String(runtime.promptMode)) ||
-    typeof runtime.isolated !== "boolean" || typeof runtime.inheritContext !== "boolean" ||
-    !SHA256_RE.test(String(runtime.systemPromptHash)) || !SHA256_RE.test(String(runtime.resourcePolicyHash)) ||
-    !SHA256_RE.test(String(runtime.agentConfigHash)) || !Array.isArray(extensionIdentities) ||
-    !extensionIdentities.every((item) => isRecord(item) && isNonEmptyString(item.name) && SHA256_RE.test(String(item.contentHash))) ||
-    !Array.isArray(activeToolNames) || !activeToolNames.every(isNonEmptyString) ||
-    !RESUME_STATUSES.has(String(state.status)) || typeof state.resultConsumed !== "boolean" || typeof state.notified !== "boolean" ||
-    !isNonNegativeInteger(state.toolUses) || !isNonNegativeInteger(state.lifetimeUsage.input) ||
-    !isNonNegativeInteger(state.lifetimeUsage.output) || !isNonNegativeInteger(state.lifetimeUsage.cacheWrite) ||
-    !isNonNegativeNumber(state.lifetimeCost) || !isNonNegativeInteger(state.compactionCount)
-  ) return undefined;
-
-  return {
-    version: 1,
-    id: value.id,
-    generation: value.generation,
-    revision: value.revision,
-    parentSessionId: value.parentSessionId,
-    sessionFile: value.sessionFile,
-    sessionDir: value.sessionDir,
-    childSessionId: value.childSessionId,
-    entryCount: value.entryCount,
-    activeLeafId: value.activeLeafId,
-    sessionSha256: value.sessionSha256 as string,
-    type: value.type,
-    description: value.description,
-    cwd: value.cwd,
-    isBackground: value.isBackground,
-    createdAt: value.createdAt,
-    updatedAt: value.updatedAt,
-    runtime: {
-      piVersion: runtime.piVersion,
-      model: { provider: runtime.model.provider, id: runtime.model.id, api: runtime.model.api },
-      thinkingLevel: runtime.thinkingLevel as ResumeTargetV1["runtime"]["thinkingLevel"],
-      promptMode: runtime.promptMode as ResumeTargetV1["runtime"]["promptMode"],
-      isolated: runtime.isolated,
-      inheritContext: runtime.inheritContext,
-      systemPromptHash: runtime.systemPromptHash as string,
-      resourcePolicyHash: runtime.resourcePolicyHash as string,
-      agentConfigHash: runtime.agentConfigHash as string,
-      extensionIdentities: extensionIdentities.map((item) => ({ name: item.name as string, contentHash: item.contentHash as string })),
-      activeToolNames: [...new Set(activeToolNames as string[])].sort(),
-    },
-    state: {
-      status: state.status as ResumeTargetV1["state"]["status"],
-      resultConsumed: state.resultConsumed,
-      notified: state.notified,
-      toolUses: state.toolUses,
-      lifetimeUsage: {
-        input: state.lifetimeUsage.input,
-        output: state.lifetimeUsage.output,
-        cacheWrite: state.lifetimeUsage.cacheWrite,
-      },
-      lifetimeCost: state.lifetimeCost,
-      compactionCount: state.compactionCount,
-    },
-  };
-}
-
-function compareResumeTargetVersion(left: ResumeTargetV1, right: ResumeTargetV1): number {
-  return left.generation - right.generation || left.revision - right.revision;
 }
 
 /**
@@ -176,8 +79,7 @@ function compareResumeTargetVersion(left: ResumeTargetV1, right: ResumeTargetV1)
 export class PersistentBgAgentRegistry {
   private readonly agents = new Map<string, BgAgentRegistryEntry>();
   private readonly claims = new Map<string, TaskClaim>();
-  private readonly resumeTargets = new Map<string, ResumeTargetV1>();
-  private readonly resumeTargetWrites = new Map<string, Promise<void>>();
+  private readonly lifecycleStores = new Map<string, AgentLifecycleStore>();
 
   constructor(private readonly pi: AppendCapablePi) {}
 
@@ -234,82 +136,32 @@ export class PersistentBgAgentRegistry {
     this.claims.set(normalized.taskId, normalized);
   }
 
-  /** Persist one validated target unless its generation/revision is stale. */
-  recordResumeTarget(target: ResumeTargetV1): Promise<boolean> {
-    return this.serializeResumeTargetWrite(target.id, () => {
-      const normalized = parseResumeTarget(target);
-      if (!normalized) throw new TypeError("Invalid resume target v1");
-      const current = this.resumeTargets.get(normalized.id);
-      if (current && compareResumeTargetVersion(normalized, current) <= 0) return false;
-      this.persistResumeTarget(normalized);
-      return true;
-    });
+  /** Return the sole process-local lifecycle store handle for an ID, creating it when absent. */
+  getOrCreateLifecycleStore(id: string): AgentLifecycleStore {
+    let store = this.lifecycleStores.get(id);
+    if (!store) {
+      store = new AgentLifecycleStore(id, this.pi);
+      this.lifecycleStores.set(id, store);
+    }
+    return store;
   }
 
-  /** Guarded patch: applies only to the expected current generation/revision. */
-  updateResumeTarget(
-    id: string,
-    expected: Pick<ResumeTargetV1, "generation" | "revision">,
-    patch: ResumeTargetPatch,
-  ): Promise<ResumeTargetV1 | undefined> {
-    return this.serializeResumeTargetWrite(id, () => {
-      const current = this.resumeTargets.get(id);
-      if (!current || current.generation !== expected.generation || current.revision !== expected.revision) return undefined;
-      const normalized = parseResumeTarget({ ...current, ...patch, id, version: 1, revision: current.revision + 1 });
-      if (!normalized) throw new TypeError("Invalid resume target v1 patch");
-      this.persistResumeTarget(normalized);
-      return this.cloneResumeTarget(normalized);
-    });
+  getLifecycleStore(id: string): AgentLifecycleStore | undefined {
+    return this.lifecycleStores.get(id);
   }
 
   getResumeTarget(id: string): ResumeTargetV1 | undefined {
-    const target = this.resumeTargets.get(id);
-    return target ? this.cloneResumeTarget(target) : undefined;
+    return this.lifecycleStores.get(id)?.getSnapshot();
   }
 
   listResumeTargets(): ResumeTargetV1[] {
-    return [...this.resumeTargets.values()].map((target) => this.cloneResumeTarget(target));
+    return [...this.lifecycleStores.values()]
+      .map((store) => store.getSnapshot())
+      .filter((target): target is ResumeTargetV1 => target !== undefined);
   }
 
-  private persistResumeTarget(target: ResumeTargetV1): void {
-    try {
-      this.pi.appendEntry(RESUME_TARGET_ENTRY_TYPE, target);
-    } catch (err) {
-      pandaWarn("subagent.recovery.persist-failed", {
-        kind: "resume-target",
-        id: target.id,
-        error: errorMessage(err),
-      });
-      throw err;
-    }
-    this.resumeTargets.set(target.id, target);
-  }
-
-  private serializeResumeTargetWrite<T>(id: string, write: () => T): Promise<T> {
-    const previous = this.resumeTargetWrites.get(id) ?? Promise.resolve();
-    const result = previous.then(write, write);
-    const tail = result.then(() => undefined, () => undefined);
-    this.resumeTargetWrites.set(id, tail);
-    void tail.finally(() => {
-      if (this.resumeTargetWrites.get(id) === tail) this.resumeTargetWrites.delete(id);
-    });
-    return result;
-  }
-
-  private cloneResumeTarget(target: ResumeTargetV1): ResumeTargetV1 {
-    return {
-      ...target,
-      runtime: {
-        ...target.runtime,
-        model: { ...target.runtime.model },
-        extensionIdentities: target.runtime.extensionIdentities.map((item) => ({ ...item })),
-        activeToolNames: [...target.runtime.activeToolNames],
-      },
-      state: {
-        ...target.state,
-        lifetimeUsage: { ...target.state.lifetimeUsage },
-      },
-    };
+  async reemitResumeTargets(): Promise<void> {
+    await Promise.all([...this.lifecycleStores.values()].map((store) => store.reemitCurrent()));
   }
 
   getAgent(id: string): BgAgentRegistryEntry | undefined {
@@ -348,7 +200,8 @@ export class PersistentBgAgentRegistry {
   replay(entries: Iterable<CustomEntryLike>): number {
     this.agents.clear();
     this.claims.clear();
-    this.resumeTargets.clear();
+    this.lifecycleStores.clear();
+    const replayedTargets = new Map<string, ResumeTargetV1>();
     let count = 0;
     for (const entry of entries) {
       if (!entry || entry.type !== "custom") continue;
@@ -374,19 +227,22 @@ export class PersistentBgAgentRegistry {
         count++;
       } else if (entry.customType === RESUME_TARGET_ENTRY_TYPE) {
         const version = isRecord(entry.data) ? entry.data.version : undefined;
-        const target = parseResumeTarget(entry.data);
+        const target = parseResumeTargetV1(entry.data);
         if (!target) {
           pandaWarn("subagent.resume-target.invalid-row", {
             reason: version === undefined ? "malformed" : version === 1 ? "malformed" : "version-mismatch",
           });
           continue;
         }
-        const current = this.resumeTargets.get(target.id);
-        if (!current || compareResumeTargetVersion(target, current) >= 0) {
-          this.resumeTargets.set(target.id, target);
+        const current = replayedTargets.get(target.id);
+        if (!current || compareResumeTargetVersions(target, current) >= 0) {
+          replayedTargets.set(target.id, target);
         }
         count++;
       }
+    }
+    for (const [id, target] of replayedTargets) {
+      this.lifecycleStores.set(id, new AgentLifecycleStore(id, this.pi, target));
     }
     pandaWarn("subagent.recovery.replayed", { count });
     return count;

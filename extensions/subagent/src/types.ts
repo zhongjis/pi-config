@@ -6,6 +6,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AgentRun } from "./agent-run.js";
 import type { LifetimeUsage } from "./usage.js";
+import type { AgentLifecycleLease } from "./lifecycle/agent-lifecycle-store.js";
 
 export type { ThinkingLevel };
 
@@ -209,6 +210,8 @@ export interface AgentRecord {
   lifetimeCost?: number;
   /** Number of successful compactions for this agent's session. */
   compactionCount?: number;
+  /** Opaque authority for durable writes in the current lifecycle generation. */
+  lifecycleLease?: AgentLifecycleLease;
 }
 
 /** Details attached to custom notification messages for visual rendering. */

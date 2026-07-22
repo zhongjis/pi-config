@@ -71,6 +71,7 @@ import { renderSubagentSummary } from "../ui/summary-renderer.js";
 import type { SubagentSummaryAgent, SubagentSummaryStatus } from "../ui/summary-renderer.js";
 import { RenderScheduler } from "../ui/render-scheduler.js";
 import { BG_AGENT_REGISTRY_ENTRY_TYPE, PersistentBgAgentRegistry, TASK_CLAIM_ENTRY_TYPE } from "./registry-persistence.js";
+import { lifecycleSnapshotInput } from "./agent-lifecycle-store.js";
 import { pandaWarn } from "../../../lib/warn.js";
 import { registerAgentTool } from "../tools/agent.js";
 import { registerGetSubagentResultTool } from "../tools/get_subagent_result.js";
@@ -341,28 +342,37 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   }
 
   async function persistResumeTargetSnapshot(record: AgentRecord): Promise<void> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const current = persistentRegistry.getResumeTarget(record.id);
-      if (!current) return;
-      const sessionSnapshot = readSessionSnapshot(record.sessionFile ?? current.sessionFile);
-      const updated = await persistentRegistry.updateResumeTarget(
-        record.id,
-        { generation: current.generation, revision: current.revision },
-        {
-          ...(sessionSnapshot ?? {}),
-          updatedAt: Date.now(),
-          state: {
-            status: record.status,
-            resultConsumed: !!record.resultConsumed,
-            notified: !!record.notified,
-            toolUses: record.toolUses,
-            lifetimeUsage: { ...(record.lifetimeUsage ?? current.state.lifetimeUsage) },
-            lifetimeCost: record.lifetimeCost ?? current.state.lifetimeCost,
-            compactionCount: record.compactionCount ?? current.state.compactionCount,
-          },
-        },
-      );
-      if (updated) return;
+    const store = persistentRegistry.getLifecycleStore(record.id);
+    const lease = record.lifecycleLease;
+    const current = store?.getSnapshot();
+    if (!store || !lease || !current) return;
+
+    if (current.state.status !== "running") {
+      if (record.resultConsumed && !current.state.resultConsumed) await store.markConsumed(lease, Date.now());
+      const afterConsumed = store.getSnapshot();
+      if (record.notified && !afterConsumed?.state.notified) await store.markNotified(lease, Date.now());
+      return;
+    }
+
+    const sessionSnapshot = readSessionSnapshot(record.sessionFile ?? current.sessionFile);
+    const input = {
+      ...lifecycleSnapshotInput(current),
+      ...(sessionSnapshot ?? {}),
+      updatedAt: Date.now(),
+      state: {
+        status: record.status,
+        resultConsumed: !!record.resultConsumed,
+        notified: !!record.notified,
+        toolUses: record.toolUses,
+        lifetimeUsage: { ...(record.lifetimeUsage ?? current.state.lifetimeUsage) },
+        lifetimeCost: record.lifetimeCost ?? current.state.lifetimeCost,
+        compactionCount: record.compactionCount ?? current.state.compactionCount,
+      },
+    };
+    if (record.status === "running") {
+      await store.checkpoint(lease, input);
+    } else {
+      await store.commitTerminal(lease, input);
     }
   }
 

@@ -7,6 +7,7 @@ import {
   RESUME_TARGET_ENTRY_TYPE,
   TASK_CLAIM_ENTRY_TYPE,
 } from "../src/lifecycle/registry-persistence.js";
+import type { AgentLifecycleSnapshotInput } from "../src/lifecycle/agent-lifecycle-store.js";
 
 /** A minimal session JSONL log that records appended CustomEntry rows. */
 function createSessionLog() {
@@ -73,6 +74,11 @@ function resumeTarget(
     },
     ...overrides,
   };
+}
+
+function lifecycleInput(target: ResumeTargetV1): AgentLifecycleSnapshotInput {
+  const { version: _version, generation: _generation, revision: _revision, ...input } = target;
+  return input;
 }
 
 describe("PersistentBgAgentRegistry — boot replay", () => {
@@ -229,23 +235,32 @@ describe("PersistentBgAgentRegistry — boot replay", () => {
     expect(registry.getResumeTarget("background")?.isBackground).toBe(true);
   });
 
-  it("orders guarded consumed/notified writes and rejects stale generations", async () => {
+  it("continues exact replayed V1 rows through store-owned revisions", async () => {
     const log = createSessionLog();
     const registry = new PersistentBgAgentRegistry(log.pi);
-    await registry.recordResumeTarget(resumeTarget("agent-a", 2, 0, { state: {
-      ...resumeTarget("agent-a", 2, 0).state, resultConsumed: false, notified: false,
-    } }));
-    const consumed = await registry.updateResumeTarget("agent-a", { generation: 2, revision: 0 }, {
-      updatedAt: 201, state: { ...registry.getResumeTarget("agent-a")!.state, resultConsumed: true },
+    const legacy = resumeTarget("agent-a", 2, 7, {
+      state: { ...resumeTarget("agent-a", 2, 7).state, status: "completed", resultConsumed: false, notified: false },
     });
-    expect(consumed?.revision).toBe(1);
-    expect(await registry.updateResumeTarget("agent-a", { generation: 2, revision: 0 }, { updatedAt: 202 })).toBeUndefined();
-    const notified = await registry.updateResumeTarget("agent-a", { generation: 2, revision: 1 }, {
-      updatedAt: 203, state: { ...consumed!.state, notified: true },
-    });
-    expect(notified?.state).toMatchObject({ resultConsumed: true, notified: true });
-    expect(await registry.recordResumeTarget(resumeTarget("agent-a", 1, 99))).toBe(false);
-    expect(registry.getResumeTarget("agent-a")).toMatchObject({ generation: 2, revision: 2 });
-    expect(log.entries.filter((entry) => entry.customType === RESUME_TARGET_ENTRY_TYPE)).toHaveLength(3);
+    expect(registry.replay([{ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: legacy }])).toBe(1);
+    const store = registry.getLifecycleStore("agent-a")!;
+
+    const begun = await store.beginResume(lifecycleInput(resumeTarget("agent-a", 0, 0, {
+      updatedAt: 201,
+      state: { ...legacy.state, status: "running", resultConsumed: false, notified: false },
+    })));
+    const terminal = await store.commitTerminal(begun.lease, lifecycleInput(resumeTarget("agent-a", 0, 0, {
+      updatedAt: 202,
+      state: { ...legacy.state, status: "completed", resultConsumed: false, notified: false },
+    })));
+    const consumed = await store.markConsumed(begun.lease, 203);
+    const notified = await store.markNotified(begun.lease, 204);
+
+    expect(begun.snapshot).toMatchObject({ generation: 3, revision: 0, state: { status: "running" } });
+    expect(terminal.revision).toBe(1);
+    expect(consumed.revision).toBe(2);
+    expect(notified).toMatchObject({ generation: 3, revision: 3, state: { resultConsumed: true, notified: true } });
+    const persisted = log.entries.filter((entry) => entry.customType === RESUME_TARGET_ENTRY_TYPE);
+    expect(persisted).toHaveLength(4);
+    expect(Object.keys(persisted.at(-1)?.data as ResumeTargetV1).sort()).toEqual(Object.keys(legacy).sort());
   });
 });

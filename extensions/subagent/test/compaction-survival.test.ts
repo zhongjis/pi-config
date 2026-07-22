@@ -6,6 +6,7 @@ import {
   RESUME_TARGET_ENTRY_TYPE,
   TASK_CLAIM_ENTRY_TYPE,
 } from "../src/lifecycle/registry-persistence.js";
+import type { AgentLifecycleSnapshotInput } from "../src/lifecycle/agent-lifecycle-store.js";
 
 /** A mutable session JSONL log that records appended CustomEntry rows. */
 function createSessionLog() {
@@ -33,6 +34,11 @@ function resumeTarget(): ResumeTargetV1 {
   };
 }
 
+function lifecycleInput(target: ResumeTargetV1): AgentLifecycleSnapshotInput {
+  const { version: _version, generation: _generation, revision: _revision, ...input } = target;
+  return input;
+}
+
 /**
  * Mirrors the `session_before_compact` handler registered in
  * `supervision.ts` (Task 28): writes a single informational marker.
@@ -49,16 +55,14 @@ function onBeforeCompact(pi: { appendEntry: (t: string, d?: unknown) => void }, 
  * Mirrors the `session_compact` handler registered in `supervision.ts`
  * (Task 28): re-emits every live registry/claim row as a fresh baseline.
  */
-function onCompact(pi: { appendEntry: (t: string, d?: unknown) => void }, registry: PersistentBgAgentRegistry) {
+async function onCompact(pi: { appendEntry: (t: string, d?: unknown) => void }, registry: PersistentBgAgentRegistry) {
   for (const agent of registry.listAgents()) {
     pi.appendEntry(BG_AGENT_REGISTRY_ENTRY_TYPE, agent);
   }
   for (const claim of registry.listClaims()) {
     pi.appendEntry(TASK_CLAIM_ENTRY_TYPE, claim);
   }
-  for (const target of registry.listResumeTargets()) {
-    pi.appendEntry(RESUME_TARGET_ENTRY_TYPE, target);
-  }
+  await registry.reemitResumeTargets();
 }
 
 describe("Compaction survival hooks (Task 28)", () => {
@@ -82,7 +86,7 @@ describe("Compaction survival hooks (Task 28)", () => {
     registry.recordAgent({ id: "agent-c", parentSessionId: "sess-2", status: "running", claimedTaskIds: ["t2"], lastSeenTs: 3000 });
     registry.claimTask({ taskId: "t1", sessionId: "sess-1", ts: 1500 });
     registry.claimTask({ taskId: "t2", sessionId: "sess-2", ts: 2500 });
-    await registry.recordResumeTarget(resumeTarget());
+    await registry.getOrCreateLifecycleStore("agent-a").initialize(lifecycleInput(resumeTarget()));
 
     const preCompactAgents = registry.listAgents();
     const preCompactClaims = registry.listClaims();
@@ -101,7 +105,7 @@ describe("Compaction survival hooks (Task 28)", () => {
     log.entries.length = 0;
 
     // ---- session_compact: re-emit the live state as a fresh baseline ----
-    onCompact(log.pi, registry);
+    await onCompact(log.pi, registry);
 
     // Only the re-emitted baseline rows remain in the post-compact log.
     expect(log.entries.filter((e) => e.customType === BG_AGENT_REGISTRY_ENTRY_TYPE)).toHaveLength(3);
@@ -124,12 +128,12 @@ describe("Compaction survival hooks (Task 28)", () => {
     );
   });
 
-  it("re-emits nothing for an empty registry and the marker reports zero sizes", () => {
+  it("re-emits nothing for an empty registry and the marker reports zero sizes", async () => {
     const log = createSessionLog();
     const registry = new PersistentBgAgentRegistry(log.pi);
 
     onBeforeCompact(log.pi, registry);
-    onCompact(log.pi, registry);
+    await onCompact(log.pi, registry);
 
     const marker = log.entries.find((e) => e.customType === "subagents:pre-compact-marker");
     expect(marker!.data).toMatchObject({ registrySize: 0, claimsSize: 0 });
@@ -138,7 +142,7 @@ describe("Compaction survival hooks (Task 28)", () => {
     expect(log.entries.filter((e) => e.customType === RESUME_TARGET_ENTRY_TYPE)).toHaveLength(0);
   });
 
-  it("both hooks complete well under the 100ms latency budget", () => {
+  it("both hooks complete well under the 100ms latency budget", async () => {
     const log = createSessionLog();
     const registry = new PersistentBgAgentRegistry(log.pi);
     for (let i = 0; i < 50; i++) {
@@ -151,7 +155,7 @@ describe("Compaction survival hooks (Task 28)", () => {
     const beforeLatency = Date.now() - startBefore;
 
     const startCompact = Date.now();
-    onCompact(log.pi, registry);
+    await onCompact(log.pi, registry);
     const compactLatency = Date.now() - startCompact;
 
     expect(beforeLatency).toBeLessThan(100);

@@ -6,7 +6,7 @@
  */
 
 import { pandaWarn } from "../../../lib/warn.js";
-import { BG_AGENT_REGISTRY_ENTRY_TYPE, RESUME_TARGET_ENTRY_TYPE, TASK_CLAIM_ENTRY_TYPE } from "../lifecycle/registry-persistence.js";
+import { BG_AGENT_REGISTRY_ENTRY_TYPE, TASK_CLAIM_ENTRY_TYPE } from "../lifecycle/registry-persistence.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 import type { UICtx } from "../ui/agent-widget.js";
 
@@ -70,16 +70,14 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
   // session_compact: pi has compacted and pre-compact entries may be gone. Re-emit every live
   // registry/claim row as a fresh appendEntry so future replays rebuild from this post-compact
   // baseline instead of relying on entries compaction may have discarded. Sync + fast.
-  pi.on("session_compact", () => {
+  pi.on("session_compact", async () => {
     for (const agent of persistentRegistry.listAgents()) {
       pi.appendEntry(BG_AGENT_REGISTRY_ENTRY_TYPE, agent);
     }
     for (const claim of persistentRegistry.listClaims()) {
       pi.appendEntry(TASK_CLAIM_ENTRY_TYPE, claim);
     }
-    for (const target of persistentRegistry.listResumeTargets()) {
-      pi.appendEntry(RESUME_TARGET_ENTRY_TYPE, target);
-    }
+    await persistentRegistry.reemitResumeTargets();
   });
 
   pi.on("session_before_switch", async () => { await manager.clearCompleted(true); });

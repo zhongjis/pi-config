@@ -28,6 +28,7 @@ import { readEnabledModels, resolveEnabledModels, decideModelScope, type ModelRe
 import { SessionRestoreError, stableSha256, validatePersistedChildSession } from "../session-restoration.js";
 import { SUBAGENTS_CREATED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext, SupervisedAgentActivity } from "../lifecycle/supervision.js";
+import { resumeTargetForValidation, type AgentLifecycleSnapshotInput } from "../lifecycle/agent-lifecycle-store.js";
 import type { AgentRun } from "../agent-run.js";
 import {
   type AgentActivity,
@@ -81,8 +82,7 @@ function captureResumeTarget(
   record: AgentRecord,
   runtime: ResumeRuntimeSnapshot,
   cwd: string,
-  previous?: ResumeTargetV1,
- ): ResumeTargetV1 {
+): AgentLifecycleSnapshotInput {
   if (!record.sessionFile || !record.sessionDir || !record.parentSessionId) {
     throw new Error("Agent session metadata is incomplete");
   }
@@ -95,12 +95,8 @@ function captureResumeTarget(
       !leaf || typeof leaf.id !== "string") {
     throw new Error("Agent session JSONL is not a valid v3 session");
   }
-  const now = Date.now();
-  const target: ResumeTargetV1 = {
-    version: 1,
+  const target: AgentLifecycleSnapshotInput = {
     id: record.id,
-    generation: previous?.generation ?? 0,
-    revision: previous ? previous.revision + 1 : 0,
     parentSessionId: record.parentSessionId,
     sessionFile: record.sessionFile,
     sessionDir: record.sessionDir,
@@ -112,8 +108,8 @@ function captureResumeTarget(
     description: record.description,
     cwd,
     isBackground: !!record.isBackground,
-    createdAt: previous?.createdAt ?? record.startedAt,
-    updatedAt: now,
+    createdAt: record.startedAt,
+    updatedAt: Date.now(),
     runtime,
     state: {
       status: record.status,
@@ -125,7 +121,7 @@ function captureResumeTarget(
       compactionCount: record.compactionCount ?? 0,
     },
   };
-  const validated = validatePersistedChildSession(target, runtime);
+  const validated = validatePersistedChildSession(resumeTargetForValidation(target), runtime);
   return {
     ...target,
     sessionFile: validated.sessionFile,
@@ -630,11 +626,20 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         }
         const runtimeForPersistence = persistenceRuntime;
         if (durable && runtimeForPersistence) {
-          persist = async (target, record) => {
-            const next = captureResumeTarget(record, runtimeForPersistence, ctx.cwd, target);
-            const accepted = await persistentRegistry.recordResumeTarget(next);
-            if (!accepted) throw new Error("Resume target write was rejected as stale");
-            return next;
+          persist = async (_target, record) => {
+            const terminalInput = captureResumeTarget(record, runtimeForPersistence, ctx.cwd);
+            const store = persistentRegistry.getOrCreateLifecycleStore(record.id);
+            const begun = await store.beginResume({
+              ...terminalInput,
+              state: {
+                ...terminalInput.state,
+                status: "running",
+                resultConsumed: false,
+                notified: false,
+              },
+            });
+            record.lifecycleLease = begun.lease;
+            return store.commitTerminal(begun.lease, terminalInput);
           };
         }
         const outcome = await manager.resume(params.resume, params.prompt, {
@@ -776,9 +781,8 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
 
       const persistFreshResumeTarget = async (record: AgentRecord) => {
         if (!record.sessionFile) return;
-        const provisional: ResumeTargetV1 = {
-          version: 1, id: record.id, generation: 0, revision: 0,
-          parentSessionId: record.parentSessionId ?? "", sessionFile: record.sessionFile,
+        const provisional: AgentLifecycleSnapshotInput = {
+          id: record.id, parentSessionId: record.parentSessionId ?? "", sessionFile: record.sessionFile,
           sessionDir: record.sessionDir ?? dirname(record.sessionFile), childSessionId: "pending",
           entryCount: 0, activeLeafId: "pending", sessionSha256: "0".repeat(64),
           type: record.type, description: record.description, cwd: ctx.cwd,
@@ -787,10 +791,11 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           state: { status: record.status, resultConsumed: false, notified: false, toolUses: record.toolUses, lifetimeUsage: EMPTY_USAGE, lifetimeCost: 0, compactionCount: 0 },
         };
         const prepared = await prepareAgentRestoreRuntime(ctx, record.type, {
-          pi, target: provisional, model, isolated, inheritContext, thinkingLevel: thinking,
+          pi, target: resumeTargetForValidation(provisional), model, isolated, inheritContext, thinkingLevel: thinking,
         });
         const target = captureResumeTarget(record, prepared.runtime, ctx.cwd);
-        await persistentRegistry.recordResumeTarget(target);
+        const initialized = await persistentRegistry.getOrCreateLifecycleStore(record.id).initialize(target);
+        record.lifecycleLease = initialized.lease;
       };
 
       // Background execution
