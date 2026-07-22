@@ -23,6 +23,7 @@ export * from "./notify-once.js";
 export * from "./stream-fallback.js";
 export * from "./rpc.js";
 export * from "./tool-models.js";
+export * from "./tool-output.js";
 
 /**
  * Wire the shared library into an extension.
