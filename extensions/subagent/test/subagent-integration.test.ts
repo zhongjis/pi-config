@@ -21,6 +21,9 @@ vi.mock("../src/agent-runner.js", () => ({
 }));
 
 const { AgentManager } = await import("../src/agent-manager.js");
+const { registerRpcHandlers } = await import("../src/cross-extension-rpc.js");
+import type { EventBus } from "../src/cross-extension-rpc.js";
+import type { AgentRecord } from "../src/types.js";
 
 function fakeSession() {
   return {
@@ -237,15 +240,12 @@ describe("D3a — abort() / publishRunStop interleave: stopped status wins over 
       const id = manager.spawn(PI, CTX, "general-purpose", "p", { description: "d", isBackground: false });
       const record = manager.getRecord(id)!;
 
-      // Flush microtasks so startAgent has been called (record.promise is set)
-      await Promise.resolve();
+      // Wait until the async pre-prompt gate has entered provider execution.
+      await vi.waitFor(() => expect(runAgentMock).toHaveBeenCalled());
 
-      // abort() while running — publishRunStop sets status synchronously via project()
+      // Active stops remain pending until provider settlement crosses the terminal barrier.
       manager.abort(id);
-
-      expect(record.status).toBe("stopped");
-      expect(record.error).toBe("Agent was stopped while running.");
-      expect(record.run?.status).toBe("stopped");
+      expect(record.status).toBe("running");
 
       // Now resolve the runAgent promise (late arrival, after abort)
       resolveRun({ responseText: "late result", session, aborted: false, steered: false });
@@ -278,10 +278,10 @@ describe("D4a — result_amended: stopped result flows via run after late settle
       const id = manager.spawn(PI, CTX, "general-purpose", "p", { description: "d", isBackground: false });
       const record = manager.getRecord(id)!;
 
-      await Promise.resolve(); // flush so startAgent runs
+      await vi.waitFor(() => expect(runAgentMock).toHaveBeenCalled());
 
-      manager.abort(id); // sets status="stopped" synchronously via publishRunStop+project
-      expect(record.status).toBe("stopped");
+      manager.abort(id);
+      expect(record.status).toBe("running");
 
       // Resolve with partial text — .then stopped branch publishes result_amended
       resolveRun({ responseText: "partial output", session, aborted: false, steered: false });
@@ -299,5 +299,89 @@ describe("D4a — result_amended: stopped result flows via run after late settle
     } finally {
       await manager.dispose();
     }
+  });
+});
+
+describe("consume RPC durability acknowledgement", () => {
+  function eventBus(): EventBus {
+    const listeners = new Map<string, Set<(data: unknown) => void>>();
+    return {
+      on(event, handler) {
+        const handlers = listeners.get(event) ?? new Set();
+        handlers.add(handler);
+        listeners.set(event, handlers);
+        return () => { handlers.delete(handler); };
+      },
+      emit(event, data) {
+        for (const handler of listeners.get(event) ?? []) handler(data);
+      },
+    };
+  }
+
+  it("replies consumed only after the durable consumed command commits", async () => {
+    const events = eventBus();
+    const record: AgentRecord = {
+      id: "agent-42",
+      type: "general-purpose",
+      description: "rpc durable consume",
+      status: "completed",
+      toolUses: 0,
+      startedAt: 1000,
+      completedAt: 2000,
+    };
+    let release!: () => void;
+    const committed = new Promise<void>((resolve) => { release = resolve; });
+    const consumeResult = vi.fn(() => committed);
+    registerRpcHandlers({
+      events,
+      pi: { events },
+      getCtx: () => ({}),
+      manager: {
+        spawn: () => "agent-42",
+        abort: () => true,
+        getRecord: () => record,
+      },
+      consumeResult,
+    });
+    const reply = vi.fn();
+    events.on("subagents:rpc:consume:reply:req-durable", reply);
+
+    events.emit("subagents:rpc:consume", { requestId: "req-durable", agentId: record.id });
+    await Promise.resolve();
+    expect(reply).not.toHaveBeenCalled();
+
+    release();
+    await vi.waitFor(() => expect(reply).toHaveBeenCalledWith({ success: true, data: { consumed: true } }));
+    expect(consumeResult).toHaveBeenCalledWith(record);
+  });
+
+  it("returns the standard error envelope when consumed persistence fails", async () => {
+    const events = eventBus();
+    const record: AgentRecord = {
+      id: "agent-42",
+      type: "general-purpose",
+      description: "rpc durable consume",
+      status: "completed",
+      toolUses: 0,
+      startedAt: 1000,
+      completedAt: 2000,
+    };
+    registerRpcHandlers({
+      events,
+      pi: { events },
+      getCtx: () => ({}),
+      manager: {
+        spawn: () => "agent-42",
+        abort: () => true,
+        getRecord: () => record,
+      },
+      consumeResult: () => Promise.reject(new Error("consumed append failed")),
+    });
+    const reply = vi.fn();
+    events.on("subagents:rpc:consume:reply:req-failed", reply);
+
+    events.emit("subagents:rpc:consume", { requestId: "req-failed", agentId: record.id });
+
+    await vi.waitFor(() => expect(reply).toHaveBeenCalledWith({ success: false, error: "consumed append failed" }));
   });
 });

@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SUBAGENTS_COMPLETED, SUBAGENTS_CREATED, SUBAGENTS_FAILED, SUBAGENTS_STARTED, SUBAGENTS_STEERED } from "../../lib/subagent-channels.js";
 import { AgentRun, type AgentRunEvent, project, toExternalEffects } from "../src/agent-run.js";
+import { consumeTerminalResult, deliverCompletionNotification } from "../src/lifecycle/durable-delivery.js";
+import type { AgentRecord } from "../src/types.js";
 
 /** Run with a controllable clock for deterministic timestamp assertions. */
 function makeRun(start = 1000) {
@@ -628,5 +630,118 @@ describe("AgentRun — consumed / notified events", () => {
     run.publish({ kind: "completed", result: "second", status: "completed" });
     expect(run.result).toBe("first");
     expect(run.events().filter((e) => e.kind === "completed")).toHaveLength(1);
+  });
+});
+
+describe("durable consumption and notification ordering", () => {
+  function terminalRecord(id: string): AgentRecord {
+    const run = new AgentRun(id, { now: () => 5000 });
+    const record: AgentRecord = {
+      id,
+      type: "general-purpose",
+      description: "durable delivery",
+      status: "queued",
+      toolUses: 0,
+      startedAt: 1000,
+      isBackground: true,
+      lifecycleLease: Object.freeze({ agentId: id, generation: 0 }),
+      run,
+    };
+    run.subscribe((_event, current) => project(current, record));
+    run.publish({ kind: "created", type: record.type, description: record.description, isBackground: true, startedAt: 1000 });
+    run.publish({ kind: "started", startedAt: 1000 });
+    run.publish({ kind: "completed", result: "done", status: "completed" });
+    return record;
+  }
+
+  it("publishes consumed only after the durable command commits", async () => {
+    const record = terminalRecord("consume-order");
+    let release!: () => void;
+    const committed = new Promise<void>((resolve) => { release = resolve; });
+    const markConsumed = vi.fn(() => committed);
+    const repository = {
+      getLifecycleStore: () => ({
+        markConsumed,
+        markNotified: vi.fn(),
+        isNotificationPending: vi.fn(),
+      }),
+    };
+
+    const consuming = consumeTerminalResult(repository, record, () => 6000);
+    expect(record.resultConsumed).toBe(false);
+    release();
+    await consuming;
+
+    expect(markConsumed).toHaveBeenCalledWith(record.lifecycleLease, 6000);
+    expect(record.resultConsumed).toBe(true);
+  });
+
+  it("consumed append failure leaves the result unacknowledged", async () => {
+    const record = terminalRecord("consume-failure");
+    const repository = {
+      getLifecycleStore: () => ({
+        markConsumed: vi.fn().mockRejectedValue(new Error("disk full")),
+        markNotified: vi.fn(),
+        isNotificationPending: vi.fn(),
+      }),
+    };
+
+    await expect(consumeTerminalResult(repository, record)).rejects.toThrow("disk full");
+    expect(record.resultConsumed).toBe(false);
+  });
+
+  it("notification send failure leaves notified false", async () => {
+    const record = terminalRecord("send-failure");
+    const markNotified = vi.fn();
+    const repository = {
+      getLifecycleStore: () => ({
+        markConsumed: vi.fn(),
+        markNotified,
+        isNotificationPending: vi.fn().mockResolvedValue(true),
+      }),
+    };
+
+    await expect(deliverCompletionNotification(
+      repository,
+      [record],
+      () => { throw new Error("send failed"); },
+    )).rejects.toThrow("send failed");
+
+    expect(markNotified).not.toHaveBeenCalled();
+    expect(record.notified).toBe(false);
+  });
+
+  it("send success plus notified append failure permits a later duplicate", async () => {
+    const record = terminalRecord("notified-failure");
+    const send = vi.fn();
+    const repository = {
+      getLifecycleStore: () => ({
+        markConsumed: vi.fn(),
+        markNotified: vi.fn().mockRejectedValue(new Error("disk full")),
+        isNotificationPending: vi.fn().mockResolvedValue(true),
+      }),
+    };
+
+    await expect(deliverCompletionNotification(repository, [record], send)).rejects.toThrow("disk full");
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(record.notified).toBe(false);
+  });
+
+  it("suppresses notification when serialized durable state says consumption won", async () => {
+    const record = terminalRecord("consume-wins");
+    const send = vi.fn();
+    const repository = {
+      getLifecycleStore: () => ({
+        markConsumed: vi.fn(),
+        markNotified: vi.fn(),
+        isNotificationPending: vi.fn().mockResolvedValue(false),
+      }),
+    };
+
+    const delivered = await deliverCompletionNotification(repository, [record], send);
+
+    expect(delivered).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -304,6 +304,13 @@ export class AgentLifecycleStore {
     return this.markDelivery(lease, "notified", updatedAt);
   }
 
+  isNotificationPending(lease: AgentLifecycleLease): Promise<boolean> {
+    return this.serialize(async () => {
+      const current = this.requireLease(lease);
+      return TERMINAL_STATUSES.has(current.state.status) && !current.state.resultConsumed && !current.state.notified;
+    });
+  }
+
   reemitCurrent(): Promise<ResumeTargetV1 | undefined> {
     return this.serialize(async () => {
       if (!this.current) return undefined;

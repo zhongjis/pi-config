@@ -483,6 +483,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
     getAbortSignal,
     typeListText,
     compactTypeListText,
+    consumeResult,
   } = ctx;
 
   pi.registerTool(defineTool({
@@ -665,7 +666,14 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           );
         }
         const record = manager.getRecord(outcome.id)!;
-        record.run?.publish({ kind: "consumed" });
+        try {
+          await consumeResult(record);
+        } catch {
+          return textResult(
+            `Failed to persist result consumption for agent "${record.id}". Retry Agent with resume: "${record.id}".`,
+            buildInvocationFailureDetails(targetType, params.description, "persistence_failed", record.id),
+          );
+        }
         const resumedBase = {
           displayName: getDisplayName(targetType),
           description: record.description,
@@ -978,6 +986,15 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
 
 
       const sessionLog = record.sessionFile ? `\nSession log: ${record.sessionFile}` : "";
+
+      try {
+        await consumeResult(record);
+      } catch {
+        return textResult(
+          `Failed to persist result consumption for agent "${record.id}". Retry get_subagent_result.`,
+          buildInvocationFailureDetails(subagentType, params.description, "persistence_failed", record.id),
+        );
+      }
 
       if (record.status === "error") {
         return textResult(formatAgentFailureOutput(record, sessionLog, localHint), details);

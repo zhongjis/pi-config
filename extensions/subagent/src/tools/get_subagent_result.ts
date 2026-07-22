@@ -139,7 +139,7 @@ export function renderGetSubagentResult(
 }
 
 export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void {
-  const { pi, manager, agentActivity, getAbortSignal, bindTurnAbortSignal, waitForAgentCompletionWithSupervision, persistResumeTargetDelivery } = ctx;
+  const { pi, manager, agentActivity, getAbortSignal, bindTurnAbortSignal, waitForAgentCompletionWithSupervision, consumeResult } = ctx;
 
   pi.registerTool(defineTool({
     name: "get_subagent_result",
@@ -238,14 +238,13 @@ export function registerGetSubagentResultTool(ctx: SubagentRuntimeContext): void
         output += getRecoveredResultText(record);
       }
 
-      // Mark result as consumed only after a terminal result is actually returned here.
+      // A terminal result is acknowledged only after durable consumed state commits.
       if (record.status !== "running" && record.status !== "queued") {
-        if (record.run) {
-          record.run.publish({ kind: "consumed" });
-        } else {
-          record.resultConsumed = true;
+        try {
+          await consumeResult(record);
+        } catch {
+          return textResult(`Failed to persist result consumption for agent "${record.id}". Retry get_subagent_result.`);
         }
-        await persistResumeTargetDelivery(record);
       }
 
       // Verbose: include full conversation

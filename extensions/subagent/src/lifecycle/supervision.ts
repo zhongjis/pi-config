@@ -72,6 +72,7 @@ import { RenderScheduler } from "../ui/render-scheduler.js";
 import { BG_AGENT_REGISTRY_ENTRY_TYPE, PersistentBgAgentRegistry, TASK_CLAIM_ENTRY_TYPE } from "./registry-persistence.js";
 import type { AgentLifecycleLease } from "./agent-lifecycle-store.js";
 import { createLifecycleCheckpointHandle } from "./compaction-checkpoint.js";
+import { consumeTerminalResult, deliverCompletionNotification } from "./durable-delivery.js";
 import { pandaWarn } from "../../../lib/warn.js";
 import { registerAgentTool } from "../tools/agent.js";
 import { registerGetSubagentResultTool } from "../tools/get_subagent_result.js";
@@ -284,7 +285,7 @@ export interface SubagentRuntimeContext {
   unsubRpcHandlers: () => void;
   releaseManager: () => void;
   clearBackgroundSupervision: () => void;
-  persistResumeTargetDelivery: (record: AgentRecord) => Promise<void>;
+  consumeResult: (record: AgentRecord) => Promise<void>;
   checkpointAllResumeTargets: () => Promise<void>;
 }
 
@@ -325,14 +326,8 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function persistResumeTargetDelivery(record: AgentRecord): Promise<void> {
-    const store = persistentRegistry.getLifecycleStore(record.id);
-    const lease = record.lifecycleLease;
-    const current = store?.getSnapshot();
-    if (!store || !lease || !current || current.state.status === "running") return;
-    if (record.resultConsumed && !current.state.resultConsumed) await store.markConsumed(lease, Date.now());
-    const afterConsumed = store.getSnapshot();
-    if (record.notified && !afterConsumed?.state.notified) await store.markNotified(lease, Date.now());
+  async function consumeResult(record: AgentRecord): Promise<void> {
+    await consumeTerminalResult(persistentRegistry, record);
   }
 
   async function checkpointAllResumeTargets(): Promise<void> {
@@ -450,12 +445,16 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     };
   }
 
-  // Background completion: route through group join or send individual nudge
+  // Background completion: terminal V1 already crossed the manager barrier. Append compatibility
+  // history before emitting the advisory event; either advisory failure leaves durable state intact.
   const manager = new AgentManager((record) => {
-    // Emit the frozen external contract (subagents:* event + durable subagents:record).
     const eventData = buildEventData(record);
-    emitTerminalContract(pi, record, eventData);
-
+    void emitTerminalContract(pi, record, eventData).catch((error) => {
+      pandaWarn("subagent.compatibility.terminal-effect-failed", {
+        id: record.id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    });
     // Durable bg-agent registry: persist the terminal transition (write-through-first).
     // recordAgent already emits a structured warning + leaves its cache unchanged on
     // append failure; swallow here so a persistence hiccup never blocks completion handling.
@@ -469,7 +468,6 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
           lastSeenTs: record.completedAt ?? Date.now(),
         });
       } catch { /* already warned; do not break completion handling */ }
-      void persistResumeTargetDelivery(record);
     }
 
     // Widget cleanup — notification is consolidated at agent_end via emitCompletionNotificationsAtIdle.
@@ -579,7 +577,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     void superviseBackgroundAgents();
     // Idle flush: surface completion notifications for agents that finished while the
     // parent sat idle between prompts (no agent_end fires then). notified-gated → one-shot.
-    if (!parentBusy) emitCompletionNotificationsAtIdle();
+    if (!parentBusy) void emitCompletionNotificationsAtIdle();
   }, BACKGROUND_SUPERVISION_INTERVAL_MS);
   backgroundSupervisionTimer.unref?.();
 
@@ -645,6 +643,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
       abort: (id) => manager.abort(id),
       getRecord: (id) => manager.getRecord(id),
     },
+    consumeResult,
   });
 
   // Broadcast readiness so extensions loaded after us can discover us
@@ -679,48 +678,52 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     (event, payload) => pi.events.emit(event, payload),
   );
   // ---- agent_end: consolidated completion notifications ----
-  function emitCompletionNotificationsAtIdle() {
-    const pending = manager.listAgents().filter(r =>
+  async function emitCompletionNotificationsAtIdle(): Promise<void> {
+    const candidates = manager.listAgents().filter(r =>
       r.isBackground &&
       r.completedAt != null &&
-      !r.resultConsumed &&
       !r.suppressNotification &&
-      !r.notified &&
       !(r.lastPolledAt != null && (Date.now() - r.lastPolledAt) < POLLED_RECENTLY_MS),
     );
-    if (pending.length === 0) return;
+    if (candidates.length === 0) return;
 
-    let content: string;
-    let details: NotificationDetails;
+    try {
+      await deliverCompletionNotification(persistentRegistry, candidates, (pending) => {
+        let content: string;
+        let details: NotificationDetails;
 
-    if (pending.length === 1) {
-      const first = pending[0];
-      const notification = formatTaskNotification(first, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS);
-      const footer =
-        (first.outputFile ? `\nFull transcript available at: ${first.outputFile}` : '') +
-        (first.sessionFile ? `\nSession log: ${first.sessionFile}` : '');
-      content = notification + footer;
-      details = buildNotificationDetails(first, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS, agentActivity.get(first.id));
-    } else {
-      const n = pending.length;
-      const notifications = pending.map(r => formatTaskNotification(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS)).join('\n\n');
-      const label = `${n} agent(s) finished`;
-      content = `Background agent group completed: ${label}\n\n${notifications}\n\nUse get_subagent_result for full output.`;
-      const [first, ...rest] = pending;
-      details = buildNotificationDetails(first, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(first.id));
-      if (rest.length > 0) {
-        details.others = rest.map(r => buildNotificationDetails(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(r.id)));
-      }
+        if (pending.length === 1) {
+          const first = pending[0];
+          const notification = formatTaskNotification(first, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS);
+          const footer =
+            (first.outputFile ? `\nFull transcript available at: ${first.outputFile}` : '') +
+            (first.sessionFile ? `\nSession log: ${first.sessionFile}` : '');
+          content = notification + footer;
+          details = buildNotificationDetails(first, SUBAGENT_INDIVIDUAL_NOTIFICATION_MAX_CHARS, agentActivity.get(first.id));
+        } else {
+          const n = pending.length;
+          const notifications = pending.map(r => formatTaskNotification(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS)).join('\n\n');
+          const label = `${n} agent(s) finished`;
+          content = `Background agent group completed: ${label}\n\n${notifications}\n\nUse get_subagent_result for full output.`;
+          const [first, ...rest] = pending;
+          details = buildNotificationDetails(first, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(first.id));
+          if (rest.length > 0) {
+            details.others = rest.map(r => buildNotificationDetails(r, SUBAGENT_GROUP_NOTIFICATION_MAX_CHARS, agentActivity.get(r.id)));
+          }
+        }
+
+        pi.sendMessage<NotificationDetails>({
+          customType: "subagent-notification",
+          content,
+          display: true,
+          details,
+        }, { deliverAs: "followUp", triggerTurn: true });
+      });
+    } catch (error) {
+      pandaWarn("subagent.notification.delivery-failed", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
     }
-
-    pi.sendMessage<NotificationDetails>({
-      customType: "subagent-notification",
-      content,
-      display: true,
-      details,
-    }, { deliverAs: "followUp", triggerTurn: true });
-    for (const r of pending) r.run?.publish({ kind: "notified" });
-    for (const r of pending) void persistResumeTargetDelivery(r);
   }
 
 
@@ -854,7 +857,7 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
     unsubRpcHandlers,
     releaseManager,
     clearBackgroundSupervision,
-    persistResumeTargetDelivery,
+    consumeResult,
     checkpointAllResumeTargets,
   };
 
@@ -868,5 +871,5 @@ export function registerSubagentRuntime(pi: ExtensionAPI, managerKey: symbol) {
   registerCleanup(runtimeContext);
   registerAgentsCommand(runtimeContext);
   pi.on("agent_start", () => { parentBusy = true; });
-  pi.on("agent_end", () => { parentBusy = false; emitCompletionNotificationsAtIdle(); });
+  pi.on("agent_end", async () => { parentBusy = false; await emitCompletionNotificationsAtIdle(); });
 }

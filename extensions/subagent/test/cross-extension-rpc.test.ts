@@ -26,7 +26,7 @@ describe("cross-extension RPC", () => {
     events = createEventBus();
     manager = { spawn: vi.fn().mockReturnValue("agent-42"), abort: vi.fn().mockReturnValue(true), getRecord: vi.fn(() => undefined) };
     ctx = { session: true };
-    deps = { events, pi: { events }, getCtx: () => ctx, manager };
+    deps = { events, pi: { events }, getCtx: () => ctx, manager, consumeResult: vi.fn().mockResolvedValue(undefined) };
   });
 
   // --- ping ---
@@ -238,7 +238,7 @@ describe("cross-extension RPC", () => {
       events.emit("subagents:rpc:consume", { requestId: "req-c1", agentId: "agent-42" });
 
       await vi.waitFor(() => expect(reply).toHaveBeenCalled());
-      expect(record.run.publish).toHaveBeenCalledWith({ kind: "consumed" });
+      expect(deps.consumeResult).toHaveBeenCalledWith(record);
       expect(reply).toHaveBeenCalledWith({ success: true, data: { consumed: true } });
     });
 

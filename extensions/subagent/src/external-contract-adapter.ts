@@ -21,7 +21,7 @@ import { SUBAGENTS_COMPACTED } from "../../lib/subagent-channels.js";
 /** Minimal pi surface the adapter needs (keeps the module unit-testable). */
 export interface ExternalContractPi {
   events: { emit(event: string, data: unknown): void };
-  appendEntry(type: string, data: unknown): void;
+  appendEntry(type: string, data: unknown): void | Promise<void>;
 }
 
 /**
@@ -73,25 +73,47 @@ function terminalEventForStatus(status: AgentRecord["status"]): AgentRunEvent | 
   }
 }
 
+/** Append terminal compatibility history without replaying a historical lifecycle event. */
+export function appendTerminalCompatibilityRecord(
+  pi: ExternalContractPi,
+  record: AgentRecord,
+ ): Promise<void> {
+  try {
+    return Promise.resolve(pi.appendEntry("subagents:record", buildSubagentRecordEntry(record)));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
 /**
- * Emit the external contract for a terminal agent: the `subagents:completed` /
- * `subagents:failed` lifecycle event (payload = `eventData`) plus the durable
- * `subagents:record` snapshot. Channel + background-gating come from `toExternalEffects`.
- *
- * No-op for non-terminal statuses. Foreground runs emit nothing (matches the current
- * surface, where terminal emission is background-only).
+ * Commit compatibility history before emitting the advisory terminal event.
+ * No-op for non-terminal or foreground records.
  */
-export function emitTerminalContract(pi: ExternalContractPi, record: AgentRecord, eventData: unknown): void {
+export function emitTerminalContract(pi: ExternalContractPi, record: AgentRecord, eventData: unknown): Promise<void> {
   const event = terminalEventForStatus(record.status);
-  if (!event) return;
+  if (!event) return Promise.resolve();
   const effects = toExternalEffects(event, { isBackground: record.isBackground ?? false });
-  for (const effect of effects) {
-    if (effect.type === "event") {
-      pi.events.emit(effect.name, eventData);
-    } else {
-      pi.appendEntry("subagents:record", buildSubagentRecordEntry(record));
+  const compatibilityEffect = effects.find((effect) => effect.type === "record");
+  const advisoryEffect = effects.find((effect) => effect.type === "event");
+  if (!compatibilityEffect || !advisoryEffect || advisoryEffect.type !== "event") return Promise.resolve();
+
+  let appended: void | Promise<void>;
+  try {
+    appended = pi.appendEntry("subagents:record", buildSubagentRecordEntry(record));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  const emitAdvisory = () => { pi.events.emit(advisoryEffect.name, eventData); };
+  if (appended === undefined) {
+    try {
+      emitAdvisory();
+      return Promise.resolve();
+    } catch (error) {
+      return Promise.reject(error);
     }
   }
+  return Promise.resolve(appended).then(emitAdvisory);
 }
 
 /**

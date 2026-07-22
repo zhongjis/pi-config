@@ -11,6 +11,7 @@
 
 import { PROTOCOL_VERSION } from "./constants.js";
 import { registerRpcHandler } from "../../lib/rpc.js";
+import type { AgentRecord } from "./types.js";
 
 export { PROTOCOL_VERSION };
 
@@ -27,7 +28,7 @@ export interface EventBus {
 export interface SpawnCapable {
   spawn(pi: unknown, ctx: unknown, type: string, prompt: string, options: any): string;
   abort(id: string): boolean;
-  getRecord(id: string): any | undefined;
+  getRecord(id: string): AgentRecord | undefined;
 }
 
 export interface RpcDeps {
@@ -35,6 +36,7 @@ export interface RpcDeps {
   pi: unknown;                    // passed through to manager.spawn
   getCtx: () => unknown | undefined;  // returns current ExtensionContext
   manager: SpawnCapable;
+  consumeResult: (record: AgentRecord) => Promise<void>;
 }
 
 export interface RpcHandle {
@@ -49,7 +51,7 @@ export interface RpcHandle {
  * Returns unsub functions for cleanup.
  */
 export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
-  const { pi, getCtx, manager } = deps;
+  const { pi, getCtx, manager, consumeResult } = deps;
 
   const unsubPing = registerRpcHandler(pi as any, "subagents", "ping", () => {
     return { version: PROTOCOL_VERSION };
@@ -67,16 +69,12 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
     if (!manager.abort(agentId)) throw new Error("Agent not found");
   });
 
-  const unsubConsume = registerRpcHandler(pi as any, "subagents", "consume", (raw) => {
+  const unsubConsume = registerRpcHandler(pi as any, "subagents", "consume", async (raw) => {
     const { agentId } = raw as { agentId: string };
     const record = manager.getRecord(agentId);
     if (!record) return { consumed: false };
     if (record.status !== "running" && record.status !== "queued") {
-      if (record.run) {
-        record.run.publish({ kind: "consumed" });
-      } else {
-        record.resultConsumed = true;
-      }
+      await consumeResult(record);
       return { consumed: true };
     }
     return { consumed: false };

@@ -3,7 +3,7 @@
 // Asserts behavior-equivalence with the prior inline supervision.ts emission.
 import { describe, expect, it, vi } from "vitest";
 import { SUBAGENTS_COMPLETED, SUBAGENTS_FAILED } from "../../../lib/subagent-channels.js";
-import { buildSubagentRecordEntry, emitTerminalContract } from "../../src/external-contract-adapter.js";
+import { appendTerminalCompatibilityRecord, buildSubagentRecordEntry, emitTerminalContract } from "../../src/external-contract-adapter.js";
 import type { AgentRecord } from "../../src/types.js";
 
 function bgRecord(overrides: Partial<AgentRecord> = {}): AgentRecord {
@@ -112,5 +112,54 @@ describe("buildSubagentRecordEntry — exact durable field set", () => {
     expect(entry.status).toBe("completed");
     expect(entry.result).toBe("r");
     expect(entry.modelLabel).toBe("anthropic/claude-sonnet-4-6");
+  });
+});
+
+describe("terminal durability ordering and repair", () => {
+  it("appends compatibility history before the advisory event", async () => {
+    const order: string[] = [];
+    const pi = {
+      appendEntry: vi.fn(async () => { order.push("record"); }),
+      events: { emit: vi.fn(() => { order.push("event"); }) },
+    };
+
+    await emitTerminalContract(pi, bgRecord(), EVENT_DATA);
+
+    expect(order).toEqual(["record", "event"]);
+  });
+
+  it("suppresses the advisory event when compatibility append fails", async () => {
+    const pi = {
+      appendEntry: vi.fn().mockRejectedValue(new Error("disk full")),
+      events: { emit: vi.fn() },
+    };
+
+    await expect(emitTerminalContract(pi, bgRecord(), EVENT_DATA)).rejects.toThrow("disk full");
+    expect(pi.events.emit).not.toHaveBeenCalled();
+  });
+
+  it("keeps compatibility history durable when advisory event emission fails", async () => {
+    const pi = {
+      appendEntry: vi.fn().mockResolvedValue(undefined),
+      events: { emit: vi.fn(() => { throw new Error("listener failed"); }) },
+    };
+
+    await expect(emitTerminalContract(pi, bgRecord(), EVENT_DATA)).rejects.toThrow("listener failed");
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      "subagents:record",
+      expect.objectContaining({ id: "a1", status: "completed" }),
+    );
+  });
+
+  it("repairs compatibility history without replaying a historical lifecycle event", async () => {
+    const pi = spyPi();
+
+    await appendTerminalCompatibilityRecord(pi, bgRecord());
+
+    expect(pi.appendEntry).toHaveBeenCalledWith(
+      "subagents:record",
+      expect.objectContaining({ id: "a1", status: "completed" }),
+    );
+    expect(pi.events.emit).not.toHaveBeenCalled();
   });
 });
