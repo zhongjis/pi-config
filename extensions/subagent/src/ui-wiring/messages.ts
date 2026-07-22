@@ -8,6 +8,7 @@
 import { pandaWarn } from "../../../lib/warn.js";
 import type { SubagentRuntimeContext } from "../lifecycle/supervision.js";
 import type { UICtx } from "../ui/agent-widget.js";
+import { reconcileDurableRunningTargets } from "../lifecycle/running-reconciliation.js";
 
 const PARENT_COMPACTION_CHECKPOINT_TIMEOUT_MS = 5_000;
 
@@ -69,13 +70,27 @@ export function registerSubagentMessageHandlers(ctx: SubagentRuntimeContext): vo
   // Pi 0.70 folds session replacement notifications into session_start reasons
   // (startup/reload/new/resume/fork), so this covers the old switch path too.
   pi.on("session_start", async (_event, ctx) => {
-    await manager.clearCompleted();     // preserve existing behavior
     manager.resetLifetimeCost();        // new session → reset per-session subagent cost total
     // Boot recovery: rebuild the durable bg-agent registry + task claims from this
     // session's appendEntry log (emits subagent.recovery.replayed with { count }).
     try {
       persistentRegistry.replay(ctx.sessionManager.getEntries());
-    } catch { /* replay is best-effort; never block session start */ }
+      const parentSessionId = ctx.sessionManager.getSessionId();
+      const outcomes = await reconcileDurableRunningTargets({
+        registry: persistentRegistry,
+        parentSessionId,
+        getRecord: (id) => manager.getRecord(id),
+        pi,
+      });
+      for (const outcome of outcomes) {
+        if (outcome.status === "rejected") {
+          pandaWarn("subagent.recovery.running-reconcile-rejected", { id: outcome.id, reason: outcome.reason });
+        }
+      }
+    } catch (error) {
+      pandaWarn("subagent.recovery.running-reconcile-failed", { reason: errorMessage(error) });
+    }
+    await manager.clearCompleted();     // preserve existing cleanup after pending-terminal inspection
     // Parent↔child session linkage (Task 29): once the registry is rebuilt, report whether each
     // registered bg-agent's recorded parent session is present in this session's registry.
     for (const agent of persistentRegistry.listAgents()) {

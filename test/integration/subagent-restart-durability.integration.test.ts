@@ -16,13 +16,21 @@
  * Expected runtime: < 10s
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pandaWarn } from "../../extensions/lib/warn.js";
+import { reconcileDurableRunningTargets } from "../../extensions/subagent/src/lifecycle/running-reconciliation.js";
+import { lifecycleSnapshotInput } from "../../extensions/subagent/src/lifecycle/agent-lifecycle-store.js";
 import {
 	BG_AGENT_REGISTRY_ENTRY_TYPE,
 	type BgAgentRegistryEntry,
 	PersistentBgAgentRegistry,
+	RESUME_TARGET_ENTRY_TYPE,
 	TASK_CLAIM_ENTRY_TYPE,
 } from "../../extensions/subagent/src/lifecycle/registry-persistence.js";
+import type { ResumeTargetV1 } from "../../extensions/subagent/src/types.js";
 
 /** A mutable session JSONL log that records appended CustomEntry rows (durable across restart). */
 function createSessionLog() {
@@ -88,6 +96,43 @@ function warnsWithCode(spy: ReturnType<typeof vi.spyOn>, code: string): Array<Re
 	return spy.mock.calls
 		.filter((call) => typeof call[1] === "string" && (call[1] as string).includes(code))
 		.map((call) => JSON.parse(call[1] as string) as Record<string, unknown>);
+}
+
+const RECOVERY_HASH = "a".repeat(64);
+
+function recoveryRuntime(): ResumeTargetV1["runtime"] {
+	return {
+		piVersion: "test",
+		model: { provider: "faux", id: "model", api: "messages" },
+		thinkingLevel: "off",
+		promptMode: "replace",
+		isolated: false,
+		inheritContext: false,
+		systemPromptHash: RECOVERY_HASH,
+		resourcePolicyHash: RECOVERY_HASH,
+		agentConfigHash: RECOVERY_HASH,
+		extensionIdentities: [],
+		activeToolNames: [],
+	};
+}
+
+function recoveryFixture(suffix: readonly Record<string, unknown>[]) {
+	const root = mkdtempSync(join(tmpdir(), "subagent-running-recovery-"));
+	const file = join(root, "child.jsonl");
+	const header = { type: "session", version: 3, id: "child-recovery", timestamp: "2026-01-01T00:00:00Z", cwd: root };
+	const boundary = { type: "custom", id: "leaf", parentId: null, timestamp: "2026-01-01T00:00:01Z", customType: "agent-mode", data: {} };
+	const prefix = `${JSON.stringify(header)}\n${JSON.stringify(boundary)}\n`;
+	const bytes = `${prefix}${suffix.map((row) => JSON.stringify(row)).join("\n")}${suffix.length > 0 ? "\n" : ""}`;
+	writeFileSync(file, bytes);
+	const target: ResumeTargetV1 = {
+		version: 1, id: "agent-recovery", generation: 4, revision: 2, parentSessionId: "parent-recovery",
+		sessionFile: file, sessionDir: root, childSessionId: "child-recovery", entryCount: 1, activeLeafId: "leaf",
+		sessionSha256: createHash("sha256").update(prefix).digest("hex"), type: "jintong", description: "recover interrupted generation",
+		cwd: root, isBackground: true, createdAt: 1, updatedAt: 2, runtime: recoveryRuntime(),
+		state: { status: "running", resultConsumed: false, notified: false, toolUses: 0,
+			lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, lifetimeCost: 0, compactionCount: 0 },
+	};
+	return { root, file, target };
 }
 
 describe("subagent restart durability", () => {
@@ -239,4 +284,125 @@ describe("subagent restart durability", () => {
 		});
 		expect(warnsWithCode(warnSpy, "subagent.linkage.parent-missing")).toHaveLength(0);
 	});
+
+describe("durable running-generation restart reconciliation", () => {
+	it("repairs a clean terminal suffix without provider, tool, or lifecycle replay", async () => {
+		const fixture = recoveryFixture([{
+			type: "message", id: "final", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z",
+			message: { role: "assistant", content: [{ type: "text", text: "preserved crash result" }], stopReason: "stop" },
+		}]);
+		const log = createSessionLog();
+		log.entries.push({ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: fixture.target });
+		const registry = new PersistentBgAgentRegistry(log.pi);
+		registry.replay(log.entries);
+		const provider = vi.fn();
+		const tool = vi.fn();
+		const events = { emit: vi.fn() };
+
+		const outcomes = await reconcileDurableRunningTargets({
+			registry, parentSessionId: "parent-recovery", getRecord: () => undefined,
+			pi: { appendEntry: log.pi.appendEntry, events }, now: () => 10,
+		});
+
+		expect(outcomes).toEqual([{ id: "agent-recovery", status: "recovered", classification: "clean_final_assistant" }]);
+		expect(registry.getResumeTarget("agent-recovery")).toMatchObject({
+			generation: 4, revision: 3, entryCount: 2, activeLeafId: "final",
+			sessionSha256: createHash("sha256").update(readFileSync(fixture.file)).digest("hex"),
+			state: { status: "completed" },
+		});
+		expect(log.entries.at(-1)).toMatchObject({
+			customType: "subagents:record", data: { id: "agent-recovery", status: "completed", result: "preserved crash result" },
+		});
+		expect(provider).not.toHaveBeenCalled();
+		expect(tool).not.toHaveBeenCalled();
+		expect(events.emit).not.toHaveBeenCalled();
+		rmSync(fixture.root, { recursive: true, force: true });
+	});
+
+	it.each([
+		["no suffix", []],
+		["metadata only", [{ type: "session_info", id: "meta", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z", name: "late title" }]],
+		["user only", [{ type: "message", id: "user", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z", message: { role: "user", content: "continue" } }]],
+		["pending tool", [{ type: "message", id: "tool", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "write", arguments: {} }], stopReason: "toolUse" } }]],
+	] as const)("persists conservative failure for %s without replay", async (_name, suffix) => {
+		const fixture = recoveryFixture(suffix);
+		const log = createSessionLog();
+		log.entries.push({ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: fixture.target });
+		const registry = new PersistentBgAgentRegistry(log.pi);
+		registry.replay(log.entries);
+		const provider = vi.fn();
+		const tool = vi.fn();
+		const events = { emit: vi.fn() };
+
+		const [outcome] = await reconcileDurableRunningTargets({
+			registry, parentSessionId: "parent-recovery", getRecord: () => undefined,
+			pi: { appendEntry: log.pi.appendEntry, events }, now: () => 10,
+		});
+
+		expect(outcome).toMatchObject({ id: "agent-recovery", status: "failed", reason: "unsafe_interrupted_operation" });
+		expect(registry.getResumeTarget("agent-recovery")).toMatchObject({ generation: 4, revision: 3, state: { status: "error" } });
+		expect(log.entries.at(-1)).toMatchObject({
+			customType: "subagents:record", data: { status: "error", error: expect.stringContaining("unsafe_interrupted_operation") },
+		});
+		expect(provider).not.toHaveBeenCalled();
+		expect(tool).not.toHaveBeenCalled();
+		expect(events.emit).not.toHaveBeenCalled();
+		rmSync(fixture.root, { recursive: true, force: true });
+	});
+
+	it("leaves corrupt state at the last valid V1 row and invalidates stale callbacks after repair", async () => {
+		const clean = recoveryFixture([{
+			type: "message", id: "final", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z",
+			message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" },
+		}]);
+		const log = createSessionLog();
+		const registry = new PersistentBgAgentRegistry(log.pi);
+		const initialized = await registry.getOrCreateLifecycleStore(clean.target.id).initialize(lifecycleSnapshotInput({ ...clean.target, generation: 0, revision: 0 }));
+		const running = registry.getResumeTarget(clean.target.id)!;
+		log.entries.length = 0;
+		log.entries.push({ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: running });
+		registry.replay(log.entries);
+
+		await reconcileDurableRunningTargets({
+			registry, parentSessionId: "parent-recovery", getRecord: () => undefined,
+			pi: { appendEntry: log.pi.appendEntry, events: { emit: vi.fn() } }, now: () => 10,
+		});
+		await expect(registry.getLifecycleStore(clean.target.id)!.checkpoint(initialized.lease, {
+			...lifecycleSnapshotInput(running), updatedAt: 11,
+		})).rejects.toThrow("lifecycle lease");
+
+		const corrupt = recoveryFixture([]);
+		writeFileSync(corrupt.file, readFileSync(corrupt.file, "utf8").replace("agent-mode", "tampered-mode"));
+		const corruptLog = createSessionLog();
+		corruptLog.entries.push({ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: corrupt.target });
+		const rebooted = new PersistentBgAgentRegistry(corruptLog.pi);
+		rebooted.replay(corruptLog.entries);
+		const outcomes = await reconcileDurableRunningTargets({
+			registry: rebooted, parentSessionId: "parent-recovery", getRecord: () => undefined,
+			pi: { appendEntry: corruptLog.pi.appendEntry, events: { emit: vi.fn() } }, now: () => 10,
+		});
+
+		expect(outcomes).toEqual([{ id: "agent-recovery", status: "rejected", reason: "session_corrupt_or_unsupported" }]);
+		expect(rebooted.getResumeTarget("agent-recovery")).toEqual(corrupt.target);
+		expect(corruptLog.entries).toHaveLength(1);
+
+		const malformed = recoveryFixture([{
+			type: "message", id: "bad", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z",
+			message: { role: "assistant", content: "not-an-array", stopReason: "stop" },
+		}]);
+		const malformedLog = createSessionLog();
+		malformedLog.entries.push({ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: malformed.target });
+		const malformedRegistry = new PersistentBgAgentRegistry(malformedLog.pi);
+		malformedRegistry.replay(malformedLog.entries);
+		await expect(reconcileDurableRunningTargets({
+			registry: malformedRegistry, parentSessionId: "parent-recovery", getRecord: () => undefined,
+			pi: { appendEntry: malformedLog.pi.appendEntry, events: { emit: vi.fn() } }, now: () => 10,
+		})).resolves.toEqual([{ id: "agent-recovery", status: "rejected", reason: "session_corrupt_or_unsupported" }]);
+		expect(malformedRegistry.getResumeTarget("agent-recovery")).toEqual(malformed.target);
+		expect(malformedLog.entries).toHaveLength(1);
+		rmSync(clean.root, { recursive: true, force: true });
+		rmSync(corrupt.root, { recursive: true, force: true });
+		rmSync(malformed.root, { recursive: true, force: true });
+	});
+});
 });

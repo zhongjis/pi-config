@@ -45,6 +45,25 @@ export interface ValidatedChildSession {
   reconciledDescendant: boolean;
 }
 
+export type AuthenticatedSuffixRecoveryOutcome =
+  | "empty"
+  | "metadata_only"
+  | "clean_final_assistant"
+  | "completed_tool_chain"
+  | "user_only"
+  | "pending_tool_call"
+  | "tool_result_without_final_assistant"
+  | "abnormal_assistant_stop"
+  | "malformed"
+  | "nonlinear_suffix";
+
+export type AuthenticatedSuffixRecoveryClassification = {
+  outcome: AuthenticatedSuffixRecoveryOutcome;
+  recoverable: boolean;
+  reconstructedResult?: string;
+  failureReason?: Extract<RestoreFailureReason, "session_corrupt_or_unsupported" | "unsafe_interrupted_operation">;
+};
+
 export interface RuntimeCompatibilityInput {
   model: { provider: string; id: string; api: string };
   thinkingLevel: ResumeRuntimeSnapshot["thinkingLevel"];
@@ -206,6 +225,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function extractAssistantText(content: unknown): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => isRecord(part) && part.type === "text" && typeof part.text === "string" ? part.text : "")
+    .join("")
+    .trim();
+}
+
 function activeBranch(entries: SessionEntry[]): SessionEntry[] {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const branch: SessionEntry[] = [];
@@ -217,7 +245,11 @@ function activeBranch(entries: SessionEntry[]): SessionEntry[] {
   return branch.reverse();
 }
 
-function validateActiveBranch(entries: SessionEntry[], runtime: ResumeRuntimeSnapshot): void {
+function validateActiveBranch(
+  entries: SessionEntry[],
+  runtime: ResumeRuntimeSnapshot,
+  allowInterruptedSuffix = false,
+): void {
   const branch = activeBranch(entries);
   const modelChanges = branch.filter((entry) => entry.type === "model_change") as Array<SessionEntry & { provider: string; modelId: string }>;
   const thinkingChanges = branch.filter((entry) => entry.type === "thinking_level_change") as Array<SessionEntry & { thinkingLevel: string }>;
@@ -233,6 +265,7 @@ function validateActiveBranch(entries: SessionEntry[], runtime: ResumeRuntimeSna
   if (thinking && thinking.thinkingLevel !== runtime.thinkingLevel) {
     fail("agent_config_unavailable", "Active branch thinking level differs from target runtime");
   }
+  if (allowInterruptedSuffix) return;
 
   const pendingToolCalls = new Set<string>();
   let lastMessageRole: string | undefined;
@@ -273,7 +306,12 @@ function validateActiveBranch(entries: SessionEntry[], runtime: ResumeRuntimeSna
   }
 }
 
-function validateTree(rawEntries: unknown[], target: ResumeTargetV1, runtime: ResumeRuntimeSnapshot): SessionEntry[] {
+function validateTree(
+  rawEntries: unknown[],
+  target: ResumeTargetV1,
+  runtime: ResumeRuntimeSnapshot,
+  allowInterruptedSuffix = false,
+): SessionEntry[] {
   const header = rawEntries[0];
   if (!isRecord(header) || header.type !== "session") {
     fail("session_corrupt_or_unsupported", "Session has an invalid header");
@@ -307,7 +345,7 @@ function validateTree(rawEntries: unknown[], target: ResumeTargetV1, runtime: Re
       cursor = cursor.parentId === null ? undefined : byId.get(cursor.parentId);
     }
   }
-  validateActiveBranch(entries, runtime);
+  validateActiveBranch(entries, runtime, allowInterruptedSuffix);
   return entries;
 }
 
@@ -348,32 +386,112 @@ function validateCwd(cwd: string): void {
   }
 }
 
-function validateAuthenticatedSuffix(entries: SessionEntry[], target: ResumeTargetV1): boolean {
-  if (!Number.isSafeInteger(target.entryCount) || target.entryCount < 1 || entries.length < target.entryCount) {
-    fail("session_corrupt_or_unsupported", "Persisted child session has an invalid snapshot boundary");
-  }
+export function classifyAuthenticatedSuffixRecovery(
+  suffix: SessionEntry[],
+  snapshotLeafId: string,
+ ): AuthenticatedSuffixRecoveryClassification {
+  let parentId = snapshotLeafId;
+  let sawMetadata = false;
+  let sawToolResult = false;
+  let finalAssistantText: string | undefined;
+  let finalAssistantAfterTool = false;
+  let lastMessageRole: string | undefined;
+  const pendingToolCalls = new Set<string>();
 
-  const suffix = entries.slice(target.entryCount);
-  let parentId = target.activeLeafId;
   for (const entry of suffix) {
     if (entry.parentId !== parentId) {
-      fail("session_corrupt_or_unsupported", "Persisted child session suffix is not direct linear ancestry");
+      return { outcome: "nonlinear_suffix", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
     }
     parentId = entry.id;
+
+    if (entry.type === "session_info") {
+      if (typeof entry.timestamp !== "string" || !entry.timestamp ||
+          ("name" in entry && entry.name !== undefined && typeof entry.name !== "string")) {
+        return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+      }
+      sawMetadata = true;
+      continue;
+    }
+
+    if (entry.type !== "message") {
+      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+    }
+
+    const message = (entry as SessionEntry & { message?: Record<string, unknown> }).message;
+    if (!isRecord(message) || typeof message.role !== "string") {
+      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+    }
+
+    lastMessageRole = message.role;
+    if (message.role === "user") {
+      finalAssistantText = undefined;
+      continue;
+    }
+    if (message.role === "toolResult") {
+      if (typeof message.toolCallId !== "string" || !pendingToolCalls.delete(message.toolCallId)) {
+        return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+      }
+      sawToolResult = true;
+      finalAssistantText = undefined;
+      continue;
+    }
+    if (message.role !== "assistant") {
+      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+    }
+    if (message.stopReason === "aborted" || message.stopReason === "error" || message.stopReason === "length") {
+      return { outcome: "abnormal_assistant_stop", recoverable: false, failureReason: "unsafe_interrupted_operation" };
+    }
+    if (!Array.isArray(message.content)) {
+      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+    }
+    let toolCallCount = 0;
+    for (const part of message.content) {
+      if (!isRecord(part) || part.type !== "toolCall") continue;
+      if (typeof part.id !== "string" || !part.id || pendingToolCalls.has(part.id)) {
+        return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+      }
+      pendingToolCalls.add(part.id);
+      toolCallCount++;
+    }
+    if (message.stopReason === "toolUse" && toolCallCount === 0) {
+      return { outcome: "pending_tool_call", recoverable: false, failureReason: "unsafe_interrupted_operation" };
+    }
+    if (toolCallCount === 0) {
+      finalAssistantText = extractAssistantText(message.content);
+      finalAssistantAfterTool = sawToolResult;
+    } else {
+      finalAssistantText = undefined;
+    }
   }
-  if (target.state.status !== "running" && suffix.some((entry) =>
-    entry.type !== "session_info" || typeof entry.timestamp !== "string" || !entry.timestamp ||
-    ("name" in entry && entry.name !== undefined && typeof entry.name !== "string")
-  )) {
-    fail("session_corrupt_or_unsupported", "Completed child session has unsupported trailing entries");
+
+  if (pendingToolCalls.size > 0) {
+    return { outcome: "pending_tool_call", recoverable: false, failureReason: "unsafe_interrupted_operation" };
   }
-  return suffix.length > 0;
+  if (lastMessageRole === "toolResult") {
+    return { outcome: "tool_result_without_final_assistant", recoverable: false, failureReason: "unsafe_interrupted_operation" };
+  }
+  if (lastMessageRole === "user") {
+    return { outcome: "user_only", recoverable: false, failureReason: "unsafe_interrupted_operation" };
+  }
+  if (finalAssistantText !== undefined) {
+    return {
+      outcome: finalAssistantAfterTool ? "completed_tool_chain" : "clean_final_assistant",
+      recoverable: true,
+      reconstructedResult: finalAssistantText,
+    };
+  }
+  return { outcome: sawMetadata ? "metadata_only" : "empty", recoverable: true };
 }
 
-export function validatePersistedChildSession(
+
+function inspectPersistedChildSession(
   target: ResumeTargetV1,
-  runtime: ResumeRuntimeSnapshot = target.runtime,
-): ValidatedChildSession {
+  runtime: ResumeRuntimeSnapshot,
+  allowInterruptedSuffix: boolean,
+): ValidatedChildSession & { classification: AuthenticatedSuffixRecoveryClassification } {
+  if (!Number.isSafeInteger(target.entryCount) || target.entryCount < 1) {
+    fail("session_corrupt_or_unsupported", "Persisted child session has an invalid snapshot boundary");
+  }
   const { file, dir } = confinedPath(target);
   validateCwd(target.cwd);
   const before = statSync(file);
@@ -394,8 +512,11 @@ export function validatePersistedChildSession(
       stableSha256(bytes.subarray(0, prefixEnd)) !== target.sessionSha256) {
     fail("session_corrupt_or_unsupported", "Persisted child session prefix does not match its snapshot");
   }
-  const entries = validateTree(raw.values, target, runtime);
-  const descendant = validateAuthenticatedSuffix(entries, target);
+  const entries = validateTree(raw.values, target, runtime, allowInterruptedSuffix);
+  const classification = classifyAuthenticatedSuffixRecovery(entries.slice(target.entryCount), target.activeLeafId);
+  if (!allowInterruptedSuffix && !classification.recoverable) {
+    fail(classification.failureReason ?? "session_corrupt_or_unsupported", "Persisted child session suffix is unsafe for recovery");
+  }
   const activeLeafId = entries.at(-1)!.id;
   const sessionSha256 = stableSha256(bytes);
   return {
@@ -406,8 +527,23 @@ export function validatePersistedChildSession(
     activeLeafId,
     entries,
     stat: { size: after.size, mtimeMs: after.mtimeMs },
-    reconciledDescendant: descendant,
+    reconciledDescendant: classification.outcome !== "empty",
+    classification,
   };
+}
+
+export function inspectPersistedChildSessionRecovery(
+  target: ResumeTargetV1,
+  runtime: ResumeRuntimeSnapshot = target.runtime,
+): ValidatedChildSession & { classification: AuthenticatedSuffixRecoveryClassification } {
+  return inspectPersistedChildSession(target, runtime, true);
+}
+
+export function validatePersistedChildSession(
+  target: ResumeTargetV1,
+  runtime: ResumeRuntimeSnapshot = target.runtime,
+): ValidatedChildSession {
+  return inspectPersistedChildSession(target, runtime, false);
 }
 
 function isPidLive(pid: number): boolean {

@@ -14,6 +14,7 @@ import type { ResumeRuntimeSnapshot, ResumeTargetV1 } from "../src/types.js";
 import {
   SessionRestoreError,
   buildRuntimeCompatibilitySnapshot,
+  classifyAuthenticatedSuffixRecovery,
   compareRuntimeCompatibilitySnapshot,
   redactSessionReference,
   restoreAgentSession,
@@ -148,12 +149,30 @@ describe("strict read-only persisted child session preflight", () => {
     ["malformed session_info", { type: "session_info", id: "suffix", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", name: 7 }],
     ["branched session_info", { type: "session_info", id: "suffix", parentId: "think", timestamp: "2026-01-01T00:00:04Z", name: "Probe" }],
     ["terminal custom", { type: "custom", id: "suffix", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", customType: "agent-mode", data: {} }],
-    ["terminal message", { type: "message", id: "suffix", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [], stopReason: "stop" } }],
   ] as const)("rejects %s suffixes for completed snapshots", (_name, suffix) => {
     const data = fixture();
     appendRows(data.file, [suffix]);
 
     expectValidationReason(data.target, "session_corrupt_or_unsupported");
+  });
+
+  it("accepts a generation-bounded final assistant suffix without opening or replaying work", () => {
+    const data = fixture();
+    const open = vi.fn();
+    const provider = vi.fn();
+    const tool = vi.fn();
+    appendRows(data.file, [{
+      type: "message", id: "next", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z",
+      message: { role: "assistant", content: [{ type: "text", text: "fresh suffix result" }], stopReason: "stop" },
+    }]);
+
+    const validated = validatePersistedChildSession(data.target);
+
+    expect(validated.activeLeafId).toBe("next");
+    expect(validated.reconciledDescendant).toBe(true);
+    expect(open).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+    expect(tool).not.toHaveBeenCalled();
   });
 
   it("rejects missing and empty files", () => {
@@ -259,6 +278,42 @@ describe("active-branch interruption and runtime safety", () => {
     const thinking = fixture();
     expect(() => validatePersistedChildSession(thinking.target, { ...thinking.runtime, thinkingLevel: "high" }))
       .toThrowError(expect.objectContaining({ reason: "agent_config_unavailable" }));
+  });
+});
+
+describe("pure authenticated suffix recovery classification", () => {
+  function suffix(rows: readonly unknown[]) {
+    return rows as Parameters<typeof classifyAuthenticatedSuffixRecovery>[0];
+  }
+
+  it.each([
+    ["empty", [], "empty", true, undefined],
+    ["metadata only", [{ type: "session_info", id: "title", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", name: "Probe" }], "metadata_only", true, undefined],
+    ["clean final assistant", [{ type: "message", id: "a", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [{ type: "text", text: "bounded final" }], stopReason: "stop" } }], "clean_final_assistant", true, "bounded final"],
+    ["completed tool chain", [
+      { type: "message", id: "a", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read", arguments: {} }], stopReason: "toolUse" } },
+      { type: "message", id: "r", parentId: "a", timestamp: "2026-01-01T00:00:05Z", message: { role: "toolResult", toolCallId: "call-1", content: [{ type: "text", text: "ok" }] } },
+      { type: "message", id: "f", parentId: "r", timestamp: "2026-01-01T00:00:06Z", message: { role: "assistant", content: [{ type: "text", text: "answer after tool" }], stopReason: "stop" } },
+    ], "completed_tool_chain", true, "answer after tool"],
+    ["user-only", [{ type: "message", id: "u", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "user", content: "continue" } }], "user_only", false, undefined],
+    ["pending tool", [{ type: "message", id: "a", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read", arguments: {} }], stopReason: "toolUse" } }], "pending_tool_call", false, undefined],
+    ["tool result without final assistant", [
+      { type: "message", id: "a", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read", arguments: {} }], stopReason: "toolUse" } },
+      { type: "message", id: "r", parentId: "a", timestamp: "2026-01-01T00:00:05Z", message: { role: "toolResult", toolCallId: "call-1", content: [] } },
+    ], "tool_result_without_final_assistant", false, undefined],
+    ["abnormal stop", [{ type: "message", id: "a", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [], stopReason: "error" } }], "abnormal_assistant_stop", false, undefined],
+    ["malformed", [{ type: "message", id: "a", parentId: "leaf", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: "not-array", stopReason: "stop" } }], "malformed", false, undefined],
+    ["nonlinear", [{ type: "message", id: "a", parentId: "think", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [], stopReason: "stop" } }], "nonlinear_suffix", false, undefined],
+  ] as const)("classifies %s", (_name, rows, outcome, recoverable, reconstructedResult) => {
+    const provider = vi.fn();
+    const tool = vi.fn();
+
+    const classification = classifyAuthenticatedSuffixRecovery(suffix(rows), "leaf");
+
+    expect(classification).toMatchObject({ outcome, recoverable });
+    expect(classification.reconstructedResult).toBe(reconstructedResult);
+    expect(provider).not.toHaveBeenCalled();
+    expect(tool).not.toHaveBeenCalled();
   });
 });
 

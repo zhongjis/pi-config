@@ -164,6 +164,10 @@ export class PersistentBgAgentRegistry {
     return this.lifecycleStores.get(id)?.getSnapshot();
   }
 
+  hasMatchingLifecycleLease(id: string, lease: AgentLifecycleLease, generation: number): boolean {
+    return this.lifecycleStores.get(id)?.hasMatchingLease(lease, generation) ?? false;
+  }
+
   listResumeTargets(): ResumeTargetV1[] {
     return [...this.lifecycleStores.values()]
       .map((store) => store.getSnapshot())
@@ -233,6 +237,7 @@ export class PersistentBgAgentRegistry {
    * with the number of registry/claim rows consumed.
    */
   replay(entries: Iterable<CustomEntryLike>): number {
+    const existingStores = new Map(this.lifecycleStores);
     this.agents.clear();
     this.claims.clear();
     this.lifecycleStores.clear();
@@ -277,7 +282,12 @@ export class PersistentBgAgentRegistry {
       }
     }
     for (const [id, target] of replayedTargets) {
-      this.lifecycleStores.set(id, new AgentLifecycleStore(id, this.pi, target));
+      const existing = existingStores.get(id);
+      const existingSnapshot = existing?.getSnapshot();
+      const store = existing && existingSnapshot && JSON.stringify(existingSnapshot) === JSON.stringify(target)
+        ? existing
+        : new AgentLifecycleStore(id, this.pi, target);
+      this.lifecycleStores.set(id, store);
     }
     pandaWarn("subagent.recovery.replayed", { count });
     return count;

@@ -296,6 +296,24 @@ export class AgentLifecycleStore {
     });
   }
 
+  /** Commit a terminal repair for a replayed running generation, rotating out any stale lease. */
+  reconcileRunning(input: AgentLifecycleSnapshotInput): Promise<AgentLifecycleCommit> {
+    return this.serialize(async () => {
+      const current = this.requireCurrent();
+      if (current.state.status !== "running") {
+        throw new AgentLifecycleTransitionError(`Cannot reconcile lifecycle from ${current.state.status}`);
+      }
+      if (!TERMINAL_STATUSES.has(input.state.status)) {
+        throw new AgentLifecycleTransitionError(`Reconciliation requires terminal status for ${this.id}`);
+      }
+      const snapshot = this.normalize({ ...input, createdAt: current.createdAt }, current.generation, current.revision + 1);
+      await this.append(snapshot);
+      this.current = snapshot;
+      const lease = this.rotateLease(current.generation);
+      return { lease, snapshot: cloneSnapshot(snapshot) };
+    });
+  }
+
   markConsumed(lease: AgentLifecycleLease, updatedAt: number): Promise<ResumeTargetV1> {
     return this.markDelivery(lease, "resultConsumed", updatedAt);
   }
@@ -321,6 +339,11 @@ export class AgentLifecycleStore {
 
   getSnapshot(): ResumeTargetV1 | undefined {
     return this.current ? cloneSnapshot(this.current) : undefined;
+  }
+
+  hasMatchingLease(lease: AgentLifecycleLease, generation: number): boolean {
+    const data = leaseData.get(lease);
+    return data?.agentId === this.id && data.generation === generation && data.runtimeToken === this.runtimeToken;
   }
 
   private markDelivery(
