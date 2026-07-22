@@ -19,7 +19,6 @@ import { resolveAgentInvocationConfig } from "../invocation-config.js";
 import { resolveModel } from "../model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import { getRecoveredResultText } from "../result-recovery.js";
-import { pandaWarn } from "../../../lib/warn.js";
 import { localUriHint } from "../local-uri-hint.js";
 import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycle/supervision.js";
 import { buildAgentToolDescription } from "../agent-tool-description.js";
@@ -29,7 +28,7 @@ import { SessionRestoreError, stableSha256, validatePersistedChildSession } from
 import { SUBAGENTS_CREATED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext, SupervisedAgentActivity } from "../lifecycle/supervision.js";
 import { resumeTargetForValidation, type AgentLifecycleSnapshotInput } from "../lifecycle/agent-lifecycle-store.js";
-import type { AgentRun } from "../agent-run.js";
+import type { AgentRun, AgentRunTerminalEvent } from "../agent-run.js";
 import {
   type AgentActivity,
   type AgentDetails,
@@ -41,7 +40,7 @@ import {
   getPromptModeLabel,
 } from "../ui/agent-widget.js";
 import { RenderScheduler } from "../ui/render-scheduler.js";
-import type { AgentInvocationStatus, AgentRecord, RestoreFailureReason, ResumeRuntimeSnapshot, ResumeTargetV1, SubagentType } from "../types.js";
+import type { AgentInvocationStatus, AgentRecord, RestoreFailureReason, ResumeRuntimeSnapshot, ResumeTargetState, ResumeTargetV1, SubagentType } from "../types.js";
 import { formatCost, formatTurns } from "../../../lib/widget-style.js";
 import { formatLifetimeTokens } from "../usage.js";
 
@@ -82,6 +81,7 @@ function captureResumeTarget(
   record: AgentRecord,
   runtime: ResumeRuntimeSnapshot,
   cwd: string,
+  status: ResumeTargetState["status"] = record.status,
 ): AgentLifecycleSnapshotInput {
   if (!record.sessionFile || !record.sessionDir || !record.parentSessionId) {
     throw new Error("Agent session metadata is incomplete");
@@ -112,7 +112,7 @@ function captureResumeTarget(
     updatedAt: Date.now(),
     runtime,
     state: {
-      status: record.status,
+      status,
       resultConsumed: !!record.resultConsumed,
       notified: !!record.notified,
       toolUses: record.toolUses,
@@ -130,6 +130,12 @@ function captureResumeTarget(
     activeLeafId: validated.activeLeafId,
     sessionSha256: validated.sessionSha256,
   };
+}
+
+function terminalStatus(candidate: AgentRunTerminalEvent): ResumeTargetState["status"] {
+  if (candidate.kind === "completed") return candidate.status;
+  if (candidate.kind === "aborted") return candidate.status;
+  return "error";
 }
 
 /**
@@ -604,8 +610,9 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           throw new Error("Durable restoration is unavailable without a persisted target");
         };
         let persistenceRuntime = durable?.runtime;
-        let persist: ((target: ResumeTargetV1, record: AgentRecord) => Promise<ResumeTargetV1>) | undefined;
-        if (!live?.session && durable) {
+        let beginResume: ((target: ResumeTargetV1, record: AgentRecord) => Promise<void>) | undefined;
+        let commitTerminal: ((record: AgentRecord, candidate: AgentRunTerminalEvent) => Promise<void>) | undefined;
+        if (durable) {
           try {
             const restoredModel = ctx.modelRegistry.find(durable.runtime.model.provider, durable.runtime.model.id);
             const prepared = await prepareAgentRestoreRuntime(ctx, targetType, {
@@ -614,7 +621,8 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
               inheritContext: durable.runtime.inheritContext,
               thinkingLevel: durable.runtime.thinkingLevel,
             });
-            restoreSession = async () => prepared.restore();
+            if (live?.session) validatePersistedChildSession(durable, prepared.runtime);
+            else restoreSession = async () => prepared.restore();
             persistenceRuntime = prepared.runtime;
           } catch (error) {
             const reason: RestoreFailureReason = error instanceof SessionRestoreError ? error.reason : "runtime_initialization_failed";
@@ -626,20 +634,19 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         }
         const runtimeForPersistence = persistenceRuntime;
         if (durable && runtimeForPersistence) {
-          persist = async (_target, record) => {
-            const terminalInput = captureResumeTarget(record, runtimeForPersistence, ctx.cwd);
-            const store = persistentRegistry.getOrCreateLifecycleStore(record.id);
+          const store = persistentRegistry.getOrCreateLifecycleStore(durable.id);
+          beginResume = async (_target, record) => {
+            const input = captureResumeTarget(record, runtimeForPersistence, ctx.cwd, "running");
             const begun = await store.beginResume({
-              ...terminalInput,
-              state: {
-                ...terminalInput.state,
-                status: "running",
-                resultConsumed: false,
-                notified: false,
-              },
+              ...input,
+              state: { ...input.state, status: "running", resultConsumed: false, notified: false },
             });
             record.lifecycleLease = begun.lease;
-            return store.commitTerminal(begun.lease, terminalInput);
+          };
+          commitTerminal = async (record, candidate) => {
+            if (!record.lifecycleLease) throw new Error("Durable lifecycle lease is unavailable");
+            const input = captureResumeTarget(record, runtimeForPersistence, ctx.cwd, terminalStatus(candidate));
+            await store.commitTerminal(record.lifecycleLease, input);
           };
         }
         const outcome = await manager.resume(params.resume, params.prompt, {
@@ -648,11 +655,12 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           target: durable,
           signal: parentSignal,
           restoreSession,
-          persist,
+          beginResume,
+          commitTerminal,
         });
         if (outcome.status === "failed") {
           return textResult(
-            `Failed to resume agent "${params.resume}": ${outcome.reason}.`,
+            outcome.error || `Failed to resume agent "${params.resume}": ${outcome.reason}.`,
             buildInvocationFailureDetails(targetType, params.description, outcome.reason, params.resume),
           );
         }
@@ -763,6 +771,34 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       const parentSessionId = currentParentSessionId || undefined;
       const subagentSessionDir = createSubagentSessionDir(parentSessionId);
 
+      // Durable callbacks are defined before shared spawn options so both paths use identical barriers.
+
+      let freshRuntime: ResumeRuntimeSnapshot | undefined;
+      const persistFreshResumeTarget = async (record: AgentRecord) => {
+        if (!record.sessionFile) throw new Error("Fresh agent session file is unavailable before prompt");
+        const provisional: AgentLifecycleSnapshotInput = {
+          id: record.id, parentSessionId: record.parentSessionId ?? "", sessionFile: record.sessionFile,
+          sessionDir: record.sessionDir ?? dirname(record.sessionFile), childSessionId: "pending",
+          entryCount: 0, activeLeafId: "pending", sessionSha256: "0".repeat(64),
+          type: record.type, description: record.description, cwd: ctx.cwd,
+          isBackground: !!record.isBackground, createdAt: record.startedAt, updatedAt: Date.now(),
+          runtime: placeholderRuntime(),
+          state: { status: record.status, resultConsumed: false, notified: false, toolUses: record.toolUses, lifetimeUsage: EMPTY_USAGE, lifetimeCost: 0, compactionCount: 0 },
+        };
+        const prepared = await prepareAgentRestoreRuntime(ctx, record.type, {
+          pi, target: resumeTargetForValidation(provisional), model, isolated, inheritContext, thinkingLevel: thinking,
+        });
+        const target = captureResumeTarget(record, prepared.runtime, ctx.cwd, "running");
+        const initialized = await persistentRegistry.getOrCreateLifecycleStore(record.id).initialize(target);
+        record.lifecycleLease = initialized.lease;
+        freshRuntime = prepared.runtime;
+      };
+      const persistFreshTerminal = async (record: AgentRecord, candidate: AgentRunTerminalEvent) => {
+        if (!freshRuntime || !record.lifecycleLease) throw new Error("Fresh durable lifecycle is unavailable");
+        const target = captureResumeTarget(record, freshRuntime, ctx.cwd, terminalStatus(candidate));
+        await persistentRegistry.getOrCreateLifecycleStore(record.id).commitTerminal(record.lifecycleLease, target);
+      };
+
       // Shared spawn options for both paths. Background adds isBackground + bg callbacks;
       // foreground adds fg callbacks. Single source so the two call sites can't drift.
       const baseSpawnOptions = {
@@ -777,25 +813,8 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         parentSessionId,
         sessionDir: subagentSessionDir,
         skills: params.skills,
-      };
-
-      const persistFreshResumeTarget = async (record: AgentRecord) => {
-        if (!record.sessionFile) return;
-        const provisional: AgentLifecycleSnapshotInput = {
-          id: record.id, parentSessionId: record.parentSessionId ?? "", sessionFile: record.sessionFile,
-          sessionDir: record.sessionDir ?? dirname(record.sessionFile), childSessionId: "pending",
-          entryCount: 0, activeLeafId: "pending", sessionSha256: "0".repeat(64),
-          type: record.type, description: record.description, cwd: ctx.cwd,
-          isBackground: !!record.isBackground, createdAt: record.startedAt, updatedAt: Date.now(),
-          runtime: placeholderRuntime(),
-          state: { status: record.status, resultConsumed: false, notified: false, toolUses: record.toolUses, lifetimeUsage: EMPTY_USAGE, lifetimeCost: 0, compactionCount: 0 },
-        };
-        const prepared = await prepareAgentRestoreRuntime(ctx, record.type, {
-          pi, target: resumeTargetForValidation(provisional), model, isolated, inheritContext, thinkingLevel: thinking,
-        });
-        const target = captureResumeTarget(record, prepared.runtime, ctx.cwd);
-        const initialized = await persistentRegistry.getOrCreateLifecycleStore(record.id).initialize(target);
-        record.lifecycleLease = initialized.lease;
+        onBeforePrompt: persistFreshResumeTarget,
+        onBeforeTerminal: persistFreshTerminal,
       };
 
       // Background execution
@@ -816,19 +835,6 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           // Capture persistent session JSONL path for discoverability.
           if (rec && typeof session.sessionFile === "string") {
             rec.sessionFile = session.sessionFile;
-          }
-          if (rec) {
-            queueMicrotask(() => {
-              void rec.promise?.then(() => persistFreshResumeTarget(rec)).catch((error) => {
-                // Best-effort background persist: the agent already ran, so never fail the spawn — but
-                // never swallow silently either (a swallowed capture failure hid the resume-target bug).
-                pandaWarn("subagent.recovery.persist-failed", {
-                  id: rec.id,
-                  phase: "background-capture",
-                  error: error instanceof Error ? error.message : String(error),
-                });
-              });
-            });
           }
         };
 
@@ -956,13 +962,6 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         }
       }
 
-      try {
-        await persistFreshResumeTarget(record);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const details = buildDetails(detailBase, record, fgState, { status: "error", error: message });
-        return textResult(`Agent failed to persist resume target: ${message}`, details);
-      }
 
       // Get final token count
       // Final token/cost: lifetime accumulators (monotonic, compaction-safe, no cacheRead inflation).

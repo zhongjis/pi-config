@@ -90,10 +90,14 @@ export type AgentRunEvent =
   | { kind: "failed"; error: string; result?: string }
   | { kind: "result_amended"; result: string; error?: string };
 
-type TerminalEvent = Extract<AgentRunEvent, { kind: "completed" | "aborted" | "failed" }>;
+export type AgentRunTerminalEvent = Extract<AgentRunEvent, { kind: "completed" | "aborted" | "failed" }>;
 
-function isTerminalEvent(event: AgentRunEvent): event is TerminalEvent {
+function isTerminalEvent(event: AgentRunEvent): event is AgentRunTerminalEvent {
   return event.kind === "completed" || event.kind === "aborted" || event.kind === "failed";
+}
+
+function terminalResult(event: AgentRunTerminalEvent): string | undefined {
+  return event.result;
 }
 
 /** Live activity, mirrors the fields the existing tracker + supervision care about. */
@@ -240,6 +244,8 @@ export class AgentRun {
   resumedAt?: number;
   restoreFailedAt?: number;
   restoreLatencyMs?: number;
+  /** Terminal output/state awaiting a failed durable commit repair. */
+  pendingTerminal?: AgentRunTerminalEvent;
   readonly activity: AgentRunActivity = {
     activeTools: new Map<string, string>(),
     toolUses: 0,
@@ -297,6 +303,22 @@ export class AgentRun {
     return new Promise<AgentRunResult>((resolve) => {
       this.terminalWaiters.add(resolve);
     });
+  }
+
+  /** Settle listeners with an error-compatible view while retaining terminal repair metadata. */
+  failTerminalCommit(candidate: AgentRunTerminalEvent, cause: unknown): void {
+    this.pendingTerminal = candidate;
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    this.publish({
+      kind: "failed",
+      error: `Execution completed but checkpoint did not persist: ${detail}`,
+      result: terminalResult(candidate),
+    });
+  }
+
+  /** Clear only the candidate that was successfully repaired. */
+  clearPendingTerminal(candidate: AgentRunTerminalEvent): void {
+    if (this.pendingTerminal === candidate) this.pendingTerminal = undefined;
   }
 
   /** Projection consumed by getBackgroundSupervisionAction (ActivitySnapshot). */

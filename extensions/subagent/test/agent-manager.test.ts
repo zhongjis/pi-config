@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentRunTerminalEvent } from "../src/agent-run.js";
+import { AgentLifecycleStore, lifecycleSnapshotInput } from "../src/lifecycle/agent-lifecycle-store.js";
 import type { AgentRecord, RestoreFailureReason, ResumeTargetV1 } from "../src/types.js";
 
 const runAgentMock = vi.fn();
@@ -473,27 +475,26 @@ describe("AgentManager durable resume", () => {
     const session = { dispose: vi.fn(), subscribe: vi.fn(() => () => {}) } as any;
     const restoreSession = vi.fn().mockResolvedValue(session);
     const persistedSnapshots: any[] = [];
-    const persist = vi.fn(async (previous, record) => {
-      persistedSnapshots.push({
-        record: {
-          status: record.status, isBackground: record.isBackground, resultConsumed: record.resultConsumed, notified: record.notified,
-          toolUses: record.toolUses, lifetimeUsage: { ...record.lifetimeUsage }, lifetimeCost: record.lifetimeCost,
-          compactionCount: record.compactionCount, sessionFile: record.sessionFile, sessionDir: record.sessionDir,
-          type: record.type, description: record.description, parentSessionId: record.parentSessionId,
-        },
-        run: record.run && {
-          status: record.run.status, isBackground: record.run.isBackground, resultConsumed: record.run.resultConsumed,
-          notified: record.run.notified, toolUses: record.run.activity.toolUses, lifetimeUsage: { ...record.run.lifetimeUsage },
-          lifetimeCost: record.run.lifetimeCost, compactionCount: record.run.compactionCount, sessionFile: record.run.sessionFile,
-          sessionDir: record.run.sessionDir, type: record.run.type, description: record.run.description,
-          parentSessionId: record.run.parentSessionId, session: record.run.session, events: record.run.events().map((event: any) => event.kind),
-        },
-      });
-      return { ...previous, revision: previous.revision + 1 };
+    const snapshot = (record: AgentRecord) => ({
+      record: {
+        status: record.status, isBackground: record.isBackground, resultConsumed: record.resultConsumed, notified: record.notified,
+        toolUses: record.toolUses, lifetimeUsage: { ...record.lifetimeUsage }, lifetimeCost: record.lifetimeCost,
+        compactionCount: record.compactionCount, sessionFile: record.sessionFile, sessionDir: record.sessionDir,
+        type: record.type, description: record.description, parentSessionId: record.parentSessionId,
+      },
+      run: record.run && {
+        status: record.run.status, isBackground: record.run.isBackground, resultConsumed: record.run.resultConsumed,
+        notified: record.run.notified, toolUses: record.run.activity.toolUses, lifetimeUsage: { ...record.run.lifetimeUsage },
+        lifetimeCost: record.run.lifetimeCost, compactionCount: record.run.compactionCount, sessionFile: record.run.sessionFile,
+        sessionDir: record.run.sessionDir, type: record.run.type, description: record.run.description,
+        parentSessionId: record.run.parentSessionId, session: record.run.session, events: record.run.events().map((event) => event.kind),
+      },
     });
+    const beginResume = vi.fn(async (_target: ResumeTargetV1, record: AgentRecord) => { persistedSnapshots.push(snapshot(record)); });
+    const commitTerminal = vi.fn(async (record: AgentRecord) => { persistedSnapshots.push(snapshot(record)); });
     try {
       const outcome = await manager.resume(target.id, "continue", {
-        parentSessionId: "parent-1", expectedType: "GENERAL-PURPOSE", target, restoreSession, persist,
+        parentSessionId: "parent-1", expectedType: "GENERAL-PURPOSE", target, restoreSession, beginResume, commitTerminal,
       });
       expect(outcome).toEqual({ status: "restored_session", id: target.id });
       const record = manager.getRecord(target.id)!;
@@ -510,7 +511,8 @@ describe("AgentManager durable resume", () => {
       expect(record.run).toMatchObject({ ...persistedRun, status: "completed", result: "restored answer", resumeSource: "restored" });
       expect(record.run?.activity.toolUses).toBe(7);
       expect(record.promise).toBeInstanceOf(Promise);
-      expect(persist).toHaveBeenCalledTimes(2);
+      expect(beginResume).toHaveBeenCalledOnce();
+      expect(commitTerminal).toHaveBeenCalledOnce();
       expect(runAgentMock).not.toHaveBeenCalled();
       expect(onStart).not.toHaveBeenCalled();
       expect(onComplete).not.toHaveBeenCalled();
@@ -520,19 +522,14 @@ describe("AgentManager durable resume", () => {
     } finally { await manager.dispose(); }
   });
 
-  it("chains terminal persistence from the accepted pre-run restored snapshot", async () => {
-    resumeAgentMock.mockResolvedValue("restored answer");
+  it("orders begin before provider and terminal commit before publication", async () => {
+    const order: string[] = [];
+    resumeAgentMock.mockImplementation(async () => { order.push("provider"); return "restored answer"; });
     const manager = new AgentManager();
     const target = durableTarget();
-    const persistedRevisions: number[] = [];
-    const persist = vi.fn(async (previous: ResumeTargetV1, record: AgentRecord): Promise<ResumeTargetV1> => {
-      const next: ResumeTargetV1 = {
-        ...previous,
-        revision: previous.revision + 1,
-        state: { ...previous.state, status: record.status },
-      };
-      persistedRevisions.push(next.revision);
-      return next;
+    const beginResume = vi.fn(async () => { order.push("begin"); });
+    const commitTerminal = vi.fn(async (_record: AgentRecord, candidate: AgentRunTerminalEvent) => {
+      order.push(`terminal:${candidate.kind}`);
     });
     try {
       const outcome = await manager.resume(target.id, "continue", {
@@ -540,12 +537,15 @@ describe("AgentManager durable resume", () => {
         expectedType: target.type,
         target,
         restoreSession: vi.fn().mockResolvedValue({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }),
-        persist,
+        beginResume,
+        commitTerminal,
       });
 
       expect(outcome).toEqual({ status: "restored_session", id: target.id });
-      expect(persistedRevisions).toEqual([target.revision + 1, target.revision + 2]);
-      expect(persist.mock.calls[1]?.[0].revision).toBe(target.revision + 1);
+      expect(order).toEqual(["begin", "provider", "terminal:completed"]);
+      expect(manager.getRecord(target.id)?.run?.events().map((event) => event.kind)).toEqual([
+        "hydrated", "restore_started", "resumed", "completed",
+      ]);
     } finally { await manager.dispose(); }
   });
 
@@ -588,7 +588,7 @@ describe("AgentManager durable resume", () => {
         expectedType: target.type,
         target,
         restoreSession: vi.fn().mockResolvedValue({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }),
-        persist: vi.fn().mockRejectedValue(new Error("write failed")),
+        beginResume: vi.fn().mockRejectedValue(new Error("write failed")),
       });
       expect(outcome).toMatchObject({ status: "failed", id: target.id, reason: "persistence_failed" });
       expect(resumeAgentMock).not.toHaveBeenCalled();
@@ -672,5 +672,193 @@ describe("AgentManager durable resume", () => {
       tornDown.resolve({ responseText: "", session: { dispose: vi.fn() }, aborted: false, steered: false });
     } finally { await manager.dispose(); }
   });
+  it("awaits the fresh running baseline before provider execution", async () => {
+    const baseline = deferred<void>();
+    const order: string[] = [];
+    runAgentMock.mockImplementation(async (_ctx, _type, _prompt, options) => {
+      await options.onBeforePrompt?.();
+      order.push("provider");
+      return { responseText: "fresh", session: { dispose: vi.fn() }, aborted: false, steered: false };
+    });
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", {
+        description: "fresh barrier",
+        onBeforePrompt: async (record) => {
+          order.push(`baseline:${record.status}`);
+          await baseline.promise;
+        },
+        onBeforeTerminal: async (_record, candidate) => {
+          order.push(`terminal:${candidate.kind}`);
+        },
+      });
+      const record = manager.getRecord(id)!;
+      await vi.waitFor(() => expect(order).toEqual(["baseline:running"]));
+      expect(runAgentMock).toHaveBeenCalledOnce();
+      expect(record.status).toBe("running");
+      baseline.resolve();
+      await record.promise;
+      expect(order).toEqual(["baseline:running", "provider", "terminal:completed"]);
+      expect(record.status).toBe("completed");
+    } finally { await manager.dispose(); }
+  });
+
+  it("blocks fresh provider entry and later resume when running baseline append fails", async () => {
+    const session = { dispose: vi.fn() };
+    let providerCalls = 0;
+    runAgentMock.mockImplementation(async (_ctx, _type, _prompt, options) => {
+      options.onSessionCreated?.(session);
+      await options.onBeforePrompt?.();
+      providerCalls++;
+      return { responseText: "must not run", session, aborted: false, steered: false };
+    });
+    const manager = new AgentManager();
+    try {
+      const id = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", {
+        description: "fresh begin failure",
+        onBeforePrompt: async () => { throw new Error("baseline append failed"); },
+        onBeforeTerminal: vi.fn(),
+      });
+      const record = manager.getRecord(id)!;
+      await record.promise;
+      expect(providerCalls).toBe(0);
+      expect(record).toMatchObject({ status: "error", session: undefined });
+      await expect(manager.resume(id, "again", {
+        parentSessionId: "", expectedType: "general-purpose", restoreSession: vi.fn(),
+      })).resolves.toMatchObject({ status: "failed", reason: "target_unknown" });
+      expect(resumeAgentMock).not.toHaveBeenCalled();
+    } finally { await manager.dispose(); }
+  });
+
+
+  it("commits generation+1 running, permits an interleaved checkpoint, then commits terminal next", async () => {
+    const target = durableTarget();
+    const beginAppend = deferred<void>();
+    let appendCount = 0;
+    const appendEntry = vi.fn(async () => {
+      appendCount++;
+      if (appendCount === 1) await beginAppend.promise;
+    });
+    const store = new AgentLifecycleStore(target.id, { appendEntry } as never, target);
+    const provider = deferred<{ ok: true; text: string }>();
+    resumeAgentMock.mockReturnValue(provider.promise);
+    const manager = new AgentManager();
+    const beginResume = vi.fn(async (_target: ResumeTargetV1, record: AgentRecord) => {
+      const input = lifecycleSnapshotInput(target);
+      const begun = await store.beginResume({
+        ...input,
+        updatedAt: 3,
+        state: { ...input.state, status: "running", resultConsumed: false, notified: false },
+      });
+      record.lifecycleLease = begun.lease;
+    });
+    const commitTerminal = vi.fn(async (record: AgentRecord, candidate: AgentRunTerminalEvent) => {
+      const current = store.getSnapshot()!;
+      await store.commitTerminal(record.lifecycleLease!, {
+        ...lifecycleSnapshotInput(current),
+        updatedAt: 5,
+        state: { ...current.state, status: candidate.kind === "completed" ? candidate.status : "error" },
+      });
+    });
+    try {
+      const resumed = manager.resume(target.id, "continue", {
+        parentSessionId: target.parentSessionId, expectedType: target.type, target,
+        restoreSession: vi.fn().mockResolvedValue({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }),
+        beginResume, commitTerminal,
+      });
+      await vi.waitFor(() => expect(appendEntry).toHaveBeenCalledOnce());
+      expect(resumeAgentMock).not.toHaveBeenCalled();
+      beginAppend.resolve();
+      await vi.waitFor(() => expect(resumeAgentMock).toHaveBeenCalledOnce());
+      expect(store.getSnapshot()).toMatchObject({ generation: 2, revision: 0, state: { status: "running" } });
+
+      const record = manager.getRecord(target.id)!;
+      const running = store.getSnapshot()!;
+      await store.checkpoint(record.lifecycleLease!, { ...lifecycleSnapshotInput(running), updatedAt: 4 });
+      expect(store.getSnapshot()).toMatchObject({ generation: 2, revision: 1, state: { status: "running" } });
+
+      provider.resolve({ ok: true, text: "done" });
+      await expect(resumed).resolves.toEqual({ status: "restored_session", id: target.id });
+      expect(store.getSnapshot()).toMatchObject({ generation: 2, revision: 2, state: { status: "completed" } });
+      expect(appendEntry).toHaveBeenCalledTimes(3);
+    } finally { await manager.dispose(); }
+  });
+
+
+  it.each(["live", "restored"] as const)("blocks %s provider entry when beginResume append fails", async (source) => {
+    const manager = new AgentManager();
+    const target = durableTarget();
+    resumeAgentMock.mockResolvedValue({ ok: true, text: "must not run" });
+    try {
+      if (source === "live") {
+        runAgentMock.mockResolvedValue({ responseText: "old", session: { dispose: vi.fn() }, aborted: false, steered: false });
+        const liveId = manager.spawn({} as never, { cwd: process.cwd() } as never, target.type, "first", {
+          description: target.description,
+          parentSessionId: target.parentSessionId,
+        });
+        await manager.getRecord(liveId)?.promise;
+        target.id = liveId;
+      }
+      const before = manager.getRecord(target.id);
+      const outcome = await manager.resume(target.id, "continue", {
+        parentSessionId: target.parentSessionId,
+        expectedType: target.type,
+        target,
+        restoreSession: vi.fn().mockResolvedValue({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }),
+        beginResume: vi.fn().mockRejectedValue(new Error("begin append failed")),
+        commitTerminal: vi.fn(),
+      });
+      expect(outcome).toMatchObject({ status: "failed", reason: "persistence_failed" });
+      expect(resumeAgentMock).not.toHaveBeenCalled();
+      if (source === "live") {
+        expect(manager.getRecord(target.id)).toBe(before);
+        expect(before).toMatchObject({ status: "completed", result: "old" });
+      } else {
+        expect(manager.getRecord(target.id)).toBeUndefined();
+      }
+    } finally { await manager.dispose(); }
+  });
+
+  it("repairs a failed terminal append before allowing exactly one subsequent prompt", async () => {
+    const manager = new AgentManager();
+    const target = durableTarget();
+    const order: string[] = [];
+    let terminalAttempts = 0;
+    resumeAgentMock
+      .mockImplementationOnce(async () => { order.push("provider:one"); return { ok: true, text: "fresh output" }; })
+      .mockImplementationOnce(async () => { order.push("provider:two"); return { ok: true, text: "after repair" }; });
+    const beginResume = vi.fn(async () => { order.push("begin"); });
+    const commitTerminal = vi.fn(async (_record: AgentRecord, candidate: AgentRunTerminalEvent) => {
+      terminalAttempts++;
+      order.push(`${terminalAttempts === 1 ? "terminal-fail" : terminalAttempts === 2 ? "repair" : "terminal-ok"}:${candidate.kind}`);
+      if (terminalAttempts === 1) throw new Error("terminal append failed");
+    });
+    try {
+      const first = await manager.resume(target.id, "continue", {
+        parentSessionId: target.parentSessionId, expectedType: target.type, target,
+        restoreSession: vi.fn().mockResolvedValue({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }),
+        beginResume, commitTerminal,
+      });
+      expect(first).toMatchObject({ status: "failed", reason: "persistence_failed", error: expect.stringContaining("Execution completed but checkpoint did not") });
+      const record = manager.getRecord(target.id)!;
+      expect(record).toMatchObject({ status: "error", result: "fresh output" });
+      expect(record.run?.events().some((event) => event.kind === "completed")).toBe(false);
+      await expect(manager.waitForAll()).resolves.toBeUndefined();
+      expect(order).toEqual(["begin", "provider:one", "terminal-fail:completed"]);
+
+      const second = await manager.resume(target.id, "again", {
+        parentSessionId: target.parentSessionId, expectedType: target.type, target,
+        restoreSession: vi.fn(), beginResume, commitTerminal,
+      });
+      expect(second).toEqual({ status: "resumed_live", id: target.id });
+      expect(resumeAgentMock).toHaveBeenCalledTimes(2);
+      expect(order).toEqual([
+        "begin", "provider:one", "terminal-fail:completed",
+        "repair:completed", "begin", "provider:two", "terminal-ok:completed",
+      ]);
+      expect(record).toMatchObject({ status: "completed", result: "after repair" });
+    } finally { await manager.dispose(); }
+  });
+
 });
 });

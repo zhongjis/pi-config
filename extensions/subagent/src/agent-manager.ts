@@ -14,7 +14,7 @@ import { resumeAgent, runAgent, type ResumeOutcome, type ToolActivity } from "./
 import { addUsage, type LifetimeUsage } from "./usage.js";
 import type { AgentRecord, AgentResumeResult, RestoreFailureReason, ResumeTargetV1, SubagentType, ThinkingLevel } from "./types.js";
 import { getRecoveredResultText } from "./result-recovery.js";
-import { AgentRun, project } from "./agent-run.js";
+import { AgentRun, project, type AgentRunTerminalEvent } from "./agent-run.js";
 import { SessionRestoreError } from "./session-restoration.js";
 import { pandaWarn } from "../../lib/warn.js";
 
@@ -42,8 +42,10 @@ export interface AgentRestoreRequest {
   signal?: AbortSignal;
   /** Opens the validated durable target through the T3 restoration service. */
   restoreSession: (target: ResumeTargetV1) => Promise<AgentSession>;
-  /** Optional durable generation writer; returns the accepted snapshot for the next write. */
-  persist?: (target: ResumeTargetV1, record: AgentRecord) => Promise<ResumeTargetV1>;
+  /** Commits the next running generation after validation, before any resumed/provider effect. */
+  beginResume?: (target: ResumeTargetV1, record: AgentRecord) => Promise<void>;
+  /** Commits or repairs one terminal candidate before terminal publication. */
+  commitTerminal?: (record: AgentRecord, candidate: AgentRunTerminalEvent) => Promise<void>;
 }
 
 interface SpawnOptions {
@@ -74,7 +76,9 @@ interface SpawnOptions {
   /** Skill names to inject (preload) into the subagent for this call only. See RunOptions.skills. */
   skills?: string[];
   /** Awaited after child session binding/policy, before first prompt. */
-  onBeforePrompt?: () => void | Promise<void>;
+  onBeforePrompt?: (record: AgentRecord) => void | Promise<void>;
+  /** Awaited after provider settlement, before terminal publication. */
+  onBeforeTerminal?: (record: AgentRecord, candidate: AgentRunTerminalEvent) => void | Promise<void>;
 }
 
 export class AgentManager {
@@ -90,6 +94,8 @@ export class AgentManager {
   private resumeInFlight = new Set<string>();
   /** IDs whose fresh execution has started but not fully settled. */
   private executionInFlight = new Set<string>();
+  /** Active executions asked to stop; terminal publication waits for durability. */
+  private stopRequests = new Map<string, string>();
   /** Child-session teardowns already detached from records but not yet settled. */
   private pendingTeardowns = new Set<Promise<void>>();
 
@@ -203,6 +209,8 @@ export class AgentManager {
     this.onStart?.(record);
 
     this.executionInFlight.add(id);
+    let durableRunBegun = options.onBeforePrompt === undefined;
+    let terminalCommitted = false;
     const promise = runAgent(ctx, type, prompt, {
       pi,
       model: options.model,
@@ -235,7 +243,10 @@ export class AgentManager {
         record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
         this.lifetimeCost += usage.cost ?? 0;
       },
-      onBeforePrompt: options.onBeforePrompt,
+      onBeforePrompt: async () => {
+        await options.onBeforePrompt?.(record);
+        durableRunBegun = true;
+      },
       onSessionCreated: (session) => {
         record.session = session;
         record.run?.publish({ kind: "session_created", session });
@@ -256,34 +267,39 @@ export class AgentManager {
         options.onSessionCreated?.(session);
       },
     })
-      .then(({ responseText, session, failure, aborted, steered }) => {
+      .then(async ({ responseText, session, failure, aborted, steered }) => {
         record.session = session;
         // Read the stop discriminator once; AgentRun owns status past this point.
-        const stopped = record.status === "stopped";
-        this.finalizeRun(record, ctx, options.description, {
+        const stopError = this.stopRequests.get(id);
+        const candidate = this.finalizeRun(record, {
           source: "settled",
-          stopped,
+          stopped: stopError !== undefined || record.status === "stopped",
+          stopError,
           responseText,
           failure,
           aborted,
           steered,
         });
+        terminalCommitted = !candidate || await this.publishTerminal(record, candidate, durableRunBegun ? options.onBeforeTerminal : undefined);
         return responseText;
       })
-      .catch((err) => {
-        const stopped = record.status === "stopped";
-        this.finalizeRun(record, ctx, options.description, {
+      .catch(async (err) => {
+        const stopError = this.stopRequests.get(id);
+        const candidate = this.finalizeRun(record, {
           source: "rejected",
-          stopped,
+          stopped: stopError !== undefined || record.status === "stopped",
+          stopError,
           error: err,
         });
+        terminalCommitted = !candidate || await this.publishTerminal(record, candidate, durableRunBegun ? options.onBeforeTerminal : undefined);
+        if (options.onBeforePrompt && !durableRunBegun) record.session = undefined;
         return "";
       })
       .finally(() => {
         // Background queue bookkeeping: runs once on every settle, regardless of outcome.
         if (options.isBackground) {
           this.runningBackground--;
-          this.onComplete?.(record);
+          if (terminalCommitted) this.onComplete?.(record);
           this.drainQueue();
         }
         if (record.externalAbortCleanup) {
@@ -291,6 +307,7 @@ export class AgentManager {
           record.externalAbortCleanup = undefined;
         }
         this.executionInFlight.delete(id);
+        this.stopRequests.delete(id);
       });
 
     record.promise = promise;
@@ -311,48 +328,60 @@ export class AgentManager {
    */
   private finalizeRun(
     record: AgentRecord,
-    ctx: ExtensionContext,
-    description: string,
     outcome:
-      | { source: "settled"; stopped: boolean; responseText: string; failure?: string; aborted: boolean; steered: boolean }
-      | { source: "rejected"; stopped: boolean; error: unknown },
-  ): void {
+      | { source: "settled"; stopped: boolean; stopError?: string; responseText: string; failure?: string; aborted: boolean; steered: boolean }
+      | { source: "rejected"; stopped: boolean; stopError?: string; error: unknown },
+  ): AgentRunTerminalEvent | undefined {
     // Flush any streaming output file (common to every terminal path).
     if (record.outputCleanup) {
       try { record.outputCleanup(); } catch { /* ignore */ }
       record.outputCleanup = undefined;
     }
 
-    // Stopped: AgentRun already owns status/error/completedAt (set when the stop was published).
-    // Only amend the final result text.
+    // A pre-start stop is already terminal. Active stops wait for this durable candidate.
     if (outcome.stopped) {
       const base = (outcome.source === "settled" ? outcome.responseText.trim() : "")
-        || getRecoveredResultText(record);
-      record.run?.publish({ kind: "result_amended", result: base });
-      return;
+        || getRecoveredResultText({ ...record, status: "stopped", error: outcome.stopError });
+      if (record.status === "stopped") {
+        record.run?.publish({ kind: "result_amended", result: base });
+        return undefined;
+      }
+      return { kind: "aborted", status: "stopped", reason: "user", error: outcome.stopError, result: base };
     }
 
     if (outcome.source === "settled") {
       const responseText = outcome.responseText.trim();
       if (outcome.aborted) {
         const finalResult = responseText || getRecoveredResultText({ ...record, status: "aborted" });
-        record.run?.publish({ kind: "aborted", status: "aborted", reason: "max_turns", result: finalResult });
-        return;
+        return { kind: "aborted", status: "aborted", reason: "max_turns", result: finalResult };
       }
       if (outcome.failure) {
-        record.run?.publish({ kind: "failed", error: outcome.failure, result: responseText || undefined });
-        return;
+        return { kind: "failed", error: outcome.failure, result: responseText || undefined };
       }
       const finalStatus = outcome.steered ? "steered" : "completed";
       const finalResult = responseText || getRecoveredResultText({ ...record, status: finalStatus });
-      record.run?.publish({ kind: "completed", result: finalResult, status: finalStatus });
-      return;
+      return { kind: "completed", result: finalResult, status: finalStatus };
     }
 
     // Rejected (error).
     const finalError = record.error ?? (outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
     const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
-    record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
+    return { kind: "failed", error: finalError, result: finalResult };
+  }
+
+  private async publishTerminal(
+    record: AgentRecord,
+    candidate: AgentRunTerminalEvent,
+    barrier?: (record: AgentRecord, candidate: AgentRunTerminalEvent) => void | Promise<void>,
+  ): Promise<boolean> {
+    try {
+      await barrier?.(record, candidate);
+    } catch (error) {
+      record.run?.failTerminalCommit(candidate, error);
+      return false;
+    }
+    record.run?.publish(candidate);
+    return true;
   }
 
   /** Forward an outer tool abort signal into this agent's internal abort controller. */
@@ -367,7 +396,11 @@ export class AgentManager {
       }
       if (record.status !== "running") return;
       record.abortController?.abort();
-      this.publishRunStop(record, "Parent tool signal aborted while the agent was running.");
+      if (!this.executionInFlight.has(record.id) && !this.resumeInFlight.has(record.id)) {
+        this.publishRunStop(record, "Parent tool signal aborted before the agent started.");
+        return;
+      }
+      this.stopRequests.set(record.id, "Parent tool signal aborted while the agent was running.");
     };
 
     if (signal.aborted) {
@@ -427,7 +460,7 @@ export class AgentManager {
       }
       this.resumeInFlight.add(id);
       try {
-        const outcome = await this.continueRecord(live, prompt, request.signal, "live", request.target, request.persist);
+        const outcome = await this.continueRecord(live, prompt, request.signal, "live", request);
         if (outcome.ok === false) return this.resumeFailure(id, outcome.reason, outcome.error, live);
         return { status: "resumed_live", id };
       } catch (error) {
@@ -456,15 +489,7 @@ export class AgentManager {
       const session = await request.restoreSession(target);
       record = this.hydrateRecord(target, session);
       this.agents.set(id, record);
-      let continuationTarget = target;
-      if (request.persist) {
-        try {
-          continuationTarget = await request.persist(target, record);
-        } catch {
-          throw new SessionRestoreError("persistence_failed", "Failed to persist running restored generation");
-        }
-      }
-      const outcome = await this.continueRecord(record, prompt, request.signal, "restored", continuationTarget, request.persist);
+      const outcome = await this.continueRecord(record, prompt, request.signal, "restored", request);
       if (outcome.ok === false) {
         pandaWarn("subagent.restore.failed", {
           id, parent: request.parentSessionId, session: sessionLabel, status: target.state.status, reason: outcome.reason, elapsed: Date.now() - restoreStartedAt,
@@ -478,6 +503,11 @@ export class AgentManager {
     } catch (error) {
       const reason = error instanceof SessionRestoreError ? error.reason : "runtime_initialization_failed";
       const message = error instanceof Error ? error.message : String(error);
+      let failedRecord = record;
+      if (record && error instanceof SessionRestoreError && record.resumeSource === undefined && !record.run?.pendingTerminal) {
+        await this.removeRecord(id, record);
+        failedRecord = undefined;
+      }
       if (record && !(error instanceof SessionRestoreError)) {
         // Prompt failures are normal run failures after a successful open, never restore failures.
         pandaWarn("subagent.restore.succeeded", {
@@ -488,7 +518,7 @@ export class AgentManager {
       pandaWarn("subagent.restore.failed", {
         id, parent: request.parentSessionId, session: sessionLabel, status: target.state.status, reason, elapsed: Date.now() - restoreStartedAt,
       });
-      return this.resumeFailure(id, reason, message, record);
+      return this.resumeFailure(id, reason, message, failedRecord);
     } finally {
       this.resumeInFlight.delete(id);
     }
@@ -554,54 +584,81 @@ export class AgentManager {
     prompt: string,
     signal: AbortSignal | undefined,
     source: "live" | "restored",
-    target?: ResumeTargetV1,
-    persist?: AgentRestoreRequest["persist"],
+    request: AgentRestoreRequest,
   ): Promise<ContinueOutcome> {
+    const run = record.run;
+    const pendingTerminal = run?.pendingTerminal;
+    if (pendingTerminal) {
+      if (!request.commitTerminal) {
+        throw new SessionRestoreError("persistence_failed", "Execution completed but checkpoint did not persist; terminal repair is unavailable");
+      }
+      try {
+        await request.commitTerminal(record, pendingTerminal);
+        run.clearPendingTerminal(pendingTerminal);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new SessionRestoreError("persistence_failed", `Execution completed but checkpoint did not persist; repair failed: ${detail}`);
+      }
+    }
+
+    if (request.target && request.beginResume) {
+      try {
+        await request.beginResume(request.target, record);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new SessionRestoreError("persistence_failed", `Failed to persist running resumed generation: ${detail}`);
+      }
+    }
+
     record.abortController = new AbortController();
-    record.run?.publish({ kind: "resumed", source, startedAt: Date.now() });
-    const continuation = resumeAgent(record.session!, prompt, {
-      onToolActivity: (activity) => {
-        if (activity.type === "end") record.toolUses++;
-        record.run?.publish({ kind: "tool", phase: activity.type, toolName: activity.toolName });
-      },
-      signal,
-    })
-      .then((result): ContinueOutcome => {
-        // Legacy callers/mocks may still resolve resumeAgent with a bare string; treat it as a
-        // successful turn. Production always returns the discriminated ResumeOutcome.
-        const outcome: ResumeOutcome = typeof result === "string" ? { ok: true, text: result } : result;
-        if (!outcome.ok) {
-          // Empty/failed RESOLVED turn: publish a real failure so resume() reports it to the tool
-          // and never echoes the prior summary. record.status becomes error BEFORE the persist
-          // below, so the durable target is never written as a forced-completed generation.
+    run?.publish({ kind: "resumed", source, startedAt: Date.now() });
+    const continuation = (async (): Promise<ContinueOutcome> => {
+      let candidate: AgentRunTerminalEvent;
+      let outcome: ContinueOutcome;
+      try {
+        const result = await resumeAgent(record.session!, prompt, {
+          onToolActivity: (activity) => {
+            if (activity.type === "end") record.toolUses++;
+            run?.publish({ kind: "tool", phase: activity.type, toolName: activity.toolName });
+          },
+          signal,
+        });
+        // Legacy callers/mocks may still resolve resumeAgent with a bare string.
+        const resumed: ResumeOutcome = typeof result === "string" ? { ok: true, text: result } : result;
+        if (!resumed.ok) {
           const finalError = "Resumed turn produced no fresh output";
           const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
-          record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
-          return { ok: false, reason: "runtime_initialization_failed", error: finalError };
+          candidate = { kind: "failed", error: finalError, result: finalResult };
+          outcome = { ok: false, reason: "runtime_initialization_failed", error: finalError };
+        } else {
+          const finalResult = resumed.text.trim() || getRecoveredResultText({ ...record, status: "completed" });
+          candidate = { kind: "completed", result: finalResult, status: "completed" };
+          outcome = { ok: true };
         }
-        const finalResult = outcome.text.trim() || getRecoveredResultText({ ...record, status: "completed" });
-        record.run?.publish({ kind: "completed", result: finalResult, status: "completed" });
-        return { ok: true };
-      })
-      .catch((error): ContinueOutcome => {
+      } catch (error) {
         const finalError = error instanceof Error ? error.message : String(error);
         const finalResult = getRecoveredResultText({ ...record, status: "error", error: finalError });
-        record.run?.publish({ kind: "failed", error: finalError, result: finalResult });
-        // A THROWN resume is the pre-existing run-failure path: publish the failure but keep the
-        // legacy resumed_live/restored_session return. Only an empty/aborted RESOLVED turn surfaces
-        // to the tool as failed.
-        return { ok: true };
-      })
-      .then(async (outcome): Promise<ContinueOutcome> => {
-        if (target && persist) {
-          try {
-            await persist(target, record);
-          } catch {
-            throw new SessionRestoreError("persistence_failed", "Failed to persist terminal resumed generation");
-          }
-        }
-        return outcome;
-      });
+        candidate = { kind: "failed", error: finalError, result: finalResult };
+        // Preserve legacy return for thrown provider failures.
+        outcome = { ok: true };
+      }
+
+      const stopError = this.stopRequests.get(record.id);
+      if (stopError) {
+        candidate = { kind: "aborted", status: "stopped", reason: "user", error: stopError, result: candidate.result };
+      }
+      this.stopRequests.delete(record.id);
+
+      const committed = await this.publishTerminal(record, candidate, request.commitTerminal);
+      if (!committed) {
+        return {
+          ok: false,
+          reason: "persistence_failed",
+          error: record.error ?? "Execution completed but checkpoint did not persist",
+        };
+      }
+      return outcome;
+    })();
     record.promise = continuation.then(() => "", () => "");
     return await continuation;
   }
@@ -629,7 +686,7 @@ export class AgentManager {
 
     if (record.status !== "running") return false;
     record.abortController?.abort();
-    this.publishRunStop(record, "Agent was stopped while running.");
+    this.stopRequests.set(id, "Agent was stopped while running.");
     return true;
   }
 
@@ -666,6 +723,7 @@ export class AgentManager {
   private removeRecord(id: string, record: AgentRecord): Promise<void> {
     this.agents.delete(id);
     this.executionInFlight.delete(id);
+    this.stopRequests.delete(id);
     return this.teardownRecord(record);
   }
 

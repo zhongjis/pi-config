@@ -187,6 +187,26 @@ describe("AgentRun reducer — terminal idempotency & resume", () => {
     expect(run.result).toBeUndefined(); // guard rejected it
   });
 });
+  it("keeps a failed durable terminal candidate while settling an error-compatible view", async () => {
+    const { run } = makeRun();
+    run.publish(created());
+    run.publish({ kind: "started", startedAt: 1000 });
+    const waiter = run.waitForTerminal();
+    const candidate = { kind: "completed", result: "fresh output", status: "completed" } as const;
+
+    run.failTerminalCommit(candidate, new Error("append failed"));
+
+    expect(run.status).toBe("error");
+    expect(run.result).toBe("fresh output");
+    expect(run.error).toContain("Execution completed but checkpoint did not");
+    expect(run.pendingTerminal).toEqual(candidate);
+    expect(run.events().some((event) => event.kind === "completed")).toBe(false);
+    await expect(waiter).resolves.toMatchObject({ status: "error", result: "fresh output" });
+
+    run.clearPendingTerminal(candidate);
+    expect(run.pendingTerminal).toBeUndefined();
+  });
+
 
 describe("AgentRun reducer — activity", () => {
   it("created seeds meta and lastProgressAt from startedAt; durable identity fields", () => {
