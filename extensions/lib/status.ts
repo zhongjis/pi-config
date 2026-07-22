@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 
 // ---------------------------------------------------------------------------
@@ -7,7 +7,7 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 
 export type StatusPart = {
   text: string;
-  color?: string;
+  color?: ThemeColor;
   bold?: boolean;
 };
 

@@ -237,15 +237,15 @@ export function streamWithFallback(opts: StreamWithFallbackOptions): ReturnType<
 					return;
 				}
 				if (pendingStart) stream.push(pendingStart);
-				stream.push({ type: "error", error: err });
+				stream.push({ type: "error", reason: "error", error: err });
 				stream.end();
 			}
 		} catch (fatal) {
-			stream.push({ type: "error", error: fatal });
+			stream.push({ type: "error", reason: "error", error: fatal });
 			stream.end();
 		}
 	})().catch((fatal) => {
-		stream.push({ type: "error", error: fatal });
+		stream.push({ type: "error", reason: "error", error: fatal });
 		stream.end();
 	});
 

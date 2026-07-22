@@ -87,7 +87,17 @@ export function createBashTool() {
 
 
 export function createBashToolDefinition(_cwd?: string) {
-  return {};
+  return {
+    name: "bash",
+    label: "bash",
+    description: "Execute a bash command",
+    parameters: {},
+    renderCall: () => ({ text: "bash" }),
+    renderResult: () => ({ text: "" }),
+    async execute() {
+      return { content: [{ type: "text", text: "" }], details: {} };
+    }
+  };
 }
 export function createEditTool() {
   return {};

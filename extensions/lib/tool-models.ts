@@ -107,12 +107,15 @@ function parseToolModelsFile(
 		diagnostic(config, source, "tool_models.json roles must be an object", path);
 		return undefined;
 	}
+	let parsedRoles: Record<string, string | null> | undefined;
 	if (isRecord(roles)) {
+		parsedRoles = {};
 		for (const [name, chain] of Object.entries(roles)) {
 			if (!name || (typeof chain !== "string" && chain !== null)) {
 				diagnostic(config, source, "tool_models.json roles values must be strings or null", path);
 				return undefined;
 			}
+			parsedRoles[name] = typeof chain === "string" ? chain : null;
 		}
 	}
 
@@ -121,9 +124,14 @@ function parseToolModelsFile(
 		diagnostic(config, source, "tool_models.json tools must be an object", path);
 		return undefined;
 	}
+	let parsedTools: Record<string, ToolModelRuleFile | null> | undefined;
 	if (isRecord(tools)) {
+		parsedTools = {};
 		for (const [toolKey, rule] of Object.entries(tools)) {
-			if (!toolKey || rule === null) continue;
+			if (rule === null) {
+				parsedTools[toolKey] = null;
+				continue;
+			}
 			if (!isRecord(rule)) {
 				diagnostic(config, source, "tool_models.json tool rules must be objects or null", path);
 				return undefined;
@@ -134,18 +142,31 @@ function parseToolModelsFile(
 					return undefined;
 				}
 			}
-			if ("role" in rule && typeof rule.role !== "string" && rule.role !== null) {
-				diagnostic(config, source, "tool_models.json tool rule role must be a string or null", path);
-				return undefined;
+			const parsedRule: ToolModelRuleFile = {};
+			if ("role" in rule) {
+				const role = rule.role;
+				if (typeof role !== "string" && role !== null) {
+					diagnostic(config, source, "tool_models.json tool rule role must be a string or null", path);
+					return undefined;
+				}
+				parsedRule.role = typeof role === "string" ? role : null;
 			}
-			if ("chain" in rule && typeof rule.chain !== "string" && rule.chain !== null) {
-				diagnostic(config, source, "tool_models.json tool rule chain must be a string or null", path);
-				return undefined;
+			if ("chain" in rule) {
+				const chain = rule.chain;
+				if (typeof chain !== "string" && chain !== null) {
+					diagnostic(config, source, "tool_models.json tool rule chain must be a string or null", path);
+					return undefined;
+				}
+				parsedRule.chain = typeof chain === "string" ? chain : null;
 			}
+			parsedTools[toolKey] = parsedRule;
 		}
 	}
 
-	return value as ToolModelsFile;
+	const parsedFile: ToolModelsFile = { version: 1 };
+	if (parsedRoles !== undefined) parsedFile.roles = parsedRoles;
+	if (parsedTools !== undefined) parsedFile.tools = parsedTools;
+	return parsedFile;
 }
 
 function applyToolModelsFile(

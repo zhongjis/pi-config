@@ -113,13 +113,16 @@ export function registerDebugCommand(pi: ExtensionAPI): void {
 // Logger interface
 // ---------------------------------------------------------------------------
 
+type NotificationType = NonNullable<Parameters<ExtensionContext["ui"]["notify"]>[1]>;
+type LoggerNotificationType = NotificationType | "success";
+
 export interface Logger {
   /** Write a structured debug entry to session JSONL + console (when debug active). */
   debug(event: string, data?: unknown): void;
   /** Set or clear the status indicator for this namespace. */
   status(text: string | undefined): void;
   /** Notify via UI or fall back to console. */
-  notify(text: string, level?: "info" | "warning" | "error" | "success"): void;
+  notify(text: string, level?: LoggerNotificationType): void;
   /** Console log with namespace prefix. */
   console(message: string, ...args: unknown[]): void;
 }
@@ -167,9 +170,10 @@ export function createLogger(ctx: ExtensionContext, namespace: string): Logger {
       ctx.ui.setStatus(namespace, text);
     },
 
-    notify(text: string, level: "info" | "warning" | "error" | "success" = "info"): void {
+    notify(text: string, level: LoggerNotificationType = "info"): void {
       if (ctx.hasUI) {
-        ctx.ui.notify(text, level);
+        const notificationType: NotificationType = level === "success" ? "info" : level;
+        ctx.ui.notify(text, notificationType);
       } else {
         console.log(`[${namespace}] ${text}`);
       }

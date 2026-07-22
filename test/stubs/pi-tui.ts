@@ -66,6 +66,16 @@ export class Markdown {
   constructor(text = "") {
     this.text = text;
   }
+
+  setText(text: string): void {
+    this.text = text;
+  }
+
+  render(width: number): string[] {
+    return renderTextLines(this.text, width);
+  }
+
+  invalidate(): void {}
 }
 
 export class SelectList {
@@ -92,6 +102,25 @@ export class Text {
   constructor(text = "") {
     this.text = text;
   }
+
+  setText(text: string): void {
+    this.text = text;
+  }
+
+  render(width: number): string[] {
+    return renderTextLines(this.text, width);
+  }
+
+  invalidate(): void {}
+}
+
+function renderTextLines(text: string, width: number): string[] {
+  const safeWidth = Number.isFinite(width) ? Math.max(0, Math.floor(width)) : 0;
+  if (safeWidth === 0) return [];
+
+  return text.split(/\r\n?|\n/).flatMap((line) =>
+    visibleWidth(line) <= safeWidth ? [line] : wrapTextWithAnsi(line, safeWidth),
+  );
 }
 
 export function matchesKey(candidate: unknown, expected: unknown): boolean {

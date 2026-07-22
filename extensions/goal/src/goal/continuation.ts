@@ -22,7 +22,7 @@ function didAgentEndCleanly(messages: readonly unknown[]): boolean {
 	if (lastAssistantIndex === undefined) return false;
 
 	const lastAssistant = messages[lastAssistantIndex];
-	if (!isAssistantMessage(lastAssistant) || !isContinuableStopReason(lastAssistant["stopReason"])) return false;
+	if (!isAssistantMessage(lastAssistant) || !isContinuableStopReason(lastAssistant.stopReason)) return false;
 
 	for (let index = lastAssistantIndex + 1; index < messages.length; index++) {
 		const message = messages[index];
@@ -39,7 +39,7 @@ function findLastAssistantMessageIndex(messages: readonly unknown[]): number | u
 }
 
 function isAssistantMessage(message: unknown): message is Record<string, unknown> {
-	return isRecord(message) && message["role"] === "assistant";
+	return isRecord(message) && message.role === "assistant";
 }
 
 function isContinuableStopReason(stopReason: unknown): boolean {
@@ -47,14 +47,14 @@ function isContinuableStopReason(stopReason: unknown): boolean {
 }
 
 function isAbortedToolResult(message: unknown): boolean {
-	if (!isRecord(message) || message["role"] !== "toolResult" || message["isError"] !== true) return false;
-	const content = message["content"];
+	if (!isRecord(message) || message.role !== "toolResult" || message.isError !== true) return false;
+	const content = message.content;
 	if (!Array.isArray(content)) return false;
 	return content.some(
 		(block) =>
 			isRecord(block) &&
-			block["type"] === "text" &&
-			typeof block["text"] === "string" &&
-			/\babort(?:ed)?\b/i.test(block["text"]),
+			block.type === "text" &&
+			typeof block.text === "string" &&
+			/\babort(?:ed)?\b/i.test(block.text),
 	);
 }

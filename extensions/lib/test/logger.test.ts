@@ -206,7 +206,7 @@ describe("logger.notify", () => {
     const log = createLogger(ctx, "ns");
 
     log.notify("hello", "success");
-    expect(notifySpy).toHaveBeenCalledWith("hello", "success");
+    expect(notifySpy).toHaveBeenCalledWith("hello", "info");
   });
 
   it("falls back to console.log when hasUI is false", async () => {
