@@ -145,6 +145,20 @@ describe("Hou Tu prompt contract accepted fixes", () => {
     expect(HOUTU_DEFAULT).toContain("Use LSP diagnostics, rg, fd");
   });
 
+  it("selects default workers by task domain with all relevant skills", () => {
+    expect(HOUTU_DEFAULT).toContain("### MANDATORY: Worker + Skill Selection Protocol");
+    expect(HOUTU_DEFAULT).toContain("### Delegation Pattern");
+    expect(HOUTU_DEFAULT).not.toContain("### MANDATORY: Plan Assignment Protocol");
+    expect(HOUTU_DEFAULT).not.toContain('subagent_type="[plan-owner]"');
+    expect(HOUTU_DEFAULT).toContain('Agent(subagent_type="jintong", skills=[...], run_in_background=false');
+  });
+
+  it("keeps the Gemini corrective overlay on domain-selected workers", () => {
+    expect(HOUTU_GEMINI).toContain("Select each worker by task-domain fit at dispatch time");
+    expect(HOUTU_GEMINI).toContain("A planned worker owner is not binding");
+    expect(HOUTU_GEMINI).toContain("Evaluate ALL skills before each delegation");
+  });
+
   it("docs describe bare PLAN.md with the handoff-supplied approved plan path", () => {
     expect(MODES_CONTRACT).not.toContain("executes `local://PLAN.md`");
     expect(MODES_CONTRACT).toContain("executes `PLAN.md`");

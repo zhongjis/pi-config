@@ -20,6 +20,7 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 - Parse canonical `## Todos` and `## Final verification wave`; also accept legacy `## TODOs` and legacy `## Final Verification Wave`.
 
 **Delegate bounded, parallel, supervised.**
+- Select each worker by task-domain fit at dispatch time. A planned worker owner is not binding.
 - Delegate one bounded plan task per `Agent` session. Do not re-split an approved plan item. A larger indivisible item remains one resumable workstream with staged green checkpoints, a tool-call/turn ceiling, and a fail-safe preserving the last green state.
 - Launch exploration (`chengfeng`, `wenchang`) as separate background agents. Keep implementation `Agent(...)` runs foreground (`run_in_background=false`). Named dependencies or overlapping write paths remain sequential.
 - Keep returned agent IDs in subagent runtime/context only. Collect with `get_subagent_result`; steer live workers with `steer_subagent`. Do not duplicate recon delegated to `chengfeng` or `wenchang`.
