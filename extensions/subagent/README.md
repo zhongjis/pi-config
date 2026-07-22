@@ -52,6 +52,18 @@ Fresh and resume semantics are explicit: omit `resume` to start new; supply `res
 
 Restored lookup is durable and parent-scoped. Versioned resume-target metadata is persisted in the parent session log; it points to child JSONL under `$PI_CODING_AGENT_DIR/subagent-sessions/<parent-session-id>/`. Restoration requires the same parent session and agent type, validates the session and current runtime before opening it, and preserves the logical agent ID.
 
+### Durable lifecycle
+
+Child JSONL owns conversation history; parent `subagents:resume-target-v1` rows own resumability and delivery state; live `AgentRun` state is a projection. `external-contract-adapter.ts` owns terminal `subagents:record` compatibility plus completed/failed effects only; created, started, steered, and other lifecycle emissions stay with their existing runtime owners.
+
+A fresh run starts generation 0. Each explicit resume starts generation `g+1` at revision 0 before provider execution. `subagents:started` emits only after the pre-prompt running V1 barrier succeeds; a rejected barrier emits no started event. Successful child compactions and terminal commits advance revisions in one serialized store; delivery-flag commits may advance them again. A provider result is reported as success only after terminal V1 durability. If that append fails, `Agent` returns `failed` with `persistence_failed`, retains the fresh output for repair, and does not replay work or start a replacement. Current-process repair reauthenticates and classifies the child suffix before committing the pending terminal candidate.
+
+Effect order is running V1 → provider/tool execution → compaction checkpoints → terminal V1 → `subagents:record` → background advisory event. Result consumption commits before tool/RPC acknowledgement. Background notification is at-least-once: send first, then mark notified; a successful send followed by flag-append failure can duplicate after restart.
+
+On restart, clean terminal suffixes reconcile without provider/tool replay; uncertain or unfinished suffixes become `unsafe_interrupted_operation`; missing, corrupt, incompatible, or out-of-scope targets fail with their existing typed reason. Pi 0.79's deferred first session flush is normalized before the pre-prompt barrier. Rollback stays V1-compatible: replay selects the highest valid generation/revision; no V2 schema is required.
+
+Verification: `pnpm test:extensions`, `pnpm test:integration`, and `pnpm lint:typecheck`.
+
 ## Default Agent Types
 
 | Type | Built-ins | Extensions | Model | Prompt Mode |
@@ -142,4 +154,4 @@ Status widgets, Agent result renderers, and background completion notifications 
 
 ## Events
 
-Lifecycle events on `pi.events`: `subagents:created`, `subagents:started`, `subagents:completed`, `subagents:failed`, `subagents:steered`, `subagents:ready`, `subagents:settings_loaded`, `subagents:settings_changed`. Cross-extension RPC: `subagents:rpc:ping`, `subagents:rpc:spawn`, `subagents:rpc:stop` with reply on `:reply:${requestId}`.
+Lifecycle events on `pi.events`: `subagents:created`, `subagents:started`, `subagents:completed`, `subagents:failed`, `subagents:steered`, `subagents:compacted`, `subagents:ready`, `subagents:settings_loaded`, `subagents:settings_changed`. Cross-extension RPC: `subagents:rpc:ping`, `subagents:rpc:spawn`, `subagents:rpc:stop` with reply on `:reply:${requestId}`.

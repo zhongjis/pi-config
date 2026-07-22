@@ -24,6 +24,9 @@ const FAUX_HANDLE_SYMBOL = Symbol.for("pi-subagent-restoration-test:faux-handle"
 interface NativeFauxHandle {
 	contexts: string[];
 	appendResponse(text: string): void;
+	appendControlledResponse(text: string): { started: Promise<void>; release(): void };
+	waitForCompaction(): Promise<{ id: string; compactionCount: number }>;
+	failNextTerminalCommit(): void;
 	pendingResponses(): number;
 	callCount(): number;
 	unregister(): void;
@@ -40,6 +43,7 @@ interface SessionLike {
 	abort?: () => void;
 	dispose?: () => void;
 	sessionManager?: { getEntries(): Array<{ type: string; customType?: string; data?: unknown }> };
+	_emit?(event: { type: "compaction_end"; reason: "context_length"; result: { tokensBefore: number }; aborted: false }): void;
 }
 
 interface AgentRecordLike {
@@ -47,6 +51,9 @@ interface AgentRecordLike {
 	session?: SessionLike;
 	sessionFile?: string;
 	status?: string;
+	error?: string;
+	result?: string;
+	toolUses?: number;
 	promise?: Promise<unknown>;
 }
 
@@ -142,7 +149,26 @@ const PROVIDER = ${JSON.stringify(FAUX_PROVIDER)};
 const MODEL_ID = ${JSON.stringify(FAUX_MODEL_ID)};
 const HANDLE = Symbol.for("pi-subagent-restoration-test:faux-handle");
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isTerminalTarget(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.state)) return false;
+  return ["completed", "steered", "aborted", "stopped", "error"].includes(String(value.state.status));
+}
+
 export default function(pi: ExtensionAPI) {
+  let failTerminalCommit = false;
+  const originalAppendEntry = pi.appendEntry.bind(pi);
+  pi.appendEntry = (customType: string, data?: unknown) => {
+    if (failTerminalCommit && customType === "subagents:resume-target-v1" && isTerminalTarget(data)) {
+      failTerminalCommit = false;
+      throw new Error("injected terminal append fault");
+    }
+    return originalAppendEntry(customType, data);
+  };
+
   const faux = registerFauxProvider({
     api: API,
     provider: PROVIDER,
@@ -163,6 +189,10 @@ export default function(pi: ExtensionAPI) {
       maxTokens: 16384,
     }],
   });
+
+  const compactions: Array<{ id: string; compactionCount: number }> = [];
+  const compactionWaiters: Array<(event: { id: string; compactionCount: number }) => void> = [];
+  let unsubCompacted = () => {};
   const handle = {
     contexts: [] as string[],
     appendResponse(text: string) {
@@ -171,11 +201,37 @@ export default function(pi: ExtensionAPI) {
         return fauxAssistantMessage(text);
       }]);
     },
+    appendControlledResponse(text: string) {
+      let markStarted!: () => void;
+      let release!: () => void;
+      const started = new Promise<void>((resolve) => { markStarted = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      faux.appendResponses([async (context) => {
+        handle.contexts.push(JSON.stringify(context.messages));
+        markStarted();
+        await released;
+        return fauxAssistantMessage(text);
+      }]);
+      return { started, release };
+    },
+    waitForCompaction() {
+      const queued = compactions.shift();
+      if (queued) return Promise.resolve(queued);
+      return new Promise<{ id: string; compactionCount: number }>((resolve) => { compactionWaiters.push(resolve); });
+    },
+    failNextTerminalCommit() { failTerminalCommit = true; },
     pendingResponses: () => faux.getPendingResponseCount(),
     callCount: () => faux.state.callCount,
-    unregister: () => faux.unregister(),
+    unregister() { unsubCompacted(); faux.unregister(); },
   };
   (globalThis as Record<PropertyKey, unknown>)[HANDLE] = handle;
+  unsubCompacted = pi.events.on("subagents:compacted", (data: unknown) => {
+    if (!isRecord(data) || typeof data.id !== "string" || typeof data.compactionCount !== "number") return;
+    const event = { id: data.id, compactionCount: data.compactionCount };
+    const waiter = compactionWaiters.shift();
+    if (waiter) waiter(event);
+    else compactions.push(event);
+  });
   subagentFactory(pi);
 }
 `,
@@ -243,6 +299,17 @@ function appendLateTitle(sessionFile: string): void {
 		type: "session_info", id: `late-title-${Date.now()}`, parentId,
 		timestamp: new Date().toISOString(), name: "Restoration probe complete",
 	})}\n`);
+}
+
+function emitSuccessfulChildCompaction(id: string): void {
+	const child = manager?.getRecord(id)?.session;
+	if (!child?._emit) throw new Error("Real child session omitted its event emitter");
+	child._emit({
+		type: "compaction_end",
+		reason: "context_length",
+		result: { tokensBefore: 4_096 },
+		aborted: false,
+	});
 }
 
 async function emitProductionSessionStart(session: SessionLike): Promise<void> {
@@ -318,10 +385,13 @@ describe.sequential("subagent session restoration — integration", () => {
 		expect(persisted).toContain(firstPrompt);
 		expect(persisted).toContain(followUp);
 		const liveRows = persisted.trimEnd().split("\n").map((line) => JSON.parse(line));
-		const liveTarget = persistedResumeTargets(id).at(-1)!;
+		const liveGeneration = persistedResumeTargets(id).filter((target) => target.generation === initialTarget.generation + 1);
+		expect(liveGeneration.map((target) => [target.revision, target.state.status])).toEqual([
+			[0, "running"],
+			[1, "completed"],
+		]);
+		const liveTarget = liveGeneration.at(-1)!;
 		expect(liveTarget).toMatchObject({
-			generation: initialTarget.generation,
-			revision: initialTarget.revision + 1,
 			entryCount: liveRows.length - 1,
 			activeLeafId: liveRows.at(-1)?.id,
 			sessionSha256: stableSha256(readFileSync(sessionFile)),
@@ -387,6 +457,129 @@ describe.sequential("subagent session restoration — integration", () => {
 		expect(secondRestoredResult.isError).toBe(false);
 		expect(invocationDetails(secondRestoredResult)).toMatchObject({ agentId: id, invocationStatus: "restored_session" });
 		expect(readFileSync(sessionFile, "utf8")).toContain(secondRestoredPrompt);
+	});
+
+	it("orders a restored resume compaction checkpoint before terminal durability without duplicate execution", async () => {
+		const session = await createIsolatedSession();
+		const faux = nativeFauxHandle();
+		faux.appendResponse("Original completed result.");
+		const firstResult = await invokeAgent("Start durable race probe", agentParams("Create the original durable target."));
+		const id = agentIdFrom(firstResult);
+		const sessionFile = sessionFileFor(id);
+		const originalTarget = persistedResumeTargets(id).at(-1)!;
+
+		await emitProductionSessionStart(session);
+		expect(manager!.getRecord(id)).toBeUndefined();
+
+		const controlled = faux.appendControlledResponse("Fresh restored result RACE-RESULT-83.");
+		const resumedPromise = invokeAgent(
+			"Resume durable race probe",
+			agentParams("Complete the restored race exactly once.", id),
+		);
+		await controlled.started;
+
+		const runningTarget = persistedResumeTargets(id).at(-1)!;
+		expect(runningTarget).toMatchObject({
+			generation: originalTarget.generation + 1,
+			revision: 0,
+			state: { status: "running", resultConsumed: false, notified: false },
+		});
+
+		const compactedEvent = faux.waitForCompaction();
+		emitSuccessfulChildCompaction(id);
+		await expect(compactedEvent).resolves.toEqual({ id, compactionCount: originalTarget.state.compactionCount + 1 });
+		const checkpointTarget = persistedResumeTargets(id).at(-1)!;
+		expect(checkpointTarget).toMatchObject({
+			generation: runningTarget.generation,
+			revision: 1,
+			state: { status: "running", compactionCount: originalTarget.state.compactionCount + 1 },
+		});
+
+		controlled.release();
+		const resumedResult = await resumedPromise;
+		const resumedGeneration = persistedResumeTargets(id).filter((target) => target.generation === runningTarget.generation);
+		expect(resumedGeneration.slice(0, 3).map((target) => [target.revision, target.state.status])).toEqual([
+			[0, "running"],
+			[1, "running"],
+			[2, "completed"],
+		]);
+		expect(resumedGeneration.at(-1)).toMatchObject({
+			generation: runningTarget.generation,
+			state: { status: "completed", resultConsumed: true },
+		});
+		expect(resumedResult.isError).toBe(false);
+		expect(resumedResult.text).toContain("Fresh restored result RACE-RESULT-83.");
+		expect(resumedResult.text).not.toContain("persistence_failed");
+		expect(invocationDetails(resumedResult)).toMatchObject({ agentId: id, invocationStatus: "restored_session" });
+		expect(manager!.getRecord(id)).toMatchObject({ status: "completed", result: "Fresh restored result RACE-RESULT-83.", toolUses: 0 });
+		expect(faux.callCount()).toBe(2);
+		expect(faux.pendingResponses()).toBe(0);
+		const childJsonl = readFileSync(sessionFile, "utf8");
+		expect(childJsonl.match(/Complete the restored race exactly once\./g)).toHaveLength(1);
+		expect(childJsonl.match(/Fresh restored result RACE-RESULT-83\./g)).toHaveLength(1);
+	});
+
+	it("retains fresh restored output when terminal durability fails after compaction", async () => {
+		const session = await createIsolatedSession();
+		const faux = nativeFauxHandle();
+		faux.appendResponse("Original failure-control result.");
+		const firstResult = await invokeAgent("Start terminal fault probe", agentParams("Create the terminal fault target."));
+		const id = agentIdFrom(firstResult);
+		const sessionFile = sessionFileFor(id);
+		const originalTarget = persistedResumeTargets(id).at(-1)!;
+
+		await emitProductionSessionStart(session);
+		const controlled = faux.appendControlledResponse("Retained output TERMINAL-FAULT-29.");
+		const resumedPromise = invokeAgent(
+			"Resume terminal fault probe",
+			agentParams("Produce one retained result before the terminal append fault.", id),
+		);
+		await controlled.started;
+		const runningTarget = persistedResumeTargets(id).at(-1)!;
+		const compactedEvent = faux.waitForCompaction();
+		emitSuccessfulChildCompaction(id);
+		await compactedEvent;
+		faux.failNextTerminalCommit();
+		controlled.release();
+
+		const failedResult = await resumedPromise;
+		expect(invocationDetails(failedResult)).toMatchObject({
+			agentId: id, invocationStatus: "failed", failureReason: "persistence_failed",
+		});
+		expect(failedResult.text).toContain("checkpoint did not persist");
+		expect(manager!.getRecord(id)).toMatchObject({
+			status: "error",
+			result: "Retained output TERMINAL-FAULT-29.",
+		});
+		expect(persistedResumeTargets(id).at(-1)).toMatchObject({
+			generation: originalTarget.generation + 1,
+			revision: 1,
+			state: { status: "running" },
+		});
+		expect(runningTarget).toMatchObject({ generation: originalTarget.generation + 1, revision: 0 });
+		expect(faux.callCount()).toBe(2);
+		expect(faux.pendingResponses()).toBe(0);
+		faux.appendResponse("Output after authenticated repair TERMINAL-REPAIR-41.");
+		const repairedResult = await invokeAgent(
+			"Repair terminal fault and continue",
+			agentParams("Continue once after authenticating the pending terminal suffix.", id),
+		);
+		expect(repairedResult.isError).toBe(false);
+		expect(repairedResult.text).toContain("Output after authenticated repair TERMINAL-REPAIR-41.");
+		expect(faux.callCount()).toBe(3);
+		expect(persistedResumeTargets(id)).toEqual(expect.arrayContaining([
+			expect.objectContaining({
+				generation: originalTarget.generation + 1, revision: 2, state: expect.objectContaining({ status: "completed" }),
+			}),
+			expect.objectContaining({
+				generation: originalTarget.generation + 2, revision: 0, state: expect.objectContaining({ status: "running" }),
+			}),
+		]));
+		const childJsonl = readFileSync(sessionFile, "utf8");
+		expect(childJsonl.match(/Produce one retained result before the terminal append fault\./g)).toHaveLength(1);
+		expect(childJsonl.match(/Retained output TERMINAL-FAULT-29\./g)).toHaveLength(1);
+		expect(childJsonl.match(/Continue once after authenticating the pending terminal suffix\./g)).toHaveLength(1);
+		expect(childJsonl.match(/Output after authenticated repair TERMINAL-REPAIR-41\./g)).toHaveLength(1);
 	});
 
 	it("rejects a tampered durable prefix without spawning or continuing", async () => {

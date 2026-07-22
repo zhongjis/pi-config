@@ -34,8 +34,9 @@ describe("AgentManager lifecycle contracts (Phase 0 characterization)", () => {
 
   it("queues background agents over the concurrency limit and drains on completion", async () => {
     const resolvers: Array<() => void> = [];
-    runAgentMock.mockImplementation((_ctx: any, _type: any, _prompt: any, options: any) => {
+    runAgentMock.mockImplementation(async (_ctx: any, _type: any, _prompt: any, options: any) => {
       options.onSessionCreated?.(fakeSession());
+      await options.onBeforePrompt?.();
       return new Promise((resolve) => {
         resolvers.push(() => resolve({ responseText: "done", session: fakeSession(), aborted: false, steered: false }));
       });
@@ -51,7 +52,7 @@ describe("AgentManager lifecycle contracts (Phase 0 characterization)", () => {
       // Over the limit: first runs, second is queued.
       expect(manager.getRecord(id1)?.status).toBe("running");
       expect(manager.getRecord(id2)?.status).toBe("queued");
-      expect(onStart).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(onStart).toHaveBeenCalledTimes(1));
 
       // Completing the first drains the queue and starts the second.
       resolvers[0]();
@@ -94,9 +95,10 @@ describe("AgentManager lifecycle contracts (Phase 0 characterization)", () => {
   });
 
   it("onStart fires for every run; onComplete fires for background runs only", async () => {
-    runAgentMock.mockImplementation((_ctx: any, _type: any, _prompt: any, options: any) => {
+    runAgentMock.mockImplementation(async (_ctx: any, _type: any, _prompt: any, options: any) => {
       options.onSessionCreated?.(fakeSession());
-      return Promise.resolve({ responseText: "ok", session: fakeSession(), aborted: false, steered: false });
+      await options.onBeforePrompt?.();
+      return { responseText: "ok", session: fakeSession(), aborted: false, steered: false };
     });
 
     const onStart = vi.fn();

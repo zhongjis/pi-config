@@ -1,14 +1,9 @@
 // finalize-run-parity.test.ts — pins the terminal-finalization behavior of AgentManager
-// BEFORE the finalizeRun() extraction (candidate #1 / T1). These lock two currently-
-// unguarded invariants so the refactor cannot silently change them:
+// after durable terminal barriers were introduced. Active stops now produce one durable stopped
+// candidate whether runAgent settles or rejects after abort; they never publish completed/failed
+// or amend an already-terminal run.
 //
-//   Pin A — stopped idempotency: a user-stopped run publishes exactly one `result_amended`
-//           and zero `completed`/`failed`, whether runAgent settles or rejects after the abort.
-//   Pin B — branch-note asymmetry: the "Changes saved to branch …" note is appended on the
-//           SETTLED continuation (completed, then-stopped) and NOT on the REJECTED continuation
-//           (error, catch-stopped). This asymmetry is intentional-as-of-today; pin = preserve.
-//
-// Drives the real manager terminal blocks via a mocked runAgent.
+// Drives real manager terminal blocks through mocked runAgent.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const runAgentMock = vi.fn();
@@ -59,7 +54,7 @@ afterEach(() => {
 
 
 describe("finalizeRun parity — stopped idempotency", () => {
-  it("then-stopped (runAgent resolves after abort): exactly one result_amended, no completed/failed", async () => {
+  it("then-stopped (runAgent resolves after abort): exactly one stopped terminal event", async () => {
     runAgentMock.mockImplementation(settleOnAbort("resolve", "late output", "provider failed after stop"));
 
     const manager = new AgentManager(undefined, 4);
@@ -75,7 +70,8 @@ describe("finalizeRun parity — stopped idempotency", () => {
       await record.promise;
 
       const kinds = record.run!.events().map((e) => e.kind);
-      expect(kinds.filter((k) => k === "result_amended")).toHaveLength(1);
+      expect(kinds.filter((k) => k === "aborted")).toHaveLength(1);
+      expect(kinds).not.toContain("result_amended");
       expect(kinds).not.toContain("completed");
       expect(kinds).not.toContain("failed");
       expect(record.status).toBe("stopped");
@@ -84,7 +80,7 @@ describe("finalizeRun parity — stopped idempotency", () => {
     }
   });
 
-  it("catch-stopped (runAgent rejects after abort): exactly one result_amended, no completed/failed", async () => {
+  it("catch-stopped (runAgent rejects after abort): exactly one stopped terminal event", async () => {
     runAgentMock.mockImplementation(settleOnAbort("reject"));
 
     const manager = new AgentManager(undefined, 4);
@@ -100,7 +96,8 @@ describe("finalizeRun parity — stopped idempotency", () => {
       await record.promise;
 
       const kinds = record.run!.events().map((e) => e.kind);
-      expect(kinds.filter((k) => k === "result_amended")).toHaveLength(1);
+      expect(kinds.filter((k) => k === "aborted")).toHaveLength(1);
+      expect(kinds).not.toContain("result_amended");
       expect(kinds).not.toContain("completed");
       expect(kinds).not.toContain("failed");
       expect(record.status).toBe("stopped");

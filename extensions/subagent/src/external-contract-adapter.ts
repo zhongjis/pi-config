@@ -1,6 +1,6 @@
 /**
- * external-contract-adapter.ts — the SINGLE place that emits the frozen external
- * `subagents:*` contract (events + durable `subagents:record` snapshot).
+ * external-contract-adapter.ts — owns terminal compatibility history plus frozen
+ * background completed/failed effects; it also hosts the compacted-event helper.
  *
  * Phase 2a of the C/D revamp: the channel decision (completed vs failed) now flows
  * through the keystone mapping `toExternalEffects` instead of an inline `isError`
@@ -9,9 +9,8 @@
  * future phases will drive this from an `AgentRun` terminal-event subscription, but
  * for now it is called from the manager's terminal `onComplete` exactly as before.
  *
- * This is the ONLY module that should touch `pi.events`/`appendEntry` for the
- * `subagents:*` contract — keeping the boundary that `tasks/` and compaction-replay
- * depend on contract-tested in isolation.
+ * Only terminal `subagents:record` plus completed/failed effects belong to this adapter.
+ * Created, started, steered, and other lifecycle effects retain their existing owners.
  */
 
 import { type AgentRunEvent, toExternalEffects } from "./agent-run.js";

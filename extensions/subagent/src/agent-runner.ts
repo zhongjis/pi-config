@@ -2,6 +2,7 @@
  * agent-runner.ts — Core execution engine: creates sessions, runs agents, collects results.
  */
 
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -436,6 +437,22 @@ export async function prepareAgentRestoreRuntime(
   });
 }
 
+function persistFreshSessionBeforePrompt(session: AgentSession): void {
+  const sessionManager = session.sessionManager as AgentSession["sessionManager"] | undefined;
+  if (!sessionManager) return;
+  const sessionFile = sessionManager.getSessionFile();
+  if (!sessionFile || existsSync(sessionFile)) return;
+  if (!sessionManager.getLeafId()) {
+    sessionManager.appendCustomEntry("subagents:lifecycle-anchor");
+  }
+  const header = sessionManager.getHeader();
+  if (!header) throw new Error("Fresh agent session header is unavailable before prompt");
+  mkdirSync(dirname(sessionFile), { recursive: true });
+  const jsonl = [header, ...sessionManager.getEntries()].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
+  writeFileSync(sessionFile, jsonl, { flag: "wx" });
+  sessionManager.setSessionFile(sessionFile);
+}
+
 export async function runAgent(
   ctx: ExtensionContext,
   type: SubagentType,
@@ -522,6 +539,7 @@ export async function runAgent(
   // Resolve thinking level: explicit option > undefined (inherit)
   const thinkingLevel = options.thinkingLevel;
 
+
   const session = await buildAgentSessionRuntime({
     cwd: effectiveCwd,
     agentDir,
@@ -541,6 +559,9 @@ export async function runAgent(
     },
   });
 
+  // Pi 0.79 defers first disk flush until an assistant message. A durable pre-prompt
+  // barrier needs a valid child JSONL first, so flush current metadata and re-open it.
+  if (options.onBeforePrompt) persistFreshSessionBeforePrompt(session);
   options.onSessionCreated?.(session);
 
   // Track turns for graceful max_turns enforcement

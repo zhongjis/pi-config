@@ -1189,6 +1189,7 @@ describe("subagent session UI rebinding", () => {
       };
       manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
         options.onSessionCreated(session);
+        await options.onBeforePrompt(record);
         return record;
       });
 
@@ -1228,6 +1229,14 @@ describe("subagent session UI rebinding", () => {
     manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
       manager.listAgents.mockReturnValue([record]);
       options.onSessionCreated(session);
+      try {
+        await options.onBeforePrompt(record);
+      } catch (error) {
+        Object.assign(record, {
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       return record;
     });
 

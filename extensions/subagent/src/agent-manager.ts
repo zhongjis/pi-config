@@ -45,6 +45,8 @@ export interface AgentRestoreRequest {
   restoreSession: (target: ResumeTargetV1) => Promise<AgentSession>;
   /** Commits the next running generation after validation, before any resumed/provider effect. */
   beginResume?: (target: ResumeTargetV1, record: AgentRecord) => Promise<void>;
+  /** Authenticates and classifies child-session suffix before current-process repair. */
+  authenticatePendingTerminal?: (record: AgentRecord, candidate: AgentRunTerminalEvent) => Promise<void>;
   /** Commits or repairs one terminal candidate before terminal publication. */
   commitTerminal?: (record: AgentRecord, candidate: AgentRunTerminalEvent) => Promise<void>;
 }
@@ -207,7 +209,6 @@ export class AgentManager {
     const startedAt = Date.now();
     record.run?.publish({ kind: "started", startedAt });
     if (options.isBackground) this.runningBackground++;
-    this.onStart?.(record);
 
     this.executionInFlight.add(id);
     let durableRunBegun = options.onBeforePrompt === undefined;
@@ -247,6 +248,7 @@ export class AgentManager {
       onBeforePrompt: async () => {
         await options.onBeforePrompt?.(record);
         durableRunBegun = true;
+        this.onStart?.(record);
       },
       onSessionCreated: (session) => {
         record.session = session;
@@ -598,10 +600,11 @@ export class AgentManager {
     const run = record.run;
     const pendingTerminal = run?.pendingTerminal;
     if (pendingTerminal) {
-      if (!request.commitTerminal) {
-        throw new SessionRestoreError("persistence_failed", "Execution completed but checkpoint did not persist; terminal repair is unavailable");
+      if (!request.authenticatePendingTerminal || !request.commitTerminal) {
+        throw new SessionRestoreError("persistence_failed", "Execution completed but checkpoint did not persist; authenticated terminal repair is unavailable");
       }
       try {
+        await request.authenticatePendingTerminal(record, pendingTerminal);
         await request.commitTerminal(record, pendingTerminal);
         run.clearPendingTerminal(pendingTerminal);
       } catch (error) {
@@ -693,9 +696,9 @@ export class AgentManager {
       return true;
     }
 
-    if (record.status !== "running") return false;
+    if (record.status !== "running" || this.stopRequests.has(id)) return false;
     record.abortController?.abort();
-    this.stopRequests.set(id, "Agent was stopped while running.");
+    this.stopRequests.set(id, record.error ?? "Agent was stopped while running.");
     return true;
   }
 

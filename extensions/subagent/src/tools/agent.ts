@@ -24,7 +24,7 @@ import { getResolvedModelLabel, safeFormatTokens, textResult } from "../lifecycl
 import { buildAgentToolDescription } from "../agent-tool-description.js";
 import { getToolDescriptionMode, getScopeModels } from "../runtime-flags.js";
 import { readEnabledModels, resolveEnabledModels, decideModelScope, type ModelRegistryRef } from "../enabled-models.js";
-import { SessionRestoreError, stableSha256, validatePersistedChildSession } from "../session-restoration.js";
+import { inspectPersistedChildSessionRecovery, SessionRestoreError, stableSha256, validatePersistedChildSession } from "../session-restoration.js";
 import { SUBAGENTS_CREATED } from "../../../lib/subagent-channels.js";
 import type { SubagentRuntimeContext, SupervisedAgentActivity } from "../lifecycle/supervision.js";
 import { resumeTargetForValidation, type AgentLifecycleSnapshotInput } from "../lifecycle/agent-lifecycle-store.js";
@@ -136,6 +136,29 @@ function terminalStatus(candidate: AgentRunTerminalEvent): ResumeTargetState["st
   if (candidate.kind === "completed") return candidate.status;
   if (candidate.kind === "aborted") return candidate.status;
   return "error";
+}
+
+function authenticatePendingTerminalSuffix(
+  target: ResumeTargetV1,
+  runtime: ResumeRuntimeSnapshot,
+  candidate: AgentRunTerminalEvent,
+): void {
+  const { classification } = inspectPersistedChildSessionRecovery(target, runtime);
+  const recoverable = classification.outcome === "clean_final_assistant" || classification.outcome === "completed_tool_chain";
+  const reconstructedResult = classification.reconstructedResult?.trim();
+  if (!recoverable || !reconstructedResult) {
+    throw new SessionRestoreError(
+      classification.failureReason ?? "unsafe_interrupted_operation",
+      `Pending terminal suffix is unsafe for repair: ${classification.outcome}`,
+    );
+  }
+  const candidateResult = candidate.result?.trim();
+  if (candidateResult && candidateResult !== reconstructedResult) {
+    throw new SessionRestoreError(
+      "session_corrupt_or_unsupported",
+      "Pending terminal result does not match authenticated child-session suffix",
+    );
+  }
 }
 
 /**
@@ -612,6 +635,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
         };
         let persistenceRuntime = durable?.runtime;
         let beginResume: ((target: ResumeTargetV1, record: AgentRecord) => Promise<void>) | undefined;
+        let authenticatePendingTerminal: ((record: AgentRecord, candidate: AgentRunTerminalEvent) => Promise<void>) | undefined;
         let commitTerminal: ((record: AgentRecord, candidate: AgentRunTerminalEvent) => Promise<void>) | undefined;
         if (durable) {
           try {
@@ -644,6 +668,13 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
             });
             record.lifecycleLease = begun.lease;
           };
+          authenticatePendingTerminal = async (record, candidate) => {
+            const current = persistentRegistry.getResumeTarget(record.id);
+            if (!current || current.state.status !== "running") {
+              throw new SessionRestoreError("persistence_failed", "Durable running target is unavailable for terminal repair");
+            }
+            authenticatePendingTerminalSuffix(current, runtimeForPersistence, candidate);
+          };
           commitTerminal = async (record, candidate) => {
             if (!record.lifecycleLease) throw new Error("Durable lifecycle lease is unavailable");
             const input = captureResumeTarget(record, runtimeForPersistence, ctx.cwd, terminalStatus(candidate));
@@ -657,11 +688,12 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           signal: parentSignal,
           restoreSession,
           beginResume,
+          authenticatePendingTerminal,
           commitTerminal,
         });
         if (outcome.status === "failed") {
           return textResult(
-            outcome.error || `Failed to resume agent "${params.resume}": ${outcome.reason}.`,
+            `Failed to resume agent "${params.resume}": ${outcome.reason}. ${outcome.error}`.trim(),
             buildInvocationFailureDetails(targetType, params.description, outcome.reason, params.resume),
           );
         }
@@ -986,6 +1018,16 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
 
 
       const sessionLog = record.sessionFile ? `\nSession log: ${record.sessionFile}` : "";
+
+      if (record.status === "error" && !record.lifecycleLease) {
+        return textResult(
+          `Agent failed to persist resume target: ${record.error ?? "unknown persistence error"}`,
+          {
+            ...buildInvocationFailureDetails(subagentType, params.description, "persistence_failed", record.id),
+            error: record.error,
+          },
+        );
+      }
 
       try {
         await consumeResult(record);

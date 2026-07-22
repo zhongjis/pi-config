@@ -674,15 +674,16 @@ describe("AgentManager durable resume", () => {
       tornDown.resolve({ responseText: "", session: { dispose: vi.fn() }, aborted: false, steered: false });
     } finally { await manager.dispose(); }
   });
-  it("awaits the fresh running baseline before provider execution", async () => {
+  it("publishes started only after the fresh running baseline succeeds", async () => {
     const baseline = deferred<void>();
     const order: string[] = [];
+    const onStart = vi.fn(() => { order.push("started"); });
     runAgentMock.mockImplementation(async (_ctx, _type, _prompt, options) => {
       await options.onBeforePrompt?.();
       order.push("provider");
       return { responseText: "fresh", session: { dispose: vi.fn() }, aborted: false, steered: false };
     });
-    const manager = new AgentManager();
+    const manager = new AgentManager(undefined, undefined, onStart);
     try {
       const id = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", {
         description: "fresh barrier",
@@ -696,11 +697,13 @@ describe("AgentManager durable resume", () => {
       });
       const record = manager.getRecord(id)!;
       await vi.waitFor(() => expect(order).toEqual(["baseline:running"]));
+      expect(onStart).not.toHaveBeenCalled();
       expect(runAgentMock).toHaveBeenCalledOnce();
       expect(record.status).toBe("running");
       baseline.resolve();
       await record.promise;
-      expect(order).toEqual(["baseline:running", "provider", "terminal:completed"]);
+      expect(order).toEqual(["baseline:running", "started", "provider", "terminal:completed"]);
+      expect(onStart).toHaveBeenCalledOnce();
       expect(record.status).toBe("completed");
     } finally { await manager.dispose(); }
   });
@@ -714,7 +717,8 @@ describe("AgentManager durable resume", () => {
       providerCalls++;
       return { responseText: "must not run", session, aborted: false, steered: false };
     });
-    const manager = new AgentManager();
+    const onStart = vi.fn();
+    const manager = new AgentManager(undefined, undefined, onStart);
     try {
       const id = manager.spawn({} as never, { cwd: process.cwd() } as never, "general-purpose", "p", {
         description: "fresh begin failure",
@@ -725,6 +729,7 @@ describe("AgentManager durable resume", () => {
       await record.promise;
       expect(providerCalls).toBe(0);
       expect(record).toMatchObject({ status: "error", session: undefined });
+      expect(onStart).not.toHaveBeenCalled();
       await expect(manager.resume(id, "again", {
         parentSessionId: "", expectedType: "general-purpose", restoreSession: vi.fn(),
       })).resolves.toMatchObject({ status: "failed", reason: "target_unknown" });
@@ -830,6 +835,9 @@ describe("AgentManager durable resume", () => {
       .mockImplementationOnce(async () => { order.push("provider:one"); return { ok: true, text: "fresh output" }; })
       .mockImplementationOnce(async () => { order.push("provider:two"); return { ok: true, text: "after repair" }; });
     const beginResume = vi.fn(async () => { order.push("begin"); });
+    const authenticatePendingTerminal = vi.fn(async (_record: AgentRecord, candidate: AgentRunTerminalEvent) => {
+      order.push(`authenticate:${candidate.kind}`);
+    });
     const commitTerminal = vi.fn(async (_record: AgentRecord, candidate: AgentRunTerminalEvent) => {
       terminalAttempts++;
       order.push(`${terminalAttempts === 1 ? "terminal-fail" : terminalAttempts === 2 ? "repair" : "terminal-ok"}:${candidate.kind}`);
@@ -850,15 +858,46 @@ describe("AgentManager durable resume", () => {
 
       const second = await manager.resume(target.id, "again", {
         parentSessionId: target.parentSessionId, expectedType: target.type, target,
-        restoreSession: vi.fn(), beginResume, commitTerminal,
+        restoreSession: vi.fn(), beginResume, authenticatePendingTerminal, commitTerminal,
       });
       expect(second).toEqual({ status: "resumed_live", id: target.id });
       expect(resumeAgentMock).toHaveBeenCalledTimes(2);
+      expect(authenticatePendingTerminal).toHaveBeenCalledOnce();
       expect(order).toEqual([
         "begin", "provider:one", "terminal-fail:completed",
-        "repair:completed", "begin", "provider:two", "terminal-ok:completed",
+        "authenticate:completed", "repair:completed", "begin", "provider:two", "terminal-ok:completed",
       ]);
       expect(record).toMatchObject({ status: "completed", result: "after repair" });
+    } finally { await manager.dispose(); }
+  });
+
+  it("rejects pending-terminal repair before commit and provider re-entry when suffix authentication fails", async () => {
+    const manager = new AgentManager();
+    const target = durableTarget();
+    const beginResume = vi.fn();
+    const commitTerminal = vi.fn().mockRejectedValueOnce(new Error("terminal append failed"));
+    const authenticatePendingTerminal = vi.fn().mockRejectedValue(new Error("tampered suffix"));
+    resumeAgentMock.mockResolvedValue({ ok: true, text: "fresh output" });
+    try {
+      const first = await manager.resume(target.id, "continue", {
+        parentSessionId: target.parentSessionId, expectedType: target.type, target,
+        restoreSession: vi.fn().mockResolvedValue({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }),
+        beginResume, commitTerminal,
+      });
+      expect(first).toMatchObject({ status: "failed", reason: "persistence_failed" });
+
+      const second = await manager.resume(target.id, "again", {
+        parentSessionId: target.parentSessionId, expectedType: target.type, target,
+        restoreSession: vi.fn(), beginResume, authenticatePendingTerminal, commitTerminal,
+      });
+
+      expect(second).toMatchObject({
+        status: "failed", reason: "persistence_failed", error: expect.stringContaining("tampered suffix"),
+      });
+      expect(authenticatePendingTerminal).toHaveBeenCalledOnce();
+      expect(commitTerminal).toHaveBeenCalledOnce();
+      expect(beginResume).toHaveBeenCalledOnce();
+      expect(resumeAgentMock).toHaveBeenCalledOnce();
     } finally { await manager.dispose(); }
   });
 

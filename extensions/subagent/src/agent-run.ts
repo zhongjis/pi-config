@@ -141,10 +141,9 @@ export interface AgentRunResult {
 export type AgentRunListener = (event: AgentRunEvent, run: AgentRun) => void;
 
 /**
- * External-contract effect descriptors. The mapping (which effect for which internal
- * event) is pure and unit-tested here; the side-effecting emit + payload construction
- * live in the future `ExternalContractAdapter` (Phase 2), which must be the ONLY
- * subscriber that touches `pi.events` / `appendEntry` for `subagents:*`.
+ * External-contract effect descriptors. Mapping stays pure and unit-tested here.
+ * `external-contract-adapter.ts` applies terminal compatibility plus completed/failed
+ * effects; created, started, and steered emissions retain their existing runtime owners.
  */
 export type ExternalEventName =
   | typeof SUBAGENTS_CREATED
