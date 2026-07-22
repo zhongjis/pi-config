@@ -19,7 +19,7 @@ Vendored from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents
 | Queueing / active-state bookkeeping | `src/agent-manager.ts` | Running vs queued agents |
 | Cross-extension RPC | `src/cross-extension-rpc.ts` | `ping`, `spawn`, `stop` handlers |
 | Single source of truth (per-run state) | `src/agent-run.ts` | `AgentRun` event-stream reducer + `waitForTerminal` + supervision snapshots + pure `toExternalEffects`; populated by `agent-manager`, read everywhere (C/D revamp) |
-| External `subagents:*` emission boundary | `src/external-contract-adapter.ts` | Sole emitter of the `subagents:*` events + `subagents:record` snapshot, via `toExternalEffects`; `buildSubagentRecordEntry` owns the durable field set |
+| Terminal compatibility + advisory boundary | `src/external-contract-adapter.ts` | Owns terminal `subagents:record` compatibility and background `subagents:completed`/`subagents:failed` advisory effects; hosts the compacted-event helper; does not own created, started, steered, settings, or ready events |
 | Agent registry / custom definitions | `src/agent-types.ts`, `src/custom-agents.ts`, `src/default-agents.ts` | Unified registry with embedded defaults |
 | Widget / viewer | `src/ui/` | Persistent widget + conversation viewer |
 | Isolation / skill loading | `src/fs-safety.ts`, `src/skill-loader.ts` | Side systems with user-visible effects |
