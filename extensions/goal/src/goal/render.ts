@@ -1,23 +1,25 @@
 /**
  * Local addition (not upstream): compact TUI presentation for the goal tools.
  *
- * Collapsed view shows scan-friendly `keyword: content` lines; expanded view
- * returns the exact raw `result.content`. Model-visible `result.content` is
- * never mutated here — see the `pi-tool-output-presentation` skill and this
- * extension's AGENTS.md `## Local Tweaks`.
+ * Collapsed view shows owner-parsed workflow state; expanded view returns the
+ * exact raw `result.content`. Model-visible `result.content` is never mutated.
  */
-import { keyHint } from "@earendil-works/pi-coding-agent";
-// @ts-expect-error repo test/runtime alias resolves @earendil-works/pi-tui; LSP may miss it.
-import { Text } from "@earendil-works/pi-tui";
+import {
+	extractToolText,
+	firstMeaningfulLine,
+	renderToolCall,
+	renderToolExpanded,
+	renderToolSummary,
+} from "../../../lib/tool-output.js";
 import { formatGoalElapsedSeconds, formatTokensCompact, goalStatusLabel } from "./format.js";
 import { GOAL_STATUS_VALUES, type GoalStatus, isRecord } from "./types.js";
 
 export type GoalRenderTheme = {
-	fg?: (color: string, text: string) => string;
-	bold?: (text: string) => string;
+	fg: (color: string, text: string) => string;
+	bold: (text: string) => string;
 };
 export type GoalRenderResult = {
-	content?: unknown;
+	content?: readonly unknown[];
 	details?: unknown;
 	isError?: boolean;
 };
@@ -26,6 +28,7 @@ export type GoalRenderOptions = {
 	isPartial?: boolean;
 };
 export type GoalRenderContext = {
+	args?: Record<string, unknown>;
 	isError?: boolean;
 };
 
@@ -33,19 +36,6 @@ export type GoalToolName = "create_goal" | "get_goal" | "update_goal";
 
 const MAX_OBJECTIVE_LENGTH = 72;
 const MAX_ERROR_LENGTH = 96;
-
-function styleTitle(theme: GoalRenderTheme, text: string): string {
-	const bold = theme.bold ? theme.bold(text) : text;
-	return theme.fg ? theme.fg("toolTitle", bold) : bold;
-}
-
-function styleMuted(theme: GoalRenderTheme, text: string): string {
-	return theme.fg ? theme.fg("muted", text) : text;
-}
-
-function prefixTreeLines(lines: string[]): string[] {
-	return lines.map((line, index) => `${index === lines.length - 1 ? "└─" : "├─"} ${line}`);
-}
 
 function compactInline(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
@@ -58,45 +48,37 @@ function truncateEnd(value: string, maxLength: number): string {
 	return `${chars.slice(0, maxLength - 1).join("")}…`;
 }
 
-function firstMeaningfulLine(text: string): string {
-	return (
-		text
-			.split(/\r?\n/)
-			.map((line) => line.trim())
-			.find((line) => line.length > 0) ?? ""
-	);
-}
-
-function getResultText(result: GoalRenderResult | undefined): string {
-	const content = result?.content;
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.filter(
-			(part): part is { type: "text"; text: string } =>
-				isRecord(part) && part["type"] === "text" && typeof part["text"] === "string",
-		)
-		.map((part) => part.text)
-		.join("\n");
-}
-
 function isGoalStatus(value: unknown): value is GoalStatus {
 	return typeof value === "string" && (GOAL_STATUS_VALUES as readonly string[]).includes(value);
+}
+
+function positiveFiniteNumber(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 export function renderGoalCall(
 	toolName: GoalToolName,
 	rawArgs: Record<string, unknown> | undefined,
 	theme: GoalRenderTheme,
-): Text {
+) {
 	const args = isRecord(rawArgs) ? rawArgs : {};
-	let suffix = "";
-	if (toolName === "create_goal" && typeof args["objective"] === "string") {
-		suffix = ` · ${styleMuted(theme, `"${truncateEnd(compactInline(args["objective"]), MAX_OBJECTIVE_LENGTH)}"`)}`;
-	} else if (toolName === "update_goal" && typeof args["status"] === "string") {
-		suffix = ` · ${styleMuted(theme, args["status"])}`;
+	let target: string | undefined;
+	if (toolName === "create_goal" && typeof args.objective === "string") {
+		target = `"${truncateEnd(compactInline(args.objective), MAX_OBJECTIVE_LENGTH)}"`;
+	} else if (toolName === "update_goal" && typeof args.status === "string") {
+		target = args.status;
 	}
-	return new Text(`▸ ${styleTitle(theme, toolName)}${suffix}`, 0, 0);
+	return renderToolCall(toolName, target, theme);
+}
+
+function parseGoal(text: string): { structured: boolean; goal: unknown } {
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (!isRecord(parsed) || !("goal" in parsed)) return { structured: false, goal: null };
+		return { structured: true, goal: parsed.goal };
+	} catch {
+		return { structured: false, goal: null };
+	}
 }
 
 function summarizeGoalResult(
@@ -105,39 +87,52 @@ function summarizeGoalResult(
 	options: GoalRenderOptions,
 	context: GoalRenderContext,
 ): string[] {
+	if (options.isPartial) return ["status: running"];
 	if (Boolean(result?.isError) || Boolean(context.isError)) {
 		return [`error: ${truncateEnd(firstMeaningfulLine(text) || "unknown error", MAX_ERROR_LENGTH)}`];
 	}
-	if (options.isPartial) return ["status: running"];
 
-	let goal: unknown;
-	try {
-		const parsed: unknown = JSON.parse(text);
-		goal = isRecord(parsed) ? parsed["goal"] : null;
-	} catch {
+	const parsed = parseGoal(text);
+	if (!parsed.structured) {
 		return [`goal: ${truncateEnd(firstMeaningfulLine(text) || "no output", MAX_ERROR_LENGTH)}`];
 	}
-	if (!isRecord(goal)) return ["goal: none set"];
+	if (!isRecord(parsed.goal)) return ["goal: none set"];
 
 	const objective =
-		typeof goal["objective"] === "string" ? truncateEnd(compactInline(goal["objective"]), MAX_OBJECTIVE_LENGTH) : "(unknown)";
-	const statusLabel = isGoalStatus(goal["status"]) ? goalStatusLabel(goal["status"]) : String(goal["status"] ?? "unknown");
+		typeof parsed.goal.objective === "string"
+			? truncateEnd(compactInline(parsed.goal.objective), MAX_OBJECTIVE_LENGTH)
+			: "(unknown)";
+	const statusLabel = isGoalStatus(parsed.goal.status)
+		? goalStatusLabel(parsed.goal.status)
+		: String(parsed.goal.status ?? "unknown");
 	const statusParts = [statusLabel];
 
-	const timeUsed = goal["timeUsedSeconds"];
-	if (typeof timeUsed === "number" && timeUsed > 0) statusParts.push(formatGoalElapsedSeconds(timeUsed));
+	const elapsed = positiveFiniteNumber(parsed.goal.timeUsedSeconds);
+	if (elapsed !== undefined) statusParts.push(`elapsed ${formatGoalElapsedSeconds(elapsed)}`);
 
-	const tokensUsed = typeof goal["tokensUsed"] === "number" ? goal["tokensUsed"] : 0;
-	const tokenBudget = goal["tokenBudget"];
-	if (tokensUsed > 0 || typeof tokenBudget === "number") {
-		const tokenText =
-			typeof tokenBudget === "number"
-				? `${formatTokensCompact(tokensUsed)}/${formatTokensCompact(tokenBudget)} tokens`
-				: `${formatTokensCompact(tokensUsed)} tokens`;
-		statusParts.push(tokenText);
+	const tokensUsed = positiveFiniteNumber(parsed.goal.tokensUsed);
+	const tokenBudget = positiveFiniteNumber(parsed.goal.tokenBudget);
+	if (tokenBudget !== undefined) {
+		statusParts.push(`budget ${formatTokensCompact(tokensUsed ?? 0)}/${formatTokensCompact(tokenBudget)} tokens`);
+	} else if (tokensUsed !== undefined) {
+		statusParts.push(`tokens ${formatTokensCompact(tokensUsed)}`);
 	}
 
-	return [`goal: ${objective}`, `status: ${statusParts.join(" · ")}`];
+	return [`objective: ${objective}`, `status: ${statusParts.join(" · ")}`];
+}
+
+function hasUsefulExpansion(
+	result: GoalRenderResult | undefined,
+	text: string,
+	options: GoalRenderOptions,
+	context: GoalRenderContext,
+): boolean {
+	if (options.isPartial || !text.trim()) return false;
+	if (Boolean(result?.isError) || Boolean(context.isError)) {
+		return text.split(/\r\n?|\n/).filter(line => line.trim()).length > 1 || Array.from(text).length > MAX_ERROR_LENGTH;
+	}
+	if (parseGoal(text).structured) return true;
+	return text.split(/\r\n?|\n/).filter(line => line.trim()).length > 1 || Array.from(text).length > MAX_ERROR_LENGTH;
 }
 
 export function renderGoalResult(
@@ -145,18 +140,14 @@ export function renderGoalResult(
 	options: GoalRenderOptions | undefined,
 	theme: GoalRenderTheme,
 	context: GoalRenderContext | undefined,
-): Text {
-	const text = getResultText(result);
-	if (options?.expanded) return new Text(text, 0, 0);
+) {
+	const text = extractToolText(result);
+	if (options?.expanded) return renderToolExpanded(text);
 
-	const lines = summarizeGoalResult(result, text, options ?? {}, context ?? {});
-	lines.push(keyHint("app.tools.expand", "to expand full result"));
-
-	return new Text(
-		prefixTreeLines(lines)
-			.map((line) => styleMuted(theme, line))
-			.join("\n"),
-		0,
-		0,
-	);
+	const resolvedOptions = options ?? {};
+	const resolvedContext = context ?? {};
+	const lines = summarizeGoalResult(result, text, resolvedOptions, resolvedContext);
+	return renderToolSummary(lines, theme, {
+		expandable: hasUsefulExpansion(result, text, resolvedOptions, resolvedContext),
+	});
 }

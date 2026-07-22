@@ -2,9 +2,9 @@
  * `get_subagent_result` tool — check status / retrieve results from a background agent.
  */
 
-import { defineTool, keyHint, type AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { defineTool, type AgentToolResult, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { renderToolCall, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
 import { getAgentConversation } from "../agent-runner.js";
 import { getRecoveredResultText } from "../result-recovery.js";
 import { describeActivity, formatDuration, getDisplayName } from "../ui/agent-widget.js";
@@ -100,28 +100,25 @@ function getStatusSummary(status: string | undefined): string | undefined {
   return status;
 }
 
-function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: string) => string }): Text {
-  const allLines = [...lines, keyHint("app.tools.expand", "to expand full result")];
-  const rendered = allLines
-    .map((line, index) => `${index === allLines.length - 1 ? "└─" : "├─"} ${line}`)
-    .map(line => theme.fg("muted", line))
-    .join("\n");
-  return new Text(rendered, 0, 0);
+type ToolTheme = Pick<ExtensionContext["ui"]["theme"], "bold" | "fg">;
+
+function renderSummaryLines(lines: string[], theme: ToolTheme) {
+  return renderToolSummary(lines, theme, { expandable: true });
 }
 
-export function renderGetSubagentResultCall(args: GetSubagentResultArgs, theme: { fg: (color: any, text: string) => string; bold: (text: string) => string }): Text {
+export function renderGetSubagentResultCall(args: GetSubagentResultArgs, theme: ToolTheme) {
   const flags = [args.wait ? "wait" : undefined, args.verbose ? "verbose" : undefined].filter(Boolean);
-  const suffix = [args.agent_id, ...flags].filter(Boolean).join(" · ");
-  return new Text(`▸ ${theme.fg("toolTitle", theme.bold("get_subagent_result"))}${suffix ? ` · ${theme.fg("muted", suffix)}` : ""}`, 0, 0);
+  const target = [args.agent_id, ...flags].filter(Boolean).join(" · ");
+  return renderToolCall("get_subagent_result", target, theme);
 }
 
 export function renderGetSubagentResult(
   result: TextToolResult,
   options: { expanded?: boolean; isPartial?: boolean },
-  theme: { fg: (color: any, text: string) => string },
-): Text {
+  theme: ToolTheme,
+) {
   const rawText = getResultText(result);
-  if (options.expanded) return new Text(rawText, 0, 0);
+  if (options.expanded) return renderToolExpanded(rawText);
   if (options.isPartial) return renderSummaryLines(["status: checking"], theme);
 
   const summary = parseResultSummary(rawText);

@@ -52,7 +52,7 @@ pnpm run build
 | `src/index.ts`, `src/bridge/rpc-handlers.ts` | Planning provenance plus `tasks:rpc:clear-planning-tasks`. | Fu Xi plan handoff cleanup. |
 | `src/lifecycle/store-glue.ts` | Transient context-hook reminders with local cooldown/stagnation cap. | Avoid stale persisted reminders while preserving cadence. |
 | `src/task-runner.ts`, `src/tools/output.ts`, `src/tools/stop.ts` | Process-only `TaskRunner` seam. | Unit-testable output/stop dispatch. |
-| `src/tools/rendering.ts`, `src/tools/list.ts`, `src/ui/task-widget.ts` | Compact grouped tool/widget output. | Better TUI scanability without changing model-visible content. |
+| `src/tools/rendering.ts`, `src/tools/list.ts`, `src/ui/task-widget.ts` | Shared width-safe tool reports with task-local action/list/get/process parsing plus compact grouped list/widget output. | Scan-friendly TUI while preserving complete model-visible and expanded content. |
 | `package.json`, `README.md` | Repo-local package/test wiring and concise docs. | Root dependency/test model; no npm install guidance. |
 | `package.json` | `peerDependencies` for pi packages (+typebox) use pnpm `catalog:` | Versions centralized in root `pnpm-workspace.yaml` `catalog:`. Re-apply after upstream sync (upstream ships literal ranges). |
 

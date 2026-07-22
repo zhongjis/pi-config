@@ -6,17 +6,22 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   getAgentDir,
-  keyHint,
   SessionManager,
   SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
+  type Theme,
 } from "@earendil-works/pi-coding-agent";
-// @ts-expect-error LSP may miss the repo test/runtime alias for pi-tui; runtime/test alias resolves it.
-import { Text } from "@earendil-works/pi-tui";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import { parseModelChain, resolveFirstAvailable } from "../lib/model.js";
+import {
+  extractToolText,
+  firstMeaningfulLine,
+  renderToolCall,
+  renderToolExpanded,
+  renderToolSummary,
+} from "../lib/tool-output.js";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const SUPPORTED_MIME_TYPES = new Set([
@@ -325,10 +330,7 @@ async function runVisionInspection(
   }
 }
 
-type LookAtRenderTheme = {
-  fg?: (color: string, text: string) => string;
-  bold?: (text: string) => string;
-};
+type LookAtRenderTheme = Pick<Theme, "fg" | "bold">;
 
 type LookAtRenderResult = {
   content?: unknown;
@@ -350,18 +352,6 @@ const MAX_CALL_SOURCE_LENGTH = 30;
 const MAX_CALL_GOAL_LENGTH = 24;
 const MAX_SUMMARY_LENGTH = 76;
 
-function styleToolTitle(theme: LookAtRenderTheme, text: string): string {
-  const bold = theme.bold ? theme.bold(text) : text;
-  return theme.fg ? theme.fg("toolTitle", bold) : bold;
-}
-
-function styleMuted(theme: LookAtRenderTheme, text: string): string {
-  return theme.fg ? theme.fg("muted", text) : text;
-}
-
-function prefixTreeLines(lines: string[]): string[] {
-  return lines.map((line, index) => `${index === lines.length - 1 ? "└─" : "├─"} ${line}`);
-}
 
 function compactInline(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -396,38 +386,19 @@ function renderCallSource(args: Partial<LookAtParams>): string {
 function renderLookAtCall(
   rawArgs: Partial<LookAtParams> | undefined,
   theme: LookAtRenderTheme,
-): Text {
+) {
   const args = rawArgs && typeof rawArgs === "object" ? rawArgs : {};
   const source = renderCallSource(args);
   const goal =
     typeof args.goal === "string"
       ? truncateEnd(compactInline(args.goal), MAX_CALL_GOAL_LENGTH)
-      : "";
-  return new Text(
-    `▸ ${styleToolTitle(theme, "look_at")} · ${styleMuted(theme, `${source} · "${goal}"`)}`,
-    0,
-    0,
-  );
+      : "unspecified";
+  return renderToolCall("look_at", `source: ${source} · goal: "${goal}" · project: active`, theme);
 }
 
 function getResultText(result: LookAtRenderResult | undefined): string {
-  const content = result?.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter(
-      (part): part is { type: "text"; text: string } =>
-        isRecord(part) && part.type === "text" && typeof part.text === "string",
-    )
-    .map((part) => part.text)
-    .join("\n");
-}
-
-function firstMeaningfulLine(text: string): string | undefined {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
+  if (typeof result?.content === "string") return result.content;
+  return Array.isArray(result?.content) ? extractToolText({ content: result.content }) : "";
 }
 
 function formatBytes(bytes: unknown): string | undefined {
@@ -455,7 +426,7 @@ function summarizeLookAtResult(
   text: string,
   details: Record<string, unknown>,
 ): string[] {
-  const findings = firstMeaningfulLine(text) ?? "no text returned";
+  const findings = firstMeaningfulLine(text) || "no text returned";
   const lines = [`findings: ${truncateEnd(findings, MAX_SUMMARY_LENGTH)}`];
   const image = summarizeImage(details);
   if (image) lines.push(image);
@@ -467,7 +438,7 @@ function summarizeLookAtResult(
 }
 
 function compactErrorSummary(text: string): string {
-  const firstLine = firstMeaningfulLine(text) ?? "unknown error";
+  const firstLine = firstMeaningfulLine(text) || "unknown error";
   return `error: ${truncateEnd(firstLine, MAX_SUMMARY_LENGTH)}`;
 }
 
@@ -476,26 +447,21 @@ function renderLookAtResult(
   options: LookAtRenderOptions = {},
   theme: LookAtRenderTheme,
   context: LookAtRenderContext = {},
-): Text {
+) {
   const text = getResultText(result);
-  if (options.expanded) return new Text(text, 0, 0);
+  if (options.expanded) return renderToolExpanded(text);
 
   const details = isRecord(result?.details) ? result.details : {};
   const isError = Boolean(result?.isError || context.isError);
-  const lines = isError
-    ? [compactErrorSummary(text)]
-    : options.isPartial
-      ? ["status: running"]
-      : summarizeLookAtResult(text, details);
-  lines.push(keyHint("app.tools.expand", "to expand full result"));
-
-  return new Text(
-    prefixTreeLines(lines)
-      .map((line) => styleMuted(theme, line))
-      .join("\n"),
-    0,
-    0,
-  );
+  if (isError) {
+    return renderToolSummary([compactErrorSummary(text)], theme, { expandable: text.length > 0 });
+  }
+  if (options.isPartial) {
+    return renderToolSummary(["status: running · image analysis"], theme, { expandable: text.length > 0 });
+  }
+  return renderToolSummary(["status: complete", ...summarizeLookAtResult(text, details)], theme, {
+    expandable: text.length > 0,
+  });
 }
 
 export default function multimodalLook(pi: ExtensionAPI): void {

@@ -24,6 +24,7 @@ import { isTui } from "../lib/mode.js";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { Type } from "typebox";
+import { extractToolText, renderToolCall, renderToolExpanded, renderToolSummary } from "../lib/tool-output.js";
 
 interface CommandArgumentCompletion {
   value: string;
@@ -510,6 +511,41 @@ export default function (pi: ExtensionAPI) {
       "Returns any comments the user leaves during the review so you can address them.",
     ].join("\n"),
     parameters: WalkthroughParams,
+    renderCall(args, theme, _context) {
+      const sidecarPath = String((args as { sidecarPath?: unknown }).sidecarPath ?? "");
+      const sha = String((args as { sha?: unknown }).sha ?? "");
+      const shortSha = sha.length > 12 ? sha.slice(0, 12) : sha;
+      const target = [sidecarPath ? `sidecar: ${sidecarPath}` : "sidecar: missing", shortSha ? `sha: ${shortSha}` : "sha: missing"].join(" · ");
+      return renderToolCall("open_pr_walkthrough", target, theme);
+    },
+    renderResult(result, options, theme, _context) {
+      const raw = extractToolText(result);
+      if (options.expanded) return renderToolExpanded(raw);
+
+      if (raw.startsWith("Sidecar not found")) {
+        return renderToolSummary(["status: blocked · sidecar missing", raw], theme, { expandable: true, expandLabel: "full result" });
+      }
+      if (raw === "Missing sha to diff against.") {
+        return renderToolSummary(["status: blocked · sha missing"], theme, { expandable: true, expandLabel: "full result" });
+      }
+      if (raw.startsWith("Failed to launch hunk:")) {
+        return renderToolSummary(["status: failed · hunk launch", raw], theme, { expandable: true, expandLabel: "diagnostics" });
+      }
+      if (raw === "Walkthrough closed — the user left no comments.") {
+        return renderToolSummary(["status: closed · no user comments", "comments: 0 local"], theme, { expandable: true, expandLabel: "full result" });
+      }
+      if (raw.startsWith("Address the following code comments in the code:")) {
+        const comments = raw.split(/\r\n?|\n/).filter((line) => line.startsWith("- ")).length;
+        return renderToolSummary([`status: comments captured · ${comments} local`, "next: address user comments"], theme, {
+          expandable: true,
+          expandLabel: "all comments",
+        });
+      }
+      return renderToolSummary([raw ? `result: ${raw}` : "result: no walkthrough output"], theme, {
+        expandable: raw.length > 0,
+        expandLabel: "full result",
+      });
+    },
     async execute(_id, params, _signal, _onUpdate, ctx) {
       if (!isTui(ctx)) {
         return {

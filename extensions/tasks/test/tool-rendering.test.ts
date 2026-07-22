@@ -1,8 +1,9 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTaskRuntime } from "../src/lifecycle/store-glue.js";
 import { registerTaskTools } from "../src/tools/index.js";
 
-type RenderableText = { render?: () => string[]; text?: string };
+type RenderableText = { render?: (width: number) => string[]; text?: string };
 type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
 type ToolResult = { content?: Array<{ type: "text"; text: string }>; details?: Record<string, unknown>; isError?: boolean };
 type ToolDefinition = {
@@ -14,7 +15,7 @@ type ToolDefinition = {
     theme: PlainTheme,
     context?: { args?: Record<string, unknown>; isError?: boolean },
   ) => RenderableText;
-  execute?: (...args: any[]) => Promise<ToolResult>;
+  execute?: (...args: unknown[]) => Promise<ToolResult>;
 };
 
 const plainTheme = {
@@ -22,9 +23,23 @@ const plainTheme = {
   bold: vi.fn((text: string) => text),
 };
 
-function renderText(component: RenderableText): string {
-  if (typeof component.render === "function") return component.render().join("\n");
+function renderText(component: RenderableText, width = 120): string {
+  if (typeof component.render === "function") return component.render(width).join("\n");
   return component.text ?? "";
+}
+
+function expectWidthSafe(component: RenderableText): void {
+  if (typeof component.render !== "function") return;
+  for (const width of [20, 40, 80, 120]) {
+    for (const line of component.render(width)) {
+      expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+    }
+  }
+}
+
+function expectCollapsedRowBudget(component: RenderableText): void {
+  const rows = (component.text ?? "").split(/\r\n?|\n/).length;
+  expect(rows).toBeLessThanOrEqual(3);
 }
 
 function textResult(text: string): ToolResult {
@@ -49,15 +64,27 @@ function registerTools(): Map<string, ToolDefinition> {
   return tools;
 }
 
-function collapsed(tool: ToolDefinition, raw: string, args: Record<string, unknown> = {}, extra: { isError?: boolean; isPartial?: boolean } = {}): string {
-  return renderText(
-    tool.renderResult!(
-      { ...textResult(raw), isError: extra.isError },
-      { expanded: false, isPartial: extra.isPartial },
-      plainTheme,
-      { args, isError: extra.isError },
-    ),
+function collapsedComponent(
+  tool: ToolDefinition,
+  raw: string,
+  args: Record<string, unknown> = {},
+  extra: { isError?: boolean; isPartial?: boolean } = {},
+): RenderableText {
+  return tool.renderResult!(
+    { ...textResult(raw), isError: extra.isError },
+    { expanded: false, isPartial: extra.isPartial },
+    plainTheme,
+    { args, isError: extra.isError },
   );
+}
+
+function collapsed(
+  tool: ToolDefinition,
+  raw: string,
+  args: Record<string, unknown> = {},
+  extra: { isError?: boolean; isPartial?: boolean } = {},
+): string {
+  return renderText(collapsedComponent(tool, raw, args, extra));
 }
 
 beforeEach(() => {
@@ -70,16 +97,32 @@ afterEach(() => {
 });
 
 describe("Task tool rendering", () => {
-  it("renders compact calls with full Task* names", () => {
+  it("registers exactly six Task tools with call and result renderers", () => {
+    const tools = registerTools();
+    expect([...tools.keys()].sort()).toEqual([
+      "TaskCreate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "TaskStop",
+      "TaskUpdate",
+    ]);
+    for (const tool of tools.values()) {
+      expect(tool.renderCall).toBeTypeOf("function");
+      expect(tool.renderResult).toBeTypeOf("function");
+    }
+  });
+
+  it("renders compact calls with full Task names", () => {
     const tools = registerTools();
 
-    expect(renderText(tools.get("TaskCreate")!.renderCall!({ subject: "Polish renderer" }, plainTheme)))
+    expect(tools.get("TaskCreate")!.renderCall!({ subject: "Polish renderer" }, plainTheme).text)
       .toBe('▸ TaskCreate · "Polish renderer"');
-    expect(renderText(tools.get("TaskUpdate")!.renderCall!({ taskId: "7", status: "in_progress", owner: "worker" }, plainTheme)))
+    expect(tools.get("TaskUpdate")!.renderCall!({ taskId: "7", status: "in_progress", owner: "worker" }, plainTheme).text)
       .toBe("▸ TaskUpdate · #7 · status, owner");
   });
 
-  it("keeps expanded output exact and leaves model-visible content unchanged", async () => {
+  it("keeps expanded output exact and lifecycle strings byte-exact", async () => {
     const tools = registerTools();
     const create = tools.get("TaskCreate")!;
     const list = tools.get("TaskList")!;
@@ -87,10 +130,9 @@ describe("Task tool rendering", () => {
     await create.execute!("call-2", { subject: "List raw", description: "Desc" }, undefined, undefined, undefined);
     const listResult = await list.execute!("call-3", {}, undefined, undefined, undefined);
     const raw = listResult.content![0].text;
+    const expanded = list.renderResult!(listResult, { expanded: true }, plainTheme, {});
 
-    const expanded = renderText(list.renderResult!(listResult, { expanded: true }, plainTheme, {}));
-
-    expect(expanded).toBe(raw);
+    expect(expanded.text).toBe(raw);
     expect(createResult.content![0].text).toBe("Task #1 created successfully: Keep raw");
     expect(raw).toBe([
       "Ready",
@@ -99,11 +141,11 @@ describe("Task tool rendering", () => {
     ].join("\n"));
   });
 
-  it("summarizes create/list/get/update results as short keyword lines", () => {
+  it("summarizes create, update, list, and get as workflow actions", () => {
     const tools = registerTools();
 
     expect(collapsed(tools.get("TaskCreate")!, "Task #1 created successfully: Polish task renderer"))
-      .toContain("└─ task: #1 created · Polish task renderer");
+      .toContain("└─ action: created #1 · Polish task renderer");
 
     const list = collapsed(tools.get("TaskList")!, [
       "Running",
@@ -116,9 +158,10 @@ describe("Task tool rendering", () => {
       "#3 [completed] Read docs",
     ].join("\n"));
     expect(list).toContain("├─ tasks: 4 total · 1 running, 1 ready, 1 blocked, 1 completed");
-    expect(list).toContain("├─ ready: #4 Verify tests");
-    expect(list).toContain("├─ running: #2 Implement renderer (agent)");
-    expect(list).toContain("└─ completed: #3 Read docs");
+    expect(list).toContain("├─ next: running #2 Implement renderer (agent)");
+    expect(list).toContain("└─ app.tools.expand to expand full result");
+    expect(list).not.toContain("ready: #4 Verify tests");
+    expect(list).not.toContain("completed: #3 Read docs");
     expect(list).not.toContain("▸ TaskList");
 
     const get = collapsed(tools.get("TaskGet")!, [
@@ -131,14 +174,19 @@ describe("Task tool rendering", () => {
       "Metadata: {\"lane\":\"docs\"}",
     ].join("\n"));
     expect(get).toContain("├─ task: #2 Implement renderer");
-    expect(get).toContain("└─ status: in_progress · owner agent-1 · blocked by #1 · blocks #4");
+    expect(get).toContain("├─ status: in_progress · owner agent-1 · blocked by #1 · blocks #4");
+    expect(get).toContain("└─ app.tools.expand to expand full result");
     expect(get).not.toContain("Description: long noisy details");
 
-    expect(collapsed(tools.get("TaskUpdate")!, "Updated task #2 status, owner (warning: reserved metadata keys ignored: _piWorkflowPhase)"))
-      .toContain("└─ warning: reserved metadata keys ignored: _piWorkflowPhase");
+    const update = collapsed(
+      tools.get("TaskUpdate")!,
+      "Updated task #2 status, owner (warning: reserved metadata keys ignored: _piWorkflowPhase)",
+    );
+    expect(update).toContain("├─ action: updated #2 · status, owner");
+    expect(update).toContain("└─ warning: reserved metadata keys ignored: _piWorkflowPhase");
   });
 
-  it("groups TaskList raw output into running, ready, blocked, and completed sections", async () => {
+  it("groups TaskList raw output without changing execution behavior", async () => {
     const tools = registerTools();
     const create = tools.get("TaskCreate")!;
     const update = tools.get("TaskUpdate")!;
@@ -156,7 +204,6 @@ describe("Task tool rendering", () => {
     await update.execute!("call-10", { taskId: "6", status: "completed" }, undefined, undefined, undefined);
 
     const result = await list.execute!("call-11", {}, undefined, undefined, undefined);
-
     expect(result.content![0].text).toBe([
       "Running",
       "#1 [in_progress] Run build (agent-1)",
@@ -184,7 +231,6 @@ describe("Task tool rendering", () => {
     await update.execute!("call-5", { taskId: "3", addBlockedBy: ["1"] }, undefined, undefined, undefined);
 
     const result = await list.execute!("call-6", {}, undefined, undefined, undefined);
-
     expect(result.content![0].text).toBe([
       "Ready",
       "#1 [pending] Blocking task",
@@ -194,24 +240,71 @@ describe("Task tool rendering", () => {
     ].join("\n"));
   });
 
-  it("summarizes process output and stop results without dumping logs", () => {
+  it("summarizes process output and stop outcomes without dumping logs", () => {
     const tools = registerTools();
-
-    const output = collapsed(tools.get("TaskOutput")!, "Task #9 (completed) exit code: 0\n\nfirst output line\nsecond output line");
+    const output = collapsed(
+      tools.get("TaskOutput")!,
+      "Task #9 (completed) exit code: 0\n\nfirst output line\nsecond output line",
+    );
     expect(output).toContain("├─ status: completed · exit code 0");
-    expect(output).toContain("└─ output: first output line");
+    expect(output).toContain("├─ output: first output line");
+    expect(output).toContain("└─ app.tools.expand to expand full result");
     expect(output).not.toContain("second output line");
 
     expect(collapsed(tools.get("TaskStop")!, "Task #3 stopped successfully"))
-      .toContain("└─ task: #3 stopped");
+      .toContain("└─ outcome: stopped #3");
   });
 
-  it("renders partial and error states safely", () => {
+  it("renders partial and error states safely without continuation text", () => {
     const tools = registerTools();
-    const partial = renderText(tools.get("TaskOutput")!.renderResult!(textResult(""), { expanded: false, isPartial: true }, plainTheme, {}));
+    const partial = collapsed(tools.get("TaskOutput")!, "", {}, { isPartial: true });
     expect(partial).toContain("└─ status: running TaskOutput");
 
-    const error = collapsed(tools.get("TaskStop")!, "No running background process for task 9\nstack hidden", {}, { isError: true });
-    expect(error).toContain("└─ error: No running background process for task 9");
+    const error = collapsed(
+      tools.get("TaskStop")!,
+      "No running background process for task 9\nstack hidden",
+      {},
+      { isError: true },
+    );
+    expect(error).toContain("├─ error: No running background process for task 9");
+    expect(error).not.toContain("continuation reminder");
+  });
+
+  it("keeps frozen inputs unchanged, complete, width-safe, and within three logical rows", () => {
+    const tools = registerTools();
+    const cases: ReadonlyArray<{ name: string; args: Record<string, unknown>; raw: string }> = [
+      { name: "TaskCreate", args: { subject: "整理 Unicode renderer" }, raw: "Task #1 created successfully: 整理 Unicode renderer" },
+      { name: "TaskUpdate", args: { taskId: "2", status: "in_progress" }, raw: "Updated task #2 status" },
+      { name: "TaskList", args: {}, raw: "Running\n#2 [in_progress] 整理 renderer\nReady\n#3 [pending] Verify" },
+      { name: "TaskGet", args: { taskId: "2" }, raw: "Task #2: 整理 renderer\nStatus: in_progress\nBlocked by: #1" },
+      { name: "TaskOutput", args: { task_id: "2", block: false }, raw: "Task #2 (running)\n\n输出 first line\nsecond line" },
+      { name: "TaskStop", args: { task_id: "2" }, raw: "Task #2 stopped successfully" },
+    ];
+
+    for (const testCase of cases) {
+      const tool = tools.get(testCase.name)!;
+      const args = testCase.args;
+      const details: Record<string, unknown> = { marker: "unchanged" };
+      const content = [{ type: "text" as const, text: testCase.raw }];
+      const result: ToolResult = { content, details };
+      Object.freeze(args);
+      Object.freeze(details);
+      Object.freeze(content[0]);
+      Object.freeze(content);
+      Object.freeze(result);
+
+      const call = tool.renderCall!(args, plainTheme);
+      const summary = tool.renderResult!(result, { expanded: false }, plainTheme, { args });
+      const expanded = tool.renderResult!(result, { expanded: true }, plainTheme, { args });
+
+      expectWidthSafe(call);
+      expectWidthSafe(summary);
+      expectWidthSafe(expanded);
+      expectCollapsedRowBudget(summary);
+      expect(expanded.text).toBe(testCase.raw);
+      expect(result.content).toBe(content);
+      expect(result.details).toBe(details);
+      expect(result.content![0].text).toBe(testCase.raw);
+    }
   });
 });

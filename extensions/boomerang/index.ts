@@ -15,6 +15,7 @@ import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ExtensionC
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { isTui } from "../lib/mode.js";
+import { renderBoomerangCall, renderBoomerangResult } from "./render.js";
 import { registerCommitCommand, type BoomerangTaskSnapshot } from "./commit.js";
 
 interface BoomerangConfig {
@@ -2096,6 +2097,8 @@ export default function (pi: ExtensionAPI) {
       parameters: Type.Object({
         task: Type.Optional(Type.String({ description: "Task to execute. Supports --rethrow N for multi-pass execution with summaries between rethrows." })),
       }),
+      renderCall: renderBoomerangCall,
+      renderResult: renderBoomerangResult,
       execute: async (_id, params, _signal, _onUpdate, ctx) => {
         if (!toolEnabled) {
           return {

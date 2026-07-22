@@ -12,6 +12,7 @@ import {
   collectSessionWritePaths,
   type SessionReviewScope,
 } from "./src/session.js";
+import { extractToolText, renderToolCall, renderToolExpanded, renderToolSummary } from "../lib/tool-output.js";
 
 interface CommandArgumentCompletion {
   value: string;
@@ -297,6 +298,46 @@ export default function secondOpinion(pi: ExtensionAPI) {
       "Paths are prompt scope only; this tool does not pass hard path filters to Codex.",
     ].join("\n"),
     parameters: SessionScopeParams,
+    renderCall(args, theme, _context) {
+      const parsed = parseScopes(args);
+      const repoCount = parsed.repos.length;
+      const reason = parsed.reason || "no reason";
+      return renderToolCall(
+        SESSION_SCOPE_TOOL,
+        `${repoCount} repo${repoCount !== 1 ? "s" : ""} · reason: ${reason}`,
+        theme,
+      );
+    },
+    renderResult(result, options, theme, context) {
+      const raw = extractToolText(result);
+      if (options.expanded) return renderToolExpanded(raw);
+
+      const parsed = parseScopes(context?.args ?? {});
+      const repoCount = parsed.repos.length;
+      const summary = `scope: ${repoCount} repo${repoCount !== 1 ? "s" : ""} · reason: ${parsed.reason || "not provided"}`;
+      if (raw.startsWith("Codex review failed:")) {
+        return renderToolSummary(["status: failed", summary, raw], theme, { expandable: true, expandLabel: "diagnostics" });
+      }
+      if (raw === "Codex scoped review complete and posted. Address-comments follow-up sent.") {
+        return renderToolSummary(["status: complete · posted", summary, "next: address-comments follow-up sent"], theme, {
+          expandable: true,
+          expandLabel: "full result",
+        });
+      }
+      if (raw === "Codex scoped review complete and posted.") {
+        return renderToolSummary(["status: complete · posted", summary, "next: no follow-up requested"], theme, {
+          expandable: true,
+          expandLabel: "full result",
+        });
+      }
+      if (raw.startsWith("At least one repo scope") || raw.startsWith("Every repo scope") || raw.startsWith("Repo path") || raw.startsWith("Repo scope")) {
+        return renderToolSummary(["status: blocked · invalid scope", summary, raw], theme, { expandable: true, expandLabel: "full result" });
+      }
+      return renderToolSummary([raw ? `result: ${raw}` : "result: no review output", summary], theme, {
+        expandable: raw.length > 0,
+        expandLabel: "full result",
+      });
+    },
     async execute(_id, params, _signal, _onUpdate, ctx) {
       try {
         const { reason, repos } = parseScopes(params);

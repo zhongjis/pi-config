@@ -239,8 +239,8 @@ const plainTheme = {
   bold: vi.fn((text: string) => text),
 };
 
-function renderText(component: { render?: () => string[]; text?: string }): string {
-  if (typeof component.render === "function") return component.render().join("\n");
+function renderText(component: { render?: (width: number) => string[]; text?: string }): string {
+  if (typeof component.render === "function") return component.render(120).join("\n");
   return component.text ?? "";
 }
 

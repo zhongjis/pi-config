@@ -55,6 +55,7 @@ pnpm lint:typecheck
   - `<namespace>:<event>` for lifecycle broadcasts
   - `<namespace>:rpc:<method>` + `:reply:${requestId}` for RPC
 - If a new extension needs special smoke handling, update `test/extensions.smoke.test.ts`.
+- Every locally registered tool needs width-safe `renderCall`/`renderResult` components, a maximum three rendered collapsed rows (except identity-preserved native streaming delegates), configured `keyHint("app.tools.expand", ...)` hints, unchanged model-facing content, and registered-definition coverage using Pi TUI visible-width APIs.
 
 ## Ask First
 - Adding a new shared event family or changing payload shapes consumed across extensions.

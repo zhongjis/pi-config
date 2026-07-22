@@ -1,5 +1,4 @@
 import {
-	keyHint,
 	withFileMutationQueue,
 	type AgentToolResult,
 	type ExtensionAPI,
@@ -20,6 +19,7 @@ import {
 	writeLocalPlanFile,
 } from "./plan-storage.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI } from "./constants.js";
+import { firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 
 export const PLAN_SECTION_HEADERS = [
 	"## TL;DR (For humans)",
@@ -296,28 +296,36 @@ function getResultText(result: PlanScaffoldToolResult | undefined): string {
 		.join("\n");
 }
 
+function isScaffoldArtifact(value: unknown): value is PlanScaffoldArtifact {
+	if (!value || typeof value !== "object") return false;
+	const artifact = value as { path?: unknown; backingPath?: unknown; status?: unknown };
+	return (artifact.path === LOCAL_DRAFT_URI || artifact.path === LOCAL_PLAN_URI)
+		&& typeof artifact.backingPath === "string"
+		&& (artifact.status === "created" || artifact.status === "exists" || artifact.status === "reset");
+}
+
+function getArtifacts(result: PlanScaffoldToolResult | undefined): PlanScaffoldArtifact[] | null {
+	const artifacts = result?.details?.artifacts;
+	if (artifacts === undefined) return [];
+	if (!Array.isArray(artifacts)) return null;
+	return artifacts.every(isScaffoldArtifact) ? artifacts : null;
+}
+
 function renderSummary(lines: string[], theme: PlanScaffoldTheme): Text {
-	const details = [...lines, keyHint("app.tools.expand", "to expand full result")];
-	return new Text(
-		details
-			.map((line, index) => `${index === details.length - 1 ? "└─" : "├─"} ${theme.fg("muted", line)}`)
-			.join("\n"),
-		0,
-		0,
-	);
+	return renderToolSummary(lines, theme, { expandable: true, expandLabel: "to expand full result" });
 }
 
 function renderPlanScaffoldCall(args: Partial<PlanScaffoldParams> | undefined, theme: PlanScaffoldTheme): Text {
 	const mode = args?.draftOnly === true ? "draft only" : "draft + plan";
-	const slug = typeof args?.slug === "string" ? ` · ${theme.fg("muted", `"${args.slug}"`)}` : "";
-	const intent = args?.intent ? ` · ${theme.fg("muted", args.intent)}` : "";
+	const slug = typeof args?.slug === "string" ? `\"${args.slug}\"` : undefined;
+	const intent = args?.intent;
 	const flags = [
 		args?.reviewRequired === true ? "review required" : undefined,
 		args?.reset === true ? "reset" : undefined,
 		args?.force === true ? "force" : undefined,
 	].filter((flag): flag is string => Boolean(flag));
-	const suffix = flags.length > 0 ? ` · ${theme.fg("muted", flags.join(" · "))}` : "";
-	return new Text(`▸ ${theme.fg("toolTitle", theme.bold("plan_scaffold"))} · ${theme.fg("muted", mode)}${slug}${intent}${suffix}`, 0, 0);
+	const target = [mode, slug, intent, ...flags].filter((part): part is string => Boolean(part)).join(" · ");
+	return renderToolCall("plan_scaffold", target, theme);
 }
 
 function renderPlanScaffoldResult(
@@ -325,9 +333,9 @@ function renderPlanScaffoldResult(
 	options: Partial<Pick<ToolRenderResultOptions, "expanded" | "isPartial">> = {},
 	theme: PlanScaffoldTheme,
 	context: PlanScaffoldRenderContext = {},
-): Text {
+): Text | ReturnType<typeof renderToolExpanded> {
 	const text = getResultText(result);
-	if (options.expanded) return new Text(text, 0, 0);
+	if (options.expanded) return renderToolExpanded(text);
 
 	if (options.isPartial) {
 		const target = context.args?.draftOnly === true ? "draft" : "draft + plan";
@@ -335,11 +343,14 @@ function renderPlanScaffoldResult(
 	}
 
 	if (context.isError || result?.isError) {
-		const firstLine = text.split(/\r?\n/u).map((line) => line.trim()).find(Boolean) ?? "unknown error";
-		return renderSummary([`error: ${firstLine}`], theme);
+		return renderSummary([`error: ${firstMeaningfulLine(text) || "unknown error"}`], theme);
 	}
 
-	const artifacts = result?.details?.artifacts ?? [];
+	const artifacts = getArtifacts(result);
+	if (!artifacts) {
+		const fallback = text.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean).slice(0, 2);
+		return renderSummary(fallback.length > 0 ? fallback : ["empty result"], theme);
+	}
 	const artifactSummary = artifacts.length > 0
 		? artifacts.map((artifact) => `${artifact.path.replace("local://", "")} ${artifact.status}`).join(" · ")
 		: "none";

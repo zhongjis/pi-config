@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { type AgentToolResult, type ExtensionContext, defineTool, getAgentDir, keyHint } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { renderToolCall, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
 import { prepareAgentRestoreRuntime, getDefaultMaxTurns, normalizeMaxTurns } from "../agent-runner.js";
 import { getAgentConfig, getAvailableTypes } from "../agent-types.js";
 import { SUBAGENT_FOREGROUND_RENDER_CADENCE_MS } from "../constants.js";
@@ -381,13 +382,8 @@ function renderExpandHint(): string {
   }
 }
 
-function renderSummaryLines(lines: string[], theme: { fg: (color: any, text: string) => string }): Text {
-  const allLines = [...lines, renderExpandHint()];
-  const rendered = allLines
-    .map((line, index) => `${index === allLines.length - 1 ? "└─" : "├─"} ${line}`)
-    .map(line => theme.fg("muted", line))
-    .join("\n");
-  return new Text(rendered, 0, 0);
+function renderSummaryLines(lines: string[], theme: Pick<ExtensionContext["ui"]["theme"], "bold" | "fg">): Text {
+  return renderToolSummary(lines, theme, { expandable: true });
 }
 
 function formatPermittedTypes(types: string[] | undefined): string | undefined {
@@ -396,7 +392,7 @@ function formatPermittedTypes(types: string[] | undefined): string | undefined {
   return visible.join(", ") + (types.length > visible.length ? ` +${types.length - visible.length}` : "");
 }
 
-function renderPolicyDenialSummary(details: AgentDetails, theme: { fg: (color: any, text: string) => string }): Text {
+function renderPolicyDenialSummary(details: AgentDetails, theme: Pick<ExtensionContext["ui"]["theme"], "bold" | "fg">) {
   const primary = theme.fg("error", "├─ status: denied");
   const detailLines = [
     "invocation: failed",
@@ -406,25 +402,49 @@ function renderPolicyDenialSummary(details: AgentDetails, theme: { fg: (color: a
   if (permitted) detailLines.push(`permitted: ${permitted}`);
   const detail = detailLines.map(line => theme.fg("toolOutput", `├─ ${line}`));
   const hint = theme.fg("muted", `└─ ${renderExpandHint()}`);
-  return new Text([primary, ...detail, hint].join("\n"), 0, 0);
+  return renderToolExpanded([primary, ...detail, hint].join("\n"));
 }
 
-export function renderAgentToolCall(args: { subagent_type?: string; description?: string }, theme: { fg: (color: any, text: string) => string; bold: (text: string) => string }): Text {
+type AgentToolRenderArgs = {
+  subagent_type?: string;
+  description?: string;
+  skills?: string[];
+};
+
+type AgentToolRenderContext = {
+  args?: AgentToolRenderArgs;
+};
+
+function formatSkillsSummary(skills: string[] | undefined): string | undefined {
+  if (!skills || skills.length === 0) return undefined;
+  return `skills: ${skills.length} · ${skills.join(", ")}`;
+}
+
+function appendSkillsSection(rawText: string, skills: string[] | undefined): string {
+  if (!skills || skills.length === 0) return rawText;
+  return `${rawText}\n\nSkills\n${skills.map(skill => `- ${skill}`).join("\n")}`;
+}
+
+export function renderAgentToolCall(
+  args: AgentToolRenderArgs,
+  theme: Pick<ExtensionContext["ui"]["theme"], "bold" | "fg">,
+ ): Text {
   const displayName = args.subagent_type ? getDisplayName(args.subagent_type) : "Agent";
-  const desc = args.description ?? "";
-  return new Text("▸ " + theme.fg("toolTitle", theme.bold(displayName)) + (desc ? " · " + theme.fg("muted", desc) : ""), 0, 0);
+  const target = [args.description, formatSkillsSummary(args.skills)].filter((value): value is string => Boolean(value)).join(" · ");
+  return renderToolCall(displayName, target, theme);
 }
 
 export function renderAgentToolResult(
   result: AgentToolResult<AgentDetails>,
   options: { expanded?: boolean; isPartial?: boolean },
-  theme: { fg: (color: any, text: string) => string },
-): Text {
+  theme: Pick<ExtensionContext["ui"]["theme"], "bold" | "fg">,
+  context: AgentToolRenderContext = {},
+) {
   const rawText = getResultText(result);
-  if (options.expanded) return new Text(rawText, 0, 0);
+  if (options.expanded) return renderToolExpanded(appendSkillsSection(rawText, context.args?.skills));
 
   const details = result.details as AgentDetails | undefined;
-  if (!details) return new Text(rawText, 0, 0);
+  if (!details) return renderToolExpanded(rawText);
   if (details.category === DELEGATION_POLICY_DENIED) return renderPolicyDenialSummary(details, theme);
 
   const lines = [`status: ${getStatusSummary(details)}`];
@@ -527,8 +547,8 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       return renderAgentToolCall(args, theme);
     },
 
-    renderResult(result, options, theme) {
-      return renderAgentToolResult(result as AgentToolResult<AgentDetails>, options, theme);
+    renderResult(result, options, theme, context) {
+      return renderAgentToolResult(result as AgentToolResult<AgentDetails>, options, theme, context);
     },
 
     // ---- Execute ----

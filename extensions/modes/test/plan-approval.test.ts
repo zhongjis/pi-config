@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 vi.mock("../src/plan-storage.js", () => ({
 	hydratePlanState: vi.fn(async (_ctx: unknown, state?: { planContent?: string; planTitle?: string; planTitleSource?: string }) => {
@@ -65,6 +66,19 @@ function createMockExtensionPi() {
 	return { pi, tools };
 }
 
+type RenderableText = { render?: (width?: number) => string[]; text?: string };
+type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
+
+const plainTheme: PlainTheme = {
+	fg: (_color, text) => text,
+	bold: (text) => text,
+};
+
+function renderText(component: RenderableText, width = 80): string {
+	if (typeof component.render === "function") return component.render(width).join("\n");
+	return component.text ?? "";
+}
+
 describe("runPlanApprovalFlow", () => {
 	it("emits user-prompted before interactive approval menu and returns plannotator wait message", async () => {
 		plannotatorMocks.checkPlannotatorAvailability.mockClear();
@@ -114,5 +128,59 @@ describe("modes extension plan_approve tool", () => {
 			content: [{ type: "text", text: "Planning finished" }],
 			details: { variant: "post-gap-review" },
 		});
+	});
+
+	it("registers call and result renderers with variant, outcome parity, raw fallback, and no side effects", async () => {
+		plannotatorMocks.checkPlannotatorAvailability.mockClear();
+		plannotatorMocks.prepareApprovedPlanHandoff.mockClear();
+
+		const { default: initModesExtension } = await import("../src/index.js");
+		const { pi, tools } = createMockExtensionPi();
+		initModesExtension(pi as never);
+		const tool = tools.get("plan_approve");
+		expect(tool.renderCall).toBeDefined();
+		expect(tool.renderResult).toBeDefined();
+		const eventCount = pi.events.emit.mock.calls.length;
+		const appendCount = pi.appendEntry.mock.calls.length;
+
+		expect(renderText(tool.renderCall({ variant: "post-high-accuracy" }, plainTheme))).toBe(
+			"▸ plan_approve · post-high-accuracy",
+		);
+
+		const cases = [
+			["Planning finished", "approved"],
+			[`Error: No plan found in local://PLAN.md. Write or save the plan to local://PLAN.md first.`, "missing plan"],
+			["Plan approval cancelled by user.", "cancelled"],
+			["Plan approval: user selected High Accuracy Review.\nRun yanluo as a subagent with the plan content from local://PLAN.md.", "high accuracy review"],
+			["Plan \"Plan\" updated via editor. Refinement feedback sent.", "editor refinement"],
+			["Cannot open editor in non-interactive mode.", "editor unavailable"],
+			["Got it, waiting on response from user", "plannotator refinement"],
+			["Plan approval: unrecognised selection.", "unrecognised selection"],
+		] as const;
+
+		for (const [text, expected] of cases) {
+			const rendered = renderText(tool.renderResult({
+				content: [{ type: "text", text }],
+				details: { variant: "post-gap-review" },
+			}, {}, plainTheme));
+			expect(rendered).toContain(expected);
+		}
+
+		const malformed = renderText(tool.renderResult({
+			content: [{ type: "text", text: "raw approval fallback" }],
+			details: { variant: 7 },
+		}, {}, plainTheme));
+		expect(malformed).toContain("raw approval fallback");
+
+		for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+			const rendered = tool.renderResult({
+				content: [{ type: "text", text: "Plan approval: user selected High Accuracy Review." }],
+				details: { variant: "post-gap-review" },
+			}, {}, plainTheme).render(width);
+			expect(rendered.every((line: string) => visibleWidth(line) <= width)).toBe(true);
+		}
+
+		expect(pi.events.emit).toHaveBeenCalledTimes(eventCount);
+		expect(pi.appendEntry).toHaveBeenCalledTimes(appendCount);
 	});
 });

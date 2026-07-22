@@ -1,7 +1,9 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { registerAgents } from "../src/agent-types.js";
-import { formatAgentFailureOutput, renderAgentToolCall, renderAgentToolResult } from "../src/tools/agent.js";
-import { renderGetSubagentResult, renderGetSubagentResultCall } from "../src/tools/get_subagent_result.js";
+import { formatAgentFailureOutput, registerAgentTool, renderAgentToolCall, renderAgentToolResult } from "../src/tools/agent.js";
+import { registerGetSubagentResultTool, renderGetSubagentResult, renderGetSubagentResultCall } from "../src/tools/get_subagent_result.js";
+import { registerSteerSubagentTool, renderSteerSubagentCall, renderSteerSubagentResult } from "../src/tools/steer_subagent.js";
 import type { AgentDetails } from "../src/ui/agent-widget.js";
 
 const theme = {
@@ -11,6 +13,19 @@ const theme = {
 
 function textOf(component: unknown): string {
   return (component as { text: string }).text;
+}
+
+type RenderableComponent = {
+  render(width: number): string[];
+};
+
+function expectWidthSafe(component: unknown): void {
+  const renderable = component as RenderableComponent;
+  for (const width of [8, 20, 40, 80, 120]) {
+    for (const line of renderable.render(width)) {
+      expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+    }
+  }
 }
 
 function result(text: string, details: AgentDetails) {
@@ -50,6 +65,36 @@ describe("Agent tool TUI rendering", () => {
     const rendered = textOf(renderAgentToolCall({ subagent_type: "taishang", description: "Assess verify failure" }, theme));
 
     expect(rendered).toBe("▸ Taishang 太上老君 · Assess verify failure");
+  });
+
+  it("shows supplied skills in input order without deduplication", () => {
+    const args = {
+      subagent_type: "taishang",
+      description: "Assess verify failure",
+      skills: ["typescript", "typescript", "pi-extensions"],
+    };
+    const call = textOf(renderAgentToolCall(args, theme));
+    const raw = "Agent completed.\n\nFull result.";
+    const expanded = textOf(renderAgentToolResult(
+      result(raw, { ...runningDetails, status: "completed", activity: undefined }),
+      { expanded: true },
+      theme,
+      { args },
+    ));
+
+    expect(call).toContain("skills: 3 · typescript, typescript, pi-extensions");
+    expect(expanded).toBe(
+      `${raw}\n\nSkills\n- typescript\n- typescript\n- pi-extensions`,
+    );
+  });
+
+  it("omits skills presentation when skills are omitted or empty", () => {
+    const raw = "Agent completed.\n\nFull result.";
+    const completed = result(raw, { ...runningDetails, status: "completed", activity: undefined });
+
+    expect(textOf(renderAgentToolCall({ subagent_type: "taishang", description: "No skills" }, theme))).not.toContain("skills:");
+    expect(textOf(renderAgentToolCall({ subagent_type: "taishang", description: "Empty skills", skills: [] }, theme))).not.toContain("skills:");
+    expect(textOf(renderAgentToolResult(completed, { expanded: true }, theme, { args: { skills: [] } }))).toBe(raw);
   });
 
   it("renders running partial as lifecycle plus useful activity", () => {
@@ -295,5 +340,96 @@ describe("get_subagent_result TUI rendering", () => {
     const rendered = textOf(renderGetSubagentResult(toolResult(raw), { expanded: true }, theme));
 
     expect(rendered).toBe(raw);
+  });
+});
+
+describe("steer_subagent TUI rendering", () => {
+  function toolResult(text: string) {
+    return { content: [{ type: "text" as const, text }] };
+  }
+
+  it("renders target and bounded message preview, with complete expanded message", () => {
+    const message = `Focus on ${"renderer parity ".repeat(8)}now`;
+    const args = { agent_id: "agent-123", message };
+    const call = textOf(renderSteerSubagentCall(args, theme));
+    const raw = "Steering message sent to agent agent-123. The agent will process it after its current tool execution.";
+    const expanded = textOf(renderSteerSubagentResult(toolResult(raw), { expanded: true }, theme, { args }));
+
+    expect(call).toContain("agent-123");
+    expect(call).toContain("…");
+    expect(call).not.toContain(message);
+    expect(expanded).toBe(`${raw}\n\nMessage\n${message}`);
+  });
+
+  it.each([
+    ["delivered", "Steering message sent to agent agent-123. The agent will process it after its current tool execution."],
+    ["queued", "Steering message queued for agent agent-123. It will be delivered once the session initializes."],
+    ["rejected", "Agent \"agent-123\" is not running (status: completed). Cannot steer a non-running agent."],
+    ["missing-target", "Agent not found: \"agent-123\". It may have been cleaned up."],
+    ["failed", "Failed to steer agent: provider unavailable"],
+  ])("distinguishes %s from existing result text", (outcome, raw) => {
+    const rendered = textOf(renderSteerSubagentResult(toolResult(raw), {}, theme));
+
+    expect(rendered).toContain(`status: ${outcome}`);
+    expect(rendered).toContain("to expand full result");
+  });
+
+  it("falls back to the existing result text without changing it", () => {
+    const raw = "Unexpected steering response";
+    const resultValue = toolResult(raw);
+    const collapsed = textOf(renderSteerSubagentResult(resultValue, {}, theme));
+    const expanded = textOf(renderSteerSubagentResult(resultValue, { expanded: true }, theme));
+
+    expect(collapsed).toContain(`result: ${raw}`);
+    expect(expanded).toBe(raw);
+    expect(resultValue.content[0].text).toBe(raw);
+  });
+});
+
+describe("Subagent renderer registration", () => {
+  it("registers call/result renderer pairs for all three Subagent tools", () => {
+    type ToolDefinition = { name?: unknown; renderCall?: unknown; renderResult?: unknown };
+    const definitions: ToolDefinition[] = [];
+    const pi = {
+      registerTool(tool: unknown) {
+        definitions.push(tool as ToolDefinition);
+      },
+      events: { emit() {} },
+    };
+    const context = { pi } as never;
+
+    registerAgentTool(context);
+    registerGetSubagentResultTool(context);
+    registerSteerSubagentTool(context);
+
+    expect(definitions.map(definition => definition.name)).toEqual([
+      "Agent",
+      "get_subagent_result",
+      "steer_subagent",
+    ]);
+    for (const definition of definitions) {
+      expect(definition.renderCall).toBeTypeOf("function");
+      expect(definition.renderResult).toBeTypeOf("function");
+    }
+  });
+
+  it("keeps Agent, history, and steering renderers width-safe", () => {
+    const longText = "界面🧪é/" + "long-unbroken-segment".repeat(8);
+    const agentArgs = { subagent_type: "taishang", description: longText, skills: [longText, "duplicate", "duplicate"] };
+    const steerArgs = { agent_id: longText, message: longText };
+
+    const components = [
+      renderAgentToolCall(agentArgs, theme),
+      renderAgentToolResult(result(longText, { ...runningDetails, status: "completed", activity: undefined }), {}, theme),
+      renderAgentToolResult(result(longText, { ...runningDetails, status: "completed", activity: undefined }), { expanded: true }, theme, { args: agentArgs }),
+      renderGetSubagentResultCall({ agent_id: longText, wait: true, verbose: true }, theme),
+      renderGetSubagentResult({ content: [{ type: "text", text: longText }] }, {}, theme),
+      renderGetSubagentResult({ content: [{ type: "text", text: longText }] }, { expanded: true }, theme),
+      renderSteerSubagentCall(steerArgs, theme),
+      renderSteerSubagentResult({ content: [{ type: "text", text: `Failed to steer agent: ${longText}` }] }, {}, theme),
+      renderSteerSubagentResult({ content: [{ type: "text", text: longText }] }, { expanded: true }, theme, { args: steerArgs }),
+    ];
+
+    for (const component of components) expectWidthSafe(component);
   });
 });

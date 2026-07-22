@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext, Theme, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -9,6 +9,7 @@ import type { ModeStateManager } from "./mode-state.js";
 import { LOCAL_PLAN_URI } from "./constants.js";
 import { hydratePlanState, writeLocalPlanFile } from "./plan-storage.js";
 import { checkPlannotatorAvailability, getPlannotatorUnavailableReason, startPlanReview, prepareApprovedPlanHandoff } from "./plannotator.js";
+import { firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 
 export function buildEditorRefinementMessage(diff: string): string {
 	if (!diff) {
@@ -97,6 +98,73 @@ async function refineInSystemEditor(
 type ApprovalMenuVariant =
 	| "post-gap-review"    // after gap review: Refine in Editor | Refine in Plannotator | High Accuracy Review | Approve
 	| "post-high-accuracy"; // after yanluo: Refine in Editor | Refine in Plannotator | Approve
+
+type PlanApprovalToolResult = AgentToolResult<unknown> & { isError?: boolean };
+type PlanApprovalTheme = Pick<Theme, "fg" | "bold">;
+type PlanApprovalRenderContext = { args?: { variant?: unknown }; isError?: boolean };
+
+function getApprovalText(result: PlanApprovalToolResult | undefined): string {
+	return (result?.content ?? [])
+		.filter((part) => part?.type === "text")
+		.map((part) => typeof part.text === "string" ? part.text : "")
+		.join("\n");
+}
+
+function normalizeApprovalVariant(value: unknown): ApprovalMenuVariant | null {
+	if (value === "post-gap-review" || value === "post-high-accuracy") return value;
+	return null;
+}
+
+function getApprovalVariant(result: PlanApprovalToolResult | undefined): ApprovalMenuVariant | null {
+	const details = result?.details;
+	if (!details || typeof details !== "object") return null;
+	return normalizeApprovalVariant((details as { variant?: unknown }).variant);
+}
+
+function classifyApprovalOutcome(text: string): string | null {
+	if (text.startsWith("Error: No plan found")) return "missing plan";
+	if (text === "Plan approval cancelled by user.") return "cancelled";
+	if (text.includes("High Accuracy Review")) return "high accuracy review";
+	if (text.includes("updated via editor")) return "editor refinement";
+	if (text === "Cannot open editor in non-interactive mode.") return "editor unavailable";
+	if (text.includes("waiting on response from user")) return "plannotator refinement";
+	if (text === "Plan approval: unrecognised selection.") return "unrecognised selection";
+	if (text.trim().length > 0) return "approved";
+	return null;
+}
+
+export function renderPlanApprovalCall(
+	args: PlanApprovalRenderContext["args"] | undefined,
+	theme: PlanApprovalTheme,
+ ) {
+	const variant = normalizeApprovalVariant(args?.variant) ?? "post-gap-review";
+	return renderToolCall("plan_approve", variant, theme);
+}
+
+export function renderPlanApprovalResult(
+	result: PlanApprovalToolResult | undefined,
+	options: Partial<Pick<ToolRenderResultOptions, "expanded" | "isPartial">> = {},
+	theme: PlanApprovalTheme,
+	_context: PlanApprovalRenderContext = {},
+ ) {
+	const text = getApprovalText(result);
+	if (options.expanded) return renderToolExpanded(text);
+	if (options.isPartial) return renderToolSummary(["status: awaiting approval menu"], theme, { expandable: true, expandLabel: "to expand full result" });
+
+	const detailVariant = getApprovalVariant(result);
+	if (!detailVariant) {
+		const fallback = text.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean).slice(0, 2);
+		return renderToolSummary(fallback.length > 0 ? fallback : ["empty result"], theme, { expandable: true, expandLabel: "to expand full result" });
+	}
+
+	if (_context.isError || result?.isError) {
+		return renderToolSummary([`error: ${firstMeaningfulLine(text) || "unknown error"}`], theme, { expandable: true, expandLabel: "to expand full result" });
+	}
+
+	const outcome = classifyApprovalOutcome(text);
+	if (!outcome) return renderToolSummary(["empty result"], theme, { expandable: true, expandLabel: "to expand full result" });
+	return renderToolSummary([`variant: ${detailVariant}`, `outcome: ${outcome}`], theme, { expandable: true, expandLabel: "to expand full result" });
+}
 
 /**
  * Run the interactive plan approval flow.

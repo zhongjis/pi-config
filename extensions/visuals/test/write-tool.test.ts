@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
 import { homedir } from "node:os";
+import { describe, expect, it, vi } from "vitest";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 const builtInWrite = vi.hoisted(() => {
-  const execute = vi.fn(async () => ({
+  const execute = vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
     content: [{ type: "text" as const, text: "Successfully wrote 0 bytes to file" }],
     details: undefined,
   }));
@@ -26,7 +27,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 
 import { installWriteToolVisual } from "../src/write-tool.js";
 
-type RenderableText = { text?: string; render?: () => string[] };
+type RenderableText = { text?: string; render?: (width: number) => string[] };
 type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
 type ToolDefinition = {
   name: string;
@@ -45,9 +46,27 @@ const plainTheme: PlainTheme = {
   bold: (text) => text,
 };
 
-function renderText(component: RenderableText): string {
-  if (typeof component.render === "function") return component.render().join("\n");
+function renderText(component: RenderableText, width = 120): string {
+  if (typeof component.render === "function") return component.render(width).join("\n");
   return component.text ?? "";
+}
+
+function expectWidthSafe(component: RenderableText): void {
+  for (const width of [20, 40, 80, 120]) {
+    const lines = typeof component.render === "function" ? component.render(width) : (component.text ?? "").split("\n");
+    for (const line of lines) {
+      expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+    }
+  }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null) return value;
+  Object.freeze(value);
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return value;
 }
 
 function installTool(): ToolDefinition {
@@ -82,6 +101,37 @@ describe("visuals write tool rendering", () => {
     expect(collapsed).not.toContain("Successfully wrote");
   });
 
+  it("delegates execute result without changing native content or details", async () => {
+    const tool = installTool();
+    const nativeResult = deepFreeze({
+      content: [{ type: "text" as const, text: "Successfully wrote 11 bytes to src/app.ts" }],
+      details: { path: "src/app.ts", bytes: 11 },
+    });
+    builtInWrite.execute.mockResolvedValueOnce(nativeResult);
+
+    const result = await tool.execute("call-1", { path: "src/app.ts", content: "hello" }, undefined, undefined, {});
+
+    expect(result).toBe(nativeResult);
+    expect(result).toEqual({
+      content: [{ type: "text", text: "Successfully wrote 11 bytes to src/app.ts" }],
+      details: { path: "src/app.ts", bytes: 11 },
+    });
+  });
+
+  it("keeps collapsed success width-safe at required widths", () => {
+    const tool = installTool();
+    const result = { content: [{ type: "text" as const, text: "Successfully wrote 11 bytes to src/app.ts" }] };
+
+    const collapsed = tool.renderResult!(
+      result,
+      { expanded: false, isPartial: false },
+      plainTheme,
+      { args: { content: "first\nsecond" } },
+    );
+
+    expectWidthSafe(collapsed);
+  });
+
   it("renders expanded raw output exactly and leaves result content unchanged", () => {
     const tool = installTool();
     const raw = "Successfully wrote 11 bytes to src/app.ts\nsecond raw line";
@@ -111,6 +161,20 @@ describe("visuals write tool rendering", () => {
     expect(collapsed).not.toContain("stack hidden");
   });
 
+  it("keeps collapsed error width-safe at required widths", () => {
+    const tool = installTool();
+    const result = { content: [{ type: "text" as const, text: `Error: ${"permission context ".repeat(20)}` }] };
+
+    const collapsed = tool.renderResult!(
+      result,
+      { expanded: false, isPartial: false },
+      plainTheme,
+      { isError: true },
+    );
+
+    expectWidthSafe(collapsed);
+  });
+
   it("renders partial/running summary with expand hint", () => {
     const tool = installTool();
     const result = { content: [{ type: "text" as const, text: "partial raw output" }] };
@@ -122,6 +186,17 @@ describe("visuals write tool rendering", () => {
       "└─ app.tools.expand to expand full result",
     ].join("\n"));
     expect(partial).not.toContain("partial raw output");
+  });
+
+  it("keeps partial writing width-safe at required widths", () => {
+    const tool = installTool();
+    const partial = tool.renderResult!(
+      { content: [{ type: "text" as const, text: "partial raw output" }] },
+      { expanded: false, isPartial: true },
+      plainTheme,
+    );
+
+    expectWidthSafe(partial);
   });
 
   it("keeps long collapsed error lines compact enough to preserve tree prefixes", () => {
@@ -156,5 +231,6 @@ describe("visuals write tool rendering", () => {
     expect(homeCall).toBe("▸ write · ~/personal/pi-config/docs/guides/agent-orchestration.md");
     expect(longCall).toBe(`▸ write · ${longPath}`);
     expect(longCall).not.toContain("…");
+    expectWidthSafe(tool.renderCall!({ path: longPath, content: "" }, plainTheme));
   });
 });

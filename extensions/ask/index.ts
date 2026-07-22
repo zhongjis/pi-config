@@ -15,14 +15,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isTui } from "../lib/mode.js";
 import {
-	Editor,
-	type EditorTheme,
-	Key,
-	matchesKey,
-	Text,
-	truncateToWidth,
-	wrapTextWithAnsi,
+Editor,
+type EditorTheme,
+Key,
+matchesKey,
+truncateToWidth,
+wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { extractToolText, renderToolCall, renderToolExpanded, renderToolSummary } from "../lib/tool-output.js";
 import { Type } from "typebox";
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -662,61 +662,60 @@ export default function ask(pi: ExtensionAPI) {
 			};
 		},
 
-		// ─── renderCall ──────────────────────────────────────────────────────
-		renderCall(args, theme, _context) {
-			const qs: IncomingQuestion[] = Array.isArray(args.questions) ? args.questions : [];
-			let text = theme.fg("toolTitle", theme.bold("ask "));
-			text += theme.fg("muted", `${qs.length} question${qs.length !== 1 ? "s" : ""}`);
+			// ─── renderCall ──────────────────────────────────────────────────────
+			renderCall(args, theme, _context) {
+				const qs: IncomingQuestion[] = Array.isArray(args.questions) ? args.questions : [];
+				const flags: string[] = [];
+				if (qs.some((q) => q?.multi === true)) flags.push("multi");
+				if (qs.some((q) => typeof q?.recommended === "number")) flags.push("recommended");
+				if (qs.some((q) => q?.allowOther !== false)) flags.push("other");
+				const firstPrompt = qs.find((q) => typeof q?.prompt === "string" && q.prompt.length > 0)?.prompt;
+				const parts = [`${qs.length} question${qs.length !== 1 ? "s" : ""}`];
+				if (flags.length > 0) parts.push(flags.join(", "));
+				if (firstPrompt) parts.push(`first: ${firstPrompt}`);
+				return renderToolCall("ask", parts.join(" · "), theme);
+			},
 
-			const flags: string[] = [];
-			if (qs.some((q) => q?.multi === true)) flags.push("multi");
-			if (qs.some((q) => typeof q?.recommended === "number")) flags.push("recommended");
-			if (flags.length > 0) text += theme.fg("dim", ` [${flags.join(", ")}]`);
+			// ─── renderResult ────────────────────────────────────────────────────
+			renderResult(result, options, theme, _context) {
+				const raw = extractToolText(result);
+				if (options.expanded) return renderToolExpanded(raw);
 
-			for (const q of qs) {
-				if (!q) continue;
-				const tag = q.multi ? theme.fg("dim", " [multi]") : "";
-				const rec =
-					typeof q.recommended === "number" ? theme.fg("dim", ` [rec=${q.recommended}]`) : "";
-				const lbl = q.label && q.label.length > 0 ? q.label : q.id;
-				text += `\n  ${theme.fg("dim", `[${lbl}]`)} ${theme.fg("text", q.prompt ?? "")}${tag}${rec}`;
-			}
-
-			return new Text(text, 0, 0);
-		},
-
-		// ─── renderResult ────────────────────────────────────────────────────
-		renderResult(result, _options, theme, _context) {
-			const d = result.details as AskDetails | undefined;
-			if (!d) {
-				const t = result.content[0];
-				return new Text(t?.type === "text" ? t.text : "", 0, 0);
-			}
-			if (d.cancelled) {
-				return new Text(theme.fg("warning", "Cancelled"), 0, 0);
-			}
-			if (!d.answers || d.answers.length === 0) {
-				return new Text(theme.fg("warning", "No answers"), 0, 0);
-			}
-
-			const lines = d.answers.map((a) => {
-				const inputQ = d.questions.find((q) => q.id === a.id);
-				const labelRaw = inputQ?.label && inputQ.label.length > 0 ? inputQ.label : a.id;
-				const id = theme.fg("dim", `[${labelRaw}]`);
-				if (a.wasCustom) {
-					return `${theme.fg("success", "✓ ")}${id} ${theme.fg("muted", "(wrote) ")}${theme.fg("accent", a.customInput ?? "")}`;
+				const d = result.details as AskDetails | undefined;
+				if (!d) {
+					return renderToolSummary([raw ? `result: ${raw}` : "result: no answer details"], theme, {
+						expandable: raw.length > 0,
+						expandLabel: "full result",
+					});
 				}
-				const idxs = a.indices ?? [];
-				const parts = idxs.map((idx, i) => {
-					const v = a.values[i];
-					const l = a.labels[i];
-					const opt: IncomingOption = { value: v, label: l };
-					return `${idx}. ${displayValue(opt)}`;
-				});
-				return `${theme.fg("success", "✓ ")}${id} ${theme.fg("accent", parts.join(", "))}`;
-			});
+				if (d.cancelled) {
+					return renderToolSummary(["status: cancelled", "answer: user cancelled"], theme, {
+						expandable: raw.length > 0,
+						expandLabel: "full result",
+					});
+				}
+				if (!d.answers || d.answers.length === 0) {
+					const questionCount = Array.isArray(d.questions) ? d.questions.length : 0;
+					return renderToolSummary([`status: no answer · ${questionCount} question${questionCount !== 1 ? "s" : ""}`], theme, {
+						expandable: raw.length > 0,
+						expandLabel: "full result",
+					});
+				}
 
-			return new Text(lines.join("\n"), 0, 0);
-		},
+				const answered = d.answers.length;
+				const total = Array.isArray(d.questions) ? d.questions.length : answered;
+				const first = d.answers[0];
+				const inputQ = d.questions.find((q) => q.id === first.id);
+				const labelRaw = inputQ?.label && inputQ.label.length > 0 ? inputQ.label : first.id;
+				const answerText = first.wasCustom
+					? `wrote: ${first.customInput ?? ""}`
+					: (first.indices ?? [])
+						.map((idx, i) => `${idx}. ${displayValue({ value: first.values[i], label: first.labels[i] })}`)
+						.join(", ");
+				return renderToolSummary([`status: answered · ${answered}/${total}`, `answer: ${labelRaw} · ${answerText || "(empty)"}`], theme, {
+					expandable: raw.length > 0,
+					expandLabel: "all answers",
+				});
+			},
 	});
 }

@@ -1,9 +1,8 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { homedir as getHomedir } from "node:os";
 import { resolve } from "node:path";
+import { renderToolCall, shortenHomePath } from "../../lib/index.js";
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -68,22 +67,11 @@ export default function betterBashTool(pi: ExtensionAPI): void {
     ) {
       markNativeBashTiming(context);
 
-      const homedir = getHomedir();
       const command = typeof args.command === "string" ? args.command : "";
-      const cmdLine =
-        theme.fg("toolTitle", theme.bold("$ ")) + theme.fg("accent", command);
-      const timeoutSuffix = args.timeout
-        ? theme.fg("dim", ` (timeout ${args.timeout}s)`)
-        : "";
-
-      if (args.cwd) {
-        const displayCwd = args.cwd.startsWith(homedir)
-          ? "~" + args.cwd.slice(homedir.length)
-          : args.cwd;
-        const cwdLine = theme.fg("muted", displayCwd);
-        return new Text(cwdLine + "\n" + cmdLine + timeoutSuffix, 0, 0);
-      }
-      return new Text(cmdLine + timeoutSuffix, 0, 0);
+      const cwd = typeof args.cwd === "string" ? shortenHomePath(args.cwd) : undefined;
+      const timeout = typeof args.timeout === "number" ? `timeout ${args.timeout}s` : undefined;
+      const target = [cwd, `$ ${command}`, timeout].filter((part): part is string => Boolean(part)).join(" · ");
+      return renderToolCall("bash", target, theme);
     },
 
     async execute(toolCallId, params, signal, onUpdate, ctx) {

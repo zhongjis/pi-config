@@ -1,7 +1,12 @@
-import { createWriteTool, keyHint, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-// @ts-expect-error LSP may miss the repo test/runtime alias for pi-tui; runtime/test alias resolves it.
-import { Text } from "@earendil-works/pi-tui";
-import { homedir } from "node:os";
+import { createWriteTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  extractToolText,
+  firstMeaningfulLine,
+  renderToolCall,
+  renderToolExpanded,
+  renderToolSummary,
+  shortenHomePath,
+} from "../../lib/index.js";
 
 type BuiltInWriteTool = {
   description: string;
@@ -36,36 +41,15 @@ type RenderResultContext = {
 };
 
 type ToolTheme = ExtensionContext["ui"]["theme"];
-type ToolThemeColor = Parameters<ToolTheme["fg"]>[0];
 
 const WRITE_SUMMARY_MAX_CHARS = 76;
 const ELLIPSIS = "…";
-
-function style(theme: ToolTheme, color: ToolThemeColor, text: string): string {
-  return theme.fg(color, text);
-}
-
-function styleToolTitle(theme: ToolTheme, text: string): string {
-  return style(theme, "toolTitle", theme.bold(text));
-}
-
-function shortenPath(path: string): string {
-  const home = homedir();
-  return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
-}
 
 function truncateEnd(text: string, maxChars: number): string {
   const chars = Array.from(text);
   if (chars.length <= maxChars) return text;
   if (maxChars <= ELLIPSIS.length) return ELLIPSIS.slice(0, maxChars);
   return `${chars.slice(0, maxChars - ELLIPSIS.length).join("")}${ELLIPSIS}`;
-}
-
-function getResultText(result: ToolResult | undefined): string {
-  return (result?.content ?? [])
-    .filter((part) => !part?.type || part.type === "text")
-    .map((part) => part?.text ?? "")
-    .join("\n");
 }
 
 function countLines(text: string): number {
@@ -77,19 +61,7 @@ function formatLineCount(count: number): string {
 }
 
 function firstDecisiveLine(text: string): string {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean) ?? "unknown error";
-}
-
-function renderSummary(lines: string[], theme: ToolTheme): Text {
-  const details = [...lines, keyHint("app.tools.expand", "to expand full result")];
-  const rendered = details
-    .map((line, index) => `${index === details.length - 1 ? "└─" : "├─"} ${line}`)
-    .map((line) => style(theme, "muted", line))
-    .join("\n");
-  return new Text(rendered, 0, 0);
+  return firstMeaningfulLine(text) || "unknown error";
 }
 
 export function installWriteToolVisual(pi: ExtensionAPI): void {
@@ -113,13 +85,8 @@ export function installWriteToolVisual(pi: ExtensionAPI): void {
     },
 
     renderCall(args: Partial<WriteToolArgs> | undefined, theme: ToolTheme) {
-      const rawPath = typeof args?.path === "string" ? args.path : "";
-      const path = shortenPath(rawPath);
-      return new Text(
-        `▸ ${styleToolTitle(theme, "write")} ${style(theme, "dim", "·")} ${style(theme, "accent", path)}`,
-        0,
-        0,
-      );
+      const path = typeof args?.path === "string" ? shortenHomePath(args.path) : "";
+      return renderToolCall("write", path, theme);
     },
 
     renderResult(
@@ -128,23 +95,25 @@ export function installWriteToolVisual(pi: ExtensionAPI): void {
       theme: ToolTheme,
       context: RenderResultContext = {},
     ) {
-      const text = getResultText(result);
-      if (options.expanded) return new Text(text, 0, 0);
+      const text = extractToolText(result);
+      if (options.expanded) return renderToolExpanded(text);
 
-      if (options.isPartial) return renderSummary(["status: writing"], theme);
+      if (options.isPartial) return renderToolSummary(["status: writing"], theme, { expandable: true });
 
       if (context.isError || result?.isError) {
-        return renderSummary(
+        return renderToolSummary(
           [`error: ${truncateEnd(firstDecisiveLine(text), WRITE_SUMMARY_MAX_CHARS)}`],
           theme,
+          { expandable: true },
         );
       }
 
       const writtenContent =
         typeof context.args?.content === "string" ? context.args.content : text;
-      return renderSummary(
+      return renderToolSummary(
         ["status: written", `size: ${formatLineCount(countLines(writtenContent))}`],
         theme,
+        { expandable: true },
       );
     },
   });

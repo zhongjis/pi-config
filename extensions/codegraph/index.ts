@@ -7,9 +7,14 @@ import { pathToFileURL } from "node:url";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Static } from "typebox";
 import { Type } from "typebox";
-import { keyHint, type AgentToolResult, type ExtensionAPI, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-// @ts-expect-error LSP may miss the repo tsconfig path for this vendored package; runtime/test alias resolves it.
-import { Text } from "@earendil-works/pi-tui";
+import { type AgentToolResult, type ExtensionAPI, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import {
+  extractToolText,
+  firstMeaningfulLine,
+  renderToolCall,
+  renderToolExpanded,
+  renderToolSummary,
+} from "../lib/tool-output.js";
 
 const OptionalProjectPath = Type.Optional(Type.String({
   description: "Path to a different project with .codegraph/ initialized. Defaults to the active Pi ctx.cwd.",
@@ -712,21 +717,6 @@ function getToolResultText(result: any): string {
     .join("\n");
 }
 
-function styleToolTitle(theme: ToolTheme, text: string): string {
-  const bold = theme.bold ? theme.bold(text) : text;
-  return theme.fg ? theme.fg("toolTitle", bold) : bold;
-}
-
-function styleMuted(theme: ToolTheme, text: string): string {
-  return theme.fg ? theme.fg("muted", text) : text;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`;
-  const kilobytes = bytes / 1024;
-  if (kilobytes < 1024) return `${kilobytes.toFixed(1)} KB`;
-  return `${(kilobytes / 1024).toFixed(1)} MB`;
-}
 
 function shortenPathForDisplay(value: string): string {
   const normalized = value.split(/[\\/]+/).filter(Boolean);
@@ -742,68 +732,31 @@ function formatArgValue(key: string, value: unknown): string | undefined {
   return undefined;
 }
 
-function renderCodeGraphCall(tool: CodeGraphToolDefinition, args: ToolParams, theme: ToolTheme): Text {
-  const argOrder = ["query", "symbol", "path", "format", "includeCode", "projectPath"] as const;
-  const parts = argOrder
-    .map((key) => {
-      const value = formatArgValue(key, args[key]);
-      if (!value) return undefined;
-      return key === "projectPath" ? `project: ${value}` : `${key}: ${value}`;
-    })
-    .filter((part): part is string => Boolean(part));
-  const suffix = parts.length > 0 ? ` · ${styleMuted(theme, parts.join(" · "))}` : "";
-  return new Text(`▸ ${styleToolTitle(theme, tool.name)}${suffix}`, 0, 0);
-}
-
-function getResultText(result: ToolRenderResult | undefined): string {
-  return (result?.content || [])
-    .filter((part) => part?.type === "text")
-    .map((part) => part.text ?? "")
-    .join("\n");
-}
-
-function countResultLines(text: string): number {
-  return text === "" ? 0 : text.split(/\r?\n/).length;
-}
-
-function getFirstMeaningfulLine(text: string): string | undefined {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
+function renderCodeGraphCall(tool: CodeGraphToolDefinition, args: ToolParams, theme: ToolTheme) {
+  const decisive = (() => {
+    switch (tool.name) {
+      case "codegraph_search":
+      case "codegraph_explore":
+        return `query: ${formatArgValue("query", args.query) ?? "unspecified"}`;
+      case "codegraph_callers":
+      case "codegraph_callees":
+      case "codegraph_impact":
+      case "codegraph_node":
+        return `symbol: ${formatArgValue("symbol", args.symbol) ?? "unspecified"}`;
+      case "codegraph_files":
+        return `path: ${formatArgValue("path", args.path) ?? "project root"}`;
+      case "codegraph_status":
+        return "op: inspect index";
+    }
+  })();
+  const project = formatArgValue("projectPath", args.projectPath) ?? "active";
+  return renderToolCall(tool.name, `${decisive} · project: ${project}`, theme);
 }
 
 function stripMarkdown(value: string): string {
   return value.replace(/\*\*([^*]+)\*\*/g, "$1").trim();
 }
 
-function parseMarkdownHeading(text: string): { name: string; kind?: string } | undefined {
-  const firstLine = getFirstMeaningfulLine(text);
-  if (!firstLine) return undefined;
-  const match = /^\*\*([^*]+)\*\*\s*(?:\(([^)]+)\))?/.exec(firstLine);
-  if (!match) return undefined;
-  return { name: match[1], kind: match[2] };
-}
-
-function collectBacktickedPaths(text: string): string[] {
-  const paths = new Set<string>();
-  const pathPattern = /`([^`\n]+)`/g;
-  let match = pathPattern.exec(text);
-  while (match !== null) {
-    const candidate = match[1];
-    if (candidate.includes("/") || /\.[A-Za-z0-9]+(?::\d+)?$/.test(candidate)) paths.add(candidate);
-    match = pathPattern.exec(text);
-  }
-  return [...paths];
-}
-
-
-function prefixTreeLines(lines: string[]): string[] {
-  return lines.map((line, index) => {
-    const prefix = index === lines.length - 1 ? "└─" : "├─";
-    return `${prefix} ${line}`;
-  });
-}
 
 function firstMatch(text: string, pattern: RegExp): string | undefined {
   return pattern.exec(text)?.[1];
@@ -871,7 +824,9 @@ function summarizeFiles(text: string, args: ToolParams): string[] {
 
 function summarizeSearch(text: string): string[] {
   const count = firstMatch(text, /Search Results \(([^)]+)\)/);
-  const top = collectBoldEntries(text, 3);
+  const top = collectBoldEntries(text, 4)
+    .filter((entry) => !entry.startsWith("Search Results"))
+    .slice(0, 3);
   return [
     count ? `matches: ${count}` : undefined,
     top.length > 0 ? `top: ${top.join(", ")}` : undefined,
@@ -938,47 +893,49 @@ function summarizeToolResult(tool: CodeGraphToolDefinition, args: ToolParams, te
   }
 }
 
+function partialActivity(tool: CodeGraphToolDefinition): string {
+  switch (tool.name) {
+    case "codegraph_status":
+      return "indexing";
+    case "codegraph_impact":
+      return "impact analysis";
+    case "codegraph_explore":
+    case "codegraph_node":
+      return "code analysis";
+    case "codegraph_files":
+      return "file analysis";
+    case "codegraph_search":
+      return "symbol search";
+    case "codegraph_callers":
+    case "codegraph_callees":
+      return "call graph analysis";
+  }
+}
+
 function renderCodeGraphResult(
   tool: CodeGraphToolDefinition,
   result: ToolRenderResult | undefined,
   options: CodeGraphRenderOptions,
   theme: ToolTheme,
   context: CodeGraphRenderContext = {},
-): Text {
-  const text = getResultText(result);
+) {
+  const text = extractToolText(result);
+  if (options.expanded) return renderToolExpanded(text);
+
   const args = context.args || {};
   const isError = Boolean(result?.isError || context.isError);
-  const lineCount = countResultLines(text);
-  const byteCount = Buffer.byteLength(text, "utf8");
-  const status = isError ? "error" : options.isPartial ? "running" : undefined;
-
-  if (options.expanded) {
-    return new Text(text, 0, 0);
+  if (isError) {
+    const error = stripMarkdown(firstMeaningfulLine(text) || "unknown CodeGraph error");
+    return renderToolSummary([`error: ${error}`], theme, { expandable: text.length > 0 });
+  }
+  if (options.isPartial) {
+    return renderToolSummary([`status: running · ${partialActivity(tool)}`], theme, { expandable: text.length > 0 });
   }
 
-  const paths = collectBacktickedPaths(text);
-  const firstLine = getFirstMeaningfulLine(text);
-  const projectPath = formatArgValue("projectPath", args.projectPath);
   const toolSummary = summarizeToolResult(tool, args, text);
-  const details = [
-    ...(status ? [status] : []),
-    ...toolSummary,
-    `output: ${lineCount} lines · ${formatBytes(byteCount)}`,
-  ];
-
-  if (paths.length > 0 && !toolSummary.some((line) => line.startsWith("files:"))) {
-    details.push(`files: ${paths.length} · ${paths.slice(0, 3).join(", ")}`);
-  }
-  if (projectPath) {
-    details.push(`project: ${projectPath}`);
-  }
-  if (firstLine && toolSummary.length === 0 && !parseMarkdownHeading(text)) {
-    details.push(`${isError ? "error" : "top"}: ${stripMarkdown(firstLine)}`);
-  }
-  details.push(keyHint("app.tools.expand", "to expand full result"));
-
-  const lines = prefixTreeLines(details).map((line) => styleMuted(theme, line));
-  return new Text(lines.join("\n"), 0, 0);
+  const fallback = stripMarkdown(firstMeaningfulLine(text) || "no output");
+  const details = ["status: complete", ...(toolSummary.length > 0 ? toolSummary : [`result: ${fallback}`])];
+  return renderToolSummary(details, theme, { expandable: text.length > 0 });
 }
 
 function isUninitializedToolResult(result: any): boolean {

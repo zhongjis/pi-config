@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 
@@ -55,6 +56,30 @@ vi.mock("@earendil-works/pi-coding-agent", async () => {
   };
 });
 
+type Renderable = { text?: string; render?: (width: number) => string[] };
+
+function renderLines(component: Renderable, width: number): string[] {
+  if (component.render) return component.render(width);
+  return (component.text ?? "").split("\n");
+}
+
+function expectWidthSafe(component: Renderable): void {
+  for (const width of [20, 40, 80, 120]) {
+    for (const line of renderLines(component, width)) {
+      expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+    }
+  }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null) return value;
+  Object.freeze(value);
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return value;
+}
+
 describe("better-bash-tool", () => {
   beforeEach(() => {
     createBashToolDefinitionMock.mockClear();
@@ -70,7 +95,7 @@ describe("better-bash-tool", () => {
 
     const tool = mock.tools.get("bash") as {
       execute: (...args: unknown[]) => Promise<unknown>;
-      renderCall: (...args: unknown[]) => { text: string };
+      renderCall: (...args: unknown[]) => Renderable;
       renderResult: unknown;
     };
     expect(tool).toBeDefined();
@@ -104,23 +129,31 @@ describe("better-bash-tool", () => {
     });
   });
 
-  it("keeps explicit cwd visible even when it matches the process cwd", async () => {
+  it("renders aligned call row with tool name, shortened cwd, command preview, and timeout", async () => {
     const { default: initBetterBashTool } = await import("../index.js");
     const mock = createMockPi();
     initBetterBashTool(mock.pi as never);
 
     const tool = mock.tools.get("bash") as {
-      renderCall: (...args: unknown[]) => { text: string };
+      renderCall: (...args: unknown[]) => Renderable;
+      renderResult: unknown;
     };
     const ctx = { ...createMockContext(), cwd: process.cwd() };
+    const args = deepFreeze({ command: "pnpm test -- --runInBand", timeout: 9, cwd: `${homedir()}/personal/pi-config` });
 
     const rendered = tool.renderCall(
-      { command: "pnpm test", cwd: process.cwd() },
+      args,
       ctx.ui.theme,
       { cwd: ctx.cwd, state: {}, executionStarted: false },
     );
+    const text = renderLines(rendered, 120).join("\n");
 
-    expect(rendered.text).toContain("~" + process.cwd().slice(homedir().length));
-    expect(rendered.text).toContain("$ pnpm test");
+    expect(text).toContain("▸ bash ·");
+    expect(text).toContain("~/personal/pi-config");
+    expect(text).toContain("$ pnpm test -- --runInBand");
+    expect(text).toContain("timeout 9s");
+    expect(args).toEqual({ command: "pnpm test -- --runInBand", timeout: 9, cwd: `${homedir()}/personal/pi-config` });
+    expect(tool.renderResult).toBe(nativeRenderResultMock);
+    expectWidthSafe(rendered);
   });
 });

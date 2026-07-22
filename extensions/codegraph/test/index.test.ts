@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const spawnMock = vi.hoisted(() => vi.fn());
@@ -10,15 +11,18 @@ const spawnMock = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", async () => ({
   spawn: spawnMock,
 }));
+vi.mock("@earendil-works/pi-tui", async () =>
+  import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"),
+);
 
-type RenderableText = { render?: () => string[]; text?: string };
+type RenderableText = { render?: (width: number) => string[]; text?: string };
 type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
 
 type ToolDefinition = {
   name: string;
   renderCall?: (args: Record<string, unknown>, theme: PlainTheme, context?: unknown) => RenderableText;
   renderResult?: (
-    result: { content?: Array<{ type: "text"; text: string }>; details?: Record<string, unknown>; isError?: boolean },
+    result: { content?: readonly unknown[]; details?: unknown; isError?: boolean },
     options: { expanded?: boolean; isPartial?: boolean },
     theme: PlainTheme,
     context?: { args?: Record<string, unknown>; isError?: boolean },
@@ -164,9 +168,18 @@ const plainTheme = {
   bold: vi.fn((text: string) => text),
 };
 
-function renderText(component: RenderableText): string {
-  if (typeof component.render === "function") return component.render().join("\n");
+function renderText(component: RenderableText, width = 120): string {
+  if (typeof component.render === "function") return component.render(width).join("\n");
   return component.text ?? "";
+}
+
+function expectWidthSafe(component: RenderableText): void {
+  expect(component.render).toBeTypeOf("function");
+  for (const width of [20, 40, 80, 120]) {
+    for (const line of component.render!(width)) {
+      expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+    }
+  }
 }
 
 async function createInvalidGlobalCodeGraph(root: string): Promise<void> {
@@ -222,86 +235,43 @@ describe("codegraph extension", () => {
     ]);
   });
 
-  it("renders compact calls and collapsed/expanded results without changing content", async () => {
+  it("renders all eight names with decisive inputs and explicit project targets", async () => {
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
-    const tool = mock.tools.get("codegraph_explore")!;
-    const rawText = [
-      "Explored symbols for query Button",
-      "File `src/components/Button.tsx`",
-      "File `src/components/Button.test.tsx`",
-      "File `src/index.ts`",
-      "File `src/extra.ts`",
-      "- Button component",
-      "- renderButton helper",
-      "function Button() { return null; }",
-    ].join("\n");
-    const result = { content: [{ type: "text" as const, text: rawText }], details: {} };
+    const cases = [
+      ["codegraph_search", { query: "按钮", projectPath: "/repo" }, "query: 按钮"],
+      ["codegraph_callers", { symbol: "render\u001b[31mCall\u001b[0m", projectPath: "/repo" }, "symbol: render"],
+      ["codegraph_callees", { symbol: "renderCall", projectPath: "/repo" }, "symbol: renderCall"],
+      ["codegraph_impact", { symbol: "renderCall", projectPath: "/repo" }, "symbol: renderCall"],
+      ["codegraph_explore", { query: "renderer flow", projectPath: "/repo" }, "query: renderer flow"],
+      ["codegraph_node", { symbol: "renderCall", projectPath: "/repo" }, "symbol: renderCall"],
+      ["codegraph_status", { projectPath: "/repo" }, "op: inspect index"],
+      ["codegraph_files", { path: "src/界面", projectPath: "/repo" }, "path: src/界面"],
+    ] as const;
 
-    const args = { query: "Button", projectPath: "/repo" };
-    const call = renderText(tool.renderCall!(args, plainTheme));
-    const collapsed = renderText(tool.renderResult!(result, { expanded: false, isPartial: false }, plainTheme, { args }));
-    const expanded = renderText(tool.renderResult!(result, { expanded: true, isPartial: false }, plainTheme, { args }));
-
-    expect(call).toContain("▸ codegraph_explore");
-    expect(call).toContain("query: Button");
-    expect(call).toContain("project: /repo");
-    expect(collapsed).not.toContain("codegraph_explore");
-    expect(collapsed).not.toContain("success");
-    expect(collapsed).toContain("├─ output: 8 lines");
-    expect(collapsed).toContain(`${Buffer.byteLength(rawText, "utf8")} bytes`);
-    expect(collapsed).toContain("├─ files: 4 · src/components/Button.tsx, src/components/Button.test.tsx, src/index.ts");
-    expect(collapsed).not.toContain("items: 2");
-    expect(collapsed).toContain("├─ project: /repo");
-    expect(collapsed).toContain("└─ app.tools.expand to expand full result");
-    expect(collapsed).not.toContain("function Button() { return null; }");
-    expect(expanded).not.toContain("codegraph_explore");
-    expect(expanded).toContain(rawText);
-    expect(result.content[0].text).toBe(rawText);
+    for (const [name, args, decisive] of cases) {
+      const component = mock.tools.get(name)!.renderCall!(args, plainTheme);
+      const text = renderText(component);
+      expect(text).toContain(`▸ ${name}`);
+      expect(text).toContain(decisive);
+      expect(text).toContain("project: /repo");
+      expectWidthSafe(component);
+    }
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it("renders partial and error CodeGraph results safely", async () => {
+  it("summarizes known outputs with state, counts, and highlights", async () => {
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
-    const tool = mock.tools.get("codegraph_search")!;
-
-    const partial = renderText(tool.renderResult!({ content: [] }, { expanded: false, isPartial: true }, plainTheme));
-    const error = renderText(tool.renderResult!(
-      { content: [{ type: "text" as const, text: "CodeGraph failed\nstack hidden" }] },
-      { expanded: false, isPartial: false },
-      plainTheme,
-      { isError: true },
-    ));
-    const expandedError = renderText(tool.renderResult!(
-      { content: [{ type: "text" as const, text: "CodeGraph failed\nstack hidden" }] },
-      { expanded: true, isPartial: false },
-      plainTheme,
-      { isError: true },
-    ));
-
-    expect(partial).toContain("├─ running");
-    expect(partial).toContain("├─ output: 0 lines · 0 bytes");
-    expect(error).toContain("├─ error");
-    expect(error).toContain("├─ error: CodeGraph failed");
-    expect(error).toContain("└─ app.tools.expand to expand full result");
-    expect(expandedError).toContain("CodeGraph failed\nstack hidden");
-  });
-
-  it("summarizes known CodeGraph output shapes per tool", async () => {
-    const mock = createMockPi();
-    const { default: codegraphExtension } = await loadExtension();
-    codegraphExtension(mock.pi as never);
-    const render = (toolName: string, text: string, args: Record<string, unknown> = {}) => {
-      const tool = mock.tools.get(toolName)!;
-      return renderText(tool.renderResult!(
+    const render = (toolName: string, text: string, args: Record<string, unknown> = {}) =>
+      renderText(mock.tools.get(toolName)!.renderResult!(
         { content: [{ type: "text" as const, text }] },
         { expanded: false, isPartial: false },
         plainTheme,
         { args },
       ));
-    };
 
     expect(render("codegraph_status", [
       "**CodeGraph Status**",
@@ -313,11 +283,10 @@ describe("codegraph extension", () => {
       "- typescript: 333",
       "- yaml: 2",
     ].join("\n"))).toContain("index: 339 files · 4471 nodes · 15.63 MB");
-
     expect(render("codegraph_files", "**Project Structure (2 files)**", { path: "extensions/codegraph", format: "tree" }))
       .toContain("structure: 2 files");
     expect(render("codegraph_search", "**Search Results (1 found)**\n\n**renderCodeGraphResult** (function)"))
-      .toContain("matches: 1 found");
+      .toContain("top: renderCodeGraphResult (function)");
     expect(render("codegraph_node", "**Location:** extensions/codegraph/index.ts:818\n**Calls →** a, b, +3 more\n**Called by ←** c"))
       .toContain("calls: 5");
     expect(render("codegraph_callers", "**Callers of renderCodeGraphResult (1 found)**\n\n- codegraphExtension (function) - extensions/codegraph/index.ts:997"))
@@ -328,6 +297,86 @@ describe("codegraph extension", () => {
       .toContain("impact: 2 symbols");
     expect(render("codegraph_explore", "Found 35 symbols across 2 files.\n\n**Blast radius — what depends on these**\n\n- renderCodeGraphResult\n- render\n\n**Source Code**"))
       .toContain("found: 35 symbols · 2 files");
+    expect(render("codegraph_explore", "Found 35 symbols across 2 files.\n\n**Source Code**"))
+      .toContain("status: complete");
+  });
+
+  it("preserves frozen raw output in expansion and safely falls back for malformed output", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const tool = mock.tools.get("codegraph_explore")!;
+    const raw = "\u001b[32m分析完成\u001b[0m\n\n```ts\nconst value = 'raw';\n```";
+    const content = Object.freeze([{ type: "text" as const, text: raw }]);
+    const result = Object.freeze({ content, details: Object.freeze({ broken: true }) });
+
+    const expanded = tool.renderResult!(result, { expanded: true }, plainTheme, {
+      args: { query: "renderer", projectPath: "/repo" },
+    });
+    expect(expanded.text).toBe(raw);
+    expect(result.content[0].text).toBe(raw);
+    expectWidthSafe(expanded);
+
+    const malformed = tool.renderResult!(
+      { content: [{ type: "text", text: "unexpected owner output\nopaque detail" }], details: { broken: true } },
+      { expanded: false },
+      plainTheme,
+      { args: { query: "renderer" } },
+    );
+    expect(renderText(malformed)).toContain("result: unexpected owner output");
+    expectWidthSafe(malformed);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("renders operation-specific partial activity and decisive errors", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const indexing = renderText(mock.tools.get("codegraph_status")!.renderResult!(
+      { content: [] },
+      { expanded: false, isPartial: true },
+      plainTheme,
+      { args: { projectPath: "/repo" } },
+    ));
+    expect(indexing).toContain("status: running · indexing");
+
+    const analysis = renderText(mock.tools.get("codegraph_impact")!.renderResult!(
+      { content: [] },
+      { expanded: false, isPartial: true },
+      plainTheme,
+      { args: { symbol: "renderCall" } },
+    ));
+    expect(analysis).toContain("status: running · impact analysis");
+
+    const error = renderText(mock.tools.get("codegraph_search")!.renderResult!(
+      { content: [{ type: "text", text: "CodeGraph failed decisively\nstack hidden" }], isError: true },
+      { expanded: false },
+      plainTheme,
+      { args: { query: "renderer" }, isError: true },
+    ));
+    expect(error).toContain("error: CodeGraph failed decisively");
+    expect(error).not.toContain("stack hidden");
+    expect(error).toContain("app.tools.expand to expand full result");
+  });
+
+  it("keeps ANSI/CJK renderer output safe at 20/40/80/120 columns", async () => {
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const tool = mock.tools.get("codegraph_search")!;
+    const call = tool.renderCall!(
+      { query: "\u001b[36m超长查询界面组件\u001b[0m", projectPath: "/非常/长/项目/路径" },
+      plainTheme,
+    );
+    const result = tool.renderResult!(
+      { content: [{ type: "text", text: "**Search Results (2 found)**\n\n**界面组件一** (function)\n**界面组件二** (class)" }] },
+      { expanded: false },
+      plainTheme,
+      { args: { query: "界面组件" } },
+    );
+    expectWidthSafe(call);
+    expectWidthSafe(result);
   });
 
   it("injects concise before_agent_start guidance for a bare .codegraph marker without spawning CodeGraph", async () => {

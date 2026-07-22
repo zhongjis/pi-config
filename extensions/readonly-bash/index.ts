@@ -5,14 +5,11 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   Theme,
-  ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { homedir as getHomedir } from "node:os";
 import { resolve } from "node:path";
-
+import { renderToolCall, shortenHomePath } from "../lib/index.js";
 export const DEFAULT_READONLY_BASH_TIMEOUT_SECONDS = 30;
 
 const readonlyBashSchema = Type.Object({
@@ -1050,24 +1047,6 @@ function normalizeResult(
   };
 }
 
-function resultWithVisibleExitCode(result: ReadonlyBashResult): BashResult {
-  const exitCode = result.details.exitCode;
-  if (exitCode === 0) return result;
-
-  const statusText = `Command exited with code ${exitCode}`;
-  if (textContent(result).includes(statusText)) return result;
-
-  return {
-    ...result,
-    content: [
-      ...result.content,
-      {
-        type: "text",
-        text: `${textContent(result) ? "\n\n" : ""}${statusText}`,
-      },
-    ],
-  };
-}
 
 function commandExitFromError(
   error: unknown,
@@ -1105,37 +1084,16 @@ export default function readonlyBash(pi: ExtensionAPI): void {
     ) {
       markNativeBashTiming(context);
 
-      const homedir = getHomedir();
       const command = typeof args.command === "string" ? args.command : "";
-      const cmdLine =
-        theme.fg("toolTitle", theme.bold("$ ")) + theme.fg("accent", command);
-      const timeoutSuffix = args.timeout
-        ? theme.fg("dim", ` (timeout ${args.timeout}s)`)
-        : "";
-
-      if (args.cwd && resolve(args.cwd) !== process.cwd()) {
-        const displayCwd = args.cwd.startsWith(homedir)
-          ? "~" + args.cwd.slice(homedir.length)
-          : args.cwd;
-        const cwdLine = theme.fg("muted", displayCwd);
-        return new Text(cwdLine + "\n" + cmdLine + timeoutSuffix, 0, 0);
-      }
-      return new Text(cmdLine + timeoutSuffix, 0, 0);
+      const cwd = typeof args.cwd === "string" && resolve(args.cwd) !== process.cwd()
+        ? shortenHomePath(args.cwd)
+        : undefined;
+      const timeout = typeof args.timeout === "number" ? `timeout ${args.timeout}s` : undefined;
+      const target = [cwd, `$ ${command}`, timeout].filter((part): part is string => Boolean(part)).join(" · ");
+      return renderToolCall("readonly_bash", target, theme);
     },
 
-    renderResult(
-      result: AgentToolResult<ReadonlyBashDetails>,
-      options: ToolRenderResultOptions,
-      theme: Theme,
-      context: unknown,
-    ) {
-      return nativeDef.renderResult!(
-        resultWithVisibleExitCode(result),
-        options,
-        theme,
-        context as never,
-      );
-    },
+    renderResult: nativeDef.renderResult,
 
     async execute(
       toolCallId: string,

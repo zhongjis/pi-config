@@ -19,7 +19,7 @@ import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../ha
 import { registerModeCommands } from "./commands.js";
 import { registerModeHooks } from "./hooks.js";
 import { ModeStateManager } from "./mode-state.js";
-import { runPlanApprovalFlow } from "./plan-approval.js";
+import { renderPlanApprovalCall, renderPlanApprovalResult, runPlanApprovalFlow } from "./plan-approval.js";
 import { getLocalPlanPath } from "./plan-storage.js";
 import { registerPlanScaffoldTool } from "./plan-scaffold.js";
 export default function modesExtension(pi: ExtensionAPI): void {
@@ -56,6 +56,12 @@ export default function modesExtension(pi: ExtensionAPI): void {
 				}),
 			),
 		}),
+		renderCall(args, theme) {
+			return renderPlanApprovalCall(args, theme);
+		},
+		renderResult(result, options, theme, context) {
+			return renderPlanApprovalResult(result, options, theme, context);
+		},
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const variant = params.variant === "post-high-accuracy" ? "post-high-accuracy" as const : "post-gap-review" as const;
 			const result = await runPlanApprovalFlow(pi, state, ctx, variant);

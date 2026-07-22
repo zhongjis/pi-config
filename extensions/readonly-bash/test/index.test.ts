@@ -1,4 +1,6 @@
+import { homedir } from "node:os";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 
@@ -71,12 +73,12 @@ type ReadonlyBashTool = {
   name: string;
   label: string;
   description: string;
-  renderResult: (
-    result: { content: Array<{ type: string; text: string }>; details: Record<string, unknown> },
-    options: unknown,
-    theme: unknown,
+  renderCall: (
+    args: { command?: string; timeout?: number; cwd?: string },
+    theme: { fg: (name: string, text: string) => string; bold: (text: string) => string },
     context: unknown,
-  ) => unknown;
+  ) => { text?: string; render?: (width: number) => string[] };
+  renderResult: unknown;
   execute: (
     toolCallId: string,
     params: { command: string; timeout?: number },
@@ -96,6 +98,28 @@ function getReadonlyBashTool(): ReadonlyBashTool {
   const tool = mock.tools.get("readonly_bash");
   expect(tool).toBeDefined();
   return tool as ReadonlyBashTool;
+}
+
+function renderLines(component: { text?: string; render?: (width: number) => string[] }, width: number): string[] {
+  if (component.render) return component.render(width);
+  return (component.text ?? "").split("\n");
+}
+
+function expectWidthSafe(component: { text?: string; render?: (width: number) => string[] }): void {
+  for (const width of [20, 40, 80, 120]) {
+    for (const line of renderLines(component, width)) {
+      expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+    }
+  }
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value !== "object" || value === null) return value;
+  Object.freeze(value);
+  for (const nested of Object.values(value)) {
+    deepFreeze(nested);
+  }
+  return value;
 }
 
 let returnToolInit: (pi: never) => void;
@@ -427,7 +451,24 @@ describe("readonly-bash tool", () => {
     expect(bashMockState.executeCalls).toHaveLength(0);
   });
 
-  it("delegates rendering to native bash renderer and preserves nonzero exit visibility", async () => {
+  it("renders aligned call row with full name, shortened cwd, command preview, and timeout", () => {
+    const tool = getReadonlyBashTool();
+    const ctx = createMockContext();
+    const args = deepFreeze({ command: "git status --short", timeout: 5, cwd: `${homedir()}/personal/other-project` });
+
+    const rendered = tool.renderCall(args, ctx.ui.theme, { state: {}, executionStarted: false });
+    const text = renderLines(rendered, 120).join("\n");
+
+    expect(text).toContain("▸ readonly_bash ·");
+    expect(text).toContain("~/personal/other-project");
+    expect(text).toContain("$ git status --short");
+    expect(text).toContain("timeout 5s");
+    expect(args).toEqual({ command: "git status --short", timeout: 5, cwd: `${homedir()}/personal/other-project` });
+    expect(tool.renderResult).toBe(nativeRenderResultMock);
+    expectWidthSafe(rendered);
+  });
+
+  it("keeps native renderResult identity and does not wrap native bash rendering", async () => {
     const tool = getReadonlyBashTool();
     const ctx = { ...createMockContext(), cwd: "/repo/worktree" };
 
@@ -448,17 +489,6 @@ describe("readonly-bash tool", () => {
       },
     });
 
-    const options = { expanded: false };
-    const theme = { fg: (_name: string, text: string) => text };
-    const context = { state: {}, executionStarted: true, showImages: false };
-    tool.renderResult(result, options, theme, context);
-
-    expect(nativeRenderResultMock).toHaveBeenCalledTimes(1);
-    expect(nativeRenderResultMock.mock.calls[0]?.[0]).toMatchObject({
-      content: [
-        { type: "text", text: "diff output" },
-        { type: "text", text: "\n\nCommand exited with code 2" },
-      ],
-    });
+    expect(tool.renderResult).toBe(nativeRenderResultMock);
   });
 });

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 const FINAL_VERIFICATION_ITEMS = [
 	"F1. Plan compliance audit",
@@ -142,11 +143,11 @@ ${FINAL_VERIFICATION_ITEMS.map((item) => `- [ ] ${item}`).join("\n")}
 `;
 }
 
-type RenderableText = { render?: () => string[]; text?: string };
+type RenderableText = { render?: (width?: number) => string[]; text?: string };
 type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
 type ToolResult = {
 	content?: Array<{ type: "text"; text: string }>;
-	details?: { artifacts?: Array<{ path: string; status: string }> };
+	details?: { artifacts?: unknown };
 	isError?: boolean;
 };
 
@@ -167,8 +168,8 @@ const plainTheme: PlainTheme = {
 	bold: vi.fn((text: string) => text),
 };
 
-function renderText(component: RenderableText): string {
-	if (typeof component.render === "function") return component.render().join("\n");
+function renderText(component: RenderableText, width = 80): string {
+	if (typeof component.render === "function") return component.render(width).join("\n");
 	return component.text ?? "";
 }
 
@@ -263,7 +264,7 @@ describe("plan_scaffold", () => {
 		const result = await execute(tool, ctx, { slug: "expanded-plan", intent: "unclear", draftOnly: true });
 		const raw = result.content[0].text;
 
-		expect(renderText(tool.renderResult!(result, { expanded: true }, plainTheme))).toBe(raw);
+		expect(renderText(tool.renderResult!(result, { expanded: true }, plainTheme), 1000)).toBe(raw);
 	});
 
 	it("renders partial and error states safely", async () => {
@@ -285,6 +286,41 @@ describe("plan_scaffold", () => {
 		expect(error).toContain("error: refused: local://PLAN.md has edits");
 		expect(error).not.toContain("stack hidden");
 		expect(error).toContain("to expand full result");
+	});
+
+	it("keeps scaffold renderers width-safe and side-effect free", async () => {
+		const { ctx, pi, tool } = await setup();
+		const result = await execute(tool, ctx, { slug: "wide-render", intent: "clear" });
+		const eventCount = pi.events.emit.mock.calls.length;
+		const appendCount = pi.appendEntry.mock.calls.length;
+		const widths = [0, 1, 2, 8, 20, 40, 80, 120];
+
+		for (const width of widths) {
+			for (const component of [
+				tool.renderCall!({ slug: "long-界-emoji", intent: "unclear", reviewRequired: true }, plainTheme),
+				tool.renderResult!(result, {}, plainTheme, { args: { slug: "wide-render", intent: "clear" } }),
+				tool.renderResult!(result, { expanded: true }, plainTheme),
+			]) {
+				const rendered = component.render?.(width) ?? [component.text ?? ""];
+				expect(rendered.every((line) => visibleWidth(line) <= width)).toBe(true);
+			}
+		}
+
+		expect(pi.events.emit).toHaveBeenCalledTimes(eventCount);
+		expect(pi.appendEntry).toHaveBeenCalledTimes(appendCount);
+	});
+
+	it("falls back to raw scaffold text when details are malformed", async () => {
+		const { tool } = await setup();
+		const result = {
+			content: [{ type: "text" as const, text: "created: local://DRAFT.md\nnext: do exact raw thing" }],
+			details: { artifacts: "broken" },
+		};
+
+		const collapsed = renderText(tool.renderResult!(result, {}, plainTheme, { args: { draftOnly: true } }));
+
+		expect(collapsed).toContain("created: local://DRAFT.md");
+		expect(collapsed).toContain("next: do exact raw thing");
 	});
 
 	async function execute(tool: RegisteredTool, ctx: unknown, params: Record<string, unknown>) {

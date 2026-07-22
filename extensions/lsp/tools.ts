@@ -7,14 +7,18 @@
  */
 
 import {
-  keyHint,
   type AgentToolResult,
   type ExtensionAPI,
   type Theme,
   type ToolRenderResultOptions,
 } from '@earendil-works/pi-coding-agent';
-// @ts-expect-error LSP may miss the repo tsconfig path for this vendored package; runtime/test alias resolves it.
-import { Text } from '@earendil-works/pi-tui';
+import {
+  extractToolText,
+  firstMeaningfulLine,
+  renderToolCall,
+  renderToolExpanded,
+  renderToolSummary,
+} from '../lib/tool-output.js';
 import { Effect } from 'effect';
 import { Type } from 'typebox';
 import { StringEnum } from '@earendil-works/pi-ai';
@@ -36,19 +40,6 @@ type ToolTheme = Pick<Theme, 'fg' | 'bold'>;
 type LspRenderOptions = Pick<ToolRenderResultOptions, 'expanded' | 'isPartial'>;
 type LspRenderContext = { args?: Partial<LspToolParams>; isError?: boolean };
 
-function styleToolTitle(theme: ToolTheme, text: string): string {
-  const bold = theme.bold ? theme.bold(text) : text;
-  return theme.fg ? theme.fg('toolTitle', bold) : bold;
-}
-
-function styleMuted(theme: ToolTheme, text: string): string {
-  return theme.fg ? theme.fg('muted', text) : text;
-}
-
-
-function prefixTreeLines(lines: string[]): string[] {
-  return lines.map((line, index) => `${index === lines.length - 1 ? '└─' : '├─'} ${line}`);
-}
 
 
 function truncateForSummary(value: string, maxLength = 120): string {
@@ -59,12 +50,6 @@ function stripMarkdown(value: string): string {
   return value.replace(/\*\*([^*]+)\*\*/g, '$1').trim();
 }
 
-function getFirstMeaningfulLine(text: string): string | undefined {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-}
 
 function firstMatch(text: string, pattern: RegExp): RegExpExecArray | undefined {
   return pattern.exec(text) ?? undefined;
@@ -97,34 +82,17 @@ function formatArgValue(value: unknown): string | undefined {
 }
 
 
-function renderCallTarget(args: Partial<LspToolParams>): string | undefined {
-  const filePath = formatArgValue(args.filePath);
-  if (filePath) {
-    if (typeof args.line === 'number' && typeof args.character === 'number') {
-      return `${filePath}:${args.line}:${args.character}`;
-    }
-    return filePath;
-  }
-
-  const query = formatArgValue(args.query);
-  return query ? `"${query}"` : undefined;
-}
-
-function renderLspCall(rawArgs: Partial<LspToolParams> | undefined, theme: ToolTheme): Text {
+function renderLspCall(rawArgs: Partial<LspToolParams> | undefined, theme: ToolTheme) {
   const args = rawArgs && typeof rawArgs === 'object' ? rawArgs : {};
-  const parts = [formatArgValue(args.operation), renderCallTarget(args)].filter(
-    (part): part is string => Boolean(part),
-  );
-  const suffix = parts.length > 0 ? ` · ${styleMuted(theme, parts.join(' · '))}` : '';
-  return new Text(`▸ ${styleToolTitle(theme, 'lsp')}${suffix}`, 0, 0);
-}
-
-function getResultText(result: LspToolResult | undefined): string {
-  const content = Array.isArray(result?.content) ? result.content : [];
-  return content
-    .filter((part) => part?.type === 'text')
-    .map((part) => (typeof part.text === 'string' ? part.text : ''))
-    .join('\n');
+  const operation = formatArgValue(args.operation) ?? 'unspecified';
+  const filePath = formatArgValue(args.filePath);
+  const query = formatArgValue(args.query);
+  const target = filePath
+    ? `path: ${filePath}${typeof args.line === 'number' && typeof args.character === 'number' ? `:${args.line}:${args.character}` : ''}`
+    : query
+      ? `query: "${query}"`
+      : 'path: project root';
+  return renderToolCall('lsp', `op: ${operation} · ${target} · project: active`, theme);
 }
 
 function entryLabel(entry: string): string {
@@ -264,7 +232,7 @@ function summarizeCodeActions(firstLine: string, text: string): string | undefin
 }
 
 function summarizeLspResult(args: Partial<LspToolParams>, text: string): string {
-  const firstLine = getFirstMeaningfulLine(text) ?? '';
+  const firstLine = firstMeaningfulLine(text);
   return (
     summarizeDiagnostics(firstLine) ??
     summarizeHover(firstLine, text) ??
@@ -273,16 +241,21 @@ function summarizeLspResult(args: Partial<LspToolParams>, text: string): string 
     summarizeWorkspaceSymbols(firstLine, text) ??
     summarizeCalls(firstLine, text) ??
     summarizeCodeActions(firstLine, text) ??
-    (formatArgValue(args.operation) ? `result: ${formatArgValue(args.operation)}` : undefined) ??
     (firstLine ? `result: ${stripMarkdown(firstLine)}` : undefined) ??
+    (formatArgValue(args.operation) ? `result: ${formatArgValue(args.operation)}` : undefined) ??
     'result: no output'
   );
 }
 
 function compactErrorSummary(text: string): string {
-  const firstLine = stripMarkdown(getFirstMeaningfulLine(text) ?? 'unknown error');
+  const firstLine = stripMarkdown(firstMeaningfulLine(text) || 'unknown error');
   const serverError = /TypeScript Server Error \([^)]+\)/.exec(firstLine)?.[0];
   return `error: ${serverError ?? truncateForSummary(firstLine, 100)}`;
+}
+
+function partialActivity(operation: unknown): string {
+  const name = formatArgValue(operation) ?? 'lsp';
+  return name === 'workspaceSymbol' ? 'workspace indexing' : `${name} analysis`;
 }
 
 function renderLspResult(
@@ -290,22 +263,24 @@ function renderLspResult(
   options: LspRenderOptions,
   theme: ToolTheme,
   context: LspRenderContext = {},
-): Text {
-  const text = getResultText(result);
-  if (options?.expanded) return new Text(text, 0, 0);
+) {
+  const text = extractToolText(result);
+  if (options?.expanded) return renderToolExpanded(text);
 
   const args = context.args && typeof context.args === 'object' ? context.args : {};
   const isError = Boolean(result?.isError || context.isError);
+  if (isError) {
+    return renderToolSummary([compactErrorSummary(text)], theme, { expandable: text.length > 0 });
+  }
+  if (options?.isPartial) {
+    return renderToolSummary([`status: running · ${partialActivity(args.operation)}`], theme, { expandable: text.length > 0 });
+  }
+
   const serverFailures = Array.isArray(result?.details?.errors) ? result.details.errors.length : 0;
   const suffix = serverFailures > 0 ? ` · ${serverFailures} server failure${serverFailures === 1 ? '' : 's'}` : '';
-  const summary = isError
-    ? compactErrorSummary(text)
-    : options?.isPartial
-      ? `status: running ${formatArgValue(args.operation) ?? 'lsp'}`
-      : `${summarizeLspResult(args, text)}${suffix}`;
-  const lines = [summary, keyHint('app.tools.expand', 'to expand full result')];
-
-  return new Text(prefixTreeLines(lines).map((line) => styleMuted(theme, line)).join('\n'), 0, 0);
+  return renderToolSummary(["status: complete", `${summarizeLspResult(args, text)}${suffix}`], theme, {
+    expandable: text.length > 0,
+  });
 }
 
 // ── Registration ────────────────────────────────────────────────────────────

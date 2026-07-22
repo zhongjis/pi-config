@@ -183,7 +183,7 @@ describe("Boomerang Extension", () => {
 
   let handlers: Map<string, Function[]>;
   let commands: Map<string, { description: string; handler: Function }>;
-  let tools: Map<string, { name: string; execute: Function }>;
+  let tools: Map<string, { name: string; execute: Function; renderCall?: Function; renderResult?: Function }>;
   let shortcuts: Map<string, { description: string; handler: Function }>;
   let sentMessages: string[];
   let sentCustomMessages: Array<{ message: { customType: string; content: string; display: boolean }; options: { triggerTurn?: boolean; deliverAs?: string } | undefined }>;
@@ -626,7 +626,7 @@ describe("Boomerang Extension", () => {
         handlers.get(event)!.push(handler);
       }),
       registerCommand: vi.fn((name: string, options: { description: string; handler: Function }) => commands.set(name, options)),
-      registerTool: vi.fn((tool: { name: string; execute: Function }) => tools.set(tool.name, tool)),
+      registerTool: vi.fn((tool: { name: string; execute: Function; renderCall?: Function; renderResult?: Function }) => tools.set(tool.name, tool)),
       registerShortcut: vi.fn((key: string, options: { description: string; handler: Function }) => shortcuts.set(key, options)),
       sendUserMessage: vi.fn((content: string, options?: { deliverAs?: "steer" | "followUp" }) => {
         if (!agentIdle && !options?.deliverAs) {
@@ -3025,6 +3025,38 @@ describe("Boomerang Extension", () => {
         "info"
       );
       expect(result.content[0].text).toContain("anchor set");
+    });
+
+    it("registers the enabled tool once with renderer pair", async () => {
+      await runBoomerang("tool on");
+      await runBoomerang("tool on");
+      const tool = getTool("boomerang");
+
+      expect(mockPi.registerTool).toHaveBeenCalledTimes(1);
+      expect(tool?.renderCall).toBeTypeOf("function");
+      expect(tool?.renderResult).toBeTypeOf("function");
+    });
+
+    it("loads enabled config from an isolated HOME with renderer pair", async () => {
+      const isolatedRoot = mkdtempSync(join(process.cwd(), ".tmp-boomerang-home-"));
+      const previousHome = mockState.homeDir;
+      try {
+        mockState.homeDir = join(isolatedRoot, "home");
+        const configDir = join(mockState.homeDir, ".pi", "agent");
+        mkdirSync(configDir, { recursive: true });
+        writeFileSync(join(configDir, "boomerang.json"), JSON.stringify({ toolEnabled: true }));
+
+        tools = new Map();
+        boomerangExtension(mockPi);
+        const tool = getTool("boomerang");
+
+        expect(tool).toBeDefined();
+        expect(tool?.renderCall).toBeTypeOf("function");
+        expect(tool?.renderResult).toBeTypeOf("function");
+      } finally {
+        mockState.homeDir = previousHome;
+        rmSync(isolatedRoot, { recursive: true, force: true });
+      }
     });
 
     it("disables the tool with /boomerang tool off", async () => {

@@ -1,8 +1,13 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@earendil-works/pi-tui", async () =>
+  import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"),
+);
 
 import multimodalLook from "../index.js";
 
-type RenderableText = { render?: () => string[]; text?: string };
+type RenderableText = { render?: (width: number) => string[]; text?: string };
 type PlainTheme = {
   fg: (color: string, text: string) => string;
   bold: (text: string) => string;
@@ -16,8 +21,8 @@ type ToolDefinition = {
   ) => RenderableText;
   renderResult?: (
     result: {
-      content?: Array<{ type: "text"; text: string }>;
-      details?: Record<string, unknown>;
+      content?: readonly unknown[];
+      details?: unknown;
       isError?: boolean;
     },
     options: { expanded?: boolean; isPartial?: boolean },
@@ -31,9 +36,18 @@ const plainTheme = {
   bold: vi.fn((text: string) => text),
 };
 
-function renderText(component: RenderableText): string {
-  if (typeof component.render === "function") return component.render().join("\n");
+function renderText(component: RenderableText, width = 120): string {
+  if (typeof component.render === "function") return component.render(width).join("\n");
   return component.text ?? "";
+}
+
+function expectWidthSafe(component: RenderableText): void {
+  expect(component.render).toBeTypeOf("function");
+  for (const width of [20, 40, 80, 120]) {
+    for (const line of component.render!(width)) {
+      expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+    }
+  }
 }
 
 function registerTool(): ToolDefinition {
@@ -48,137 +62,100 @@ function registerTool(): ToolDefinition {
 }
 
 describe("look_at tool rendering", () => {
-  it("renders collapsed success as short keyword lines", () => {
+  it("renders source, goal, and active project in the call", () => {
+    const tool = registerTool();
+    const fileCall = tool.renderCall!(
+      { file_path: "screens/界面.png", goal: "\u001b[36mFind primary CTA\u001b[0m" },
+      plainTheme,
+    );
+    const dataCall = tool.renderCall!({ image_data: "abc", goal: "Find logo" }, plainTheme);
+
+    expect(renderText(fileCall)).toContain('▸ look_at · source: screens/界面.png · goal: "');
+    expect(renderText(fileCall)).toContain("project: active");
+    expect(renderText(dataCall)).toContain('source: image_data · goal: "Find logo" · project: active');
+    expectWidthSafe(fileCall);
+    expectWidthSafe(dataCall);
+  });
+
+  it("summarizes terminal state, image facts, and finding highlight", () => {
     const tool = registerTool();
     const text = renderText(
       tool.renderResult!(
         {
-          content: [
-            {
-              type: "text",
-              text: "Primary CTA says Continue.\nSecondary copy is muted.",
-            },
-          ],
-          details: {
-            mimeType: "image/png",
-            bytes: 253_952,
-            model: "openai/gpt-5.5",
-            fallback: false,
-          },
+          content: [{ type: "text", text: "Primary CTA says Continue.\nSecondary copy is muted." }],
+          details: { mimeType: "image/png", bytes: 253_952, model: "openai/gpt-5.5", fallback: false },
         },
-        { expanded: false, isPartial: false },
+        { expanded: false },
         plainTheme,
         { args: { file_path: "screens/login.png", goal: "find CTA" } },
       ),
     );
 
-    expect(text).toContain("├─ findings: Primary CTA says Continue.");
-    expect(text).toContain("├─ image: image/png · 248 KB");
-    expect(text).toContain("├─ model: openai/gpt-5.5");
-    expect(text).toContain("└─ app.tools.expand to expand full result");
-    expect(text).not.toContain("▸ look_at");
-    expect(text).not.toContain("fallback: current model");
+    expect(text).toContain("status: complete");
+    expect(text).toContain("findings: Primary CTA says Continue.");
+    expect(text).toContain("image: image/png · 248 KB");
+    expect(text).toContain("model: openai/gpt-5.5");
+    expect(text).toContain("app.tools.expand to expand full result");
   });
 
-  it("renders expanded raw output exactly and leaves content unchanged", () => {
+  it("preserves frozen raw expansion and falls back when details are malformed", () => {
     const tool = registerTool();
-    const raw = "Primary CTA says Continue.\n\nNo validation errors visible.";
-    const content = [{ type: "text" as const, text: raw }];
-    const result = { content, details: { model: "openai/gpt-5.5" } };
+    const raw = "\u001b[32m界面分析完成\u001b[0m\n\n- Primary CTA visible\n- No errors";
+    const content = Object.freeze([{ type: "text" as const, text: raw }]);
+    const result = Object.freeze({ content, details: Object.freeze({ bytes: "broken" }) });
+    const expanded = tool.renderResult!(result, { expanded: true }, plainTheme, {
+      args: { image_data: "abc", goal: "inspect form" },
+    });
 
-    const expanded = renderText(
-      tool.renderResult!(
-        result,
-        { expanded: true, isPartial: false },
-        plainTheme,
-        { args: { image_data: "abc", goal: "inspect form" } },
-      ),
-    );
-
-    expect(expanded).toBe(raw);
-    expect(result.content).toBe(content);
+    expect(expanded.text).toBe(raw);
     expect(result.content[0].text).toBe(raw);
+    expectWidthSafe(expanded);
+
+    const malformed = tool.renderResult!(
+      { content: [{ type: "text", text: "raw owner fallback\nopaque detail" }], details: "broken" },
+      { expanded: false },
+      plainTheme,
+      {},
+    );
+    expect(renderText(malformed)).toContain("findings: raw owner fallback");
   });
 
-  it("renders error summaries with expand hint", () => {
+  it("renders image analysis partial state and decisive errors", () => {
     const tool = registerTool();
-    const text = renderText(
-      tool.renderResult!(
-        {
-          content: [
-            {
-              type: "text",
-              text: 'look_at unsupported mime_type "image/bmp". Supported: image/png, image/jpeg.\nstack hidden',
-            },
-          ],
-          details: {},
-          isError: true,
-        },
-        { expanded: false, isPartial: false },
-        plainTheme,
-        { isError: true },
-      ),
+    const partial = tool.renderResult!(
+      { content: [], details: {} },
+      { expanded: false, isPartial: true },
+      plainTheme,
+      { args: { file_path: "screens/login.png", goal: "inspect form" } },
     );
+    expect(renderText(partial)).toContain("status: running · image analysis");
 
-    expect(text).toContain(
-      '├─ error: look_at unsupported mime_type "image/bmp". Supported: image/png, image/jpeg.',
+    const error = tool.renderResult!(
+      {
+        content: [{ type: "text", text: 'look_at unsupported mime_type "image/bmp". Supported: image/png, image/jpeg.\nstack hidden' }],
+        details: {},
+        isError: true,
+      },
+      { expanded: false },
+      plainTheme,
+      { isError: true },
     );
-    expect(text).toContain("└─ app.tools.expand to expand full result");
+    const errorText = renderText(error);
+    expect(errorText).toContain('error: look_at unsupported mime_type "image/bmp". Supported: image/png, image/jpeg.');
+    expect(errorText).not.toContain("stack hidden");
   });
 
-  it("renders partial running summaries with expand hint", () => {
+  it("keeps ANSI/CJK output safe at 20/40/80/120 columns", () => {
     const tool = registerTool();
-    const text = renderText(
-      tool.renderResult!(
-        { content: [], details: {} },
-        { expanded: false, isPartial: true },
-        plainTheme,
-        { args: { file_path: "screens/login.png", goal: "inspect form" } },
-      ),
+    const result = tool.renderResult!(
+      {
+        content: [{ type: "text", text: "\u001b[31m界面中主要按钮包含很长的验证说明和操作指引\u001b[0m" }],
+        details: { mimeType: "image/png", bytes: 253_952, model: "openai/gpt-5.5" },
+      },
+      { expanded: false },
+      plainTheme,
+      {},
     );
-
-    expect(text).toContain("├─ status: running");
-    expect(text).toContain("└─ app.tools.expand to expand full result");
-  });
-
-  it("keeps long collapsed lines compact enough to preserve tree prefixes", () => {
-    const tool = registerTool();
-    const longFinding = `Validation banner says ${"field required ".repeat(12)}near submit button.`;
-    const text = renderText(
-      tool.renderResult!(
-        { content: [{ type: "text", text: longFinding }], details: {} },
-        { expanded: false, isPartial: false },
-        plainTheme,
-        {},
-      ),
-    );
-
-    expect(text).toContain("…");
-    expect(
-      text
-        .split("\n")
-        .every((line) => Array.from(line).length <= 90),
-    ).toBe(true);
-  });
-
-  it("renders full tool name in call header and truncates long source and goal", () => {
-    const tool = registerTool();
-
-    const imageDataHeader = renderText(
-      tool.renderCall!({ image_data: "abc", goal: "Find logo" }, plainTheme),
-    );
-    expect(imageDataHeader).toBe('▸ look_at · image_data · "Find logo"');
-
-    const longSource = `screenshots/${"nested-folder-".repeat(8)}image.png`;
-    const longGoal = `Read every visible label and summarize spacing problems ${"carefully ".repeat(12)}`;
-    const longHeader = renderText(
-      tool.renderCall!({ file_path: longSource, goal: longGoal }, plainTheme),
-    );
-
-    expect(longHeader).toContain("▸ look_at · ");
-    expect(longHeader).toContain("…");
-    expect(longHeader).not.toContain(longSource);
-    expect(longHeader).not.toContain(longGoal);
-    expect(longHeader.length).toBeLessThanOrEqual(80);
+    expectWidthSafe(result);
   });
 });
