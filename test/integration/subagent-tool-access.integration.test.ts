@@ -46,6 +46,7 @@ interface AgentRecordLike {
 	status?: string;
 	error?: unknown;
 	promise?: Promise<unknown>;
+	lifecycleLease?: unknown;
 }
 
 interface SubagentManager {
@@ -214,6 +215,19 @@ async function waitForActiveTools(agentId: string): Promise<string[]> {
 	throw new Error(`Timed out waiting for active tools for ${agentId}; status=${record?.status}; error=${record?.error}`);
 }
 
+async function waitForDurableStart(agentId: string): Promise<void> {
+	const manager = getSubagentManager();
+	const deadline = Date.now() + 5_000;
+	while (Date.now() < deadline) {
+		const record = manager.getRecord(agentId);
+		if (record?.lifecycleLease) return;
+		if (record?.status === "error") throw new Error(`Agent ${agentId} failed before durable start: ${record.error}`);
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	const record = manager.getRecord(agentId);
+	throw new Error(`Timed out waiting for durable start for ${agentId}; status=${record?.status}; error=${record?.error}`);
+}
+
 async function abortSubagent(agentId: string): Promise<void> {
 	const record = getSubagentManager().getRecord(agentId);
 	await shutdownSession(record?.session);
@@ -286,6 +300,7 @@ describe("subagent tool access — integration", () => {
 
 		const wenchangId = await spawnBackgroundAgent(t, WENCHANG_AGENT);
 		spawnedIds.push(wenchangId);
+		await waitForDurableStart(wenchangId);
 		const wenchangTools = await waitForActiveTools(wenchangId);
 
 		expect(wenchangTools).toContain("read");

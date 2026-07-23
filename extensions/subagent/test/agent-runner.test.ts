@@ -571,11 +571,12 @@ describe("agent-runner final output capture", () => {
       pi,
       target: restoreTarget(),
       model: model as never,
+      thinkingLevel: "medium",
     });
 
     expect(first.runtime).toMatchObject({
       model,
-      thinkingLevel: "off",
+      thinkingLevel: "medium",
       promptMode: "replace",
       isolated: false,
       inheritContext: false,
@@ -588,6 +589,7 @@ describe("agent-runner final output capture", () => {
       pi,
       target,
       model: { ...model, api: "other-api" } as never,
+      thinkingLevel: "medium",
     });
     createAgentSession.mockClear();
     await expect(mismatched.restore()).rejects.toEqual(

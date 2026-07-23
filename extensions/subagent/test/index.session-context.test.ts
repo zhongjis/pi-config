@@ -153,7 +153,10 @@ vi.mock("../src/agent-runner.js", async (importOriginal) => {
   };
   return {
     ...actual,
-    prepareAgentRestoreRuntime: vi.fn(async () => ({ runtime, restore: vi.fn() })),
+    prepareAgentRestoreRuntime: vi.fn(async (_ctx: unknown, _type: string, options: { thinkingLevel: ResumeRuntimeSnapshot["thinkingLevel"] }) => ({
+      runtime: { ...runtime, thinkingLevel: options.thinkingLevel },
+      restore: vi.fn(),
+    })),
   };
 });
 
@@ -1164,6 +1167,47 @@ describe("subagent session UI rebinding", () => {
     expect(result.details.agentId).toBe("fg-record-42");
   });
 
+  it("persists fresh omitted-thinking spawns with the concrete child session thinking level", async () => {
+    const { prepareAgentRestoreRuntime } = await import("../src/agent-runner.js");
+    const mock = createMockPi();
+    await initExtension(mock);
+    const manager = managerInstances[0]!;
+    const mediumJsonl = [
+      { type: "session", version: 3, id: "child-session", timestamp: "2026-01-01T00:00:00Z", cwd: "/tmp" },
+      { type: "model_change", id: "model", parentId: null, timestamp: "2026-01-01T00:00:01Z", provider: "test", modelId: "test" },
+      { type: "thinking_level_change", id: "think", parentId: "model", timestamp: "2026-01-01T00:00:02Z", thinkingLevel: "medium" },
+      { type: "message", id: "leaf-1", parentId: "think", timestamp: "2026-01-01T00:00:03Z", message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" } },
+    ].map((row) => JSON.stringify(row)).join("\n") + "\n";
+    const root = mkdtempSync(join(tmpdir(), "resume-target-thinking-"));
+    try {
+      const file = join(root, "child.jsonl");
+      writeFileSync(file, mediumJsonl, { flag: "wx" });
+      const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: file, thinkingLevel: "medium" };
+      const record = {
+        id: "fresh-thinking", type: "general-purpose", description: "Fresh thinking",
+        status: "completed", toolUses: 0, startedAt: Date.now(), completedAt: Date.now(), result: "done",
+        session, sessionFile: file, sessionDir: root, parentSessionId: "parent-session-1",
+      };
+      manager.spawnAndWait.mockImplementation(async (_pi, _ctx, _type, _prompt, options) => {
+        options.onSessionCreated(session);
+        await options.onBeforePrompt(record);
+        return record;
+      });
+
+      await mock.registeredTools.get("Agent").execute(
+        "tool-fresh-thinking",
+        { prompt: "do it", description: "Fresh thinking", subagent_type: "general-purpose" },
+        undefined, vi.fn(), createCtx(),
+      );
+
+      expect(vi.mocked(prepareAgentRestoreRuntime).mock.calls.at(-1)?.[2]).toMatchObject({
+        thinkingLevel: "medium",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("persists validator-reconciled current metadata count, leaf, hash, and canonical paths", async () => {
     const root = mkdtempSync(join(tmpdir(), "resume-target-capture-"));
     const realDir = join(root, "real");
@@ -1181,7 +1225,7 @@ describe("subagent session UI rebinding", () => {
       const mock = createMockPi();
       await initExtension(mock);
       const manager = managerInstances[0]!;
-      const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: linkedFile };
+      const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: linkedFile, thinkingLevel: "off" };
       const record = {
         id: "captured-current", type: "general-purpose", description: "Capture current",
         status: "completed", toolUses: 0, startedAt: Date.now(), completedAt: Date.now(), result: "done",
@@ -1220,7 +1264,7 @@ describe("subagent session UI rebinding", () => {
     });
     await initExtension(mock);
     const manager = managerInstances[0]!;
-    const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: "/tmp/session.jsonl" };
+    const session = { getSessionStats: vi.fn(() => ({ tokens: { total: 0 } })), sessionFile: "/tmp/session.jsonl", thinkingLevel: "off" };
     const record = {
       id: "fg-persist-failure", type: "general-purpose", description: "Persist target",
       status: "completed", toolUses: 0, startedAt: Date.now(), completedAt: Date.now(), result: "done",

@@ -40,6 +40,7 @@ interface SessionLike {
 	agent?: { state?: { tools?: Array<{ name: string }> } };
 	modelRegistry: { find(provider: string, modelId: string): Model<any> | undefined };
 	setModel(model: Model<any>): Promise<void>;
+	thinkingLevel?: ResumeTargetV1["runtime"]["thinkingLevel"];
 	abort?: () => void;
 	dispose?: () => void;
 	sessionManager?: { getEntries(): Array<{ type: string; customType?: string; data?: unknown }> };
@@ -182,7 +183,7 @@ export default function(pi: ExtensionAPI) {
       id: MODEL_ID,
       name: "Session Restoration Faux",
       api: API,
-      reasoning: false,
+      reasoning: true,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 128000,
@@ -365,6 +366,8 @@ describe.sequential("subagent session restoration — integration", () => {
 		expect(originalRecord?.status).toBe("completed");
 		expect(originalSession).toBeDefined();
 		const initialTarget = persistedResumeTargets(id).at(-1)!;
+		expect(originalSession?.thinkingLevel).toBeDefined();
+		expect(initialTarget.runtime.thinkingLevel).toBe(originalSession?.thinkingLevel);
 
 		const followUp = "Repeat the sentinel from the prior turn.";
 		faux.appendResponse("RESTORE-CONTEXT-17");

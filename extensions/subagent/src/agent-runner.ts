@@ -317,8 +317,9 @@ export async function buildAgentSessionRuntime(options: AgentSessionRuntimeOptio
 }
 
 export interface PrepareAgentRestoreRuntimeOptions
-  extends Pick<RunOptions, "pi" | "model" | "isolated" | "inheritContext" | "thinkingLevel" | "onToolActivity"> {
+  extends Pick<RunOptions, "pi" | "model" | "isolated" | "inheritContext" | "onToolActivity"> {
   target: ResumeTargetV1;
+  thinkingLevel: ThinkingLevel;
 }
 
 /** Prepare exact current runtime compatibility plus a strict restore callback. */
@@ -373,7 +374,7 @@ export async function prepareAgentRestoreRuntime(
 
   const model = options.model ?? resolveDefaultModel(ctx.model, ctx.modelRegistry, agentConfig.model);
   if (!model) throw new SessionRestoreError("model_unavailable", "Agent model is unavailable in current runtime");
-  const thinkingLevel = options.thinkingLevel ?? settingsManager.getDefaultThinkingLevel() ?? "off";
+  const thinkingLevel = options.thinkingLevel;
   const loadedExtensions = resourceLoader.getExtensions().extensions;
   const availableToolNames = [
     ...BUILTIN_TOOL_NAMES,
@@ -412,7 +413,7 @@ export async function prepareAgentRestoreRuntime(
     modelRegistry: ctx.modelRegistry,
     model,
     resourceLoader,
-    thinkingLevel: options.thinkingLevel,
+    thinkingLevel,
     builtinToolNames: config.builtinToolNames,
     extensions,
     extensionToolNames: agentConfig.extensionToolNames,

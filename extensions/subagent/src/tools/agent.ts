@@ -825,8 +825,10 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           runtime: placeholderRuntime(),
           state: { status: record.status, resultConsumed: false, notified: false, toolUses: record.toolUses, lifetimeUsage: EMPTY_USAGE, lifetimeCost: 0, compactionCount: 0 },
         };
+        const concreteThinking = record.session?.thinkingLevel;
+        if (!concreteThinking) throw new Error("Fresh agent session thinking level is unavailable before prompt");
         const prepared = await prepareAgentRestoreRuntime(ctx, record.type, {
-          pi, target: resumeTargetForValidation(provisional), model, isolated, inheritContext, thinkingLevel: thinking,
+          pi, target: resumeTargetForValidation(provisional), model, isolated, inheritContext, thinkingLevel: concreteThinking,
         });
         const target = captureResumeTarget(record, prepared.runtime, ctx.cwd, "running");
         const initialized = await persistentRegistry.getOrCreateLifecycleStore(record.id).initialize(target);
