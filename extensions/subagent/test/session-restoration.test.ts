@@ -15,6 +15,7 @@ import {
   SessionRestoreError,
   buildRuntimeCompatibilitySnapshot,
   classifyAuthenticatedSuffixRecovery,
+  inspectPersistedChildSessionRecovery,
   compareRuntimeCompatibilitySnapshot,
   redactSessionReference,
   restoreAgentSession,
@@ -124,13 +125,20 @@ describe("strict read-only persisted child session preflight", () => {
     };
     appendRows(data.file, [title]);
 
-    const validated = validatePersistedChildSession(data.target);
+    const validated = inspectPersistedChildSessionRecovery(data.target);
 
     expect(validated).toMatchObject({
       entryCount: data.target.entryCount + 1,
       activeLeafId: "title",
       sessionSha256: stableSha256(readFileSync(data.file)),
       reconciledDescendant: true,
+      completionDisposition: "clean",
+      classification: {
+        outcome: "clean_final_assistant",
+        recoverable: true,
+        reconstructedResult: "done",
+        completionDisposition: "clean",
+      },
     });
   });
 
@@ -281,6 +289,73 @@ describe("active-branch interruption and runtime safety", () => {
   });
 });
 
+describe("explicit recovery boundaries", () => {
+  function recoveredRows(root: string, interruptedStop: "error" | "aborted" = "error"): unknown[] {
+    return [
+      { type: "session", version: 3, id: "child-1", timestamp: "2026-01-01T00:00:00Z", cwd: root },
+      { type: "model_change", id: "model", parentId: null, timestamp: "2026-01-01T00:00:01Z", provider: "p", modelId: "m" },
+      { type: "thinking_level_change", id: "think", parentId: "model", timestamp: "2026-01-01T00:00:02Z", thinkingLevel: "off" },
+      {
+        type: "message", id: "interrupted", parentId: "think", timestamp: "2026-01-01T00:00:03Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "interrupted-call", name: "write", arguments: {} }],
+          stopReason: interruptedStop,
+        },
+      },
+      { type: "message", id: "boundary", parentId: "interrupted", timestamp: "2026-01-01T00:00:04Z", message: { role: "user", content: "recover explicitly" } },
+      { type: "message", id: "final", parentId: "boundary", timestamp: "2026-01-01T00:00:05Z", message: { role: "assistant", content: [{ type: "text", text: "recovered result" }], stopReason: "stop" } },
+    ];
+  }
+
+  it.each(["error", "aborted"] as const)("accepts historical %s with its own dangling call only after a user boundary", (stopReason) => {
+    const seed = fixture();
+    const data = fixture(recoveredRows(seed.root, stopReason));
+
+    const validated = validatePersistedChildSession(data.target);
+
+    expect(validated.activeLeafId).toBe("final");
+    expect(validated.completionDisposition).toBe("recovered");
+  });
+
+  it("keeps clean terminal branches clean", () => {
+    expect(validatePersistedChildSession(fixture().target).completionDisposition).toBe("clean");
+  });
+
+  it("does not reset a normal pending call at a later recovery boundary", () => {
+    const seed = fixture();
+    const rows = recoveredRows(seed.root);
+    rows.splice(3, 0, {
+      type: "message", id: "normal-call", parentId: "think", timestamp: "2026-01-01T00:00:02Z",
+      message: { role: "assistant", content: [{ type: "toolCall", id: "normal-pending", name: "write", arguments: {} }], stopReason: "toolUse" },
+    });
+    (rows[4] as { parentId: string }).parentId = "normal-call";
+
+    expectValidationReason(fixture(rows).target, "unsafe_interrupted_operation");
+  });
+
+  it.each([
+    ["missing user boundary", (rows: unknown[]) => rows.splice(4, 1)],
+    ["length stop", (rows: unknown[]) => {
+      const message = (rows[3] as { message: { stopReason: string } }).message;
+      message.stopReason = "length";
+    }],
+    ["empty recovered final", (rows: unknown[]) => {
+      const message = (rows[5] as { message: { content: unknown[] } }).message;
+      message.content = [];
+    }],
+  ] as const)("keeps %s unsafe", (_name, mutate) => {
+    const seed = fixture();
+    const rows = recoveredRows(seed.root);
+    mutate(rows);
+    if (_name === "missing user boundary") {
+      (rows.at(-1) as { parentId: string }).parentId = "interrupted";
+    }
+
+    expectValidationReason(fixture(rows).target, "unsafe_interrupted_operation");
+  });
+});
+
 describe("pure authenticated suffix recovery classification", () => {
   function suffix(rows: readonly unknown[]) {
     return rows as Parameters<typeof classifyAuthenticatedSuffixRecovery>[0];
@@ -314,6 +389,49 @@ describe("pure authenticated suffix recovery classification", () => {
     expect(classification.reconstructedResult).toBe(reconstructedResult);
     expect(provider).not.toHaveBeenCalled();
     expect(tool).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["clean final", [
+      { type: "message", id: "final", parentId: null, message: { role: "assistant", content: [{ type: "text", text: "authenticated clean result" }], stopReason: "stop" } },
+    ], "clean_final_assistant", "clean", "authenticated clean result"],
+    ["recovered completed tool chain", [
+      { type: "message", id: "interrupted", parentId: null, message: { role: "assistant", content: [{ type: "toolCall", id: "historical-call" }], stopReason: "error" } },
+      { type: "message", id: "boundary", parentId: "interrupted", message: { role: "user", content: "recover" } },
+      { type: "message", id: "tool", parentId: "boundary", message: { role: "assistant", content: [{ type: "toolCall", id: "current-call" }], stopReason: "toolUse" } },
+      { type: "message", id: "result", parentId: "tool", message: { role: "toolResult", toolCallId: "current-call", content: [] } },
+      { type: "message", id: "final", parentId: "result", message: { role: "assistant", content: [{ type: "text", text: "authenticated recovered result" }], stopReason: "stop" } },
+    ], "completed_tool_chain", "recovered", "authenticated recovered result"],
+  ] as const)("retains a %s across a metadata-only suffix", (_name, prefixRows, outcome, completionDisposition, reconstructedResult) => {
+    const metadata = suffix([
+      { type: "session_info", id: "title", parentId: "final", timestamp: "2026-01-01T00:00:04Z", name: "Late title" },
+    ]);
+
+    const classification = classifyAuthenticatedSuffixRecovery(metadata, "final", suffix(prefixRows));
+
+    expect(classification).toEqual({
+      outcome,
+      recoverable: true,
+      reconstructedResult,
+      completionDisposition,
+    });
+  });
+});
+
+describe("recovered suffix classification", () => {
+  it("classifies an interrupted assistant followed by an explicit user boundary and final answer as recovered", () => {
+    const classification = classifyAuthenticatedSuffixRecovery([
+      { type: "message", id: "interrupted", parentId: "leaf", message: { role: "assistant", content: [{ type: "toolCall", id: "own-call" }], stopReason: "error" } },
+      { type: "message", id: "boundary", parentId: "interrupted", message: { role: "user", content: "recover" } },
+      { type: "message", id: "final", parentId: "boundary", message: { role: "assistant", content: [{ type: "text", text: "authenticated recovered result" }], stopReason: "stop" } },
+    ] as Parameters<typeof classifyAuthenticatedSuffixRecovery>[0], "leaf");
+
+    expect(classification).toMatchObject({
+      outcome: "clean_final_assistant",
+      recoverable: true,
+      reconstructedResult: "authenticated recovered result",
+      completionDisposition: "recovered",
+    });
   });
 });
 

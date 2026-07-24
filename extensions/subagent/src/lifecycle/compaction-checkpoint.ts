@@ -101,6 +101,7 @@ export async function createLifecycleCheckpointHandle(
     updatedAt: Date.now(),
     state: {
       status: "running",
+      completionDisposition: current.state.completionDisposition ?? "clean",
       resultConsumed: current.state.resultConsumed,
       notified: current.state.notified,
       toolUses: record.toolUses,

@@ -52,6 +52,7 @@ interface AgentRecordLike {
 	session?: SessionLike;
 	sessionFile?: string;
 	status?: string;
+	completionDisposition?: "clean" | "recovered";
 	error?: string;
 	result?: string;
 	toolUses?: number;
@@ -302,6 +303,38 @@ function appendLateTitle(sessionFile: string): void {
 	})}\n`);
 }
 
+function appendRecoveredHistory(sessionFile: string): void {
+  const rows = readFileSync(sessionFile, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+  const parentId = rows.at(-1)?.id;
+  if (typeof parentId !== "string") throw new Error("Child session has no leaf for recovered history");
+  const now = Date.now();
+  const assistantMetadata = {
+    api: FAUX_API, provider: FAUX_PROVIDER, model: FAUX_MODEL_ID,
+    usage: {
+      input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+  };
+  const recoveredRows = [
+    {
+      type: "message", id: `historical-error-${now}`, parentId, timestamp: new Date(now).toISOString(),
+      message: {
+        role: "assistant", content: [{ type: "toolCall", id: "historical-call-never-run", name: "read", arguments: { path: "never-read" } }],
+        ...assistantMetadata, stopReason: "error", errorMessage: "historical provider failure", timestamp: now,
+      },
+    },
+    {
+      type: "message", id: `recovery-boundary-${now}`, parentId: `historical-error-${now}`, timestamp: new Date(now + 1).toISOString(),
+      message: { role: "user", content: "Explicitly recover after the failed turn.", timestamp: now + 1 },
+    },
+    {
+      type: "message", id: `recovered-final-${now}`, parentId: `recovery-boundary-${now}`, timestamp: new Date(now + 2).toISOString(),
+      message: { ...assistantMetadata, role: "assistant", content: [{ type: "text", text: "Authenticated recovered history result." }], stopReason: "stop", timestamp: now + 2 },
+    },
+  ];
+  writeFileSync(sessionFile, `${readFileSync(sessionFile, "utf8")}${recoveredRows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+}
+
 function emitSuccessfulChildCompaction(id: string): void {
 	const child = manager?.getRecord(id)?.session;
 	if (!child?._emit) throw new Error("Real child session omitted its event emitter");
@@ -460,6 +493,36 @@ describe.sequential("subagent session restoration — integration", () => {
 		expect(secondRestoredResult.isError).toBe(false);
 		expect(invocationDetails(secondRestoredResult)).toMatchObject({ agentId: id, invocationStatus: "restored_session" });
 		expect(readFileSync(sessionFile, "utf8")).toContain(secondRestoredPrompt);
+	});
+
+	it("restores recovered history as context and resumes only through a fresh prompt", async () => {
+		const session = await createIsolatedSession();
+		const faux = nativeFauxHandle();
+		faux.appendResponse("Original clean result.");
+		const firstResult = await invokeAgent("Start recovered-history probe", agentParams("Create a clean durable target."));
+		const id = agentIdFrom(firstResult);
+		const sessionFile = sessionFileFor(id);
+		const originalTarget = persistedResumeTargets(id).at(-1)!;
+		expect(originalTarget.state.completionDisposition).toBe("clean");
+
+		appendRecoveredHistory(sessionFile);
+		await emitProductionSessionStart(session);
+		expect(manager!.getRecord(id)).toBeUndefined();
+		faux.appendResponse("Fresh prompt resumed recovered context.");
+		const freshPrompt = "Continue recovered session through this fresh prompt only.";
+		const resumed = await invokeAgent("Resume recovered-history probe", agentParams(freshPrompt, id));
+
+		expect(resumed.isError).toBe(false);
+		expect(invocationDetails(resumed)).toMatchObject({ agentId: id, invocationStatus: "restored_session" });
+		expect(manager!.getRecord(id)?.status).toBe("completed");
+		expect(manager!.getRecord(id)?.completionDisposition).toBe("recovered");
+		expect(manager!.getRecord(id)?.toolUses).toBe(0);
+		expect(faux.callCount()).toBe(2);
+		expect(faux.contexts.at(-1)).toContain(freshPrompt);
+		expect(faux.contexts.at(-1)).toContain("Authenticated recovered history result.");
+		expect(persistedResumeTargets(id).at(-1)).toMatchObject({
+			state: { status: "completed", completionDisposition: "recovered" },
+		});
 	});
 
 	it("orders a restored resume compaction checkpoint before terminal durability without duplicate execution", async () => {

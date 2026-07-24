@@ -3,6 +3,7 @@ import {
   AgentLifecycleStore,
   AgentLifecycleTransitionError,
   type AgentLifecycleSnapshotInput,
+  parseResumeTargetV1,
   RESUME_TARGET_ENTRY_TYPE,
 } from "../src/lifecycle/agent-lifecycle-store.js";
 import type { ResumeTargetState } from "../src/types.js";
@@ -93,6 +94,46 @@ describe("AgentLifecycleStore", () => {
 
     expect(begun.snapshot).toMatchObject({ generation: 1, revision: 0, updatedAt: 300 });
     expect(begun.snapshot.state).toMatchObject({ status: "running", resultConsumed: false, notified: false });
+  });
+
+  it("defaults missing V1 disposition to clean and rejects unknown dispositions", async () => {
+    const appendEntry = vi.fn();
+    const store = new AgentLifecycleStore("agent-a", { appendEntry });
+    const initialized = await store.initialize(snapshotInput("agent-a", "completed"));
+
+    expect(initialized.snapshot.state.completionDisposition).toBe("clean");
+    expect(parseResumeTargetV1({
+      ...initialized.snapshot,
+      state: { ...initialized.snapshot.state, completionDisposition: "future" },
+    })).toBeUndefined();
+  });
+
+  it("keeps recovered disposition through resume, checkpoint, terminal, and delivery revisions", async () => {
+    const appendEntry = vi.fn();
+    const store = new AgentLifecycleStore("agent-a", { appendEntry });
+    const initialInput = snapshotInput("agent-a", "completed");
+    initialInput.state.completionDisposition = "recovered";
+    await store.initialize(initialInput);
+
+    const resumeInput = snapshotInput("agent-a", "completed", { updatedAt: 300 });
+    resumeInput.state.completionDisposition = "clean";
+    const begun = await store.beginResume(resumeInput);
+    expect(begun.snapshot.state.completionDisposition).toBe("recovered");
+
+    const checkpointInput = snapshotInput("agent-a", "running", { updatedAt: 301 });
+    checkpointInput.state.completionDisposition = "clean";
+    const checkpoint = await store.checkpoint(begun.lease, checkpointInput);
+    expect(checkpoint.state.completionDisposition).toBe("recovered");
+
+    const terminalInput = snapshotInput("agent-a", "completed", { updatedAt: 302 });
+    terminalInput.state.completionDisposition = "clean";
+    const terminal = await store.commitTerminal(begun.lease, terminalInput);
+    const consumed = await store.markConsumed(begun.lease, 303);
+    const notified = await store.markNotified(begun.lease, 304);
+
+    expect(terminal.state.completionDisposition).toBe("recovered");
+    expect(consumed.state.completionDisposition).toBe("recovered");
+    expect(notified.state.completionDisposition).toBe("recovered");
   });
 
   it("serializes a deferred checkpoint before terminal commit with monotonic revisions", async () => {

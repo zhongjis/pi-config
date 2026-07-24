@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { pandaWarn } from "../../../lib/warn.js";
-import type { ResumeTargetState, ResumeTargetV1 } from "../types.js";
+import type { CompletionDisposition, ResumeTargetState, ResumeTargetV1 } from "../types.js";
 
 /** Stable public V1 custom-entry key. */
 export const RESUME_TARGET_ENTRY_TYPE = "subagents:resume-target-v1";
@@ -41,6 +41,14 @@ const TERMINAL_STATUSES = new Set<ResumeTargetState["status"]>([
   "error",
 ]);
 const PROMPT_MODES = new Set(["replace", "append", "system_instructions"]);
+const COMPLETION_DISPOSITIONS = new Set<CompletionDisposition>(["clean", "recovered"]);
+
+function dominantCompletionDisposition(
+  current: CompletionDisposition | undefined,
+  incoming: CompletionDisposition | undefined,
+ ): CompletionDisposition {
+  return current === "recovered" || incoming === "recovered" ? "recovered" : "clean";
+}
 
 export class AgentLifecycleTransitionError extends Error {
   constructor(message: string) {
@@ -94,6 +102,7 @@ export function parseResumeTargetV1(value: unknown): ResumeTargetV1 | undefined 
     !extensionIdentities.every((item) => isRecord(item) && isNonEmptyString(item.name) && SHA256_RE.test(String(item.contentHash))) ||
     !Array.isArray(activeToolNames) || !activeToolNames.every(isNonEmptyString) ||
     !RESUME_STATUSES.has(String(state.status) as ResumeTargetState["status"]) ||
+    (state.completionDisposition !== undefined && !COMPLETION_DISPOSITIONS.has(String(state.completionDisposition) as CompletionDisposition)) ||
     typeof state.resultConsumed !== "boolean" || typeof state.notified !== "boolean" ||
     !isNonNegativeInteger(state.toolUses) || !isNonNegativeInteger(state.lifetimeUsage.input) ||
     !isNonNegativeInteger(state.lifetimeUsage.output) || !isNonNegativeInteger(state.lifetimeUsage.cacheWrite) ||
@@ -136,6 +145,7 @@ export function parseResumeTargetV1(value: unknown): ResumeTargetV1 | undefined 
     },
     state: {
       status: state.status as ResumeTargetState["status"],
+      completionDisposition: (state.completionDisposition ?? "clean") as CompletionDisposition,
       resultConsumed: state.resultConsumed,
       notified: state.notified,
       toolUses: state.toolUses,
@@ -229,6 +239,7 @@ export class AgentLifecycleStore {
         state: {
           ...input.state,
           status: "running",
+          completionDisposition: dominantCompletionDisposition(current.state.completionDisposition, input.state.completionDisposition),
           resultConsumed: false,
           notified: false,
         },
@@ -258,6 +269,7 @@ export class AgentLifecycleStore {
         createdAt: current.createdAt,
         state: {
           ...input.state,
+          completionDisposition: dominantCompletionDisposition(current.state.completionDisposition, input.state.completionDisposition),
           toolUses: Math.max(current.state.toolUses, input.state.toolUses),
           lifetimeUsage: {
             input: Math.max(current.state.lifetimeUsage.input, input.state.lifetimeUsage.input),
@@ -282,7 +294,14 @@ export class AgentLifecycleStore {
       if (!TERMINAL_STATUSES.has(input.state.status)) {
         throw new AgentLifecycleTransitionError(`Terminal command requires terminal status for ${this.id}`);
       }
-      const snapshot = this.normalize({ ...input, createdAt: current.createdAt }, current.generation, current.revision + 1);
+      const snapshot = this.normalize({
+        ...input,
+        createdAt: current.createdAt,
+        state: {
+          ...input.state,
+          completionDisposition: dominantCompletionDisposition(current.state.completionDisposition, input.state.completionDisposition),
+        },
+      }, current.generation, current.revision + 1);
       if (TERMINAL_STATUSES.has(current.state.status)) {
         if (equalPayload(current, snapshot)) return cloneSnapshot(current);
         throw new AgentLifecycleTransitionError(`Conflicting terminal command for ${this.id}`);
@@ -306,7 +325,14 @@ export class AgentLifecycleStore {
       if (!TERMINAL_STATUSES.has(input.state.status)) {
         throw new AgentLifecycleTransitionError(`Reconciliation requires terminal status for ${this.id}`);
       }
-      const snapshot = this.normalize({ ...input, createdAt: current.createdAt }, current.generation, current.revision + 1);
+      const snapshot = this.normalize({
+        ...input,
+        createdAt: current.createdAt,
+        state: {
+          ...input.state,
+          completionDisposition: dominantCompletionDisposition(current.state.completionDisposition, input.state.completionDisposition),
+        },
+      }, current.generation, current.revision + 1);
       await this.append(snapshot);
       this.current = snapshot;
       const lease = this.rotateLease(current.generation);

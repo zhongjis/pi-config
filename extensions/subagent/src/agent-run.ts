@@ -14,7 +14,7 @@
  * verified mapping to the current implementation.
  */
 
-import type { AgentRecord, RestoreFailureReason, ResumeTargetState } from "./types.js";
+import type { AgentRecord, CompletionDisposition, RestoreFailureReason, ResumeTargetState } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
 import { SUBAGENTS_COMPLETED, SUBAGENTS_CREATED, SUBAGENTS_FAILED, SUBAGENTS_STARTED, SUBAGENTS_STEERED } from "../../lib/subagent-channels.js";
 
@@ -72,6 +72,7 @@ export type AgentRunEvent =
   | { kind: "restore_started"; at?: number }
   | { kind: "resumed"; source?: "live" | "restored"; startedAt?: number; at?: number }
   | { kind: "restore_failed"; reason: RestoreFailureReason; at?: number }
+  | { kind: "completion_disposition"; disposition: CompletionDisposition }
   | { kind: "session_created"; session: unknown }
   | { kind: "output_file_ready"; outputFile?: string; sessionFile?: string }
   | { kind: "message_start" }
@@ -220,6 +221,7 @@ export class AgentRun {
   startedAt = 0;
   completedAt?: number;
   status: AgentRunStatus = "queued";
+  completionDisposition: CompletionDisposition = "clean";
   result?: string;
   error?: string;
   session?: unknown;
@@ -387,6 +389,7 @@ export class AgentRun {
         this.startedAt = event.createdAt;
         this.completedAt = event.completedAt;
         this.status = event.state.status;
+        this.completionDisposition = event.state.completionDisposition ?? "clean";
         this.resultConsumed = event.state.resultConsumed;
         this.notified = event.state.notified;
         this.activity.toolUses = event.state.toolUses;
@@ -429,6 +432,9 @@ export class AgentRun {
         this.restoreLatencyMs = this.restoreStartedAt === undefined ? undefined : Math.max(0, at - this.restoreStartedAt);
         break;
       }
+      case "completion_disposition":
+        if (event.disposition === "recovered") this.completionDisposition = "recovered";
+        break;
       case "session_created":
         this.session = event.session;
         this.markProgress();
@@ -523,6 +529,7 @@ export class AgentRun {
  */
 export function project(run: AgentRun, record: AgentRecord): void {
   record.status = run.status;
+  record.completionDisposition = run.completionDisposition;
   record.result = run.result;
   record.error = run.error;
   record.completedAt = run.completedAt;

@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { pandaWarn } from "../../extensions/lib/warn.js";
 import { reconcileDurableRunningTargets } from "../../extensions/subagent/src/lifecycle/running-reconciliation.js";
 import { lifecycleSnapshotInput } from "../../extensions/subagent/src/lifecycle/agent-lifecycle-store.js";
+import { AgentRun } from "../../extensions/subagent/src/agent-run.js";
 import {
 	BG_AGENT_REGISTRY_ENTRY_TYPE,
 	type BgAgentRegistryEntry,
@@ -30,7 +31,7 @@ import {
 	RESUME_TARGET_ENTRY_TYPE,
 	TASK_CLAIM_ENTRY_TYPE,
 } from "../../extensions/subagent/src/lifecycle/registry-persistence.js";
-import type { ResumeTargetV1 } from "../../extensions/subagent/src/types.js";
+import type { AgentRecord, ResumeTargetV1 } from "../../extensions/subagent/src/types.js";
 
 /** A mutable session JSONL log that records appended CustomEntry rows (durable across restart). */
 function createSessionLog() {
@@ -129,7 +130,7 @@ function recoveryFixture(suffix: readonly Record<string, unknown>[]) {
 		sessionFile: file, sessionDir: root, childSessionId: "child-recovery", entryCount: 1, activeLeafId: "leaf",
 		sessionSha256: createHash("sha256").update(prefix).digest("hex"), type: "jintong", description: "recover interrupted generation",
 		cwd: root, isBackground: true, createdAt: 1, updatedAt: 2, runtime: recoveryRuntime(),
-		state: { status: "running", resultConsumed: false, notified: false, toolUses: 0,
+		state: { status: "running", completionDisposition: "clean", resultConsumed: false, notified: false, toolUses: 0,
 			lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, lifetimeCost: 0, compactionCount: 0 },
 	};
 	return { root, file, target };
@@ -316,6 +317,75 @@ describe("durable running-generation restart reconciliation", () => {
 		expect(provider).not.toHaveBeenCalled();
 		expect(tool).not.toHaveBeenCalled();
 		expect(events.emit).not.toHaveBeenCalled();
+		rmSync(fixture.root, { recursive: true, force: true });
+	});
+
+	it.each(["boundary-before-final", "final-leaf"] as const)(
+		"repairs recovered historical errors at %s without replaying historical tools",
+		async (snapshotBoundary) => {
+			const fixture = recoveryFixture([
+				{ type: "message", id: "interrupted", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z", message: { role: "assistant", content: [{ type: "toolCall", id: "historical-call", name: "write", arguments: {} }], stopReason: "error" } },
+				{ type: "message", id: "boundary", parentId: "interrupted", timestamp: "2026-01-01T00:00:03Z", message: { role: "user", content: "recover explicitly" } },
+				{ type: "message", id: "final", parentId: "boundary", timestamp: "2026-01-01T00:00:04Z", message: { role: "assistant", content: [{ type: "text", text: "recovered durable result" }], stopReason: "stop" } },
+			]);
+			if (snapshotBoundary === "final-leaf") {
+				fixture.target.entryCount = 4;
+				fixture.target.activeLeafId = "final";
+				fixture.target.sessionSha256 = createHash("sha256").update(readFileSync(fixture.file)).digest("hex");
+				writeFileSync(fixture.file, `${readFileSync(fixture.file, "utf8")}${JSON.stringify({
+					type: "session_info", id: "title", parentId: "final", timestamp: "2026-01-01T00:00:05Z", name: "Late recovered title",
+				})}\n`);
+			}
+			const log = createSessionLog();
+			log.entries.push({ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: fixture.target });
+			const registry = new PersistentBgAgentRegistry(log.pi);
+			registry.replay(log.entries);
+			const provider = vi.fn();
+			const historicalTool = vi.fn();
+
+			const outcomes = await reconcileDurableRunningTargets({
+				registry, parentSessionId: "parent-recovery", getRecord: () => undefined,
+				pi: { appendEntry: log.pi.appendEntry, events: { emit: vi.fn() } }, now: () => 10,
+			});
+
+			expect(outcomes).toEqual([{ id: "agent-recovery", status: "recovered", classification: "clean_final_assistant" }]);
+			expect(registry.getResumeTarget("agent-recovery")).toMatchObject({
+				...(snapshotBoundary === "final-leaf" ? { entryCount: 5, activeLeafId: "title" } : {}),
+				state: { status: "completed", completionDisposition: "recovered" },
+			});
+			expect(log.entries.at(-1)).toMatchObject({
+				customType: "subagents:record", data: { status: "completed", result: "recovered durable result" },
+			});
+			expect(provider).not.toHaveBeenCalled();
+			expect(historicalTool).not.toHaveBeenCalled();
+			rmSync(fixture.root, { recursive: true, force: true });
+		},
+	);
+
+	it("rejects a pending terminal candidate whose result does not exactly match authenticated final text", async () => {
+		const fixture = recoveryFixture([{
+			type: "message", id: "final", parentId: "leaf", timestamp: "2026-01-01T00:00:02Z",
+			message: { role: "assistant", content: [{ type: "text", text: "authenticated result" }], stopReason: "stop" },
+		}]);
+		const log = createSessionLog();
+		log.entries.push({ type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: fixture.target });
+		const registry = new PersistentBgAgentRegistry(log.pi);
+		registry.replay(log.entries);
+		const run = new AgentRun(fixture.target.id);
+		run.failTerminalCommit({ kind: "completed", status: "completed", result: "different result" }, new Error("append failed"));
+		const record: AgentRecord = {
+			id: fixture.target.id, type: fixture.target.type, description: fixture.target.description,
+			status: "error", toolUses: 0, startedAt: 1, run,
+		};
+
+		const outcomes = await reconcileDurableRunningTargets({
+			registry, parentSessionId: "parent-recovery", getRecord: () => record,
+			pi: { appendEntry: log.pi.appendEntry, events: { emit: vi.fn() } }, now: () => 10,
+		});
+
+		expect(outcomes).toEqual([{ id: "agent-recovery", status: "rejected", reason: "session_corrupt_or_unsupported" }]);
+		expect(registry.getResumeTarget("agent-recovery")).toEqual(expect.objectContaining({ generation: 4, revision: 2 }));
+		expect(run.pendingTerminal).toBeDefined();
 		rmSync(fixture.root, { recursive: true, force: true });
 	});
 

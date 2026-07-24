@@ -58,9 +58,13 @@ export interface ResumeRuntimeSnapshot {
   activeToolNames: string[];
 }
 
+export type CompletionDisposition = "clean" | "recovered";
+
 /** Last durable execution state for a resume target. */
 export interface ResumeTargetState {
   status: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
+  /** Missing only on legacy V1 rows; normalized snapshots always persist clean or recovered. */
+  completionDisposition?: CompletionDisposition;
   resultConsumed: boolean;
   notified: boolean;
   toolUses: number;
@@ -156,6 +160,7 @@ export interface AgentRecord {
   type: SubagentType;
   description: string;
   status: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
+  completionDisposition?: CompletionDisposition;
   result?: string;
   error?: string;
   toolUses: number;

@@ -18,6 +18,7 @@ import {
   type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type {
+  CompletionDisposition,
   RestoreFailureReason,
   ResumeExtensionIdentity,
   ResumeRuntimeSnapshot,
@@ -43,6 +44,8 @@ export interface ValidatedChildSession {
   entries: SessionEntry[];
   stat: { size: number; mtimeMs: number };
   reconciledDescendant: boolean;
+  completionDisposition: CompletionDisposition;
+  authenticatedFinalAssistantText?: string;
 }
 
 export type AuthenticatedSuffixRecoveryOutcome =
@@ -61,6 +64,7 @@ export type AuthenticatedSuffixRecoveryClassification = {
   outcome: AuthenticatedSuffixRecoveryOutcome;
   recoverable: boolean;
   reconstructedResult?: string;
+  completionDisposition: CompletionDisposition;
   failureReason?: Extract<RestoreFailureReason, "session_corrupt_or_unsupported" | "unsafe_interrupted_operation">;
 };
 
@@ -245,11 +249,124 @@ function activeBranch(entries: SessionEntry[]): SessionEntry[] {
   return branch.reverse();
 }
 
+type ActiveBranchFailureOutcome = Extract<AuthenticatedSuffixRecoveryOutcome,
+  "pending_tool_call" | "tool_result_without_final_assistant" | "user_only" | "abnormal_assistant_stop" | "malformed">;
+
+interface ActiveBranchAnalysis {
+  completionDisposition: CompletionDisposition;
+  finalAssistantText?: string;
+  finalAssistantAfterTool: boolean;
+  lastMessageRole?: string;
+  sawMetadata: boolean;
+  failure?: {
+    outcome: ActiveBranchFailureOutcome;
+    reason: Extract<RestoreFailureReason, "session_corrupt_or_unsupported" | "unsafe_interrupted_operation">;
+  };
+}
+
+function analyzeActiveBranch(branch: SessionEntry[]): ActiveBranchAnalysis {
+  const pendingToolCalls = new Map<string, "normal" | "interrupted">();
+  let completionDisposition: CompletionDisposition = "clean";
+  let recoveryBoundaryRequired = false;
+  let finalAssistantText: string | undefined;
+  let finalAssistantAfterTool = false;
+  let lastMessageRole: string | undefined;
+  let sawToolResultSinceBoundary = false;
+  let sawMetadata = false;
+
+  const failure = (
+    outcome: ActiveBranchFailureOutcome,
+    reason: Extract<RestoreFailureReason, "session_corrupt_or_unsupported" | "unsafe_interrupted_operation">,
+  ): ActiveBranchAnalysis => ({
+    completionDisposition, finalAssistantText, finalAssistantAfterTool, lastMessageRole, sawMetadata,
+    failure: { outcome, reason },
+  });
+
+  for (const entry of branch) {
+    if (entry.type === "session_info") sawMetadata = true;
+    if (entry.type !== "message") continue;
+    const message = (entry as SessionEntry & { message?: Record<string, unknown> }).message;
+    if (!isRecord(message) || typeof message.role !== "string") {
+      return failure("malformed", "session_corrupt_or_unsupported");
+    }
+    lastMessageRole = message.role;
+
+    if (message.role === "user") {
+      if (recoveryBoundaryRequired) {
+        for (const [id, origin] of pendingToolCalls) {
+          if (origin === "interrupted") pendingToolCalls.delete(id);
+        }
+        completionDisposition = "recovered";
+        recoveryBoundaryRequired = false;
+      }
+      finalAssistantText = undefined;
+      finalAssistantAfterTool = false;
+      sawToolResultSinceBoundary = false;
+      continue;
+    }
+
+    if (message.role === "toolResult") {
+      if (typeof message.toolCallId !== "string" || !pendingToolCalls.delete(message.toolCallId)) {
+        return failure("malformed", "unsafe_interrupted_operation");
+      }
+      sawToolResultSinceBoundary = true;
+      finalAssistantText = undefined;
+      finalAssistantAfterTool = false;
+      continue;
+    }
+
+    if (message.role !== "assistant" || !Array.isArray(message.content)) {
+      return failure("malformed", "session_corrupt_or_unsupported");
+    }
+
+    const interrupted = message.stopReason === "error" || message.stopReason === "aborted";
+    if (message.stopReason === "length") {
+      return failure("abnormal_assistant_stop", "unsafe_interrupted_operation");
+    }
+
+    let toolCallCount = 0;
+    for (const part of message.content) {
+      if (!isRecord(part) || part.type !== "toolCall") continue;
+      if (typeof part.id !== "string" || !part.id || pendingToolCalls.has(part.id)) {
+        return failure("malformed", "unsafe_interrupted_operation");
+      }
+      pendingToolCalls.set(part.id, interrupted ? "interrupted" : "normal");
+      toolCallCount++;
+    }
+
+    if (interrupted) {
+      recoveryBoundaryRequired = true;
+      finalAssistantText = undefined;
+      finalAssistantAfterTool = false;
+      continue;
+    }
+    if (message.stopReason === "toolUse" && toolCallCount === 0) {
+      return failure("pending_tool_call", "unsafe_interrupted_operation");
+    }
+    if (toolCallCount === 0) {
+      finalAssistantText = extractAssistantText(message.content);
+      finalAssistantAfterTool = sawToolResultSinceBoundary;
+    } else {
+      finalAssistantText = undefined;
+      finalAssistantAfterTool = false;
+    }
+  }
+
+  if (recoveryBoundaryRequired) return failure("abnormal_assistant_stop", "unsafe_interrupted_operation");
+  if (pendingToolCalls.size > 0) return failure("pending_tool_call", "unsafe_interrupted_operation");
+  if (lastMessageRole === "toolResult") return failure("tool_result_without_final_assistant", "unsafe_interrupted_operation");
+  if (lastMessageRole === "user") return failure("user_only", "unsafe_interrupted_operation");
+  if (completionDisposition === "recovered" && !finalAssistantText) {
+    return failure("abnormal_assistant_stop", "unsafe_interrupted_operation");
+  }
+  return { completionDisposition, finalAssistantText, finalAssistantAfterTool, lastMessageRole, sawMetadata };
+}
+
 function validateActiveBranch(
   entries: SessionEntry[],
   runtime: ResumeRuntimeSnapshot,
   allowInterruptedSuffix = false,
-): void {
+ ): ActiveBranchAnalysis {
   const branch = activeBranch(entries);
   const modelChanges = branch.filter((entry) => entry.type === "model_change") as Array<SessionEntry & { provider: string; modelId: string }>;
   const thinkingChanges = branch.filter((entry) => entry.type === "thinking_level_change") as Array<SessionEntry & { thinkingLevel: string }>;
@@ -265,45 +382,12 @@ function validateActiveBranch(
   if (thinking && thinking.thinkingLevel !== runtime.thinkingLevel) {
     fail("agent_config_unavailable", "Active branch thinking level differs from target runtime");
   }
-  if (allowInterruptedSuffix) return;
 
-  const pendingToolCalls = new Set<string>();
-  let lastMessageRole: string | undefined;
-  for (const entry of branch) {
-    if (entry.type !== "message") continue;
-    const message = (entry as SessionEntry & { message?: Record<string, unknown> }).message;
-    if (!isRecord(message) || typeof message.role !== "string") {
-      fail("session_corrupt_or_unsupported", "Session message entry is invalid");
-    }
-    lastMessageRole = message.role;
-    if (message.role === "assistant") {
-      if (message.stopReason === "aborted" || message.stopReason === "error" || message.stopReason === "length") {
-        fail("unsafe_interrupted_operation", "Session contains an interrupted assistant response");
-      }
-      if (!Array.isArray(message.content)) {
-        fail("session_corrupt_or_unsupported", "Assistant message content is invalid");
-      }
-      let toolCallCount = 0;
-      for (const part of message.content) {
-        if (!isRecord(part) || part.type !== "toolCall") continue;
-        if (typeof part.id !== "string" || !part.id || pendingToolCalls.has(part.id)) {
-          fail("unsafe_interrupted_operation", "Session contains invalid tool-call state");
-        }
-        pendingToolCalls.add(part.id);
-        toolCallCount++;
-      }
-      if (message.stopReason === "toolUse" && toolCallCount === 0) {
-        fail("unsafe_interrupted_operation", "Session contains incomplete provider tool state");
-      }
-    } else if (message.role === "toolResult") {
-      if (typeof message.toolCallId !== "string" || !pendingToolCalls.delete(message.toolCallId)) {
-        fail("unsafe_interrupted_operation", "Session contains unmatched tool result state");
-      }
-    }
+  const analysis = analyzeActiveBranch(branch);
+  if (analysis.failure?.reason === "session_corrupt_or_unsupported" || (analysis.failure && !allowInterruptedSuffix)) {
+    fail(analysis.failure.reason, "Session active branch is unsafe for recovery");
   }
-  if (pendingToolCalls.size > 0 || lastMessageRole === "user" || lastMessageRole === "toolResult") {
-    fail("unsafe_interrupted_operation", "Session ends with an interrupted operation");
-  }
+  return analysis;
 }
 
 function validateTree(
@@ -311,7 +395,7 @@ function validateTree(
   target: ResumeTargetV1,
   runtime: ResumeRuntimeSnapshot,
   allowInterruptedSuffix = false,
-): SessionEntry[] {
+ ): { entries: SessionEntry[]; analysis: ActiveBranchAnalysis } {
   const header = rawEntries[0];
   if (!isRecord(header) || header.type !== "session") {
     fail("session_corrupt_or_unsupported", "Session has an invalid header");
@@ -345,8 +429,7 @@ function validateTree(
       cursor = cursor.parentId === null ? undefined : byId.get(cursor.parentId);
     }
   }
-  validateActiveBranch(entries, runtime, allowInterruptedSuffix);
-  return entries;
+  return { entries, analysis: validateActiveBranch(entries, runtime, allowInterruptedSuffix) };
 }
 
 function confinedPath(target: ResumeTargetV1): { file: string; dir: string } {
@@ -389,98 +472,47 @@ function validateCwd(cwd: string): void {
 export function classifyAuthenticatedSuffixRecovery(
   suffix: SessionEntry[],
   snapshotLeafId: string,
+  prefix: SessionEntry[] = [],
  ): AuthenticatedSuffixRecoveryClassification {
   let parentId = snapshotLeafId;
   let sawMetadata = false;
-  let sawToolResult = false;
-  let finalAssistantText: string | undefined;
-  let finalAssistantAfterTool = false;
-  let lastMessageRole: string | undefined;
-  const pendingToolCalls = new Set<string>();
-
   for (const entry of suffix) {
     if (entry.parentId !== parentId) {
-      return { outcome: "nonlinear_suffix", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+      return { outcome: "nonlinear_suffix", recoverable: false, completionDisposition: "clean", failureReason: "session_corrupt_or_unsupported" };
     }
     parentId = entry.id;
-
     if (entry.type === "session_info") {
       if (typeof entry.timestamp !== "string" || !entry.timestamp ||
           ("name" in entry && entry.name !== undefined && typeof entry.name !== "string")) {
-        return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
+        return { outcome: "malformed", recoverable: false, completionDisposition: "clean", failureReason: "session_corrupt_or_unsupported" };
       }
       sawMetadata = true;
       continue;
     }
-
     if (entry.type !== "message") {
-      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
-    }
-
-    const message = (entry as SessionEntry & { message?: Record<string, unknown> }).message;
-    if (!isRecord(message) || typeof message.role !== "string") {
-      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
-    }
-
-    lastMessageRole = message.role;
-    if (message.role === "user") {
-      finalAssistantText = undefined;
-      continue;
-    }
-    if (message.role === "toolResult") {
-      if (typeof message.toolCallId !== "string" || !pendingToolCalls.delete(message.toolCallId)) {
-        return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
-      }
-      sawToolResult = true;
-      finalAssistantText = undefined;
-      continue;
-    }
-    if (message.role !== "assistant") {
-      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
-    }
-    if (message.stopReason === "aborted" || message.stopReason === "error" || message.stopReason === "length") {
-      return { outcome: "abnormal_assistant_stop", recoverable: false, failureReason: "unsafe_interrupted_operation" };
-    }
-    if (!Array.isArray(message.content)) {
-      return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
-    }
-    let toolCallCount = 0;
-    for (const part of message.content) {
-      if (!isRecord(part) || part.type !== "toolCall") continue;
-      if (typeof part.id !== "string" || !part.id || pendingToolCalls.has(part.id)) {
-        return { outcome: "malformed", recoverable: false, failureReason: "session_corrupt_or_unsupported" };
-      }
-      pendingToolCalls.add(part.id);
-      toolCallCount++;
-    }
-    if (message.stopReason === "toolUse" && toolCallCount === 0) {
-      return { outcome: "pending_tool_call", recoverable: false, failureReason: "unsafe_interrupted_operation" };
-    }
-    if (toolCallCount === 0) {
-      finalAssistantText = extractAssistantText(message.content);
-      finalAssistantAfterTool = sawToolResult;
-    } else {
-      finalAssistantText = undefined;
+      return { outcome: "malformed", recoverable: false, completionDisposition: "clean", failureReason: "session_corrupt_or_unsupported" };
     }
   }
 
-  if (pendingToolCalls.size > 0) {
-    return { outcome: "pending_tool_call", recoverable: false, failureReason: "unsafe_interrupted_operation" };
-  }
-  if (lastMessageRole === "toolResult") {
-    return { outcome: "tool_result_without_final_assistant", recoverable: false, failureReason: "unsafe_interrupted_operation" };
-  }
-  if (lastMessageRole === "user") {
-    return { outcome: "user_only", recoverable: false, failureReason: "unsafe_interrupted_operation" };
-  }
-  if (finalAssistantText !== undefined) {
+  const branch = activeBranch([...prefix, ...suffix]);
+  const analysis = analyzeActiveBranch(branch);
+  if (analysis.failure) {
     return {
-      outcome: finalAssistantAfterTool ? "completed_tool_chain" : "clean_final_assistant",
-      recoverable: true,
-      reconstructedResult: finalAssistantText,
+      outcome: analysis.failure.outcome,
+      recoverable: false,
+      completionDisposition: analysis.completionDisposition,
+      failureReason: analysis.failure.reason,
     };
   }
-  return { outcome: sawMetadata ? "metadata_only" : "empty", recoverable: true };
+  if (analysis.finalAssistantText !== undefined) {
+    return {
+      outcome: analysis.finalAssistantAfterTool ? "completed_tool_chain" : "clean_final_assistant",
+      recoverable: true,
+      reconstructedResult: analysis.finalAssistantText,
+      completionDisposition: analysis.completionDisposition,
+    };
+  }
+  return { outcome: sawMetadata ? "metadata_only" : "empty", recoverable: true, completionDisposition: analysis.completionDisposition };
 }
 
 
@@ -512,8 +544,12 @@ function inspectPersistedChildSession(
       stableSha256(bytes.subarray(0, prefixEnd)) !== target.sessionSha256) {
     fail("session_corrupt_or_unsupported", "Persisted child session prefix does not match its snapshot");
   }
-  const entries = validateTree(raw.values, target, runtime, allowInterruptedSuffix);
-  const classification = classifyAuthenticatedSuffixRecovery(entries.slice(target.entryCount), target.activeLeafId);
+  const { entries, analysis } = validateTree(raw.values, target, runtime, allowInterruptedSuffix);
+  const classification = classifyAuthenticatedSuffixRecovery(
+    entries.slice(target.entryCount),
+    target.activeLeafId,
+    entries.slice(0, target.entryCount),
+  );
   if (!allowInterruptedSuffix && !classification.recoverable) {
     fail(classification.failureReason ?? "session_corrupt_or_unsupported", "Persisted child session suffix is unsafe for recovery");
   }
@@ -527,7 +563,9 @@ function inspectPersistedChildSession(
     activeLeafId,
     entries,
     stat: { size: after.size, mtimeMs: after.mtimeMs },
-    reconciledDescendant: classification.outcome !== "empty",
+    reconciledDescendant: entries.length > target.entryCount,
+    completionDisposition: analysis.completionDisposition,
+    authenticatedFinalAssistantText: analysis.finalAssistantText,
     classification,
   };
 }
@@ -636,7 +674,7 @@ function reconcileAfterBind(
     throw new Error("Bind changed the authenticated pre-bind prefix");
   }
 
-  const entries = validateTree(raw.values, target, runtime);
+  const { entries } = validateTree(raw.values, target, runtime);
   let parentId = validated.activeLeafId;
   for (const entry of entries.slice(validated.entryCount)) {
     if (entry.parentId !== parentId) throw new Error("Bind appended nonlinear session entries");

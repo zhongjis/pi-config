@@ -474,18 +474,19 @@ describe("AgentManager durable resume", () => {
     target.state.lifetimeUsage = { input: 11, output: 13, cacheWrite: 17 };
     target.state.lifetimeCost = 1.25;
     target.state.compactionCount = 4;
+    target.state.completionDisposition = "recovered";
     const session = { dispose: vi.fn(), subscribe: vi.fn(() => () => {}) } as any;
     const restoreSession = vi.fn().mockResolvedValue(session);
     const persistedSnapshots: any[] = [];
     const snapshot = (record: AgentRecord) => ({
       record: {
-        status: record.status, isBackground: record.isBackground, resultConsumed: record.resultConsumed, notified: record.notified,
+        status: record.status, completionDisposition: record.completionDisposition, isBackground: record.isBackground, resultConsumed: record.resultConsumed, notified: record.notified,
         toolUses: record.toolUses, lifetimeUsage: { ...record.lifetimeUsage }, lifetimeCost: record.lifetimeCost,
         compactionCount: record.compactionCount, sessionFile: record.sessionFile, sessionDir: record.sessionDir,
         type: record.type, description: record.description, parentSessionId: record.parentSessionId,
       },
       run: record.run && {
-        status: record.run.status, isBackground: record.run.isBackground, resultConsumed: record.run.resultConsumed,
+        status: record.run.status, completionDisposition: record.run.completionDisposition, isBackground: record.run.isBackground, resultConsumed: record.run.resultConsumed,
         notified: record.run.notified, toolUses: record.run.activity.toolUses, lifetimeUsage: { ...record.run.lifetimeUsage },
         lifetimeCost: record.run.lifetimeCost, compactionCount: record.run.compactionCount, sessionFile: record.run.sessionFile,
         sessionDir: record.run.sessionDir, type: record.run.type, description: record.run.description,
@@ -501,7 +502,7 @@ describe("AgentManager durable resume", () => {
       expect(outcome).toEqual({ status: "restored_session", id: target.id });
       const record = manager.getRecord(target.id)!;
       const persisted = {
-        status: target.state.status, isBackground: true, resultConsumed: true, notified: true, toolUses: 7,
+        status: target.state.status, completionDisposition: "recovered", isBackground: true, resultConsumed: true, notified: true, toolUses: 7,
         lifetimeUsage: { input: 11, output: 13, cacheWrite: 17 }, lifetimeCost: 1.25, compactionCount: 4,
         sessionFile: target.sessionFile, sessionDir: target.sessionDir, type: target.type, description: target.description,
         parentSessionId: target.parentSessionId,
@@ -829,6 +830,7 @@ describe("AgentManager durable resume", () => {
   it("repairs a failed terminal append before allowing exactly one subsequent prompt", async () => {
     const manager = new AgentManager();
     const target = durableTarget();
+    target.state.completionDisposition = "recovered";
     const order: string[] = [];
     let terminalAttempts = 0;
     resumeAgentMock
@@ -851,7 +853,7 @@ describe("AgentManager durable resume", () => {
       });
       expect(first).toMatchObject({ status: "failed", reason: "persistence_failed", error: expect.stringContaining("Execution completed but checkpoint did not") });
       const record = manager.getRecord(target.id)!;
-      expect(record).toMatchObject({ status: "error", result: "fresh output" });
+      expect(record).toMatchObject({ status: "error", completionDisposition: "recovered", result: "fresh output" });
       expect(record.run?.events().some((event) => event.kind === "completed")).toBe(false);
       await expect(manager.waitForAll()).resolves.toBeUndefined();
       expect(order).toEqual(["begin", "provider:one", "terminal-fail:completed"]);
@@ -867,7 +869,7 @@ describe("AgentManager durable resume", () => {
         "begin", "provider:one", "terminal-fail:completed",
         "authenticate:completed", "repair:completed", "begin", "provider:two", "terminal-ok:completed",
       ]);
-      expect(record).toMatchObject({ status: "completed", result: "after repair" });
+      expect(record).toMatchObject({ status: "completed", completionDisposition: "recovered", result: "after repair" });
     } finally { await manager.dispose(); }
   });
 

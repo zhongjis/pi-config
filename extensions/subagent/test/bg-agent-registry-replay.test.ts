@@ -200,7 +200,7 @@ describe("PersistentBgAgentRegistry — boot replay", () => {
       description: "Fix exact resume schema",
       createdAt: 100,
       updatedAt: 200,
-      state: { lifetimeUsage: { input: 10, output: 20, cacheWrite: 30 }, lifetimeCost: 1.25, compactionCount: 2 },
+      state: { completionDisposition: "clean", lifetimeUsage: { input: 10, output: 20, cacheWrite: 30 }, lifetimeCost: 1.25, compactionCount: 2 },
     });
   });
 
@@ -212,6 +212,11 @@ describe("PersistentBgAgentRegistry — boot replay", () => {
     const missingField = { ...resumeTarget("missing", 1, 0) } as Partial<ResumeTargetV1>;
     delete missingField.sessionDir;
     const wrongVersion = { ...resumeTarget("wrong-version", 1, 0), version: 2 };
+    const unknownDispositionBase = resumeTarget("unknown-disposition", 1, 0);
+    const unknownDisposition = {
+      ...unknownDispositionBase,
+      state: { ...unknownDispositionBase.state, completionDisposition: "future" },
+    };
 
     expect(registry.replay([
       { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: badHash },
@@ -219,9 +224,10 @@ describe("PersistentBgAgentRegistry — boot replay", () => {
       { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: missingField },
       { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: wrongVersion },
       { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: { version: 1, id: "partial" } },
+      { type: "custom", customType: RESUME_TARGET_ENTRY_TYPE, data: unknownDisposition },
     ])).toBe(0);
     expect(registry.listResumeTargets()).toEqual([]);
-    expect(warnSpy.mock.calls.filter((call: unknown[]) => String(call[1]).includes("subagent.resume-target.invalid-row"))).toHaveLength(5);
+    expect(warnSpy.mock.calls.filter((call: unknown[]) => String(call[1]).includes("subagent.resume-target.invalid-row"))).toHaveLength(6);
   });
 
   it("keeps foreground and background targets independent", () => {
@@ -259,6 +265,7 @@ describe("PersistentBgAgentRegistry — boot replay", () => {
     expect(terminal.revision).toBe(1);
     expect(consumed.revision).toBe(2);
     expect(notified).toMatchObject({ generation: 3, revision: 3, state: { resultConsumed: true, notified: true } });
+    expect(notified.state.completionDisposition).toBe("clean");
     const persisted = log.entries.filter((entry) => entry.customType === RESUME_TARGET_ENTRY_TYPE);
     expect(persisted).toHaveLength(4);
     expect(Object.keys(persisted.at(-1)?.data as ResumeTargetV1).sort()).toEqual(Object.keys(legacy).sort());

@@ -83,6 +83,7 @@ describe("store-owned compaction checkpoints", () => {
     const appendEntry = vi.fn();
     const registry = new PersistentBgAgentRegistry({ appendEntry });
     const snapshot = target();
+    snapshot.state.completionDisposition = "recovered";
     snapshot.sessionFile = file;
     snapshot.sessionDir = root;
     const begun = await registry.getOrCreateLifecycleStore(snapshot.id).initialize(input(snapshot));
@@ -94,7 +95,7 @@ describe("store-owned compaction checkpoints", () => {
     expect(checkpoint).toMatchObject({
       generation: 0, revision: 1, entryCount: 1, activeLeafId: "leaf-after-compact",
       sessionSha256: createHash("sha256").update(bytes).digest("hex"),
-      state: { status: "running", compactionCount: 1 },
+      state: { status: "running", completionDisposition: "recovered", compactionCount: 1 },
     });
     expect(appendEntry).toHaveBeenCalledTimes(2);
   });
@@ -234,5 +235,6 @@ describe("store-owned compaction checkpoints", () => {
     const replayed = new PersistentBgAgentRegistry({ appendEntry: vi.fn() });
     expect(replayed.replay(entries)).toBe(1);
     expect(replayed.getResumeTarget("agent-a")).toEqual(checkpoint);
+    expect(replayed.getResumeTarget("agent-a")?.state.completionDisposition).toBe("clean");
   });
 });

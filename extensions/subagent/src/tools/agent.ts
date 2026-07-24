@@ -82,6 +82,7 @@ function captureResumeTarget(
   runtime: ResumeRuntimeSnapshot,
   cwd: string,
   status: ResumeTargetState["status"] = record.status,
+  candidate?: AgentRunTerminalEvent,
 ): AgentLifecycleSnapshotInput {
   if (!record.sessionFile || !record.sessionDir || !record.parentSessionId) {
     throw new Error("Agent session metadata is incomplete");
@@ -113,6 +114,7 @@ function captureResumeTarget(
     runtime,
     state: {
       status,
+      completionDisposition: record.completionDisposition ?? "clean",
       resultConsumed: !!record.resultConsumed,
       notified: !!record.notified,
       toolUses: record.toolUses,
@@ -122,6 +124,14 @@ function captureResumeTarget(
     },
   };
   const validated = validatePersistedChildSession(resumeTargetForValidation(target), runtime);
+  if (candidate?.kind === "completed") {
+    authenticateCandidateResult(candidate, validated.authenticatedFinalAssistantText);
+  }
+  const completionDisposition = record.completionDisposition === "recovered" || validated.completionDisposition === "recovered"
+    ? "recovered"
+    : "clean";
+  if (record.run) record.run.publish({ kind: "completion_disposition", disposition: completionDisposition });
+  else record.completionDisposition = completionDisposition;
   return {
     ...target,
     sessionFile: validated.sessionFile,
@@ -129,6 +139,7 @@ function captureResumeTarget(
     entryCount: validated.entryCount,
     activeLeafId: validated.activeLeafId,
     sessionSha256: validated.sessionSha256,
+    state: { ...target.state, completionDisposition },
   };
 }
 
@@ -136,6 +147,16 @@ function terminalStatus(candidate: AgentRunTerminalEvent): ResumeTargetState["st
   if (candidate.kind === "completed") return candidate.status;
   if (candidate.kind === "aborted") return candidate.status;
   return "error";
+}
+
+function authenticateCandidateResult(candidate: AgentRunTerminalEvent, authenticatedFinalAssistantText: string | undefined): void {
+  const candidateResult = candidate.result?.trim();
+  if (!candidateResult || candidateResult !== authenticatedFinalAssistantText) {
+    throw new SessionRestoreError(
+      "session_corrupt_or_unsupported",
+      "Terminal result must exactly match the nonempty authenticated final assistant text",
+    );
+  }
 }
 
 function authenticatePendingTerminalSuffix(
@@ -152,13 +173,7 @@ function authenticatePendingTerminalSuffix(
       `Pending terminal suffix is unsafe for repair: ${classification.outcome}`,
     );
   }
-  const candidateResult = candidate.result?.trim();
-  if (candidateResult && candidateResult !== reconstructedResult) {
-    throw new SessionRestoreError(
-      "session_corrupt_or_unsupported",
-      "Pending terminal result does not match authenticated child-session suffix",
-    );
-  }
+  authenticateCandidateResult(candidate, reconstructedResult);
 }
 
 /**
@@ -677,7 +692,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
           };
           commitTerminal = async (record, candidate) => {
             if (!record.lifecycleLease) throw new Error("Durable lifecycle lease is unavailable");
-            const input = captureResumeTarget(record, runtimeForPersistence, ctx.cwd, terminalStatus(candidate));
+            const input = captureResumeTarget(record, runtimeForPersistence, ctx.cwd, terminalStatus(candidate), candidate);
             await store.commitTerminal(record.lifecycleLease, input);
           };
         }
@@ -837,7 +852,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       };
       const persistFreshTerminal = async (record: AgentRecord, candidate: AgentRunTerminalEvent) => {
         if (!freshRuntime || !record.lifecycleLease) throw new Error("Fresh durable lifecycle is unavailable");
-        const target = captureResumeTarget(record, freshRuntime, ctx.cwd, terminalStatus(candidate));
+        const target = captureResumeTarget(record, freshRuntime, ctx.cwd, terminalStatus(candidate), candidate);
         await persistentRegistry.getOrCreateLifecycleStore(record.id).commitTerminal(record.lifecycleLease, target);
       };
 

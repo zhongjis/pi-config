@@ -553,6 +553,7 @@ export class AgentManager {
       type: target.type,
       description: target.description,
       status: target.state.status,
+      completionDisposition: target.state.completionDisposition ?? "clean",
       toolUses: target.state.toolUses,
       startedAt: target.createdAt,
       resultConsumed: target.state.resultConsumed,

@@ -1,3 +1,4 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentWidget, formatTokens, formatTurns, formatStatusParts, formatMs, formatDuration, describeActivity } from "../src/ui/agent-widget.js";
 
@@ -180,6 +181,73 @@ describe("AgentWidget render scheduling", () => {
     vi.advanceTimersByTime(250);
     widget.update();
     expect(tui.requestRender).toHaveBeenCalledTimes(1);
+  });
+
+  it("redraws and renders a width-safe warning when completion becomes recovered", () => {
+    const record: {
+      id: string;
+      type: string;
+      status: "completed" | "error" | "aborted";
+      description: string;
+      toolUses: number;
+      startedAt: number;
+      completedAt: number;
+      completionDisposition: "clean" | "recovered";
+      error?: string;
+    } = {
+      id: "agent-1",
+      type: "general-purpose",
+      status: "completed",
+      description: "恢复🧰 récovered session",
+      toolUses: 0,
+      startedAt: 0,
+      completedAt: 1000,
+      completionDisposition: "clean",
+    };
+    const manager = { listAgents: vi.fn(() => [record]) };
+    const widget = new AgentWidget(manager as never, new Map());
+    const uiCtx = { setStatus: vi.fn(), setWidget: vi.fn() };
+
+    widget.setUICtx(uiCtx);
+    widget.update();
+
+    const widgetFactory = uiCtx.setWidget.mock.calls[0][1];
+    const tui = { terminal: { columns: 120 }, requestRender: vi.fn() };
+    const theme = {
+      fg: vi.fn((_color: string, text: string) => `\u001b[2m${text}\u001b[0m`),
+      bold: vi.fn((text: string) => text),
+    };
+    const component = widgetFactory(tui, theme);
+
+    expect(component.render().join("\n")).toContain("✓ general-purpose 恢复🧰 récovered session");
+
+    record.completionDisposition = "recovered";
+    widget.update();
+
+    expect(tui.requestRender).toHaveBeenCalledTimes(1);
+    const recoveredText = component.render().join("\n");
+    expect(recoveredText).toContain("⚠ recovered · general-purpose 恢复🧰 récovered session");
+    expect(recoveredText).not.toContain("✗");
+
+    for (const width of [8, 20, 40, 80, 120]) {
+      tui.terminal.columns = width;
+      const rendered = component.render();
+      for (const line of rendered) {
+        expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+      }
+      if (width === 20 || width === 40) {
+        expect(rendered.join("\n")).toContain("⚠ recovered");
+      }
+    }
+
+    record.status = "error";
+    record.error = "real failure";
+    expect(component.render().join("\n")).toContain("✗ general-purpose");
+    expect(component.render().join("\n")).not.toContain(" · recovered");
+
+    record.status = "aborted";
+    expect(component.render().join("\n")).toContain("✗ general-purpose");
+    expect(component.render().join("\n")).not.toContain(" · recovered");
   });
 
   it("suspends animation repaints while an overlay owns the screen, and resumes after", () => {

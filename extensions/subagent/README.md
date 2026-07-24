@@ -60,7 +60,7 @@ A fresh run starts generation 0. Each explicit resume starts generation `g+1` at
 
 Effect order is running V1 → provider/tool execution → compaction checkpoints → terminal V1 → `subagents:record` → background advisory event. Result consumption commits before tool/RPC acknowledgement. Background notification is at-least-once: send first, then mark notified; a successful send followed by flag-append failure can duplicate after restart.
 
-On restart, clean terminal suffixes reconcile without provider/tool replay; uncertain or unfinished suffixes become `unsafe_interrupted_operation`; missing, corrupt, incompatible, or out-of-scope targets fail with their existing typed reason. Pi 0.79's deferred first session flush is normalized before the pre-prompt barrier. Rollback stays V1-compatible: replay selects the highest valid generation/revision; no V2 schema is required.
+On restart, clean terminal suffixes reconcile without provider/tool replay. A historical `error`/`aborted` assistant turn becomes resumable only after a later user recovery boundary and a balanced nonempty final assistant; its V1 state keeps `completionDisposition: recovered` across replay, compaction, delivery, and later resumes. `length`, normal pending calls, and unfinished/malformed endings stay unsafe. Missing legacy disposition defaults to `clean`; no V2 schema is required.
 
 Verification: `pnpm test:extensions`, `pnpm test:integration`, and `pnpm lint:typecheck`.
 

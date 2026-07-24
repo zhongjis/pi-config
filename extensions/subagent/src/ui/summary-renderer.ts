@@ -1,5 +1,6 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { formatCompactions, formatDuration, formatTokens, formatTools, formatTurns, SEPARATOR, SPINNER } from "../../../lib/widget-style.js";
+import type { CompletionDisposition } from "../types.js";
 
 export type SubagentSummaryStatus =
   | "queued"
@@ -30,6 +31,7 @@ export interface SubagentSummaryAgent {
   maxTurns?: number | null;
   compactionCount?: number;
   error?: string;
+  completionDisposition?: CompletionDisposition;
 }
 
 export interface SubagentSummaryGroup {
@@ -114,12 +116,28 @@ export function statusIcon(status: SubagentSummaryStatus, spinnerFrame = 0): str
   }
 }
 
+function isRecoveredCompletion(agent: SubagentSummaryAgent): boolean {
+  return agent.completionDisposition === "recovered" && agent.status === "completed";
+}
+
+function hasRecoveredSuffix(agent: SubagentSummaryAgent): boolean {
+  return agent.completionDisposition === "recovered"
+    && agent.status !== "completed"
+    && agent.status !== "error"
+    && agent.status !== "aborted";
+}
+
+function summaryStatusLead(agent: SubagentSummaryAgent, subject: string): string {
+  if (isRecoveredCompletion(agent)) return `⚠ recovered · ${subject}`;
+  return `${statusIcon(agent.status, agent.spinnerFrame)} ${subject}`;
+}
+
 function buildAgentLines(agent: SubagentSummaryAgent): string[] {
   const stats = getAgentStats(agent);
   const subject = [agent.displayName, agent.description].filter(Boolean).join(" ");
   const statusSuffix = getStatusSuffix(agent);
   const head = [
-    `${statusIcon(agent.status, agent.spinnerFrame)} ${subject}`,
+    summaryStatusLead(agent, subject),
     stats,
     statusSuffix,
   ].filter(Boolean).join(" · ");
@@ -150,11 +168,17 @@ function getTokenText(agent: SubagentSummaryAgent): string | undefined {
 }
 
 function getStatusSuffix(agent: SubagentSummaryAgent): string | undefined {
-  if (agent.status === "steered") return "turn limit";
-  if (agent.status === "stopped") return "stopped";
   if (agent.status === "aborted") return "aborted";
   if (agent.status === "error") return `error${agent.error ? `: ${firstContentLine(agent.error)}` : ""}`;
-  return undefined;
+
+  const lifecycleSuffix = agent.status === "steered"
+    ? "turn limit"
+    : agent.status === "stopped"
+      ? "stopped"
+      : undefined;
+
+  if (!hasRecoveredSuffix(agent)) return lifecycleSuffix;
+  return lifecycleSuffix ? `${lifecycleSuffix} · recovered` : "recovered";
 }
 
 function getPreviewText(agent: SubagentSummaryAgent): string | undefined {

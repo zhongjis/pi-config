@@ -27,10 +27,6 @@ function terminalStatus(candidate: AgentRunTerminalEvent | undefined): "complete
   return "error";
 }
 
-function terminalResult(candidate: AgentRunTerminalEvent | undefined, reconstructedResult: string): string {
-  if (!candidate) return reconstructedResult;
-  return candidate.result?.trim() || reconstructedResult;
-}
 
 function transientTerminalRecord(
   target: ResumeTargetV1,
@@ -43,6 +39,7 @@ function transientTerminalRecord(
     type: target.type,
     description: target.description,
     status: target.state.status,
+    completionDisposition: target.state.completionDisposition ?? "clean",
     toolUses: target.state.toolUses,
     startedAt: target.createdAt,
     completedAt: target.updatedAt,
@@ -114,15 +111,17 @@ export async function reconcileDurableRunningTargets(
       : undefined;
     const reconstructedResult = classification.reconstructedResult?.trim();
     const pendingCandidate = liveRecord?.run?.pendingTerminal;
+    if (pendingCandidate && (!reconstructedResult || pendingCandidate.result?.trim() !== reconstructedResult)) {
+      outcomes.push({ id: target.id, status: "rejected", reason: "session_corrupt_or_unsupported" });
+      continue;
+    }
     const status = recoveredClassification && reconstructedResult
       ? terminalStatus(pendingCandidate)
       : "error";
     const error = status === "error"
       ? `unsafe_interrupted_operation: durable running generation ended as ${classification.outcome}`
       : undefined;
-    const result = status === "error" || !reconstructedResult
-      ? undefined
-      : terminalResult(pendingCandidate, reconstructedResult);
+    const result = status === "error" || !reconstructedResult ? undefined : reconstructedResult;
     const updatedAt = options.now?.() ?? Date.now();
     const store = options.registry.getLifecycleStore(target.id);
     if (!store) {
@@ -142,6 +141,7 @@ export async function reconcileDurableRunningTargets(
         state: {
           ...target.state,
           status,
+          completionDisposition: classification.completionDisposition,
           resultConsumed: false,
           notified: false,
         },
