@@ -47,6 +47,10 @@ function getKuafuGptPrompt(): string {
   return readFileSync(KUAFU_GPT_PATH, "utf-8");
 }
 
+function getKuafuDefaultPrompt(): string {
+  return getModeDefaultBody("kuafu");
+}
+
 function getYanluoPrompt(): string {
   return readFileSync(YANLUO_PATH, "utf-8");
 }
@@ -479,6 +483,207 @@ describe("audited omo prompt contracts", () => {
     expect(prompt).toContain("Continue until the authorized task is complete and verified");
     expect(prompt).toContain("Orchestrate first");
     expect(prompt).toContain("Implementation authorization gate");
+  });
+});
+
+describe("kuafu approved prompt policies", () => {
+  function getPromptVariants(): ReadonlyArray<readonly [variant: string, prompt: string]> {
+    return [
+      ["default", getKuafuDefaultPrompt()],
+      ["GPT", getKuafuGptPrompt()],
+    ];
+  }
+
+  function expectPolicies(
+    prompt: string,
+    variant: string,
+    policies: ReadonlyArray<readonly [policy: string, pattern: RegExp]>,
+  ): void {
+    for (const [policy, pattern] of policies) {
+      expect(prompt, `${variant}: ${policy}`).toMatch(pattern);
+    }
+  }
+
+  it("defines exact Taishang consult triggers and routine-work anti-triggers in both prompts", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expectPolicies(prompt, variant, [
+        [
+          "architecture consult crosses boundaries",
+          /architecture[\s\S]{0,160}(?:cross(?:es|ing)?|span(?:s|ning)?)[\s\S]{0,100}boundar(?:y|ies)/i,
+        ],
+        [
+          "security or performance trade-off consult",
+          /(?:security|performance)[\s\S]{0,100}trade[- ]offs?/i,
+        ],
+        ["conflicting invariants consult", /conflicting[\s-]+invariants?/i],
+        [
+          "consult after two materially different debugging failures",
+          /(?:after|once)[\s\S]{0,80}two[\s\S]{0,100}materially different[\s\S]{0,100}(?:debugging[\s-]+)?(?:failures?|attempts?)/i,
+        ],
+        [
+          "routine or local work is an anti-trigger",
+          /(?:(?:do not|does not|not)[\s\S]{0,100}(?:consult|trigger|escalat)[\s\S]{0,100}(?:routine|local)|(?:routine|local)[\s\S]{0,100}(?:do not|does not|not)[\s\S]{0,100}(?:consult|trigger|escalat))/i,
+        ],
+        [
+          "first debugging attempt is an anti-trigger",
+          /(?:(?:do not|does not|not)[\s\S]{0,100}(?:consult|trigger|escalat)[\s\S]{0,100}first[\s-]+attempt|first[\s-]+attempt[\s\S]{0,100}(?:do not|does not|not)[\s\S]{0,100}(?:consult|trigger|escalat))/i,
+        ],
+        [
+          "routine code-quality work is an anti-trigger",
+          /(?:(?:do not|does not|not)[\s\S]{0,100}(?:consult|trigger|escalat)[\s\S]{0,100}code[- ]quality|code[- ]quality[\s\S]{0,100}(?:do not|does not|not)[\s\S]{0,100}(?:consult|trigger|escalat))/i,
+        ],
+      ]);
+    }
+  });
+
+  it("honors explicit Taishang requests and requires generic LSP diagnostics in both prompts", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expect(prompt, `${variant}: explicit Taishang request`).toMatch(
+        /explicit user request[\s\S]{0,100}consult[\s\S]{0,60}taishang/i,
+      );
+      expect(prompt, `${variant}: generic LSP diagnostics`).toMatch(/LSP diagnostics/i);
+      expect(prompt, `${variant}: schema-coupled diagnostics`).not.toContain('operation: "diagnostics"');
+      expect(prompt, `${variant}: legacy diagnostics tool name`).not.toContain("`lsp_diagnostics`");
+    }
+  });
+
+  it("blocks consultation-dependent edits and final delivery while allowing only non-overlapping work", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expectPolicies(prompt, variant, [
+        [
+          "dependent edits wait for consultation",
+          /(?:consultation|taishang)[\s\S]{0,160}(?:block|wait|pause|do not)[\s\S]{0,100}(?:dependent|overlapping)[\s-]+edits?/i,
+        ],
+        [
+          "final delivery waits for consultation",
+          /(?:consultation|taishang)[\s\S]{0,160}(?:block|wait|pause|do not)[\s\S]{0,100}(?:final[\s-]+delivery|final(?:ize|ization)|completion)/i,
+        ],
+        [
+          "only non-overlapping work may continue",
+          /(?:only[\s\S]{0,40})?non[- ]overlapping[\s\S]{0,80}(?:work|while|continue)/i,
+        ],
+      ]);
+    }
+  });
+
+  it("defines attempt-one, attempt-two, consult-before-three, and ownership-safe third-failure recovery", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expectPolicies(prompt, variant, [
+        ["attempt one fixes root cause minimally", /attempt\s*1[\s\S]{0,140}(?:root cause|minimal)/i],
+        [
+          "attempt two uses a materially different approach",
+          /attempt\s*2[\s\S]{0,140}materially different[\s\S]{0,80}(?:approach|strategy)/i,
+        ],
+        [
+          "Taishang consultation occurs before attempt three",
+          /(?:consult|taishang)[\s\S]{0,100}before[\s\S]{0,60}(?:attempt\s*3|third attempt)/i,
+        ],
+        [
+          "third failure restores last verified green state",
+          /(?:third|3(?:rd)?)[\s-]+failure[\s\S]{0,180}(?:restore|return|revert)[\s\S]{0,100}last verified green/i,
+        ],
+        [
+          "restoration preserves user and concurrent changes",
+          /preserv(?:e|es|ing)[\s\S]{0,100}(?:user|others?['’]s?)[\s/+-]*(?:and|or)?[\s/+-]*(?:concurrent|external)[\s-]+changes/i,
+        ],
+        [
+          "third-failure report includes failure, resume anchor, and precise question",
+          /report[\s\S]{0,100}(?:failure|failed)[\s\S]{0,100}resume[\s-]+anchor[\s\S]{0,100}(?:precise|one)[\s-]+question/i,
+        ],
+      ]);
+    }
+  });
+
+  it("stops exploration at sufficiency and retries empty or partial results once with a different strategy", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expectPolicies(prompt, variant, [
+        [
+          "exploration has explicit stop conditions",
+          /explor(?:e|ation)[\s\S]{0,120}stop[\s-]+conditions?[\s\S]{0,180}(?:location|owner|pattern|verification|answerable|sufficient)/i,
+        ],
+        [
+          "empty or partial results get one different-strategy retry",
+          /(?:empty|partial)[\s\S]{0,100}(?:result|search)[\s\S]{0,140}(?:retry|try)[\s\S]{0,80}(?:once|one)[\s\S]{0,100}(?:different|alternate)[\s-]+strategy/i,
+        ],
+      ]);
+    }
+  });
+
+  it("requires final request reread, routing-intent reread, and focused verification", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expectPolicies(prompt, variant, [
+        [
+          "final pass rereads original request",
+          /(?:before[\s-]+final|final[\s-]+pass)[\s\S]{0,140}reread[\s\S]{0,80}(?:original|current)[\s-]+(?:user[\s-]+)?request/i,
+        ],
+        [
+          "final pass rereads routing or intent line",
+          /(?:before[\s-]+final|final[\s-]+pass)[\s\S]{0,180}reread[\s\S]{0,100}(?:routing|intent)[\s-]+line/i,
+        ],
+        ["final pass runs focused verification", /final[\s-]+pass[\s\S]{0,180}focused verification/i],
+      ]);
+    }
+  });
+
+  it("states compact hard invariants against false evidence and unsafe repository changes", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expectPolicies(prompt, variant, [
+        ["no fabricated evidence", /(?:never|do not)[\s\S]{0,50}(?:fabricat|invent)[\s\S]{0,40}evidence/i],
+        [
+          "no weakened or deleted tests",
+          /(?:never|do not)[\s\S]{0,60}(?:weaken|delete|remove|skip)[\s\S]{0,50}tests?/i,
+        ],
+        ["no concealed failures", /(?:never|do not)[\s\S]{0,50}(?:conceal|hide)[\s\S]{0,40}failures?/i],
+        [
+          "no destructive Git history",
+          /(?:never|do not)[\s\S]{0,60}(?:rewrite|destroy|destructive)[\s\S]{0,50}(?:git[\s-]+)?history/i,
+        ],
+        [
+          "no reverting others' work",
+          /(?:never|do not)[\s\S]{0,60}(?:revert|overwrite|discard)[\s\S]{0,50}(?:others?['’]s?|user|concurrent)[\s-]+(?:work|changes)/i,
+        ],
+        [
+          "no knowingly broken tree",
+          /(?:never|do not)[\s\S]{0,60}(?:leave|deliver)[\s\S]{0,50}(?:knowingly[\s-]+)?broken[\s-]+tree/i,
+        ],
+      ]);
+    }
+  });
+
+  it("checks pattern maturity from config, tests, and two nearby examples before asking on behavioral ambiguity", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      expectPolicies(prompt, variant, [
+        [
+          "pattern maturity uses config and tests",
+          /pattern[\s-]+maturity[\s\S]{0,160}config[\s\S]{0,80}tests?/i,
+        ],
+        [
+          "pattern maturity samples two nearby examples",
+          /(?:read|inspect|sample|check)[\s\S]{0,100}two[\s\S]{0,60}nearby examples?/i,
+        ],
+        [
+          "ask only when behavior-changing ambiguity remains",
+          /ask[\s\S]{0,80}only[\s\S]{0,120}behavio(?:u)?r[- ]changing ambiguity[\s\S]{0,80}remain/i,
+        ],
+      ]);
+    }
+  });
+
+  it("keeps authorization before tool-use, delegation, and recovery policy", () => {
+    for (const [variant, prompt] of getPromptVariants()) {
+      const authorization = prompt.search(/Implementation authorization gate/i);
+      const toolUse = prompt.search(/tool[-_ ]use policy|<tool_use_policy>/i);
+      const delegation = prompt.search(/delegation policy|<delegation_policy>/i);
+      const recovery = prompt.search(/recovery policy|failure recovery|attempt\s*1/i);
+
+      expect(authorization, `${variant}: authorization policy missing`).toBeGreaterThanOrEqual(0);
+      expect(toolUse, `${variant}: tool-use policy missing`).toBeGreaterThanOrEqual(0);
+      expect(delegation, `${variant}: delegation policy missing`).toBeGreaterThanOrEqual(0);
+      expect(recovery, `${variant}: recovery policy missing`).toBeGreaterThanOrEqual(0);
+      expect(authorization, `${variant}: authorization must precede tool-use policy`).toBeLessThan(toolUse);
+      expect(authorization, `${variant}: authorization must precede delegation policy`).toBeLessThan(delegation);
+      expect(authorization, `${variant}: authorization must precede recovery policy`).toBeLessThan(recovery);
+    }
   });
 });
 
