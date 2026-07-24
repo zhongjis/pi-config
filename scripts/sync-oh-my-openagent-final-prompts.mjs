@@ -6,8 +6,8 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PINNED_REPOSITORY = "https://github.com/code-yeongyu/oh-my-openagent";
-export const PINNED_SHA = "14083b89f1cbf4680be13493a6c4afd67c957e8a";
-export const PINNED_VERSION = "4.19.0";
+export const PINNED_SHA = "60201be160749965b9bb4c3b2744e1bbee820dc5";
+export const PINNED_VERSION = "4.19.1";
 export const DEFAULT_TARGET_DIR = "docs/references/oh-my-openagent/final-prompts";
 export const MANIFEST_FILE = ".omo-final-prompts.json";
 
@@ -59,7 +59,9 @@ export const FINAL_PROMPT_PATHS = Object.freeze([
   "sisyphus/gpt-5-5.md",
   "sisyphus/kimi-k2-6.md",
   "sisyphus/kimi-k2-7.md",
-  "sisyphus/kimi-k3.md"
+  "sisyphus/kimi-k3.md",
+  "ultrawork/default.md",
+  "ultrawork/gpt.md"
   ]);
 
 const expectedFinalPromptPathSet = new Set(FINAL_PROMPT_PATHS);

@@ -3,8 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const EXPECTED_SHA = "14083b89f1cbf4680be13493a6c4afd67c957e8a";
-const EXPECTED_VERSION = "4.19.0";
+const EXPECTED_SHA = "60201be160749965b9bb4c3b2744e1bbee820dc5";
+const EXPECTED_VERSION = "4.19.1";
 const FROZEN_DATE = "2026-01-01T00:00:00.000Z";
 const REPOSITORY = "https://github.com/code-yeongyu/oh-my-openagent";
 const MANIFEST_FILE = ".omo-final-prompts.json";
@@ -126,7 +126,8 @@ async function main() {
       atlas,
       prometheus,
       sisyphusJunior,
-      modelTypes
+      modelTypes,
+      ultrawork
     ] = await Promise.all([
       importSource(options.sourceDir, `${agentsRoot}/sisyphus-agent-factory.ts`),
       importSource(options.sourceDir, `${agentsRoot}/hephaestus/agent.ts`),
@@ -139,7 +140,8 @@ async function main() {
       importSource(options.sourceDir, `${agentsRoot}/atlas/agent.ts`),
       importSource(options.sourceDir, `${agentsRoot}/prometheus/system-prompt.ts`),
       importSource(options.sourceDir, `${agentsRoot}/sisyphus-junior/agent.ts`),
-      importSource(options.sourceDir, `${agentsRoot}/types.ts`)
+      importSource(options.sourceDir, `${agentsRoot}/types.ts`),
+      importSource(options.sourceDir, "packages/prompts-core/src/ultrawork-prompts.ts")
     ]);
 
     const resolveOracleFamily = (model?: string) => {
@@ -222,10 +224,12 @@ async function main() {
       { path: "sisyphus/gpt-5-5.md", model: "openai/gpt-5.5", expectedFamily: "gpt-5-5", resolveFamily: sisyphus.resolveSisyphusPromptFamily, build: () => buildSisyphus("openai/gpt-5.5") },
       { path: "sisyphus/kimi-k2-6.md", model: "opencode-go/kimi-k2.6", expectedFamily: "kimi-k2-6", resolveFamily: sisyphus.resolveSisyphusPromptFamily, build: () => buildSisyphus("opencode-go/kimi-k2.6") },
       { path: "sisyphus/kimi-k2-7.md", model: "opencode-go/kimi-k2.7", expectedFamily: "kimi-k2-7", resolveFamily: sisyphus.resolveSisyphusPromptFamily, build: () => buildSisyphus("opencode-go/kimi-k2.7") },
-      { path: "sisyphus/kimi-k3.md", model: "opencode-go/kimi-k3", expectedFamily: "kimi-k3", resolveFamily: sisyphus.resolveSisyphusPromptFamily, build: () => buildSisyphus("opencode-go/kimi-k3") }
+      { path: "sisyphus/kimi-k3.md", model: "opencode-go/kimi-k3", expectedFamily: "kimi-k3", resolveFamily: sisyphus.resolveSisyphusPromptFamily, build: () => buildSisyphus("opencode-go/kimi-k3") },
+      { path: "ultrawork/default.md", expectedFamily: "default", resolveFamily: onlyDefault, build: () => ultrawork.ULTRAWORK_DEFAULT_PROMPT },
+      { path: "ultrawork/gpt.md", expectedFamily: "default", resolveFamily: onlyDefault, build: () => ultrawork.ULTRAWORK_GPT_PROMPT }
     ];
 
-    if (entries.length !== 43) throw new Error(`expected 43 prompt entries, got ${entries.length}`);
+    if (entries.length !== 45) throw new Error(`expected 45 prompt entries, got ${entries.length}`);
     await rm(options.outputDir, { recursive: true, force: true });
     await mkdir(options.outputDir, { recursive: true });
 

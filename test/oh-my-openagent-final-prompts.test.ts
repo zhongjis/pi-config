@@ -11,8 +11,8 @@ const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = join(repoRoot, "scripts/sync-oh-my-openagent-final-prompts.mjs");
 const scriptUrl = pathToFileURL(scriptPath).href;
-const expectedSha = "14083b89f1cbf4680be13493a6c4afd67c957e8a";
-const expectedVersion = "4.19.0";
+const expectedSha = "60201be160749965b9bb4c3b2744e1bbee820dc5";
+const expectedVersion = "4.19.1";
 
 const expectedMatrix = [
   "atlas/default.md",
@@ -58,6 +58,8 @@ const expectedMatrix = [
   "sisyphus/kimi-k2-6.md",
   "sisyphus/kimi-k2-7.md",
   "sisyphus/kimi-k3.md",
+  "ultrawork/default.md",
+  "ultrawork/gpt.md",
 ];
 
 type ArchiveCheckResult = {
@@ -177,12 +179,12 @@ describe("Oh My OpenAgent final-prompt sync contract", () => {
     expect(sync).not.toHaveProperty("generatePinnedOhMyOpenAgentArchive");
   });
 
-  it("defines the canonical 43-path matrix for 11 agents", async () => {
+  it("defines the canonical 45-path generated prompt matrix", async () => {
     const sync = await loadModule();
     expect(sync.PINNED_SHA).toBe(expectedSha);
     expect(sync.PINNED_VERSION).toBe(expectedVersion);
     expect(sync.FINAL_PROMPT_PATHS).toEqual(expectedMatrix);
-    expect(sync.FINAL_PROMPT_PATHS).toHaveLength(43);
+    expect(sync.FINAL_PROMPT_PATHS).toHaveLength(45);
     expect(countByAgent(sync.FINAL_PROMPT_PATHS)).toEqual({
       atlas: 8,
       explore: 1,
@@ -195,6 +197,7 @@ describe("Oh My OpenAgent final-prompt sync contract", () => {
       prometheus: 1,
       sisyphus: 10,
       "sisyphus-junior": 9,
+      ultrawork: 2,
     });
   });
 
@@ -321,7 +324,7 @@ describe("Oh My OpenAgent final-prompt sync contract", () => {
       targetDir,
     ], { cwd: repoRoot });
     expect(syncRun.stderr).toBe("");
-    expect(syncRun.stdout).toContain("synced 43 files");
+    expect(syncRun.stdout).toContain("synced 45 files");
 
     const checkRun = await execFileAsync(process.execPath, [
       scriptPath,
@@ -360,7 +363,7 @@ describe("Oh My OpenAgent final-prompt sync contract", () => {
     });
 
     expect(run.stderr).toBe("");
-    expect(run.stdout).toContain("synced 43 files");
+    expect(run.stdout).toContain("synced 45 files");
     expect(await listTree(targetDir)).toEqual(expectedMatrix);
     expect(await listTree(tempRoot)).toEqual([]);
     const commands = await readFile(commandLog, "utf8");
