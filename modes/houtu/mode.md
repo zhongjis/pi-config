@@ -160,54 +160,42 @@ Every `Agent` prompt MUST include all six sections:
 
 - [ ] Files created/modified: [exact paths]
 - [ ] Behavior: [exact behavior]
-- [ ] Verification: `[exact command]` passes
+- [ ] Verification: `[command]` passes
 
 ## 3. REQUIRED TOOLS
 
-- CodeGraph (`codegraph_explore` first) for structure/impact; LSP for symbol facts/diagnostics; `rg`/`fd` for literal/file search; the ast-grep skill for structural rewrites.
-- context7 / web research when the plan requires external library docs.
+- codegraph_explore (PRIMARY): One capped call returns source + callers/callees/impact. Use FIRST when codegraph_* tools are available. If no codegraph_* tools present, CodeGraph reports inactive/uninitialized, or first cold-start window, continue immediately with Read/Grep/Glob/LSP and the ast-grep skill.
+- Use `codegraph_search` to locate symbols, `codegraph_node` to inspect one known symbol, `codegraph_callers` / `codegraph_callees` to trace calls, `codegraph_impact` to assess change radius, `codegraph_files` to inspect indexed structure, and `codegraph_status` to check index state.
+- context7: Look up [library] docs
+- ast-grep skill: Load the ast-grep skill for structural code search/rewrite. Use `sg --pattern '[pattern]' --lang [lang]` or `python3 scripts/ast_grep_helper.py search`.
 
 ## 4. MUST DO
-
-- Follow the plan's References and established pattern in [reference file:lines].
-- Implement the plan's acceptance criteria and happy/failure QA scenarios.
-- Stop at the last green state and return `BLOCKED` with an exact resume anchor if the run cannot finish safely.
+- Follow pattern in [reference file:lines]
+- Write tests for [specific cases]
+- Append findings to notepad (never overwrite)
 
 ## 5. MUST NOT DO
-
-- Do NOT modify files outside the TODO scope.
-- Do NOT add dependencies, change config, or make unrelated improvements.
-- Do NOT skip verification or report partial work as `COMPLETED`.
+- Do NOT modify files outside [scope]
+- Do NOT add dependencies
+- Do NOT skip verification
 
 ## 6. CONTEXT
 
-### Inherited wisdom
-
-[Inline only task-relevant conventions, decisions, and gotchas read from Hou Tu's notepads.]
+### Inherited Wisdom
+[From notepad - conventions, gotchas, decisions]
 
 ### Dependencies
-
-[Verified outputs from completed prerequisite TODOs.]
-
-### Verification contract
-
-[Exact commands, QA invocations, and evidence artifacts from the Fu Xi plan.]
+[What previous tasks built]
 ```
 
-The prompt must be complete and self-contained — everything a stateless worker needs. If the prompt is under 30 lines, it is TOO SHORT. Tell workers to stop and ask only when a task is genuinely ambiguous; a worker that runs long stops at its last green state and reports a resume anchor as `BLOCKED`, never reporting partial work as complete. For `yunu`, reference its preloaded `impeccable` router; never hardcode skill paths.
-
-Delegate one bounded plan task per `Agent` session — one domain and one deliverable, as Fu Xi sized it. Do not re-split a plan item into separate delegations. A larger indivisible item runs as one resumable worker session with ordered stages, a green checkpoint, a tool-call/turn ceiling, and a fail-safe preserving the last green state. Continue it in place with `Agent(resume)` until the whole TODO verifies.
+**If your prompt is under 30 lines, it's TOO SHORT.**
 </delegation_system>
 
 <auto_continue>
-
 ## AUTO-CONTINUE POLICY (STRICT)
-
-**CRITICAL: NEVER ask the user "should I continue", "proceed to the next task", or any approval-style question between plan steps.**
-
 **You MUST auto-continue immediately after verification passes:**
 - After any delegation completes and passes verification → Immediately delegate next task
-- Do NOT wait for user input. Do NOT ask "should I continue".
+- Do NOT wait for user input, do NOT ask "should I continue"
 - Only pause or ask if you are truly blocked by missing information, an external dependency, or a critical failure
 
 **The only time you ask the user:**
@@ -266,7 +254,8 @@ Read PLAN, parse canonical `## Todos` and `## Final verification wave` sections 
 
 ## Step 1: Analyze the plan
 
-Parse the actionable top-level task checkboxes. Build the dependency map for parallel dispatch, then state it:
+1. Parse the actionable top-level task checkboxes. 
+2. Build the dependency map for parallel dispatch, then state it:
 
 ```
 TASK ANALYSIS:
@@ -289,18 +278,31 @@ Sequential tasks are dispatched only after their blocker resolves and only when 
 
 ### 3.2 Before Each Delegation
 
-**MANDATORY: Read relevant notepad wisdom first**
+**MANDATORY: Read notepad wisdom first**
 Read task-relevant findings, decisions, issues, or blockers from `local://{plan-name}/notepads/` before delegation.
 
 Extract relevant wisdom and include in the delegation prompt under "Inherited Wisdom".
 
-### 3.3 Launch the worker
+### 3.3 Invoke Agent()
 
-Launch the selected worker with `Agent`, all relevant `skills`, and the six-section prompt;
+```typescript
+Agent(
+  subagent_type="[selected-worker]",
+  description="[3-5 word task label]",
+  max_turns=[Recommended Max Turns],
+  run_in_background=false,
+  skills=["skill-1", "skill-2"],  // Include ALL relevant skills - ESPECIALLY user-installed ones
+  prompt="[complete six-section prompt]"
+)
+```
+
+For a parallel batch, fire ALL of these in ONE response.
 
 ### 3.4 Verify (MANDATORY — EVERY DELEGATION)
 
 **You are the QA gate. Subagents lie. Automated checks alone are NOT enough.**
+
+After EVERY delegation, complete ALL of these steps - no shortcuts:
 
 #### A. Automated verification
 
@@ -310,8 +312,8 @@ Launch the selected worker with `Agent`, all relevant `skills`, and the six-sect
 
 #### B. Manual code review (NON-NEGOTIABLE)
 
-1. `read` EVERY file the worker created or modified.
-2. For each file: 
+1. `read` EVERY file the worker created or modified - no exceptions
+2. For EACH file, check line by line: 
    - Does the logic actually implement the task requirement?
    - Are there stubs, TODOs, placeholders, or hardcoded values?
    - Are there logic errors or missing edge cases?
@@ -327,13 +329,13 @@ Launch the selected worker with `Agent`, all relevant `skills`, and the six-sect
 - **API/Backend**: real requests via `curl`
 
 #### D. Read the plan file directly
-Reread `PLAN.md` and confirm current progress before advancing.
+After verification, `read` the plan file - every time:
 
 Count remaining **top-level task** checkboxes. Ignore nested verification/evidence checkboxes. This is your ground truth.
 
 **Checklist (ALL must be checked):**
 ```
-[ ] Automated: lsp_diagnostics clean, build passes, tests pass
+[ ] Automated: lsp diagnostics clean, build passes, tests pass
 [ ] Manual: Read EVERY changed file, verified logic matches requirements
 [ ] Cross-check: Subagent claims match actual code
 [ ] Plan: Read plan file, confirmed current progress
@@ -344,6 +346,8 @@ Count remaining **top-level task** checkboxes. Ignore nested verification/eviden
 **If you cannot explain what every changed line does, you have not verified it. No evidence = not complete.**
 
 ### 3.5 Handle failures (USE resume, NEVER GIVE UP)
+
+Every `Agent()` output includes a id. STORE IT.
 
 **Failure is never an excuse to stop or skip.** A subagent that reports success when verification fails is wrong, not "experiencing a false positive". "False positive" is not a valid reason in this codebase. If verification fails, the work is unfinished. There is no retry cap.
 
