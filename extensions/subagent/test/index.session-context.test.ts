@@ -554,6 +554,9 @@ describe("subagent session UI rebinding", () => {
     expect(tool.description).toContain("active mode at execution time");
     expect(tool.description).not.toContain("- forbidden:");
     expect(tool.parameters.properties.subagent_type.description).not.toContain("forbidden");
+    expect(tool.parameters.properties.run_in_background.description).toBe(
+      "Requested result-delivery mode. Agent-type configuration takes precedence. Effective false waits for completion and returns the final result; effective true returns an agent ID immediately. If neither configuration nor this argument sets a value, the default is false.",
+    );
   });
 
   it("fails closed for RPC spawn when persisted active mode config is unavailable", async () => {

@@ -557,7 +557,7 @@ export function registerAgentTool(ctx: SubagentRuntimeContext): void {
       ),
       run_in_background: Type.Optional(
         Type.Boolean({
-          description: "Set to true to run in background. Returns agent ID immediately; actively supervise longer work with get_subagent_result and steer_subagent.",
+          description: "Requested result-delivery mode. Agent-type configuration takes precedence. Effective false waits for completion and returns the final result; effective true returns an agent ID immediately. If neither configuration nor this argument sets a value, the default is false.",
         }),
       ),
       resume: Type.Optional(
