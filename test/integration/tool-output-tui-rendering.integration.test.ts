@@ -50,7 +50,7 @@ const EXPECTED_TOOL_NAMES = [
 const OWNER_EXTENSIONS = [
   "better-bash-tool",
   "readonly-bash",
-  "visuals",
+  "qol",
   "codegraph",
   "lsp",
   "multimodal-look",

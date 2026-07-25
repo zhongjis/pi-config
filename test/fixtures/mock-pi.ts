@@ -35,7 +35,14 @@ export function createMockPi() {
     appendEntry: () => {},
     events,
     getActiveTools: () => Array.from(tools.keys()),
-    getAllTools: () => Array.from(tools.entries()).map(([name, definition]) => ({ name, ...(definition as object) })),
+    getAllTools: () => Array.from(tools.entries()).map(([name, definition]) => ({
+      name,
+      ...(definition as object),
+      sourceInfo: (definition as { sourceInfo?: unknown }).sourceInfo ?? {
+        source: "extension",
+        path: "/mock/extensions",
+      },
+    })),
     getCommands: () => Array.from(commands.keys()).map((name) => ({ name })),
     getFlag: (name: string) => flags.get(name),
     getSessionName: () => "panda-harness-session",

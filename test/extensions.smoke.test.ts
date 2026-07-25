@@ -128,7 +128,7 @@ describe("extension entrypoints", () => {
 
   it("leaves session resume hints to Pi core", async () => {
     const mock = createMockPi();
-    const mod = await import("../extensions/visuals/index.js");
+    const mod = await import("../extensions/qol/index.js");
 
     mod.default(mock.pi as never);
 
