@@ -68,7 +68,7 @@ packages/ai/src/
     openrouter-images.ts      # image-generation provider factory
     faux.ts                   # test provider factory
     all.ts                    # explicit aggregate: builtinModels(), builtinImagesModels(), getBuiltin*()
-  utils/oauth/                # OAuth flow implementations (node), lazy-loaded
+  auth/oauth/                 # Canonical OAuth implementations (node), lazy-loaded
 ```
 
 `src/index.ts` must stay core-only. It must not import:
@@ -407,7 +407,7 @@ export interface ApiKeyAuth {
   name: string; // "Anthropic API key"
 
   /** Interactive setup (prompt for key/provider env). Absent = ambient-only (env, ADC, IAM). */
-  login?(callbacks: AuthLoginCallbacks): Promise<ApiKeyCredential>;
+  login?(interaction: AuthInteraction): Promise<ApiKeyCredential>;
 
   /**
    * Resolve auth from the stored credential and/or ambient sources, merging
@@ -424,7 +424,7 @@ export interface ApiKeyAuth {
 export interface OAuthAuth {
   name: string; // "Anthropic (Claude Pro/Max)"
 
-  login(callbacks: AuthLoginCallbacks): Promise<OAuthCredential>;
+  login(interaction: AuthInteraction): Promise<OAuthCredential>;
 
   /** Exchange the refresh token. Network call; throws on failure (invalid_grant etc.). Runs under the store lock. */
   refresh(credential: OAuthCredential): Promise<OAuthCredential>;
@@ -445,9 +445,9 @@ export interface AuthContext {
 }
 ```
 
-The OAuth split (`refresh` + `toAuth` instead of one `resolve`) matches the old `OAuthProviderInterface` (`refreshToken` + `getApiKey`) and lets `Models` own the locking pattern without closure gymnastics: refresh produces a credential, `toAuth` derives request auth from whatever credential ends up stored.
+The `refresh`/`toAuth` split lets `Models` own the locked refresh pattern without closure gymnastics: refresh produces a credential, while `toAuth` derives request auth from whatever credential ends up stored.
 
-There is no `usesCallbackServer` flag. With `prompt()/notify()` callbacks the flow self-describes at runtime: a flow that runs a callback server issues a `manual_code` prompt racing the server and aborts the prompt when the callback wins. The UI needs no static foreknowledge.
+OAuth implementations use the provider-neutral `AuthInteraction` protocol directly. A callback-server flow issues a `manual_code` prompt racing the server and aborts the prompt when the callback wins, so the UI needs no provider-specific callback or static callback-server flag.
 
 ### Credentials
 
@@ -564,7 +564,7 @@ FileCredentialStore        ports AuthStorage's lock backend: read = memory snaps
    └─ withRuntimeOverrides --api-key
       └─ createModels({ credentials: store })
 
-login/logout UI            provider.auth.{oauth,apiKey}.login(callbacks) + store.modify/delete
+login/logout UI            provider.auth.{oauth,apiKey}.login(interaction) + store.modify/delete
 status UI                  store.read(pid) + getAuth try/catch ("needs /login" on rejection)
 getOAuthProviders          presence of provider.auth.oauth across registered providers
 ```
@@ -574,7 +574,7 @@ getOAuthProviders          presence of provider.auth.oauth across registered pro
 One interface serves api-key and OAuth login:
 
 ```ts
-export interface AuthLoginCallbacks {
+export interface AuthInteraction {
   /** Aborts the whole login flow. Per-prompt cancellation uses AuthPrompt.signal. */
   signal?: AbortSignal;
 
@@ -612,7 +612,7 @@ export function anthropicProvider(): Provider {
       apiKey: envApiKeyAuth("Anthropic API key", ["ANTHROPIC_API_KEY"]),
       oauth: lazyOAuth({
         name: "Anthropic (Claude Pro/Max)",
-        load: () => import("../utils/oauth/anthropic.ts").then((m) => m.anthropicOAuth),
+        load: () => import("../auth/oauth/anthropic.ts").then((m) => m.anthropicOAuth),
       }),
     },
     models: ANTHROPIC_MODELS,
@@ -632,7 +632,7 @@ export function lazyOAuth(input: {
 
 OAuth must not force Node-only code (`node:http`, `node:crypto`) into browser bundles: the dynamic import inside `lazyOAuth()` uses the same bundler-opaque variable-specifier trick as the bedrock lazy wrapper. Browser hosts never trigger the load (no stored node OAuth credentials, no login flow). If web OAuth lands later (sitegeist proved feasibility: Web Crypto PKCE, auth tab, fetch token exchange, device-code polling), it is just a different `OAuthAuth` implementation — no reserved option values.
 
-The existing flows in `src/utils/oauth/` (anthropic, openai-codex, github-copilot) are adapted to `OAuthAuth` (`login`/`refresh`/`toAuth`, replacing `login`/`refreshToken`/`getApiKey`/`modifyModels`) with the new callbacks, staying Node-targeted and lazy-loaded. Copilot's `modifyModels` baseUrl rewriting becomes `toAuth` returning `ModelAuth.baseUrl`.
+The built-in flows in `src/auth/oauth/` implement `OAuthAuth` and `AuthInteraction` directly while remaining Node-targeted and lazy-loaded. Copilot derives its credential-specific request endpoint through `toAuth().baseUrl`.
 
 ## Provider wrappers and models.json
 
@@ -817,7 +817,7 @@ Check items off as they land. Keep this list current; it is the working state fo
 
 ### Phase 3 — provider factories + catalogs
 
-- [x] Auth helpers in `src/auth/helpers.ts`: `envApiKeyAuth()` (with secret-prompt `login`), `lazyOAuth()`. OAuth flow loads go through `utils/oauth/load.ts` (bundler-opaque dynamic import); the `OAuthAuth` exports it references land in Phase 4.
+- [x] Auth helpers in `src/auth/helpers.ts`: `envApiKeyAuth()` (with secret-prompt `login`), `lazyOAuth()`. OAuth flow loads go through `auth/oauth/load.ts` (bundler-opaque dynamic import); the `OAuthAuth` exports it references land in Phase 4.
 - [x] `createProvider()` in `models.ts` (single + mixed `api` map, dispatch on `model.api`, unknown api -> stream error).
 - [x] Per-provider factories under `src/providers/` for all built-in catalog providers; OAuth attached via `lazyOAuth()` (anthropic, openai-codex, github-copilot); ambient `ApiKeyAuth` for amazon-bedrock (AWS env/profile) and google-vertex (key or ADC+project+location).
 - [x] `providers/all.ts`: `builtinProviders()`, `builtinModels()`, `getBuiltinModel/getBuiltinModels/getBuiltinProviders` re-exports.
@@ -826,8 +826,8 @@ Check items off as they land. Keep this list current; it is the working state fo
 
 ### Phase 4 — OAuth adaptation
 
-- [x] Adapt `utils/oauth/anthropic.ts`, `openai-codex.ts`, `github-copilot.ts` to `OAuthAuth` (`login`/`refresh`/`toAuth`) + `prompt()/notify()`; `modifyModels` baseUrl rewriting becomes `toAuth().baseUrl`. New exports (`anthropicOAuth`, `openaiCodexOAuth`, `githubCopilotOAuth`) sit next to the old `OAuthProviderInterface` objects, which survive until Phase 7.
-- [x] No `usesCallbackServer` on `OAuthAuth`: callback-server flows race a `manual_code` prompt (aborted via `AuthPrompt.signal` once the flow settles). The old interface keeps its flag until it dies with compat.
+- [x] Built-in implementations live under `auth/oauth/` and implement `OAuthAuth` directly through `AuthInteraction.prompt()`/`notify()`. They are private provider implementations loaded lazily by provider factories.
+- [x] Callback-server flows race a `manual_code` prompt, aborted through `AuthPrompt.signal` once the flow settles. The public `oauth` subpath retains only coding-agent extension compatibility types.
 
 ### Phase 5 — packaging
 
@@ -860,22 +860,23 @@ Check items off as they land. Keep this list current; it is the working state fo
 coding-agent replaces AuthStorage and ModelRegistry's internals with `FileCredentialStore` + a `MutableModels` collection. AgentSession itself stays (AgentHarness adoption is pi 2.0); only its model/auth substrate swaps. Layering is strictly one-directional:
 
 ```txt
-FileCredentialStore (auth.json, locked) + --api-key overlay + $ENV/!command resolution
+FileCredentialStore (auth.json, locked, $ENV/!command resolution) + explicit --api-key overlay
         ↑
 MutableModels: builtin factories (wrapped per models.json config) + custom providers (models.json ∪ extensions)
         ↑
-ModelRegistry: async facade — reads delegate to the collection; registerProvider/login/logout/status for extensions + UI
+ModelRegistry: compatibility facade — sync last-known reads delegate to the collection; registerProvider/login/logout/status for extensions + UI
         ↑
-AgentSession / sdk / interactive-mode (await added; stream via models)
+AgentSession / sdk / interactive-mode (stream via models; await only auth/refresh paths)
 ```
 
 Decisions:
 
 - `AuthStorage` is deleted as a type — it would otherwise depend on provider auth while provider auth depends on its store (circular). Its surface splits: `get`/`set`/`remove` -> `CredentialStore`; `getApiKey` -> `Models.getAuth`; `login`/`logout`/`getAuthStatus` -> ModelRegistry facade methods over `provider.auth.oauth` + the store.
-- Runtime `--api-key` overrides are a store overlay (an override reads as an ephemeral stored api-key credential, masking stored OAuth — matches today's priority). Every registered provider is guaranteed an `apiKey` auth slot so overrides apply to OAuth-only providers too.
-- `ModelRegistry.getAll`/`find`/`getAvailable` become async, delegating to the collection (no materialized snapshot, no sync lies; dynamic providers like llama.cpp work). The extension-facing `modelRegistry` surface changes accordingly (breaking, changelogged); extensions also get the collection itself as the forward API.
+- `FileCredentialStore` is self-contained (path, locking, parse/write, chmod, error buffering) and owns `auth.json` semantics, including `$ENV`/`!command` resolution for stored API-key credentials. Persisted values stay raw; resolution returns copies for auth use.
+- Runtime `--api-key` overrides are an explicit store overlay (an override reads as an ephemeral stored api-key credential, masking stored OAuth — matches today's priority). Every registered provider is guaranteed an `apiKey` auth slot so overrides apply to OAuth-only providers too.
+- `ModelRegistry.getAll`/`find`/`getAvailable` stay sync for SDK and extension compatibility, delegating to the collection's last-known sync model lists and fast configured-looking status checks. Dynamic providers update through explicit async `refresh()`, and request auth remains async through `getApiKeyAndHeaders()`/`Models.getAuth()`. Extensions also get the collection itself as the forward API.
 - models.json keeps FULL feature parity, implemented as provider decoration: builtin factories wrapped so `getModels()` applies provider `baseUrl`/`compat` overlays, `modelOverrides`, and custom-model merges (async-safe); provider `apiKey`/`headers`/`authHeader` configs become that provider's `ApiKeyAuth` (config first, factory auth fallback); parse errors keep `getError()` semantics.
-- Extension `ProviderConfig` parity: provider-keyed `streamSimple`, old-style `oauth` adapted to `OAuthAuth` (`modifyModels` -> `getModels` wrap + `toAuth`), full model replacement per provider. Legacy `registerApiProvider` writes stay compat-local for consumers that call global `complete()`; they die with compat.
+- Extension `ProviderConfig` parity: provider-keyed `streamSimple`, legacy extension OAuth callbacks adapted to `OAuthAuth`, and full model replacement per provider. Legacy `registerApiProvider` writes stay compat-local for consumers that call global `complete()`; they die with compat.
 - Copilot: stored-credential baseUrl applied in the wrapped `getModels()` (extension-visible models stay correct) plus per-request `toAuth().baseUrl`.
 - Cloudflare: provider-auth substitution (key + `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_GATEWAY_ID` from credential `env` or ambient `AuthContext.env()` -> `ModelAuth.baseUrl`). Built-in compat calls route through `Models`, so they use the same provider auth path.
 
@@ -884,14 +885,15 @@ Ordering for new sessions:
 1. [x] pi-ai rework first: `Provider.getModels()` sync + optional `refreshModels()`; `Models.getModels`/`getModel` sync, `Models.refresh(provider?)` async; `createProvider` takes `models` array + optional `refreshModels` fetcher (in-flight dedupe). Reverses Phase 1's async-listing decision — see "Provider model listing" for rationale (sync-or-async unions breed latent sync assumptions; async-only breaks sync consumer surfaces like extension `find`/`getAll`).
 2. [x] Cloudflare provider auth in pi-ai factories: Workers AI and AI Gateway validate their required account/gateway env/config and return resolved `baseUrl`, provider-scoped env, and header suppression/override metadata from provider auth.
 3. [ ] Add `FileCredentialStore` in coding-agent.
-   - Implement the pi-ai `CredentialStore` interface over the existing `auth.json` lock backend (`FileAuthStorageBackend` / `InMemoryAuthStorageBackend` can be reused or renamed).
+   - Implement the pi-ai `CredentialStore` interface as a self-contained `auth.json` store; do not depend on the old `AuthStorageBackend` abstraction, though its lock/retry semantics may be ported.
    - Preserve the existing file format. `ApiKeyCredential` uses `{ type: "api_key", key?, env? }`, matching today's `auth.json`; do not translate `env` into metadata or rewrite discriminators.
+   - Resolve `$ENV`/`!command` in stored API-key `key` and `env` values out of the box using an injected execution/config environment. `$ENV` lookup should come from that environment, and `!command` should run through the shared shell execution path rather than direct `execSync`.
+   - Persist raw config values; resolved credentials returned for auth use must be copies and must not rewrite `$ENV`/`!command` strings unless a caller explicitly stores new values.
    - `read(provider)` returns the current credential snapshot and records parse/storage errors for status UI parity.
    - `modify(provider, fn)` must lock, re-read, run `fn`, merge-write the provider entry, chmod `0600`, and return the post-write credential.
    - `delete(provider)` must lock and remove only that provider's entry.
-   - Add file-backed and in-memory tests covering lock/RMW behavior, `api_key` reads, OAuth reads, provider `env` preservation, delete, parse errors, and concurrent refresh-style modifications.
-4. [ ] Add store decorators for coding-agent policy.
-   - `withConfigValues(store, policy)` resolves stored API-key credentials whose `key` or `env` values use `$ENV` or `!command`, using existing `resolve-config-value.ts` semantics. Command execution stays in coding-agent, not pi-ai.
+   - Add file-backed and in-memory tests covering lock/RMW behavior, `api_key` reads with config-value resolution, OAuth reads, provider `env` preservation, delete, parse errors, and concurrent refresh-style modifications.
+4. [ ] Add runtime override overlay for coding-agent policy.
    - `withRuntimeOverrides(store, overrides)` implements CLI `--api-key`: read returns an ephemeral `{ type: "api_key", key }` for each overridden provider, masking stored OAuth/API credentials without persisting.
    - Runtime overrides must apply even to OAuth-capable providers; every provider registered in coding-agent must retain or gain an `apiKey` auth slot so the overlay is meaningful.
    - Tests cover precedence: runtime override > stored credential > models.json config auth > ambient provider env, with stored credential blocking ambient fallback.
@@ -907,37 +909,35 @@ Ordering for new sessions:
    - Wrap Copilot's provider `getModels()` when an OAuth credential is present so extension/UI-visible model metadata also carries the authenticated account base URL.
    - Keep API-key/env-token Copilot behavior unchanged.
    - Add tests for model metadata before login, after OAuth credential, after refresh/baseUrl change, and logout.
-7. [ ] Extension OAuth adapter.
-   - Adapt old extension `OAuthProviderInterface` configs to pi-ai `OAuthAuth`.
-   - `login` maps old callbacks/events to `prompt()/notify()`.
-   - `refreshToken` maps to `refresh`.
-   - `getApiKey` maps to `toAuth`.
-   - `modifyModels` becomes a provider `getModels()` wrapper plus `toAuth().baseUrl` where applicable.
-   - Preserve existing extension runtime compatibility through the `/compat` alias until Phase 10.
+7. [x] Extension OAuth adapter.
+   - Keep only the legacy callback/credential declarations required by coding-agent `ProviderConfig.oauth`.
+   - `login` maps legacy callbacks/events to `AuthInteraction.prompt()`/`notify()`.
+   - `refreshToken` maps to `refresh`; `getApiKey` maps to `toAuth`.
+   - Preserve the type-only pi-ai `oauth` barrel and extension-loader aliases.
 8. [ ] Rebuild coding-agent `ModelRegistry` over `MutableModels`.
    - It owns a `MutableModels` instance built from decorated built-ins + models.json custom providers + extension providers.
-   - `getAll()`, `find()`, and `getAvailable()` become async and delegate to the collection/status checks. Update extension-facing types and changelog this breaking change.
-   - `refresh()` rebuilds provider layers and calls `models.refresh()` where needed; no global api-registry reset should be part of the new path except compat-only grace behavior.
+   - `getAll()`, `find()`, and `getAvailable()` remain sync compatibility methods over last-known model lists and fast configured-looking auth status. Do not break the extension-facing `modelRegistry` surface for these reads.
+   - `refresh()` is the explicit async freshness boundary: rebuild provider layers and call `models.refresh()` where needed; no global api-registry reset should be part of the new path except compat-only grace behavior.
    - `registerProvider()`/`unregisterProvider()` mutate provider layers and rebuild the collection.
    - Facade auth ops (`login`, `logout`, provider status, available OAuth providers) drive `provider.auth.{apiKey,oauth}` and the `CredentialStore`; no `AuthStorage` type remains.
    - Legacy `registerApiProvider` writes stay only for `/compat` callers and are removed in Phase 10.
 9. [ ] Rewire consumers.
    - `AgentSession` stream function resolves through `ModelRegistry`/`Models`, not `getApiKeyAndHeaders()` + compat globals.
    - SDK options replace `authStorage` with `credentials?: CredentialStore` or an agent-dir-backed default; update `sdk.md` and examples.
-   - `model-resolver`, `--list-models`, model selector, login/logout/status UI, and provider attribution await async model/auth APIs.
+   - `model-resolver`, `--list-models`, model selector, login/logout/status UI, and provider attribution use sync last-known model reads and await only explicit refresh/auth operations.
    - CLI `--api-key` populates the runtime override decorator instead of mutating `AuthStorage`.
    - Keep extension loader root-to-compat alias until Phase 10, but expose the new collection/facade as the forward API.
 10. [ ] Test migration and real-provider validation.
-    - Unit tests for `FileCredentialStore`, config-value decorators, provider decoration, extension OAuth adapter, ModelRegistry async facade, and consumer rewiring.
+    - Unit tests for `FileCredentialStore`, runtime override overlay, provider decoration, extension OAuth adapter, Models-backed ModelRegistry facade, and consumer rewiring.
     - Regression tests for Cloudflare account/gateway env, Copilot OAuth baseUrl wrapping, runtime `--api-key` precedence, `$ENV`/`!command` resolution, and stored credential blocking ambient fallback.
-    - Update existing tests that assume sync `ModelRegistry.getAll/find/getAvailable`.
+    - Update existing tests for sync last-known `ModelRegistry.getAll/find/getAvailable` plus explicit async refresh behavior.
     - Run targeted non-e2e suites plus tmux validation of login flows against real providers (Anthropic OAuth/API key, OpenAI Codex OAuth, GitHub Copilot OAuth, Cloudflare AI Gateway, Bedrock if credentials are available).
 
 ### Phase 10 — compat deletion (pi 2.0 era, separate)
 
 - [ ] AgentSession -> AgentHarness; the registry facade dies in favor of harness `Models`.
 - [ ] Move ALL internal `/compat` imports to the new API: every package's src, all tests, and the example extensions (examples then demonstrate the new API). Nothing inside the repo may import `/compat` at that point.
-- [ ] Delete `/compat`, `env-api-keys.ts`, the extension-loader root-to-compat alias, the old `pi-ai/oauth` registry and `OAuthProviderInterface` (incl. `usesCallbackServer`), and the compat-local legacy API registry. This is the extension-author breaking release; changelog carries the migration guide.
+- [ ] Delete `/compat`, `env-api-keys.ts`, the extension-loader root-to-compat alias, and the compat-local legacy API registry. The old OAuth registry/provider interface is already gone; the type-only `oauth` barrel remains for extension compatibility.
 
 ### Deferred / follow-ups
 

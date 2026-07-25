@@ -22,6 +22,7 @@ These are the Markdown files behind `https://pi.dev/docs/latest`.
 - [Pi Packages](../source/packages/coding-agent/docs/packages.md)
 - [Custom Models](../source/packages/coding-agent/docs/models.md)
 - [Custom Providers](../source/packages/coding-agent/docs/custom-provider.md)
+- [llama.cpp](../source/packages/coding-agent/docs/llama-cpp.md)
 
 ## Reference And Programmatic Use
 
@@ -30,6 +31,7 @@ These are the Markdown files behind `https://pi.dev/docs/latest`.
 - [RPC Mode](../source/packages/coding-agent/docs/rpc.md)
 - [JSON Event Stream Mode](../source/packages/coding-agent/docs/json.md)
 - [TUI Components](../source/packages/coding-agent/docs/tui.md)
+- [Environment Variables](../source/packages/coding-agent/docs/environment-variables.md)
 
 ## Platform And Development
 

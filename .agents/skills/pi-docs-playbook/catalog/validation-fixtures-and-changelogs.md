@@ -26,3 +26,5 @@
 - [agent-core changelog](../source/packages/agent/CHANGELOG.md)
 - [pi-ai changelog](../source/packages/ai/CHANGELOG.md)
 - [pi-tui changelog](../source/packages/tui/CHANGELOG.md)
+- [pi-server changelog](../source/packages/server/CHANGELOG.md)
+- [SQLite session storage changelog](../source/packages/storage/sqlite-node/CHANGELOG.md)

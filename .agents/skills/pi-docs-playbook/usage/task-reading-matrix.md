@@ -18,6 +18,8 @@ Optional:
 - `source/packages/agent/README.md`
 - `source/packages/agent/docs/agent-harness.md`
 - `source/packages/coding-agent/examples/sdk/README.md`
+- `source/packages/coding-agent/docs/environment-variables.md`
+- `source/packages/server/README.md`
 
 Use for:
 
@@ -41,6 +43,7 @@ Optional:
 - `source/packages/coding-agent/examples/extensions/README.md`
 - `source/packages/coding-agent/examples/extensions/plan-mode/README.md`
 - `source/packages/coding-agent/test/suite/README.md`
+- `source/packages/evals/README.md`
 
 Use for:
 
@@ -65,6 +68,7 @@ Optional:
 
 - `source/packages/agent/docs/observability.md`
 - `source/packages/agent/docs/agent-harness.md`
+- `source/packages/storage/sqlite-node/README.md`
 
 Use for:
 
@@ -131,6 +135,8 @@ Required:
 Optional:
 
 - `source/.pi/skills/add-llm-provider.md`
+- `source/packages/coding-agent/docs/environment-variables.md`
+- `source/packages/coding-agent/docs/llama-cpp.md`
 
 Use for:
 
@@ -195,6 +201,8 @@ Required:
 - `source/packages/agent/CHANGELOG.md`
 - `source/packages/ai/CHANGELOG.md`
 - `source/packages/tui/CHANGELOG.md`
+- `source/packages/server/CHANGELOG.md`
+- `source/packages/storage/sqlite-node/CHANGELOG.md`
 
 Optional:
 

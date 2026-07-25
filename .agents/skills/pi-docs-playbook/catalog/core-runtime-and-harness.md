@@ -10,6 +10,9 @@
 - [agent-core README](../source/packages/agent/README.md)
 - [pi-ai README](../source/packages/ai/README.md)
 - [pi-tui README](../source/packages/tui/README.md)
+- [Pi evals README](../source/packages/evals/README.md)
+- [Experimental pi-server README](../source/packages/server/README.md)
+- [SQLite session storage README](../source/packages/storage/sqlite-node/README.md)
 
 ## Harness Design Notes
 

@@ -13,8 +13,8 @@
 ## 来源
 
 - 上游仓库：[`earendil-works/pi`](https://github.com/earendil-works/pi)
-- 当前镜像 commit：[`0201806`](https://github.com/earendil-works/pi/tree/v0.80.2)（tag `v0.80.2`，与本地安装的 pi 版本一致）
-- 镜像日期：2026-06-26
+- 当前镜像 commit：[`b4f2936`](https://github.com/earendil-works/pi/tree/v0.82.1)（tag `v0.82.1`，与本地安装的 pi 版本一致）
+- 镜像日期：2026-07-25
 
 ## 这个 repo 解决什么问题
 
@@ -86,9 +86,9 @@ pi 文档不是没有，而是密度很高。
 ## 更新镜像
 
 ```bash
-git clone --depth 1 https://github.com/earendil-works/pi.git /tmp/pi-docs-read
+git clone --depth 1 --branch v0.82.1 https://github.com/earendil-works/pi.git /tmp/pi-docs-read
 cd pi-docs-playbook
-rsync -a --prune-empty-dirs \
+rsync -a --delete --prune-empty-dirs \
   --include='*/' \
   --include='*.md' \
   --include='*.mdx' \
@@ -134,8 +134,8 @@ This skill was vendored into panda-harness project-level `.agents/skills/`.
 - Synced date: 2026-06-17
 - Local additions: `SKILL.md`（上游不带，本地新增以使其成为可加载 skill / authored locally so this becomes a loadable skill）
 
-上游本身镜像的 pi 文档快照见上文「来源」：`earendil-works/pi` @ `0201806`（tag `v0.80.2`；与本 vendoring commit 不同，前者是 pi 文档，后者是 playbook repo）。
-The upstream pi docs snapshot it mirrors is `earendil-works/pi` @ `0201806` (tag `v0.80.2`, see 来源 above) — distinct from the playbook repo commit `2f93257`.
+上游本身镜像的 pi 文档快照见上文「来源」：`earendil-works/pi` @ `b4f2936`（tag `v0.82.1`；与本 vendoring commit 不同，前者是 pi 文档，后者是 playbook repo）。
+The upstream pi docs snapshot it mirrors is `earendil-works/pi` @ `b4f2936` (tag `v0.82.1`, see 来源 above) — distinct from the playbook repo commit `2f93257`.
 
 更新方式：用 skill-maintainer / pi-extension-vendoring 重新拉取上游，保留本地 `SKILL.md` 与本节。
 To update: re-pull upstream via skill-maintainer, preserving local `SKILL.md` and this section.
