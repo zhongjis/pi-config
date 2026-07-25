@@ -1,20 +1,6 @@
 /**
- * neofetch-header.ts
- *
- * Replaces the default pi startup header with a neofetch-style layout:
- *   - Left column : π block-art mascot (same as built-in, slightly tightened)
- *   - Right column: live session info + condensed keybinding hints
- *
- * What's preserved from the default header:
- *   - Version, model, cwd, git branch
- *   - Resource counts (tools / skills / prompts / extensions) instead of full lists
- *   - Essential keybinding hints (5 instead of 20)
- *
- * Requires `quietStartup: true` in settings.json to suppress the
- * verbose resource listings that would otherwise appear below the header.
- *
- * Install: place in ~/.pi/agent/extensions/neofetch-header.ts
- * Reload:  /reload
+ * Installs the qol startup header with compact session metadata, resource counts,
+ * and keybinding hints.
  */
 
 import type {

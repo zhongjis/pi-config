@@ -30,11 +30,11 @@ type FooterAssistantMessage = {
 
 // Cross-extension footer integration.
 // Only one footer can occupy the single ctx.ui.setFooter() slot at a time. When the
-// `visuals` extension is loaded it owns that slot; instead of installing our own footer
-// (which would clobber the visuals footer, and whose teardown would restore the built-in
-// footer rather than the visuals one), we publish the current goal indicator on a
-// Symbol.for() global bridge that visuals reads and renders. We fall back to the
-// standalone Codex footer when visuals is absent.
+// `qol` extension is loaded it owns that slot; instead of installing our own footer
+// (which would clobber the qol footer, and whose teardown would restore the built-in
+// footer rather than the qol one), we publish the current goal indicator on a
+// Symbol.for() global bridge that qol reads and renders. We fall back to the
+// standalone Codex footer when qol is absent.
 const GOAL_FOOTER_BRIDGE_KEY = Symbol.for("pi-goal:footer");
 const VISUALS_FOOTER_OWNER_KEY = Symbol.for("pi-visuals:footer");
 
@@ -113,9 +113,9 @@ export function updateGoalUi(ctx: ExtensionContext, goal: Goal | null): void {
 	observeGoalForPresentation(goal, ctx.isIdle());
 	publishGoalFooterBridge();
 
-	// When the visuals extension owns the single footer slot it renders the goal
+	// When the qol extension owns the single footer slot it renders the goal
 	// indicator from the bridge published above. The setStatus() call already requested a
-	// re-render, so avoid installing our own footer (which would clobber the visuals one).
+	// re-render, so avoid installing our own footer (which would clobber the qol one).
 	if (visualsOwnsFooter()) return;
 
 	if (!goal) {

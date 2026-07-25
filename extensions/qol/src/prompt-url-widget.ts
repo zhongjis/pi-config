@@ -128,7 +128,7 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
     });
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
+  pi.on("session_switch" as "session_start", async (_event, ctx) => {
     rebuildFromSession(ctx);
   });
 

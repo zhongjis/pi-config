@@ -3,15 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 const builtInWrite = vi.hoisted(() => {
+  const parameters = Object.freeze({ type: "object" });
   const execute = vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => ({
     content: [{ type: "text" as const, text: "Successfully wrote 0 bytes to file" }],
     details: undefined,
   }));
   return {
     execute,
+    parameters,
     createWriteTool: vi.fn(() => ({
       description: "built-in write",
-      parameters: {},
+      parameters,
       execute,
     })),
   };
@@ -25,12 +27,14 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   };
 });
 
-import { installWriteToolVisual } from "../src/write-tool.js";
+import { installWriteToolVisual } from "../src/write-tool-renderer.js";
 
 type RenderableText = { text?: string; render?: (width: number) => string[] };
 type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
 type ToolDefinition = {
   name: string;
+  description: string;
+  parameters: unknown;
   renderCall?: (args: Record<string, unknown>, theme: PlainTheme) => RenderableText;
   renderResult?: (
     result: { content?: Array<{ type: "text"; text: string }>; isError?: boolean },
@@ -81,7 +85,14 @@ function installTool(): ToolDefinition {
   return registered!;
 }
 
-describe("visuals write tool rendering", () => {
+describe("qol write tool rendering", () => {
+  it("reuses the built-in write description and parameter schema", () => {
+    const tool = installTool();
+
+    expect(tool.description).toBe("built-in write");
+    expect(tool.parameters).toBe(builtInWrite.parameters);
+  });
+
   it("renders collapsed success as short keyword lines", () => {
     const tool = installTool();
     const result = { content: [{ type: "text" as const, text: "Successfully wrote 11 bytes to src/app.ts" }] };
@@ -101,16 +112,28 @@ describe("visuals write tool rendering", () => {
     expect(collapsed).not.toContain("Successfully wrote");
   });
 
-  it("delegates execute result without changing native content or details", async () => {
+  it("passes all five execute arguments through and preserves native result identity", async () => {
     const tool = installTool();
     const nativeResult = deepFreeze({
       content: [{ type: "text" as const, text: "Successfully wrote 11 bytes to src/app.ts" }],
       details: { path: "src/app.ts", bytes: 11 },
     });
+    const toolCallId = "call-1";
+    const params = Object.freeze({ path: "src/app.ts", content: "hello" });
+    const signal = new AbortController().signal;
+    const onUpdate = vi.fn();
+    const ctx = Object.freeze({ cwd: "/workspace" });
     builtInWrite.execute.mockResolvedValueOnce(nativeResult);
 
-    const result = await tool.execute("call-1", { path: "src/app.ts", content: "hello" }, undefined, undefined, {});
+    const result = await tool.execute(toolCallId, params, signal, onUpdate, ctx);
 
+    expect(builtInWrite.execute).toHaveBeenLastCalledWith(
+      toolCallId,
+      params,
+      signal,
+      onUpdate,
+      ctx,
+    );
     expect(result).toBe(nativeResult);
     expect(result).toEqual({
       content: [{ type: "text", text: "Successfully wrote 11 bytes to src/app.ts" }],

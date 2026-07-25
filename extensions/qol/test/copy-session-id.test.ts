@@ -6,12 +6,12 @@ vi.mock("../../lib/clipboard.js", () => ({
   writeClipboard: writeClipboardMock,
 }));
 
-import copySessionIdExtension from "../index.js";
+import copySessionIdExtension from "../src/copy-session-id.js";
 
 type CommandContext = {
   sessionManager: {
     getSessionId(): string;
-    getSessionFile(): string;
+    getSessionFile(): string | undefined;
   };
   readonly ui: {
     notify(message: string, type: "success" | "error"): void;
@@ -19,6 +19,10 @@ type CommandContext = {
 };
 
 type CommandHandler = (args: string, ctx: CommandContext) => Promise<void>;
+type RegisteredCommand = {
+  description: string;
+  handler: CommandHandler;
+};
 
 const SESSION_ID = "019f7cb7-d269-7868-a64d-bbb2e14fc944";
 const SESSION_FILE = "/tmp/session.jsonl";
@@ -27,29 +31,34 @@ const PAYLOAD = [
   `session-id: ${JSON.stringify(SESSION_ID)}`,
   `session-log-path: ${JSON.stringify(SESSION_FILE)}`,
 ].join("\n");
+const UNSAVED_PAYLOAD = [
+  "use pi-jsonl-logs skill to analyze the following session log based on user request",
+  `session-id: ${JSON.stringify(SESSION_ID)}`,
+  "session-log-path: null",
+].join("\n");
 const STALE_ERROR = "This extension ctx is stale after session replacement or reload.";
 
-function registerCommand(): CommandHandler {
-  let handler: CommandHandler | undefined;
+function registerCommand(): RegisteredCommand {
+  let registered: RegisteredCommand | undefined;
 
   copySessionIdExtension({
-    registerCommand(name: string, command: { handler: CommandHandler }) {
-      if (name === "session:copy-id") handler = command.handler;
+    registerCommand(name: string, command: RegisteredCommand) {
+      if (name === "session:copy-id") registered = command;
     },
   } as never);
 
-  expect(handler).toBeDefined();
-  return handler!;
+  expect(registered).toBeDefined();
+  return registered!;
 }
 
-function createContext() {
+function createContext(sessionFile?: string) {
   let stale = false;
   const notify = vi.fn();
   const ui = { notify };
   const ctx = {
     sessionManager: {
       getSessionId: () => SESSION_ID,
-      getSessionFile: () => SESSION_FILE,
+      getSessionFile: () => sessionFile,
     },
     get ui() {
       if (stale) throw new Error(STALE_ERROR);
@@ -82,11 +91,26 @@ afterEach(() => {
 });
 
 describe("session:copy-id", () => {
+  it("registers the current command description", () => {
+    expect(registerCommand().description).toBe(
+      "Copy current session ID and session log path to clipboard",
+    );
+  });
+
+  it("serializes an undefined session file as exact null metadata", async () => {
+    writeClipboardMock.mockResolvedValue("wl-copy");
+    const { ctx } = createContext(undefined);
+
+    await registerCommand().handler("", ctx);
+
+    expect(writeClipboardMock).toHaveBeenCalledWith(UNSAVED_PAYLOAD);
+  });
+
   it("copies current session metadata and reports the successful backend", async () => {
     writeClipboardMock.mockResolvedValue("wl-copy");
-    const { ctx, notify } = createContext();
+    const { ctx, notify } = createContext(SESSION_FILE);
 
-    await registerCommand()("", ctx);
+    await registerCommand().handler("", ctx);
 
     expect(writeClipboardMock).toHaveBeenCalledWith(PAYLOAD);
     expect(notify).toHaveBeenCalledOnce();
@@ -100,9 +124,9 @@ describe("session:copy-id", () => {
     const clipboard = deferred<string>();
     writeClipboardMock.mockReturnValue(clipboard.promise);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const { ctx, makeStale } = createContext();
+    const { ctx, makeStale } = createContext(SESSION_FILE);
 
-    const command = registerCommand()("", ctx);
+    const command = registerCommand().handler("", ctx);
     expect(writeClipboardMock).toHaveBeenCalledWith(PAYLOAD);
     makeStale();
     clipboard.resolve("wl-copy");
@@ -114,9 +138,9 @@ describe("session:copy-id", () => {
   it("prints the payload and reports the original clipboard failure", async () => {
     writeClipboardMock.mockRejectedValue(new Error("no clipboard backend"));
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const { ctx, notify } = createContext();
+    const { ctx, notify } = createContext(SESSION_FILE);
 
-    await registerCommand()("", ctx);
+    await registerCommand().handler("", ctx);
 
     expect(log).toHaveBeenCalledWith(PAYLOAD);
     expect(notify).toHaveBeenCalledWith(
@@ -130,9 +154,9 @@ describe("session:copy-id", () => {
     writeClipboardMock.mockReturnValue(clipboard.promise);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { ctx, makeStale } = createContext();
+    const { ctx, makeStale } = createContext(SESSION_FILE);
 
-    const command = registerCommand()("", ctx);
+    const command = registerCommand().handler("", ctx);
     makeStale();
     clipboard.reject(new Error("no clipboard backend"));
 

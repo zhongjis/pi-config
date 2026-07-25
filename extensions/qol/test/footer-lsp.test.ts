@@ -12,7 +12,7 @@ function lspConfig(globalDisabled: boolean, servers: string[]) {
 	return { globalDisabled, servers: servers.map((name) => ({ name })) } as never;
 }
 
-describe("visuals footer — LSP infra styling", () => {
+describe("qol footer — LSP infra styling", () => {
 	it("hides LSP when there are 0 active servers", () => {
 		expect(styleInfraEntry(formatLspStatus(null), theme)).toBeNull(); // "LSP none"
 		expect(styleInfraEntry(formatLspStatus(lspConfig(true, ["tsserver"])), theme)).toBeNull(); // "LSP disabled"

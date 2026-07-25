@@ -1,5 +1,5 @@
 // Repo-local test (not vendored from upstream): verifies the cross-extension footer
-// integration with the `visuals` extension. See AGENTS.md "Local Tweaks".
+// integration with the `qol` extension. See AGENTS.md "Local Tweaks".
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Goal } from "../src/goal/types.js";
 import { updateGoalUi } from "../src/goal/ui.js";
@@ -90,7 +90,7 @@ function activeGoal(overrides: Partial<Goal> = {}): Goal {
 	};
 }
 
-describe("goal ⇄ visuals footer bridge", () => {
+describe("goal ⇄ qol footer bridge", () => {
 	beforeEach(() => {
 		delete globals()[VISUALS_FOOTER_OWNER_KEY];
 		delete globals()[GOAL_FOOTER_BRIDGE_KEY];
@@ -104,7 +104,7 @@ describe("goal ⇄ visuals footer bridge", () => {
 		delete globals()[GOAL_FOOTER_BRIDGE_KEY];
 	});
 
-	it("defers to visuals and publishes an idle-aware indicator", () => {
+	it("defers to qol and publishes an idle-aware indicator", () => {
 		setVisualsOwnsFooter(true);
 		const { ctx, footerFactories } = createMockCtx();
 

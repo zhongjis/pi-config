@@ -16,7 +16,7 @@ type FooterFactory = (
 ) => FooterComponent;
 type EventHandler = (event: unknown, ctx: unknown) => Promise<void> | void;
 
-describe("visuals goal footer integration", () => {
+describe("qol goal footer integration", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(0);
@@ -28,7 +28,7 @@ describe("visuals goal footer integration", () => {
     delete (globalThis as Record<symbol, unknown>)[Symbol.for("pi-goal:footer")];
   });
 
-  it("keeps visuals as sole owner while composite renders advance busy time, freeze idle, and precede LSP", async () => {
+  it("keeps qol as sole owner while composite renders advance busy time, freeze idle, and precede LSP", async () => {
     const handlers = new Map<string, EventHandler>();
     let footerFactory: FooterFactory | undefined;
     let footerInstallCount = 0;

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { writeClipboard } from "../lib/clipboard.js";
+import { writeClipboard } from "../../lib/clipboard.js";
 
 function formatSessionMetadata(
   sessionId: string,
