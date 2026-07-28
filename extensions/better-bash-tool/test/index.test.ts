@@ -156,4 +156,60 @@ describe("better-bash-tool", () => {
     expect(tool.renderResult).toBe(nativeRenderResultMock);
     expectWidthSafe(rendered);
   });
+
+  it("places cwd on the header line and the command on its own line below", async () => {
+    const { default: initBetterBashTool } = await import("../index.js");
+    const mock = createMockPi();
+    initBetterBashTool(mock.pi as never);
+
+    const tool = mock.tools.get("bash") as {
+      renderCall: (...args: unknown[]) => Renderable;
+    };
+    const ctx = { ...createMockContext(), cwd: process.cwd() };
+    const args = deepFreeze({
+      command: "pnpm test -- --runInBand",
+      timeout: 9,
+      cwd: `${homedir()}/personal/pi-config`,
+    });
+
+    const rendered = tool.renderCall(args, ctx.ui.theme, {
+      cwd: ctx.cwd,
+      state: {},
+      executionStarted: false,
+    });
+    const lines = renderLines(rendered, 120).filter((line) => line.trim() !== "");
+
+    const cwdLine = lines.find((line) => line.includes("~/personal/pi-config"));
+    const cmdLine = lines.find((line) => line.includes("$ pnpm test -- --runInBand"));
+
+    expect(cwdLine).toBeDefined();
+    expect(cmdLine).toBeDefined();
+    expect(cwdLine).not.toBe(cmdLine);
+    expect(cwdLine).not.toContain("$ pnpm test -- --runInBand");
+    expect(lines.indexOf(cwdLine as string)).toBeLessThan(lines.indexOf(cmdLine as string));
+    expectWidthSafe(rendered);
+  });
+
+  it("omits cwd metadata cleanly when no cwd is given (no dangling separator)", async () => {
+    const { default: initBetterBashTool } = await import("../index.js");
+    const mock = createMockPi();
+    initBetterBashTool(mock.pi as never);
+
+    const tool = mock.tools.get("bash") as {
+      renderCall: (...args: unknown[]) => Renderable;
+    };
+    const ctx = { ...createMockContext(), cwd: process.cwd() };
+    const args = deepFreeze({ command: "ls -la" });
+
+    const rendered = tool.renderCall(args, ctx.ui.theme, {
+      cwd: ctx.cwd,
+      state: {},
+      executionStarted: false,
+    });
+    const header = renderLines(rendered, 120).find((line) => line.includes("bash")) ?? "";
+
+    expect(header).toContain("$ ls -la");
+    expect(header).not.toMatch(/·\s*$/);
+    expectWidthSafe(rendered);
+  });
 });

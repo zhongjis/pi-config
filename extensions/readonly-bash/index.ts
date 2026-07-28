@@ -1089,7 +1089,12 @@ export default function readonlyBash(pi: ExtensionAPI): void {
         ? shortenHomePath(args.cwd)
         : undefined;
       const timeout = typeof args.timeout === "number" ? `timeout ${args.timeout}s` : undefined;
-      const target = [cwd, `$ ${command}`, timeout].filter((part): part is string => Boolean(part)).join(" · ");
+      // cwd (+ timeout) on the header line; the command on its own indented line
+      // below, so a long worktree cwd never runs into the command after wrapping.
+      const meta = [cwd, timeout].filter((part): part is string => Boolean(part)).join(" · ");
+      const commandLine = command ? `$ ${command}` : "";
+      const target =
+        meta && commandLine ? `${meta}\n  ${commandLine}` : meta || commandLine || undefined;
       return renderToolCall("readonly_bash", target, theme);
     },
 

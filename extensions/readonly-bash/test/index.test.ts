@@ -468,6 +468,38 @@ describe("readonly-bash tool", () => {
     expectWidthSafe(rendered);
   });
 
+  it("places cwd on the header line and the command on its own line below", () => {
+    const tool = getReadonlyBashTool();
+    const ctx = createMockContext();
+    const args = deepFreeze({ command: "git status --short", timeout: 5, cwd: `${homedir()}/personal/other-project` });
+
+    const rendered = tool.renderCall(args, ctx.ui.theme, { state: {}, executionStarted: false });
+    const lines = renderLines(rendered, 120).filter((line) => line.trim() !== "");
+
+    const cwdLine = lines.find((line) => line.includes("~/personal/other-project"));
+    const cmdLine = lines.find((line) => line.includes("$ git status --short"));
+
+    expect(cwdLine).toBeDefined();
+    expect(cmdLine).toBeDefined();
+    expect(cwdLine).not.toBe(cmdLine);
+    expect(cwdLine).not.toContain("$ git status --short");
+    expect(lines.indexOf(cwdLine as string)).toBeLessThan(lines.indexOf(cmdLine as string));
+    expectWidthSafe(rendered);
+  });
+
+  it("omits cwd metadata cleanly when no cwd is given (no dangling separator)", () => {
+    const tool = getReadonlyBashTool();
+    const ctx = createMockContext();
+    const args = deepFreeze({ command: "ls -la" });
+
+    const rendered = tool.renderCall(args, ctx.ui.theme, { state: {}, executionStarted: false });
+    const header = renderLines(rendered, 120).find((line) => line.includes("readonly_bash")) ?? "";
+
+    expect(header).toContain("$ ls -la");
+    expect(header).not.toMatch(/·\s*$/);
+    expectWidthSafe(rendered);
+  });
+
   it("keeps native renderResult identity and does not wrap native bash rendering", async () => {
     const tool = getReadonlyBashTool();
     const ctx = { ...createMockContext(), cwd: "/repo/worktree" };
