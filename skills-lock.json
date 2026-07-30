@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "SKILL.md",
       "computedHash": "1d8e58d521052cbd5872d9ad412c0356631a79935d6239225fc940a9bfdd43a5"
+    },
+    "system-prompts": {
+      "source": "can1357/oh-my-pi",
+      "sourceType": "github",
+      "skillPath": ".omp/skills/system-prompts/SKILL.md",
+      "computedHash": "2cdd44a6c1dbf3ff7cb6a5416624a596fa22c63efc1e0e7df891a8a0a6f2dd1d"
     }
   }
 }
