@@ -11,7 +11,7 @@ Where the details live:
 | Workflow lifecycles (plan-execute, build) | [`docs/specs/orchestration-flow.md`](../specs/orchestration-flow.md) |
 | Delegation authorization internals | [`docs/specs/mode-scoped-subagent-delegation.md`](../specs/mode-scoped-subagent-delegation.md) |
 | Mode switching, plan approval, restrictions | [`docs/specs/modes.md`](../specs/modes.md) · [`extensions/modes/README.md`](../../extensions/modes/README.md) |
-| `Agent` tool API (spawn / resume / supervise) | [`extensions/subagent/README.md`](../../extensions/subagent/README.md) |
+| `Agent` tool API (spawn / resume / supervise) | [`extensions/subagents-new/README.md`](../../extensions/subagents-new/README.md) |
 | Frontmatter fields (`allow_delegation_to`, `prompt_mode`, …) | [`docs/guides/agent-frontmatter.md`](agent-frontmatter.md) |
 
 ---

@@ -17,11 +17,9 @@
  * frontmatter declares the tools that must / must not be active. Adding a
  * scenario = adding a .md file; no test code changes needed.
  *
- * Headless: a faux Model object satisfies createAgentSession; we assert on the
- * pre-prompt gated tool set captured at onSessionCreated, so no LLM/network is
- * involved. cwd is the fixtures dir so the templates' relative `extensions:`
- * paths resolve and the .mjs fixtures can import `@sinclair/typebox` from the
- * repo's node_modules.
+ * Headless: each scenario uses a native faux provider on an isolated
+ * `ModelRuntime`; assertions inspect pre-prompt tool gating. cwd is the fixtures
+ * dir so relative extension paths resolve against the repo's node_modules.
  */
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +31,7 @@ import { runAgent } from "../src/agent-runner.js";
 import { getAgentConfig, registerAgents } from "../src/agent-types.js";
 import { loadCustomAgents } from "../src/custom-agents.js";
 import { resolveAgentInvocationConfig } from "../src/invocation-config.js";
-import { registerFauxProvider } from "./helpers/pi-ai.js";
+import { createFauxModelRuntime } from "./helpers/pi-ai.js";
 
 // Real pi-mono (loader + dynamic extension import + session construction) — a
 // cold run under full-suite contention can exceed vitest's 5s default.
@@ -69,7 +67,6 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   let prevAgentDir: string | undefined;
   let prevHome: string | undefined;
   let hermeticDir: string;
-  let faux: ReturnType<typeof registerFauxProvider>;
 
   beforeAll(() => {
     // Isolate global discovery (getAgentDir / ~/.pi) so the dev's real agents
@@ -80,7 +77,6 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
     process.env.PI_CODING_AGENT_DIR = hermeticDir;
     process.env.HOME = hermeticDir;
 
-    faux = registerFauxProvider({ provider: "faux", models: [{ id: "faux-1", contextWindow: 200_000 }] });
 
     // Load the templates through the REAL loader (project agents come from
     // <cwd>/.pi/agents → FIXTURES_DIR/.pi/agents) and install them in the
@@ -89,7 +85,6 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   });
 
   afterAll(() => {
-    faux.unregister();
     if (prevAgentDir == null) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
     if (prevHome == null) delete process.env.HOME;
@@ -98,17 +93,11 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   });
 
   async function runScenario(agentName: string): Promise<{ active: string[]; prompt: string }> {
-    const model = faux.getModel();
-    const modelRegistry: any = {
-      find: () => model,
-      getAll: () => [model],
-      getAvailable: () => [model],
-      hasConfiguredAuth: () => true,
-      isUsingOAuth: () => false,
-      getApiKeyAndHeaders: async () => ({ apiKey: "faux", headers: {} }),
-      registerProvider: () => {},
-      unregisterProvider: () => {},
-    };
+    const fauxRuntime = await createFauxModelRuntime({
+      provider: "faux",
+      models: [{ id: "faux-1", contextWindow: 200_000 }],
+    });
+    const { model, modelRegistry } = fauxRuntime;
     // cwd = fixtures dir so the templates' relative extensions: paths resolve.
     // getSystemPrompt returns a distinctive marker so prompt_mode: append can be
     // proven to inherit the parent prompt.
@@ -137,8 +126,10 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
         },
       });
     } catch {
-      // Prompt may error (no live provider) — both observables are captured at
-      // onSessionCreated, before the turn.
+      // The empty faux queue may end the prompt after construction; both
+      // observables are already captured by onSessionCreated.
+    } finally {
+      fauxRuntime.dispose();
     }
     return { active, prompt };
   }

@@ -1,8 +1,7 @@
 ---
-description: "No ext: selector, so all loaded extensions' tools surface."
+description: "Omitted extension_tools surfaces all loaded extension tools."
 extensions: "./ext-alpha.mjs, ./ext-beta.mjs"
-tools: "*"
 expect_tools_present: "read, alpha_read, alpha_write, beta_tool"
 ---
-e2e template: with no ext: entry there is no flip, so every loaded extension's
-tools surface alongside the built-ins.
+e2e template: omitting extension_tools surfaces every loaded extension tool
+alongside the default built-ins.

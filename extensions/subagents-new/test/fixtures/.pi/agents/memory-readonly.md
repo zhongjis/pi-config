@@ -1,13 +1,10 @@
 ---
-description: "memory read-only — an agent without write tools gets a read-only memory block."
+description: "Unknown memory metadata is inert; built-ins remain read-only."
 memory: project
-tools: read, grep
+builtin_tools: read, grep
 expect_tools_present: "read, grep"
 expect_tools_absent: "write, edit"
-expect_prompt_contains: "Agent Memory (read-only), Memory scope: project"
-expect_prompt_absent: "persistent memory directory"
+expect_prompt_absent: "Agent Memory, Memory scope: project, persistent memory directory"
 ---
-A read-only memory agent. Per the README, agents without write/edit tools
-auto-get a read-only memory fallback: existing memory is injected, no write
-access is granted, and no memory directory is created (so `project` scope is
-safe here — nothing is written into the repo).
+e2e template: current loader ignores unknown memory metadata while preserving
+the canonical read-only builtin_tools allowlist and injecting no memory prompt.

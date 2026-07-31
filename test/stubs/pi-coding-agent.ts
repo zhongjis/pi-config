@@ -64,6 +64,14 @@ export function createAgentSession() {
   return {};
 }
 
+export function createCodingTools() {
+  return ["read", "bash", "edit", "write"].map((name) => ({ name }));
+}
+
+export function createReadOnlyTools() {
+  return ["read", "grep", "find", "ls"].map((name) => ({ name }));
+}
+
 export function defineTool<T>(definition: T): T {
   return definition;
 }

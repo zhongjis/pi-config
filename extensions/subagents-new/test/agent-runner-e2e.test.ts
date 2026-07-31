@@ -16,22 +16,18 @@
  *     (fires after construction, before any prompt) and assert what the LLM
  *     would actually be allowed to call.
  *
- * No network/LLM: a faux Model object satisfies `createAgentSession`'s `model`
- * param, and we never depend on a turn completing — the assertion is on the
- * gated tool set, which is fixed at construction. (Driving a live faux model
- * through `session.prompt()` is intentionally avoided: under Vite the faux
- * provider registers in a different `pi-ai` module instance than the one
- * pi-coding-agent streams through, which is brittle and orthogonal to gating.)
+ * No network: a native faux provider on a per-test `ModelRuntime` satisfies
+ * `createAgentSession`; assertions inspect the gated tool set at construction.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { extensionCanonicalName, runAgent } from "../src/agent-runner.js";
+import { runAgent } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import type { AgentConfig } from "../src/types.js";
-import { registerFauxProvider } from "./helpers/pi-ai.js";
+import { createFauxModelRuntime, type FauxModelRuntime } from "./helpers/pi-ai.js";
 
 // These tests spin up the REAL pi-mono runtime (loader + dynamic extension
 // import + session construction), so a cold first run under full-suite CPU
@@ -51,16 +47,17 @@ function makePi() {
 
 describe("agent-runner end-to-end (real pi-mono session + real extension)", () => {
   let cwd: string;
-  let faux: ReturnType<typeof registerFauxProvider>;
+  let fauxRuntime: FauxModelRuntime;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), "subagents-e2e-"));
-    // Only used as a valid Model object for createAgentSession; we never rely
-    // on it actually streaming (we assert on the pre-prompt gated tool set).
-    faux = registerFauxProvider({ provider: "faux", models: [{ id: "faux-1", contextWindow: 200_000 }] });
+    fauxRuntime = await createFauxModelRuntime({
+      provider: "faux",
+      models: [{ id: "faux-1", contextWindow: 200_000 }],
+    });
   });
   afterEach(() => {
-    faux.unregister();
+    fauxRuntime.dispose();
     rmSync(cwd, { recursive: true, force: true });
   });
 
@@ -77,7 +74,8 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
             name: "e2e",
             description: "e2e",
             builtinToolNames: BUILTINS,
-            skills: false,
+            discoverSkills: false,
+            preloadSkills: [],
             systemPrompt: "You are e2e.",
             promptMode: "replace",
             inheritContext: false,
@@ -88,17 +86,7 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
         ],
       ]),
     );
-    const model = faux.getModel();
-    const modelRegistry: any = {
-      find: () => model,
-      getAll: () => [model],
-      getAvailable: () => [model],
-      hasConfiguredAuth: () => true,
-      isUsingOAuth: () => false,
-      getApiKeyAndHeaders: async () => ({ apiKey: "faux", headers: {} }),
-      registerProvider: () => {},
-      unregisterProvider: () => {},
-    };
+    const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
 
     let active: string[] = [];
@@ -130,29 +118,28 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
     for (const b of BUILTINS) expect(active).toContain(b);
   });
 
-  it("disallowedTools removes a real extension tool from the live session", async () => {
-    const active = await activeToolsFor({ extensions: [FIXTURE], disallowedTools: [EXT_TOOL] });
+  it("extensionToolNames removes an unselected extension tool from the live session", async () => {
+    const active = await activeToolsFor({ extensions: [FIXTURE], extensionToolNames: [] });
     expect(active).not.toContain(EXT_TOOL); // loaded, then denied at construction
     expect(active).toContain("read");
   });
 
-  it("the ext: allowlist flip mutes a loaded-but-unselected extension in real pi-mono", async () => {
-    // Extension loads (extensions: [FIXTURE]), but a single ext: selector for a
-    // *different* name flips extension tools to an allowlist — the unselected
-    // fixture contributes nothing, even though it loaded and ran its handlers.
-    const active = await activeToolsFor({ extensions: [FIXTURE], extSelectors: ["ext:not-the-fixture"] });
+  it("the extension tool allowlist mutes a loaded-but-unselected tool in real pi-mono", async () => {
+    // Extension loads, but selecting a different extension tool keeps this one
+    // inactive even though its extension loaded and ran its handlers.
+    const active = await activeToolsFor({
+      extensions: [FIXTURE],
+      extensionToolNames: ["not_the_fixture"],
+    });
     expect(active).not.toContain(EXT_TOOL);
     for (const b of BUILTINS) expect(active).toContain(b);
   });
 
-  it("an ext: selector surfaces the loaded extension's tool through the flip", async () => {
-    // Derive the canonical name the loader/selector matcher uses, so the test
-    // tracks `extensionCanonicalName` rather than hard-coding a filename form.
-    const canon = extensionCanonicalName(FIXTURE);
+  it("an extension tool allowlist surfaces the selected loaded tool", async () => {
     const active = await activeToolsFor({
       extensions: [FIXTURE],
       builtinToolNames: ["read"],
-      extSelectors: [`ext:${canon}`],
+      extensionToolNames: [EXT_TOOL],
     });
     expect(active).toContain(EXT_TOOL); // selected → surfaces despite the flip
     expect(active).toContain("read");

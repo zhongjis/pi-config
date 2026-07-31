@@ -2,6 +2,26 @@
 
 A [pi](https://pi.dev) extension that brings **Claude Code-style autonomous sub-agents** to pi. Spawn specialized agents that run in isolated sessions — each with its own tools, system prompt, model, and thinking level. Run them in foreground or background, steer them mid-run, resume completed sessions, and define your own custom agent types.
 
+## Upstream
+
+- **Source:** https://github.com/tintinweb/pi-subagents
+- **Version/tag:** `v0.14.3`
+- **Immutable ref:** `c10b1836256e760da75296ccd4e57a77ada1325e`
+- **License:** MIT
+- **Local import commit:** `5bec4ea2378fd39241ab6088144e372314f1b464`
+- **Adapted:** Panda Harness presentation renderers and root test/discovery wiring only.
+
+## Local Tweaks
+
+| File | What | Why |
+|------|------|-----|
+| `src/tool-rendering.ts`, `src/index.ts`, `test/tool-rendering.test.ts` | Width-safe call/result renderers for `Agent`, `get_subagent_result`, and `steer_subagent`, with configured expand hints and raw expanded tool output | Preserve Panda Harness supervision formatting |
+| `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
+| `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
+| `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.83 test/runtime fixtures target `subagents-new`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
+
+Execution and model-facing content are preserved. FleetView and Thinking Steps remain unchanged.
+
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
 

@@ -27,3 +27,6 @@ export const BACKGROUND_SUPERVISION_COOLDOWN_MS = 2 * 60_000;
  * rationale: preserve the absolute supervision ceiling.
  */
 export const DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS = 30 * 60_000;
+
+/** Maximum retained result lines shown in expanded completion notifications. */
+export const SUBAGENT_RESULT_PREVIEW_LINES = 30;

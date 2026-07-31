@@ -7,7 +7,7 @@ Both file types are parsed by one shared schema in
 [`extensions/lib/agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts),
 but each consumer reads a different subset of the parsed result:
 
-- **Subagents** — loaded by [`extensions/subagent/src/custom-agents.ts`](../../extensions/subagent/src/custom-agents.ts).
+- **Subagents** — loaded by [`extensions/subagents-new/src/custom-agents.ts`](../../extensions/subagents-new/src/custom-agents.ts).
   Consume the full field set.
 - **Modes** — loaded by [`extensions/modes/src/config-loader.ts`](../../extensions/modes/src/config-loader.ts)
   via `parseModeAgentConfig`. Consume a **subset**; other fields are inert.

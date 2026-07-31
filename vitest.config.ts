@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
+const piAiCompat = fileURLToPath(import.meta.resolve("@earendil-works/pi-ai/compat"));
 
 export default defineConfig({
   test: {
@@ -41,9 +42,13 @@ export default defineConfig({
       },
       {
         resolve: {
-          alias: {
-            "@marcfargas/pi-test-harness": resolve(rootDir, "node_modules/@marcfargas/pi-test-harness/src/index.ts"),
-          }
+          alias: [
+            { find: /^@earendil-works\/pi-ai$/, replacement: piAiCompat },
+            {
+              find: "@marcfargas/pi-test-harness",
+              replacement: resolve(rootDir, "node_modules/@marcfargas/pi-test-harness/src/index.ts"),
+            },
+          ],
         },
         test: {
           name: "integration",

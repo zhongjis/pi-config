@@ -1,7 +1,6 @@
 packages:
   - extensions/tasks
   - extensions/web-access
-  - extensions/subagent
   - extensions/lsp
   - extensions/subagents-new
 catalog:

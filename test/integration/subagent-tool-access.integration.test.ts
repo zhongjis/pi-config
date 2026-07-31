@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
-const SUBAGENT_SOURCE = path.join(PROJECT_ROOT, "extensions/subagent/index.ts");
+const SUBAGENT_SOURCE = path.join(PROJECT_ROOT, "extensions/subagents-new/src/index.ts");
 const MATRIX_AGENT = "jintong";
 const MATRIX_AGENT_NESTED = "chengfeng";
 const WENCHANG_AGENT = "wenchang";

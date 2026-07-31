@@ -1,6 +1,6 @@
 ---
-description: "tools value format: quoted CSV string."
-tools: "read, grep, find"
+description: "builtin_tools value format: quoted CSV string."
+builtin_tools: "read, grep, find"
 expect_tools_present: "read, grep, find"
 expect_tools_absent: "bash, edit, write, ls"
 ---

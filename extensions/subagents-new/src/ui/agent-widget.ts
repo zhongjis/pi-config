@@ -8,8 +8,9 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { AgentManager } from "../agent-manager.js";
 import { getConfig } from "../agent-types.js";
-import type { AgentInvocation, SubagentType, WidgetMode } from "../types.js";
+import type { AgentInvocation, AgentRecord, SubagentType, WidgetMode } from "../types.js";
 import { getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, type SessionLike } from "../usage.js";
+import { renderSubagentSummary } from "./summary-renderer.js";
 
 // ---- Constants ----
 
@@ -317,41 +318,48 @@ export class AgentWidget {
     }
   }
 
-  /** Render a finished agent line. */
-  private renderFinishedLine(a: { id: string; type: SubagentType; status: string; description: string; toolUses: number; startedAt: number; completedAt?: number; error?: string }, theme: Theme): string {
-    const name = getDisplayName(a.type);
-    const modeLabel = getPromptModeLabel(a.type);
-    const duration = formatMs((a.completedAt ?? Date.now()) - a.startedAt);
+  /** Display name with the existing prompt-mode annotation folded into the summary subject. */
+  private summaryDisplayName(type: SubagentType): string {
+    const name = getDisplayName(type);
+    const modeLabel = getPromptModeLabel(type);
+    return modeLabel ? `${name} (${modeLabel})` : name;
+  }
 
-    let icon: string;
-    let statusText: string;
-    if (a.status === "completed") {
-      icon = theme.fg("success", "✓");
-      statusText = "";
-    } else if (a.status === "steered") {
-      icon = theme.fg("warning", "✓");
-      statusText = theme.fg("warning", " (turn limit)");
-    } else if (a.status === "stopped") {
-      icon = theme.fg("dim", "■");
-      statusText = theme.fg("dim", " stopped");
-    } else if (a.status === "error") {
-      icon = theme.fg("error", "✗");
-      const errMsg = a.error ? `: ${a.error.slice(0, 60)}` : "";
-      statusText = theme.fg("error", ` error${errMsg}`);
-    } else {
-      // aborted
-      icon = theme.fg("error", "✗");
-      statusText = theme.fg("warning", " aborted");
-    }
+  /** Lifetime token fields for the shared summary, retaining live context-window annotation. */
+  private summaryTokens(
+    record: AgentRecord,
+    activity: AgentActivity | undefined,
+    theme: Theme,
+  ): { tokens?: string; totalTokens: number } {
+    const totalTokens = getLifetimeTotal(activity?.lifetimeUsage ?? record.lifetimeUsage);
+    const contextPercent = getSessionContextPercent(activity?.session);
+    return {
+      tokens: totalTokens > 0 && contextPercent !== null
+        ? formatSessionTokens(totalTokens, contextPercent, theme)
+        : undefined,
+      totalTokens,
+    };
+  }
 
-    const parts: string[] = [];
+  /** Render a finished agent line through the shared summary vocabulary. */
+  private renderFinishedLine(a: AgentRecord, theme: Theme): string {
     const activity = this.agentActivity.get(a.id);
-    if (activity) parts.push(formatTurns(activity.turnCount, activity.maxTurns));
-    if (a.toolUses > 0) parts.push(`${a.toolUses} tool use${a.toolUses === 1 ? "" : "s"}`);
-    parts.push(duration);
-
-    const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
-    return `${icon} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
+    const invocation = buildInvocationTags(a.invocation);
+    const tokenFields = this.summaryTokens(a, activity, theme);
+    return renderSubagentSummary({
+      displayName: this.summaryDisplayName(a.type),
+      description: a.description,
+      status: a.status,
+      toolUses: a.toolUses,
+      durationMs: (a.completedAt ?? Date.now()) - a.startedAt,
+      modelName: invocation.modelName,
+      tags: invocation.tags,
+      turnCount: activity?.turnCount,
+      maxTurns: activity?.maxTurns,
+      compactionCount: a.compactionCount,
+      error: a.error,
+      ...tokenFields,
+    })[0] ?? "";
   }
 
   /**
@@ -377,7 +385,6 @@ export class AgentWidget {
     const truncate = (line: string) => truncateToWidth(line, w);
     const headingColor = hasActive ? "accent" : "dim";
     const headingIcon = hasActive ? "●" : "○";
-    const frame = SPINNER[this.widgetFrame % SPINNER.length];
 
     // Build sections separately for overflow-aware assembly.
     // Each running agent = 2 lines (header + activity), finished = 1 line, queued = 1 line.
@@ -389,29 +396,29 @@ export class AgentWidget {
 
     const runningLines: string[][] = []; // each entry is [header, activity]
     for (const a of running) {
-      const name = getDisplayName(a.type);
-      const modeLabel = getPromptModeLabel(a.type);
-      const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
-      const elapsed = formatMs(Date.now() - a.startedAt);
-
       const bg = this.agentActivity.get(a.id);
       const toolUses = bg?.toolUses ?? a.toolUses;
-      const tokens = getLifetimeTotal(bg?.lifetimeUsage);
-      const contextPercent = getSessionContextPercent(bg?.session);
-      const tokenText = tokens > 0 ? formatSessionTokens(tokens, contextPercent, theme, a.compactionCount) : "";
-
-      const parts: string[] = [];
-      if (bg) parts.push(formatTurns(bg.turnCount, bg.maxTurns));
-      if (toolUses > 0) parts.push(`${toolUses} tool use${toolUses === 1 ? "" : "s"}`);
-      if (tokenText) parts.push(tokenText);
-      parts.push(elapsed);
-      const statsText = parts.join(" · ");
-
       const activity = bg ? describeActivity(bg.activeTools, bg.responseText) : "thinking…";
+      const invocation = buildInvocationTags(a.invocation);
+      const summaryLines = renderSubagentSummary({
+        displayName: this.summaryDisplayName(a.type),
+        description: a.description,
+        status: "running",
+        activity,
+        spinnerFrame: this.widgetFrame,
+        modelName: invocation.modelName,
+        tags: invocation.tags,
+        turnCount: bg?.turnCount,
+        maxTurns: bg?.maxTurns,
+        toolUses,
+        durationMs: Date.now() - a.startedAt,
+        compactionCount: a.compactionCount,
+        ...this.summaryTokens(a, bg, theme),
+      });
 
       runningLines.push([
-        truncate(theme.fg("dim", "├─") + ` ${theme.fg("accent", frame)} ${theme.bold(name)}${modeTag}  ${theme.fg("muted", a.description)} ${theme.fg("dim", "·")} ${fgPreservingNestedStyles(theme, "dim", statsText)}`),
-        truncate(theme.fg("dim", "│  ") + theme.fg("dim", `  ⎿  ${activity}`)),
+        truncate(theme.fg("dim", "├─") + ` ${fgPreservingNestedStyles(theme, "accent", summaryLines[0] ?? "")}`),
+        truncate(theme.fg("dim", "│  ") + theme.fg("dim", summaryLines[1] ?? "└─ thinking…")),
       ]);
     }
 

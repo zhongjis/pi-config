@@ -1,7 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { describe, expect, it, vi } from "vitest";
+import type { AgentManager } from "../src/agent-manager.js";
 import { renderRunningAgentStatus } from "../src/index.js";
-import type { WidgetMode } from "../src/types.js";
-import { type AgentActivity, AgentWidget, fgPreservingNestedStyles, formatSessionTokens } from "../src/ui/agent-widget.js";
+import type { AgentRecord, WidgetMode } from "../src/types.js";
+import {
+  type AgentActivity,
+  AgentWidget,
+  fgPreservingNestedStyles,
+  formatSessionTokens,
+  type Theme,
+  type UICtx,
+} from "../src/ui/agent-widget.js";
 
 describe("formatSessionTokens", () => {
   const theme = { fg: (c: string, s: string) => `<${c}>${s}</${c}>`, bold: (s: string) => s };
@@ -23,13 +32,10 @@ describe("formatSessionTokens", () => {
   });
 
   it("annotates compaction count alongside percent", () => {
-    // compactions only (e.g. immediately post-compaction, percent null)
     expect(formatSessionTokens(1234, null, theme, 1)).toBe("1.2k token (<dim>⇊1</dim>)");
     expect(formatSessionTokens(1234, null, theme, 3)).toBe("1.2k token (<dim>⇊3</dim>)");
-    // percent + compactions, joined with ` · `
     expect(formatSessionTokens(1234, 45, theme, 2)).toBe("1.2k token (<dim>45%</dim> · <dim>⇊2</dim>)");
     expect(formatSessionTokens(1234, 88, theme, 4)).toBe("1.2k token (<error>88%</error> · <dim>⇊4</dim>)");
-    // compactions=0 omitted
     expect(formatSessionTokens(1234, 45, theme, 0)).toBe("1.2k token (<dim>45%</dim>)");
   });
 
@@ -55,83 +61,265 @@ describe("renderRunningAgentStatus", () => {
 });
 
 describe("AgentWidget", () => {
-  const theme = { fg: (_c: string, s: string) => s, bold: (s: string) => s };
+  const theme: Theme = { fg: (_c, s) => s, bold: (s) => s };
 
-  function makeActivity(): AgentActivity {
+  function makeActivity(overrides: Partial<AgentActivity> = {}): AgentActivity {
     return {
       activeTools: new Map(),
       toolUses: 0,
       responseText: "",
       turnCount: 1,
-      lifetimeUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 },
+      ...overrides,
     };
   }
 
-  function makeRecord(id: string, opts: { isBackground?: boolean } = {}) {
+  function makeRecord(overrides: Partial<AgentRecord> = {}): AgentRecord {
     return {
-      id,
+      id: "agent-1",
       type: "general-purpose",
-      description: `${id} description`,
+      description: "agent description",
       status: "running",
       toolUses: 0,
       startedAt: Date.now(),
-      lifetimeUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 },
       compactionCount: 0,
-      isBackground: opts.isBackground,
+      ...overrides,
     };
   }
 
-  /** Render the widget for a manager and return the produced lines ("" if nothing rendered). */
-  function renderLines(manager: unknown, activityId: string, mode?: () => WidgetMode): string {
-    const widget = new AgentWidget(
-      manager as any,
-      new Map([[activityId, makeActivity()]]),
-      mode,
-    );
-    let factory: any;
-    widget.setUICtx({
-      setStatus: () => {},
-      setWidget: (_key, content) => { factory = content; },
+  type WidgetFactory = Exclude<Parameters<UICtx["setWidget"]>[1], undefined>;
+
+  function harness(
+    records: AgentRecord[],
+    activities = new Map<string, AgentActivity>(),
+    mode?: () => WidgetMode,
+  ) {
+    const listAgents = vi.fn(() => records);
+    const manager = { listAgents } as unknown as AgentManager;
+    const setStatus = vi.fn<UICtx["setStatus"]>();
+    let widgetFactory: WidgetFactory | undefined;
+    const setWidget = vi.fn<UICtx["setWidget"]>((_key, content) => {
+      widgetFactory = typeof content === "function" ? content : undefined;
     });
-    widget.update();
-    if (!factory) return "";
-    return factory({ terminal: { columns: 120 }, requestRender: () => {} }, theme)
-      .render()
-      .join("\n");
+    const requestRender = vi.fn();
+    const widget = new AgentWidget(manager, activities, mode);
+    widget.setUICtx({ setStatus, setWidget });
+
+    return {
+      listAgents,
+      requestRender,
+      setStatus,
+      setWidget,
+      widget,
+      render(width = 120, renderTheme = theme): string[] {
+        if (!widgetFactory) return [];
+        return widgetFactory({ terminal: { columns: width }, requestRender }, renderTheme).render();
+      },
+    };
   }
 
-  // "all" (and the no-policy constructor default) shows every agent.
-  it("shows foreground agents in 'all' mode (and by default)", () => {
-    const manager = { listAgents: () => [makeRecord("foreground", { isBackground: false })] };
-    expect(renderLines(manager, "foreground")).toContain("foreground description");
-    expect(renderLines(manager, "foreground", () => "all")).toContain("foreground description");
+  it("renders a running agent through the shared two-line summary vocabulary", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(130_000));
+      const record = makeRecord({
+        description: "run summary",
+        startedAt: 65_000,
+        compactionCount: 2,
+        invocation: {
+          modelName: "sonnet",
+          thinking: "high",
+          isolated: true,
+          inheritContext: true,
+          runInBackground: true,
+          maxTurns: 20,
+        },
+      });
+      const activity = makeActivity({
+        activeTools: new Map([["tool-1", "grep"]]),
+        toolUses: 3,
+        turnCount: 4,
+        maxTurns: 20,
+        lifetimeUsage: { input: 10_000, output: 2_000, cacheWrite: 345 },
+        session: {
+          getSessionStats: () => ({
+            tokens: { input: 1, output: 1, cacheWrite: 1 },
+            contextUsage: { percent: 75 },
+          }),
+        },
+      });
+      const h = harness([record], new Map([[record.id, activity]]));
+
+      h.widget.update();
+
+      expect(h.render(240)).toEqual([
+        "● Agents",
+        "└─ ⠙ Agent (twin) run summary · sonnet · thinking: high · isolated · inherit context · background · max turns: 20 · ↻4≤20 · ⇲2 · 3 tools · 12.3k token (75%) · 1m5s",
+        "   └─ searching…",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("excludes foreground agents in 'background' mode", () => {
-    const manager = { listAgents: () => [makeRecord("foreground", { isBackground: false })] };
-    expect(renderLines(manager, "foreground", () => "background")).toBe("");
+  it.each([
+    ["completed", "✓ Agent (twin) terminal · 1 tool · 1k · 1m5s"],
+    ["steered", "✓ Agent (twin) terminal · 1 tool · 1k · 1m5s · turn limit"],
+    ["stopped", "■ Agent (twin) terminal · 1 tool · 1k · 1m5s · stopped"],
+    ["aborted", "✗ Agent (twin) terminal · 1 tool · 1k · 1m5s · aborted"],
+    ["error", "✗ Agent (twin) terminal · 1 tool · 1k · 1m5s · error: process exited 1"],
+  ] as const)("renders %s terminal status through the shared summary", (status, expected) => {
+    const record = makeRecord({
+      status,
+      description: "terminal",
+      toolUses: 1,
+      startedAt: 1_000,
+      completedAt: 66_000,
+      lifetimeUsage: { input: 800, output: 200, cacheWrite: 0 },
+      error: status === "error" ? "process exited 1\nstack omitted" : undefined,
+    });
+    const h = harness([record]);
+
+    h.widget.update();
+
+    expect(h.render()).toEqual(["○ Agents", `└─ ${expected}`]);
   });
 
-  // Also covers scheduler-spawned agents (isBackground=true, no `invocation`
-  // snapshot): if the filter still keyed off `invocation.runInBackground` —
-  // #118's original approach — this would wrongly vanish.
-  it("renders background agents in 'background' mode", () => {
-    const manager = { listAgents: () => [makeRecord("background", { isBackground: true })] };
-    const lines = renderLines(manager, "background", () => "background");
-    expect(lines).toContain("Agents");
-    expect(lines).toContain("background description");
+  it("keeps queued count ahead of finished rows and caps overflow at 12 lines", () => {
+    const running = Array.from({ length: 4 }, (_, index) => makeRecord({
+      id: `running-${index}`,
+      description: `running ${index}`,
+    }));
+    const queued = Array.from({ length: 3 }, (_, index) => makeRecord({
+      id: `queued-${index}`,
+      status: "queued",
+      description: `queued ${index}`,
+    }));
+    const finished = Array.from({ length: 3 }, (_, index) => makeRecord({
+      id: `finished-${index}`,
+      status: "completed",
+      description: `finished ${index}`,
+      completedAt: Date.now(),
+    }));
+    const h = harness([...finished, ...queued, ...running]);
+
+    h.widget.update();
+    const lines = h.render();
+
+    expect(lines).toHaveLength(12);
+    expect(lines.filter((line) => line.includes("running "))).toHaveLength(4);
+    expect(lines.findIndex((line) => line.includes("3 queued"))).toBe(9);
+    expect(lines[10]).toContain("finished 0");
+    expect(lines[11]).toBe("└─ +2 more (2 finished)");
+    expect(lines.join("\n")).not.toContain("finished 1");
   });
 
-  // 'background' excludes only agents *known* to be foreground; one with no
-  // isBackground flag (e.g. a cross-extension RPC spawn) is kept, not hidden.
-  it("keeps agents with no isBackground flag in 'background' mode", () => {
-    const manager = { listAgents: () => [makeRecord("unflagged", {})] };
-    expect(renderLines(manager, "unflagged", () => "background")).toContain("unflagged description");
+  it("preserves all, background, and off filtering modes", () => {
+    const foreground = makeRecord({ id: "foreground", description: "foreground", isBackground: false });
+    const background = makeRecord({ id: "background", description: "background", isBackground: true });
+    const unflagged = makeRecord({ id: "unflagged", description: "unflagged" });
+
+    const all = harness([foreground, background, unflagged], new Map(), () => "all");
+    all.widget.update();
+    expect(all.render().join("\n")).toContain("foreground");
+    expect(all.render().join("\n")).toContain("background");
+    expect(all.render().join("\n")).toContain("unflagged");
+
+    const backgroundOnly = harness([foreground, background, unflagged], new Map(), () => "background");
+    backgroundOnly.widget.update();
+    expect(backgroundOnly.render().join("\n")).not.toContain("foreground");
+    expect(backgroundOnly.render().join("\n")).toContain("background");
+    expect(backgroundOnly.render().join("\n")).toContain("unflagged");
+
+    const off = harness([background], new Map(), () => "off");
+    off.widget.update();
+    expect(off.render()).toEqual([]);
   });
 
-  // "off" hides the widget entirely — even a background agent renders nothing.
-  it("renders nothing in 'off' mode", () => {
-    const manager = { listAgents: () => [makeRecord("background", { isBackground: true })] };
-    expect(renderLines(manager, "background", () => "off")).toBe("");
+  it("keeps ANSI and CJK summaries within narrow and wide terminal widths", () => {
+    const ansiTheme: Theme = {
+      fg: (color, text) => `\u001b[${color === "error" ? 31 : 35}m${text}\u001b[0m`,
+      bold: (text) => `\u001b[1m${text}\u001b[0m`,
+    };
+    const record = makeRecord({
+      description: "修复界面🧪 e\u0301 " + "界".repeat(80),
+      invocation: { modelName: "模型", thinking: "xhigh" },
+      compactionCount: 3,
+    });
+    const activity = makeActivity({
+      responseText: "分析结果界".repeat(20),
+      toolUses: 12,
+      turnCount: 5,
+      maxTurns: 30,
+      lifetimeUsage: { input: 1_000_000, output: 200_000, cacheWrite: 34_567 },
+    });
+    const h = harness([record], new Map([[record.id, activity]]));
+    h.widget.update();
+
+    for (const width of [8, 20, 40, 80, 120]) {
+      const lines = h.render(width, ansiTheme);
+      expect(lines.length).toBeLessThanOrEqual(12);
+      for (const line of lines) {
+        expect(visibleWidth(line), `width ${width}: ${JSON.stringify(line)}`).toBeLessThanOrEqual(width);
+      }
+    }
+  });
+
+  it("keeps completed and error linger windows unchanged", () => {
+    const completed = makeRecord({ status: "completed", completedAt: Date.now() });
+    const completedHarness = harness([completed]);
+    completedHarness.widget.markFinished(completed.id);
+    completedHarness.widget.update();
+    expect(completedHarness.render()).not.toEqual([]);
+    completedHarness.widget.onTurnStart();
+    expect(completedHarness.render()).toEqual([]);
+
+    const failed = makeRecord({ id: "failed", status: "error", completedAt: Date.now(), error: "boom" });
+    const failedHarness = harness([failed]);
+    failedHarness.widget.markFinished(failed.id);
+    failedHarness.widget.update();
+    failedHarness.widget.onTurnStart();
+    expect(failedHarness.render().join("\n")).toContain("error: boom");
+    failedHarness.widget.onTurnStart();
+    expect(failedHarness.render()).toEqual([]);
+  });
+
+  it("registers once, bounds status churn, owns its 80ms timer, and fully disposes", () => {
+    vi.useFakeTimers();
+    try {
+      const record = makeRecord();
+      const h = harness([record]);
+      h.widget.ensureTimer();
+      h.widget.update();
+      h.render();
+
+      h.widget.update();
+      h.widget.update();
+
+      expect(h.setWidget.mock.calls.filter((call) => typeof call[1] === "function")).toHaveLength(1);
+      expect(h.setStatus).toHaveBeenCalledTimes(1);
+      expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "1 running agent");
+
+      const readsBeforeTick = h.listAgents.mock.calls.length;
+      vi.advanceTimersByTime(79);
+      expect(h.listAgents).toHaveBeenCalledTimes(readsBeforeTick);
+      vi.advanceTimersByTime(1);
+      expect(h.listAgents).toHaveBeenCalledTimes(readsBeforeTick + 1);
+
+      const rendersBeforeDispose = h.requestRender.mock.calls.length;
+      const readsBeforeDispose = h.listAgents.mock.calls.length;
+      h.widget.dispose();
+
+      expect(h.setWidget).toHaveBeenLastCalledWith("agents", undefined);
+      expect(h.setStatus).toHaveBeenLastCalledWith("subagents", undefined);
+      expect(vi.getTimerCount()).toBe(0);
+
+      vi.advanceTimersByTime(240);
+      expect(h.requestRender).toHaveBeenCalledTimes(rendersBeforeDispose);
+      expect(h.listAgents).toHaveBeenCalledTimes(readsBeforeDispose);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

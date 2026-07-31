@@ -46,6 +46,29 @@ function discoverExtensionEntries(): string[] {
     const indexPath = join(fullPath, "index.ts");
     if (existsSync(indexPath)) {
       entries.push(indexPath);
+      continue;
+    }
+
+    const packagePath = join(fullPath, "package.json");
+    if (!existsSync(packagePath)) {
+      continue;
+    }
+
+    const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
+    const declaredEntries = packageJson.pi?.extensions;
+    if (!Array.isArray(declaredEntries)) {
+      continue;
+    }
+
+    for (const declaredEntry of declaredEntries) {
+      if (typeof declaredEntry !== "string") {
+        continue;
+      }
+
+      const declaredPath = join(fullPath, declaredEntry);
+      if (existsSync(declaredPath)) {
+        entries.push(declaredPath);
+      }
     }
   }
 
@@ -115,9 +138,9 @@ describe("extension entrypoints", () => {
     expect(new Set(extensionEntries).size).toBe(extensionEntries.length);
   });
 
-  it("locks Phase 2 fork package names for subagent and tasks", () => {
+  it("locks package names for subagents and tasks", () => {
     const cases: Array<[string, string]> = [
-      ["extensions/subagent/package.json", "@panda/pi-subagents"],
+      ["extensions/subagents-new/package.json", "@tintinweb/pi-subagents"],
       ["extensions/tasks/package.json", "@panda/pi-tasks"],
     ];
     for (const [relPath, expectedName] of cases) {

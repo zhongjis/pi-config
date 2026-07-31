@@ -108,7 +108,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     expect(ui.onTerminalInput).toHaveBeenCalled();
   });
 
-  it("registers the belowEditor widget once a spawned agent has a session, then clears it on shutdown", async () => {
+  it("registers the AgentWidget and FleetView together, then clears both on shutdown", async () => {
     vi.mocked(runAgent).mockResolvedValue({
       responseText: "done",
       session: { dispose: vi.fn() } as any,
@@ -120,22 +120,27 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     subagentsExtension(pi);
 
     const ui = uiCtx();
-    await lifecycle.get("tool_execution_start")?.({}, ctxWith(ui)); // fleet captures THIS ui
+    await lifecycle.get("tool_execution_start")?.({}, ctxWith(ui));
 
     const spawn = await tools.get("Agent").execute(
       "tc",
       { prompt: "go", description: "live one", subagent_type: "general-purpose", run_in_background: true },
       undefined,
       undefined,
-      ctxWith(uiCtx()),
+      ctxWith(ui),
     );
     expect(textOf(spawn)).toMatch(/Agent ID:/);
-    await flush(); // completion → fleet.onAgentFinished → update → widget registers
+    await flush();
 
-    const fleetRegs = ui.setWidget.mock.calls.filter(c => c[0] === "fleet" && typeof c[1] === "function");
-    expect(fleetRegs.length, "fleet widget should register with a render factory").toBeGreaterThan(0);
+    const factoryRegistrations = ui.setWidget.mock.calls
+      .filter((call) => typeof call[1] === "function")
+      .map((call) => ({ key: call[0], placement: call[2]?.placement }));
+    expect(factoryRegistrations).toContainEqual({ key: "agents", placement: "aboveEditor" });
+    expect(factoryRegistrations).toContainEqual({ key: "fleet", placement: "belowEditor" });
 
-    await lifecycle.get("session_shutdown")?.({}, ctxWith(uiCtx()));
-    expect(ui.setWidget).toHaveBeenCalledWith("fleet", undefined); // dispose cleared it
+    await lifecycle.get("session_shutdown")?.({}, ctxWith(ui));
+    await new Promise((resolve) => setTimeout(resolve, 100)); // AgentWidget timer observes the emptied manager.
+    expect(ui.setWidget).toHaveBeenCalledWith("agents", undefined);
+    expect(ui.setWidget).toHaveBeenCalledWith("fleet", undefined);
   });
 });

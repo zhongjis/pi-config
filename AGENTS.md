@@ -36,7 +36,7 @@ Source: `agent0ai/dox` at `5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT, Copyr
 |------|----------|-------|
 | Change agent behavior | `agents/` | Frontmatter + prompts; root naming rules still apply |
 | Build or debug a Pi extension | `extensions/AGENTS.md` | Child file covers layout tiers, events, smoke-test assumptions |
-| Change subagent orchestration | `extensions/subagent/AGENTS.md` | Eventbus RPC + background-agent lifecycle |
+| Change subagent orchestration | `extensions/subagents-new/AGENTS.md` | Eventbus RPC + background-agent lifecycle |
 | Change task tracking flow | `extensions/tasks/AGENTS.md` | Task DAG, storage, process tracking, planning cleanup |
 | Change web search/fetch tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local extension; model wiring → `docs/specs/extension-model-usage.md` |
 | Change shared extension model roles | `extensions/lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` roles bind extension-owned LLM calls to model chains |
@@ -73,7 +73,7 @@ Before registering any new tool, extension, or MCP server:
 | Interactive user prompts (questions, select) | `extensions/ask` |
 | Shell with cwd | `extensions/better-bash-tool` |
 | Read-only validated shell | `extensions/readonly-bash` |
-| Subagent orchestration (Agent, get_subagent_result, steer_subagent) | `extensions/subagent` |
+| Subagent orchestration (Agent, get_subagent_result, steer_subagent) | `extensions/subagents-new` |
 | Task tracking + DAG (TaskCreate/Update/List/Get/Output/Stop) | `extensions/tasks` |
 | Web search, fetch, code search, video | `pi-web-access` git package (`settings.json`) |
 | MCP tools proxy | `pi-mcporter` package → `mcporter` tool |

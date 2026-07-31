@@ -48,21 +48,22 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 const OWNER_EXTENSIONS = [
-  "better-bash-tool",
-  "readonly-bash",
-  "qol",
-  "codegraph",
-  "lsp",
-  "multimodal-look",
-  "tasks",
-  "goal",
-  "modes",
-  "subagent",
-  "boomerang",
-  "ask",
-  "diff",
-  "second-opinion",
-].map((name) => resolve(PROJECT_ROOT, "extensions", name, "index.ts"));
+  ...[
+    "better-bash-tool",
+    "readonly-bash",
+    "qol",
+    "codegraph",
+    "lsp",
+    "multimodal-look",
+    "tasks",
+    "goal",
+    "modes",
+  ].map((name) => resolve(PROJECT_ROOT, "extensions", name, "index.ts")),
+  resolve(PROJECT_ROOT, "extensions/subagents-new/src/index.ts"),
+  ...["boomerang", "ask", "diff", "second-opinion"].map((name) =>
+    resolve(PROJECT_ROOT, "extensions", name, "index.ts"),
+  ),
+];
 
 type ThemeLike = {
   bold(text: string): string;
@@ -127,7 +128,15 @@ const FIXTURES: Record<(typeof EXPECTED_TOOL_NAMES)[number], ToolFixture> = {
   Agent: {
     args: { prompt: "Audit renderer output", description: "renderer audit", subagent_type: "juling", skills: ["pi-extensions", "vitest"] },
     raw: "Renderer audit complete.\nRAW31_01",
-    details: { displayName: "Juling", description: "renderer audit", subagentType: "juling", status: "completed" },
+    details: {
+      displayName: "Juling",
+      description: "renderer audit",
+      subagentType: "juling",
+      status: "completed",
+      toolUses: 0,
+      tokens: "",
+      durationMs: 0,
+    },
   },
   TaskCreate: { args: { subject: "Renderer audit", description: "Check output" }, raw: "Created task #1: Renderer audit\nRAW31_02", details: {} },
   TaskGet: { args: { taskId: "1" }, raw: "#1 [in_progress] Renderer audit\nRAW31_03", details: {} },

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadCustomAgentsWithDiagnostics } from "../extensions/subagent/src/custom-agents.js";
+import { loadCustomAgentsWithDiagnostics } from "../extensions/subagents-new/src/custom-agents.js";
 
 function readRepoFile(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf-8");

@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestSession, type TestSession } from "@marcfargas/pi-test-harness";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
-import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagent/src/ui/agent-widget.js";
+import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagents-new/src/ui/agent-widget.js";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
-const SUBAGENT_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/subagent/index.ts");
+const SUBAGENT_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/subagents-new/src/index.ts");
 
 const THEME = {
 	fg: (_color: string, text: string) => text,
@@ -42,7 +42,7 @@ async function shutdownSession(session: SessionLike | undefined): Promise<void> 
 
 function renderText(component: unknown): string {
 	if (component && typeof component === "object" && "render" in component && typeof component.render === "function") {
-		return component.render().join("\n");
+		return component.render(120).join("\n");
 	}
 	if (component && typeof component === "object" && "text" in component && typeof component.text === "string") {
 		return component.text;
@@ -78,7 +78,7 @@ function makeActivity(toolName: string): AgentActivity {
 	return {
 		activeTools: new Map([[`${toolName}-1`, toolName]]),
 		toolUses: 1,
-		tokens: "󰾆 42",
+		lifetimeUsage: { input: 42, output: 0, cacheWrite: 0 },
 		responseText: "",
 		turnCount: 1,
 		maxTurns: 3,
@@ -143,9 +143,9 @@ describe("subagent TUI rendering — integration", () => {
 		vi.setSystemTime(0);
 
 		const records = [
-			{ id: "fg-1", type: "general-purpose", status: "running", description: "foreground probe", toolUses: 1, startedAt: 0 },
-			{ id: "bg-1", type: "general-purpose", status: "running", description: "background probe", toolUses: 1, startedAt: 0 },
-			{ id: "bg-2", type: "general-purpose", status: "queued", description: "queued probe", toolUses: 0, startedAt: 0 },
+			{ id: "fg-1", type: "general-purpose", status: "running", description: "foreground probe", toolUses: 1, startedAt: 0, lifetimeUsage: { input: 42, output: 0, cacheWrite: 0 }, compactionCount: 0 },
+			{ id: "bg-1", type: "general-purpose", status: "running", description: "background probe", toolUses: 1, startedAt: 0, lifetimeUsage: { input: 42, output: 0, cacheWrite: 0 }, compactionCount: 0 },
+			{ id: "bg-2", type: "general-purpose", status: "queued", description: "queued probe", toolUses: 0, startedAt: 0, lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, compactionCount: 0 },
 		];
 		const manager = { listAgents: vi.fn(() => records) };
 		const activity = new Map<string, AgentActivity>([
@@ -173,15 +173,15 @@ describe("subagent TUI rendering — integration", () => {
 		for (let i = 0; i < 5; i++) widget.update();
 		expect(uiCtx.setWidget.mock.calls.filter((call) => call[0] === "agents" && typeof call[1] === "function")).toHaveLength(1);
 		expect(uiCtx.setStatus).toHaveBeenCalledTimes(1);
-		expect(tui.requestRender).not.toHaveBeenCalled();
+		expect(tui.requestRender).toHaveBeenCalledTimes(5);
 
 		vi.advanceTimersByTime(250);
 		widget.update();
-		expect(tui.requestRender).toHaveBeenCalledTimes(1);
+		expect(tui.requestRender).toHaveBeenCalledTimes(6);
 
 		activity.get("bg-1")!.toolUses = 2;
 		widget.update();
-		expect(tui.requestRender).toHaveBeenCalledTimes(2);
+		expect(tui.requestRender).toHaveBeenCalledTimes(7);
 		expect(uiCtx.setWidget.mock.calls.filter((call) => call[0] === "agents" && typeof call[1] === "function")).toHaveLength(1);
 
 		widget.dispose();
@@ -199,14 +199,16 @@ describe("subagent TUI rendering — integration", () => {
 		const grouped = renderText(renderer!(
 			{
 				details: {
+					id: "bg-1",
 					description: "background one",
 					status: "completed",
 					resultPreview: "one done",
 					toolUses: 1,
+					turnCount: 1,
 					totalTokens: 12,
 					durationMs: 100,
 					others: [
-						{ description: "background two", status: "completed", resultPreview: "two done", toolUses: 2, totalTokens: 24, durationMs: 200 },
+						{ id: "bg-2", description: "background two", status: "completed", resultPreview: "two done", toolUses: 2, turnCount: 2, totalTokens: 24, durationMs: 200 },
 					],
 				},
 			},

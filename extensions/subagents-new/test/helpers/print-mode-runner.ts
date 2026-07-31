@@ -23,11 +23,10 @@
  *
  * MODEL BACKEND (faux default, real opt-in)
  * -----------------------------------------
- *   - Faux (default): a scripted `registerFauxProvider` model drives both the
- *     parent and the spawned child deterministically — no network, CI-safe. You
- *     supply a `respond(context)` function (or raw `steps`) that emits the
- *     `Agent` tool call on the parent and a reply on the child. `routeBySession`
- *     does the parent/child branching for the common single-spawn case.
+ *   - Faux (default): a scripted native faux provider registered on a per-run
+ *     `ModelRuntime` drives parent and child deterministically — no network or
+ *     auth. Supply `respond(context)` or raw `steps`; `routeBySession` handles
+ *     parent/child branching for the common single-spawn case.
  *   - Live (opt-in): set `PI_E2E_LIVE=1` or pass `live: {provider, model}`. A real
  *     model drives the turn; `respond`/`steps` are ignored. Non-deterministic,
  *     needs creds. With no explicit model pin, it resolves the model from your
@@ -65,7 +64,7 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { getModel, registerFauxProvider } from "./pi-ai.js";
+import { createFauxModelRuntime, type FauxModelRuntime, getModel } from "./pi-ai.js";
 
 /** Path to the pi-subagents extension entrypoint (repo `src/index.ts`). */
 const EXTENSION_PATH = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
@@ -153,8 +152,8 @@ export interface PrintModeRun {
   /** Faux model call count (0 in live mode). */
   modelCalls: number;
   /**
-   * Tear down: emit session_shutdown (so extensions clear timers), dispose the
-   * session, unregister faux, restore cwd/env, rm temp dir. Async — await it.
+   * Tear down: emit session_shutdown, dispose session/runtime, restore cwd/env,
+   * and remove owned temp dirs. Async — await it.
    */
   dispose: () => Promise<void>;
 }
@@ -265,9 +264,8 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
   }
 
   // --- model backend ---
-  let faux: ReturnType<typeof registerFauxProvider> | undefined;
+  let fauxRuntime: FauxModelRuntime | undefined;
   let model: Model<string> | undefined;
-  let modelRegistry: unknown;
   if (live) {
     // Explicit pin wins (options.live or PI_PROVIDER + PI_MODEL). Otherwise leave
     // `model` undefined: createAgentSession then calls findInitialModel() against
@@ -287,36 +285,22 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
         );
       }
     }
-    modelRegistry = undefined; // let createAgentSession build the real, auth-backed registry
   } else {
     if (!options.steps && !options.respond) {
       throw new Error("runPrintMode (faux mode): provide `respond` or `steps`");
     }
-    faux = registerFauxProvider({ provider: "faux", models: [{ id: "faux-1", contextWindow: 200_000 }] });
-    model = faux.getModel();
-    // Structural faux registry (matches the existing e2e suites): the parent
-    // session uses `model` directly; subagents inherit it via ctx.model since
-    // resolveDefaultModel falls back to the parent model when no model is pinned.
-    modelRegistry = {
-      find: () => model,
-      getAll: () => [model],
-      getAvailable: () => [model],
-      hasConfiguredAuth: () => true,
-      isUsingOAuth: () => false,
-      // createAgentSession's injected streamFn checks `auth.ok` and throws
-      // Error(auth.error) otherwise — so the `ok: true` flag is mandatory, not
-      // cosmetic. Without it the turn dies before streaming (empty error message).
-      getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "faux", headers: {} }),
-      registerProvider: () => {},
-      unregisterProvider: () => {},
-    };
+    fauxRuntime = await createFauxModelRuntime({
+      provider: "faux",
+      models: [{ id: "faux-1", contextWindow: 200_000 }],
+    });
+    model = fauxRuntime.model;
 
     // Pad the response queue: one context-branching responder per expected model
     // call. The queue is a single FIFO shared by parent + child, but every entry
     // is the same responder that decides from its own context, so interleaving
     // order doesn't matter.
     if (options.steps) {
-      faux.setResponses(options.steps);
+      fauxRuntime.faux.setResponses(options.steps);
     } else {
       const respond = options.respond;
       if (!respond) {
@@ -325,7 +309,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
       const max = options.maxModelCalls ?? 16;
       const factory: FauxResponseStep = async (context, _opts, state) =>
         toAssistantMessage(await respond(context, state));
-      faux.setResponses(Array.from({ length: max }, () => factory));
+      fauxRuntime.faux.setResponses(Array.from({ length: max }, () => factory));
     }
   }
 
@@ -352,8 +336,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
     cwd,
     agentDir,
     model,
-    // Structural faux registry in faux mode; undefined in live mode (defaults).
-    modelRegistry: modelRegistry as any,
+    modelRuntime: fauxRuntime?.modelRuntime,
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(cwd),
     // Live: real settings so an omitted model resolves to your local default
@@ -427,7 +410,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
     } catch {
       /* ignore */
     }
-    faux?.unregister();
+    fauxRuntime?.dispose();
     delete (globalThis as Record<symbol, unknown>)[MANAGER_KEY];
     // Restore cwd before removing the temp dir (can't rm the dir you're in).
     try {
@@ -510,7 +493,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
     parentSession: session,
     manager,
     subagents,
-    modelCalls: faux?.state.callCount ?? 0,
+    modelCalls: fauxRuntime?.faux.state.callCount ?? 0,
     dispose,
   };
 }

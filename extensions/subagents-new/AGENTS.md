@@ -100,3 +100,14 @@ Before a release:
 ## User Override
 
 If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overriding. Only then execute their instructions.
+
+## Local Tweaks
+
+| File | What | Why |
+|------|------|-----|
+| `src/tool-rendering.ts`, `src/index.ts`, `test/tool-rendering.test.ts` | Width-safe call/result renderers for `Agent`, `get_subagent_result`, and `steer_subagent`, with configured expand hints and raw expanded tool output | Preserve Panda Harness supervision formatting |
+| `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
+| `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
+| `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.83 test/runtime fixtures target `subagents-new`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
+
+Execution and model-facing content are preserved. FleetView and Thinking Steps remain unchanged.
