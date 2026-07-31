@@ -23,11 +23,11 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 
 | File | What | Why |
 |------|------|-----|
-| `index.ts` | Local Pi extension entrypoint with `/caveman`, lifecycle hooks, status handling, and top-level persisted-session gate | Upstream is a cross-agent skill/hook package; this repo needs Pi-native registration and subagent exclusion |
+| `index.ts` | Local Pi extension entrypoint with `/caveman`, lifecycle hooks, status handling, and a session gate that injects for top-level persisted sessions and subagent sessions | Upstream is a cross-agent skill/hook package; this repo needs Pi-native registration and wants caveman style to also apply to spawned subagents |
 | `config.ts` | Stores persistent config at `~/.pi/agent/caveman.json` and supports only `lite`, `full`, `ultra`, or default `off` | Matches existing personal harness config and avoids implementing upstream-only modes |
 | `state.ts` | Stores per-session overrides as `caveman-level` custom entries | Lets Pi restore session state across reload/fork without upstream flag files |
 | `prompt.ts` | Parses vendored SKILL body and removes upstream stop/off phrases from injected runtime prompt | Local command surface does not implement current-session off/normal-mode handling yet |
-| `session-gate.ts` | Requires top-level persisted session signals before injecting | Keeps caveman out of subagents and transient sessions |
+| `session-gate.ts` | `isTopLevelPersistedSession` plus `isSubagentSession` (session file under `subagent-sessions/`) | Injects for top-level persisted sessions and subagents (subagents inherit the effective level); still keeps caveman out of transient non-subagent sessions |
 | `README.md` | Rewritten in repo-standard concise extension README format | Repo docs omit install/marketing sections and keep provenance local |
 | `test/` | Local-only unit coverage for prompt, state, session gate, and Pi lifecycle injection | Upstream tests target other agent runtimes; local behavior needs Pi harness coverage |
 

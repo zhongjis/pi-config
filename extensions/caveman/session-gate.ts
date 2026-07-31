@@ -18,6 +18,19 @@ export function isTopLevelPersistedSession(
   return persistedSignal ?? sessionFileSignal ?? false;
 }
 
+const SUBAGENT_SESSION_MARKER = "subagent-sessions";
+
+export function isSubagentSession(
+  ctx: CavemanSessionPersistenceContextLike,
+): boolean {
+  if (typeof ctx.sessionManager.getSessionFile !== "function") {
+    return false;
+  }
+
+  const sessionFile = ctx.sessionManager.getSessionFile();
+  return typeof sessionFile === "string" && sessionFile.includes(SUBAGENT_SESSION_MARKER);
+}
+
 function readPersistedSignal(
   ctx: CavemanSessionPersistenceContextLike,
 ): boolean | undefined {

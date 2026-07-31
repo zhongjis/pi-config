@@ -65,6 +65,19 @@ describe("caveman extension", () => {
 		expect(result?.systemPrompt).toContain("No self-reference");
 	});
 
+	it("injects into subagent sessions", async () => {
+		const mock = await registerFreshExtension();
+		const ctx = createPersistedContext();
+		(ctx.sessionManager as any).isPersisted = () => false;
+		(ctx.sessionManager as any).getSessionFile = () =>
+			"/home/u/.pi/agent/subagent-sessions/parent/child.jsonl";
+		await mock.fireLifecycle("session_start", {}, ctx);
+
+		const result = await fireBeforeAgentStart(mock, ctx);
+
+		expect(result?.systemPrompt).toContain("Active level: ultra.");
+	});
+
 	it("does not inject into non-persisted sessions", async () => {
 		const mock = await registerFreshExtension();
 		const ctx = createPersistedContext();
