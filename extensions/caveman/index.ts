@@ -5,7 +5,6 @@ import {
   type CavemanStatusVisibility,
 } from "./config.js";
 import { buildInjectedPrompt, loadRuntimePrompt } from "./prompt.js";
-import { isSubagentSession, isTopLevelPersistedSession } from "./session-gate.js";
 import {
   clearCavemanState,
   getCavemanConfig,
@@ -157,11 +156,7 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
     },
   });
 
-  pi.on("before_agent_start", async (event, ctx) => {
-    if (!isTopLevelPersistedSession(ctx) && !isSubagentSession(ctx)) {
-      return;
-    }
-
+  pi.on("before_agent_start", async (event) => {
     const level = getCavemanEffectiveLevel();
     if (!level) {
       return;

@@ -1,6 +1,6 @@
 # Caveman
 
-Token-compression prompt injection for Pi. Appends terse-communication rules to top-level persisted session and subagent session system prompts. Three local levels: `lite` (professional but tight), `full` (classic caveman), `ultra` (abbreviations, arrows, one word when enough).
+Token-compression prompt injection for Pi. Appends terse-communication rules to every agent session's system prompt (top-level and spawned subagents) whenever a caveman level is configured. Three local levels: `lite` (professional but tight), `full` (classic caveman), `ultra` (abbreviations, arrows, one word when enough).
 
 ## Upstream
 
@@ -8,7 +8,7 @@ Token-compression prompt injection for Pi. Appends terse-communication rules to 
 - **Version:** `main` at `25d22f864ad68cc447a4cb93aefde918aa4aec9f`
 - **Synced:** 2026-06-29
 - **License:** MIT; copied in `LICENSE`
-- **Adapted:** Pi-native extension wrapper, persistent `~/.pi/agent/caveman.json` config, session-entry overrides, top-level + subagent session gate, and runtime prompt normalization for unimplemented upstream stop/off behavior.
+- **Adapted:** Pi-native extension wrapper, persistent `~/.pi/agent/caveman.json` config, session-entry overrides, level-configured `before_agent_start` injection (all agent sessions), and runtime prompt normalization for unimplemented upstream stop/off behavior.
 
 ## Commands
 
@@ -26,7 +26,7 @@ Persisted in `~/.pi/agent/caveman.json`:
 ## Hooks
 
 - `session_start` — restores config/session state and status
-- `before_agent_start` — appends the active caveman prompt to top-level persisted session and subagent session system prompts
+- `before_agent_start` — appends the active caveman prompt to every agent session's system prompt (top-level and subagents) when a level is configured
 - `session_shutdown` — clears status and runtime state
 
 ## Local Additions

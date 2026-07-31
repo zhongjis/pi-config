@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,12 +65,11 @@ describe("caveman extension", () => {
 		expect(result?.systemPrompt).toContain("No self-reference");
 	});
 
-	it("injects into subagent sessions", async () => {
+	it("injects into non-persisted subagent sessions", async () => {
 		const mock = await registerFreshExtension();
 		const ctx = createPersistedContext();
 		(ctx.sessionManager as any).isPersisted = () => false;
-		(ctx.sessionManager as any).getSessionFile = () =>
-			"/home/u/.pi/agent/subagent-sessions/parent/child.jsonl";
+		(ctx.sessionManager as any).getSessionFile = () => undefined;
 		await mock.fireLifecycle("session_start", {}, ctx);
 
 		const result = await fireBeforeAgentStart(mock, ctx);
@@ -78,11 +77,15 @@ describe("caveman extension", () => {
 		expect(result?.systemPrompt).toContain("Active level: ultra.");
 	});
 
-	it("does not inject into non-persisted sessions", async () => {
+	it("does not inject when the caveman level is off", async () => {
+		const configDir = join(tempHome, ".pi", "agent");
+		await mkdir(configDir, { recursive: true });
+		await writeFile(
+			join(configDir, "caveman.json"),
+			JSON.stringify({ defaultLevel: "off", statusVisibility: "active" }),
+		);
 		const mock = await registerFreshExtension();
 		const ctx = createPersistedContext();
-		(ctx.sessionManager as any).isPersisted = () => false;
-		(ctx.sessionManager as any).getSessionFile = () => null;
 		await mock.fireLifecycle("session_start", {}, ctx);
 
 		await expect(fireBeforeAgentStart(mock, ctx)).resolves.toBeUndefined();
