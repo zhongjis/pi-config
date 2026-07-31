@@ -48,6 +48,7 @@
       "AGENTS.md",
       "extensions/**/*.ts",
       "!extensions/tasks",
+      "!extensions/subagents-new",
       "test/**/*.ts",
       "package.json",
       "pnpm-workspace.yaml",

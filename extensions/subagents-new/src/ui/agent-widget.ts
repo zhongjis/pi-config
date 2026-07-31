@@ -61,6 +61,9 @@ export interface AgentActivity {
   maxTurns?: number;
   /** Lifetime usage breakdown — see LifetimeUsage docs. */
   lifetimeUsage: LifetimeUsage;
+  /** Wall-clock ms of the last observed progress signal (tool activity, text delta,
+   * turn end, or assistant usage). Consumed by background supervision to detect idle. */
+  lastProgressAt?: number;
 }
 
 /** Metadata attached to Agent tool results for custom rendering. */
@@ -86,6 +89,16 @@ export interface AgentDetails {
   maxTurns?: number;
   agentId?: string;
   error?: string;
+  /**
+   * Stable delegation-policy denial metadata (mirrors the OLD subagent
+   * extension). Present only on a denied Agent tool result; the tool_result
+   * hook keys off `category` + `invocationStatus` to mark the call as an error.
+   */
+  invocationStatus?: "failed";
+  category?: "delegation_policy_denied";
+  activeMode?: string;
+  requestedType?: string;
+  permittedTypes?: string[];
 }
 
 // ---- Formatting helpers ----
@@ -168,7 +181,6 @@ export function buildInvocationTags(
   if (!invocation) return { tags };
   if (invocation.thinking) tags.push(`thinking: ${invocation.thinking}`);
   if (invocation.isolated) tags.push("isolated");
-  if (invocation.isolation === "worktree") tags.push("worktree");
   if (invocation.inheritContext) tags.push("inherit context");
   if (invocation.runInBackground) tags.push("background");
   if (invocation.maxTurns != null) tags.push(`max turns: ${invocation.maxTurns}`);

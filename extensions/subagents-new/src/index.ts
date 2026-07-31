@@ -14,21 +14,22 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { defineTool, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Key, matchesKey, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { AgentManager } from "./agent-manager.js";
+import { registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, SUBAGENT_TOOL_NAMES, setDefaultMaxTurns, setGraceTurns, steerAgent } from "./agent-runner.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, isDefaultsDisabled, registerAgents, resolveType, setDefaultsDisabled } from "./agent-types.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
+import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ModeStateEntryLike, type ResolvedDelegationPolicy, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { isModelInScope, readEnabledModels, resolveEnabledModels } from "./enabled-models.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { type ModelRegistry, resolveModel } from "./model-resolver.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
-import { SubagentScheduler } from "./schedule.js";
-import { resolveStorePath, ScheduleStore } from "./schedule-store.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { getForegroundOutcomeNote, getStatusNote } from "./status-note.js";
+import { startBackgroundSupervision } from "./supervision-loop.js";
 import { type AgentConfig, type AgentInvocation, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType, type WidgetMode } from "./types.js";
 import {
   type AgentActivity,
@@ -48,7 +49,6 @@ import {
   type UICtx,
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx } from "./ui/fleet-list.js";
-import { showSchedulesMenu } from "./ui/schedule-menu.js";
 import { addUsage, getLifetimeTotal, getSessionContextPercent, type LifetimeUsage } from "./usage.js";
 
 // ---- Shared helpers ----
@@ -56,6 +56,18 @@ import { addUsage, getLifetimeTotal, getSessionContextPercent, type LifetimeUsag
 /** Tool execute return value for a text response. */
 function textResult(msg: string, details?: AgentDetails) {
   return { content: [{ type: "text" as const, text: msg }], details: details as any };
+}
+
+/**
+ * Read persisted session entries for delegation-policy resolution. Defensive:
+ * returns [] when the session manager can't enumerate entries (e.g. a partial
+ * ctx mock) so enforcement degrades to "unrestricted" instead of throwing.
+ */
+function readModeEntries(ctx: ExtensionContext): ModeStateEntryLike[] {
+  const sm = (ctx as { sessionManager?: { getEntries?: () => unknown } }).sessionManager;
+  if (typeof sm?.getEntries !== "function") return [];
+  const entries = sm.getEntries();
+  return Array.isArray(entries) ? (entries as ModeStateEntryLike[]) : [];
 }
 
 /** Await a promise until it settles or the caller cancels, without aborting the underlying work. */
@@ -122,6 +134,7 @@ function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
     responseText: "",
     session: undefined,
     lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 },
+    lastProgressAt: Date.now(),
   };
 
   const callbacks = {
@@ -134,14 +147,17 @@ function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
         }
         state.toolUses++;
       }
+      state.lastProgressAt = Date.now();
       onStreamUpdate?.();
     },
     onTextDelta: (_delta: string, fullText: string) => {
       state.responseText = fullText;
+      state.lastProgressAt = Date.now();
       onStreamUpdate?.();
     },
     onTurnEnd: (turnCount: number) => {
       state.turnCount = turnCount;
+      state.lastProgressAt = Date.now();
       onStreamUpdate?.();
     },
     onSessionCreated: (session: any) => {
@@ -149,6 +165,7 @@ function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
     },
     onAssistantUsage: (usage: { input: number; output: number; cacheWrite: number }) => {
       addUsage(state.lifetimeUsage, usage);
+      state.lastProgressAt = Date.now();
       onStreamUpdate?.();
     },
   };
@@ -240,6 +257,33 @@ function buildDetails(
   };
 }
 
+/**
+ * Build the AgentDetails for a delegation-policy denial. Mirrors the OLD
+ * subagent extension: `category` + `invocationStatus: "failed"` let the
+ * tool_result hook flip the Agent call to an error, and the extra fields keep
+ * the denial machine-readable for renderers/consumers.
+ */
+function buildDelegationPolicyDenialDetails(
+  policy: ResolvedDelegationPolicy,
+  requestedType: string,
+  description: string,
+): AgentDetails {
+  return {
+    displayName: getDisplayName(policy.decision.requestedType),
+    description,
+    subagentType: policy.decision.requestedType,
+    toolUses: 0,
+    tokens: "",
+    durationMs: 0,
+    status: "error",
+    invocationStatus: "failed",
+    category: DELEGATION_POLICY_DENIED,
+    activeMode: policy.activeMode,
+    requestedType,
+    permittedTypes: policy.permittedTypes,
+  };
+}
+
 /** Build notification details for the custom message renderer. */
 function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, activity?: AgentActivity): NotificationDetails {
   const totalTokens = getLifetimeTotal(record.lifetimeUsage);
@@ -264,6 +308,11 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
 }
 
 export default function (pi: ExtensionAPI) {
+  // Mark structured delegation-policy denials (details.category ===
+  // "delegation_policy_denied") as tool errors so the LLM sees a failed Agent
+  // call instead of a success. Registered once per activation.
+  registerAgentPolicyDenialResultHook(pi);
+
   // ---- Register custom notification renderer ----
   pi.registerMessageRenderer<NotificationDetails>(
     "subagent-notification",
@@ -492,6 +541,22 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
+  // Inject the delegation-policy gate into the manager (defense in depth: the
+  // Agent tool and RPC handler both deny earlier, but any spawn reaching the
+  // manager is still gated). The manager stays free of session-state imports —
+  // this closure reads the persisted agent-mode policy from the spawn ctx and
+  // fails closed on denial.
+  manager.setPolicyChecker((ctx, type) => {
+    const decision = resolvePersistedDelegationPolicy({
+      entries: readModeEntries(ctx),
+      availableTypes: getAvailableTypes(),
+      requestedType: type,
+    });
+    return decision.decision.allowed
+      ? undefined
+      : formatDelegationPolicyDenial(decision, type);
+  });
+
   // Expose manager via Symbol.for() global registry for cross-package access.
   // Standard Node.js pattern for cross-package singletons (used by OpenTelemetry, etc.).
   //
@@ -508,6 +573,7 @@ export default function (pi: ExtensionAPI) {
     spawn: (piRef: any, ctx: any, type: string, prompt: string, options: any) =>
       manager.spawn(piRef, ctx, type, prompt, options),
     getRecord: (id: string) => manager.getRecord(id),
+    getLifetimeCost: () => manager.getLifetimeCost(),
   };
   const ownsManagerRegistry = (globalThis as any)[MANAGER_KEY] === undefined;
   if (ownsManagerRegistry) {
@@ -524,36 +590,21 @@ export default function (pi: ExtensionAPI) {
   // (currentCtx would stay undefined → spawn always "No active session"). Gating
   // here makes a filtered session behave like an absent one (#142).
   let rpcHandle: RpcHandle | undefined;
-
-  // ---- Subagent scheduler ----
-  // Session-scoped: store is constructed inside session_start once sessionId
-  // is available. Mirrors pi-chonky-tasks's session-scoped task store —
-  // schedules reset on /new, restore on /resume.
-  const scheduler = new SubagentScheduler();
-
-  function startScheduler(ctx: ExtensionContext) {
-    try {
-      const sessionId = ctx.sessionManager?.getSessionId?.();
-      if (!sessionId) return;  // sessionId not yet available — try again on next event
-      const path = resolveStorePath(ctx.cwd, sessionId);
-      const store = new ScheduleStore(path);
-      scheduler.start(pi, ctx, manager, store);
-      pi.events.emit("subagents:scheduler_ready", { sessionId, jobCount: store.list().length });
-    } catch (err) {
-      // Scheduling is non-essential — log and move on so the rest of the
-      // extension keeps working if e.g. .pi/ is unwritable.
-      console.warn("[pi-subagents] Failed to start scheduler:", err);
-    }
-  }
-
-  // Capture ctx from session_start for RPC spawn handler + start the scheduler.
-  // This also wires the RPC handlers and broadcasts readiness — on the first
-  // bound session_start, so a filtered-out activation never advertises (#142).
+  // Background auto-supervision loop handle. Started on session_start, stopped on
+  // switch/shutdown. `undefined` = not running (used as the double-start guard).
+  let supervisionStop: (() => void) | undefined;
+  // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
+  // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
   pi.on("session_start", async (_event, ctx) => {
     currentCtx = ctx;
     manager.clearCompleted(true);
-    // Guard mirrors the `!scheduler.isActive()` pattern below: session_start
-    // fires once per activation, but a double-bind must not leak listeners.
+    manager.resetLifetimeCost();
+    // Start the idle-agent auto-supervision loop once per activation (guarded so a
+    // double-bound session_start can't stack intervals).
+    if (!supervisionStop) {
+      supervisionStop = startBackgroundSupervision(pi, manager, agentActivity);
+    }
+    // Guard: session_start fires once per activation, but a double-bind must not leak listeners.
     if (!rpcHandle) {
       rpcHandle = registerRpcHandlers({
         events: pi.events,
@@ -566,12 +617,12 @@ export default function (pi: ExtensionAPI) {
       // also avoids the race where a consumer loaded after us misses the event.
       pi.events.emit("subagents:ready", {});
     }
-    if (isSchedulingEnabled() && !scheduler.isActive()) startScheduler(ctx);
   });
 
   pi.on("session_before_switch", () => {
     manager.clearCompleted(true);
-    scheduler.stop();
+    supervisionStop?.();
+    supervisionStop = undefined;
   });
 
   // On shutdown, abort all agents immediately and clean up.
@@ -582,12 +633,13 @@ export default function (pi: ExtensionAPI) {
     rpcHandle?.unsubPing();
     rpcHandle = undefined;
     currentCtx = undefined;
+    supervisionStop?.();
+    supervisionStop = undefined;
     // Only release the global slot if this activation claimed it — a child
     // session's shutdown must not delete the root session's registry entry.
     if (ownsManagerRegistry && (globalThis as any)[MANAGER_KEY] === registryEntry) {
       delete (globalThis as any)[MANAGER_KEY];
     }
-    scheduler.stop();
     manager.abortAll();
     for (const timer of pendingNudges.values()) clearTimeout(timer);
     pendingNudges.clear();
@@ -622,16 +674,6 @@ export default function (pi: ExtensionAPI) {
   let defaultJoinMode: JoinMode = 'smart';
   function getDefaultJoinMode(): JoinMode { return defaultJoinMode; }
   function setDefaultJoinMode(mode: JoinMode) { defaultJoinMode = mode; }
-
-  // Master switch for the schedule subagent feature. Defaults to enabled.
-  // Read once at extension init (before tool registration) so the Agent tool's
-  // param schema reflects the persisted setting. Runtime toggles via /agents
-  // → Settings short-circuit the menu entry + the execute-time addJob path
-  // immediately, but the schema-level removal only takes effect on next
-  // extension load (next pi session). Documented in CHANGELOG/README.
-  let schedulingEnabled = true;
-  function isSchedulingEnabled(): boolean { return schedulingEnabled; }
-  function setSchedulingEnabled(b: boolean) { schedulingEnabled = b; }
 
   // ---- Scope models configuration ----
   // When enabled, subagent model choices are validated against `enabledModels`
@@ -766,7 +808,6 @@ export default function (pi: ExtensionAPI) {
       setDefaultMaxTurns,
       setGraceTurns,
       setDefaultJoinMode,
-      setSchedulingEnabled,
       setScopeModels: setScopeModelsEnabled,
       setDisableDefaultAgents: setDisableDefaultAgents,
       setToolDescriptionMode: setToolDescriptionMode,
@@ -778,28 +819,6 @@ export default function (pi: ExtensionAPI) {
   );
 
   // ---- Agent tool ----
-
-  // Schedule param + its guideline are gated on `schedulingEnabled` (read once
-  // at registration; flipping the setting later requires next pi session for
-  // the schema to update). Defining the shape once and spreading it via Partial
-  // preserves Type.Object's inference when present and produces a
-  // `schedule`-free schema when absent — zero LLM-context cost in disabled mode.
-  const scheduleParamShape = {
-    schedule: Type.Optional(
-      Type.String({
-        description:
-          'Opt-in only — fire later instead of now. Omit to run immediately (the default, almost always correct). ' +
-          'Formats: 6-field cron ("0 0 9 * * 1" = 9am Mon), interval ("5m"/"1h"), one-shot ("+10m" or ISO). ' +
-          'Forces run_in_background; incompatible with inherit_context and resume. Returns job ID.',
-      }),
-    ),
-  };
-  const scheduleParam: Partial<typeof scheduleParamShape> =
-    isSchedulingEnabled() ? scheduleParamShape : {};
-
-  const scheduleGuideline = isSchedulingEnabled()
-    ? `\n- Use \`schedule\` only when the user explicitly asked for scheduled / recurring / delayed execution (e.g. "every Monday", "in an hour"). Don't auto-schedule from vague intent like "monitor X" — run once now or ask.`
-    : "";
 
   // Compact Agent tool description (#91, `toolDescriptionMode: "compact"`) —
   // the same load-bearing facts as the full version at ~75% fewer tokens, for
@@ -813,8 +832,7 @@ Notes:
 - description: 3-5 words (shown in UI). Prompts must be self-contained — the agent has not seen this conversation.
 - Parallel work: one message, multiple Agent calls, run_in_background: true on each. You are notified when background agents finish — never poll or sleep.
 - The result is not shown to the user — summarize it for them. Verify an agent's claimed code changes before reporting work done.
-- resume continues a previous agent by ID; steer_subagent messages a running one.
-- isolation: "worktree" runs the agent in an isolated git worktree; changes land on a branch.`;
+- resume continues a previous agent by ID; steer_subagent messages a running one.`;
 
   const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously. Each agent type has specific capabilities and tools available to it.
 
@@ -844,7 +862,6 @@ If the target is already known, use a direct tool — \`read\` for a known path,
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
 - Use thinking to control extended thinking level.
 - Use inherit_context if the agent needs the parent conversation history.
-- Use isolation: "worktree" to run the agent in an isolated git worktree (safe parallel file modifications). The worktree is automatically cleaned up if the agent makes no changes; otherwise the path and branch are returned in the result.${scheduleGuideline}
 
 ## Writing the prompt
 
@@ -868,7 +885,6 @@ Terse command-style prompts produce shallow, generic work.
       typeList: buildTypeListText,
       compactTypeList: buildCompactTypeListText,
       agentDir: getAgentDir,
-      scheduleGuideline: () => scheduleGuideline,
     };
     // Replacement callback (not a string) — agent descriptions may contain `$&` etc.
     return template.replace(/\{\{(\w+)\}\}/g, (raw, name: string) => {
@@ -964,12 +980,11 @@ Terse command-style prompts produce shallow, generic work.
           description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
         }),
       ),
-      isolation: Type.Optional(
-        Type.Literal("worktree", {
-          description: 'Set to "worktree" to run the agent in a temporary git worktree (isolated copy of the repo). Changes are saved to a branch on completion.',
+      skills: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Skill names to inject into the agent for this call only. Unioned with the agent type's frontmatter preload_skills (deduped). Only applies to fresh spawns; ignored on resume and when isolated: true.",
         }),
       ),
-      ...scheduleParam,
     }),
 
     // ---- Custom rendering: Claude Code style ----
@@ -1074,6 +1089,24 @@ Terse command-style prompts produce shallow, generic work.
       const subagentType = resolved ?? "general-purpose";
       const fellBack = resolved === undefined;
 
+      // Delegation-policy gate: resolve the latest persisted agent-mode policy
+      // and deny BEFORE any spawn/resume. A denied delegation returns a failed
+      // tool result carrying machine-readable details (category +
+      // invocationStatus: "failed") — the tool_result hook flips it to an error.
+      // It never falls through to spawning. Enforcement uses the resolved type;
+      // the message/details echo the raw requested type (mirrors OLD subagent).
+      const delegation = resolvePersistedDelegationPolicy({
+        entries: readModeEntries(ctx),
+        availableTypes: getAvailableTypes(),
+        requestedType: subagentType,
+      });
+      if (!delegation.decision.allowed) {
+        return textResult(
+          formatDelegationPolicyDenial(delegation, rawType),
+          buildDelegationPolicyDenialDetails(delegation, rawType, params.description),
+        );
+      }
+
       const displayName = getDisplayName(subagentType);
 
       // Get agent config (if any)
@@ -1126,7 +1159,6 @@ Terse command-style prompts produce shallow, generic work.
       const inheritContext = resolvedConfig.inheritContext;
       const runInBackground = resolvedConfig.runInBackground;
       const isolated = resolvedConfig.isolated;
-      const isolation = resolvedConfig.isolation;
       // Whether this spawn writes its .output transcript. Per-agent
       // frontmatter (`output_transcript`) wins; otherwise the project/global
       // default applies. `attachTranscript` below is the SOLE gate — every
@@ -1154,7 +1186,6 @@ Terse command-style prompts produce shallow, generic work.
         isolated,
         inheritContext,
         runInBackground,
-        isolation,
       };
       // Tool-result render shows the mode label too; viewer's header already does.
       const modeLabel = getPromptModeLabel(subagentType);
@@ -1167,47 +1198,6 @@ Terse command-style prompts produce shallow, generic work.
         modelName,
         tags: agentTags.length > 0 ? agentTags : undefined,
       };
-
-      // ---- Schedule: register a job, don't spawn now ----
-      if (params.schedule) {
-        if (!isSchedulingEnabled()) {
-          return textResult("Scheduling is disabled in this project. Enable via /agents → Settings → Scheduling.");
-        }
-        if (params.resume) {
-          return textResult("Cannot combine `schedule` with `resume` — schedules create fresh agents.");
-        }
-        if (params.inherit_context) {
-          return textResult("Cannot combine `schedule` with `inherit_context` — there is no parent conversation at fire time.");
-        }
-        if (params.run_in_background === false) {
-          return textResult("Cannot combine `schedule` with `run_in_background: false` — scheduled jobs always run in background.");
-        }
-        if (!scheduler.isActive()) {
-          return textResult("Scheduler is not active in this session yet. Try again after the session has fully started.");
-        }
-        try {
-          const job = scheduler.addJob({
-            name: params.description as string,
-            description: params.description as string,
-            schedule: params.schedule as string,
-            subagent_type: subagentType,
-            prompt: params.prompt as string,
-            model: params.model as string | undefined,
-            thinking: thinking,
-            max_turns: effectiveMaxTurns,
-            isolated: isolated,
-            isolation: isolation,
-          });
-          const next = scheduler.getNextRun(job.id);
-          return textResult(
-            `Scheduled "${job.name}" (id: ${job.id}, type: ${job.scheduleType}). ` +
-            `Next run: ${next ?? "(unknown)"}. ` +
-            `Manage via /agents → Scheduled jobs.`,
-          );
-        } catch (err) {
-          return textResult(err instanceof Error ? err.message : String(err));
-        }
-      }
 
       // Resume existing agent
       if (params.resume) {
@@ -1259,8 +1249,8 @@ Terse command-style prompts produce shallow, generic work.
             inheritContext,
             thinkingLevel: thinking,
             isBackground: true,
-            isolation,
             invocation: agentInvocation,
+            skills: params.skills,
             ...bgCallbacks,
           });
         } catch (err) {
@@ -1384,8 +1374,8 @@ Terse command-style prompts produce shallow, generic work.
           isolated,
           inheritContext,
           thinkingLevel: thinking,
-          isolation,
           invocation: agentInvocation,
+          skills: params.skills,
           signal,
           ...fgCallbacks,
         }, (fgAgentId) => {
@@ -1629,12 +1619,6 @@ Terse command-style prompts produce shallow, generic work.
       options.push(`Agent types (${allNames.length})`);
     }
 
-    // Scheduled jobs entry (always present when scheduler is active)
-    if (scheduler.isActive()) {
-      const jobCount = scheduler.list().length;
-      options.push(`Scheduled jobs (${jobCount})`);
-    }
-
     // Actions
     options.push("Create new agent");
     options.push("Settings");
@@ -1657,9 +1641,6 @@ Terse command-style prompts produce shallow, generic work.
       await showAgentsMenu(ctx);
     } else if (choice.startsWith("Agent types (")) {
       await showAllAgentsList(ctx);
-      await showAgentsMenu(ctx);
-    } else if (choice.startsWith("Scheduled jobs (")) {
-      await showSchedulesMenu(ctx, scheduler);
       await showAgentsMenu(ctx);
     } else if (choice === "Create new agent") {
       await showCreateWizard(ctx);
@@ -1874,7 +1855,8 @@ Terse command-style prompts produce shallow, generic work.
     const fmFields: string[] = [];
     fmFields.push(`description: ${JSON.stringify(cfg.description)}`);
     if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
-    fmFields.push(`tools: ${cfg.builtinToolNames?.join(", ") || "all"}`);
+    if (cfg.builtinToolNames) fmFields.push(`builtin_tools: ${cfg.builtinToolNames.join(", ") || "none"}`);
+    if (cfg.extensionToolNames) fmFields.push(`extension_tools: ${cfg.extensionToolNames.join(", ") || "none"}`);
     if (cfg.model) fmFields.push(`model: ${cfg.model}`);
     if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
     if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
@@ -1882,15 +1864,12 @@ Terse command-style prompts produce shallow, generic work.
     if (cfg.extensions === false) fmFields.push("extensions: false");
     else if (Array.isArray(cfg.extensions)) fmFields.push(`extensions: ${cfg.extensions.join(", ")}`);
     if (cfg.excludeExtensions?.length) fmFields.push(`exclude_extensions: ${cfg.excludeExtensions.join(", ")}`);
-    if (cfg.skills === false) fmFields.push("skills: false");
-    else if (Array.isArray(cfg.skills)) fmFields.push(`skills: ${cfg.skills.join(", ")}`);
-    if (cfg.disallowedTools?.length) fmFields.push(`disallowed_tools: ${cfg.disallowedTools.join(", ")}`);
+    if (!cfg.discoverSkills) fmFields.push("discover_skills: false");
+    if (cfg.preloadSkills?.length) fmFields.push(`preload_skills: ${cfg.preloadSkills.join(", ")}`);
     if (cfg.inheritContext) fmFields.push("inherit_context: true");
     if (cfg.runInBackground) fmFields.push("run_in_background: true");
     if (cfg.outputTranscript === false) fmFields.push("output_transcript: false");
     if (cfg.isolated) fmFields.push("isolated: true");
-    if (cfg.memory) fmFields.push(`memory: ${cfg.memory}`);
-    if (cfg.isolation) fmFields.push(`isolation: ${cfg.isolation}`);
 
     const content = `---\n${fmFields.join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
 
@@ -2004,33 +1983,32 @@ The file format is a markdown file with YAML frontmatter and a system prompt bod
 \`\`\`markdown
 ---
 description: <one-line description shown in UI>
-tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no tools. Omit for all tools>
+builtin_tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no built-in tools. Omit for all>
+extension_tools: <comma-separated extension/MCP tool names (exact or trailing-* wildcard, e.g. codegraph_*). Use "none" for none. Omit for all>
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5". Omit to inherit parent model>
 thinking: <optional thinking level: ${THINKING_LEVELS.join(", ")}. Omit to inherit>
 max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
 prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
 extensions: <true (inherit all MCP/extension tools), false (none), or comma-separated names. Default: true>
-skills: <true (inherit all), false (none), or comma-separated skill names to preload into prompt. Default: true>
-disallowed_tools: <comma-separated tool names to block, even if otherwise available. Omit for none>
+discover_skills: <false to disable the on-demand skill catalog. Default: true>
+preload_skills: <comma-separated skill names to eagerly inject into the prompt. Omit for none>
 inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>
 run_in_background: <true to run in background by default. Default: false>
 output_transcript: <false to write no transcript file or path for this agent. Independent of persist_session. Default: true>
 isolated: <true for no extension/MCP tools, only built-in tools. Default: false>
-memory: <"user" (global), "project" (per-project), or "local" (gitignored per-project) for persistent memory. Omit for none>
-isolation: <"worktree" to run in isolated git worktree. Omit for normal>
 ---
 
 <system prompt body — instructions for the agent>
 \`\`\`
 
 Guidelines for choosing settings:
-- For read-only tasks (review, analysis): tools: read, bash, grep, find, ls
+- For read-only tasks (review, analysis): builtin_tools: read, bash, grep, find, ls
 - For code modification tasks: include edit, write
 - Use prompt_mode: append if the agent should keep the default system prompt and add specialization on top
 - Use prompt_mode: replace for fully custom agents with their own personality/instructions
 - Set inherit_context: true if the agent needs to know what was discussed in the parent conversation
 - Set isolated: true if the agent should NOT have access to MCP servers or other extensions
-- Set output_transcript: false to skip writing this agent's transcript; this alone doesn't keep the run off disk (persist_session, isolation: worktree commits, and memory still write) — set those too if that's the goal
+- Set output_transcript: false to skip writing this agent's transcript; this alone doesn't keep the run off disk (persist_session still writes) — set it too if that's the goal
 - Only include frontmatter fields that differ from defaults — omit fields where the default is fine
 
 Write the file using the write tool. Only write the file, nothing else.`;
@@ -2114,7 +2092,7 @@ Write the file using the write tool. Only write the file, nothing else.`;
     // Build the file
     const content = `---
 description: ${description}
-tools: ${tools}${modelLine}${thinkingLine}
+builtin_tools: ${tools}${modelLine}${thinkingLine}
 prompt_mode: replace
 ---
 
@@ -2143,7 +2121,6 @@ ${systemPrompt}
       defaultMaxTurns: getDefaultMaxTurns() ?? 0,
       graceTurns: getGraceTurns(),
       defaultJoinMode: getDefaultJoinMode(),
-      schedulingEnabled: isSchedulingEnabled(),
       scopeModels: isScopeModelsEnabled(),
       disableDefaultAgents: isDefaultsDisabled(),
       toolDescriptionMode: getToolDescriptionMode(),
@@ -2189,13 +2166,6 @@ ${systemPrompt}
           description: "Default join mode for background agents",
           currentValue: getDefaultJoinMode(),
           values: ["smart", "async", "group"],
-        },
-        {
-          id: "schedulingEnabled",
-          label: "Scheduling",
-          description: "Schedule subagent feature (off removes `schedule` param from Agent tool spec on next pi session)",
-          currentValue: isSchedulingEnabled() ? "on" : "off",
-          values: ["on", "off"],
         },
         {
           id: "scopeModels",
@@ -2267,18 +2237,6 @@ ${systemPrompt}
       } else if (id === "joinMode") {
         setDefaultJoinMode(value as JoinMode);
         notifyApplied(ctx, `Default join mode set to ${value}`);
-      } else if (id === "schedulingEnabled") {
-        const enabled = value === "on";
-        if (enabled === isSchedulingEnabled()) {
-          ctx.ui.notify(`Scheduling already ${enabled ? "enabled" : "disabled"}.`, "info");
-        } else {
-          setSchedulingEnabled(enabled);
-          if (!enabled) scheduler.stop();  // immediate kill — outstanding fires stop ticking
-          notifyApplied(
-            ctx,
-            `Scheduling ${enabled ? "enabled" : "disabled"}. Tool spec change takes effect on next pi session.`,
-          );
-        }
       } else if (id === "scopeModels") {
         const enabled = value === "on";
         setScopeModelsEnabled(enabled);

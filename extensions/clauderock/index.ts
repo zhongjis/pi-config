@@ -4,9 +4,8 @@ import {
   type Model,
   type SimpleStreamOptions,
   createAssistantMessageEventStream,
-  streamSimple,
-  streamSimpleAnthropic,
 } from "@earendil-works/pi-ai";
+import { streamSimple, streamSimpleAnthropic } from "@earendil-works/pi-ai/compat";
 import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { execSync } from "child_process";

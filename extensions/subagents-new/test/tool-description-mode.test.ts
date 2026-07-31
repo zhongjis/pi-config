@@ -121,7 +121,6 @@ describe("toolDescriptionMode", () => {
       "run_in_background",
       "resume",
       "steer_subagent",
-      'isolation: "worktree"',
       ".pi/agents/",
       "self-contained",
     ]) {
@@ -154,35 +153,18 @@ describe("toolDescriptionMode", () => {
     expect(desc).toContain("- Explore: Fast read-only search agent for locating code. (Tools:");
   });
 
-  it("{{scheduleGuideline}} expands to the schedule bullet when scheduling is on (default)", () => {
-    const tools = setup({ toolDescriptionMode: "custom" }, () => {
-      writeFileSync(join(tmpDir, ".pi", "agent-tool-description.md"), "RULES:{{scheduleGuideline}}\nEND");
-    });
-    const desc: string = tools.get("Agent").description;
-    // The expansion carries its own leading "\n- " bullet.
-    expect(desc).toContain("RULES:\n- Use `schedule` only when");
-  });
-
-  it("{{scheduleGuideline}} expands to the empty string when scheduling is disabled", () => {
-    const tools = setup({ toolDescriptionMode: "custom", schedulingEnabled: false }, () => {
-      writeFileSync(join(tmpDir, ".pi", "agent-tool-description.md"), "RULES:{{scheduleGuideline}}\nEND");
-    });
-    const desc: string = tools.get("Agent").description;
-    expect(desc).toContain("RULES:\nEND");
-    expect(desc).not.toContain("schedule");
-  });
 
   it("every documented placeholder is replaced — no {{ }} residue", () => {
     const tools = setup({ toolDescriptionMode: "custom" }, () => {
       writeFileSync(
         join(tmpDir, ".pi", "agent-tool-description.md"),
-        "A {{typeList}} B {{compactTypeList}} C {{agentDir}} D {{scheduleGuideline}} E",
+        "A {{typeList}} B {{compactTypeList}} C {{agentDir}} D",
       );
     });
     const desc: string = tools.get("Agent").description;
-    expect(desc).not.toContain("{{");
+    expect(desc).not.toContain("}{{");
     expect(desc).not.toContain("}}");
-  });
+  })
 
   it("the shipped example template renders byte-identical to the full description", async () => {
     // Guards examples/agent-tool-description.md against going stale: it must

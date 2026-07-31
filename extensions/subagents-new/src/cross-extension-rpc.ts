@@ -9,6 +9,8 @@
  *   error   → { success: false, error: string }
  */
 
+import { getAvailableTypes } from "./agent-types.js";
+import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { type ModelRegistry, resolveModel } from "./model-resolver.js";
 
 /** Minimal event bus interface needed by the RPC handlers. */
@@ -83,6 +85,22 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
     events, "subagents:rpc:spawn", ({ type, prompt, options }) => {
       const ctx = getCtx();
       if (!ctx) throw new Error("No active session");
+
+      // Delegation-policy gate: resolve the latest persisted agent-mode policy
+      // from the caller's session and deny BEFORE manager.spawn. A denial throws
+      // — handleRpc turns it into the frozen { success:false, error } envelope,
+      // whose message keeps the stable `delegation_policy_denied:` prefix.
+      const modeEntries =
+        (ctx as { sessionManager?: { getEntries?: () => ModeStateEntryLike[] } })
+          .sessionManager?.getEntries?.() ?? [];
+      const delegation = resolvePersistedDelegationPolicy({
+        entries: modeEntries,
+        availableTypes: getAvailableTypes(),
+        requestedType: type,
+      });
+      if (!delegation.decision.allowed) {
+        throw new Error(formatDelegationPolicyDenial(delegation, type));
+      }
 
       // Cross-extension RPC callers (e.g. pi-tasks TaskExecute) naturally
       // forward serializable values, so options.model can be a string like

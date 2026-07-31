@@ -5,8 +5,6 @@ import {
   getAvailableTypes,
   getConfig,
   getDefaultAgentNames,
-  getMemoryToolNames,
-  getReadOnlyMemoryToolNames,
   getToolNamesForType,
   getUserAgentNames,
   isDefaultsDisabled,
@@ -24,7 +22,8 @@ function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     description: "Test agent",
     builtinToolNames: ["read", "grep"],
     extensions: false,
-    skills: false,
+    discoverSkills: false,
+    preloadSkills: [],
     systemPrompt: "You are a test agent.",
     promptMode: "replace",
     inheritContext: false,
@@ -81,7 +80,7 @@ describe("agent type registry", () => {
       expect(config.displayName).toBe("Agent");
       expect(config.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES);
       expect(config.extensions).toBe(true);
-      expect(config.skills).toBe(true);
+      expect(config.discoverSkills).toBe(true);
     });
 
     it("Explore has read-only tools", () => {
@@ -222,7 +221,8 @@ describe("agent type registry", () => {
         description: "Security auditor",
         builtinToolNames: ["read", "grep"],
         extensions: false,
-        skills: true,
+        discoverSkills: true,
+        preloadSkills: [],
       })]]);
       registerAgents(agents);
 
@@ -231,20 +231,21 @@ describe("agent type registry", () => {
       expect(config.description).toBe("Security auditor");
       expect(config.builtinToolNames).toEqual(["read", "grep"]);
       expect(config.extensions).toBe(false);
-      expect(config.skills).toBe(true);
+      expect(config.discoverSkills).toBe(true);
     });
 
     it("getConfig returns extension allowlist for user agents", () => {
       const agents = new Map([["partial", makeAgentConfig({
         name: "partial",
         extensions: ["web-search"],
-        skills: ["planning"],
+        discoverSkills: true,
+        preloadSkills: ["planning"],
       })]]);
       registerAgents(agents);
 
       const config = getConfig("partial");
       expect(config.extensions).toEqual(["web-search"]);
-      expect(config.skills).toEqual(["planning"]);
+      expect(config.preloadSkills).toEqual(["planning"]);
     });
 
     it("getToolNamesForType works for user agents", () => {
@@ -320,38 +321,6 @@ describe("agent type registry", () => {
       // getConfig fallback should still return something reasonable
       const config = getConfig("general-purpose");
       expect(config.displayName).toBe("Agent");
-    });
-  });
-
-  describe("getMemoryToolNames", () => {
-    it("returns read, write, edit when none exist", () => {
-      const names = getMemoryToolNames(new Set());
-      expect(names).toContain("read");
-      expect(names).toContain("write");
-      expect(names).toContain("edit");
-      expect(names).toHaveLength(3);
-    });
-
-    it("skips tools that already exist", () => {
-      const names = getMemoryToolNames(new Set(["read", "edit"]));
-      expect(names).toEqual(["write"]);
-    });
-
-    it("returns empty when all memory tools already exist", () => {
-      const names = getMemoryToolNames(new Set(["read", "write", "edit"]));
-      expect(names).toHaveLength(0);
-    });
-  });
-
-  describe("getReadOnlyMemoryToolNames", () => {
-    it("returns only read when missing", () => {
-      const names = getReadOnlyMemoryToolNames(new Set());
-      expect(names).toEqual(["read"]);
-    });
-
-    it("returns empty when read already exists", () => {
-      const names = getReadOnlyMemoryToolNames(new Set(["read"]));
-      expect(names).toHaveLength(0);
     });
   });
 

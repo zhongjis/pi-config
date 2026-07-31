@@ -10,6 +10,7 @@ export default defineConfig({
       {
         resolve: {
           alias: {
+            "@earendil-works/pi-ai/compat": resolve(rootDir, "test/stubs/pi-ai.ts"),
             "@earendil-works/pi-ai": resolve(rootDir, "test/stubs/pi-ai.ts"),
             "@earendil-works/pi-agent-core": resolve(rootDir, "test/stubs/pi-agent-core.ts"),
             "@earendil-works/pi-coding-agent": resolve(rootDir, "test/stubs/pi-coding-agent.ts"),

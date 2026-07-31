@@ -318,3 +318,83 @@ describe("cross-extension RPC", () => {
     });
   });
 });
+
+// --- delegation policy enforcement (persisted agent-mode entry) ---
+//
+// The RPC spawn handler resolves the persisted delegation policy from the
+// caller's session BEFORE manager.spawn. A denied delegation must surface the
+// frozen error envelope with a stable `delegation_policy_denied:` prefix and
+// never reach manager.spawn.
+describe("spawn RPC delegation policy", () => {
+  let events: EventBus;
+  let manager: SpawnCapable;
+  let deps: RpcDeps;
+
+  function ctxWithEntries(entries: unknown[]): object {
+    return { session: true, sessionManager: { getEntries: () => entries } };
+  }
+
+  beforeEach(() => {
+    events = createEventBus();
+    manager = { spawn: vi.fn().mockReturnValue("agent-42"), abort: vi.fn().mockReturnValue(true) };
+  });
+
+  it("permits spawn when the session has no agent-mode entry (no false denial)", async () => {
+    deps = { events, pi: { events }, getCtx: () => ctxWithEntries([]), manager };
+    registerRpcHandlers(deps);
+    const reply = vi.fn();
+    events.on("subagents:rpc:spawn:reply:req-d1", reply);
+    events.emit("subagents:rpc:spawn", {
+      requestId: "req-d1", type: "general-purpose", prompt: "x",
+    });
+
+    await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+    expect(reply).toHaveBeenCalledWith({ success: true, data: { id: "agent-42" } });
+    expect(manager.spawn).toHaveBeenCalled();
+  });
+
+  it("denies spawn when the active mode policy forbids the requested type", async () => {
+    const entries = [
+      {
+        type: "custom",
+        customType: "agent-mode",
+        data: {
+          mode: "fuxi",
+          delegationPolicy: { version: 1, allowDelegationTo: ["chengfeng"], disallowDelegationTo: [] },
+        },
+      },
+    ];
+    deps = { events, pi: { events }, getCtx: () => ctxWithEntries(entries), manager };
+    registerRpcHandlers(deps);
+    const reply = vi.fn();
+    events.on("subagents:rpc:spawn:reply:req-d2", reply);
+    events.emit("subagents:rpc:spawn", {
+      requestId: "req-d2", type: "general-purpose", prompt: "x",
+    });
+
+    await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+    const call = (reply as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.success).toBe(false);
+    expect(call.error).toMatch(/^delegation_policy_denied:/);
+    expect(manager.spawn).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when an active mode has no resolvable policy", async () => {
+    const entries = [
+      { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
+    ];
+    deps = { events, pi: { events }, getCtx: () => ctxWithEntries(entries), manager };
+    registerRpcHandlers(deps);
+    const reply = vi.fn();
+    events.on("subagents:rpc:spawn:reply:req-d3", reply);
+    events.emit("subagents:rpc:spawn", {
+      requestId: "req-d3", type: "general-purpose", prompt: "x",
+    });
+
+    await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+    const call = (reply as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.success).toBe(false);
+    expect(call.error).toMatch(/^delegation_policy_denied:/);
+    expect(manager.spawn).not.toHaveBeenCalled();
+  });
+});

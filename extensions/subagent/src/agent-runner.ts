@@ -13,6 +13,7 @@ import {
   DefaultResourceLoader,
   type ExtensionAPI,
   getAgentDir,
+  type ModelRuntime,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -275,12 +276,20 @@ export interface AgentSessionRuntimeOptions {
 
 /** Create an opened/fresh session without binding extensions or applying tool policy. */
 export async function createUnboundAgentSessionRuntime(options: AgentSessionRuntimeOptions): Promise<AgentSession> {
-  const sessionOpts: NonNullable<Parameters<typeof createAgentSession>[0]> = {
+  // Pi 0.83 replaced createAgentSession's modelRegistry option with modelRuntime,
+  // but ExtensionContext still exposes only the registry facade. Pass both so the
+  // parent's providers carry into the child session.
+  const parentModelRuntime = (options.modelRegistry as unknown as { runtime?: ModelRuntime }).runtime;
+  const sessionOpts: Parameters<typeof createAgentSession>[0] & {
+    modelRegistry: ExtensionContext["modelRegistry"];
+    modelRuntime?: ModelRuntime;
+  } = {
     cwd: options.cwd,
     agentDir: options.agentDir,
     sessionManager: options.sessionManager,
     settingsManager: options.settingsManager,
     modelRegistry: options.modelRegistry,
+    ...(parentModelRuntime !== undefined && { modelRuntime: parentModelRuntime }),
     model: options.model,
     resourceLoader: options.resourceLoader,
   };

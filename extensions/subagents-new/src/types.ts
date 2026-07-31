@@ -14,30 +14,46 @@ export type SubagentType = string;
 /** Names of the three embedded default agents. */
 export const DEFAULT_AGENT_NAMES = ["general-purpose", "Explore", "Plan"] as const;
 
-/** Memory scope for persistent agent memory. */
-export type MemoryScope = "user" | "project" | "local";
+/** Structured diagnostic emitted while loading agent frontmatter. */
+export interface AgentDefinitionDiagnostic {
+  file: string;
+  agentName: string;
+  field: string;
+  severity: "warning" | "error";
+  message: string;
+}
 
-/** Isolation mode for agent execution. */
-export type IsolationMode = "worktree";
+/** Result from loading custom agents with diagnostics. */
+export interface CustomAgentsLoadResult {
+  agents: Map<string, AgentConfig>;
+  diagnostics: AgentDefinitionDiagnostic[];
+}
 
 /** Unified agent configuration — used for both default and user-defined agents. */
 export interface AgentConfig {
   name: string;
   displayName?: string;
   description: string;
+  /** Built-in allowlist from `builtin_tools`; undefined = all built-ins. */
   builtinToolNames?: string[];
-  /** Raw `ext:` selector entries from the `tools:` CSV, e.g. ["ext:foo", "ext:bar/x"].
-   * Presence of any entry flips extension tools to an explicit allowlist. */
-  extSelectors?: string[];
-  /** Tool denylist — these tools are removed even if `builtinToolNames` or extensions include them. */
-  disallowedTools?: string[];
+  /** Extension tool allowlist from `extension_tools`; undefined = all extension tools, [] = none.
+   * Matches by tool NAME, with trailing-`*` prefix wildcards (e.g. `codegraph_*`). */
+  extensionToolNames?: string[];
+  /** Agent allowlist — only these subagents may be delegated to. */
+  allowDelegationTo?: string[];
+  /** Agent denylist — these subagents may not be delegated to. */
+  disallowDelegationTo?: string[];
+  /** When true, subagent keeps Agent/get_subagent_result/steer_subagent tools (can delegate). */
+  allowNesting?: boolean;
   /** true = inherit all, string[] = only listed, false = none */
   extensions: true | string[] | false;
   /** Extension-name denylist applied after the `extensions:` include set. Exclude wins.
    * Plain canonical names only (case-insensitive); no paths, no wildcard. */
   excludeExtensions?: string[];
-  /** true = inherit all, string[] = only listed, false = none */
-  skills: true | string[] | false;
+  /** When true, pi's skill catalog is discoverable on demand. Default true. */
+  discoverSkills: boolean;
+  /** Skill names whose full content is eagerly injected into the system prompt. Default []. */
+  preloadSkills: string[];
   model?: string;
   thinking?: ThinkingLevel;
   maxTurns?: number;
@@ -48,17 +64,13 @@ export interface AgentConfig {
   /** Optional session directory used when persistSession is true. Omitted = pi's normal session location. */
   sessionDir?: string;
   systemPrompt: string;
-  promptMode: "replace" | "append";
+  promptMode: "replace" | "append" | "system_instructions";
   /** Default for spawn: fork parent conversation. undefined = caller decides. */
   inheritContext?: boolean;
   /** Default for spawn: run in background. undefined = caller decides. */
   runInBackground?: boolean;
   /** Default for spawn: no extension tools. undefined = caller decides. */
   isolated?: boolean;
-  /** Persistent memory scope — agents with memory get a persistent directory and MEMORY.md */
-  memory?: MemoryScope;
-  /** Isolation mode — "worktree" runs the agent in a temporary git worktree */
-  isolation?: IsolationMode;
   /** true = this is an embedded default agent (informational) */
   isDefault?: boolean;
   /** false = agent is hidden from the registry */
@@ -97,10 +109,6 @@ export interface AgentRecord {
   resultConsumed?: boolean;
   /** Steering messages queued before the session was ready. */
   pendingSteers?: string[];
-  /** Worktree info if the agent is running in an isolated worktree. */
-  worktree?: { path: string; branch: string; baseSha: string; workPath: string };
-  /** Worktree cleanup result after agent completion. */
-  worktreeResult?: { hasChanges: boolean; branch?: string };
   /** The tool_use_id from the original Agent tool call. */
   toolCallId?: string;
   /** Path to the streaming output transcript file. */
@@ -113,6 +121,8 @@ export interface AgentRecord {
    * excluded — see issue #38). Initialized to zeros at spawn.
    */
   lifetimeUsage: LifetimeUsage;
+  /** Lifetime cost in USD, accumulated via `message_end` events. Separate from lifetimeUsage (tokens-only). */
+  lifetimeCost?: number;
   /** Number of times this agent's session has compacted. Initialized to 0 at spawn. */
   compactionCount: number;
   /**
@@ -128,6 +138,10 @@ export interface AgentRecord {
   isBackground?: boolean;
   /** Resolved spawn params, captured for UI display. Fixed at spawn time. */
   invocation?: AgentInvocation;
+  /** Wall-clock ms of the last auto-steer emitted by background supervision (cooldown gate). */
+  lastSupervisionSteerAt?: number;
+  /** Wall-clock ms of the last auto-abort emitted by background supervision (one-shot gate). */
+  lastSupervisionAbortAt?: number;
 }
 
 export interface AgentInvocation {
@@ -138,7 +152,6 @@ export interface AgentInvocation {
   isolated?: boolean;
   inheritContext?: boolean;
   runInBackground?: boolean;
-  isolation?: IsolationMode;
 }
 
 /** Details attached to custom notification messages for visual rendering. */
@@ -162,47 +175,4 @@ export interface EnvInfo {
   isGitRepo: boolean;
   branch: string;
   platform: string;
-}
-
-/**
- * A subagent spawn registered to fire on a schedule.
- *
- * Stored at `<cwd>/.pi/subagent-schedules/<sessionId>.json`. Session-scoped:
- * survives `/resume` but resets on `/new`, mirroring pi-chonky-tasks.
- */
-export interface ScheduledSubagent {
-  id: string;
-  /** Unique within store. Defaults to `description`. */
-  name: string;
-  description: string;
-  /** Raw user input — cron expr | "+10m" | ISO | "5m". */
-  schedule: string;
-  scheduleType: "cron" | "once" | "interval";
-  /** Computed at create time for interval/once. */
-  intervalMs?: number;
-
-  // spawn params (subset of Agent tool params; no inherit_context, no resume)
-  subagent_type: SubagentType;
-  prompt: string;
-  model?: string;
-  thinking?: ThinkingLevel;
-  max_turns?: number;
-  isolated?: boolean;
-  isolation?: IsolationMode;
-
-  // state
-  enabled: boolean;
-  /** ISO timestamp. */
-  createdAt: string;
-  lastRun?: string;
-  lastStatus?: "success" | "error" | "running";
-  /** Refreshed on every fire and on store load. */
-  nextRun?: string;
-  runCount: number;
-}
-
-export interface ScheduleStoreData {
-  /** For future migrations. */
-  version: 1;
-  jobs: ScheduledSubagent[];
 }

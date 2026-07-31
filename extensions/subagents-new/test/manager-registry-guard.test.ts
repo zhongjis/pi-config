@@ -106,3 +106,19 @@ describe("Symbol.for manager registry across activations", () => {
     expect((globalThis as any)[MANAGER_KEY]).toBeUndefined();
   });
 });
+
+describe("Symbol.for manager registry — getLifetimeCost bridge", () => {
+  it("registryEntry.getLifetimeCost is a function returning a number after extension wires the registry", async () => {
+    delete (globalThis as any)[MANAGER_KEY];
+
+    const root = makePi();
+    subagentsExtension(root.pi);
+    const entry = (globalThis as any)[MANAGER_KEY];
+
+    expect(typeof entry.getLifetimeCost).toBe("function");
+    expect(typeof entry.getLifetimeCost()).toBe("number");
+
+    // cleanup
+    await root.lifecycle.get("session_shutdown")?.();
+  });
+});

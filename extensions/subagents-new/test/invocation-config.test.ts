@@ -8,7 +8,8 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     description: "Explore",
     builtinToolNames: ["read"],
     extensions: false,
-    skills: false,
+    discoverSkills: false,
+    preloadSkills: [],
     systemPrompt: "Test agent",
     promptMode: "replace",
     inheritContext: false,
@@ -28,7 +29,6 @@ describe("resolveAgentInvocationConfig", () => {
         inheritContext: false,
         runInBackground: false,
         isolated: false,
-        isolation: "worktree",
       }),
       {
         model: "provider/param-model",
@@ -37,7 +37,6 @@ describe("resolveAgentInvocationConfig", () => {
         inherit_context: true,
         run_in_background: true,
         isolated: true,
-        isolation: "worktree",
       },
     );
 
@@ -48,7 +47,15 @@ describe("resolveAgentInvocationConfig", () => {
     expect(resolved.inheritContext).toBe(false);
     expect(resolved.runInBackground).toBe(false);
     expect(resolved.isolated).toBe(false);
-    expect(resolved.isolation).toBe("worktree");
+  });
+
+  it("normalizes thinking 'none' to 'off' (backward compat)", () => {
+    expect(resolveAgentInvocationConfig(undefined, { thinking: "none" }).thinking).toBe("off");
+  });
+
+  it("passes non-legacy thinking levels through unchanged (incl. pi 0.80 'max')", () => {
+    expect(resolveAgentInvocationConfig(undefined, { thinking: "high" }).thinking).toBe("high");
+    expect(resolveAgentInvocationConfig(undefined, { thinking: "max" }).thinking).toBe("max");
   });
 
   it("uses tool-call params when no agent config is available", () => {
@@ -59,7 +66,6 @@ describe("resolveAgentInvocationConfig", () => {
       inherit_context: true,
       run_in_background: true,
       isolated: true,
-      isolation: "worktree",
     });
 
     expect(resolved.modelInput).toBe("provider/param-model");
@@ -69,7 +75,6 @@ describe("resolveAgentInvocationConfig", () => {
     expect(resolved.inheritContext).toBe(true);
     expect(resolved.runInBackground).toBe(true);
     expect(resolved.isolated).toBe(true);
-    expect(resolved.isolation).toBe("worktree");
   });
 
   it("lets parent fill in booleans when config leaves them undefined", () => {
@@ -104,6 +109,11 @@ describe("resolveAgentInvocationConfig", () => {
     expect(resolved.inheritContext).toBe(false);
     expect(resolved.runInBackground).toBe(false);
     expect(resolved.isolated).toBe(false);
+  });
+
+  it("resolved config has no isolation key (worktree isolation removed)", () => {
+    const resolved = resolveAgentInvocationConfig(makeConfig(), {});
+    expect(resolved).not.toHaveProperty("isolation");
   });
 });
 

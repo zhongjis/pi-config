@@ -79,7 +79,8 @@ describe("buildAgentPrompt", () => {
       description: "Appender",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "Extra custom instructions here.",
       promptMode: "append",
       inheritContext: false,
@@ -102,7 +103,8 @@ describe("buildAgentPrompt", () => {
       description: "Appender",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "Extra custom instructions here.",
       promptMode: "append",
       inheritContext: false,
@@ -121,7 +123,8 @@ describe("buildAgentPrompt", () => {
       description: "Clone",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "",
       promptMode: "append",
       inheritContext: false,
@@ -142,7 +145,8 @@ describe("buildAgentPrompt", () => {
       description: "Custom",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "You are a specialized agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -161,7 +165,8 @@ describe("buildAgentPrompt", () => {
       description: "Standalone",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "You are a standalone agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -188,7 +193,8 @@ describe("buildAgentPrompt", () => {
       description: "No parent",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "Extra stuff.",
       promptMode: "append",
       inheritContext: false,
@@ -203,53 +209,14 @@ describe("buildAgentPrompt", () => {
     expect(prompt).toContain("Extra stuff.");
   });
 
-  it("injects memory block in replace mode", () => {
-    const config: AgentConfig = {
-      name: "mem-agent",
-      description: "Memory Agent",
-      builtinToolNames: [],
-      extensions: true,
-      skills: true,
-      systemPrompt: "You are a memory agent.",
-      promptMode: "replace",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const extras = { memoryBlock: "# Agent Memory\nYou have persistent memory at /tmp/mem/" };
-    const prompt = buildAgentPrompt(config, "/workspace", env, undefined, extras);
-    expect(prompt).toContain("You are a memory agent.");
-    expect(prompt).toContain("Agent Memory");
-    expect(prompt).toContain("persistent memory");
-  });
-
-  it("injects memory block in append mode", () => {
-    const config: AgentConfig = {
-      name: "mem-append",
-      description: "Memory Append",
-      builtinToolNames: [],
-      extensions: true,
-      skills: true,
-      systemPrompt: "Custom instructions.",
-      promptMode: "append",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const extras = { memoryBlock: "# Agent Memory\nPersistent memory here." };
-    const prompt = buildAgentPrompt(config, "/workspace", env, "Parent prompt.", extras);
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain("Agent Memory");
-    expect(prompt).toContain("Custom instructions.");
-  });
-
   it("injects preloaded skill blocks", () => {
     const config: AgentConfig = {
       name: "skill-agent",
       description: "Skill Agent",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "You are a skill agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -269,13 +236,14 @@ describe("buildAgentPrompt", () => {
     expect(prompt).toContain("Handle errors gracefully.");
   });
 
-  it("injects both memory and skills", () => {
+  it("does not inject a memory block for a memory-less config", () => {
     const config: AgentConfig = {
       name: "full-agent",
       description: "Full Agent",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "Full agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -283,12 +251,12 @@ describe("buildAgentPrompt", () => {
       isolated: false,
     };
     const extras = {
-      memoryBlock: "# Memory\nRemember this.",
       skillBlocks: [{ name: "skill1", content: "Skill content." }],
     };
     const prompt = buildAgentPrompt(config, "/workspace", env, undefined, extras);
-    expect(prompt).toContain("# Memory");
     expect(prompt).toContain("Preloaded Skill: skill1");
+    expect(prompt).not.toContain("Agent Memory");
+    expect(prompt).not.toContain("# Memory");
   });
 
   it("no extras means no extra sections", () => {
@@ -297,7 +265,8 @@ describe("buildAgentPrompt", () => {
       description: "Plain",
       builtinToolNames: [],
       extensions: true,
-      skills: true,
+      discoverSkills: true,
+      preloadSkills: [],
       systemPrompt: "Plain agent.",
       promptMode: "replace",
       inheritContext: false,
@@ -316,7 +285,8 @@ describe("buildAgentPrompt", () => {
         description: "Test",
         builtinToolNames: [],
         extensions: true,
-        skills: true,
+        discoverSkills: true,
+        preloadSkills: [],
         systemPrompt: "You are a test agent.",
         promptMode: "replace",
         inheritContext: false,
@@ -333,7 +303,8 @@ describe("buildAgentPrompt", () => {
         description: "Test",
         builtinToolNames: [],
         extensions: true,
-        skills: true,
+        discoverSkills: true,
+        preloadSkills: [],
         systemPrompt: "Custom instructions.",
         promptMode: "append",
         inheritContext: false,
@@ -356,7 +327,8 @@ describe("buildAgentPrompt", () => {
         description: "Test",
         builtinToolNames: [],
         extensions: true,
-        skills: true,
+        discoverSkills: true,
+        preloadSkills: [],
         systemPrompt: "Test.",
         promptMode: "replace",
         inheritContext: false,
@@ -374,7 +346,8 @@ describe("buildAgentPrompt", () => {
           description: "Test",
           builtinToolNames: [],
           extensions: true,
-          skills: true,
+          discoverSkills: true,
+          preloadSkills: [],
           systemPrompt: "Test.",
           promptMode,
           inheritContext: false,

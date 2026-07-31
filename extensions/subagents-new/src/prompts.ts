@@ -4,12 +4,10 @@
 
 import type { AgentConfig, EnvInfo } from "./types.js";
 
-/** Extra sections to inject into the system prompt (memory, skills, etc.). */
+/** Extra sections to inject into the system prompt (skills, etc.). */
 export interface PromptExtras {
-  /** Persistent memory content to inject (first 200 lines of MEMORY.md + instructions). */
-  memoryBlock?: string;
   /** Preloaded skill contents to inject. */
-  skillBlocks?: { name: string; content: string }[];
+  skillBlocks?: { name: string; content: string; sourcePath?: string; baseDir?: string }[];
 }
 
 /**
@@ -18,6 +16,9 @@ export interface PromptExtras {
  * - "replace" mode: env header + config.systemPrompt (full control, no parent identity)
  * - "append" mode: parent system prompt + sub-agent context + env header + config.systemPrompt
  * - "append" with empty systemPrompt: pure parent clone
+ * - "system_instructions" mode: same output as "replace" (env header + config.systemPrompt,
+ *   no parent identity); agent-runner lets pi auto-inject AGENTS.md as `# Project Context`
+ *   AFTER this prompt via noContextFiles: false (single source of truth, no parent-role bleed)
  *
  * Both modes include an `<active_agent name="${config.name}"/>` tag so downstream
  * extensions (e.g. permission/policy systems) can resolve per-agent policy
@@ -27,7 +28,7 @@ export interface PromptExtras {
  * session (the LLM's KV cache can then reuse those tokens across every spawn).
  *
  * @param parentSystemPrompt  The parent agent's effective system prompt (for append mode).
- * @param extras  Optional extra sections to inject (memory, preloaded skills).
+ * @param extras  Optional extra sections to inject (preloaded skills).
  */
 export function buildAgentPrompt(
   config: AgentConfig,
@@ -45,12 +46,11 @@ Platform: ${env.platform}`;
 
   // Build optional extras suffix
   const extraSections: string[] = [];
-  if (extras?.memoryBlock) {
-    extraSections.push(extras.memoryBlock);
-  }
   if (extras?.skillBlocks?.length) {
     for (const skill of extras.skillBlocks) {
-      extraSections.push(`\n# Preloaded Skill: ${skill.name}\n${skill.content}`);
+      const sourceLine = skill.sourcePath ? `Source: ${skill.sourcePath}\n` : "";
+      const baseDirLine = skill.baseDir ? `Skill directory: ${skill.baseDir}\nRelative references resolve from this skill directory.\n` : "";
+      extraSections.push(`\n# Preloaded Skill: ${skill.name}\n${sourceLine}${baseDirLine}${skill.content}`);
     }
   }
   const extrasSuffix = extraSections.length > 0 ? "\n\n" + extraSections.join("\n") : "";
@@ -83,7 +83,7 @@ You are operating as a sub-agent invoked to handle a specific task.
     return identity + "\n\n" + bridge + "\n\n" + activeAgentTag + envBlock + customSection + extrasSuffix;
   }
 
-  // "replace" mode — env header + the config's full system prompt
+  // "replace" / "system_instructions" mode — env header + the config's full system prompt.
   const replaceHeader = `You are a pi coding agent sub-agent.
 You have been invoked to handle a specific task autonomously.
 
