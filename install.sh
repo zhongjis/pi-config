@@ -26,7 +26,8 @@ EXCLUDED_EXTENSION_ITEMS=(
   "AGENTS.md"
   "CONVENTIONS.md"
   "clauderock"
-  "subagents-new"
+  # "subagents-new"
+  "subagents"
 )
 
 # Top-level items to symlink into ~/.pi/agent (allowlist).
@@ -262,8 +263,6 @@ remove_legacy_git_symlink() {
     echo "Removed empty legacy scope directory: $legacy_scope"
   fi
 }
-remove_legacy_git_symlink "@tintinweb" "pi-subagents"
-remove_legacy_git_symlink "@tintinweb" "pi-tasks"
 
 # Symlink only allowlisted items from repo into ~/.pi/agent/
 for name in "${ALLOWED_ITEMS[@]}"; do
