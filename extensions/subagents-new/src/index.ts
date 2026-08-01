@@ -784,7 +784,8 @@ Custom agents: .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.
 
 Notes:
 - description: 3-5 words (shown in UI). Prompts must be self-contained — the agent has not seen this conversation.
-- Parallel work: one message, multiple Agent calls, run_in_background: true on each. You are notified when background agents finish — never poll or sleep.
+- Foreground: multiple Agent calls in one assistant response run concurrently. Parent blocks until all foreground calls return and receives results inline.
+- Background: run_in_background returns an agent ID immediately. Continue only non-overlapping work, supervise each agent, then collect via get_subagent_result; never poll or sleep.
 - The result is not shown to the user — summarize it for them. Verify an agent's claimed code changes before reporting work done.
 - resume continues a previous agent by ID; steer_subagent messages a running one.`;
 
@@ -804,11 +805,11 @@ If the target is already known, use a direct tool — \`read\` for a known path,
 ## Usage notes
 
 - Always include a short (3-5 word) description summarizing what the agent will do (shown in UI).
-- When you launch multiple agents for independent work, send them in a single message with multiple tool uses, with run_in_background: true on each, so they run concurrently. If the user specifies that they want agents run "in parallel", you MUST send a single message with multiple tool calls. Foreground calls run sequentially — only one executes at a time.
+- Multiple Agent calls in one assistant response run concurrently. For foreground calls, the parent blocks until all return and receives results inline. If the user asks to run agents "in parallel", send one message with multiple tool calls.
 - When the agent is done, it returns a single message back to you. The result is not visible to the user — to show the user, send a text message with a concise summary.
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting work as done.
-- Use run_in_background for work you don't need immediately. You will be notified when it completes — do NOT poll or sleep waiting for it. Continue with other work or respond to the user instead.
-- Foreground vs background: use foreground (default) when you need the agent's results before you can proceed. Use background when you have genuinely independent work to do in parallel.
+- Use run_in_background only for work you don't need immediately. Each call returns an agent ID immediately. Continue only non-overlapping work, supervise each agent, then collect via get_subagent_result. You will be notified when it completes — do NOT poll or sleep.
+- Foreground vs background: use foreground (default) when you need results before proceeding. Use background only when you can continue non-overlapping work while supervising.
 - Use resume with an agent ID to continue a previous agent's work. A new (non-resume) Agent call starts a fresh agent with no memory of prior runs, so the prompt must be self-contained.
 - Use steer_subagent to send mid-run messages to a running background agent.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, etc.), since it is not aware of the user's intent.

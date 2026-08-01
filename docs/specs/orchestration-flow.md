@@ -86,8 +86,15 @@ sequenceDiagram
    - The runtime opens a child session, seeds `agent-mode: houtu`, preloads a deterministic execution prompt, and waits for the user to press Enter.
 
 7. **Hou Tu execution**
-   - Hou Tu reads `PLAN.md` at the approved plan path supplied by `/handoff:start-work`, creates one pi-task per top-level plan task, wires the dependency DAG, initializes split notepads, and analyzes runnable tasks.
-   - Each task ID identifies one bounded plan task. Hou Tu delegates execution through `Agent`; independent tasks may run as separate background agents.
+   - Hou Tu reads `PLAN.md` at the approved path, creates one pi-task per top-level plan task, wires the dependency DAG, then analyzes runnable tasks.
+   - Parent initializes and curates `local://{plan-name}/notepads/` with `learnings.md`, `decisions.md`, `issues.md`, and `blockers.md`.
+   - PLAN is the durable source of truth; Task is its synchronized runtime mirror. Hou Tu updates both only after parent verification.
+   - Each task ID identifies one bounded plan task. Independent implementation launches as multiple foreground `Agent` calls in one assistant response; they execute concurrently while Hou Tu blocks until all return. Background runs are only for non-blocking exploration/research.
+   - Worker prompts retain exactly six top-level sections. Capability-aware shared-note instructions live under CONTEXT.
+   - All workers read only relevant shared notes. Mutation-capable workers append only relevant findings and preserve unrelated entries; read-only researchers return findings to parent for curation.
+   - Hou Tu rereads relevant notes and independently verifies them; notes remain worker claims until verification.
+   - Shared Agent-tree storage is same-user collaboration, not sandbox or security isolation.
+   - Hou Tu delegates product-code, test-file, documentation, and git mutations. Parent work is verification plus PLAN, Task, and notepad orchestration-state mutation.
    - Hou Tu verifies every delegation with diagnostics, builds/tests where applicable, manual readback, plan-state checks, and hands-on QA when needed.
    - After verification, Hou Tu updates plan checkboxes and continues through final verification gates.
 
@@ -146,7 +153,7 @@ flowchart TD
    - Kua Fu may consult `xuannv` for tactical planning. `fuxi` and `houtu` are modes, not subagent types, so Kua Fu does not delegate to them (its frontmatter omits `fuxi` and explicitly disallows `houtu`).
 
 4. **Supervision**
-   - Background agents must be polled with `get_subagent_result` and steered with `steer_subagent` if they drift or stall.
+   - Background-agent completion notifications trigger collection with `get_subagent_result`; Kua Fu does not poll. It uses `steer_subagent` only when live work drifts or stalls.
    - Failed delegated work should resume the same agent when useful, instead of spawning duplicate context.
 
 5. **Verification**

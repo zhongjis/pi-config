@@ -1,23 +1,22 @@
-declare function require(id: string): any;
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
-const { getAgentDir } = require("@earendil-works/pi-coding-agent") as { getAgentDir: () => string };
-const { mkdir, readFile, realpath, writeFile } = require("fs/promises") as {
-  mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
-  readFile: (path: string, encoding: string) => Promise<string>;
-  realpath: (path: string) => Promise<string>;
-  writeFile: (path: string, data: string, encoding: string) => Promise<void>;
-};
-const { dirname, isAbsolute, relative, resolve } = require("path") as {
-  dirname: (path: string) => string;
-  isAbsolute: (path: string) => boolean;
-  relative: (from: string, to: string) => string;
-  resolve: (...parts: string[]) => string;
-};
+interface SessionLocalEntry {
+  type: string;
+  customType?: string;
+  data?: unknown;
+}
 
 export interface SessionLocalContext {
   sessionManager: {
     getSessionId(): string;
+    getBranch?(): SessionLocalEntry[];
   };
+}
+
+export interface SessionLocalScopeWriter {
+  appendCustomEntry(customType: string, data?: unknown): string;
 }
 
 export interface LocalRootTarget {
@@ -37,6 +36,8 @@ export type SessionLocalTarget = LocalRootTarget | LocalPathTarget;
 const LOCAL_ROOT_SEGMENT = "local";
 export const LOCAL_URI_PREFIX = "local://";
 const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+const SESSION_LOCAL_SCOPE_VERSION = 1;
+export const SESSION_LOCAL_SCOPE_CUSTOM_TYPE = "session-local:scope";
 
 function getErrorCode(error: unknown): string | undefined {
   if (!error || typeof error !== "object") {
@@ -64,8 +65,8 @@ function getLocalRoot(): string {
   return resolve(getAgentDir(), LOCAL_ROOT_SEGMENT);
 }
 
-function getSafeSessionId(ctx: SessionLocalContext): string {
-  const rawSessionId = ctx.sessionManager.getSessionId().trim();
+function getSafeSessionId(rawValue: string): string {
+  const rawSessionId = rawValue.trim();
   if (!rawSessionId) {
     throw new Error("Rejected session local path: session ID is empty.");
   }
@@ -75,6 +76,42 @@ function getSafeSessionId(ctx: SessionLocalContext): string {
   }
 
   return rawSessionId;
+}
+
+export function getSessionLocalScopeId(ctx: SessionLocalContext): string {
+  const branch = ctx.sessionManager.getBranch?.() ?? [];
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const entry = branch[index];
+    if (entry.type !== "custom" || entry.customType !== SESSION_LOCAL_SCOPE_CUSTOM_TYPE) {
+      continue;
+    }
+
+    const data = entry.data;
+    if (
+      !data ||
+      typeof data !== "object" ||
+      (data as { version?: unknown }).version !== SESSION_LOCAL_SCOPE_VERSION ||
+      typeof (data as { rootScopeId?: unknown }).rootScopeId !== "string"
+    ) {
+      throw new Error("Rejected session local scope: metadata is invalid.");
+    }
+
+    return getSafeSessionId((data as { rootScopeId: string }).rootScopeId);
+  }
+
+  return getSafeSessionId(ctx.sessionManager.getSessionId());
+}
+
+export function seedSessionLocalScope(
+  parentCtx: SessionLocalContext,
+  childSessionManager: SessionLocalScopeWriter,
+): string {
+  const rootScopeId = getSessionLocalScopeId(parentCtx);
+  childSessionManager.appendCustomEntry(SESSION_LOCAL_SCOPE_CUSTOM_TYPE, {
+    version: SESSION_LOCAL_SCOPE_VERSION,
+    rootScopeId,
+  });
+  return rootScopeId;
 }
 
 function validateRelativeLocalPath(relativePath: string): string {
@@ -189,7 +226,7 @@ export function parseSessionLocalTarget(target: string): SessionLocalTarget {
 
 export function getSessionLocalRoot(ctx: SessionLocalContext): string {
   const localRoot = getLocalRoot();
-  const sessionDirectory = resolve(localRoot, getSafeSessionId(ctx));
+  const sessionDirectory = resolve(localRoot, getSessionLocalScopeId(ctx));
   return assertDescendant(localRoot, sessionDirectory, "session local root");
 }
 

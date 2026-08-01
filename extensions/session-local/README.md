@@ -1,24 +1,30 @@
 # session-local
 
-Session-local file storage via `local://` URI paths.
+Agent-tree-local file storage via `local://` URI paths. A parent session defaults to its own storage root; fresh `Agent` descendants inherit that root automatically.
 
 ## What It Does
 
 - Intercepts `read`, `write`, and `edit` tool calls that target `local://` paths
-- Resolves `local://<path>` to a per-session storage directory under `~/.pi/agent/local/<session-id>/`
-- `read local://` (root) generates a directory listing of the session-local storage
-- Blocks `read` of a missing `local://` file with actionable guidance (storage is session-scoped, so a parent session's files are not visible to a delegated subagent — it must inline the content or use a real filesystem path)
+- Resolves `local://<path>` under `~/.pi/agent/local/<root-session-id>/`
+- Shares that root across a parent session and all fresh `Agent` descendants
+- Keeps unrelated sessions on separate roots
+- `read local://` (root) generates a directory listing of the Agent-tree storage
+- Blocks `read` of a missing `local://` file with Agent-tree scope guidance
 - Rewrites resolved paths back to `local://` in tool results so the LLM sees virtual paths
-- Validates paths to prevent escaping the session storage root (no `..` traversal)
+- Validates scope IDs and paths to prevent root escape (no `..` traversal)
+
+This is same-user convenience scoping, not an OS sandbox. Extensions and processes running as the same user can access backing files directly.
 
 ### Exported API
 
 Other extensions can import storage utilities:
 
-- `getSessionLocalPath(ctx, relativePath)` — Resolve a relative path within session-local storage
-- `ensureSessionLocalRootDirectory(ctx)` — Create the session-local root directory
-- `readSessionLocalFile(ctx, relativePath)` — Read a file from session-local storage
-- `writeSessionLocalFile(ctx, relativePath, content)` — Write a file to session-local storage
+- `getSessionLocalScopeId(ctx)` — Derive the active branch's effective Agent-tree root ID
+- `seedSessionLocalScope(parentCtx, childSessionManager)` — Seed a fresh child with that root ID
+- `getSessionLocalPath(ctx, relativePath)` — Resolve a relative path within Agent-tree-local storage
+- `ensureSessionLocalRootDirectory(ctx)` — Create the Agent-tree-local root directory
+- `readSessionLocalFile(ctx, relativePath)` — Read a file from Agent-tree-local storage
+- `writeSessionLocalFile(ctx, relativePath, content)` — Write a file to Agent-tree-local storage
 
 ## Hooks
 

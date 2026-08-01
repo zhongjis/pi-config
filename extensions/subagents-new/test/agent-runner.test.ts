@@ -8,26 +8,40 @@ const {
   defaultResourceLoaderCtor,
   loaderExtensionsRef,
   getAgentDir,
+  sessionManagerAppendCustomEntry,
   sessionManagerInMemory,
   sessionManagerCreate,
   settingsManagerCreate,
   settingsManagerGetSessionDir,
-} = vi.hoisted(() => ({
-  createAgentSession: vi.fn(),
-  defaultResourceLoaderCtor: vi.fn(),
-  loaderExtensionsRef: {
-    current: { extensions: [], errors: [], runtime: {} } as {
-      extensions: Array<{ path: string; tools: Map<string, unknown> }>;
-      errors: Array<{ path: string; error: string }>;
-      runtime: Record<string, unknown>;
+} = vi.hoisted(() => {
+  const sessionManagerAppendCustomEntry = vi.fn(() => "scope-entry");
+  const createSessionManager = (kind: string) => ({
+    kind,
+    getSessionId: () => "child-session",
+    getBranch: () => [],
+    appendCustomEntry: sessionManagerAppendCustomEntry,
+  });
+
+  return {
+    createAgentSession: vi.fn(),
+    defaultResourceLoaderCtor: vi.fn(),
+    loaderExtensionsRef: {
+      current: { extensions: [], errors: [], runtime: {} } as {
+        extensions: Array<{ path: string; tools: Map<string, unknown>; hidden?: boolean }>;
+        errors: Array<{ path: string; error: string }>;
+        runtime: Record<string, unknown>;
+      },
     },
-  },
-  getAgentDir: vi.fn(() => "/mock/agent-dir"),
-  sessionManagerInMemory: vi.fn(() => ({ kind: "memory-session-manager" })),
-  sessionManagerCreate: vi.fn(() => ({ kind: "persistent-session-manager" })),
-  settingsManagerGetSessionDir: vi.fn(() => undefined as string | undefined),
-  settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager", getSessionDir: settingsManagerGetSessionDir })),
-}));
+    getAgentDir: vi.fn(() => "/mock/agent-dir"),
+    sessionManagerAppendCustomEntry,
+    sessionManagerInMemory: vi.fn((_cwd?: string) => createSessionManager("memory-session-manager")),
+    sessionManagerCreate: vi.fn((_cwd?: string, _sessionDir?: string) =>
+      createSessionManager("persistent-session-manager"),
+    ),
+    settingsManagerGetSessionDir: vi.fn(() => undefined as string | undefined),
+    settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager", getSessionDir: settingsManagerGetSessionDir })),
+  };
+});
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession,
@@ -42,13 +56,22 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     }
 
     async reload() {
-      // Mirror the real loader: `noExtensions: true` zeros out the discovered set
-      // entirely. Otherwise tests pre-register the extensions a path should
-      // resolve to; an unregistered path simply yields no extension (a failed load).
-      if (this.opts.noExtensions) {
-        loaderExtensionsRef.current = { extensions: [], errors: [], runtime: {} };
-        return;
-      }
+      // Mirror the real loader: noExtensions suppresses discovered extensions,
+      // but named inline factories still load and then flow through the override.
+      const discovered = this.opts.noExtensions
+        ? []
+        : loaderExtensionsRef.current.extensions.filter((extension) => !extension.path.startsWith("<inline:"));
+      const inline = (this.opts.extensionFactories ?? []).map(
+        (input: { name: string; hidden?: boolean }, index: number) => ({
+          path: `<inline:${input.name ?? index + 1}>`,
+          tools: new Map<string, unknown>(),
+          hidden: input.hidden,
+        }),
+      );
+      loaderExtensionsRef.current = {
+        ...loaderExtensionsRef.current,
+        extensions: [...discovered, ...inline],
+      };
       if (this.opts.extensionsOverride) {
         loaderExtensionsRef.current = this.opts.extensionsOverride(loaderExtensionsRef.current);
       }
@@ -164,7 +187,10 @@ const ctx = {
   model: undefined,
   modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
   getSystemPrompt: vi.fn(() => "parent prompt"),
-  sessionManager: { getBranch: vi.fn(() => []) },
+  sessionManager: {
+    getSessionId: vi.fn(() => "parent-session"),
+    getBranch: vi.fn(() => []),
+  },
 } as any;
 
 const pi = {} as any;
@@ -175,6 +201,7 @@ beforeEach(() => {
   getAgentDir.mockClear();
   sessionManagerInMemory.mockClear();
   sessionManagerCreate.mockClear();
+  sessionManagerAppendCustomEntry.mockClear();
   settingsManagerGetSessionDir.mockReset();
   settingsManagerGetSessionDir.mockReturnValue(undefined);
   settingsManagerCreate.mockClear();
@@ -802,7 +829,7 @@ describe("agent-runner session persistence", () => {
     expect(sessionManagerInMemory).toHaveBeenCalledWith("/tmp");
     expect(sessionManagerCreate).not.toHaveBeenCalled();
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionManager: { kind: "memory-session-manager" },
+      sessionManager: expect.objectContaining({ kind: "memory-session-manager" }),
     }));
   });
 
@@ -817,7 +844,7 @@ describe("agent-runner session persistence", () => {
     expect(sessionManagerInMemory).not.toHaveBeenCalled();
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions");
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionManager: { kind: "persistent-session-manager" },
+      sessionManager: expect.objectContaining({ kind: "persistent-session-manager" }),
     }));
   });
 
@@ -874,6 +901,144 @@ describe("agent-runner session persistence", () => {
 
     expect(sessionManagerInMemory).toHaveBeenCalledWith("/tmp");
     expect(sessionManagerCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe("agent-runner session-local Agent-tree scope", () => {
+  it("seeds inherited scope metadata before createAgentSession", async () => {
+    const context = {
+      ...ctx,
+      sessionManager: {
+        getSessionId: () => "child-parent-session",
+        getBranch: () => [{
+          type: "custom",
+          customType: "session-local:scope",
+          data: { version: 1, rootScopeId: "root-session" },
+        }],
+      },
+    };
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(context, "Explore", "go", { pi });
+
+    expect(sessionManagerAppendCustomEntry).toHaveBeenCalledTimes(1);
+    expect(sessionManagerAppendCustomEntry).toHaveBeenCalledWith(
+      "session-local:scope",
+      { version: 1, rootScopeId: "root-session" },
+    );
+    expect(sessionManagerAppendCustomEntry.mock.invocationCallOrder[0]).toBeLessThan(
+      createAgentSession.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("resume reuses the existing session without reseeding scope metadata", async () => {
+    const { session } = createSession("RESUMED");
+
+    await resumeAgent(session as any, "continue");
+
+    expect(sessionManagerAppendCustomEntry).not.toHaveBeenCalled();
+  });
+});
+
+describe("agent-runner trusted session-local binding", () => {
+  function trustedFactory() {
+    const factories = lastLoaderOpts().extensionFactories as Array<{
+      name: string;
+      hidden?: boolean;
+      factory(pi: unknown): void | Promise<void>;
+    }> | undefined;
+    expect(factories).toHaveLength(1);
+    expect(factories?.[0]).toMatchObject({ name: "session-local", hidden: true });
+    return factories?.[0];
+  }
+
+  it("loads one hidden hook-only factory with extensions:false without widening tools", async () => {
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi });
+
+    const inline = trustedFactory();
+    expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "<inline:session-local>",
+    ]);
+    expect(lastToolsPassed()).toEqual(["read"]);
+
+    const hookPi = { on: vi.fn(), registerTool: vi.fn() };
+    await inline?.factory(hookPi);
+    expect(hookPi.on).toHaveBeenCalledTimes(3);
+    expect(hookPi.registerTool).not.toHaveBeenCalled();
+  });
+
+  it("keeps only the hidden factory under isolated mode", async () => {
+    vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ extensions: true }));
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ extensions: true }));
+    vi.mocked(getToolNamesForType).mockReturnValueOnce(["read"]);
+    withExtensions({ "/ext/unrelated.ts": ["unrelated_tool"] });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, isolated: true });
+
+    trustedFactory();
+    expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "<inline:session-local>",
+    ]);
+    expect(lastToolsPassed()).toEqual(["read"]);
+  });
+
+  it("retains the hidden factory once and filters a discovered duplicate under an allowlist", async () => {
+    vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ extensions: ["session-local", "mcp"] }));
+    vi.mocked(getAgentConfig).mockReturnValueOnce(
+      makeAgentConfig({ extensions: ["session-local", "mcp"] }),
+    );
+    vi.mocked(getToolNamesForType).mockReturnValueOnce(["read"]);
+    withExtensions({
+      "/ext/session-local/index.ts": [],
+      "/ext/mcp.ts": ["mcp_tool"],
+      "/ext/unrelated.ts": ["unrelated_tool"],
+    });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+    const onToolActivity = vi.fn();
+
+    await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
+
+    trustedFactory();
+    expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "/ext/mcp.ts",
+      "<inline:session-local>",
+    ]);
+    expect(lastToolsPassed()).toContain("mcp_tool");
+    expect(lastToolsPassed()).not.toContain("unrelated_tool");
+    expect(onToolActivity).not.toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: expect.stringContaining("extension-error:") }),
+    );
+  });
+
+  it("retains the hidden factory when session-local is excluded without loading unrelated extensions", async () => {
+    vi.mocked(getConfig).mockReturnValueOnce(
+      makeConfig({ extensions: true, excludeExtensions: ["session-local"] }),
+    );
+    vi.mocked(getAgentConfig).mockReturnValueOnce(
+      makeAgentConfig({ extensions: true, excludeExtensions: ["session-local"] }),
+    );
+    vi.mocked(getToolNamesForType).mockReturnValueOnce(["read"]);
+    withExtensions({
+      "/ext/session-local/index.ts": [],
+      "/ext/mcp.ts": ["mcp_tool"],
+    });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi });
+
+    trustedFactory();
+    expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "/ext/mcp.ts",
+      "<inline:session-local>",
+    ]);
   });
 });
 
@@ -1286,7 +1451,7 @@ describe("agent-runner extension allowlist", () => {
     vi.mocked(getToolNamesForType).mockReturnValueOnce(BUILTINS_7);
   }
 
-  it("['*'] short-circuits — no extensionsOverride, behaves like extensions: true", async () => {
+  it("['*'] keeps all discovered extensions while composing the trusted override", async () => {
     setupArrayAgent(["*"]);
     withExtensions({ "/ext/a.ts": ["tool_a"] });
     const { session } = createSession("OK");
@@ -1295,7 +1460,7 @@ describe("agent-runner extension allowlist", () => {
     await runAgent(ctx, "Explore", "go", { pi });
 
     const opts = lastLoaderOpts();
-    expect(opts.extensionsOverride).toBeUndefined();
+    expect(opts.extensionsOverride).toBeTypeOf("function");
     expect(opts.additionalExtensionPaths).toBeUndefined();
     expect(lastToolsPassed()).toContain("tool_a");
   });
@@ -1552,7 +1717,7 @@ describe("agent-runner exclude_extensions", () => {
     ]);
   });
 
-  it("extensions: false + exclude — orphan warning, no override", async () => {
+  it("extensions: false + exclude — orphan warning, trusted override only", async () => {
     setupAgent({ extensions: false, excludeExtensions: ["notify"] });
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
@@ -1560,7 +1725,7 @@ describe("agent-runner exclude_extensions", () => {
 
     await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
 
-    expect(lastLoaderOpts().extensionsOverride).toBeUndefined();
+    expect(lastLoaderOpts().extensionsOverride).toBeTypeOf("function");
     expect(extensionErrors(onToolActivity)).toEqual([
       expect.stringContaining("exclude_extensions has no effect"),
     ]);
@@ -1669,8 +1834,9 @@ describe("agent-runner extension_tools tool filter", () => {
     expect(tools).not.toContain("foo_other");  // sibling not named
     expect(tools).not.toContain("other_tool"); // other extension not named
     expect(tools).not.toContain("read");       // no built-ins requested
-    // both extensions still load — no loader override needed under extensions: true
-    expect(lastLoaderOpts().extensionsOverride).toBeUndefined();
+    // Both ordinary extensions still load; the override only reserves the trusted
+    // inline session-local hook and removes discovered duplicates of that hook.
+    expect(lastLoaderOpts().extensionsOverride).toBeTypeOf("function");
   });
 
   it("undefined extension_tools surfaces all loaded extension tools", async () => {

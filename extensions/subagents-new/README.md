@@ -2,6 +2,8 @@
 
 A [pi](https://pi.dev) extension that brings **Claude Code-style autonomous sub-agents** to pi. Spawn specialized agents that run in isolated sessions — each with its own tools, system prompt, model, and thinking level. Run them in foreground or background, steer them mid-run, resume completed sessions, and define your own custom agent types.
 
+Agent descendants automatically share the parent Agent tree's `local://` storage root while retaining separate conversations, tools, and models.
+
 ## Upstream
 
 - **Source:** https://github.com/tintinweb/pi-subagents
@@ -9,7 +11,7 @@ A [pi](https://pi.dev) extension that brings **Claude Code-style autonomous sub-
 - **Immutable ref:** `c10b1836256e760da75296ccd4e57a77ada1325e`
 - **License:** MIT
 - **Local import commit:** `5bec4ea2378fd39241ab6088144e372314f1b464`
-- **Adapted:** Panda Harness presentation renderers and root test/discovery wiring only.
+- **Adapted:** Panda Harness presentation, root test/discovery wiring, orchestration guidance, and Agent-tree `local://` inheritance.
 
 ## Local Tweaks
 
@@ -230,8 +232,8 @@ All fields are optional — sensible defaults for everything.
 | `description` | filename | Agent description shown in tool listings |
 | `display_name` | — | Display name for UI (e.g. widget, agent list) |
 | `tools` | all 7 | Which tools the agent can call. Built-in names (`read, grep, …`), `*` / `all` (all built-ins), `none`, and `ext:<extension>` / `ext:<extension>/<tool>` selectors for extension tools. See [Tool & extension scoping](#tool--extension-scoping) below |
-| `extensions` | `true` | Which extensions to load for the agent. `true` (all defaults), `false` (none), or an explicit list: `[mcp, "/abs/path.ts", "*"]`. See [Tool & extension scoping](#tool--extension-scoping) below |
-| `exclude_extensions` | — | Extension denylist applied after `extensions:` — exclude wins. Plain names only (case-insensitive), no paths or `*`. Useful with `extensions: true` to drop one extension (e.g. `pi-notify`) |
+| `extensions` | `true` | Which user-configured extensions to load for the agent. `true` (all defaults), `false` (none), or an explicit list: `[mcp, "/abs/path.ts", "*"]`. The hidden hook-only `session-local` runtime remains bound so Agent-tree `local://` paths work. See [Tool & extension scoping](#tool--extension-scoping) below |
+| `exclude_extensions` | — | User-extension denylist applied after `extensions:` — exclude wins except for trusted hook-only `session-local` plumbing. Plain names only (case-insensitive), no paths or `*`. Useful with `extensions: true` to drop one extension (e.g. `pi-notify`) |
 | `skills` | `true` | Inherit skills from parent. Can be a comma-separated list of skill names to preload (see [Skill Preloading](#skill-preloading) for discovery locations) |
 | `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |
 | `disallowed_tools` | — | Comma-separated tools to deny even if extensions provide them |
@@ -245,7 +247,7 @@ All fields are optional — sensible defaults for everything.
 | `prompt_mode` | `replace` | `replace`: body is the full system prompt (no AGENTS.md / CLAUDE.md inheritance). `append`: body appended to parent's prompt (agent acts as a "parent twin" — inherits parent's AGENTS.md / CLAUDE.md) |
 | `inherit_context` | `false` | Fork parent conversation into agent |
 | `run_in_background` | `false` | Run in background by default |
-| `isolated` | `false` | Hermetic specialist mode: forces `extensions: false` + `skills: false` + drops `ext:` selectors. Only built-in tools. Distinct from `isolation: worktree` (filesystem) |
+| `isolated` | `false` | Hermetic specialist mode: forces user extensions off, disables skills/context, and drops `ext:` selectors. Only built-in tools surface; the hidden hook-only `session-local` runtime remains bound. Distinct from `isolation: worktree` (filesystem) |
 | `enabled` | `true` | Set to `false` to disable an agent (useful for hiding a default agent per-project) |
 
 Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
@@ -264,7 +266,7 @@ tools: "*"                        # all 7 built-ins (alias: `all`)
 tools: none                       # zero built-ins (alias: `""`)
 tools: "*, ext:mcp/search"        # built-ins plus one extension tool
 
-extensions: false                 # no extensions load
+extensions: false                 # no user extensions; hidden session-local plumbing remains
 extensions: [mcp]                 # only mcp loads
 extensions: ["*", "/abs/foo.ts"]  # all defaults plus one path-loaded extension
 
@@ -274,18 +276,18 @@ exclude_extensions: pi-notify     # everything except pi-notify (with extensions
 extensions: [mcp]
 tools: "*, ext:mcp/search"
 
-isolated: true                    # hermetic: built-ins only, no extensions/skills/context
+isolated: true                    # built-ins only; no user extensions/skills/context
 ```
 
 A few rules the examples don't make obvious:
 
-- `extensions:` is the sole loading authority. `ext:foo` in `tools:` narrows what surfaces; it can't load `foo` on its own. Mismatches fire `extension-error:…` warnings.
+- `extensions:` is the loading authority for user-configured extensions. `ext:foo` in `tools:` narrows what surfaces; it can't load `foo` on its own. The trusted hook-only `session-local` runtime is internal plumbing and always remains bound. Mismatches fire `extension-error:…` warnings.
 - Any `ext:` entry flips extension tools to an explicit allowlist — unnamed extensions still load (handlers fire) but expose no tools. So `tools: "*, ext:mcp/search"` exposes only `search` from `mcp`, nothing from any other extension.
 - Extension names match case-insensitively (`[Mcp]` = `[mcp]`); tool names in `ext:foo/bar` stay case-sensitive.
 - Extensions that register tools **lazily** work too. MCP-backed extensions typically can't enumerate their tools until their servers connect, so they register from `session_start` or `before_agent_start` rather than at load. Subagent scoping is re-derived as tools appear, so these surface normally — including under `ext:` selectors, which keep narrowing correctly no matter when a tool shows up.
 - An installed **package** extension matches by its package short name (`@scope/pi-subagents` → `[pi-subagents]`), in addition to its path-derived name (a package whose entry is `src/index.ts` also answers to `[src]`). Prefer the package name — the path-derived one is incidental.
 - Plain `tools:` typos fail loudly: `tools: reed, grep` fires `tools-error:…` instead of silently producing an under-tooled agent.
-- `exclude_extensions:` wins over `extensions:` and over `ext:` selectors — an excluded extension never loads and a `tools: ext:` entry can't pull it back. Plain names only (no paths, no `*`); a name matching nothing fires an `extension-error:…` warning.
+- `exclude_extensions:` wins over `extensions:` and `ext:` selectors for user-configured extensions. It cannot remove the trusted hook-only `session-local` runtime. Plain names only (no paths, no `*`); a name matching nothing fires an `extension-error:…` warning.
 - `exclude_extensions:` is **not a sandbox**: excluded extensions' factory code still executes once during loading. Exclusion suppresses their tools and their bound lifecycle hooks (`pi.on` handlers like `session_start` only fire for extensions bound to the session), but not other load-time side effects — a factory that subscribes directly to the shared `pi.events` bus stays live. Don't rely on it to contain an untrusted extension.
 - Array and string forms are equivalent: `[a, b]` == `"a, b"`.
 

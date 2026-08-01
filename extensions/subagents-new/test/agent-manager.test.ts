@@ -107,6 +107,56 @@ describe("AgentManager — Bug 1 race condition (resultConsumed vs onComplete)",
   });
 });
 
+describe("AgentManager — concurrent foreground calls", () => {
+  let manager: AgentManager;
+
+  afterEach(() => manager?.dispose());
+
+  it("starts two spawnAndWait calls before either foreground run resolves", async () => {
+    manager = new AgentManager();
+    type MockRunResult = {
+      responseText: string;
+      session: ReturnType<typeof mockSession>;
+      aborted: boolean;
+      steered: boolean;
+    };
+    let resolveFirst: ((result: MockRunResult) => void) | undefined;
+    let resolveSecond: ((result: MockRunResult) => void) | undefined;
+    const started: string[] = [];
+
+    vi.mocked(runAgent).mockImplementation((_ctx, _type, prompt) =>
+      new Promise((resolve) => {
+        started.push(prompt);
+        if (prompt === "first") resolveFirst = resolve;
+        else resolveSecond = resolve;
+      }),
+    );
+
+    // Manager-level proof only: same-assistant-message host dispatch belongs to pi.
+    const first = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" });
+    const second = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "second", { description: "second" });
+    let firstSettled = false;
+    let secondSettled = false;
+    void first.then(() => { firstSettled = true; });
+    void second.then(() => { secondSettled = true; });
+
+    await Promise.resolve();
+    expect(started).toEqual(["first", "second"]);
+    expect(firstSettled).toBe(false);
+    expect(secondSettled).toBe(false);
+
+    if (!resolveFirst || !resolveSecond) throw new Error("Both foreground runs must start");
+    resolveFirst({ responseText: "first done", session: mockSession(), aborted: false, steered: false });
+    await first;
+    expect(firstSettled).toBe(true);
+    expect(secondSettled).toBe(false);
+
+    resolveSecond({ responseText: "second done", session: mockSession(), aborted: false, steered: false });
+    await second;
+    expect(secondSettled).toBe(true);
+  });
+});
+
 describe("AgentManager — spawnAndWait onSpawned + foreground output file wiring (#105)", () => {
   let manager: AgentManager;
   afterEach(() => manager?.dispose());

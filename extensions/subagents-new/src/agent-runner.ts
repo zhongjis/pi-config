@@ -22,6 +22,8 @@ import {
   computeActiveToolNames,
   DEFAULT_BUILTIN_TOOL_NAMES,
 } from "../../lib/active-tools.js";
+import sessionLocalTools from "../../session-local/index.js";
+import { seedSessionLocalScope } from "../../session-local/storage.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
@@ -29,6 +31,9 @@ import { detectEnv } from "./env.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
+
+const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
+const TRUSTED_SESSION_LOCAL_EXTENSION_PATH = `<inline:${TRUSTED_SESSION_LOCAL_EXTENSION_NAME}>`;
 
 /**
  * Tool names registered by THIS extension. Single source of truth so the
@@ -563,29 +568,35 @@ export async function runAgent(
   // suppresses handler binding and tool registration; it is not a sandbox.
   const excludeNames = new Set((excludeExtensions ?? []).map((n) => n.toLowerCase()));
   const hasExcludes = excludeNames.size > 0;
-  // The override filters loaded extensions down to `keepNames` minus `excludeNames`.
-  // It's only needed when we're neither loading everything without excludes
-  // (`extensions: true` or a `"*"` wildcard) nor nothing (`noExtensions`).
+  // Always compose an override so the trusted inline session-local hook survives
+  // every loading mode while any discovered copy is removed. Other extensions
+  // retain the existing include/exclude behavior and warning inputs.
   const loadAll = extensions === true || extensionsSpec?.wildcard === true;
   const additionalExtensionPaths = extensionsSpec?.paths.length ? extensionsSpec.paths : undefined;
-  // Pre-filter discovered set, captured by the override — the exclude-typo warning
-  // must compare against this, not the surviving set (absence from survivors is
-  // an exclude *succeeding*).
+  const shouldFilterDiscovered = !noExtensions && (!loadAll || hasExcludes);
   let discoveredNames: Set<string> | undefined;
-  const extensionsOverride: ((base: LoadExtensionsResult) => LoadExtensionsResult) | undefined =
-    noExtensions || (loadAll && !hasExcludes)
-      ? undefined
-      : (base) => {
-          discoveredNames = new Set(base.extensions.flatMap((e) => extensionCanonicalNames(e.path)));
-          return {
-            ...base,
-            extensions: base.extensions.filter((e) => {
-              const canons = extensionCanonicalNames(e.path);
-              if (canons.some((n) => excludeNames.has(n))) return false; // exclude wins
-              return loadAll || canons.some((n) => keepNames.has(n));
-            }),
-          };
-        };
+  const extensionsOverride = (base: LoadExtensionsResult): LoadExtensionsResult => {
+    const discoveredExtensions = base.extensions.filter(
+      (extension) => extension.path !== TRUSTED_SESSION_LOCAL_EXTENSION_PATH,
+    );
+    if (shouldFilterDiscovered) {
+      discoveredNames = new Set(discoveredExtensions.flatMap((e) => extensionCanonicalNames(e.path)));
+    }
+
+    return {
+      ...base,
+      extensions: base.extensions.filter((extension) => {
+        if (extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH) return true;
+
+        const canons = extensionCanonicalNames(extension.path);
+        if (canons.includes(TRUSTED_SESSION_LOCAL_EXTENSION_NAME)) return false;
+        if (noExtensions) return false;
+        if (!shouldFilterDiscovered) return true;
+        if (canons.some((name) => excludeNames.has(name))) return false;
+        return loadAll || canons.some((name) => keepNames.has(name));
+      }),
+    };
+  };
 
   const loader = new DefaultResourceLoader({
     cwd: configCwd,
@@ -593,6 +604,11 @@ export async function runAgent(
     noExtensions,
     additionalExtensionPaths,
     extensionsOverride,
+    extensionFactories: [{
+      name: TRUSTED_SESSION_LOCAL_EXTENSION_NAME,
+      factory: sessionLocalTools,
+      hidden: true,
+    }],
     noSkills,
     noPromptTemplates: true,
     noThemes: true,
@@ -646,7 +662,11 @@ export async function runAgent(
   }
   if (keepNames.size > 0) {
     const survivingNames = new Set(
-      loader.getExtensions().extensions.flatMap((e) => extensionCanonicalNames(e.path)),
+      loader.getExtensions().extensions.flatMap((extension) =>
+        extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH
+          ? [TRUSTED_SESSION_LOCAL_EXTENSION_NAME]
+          : extensionCanonicalNames(extension.path),
+      ),
     );
     for (const name of keepNames) {
       if (!survivingNames.has(name)) {
@@ -719,6 +739,14 @@ export async function runAgent(
   const sessionManager = agentConfig?.persistSession
     ? SessionManager.create(effectiveCwd, configuredSessionDir ?? subagentSessionsDir ?? defaultSessionDir)
     : SessionManager.inMemory(effectiveCwd);
+
+  // Persist the parent branch's effective Agent-tree scope before the session
+  // runtime exists, so session-local hooks observe it from their first bind.
+  // Direct SDK/test callers may provide a partial context; they retain the
+  // historical child-local fallback instead of failing before session creation.
+  if (ctx.sessionManager) {
+    seedSessionLocalScope(ctx, sessionManager);
+  }
 
   // Pi 0.80.8 replaced createAgentSession's modelRegistry option with
   // modelRuntime, but ExtensionContext still exposes only the registry facade.

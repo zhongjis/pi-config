@@ -78,7 +78,7 @@ Before registering any new tool, extension, or MCP server:
 | Web search, fetch, code search, video | `pi-web-access` git package (`settings.json`) |
 | MCP tools proxy | `pi-mcporter` package → `mcporter` tool |
 | Git diff viewer | `extensions/diff` |
-| Session-local file storage (`local://`) | `extensions/session-local` |
+| Agent-tree-local file storage (`local://`) | `extensions/session-local` |
 | GitHub issues/PRs/diffs and repo files as read paths (`pr://`, `issue://`, `github://`) | `extensions/github-fs` |
 | Secrets redaction from tool outputs | `extensions/filter-outputs` |
 | Code knowledge graph | `extensions/codegraph` |

@@ -38,6 +38,20 @@ function makePi() {
   };
 }
 
+function expectForegroundBackgroundContract(desc: string) {
+  expect(desc).toMatch(/multiple Agent calls in one assistant response/i);
+  expect(desc).toContain("run concurrently");
+  expect(desc).toContain("blocks until all");
+  expect(desc).toContain("results inline");
+  expect(desc).toContain("returns an agent ID immediately");
+  expect(desc).toContain("non-overlapping work");
+  expect(desc).toContain("supervise");
+  expect(desc).toContain("get_subagent_result");
+  expect(desc).not.toContain("Foreground calls run sequentially");
+  expect(desc).not.toContain("run_in_background: true on each");
+  expect(desc).not.toContain("only one executes at a time");
+}
+
 describe("toolDescriptionMode", () => {
   let tmpDir: string;
   let hermeticAgentDir: string;
@@ -92,6 +106,13 @@ describe("toolDescriptionMode", () => {
     expect(desc).toContain("very thorough");
   });
 
+  it("full describes concurrent foreground calls and supervised background work", () => {
+    const tools = setup();
+    const desc: string = tools.get("Agent").description;
+
+    expectForegroundBackgroundContract(desc);
+  });
+
   it("compact mode swaps in the short description with one-line type list", () => {
     const tools = setup({ toolDescriptionMode: "compact" });
     const desc: string = tools.get("Agent").description;
@@ -104,6 +125,13 @@ describe("toolDescriptionMode", () => {
     expect(desc).not.toContain("very thorough");
     // The point of the feature: materially smaller than the full version.
     expect(desc.length).toBeLessThan(1600);
+  });
+
+  it("compact describes concurrent foreground calls and supervised background work", () => {
+    const tools = setup({ toolDescriptionMode: "compact" });
+    const desc: string = tools.get("Agent").description;
+
+    expectForegroundBackgroundContract(desc);
   });
 
   it("invalid mode in the settings file is dropped — full description", () => {

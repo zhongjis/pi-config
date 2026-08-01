@@ -266,7 +266,7 @@ export default function sessionLocalTools(pi: ExtensionAPI): void {
       if (!exists) {
         return {
           block: true,
-          reason: `${requestedPath} was not found in this session's local storage. local:// files are scoped to the current session, so a file written in another session (for example a parent agent that delegated this task to you) is not visible here. Fix: have the caller paste the content into your prompt, or write it to a real filesystem path the subagent can read. Run read path="local://" to see this session's local root and its backing path.`,
+          reason: `${requestedPath} was not found in this Agent tree's local storage. local:// files are shared by parent and descendant Agents in this tree; unrelated sessions use separate roots. Run read path="local://" to inspect this tree's local root and backing path.`,
         };
       }
     }

@@ -9,14 +9,14 @@ vi.mock("../storage.js", () => ({
   LOCAL_URI_PREFIX: "local://",
   isLocalPathTarget: (target: string) => target.startsWith("local://"),
   isLocalListingTarget: (target: string) => target === "local://" || /^local:\/\/+$/u.test(target),
-  ensureSessionLocalRootDirectory: async (ctx: { sessionManager: { getSessionId(): string } }) => {
+  ensureSessionLocalRootDirectory: async (ctx: { sessionManager: { getSessionId(): string; getBranch(): unknown[] } }) => {
     const sessionRoot = join(mockSessionLocalRoot, ctx.sessionManager.getSessionId());
     await mkdir(sessionRoot, { recursive: true });
     return sessionRoot;
   },
-  getSessionLocalPath: (ctx: { sessionManager: { getSessionId(): string } }, relativePath: string) =>
+  getSessionLocalPath: (ctx: { sessionManager: { getSessionId(): string; getBranch(): unknown[] } }, relativePath: string) =>
     join(mockSessionLocalRoot, ctx.sessionManager.getSessionId(), relativePath),
-  resolveSessionLocalTarget: async (ctx: { sessionManager: { getSessionId(): string } }, target: string) =>
+  resolveSessionLocalTarget: async (ctx: { sessionManager: { getSessionId(): string; getBranch(): unknown[] } }, target: string) =>
     join(mockSessionLocalRoot, ctx.sessionManager.getSessionId(), target.slice("local://".length)),
 }));
 
@@ -25,6 +25,7 @@ import sessionLocalTools from "../index.js";
 type SessionLocalContext = {
   sessionManager: {
     getSessionId(): string;
+    getBranch(): unknown[];
   };
 };
 
@@ -61,6 +62,7 @@ function createCtx(sessionId = "session-1"): SessionLocalContext {
   return {
     sessionManager: {
       getSessionId: () => sessionId,
+      getBranch: () => [],
     },
   };
 }
@@ -233,7 +235,7 @@ describe("session-local extension composition", () => {
     const [result] = await mock.fire("tool_call", event, ctx);
 
     expect(result).toMatchObject({ block: true });
-    expect((result as { reason: string }).reason).toContain("scoped to the current session");
+    expect((result as { reason: string }).reason).toContain("shared by parent and descendant Agents");
     // input untouched — the read never proceeds
     expect(event.input.path).toBe("local://missing.md");
   });

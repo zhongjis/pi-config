@@ -168,6 +168,40 @@ describe("mode hooks", () => {
 		}
 	});
 
+	it("keeps handoff internals out of Hou Tu prompt sources", () => {
+		const internalNames = /\/handoff:start-work|buildPlanExecutionGoal|handoff-supplied/;
+		for (const family of ["default", "gpt", "gemini"] as const) {
+			const body = readModePromptBody("houtu", family);
+			expect(body).toMatch(/exact approved PLAN path[^\n]*incoming goal/i);
+			expect(body).not.toMatch(internalNames);
+		}
+	});
+
+	it("keeps Hou Tu split notepads shared through ordinary local URIs", () => {
+		for (const family of ["default", "gpt", "gemini"] as const) {
+			const body = readModePromptBody("houtu", family);
+			expect(body).toMatch(/local:\/\/\{plan-name\}\/notepads\//);
+			for (const file of ["learnings.md", "decisions.md", "issues.md", "blockers.md"]) {
+				expect(body).toContain(file);
+			}
+			expect(body).toMatch(/worker[s]?[\s\S]*read[^\n]*task-relevant[^\n]*notepad/i);
+			expect(body).toMatch(/worker[s]?[\s\S]*append[^\n]*task-relevant[^\n]*notepad/i);
+			expect(body).not.toMatch(/local:\/\/houtu\/artifacts\/|exact absolute FILE|nonce|one writer[^\n]*one file|URI\/nonce receipt|capability grant/i);
+		}
+	});
+
+	it("makes Hou Tu shared-notepad instructions capability-aware in every prompt family", () => {
+		for (const family of ["default", "gpt", "gemini"] as const) {
+			const body = readModePromptBody("houtu", family);
+			expect(body).toMatch(/read-only researchers MUST return task-relevant findings to (?:the )?parent[^\n]*curat/i);
+			expect(body).not.toMatch(/notepad[^\n]*`edit`\/`write`|`edit`\/`write`[^\n]*notepad/i);
+			expect(body).toMatch(/(?:every|all) workers MUST READ only task-relevant (?:shared )?(?:notes|notepad entries)/i);
+			expect(body).not.toMatch(/\b(?:all workers|every worker) MUST APPEND\b/i);
+			expect(body).toMatch(/mutation-capable workers MUST APPEND only task-relevant findings[^\n]*preserve unrelated entries/i);
+			expect(body).toMatch(/shared-note READ\/conditional-APPEND instructions MUST (?:appear|remain) only under worker `## 6\. CONTEXT`/i);
+		}
+	});
+
 	it("blocks plan-mode writes outside local://PLAN.md", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);

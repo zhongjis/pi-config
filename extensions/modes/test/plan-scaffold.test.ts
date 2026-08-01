@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 const FINAL_VERIFICATION_ITEMS = [
-	"F1. Plan compliance audit",
-	"F2. Code quality review",
-	"F3. Real manual QA",
-	"F4. Scope fidelity",
+	"F1. Plan compliance audit — owned by `taishang`",
+	"F2. Code quality review — orchestrator-owned code-quality gate",
+	"F3. Real manual QA — orchestrator manual QA",
+	"F4. Scope fidelity — owned by `direnjie`",
 ];
 
 function expectedDraft(slug: string, intent: "clear" | "unclear", reviewRequired = false): string {
@@ -134,7 +134,7 @@ Your next move: <fill - e.g. approve, or run a high-accuracy review>. Full execu
   Commit: <Y/N> | <type>(<scope>): <summary>
 
 ## Final verification wave
-> Runs in parallel after ALL todos. ALL must APPROVE. Surface results and wait for the user's explicit okay before declaring complete.
+> Runs in parallel after ALL todos. ALL must APPROVE. Surface all four approvals, then wait for the user's explicit okay before declaring complete.
 ${FINAL_VERIFICATION_ITEMS.map((item) => `- [ ] ${item}`).join("\n")}
 
 ## Commit strategy
@@ -347,6 +347,34 @@ describe("plan_scaffold", () => {
 			{ path: "local://DRAFT.md", backingPath: artifactPath("DRAFT.md"), status: "created" },
 			{ path: "local://PLAN.md", backingPath: artifactPath("PLAN.md"), status: "created" },
 		]);
+	});
+
+	it("scaffolds explicit final-wave ownership and user completion approval", async () => {
+		const { ctx, tool } = await setup();
+		await execute(tool, ctx, { slug: "owned-final-wave", intent: "clear" });
+		const plan = await readFile(artifactPath("PLAN.md"), "utf8");
+
+		expect.soft(plan, "F1 must name taishang ownership").toMatch(
+			/- \[ \] F1\. Plan compliance audit[^\n]{0,100}`taishang`/i,
+		);
+		expect.soft(plan, "F2 must name orchestrator code-quality ownership").toMatch(
+			/- \[ \] F2\. Code quality review[^\n]{0,120}orchestrator-owned code-quality gate/i,
+		);
+		expect.soft(plan, "F3 must name orchestrator manual-QA ownership").toMatch(
+			/- \[ \] F3\. Real manual QA[^\n]{0,100}orchestrator manual QA/i,
+		);
+		expect.soft(plan, "F4 must name direnjie ownership").toMatch(
+			/- \[ \] F4\. Scope fidelity[^\n]{0,100}`direnjie`/i,
+		);
+		expect.soft(plan, "all approvals must be surfaced").toMatch(
+			/surface all four approvals/i,
+		);
+		expect(plan, "completion requires explicit user okay").toMatch(
+			/wait for (?:the )?user(?:'s)? explicit okay before declaring complete/i,
+		);
+		expect(plan, "final wave must not complete autonomously").not.toMatch(
+			/complete autonomously/i,
+		);
 	});
 
 	it("serializes concurrent scaffolds on the real backing path", async () => {

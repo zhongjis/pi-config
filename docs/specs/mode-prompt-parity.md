@@ -99,13 +99,21 @@ Evidence:
 
 Local invariants before edits:
 
-- Houtu executes `local://PLAN.md` by coordinating and verifying, not by implementing product changes directly.
-- One bounded plan task per `Agent()` delegation. No giant multi-task handoff.
-- Independent tasks may fan out in parallel only when no named dependency or file conflict exists.
-- Every delegation prompt includes task, expected outcome, required tools, must-do, must-not-do, context, and accumulated context.
-- After every delegation: read changed files, run `lsp_diagnostics`, run focused tests/build when available, perform manual QA for user-visible behavior, compare claims to actual code.
-- Mark checkboxes only after verification passes, then reread plan to confirm progress. Failed work resumes same subagent session when possible.
-- Final wave approval remains required before completion.
+- Houtu executes approved `PLAN.md` paths by coordinating workers and independently verifying evidence; it never implements product changes directly.
+- Every delegation remains one domain plus one deliverable; `Recommended Max Turns` sizes foreground runs and may be raised when justified.
+- Independent implementation launches as multiple foreground `Agent` calls in one assistant response when no named dependency or write conflict exists; they execute concurrently while the parent blocks until all return.
+- Background `Agent` runs are reserved for non-blocking exploration/research, not implementation parallelism.
+- Parent initializes and curates `local://{plan-name}/notepads/` with `learnings.md`, `decisions.md`, `issues.md`, and `blockers.md`.
+- All workers read only relevant shared notes.
+- Mutation-capable workers append only relevant findings and preserve unrelated entries.
+- Read-only researchers return findings to parent for curation.
+- Shared Agent-tree storage is same-user collaboration, not sandbox or security isolation. Notepad entries remain worker claims until parent rereads and independently verifies them.
+- Every worker prompt contains exactly six top-level sections: task, expected outcome, required tools, must-do, must-not-do, and context. Capability-aware shared-note instructions remain under context.
+- Parent verification reads changed files, runs exact `lsp(operation:"diagnostics")` on changed code, executes focused tests, and performs applicable manual QA.
+- Houtu delegates product-code, test-file, documentation, and git mutations. Parent retains verification plus PLAN, Task, and notepad orchestration-state mutations.
+- PLAN is the durable source of truth; Task is its synchronized runtime mirror: batch-create pending top-level Todos and F1-F4, wire dependencies, mark `in_progress` before dispatch, then mark Task `completed` plus check PLAN only after parent verification.
+- Bounded recovery uses `Agent(resume)` for salvageable work; a fresh session is allowed only when its predecessor is unavailable or unsalvageable and receives failure context. Consult `taishang` before attempt 3.
+- Final ownership is fixed: F1 `taishang`; F2 parent code-quality gate; F3 parent manual QA; F4 `direnjie`. Rejection leaves the gate `in_progress` and unchecked, repairs the responsible implementation workstream, then reruns every invalidated gate. Houtu surfaces all four approvals and waits for explicit user okay before declaring complete.
 
 ### Luban <- Superpowers skills
 

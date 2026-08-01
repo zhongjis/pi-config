@@ -52,18 +52,28 @@ describe("handoff argument parsing", () => {
 });
 
 describe("plan execution goal builder", () => {
-  it("produces Hou Tu-aligned execution guidance without handoff protocol details", () => {
+  it("preserves the public Hou Tu plan-execution seam", () => {
     const goal = buildPlanExecutionGoal("/tmp/PLAN.md");
-    expect(goal).toContain("/tmp/PLAN.md");
-    expect(goal).toContain("Read the full plan before making changes.");
-    expect(goal).toContain("one pi-task per top-level plan task plus final verification gates");
-    expect(goal).toContain("Treat waves as labels; derive runnable work from the dependency graph.");
-    expect(goal).toContain("launch each independent runnable task through a separate background Agent call");
-    expect(goal).toContain("If running fewer than all runnable tasks, record the specific dependency or file/path conflict");
-    expect(goal).toContain("pi-task completed is not proof");
-    expect(goal).toContain("every Final Verification Wave verdict is APPROVE");
-    expect(goal).not.toContain("Execute step by step");
-    expect(goal).not.toContain("HANDOFF.json");
-    expect(goal).not.toContain("__PI_HANDOFF_EXECUTE__");
+    expect(goal).toMatch(/approved plan at \/tmp\/PLAN\.md/i);
+    expect(goal).toMatch(/foreground Agent calls[\s\S]*concurrent/i);
+    expect(goal).toMatch(/background Agent calls[\s\S]*(?:exploration|research)/i);
+    expect(goal).toMatch(
+      /local:\/\/\{plan-name\}\/notepads\/[\s\S]*learnings\.md[\s\S]*decisions\.md[\s\S]*issues\.md[\s\S]*blockers\.md/i,
+    );
+    expect(goal).toMatch(/all workers[^\n]*read only[^\n]*relevant[^\n]*notepad/i);
+    expect(goal).toMatch(
+      /mutation-capable workers[^\n]*append only[^\n]*relevant findings[^\n]*preserve unrelated entries/i,
+    );
+    expect(goal).toMatch(
+      /read-only researchers[^\n]*return findings to the parent for curation/i,
+    );
+    expect(goal).toMatch(
+      /capability-aware shared-note instructions[^\n]*under CONTEXT/i,
+    );
+    expect(goal).not.toMatch(/\b(?:all|every) workers?\b[^\n]*\bappend\b/i);
+    expect(goal).not.toMatch(/^\s*-\s*workers?\b[^\n]*\bappend\b/im);
+    expect(goal).not.toMatch(/edit\/write/i);
+    expect(goal).not.toMatch(/local:\/\/houtu\/artifacts\/|exact absolute FILE|nonce|one writer[^\n]*one file|receipt|capability grant/i);
+    expect(goal).toMatch(/explicit okay/i);
   });
 });
