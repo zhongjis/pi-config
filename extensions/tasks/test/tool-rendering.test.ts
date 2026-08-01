@@ -186,6 +186,28 @@ describe("Task tool rendering", () => {
     expect(mixed).toContain("├─ rejected: 1 · #1 (tasks.fsm.illegal-transition)");
   });
 
+  it("expands a batch update into a per-item report; single-item stays inline", () => {
+    const tool = taskTool();
+    const expandUpdate = (raw: string) =>
+      renderText(tool.renderResult!(
+        { content: [{ type: "text", text: raw }], details: {} },
+        { expanded: true },
+        plainTheme,
+        { args: { op: "update" } },
+      ));
+
+    // Batch: crammed line becomes a per-item report (no raw dump).
+    expect(expandUpdate("Updated 3 tasks: #9 (status), #10 (status), #8 (status)")).toBe(
+      ["Updated 3 tasks", "  #9 (status)", "  #10 (status)", "  #8 (status)"].join("\n"),
+    );
+    // Mixed: applied reformatted, single-item rejected stays inline.
+    expect(expandUpdate("Updated 2 tasks: #7 (status), #8 (status)\nRejected 1 task: #6 (blocked)")).toBe(
+      ["Updated 2 tasks", "  #7 (status)", "  #8 (status)", "Rejected 1 task: #6 (blocked)"].join("\n"),
+    );
+    // Single item: unchanged (already clean).
+    expect(expandUpdate("Updated 1 task: #2 (status, owner)")).toBe("Updated 1 task: #2 (status, owner)");
+  });
+
   it("groups list raw output without changing execution behavior", async () => {
     const tool = taskTool();
 

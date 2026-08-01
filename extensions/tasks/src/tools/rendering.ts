@@ -76,6 +76,31 @@ function summarizeUpdate(text: string): string[] | undefined {
   return lines;
 }
 
+/** Expand a batch `update` result into a per-item report; single-item results stay inline. */
+function expandUpdateLine(line: string): string[] | undefined {
+  const match = line.match(/^(Updated|Rejected) (\d+) tasks?: (.+)$/);
+  if (!match) return undefined;
+  const items = match[3].split(/,\s(?=#)/);
+  if (items.length <= 1) return undefined;
+  return [`${match[1]} ${match[2]} tasks`, ...items.map(item => `  ${item.trim()}`)];
+}
+
+function expandReport(op: TaskOp | undefined, text: string): string | undefined {
+  if (op !== "update") return undefined;
+  let changed = false;
+  const out: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const reformatted = expandUpdateLine(line);
+    if (reformatted) {
+      out.push(...reformatted);
+      changed = true;
+    } else {
+      out.push(line);
+    }
+  }
+  return changed ? out.join("\n") : undefined;
+}
+
 type TaskListSection = "Running" | "Ready" | "Blocked" | "Completed";
 
 const TASK_LIST_SECTIONS: readonly TaskListSection[] = ["Running", "Ready", "Blocked", "Completed"];
@@ -197,9 +222,9 @@ export function renderTaskToolResult(
   context?: TaskRenderContext,
 ) {
   const rawText = extractToolText(result);
-  if (options.expanded) return renderToolExpanded(rawText);
-
   const op = readOp(context?.args as Record<string, unknown> | undefined);
+  if (options.expanded) return renderToolExpanded(expandReport(op, rawText) ?? rawText);
+
   const isError = Boolean(context?.isError || result?.isError);
   const lines = options.isPartial
     ? [`status: running Task${op ? ` ${op}` : ""}`]
