@@ -49,10 +49,6 @@ function textResult(text: string): ToolResult {
 function registerTools(): Map<string, ToolDefinition> {
   const tools = new Map<string, ToolDefinition>();
   const runtime = createTaskRuntime();
-  const runner = {
-    getOutput: vi.fn().mockResolvedValue(""),
-    stop: vi.fn().mockResolvedValue(""),
-  };
   const pi = {
     registerTool(tool: ToolDefinition) {
       tools.set(tool.name, tool);
@@ -60,8 +56,12 @@ function registerTools(): Map<string, ToolDefinition> {
     registerCommand: vi.fn(),
   };
 
-  registerTaskTools({ pi, runtime, runner } as never);
+  registerTaskTools({ pi, runtime } as never);
   return tools;
+}
+
+function taskTool(): ToolDefinition {
+  return registerTools().get("Task")!;
 }
 
 function collapsedComponent(
@@ -97,43 +97,35 @@ afterEach(() => {
 });
 
 describe("Task tool rendering", () => {
-  it("registers exactly six Task tools with call and result renderers", () => {
+  it("registers exactly one Task tool with call and result renderers", () => {
     const tools = registerTools();
-    expect([...tools.keys()].sort()).toEqual([
-      "TaskCreate",
-      "TaskGet",
-      "TaskList",
-      "TaskOutput",
-      "TaskStop",
-      "TaskUpdate",
-    ]);
-    for (const tool of tools.values()) {
-      expect(tool.renderCall).toBeTypeOf("function");
-      expect(tool.renderResult).toBeTypeOf("function");
-    }
+    expect([...tools.keys()].sort()).toEqual(["Task"]);
+    const tool = tools.get("Task")!;
+    expect(tool.renderCall).toBeTypeOf("function");
+    expect(tool.renderResult).toBeTypeOf("function");
   });
 
-  it("renders compact calls with full Task names", () => {
-    const tools = registerTools();
+  it("renders compact calls keyed by op", () => {
+    const tool = taskTool();
 
-    expect(tools.get("TaskCreate")!.renderCall!({ subject: "Polish renderer" }, plainTheme).text)
-      .toBe('▸ TaskCreate · "Polish renderer"');
-    expect(tools.get("TaskUpdate")!.renderCall!({ taskId: "7", status: "in_progress", owner: "worker" }, plainTheme).text)
-      .toBe("▸ TaskUpdate · #7 · status, owner");
+    expect(tool.renderCall!({ op: "create", tasks: [{ subject: "Polish renderer", description: "d" }] }, plainTheme).text)
+      .toBe("▸ Task · create (1)");
+    expect(tool.renderCall!({ op: "update", tasks: [{ taskId: "7", status: "in_progress", owner: "worker" }] }, plainTheme).text)
+      .toBe("▸ Task · update (1)");
+    expect(tool.renderCall!({ op: "list" }, plainTheme).text).toBe("▸ Task · list");
+    expect(tool.renderCall!({ op: "get", taskId: "7" }, plainTheme).text).toBe("▸ Task · get #7");
   });
 
   it("keeps expanded output exact and lifecycle strings byte-exact", async () => {
-    const tools = registerTools();
-    const create = tools.get("TaskCreate")!;
-    const list = tools.get("TaskList")!;
-    const createResult = await create.execute!("call-1", { subject: "Keep raw", description: "Desc" }, undefined, undefined, undefined);
-    await create.execute!("call-2", { subject: "List raw", description: "Desc" }, undefined, undefined, undefined);
-    const listResult = await list.execute!("call-3", {}, undefined, undefined, undefined);
+    const tool = taskTool();
+    const createResult = await tool.execute!("call-1", { op: "create", tasks: [{ subject: "Keep raw", description: "Desc" }] }, undefined, undefined, undefined);
+    await tool.execute!("call-2", { op: "create", tasks: [{ subject: "List raw", description: "Desc" }] }, undefined, undefined, undefined);
+    const listResult = await tool.execute!("call-3", { op: "list" }, undefined, undefined, undefined);
     const raw = listResult.content![0].text;
-    const expanded = list.renderResult!(listResult, { expanded: true }, plainTheme, {});
+    const expanded = tool.renderResult!(listResult, { expanded: true }, plainTheme, { args: { op: "list" } });
 
     expect(expanded.text).toBe(raw);
-    expect(createResult.content![0].text).toBe("Task #1 created successfully: Keep raw");
+    expect(createResult.content![0].text).toBe("Created 1 task: #1\n#1: Keep raw");
     expect(raw).toBe([
       "Ready",
       "#1 [pending] Keep raw",
@@ -142,12 +134,12 @@ describe("Task tool rendering", () => {
   });
 
   it("summarizes create, update, list, and get as workflow actions", () => {
-    const tools = registerTools();
+    const tool = taskTool();
 
-    expect(collapsed(tools.get("TaskCreate")!, "Task #1 created successfully: Polish task renderer"))
-      .toContain("└─ action: created #1 · Polish task renderer");
+    expect(collapsed(tool, "Created 1 task: #1\n#1: Polish task renderer", { op: "create" }))
+      .toContain("├─ action: created 1 · #1");
 
-    const list = collapsed(tools.get("TaskList")!, [
+    const list = collapsed(tool, [
       "Running",
       "#2 [in_progress] Implement renderer (agent)",
       "Ready",
@@ -156,15 +148,15 @@ describe("Task tool rendering", () => {
       "#1 [pending] Inspect output [blocked by #3]",
       "Completed",
       "#3 [completed] Read docs",
-    ].join("\n"));
+    ].join("\n"), { op: "list" });
     expect(list).toContain("├─ tasks: 4 total · 1 running, 1 ready, 1 blocked, 1 completed");
     expect(list).toContain("├─ next: running #2 Implement renderer (agent)");
     expect(list).toContain("└─ app.tools.expand to expand full result");
     expect(list).not.toContain("ready: #4 Verify tests");
     expect(list).not.toContain("completed: #3 Read docs");
-    expect(list).not.toContain("▸ TaskList");
+    expect(list).not.toContain("▸ Task");
 
-    const get = collapsed(tools.get("TaskGet")!, [
+    const get = collapsed(tool, [
       "Task #2: Implement renderer",
       "Status: in_progress",
       "Owner: agent-1",
@@ -172,38 +164,45 @@ describe("Task tool rendering", () => {
       "Blocked by: #1",
       "Blocks: #4",
       "Metadata: {\"lane\":\"docs\"}",
-    ].join("\n"));
+    ].join("\n"), { op: "get" });
     expect(get).toContain("├─ task: #2 Implement renderer");
     expect(get).toContain("├─ status: in_progress · owner agent-1 · blocked by #1 · blocks #4");
     expect(get).toContain("└─ app.tools.expand to expand full result");
     expect(get).not.toContain("Description: long noisy details");
 
     const update = collapsed(
-      tools.get("TaskUpdate")!,
-      "Updated task #2 status, owner (warning: reserved metadata keys ignored: _piWorkflowPhase)",
+      tool,
+      "Updated 1 task: #2 (status, owner) [warning: reserved metadata keys ignored: _piWorkflowPhase]",
+      { op: "update" },
     );
-    expect(update).toContain("├─ action: updated #2 · status, owner");
-    expect(update).toContain("└─ warning: reserved metadata keys ignored: _piWorkflowPhase");
+    expect(update).toContain("action: updated 1 · #2 (status, owner)");
+
+    const mixed = collapsed(
+      tool,
+      "Updated 1 task: #2 (status)\nRejected 1 task: #1 (tasks.fsm.illegal-transition)",
+      { op: "update" },
+    );
+    expect(mixed).toContain("├─ action: updated 1 · #2 (status)");
+    expect(mixed).toContain("├─ rejected: 1 · #1 (tasks.fsm.illegal-transition)");
   });
 
-  it("groups TaskList raw output without changing execution behavior", async () => {
-    const tools = registerTools();
-    const create = tools.get("TaskCreate")!;
-    const update = tools.get("TaskUpdate")!;
-    const list = tools.get("TaskList")!;
+  it("groups list raw output without changing execution behavior", async () => {
+    const tool = taskTool();
 
-    await create.execute!("call-1", { subject: "Run build", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-2", { subject: "Fix ready A", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-3", { subject: "Fix ready B", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-4", { subject: "Wait for build", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-5", { subject: "Document done", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-6", { subject: "Verify done", description: "desc" }, undefined, undefined, undefined);
-    await update.execute!("call-7", { taskId: "1", status: "in_progress", owner: "agent-1" }, undefined, undefined, undefined);
-    await update.execute!("call-8", { taskId: "4", addBlockedBy: ["1"] }, undefined, undefined, undefined);
-    await update.execute!("call-9", { taskId: "5", status: "completed" }, undefined, undefined, undefined);
-    await update.execute!("call-10", { taskId: "6", status: "completed" }, undefined, undefined, undefined);
+    await tool.execute!("call-1", { op: "create", tasks: [
+      { subject: "Run build", description: "desc" },
+      { subject: "Fix ready A", description: "desc" },
+      { subject: "Fix ready B", description: "desc" },
+      { subject: "Wait for build", description: "desc" },
+      { subject: "Document done", description: "desc" },
+      { subject: "Verify done", description: "desc" },
+    ] }, undefined, undefined, undefined);
+    await tool.execute!("call-7", { op: "update", tasks: [{ taskId: "1", status: "in_progress", owner: "agent-1" }] }, undefined, undefined, undefined);
+    await tool.execute!("call-8", { op: "update", tasks: [{ taskId: "4", addBlockedBy: ["1"] }] }, undefined, undefined, undefined);
+    await tool.execute!("call-9", { op: "update", tasks: [{ taskId: "5", status: "completed" }] }, undefined, undefined, undefined);
+    await tool.execute!("call-10", { op: "update", tasks: [{ taskId: "6", status: "completed" }] }, undefined, undefined, undefined);
 
-    const result = await list.execute!("call-11", {}, undefined, undefined, undefined);
+    const result = await tool.execute!("call-11", { op: "list" }, undefined, undefined, undefined);
     expect(result.content![0].text).toBe([
       "Running",
       "#1 [in_progress] Run build (agent-1)",
@@ -219,18 +218,17 @@ describe("Task tool rendering", () => {
   });
 
   it("excludes blocked and owner-assigned pending tasks from Ready", async () => {
-    const tools = registerTools();
-    const create = tools.get("TaskCreate")!;
-    const update = tools.get("TaskUpdate")!;
-    const list = tools.get("TaskList")!;
+    const tool = taskTool();
 
-    await create.execute!("call-1", { subject: "Blocking task", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-2", { subject: "Owner task", description: "desc" }, undefined, undefined, undefined);
-    await create.execute!("call-3", { subject: "Blocked task", description: "desc" }, undefined, undefined, undefined);
-    await update.execute!("call-4", { taskId: "2", owner: "agent-2" }, undefined, undefined, undefined);
-    await update.execute!("call-5", { taskId: "3", addBlockedBy: ["1"] }, undefined, undefined, undefined);
+    await tool.execute!("call-1", { op: "create", tasks: [
+      { subject: "Blocking task", description: "desc" },
+      { subject: "Owner task", description: "desc" },
+      { subject: "Blocked task", description: "desc" },
+    ] }, undefined, undefined, undefined);
+    await tool.execute!("call-4", { op: "update", tasks: [{ taskId: "2", owner: "agent-2" }] }, undefined, undefined, undefined);
+    await tool.execute!("call-5", { op: "update", tasks: [{ taskId: "3", addBlockedBy: ["1"] }] }, undefined, undefined, undefined);
 
-    const result = await list.execute!("call-6", {}, undefined, undefined, undefined);
+    const result = await tool.execute!("call-6", { op: "list" }, undefined, undefined, undefined);
     expect(result.content![0].text).toBe([
       "Ready",
       "#1 [pending] Blocking task",
@@ -240,49 +238,31 @@ describe("Task tool rendering", () => {
     ].join("\n"));
   });
 
-  it("summarizes process output and stop outcomes without dumping logs", () => {
-    const tools = registerTools();
-    const output = collapsed(
-      tools.get("TaskOutput")!,
-      "Task #9 (completed) exit code: 0\n\nfirst output line\nsecond output line",
-    );
-    expect(output).toContain("├─ status: completed · exit code 0");
-    expect(output).toContain("├─ output: first output line");
-    expect(output).toContain("└─ app.tools.expand to expand full result");
-    expect(output).not.toContain("second output line");
-
-    expect(collapsed(tools.get("TaskStop")!, "Task #3 stopped successfully"))
-      .toContain("└─ outcome: stopped #3");
-  });
-
   it("renders partial and error states safely without continuation text", () => {
-    const tools = registerTools();
-    const partial = collapsed(tools.get("TaskOutput")!, "", {}, { isPartial: true });
-    expect(partial).toContain("└─ status: running TaskOutput");
+    const tool = taskTool();
+    const partial = collapsed(tool, "", { op: "list" }, { isPartial: true });
+    expect(partial).toContain("└─ status: running Task list");
 
     const error = collapsed(
-      tools.get("TaskStop")!,
-      "No running background process for task 9\nstack hidden",
-      {},
+      tool,
+      "Rejected 1 task: #9 (tasks.fsm.illegal-transition)\nstack hidden",
+      { op: "update" },
       { isError: true },
     );
-    expect(error).toContain("├─ error: No running background process for task 9");
+    expect(error).toContain("├─ error: Rejected 1 task: #9 (tasks.fsm.illegal-transition)");
     expect(error).not.toContain("continuation reminder");
   });
 
   it("keeps frozen inputs unchanged, complete, width-safe, and within three logical rows", () => {
-    const tools = registerTools();
-    const cases: ReadonlyArray<{ name: string; args: Record<string, unknown>; raw: string }> = [
-      { name: "TaskCreate", args: { subject: "整理 Unicode renderer" }, raw: "Task #1 created successfully: 整理 Unicode renderer" },
-      { name: "TaskUpdate", args: { taskId: "2", status: "in_progress" }, raw: "Updated task #2 status" },
-      { name: "TaskList", args: {}, raw: "Running\n#2 [in_progress] 整理 renderer\nReady\n#3 [pending] Verify" },
-      { name: "TaskGet", args: { taskId: "2" }, raw: "Task #2: 整理 renderer\nStatus: in_progress\nBlocked by: #1" },
-      { name: "TaskOutput", args: { task_id: "2", block: false }, raw: "Task #2 (running)\n\n输出 first line\nsecond line" },
-      { name: "TaskStop", args: { task_id: "2" }, raw: "Task #2 stopped successfully" },
+    const tool = taskTool();
+    const cases: ReadonlyArray<{ args: Record<string, unknown>; raw: string }> = [
+      { args: { op: "create", tasks: [{ subject: "整理 Unicode renderer", description: "d" }] }, raw: "Created 1 task: #1\n#1: 整理 Unicode renderer" },
+      { args: { op: "update", tasks: [{ taskId: "2", status: "in_progress" }] }, raw: "Updated 1 task: #2 (status)" },
+      { args: { op: "list" }, raw: "Running\n#2 [in_progress] 整理 renderer\nReady\n#3 [pending] Verify" },
+      { args: { op: "get", taskId: "2" }, raw: "Task #2: 整理 renderer\nStatus: in_progress\nBlocked by: #1" },
     ];
 
     for (const testCase of cases) {
-      const tool = tools.get(testCase.name)!;
       const args = testCase.args;
       const details: Record<string, unknown> = { marker: "unchanged" };
       const content = [{ type: "text" as const, text: testCase.raw }];

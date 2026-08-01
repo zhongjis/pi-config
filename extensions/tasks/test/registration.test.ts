@@ -20,18 +20,11 @@ function mockPi() {
 }
 
 describe("task extension registration", () => {
-  it("registers process-only task tools without subagent channels", () => {
+  it("registers the single consolidated Task tool without subagent channels", () => {
     const mock = mockPi();
     initExtension(mock.pi as never);
 
-    expect([...mock.tools].sort()).toEqual([
-      "TaskCreate",
-      "TaskGet",
-      "TaskList",
-      "TaskOutput",
-      "TaskStop",
-      "TaskUpdate",
-    ]);
+    expect([...mock.tools].sort()).toEqual(["Task"]);
     expect([...mock.channels].filter(channel => channel.startsWith("subagents:"))).toEqual([]);
   });
 });

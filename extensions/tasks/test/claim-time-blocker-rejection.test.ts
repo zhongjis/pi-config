@@ -77,16 +77,18 @@ describe("claim-time blocker rejection", () => {
     const mock = mockPi();
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", { subject: "Blocker", description: "Desc" });
-    await mock.executeTool("TaskCreate", { subject: "Blocked", description: "Desc" });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Blocker", description: "Desc" }] });
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Blocked", description: "Desc" }] });
+    await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "2", addBlockedBy: ["1"] }] });
 
-    await expect(mock.executeTool("TaskUpdate", { taskId: "2", status: "in_progress" }))
-      .rejects.toThrow("tasks.claim.blocker-not-satisfied");
-    await expect(mock.executeTool("TaskUpdate", { taskId: "2", owner: "agent-1" }))
-      .rejects.toThrow("tasks.claim.blocker-not-satisfied");
+    const statusClaim = await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "2", status: "in_progress" }] });
+    expect(statusClaim.isError).toBe(true);
+    expect(statusClaim.content[0].text).toContain("tasks.claim.blocker-not-satisfied");
+    const ownerClaim = await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "2", owner: "agent-1" }] });
+    expect(ownerClaim.isError).toBe(true);
+    expect(ownerClaim.content[0].text).toContain("tasks.claim.blocker-not-satisfied");
 
-    const task = await mock.executeTool("TaskGet", { taskId: "2" });
+    const task = await mock.executeTool("Task", { op: "get", taskId: "2" });
     expect(task.content[0].text).toContain("Status: pending");
 
     expect(parsePandaWarns(warnSpy)).toEqual(expect.arrayContaining([

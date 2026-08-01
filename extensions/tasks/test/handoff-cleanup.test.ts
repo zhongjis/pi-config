@@ -153,16 +153,16 @@ describe("tasks:rpc:clear-planning-tasks", () => {
 
     await initFreshExtension(mock);
 
-    await mock.executeTool("TaskCreate", { subject: "Plan pending", description: "Desc" }, currentPlanningSession.ctx);
-    await mock.executeTool("TaskCreate", { subject: "Plan working", description: "Desc" }, currentPlanningSession.ctx);
-    await mock.executeTool("TaskCreate", { subject: "Plan done", description: "Desc" }, currentPlanningSession.ctx);
-    await mock.executeTool("TaskUpdate", { taskId: "2", status: "in_progress" }, currentPlanningSession.ctx);
-    await mock.executeTool("TaskUpdate", { taskId: "3", status: "completed" }, currentPlanningSession.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Plan pending", description: "Desc" }] }, currentPlanningSession.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Plan working", description: "Desc" }] }, currentPlanningSession.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Plan done", description: "Desc" }] }, currentPlanningSession.ctx);
+    await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "2", status: "in_progress" }] }, currentPlanningSession.ctx);
+    await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "3", status: "completed" }] }, currentPlanningSession.ctx);
 
-    await mock.executeTool("TaskCreate", { subject: "Keep completed", description: "Desc" }, normalSession.ctx);
-    await mock.executeTool("TaskUpdate", { taskId: "4", status: "completed" }, normalSession.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Keep completed", description: "Desc" }] }, normalSession.ctx);
+    await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "4", status: "completed" }] }, normalSession.ctx);
 
-    await mock.executeTool("TaskCreate", { subject: "Other session planning", description: "Desc" }, otherPlanningSession.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Other session planning", description: "Desc" }] }, otherPlanningSession.ctx);
 
     const reply = await callClearPlanningTasksRpc(mock.pi, "session-1");
 
@@ -170,11 +170,11 @@ describe("tasks:rpc:clear-planning-tasks", () => {
       success: true,
       data: { status: "cleared", removed: 3, removedIncomplete: 2 },
     });
-    expect((await mock.executeTool("TaskGet", { taskId: "1" })).content[0].text).toBe("Task not found");
-    expect((await mock.executeTool("TaskGet", { taskId: "2" })).content[0].text).toBe("Task not found");
-    expect((await mock.executeTool("TaskGet", { taskId: "3" })).content[0].text).toBe("Task not found");
-    expect((await mock.executeTool("TaskGet", { taskId: "4" })).content[0].text).toContain("Status: completed");
-    expect(getTaskMetadata(await mock.executeTool("TaskGet", { taskId: "5" }))).toMatchObject({
+    expect((await mock.executeTool("Task", { op: "get", taskId: "1" })).content[0].text).toBe("Task not found");
+    expect((await mock.executeTool("Task", { op: "get", taskId: "2" })).content[0].text).toBe("Task not found");
+    expect((await mock.executeTool("Task", { op: "get", taskId: "3" })).content[0].text).toBe("Task not found");
+    expect((await mock.executeTool("Task", { op: "get", taskId: "4" })).content[0].text).toContain("Status: completed");
+    expect(getTaskMetadata(await mock.executeTool("Task", { op: "get", taskId: "5" }))).toMatchObject({
       _piWorkflowPhase: "planning",
       _piOriginMode: "fuxi",
       _piOriginSessionId: "session-2",
@@ -193,8 +193,8 @@ describe("tasks:rpc:clear-planning-tasks", () => {
 
     await initFreshExtension(mock);
 
-    await mock.executeTool("TaskCreate", { subject: "Keep normal", description: "Desc" }, normalSession.ctx);
-    await mock.executeTool("TaskCreate", { subject: "Keep other planning", description: "Desc" }, otherPlanningSession.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Keep normal", description: "Desc" }] }, normalSession.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Keep other planning", description: "Desc" }] }, otherPlanningSession.ctx);
 
     const reply = await callClearPlanningTasksRpc(mock.pi, "session-1");
 
@@ -202,8 +202,8 @@ describe("tasks:rpc:clear-planning-tasks", () => {
       success: true,
       data: { status: "already_clean", removed: 0, removedIncomplete: 0 },
     });
-    expect((await mock.executeTool("TaskGet", { taskId: "1" })).content[0].text).toContain("Status: pending");
-    expect(getTaskMetadata(await mock.executeTool("TaskGet", { taskId: "2" }))).toMatchObject({
+    expect((await mock.executeTool("Task", { op: "get", taskId: "1" })).content[0].text).toContain("Status: pending");
+    expect(getTaskMetadata(await mock.executeTool("Task", { op: "get", taskId: "2" }))).toMatchObject({
       _piOriginSessionId: "session-2",
     });
   });
@@ -218,7 +218,7 @@ describe("tasks:rpc:clear-planning-tasks", () => {
 
     await initFreshExtension(mock);
     await mock.fireLifecycle("before_agent_start", {}, session.ctx);
-    await mock.executeTool("TaskCreate", { subject: "Plan only", description: "Desc" }, session.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Plan only", description: "Desc" }] }, session.ctx);
 
     const taskFile = join(tempDir, ".pi", "tasks", `tasks-${sessionId}.json`);
     expect(existsSync(taskFile)).toBe(true);
@@ -261,16 +261,19 @@ describe("Fu Xi planning provenance", () => {
 
     await initFreshExtension(mock);
     await mock.executeTool(
-      "TaskCreate",
+      "Task",
       {
-        subject: "Plan task",
-        description: "Desc",
-        metadata: { lane: "ux", _piOriginMode: "spoofed" },
+        op: "create",
+        tasks: [{
+          subject: "Plan task",
+          description: "Desc",
+          metadata: { lane: "ux", _piOriginMode: "spoofed" },
+        }],
       },
       session.ctx,
     );
 
-    const metadata = getTaskMetadata(await mock.executeTool("TaskGet", { taskId: "1" }, session.ctx));
+    const metadata = getTaskMetadata(await mock.executeTool("Task", { op: "get", taskId: "1" }, session.ctx));
     expect(metadata).toEqual({
       lane: "ux",
       _piWorkflowPhase: "planning",
@@ -287,21 +290,24 @@ describe("Fu Xi planning provenance", () => {
 
     await initFreshExtension(mock);
     await mock.executeTool(
-      "TaskCreate",
+      "Task",
       {
-        subject: "Normal task",
-        description: "Desc",
-        metadata: {
-          keep: "yes",
-          _piWorkflowPhase: "spoofed",
-          _piOriginMode: "spoofed",
-          _piOriginSessionId: "spoofed",
-        },
+        op: "create",
+        tasks: [{
+          subject: "Normal task",
+          description: "Desc",
+          metadata: {
+            keep: "yes",
+            _piWorkflowPhase: "spoofed",
+            _piOriginMode: "spoofed",
+            _piOriginSessionId: "spoofed",
+          },
+        }],
       },
       session.ctx,
     );
 
-    const metadata = getTaskMetadata(await mock.executeTool("TaskGet", { taskId: "1" }, session.ctx));
+    const metadata = getTaskMetadata(await mock.executeTool("Task", { op: "get", taskId: "1" }, session.ctx));
     expect(metadata).toEqual({ keep: "yes" });
   });
 
@@ -312,17 +318,20 @@ describe("Fu Xi planning provenance", () => {
     ]);
 
     await initFreshExtension(mock);
-    await mock.executeTool("TaskCreate", { subject: "Plan task", description: "Desc" }, session.ctx);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Plan task", description: "Desc" }] }, session.ctx);
     const result = await mock.executeTool(
-      "TaskUpdate",
+      "Task",
       {
-        taskId: "1",
-        metadata: {
-          note: "keep",
-          _piWorkflowPhase: "done",
-          _piOriginMode: "kuafu",
-          _piOriginSessionId: null,
-        },
+        op: "update",
+        tasks: [{
+          taskId: "1",
+          metadata: {
+            note: "keep",
+            _piWorkflowPhase: "done",
+            _piOriginMode: "kuafu",
+            _piOriginSessionId: null,
+          },
+        }],
       },
       session.ctx,
     );
@@ -331,7 +340,7 @@ describe("Fu Xi planning provenance", () => {
       "warning: reserved metadata keys ignored: _piWorkflowPhase, _piOriginMode, _piOriginSessionId",
     );
 
-    const metadata = getTaskMetadata(await mock.executeTool("TaskGet", { taskId: "1" }, session.ctx));
+    const metadata = getTaskMetadata(await mock.executeTool("Task", { op: "get", taskId: "1" }, session.ctx));
     expect(metadata).toEqual({
       note: "keep",
       _piWorkflowPhase: "planning",
@@ -358,7 +367,7 @@ describe("Fu Xi planning provenance", () => {
     await initFreshExtension(mock);
     await mock.executeCommand("tasks", "", session.ctx);
 
-    const metadata = getTaskMetadata(await mock.executeTool("TaskGet", { taskId: "1" }, session.ctx));
+    const metadata = getTaskMetadata(await mock.executeTool("Task", { op: "get", taskId: "1" }, session.ctx));
     expect(metadata).toEqual({
       _piWorkflowPhase: "planning",
       _piOriginMode: "fuxi",

@@ -4,7 +4,6 @@ import { pandaWarn } from "../../../lib/warn.js";
 import { AutoClearManager } from "../auto-clear.js";
 import { AUTO_CLEAR_DELAY, REMINDER_INTERVAL } from "../constants.js";
 import { ContinuationCooldown } from "../continuation-cooldown.js";
-import { ProcessTracker } from "../process-tracker.js";
 import { TaskStore } from "../task-store.js";
 import { loadTasksConfig } from "../tasks-config.js";
 import { TaskWidget, type UICtx } from "../ui/task-widget.js";
@@ -19,7 +18,7 @@ export function textResult(msg: string) {
   return { content: [{ type: "text" as const, text: msg }], details: undefined as any };
 }
 
-export const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskOutput", "TaskStop"]);
+export const TASK_TOOL_NAMES = new Set(["Task"]);
 
 export type SessionStateContext = {
   sessionManager: {
@@ -95,7 +94,7 @@ export function isPlanningTaskMetadataForSession(metadata: Record<string, any>, 
 }
 
 export const SYSTEM_REMINDER = `<system-reminder>
-The task tools haven't been used recently. If you're working on tasks that would benefit from tracking progress, consider using TaskCreate to add new tasks and TaskUpdate to update task status (set to in_progress when starting, completed when done). Also consider cleaning up the task list if it has become stale. Only use these if relevant to the current work. This is just a gentle reminder - ignore if not applicable. Make sure that you NEVER mention this reminder to the user
+The task tool hasn't been used recently. If you're working on tasks that would benefit from tracking progress, consider using the Task tool (op:create to add tasks, op:update to set status to in_progress when starting and completed when done). Also consider cleaning up the task list if it has become stale. Only use it if relevant to the current work. This is just a gentle reminder - ignore if not applicable. Make sure that you NEVER mention this reminder to the user
 </system-reminder>`;
 
 export type TaskRuntime = {
@@ -103,7 +102,6 @@ export type TaskRuntime = {
   piTasks: string | undefined;
   taskScope: string;
   store: TaskStore;
-  tracker: ProcessTracker;
   widget: TaskWidget;
   autoClear: AutoClearManager;
   latestCtx: ExtensionContext | undefined;
@@ -125,7 +123,6 @@ export function createTaskRuntime(): TaskRuntime {
     piTasks,
     taskScope,
     store: undefined as unknown as TaskStore,
-    tracker: new ProcessTracker(),
     widget: undefined as unknown as TaskWidget,
     autoClear: undefined as unknown as AutoClearManager,
     latestCtx: undefined,

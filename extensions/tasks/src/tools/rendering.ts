@@ -7,13 +7,14 @@ import {
   renderToolSummary,
 } from "../../../lib/tool-output.js";
 
-type TaskToolName = "TaskCreate" | "TaskList" | "TaskGet" | "TaskUpdate" | "TaskOutput" | "TaskStop";
+type TaskOp = "create" | "update" | "list" | "get";
 type ToolTheme = Pick<Theme, "fg" | "bold">;
 type TaskRenderOptions = Pick<ToolRenderResultOptions, "expanded" | "isPartial">;
 type TaskRenderContext = { args?: object; isError?: boolean };
 type TextToolResult = AgentToolResult<unknown> & { isError?: boolean };
 
 const MAX_SUMMARY_LENGTH = 96;
+const TASK_OPS: readonly TaskOp[] = ["create", "update", "list", "get"];
 
 function compactInline(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -24,58 +25,55 @@ function truncate(value: string, maxLength = MAX_SUMMARY_LENGTH): string {
   return chars.length > maxLength ? `${chars.slice(0, maxLength - 1).join("")}…` : chars.join("");
 }
 
-function firstBodyLine(text: string): string {
-  const body = text.split(/\n\n+/).slice(1).join("\n\n");
-  return firstMeaningfulLine(body);
-}
-
 function formatArgValue(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim() !== "") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return undefined;
 }
 
-function formatCallArgs(toolName: TaskToolName, args: Record<string, unknown>): string[] {
-  switch (toolName) {
-    case "TaskCreate": {
-      const subject = formatArgValue(args.subject);
-      return subject ? [`"${truncate(subject, 60)}"`] : [];
+function readOp(args: Record<string, unknown> | undefined): TaskOp | undefined {
+  const op = args?.op;
+  return TASK_OPS.find(candidate => candidate === op);
+}
+
+function formatCallArgs(op: TaskOp | undefined, args: Record<string, unknown>): string[] {
+  switch (op) {
+    case "create":
+    case "update": {
+      const count = Array.isArray(args.tasks) ? args.tasks.length : undefined;
+      return [count !== undefined ? `${op} (${count})` : op];
     }
-    case "TaskList":
+    case "get": {
+      const id = formatArgValue(args.taskId);
+      return [id ? `get #${id}` : "get"];
+    }
+    case "list":
+      return ["list"];
+    default:
       return [];
-    case "TaskGet": {
-      const id = formatArgValue(args.taskId);
-      return id ? [`#${id}`] : [];
-    }
-    case "TaskUpdate": {
-      const id = formatArgValue(args.taskId);
-      const fields = ["status", "subject", "description", "activeForm", "owner", "metadata", "addBlocks", "addBlockedBy"]
-        .filter(key => args[key] !== undefined);
-      return [id ? `#${id}` : undefined, fields.length > 0 ? fields.join(", ") : undefined]
-        .filter((part): part is string => part !== undefined);
-    }
-    case "TaskOutput": {
-      const id = formatArgValue(args.task_id);
-      const block = args.block === false ? "block=false" : undefined;
-      return [id ? `#${id}` : undefined, block].filter((part): part is string => part !== undefined);
-    }
-    case "TaskStop": {
-      const id = formatArgValue(args.task_id) ?? formatArgValue(args.shell_id);
-      return id ? [`#${id}`] : [];
-    }
   }
 }
 
-export function renderTaskToolCall(toolName: TaskToolName, rawArgs: object | undefined, theme: ToolTheme) {
+export function renderTaskToolCall(rawArgs: object | undefined, theme: ToolTheme) {
   const args = rawArgs && typeof rawArgs === "object" ? rawArgs as Record<string, unknown> : {};
-  const target = formatCallArgs(toolName, args).join(" · ") || undefined;
-  return renderToolCall(toolName, target, theme);
+  const target = formatCallArgs(readOp(args), args).join(" · ") || undefined;
+  return renderToolCall("Task", target, theme);
 }
 
 function summarizeCreate(text: string): string[] | undefined {
-  const match = text.match(/^Task #(\S+) created successfully: (.+)$/);
+  const match = text.match(/^Created (\d+) tasks?: (.+)$/m);
   if (!match) return undefined;
-  return [`action: created #${match[1]} · ${truncate(match[2])}`];
+  return [`action: created ${match[1]} · ${truncate(match[2], 72)}`];
+}
+
+function summarizeUpdate(text: string): string[] | undefined {
+  const applied = text.match(/^Updated (\d+) tasks?: (.+)$/m);
+  const rejected = text.match(/^Rejected (\d+) tasks?: (.+)$/m);
+  if (!applied && !rejected) return undefined;
+  const lines: string[] = [];
+  if (applied) lines.push(`action: updated ${applied[1]} · ${truncate(applied[2], 72)}`);
+  if (rejected) lines.push(`rejected: ${rejected[1]} · ${truncate(rejected[2], 72)}`);
+  return lines;
 }
 
 type TaskListSection = "Running" | "Ready" | "Blocked" | "Completed";
@@ -163,49 +161,20 @@ function summarizeGet(text: string): string[] | undefined {
   return lines;
 }
 
-function summarizeUpdate(text: string): string[] | undefined {
-  const notFound = text.match(/^Task #(\S+) not found$/);
-  if (notFound) return [`action: task #${notFound[1]} not found`];
-
-  const updated = text.match(/^Updated task #(\S+)\s*(.*)$/);
-  if (!updated) return undefined;
-  const warning = updated[2].match(/^(.*?) \(warning: (.*)\)$/);
-  const fields = (warning?.[1] ?? updated[2]).trim();
-  const lines = [`action: updated #${updated[1]}${fields ? ` · ${fields}` : ""}`];
-  if (warning?.[2]) lines.push(`warning: ${truncate(warning[2])}`);
-  return lines;
-}
-
-function summarizeOutput(text: string): string[] | undefined {
-  const match = text.match(/^Task #(\S+) \(([^)]+)\)(?: exit code: (\S+))?/);
-  if (!match) return undefined;
-  const lines = [`status: ${match[2]}${match[3] ? ` · exit code ${match[3]}` : ""}`];
-  const preview = firstBodyLine(text);
-  if (preview) lines.push(`output: ${truncate(preview)}`);
-  return lines;
-}
-
-function summarizeStop(text: string): string[] | undefined {
-  const match = text.match(/^Task #(\S+) stopped successfully$/);
-  if (!match) return undefined;
-  return [`outcome: stopped #${match[1]}`];
-}
-
-function summarizeFallback(toolName: TaskToolName, text: string): string[] {
+function summarizeFallback(text: string): string[] {
   const firstLine = firstMeaningfulLine(text);
-  if (!firstLine) return ["status: complete · no output"];
-  const keyword = toolName === "TaskOutput" ? "output" : toolName === "TaskStop" ? "outcome" : "action";
-  return [`${keyword}: ${truncate(firstLine)}`];
+  return firstLine ? [`action: ${truncate(firstLine)}`] : ["status: complete · no output"];
 }
 
-function summarizeResult(toolName: TaskToolName, text: string): string[] {
-  switch (toolName) {
-    case "TaskCreate": return summarizeCreate(text) ?? summarizeFallback(toolName, text);
-    case "TaskList": return summarizeList(text) ?? summarizeFallback(toolName, text);
-    case "TaskGet": return summarizeGet(text) ?? summarizeFallback(toolName, text);
-    case "TaskUpdate": return summarizeUpdate(text) ?? summarizeFallback(toolName, text);
-    case "TaskOutput": return summarizeOutput(text) ?? summarizeFallback(toolName, text);
-    case "TaskStop": return summarizeStop(text) ?? summarizeFallback(toolName, text);
+function summarizeResult(op: TaskOp | undefined, text: string): string[] {
+  switch (op) {
+    case "create": return summarizeCreate(text) ?? summarizeFallback(text);
+    case "update": return summarizeUpdate(text) ?? summarizeFallback(text);
+    case "list": return summarizeList(text) ?? summarizeFallback(text);
+    case "get": return summarizeGet(text) ?? summarizeFallback(text);
+    default:
+      // No op context (shouldn't happen for well-formed calls): best-effort parse.
+      return summarizeList(text) ?? summarizeGet(text) ?? summarizeCreate(text) ?? summarizeUpdate(text) ?? summarizeFallback(text);
   }
 }
 
@@ -213,16 +182,15 @@ function errorSummary(text: string): string {
   return `error: ${truncate(firstMeaningfulLine(text) || "Task tool failed")}`;
 }
 
-function hasUsefulExpansion(toolName: TaskToolName, rawText: string, isError: boolean): boolean {
+function hasUsefulExpansion(op: TaskOp | undefined, rawText: string, isError: boolean): boolean {
   if (!rawText.trim()) return false;
   const rawLines = rawText.split(/\r\n?|\n/).filter(line => line.trim().length > 0);
   if (isError) return rawLines.length > 1 || Array.from(firstMeaningfulLine(rawText)).length > MAX_SUMMARY_LENGTH;
-  if (toolName === "TaskList" || toolName === "TaskGet" || toolName === "TaskOutput") return true;
+  if (op === "list" || op === "get") return true;
   return rawLines.length > 1 || Array.from(compactInline(rawText)).length > MAX_SUMMARY_LENGTH;
 }
 
 export function renderTaskToolResult(
-  toolName: TaskToolName,
   result: TextToolResult | undefined,
   options: TaskRenderOptions,
   theme: ToolTheme,
@@ -231,13 +199,14 @@ export function renderTaskToolResult(
   const rawText = extractToolText(result);
   if (options.expanded) return renderToolExpanded(rawText);
 
+  const op = readOp(context?.args as Record<string, unknown> | undefined);
   const isError = Boolean(context?.isError || result?.isError);
   const lines = options.isPartial
-    ? [`status: running ${toolName}`]
+    ? [`status: running Task${op ? ` ${op}` : ""}`]
     : isError
       ? [errorSummary(rawText)]
-      : summarizeResult(toolName, rawText);
+      : summarizeResult(op, rawText);
   return renderToolSummary(lines, theme, {
-    expandable: !options.isPartial && hasUsefulExpansion(toolName, rawText, isError),
+    expandable: !options.isPartial && hasUsefulExpansion(op, rawText, isError),
   });
 }

@@ -62,13 +62,14 @@ describe("TaskUpdate FSM gate", () => {
     const mock = mockPi();
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", { subject: "Done task", description: "Desc" });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Done task", description: "Desc" }] });
+    await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "1", status: "completed" }] });
 
-    await expect(mock.executeTool("TaskUpdate", { taskId: "1", status: "in_progress" }))
-      .rejects.toThrow(ILLEGAL_TRANSITION_CODE);
+    const rejected = await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "1", status: "in_progress" }] });
+    expect(rejected.isError).toBe(true);
+    expect(rejected.content[0].text).toContain(ILLEGAL_TRANSITION_CODE);
 
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    const result = await mock.executeTool("Task", { op: "get", taskId: "1" });
     expect(result.content[0].text).toContain("Status: completed");
   });
 
@@ -76,13 +77,14 @@ describe("TaskUpdate FSM gate", () => {
     const mock = mockPi();
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", { subject: "Active task", description: "Desc" });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "in_progress" });
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Active task", description: "Desc" }] });
+    await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "1", status: "in_progress" }] });
 
-    await expect(mock.executeTool("TaskUpdate", { taskId: "1", status: "pending" }))
-      .rejects.toThrow(ILLEGAL_TRANSITION_CODE);
+    const rejected = await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "1", status: "pending" }] });
+    expect(rejected.isError).toBe(true);
+    expect(rejected.content[0].text).toContain(ILLEGAL_TRANSITION_CODE);
 
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    const result = await mock.executeTool("Task", { op: "get", taskId: "1" });
     expect(result.content[0].text).toContain("Status: in_progress");
   });
 });

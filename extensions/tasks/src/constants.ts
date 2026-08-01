@@ -23,28 +23,6 @@ export const TASK_STATUS_ORDER = {
   in_progress: 1,
   completed: 2,
 } as const;
-
-/**
- * unit: ms
- * source: extensions/tasks/src/index.ts:1015
- * rationale: preserve TaskOutput default wait timeout.
- */
-export const TASK_OUTPUT_DEFAULT_TIMEOUT_MS = 30_000;
-
-/**
- * unit: ms
- * source: extensions/tasks/src/index.ts:1060
- * rationale: preserve background-process wait timeout.
- */
-export const TASK_PROCESS_WAIT_TIMEOUT_MS = 30_000;
-
-/**
- * unit: ms
- * source: extensions/tasks/src/process-tracker.ts:122
- * rationale: preserve the SIGTERM-to-SIGKILL grace period.
- */
-export const PROCESS_STOP_GRACE_PERIOD_MS = 5_000;
-
 /**
  * unit: ms
  * source: extensions/tasks/src/ui/task-widget.ts:115

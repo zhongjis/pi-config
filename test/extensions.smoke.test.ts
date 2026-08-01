@@ -82,12 +82,7 @@ const extensionEntries = discoverExtensionEntries();
 
 const EXPECTED_TOOL_NAMES = [
   "Agent",
-  "TaskCreate",
-  "TaskGet",
-  "TaskList",
-  "TaskOutput",
-  "TaskStop",
-  "TaskUpdate",
+  "Task",
   "ask",
   "bash",
   "boomerang",
@@ -173,8 +168,8 @@ describe("extension entrypoints", () => {
     const rawNames = registrations.map((definition) => definition.name);
     const uniqueNames = [...new Set(rawNames)];
 
-    expect(rawNames).toHaveLength(31);
-    expect(uniqueNames).toHaveLength(31);
+    expect(rawNames).toHaveLength(26);
+    expect(uniqueNames).toHaveLength(26);
     expect([...uniqueNames].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
 
     for (const definition of registrations) {

@@ -25,18 +25,3 @@ export interface TaskStoreData {
 nextId: number;
 tasks: Task[];
 }
-
-/** Background process associated with a task. */
-export interface BackgroundProcess {
-  taskId: string;
-  pid: number;
-  command?: string;
-  output: string[];
-  status: "running" | "completed" | "error" | "stopped";
-  exitCode?: number;
-  startedAt: number;
-  completedAt?: number;
-  proc: import("node:child_process").ChildProcess;
-  abortController: AbortController;
-  waiters: Array<() => void>;
-}

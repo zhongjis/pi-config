@@ -86,11 +86,11 @@ describe("tasks:rpc:update late reply guard", () => {
     const mock = mockPi();
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", {
-      subject: "Completed task",
-      description: "Desc",
+    await mock.executeTool("Task", {
+      op: "create",
+      tasks: [{ subject: "Completed task", description: "Desc" }],
     });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
+    await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "1", status: "completed" }] });
 
     const reply = await callUpdateRpc(mock.pi, { taskId: "1", status: "pending" });
 
@@ -101,7 +101,7 @@ describe("tasks:rpc:update late reply guard", () => {
       expect.stringContaining("tasks.fsm.late-reply-dropped"),
     );
 
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    const result = await mock.executeTool("Task", { op: "get", taskId: "1" });
     expect(result.content[0].text).toContain("Status: completed");
 
     warnSpy.mockRestore();

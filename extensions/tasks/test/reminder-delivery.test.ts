@@ -119,7 +119,7 @@ describe("system-reminder delivery", () => {
     runtime.store.create("Task A", "desc");
 
     await advanceTurns(fire, ctx, REMINDER_INTERVAL + 1);
-    const result = await fire("tool_result", { toolName: "TaskUpdate", content: [] });
+    const result = await fire("tool_result", { toolName: "Task", content: [] });
 
     expect(result).toEqual({});
     expect(runtime.reminderDue).toBe(false);

@@ -97,13 +97,14 @@ describe("dangling blocker claim semantics", () => {
     const mock = mockPi();
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", { subject: "Blocked", description: "Desc" });
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Blocked", description: "Desc" }] });
     tasks[0].blockedBy.push("999");
 
-    await expect(mock.executeTool("TaskUpdate", { taskId: "1", status: "in_progress" }))
-      .rejects.toThrow("tasks.claim.blocker-not-satisfied");
+    const rejected = await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "1", status: "in_progress" }] });
+    expect(rejected.isError).toBe(true);
+    expect(rejected.content[0].text).toContain("tasks.claim.blocker-not-satisfied");
 
-    const task = await mock.executeTool("TaskGet", { taskId: "1" });
+    const task = await mock.executeTool("Task", { op: "get", taskId: "1" });
     expect(task.content[0].text).toContain("Status: pending");
     expect(parsePandaWarns(warnSpy)).toEqual(expect.arrayContaining([
       expect.objectContaining({

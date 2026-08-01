@@ -15,12 +15,7 @@ const WIDTHS = [20, 40, 80, 120] as const;
 const NATIVE_RESULT_DELEGATES = new Set(["bash", "readonly_bash"]);
 const EXPECTED_TOOL_NAMES = [
   "Agent",
-  "TaskCreate",
-  "TaskGet",
-  "TaskList",
-  "TaskOutput",
-  "TaskStop",
-  "TaskUpdate",
+  "Task",
   "ask",
   "bash",
   "boomerang",
@@ -138,12 +133,7 @@ const FIXTURES: Record<(typeof EXPECTED_TOOL_NAMES)[number], ToolFixture> = {
       durationMs: 0,
     },
   },
-  TaskCreate: { args: { subject: "Renderer audit", description: "Check output" }, raw: "Created task #1: Renderer audit\nRAW31_02", details: {} },
-  TaskGet: { args: { taskId: "1" }, raw: "#1 [in_progress] Renderer audit\nRAW31_03", details: {} },
-  TaskList: { args: {}, raw: "Tasks: 1 total, 1 in progress\n#1 Renderer audit\nRAW31_04", details: {} },
-  TaskOutput: { args: { taskId: "1" }, raw: "Task #1 output\nrenderer line\nRAW31_05", details: {} },
-  TaskStop: { args: { taskId: "1" }, raw: "Stopped task #1\nRAW31_06", details: {} },
-  TaskUpdate: { args: { taskId: "1", status: "completed" }, raw: "Updated task #1: completed\nRAW31_07", details: {} },
+  Task: { args: { op: "list" }, raw: "Running\n#1 [in_progress] Renderer audit\nRAW31_02", details: {} },
   ask: {
     args: { questions: [{ id: "scope", label: "Scope", prompt: "Which scope?", options: [{ value: "all", label: "All" }] }] },
     raw: "Scope: user selected: 1. All\nRAW31_08",
@@ -241,7 +231,7 @@ afterEach(async () => {
 });
 
 describe("tool output TUI rendering — real Pi integration", () => {
-  it("loads and exercises the exact 31 registered renderer pairs without mutation", async () => {
+  it("loads and exercises the exact 26 registered renderer pairs without mutation", async () => {
     originalHome = process.env.HOME;
     originalPackageDir = process.env.PI_PACKAGE_DIR;
     tempHome = await mkdtemp(join(tmpdir(), "pi-render-home-"));
@@ -269,8 +259,8 @@ describe("tool output TUI rendering — real Pi integration", () => {
     const rawNames = definitions.map(({ name }) => name);
     const uniqueNames = [...new Set(rawNames)];
 
-    expect(rawNames).toHaveLength(31);
-    expect(uniqueNames).toHaveLength(31);
+    expect(rawNames).toHaveLength(26);
+    expect(uniqueNames).toHaveLength(26);
     expect([...uniqueNames].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
 
     const theme = runner!.getUIContext().theme;
@@ -325,7 +315,7 @@ describe("tool output TUI rendering — real Pi integration", () => {
       }
     }
 
-    expect(expandHintCount).toBe(29);
+    expect(expandHintCount).toBe(24);
     const helperSource = await readFile(resolve(PROJECT_ROOT, "extensions/lib/tool-output.ts"), "utf8");
     expect(helperSource).toContain('keyHint("app.tools.expand"');
     expect(helperSource).not.toMatch(/(?:ctrl|alt|shift)\+[a-z]/i);
