@@ -11,6 +11,7 @@ node_modules/
 
 .direnv
 extensions/subagent/dist/
+extensions/tasks/dist/
 extensions/lib/*.js
 extensions/lib/*.d.ts
 extensions/shennong/.update-check-cache.json
