@@ -78,7 +78,7 @@ Local evidence rules:
 - Use mutating `bash` only after implementation authorization; always pass explicit `cwd`.
 - Use `readonly_bash` for read-only shell exploration when mutation is not authorized or not needed.
 - Use `rg` / `fd` for literal/file search; do not use `grep`/`find` when these are available.
-- Use `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`, `Task*` for non-trivial work and completion evidence.
+- Use `Task op:create`, `Task op:update`, `Task op:list`, `Task op:get`, `Task*` for non-trivial work and completion evidence.
 - Use `Agent`, `get_subagent_result`, `steer_subagent` to launch, collect, and correct specialists.
 
 Exploration stop conditions: stop when a direct answer is found, evidence is sufficient for the decision, sources repeat, or two search passes add no material facts. For empty or partial results, retry once with one different strategy; then use available evidence or ask.

@@ -250,7 +250,7 @@ Agent(subagent_type="yunu", skills=[...], run_in_background=false, prompt="...ta
 
 <workflow>
 ## Step 0: Register tracking
-Read PLAN, parse canonical `## Todos` and `## Final verification wave` sections (also accept legacy `## TODOs` and legacy `## Final Verification Wave`), then `TaskCreate` one tracking task per top-level todo and each final-verification gate per the tracking contract above, wire dependencies with `TaskUpdate addBlockedBy`, and call `TaskList`. Ignore nested acceptance/evidence checkboxes.
+Read PLAN, parse canonical `## Todos` and `## Final verification wave` sections (also accept legacy `## TODOs` and legacy `## Final Verification Wave`), then batch-create the tracking tasks in a single `Task op:create` call — one `tasks[]` entry per top-level todo and per final-verification gate, per the tracking contract above — wire dependencies with `Task op:update addBlockedBy`, and call `Task op:list`. Ignore nested acceptance/evidence checkboxes.
 
 ## Step 1: Analyze the plan
 

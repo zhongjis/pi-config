@@ -14,7 +14,7 @@ Generate hierarchical AGENTS.md files. Root plus complexity-scored child docs.
 - Preserve raw invocation semantics: --create-new and --max-depth=N must be honored exactly.
 - Always read existing AGENTS.md and CLAUDE.md before writing. With --create-new, harvest context first, then delete/regenerate AGENTS.md files.
 - Never require tools absent from active Pi runtime. Prefer first-class discovery tools when available, fallback cleanly.
-- Use Pi-native tools/agents: TaskCreate, TaskUpdate, Agent/chengfeng, Agent/jintong, CodeGraph if available, LSP if available, rg, fd, read, edit, write.
+- Use Pi-native tools/agents: Task (op:create/update/list/get), Agent/chengfeng, Agent/jintong, CodeGraph if available, LSP if available, rg, fd, read, edit, write.
 
 ## Workflow
 
@@ -26,13 +26,15 @@ Generate hierarchical AGENTS.md files. Root plus complexity-scored child docs.
 6. Review hard — dedupe, trim, telegraphic style, validate commands and links.
 
 Task pattern:
-  TaskCreate({ subject: "Discovery: map repo + launch chengfeng", description: "init-deep phase 1" })
-  TaskCreate({ subject: "Scoring: choose AGENTS.md locations", description: "init-deep phase 2" })
-  TaskCreate({ subject: "Generate root AGENTS.md", description: "init-deep phase 3a" })
-  TaskCreate({ subject: "Generate child AGENTS.md files", description: "init-deep phase 3b" })
-  TaskCreate({ subject: "Review: dedupe + trim + validate", description: "init-deep phase 4" })
-  TaskUpdate({ taskId: "...", status: "in_progress" })
-  TaskUpdate({ taskId: "...", status: "completed" })
+  Task({ op: "create", tasks: [
+    { subject: "Discovery: map repo + launch chengfeng", description: "init-deep phase 1" },
+    { subject: "Scoring: choose AGENTS.md locations", description: "init-deep phase 2" },
+    { subject: "Generate root AGENTS.md", description: "init-deep phase 3a" },
+    { subject: "Generate child AGENTS.md files", description: "init-deep phase 3b" },
+    { subject: "Review: dedupe + trim + validate", description: "init-deep phase 4" },
+  ] })
+  Task({ op: "update", tasks: [{ taskId: "...", status: "in_progress" }] })
+  Task({ op: "update", tasks: [{ taskId: "...", status: "completed" }] })
 
 ## Phase 1: Discovery + Analysis
 

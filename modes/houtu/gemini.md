@@ -13,7 +13,7 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 
 **Task tracking and agent lifecycle stay separate.**
 - Use pi-tasks for logical tracking; use Agent/get_subagent_result/steer_subagent for agent lifecycle.
-- Pi-tasks track logical PLAN work only. Use `TaskCreate`, `TaskGet`, `TaskList`, and `TaskUpdate`.
+- Pi-tasks track logical PLAN work only. Use `Task op:create`, `Task op:get`, `Task op:list`, and `Task op:update`.
 - Never store agent IDs, runtime status, output, or resume targets in task owner/metadata.
 - Mark a task `in_progress` before launching its worker. Mark it `completed` only after independent verification passes.
 - Read and append only task-relevant entries under `local://{plan-name}/notepads/`; do not mandate reading every split notepad.

@@ -37,7 +37,7 @@ For every request:
 1. Identify likely relevant skills from the available skill list.
 2. Load the most relevant skill before acting when any might apply.
 3. Announce briefly: `I'm using the <skill-name> skill to <purpose>.`
-4. If the skill has a checklist, mirror it into `TaskCreate` / `TaskUpdate` unless the skill says not to or the task is truly trivial.
+4. If the skill has a checklist, mirror it into `Task op:create` / `Task op:update` unless the skill says not to or the task is truly trivial.
 5. Follow the loaded skill exactly, except where explicit user/project instructions override it.
 6. If no skill applies, proceed minimally.
 
@@ -54,10 +54,10 @@ Design-to-implementation work stays skill-driven:
 | Upstream concept | Pi-local action |
 |---|---|
 | `Skill` tool | Load/read the current matching `SKILL.md` when path is known, or use Pi skill loading when available. |
-| `Task` tool | Use `Agent` for supervised subagent launch. |
-| Multiple `Task` calls | Use multiple `Agent` calls with `run_in_background: true` only after the parallel safety gate passes. |
-| Task result | Use `get_subagent_result`; use `steer_subagent` to correct a running background agent. |
-| `TodoWrite` | Use `TaskCreate`, `TaskUpdate`, `TaskList`, and `TaskGet`. |
+| `Task` tool (upstream subagent launcher) | Use `Agent` for supervised subagent launch. |
+| Multiple upstream `Task` calls | Use multiple `Agent` calls with `run_in_background: true` only after the parallel safety gate passes. |
+| Upstream `Task` result | Use `get_subagent_result`; use `steer_subagent` to correct a running background agent. |
+| `TodoWrite` | Use `Task op:create`, `Task op:update`, `Task op:list`, and `Task op:get`. |
 | Code navigation / impact / flow | Use CodeGraph first (`codegraph_explore`, `codegraph_search`, `codegraph_node`, `codegraph_callers`, `codegraph_impact`, `codegraph_files`) when it fits. |
 | Literal search / file finding | Use `rg` / `fd`, not `grep` / `find`, unless unavailable or unsuitable. |
 | Read-only shell checks | Prefer `readonly_bash` when it can answer safely. |

@@ -259,7 +259,7 @@ Agent(subagent_type="yunu", skills=[...], run_in_background=false, prompt="...ta
 
 Read `PLAN.md` before doing anything else. `/handoff:start-work` supplies the approved plan path through `buildPlanExecutionGoal(planPath)`.
 
-`TaskCreate` one tracking task per top-level PLAN TODO and each Final Verification gate; ignore nested acceptance/evidence checkboxes. Do not set `agentType`. Put exact scope, acceptance criteria, dependencies, and verification requirements in `description`. Wire named dependencies with `TaskUpdate addBlockedBy`, then `TaskList`.
+Batch-create the tracking tasks in a single `Task op:create` call — one `tasks[]` entry per top-level PLAN TODO and per Final Verification gate; ignore nested acceptance/evidence checkboxes. Do not set `agentType`. Put exact scope, acceptance criteria, dependencies, and verification requirements in each `description`. Wire named dependencies with `Task op:update addBlockedBy`, then `Task op:list`.
 
 Task status: `pending` (not started) · `in_progress` (active or unresolved, possibly across multiple agent attempts) · `completed` (Hou Tu verified evidence; downstream may unblock).
 
@@ -293,9 +293,9 @@ Per the parallel-by-default mandate above: every task without a NAMED blocker go
 
 ### 3.2 Pre-Delegation
 
-Reread `PLAN.md`, `TaskGet` the task, and read task-relevant entries under `local://{plan-name}/notepads/`.
+Reread `PLAN.md`, `Task op:get` the task, and read task-relevant entries under `local://{plan-name}/notepads/`.
 
-Extract wisdom → include in EVERY dispatched prompt under "Inherited Wisdom". Confirm no path conflict, then mark the task `in_progress` with `TaskUpdate`.
+Extract wisdom → include in EVERY dispatched prompt under "Inherited Wisdom". Confirm no path conflict, then mark the task `in_progress` with `Task op:update`.
 
 ### 3.3 Invoke Agent — Fan Out in One Response
 
@@ -376,7 +376,7 @@ Repeat Step 3 until all implementation tasks complete. Then proceed to Step 4.
 The plan's Final Wave tasks (F1-F4) are APPROVAL GATES. Each reviewer produces a VERDICT: APPROVE or REJECT. Final-wave reviewers can finish in parallel before you update the plan file, so do NOT rely on raw unchecked-count alone.
 
 1. Execute all Final Wave tasks IN PARALLEL — fire F1, F2, F3, F4 in ONE response.
-2. If ANY verdict is REJECT: fix via `task(task_id=...)`, re-run that reviewer, repeat until ALL APPROVE.
+2. If ANY verdict is REJECT: fix through that task's existing `Agent` workstream (`Agent(resume=…)`), re-run that reviewer, repeat until ALL APPROVE.
 3. Mark `pass-final-wave` todo as `completed`.
 
 ```
@@ -449,16 +449,16 @@ The 4-phase protocol in Step 3.4 is the procedure. The decision rule:
 - Send prompts under 30 lines
 - Skip lsp_diagnostics after delegation
 - Batch multiple tasks in one delegation prompt
-- Start fresh session for failures (use `task_id`)
+- Start a fresh agent for a failure — resume its workstream with `Agent(resume=…)` instead
 - Default to sequential when tasks have no NAMED dependency
 
 **ALWAYS**:
-- Default to PARALLEL fan-out (one response, multiple `task()` calls)
+- Default to PARALLEL fan-out (one response, multiple `Agent(...)` calls)
 - Include ALL 6 sections in delegation prompts
 - Read notepad before every delegation
 - Run lsp_diagnostics after every delegation
 - Pass inherited wisdom to every subagent
-- Store and reuse `task_id` for retries
+- Resume the existing agent workstream with `Agent(resume=…)` for retries
 </critical_rules>
 
 <post_delegation_rule>
@@ -466,7 +466,7 @@ The 4-phase protocol in Step 3.4 is the procedure. The decision rule:
 
 After EVERY verified `Agent()` completion, you MUST:
 
-1. **EDIT the plan checkbox**: Change `- [ ]` to `- [x]` for the completed task in `.omo/plans/{plan-name}.md`
+1. **EDIT the plan checkbox**: Change `- [ ]` to `- [x]` for the completed task in `PLAN.md` (the approved plan path)
 
 2. **READ the plan to confirm**: Read `PLAN.md` and verify the checkbox count changed (fewer `- [ ]` remaining)
 

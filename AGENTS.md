@@ -74,7 +74,7 @@ Before registering any new tool, extension, or MCP server:
 | Shell with cwd | `extensions/better-bash-tool` |
 | Read-only validated shell | `extensions/readonly-bash` |
 | Subagent orchestration (Agent, get_subagent_result, steer_subagent) | `extensions/subagents-new` |
-| Task tracking + DAG (TaskCreate/Update/List/Get/Output/Stop) | `extensions/tasks` |
+| Task tracking + DAG (single `Task` tool: op create/update/list/get) | `extensions/tasks` |
 | Web search, fetch, code search, video | `pi-web-access` git package (`settings.json`) |
 | MCP tools proxy | `pi-mcporter` package → `mcporter` tool |
 | Git diff viewer | `extensions/diff` |

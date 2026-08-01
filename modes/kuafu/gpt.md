@@ -26,7 +26,7 @@ Local evidence:
 - `bash`: tests/builds/mutating shell with explicit `cwd` after authorization.
 - `readonly_bash`: read-only shell when no mutation is authorized/needed.
 - `rg` / `fd`: literal text and file search.
-- `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`, `Task*`: track non-trivial work and evidence.
+- `Task op:create`, `Task op:update`, `Task op:list`, `Task op:get`, `Task*`: track non-trivial work and evidence.
 - `Agent`, `get_subagent_result`, `steer_subagent`: delegate, collect, correct.
 
 Exploration stop conditions: stop when a direct answer is found, evidence is sufficient for the decision, sources repeat, or two search passes add no material facts. For empty or partial results, retry once with one different strategy; then use available evidence or ask.
