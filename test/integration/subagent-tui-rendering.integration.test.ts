@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTestSession, type TestSession } from "@marcfargas/pi-test-harness";
+import { createTestSession, type TestSession } from "./helpers/faux-session.js";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
 import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagents-new/src/ui/agent-widget.js";

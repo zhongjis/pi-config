@@ -169,6 +169,26 @@ export function getSettingsListTheme() {
   };
 }
 
+// Minimal faithful port of @earendil-works/pi-coding-agent theme.initTheme:
+// stores a global theme instance under the shared globalThis symbol keys so
+// any consumer reading the `theme` proxy resolves instead of throwing.
+export function initTheme(_themeName?: string, _enableWatcher = false): void {
+  const themeInstance = {
+    fg(_color: string, text: string): string {
+      return text;
+    },
+    bold(text: string): string {
+      return text;
+    },
+    dim(text: string): string {
+      return text;
+    },
+  };
+  const g = globalThis as Record<symbol, unknown>;
+  g[Symbol.for("@earendil-works/pi-coding-agent:theme")] = themeInstance;
+  g[Symbol.for("@mariozechner/pi-coding-agent:theme")] = themeInstance;
+}
+
 export function keyHint(_keybinding: string, description?: string): string {
   return description ? `${_keybinding} ${description}` : _keybinding;
 }
@@ -209,12 +229,37 @@ export function parseFrontmatter<T extends Record<string, unknown> = Record<stri
 
   const raw = yamlString.split("\n");
   const frontmatter: Record<string, unknown> = {};
-  for (const line of raw) {
+  for (let i = 0; i < raw.length; i++) {
+    const line = raw[i];
     const colon = line.indexOf(":");
     if (colon === -1) continue;
     const key = line.slice(0, colon).trim();
     const value = line.slice(colon + 1).trim();
     if (!key) continue;
+    if (value === "") {
+      // YAML block list: subsequent indented "- item" lines belong to this key.
+      const items: string[] = [];
+      let j = i + 1;
+      while (j < raw.length && /^\s*-\s+/.test(raw[j])) {
+        items.push(raw[j].replace(/^\s*-\s+/, "").trim());
+        j++;
+      }
+      if (items.length > 0) {
+        frontmatter[key] = items;
+        i = j - 1;
+        continue;
+      }
+      frontmatter[key] = coerceYamlValue(value);
+      continue;
+    }
+    // Inline YAML list: [a, b, c]
+    if (value.startsWith("[") && value.endsWith("]")) {
+      const inner = value.slice(1, -1).trim();
+      frontmatter[key] = inner
+        ? inner.split(",").map((item) => item.trim().replace(/^["']|["']$/g, "")).filter(Boolean)
+        : [];
+      continue;
+    }
     frontmatter[key] = coerceYamlValue(value);
   }
 

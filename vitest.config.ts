@@ -3,7 +3,6 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const rootDir = dirname(fileURLToPath(import.meta.url));
-const piAiCompat = fileURLToPath(import.meta.resolve("@earendil-works/pi-ai/compat"));
 
 export default defineConfig({
   test: {
@@ -30,7 +29,8 @@ export default defineConfig({
             "**/node_modules/**",
             ".omx/**",
             "sessions/**",
-            "test/integration/**"
+            "test/integration/**",
+            "extensions/subagents-new/test/**/*e2e*.test.ts"
           ],
           setupFiles: ["test/setup-require-stubs.ts"],
           server: {
@@ -41,15 +41,6 @@ export default defineConfig({
         }
       },
       {
-        resolve: {
-          alias: [
-            { find: /^@earendil-works\/pi-ai$/, replacement: piAiCompat },
-            {
-              find: "@marcfargas/pi-test-harness",
-              replacement: resolve(rootDir, "node_modules/@marcfargas/pi-test-harness/src/index.ts"),
-            },
-          ],
-        },
         test: {
           name: "integration",
           environment: "node",
@@ -63,7 +54,26 @@ export default defineConfig({
           testTimeout: 30_000,
           server: {
             deps: {
-              inline: [/@earendil-works/, /@mariozechner/, /@marcfargas/]
+              inline: [/@earendil-works/, /@mariozechner/]
+            }
+          }
+        }
+      },
+      {
+        test: {
+          name: "subagents-e2e",
+          environment: "node",
+          globals: true,
+          include: [
+            "extensions/subagents-new/test/**/*e2e*.test.ts"
+          ],
+          exclude: [
+            "**/node_modules/**"
+          ],
+          testTimeout: 30_000,
+          server: {
+            deps: {
+              inline: [/@earendil-works/, /@mariozechner/]
             }
           }
         }

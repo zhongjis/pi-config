@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { createTestSession, type TestSession } from "@marcfargas/pi-test-harness";
+import { createTestSession, type TestSession } from "./helpers/faux-session.js";
 import { initTheme, keyHint } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, setKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { KeybindingsManager } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/keybindings.js";

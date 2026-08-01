@@ -5,7 +5,7 @@ import {
 	calls,
 	says,
 	type TestSession,
-} from "@marcfargas/pi-test-harness";
+} from "./helpers/faux-session.js";
 import * as path from "node:path";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");

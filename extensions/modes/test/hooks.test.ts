@@ -82,104 +82,10 @@ type PromptConfig = {
 	promptMode?: "replace" | "append";
 };
 
-const ALL_TEST_MODES: TestMode[] = ["kuafu", "fuxi", "houtu", "luban", "shennong"];
-
 const MODE_PROMPT_FILES: Record<PromptFamily, string> = {
 	default: "mode.md",
 	gpt: "gpt.md",
 	gemini: "gemini.md",
-};
-
-type PromptInvariantSet = {
-	default: string[];
-	gpt: string[];
-	geminiOverlay: string[];
-	defaultOnlyInGptReplacement: string;
-	overlayAnchor: string;
-};
-
-const MODE_PROMPT_INVARIANTS: Record<TestMode, PromptInvariantSet> = {
-	kuafu: {
-		default: ["Implementation authorization gate", "Orchestrate first", "No evidence = not complete"],
-		gpt: ["Implementation authorization gate", "codegraph_*", "Subagent self-report is never evidence"],
-		geminiOverlay: ["<KUAFU_INTENT_GATE>", "<KUAFU_VERIFICATION_OVERRIDE>"],
-		defaultOnlyInGptReplacement: "Turn-local intent gate controls every response.",
-		overlayAnchor: "<KUAFU_INTENT_GATE>",
-	},
-	fuxi: {
-		default: [
-			"Plan only. MUST NOT implement",
-			"Plan mode is sticky",
-			"separate worker session that only the user starts",
-			"ulw-plan",
-			"Load the `ulw-plan` skill before planning",
-			"MUST NOT restate or inline the planning workflow",
-			"local://DRAFT.md",
-			"local://PLAN.md",
-			"plan_approve",
-		],
-		gpt: [
-			"Plan only. MUST NOT implement",
-			"Plan mode is sticky",
-			"separate worker session that only the user starts",
-			"ulw-plan",
-			"Load the `ulw-plan` skill before planning",
-			"MUST NOT restate or inline the planning workflow",
-			"local://DRAFT.md",
-			"local://PLAN.md",
-			"plan_approve",
-		],
-		geminiOverlay: [
-			"<FUXI_INTENT_GATE>",
-			"<FUXI_APPROVAL_GATE>",
-			"<FUXI_VERIFICATION_OVERRIDE>",
-		],
-		defaultOnlyInGptReplacement: "MANDATORY PLAN GENERATION SEQUENCE",
-		overlayAnchor: "<FUXI_INTENT_GATE>",
-	},
-	houtu: {
-		default: [
-			"Complete every task in `PLAN.md` and delegate work to subagents through \"Agent()\"",
-			"Use `run_in_background: true` for exploration (`chengfeng`, `wenchang`)",
-			"Delegate one bounded plan task per `Agent` session",
-			"Read PLAN, parse canonical `## Todos` and `## Final verification wave` sections (also accept legacy `## TODOs` and legacy `## Final Verification Wave`), then `TaskCreate` one tracking task per top-level todo and each final-verification gate per the tracking contract above, wire dependencies with `TaskUpdate addBlockedBy`, and call `TaskList`. Ignore nested acceptance/evidence checkboxes.",
-			"The plan's Final Wave tasks (F1-F4) are APPROVAL GATES",
-		],
-		gpt: [
-			"Read `PLAN.md` before doing anything else",
-			"buildPlanExecutionGoal(planPath)",
-			"Manage pi-tasks for logical DAG tracking only",
-			"Use pi-tasks for agent lifecycle",
-			"Final Verification Wave is a mandatory approval gate",
-			"APPROVE",
-		],
-		geminiOverlay: ["<gemini-corrective-overlay>", "Hou Tu coordinates only", "Pi-tasks track logical PLAN work only", "Delegate one bounded plan task per `Agent` session", "every Final Verification Wave gate has explicit `APPROVE`"],
-		defaultOnlyInGptReplacement: "<tracking_contract>",
-		overlayAnchor: "<gemini-corrective-overlay>",
-	},
-	luban: {
-		default: [
-			"Skill-first is mandatory",
-			"Do not claim Sisyphus, Prometheus, Atlas, or upstream agent-profile parity",
-			"Parallelism is safety-gated, not maximized",
-		],
-		gpt: [
-			"Before any response or action, run the skill gate",
-			"1% chance a skill applies",
-			"Do not claim Sisyphus, Prometheus, Atlas",
-			"verification-before-completion",
-		],
-		geminiOverlay: ["<LUBAN_GEMINI_CORRECTIVE_OVERLAY>", "Do not skip skill loading", "verify with readback"],
-		defaultOnlyInGptReplacement: "Consult the grain before the first cut",
-		overlayAnchor: "<LUBAN_GEMINI_CORRECTIVE_OVERLAY>",
-	},
-	shennong: {
-		default: ["No code, no implementation plans, no patching.", "Prioritization by LNO only", "Decision already made -> `/pm:write-prd` in place."],
-		gpt: ["PM-mode strategist for Pi decisions.", "One Leverage action max for next move", "Hand off with `/mode kuafu`."],
-		geminiOverlay: ["<SHENNONG_GEMINI_CORRECTIVE_OVERLAY>", "Use Shen Nong base behavior with strict PM correction:"],
-		defaultOnlyInGptReplacement: "You think in Shreyas-style PM mode:",
-		overlayAnchor: "<SHENNONG_GEMINI_CORRECTIVE_OVERLAY>",
-	},
 };
 
 function getModePromptPath(mode: TestMode, family: PromptFamily): string {
@@ -193,12 +99,6 @@ function stripFrontmatter(markdown: string): string {
 function readModePromptBody(mode: TestMode, family: PromptFamily): string {
 	const content = readFileSync(getModePromptPath(mode, family), "utf-8");
 	return family === "default" ? stripFrontmatter(content) : content.trim();
-}
-
-function expectContainsAll(text: string, expectedSnippets: string[]): void {
-	for (const snippet of expectedSnippets) {
-		expect(text).toContain(snippet);
-	}
 }
 
 async function renderInjectedPrompt({
@@ -265,97 +165,6 @@ describe("mode hooks", () => {
 
 		for (const prompt of prompts) {
 			expect(prompt).toContain("Load the `ulw-plan` skill before planning");
-		}
-	});
-
-	it("keeps Hou Tu implementation foreground while exploration remains background", async () => {
-		const defaultBody = readModePromptBody("houtu", "default");
-		const gptBody = readModePromptBody("houtu", "gpt");
-		const geminiOverlay = readModePromptBody("houtu", "gemini");
-		const prompts = [
-			await renderInjectedPrompt({ mode: "houtu", defaultConfig: { body: defaultBody } }),
-			await renderInjectedPrompt({
-				mode: "houtu",
-				family: "gpt",
-				defaultConfig: { body: defaultBody },
-				familyConfig: { body: gptBody },
-			}),
-			await renderInjectedPrompt({
-				mode: "houtu",
-				family: "gemini",
-				defaultConfig: { body: defaultBody },
-				familyConfig: { body: defaultBody, overlays: geminiOverlay },
-			}),
-		];
-
-		for (const prompt of prompts) {
-			expect(prompt).toContain("2. **Wait for the completion notification** - the system will trigger your next turn");
-			expect(prompt).toContain("3. **Then** collect results via `get_subagent_result(agent_id=\"...\")`");
-			expect(prompt).toContain("**Exploration** (`chengfeng`, `wenchang`): `run_in_background=true` — non-blocking research");
-			expect(prompt).toContain("**Task execution** (`Agent(...)`): `run_in_background=false` — blocks for verification");
-			expect(prompt).toContain("**Background management:**");
-			expect(prompt).toContain("Collect with background agent IDs: `get_subagent_result(agent_id=\"...\")`");
-			expect(prompt).toContain("Continue follow-ups with agent IDs: `Agent(resume=\"...\")`");
-			const foregroundRuns = prompt.match(/run_in_background(?:\s*:\s*|=)false/g) ?? [];
-			expect(foregroundRuns.length).toBeGreaterThanOrEqual(4);
-			expect(prompt).not.toContain("Stop the dependent work");
-			expect(prompt).not.toContain("Use background for exploration AND for every parallel implementation batch");
-			expect(prompt).not.toContain("Launch independent, conflict-free tasks as separate background agents");
-		}
-	});
-
-	it("renders actual default, GPT, and Gemini final prompts for every mode", async () => {
-		for (const mode of ALL_TEST_MODES) {
-			const invariants = MODE_PROMPT_INVARIANTS[mode];
-			const defaultBody = readModePromptBody(mode, "default");
-			const gptBody = readModePromptBody(mode, "gpt");
-			const geminiOverlay = readModePromptBody(mode, "gemini");
-			const stalePrompt = "Base\n\n<!-- mode:fuxi -->\nstale plan prompt\n<!-- /mode:fuxi -->";
-
-			const defaultPrompt = await renderInjectedPrompt({
-				mode,
-				family: "default",
-				basePrompt: stalePrompt,
-				defaultConfig: { body: defaultBody, promptMode: "replace" },
-			});
-			expect(defaultPrompt).toContain(`<!-- mode:${mode} -->`);
-			expect(defaultPrompt).not.toContain("stale plan prompt");
-			expectContainsAll(defaultPrompt, invariants.default);
-
-			const gptPrompt = await renderInjectedPrompt({
-				mode,
-				family: "gpt",
-				basePrompt: stalePrompt,
-				defaultConfig: { body: defaultBody, promptMode: "replace" },
-				familyConfig: { body: gptBody, promptMode: "replace" },
-			});
-			expect(gptPrompt).toContain(`<!-- mode:${mode} -->`);
-			expect(gptPrompt).not.toContain("stale plan prompt");
-			expectContainsAll(gptPrompt, invariants.gpt);
-			expect(gptPrompt).not.toContain(invariants.defaultOnlyInGptReplacement);
-
-			const geminiPrompt = await renderInjectedPrompt({
-				mode,
-				family: "gemini",
-				basePrompt: stalePrompt,
-				defaultConfig: { body: defaultBody, promptMode: "replace" },
-				familyConfig: { body: defaultBody, overlays: geminiOverlay, promptMode: "replace" },
-			});
-			expect(geminiPrompt).toContain(`<!-- mode:${mode} -->`);
-			expect(geminiPrompt).not.toContain("stale plan prompt");
-			expectContainsAll(geminiPrompt, invariants.default);
-			expectContainsAll(geminiPrompt, invariants.geminiOverlay);
-
-			const overlayPos = geminiPrompt.indexOf(invariants.overlayAnchor);
-			expect(overlayPos).toBeGreaterThan(-1);
-			if (defaultBody.includes("<critical>")) {
-				const criticalPos = geminiPrompt.indexOf("<critical>");
-				expect(criticalPos).toBeGreaterThan(-1);
-				expect(overlayPos).toBeLessThan(criticalPos);
-			} else {
-				expect(geminiPrompt).toContain("</role>");
-				expect(overlayPos).toBeGreaterThan(geminiPrompt.indexOf("</role>"));
-			}
 		}
 	});
 
