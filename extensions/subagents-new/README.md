@@ -21,8 +21,9 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
 | `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
 | `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.83 test/runtime fixtures target `subagents-new`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
+| `src/agent-manager.ts`, `test/agent-manager.test.ts` | Terminal Agent records retain their in-memory sessions for 30 minutes before timer cleanup | Preserve resumability across long parent verification while keeping retention bounded |
 
-Execution and model-facing content are preserved. FleetView and Thinking Steps remain unchanged.
+Upstream execution and model-facing content are otherwise preserved. FleetView and Thinking Steps remain unchanged.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
@@ -39,7 +40,7 @@ https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
 - **Conversation viewer** — select any agent in `/agents` to open a live-scrolling overlay of its full conversation (auto-follows new content, scroll up to pause). Steer a running agent inline by pressing `Enter` to open a composer, typing, then `Enter` to send (`Esc` or an empty submit returns) — the message appears as a user message and redirects the agent after its current tool. Stop a still-running agent by pressing `x` (then `x` again to confirm) — both work for background agents too
 - **Custom agent types** — define agents in `.pi/agents/<name>.md` or `.agents/agents/<name>.md` (project) or globally, with YAML frontmatter: custom system prompts, model selection, thinking levels, tool restrictions
 - **Mid-run steering** — inject messages into running agents to redirect their work without restarting
-- **Session resume** — pick up where an agent left off, preserving full conversation context
+- **Session resume** — pick up where an agent left off, preserving full conversation context. Terminal Agent records remain resumable for 30 minutes within the current parent session; session switch, reload, or shutdown may clean them sooner.
 - **Graceful turn limits** — agents get a "wrap up" warning before hard abort, producing clean partial results instead of cut-off output
 - **Case-insensitive agent types** — `"explore"`, `"Explore"`, `"EXPLORE"` all work. Unknown types fall back to general-purpose with a note
 - **Fuzzy model selection** — specify models by name (`"haiku"`, `"sonnet"`) instead of full IDs, with automatic filtering to only available/configured models

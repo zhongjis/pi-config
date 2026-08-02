@@ -251,12 +251,63 @@ describe("AgentManager — cleanup timer", () => {
 
   afterEach(() => {
     manager?.dispose();
+    vi.useRealTimers();
   });
 
   it("does not keep the process alive on its own", () => {
     manager = new AgentManager();
 
     expect((manager as any).cleanupInterval.hasRef()).toBe(false);
+  });
+
+  it("retains terminal foreground and background sessions for 30 minutes, then disposes them", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const foregroundSession = mockSession();
+    const backgroundSession = mockSession();
+    vi.mocked(runAgent)
+      .mockResolvedValueOnce({
+        responseText: "foreground done",
+        session: foregroundSession,
+        aborted: false,
+        steered: false,
+      })
+      .mockResolvedValueOnce({
+        responseText: "background done",
+        session: backgroundSession,
+        aborted: false,
+        steered: false,
+      });
+    manager = new AgentManager();
+
+    const foreground = await manager.spawnAndWait(
+      mockPi,
+      mockCtx,
+      "general-purpose",
+      "foreground",
+      { description: "foreground" },
+    );
+    const backgroundId = manager.spawn(
+      mockPi,
+      mockCtx,
+      "general-purpose",
+      "background",
+      { description: "background", isBackground: true },
+    );
+    await manager.getRecord(backgroundId)!.promise;
+
+    expect(foreground.record.resultConsumed).toBe(true);
+    expect(manager.getRecord(backgroundId)!.resultConsumed).toBeFalsy();
+
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    expect(manager.getRecord(foreground.id)).toBeDefined();
+    expect(manager.getRecord(backgroundId)).toBeDefined();
+
+    await vi.advanceTimersByTimeAsync(11 * 60_000);
+    expect(manager.getRecord(foreground.id)).toBeUndefined();
+    expect(manager.getRecord(backgroundId)).toBeUndefined();
+    expect(foregroundSession.dispose).toHaveBeenCalledOnce();
+    expect(backgroundSession.dispose).toHaveBeenCalledOnce();
   });
 });
 
