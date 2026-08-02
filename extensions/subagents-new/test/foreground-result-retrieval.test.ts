@@ -1,25 +1,19 @@
 /**
- * foreground-result-retrieval.test.ts — issue #174, via the REAL Agent tool +
- * the REAL get_subagent_result tool.
+ * foreground-result-retrieval.test.ts — issue #174, via the REAL Agent,
+ * get_subagent_result, and resume paths.
  *
- * Report: a FOREGROUND agent that wraps up at max_turns returns its partial
- * result inline, but a get_subagent_result for "that agent ID" immediately
- * afterwards answers `Agent not found ... It may have been cleaned up.` — with
- * no /new, /resume or session switch in between.
+ * A foreground agent that wraps up at max_turns remains resumable. Its exact
+ * Agent ID must therefore reach model-visible content, not renderer-only
+ * details, so the parent can continue that session without inventing an ID.
  *
- * Tracing says the premise can't hold, and these tests pin both halves of why:
+ * These tests pin three lifecycle guarantees:
  *
- *   1. The record is NOT cleaned up. Foreground completion mutates the record
- *      in place (agent-manager.ts startAgent's .then) — nothing deletes it. So
- *      a lookup with the REAL id succeeds.
- *   2. The model never HAD the real id. Foreground returns the result text
- *      only; the id travels in `details`, which is renderer metadata and never
- *      reaches the API (only `content` is serialized). The background path is
- *      the one that puts `Agent ID: ...` in the text.
+ *   1. Foreground completion does not clean up the record.
+ *   2. The foreground result exposes the real ID and that ID resumes.
+ *   3. Session switching still evicts consumed foreground records.
  *
- * Together: whatever id the reporter's model passed, it wasn't one we issued,
- * and "not found" was the correct answer. Test 3 pins the eviction rule that
- * DOES apply, so the two are not confused again.
+ * The turn-limit shape stays covered because issue #174 occurred after a
+ * graceful max_turns wrap-up (`status: "steered"`).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,10 +22,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/agent-runner.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
+  return { ...actual, resumeAgent: vi.fn(), runAgent: vi.fn() };
 });
 
-import { runAgent } from "../src/agent-runner.js";
+import { resumeAgent, runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 
 function makePi() {
@@ -69,11 +63,10 @@ const textOf = (r: any): string => r.content[0].text;
 /**
  * Run a FOREGROUND agent that wraps up at the turn limit — the exact #174
  * shape. `steered: true` is what agent-manager turns into status "steered",
- * which is what produces the reporter's "(wrapped up at the turn limit —
- * output may be partial)" note.
+ * which produces the reporter's turn-limit completion note.
  *
- * Returns the tool result plus the id read out of `details` — the only place
- * a foreground id exists, which is the point of test 2.
+ * Returns the tool result plus the authoritative ID from structured details
+ * so tests can compare it with the model-visible handle.
  */
 async function runForegroundSteeredAgent(tools: Map<string, any>) {
   vi.mocked(runAgent).mockResolvedValue({
@@ -150,26 +143,27 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     await lifecycle.get("session_shutdown")?.({}, ctx());
   });
 
-  it("never hands the model an agent id — the id lives only in renderer details", async () => {
+  it("hands the model the real agent id and that id resumes", async () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
     const { res, id } = await runForegroundSteeredAgent(tools);
 
-    // `content` is the only thing serialized to the API. If the id isn't here,
-    // the model cannot have obtained it — any id it passes is invented.
-    expect(textOf(res)).not.toContain(id);
-    expect(textOf(res)).not.toMatch(/Agent ID:/);
+    expect(textOf(res)).toContain(`Agent ID: ${id}`);
 
-    // An invented id is correctly rejected — this is the reporter's error,
-    // reproduced WITHOUT any record having been cleaned up.
-    const bogus = await tools.get("get_subagent_result").execute(
-      "tc-bogus",
-      { agent_id: "3f1320a7-74ec-422" },
+    vi.mocked(resumeAgent).mockResolvedValue({ text: "RESUMED-PAYLOAD" });
+    const resumed = await tools.get("Agent").execute(
+      "tc-resume",
+      {
+        prompt: "Continue from the previous result.",
+        description: "Continue organization-scope changes",
+        subagent_type: "Explore",
+        resume: id,
+      },
       undefined,
       undefined,
       ctx(),
     );
-    expect(textOf(bogus)).toContain("Agent not found");
+    expect(textOf(resumed)).toBe("RESUMED-PAYLOAD");
 
     await lifecycle.get("session_shutdown")?.({}, ctx());
   });
