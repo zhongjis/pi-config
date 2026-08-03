@@ -6,6 +6,7 @@ discover_skills: false
 builtin_tools: read
 extension_tools: readonly_bash,codegraph_*,lsp
 extensions: true
+persist_session: true
 ---
 
 <role>

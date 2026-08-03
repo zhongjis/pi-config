@@ -7,6 +7,7 @@ preload_skills: ast-grep
 builtin_tools: read
 extension_tools: readonly_bash,codegraph_*,lsp
 extensions: true
+persist_session: true
 ---
 
 <role>

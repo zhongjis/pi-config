@@ -6,6 +6,7 @@ prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read,bash,edit,write
 extension_tools: codegraph_*,lsp
+persist_session: true
 ---
 
 <role>

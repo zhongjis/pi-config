@@ -6,6 +6,7 @@ discover_skills: false
 builtin_tools: read
 extension_tools: web_search,code_search,fetch_content,get_search_content,mcporter
 extensions: true
+persist_session: true
 ---
 
 <role>

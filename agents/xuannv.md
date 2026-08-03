@@ -8,6 +8,7 @@ extension_tools: readonly_bash,codegraph_*,lsp,Agent,get_subagent_result,steer_s
 extensions: true
 allow_delegation_to: chengfeng,wenchang,direnjie
 allow_nesting: true
+persist_session: true
 ---
 
 <role>
