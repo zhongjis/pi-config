@@ -122,15 +122,16 @@ describe("init extension templates", () => {
     ]);
   });
 
-  it("keeps init-dox DOX state/case contract markers", () => {
+  it("keeps init-dox DOX context/branch contract markers", () => {
     expectTemplateMarkers("init-dox", INIT_DOX_TEMPLATE, [
-      "## DOX Contract",
-      "## Child DOX Index",
-      "no AGENTS.md",
-      "older DOX markers",
-      "AGENTS.md not using DOX",
-      "conflicts or ambiguous ownership",
-      "ask which doc owns the path",
+      "https://github.com/agent0ai/dox",
+      "README",
+      "Child DOX Index",
+      "does NOT exist",
+      "ALREADY exists",
+      "ambiguous",
+      "byte-for-byte",
+      "curl -fsSL https://raw.githubusercontent.com/agent0ai/dox/main/AGENTS.md",
     ]);
   });
 });
