@@ -2,7 +2,7 @@
 // The prompt points at live upstream DOX (agent0ai/dox, MIT) instead of embedding the contract, so DOX text is never duplicated here.
 export const INIT_DOX_TEMPLATE = `# /init-dox
 
-Install or migrate this project's AGENTS.md docs to the DOX framework. Documentation/process only — no runtime, package, config, lockfile, or toolchain changes unless user args explicitly request broader changes.
+Install, upgrade, or migrate this project's AGENTS.md docs to the DOX framework. Documentation/process only — no runtime, package, config, lockfile, or toolchain changes unless user args explicitly request broader changes.
 
 ## Step 1 — Build context
 
@@ -10,46 +10,61 @@ Install or migrate this project's AGENTS.md docs to the DOX framework. Documenta
 - Read the repo README first to learn what DOX is and how the hierarchy works: https://github.com/agent0ai/dox/blob/main/README.md
 - Read the DOX contract file — this is the DOX-system text you will install at the project root: https://github.com/agent0ai/dox/blob/main/AGENTS.md
 - Pi shortcut: read \`github://agent0ai/dox/README.md\` and \`github://agent0ai/dox/AGENTS.md\` directly with the read tool.
-- Raw DOX contract for byte-exact copying: https://raw.githubusercontent.com/agent0ai/dox/main/AGENTS.md
 - Do not proceed until both files are read. Follow their hierarchy, child-doc shape, style, and closeout rules for every edit below.
 
-## Step 2 — Modify AGENTS.md
+## Step 2 — Fetch upstream and compute the version tag
 
-Discover docs with fd. Read the root AGENTS.md and every child AGENTS.md on each target path before editing. Then branch on whether a root AGENTS.md already exists.
+The DOX contract text must be reused verbatim — fetch the raw file with the CLI and reuse its bytes; never retype, reword, reformat, or trim it. Compute its sha256 so the install carries a version tag for future upgrade detection:
 
-The DOX contract text must be reused verbatim — fetch the raw file with the CLI and reuse its bytes; never retype, reword, reformat, or trim it. The only parts you author for this project are the **Child DOX Index** entries and the **User Preferences** section; every other section (the DOX rules) stays byte-for-byte identical to upstream.
+    curl -fsSL https://raw.githubusercontent.com/agent0ai/dox/main/AGENTS.md -o /tmp/dox-agents.md
+    DOX_SHA=$(shasum -a 256 /tmp/dox-agents.md | cut -d' ' -f1)
 
-### If root AGENTS.md does NOT exist
+The version tag is a single HTML comment placed directly ABOVE the verbatim DOX block, never inside it (so the block stays byte-for-byte identical to upstream):
 
-1. Fetch the DOX contract verbatim into a new project-root AGENTS.md via the CLI, e.g.:
-   \`curl -fsSL https://raw.githubusercontent.com/agent0ai/dox/main/AGENTS.md -o AGENTS.md\`
-2. Populate the root **Child DOX Index** per DOX rules: list each child AGENTS.md and its scope; if none exist yet, state that root owns all files.
-3. Create/rewrite/polish child AGENTS.md files wherever a folder is a durable boundary that warrants one, following DOX rules. Child docs carry local deltas only.
+    <!-- dox-source: agent0ai/dox@main sha256:$DOX_SHA -->
 
-### If root AGENTS.md ALREADY exists
+## Step 3 — Classify state and resolve the action
 
-1. Fetch the DOX contract verbatim and prepend its bytes to the top of the existing root AGENTS.md via the CLI, keeping existing content intact below, e.g.:
-   \`curl -fsSL https://raw.githubusercontent.com/agent0ai/dox/main/AGENTS.md -o /tmp/dox-agents.md && printf '\\n\\n' | cat /tmp/dox-agents.md - AGENTS.md > AGENTS.md.new && mv AGENTS.md.new AGENTS.md\`
-   DOX rules must come first, followed by the existing content unchanged.
-2. Populate the root **Child DOX Index** per DOX rules.
-3. Rewrite/polish the pre-existing content to strictly follow DOX rules: concise, current, operational; delete stale, duplicate, or contradictory guidance.
-4. Create/rewrite/polish child AGENTS.md files wherever warranted, following DOX rules. Child docs carry local deltas only.
+Discover docs with fd. Read the root AGENTS.md and every child AGENTS.md on each target path. Locate the version tag \`<!-- dox-source: agent0ai/dox@main sha256:... -->\` if present. Resolve exactly one action from this table — do not edit anything yet:
 
-## Rules
+| Root AGENTS.md state | Resolved action |
+|----------------------|-----------------|
+| absent | Create — write the tag + verbatim DOX contract + a Child DOX Index. |
+| tag present, sha matches upstream | Unchanged — DOX contract is current; only the Child DOX Index and child docs may need a refresh. |
+| tag present, sha differs | Upgrade — replace the tagged DOX-rules block with the current verbatim contract and restamp the tag. |
+| tag missing, a DOX block is present (older/paraphrased/adapted) | Migrate — replace the legacy DOX-rules block with the tag + verbatim contract. |
+| tag missing, no DOX block | Prepend — add the tag + verbatim contract to the top, keep existing content intact below. |
 
-- Copy the DOX contract byte-for-byte from upstream — never paraphrase, reword, reformat, or trim the DOX rules.
-- Read existing AGENTS.md before editing. Never overwrite existing content — prepend the DOX text and preserve what was there.
-- Do not duplicate parent rules into child docs.
-- If ownership or a destructive migration is ambiguous, ask which doc owns the path before overwriting or deleting.
-- Keep locally authored wording (Child DOX Index, child docs) concise and operational.
+Ambiguity guard: if a legacy DOX block is interleaved with project content and cannot be cleanly separated, do not guess — surface it in the decision gate below.
+
+## Step 4 — Decision gate (human approval)
+
+Stop before touching any file. Present the resolved plan and get explicit human approval:
+
+- resolved action (Create / Unchanged / Upgrade / Migrate / Prepend)
+- root AGENTS.md path and how it changes (created / block replaced / prepended / untouched)
+- for Upgrade: the installed tag sha vs the current upstream sha
+- child AGENTS.md files to be created or rewritten
+- any ambiguity from Step 3 that needs a human decision
+
+Wait for explicit approval. If the user rejects or asks for changes, adjust the plan and re-confirm. If the resolved plan is a pure no-op (Unchanged with no child-doc edits), report it and finish without prompting.
+
+## Step 5 — Apply the approved plan
+
+Execute only the approved action.
+
+- Root AGENTS.md: perform the Create / Upgrade / Migrate / Prepend using the CLI-fetched bytes (/tmp/dox-agents.md). Only the DOX-rules sections are copied byte-for-byte; the **Child DOX Index** and **User Preferences** sections are project-authored — populate them for this repo and preserve existing entries across upgrades.
+- Idempotency: after a run the file carries a current tag, so re-running with no upstream change resolves to Unchanged and never duplicates the DOX block.
+- Child docs: populate the root **Child DOX Index** per DOX rules (list each child AGENTS.md and its scope; if none exist yet, state that root owns all files). Create/rewrite/polish child AGENTS.md files wherever a folder is a durable boundary that warrants one; child docs carry local deltas only and do not duplicate parent rules.
 
 ## Output
 
 Report:
   === init-dox Complete ===
-  Mode: installed | migrated
-  Root AGENTS.md: created | prepended
+  Mode: installed | upgraded | migrated | unchanged
+  Root AGENTS.md: created | replaced | prepended | unchanged
+  DOX source: agent0ai/dox@main sha256:<hex>
+  Approved by user: yes | n/a (no-op)
   Child AGENTS.md created/updated: N
-  Asked user: yes/no
   Notes: blockers, ownership questions, or docs intentionally unchanged
 `;

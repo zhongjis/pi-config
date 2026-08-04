@@ -122,16 +122,19 @@ describe("init extension templates", () => {
     ]);
   });
 
-  it("keeps init-dox DOX context/branch contract markers", () => {
+  it("keeps init-dox DOX context/version-tag/approval-gate contract markers", () => {
     expectTemplateMarkers("init-dox", INIT_DOX_TEMPLATE, [
       "https://github.com/agent0ai/dox",
       "README",
       "Child DOX Index",
-      "does NOT exist",
-      "ALREADY exists",
-      "ambiguous",
       "byte-for-byte",
       "curl -fsSL https://raw.githubusercontent.com/agent0ai/dox/main/AGENTS.md",
+      "shasum -a 256",
+      "<!-- dox-source: agent0ai/dox@main sha256:",
+      "sha matches upstream",
+      "sha differs",
+      "Ambiguity guard",
+      "Decision gate (human approval)",
     ]);
   });
 });
