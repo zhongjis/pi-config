@@ -7,7 +7,7 @@ Slash-command extension for AGENTS.md/DOX initialization prompts. `/init-deep` r
 ## Provenance
 
 - `/init-deep`: upstream init-deep SUL concepts informed prompt shape only; wording is original, Pi-native, and never a wholesale copy.
-- `/init-dox`: DOX source is `agent0ai/dox@5cb5ba55bd1c0f7c1b31fe655fe36e2febb760d2` (MIT), adopted as docs/process layer only, not a Pi extension/package.
+- `/init-dox`: DOX source is `agent0ai/dox` upstream `main` (MIT), adopted as docs/process layer only, not a Pi extension/package.
 
 ## Structure
 
