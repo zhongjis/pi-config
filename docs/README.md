@@ -93,6 +93,7 @@ See [modes.md](specs/modes.md) and [orchestration-flow.md](specs/orchestration-f
 | [mode-prompt-audit-checklist.md](specs/mode-prompt-audit-checklist.md) | Future prompt audit checklist for construction semantics, provenance, parity, and scope guardrails |
 | [orchestration-flow.md](specs/orchestration-flow.md) | Planning-to-execution lifecycle |
 | [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Planned restore-first continuation for persisted subagent sessions |
+| [omp-harness-migration.md](specs/omp-harness-migration.md) | Draft feature inventory and migration design for replacing Pi with OMP |
 | [testing/README.md](guides/testing/README.md) | Extension testing policy and two-tier model |
 | [testing/unit-test.md](guides/testing/unit-test.md) | Unit test conventions |
 | [testing/integration-test.md](guides/testing/integration-test.md) | Integration test approach |
