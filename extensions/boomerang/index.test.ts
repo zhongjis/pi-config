@@ -175,7 +175,7 @@ describe("Boomerang Extension", () => {
   let currentCwd: string;
   let currentLeafId: string | null;
   let currentModel: { provider: string; id: string };
-  let currentThinking: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  let currentThinking: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   let agentIdle: boolean;
   let allModels: { provider: string; id: string }[];
   let availableModels: { provider: string; id: string }[];
@@ -1270,6 +1270,37 @@ describe("Boomerang Extension", () => {
 
       expect(setThinkingCalls).toEqual(["xhigh"]);
       expect(currentThinking).toBe("xhigh");
+    });
+
+    it("supports Pi max thinking from template frontmatter", async () => {
+      writePrompt("user", "deep-dive", "---\nthinking: max\n---\nInspect $@");
+
+      await runBoomerang("/deep-dive auth");
+
+      expect(setThinkingCalls).toEqual(["max"]);
+      expect(currentThinking).toBe("max");
+    });
+
+    it("supports Pi max thinking in chain frontmatter", async () => {
+      writePrompt("user", "step1", "---\nthinking: max\n---\nStep one");
+      writePrompt("user", "step2", "Step two");
+
+      await runBoomerang("/step1 -> /step2 -- task");
+
+      expect(setThinkingCalls).toEqual(["max"]);
+      expect(currentThinking).toBe("max");
+    });
+
+    it("restores the previous thinking level after max template completion", async () => {
+      writePrompt("user", "deep-dive", "---\nthinking: max\n---\nInspect $@");
+
+      await runBoomerang("/deep-dive auth");
+      addAssistantTextEntry("Done.");
+      await triggerAgentEnd();
+
+      expect(setThinkingCalls).toEqual(["max", "low"]);
+      expect(currentThinking).toBe("low");
+      expect(uiMock.notify).toHaveBeenCalledWith("Restored to thinking:low", "info");
     });
 
     it("restores the previous thinking level after summarizing", async () => {

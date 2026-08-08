@@ -5,10 +5,10 @@ Vendored `pi-boomerang` extension for token-efficient autonomous task execution.
 ## Upstream
 
 - Source: https://github.com/nicobailon/pi-boomerang
-- Last synced version: 0.6.6
-- Last synced commit: `c2fa351aeeaa773d574036ebbdfc656d7c812883`
+- Last synced version: 0.7.0
+- Last synced commit: `1a5985b2d92cfa84ce1f470d100d02b368711a91`
 - License: not declared upstream
-- Local changes summary: copied into `extensions/boomerang/`, kept code/test behavior intact, replaced README with local repo format, omitted upstream package files because root dependencies already provide required packages.
+- Local changes summary: copied into `extensions/boomerang/`, preserved local `/boomerang:commit` and tool rendering, replaced README with local repo format, omitted upstream package files because root dependencies already provide required packages.
 
 ## Tools
 
@@ -53,6 +53,8 @@ Fields:
 
 - `toolEnabled` — boolean; whether agent-callable `boomerang` tool is enabled.
 - `toolGuidance` — string or null; extra system-prompt guidance for tool use.
+
+Prompt-template frontmatter accepts Pi thinking levels through `max`.
 
 Model role config: `/boomerang:commit` uses the `boomerang.commit` rule / `commit` role from `~/.pi/agent/tool_models.json` or project `.pi/tool_models.json`.
 
