@@ -20,7 +20,7 @@ fi
 
 # Detect package manager from lockfile in current directory
 if [ -f pnpm-lock.yaml ]; then
-  exec "${node_build_shell[@]}" nixpkgs#pnpm -c pnpm --ignore-workspace "$@"
+  exec "${node_build_shell[@]}" nixpkgs#pnpm -c pnpm "$@"
 elif [ -f bun.lock ] || [ -f bun.lockb ]; then
   exec "${node_build_shell[@]}" nixpkgs#bun -c bun "$@"
 fi

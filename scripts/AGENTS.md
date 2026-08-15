@@ -14,6 +14,7 @@ This file owns `scripts/`.
 - Do not add global installs or host-mutating setup as a default path; prefer Nix/project-scoped execution.
 - Keep sync scripts explicit about temp directories, upstream source, and files intentionally ignored.
 - Preserve executable semantics when editing shell scripts.
+- `pi-package-npm.sh` must preserve package-local manager config and forward Pi's arguments unchanged.
 - Oh My OpenAgent generated final-prompt updates run through `pnpm sync:oh-my-openagent-prompts`; verify with `pnpm check:oh-my-openagent-prompts`. The active mode-owned `ulw-plan` is not a sync target.
 
 ## Work Guidance

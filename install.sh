@@ -174,7 +174,7 @@ install_git_package_deps() {
 
         if [ -f "$repo_dir/pnpm-lock.yaml" ]; then
           echo "Installing pnpm dependencies in $repo_dir"
-          ( cd "$repo_dir" && pnpm install --ignore-workspace )
+          ( cd "$repo_dir" && pnpm install )
         elif [ -f "$repo_dir/bun.lock" ] || [ -f "$repo_dir/bun.lockb" ]; then
           echo "Installing bun dependencies in $repo_dir"
           ( cd "$repo_dir" && bun install )
