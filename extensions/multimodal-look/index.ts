@@ -527,7 +527,10 @@ export default function multimodalLook(pi: ExtensionAPI): void {
         signal,
       );
       return {
-        content: [{ type: "text", text: result.text }],
+        content: [
+          { type: "text", text: result.text },
+          { type: "image", data: image.data, mimeType: image.mimeType },
+        ],
         details: {
           model: result.model,
           thinkingLevel: result.thinkingLevel,

@@ -1,6 +1,6 @@
 # multimodal-look
 
-Adds `look_at`, a dedicated multimodal inspection tool. It sends one image plus a focused goal to a profile-aware vision model and returns concise text findings to the main agent.
+Adds `look_at`, a dedicated multimodal inspection tool. It sends one image plus a focused goal to a profile-aware vision model, then returns concise text findings plus the original image as a tool-result image block.
 
 ## Tools
 
