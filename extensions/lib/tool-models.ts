@@ -63,10 +63,12 @@ export const BUILTIN_TOOL_MODELS_FILE: ToolModelsFile = {
 	roles: {
 		"summary.session": "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b",
 		commit: "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
+		"guard.tool": "openai-codex/gpt-5.6-luna:low,opencode/claude-haiku-4-5",
 	},
 	tools: {
 		"smart-sessions.summary": { role: "summary.session" },
 		"boomerang.commit": { role: "commit" },
+		"tool-smart-guard.classifier": { role: "guard.tool" },
 	},
 };
 

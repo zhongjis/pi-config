@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -12,6 +12,7 @@ import {
 
 const SUMMARY_CHAIN = "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b";
 const COMMIT_CHAIN = "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b";
+const GUARD_CHAIN = "openai-codex/gpt-5.6-luna:low,opencode/claude-haiku-4-5";
 
 function writeJson(path: string, value: unknown): void {
 	mkdirSync(dirname(path), { recursive: true });
@@ -66,10 +67,12 @@ describe("tool model config", () => {
 			roles: {
 				"summary.session": SUMMARY_CHAIN,
 				commit: COMMIT_CHAIN,
+				"guard.tool": GUARD_CHAIN,
 			},
 			tools: {
 				"smart-sessions.summary": { role: "summary.session" },
 				"boomerang.commit": { role: "commit" },
+				"tool-smart-guard.classifier": { role: "guard.tool" },
 			},
 		});
 		expect(getToolModelSelection(config, "smart-sessions.summary")).toMatchObject({
@@ -82,7 +85,21 @@ describe("tool model config", () => {
 			role: "commit",
 			source: "built-in",
 		});
+		expect(getToolModelSelection(config, "tool-smart-guard.classifier")).toMatchObject({
+			chain: GUARD_CHAIN,
+			role: "guard.tool",
+			source: "built-in",
+		});
 		expect(config.diagnostics).toEqual([]);
+	});
+
+	it("keeps the installed tool model chains resolvable and wires smart guard", () => {
+		const installed = JSON.parse(readFileSync(join(process.cwd(), "tool_models.json"), "utf8"));
+
+		expect(installed.roles["summary.session"].split(",")[0]).toBe("openai-codex/gpt-5.6-luna");
+		expect(installed.roles.commit.split(",")[0]).toBe("openai-codex/gpt-5.6-luna");
+		expect(installed.roles["guard.tool"]).toBe(GUARD_CHAIN);
+		expect(installed.tools["tool-smart-guard.classifier"]).toEqual({ role: "guard.tool" });
 	});
 
 	it("lets project config override global config", () => {

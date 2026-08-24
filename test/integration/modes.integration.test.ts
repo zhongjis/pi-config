@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createTestSession,
 	when,
@@ -12,6 +12,7 @@ import { readFile, rm } from "node:fs/promises";
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const EXTENSION = path.resolve(PROJECT_ROOT, "extensions/modes/src/index.ts");
 const INLINE_SKILLS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/inline-skills/index.ts");
+const TOOL_SMART_GUARD_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/tool-smart-guard/index.ts");
 
 const MOCK_TOOLS = {
 	bash: (params: Record<string, unknown>) => `$ ${params.command}\nok`,
@@ -290,40 +291,59 @@ describe("modes extension — integration", () => {
 		expect(writeResults).toHaveLength(1);
 	});
 
-	// ── Fu Xi plan mode: built-in bash guard ──────────────────────
-
-	it("fuxi mode blocks built-in bash even for read-only-looking commands", async () => {
+	// ── Fu Xi plan mode: smart-guarded built-in bash ──────────────
+	it("fails closed for Fu Xi bash when smart guard is omitted", async () => {
+		const bash = vi.fn((params: Record<string, unknown>) => `$ ${params.command}\nok`);
 		t = await createTestSession({
 			extensions: [EXTENSION],
-			mockTools: MOCK_TOOLS,
+			mockTools: { ...MOCK_TOOLS, bash },
 			propagateErrors: false,
 		});
 
 		await switchMode(t, "fuxi");
-
 		await t.run(
-			when("List files", [
-				calls("bash", { command: "cat README.md" }),
+			when("Inspect git status", [
+				calls("bash", { command: "git status" }),
 				says("Blocked."),
 			]),
 		);
 
-		const blocked = t.events.blockedCalls();
-		expect(blocked).toHaveLength(1);
-		expect(blocked[0].toolName).toBe("bash");
-		expect(blocked[0].blockReason).toContain("full bash is unavailable");
-		expect(blocked[0].blockReason).toContain("readonly_bash");
+		expect(bash).not.toHaveBeenCalled();
+		const [result] = t.events.toolResultsFor("bash");
+		expect(result).toMatchObject({ isError: true });
+		expect(result.text).toMatch(/smart guard.*not registered/i);
 	});
 
-	it("fuxi mode blocks destructive built-in bash commands", async () => {
+	it("allows deterministic-safe Fu Xi bash through smart guard without classifier", async () => {
+		const bash = vi.fn((params: Record<string, unknown>) => `$ ${params.command}\nok`);
 		t = await createTestSession({
-			extensions: [EXTENSION],
-			mockTools: MOCK_TOOLS,
+			extensions: [EXTENSION, TOOL_SMART_GUARD_EXTENSION],
+			mockTools: { ...MOCK_TOOLS, bash },
 			propagateErrors: false,
 		});
 
 		await switchMode(t, "fuxi");
+		await t.run(
+			when("Inspect git status", [
+				calls("bash", { command: "git status" }),
+				says("Done."),
+			]),
+		);
 
+		expect(bash).toHaveBeenCalledOnce();
+		expect(t.events.toolResultsFor("bash")).toHaveLength(1);
+		expect(t.events.toolResultsFor("bash")[0].isError).toBe(false);
+	});
+
+	it("blocks deterministic-dangerous Fu Xi bash before native execution", async () => {
+		const bash = vi.fn((params: Record<string, unknown>) => `$ ${params.command}\nok`);
+		t = await createTestSession({
+			extensions: [EXTENSION, TOOL_SMART_GUARD_EXTENSION],
+			mockTools: { ...MOCK_TOOLS, bash },
+			propagateErrors: false,
+		});
+
+		await switchMode(t, "fuxi");
 		await t.run(
 			when("Run destructive command", [
 				calls("bash", { command: "rm -rf /tmp/test" }),
@@ -331,34 +351,10 @@ describe("modes extension — integration", () => {
 			]),
 		);
 
-		const blocked = t.events.blockedCalls();
-		expect(blocked).toHaveLength(1);
-		expect(blocked[0].toolName).toBe("bash");
-		expect(blocked[0].blockReason).toContain("full bash is unavailable");
-		expect(blocked[0].blockReason).toContain("switch to build mode");
-	});
-
-	it("fuxi mode blocks every built-in bash call", async () => {
-		t = await createTestSession({
-			extensions: [EXTENSION],
-			mockTools: MOCK_TOOLS,
-			propagateErrors: false,
-		});
-
-		await switchMode(t, "fuxi");
-
-		await t.run(
-			when("Run git and grep", [
-				calls("bash", { command: "git status" }),
-				calls("bash", { command: "grep -r TODO src/" }),
-				calls("bash", { command: "ls -la" }),
-				says("Done."),
-			]),
-		);
-
-		const blocked = t.events.blockedCalls();
-		expect(blocked).toHaveLength(3);
-		expect(blocked.map((call) => call.toolName)).toEqual(["bash", "bash", "bash"]);
+		expect(bash).not.toHaveBeenCalled();
+		const [result] = t.events.toolResultsFor("bash");
+		expect(result).toMatchObject({ isError: true });
+		expect(result.text).toContain("dangerous");
 	});
 
 	// ── Mode switching via command ──────────────────────────────

@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { isTui } from "../../lib/mode.js";
+import { FUXI_BASH_GUARD_CAPABILITY, hasGuardCapability } from "../../lib/guard-registration.js";
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
@@ -203,12 +204,12 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 			return;
 		}
 
-		if (event.toolName !== "bash") return;
-		const command = (event.input as { command?: string }).command ?? "";
-		return {
-			block: true,
-			reason: `Plan mode: full bash is unavailable. Use readonly_bash for read-only commands, or switch to build mode if mutation is needed.\nCommand: ${command}`,
-		};
+		if (event.toolName === "bash" && !hasGuardCapability(pi, FUXI_BASH_GUARD_CAPABILITY)) {
+			return {
+				block: true,
+				reason: "Plan mode: built-in bash blocked because smart guard capability is not registered.",
+			};
+		}
 	});
 
 	pi.on("tool_result", async (event, ctx) => {

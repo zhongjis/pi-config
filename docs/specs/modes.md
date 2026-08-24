@@ -11,7 +11,7 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 | Mode | Alias | Purpose |
 |------|-------|---------|
 | `kuafu` | `build` | Default. General-purpose coding and implementation. |
-| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is blocked and read-only shell inspection uses `readonly_bash` when exactly allowlisted via `extension_tools: readonly_bash`. |
+| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit is limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is guarded by `tool-smart-guard`. |
 | `houtu` | `execute` | Plan execution after handoff. Receives a prepared execution prompt in a child session. |
 | `luban` | — | Skill-first discipline mode adapted from obra/superpowers. |
 | `shennong` | `pm` | Product mode. Problem framing, prioritization, and de-risking before implementation; hands off to Kua Fu via `/mode kuafu`. |
@@ -80,7 +80,7 @@ The mode body is wrapped in HTML comment markers (`<!-- mode:<name> -->`) and in
 
 ## Plan Mode Restrictions (Fu Xi)
 
-When the active mode is `fuxi`, the `tool_call` hook enforces restrictions.
+When the active mode is `fuxi`, the modes extension's `tool_call` hook deterministically enforces the write/edit restriction below.
 
 ### Write/Edit Restrictions
 
@@ -91,13 +91,17 @@ When the active mode is `fuxi`, the `tool_call` hook enforces restrictions.
 
 ### Bash Restrictions
 
-In Fu Xi, built-in `bash` tool calls are blocked unconditionally. Read-only shell inspection must use the extension-provided `readonly_bash` tool, and that tool is exposed only when the mode frontmatter opts in exactly with `extension_tools: readonly_bash`.
+Fu Xi exposes built-in `bash`. `tool-smart-guard` guards only built-in `bash` when the latest valid persisted `agent-mode` entry is `fuxi`; other tools and modes bypass it.
 
-Mutable shell work requires switching to build mode.
+The modes extension requires positive smart-guard registration. Missing or failed guard loading blocks Fu Xi `bash` before execution.
+
+The guard allows a narrow deterministic set of obvious-safe commands, blocks a narrow deterministic set of obvious-danger commands, and sends unknown commands to the classifier configured by `tool-smart-guard.classifier`. Invalid verdicts, unavailable models or auth, provider errors, and cancellation block the command.
+
+This is a best-effort accidental-mutation guard, not a shell sandbox or security guarantee. Mutable shell work requires switching to build mode.
 
 ### Delegation Restrictions
 
-`Agent` tool calls are checked against `allow_delegation_to` / `disallow_delegation_to` from mode frontmatter. Blocked delegations return a descriptive reason listing permitted targets.
+Mode frontmatter delegation rules are persisted in versioned `agent-mode` policy state. The subagent runtime consumes that policy for direct `Agent` and RPC authorization; the modes hook does not guard `Agent` calls.
 
 ---
 

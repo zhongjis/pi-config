@@ -19,11 +19,13 @@ Later layers override earlier layers.
   "version": 1,
   "roles": {
     "summary.session": "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b",
-    "commit": "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b"
+    "commit": "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
+    "guard.tool": "openai-codex/gpt-5.6-luna:low,opencode/claude-haiku-4-5"
   },
   "tools": {
     "smart-sessions.summary": { "role": "summary.session" },
-    "boomerang.commit": { "role": "commit" }
+    "boomerang.commit": { "role": "commit" },
+    "tool-smart-guard.classifier": { "role": "guard.tool" }
   }
 }
 ```
@@ -43,8 +45,15 @@ Rules:
 |---|---|---|---|
 | `smart-sessions.summary` | `summary.session` | One-line session-name summary | `extensions/smart-sessions/index.ts` |
 | `boomerang.commit` | `commit` | `/boomerang:commit` target model | `extensions/boomerang/commit.ts` |
+| `tool-smart-guard.classifier` | `guard.tool` | Classify unknown Fu Xi built-in `bash` commands | `extensions/tool-smart-guard/index.ts` |
 
 ## Extension behavior
+
+### `tool-smart-guard`
+
+Unknown Fu Xi built-in `bash` commands resolve `tool-smart-guard.classifier`. Its built-in role is `guard.tool`, with chain `openai-codex/gpt-5.6-luna:low,opencode/claude-haiku-4-5`.
+
+Global or project config may replace the entire `guard.tool` chain, repoint the tool key to another role, or set a direct tool `chain`; a direct chain wins over its role. Clearing the selection, an unavailable model or auth, provider errors, cancellation, and invalid classifier verdicts fail closed and block the command.
 
 ### `smart-sessions`
 

@@ -11,6 +11,7 @@ import * as path from "node:path";
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const ULW_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/ulw/index.ts");
 const MODES_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/modes/src/index.ts");
+const TOOL_SMART_GUARD_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/tool-smart-guard/index.ts");
 
 const MOCK_TOOLS = {
 	bash: (params: Record<string, unknown>) => `$ ${params.command}\nok`,
@@ -87,18 +88,17 @@ describe("ulw extension — integration", () => {
 
 	// ── Mode gating with modes extension ────────────────────────
 
-	it("skips injection in fuxi mode (with modes extension)", async () => {
+	it("skips injection in fuxi mode while smart guard permits safe bash", async () => {
 		t = await createTestSession({
-			extensions: [MODES_EXTENSION, ULW_EXTENSION],
+			extensions: [MODES_EXTENSION, TOOL_SMART_GUARD_EXTENSION, ULW_EXTENSION],
 			mockTools: MOCK_TOOLS,
 			propagateErrors: false,
 		});
 
 		await switchMode(t, "fuxi");
 
-		// In fuxi mode, ulw keyword should be stripped but prompt not injected.
-		// Built-in bash is blocked by fuxi's plan-mode hook (different concern),
-		// but the ulw extension should not inject its prompt.
+		// Fu Xi suppresses ultrawork injection; smart guard independently allows
+		// this deterministic read-only command through built-in bash.
 		await t.run(
 			when("ulw check status", [
 				calls("bash", { command: "git status" }),
@@ -106,10 +106,8 @@ describe("ulw extension — integration", () => {
 			]),
 		);
 
-		const blocked = t.events.blockedCalls();
-		expect(blocked).toHaveLength(1);
-		expect(blocked[0].toolName).toBe("bash");
-		expect(blocked[0].blockReason).toContain("full bash is unavailable");
+		expect(t.events.blockedCalls()).toHaveLength(0);
+		expect(t.events.toolResultsFor("bash")).toHaveLength(1);
 	});
 
 	it("activates normally in kuafu mode (with modes extension)", async () => {

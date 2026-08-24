@@ -24,10 +24,11 @@ extensions/
 | Subagents | `subagents/AGENTS.md` | Vendored live package with a high-coupling runtime/event surface |
 | Tasks | `tasks/AGENTS.md` | File-backed DAG + process tracking + planning cleanup RPC |
 | Agent modes | `modes/src/commands.ts`, `modes/src/hooks.ts`, `modes/src/mode-state.ts` | Mode-owned resource transitions submit through command context; reload is terminal. |
-| Consolidated QoL/UI | `qol/` | Structured simple extension owning header, footer, prompt URL widget, session/exit commands, and `write` rendering. |
+| Fu Xi built-in bash guard | `tool-smart-guard/`, `lib/guard-registration.ts`, `lib/tool-models.ts` | Positive registration keeps modes fail-closed; unknown commands use `guard.tool`. |
+| Consolidated QoL/UI | `qol/` | Structured simple extension owning header, footer, post-settle over-limit compaction, prompt URL widget, session/exit commands, and `write` rendering. |
 | Web research tools | `pi-web-access` git package (`settings.json`) | Vendored remote, not a local `extensions/` dir |
 | Provider failover | `clauderock/` | Anthropic → AWS Bedrock fallback on quota/rate-limit; uses `lib/stream-fallback.ts` |
-| Shared model roles | `lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` role schema for extension-owned LLM calls |
+| Shared model roles | `lib/tool-models.ts`, `docs/specs/extension-model-usage.md` | `tool_models.json` role schema; `guard.tool` is the smart-guard classifier seam. |
 | Shared failover primitives | `lib/provider-errors.ts`, `lib/fallback-cache.ts`, `lib/stream-fallback.ts`, `lib/notify-once.ts` | Pure utilities; no extension state |
 
 ## Commands

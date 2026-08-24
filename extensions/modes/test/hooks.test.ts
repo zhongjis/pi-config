@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { FUXI_BASH_GUARD_CAPABILITY, registerGuardCapability } from "../../lib/guard-registration.js";
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
 	CustomEditor: class {
@@ -238,27 +239,40 @@ describe("mode hooks", () => {
 		});
 	});
 
-	it("blocks built-in bash commands in plan mode", async () => {
+	it("blocks Fu Xi bash when smart guard capability is not registered", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
 		state.cachedConfigs["fuxi:default"] = { body: "" };
 
 		registerModeHooks(mock.pi as never, state);
+		const [result] = await mock.fire(
+			"tool_call",
+			{ toolName: "bash", input: { command: "git status" } },
+			{},
+		);
 
-		for (const command of ["cat README.md", "npm install express"]) {
-			const [result] = await mock.fire(
-				"tool_call",
-				{ toolName: "bash", input: { command } },
-				{},
-			);
+		expect(result).toEqual({
+			block: true,
+			reason: expect.stringMatching(/smart guard.*not registered/i),
+		});
+	});
 
-			expect(result).toMatchObject({
-				block: true,
-				reason: expect.stringContaining("full bash is unavailable"),
-			});
-			expect((result as { reason: string }).reason).toContain("readonly_bash");
-		}
+	it("passes Fu Xi bash to smart guard when capability is registered", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "fuxi";
+		state.cachedConfigs["fuxi:default"] = { body: "" };
+		registerGuardCapability(mock.pi as never, FUXI_BASH_GUARD_CAPABILITY);
+
+		registerModeHooks(mock.pi as never, state);
+		const [result] = await mock.fire(
+			"tool_call",
+			{ toolName: "bash", input: { command: "git status" } },
+			{},
+		);
+
+		expect(result).toBeUndefined();
 	});
 
 

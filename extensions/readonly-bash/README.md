@@ -2,6 +2,10 @@
 
 Restricted shell tool for read-only commands. Validates commands against an allowlist before execution. Best-effort accidental-mutation guard, not a security sandbox.
 
+## Status
+
+Deprecated for Fu Xi only: Fu Xi now uses smart-guarded built-in `bash`. `readonly_bash` remains implemented and enabled for five read-only subagents: `chengfeng`, `direnjie`, `taishang`, `xuannv`, and `yanluo`.
+
 ## Tool
 
 `readonly_bash` — executes a validated read-only shell command.

@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 import { resolveModelFromStr, ModeStateManager } from "../src/mode-state.js";
 
 vi.mock("../src/config-loader.js", () => ({
@@ -226,6 +229,31 @@ describe("ModeStateManager", () => {
 
 		await state.applyMode(ctx as never);
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
+	});
+
+	it("activates built-in bash instead of readonly_bash from Fu Xi frontmatter", async () => {
+		const pi = createMockPi(["read", "write", "bash", "readonly_bash"]);
+		const state = new ModeStateManager(pi as never);
+		const source = readFileSync(join(process.cwd(), "modes", "fuxi", "mode.md"), "utf8");
+		const parsed = parseAgentMarkdown(source);
+		state.currentMode = "fuxi";
+		state.cachedConfigs["fuxi:default"] = {
+			body: parsed.body,
+			builtinToolNames: parsed.builtinToolNames,
+			extensionToolNames: parsed.extensionToolNames,
+			extensions: parsed.extensions,
+			allowNesting: parsed.allowNesting,
+		};
+
+		await state.applyMode({
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+		} as never);
+
+		const activeTools = pi.setActiveTools.mock.calls.at(-1)?.[0] ?? [];
+		expect(activeTools).toEqual(expect.arrayContaining(["read", "write", "edit", "bash"]));
+		expect(activeTools).not.toContain("readonly_bash");
 	});
 
 	it("uses extension_tools: none to disable extension tools", async () => {

@@ -22,7 +22,7 @@ Relevant generated final prompt baselines located:
 - Sisyphus: `docs/references/oh-my-openagent/final-prompts/sisyphus/*.md` (model-family final prompts generated from TypeScript builders).
 - Prometheus: `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`.
 - Atlas: `docs/references/oh-my-openagent/final-prompts/atlas/{default,gpt,gemini,glm,kimi,kimi-k2-7,opus-4-7}.md`.
-- Fu Xi active `ulw-plan`: `modes/fuxi/skills/ulw-plan/{SKILL.md,agents/openai.yaml,references/full-workflow.md,references/intent-clear.md,references/intent-unclear.md,scripts/scaffold-plan.mjs}`. It began as the six-file pinned `v4.19.0` upstream copy and carries only Pi runtime adaptations.
+- Fu Xi active `ulw-plan`: `modes/fuxi/skills/ulw-plan/{SKILL.md,agents/openai.yaml,references/adversarial-research.md,references/full-workflow.md,references/intent-clear.md,references/intent-unclear.md,references/review-lifecycle.md,scripts/scaffold-plan.mjs}`. It began as the six-file pinned `v4.19.0` upstream copy; staged conditional references and other changes are Pi runtime adaptations.
 
 ## Applied v4.16.3 Agent Mappings
 
@@ -84,7 +84,7 @@ Local invariants before edits:
 - Fuxi remains planner-only. Product code edits and implementation are forbidden.
 - Planning is sticky: user implementation verbs mean “plan this” in Fuxi.
 - Only plan artifacts may be written: `local://DRAFT.md` and `local://PLAN.md`; hook restrictions remain authoritative.
-- Preserve Pi planning ceremony: explore-first routing, continuous `local://DRAFT.md`, explicit pre-plan approval, `plan_scaffold`, Di Renjie gap analysis, canonical upstream plan write, self-review, dual high-accuracy review when required, and `plan_approve`.
+- Preserve staged Pi planning ceremony: always-loaded `SKILL.md` control plane; canonical CLEAR/UNCLEAR branch references; `adversarial-research.md` only for shared architecture/bootstrap/Discord/external-source research; continuous `local://DRAFT.md`; `full-workflow.md` only near explicit pre-plan approval and `plan_scaffold` plan production; Di Renjie gap analysis, APPEND plan write, and binary completion gates; `review-lifecycle.md` only when dual high-accuracy review becomes actionable; final `plan_approve`.
 - Plans for typed-code changes should include LSP diagnostics when available.
 - `ask` is interview-only; final approval/proceed menus use `plan_approve`.
 - GPT replacement must contain the full planner contract. Gemini overlay must not bypass draft, review, or approval requirements.
