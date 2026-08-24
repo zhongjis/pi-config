@@ -10,7 +10,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { CustomEditor, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type SessionEntry, type SessionManager } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type AgentEndEvent, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type SessionEntry, type SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { isTui } from "../lib/mode.js";
@@ -563,14 +563,25 @@ export default function (pi: ExtensionAPI) {
   let anchorEntryId: string | null = null;
   let anchorSummaries: string[] = [];
 
-  let pendingCollapse: {
+  interface PendingCollapse {
     targetId: string;
     task: string;
     commandCtx: ExtensionCommandContext;
     switchedToModel?: string;
     switchedToThinking?: ThinkingLevel;
     injectedSkill?: string;
-  } | null = null;
+    toolInitiated?: boolean;
+  }
+
+  interface CollapseFinalizer {
+    request: PendingCollapse;
+    sessionGeneration: number;
+    status: "running" | "failed";
+    promise: Promise<void>;
+  }
+
+  let pendingCollapse: PendingCollapse | null = null;
+  let collapseFinalizer: CollapseFinalizer | null = null;
 
   let lastTaskSummary: string | null = null;
   let lastHandoffSummary: string | null = null;
@@ -599,6 +610,98 @@ export default function (pi: ExtensionAPI) {
   let autoAwaitingAssistantAfterId: string | null = null;
   let sessionGeneration = 0;
   let fallbackReloadInProgress = false;
+
+  function terminalAssistantFailure(messages: AgentEndEvent["messages"]): AssistantMessage | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role !== "assistant") continue;
+      return message.stopReason === "aborted" || message.stopReason === "error" ? message : undefined;
+    }
+    return undefined;
+  }
+
+  function ownsCollapse(owner: CollapseFinalizer): boolean {
+    return collapseFinalizer === owner
+      && pendingCollapse === owner.request
+      && sessionGeneration === owner.sessionGeneration
+      && (owner.request.toolInitiated === true || boomerangActive);
+  }
+
+  async function finalizeCollapse(owner: CollapseFinalizer, ctx: ExtensionContext): Promise<void> {
+    const { request } = owner;
+    const { commandCtx, targetId } = request;
+    let ownsGlobalCollapseFlag = false;
+
+    try {
+      await commandCtx.waitForIdle();
+      if (!ownsCollapse(owner)) return;
+
+      globalThis.__boomerangCollapseInProgress = true;
+      ownsGlobalCollapseFlag = true;
+      keepBoomerangExpanded(ctx);
+
+      const result = await commandCtx.navigateTree(targetId, { summarize: true });
+      if (!ownsCollapse(owner)) return;
+
+      if (result.cancelled) {
+        ctx.ui.notify("Summary cancelled", "warning");
+        await restoreModelAndThinking(ctx);
+        if (!ownsCollapse(owner)) return;
+        clearTaskState();
+        updateStatus(ctx);
+        return;
+      }
+
+      justCollapsedEntryId = commandCtx.sessionManager.getLeafId();
+      const handoffSummary = lastHandoffSummary ?? lastTaskSummary;
+      if (anchorEntryId !== null && targetId === anchorEntryId && lastTaskSummary) {
+        anchorSummaries.push(lastTaskSummary);
+      }
+      ctx.ui.notify("Boomerang complete. Context summarized.", "info");
+
+      await restoreModelAndThinking(ctx);
+      if (!ownsCollapse(owner)) return;
+      clearTaskState();
+      updateStatus(ctx);
+      if (handoffSummary) {
+        triggerHiddenOrchestratorHandoff(handoffSummary);
+      }
+    } catch (error) {
+      if (!ownsCollapse(owner)) return;
+
+      ctx.ui.notify(`Failed to summarize: ${String(error)}`, "error");
+      await restoreModelAndThinking(ctx);
+      if (!ownsCollapse(owner)) return;
+
+      owner.status = "failed";
+      updateStatus(ctx);
+      ctx.ui.notify(
+        "Boomerang summary state preserved. Use /boomerang-retry-summary to retry or /boomerang-cancel to clear it.",
+        "warning"
+      );
+    } finally {
+      if (ownsGlobalCollapseFlag) {
+        globalThis.__boomerangCollapseInProgress = false;
+      }
+      if (collapseFinalizer === owner && owner.status === "running") {
+        collapseFinalizer = null;
+      }
+    }
+  }
+
+  function scheduleCollapse(request: PendingCollapse, ctx: ExtensionContext): Promise<void> | undefined {
+    if (collapseFinalizer) return undefined;
+
+    const owner: CollapseFinalizer = {
+      request,
+      sessionGeneration,
+      status: "running",
+      promise: Promise.resolve(),
+    };
+    collapseFinalizer = owner;
+    owner.promise = finalizeCollapse(owner, ctx);
+    return owner.promise;
+  }
 
   function parseFrontmatter(content: string): { frontmatter: Record<string, string>; content: string } {
     const frontmatter: Record<string, string> = {};
@@ -863,6 +966,7 @@ export default function (pi: ExtensionAPI) {
     anchorEntryId = null;
     anchorSummaries = [];
     pendingCollapse = null;
+    collapseFinalizer = null;
     lastTaskSummary = null;
     lastHandoffSummary = null;
     toolAnchorEntryId = null;
@@ -886,6 +990,7 @@ export default function (pi: ExtensionAPI) {
   function clearTaskState() {
     boomerangActive = false;
     pendingCollapse = null;
+    collapseFinalizer = null;
     lastTaskSummary = null;
     lastHandoffSummary = null;
     pendingSkill = null;
@@ -2034,7 +2139,7 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Usage: /boomerang <task> | auto [on|off|toggle|status] | anchor | tool [on|off] | guidance [text|clear]", "error");
         return;
       }
-      if (boomerangActive || chainState) {
+      if (boomerangActive || chainState || pendingCollapse || collapseFinalizer) {
         ctx.ui.notify("Boomerang already active. Use /boomerang-cancel to abort.", "error");
         return;
       }
@@ -2047,11 +2152,25 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("boomerang-retry-summary", {
+    description: "Retry failed boomerang summary without rerunning the task",
+    handler: async (_args, ctx) => {
+      if (!pendingCollapse || collapseFinalizer?.status !== "failed") {
+        ctx.ui.notify("No failed boomerang summary to retry", "warning");
+        return;
+      }
+
+      const collapseRequest = pendingCollapse;
+      collapseFinalizer = null;
+      await scheduleCollapse(collapseRequest, ctx);
+    },
+  });
+
   pi.registerCommand("boomerang-cancel", {
     description: "Cancel active boomerang (no context summary)",
     handler: async (_args, ctx) => {
       storedCommandCtx = ctx;
-      const hasActive = boomerangActive || chainState || toolAnchorEntryId !== null || toolCollapsePending || toolQueuedTask !== null;
+      const hasActive = boomerangActive || chainState || pendingCollapse !== null || collapseFinalizer !== null || toolAnchorEntryId !== null || toolCollapsePending || toolQueuedTask !== null;
       if (!hasActive) {
         ctx.ui.notify("No boomerang active", "warning");
         return;
@@ -2112,7 +2231,7 @@ export default function (pi: ExtensionAPI) {
           };
         }
 
-        if (boomerangActive) {
+        if (boomerangActive || pendingCollapse || collapseFinalizer) {
           return {
             content: [{ type: "text", text: "A boomerang is already active. Wait for it to complete." }],
             details: {},
@@ -2227,7 +2346,25 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("agent_end", async (_event, ctx) => {
+  pi.on("agent_end", async (event, ctx) => {
+    const terminalFailure = terminalAssistantFailure(event.messages);
+    if (terminalFailure) {
+      const hasActiveTask = boomerangActive || pendingCollapse || rethrowState || chainState
+        || toolCollapsePending || toolQueuedTask || toolAnchorEntryId;
+      if (hasActiveTask) {
+        await restoreModelAndThinking(ctx);
+        clearTaskState();
+        rethrowState = null;
+        toolAnchorEntryId = null;
+        toolCollapsePending = false;
+        toolQueuedTask = null;
+        updateStatus(ctx);
+        const reason = terminalFailure.errorMessage ?? terminalFailure.stopReason;
+        ctx.ui.notify(`Boomerang stopped without summary: ${reason}`, "warning");
+      }
+      return;
+    }
+
     if (rethrowState) return;
 
     if (boomerangActive && autoAwaitingAssistantAfterId !== null) {
@@ -2294,37 +2431,17 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Use navigateTree for immediate UI update
       const targetId = toolAnchorEntryId;
       toolAnchorEntryId = null;
       lastTaskSummary = null;
       lastHandoffSummary = null;
-      pendingCollapse = { targetId, task: "Agent-initiated task", commandCtx: storedCommandCtx };
-
-      let shouldTriggerHandoff = false;
-      let handoffSummary: string | null = null;
-      try {
-        globalThis.__boomerangCollapseInProgress = true;
-        keepBoomerangExpanded(ctx);
-        const result = await storedCommandCtx.navigateTree(targetId, { summarize: true });
-        if (result.cancelled) {
-          ctx.ui.notify("Summary cancelled", "warning");
-        } else {
-          justCollapsedEntryId = storedCommandCtx.sessionManager.getLeafId();
-          handoffSummary = lastHandoffSummary ?? lastTaskSummary;
-          ctx.ui.notify("Boomerang complete. Context summarized.", "info");
-          shouldTriggerHandoff = true;
-        }
-      } catch (err) {
-        ctx.ui.notify(`Failed to summarize: ${String(err)}`, "error");
-      } finally {
-        globalThis.__boomerangCollapseInProgress = false;
-      }
-      pendingCollapse = null;
-      await restoreModelAndThinking(ctx);
-      if (shouldTriggerHandoff && handoffSummary) {
-        triggerHiddenOrchestratorHandoff(handoffSummary);
-      }
+      pendingCollapse = {
+        targetId,
+        task: "Agent-initiated task",
+        commandCtx: storedCommandCtx,
+        toolInitiated: true,
+      };
+      scheduleCollapse(pendingCollapse, ctx);
       return;
     }
 
@@ -2364,43 +2481,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (!boomerangActive || !pendingCollapse) return;
-
-    const collapseRequest = pendingCollapse;
-    const { targetId, commandCtx } = collapseRequest;
-
-    let shouldTriggerHandoff = false;
-    let handoffSummary: string | null = null;
-    try {
-      globalThis.__boomerangCollapseInProgress = true;
-      keepBoomerangExpanded(ctx);
-      const result = await commandCtx.navigateTree(targetId, { summarize: true });
-      const collapseStillOwned = pendingCollapse === collapseRequest && boomerangActive;
-
-      if (result.cancelled) {
-        ctx.ui.notify("Summary cancelled", "warning");
-      } else if (!collapseStillOwned) {
-        // State changed during summarization (for example via /boomerang-cancel).
-      } else {
-        justCollapsedEntryId = commandCtx.sessionManager.getLeafId();
-        handoffSummary = lastHandoffSummary ?? lastTaskSummary;
-        if (anchorEntryId !== null && targetId === anchorEntryId && lastTaskSummary) {
-          anchorSummaries.push(lastTaskSummary);
-        }
-        ctx.ui.notify("Boomerang complete. Context summarized.", "info");
-        shouldTriggerHandoff = true;
-      }
-    } catch (err) {
-      ctx.ui.notify(`Failed to summarize: ${String(err)}`, "error");
-    } finally {
-      globalThis.__boomerangCollapseInProgress = false;
-    }
-
-    await restoreModelAndThinking(ctx);
-    clearTaskState();
-    updateStatus(ctx);
-    if (shouldTriggerHandoff && handoffSummary) {
-      triggerHiddenOrchestratorHandoff(handoffSummary);
-    }
+    scheduleCollapse(pendingCollapse, ctx);
   });
 
   pi.on("session_before_tree", async (event) => {

@@ -12,6 +12,7 @@ import type {
   SessionShutdownEvent,
   SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai";
 
 const mockState = vi.hoisted(() => ({
   homeDir: "",
@@ -352,6 +353,27 @@ describe("Boomerang Extension", () => {
     });
   }
 
+  function agentEndAssistant(stopReason: StopReason, errorMessage?: string): AssistantMessage {
+    return {
+      role: "assistant",
+      content: [],
+      api: "anthropic-messages",
+      provider: "anthropic",
+      model: "current-model",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason,
+      errorMessage,
+      timestamp: Date.now(),
+    };
+  }
+
   async function captureTreeSummary(targetId: string) {
     const handler = getHandler("session_before_tree");
     if (!handler) return;
@@ -427,6 +449,10 @@ describe("Boomerang Extension", () => {
     await getCommand("boomerang-cancel")("", ctx);
   }
 
+  async function runRetrySummary(ctx: ExtensionCommandContext = mockCommandCtx) {
+    await getCommand("boomerang-retry-summary")("", ctx);
+  }
+
   async function fireBeforeAgentStart(systemPrompt = "original") {
     return await getHandler("before_agent_start")({ systemPrompt }, mockCtx);
   }
@@ -436,12 +462,35 @@ describe("Boomerang Extension", () => {
     return handler ? await handler({ type: "input", text, source }, mockCtx) : undefined;
   }
 
-  async function triggerAgentEnd(ctx: ExtensionContext = mockCtx, options: { idle?: boolean } = {}) {
+  async function triggerAgentEnd(
+    ctx: ExtensionContext = mockCtx,
+    options: { idle?: boolean; messages?: AgentEndEvent["messages"] } = {}
+  ) {
     agentIdle = options.idle ?? true;
     const handler = getHandler("agent_end");
-    if (handler) {
-      const event: AgentEndEvent = { type: "agent_end", messages: [] };
+    if (!handler) return;
+
+    const navigationCallCount = navigateTreeCalls.length;
+    const originalSetStatus = uiMock.setStatus.getMockImplementation() as
+      | ((key: string, value: string | undefined) => void)
+      | undefined;
+    let markStatusUpdated: (() => void) | undefined;
+    const statusUpdated = new Promise<void>((resolve) => {
+      markStatusUpdated = resolve;
+    });
+    uiMock.setStatus.mockImplementation((key: string, value: string | undefined) => {
+      originalSetStatus?.(key, value);
+      markStatusUpdated?.();
+    });
+
+    try {
+      const event: AgentEndEvent = { type: "agent_end", messages: options.messages ?? [] };
       await handler(event, ctx);
+      if (options.idle !== false && navigateTreeCalls.length > navigationCallCount) {
+        await statusUpdated;
+      }
+    } finally {
+      uiMock.setStatus.mockImplementation(originalSetStatus ?? (() => undefined));
     }
   }
 
@@ -1965,6 +2014,118 @@ describe("Boomerang Extension", () => {
       expect(navigateTreeCalls).toHaveLength(1);
     });
 
+    describe("collapse lifecycle coordinator", () => {
+      it("ignores summary retry when no failed collapse exists", async () => {
+        await runRetrySummary();
+
+        expect(uiMock.notify).toHaveBeenCalledWith("No failed boomerang summary to retry", "warning");
+        expect(navigateTreeCalls).toHaveLength(0);
+        expect(sentMessages).toHaveLength(0);
+      });
+
+      it("returns from agent_end before idle, then collapses once despite duplicate events", async () => {
+        let releaseIdle: (() => void) | undefined;
+        const idleGate = new Promise<void>((resolve) => {
+          releaseIdle = resolve;
+        });
+        waitForIdleMock.mockReturnValue(idleGate);
+
+        let markNavigationStarted: (() => void) | undefined;
+        const navigationStarted = new Promise<void>((resolve) => {
+          markNavigationStarted = resolve;
+        });
+        const deferredCtx = createCommandCtx({
+          navigateTree: vi.fn(async (targetId: string, options: { summarize?: boolean }) => {
+            navigateTreeCalls.push({ targetId, options });
+            markNavigationStarted?.();
+            return { cancelled: false };
+          }),
+        });
+
+        await runBoomerang("fix auth", deferredCtx);
+        addAssistantTextEntry("Done.");
+        await triggerAgentEnd(mockCtx, { idle: false });
+        await triggerAgentEnd(mockCtx, { idle: false });
+
+        expect(waitForIdleMock).toHaveBeenCalledOnce();
+        expect(navigateTreeCalls).toHaveLength(0);
+
+        releaseIdle?.();
+        await navigationStarted;
+
+        expect(navigateTreeCalls).toHaveLength(1);
+        await triggerAgentEnd();
+        expect(navigateTreeCalls).toHaveLength(1);
+      });
+
+      it.each([
+        ["aborted", "Operation aborted"],
+        ["error", "Provider failed"],
+      ] as const)("does not collapse a %s task and permits a later task", async (stopReason, errorMessage) => {
+        writePrompt("user", "task", "---\nmodel: claude-opus-4-6\n---\nTask content");
+        await runBoomerang("/task");
+        addAssistantTextEntry("");
+
+        await triggerAgentEnd(mockCtx, { messages: [agentEndAssistant(stopReason, errorMessage)] });
+
+        expect(waitForIdleMock).not.toHaveBeenCalled();
+        expect(navigateTreeCalls).toHaveLength(0);
+        expect(sentCustomMessages).toHaveLength(0);
+        expect(currentModel).toEqual(model("anthropic", "current-model"));
+
+        await runBoomerang("later task");
+        expect(sentMessages).toEqual(["Task content", "later task"]);
+      });
+
+      it("invalidates a waiting collapse when cancelled", async () => {
+        let releaseIdle: (() => void) | undefined;
+        const idleGate = new Promise<void>((resolve) => {
+          releaseIdle = resolve;
+        });
+        waitForIdleMock.mockReturnValue(idleGate);
+
+        await runBoomerang("fix auth");
+        addAssistantTextEntry("Done.");
+        await triggerAgentEnd(mockCtx, { idle: false });
+        await runCancel();
+        agentIdle = true;
+
+        await runBoomerang("later task");
+        expect(sentMessages).toEqual(["fix auth", "later task"]);
+
+        releaseIdle?.();
+        await idleGate;
+        await Promise.resolve();
+
+        expect(navigateTreeCalls).toHaveLength(0);
+        expect(sentCustomMessages).toHaveLength(0);
+      });
+
+      it("invalidates a waiting collapse when the session is replaced", async () => {
+        let releaseIdle: (() => void) | undefined;
+        const idleGate = new Promise<void>((resolve) => {
+          releaseIdle = resolve;
+        });
+        waitForIdleMock.mockReturnValue(idleGate);
+
+        await runBoomerang("fix auth");
+        addAssistantTextEntry("Done.");
+        await triggerAgentEnd(mockCtx, { idle: false });
+        await fireSessionSwitch();
+        agentIdle = true;
+
+        await runBoomerang("later task");
+        expect(sentMessages).toEqual(["fix auth", "later task"]);
+
+        releaseIdle?.();
+        await idleGate;
+        await Promise.resolve();
+
+        expect(navigateTreeCalls).toHaveLength(0);
+        expect(sentCustomMessages).toHaveLength(0);
+      });
+    });
+
     it("waits for assistant output even if getLeafId becomes null after queueing", async () => {
       writePrompt("user", "task", "Task content");
       const baseSessionManager = mockCtx.sessionManager as any;
@@ -2082,20 +2243,43 @@ describe("Boomerang Extension", () => {
       expect(sentCustomMessages).toEqual([]);
     });
 
-    it("does not wake the orchestrator when normal summarization throws", async () => {
-      const throwingCtx = createCommandCtx({
+    it("retries only failed summarization without rerunning the task", async () => {
+      let navigationAttempt = 0;
+      const retryingCtx = createCommandCtx({
         navigateTree: vi.fn(async (targetId: string, options: { summarize?: boolean }) => {
           navigateTreeCalls.push({ targetId, options });
-          throw new Error("navigation failed");
+          navigationAttempt++;
+          if (navigationAttempt === 1) {
+            throw new Error("navigation failed");
+          }
+          await captureTreeSummary(targetId);
+          return { cancelled: false };
         }),
       });
 
-      await runBoomerang("fix auth", throwingCtx);
+      await runBoomerang("fix auth", retryingCtx);
       addAssistantTextEntry("Done.");
       await triggerAgentEnd();
 
       expect(uiMock.notify).toHaveBeenCalledWith("Failed to summarize: Error: navigation failed", "error");
+      expect(uiMock.notify).toHaveBeenCalledWith(
+        "Boomerang summary state preserved. Use /boomerang-retry-summary to retry or /boomerang-cancel to clear it.",
+        "warning"
+      );
+      expect(navigateTreeCalls).toHaveLength(1);
       expect(sentCustomMessages).toEqual([]);
+
+      await runBoomerang("later task");
+      expect(sentMessages).toEqual(["fix auth"]);
+
+      await runRetrySummary();
+
+      expect(navigateTreeCalls).toHaveLength(2);
+      expect(sentMessages).toEqual(["fix auth"]);
+      expectBoomerangHandoff();
+
+      await runBoomerang("later task");
+      expect(sentMessages).toEqual(["fix auth", "later task"]);
     });
 
     it("sets the global summarize flag during template summarization", async () => {
@@ -2948,9 +3132,15 @@ describe("Boomerang Extension", () => {
       await triggerAgentEnd();
 
       expect(uiMock.notify).toHaveBeenCalledWith("Failed to summarize: Error: auto navigation failed", "error");
-      expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", undefined);
+      expect(uiMock.notify).toHaveBeenCalledWith(
+        "Boomerang summary state preserved. Use /boomerang-retry-summary to retry or /boomerang-cancel to clear it.",
+        "warning"
+      );
+      expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", "[warning]boomerang");
       expect(sentCustomMessages).toEqual([]);
 
+      await runCancel();
+      expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", undefined);
       await fireInput("after navigation failure");
       const nextStart = await fireBeforeAgentStart("original");
       expect(nextStart).toBeUndefined();

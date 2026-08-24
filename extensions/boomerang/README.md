@@ -33,6 +33,7 @@ Parameters:
 - `/boomerang anchor [show|clear]` — set, inspect, or clear shared summary anchor.
 - `/boomerang tool [on [guidance]|off]` — enable/disable agent-callable tool.
 - `/boomerang guidance [text|clear]` — set or clear tool guidance.
+- `/boomerang-retry-summary` — retry only a failed summary collapse; never reruns the autonomous task.
 - `/boomerang-cancel` — abort active boomerang without summarizing.
 - `Ctrl+Alt+B` — toggle one-shot auto-boomerang mode.
 
@@ -40,10 +41,10 @@ Parameters:
 
 - `input` — captures next prompt when auto mode is enabled.
 - `before_agent_start` — injects boomerang instructions, tool guidance, optional skill content.
-- `agent_end` — advances chains, starts queued tool tasks, collapses context.
+- `agent_end` — advances chains and queued tool tasks; successful collapse waits for command-context idle, while aborted/error runs restore state without summarizing.
 - `session_before_tree` — provides generated summary for tree navigation.
 - `session_before_compact` — prevents immediate compaction of freshly summarized branch state.
-- `session_start` / `session_shutdown` — clears transient boomerang state and cancels stale deferred handoffs.
+- `session_start` / `session_shutdown` — clears transient boomerang state and invalidates stale deferred collapses/handoffs.
 
 ## Settings / Configuration
 
