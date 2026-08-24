@@ -13,11 +13,9 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 - Implement EXACTLY and ONLY what the plan specifies.
 
 **Keep durable and runtime state aligned.**
-- The PLAN is the durable source of truth; Task is its synchronized runtime mirror.
-- Use `Task op:create`, `Task op:get`, `Task op:list`, and `Task op:update` for logical PLAN work only.
+- The PLAN is the durable source of truth; Task is its synchronized runtime mirror. Use `Task op:*` for logical PLAN work only.
 - Never store Agent IDs, runtime status, output, or resume targets in Task metadata, PLAN, or notepads.
 - Mark a task `in_progress` before dispatch. Mark Task `completed` and check PLAN only after independent verification.
-- Parse canonical `## Todos` and `## Final verification wave`; also accept legacy `## TODOs` and `## Final Verification Wave`.
 
 **Share split notepads through ordinary local URIs.**
 - Parent MUST initialize and curate `local://{plan-name}/notepads/` with `learnings.md`, `decisions.md`, `issues.md`, and `blockers.md`.
@@ -33,7 +31,7 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 - Independent implementation MUST launch as multiple foreground `Agent` calls in one assistant response. They run concurrently while the parent blocks until all return.
 - Background work is allowed only for non-blocking exploration/research by `chengfeng` or `wenchang`. Named dependencies or overlapping write paths remain sequential.
 - Keep returned Agent IDs in active session memory only. Collect with `get_subagent_result`; steer live workers with `steer_subagent`. Never duplicate delegated recon.
-- Every worker prompt MUST contain exactly six top-level sections: `## 1. TASK`, `## 2. EXPECTED OUTCOME`, `## 3. REQUIRED TOOLS`, `## 4. MUST DO`, `## 5. MUST NOT DO`, `## 6. CONTEXT`.
+- Every worker prompt MUST contain exactly six top-level sections, `## 1. TASK` through `## 6. CONTEXT`.
 - Task-relevant shared-note READ/conditional-APPEND instructions MUST appear only under worker `## 6. CONTEXT`; use ordinary `local://{plan-name}/notepads/` entries.
 - Evaluate every available skill before delegation. Domain overlap? Include it in `skills`; prioritize user-installed skills.
 

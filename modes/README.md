@@ -4,12 +4,13 @@ Per-model-family prompt variants for mode agents.
 
 Prompt construction:
 - Default family uses `mode.md` frontmatter + body.
-- GPT family uses `gpt.md` as a body-only replacement; it retains `mode.md` frontmatter and must be self-contained.
+- GPT family uses `gpt.md` as a body-only replacement when present; it retains `mode.md` frontmatter and must be self-contained. A mode without a `gpt.md` inherits the default `mode.md` body for GPT runs.
 - Gemini family uses `gemini.md` as a body-only corrective overlay on the default `mode.md` body.
 - Mode-owned skills live under `modes/<mode>/skills/*/SKILL.md`. Runtime discovers only the active mode's existing skill directory; full content loads on demand.
 
 Fu Xi architecture:
 - Fu Xi prompt files are a thin Prometheus family.
+- Fu Xi ships no dedicated `gpt.md`; GPT-family runs inherit the default `mode.md` body.
 - Active planner policy lives in `modes/fuxi/skills/ulw-plan/SKILL.md`; Fu Xi prompts require loading it before planning, and its `references/*` files resolve relative to the skill base dir.
 - Fu Xi’s exactly seven planning stages are authoritative in `modes/fuxi/skills/ulw-plan/SKILL.md`; do not duplicate them here.
 
@@ -18,7 +19,7 @@ Current file matrix:
 | Mode | `mode.md` | `gpt.md` | `gemini.md` | mode skill migration |
 |---|---:|---:|---:|---|
 | kuafu | Yes | Yes | Yes | none |
-| fuxi | Yes | Yes | Yes | mode-local `skills/ulw-plan` |
+| fuxi | Yes | — (inherits default) | Yes | mode-local `skills/ulw-plan` |
 | houtu | Yes | Yes | Yes | none |
 | luban | Yes | Yes | Yes | mode-local 14-skill Superpowers snapshot |
 | shennong | Yes | Yes | Yes | future / out of scope |

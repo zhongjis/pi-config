@@ -11,11 +11,11 @@ This file owns `modes/` prompt files and mode subdirectories.
 ## Local Contracts
 
 - `mode.md` carries canonical frontmatter plus default prompt body.
-- `gpt.md` is a body-only replacement; it inherits `mode.md` frontmatter and must be self-contained.
+- `gpt.md` is a body-only replacement; it inherits `mode.md` frontmatter and must be self-contained. When a mode ships no `gpt.md`, its GPT family inherits the default `mode.md` body.
 - `gemini.md` is a body-only corrective overlay on the default prompt body.
-- Keep the per-mode file matrix (`mode.md` + `gpt.md` + `gemini.md`) complete unless intentionally removing a mode family.
+- Keep the per-mode `mode.md` + `gemini.md` pair complete for every mode, and ship `gpt.md` for every mode except Fu Xi, whose GPT family intentionally inherits the default `mode.md` body. Removing a mode family is the only other reason the matrix may be incomplete.
 - `<mode>/skills/*/SKILL.md` (optional): mode-owned skills discovered only while that mode is active. Full skill content remains on-demand; no mode skill is eagerly injected. References resolve relative to the skill base dir supplied at runtime.
-- Fu Xi is a thin Prometheus prompt family. `modes/fuxi/mode.md`, `gpt.md`, and `gemini.md` require loading `modes/fuxi/skills/ulw-plan/SKILL.md` before planning. The mode-owned skill preserves the pinned upstream `v4.19.0` plan format, routing, task grammar, scaffold semantics, and guidance with only Pi runtime adaptations; do not duplicate workflow text in mode prompts.
+- Fu Xi is a thin Prometheus prompt family. `modes/fuxi/mode.md` and `gemini.md` require loading `modes/fuxi/skills/ulw-plan/SKILL.md` before planning (Fu Xi ships no `gpt.md`; GPT runs inherit the default body). The mode-owned skill preserves the pinned upstream `v4.19.0` plan format, routing, task grammar, scaffold semantics, and guidance with only Pi runtime adaptations; do not duplicate workflow text in mode prompts.
 - Oh My OpenAgent reference archive contains generated final prompts only under `docs/references/oh-my-openagent/final-prompts/`; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, and never hand-edit generated files.
 - Lu Ban owns the 14-skill Superpowers snapshot under `modes/luban/skills/`; `UPSTREAM.md` and `LICENSE` preserve provenance. Runtime discovery is Lu Ban-only and full content remains on-demand.
 - Kuafu delegates turn-local tactical planning to callable `xuannv`; keep that advisory text-return flow separate from Fu Xi mode’s durable planning ceremony.

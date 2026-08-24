@@ -13,7 +13,7 @@ Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior pa
 ## Construction Semantics
 
 - Default family uses `mode.md` frontmatter and body.
-- GPT family uses `gpt.md` as a body-only replacement. It retains parsed `mode.md` frontmatter and must be self-contained.
+- GPT family uses `gpt.md` as a body-only replacement when present. It retains parsed `mode.md` frontmatter and must be self-contained. A mode without a `gpt.md` (Fu Xi) uses the default `mode.md` body for GPT-family runs.
 - Gemini family uses `gemini.md` as a body-only corrective overlay on the default `mode.md` body, not as a replacement.
 - Active mode prompt markers strip stale mode blocks before injecting the resolved prompt.
 - Review the final injected prompt for each affected family. Source-file review alone is insufficient.
@@ -23,7 +23,7 @@ Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior pa
 | Mode | `mode.md` | `gpt.md` | `gemini.md` |
 |---|---:|---:|---:|
 | kuafu | Yes | Yes | Yes |
-| fuxi | Yes | Yes | Yes |
+| fuxi | Yes | — (inherits default) | Yes |
 | houtu | Yes | Yes | Yes |
 | luban | Yes | Yes | Yes |
 

@@ -145,7 +145,7 @@ describe("mode hooks", () => {
 
 	it("instructs Fu Xi to load the discovered ulw-plan skill in every prompt family", async () => {
 		const defaultBody = readModePromptBody("fuxi", "default");
-		const gptBody = readModePromptBody("fuxi", "gpt");
+		// fuxi ships no dedicated gpt.md — the GPT family inherits the default mode.md body
 		const geminiOverlay = readModePromptBody("fuxi", "gemini");
 		const prompts = [
 			await renderInjectedPrompt({ mode: "fuxi", defaultConfig: { body: defaultBody } }),
@@ -153,7 +153,7 @@ describe("mode hooks", () => {
 				mode: "fuxi",
 				family: "gpt",
 				defaultConfig: { body: defaultBody },
-				familyConfig: { body: gptBody },
+				familyConfig: { body: defaultBody },
 			}),
 			await renderInjectedPrompt({
 				mode: "fuxi",
@@ -166,6 +166,22 @@ describe("mode hooks", () => {
 		for (const prompt of prompts) {
 			expect(prompt).toContain("Load the `ulw-plan` skill before planning");
 		}
+	});
+
+	it("injects Hou Tu gemini overlay before the <critical> anchor (not the </role> fallback)", async () => {
+		const defaultBody = readModePromptBody("houtu", "default");
+		const overlay = readModePromptBody("houtu", "gemini");
+		const prompt = await renderInjectedPrompt({
+			mode: "houtu",
+			family: "gemini",
+			defaultConfig: { body: defaultBody },
+			familyConfig: { body: defaultBody, overlays: overlay },
+		});
+		const overlayPos = prompt.indexOf("<gemini-corrective-overlay>");
+		const criticalPos = prompt.indexOf("<critical>");
+		expect(overlayPos).toBeGreaterThan(-1);
+		expect(criticalPos).toBeGreaterThan(-1);
+		expect(overlayPos).toBeLessThan(criticalPos);
 	});
 
 	it("keeps handoff internals out of Hou Tu prompt sources", () => {

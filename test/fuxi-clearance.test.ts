@@ -15,12 +15,7 @@ function getFuxiPrompt(): string {
   return readFileSync(FUXI_PATH, "utf-8");
 }
 
-const FUXI_GPT_PATH = join(process.cwd(), "modes", "fuxi", "gpt.md");
 const FUXI_GEMINI_PATH = join(process.cwd(), "modes", "fuxi", "gemini.md");
-
-function getFuxiGptPrompt(): string {
-  return readFileSync(FUXI_GPT_PATH, "utf-8");
-}
 
 function getFuxiGeminiOverlays(): string {
   return readFileSync(FUXI_GEMINI_PATH, "utf-8");
@@ -66,21 +61,27 @@ function readModePrompt(mode: ModeName, family: PromptFamily): string {
 }
 
 describe("mode prompt family matrix", () => {
-  it("requires default, GPT, and Gemini prompt files for every mode", () => {
+  it("requires default and Gemini prompt files for every mode", () => {
     for (const mode of ALL_MODES) {
-      for (const family of ["default", "gpt", "gemini"] as const) {
+      for (const family of ["default", "gemini"] as const) {
         const path = getModePromptPath(mode, family);
         expect(existsSync(path), `${mode}:${family} prompt missing`).toBe(true);
         expect(readModePrompt(mode, family).trim(), `${mode}:${family} prompt empty`).not.toBe("");
       }
     }
   });
-});
 
-describe("fuxi gpt variant", () => {
-  it("contains no frontmatter", () => {
-    const prompt = getFuxiGptPrompt();
-    expect(prompt).not.toMatch(/^---/);
+  it("ships a dedicated gpt.md for every mode except fuxi", () => {
+    // fuxi is a thin Prometheus family; its GPT variant inherits the default mode.md body.
+    for (const mode of ALL_MODES) {
+      const path = getModePromptPath(mode, "gpt");
+      if (mode === "fuxi") {
+        expect(existsSync(path), "fuxi must not ship a dedicated gpt.md").toBe(false);
+        continue;
+      }
+      expect(existsSync(path), `${mode}:gpt prompt missing`).toBe(true);
+      expect(readModePrompt(mode, "gpt").trim(), `${mode}:gpt prompt empty`).not.toBe("");
+    }
   });
 });
 
@@ -91,6 +92,7 @@ describe("fuxi gemini composed", () => {
     expect(composed).toContain("<FUXI_ANTI_FALSE_FINALIZE>");
     expect(composed).toContain("<FUXI_DRAFT_MANDATE>");
     expect(composed).toContain("<FUXI_VERIFICATION_OVERRIDE>");
+    expect(composed).toContain("<FUXI_TOOL_MANDATE>");
   });
 
   it("#then overlays should appear before <critical> section", () => {

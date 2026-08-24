@@ -35,12 +35,12 @@ Accepted, applied local mappings:
 
 `opencode-go/glm-5.2` availability was verified before these mappings were accepted.
 
-Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md), [`modes/kuafu/gpt.md`](../../modes/kuafu/gpt.md), and [`modes/fuxi/gpt.md`](../../modes/fuxi/gpt.md) are not applied changes and are intentionally excluded from the accepted mapping baseline.
+Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md) and [`modes/kuafu/gpt.md`](../../modes/kuafu/gpt.md) are not applied changes and are intentionally excluded from the accepted mapping baseline.
 
 ## Local Construction Semantics
 
 - `mode.md`: default body. Frontmatter + body parsed. Default/unknown family uses this body unchanged.
-- `gpt.md`: body-only replacement. If present and non-empty, it replaces the `mode.md` body while retaining parsed frontmatter config from `mode.md`.
+- `gpt.md`: body-only replacement. If present and non-empty, it replaces the `mode.md` body while retaining parsed frontmatter config from `mode.md`. A mode without a `gpt.md` (Fu Xi) uses the default `mode.md` body for GPT-family runs.
 - `gemini.md`: body-only overlay. If present and non-empty, it is injected into the default `mode.md` body before `<critical>`, else after `</role>`, else appended.
 - Hook behavior: resolved model family is applied before prompt injection. Active mode body is wrapped in `<!-- mode:<mode> --> ... <!-- /mode:<mode> -->`; stale mode blocks are stripped before replacement.
 
@@ -49,7 +49,7 @@ Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md), [`modes/ku
 | Mode | Upstream Target | Default `mode.md` | GPT `gpt.md` | Gemini `gemini.md` |
 |---|---|---:|---:|---:|
 | Kuafu | Sisyphus | present | present | present |
-| Fuxi | Prometheus | present | present | present |
+| Fuxi | Prometheus | present | absent (inherits default) | present |
 | Houtu | Atlas | present | present | present |
 | Luban | Superpowers skills persona/profile check | present | present | present |
 

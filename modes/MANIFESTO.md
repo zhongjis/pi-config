@@ -40,12 +40,12 @@ Short, forceful overlays maintain context while mitigating these known weaknesse
 | Mode | Role | Default Model | GPT Variant | Gemini Variant |
 |------|------|--------------|-------------|----------------|
 | **kuafu** | Build orchestrator | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **fuxi** | Strategic planner | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
+| **fuxi** | Strategic planner | `anthropic/claude-opus-4-8:xhigh` | Default body (no `gpt.md`) | Yes (`gemini.md`) |
 | **houtu** | Plan executor | `anthropic/claude-sonnet-4-6` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **luban** | Superpowers discipline | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **shennong** | Product judgment | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 
-All five modes have default/GPT/Gemini prompt coverage. GPT files are standalone replacement bodies; Gemini files are corrective overlays on default bodies.
+All five modes have default/GPT/Gemini prompt coverage. GPT files are standalone replacement bodies — except Fu Xi's thin Prometheus family, which ships no dedicated `gpt.md` and inherits the default `mode.md` body for GPT runs; Gemini files are corrective overlays on default bodies.
 
 ## Local Addition: Small Models as Corrective
 
