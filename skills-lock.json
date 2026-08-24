@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "agents-best-practices": {
+      "source": "DenisSergeevitch/agents-best-practices",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "7d677084cebda36927221e16feeacc27f27b8f3381fd1e2061163003b8eb0fce"
+    },
     "pi-extensions": {
       "source": "Dwsy/pi-extensions-skill",
       "sourceType": "github",
