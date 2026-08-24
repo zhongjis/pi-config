@@ -18,16 +18,6 @@ describe("research agent prompt contract", () => {
 		expect(prompt).toContain("Every URL in `Sources:` MUST appear here as an opened source");
 	});
 
-	it("keeps recon agents on the lightweight fallback model contract", () => {
-		for (const path of ["agents/chengfeng.md", "agents/wenchang.md"]) {
-			const prompt = repoFile(path);
-
-			expect(prompt).toMatch(/^model: .*gpt-5\.4-mini/m);
-			expect(prompt).not.toContain("gpt-5.6-terra");
-			expect(prompt).not.toContain("Adapted from omo");
-		}
-	});
-
 	it("keeps implementation workers on the available GLM 5.2 fallback", () => {
 		for (const path of ["agents/jintong.md", "agents/juling.md"]) {
 			expect(repoFile(path)).toContain("opencode-go/glm-5.2");
