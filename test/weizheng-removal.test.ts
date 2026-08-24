@@ -16,7 +16,7 @@ const ACTIVE_PROMPT_AND_CONTRACT_ROOTS = [
   ".agents/skills/faithfully-awesome-omo",
 ];
 
-const SINGLE_CONTRACT_FILES = ["CONTEXT.md", "extensions/subagents-new/AGENTS.md"];
+const SINGLE_CONTRACT_FILES = ["CONTEXT.md", "extensions/subagents/AGENTS.md"];
 
 const ORCHESTRATOR_GATE_FILES = [
   "modes/fuxi/skills/ulw-plan/SKILL.md",

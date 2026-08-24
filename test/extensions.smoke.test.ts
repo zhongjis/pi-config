@@ -135,7 +135,7 @@ describe("extension entrypoints", () => {
 
   it("locks package names for subagents and tasks", () => {
     const cases: Array<[string, string]> = [
-      ["extensions/subagents-new/package.json", "@tintinweb/pi-subagents"],
+      ["extensions/subagents/package.json", "@tintinweb/pi-subagents"],
       ["extensions/tasks/package.json", "@panda/pi-tasks"],
     ];
     for (const [relPath, expectedName] of cases) {

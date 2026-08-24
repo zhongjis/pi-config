@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestSession, type TestSession } from "./helpers/faux-session.js";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
-import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagents-new/src/ui/agent-widget.js";
+import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagents/src/ui/agent-widget.js";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
-const SUBAGENT_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/subagents-new/src/index.ts");
+const SUBAGENT_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/subagents/src/index.ts");
 
 const THEME = {
 	fg: (_color: string, text: string) => text,

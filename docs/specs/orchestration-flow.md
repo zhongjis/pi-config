@@ -195,9 +195,9 @@ flowchart LR
     BG --> Tools[get_subagent_result / steer_subagent / resume]
 ```
 
-- `extensions/subagents-new/src/index.ts` registers `Agent`, background execution, resume, `get_subagent_result`, and `steer_subagent`.
-- `extensions/subagents-new/src/custom-agents.ts` loads agent markdown from project `.pi/agents/*.md` and global `~/.pi/agent/agents/*.md`; project agents override global agents.
-- `extensions/subagents-new/src/prompts.ts` builds prompts from agent frontmatter. `replace` gives the child a fresh prompt; `append` wraps the parent prompt with sub-agent context and the child instructions; `system_instructions` returns the same prompt as `replace` and lets pi auto-inject AGENTS.md (project guardrails) without parent identity bleed — see `agent-runner.ts` `inheritContextFiles`.
+- `extensions/subagents/src/index.ts` registers `Agent`, background execution, resume, `get_subagent_result`, and `steer_subagent`.
+- `extensions/subagents/src/custom-agents.ts` loads agent markdown from project `.pi/agents/*.md` and global `~/.pi/agent/agents/*.md`; project agents override global agents.
+- `extensions/subagents/src/prompts.ts` builds prompts from agent frontmatter. `replace` gives the child a fresh prompt; `append` wraps the parent prompt with sub-agent context and the child instructions; `system_instructions` returns the same prompt as `replace` and lets pi auto-inject AGENTS.md (project guardrails) without parent identity bleed — see `agent-runner.ts` `inheritContextFiles`.
 - `modes/fuxi/mode.md`, `modes/houtu/mode.md`, and `modes/kuafu/mode.md` are the prompt contracts that define the workflows above.
 
 ## Ownership by file
@@ -218,15 +218,15 @@ Modes-side Plannotator coordination. It prepares approved plan handoff, persists
 
 Handoff runtime. It owns prepared handoff lookup, `/handoff:start-work`, child session creation, `agent-mode` seeding, deterministic execution prompt construction, and optional generic handoff summarization.
 
-### `extensions/subagents-new/src/index.ts`
+### `extensions/subagents/src/index.ts`
 
 Subagent runtime entry point. It registers `Agent`, handles foreground/background runs, exposes supervision tools, emits lifecycle events, and tracks background records.
 
-### `extensions/subagents-new/src/custom-agents.ts`
+### `extensions/subagents/src/custom-agents.ts`
 
 Custom agent loader. It scans project and global agent markdown, parses frontmatter, and lets project agents override global agents.
 
-### `extensions/subagents-new/src/prompts.ts`
+### `extensions/subagents/src/prompts.ts`
 
 Prompt builder. It renders `replace`, `append`, and `system_instructions` prompt modes and injects skill/memory extras.
 

@@ -1,8 +1,7 @@
 packages:
   - extensions/tasks
-  - extensions/web-access
   - extensions/lsp
-  - extensions/subagents-new
+  - extensions/subagents
 catalog:
   "@earendil-works/pi-coding-agent": 0.83.0
   "@earendil-works/pi-tui": 0.83.0

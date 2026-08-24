@@ -30,7 +30,7 @@ export default defineConfig({
             ".omx/**",
             "sessions/**",
             "test/integration/**",
-            "extensions/subagents-new/test/**/*e2e*.test.ts"
+            "extensions/subagents/test/**/*e2e*.test.ts"
           ],
           setupFiles: ["test/setup-require-stubs.ts"],
           server: {
@@ -65,7 +65,7 @@ export default defineConfig({
           environment: "node",
           globals: true,
           include: [
-            "extensions/subagents-new/test/**/*e2e*.test.ts"
+            "extensions/subagents/test/**/*e2e*.test.ts"
           ],
           exclude: [
             "**/node_modules/**"

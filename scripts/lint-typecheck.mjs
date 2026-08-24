@@ -7,7 +7,7 @@ const rootChecks = [
   ["pnpm", ["exec", "tsc", "--noEmit", "-p", "extensions/second-opinion/tsconfig.json"]]
 ];
 
-const packageDirs = ["extensions/subagents-new", "extensions/tasks"];
+const packageDirs = ["extensions/subagents", "extensions/tasks"];
 
 function run(command, args) {
   console.log(`\n$ ${command} ${args.join(" ")}`);

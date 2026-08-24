@@ -4,7 +4,7 @@
  *
  * Mirrors the proven agent-runner-e2e / ext-templates-e2e pattern: a hermetic
  * $PI_CODING_AGENT_DIR holds the agent .md files plus two extensions (a matrix
- * tool probe and a re-export of the real subagents-new src). The agents are
+ * tool probe and a re-export of the real subagents src). The agents are
  * loaded through the real `loadCustomAgents`, registered, then run headless via
  * `runAgent`. `onSessionCreated` fires after construction (before any prompt),
  * so `session.getActiveToolNames()` is exactly the gated set the LLM could call.
@@ -29,7 +29,7 @@ import { createFauxModelRuntime, type FauxModelRuntime } from "./helpers/pi-ai.j
 vi.setConfig({ testTimeout: 30_000 });
 
 const PROJECT_ROOT = path.resolve(__dirname, "../../..");
-const SUBAGENT_SOURCE = path.join(PROJECT_ROOT, "extensions/subagents-new/src/index.ts");
+const SUBAGENT_SOURCE = path.join(PROJECT_ROOT, "extensions/subagents/src/index.ts");
 const MATRIX_AGENT = "jintong";
 const WENCHANG_AGENT = "wenchang";
 const WENCHANG_SOURCE = path.join(PROJECT_ROOT, "agents/wenchang.md");

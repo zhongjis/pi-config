@@ -54,7 +54,7 @@ const OWNER_EXTENSIONS = [
     "goal",
     "modes",
   ].map((name) => resolve(PROJECT_ROOT, "extensions", name, "index.ts")),
-  resolve(PROJECT_ROOT, "extensions/subagents-new/src/index.ts"),
+  resolve(PROJECT_ROOT, "extensions/subagents/src/index.ts"),
   ...["boomerang", "ask", "diff", "second-opinion"].map((name) =>
     resolve(PROJECT_ROOT, "extensions", name, "index.ts"),
   ),

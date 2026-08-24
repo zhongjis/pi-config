@@ -1,6 +1,6 @@
 /**
  * Native Pi 0.83 faux model runtime for deterministic, auth-free integration
- * tests. Ported locally (do NOT import from extensions/subagents-new) so the
+ * tests. Ported locally (do NOT import from extensions/subagents) so the
  * integration harness has no cross-extension test dependency.
  *
  * Each caller owns an isolated runtime and must call dispose().

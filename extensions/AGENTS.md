@@ -21,7 +21,7 @@ extensions/
 | Add multi-file extension | `extensions/foo/index.ts` + `src/` + `test/` + `README.md` | Structured tier |
 | Add complex extension | `extensions/foo/index.ts` + `src/` + `test/` + `package.json` + `README.md` | Package tier (vendored) |
 | Shared event semantics | `CONVENTIONS.md` | Source of truth for `pi.events` usage |
-| Subagents | `subagents-new/AGENTS.md` | Vendored live package with a high-coupling runtime/event surface |
+| Subagents | `subagents/AGENTS.md` | Vendored live package with a high-coupling runtime/event surface |
 | Tasks | `tasks/AGENTS.md` | File-backed DAG + process tracking + planning cleanup RPC |
 | Agent modes | `modes/src/commands.ts`, `modes/src/hooks.ts`, `modes/src/mode-state.ts` | Mode-owned resource transitions submit through command context; reload is terminal. |
 | Consolidated QoL/UI | `qol/` | Structured simple extension owning header, footer, prompt URL widget, session/exit commands, and `write` rendering. |
@@ -93,5 +93,5 @@ Child `AGENTS.md` files own only local extension details. This file owns extensi
 | `queue-steer/` | `queue-steer/AGENTS.md` | Visible steering/follow-up queues, editable timeline, and local sync notes. |
 | `smart-sessions/` | `smart-sessions/AGENTS.md` | Vendored session-summary behavior and model-role compatibility notes. |
 | `thinking-steps/` | `thinking-steps/AGENTS.md` | Thinking Steps renderer sync notes, TUI-only lifecycle ownership, and native renderer compatibility. |
-| `subagents-new/` | `subagents-new/AGENTS.md` | Vendored live subagent runtime, tool surface, RPC, lifecycle, provenance, and local fork manifest. |
+| `subagents/` | `subagents/AGENTS.md` | Vendored live subagent runtime, tool surface, RPC, lifecycle, provenance, and local fork manifest. |
 | `tasks/` | `tasks/AGENTS.md` | Task DAG, process tracking, planning cleanup, and task-local fork manifest. |

@@ -4,7 +4,7 @@
  * must resolve to the intended active tool set through the SHARED
  * computeActiveToolNames engine.
  *
- * This is the fleet-acceptance guard for the subagents-new → shared-schema
+ * This is the fleet-acceptance guard for the subagents → shared-schema
  * migration: every real agents/<name>.md (except AGENTS.md) and modes/<name>/mode.md
  * must produce ZERO invalidFields. A non-empty invalidFields for any file means
  * the shared parser rejects a fleet agent — a real problem, not a test bug.
@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
 import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 
-// test dir → subagents-new → extensions → repo root
+// test dir → subagents → extensions → repo root
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 /** Discover every real fleet definition file (agents + modes). */

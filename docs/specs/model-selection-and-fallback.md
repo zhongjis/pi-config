@@ -25,7 +25,7 @@ Each surface decides a different question. They compose; none replaces another.
 | **Shared library** | How a spec string resolves to a model | `parseModelChain` + `resolveModel` + `resolveFirstAvailable` | [`extensions/lib/model.ts`](../../extensions/lib/model.ts) |
 | **Profiles** | Which models are visible at all | Patches `registry.getAvailable()` to a provider allowlist; force-switches the session model | [`extensions/profiles/index.ts`](../../extensions/profiles/index.ts) |
 | **Modes** | Which model the main session uses per mode | Applies mode-frontmatter `model:` through the shared library | [`extensions/modes/src/`](../../extensions/modes/src/) |
-| **Subagents** | Which model each agent runs on | Resolves the `model` param or agent-config chain, falling back to the parent model | [`extensions/subagents-new/src/`](../../extensions/subagents-new/src/) |
+| **Subagents** | Which model each agent runs on | Resolves the `model` param or agent-config chain, falling back to the parent model | [`extensions/subagents/src/`](../../extensions/subagents/src/) |
 | **Tool model roles** | Which model extension-owned background LLM calls use | `tool_models.json` maps tool keys to role chains, then resolves through the shared library | [`extensions/lib/tool-models.ts`](../../extensions/lib/tool-models.ts), [`extension-model-usage.md`](./extension-model-usage.md) |
 
 The profile filter sits under everything: every `getAvailable()` call the other
@@ -141,8 +141,8 @@ injects an offline system prompt.
 
 A subagent picks its model in strict priority order: explicit invocation param,
 then agent-config chain, then the parent model
-([`agent-runner.ts:51-91`](../../extensions/subagents-new/src/agent-runner.ts),
-[`invocation-config.ts:29-31`](../../extensions/subagents-new/src/invocation-config.ts)).
+([`agent-runner.ts:51-91`](../../extensions/subagents/src/agent-runner.ts),
+[`invocation-config.ts:29-31`](../../extensions/subagents/src/invocation-config.ts)).
 
 `resolveAgentInvocationConfig` computes the raw model and records its origin:
 
@@ -155,7 +155,7 @@ The agent config wins over the tool param. The `modelFromParams` flag matters
 only for how a *failed* chain behaves.
 
 **When the chain fails, the origin decides the outcome**
-([`index.ts:1059-1079`](../../extensions/subagents-new/src/index.ts)):
+([`index.ts:1059-1079`](../../extensions/subagents/src/index.ts)):
 
 | Chain origin | All candidates fail | Result |
 |---|---|---|
@@ -167,13 +167,13 @@ default degrades quietly so a missing model never blocks delegation.
 
 **One extra config-chain fallback.** `resolveDefaultModel` adds a step beyond
 `resolveFirstAvailable`
-([`agent-runner.ts:55-91`](../../extensions/subagents-new/src/agent-runner.ts)): if the
+([`agent-runner.ts:55-91`](../../extensions/subagents/src/agent-runner.ts)): if the
 chain resolves nothing through `getAvailable()`, it retries each
 `provider/modelId` candidate against `registry.find()` directly, bypassing the
 availability filter. Only then does it fall back to the parent model with a
 `[subagent] Could not resolve any model … Falling back to parent model` warning.
 
-**Agent-type defaults** ([`agent-types.ts`](../../extensions/subagents-new/src/agent-types.ts)):
+**Agent-type defaults** ([`agent-types.ts`](../../extensions/subagents/src/agent-types.ts)):
 
 | Built-in agent | Model |
 |---|---|
@@ -183,7 +183,7 @@ availability filter. Only then does it fall back to the parent model with a
 
 User `.md` agents with the same name override these defaults. An unknown or
 disabled agent type falls back to `general-purpose`
-([`agent-types.ts`](../../extensions/subagents-new/src/agent-types.ts)).
+([`agent-types.ts`](../../extensions/subagents/src/agent-types.ts)).
 
 ---
 

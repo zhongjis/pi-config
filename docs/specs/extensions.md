@@ -117,6 +117,6 @@ See existing READMEs for reference:
 
 - `extensions/caveman/README.md` — vendored extension with levels and upstream sync instructions
 - `extensions/codegraph/README.md` — vendored extension with concise provenance and tool docs
-- `extensions/subagents-new/README.md` — vendored complex multi-tool extension with settings
+- `extensions/subagents/README.md` — vendored complex multi-tool extension with settings
 - `extensions/tasks/README.md` — vendored extension with config file and env var documentation
 - `extensions/readonly-bash/README.md` — original extension with validation contract docs

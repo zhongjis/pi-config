@@ -69,35 +69,7 @@ importers:
         specifier: 'catalog:'
         version: 1.3.7
 
-  extensions/subagent:
-    dependencies:
-      '@earendil-works/pi-agent-core':
-        specifier: 'catalog:'
-        version: 0.83.0(ws@8.20.0)(zod@4.3.6)
-      '@earendil-works/pi-ai':
-        specifier: 'catalog:'
-        version: 0.83.0(ws@8.20.0)(zod@4.3.6)
-      '@earendil-works/pi-coding-agent':
-        specifier: 'catalog:'
-        version: 0.83.0(ws@8.20.0)(zod@4.3.6)
-      '@earendil-works/pi-tui':
-        specifier: 'catalog:'
-        version: 0.83.0
-      typebox:
-        specifier: 'catalog:'
-        version: 1.3.7
-    devDependencies:
-      '@types/node':
-        specifier: ^25.5.0
-        version: 25.6.0
-      typescript:
-        specifier: ^6.0.0
-        version: 6.0.3
-      vitest:
-        specifier: ^4.0.18
-        version: 4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.6.0)(vite@8.0.8(@types/node@25.6.0)(jiti@2.7.0)(yaml@2.9.0))
-
-  extensions/subagents-new:
+  extensions/subagents:
     dependencies:
       '@earendil-works/pi-ai':
         specifier: 'catalog:'

@@ -64,7 +64,7 @@ const theme = {
   bold: (text: string) => text,
 };
 
-describe("subagents-new + thinking-steps presentation coexistence", () => {
+describe("subagents + thinking-steps presentation coexistence", () => {
   it("keeps all subagent renderers registered beside Thinking Steps controls and lifecycle", async () => {
     const previousPackageDir = process.env.PI_PACKAGE_DIR;
     process.env.PI_PACKAGE_DIR = resolve(__dirname, "../../../node_modules/@earendil-works/pi-coding-agent");
