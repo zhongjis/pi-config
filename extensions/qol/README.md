@@ -1,6 +1,6 @@
 # qol
 
-Consolidated quality-of-life and UI extension for the Pi harness. It owns the startup header, compact footer, GitHub prompt widget, session and exit commands, and built-in `write` presentation.
+Consolidated quality-of-life and UI extension for the Pi harness. It owns the startup header, compact footer, over-limit context compaction guard, GitHub prompt widget, session and exit commands, and built-in `write` presentation.
 
 ## Header
 
@@ -20,6 +20,8 @@ QoL owns the single footer slot while preserving the existing bridge contracts:
 - `Symbol.for("pi-goal:footer")` supplies `{ getIndicator(isIdle) }` from `goal`.
 - `Symbol.for("pi-subagents:manager")` supplies optional subagent lifetime cost.
 
+After native retry and auto-compaction processing settles, QoL immediately requests manual compaction if reported context still exceeds the active model's context window. One request may be pending at a time.
+
 ## Widget
 
 `prompt-url` detects supported GitHub PR and issue prompts, shows URL metadata above the editor, and derives a session name when no custom name exists. Metadata loads through `gh pr view` or `gh issue view`.
@@ -31,8 +33,9 @@ QoL owns the single footer slot while preserving the existing bridge contracts:
 
 ## Hooks
 
-- `session_start` — refresh and install the header, install the footer, and rebuild `prompt-url` from session history.
+- `session_start` — refresh and install the header, reset the compaction guard, install the footer, and rebuild `prompt-url` from session history.
 - `model_select` — reinstall header and footer for current model state.
+- `agent_settled` — compact once when still over limit after native processing, unless Pi or queue-steer has queued/released continuation work.
 - `before_agent_start` — detect a supported GitHub URL prompt and populate `prompt-url`.
 - `session_switch` — rebuild or clear `prompt-url` from switched session history.
 

@@ -140,6 +140,7 @@ function getSubagentCost(): number {
 // the indicator here. Read defensively: returns null when goal is absent, has no active
 // goal, or is an older build without the bridge.
 const GOAL_FOOTER_BRIDGE_KEY = Symbol.for("pi-goal:footer");
+const QUEUE_STEER_PENDING_WORK_KEY = Symbol.for("pi-queue-steer:pending-work");
 const VISUALS_FOOTER_OWNER_KEY = Symbol.for("pi-visuals:footer");
 
 function getGoalIndicator(ctx: Pick<ExtensionContext, "isIdle">): { text: string; color: ThemeColor } | null {
@@ -154,6 +155,17 @@ function getGoalIndicator(ctx: Pick<ExtensionContext, "isIdle">): { text: string
     return indicator;
   } catch {
     return null;
+  }
+}
+
+function hasQueueSteerPendingWork(): boolean {
+  try {
+    const bridge = (globalThis as Record<symbol, unknown>)[QUEUE_STEER_PENDING_WORK_KEY] as
+      | { hasPendingWork?: () => boolean }
+      | undefined;
+    return bridge?.hasPendingWork?.() === true;
+  } catch {
+    return false;
   }
 }
 
@@ -280,6 +292,29 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
   // via a bridge and defer to us instead of calling setFooter() themselves.
   (globalThis as Record<symbol, unknown>)[VISUALS_FOOTER_OWNER_KEY] = true;
   let currentCtx: ExtensionContext | null = null;
+  let compactionPending = false;
+
+  function compactOverLimitContext(ctx: ExtensionContext): void {
+    if (compactionPending || ctx.hasPendingMessages() || hasQueueSteerPendingWork()) return;
+
+    const usage = ctx.getContextUsage();
+    if (
+      typeof usage?.tokens !== "number" ||
+      usage.contextWindow <= 0 ||
+      usage.tokens <= usage.contextWindow
+    ) {
+      return;
+    }
+
+    compactionPending = true;
+    const clearPending = () => {
+      compactionPending = false;
+    };
+    ctx.compact({
+      onComplete: clearPending,
+      onError: clearPending,
+    });
+  }
 
   function installFooter(ctx: ExtensionContext): void {
     currentCtx = ctx;
@@ -414,11 +449,18 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
   }
 
   pi.on("session_start", async (_event, ctx) => {
+    compactionPending = false;
     installFooter(ctx);
   });
 
   pi.on("model_select", async (_event, ctx) => {
     installFooter(ctx);
+  });
+
+  // Native auto-compaction settles first. This catches any still-over-limit
+  // context without racing retries, queued continuations, or native compaction.
+  pi.on("agent_settled", async (_event, ctx) => {
+    compactOverLimitContext(ctx);
   });
 
   // Keep currentCtx reference updated (silences unused-var lint if added later).

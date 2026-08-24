@@ -16,8 +16,8 @@ Intentional divergences from upstream. Current-state snapshot — preserve these
 | File | What | Why |
 |------|------|-----|
 | `index.ts` | Root shim re-exports `./src/index.js`. | Keep directory-based layout with ESM-safe imports. |
-| `src/index.ts` | Adds Pi 0.79-compatible `isProjectTrusted` feature detection, typed `agent_settled` registration, and `SettingsManager` fallback when `create` is unavailable. | Root catalog is older than upstream’s tested Pi, so runtime compatibility stays intact. |
+| `src/index.ts` | Adds Pi 0.79-compatible trust/settings handling plus a session-scoped pending-work bridge. | Preserve runtime compatibility and prevent compaction racing queued/released continuations. |
 | `test/editor-render.test.ts` | Vitest rewrite with `.js` imports for the structured layout. | Matches repo test runner and ESM import style. |
-| `test/queue-state.test.ts` | Vitest rewrite with `.js` imports plus local harness/type adjustments for queue behavior. | Verifies the vendored extension under repo test tooling. |
+| `test/queue-state.test.ts` | Vitest rewrite plus pending-work lifecycle coverage. | Verifies queue behavior and compaction coordination under repo tooling. |
 | `README.md` | Local concise README replaces upstream install/marketing/test content and records provenance. | Fits repo extension docs contract. |
 | `package.json`, `package-lock.json`, `tsconfig.json`, `CHANGELOG.md`, `assets/pi-queue-steer-demo.gif` | Omitted upstream package metadata, lockfile, TS config, changelog, and demo asset. | Repo vendors only runtime source/docs needed for this extension. |

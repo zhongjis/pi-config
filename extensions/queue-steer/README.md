@@ -21,7 +21,7 @@ Visible steering and follow-up timeline for Pi. Steering rows stay in a blue nex
 - `agent_start` recomposes after late editor chrome and reloads settings.
 - `input` captures queued steering/follow-up messages and edit submits.
 - `turn_end` and `agent_end` deliver queued rows at Pi boundaries.
-- `agent_settled` refreshes the timeline and drains idle queue state.
+- `agent_settled` refreshes the timeline and drains idle queue state; a session bridge keeps compaction deferred until released work starts.
 - `session_shutdown` clears widget, timers, drafts, and queue state.
 
 ## Settings

@@ -2,10 +2,22 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { it } from "vitest";
+import { afterEach, it } from "vitest";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import queueSteerExtension from "../src/index.js";
 import { DeliveryQueue, QueueEditSession, type QueueLane } from "../src/queue-state.js";
+
+const QUEUE_STEER_PENDING_WORK_KEY = Symbol.for("pi-queue-steer:pending-work");
+
+function pendingWorkBridge(): { hasPendingWork(): boolean } | undefined {
+  return (globalThis as Record<symbol, unknown>)[QUEUE_STEER_PENDING_WORK_KEY] as
+    | { hasPendingWork(): boolean }
+    | undefined;
+}
+
+afterEach(() => {
+  delete (globalThis as Record<symbol, unknown>)[QUEUE_STEER_PENDING_WORK_KEY];
+});
 
 it("keeps steering and follow-ups in independent FIFOs", () => {
 	const queue = new DeliveryQueue<string>();
@@ -119,6 +131,7 @@ function createHarness(options: { cwd?: string; projectTrusted?: boolean } = {})
 	let idle = false;
 	let pending = false;
 	let aborted = false;
+	let failNextSend = false;
 	let activeEditor = new MockEditor();
 	let currentFactory: any = () => activeEditor;
 	let widget: unknown;
@@ -170,6 +183,10 @@ function createHarness(options: { cwd?: string; projectTrusted?: boolean } = {})
 			handlers.set(name, registered);
 		},
 		sendUserMessage(content: unknown, options?: unknown) {
+			if (failNextSend) {
+				failNextSend = false;
+				throw new Error("dispatch failed");
+			}
 			sent.push({ content, options });
 			if (options) pending = true;
 		},
@@ -204,6 +221,9 @@ function createHarness(options: { cwd?: string; projectTrusted?: boolean } = {})
 		clearPending() {
 			pending = false;
 		},
+		failNextDispatch() {
+			failNextSend = true;
+		},
 		replaceEditor(editor = new MockEditor()) {
 			ui.setEditorComponent(() => editor);
 		},
@@ -227,6 +247,45 @@ function renderWidget(harness: ReturnType<typeof createHarness>, width = 76): st
 	const component = widgetFactory({}, { fg: (_color: string, text: string) => text });
 	return component.render(width).join("\n");
 }
+
+it("publishes queued and released work until agent_start, then cleans up on shutdown", async () => {
+  const harness = createHarness();
+  const bridge = pendingWorkBridge();
+  assert.ok(bridge);
+
+  await harness.emit("session_start");
+  assert.equal(bridge.hasPendingWork(), false);
+  await enqueue(harness, "steer", "continue after settlement");
+  assert.equal(bridge.hasPendingWork(), true);
+
+  await harness.emit("turn_end", { message: { role: "assistant", stopReason: "toolUse" } });
+  assert.equal(harness.sent.length, 1);
+  assert.equal(bridge.hasPendingWork(), true);
+
+  harness.clearPending();
+  await harness.emit("agent_start");
+  assert.equal(bridge.hasPendingWork(), false);
+
+  await harness.emit("session_shutdown");
+  assert.equal(pendingWorkBridge(), undefined);
+});
+
+it("restores queued work without leaving release state set after failed dispatch", async () => {
+  const harness = createHarness();
+  const bridge = pendingWorkBridge();
+  assert.ok(bridge);
+
+  await harness.emit("session_start");
+  await enqueue(harness, "steer", "retry me");
+  harness.failNextDispatch();
+  await harness.emit("turn_end", { message: { role: "assistant", stopReason: "toolUse" } });
+  assert.equal(bridge.hasPendingWork(), true);
+
+  harness.editor.handleInput("alt-up");
+  harness.editor.setText("");
+  harness.editor.handleInput("enter");
+  assert.equal(bridge.hasPendingWork(), false);
+});
 
 it("renders stacked lane boxes with steering above follow-ups", async () => {
 	const harness = createHarness();

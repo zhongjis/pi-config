@@ -22,6 +22,7 @@ import {
 const WIDGET_ID = "queue-steer.timeline";
 const EDITOR_FEATURES = Symbol.for("@tmustier/pi-editor-features");
 const QUEUE_STEER_FEATURE = "queue-steer";
+const QUEUE_STEER_PENDING_WORK_KEY = Symbol.for("pi-queue-steer:pending-work");
 const NEXT_ROW_KEY = "alt+down";
 
 type QueueMode = "all" | "one-at-a-time";
@@ -248,7 +249,12 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 	let editorInstallTimer: ReturnType<typeof setTimeout> | undefined;
 	let renderingInline = false;
 	let paused = false;
+	let releasePending = false;
 	let settingsManager: QueueSettingsManager | undefined;
+	const pendingWorkBridge = Object.freeze({
+		hasPendingWork: (): boolean => queue.length > 0 || releasePending,
+	});
+	(globalThis as Record<symbol, unknown>)[QUEUE_STEER_PENDING_WORK_KEY] = pendingWorkBridge;
 
 	const queueModes = (): QueueModes => ({
 		steer: settingsManager?.getSteeringMode() ?? "one-at-a-time",
@@ -309,10 +315,12 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 	): Promise<boolean> => {
 		if (items.length === 0) return false;
 		const pendingBefore = ctx.hasPendingMessages();
+		const releasePendingBefore = releasePending;
 		renderQueue(ctx);
 		try {
 			for (const item of items) {
 				pi.sendUserMessage(userContent(item), { deliverAs: lane });
+				releasePending = true;
 			}
 			// sendUserMessage is fire-and-forget. Keep the awaited boundary
 			// handler open until async input preflight reaches Pi's native queue.
@@ -324,6 +332,7 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 			}
 			return true;
 		} catch (error) {
+			releasePending = releasePendingBefore;
 			queue.prependMany(items);
 			renderQueue(ctx);
 			ctx.ui.notify(
@@ -359,10 +368,13 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 		if (!next) return false;
 		paused = false;
 		renderQueue(ctx);
+		const releasePendingBefore = releasePending;
 		try {
 			pi.sendUserMessage(userContent(next));
+			releasePending = true;
 			return true;
 		} catch (error) {
+			releasePending = releasePendingBefore;
 			queue.prepend(next);
 			renderQueue(ctx);
 			ctx.ui.notify(
@@ -377,10 +389,13 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 		const next = queue.shift("followUp");
 		if (!next) return false;
 		renderQueue(ctx);
+		const releasePendingBefore = releasePending;
 		try {
 			pi.sendUserMessage(userContent(next), ctx.isIdle() ? undefined : { deliverAs: "steer" });
+			releasePending = true;
 			return true;
 		} catch (error) {
+			releasePending = releasePendingBefore;
 			queue.prepend(next);
 			renderQueue(ctx);
 			ctx.ui.notify(
@@ -546,6 +561,7 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
+		releasePending = false;
 		activeContext = ctx;
 		settingsManager = createQueueSettingsManager(ctx);
 		ctx.ui.setWidget(WIDGET_ID, undefined);
@@ -556,6 +572,7 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 
 	// Recompose after late-installed editor chrome, such as pi-session-hud.
 	pi.on("agent_start", async (_event, ctx) => {
+		releasePending = false;
 		installEditor(ctx);
 		scheduleEditorInstall(ctx);
 		await settingsManager?.reload();
@@ -622,6 +639,11 @@ export default function queueSteerExtension(pi: ExtensionAPI) {
 		editSession = undefined;
 		settingsManager = undefined;
 		paused = false;
+		releasePending = false;
 		queue.clear();
+		const globals = globalThis as Record<symbol, unknown>;
+		if (globals[QUEUE_STEER_PENDING_WORK_KEY] === pendingWorkBridge) {
+			delete globals[QUEUE_STEER_PENDING_WORK_KEY];
+		}
 	});
 }
