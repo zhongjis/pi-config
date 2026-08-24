@@ -1,6 +1,8 @@
-# Oh My OpenAgent reference archive
+# Oh My OpenAgent references
 
 `final-prompts/` contains 45 generated, final rendered prompts, including the upstream default and GPT ultrawork variants. Do not edit generated archive files by hand. The Pi-adapted active `ulw-plan` skill lives at `modes/fuxi/skills/ulw-plan/`; it records its own pinned upstream provenance.
+
+[`model-family-prompt-variants.md`](./model-family-prompt-variants.md) explains why TasteSkill and Oh My OpenAgent maintain model-family prompt variants, separating vendor guidance from project-specific heuristics.
 
 ## Refresh
 
