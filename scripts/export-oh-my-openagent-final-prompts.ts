@@ -3,8 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const EXPECTED_SHA = "60201be160749965b9bb4c3b2744e1bbee820dc5";
-const EXPECTED_VERSION = "4.19.1";
+const EXPECTED_SHA = "a17b91cdc210a24a86accf51c41e57b99e8aced7";
+const EXPECTED_VERSION = "5.0.0-beta.21";
 const FROZEN_DATE = "2026-01-01T00:00:00.000Z";
 const REPOSITORY = "https://github.com/code-yeongyu/oh-my-openagent";
 const MANIFEST_FILE = ".omo-final-prompts.json";

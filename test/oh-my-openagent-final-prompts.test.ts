@@ -11,8 +11,8 @@ const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = join(repoRoot, "scripts/sync-oh-my-openagent-final-prompts.mjs");
 const scriptUrl = pathToFileURL(scriptPath).href;
-const expectedSha = "60201be160749965b9bb4c3b2744e1bbee820dc5";
-const expectedVersion = "4.19.1";
+const expectedSha = "a17b91cdc210a24a86accf51c41e57b99e8aced7";
+const expectedVersion = "5.0.0-beta.21";
 
 const expectedMatrix = [
   "atlas/default.md",

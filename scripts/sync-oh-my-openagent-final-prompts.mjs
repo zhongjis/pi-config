@@ -6,8 +6,8 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PINNED_REPOSITORY = "https://github.com/code-yeongyu/oh-my-openagent";
-export const PINNED_SHA = "60201be160749965b9bb4c3b2744e1bbee820dc5";
-export const PINNED_VERSION = "4.19.1";
+export const PINNED_SHA = "a17b91cdc210a24a86accf51c41e57b99e8aced7";
+export const PINNED_VERSION = "5.0.0-beta.21";
 export const DEFAULT_TARGET_DIR = "docs/references/oh-my-openagent/final-prompts";
 export const MANIFEST_FILE = ".omo-final-prompts.json";
 
