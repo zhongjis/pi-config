@@ -124,6 +124,7 @@ describe("mode frontmatter task selector wildcard", () => {
     join(process.cwd(), "modes", "kuafu", "mode.md"),
     join(process.cwd(), "modes", "luban", "mode.md"),
     join(process.cwd(), "modes", "shennong", "mode.md"),
+    join(process.cwd(), "modes", "zhurong", "mode.md"),
   ];
 
   it("uses Task* as the sole task-tool selector in every mode frontmatter", () => {

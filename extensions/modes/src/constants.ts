@@ -1,6 +1,6 @@
 import type { Mode } from "./types.js";
 
-export const MODES: Mode[] = ["kuafu", "fuxi", "houtu", "luban", "shennong"];
+export const MODES: Mode[] = ["kuafu", "fuxi", "houtu", "luban", "shennong", "zhurong"];
 
 export const SKILL_GATED_MODES: ReadonlySet<Mode> = new Set(["fuxi", "luban", "shennong"]);
 
@@ -16,6 +16,7 @@ export const MODE_META: Record<Mode, { alias?: string; label: string }> = {
   houtu: { alias: "execute", label: "Hou Tu 后土 (execute)" },
   luban: { label: "Lu Ban 鲁班 (superpowers)" },
   shennong: { alias: "pm", label: "Shen Nong 神農 (pm-skills)" },
+  zhurong: { label: "Zhu Rong 祝融 (deep worker)" },
 };
 
 // Color scheme (24-bit ANSI)
@@ -25,6 +26,7 @@ export const MODE_COLORS: Record<Mode, string> = {
   houtu: "\x1b[38;2;16;185;129m",
   luban: "\x1b[38;2;168;85;247m", // #A855F7 — purple (Lu Ban)
   shennong: "\x1b[38;2;234;179;8m", // #EAB308 — amber/gold (神農)
+  zhurong: "\x1b[38;2;220;38;38m", // #DC2626 — fire-red (祝融)
 };
 
 export const RESET = "\x1b[0m";

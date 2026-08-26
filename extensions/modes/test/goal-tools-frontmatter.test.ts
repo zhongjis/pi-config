@@ -8,7 +8,7 @@ import type { Mode } from "../src/types.js";
 // Regression: goal-mode continuation requires the goal tools to be callable by
 // modes that own goal-mode continuation. Hou Tu/Atlas-aligned plan execution
 // intentionally does not expose them.
-const GOAL_TOOL_MODES: Mode[] = ["kuafu", "fuxi", "luban", "shennong"];
+const GOAL_TOOL_MODES: Mode[] = ["kuafu", "fuxi", "luban", "shennong", "zhurong"];
 const NON_GOAL_TOOL_MODES: Mode[] = ["houtu"];
 const GOAL_TOOLS = ["create_goal", "get_goal", "update_goal"];
 

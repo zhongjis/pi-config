@@ -157,6 +157,8 @@ describe("ModeStateManager", () => {
 		state.currentMode = "luban";
 		expect(state.nextMode()).toBe("shennong");
 		state.currentMode = "shennong";
+		expect(state.nextMode()).toBe("zhurong");
+		state.currentMode = "zhurong";
 		expect(state.nextMode()).toBe("kuafu");
 	});
 
