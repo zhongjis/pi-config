@@ -6,7 +6,7 @@ Session handoff system for transferring context to a new focused session.
 
 - Summarizes current session context using a cheap model, then launches a new session with the summary as starting context
 - Alternatively writes the summary to a temp-dir handoff document (`/handoff:file`) for handing work to an out-of-session agent
-- Supports every canonical mode from the modes extension (kuafu, fuxi, houtu, luban, shennong)
+- Supports every canonical mode from the modes extension (kuafu, fuxi, houtu, luban, shennong, zhurong)
 - Optional `--no-summarize` flag skips the summary step
 - Integrates with the modes extension for plan-to-execution handoff (`/handoff:start-work`)
 - Exports runtime utilities (`buildPlanExecutionGoal`, `registerDirectHandoffBridge`, etc.) for use by other extensions

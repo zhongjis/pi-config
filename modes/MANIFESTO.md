@@ -44,6 +44,7 @@ Short, forceful overlays maintain context while mitigating these known weaknesse
 | **houtu** | Plan executor | `anthropic/claude-sonnet-4-6` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **luban** | Superpowers discipline | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **shennong** | Product judgment | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
+| **zhurong** | Deep-worker autonomy | `openai-codex/gpt-5.6-sol:high` (GPT-only) | No (GPT-only, `mode.md` body) | No (GPT-only) |
 
 All five modes have default/GPT/Gemini prompt coverage. GPT files are standalone replacement bodies — except Fu Xi's thin Prometheus family, which ships no dedicated `gpt.md` and inherits the default `mode.md` body for GPT runs; Gemini files are corrective overlays on default bodies.
 

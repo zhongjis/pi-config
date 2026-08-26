@@ -71,7 +71,7 @@ Stable, citable external material under `docs/references/`.
 
 ## Mode Agents
 
-Five personas, each with its own mythology name.
+Six personas, each with its own mythology name.
 
 **Kua Fu 夸父**:
 Build mode — the default general-purpose implementation orchestrator.
@@ -87,6 +87,9 @@ Skill-first discipline mode, adapted from obra/superpowers.
 
 **Shennong 神農**:
 Product-manager mode, backed by the PM skill pack.
+
+**Zhu Rong 祝融**:
+Deep-worker mode — GPT-only autonomous worker that receives goals, executes end-to-end, and self-verifies through the artifact's surface.
 
 ## Subagents
 

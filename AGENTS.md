@@ -153,7 +153,7 @@ Before registering any new tool, extension, or MCP server:
 | Code knowledge graph | `extensions/codegraph` |
 | Session handoff to new focused session | `extensions/handoff` |
 | Token-efficient background task execution | `extensions/boomerang` |
-| Agent modes (kuafu / fuxi / houtu / luban / shennong) | `extensions/modes` |
+| Agent modes (kuafu / fuxi / houtu / luban / shennong / zhurong) | `extensions/modes` |
 | Product-manager mode PM skill pack + /pm:* commands (神農, vendored pm-skills) | `extensions/pm-marketplace` |
 | AGENTS.md generation | `extensions/init` |
 | Inline `/skill` autocomplete + per-turn skill loading | `extensions/inline-skills` |

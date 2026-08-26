@@ -1,6 +1,6 @@
 # Agent Orchestration Across Modes
 
-High-level map of how the five agent **modes** get work done by delegating to
+High-level map of how the six agent **modes** get work done by delegating to
 **subagents**. This is an overview — it links to the authoritative detail rather
 than restating it.
 
@@ -20,7 +20,7 @@ Where the details live:
 
 | Workflow | Modes | Shape |
 |----------|-------|-------|
-| **Single-session** | Kua Fu, Lu Ban, Shen Nong | Classify the request, delegate specialists, verify, respond — all in the current session. |
+| **Single-session** | Kua Fu, Lu Ban, Shen Nong, Zhu Rong | Classify the request, delegate specialists, verify, respond — all in the current session. |
 | **Plan-then-execute** | Fu Xi → Hou Tu | Fu Xi plans; on approval a **child session** opens in Hou Tu to execute. |
 
 All modes delegate through the same `Agent` tool. What differs per mode is *which*
@@ -37,6 +37,7 @@ subagents it may call, *how* it routes, and *when* it hands off.
 | **Hou Tu 后土** | `execute` | Execution conductor. Runs an approved plan as a pi-task DAG, delegating every task; verifies through a final gate wave. Writes no code directly. |
 | **Lu Ban 鲁班** | — | Skill-first discipline mode. Loads the matching skill, follows it, routes to specialists; parallelism is safety-gated. |
 | **Shen Nong 神農** | `pm` | Product mode. Frames the problem, prioritizes, de-risks — no code. Hands off to Kua Fu via `/mode kuafu`. |
+| **Zhu Rong 祝融** | — | GPT-only autonomous deep worker. Receives goals, executes end-to-end, and self-verifies through the artifact's surface. Delegates to every worker/consultant except Hou Tu. |
 
 Details of each mode's lifecycle, restrictions, and gates are in
 [`orchestration-flow.md`](../specs/orchestration-flow.md) and
@@ -73,24 +74,25 @@ Which subagent each mode may delegate to. **Authoritative source is each mode's
 `allow_delegation_to` / `disallow_delegation_to` frontmatter** (`modes/<mode>/mode.md`);
 this table is a convenience snapshot.
 
-| Target ↓ / Mode → | kuafu | fuxi | houtu | luban | shennong |
-|---|:---:|:---:|:---:|:---:|:---:|
-| chengfeng | ✓ | ✓ | ✓ | ✓ | ✓ |
-| wenchang | ✓ | ✓ | ✓ | ✓ | ✓ |
-| taishang | ✓ | ✓ | ✓ | ✓ | ✓ |
-| direnjie | ✓ | ✓ | ✓ | — | — |
-| yanluo | — | ✓ | — | — | — |
-| xuannv | ✓ | — | — | — | — |
-| jintong | ✓ | — | ✓ | ✓ | — |
-| juling | ✓ | — | ✓ | ✓ | — |
-| guangguang | ✓ | — | ✓ | ✓ | — |
-| yunu | ✓ | ✓ | ✓ | ✓ | — |
-| houtu | ✗ | ✗ | — | — | — |
+| Target ↓ / Mode → | kuafu | fuxi | houtu | luban | shennong | zhurong |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| chengfeng | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| wenchang | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| taishang | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| direnjie | ✓ | ✓ | ✓ | — | — | ✓ |
+| yanluo | — | ✓ | — | — | — | — |
+| xuannv | ✓ | — | — | — | — | — |
+| jintong | ✓ | — | ✓ | ✓ | — | ✓ |
+| juling | ✓ | — | ✓ | ✓ | — | ✓ |
+| guangguang | ✓ | — | ✓ | ✓ | — | ✓ |
+| yunu | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| houtu | ✗ | ✗ | — | — | — | ✗ |
 
 Notes: `shennong` lists no code writers (planning only); `fuxi` allows only `yunu`
 among writers (for UI feasibility input), not general implementation; `yanluo` is
 fuxi-only, `xuannv` is kuafu-only; **Hou Tu is never a delegation target** — it is
 reached through the approval → `/handoff:start-work` bridge, not by delegation.
+`zhurong` (GPT-only autonomous deep worker) may delegate to every worker and consultant except Hou Tu.
 
 Delegation is **mode-scoped and fail-closed**: the allowlist sets candidates, the
 blocklist removes them, and any target outside the resolved set is denied at every

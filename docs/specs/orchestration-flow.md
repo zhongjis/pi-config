@@ -168,7 +168,7 @@ These are the current GPT frontmatter defaults for mode and agent model chains. 
 | Surface | Duty shape | Recommended GPT target | Rationale |
 |---|---|---|---|
 | `fuxi`, `yanluo` | decision-complete planning and final high-accuracy plan review | `openai-codex/gpt-5.6-sol:xhigh` | Highest consequence reasoning; failures create bad downstream work. |
-| `taishang`, `direnjie`, `juling`, `yunu`, `luban`, `shennong` | deep consult, gap analysis, complex implementation, UI judgment, skill discipline, product judgment | `openai-codex/gpt-5.6-sol:high` | These roles depend on trade-off judgment and catching subtle risks. |
+| `taishang`, `direnjie`, `juling`, `yunu`, `luban`, `shennong`, `zhurong` | deep consult, gap analysis, complex implementation, UI judgment, skill discipline, product judgment, autonomous deep-worker execution | `openai-codex/gpt-5.6-sol:high` | These roles depend on trade-off judgment and catching subtle risks. |
 | `kuafu` | default orchestrator: intent gate, delegation, supervision, verification | `openai-codex/gpt-5.6-sol:medium` by default; raise to `:high` for large/multi-stream work | After prompt audit, Kua Fu is too judgment-heavy for Terra by default, but it runs often enough that `medium` is the cost/speed guard. |
 | `houtu` | Atlas-aligned execution conductor | `openai-codex/gpt-5.5:medium` | Matches upstream Atlas GPT-family model and effort while preserving the local provider ladder. |
 | `jintong` | bounded implementation | `openai-codex/gpt-5.6-terra:medium` | Terra suits routine implementation while keeping cost below Sol. |

@@ -14,6 +14,10 @@ Fu Xi architecture:
 - Active planner policy lives in `modes/fuxi/skills/ulw-plan/SKILL.md`; Fu Xi prompts require loading it before planning, and its `references/*` files resolve relative to the skill base dir.
 - Fu Xi’s exactly seven planning stages are authoritative in `modes/fuxi/skills/ulw-plan/SKILL.md`; do not duplicate them here.
 
+Zhu Rong architecture:
+- Zhu Rong is a GPT-only autonomous deep-worker mode; it ships `mode.md` only.
+- Zhu Rong ships no `gpt.md` and no `gemini.md`; its GPT-only `model:` chain runs the default `mode.md` body.
+
 Current file matrix:
 
 | Mode | `mode.md` | `gpt.md` | `gemini.md` | mode skill migration |
@@ -23,6 +27,7 @@ Current file matrix:
 | houtu | Yes | Yes | Yes | none |
 | luban | Yes | Yes | Yes | mode-local 14-skill Superpowers snapshot |
 | shennong | Yes | Yes | Yes | future / out of scope |
+| zhurong | Yes | — (GPT-only) | — (GPT-only) | none |
 
 Prompt audits must review the final injected prompt, not only source files, and preserve locked family anchors plus the final injected session audit requirement. See `../docs/specs/mode-prompt-audit-checklist.md`.
 
