@@ -103,7 +103,6 @@ const EXPECTED_TOOL_NAMES = [
   "open_pr_walkthrough",
   "plan_approve",
   "plan_scaffold",
-  "readonly_bash",
   "steer_subagent",
   "update_goal",
   "write",
@@ -168,8 +167,8 @@ describe("extension entrypoints", () => {
     const rawNames = registrations.map((definition) => definition.name);
     const uniqueNames = [...new Set(rawNames)];
 
-    expect(rawNames).toHaveLength(26);
-    expect(uniqueNames).toHaveLength(26);
+    expect(rawNames).toHaveLength(25);
+    expect(uniqueNames).toHaveLength(25);
     expect([...uniqueNames].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
 
     for (const definition of registrations) {

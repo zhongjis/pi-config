@@ -119,4 +119,4 @@ See existing READMEs for reference:
 - `extensions/codegraph/README.md` — vendored extension with concise provenance and tool docs
 - `extensions/subagents/README.md` — vendored complex multi-tool extension with settings
 - `extensions/tasks/README.md` — vendored extension with config file and env var documentation
-- `extensions/readonly-bash/README.md` — original extension with validation contract docs
+- `extensions/smart-tool-guards/README.md` — original hook extension with scope, precedence, and classifier contracts

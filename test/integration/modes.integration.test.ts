@@ -12,7 +12,7 @@ import { readFile, rm } from "node:fs/promises";
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const EXTENSION = path.resolve(PROJECT_ROOT, "extensions/modes/src/index.ts");
 const INLINE_SKILLS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/inline-skills/index.ts");
-const TOOL_SMART_GUARD_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/tool-smart-guard/index.ts");
+const SMART_TOOL_GUARDS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/smart-tool-guards/index.ts");
 
 const MOCK_TOOLS = {
 	bash: (params: Record<string, unknown>) => `$ ${params.command}\nok`,
@@ -317,15 +317,15 @@ describe("modes extension — integration", () => {
 	it("allows deterministic-safe Fu Xi bash through smart guard without classifier", async () => {
 		const bash = vi.fn((params: Record<string, unknown>) => `$ ${params.command}\nok`);
 		t = await createTestSession({
-			extensions: [EXTENSION, TOOL_SMART_GUARD_EXTENSION],
+			extensions: [EXTENSION, SMART_TOOL_GUARDS_EXTENSION],
 			mockTools: { ...MOCK_TOOLS, bash },
 			propagateErrors: false,
 		});
 
 		await switchMode(t, "fuxi");
 		await t.run(
-			when("Inspect git status", [
-				calls("bash", { command: "git status" }),
+			when("Inspect current directory", [
+				calls("bash", { command: "pwd" }),
 				says("Done."),
 			]),
 		);
@@ -338,7 +338,7 @@ describe("modes extension — integration", () => {
 	it("blocks deterministic-dangerous Fu Xi bash before native execution", async () => {
 		const bash = vi.fn((params: Record<string, unknown>) => `$ ${params.command}\nok`);
 		t = await createTestSession({
-			extensions: [EXTENSION, TOOL_SMART_GUARD_EXTENSION],
+			extensions: [EXTENSION, SMART_TOOL_GUARDS_EXTENSION],
 			mockTools: { ...MOCK_TOOLS, bash },
 			propagateErrors: false,
 		});

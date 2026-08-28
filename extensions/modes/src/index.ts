@@ -17,13 +17,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../handoff/runtime.js";
 import { registerModeCommands } from "./commands.js";
-import { registerModeHooks } from "./hooks.js";
+import { registerModeGuardScope, registerModeHooks } from "./hooks.js";
 import { ModeStateManager } from "./mode-state.js";
 import { renderPlanApprovalCall, renderPlanApprovalResult, runPlanApprovalFlow } from "./plan-approval.js";
 import { getLocalPlanPath } from "./plan-storage.js";
 import { registerPlanScaffoldTool } from "./plan-scaffold.js";
 export default function modesExtension(pi: ExtensionAPI): void {
 	const state = new ModeStateManager(pi);
+	registerModeGuardScope(pi, state);
 
 	// Fallback args resolver so /handoff:start-work can derive
 	// handoff args from persisted mode state (survives pi restart).

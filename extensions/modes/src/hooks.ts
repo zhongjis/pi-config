@@ -2,7 +2,11 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { isTui } from "../../lib/mode.js";
-import { FUXI_BASH_GUARD_CAPABILITY, hasGuardCapability } from "../../lib/guard-registration.js";
+import {
+	hasGuardCapability,
+	registerGuardScopeProvider,
+	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
+} from "../../lib/guard-registration.js";
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
@@ -185,6 +189,10 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 
 // ─── Hook registration ───────────────────────────────────────────────────────
 
+export function registerModeGuardScope(pi: ExtensionAPI, state: ModeStateManager): void {
+	registerGuardScopeProvider(pi, "modes:fuxi", () => state.currentMode === "fuxi" ? "guard" : "abstain");
+}
+
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
 	pi.on("tool_call", async (event, ctx) => {
 
@@ -204,7 +212,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 			return;
 		}
 
-		if (event.toolName === "bash" && !hasGuardCapability(pi, FUXI_BASH_GUARD_CAPABILITY)) {
+		if (event.toolName === "bash" && !hasGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)) {
 			return {
 				block: true,
 				reason: "Plan mode: built-in bash blocked because smart guard capability is not registered.",

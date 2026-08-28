@@ -86,7 +86,10 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		cwd,
 		agentDir: cwd, // Use cwd as agent dir to avoid touching real ~/.pi
 		settingsManager,
-		additionalExtensionPaths: options.extensions?.map((p) => path.resolve(cwd, p)) ?? [],
+		additionalExtensionPaths: [
+			path.resolve(__dirname, "faux-compat-provider.ts"),
+			...(options.extensions?.map((p) => path.resolve(cwd, p)) ?? []),
+		],
 		extensionFactories: options.extensionFactories,
 		systemPromptOverride: options.systemPrompt ? () => options.systemPrompt! : undefined,
 	});
@@ -107,14 +110,6 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	// Harmless with faux (which is auth-free), but kept for parity with upstream
 	// and any code paths that still consult these.
 	(session.agent as any).getApiKey = async () => "test-key";
-	const origModelRegistry = (session as any)._modelRegistry;
-	if (origModelRegistry) {
-		origModelRegistry.getApiKey = async () => "test-key";
-		origModelRegistry.getApiKeyForProvider = async () => "test-key";
-		origModelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test-key", headers: {} });
-		origModelRegistry.hasConfiguredAuth = () => true;
-		origModelRegistry.isUsingOAuth = () => false;
-	}
 
 	// Check for extension load errors
 	if (extensionsResult?.errors?.length > 0) {
@@ -206,6 +201,12 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 			console.error(`[faux-harness] Extension error: ${err.event} — ${err.error}`);
 		},
 	});
+	const modelRegistry = (session as any).extensionRunner.getModelRegistry();
+	modelRegistry.getApiKey = async () => "test-key";
+	modelRegistry.getApiKeyForProvider = async () => "test-key";
+	modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test-key", headers: {} });
+	modelRegistry.hasConfiguredAuth = () => true;
+	modelRegistry.isUsingOAuth = () => false;
 
 	// Capture original tools before any wrapping — used in run() to avoid double-wrap
 	const originalTools: AgentTool[] = [...((session.agent as any).state.tools as AgentTool[])];
@@ -226,7 +227,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 			// Build the faux response queue from the flattened playbook.
 			const state = createPlaybookState();
 			playbookState = state;
-			const steps = buildFauxSteps(turns, state, (session as any).id);
+			const steps = buildFauxSteps(turns, state, (session as any).id, options.fauxResponseRouter);
 
 			// Feed the deterministic responses to the faux provider. This REPLACES
 			// the upstream `agent.streamFn = playbookStreamFn` — pi 0.83 drives the

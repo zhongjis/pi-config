@@ -15,10 +15,12 @@
 
 import {
 	type AssistantMessage,
+	type Context,
 	type FauxResponseStep,
 	fauxAssistantMessage,
 	fauxText,
 	fauxToolCall,
+	type StreamOptions,
 } from "@earendil-works/pi-ai";
 import type { PlaybookAction, ToolResultRecord, Turn } from "./types.js";
 import { formatPlaybookDiagnostic } from "./diagnostics.js";
@@ -164,6 +166,10 @@ export function buildFauxSteps(
 	turns: Turn[],
 	state: PlaybookState,
 	parentSessionId: string | undefined,
+	fauxResponseRouter?: (
+		context: Context,
+		options: StreamOptions | undefined,
+	) => AssistantMessage | Promise<AssistantMessage | undefined> | undefined,
 ): FauxResponseStep[] {
 	const queue: PlaybookAction[] = turns.flatMap((t) => t.actions);
 
@@ -182,13 +188,16 @@ export function buildFauxSteps(
 	// this; otherwise it is captured dynamically.
 	let parentSid = parentSessionId;
 
-	const dispatcher: FauxResponseStep = (_context, options) => {
-		const sid = (options as { sessionId?: string } | undefined)?.sessionId;
+	const dispatcher: FauxResponseStep = async (context, options) => {
+		const routed = await fauxResponseRouter?.(context, options);
+		if (routed) return routed;
+
+		const sid = options?.sessionId;
 		if (parentSid === undefined) parentSid = sid;
 		const isParent = sid === undefined || sid === parentSid;
 
 		if (!isParent) {
-			return stayIdleUntilAborted(options as { signal?: AbortSignal } | undefined);
+			return stayIdleUntilAborted(options);
 		}
 
 		if (state.consumed < queue.length) {

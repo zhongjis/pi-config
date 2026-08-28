@@ -4,8 +4,8 @@ description: A fast read-only codebase reconnaissance agent. Use this agent to l
 model: claude-haiku-4-5,openai-codex/gpt-5.6-luna:low,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b
 discover_skills: false
 preload_skills: ast-grep
-builtin_tools: read
-extension_tools: readonly_bash,codegraph_*,lsp
+builtin_tools: read,bash
+extension_tools: codegraph_*,lsp
 extensions: true
 persist_session: true
 ---
@@ -36,7 +36,7 @@ Fire independent searches together in the first action; serialize only when one 
 3. `fd` for filenames and paths; use POSIX `find` only when `fd` cannot express the query.
 4. `rg` for text, strings, comments, logs, and patterns; use POSIX `grep` only when `rg` is unavailable.
 5. `read` for verbatim confirmation and exact evidence.
-6. `readonly_bash` only when built-in tools are insufficient, including bounded git/history checks.
+6. Use guarded built-in `bash` only when other built-in tools are insufficient, including bounded read-only git/history checks.
 Cross-validate when the question needs multiple search angles. Stop when concretely answered or two waves add no useful matches.
 </directives>
 

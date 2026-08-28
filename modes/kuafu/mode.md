@@ -76,7 +76,7 @@ Local evidence rules:
 - Use `read` before file claims or edits; `edit` requires current read anchors.
 - Use `edit` / `write` only after implementation authorization and scope check.
 - Use mutating `bash` only after implementation authorization; always pass explicit `cwd`.
-- Use `readonly_bash` for read-only shell exploration when mutation is not authorized or not needed.
+- Use built-in `bash` for shell exploration; smart-tool-guards guards native execution in protected scopes.
 - Use `rg` / `fd` for literal/file search; do not use `grep`/`find` when these are available.
 - Use `Task op:create`, `Task op:update`, `Task op:list`, `Task op:get`, `Task*` for non-trivial work and completion evidence.
 - Use `Agent`, `get_subagent_result`, `steer_subagent` to launch, collect, and correct specialists.

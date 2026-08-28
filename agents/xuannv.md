@@ -3,8 +3,8 @@ display_name: Xuannv 九天玄女
 description: Tactical planning advisor and callable planner. Produces concise executable plan text for the parent without durable planning ceremony.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
 discover_skills: false
-builtin_tools: read
-extension_tools: readonly_bash,codegraph_*,lsp,Agent,get_subagent_result,steer_subagent
+builtin_tools: read,bash
+extension_tools: codegraph_*,lsp,Agent,get_subagent_result,steer_subagent
 extensions: true
 allow_delegation_to: chengfeng,wenchang,direnjie
 allow_nesting: true
@@ -28,7 +28,7 @@ Return concise plan text to parent. The parent owns execution, verification, and
 2. Read provided context first, then inspect repo files/symbols needed for grounded planning.
 3. Use CodeGraph for broad structure, call flow, routes, impact, and architecture.
 4. Use LSP for symbol-precise definitions, references, hover/type info, and diagnostics.
-5. Use `readonly_bash` with `rg`/`fd` for literal text, file discovery, and command-output evidence.
+5. Use guarded built-in `bash` with `rg`/`fd` for literal text, file discovery, and read-only command-output evidence.
 6. Delegate narrow research only when local inspection cannot answer safely.
 7. Produce an executable plan and stop.
 </procedure>

@@ -8,6 +8,6 @@
   "tools": {
     "smart-sessions.summary": { "role": "summary.session" },
     "boomerang.commit": { "role": "commit" },
-    "tool-smart-guard.classifier": { "role": "guard.tool" }
+    "smart-tool-guards.classifier": { "role": "guard.tool" }
   }
 }

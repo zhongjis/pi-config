@@ -68,7 +68,7 @@ export const BUILTIN_TOOL_MODELS_FILE: ToolModelsFile = {
 	tools: {
 		"smart-sessions.summary": { role: "summary.session" },
 		"boomerang.commit": { role: "commit" },
-		"tool-smart-guard.classifier": { role: "guard.tool" },
+		"smart-tool-guards.classifier": { role: "guard.tool" },
 	},
 };
 
@@ -213,14 +213,15 @@ function applyToolModelsFile(
 		}
 
 		if ("chain" in rule) {
-			if (rule.chain === null) {
+			const chain = rule.chain;
+			if (chain === null) {
 				delete next.chain;
 				delete next.chainCandidates;
 				delete next.chainSource;
 				delete next.chainPath;
-			} else {
-				next.chain = rule.chain;
-				next.chainCandidates = parseModelChain(rule.chain);
+			} else if (chain !== undefined) {
+				next.chain = chain;
+				next.chainCandidates = parseModelChain(chain);
 				next.chainSource = source;
 				next.chainPath = path;
 			}

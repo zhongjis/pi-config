@@ -72,7 +72,7 @@ describe("tool model config", () => {
 			tools: {
 				"smart-sessions.summary": { role: "summary.session" },
 				"boomerang.commit": { role: "commit" },
-				"tool-smart-guard.classifier": { role: "guard.tool" },
+				"smart-tool-guards.classifier": { role: "guard.tool" },
 			},
 		});
 		expect(getToolModelSelection(config, "smart-sessions.summary")).toMatchObject({
@@ -85,7 +85,7 @@ describe("tool model config", () => {
 			role: "commit",
 			source: "built-in",
 		});
-		expect(getToolModelSelection(config, "tool-smart-guard.classifier")).toMatchObject({
+		expect(getToolModelSelection(config, "smart-tool-guards.classifier")).toMatchObject({
 			chain: GUARD_CHAIN,
 			role: "guard.tool",
 			source: "built-in",
@@ -99,7 +99,11 @@ describe("tool model config", () => {
 		expect(installed.roles["summary.session"].split(",")[0]).toBe("openai-codex/gpt-5.6-luna");
 		expect(installed.roles.commit.split(",")[0]).toBe("openai-codex/gpt-5.6-luna");
 		expect(installed.roles["guard.tool"]).toBe(GUARD_CHAIN);
-		expect(installed.tools["tool-smart-guard.classifier"]).toEqual({ role: "guard.tool" });
+		expect(installed.tools).toEqual({
+			"smart-sessions.summary": { role: "summary.session" },
+			"boomerang.commit": { role: "commit" },
+			"smart-tool-guards.classifier": { role: "guard.tool" },
+		});
 	});
 
 	it("lets project config override global config", () => {

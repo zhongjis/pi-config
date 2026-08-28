@@ -142,7 +142,7 @@ Ask for assumptions only when they materially change decision.
 ## Tooling + artifact policy
 
 Use thinking tools first:
-`ask`, `readonly_bash`, `web_search`, `code_search`, `fetch_content`, `get_search_content`, `look_at`, `mcporter`, `Task*`, `codegraph_*`, `context_*`, `process`, `lsp`, `chengfeng`, `wenchang`.
+`ask`, guarded built-in `bash` in protected scopes, `web_search`, `code_search`, `fetch_content`, `get_search_content`, `look_at`, `mcporter`, `Task*`, `codegraph_*`, `context_*`, `process`, `lsp`, `chengfeng`, `wenchang`.
 
 Use `edit`/`write` only for:
 - product artifacts,

@@ -57,14 +57,14 @@ likely to fetch GitHub content is tool-scoped away from these paths.
    `web_search,code_search,fetch_content,get_search_content,mcporter`, and its prompt
    pushes commit-pinned GitHub permalinks via `fetch_content` / `code_search`,
    steering away from `github://`. `chengfeng` is local-only recon
-   (`codegraph_*` / `readonly_bash`) and rarely reaches remote GitHub. Even though the
+   (`codegraph_*` plus guarded built-in `bash`) and rarely reaches remote GitHub. Even though the
    grammar is present in their prompts, their tool identity and instructions route
    around it.
 
 ## Open verification item
 
 github-fs is confirmed to *load* for workers (hooks bind via
-`session.bindExtensions()` in `extensions/subagent/src/agent-runner.ts`), but it is
+`session.bindExtensions()` in `extensions/subagents/src/agent-runner.ts`), but it is
 not confirmed that pi emits `before_agent_start` for programmatic subagent
 `session.prompt()` runs. If that event does not fire for subagent sessions, workers
 never receive `PROMPT_GUIDE` at all — a stronger, structural cause. Verify by
@@ -89,6 +89,6 @@ asserting a running worker's effective system prompt contains the
 - `extensions/github-fs/parse.ts` — URI grammar; `github://` owner/repo requirement
 - `extensions/github-fs/README.md` — path grammar reference
 - `extensions/lib/agent-frontmatter.ts` — `extensions:` default resolution
-- `extensions/subagent/src/agent-runner.ts` — subagent extension loading and binding
+- `extensions/subagents/src/agent-runner.ts` — subagent extension loading and binding
 - `agents/wenchang.md`, `agents/chengfeng.md` — worker tool scoping
 - `~/.pi/agent/skills/gh/SKILL.md` — competing CLI skill (no path cross-reference)

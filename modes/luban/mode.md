@@ -60,7 +60,7 @@ Design-to-implementation work stays skill-driven:
 | `TodoWrite` | Use `Task op:create`, `Task op:update`, `Task op:list`, and `Task op:get`. |
 | Code navigation / impact / flow | Use CodeGraph first (`codegraph_explore`, `codegraph_search`, `codegraph_node`, `codegraph_callers`, `codegraph_impact`, `codegraph_files`) when it fits. |
 | Literal search / file finding | Use `rg` / `fd`, not `grep` / `find`, unless unavailable or unsuitable. |
-| Read-only shell checks | Prefer `readonly_bash` when it can answer safely. |
+| Read-only shell checks | Use built-in `bash`; smart-tool-guards guards native execution in protected scopes. |
 | Mutating or general shell | Use `bash` with `cwd`; never write `cd ... && ...`. |
 | File tools | Use Pi `read`, `edit`, and `write`; read existing files before editing. |
 </tool_mapping>

@@ -54,7 +54,6 @@ const AVAILABLE_TOOL_NAMES = [
   "codegraph_search",
   "codegraph_explore",
   "lsp",
-  "readonly_bash",
   "look_at",
   "web_search",
   "code_search",
@@ -101,7 +100,6 @@ describe("fleet frontmatter — computeActiveToolNames matches authored intent",
       new Set(["read", "bash", "edit", "write", "codegraph_search", "codegraph_explore", "lsp"]),
     );
     expect(active).not.toContain("grep"); // not in builtin_tools
-    expect(active).not.toContain("readonly_bash"); // not in extension_tools
     expect(active).not.toContain("Agent"); // no allow_nesting
   });
 
@@ -111,22 +109,16 @@ describe("fleet frontmatter — computeActiveToolNames matches authored intent",
     expect(active).not.toContain("codegraph_search");
   });
 
-  it("taishang → read + readonly_bash,look_at,codegraph_*,lsp (read-only)", () => {
-    const active = activeFor("agents/taishang.md");
-    expect(new Set(active)).toEqual(
-      new Set(["read", "readonly_bash", "look_at", "codegraph_search", "codegraph_explore", "lsp"]),
-    );
-    expect(active).not.toContain("bash"); // builtin_tools: read only
+  it.each([
+    ["chengfeng", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
+    ["direnjie", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
+    ["taishang", ["read", "bash", "look_at", "codegraph_search", "codegraph_explore", "lsp"]],
+    ["xuannv", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp", "Agent", "get_subagent_result", "steer_subagent"]],
+    ["yanluo", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
+  ] as const)("%s → guarded built-in bash with role tools preserved", (agent, expected) => {
+    const active = activeFor(`agents/${agent}.md`);
+    expect(new Set(active)).toEqual(new Set(expected));
     expect(active).not.toContain("edit");
     expect(active).not.toContain("write");
-  });
-
-  it("xuannv keeps the nested-subagent tools because allow_nesting is set", () => {
-    const active = activeFor("agents/xuannv.md");
-    expect(active).toContain("Agent");
-    expect(active).toContain("get_subagent_result");
-    expect(active).toContain("steer_subagent");
-    expect(active).toContain("read");
-    expect(active).toContain("codegraph_search");
   });
 });

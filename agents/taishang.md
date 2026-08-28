@@ -3,8 +3,8 @@ display_name: Taishang 太上老君
 description: Complex architecture, multi-system trade-offs, hard debugging, and security or performance review. Read-only consultation with stellar logical reasoning and deep analysis.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/deepseek-v4-pro:medium,llama-swap/qwen2.5-coder:14b:medium
 discover_skills: false
-builtin_tools: read
-extension_tools: readonly_bash,look_at,codegraph_*,lsp
+builtin_tools: read,bash
+extension_tools: look_at,codegraph_*,lsp
 extensions: true
 persist_session: true
 ---

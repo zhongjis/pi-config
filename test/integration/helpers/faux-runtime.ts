@@ -38,6 +38,8 @@ import {
 } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
+const FAUX_COMPAT_SEAM_KEY = Symbol.for("pi-config.integration-faux-compat-seam");
+
 export interface FauxModelRuntime {
 	faux: FauxProviderHandle;
 	model: Model<string>;
@@ -49,6 +51,7 @@ export async function createFauxModelRuntime(
 	options: RegisterFauxProviderOptions = {},
 ): Promise<FauxModelRuntime> {
 	const faux = fauxProvider(options);
+	Reflect.set(globalThis, FAUX_COMPAT_SEAM_KEY, { api: faux.api, provider: faux.provider });
 	// Hermetic, empty credential + models store so no real provider auth leaks in.
 	const authDir = mkdtempSync(join(tmpdir(), "pi-faux-auth-"));
 	const modelRuntime = await ModelRuntime.create({
@@ -73,6 +76,10 @@ export async function createFauxModelRuntime(
 		model: faux.getModel(),
 		modelRuntime,
 		dispose: () => {
+			const activeSeam: unknown = Reflect.get(globalThis, FAUX_COMPAT_SEAM_KEY);
+			if (typeof activeSeam === "object" && activeSeam !== null && Reflect.get(activeSeam, "api") === faux.api) {
+				Reflect.deleteProperty(globalThis, FAUX_COMPAT_SEAM_KEY);
+			}
 			modelRuntime.unregisterProvider(faux.provider.id);
 			rmSync(authDir, { recursive: true, force: true });
 		},

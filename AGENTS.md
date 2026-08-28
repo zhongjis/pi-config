@@ -141,7 +141,7 @@ Before registering any new tool, extension, or MCP server:
 |---|---|
 | Interactive user prompts (questions, select) | `extensions/ask` |
 | Shell with cwd | `extensions/better-bash-tool` |
-| Read-only validated shell | `extensions/readonly-bash` |
+| Scoped guard for selected built-in `bash` calls | `extensions/smart-tool-guards` |
 | Subagent orchestration (Agent, get_subagent_result, steer_subagent) | `extensions/subagents` |
 | Task tracking + DAG (single `Task` tool: op create/update/list/get) | `extensions/tasks` |
 | Web search, fetch, code search, video | `pi-web-access` git package (`settings.json`) |

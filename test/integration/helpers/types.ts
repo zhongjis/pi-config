@@ -5,6 +5,7 @@
  * integration tests use. Model-driver-independent.
  */
 
+import type { AssistantMessage, Context, StreamOptions } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
@@ -100,6 +101,11 @@ export interface TestSessionOptions {
 	cwd?: string;
 	/** System prompt override */
 	systemPrompt?: string;
+	/** Route nested faux-model calls without consuming parent playbook actions. */
+	fauxResponseRouter?: (
+		context: Context,
+		options: StreamOptions | undefined,
+	) => AssistantMessage | Promise<AssistantMessage | undefined> | undefined;
 
 	/** Mock tool execution (intercepts tool.execute()) */
 	mockTools?: Record<string, MockToolHandler>;

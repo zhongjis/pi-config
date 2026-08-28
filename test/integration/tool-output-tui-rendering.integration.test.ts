@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const execFileAsync = promisify(execFile);
 const PROJECT_ROOT = resolve(__dirname, "../..");
 const WIDTHS = [20, 40, 80, 120] as const;
-const NATIVE_RESULT_DELEGATES = new Set(["bash", "readonly_bash"]);
+const NATIVE_RESULT_DELEGATES = new Set(["bash"]);
 const EXPECTED_TOOL_NAMES = [
   "Agent",
   "Task",
@@ -36,7 +36,6 @@ const EXPECTED_TOOL_NAMES = [
   "open_pr_walkthrough",
   "plan_approve",
   "plan_scaffold",
-  "readonly_bash",
   "steer_subagent",
   "update_goal",
   "write",
@@ -45,7 +44,6 @@ const EXPECTED_TOOL_NAMES = [
 const OWNER_EXTENSIONS = [
   ...[
     "better-bash-tool",
-    "readonly-bash",
     "qol",
     "codegraph",
     "lsp",
@@ -158,7 +156,6 @@ const FIXTURES: Record<(typeof EXPECTED_TOOL_NAMES)[number], ToolFixture> = {
   open_pr_walkthrough: { args: { sidecar_path: "/tmp/review-sidecar.json", head_sha: "0123456789abcdef" }, raw: "- extensions/render.ts:31 — Renderer verified\nRAW31_25", details: {} },
   plan_approve: { args: { variant: "review" }, raw: "Plan approved for handoff.\nRAW31_26", details: {} },
   plan_scaffold: { args: { slug: "renderer-audit", intent: "Prove tool output", create_plan: true }, raw: "Created DRAFT.md and PLAN.md\nNext: review plan\nRAW31_27", details: { artifacts: [{ name: "DRAFT.md", status: "created" }, { name: "PLAN.md", status: "created" }] } },
-  readonly_bash: { args: { command: "git status --short", timeout: 5, cwd: "/tmp/render-cwd" }, raw: "clean\nRAW31_28", details: {} },
   steer_subagent: { args: { agent_id: "agent-render-1", message: "Focus on renderer width" }, raw: "Steering message delivered to agent agent-render-1.\nRAW31_29", details: {} },
   update_goal: { args: { status: "completed", note: "Renderer proof complete" }, raw: "Goal updated: completed\nRAW31_30", details: {} },
   write: { args: { path: "/tmp/界面-render.txt", content: "line one\nline two" }, raw: "Wrote 2 lines to /tmp/界面-render.txt\nRAW31_31", details: {} },
@@ -231,7 +228,7 @@ afterEach(async () => {
 });
 
 describe("tool output TUI rendering — real Pi integration", () => {
-  it("loads and exercises the exact 26 registered renderer pairs without mutation", async () => {
+  it("loads and exercises the exact 25 registered renderer pairs without mutation", async () => {
     originalHome = process.env.HOME;
     originalPackageDir = process.env.PI_PACKAGE_DIR;
     tempHome = await mkdtemp(join(tmpdir(), "pi-render-home-"));
@@ -259,8 +256,8 @@ describe("tool output TUI rendering — real Pi integration", () => {
     const rawNames = definitions.map(({ name }) => name);
     const uniqueNames = [...new Set(rawNames)];
 
-    expect(rawNames).toHaveLength(26);
-    expect(uniqueNames).toHaveLength(26);
+    expect(rawNames).toHaveLength(25);
+    expect(uniqueNames).toHaveLength(25);
     expect([...uniqueNames].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
 
     const theme = runner!.getUIContext().theme;

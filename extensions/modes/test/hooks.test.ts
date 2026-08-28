@@ -1,9 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { FUXI_BASH_GUARD_CAPABILITY, registerGuardCapability } from "../../lib/guard-registration.js";
+import {
+	evaluateGuardScope,
+	registerGuardCapability,
+	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
+} from "../../lib/guard-registration.js";
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
+	isToolCallEventType: (toolName: string, event: { toolName?: string }) => event.toolName === toolName,
 	CustomEditor: class {
 		constructor(..._args: unknown[]) {}
 		handleInput(_data: string): void {}
@@ -13,7 +18,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	},
 }));
 
-vi.mock("@earendil-works/pi-tui", () => ({
+vi.mock("@earendil-works/pi-tui", async (importOriginal: () => Promise<object>) => ({
+	...await importOriginal() as object,
 	Key: { tab: "tab", ctrlShift: (key: string) => `ctrl+shift+${key}` },
 	matchesKey: (candidate: unknown, expected: unknown) => candidate === expected,
 }));
@@ -40,7 +46,9 @@ vi.mock("../src/plan-storage.js", () => ({
 	hydratePlanState: vi.fn(async () => undefined),
 }));
 
-import { registerModeHooks } from "../src/hooks.js";
+import smartToolGuards from "../../smart-tool-guards/index.js";
+import modesExtension from "../src/index.js";
+import { registerModeGuardScope, registerModeHooks } from "../src/hooks.js";
 import { ModeStateManager } from "../src/mode-state.js";
 
 function createMockPi() {
@@ -48,11 +56,15 @@ function createMockPi() {
 
 	return {
 		pi: {
+			events: {},
 			on(event: string, handler: (event: unknown, ctx: unknown) => unknown | Promise<unknown>) {
 				const next = handlers.get(event) ?? [];
 				next.push(handler);
 				handlers.set(event, next);
 			},
+			registerTool: vi.fn(),
+			registerFlag: vi.fn(),
+			registerCommand: vi.fn(),
 			getAllTools: () => [{ name: "read" }, { name: "write" }, { name: "edit" }, { name: "bash" }, { name: "Agent" }],
 			getActiveTools: () => ["read", "write", "edit", "bash", "Agent"],
 			setActiveTools: vi.fn(),
@@ -263,7 +275,7 @@ describe("mode hooks", () => {
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
 		state.cachedConfigs["fuxi:default"] = { body: "" };
-		registerGuardCapability(mock.pi as never, FUXI_BASH_GUARD_CAPABILITY);
+		registerGuardCapability(mock.pi as never, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY);
 
 		registerModeHooks(mock.pi as never, state);
 		const [result] = await mock.fire(
@@ -274,6 +286,49 @@ describe("mode hooks", () => {
 
 		expect(result).toBeUndefined();
 	});
+
+	it("registers the Fu Xi scope provider during extension initialization", async () => {
+		const mock = createMockPi();
+		modesExtension(mock.pi as never);
+		const event = { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "pwd" } };
+
+		expect(await evaluateGuardScope(mock.pi as never, event as never, {} as never)).toBe("abstain");
+	});
+
+	it.each(["modes-first", "smart-tool-guards-first"] as const)(
+		"keeps one guard decision across %s registration, repeats, and mode switches",
+		async (order: "modes-first" | "smart-tool-guards-first") => {
+			const mock = createMockPi();
+			const state = new ModeStateManager(mock.pi as never);
+			const registerMode = () => registerModeGuardScope(mock.pi as never, state);
+			if (order === "modes-first") {
+				registerMode();
+				smartToolGuards(mock.pi as never);
+			} else {
+				smartToolGuards(mock.pi as never);
+				registerMode();
+			}
+			smartToolGuards(mock.pi as never);
+			registerMode();
+
+			state.currentMode = "fuxi";
+			const guarded = await mock.fire(
+				"tool_call",
+				{ type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "rm out" } },
+				{ cwd: "/tmp" },
+			);
+			expect(guarded.filter((result) => result !== undefined)).toEqual([
+				expect.objectContaining({ block: true }),
+			]);
+
+			state.currentMode = "houtu";
+			expect(await mock.fire(
+				"tool_call",
+				{ type: "tool_call", toolCallId: "call-2", toolName: "bash", input: { command: "rm out" } },
+				{ cwd: "/tmp" },
+			)).toEqual([undefined]);
+		},
+	);
 
 
 

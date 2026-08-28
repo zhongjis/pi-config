@@ -39,7 +39,7 @@ Use Pi-native tools instead of upstream Claude Code names:
 | `TodoWrite` | Use `Task op:create`, `Task op:update`, `Task op:list`, and `Task op:get`. |
 | Code navigation / impact / flow | Use CodeGraph first when it fits: `codegraph_explore`, `codegraph_search`, `codegraph_node`, `codegraph_callers`, `codegraph_impact`, `codegraph_files`. |
 | Literal search / file finding | Use `rg` / `fd`, not `grep` / `find`, unless unavailable or unsuitable. |
-| Read-only shell checks | Prefer `readonly_bash` when it can answer safely. |
+| Read-only shell checks | Use built-in `bash`; smart-tool-guards guards native execution in protected scopes. |
 | Mutating or general shell | Use `bash` with `cwd`; never write `cd ... && ...`. |
 | File tools | Use Pi `read`, `edit`, and `write`; read existing files before editing. |
 </pi_tool_mapping>

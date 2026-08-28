@@ -106,10 +106,11 @@ The live `~/.pi/agent/settings.json` currently configures:
 - eight Git package sources;
 - a broad local extension allowlist.
 
-`tool_models.json` defines two cross-extension model roles:
+`tool_models.json` defines three cross-extension model roles:
 
 - `summary.session`, consumed by `smart-sessions.summary`;
-- `commit`, consumed by `boomerang.commit`.
+- `commit`, consumed by `boomerang.commit`;
+- `guard.tool`, consumed by `smart-tool-guards.classifier`.
 
 OMP has direct settings for compaction, retry delays, model fallback chains, steering/follow-up modes, themes, model roles, provider order, and tool approvals. The migration should hand-author and validate `config.yml`; it should not blindly rename the Pi JSON. OMP's automatic legacy migration only reads legacy files already under the active OMP user root, not `~/.pi/agent/settings.json`.
 
@@ -223,7 +224,7 @@ Sources: `agents/*.md`, `extensions/lib/agent-frontmatter.ts`, `omp://task-agent
 | `profiles` | Runtime provider allowlists for default/opencode/local; model force-switch; session persistence; offline guards; `/profile` commands and CLI flag | Use OMP named profiles: `~/.omp/profiles/<name>/agent`, `omp --profile`, `OMP_PROFILE`/`PI_PROFILE`. Profiles uniformly isolate config, agents, sessions, state, and auth. Put offline policy in the local profile. In-session profile switching is intentionally removed because OMP profile roots are process-scoped. | **Native config — P0** |
 | `qol` | Custom header/footer, prompt URL widget, session copy ID, exit command, write renderer | OMP already owns status line, startup, tool rendering, session naming, and shutdown. `setHeader`/`setFooter` are legacy no-ops in OMP. Keep only a prompt-URL widget or session-copy command if still missing after trial. | **Mostly retire — P2** |
 | `queue-steer` | Visible steering/follow-up timeline, row editing, pause/promote controls, settings reload | Use native steering and follow-up queues plus `steeringMode`, `followUpMode`, and `interruptMode`. Do not patch the editor for a duplicate queue. | **Native — P1** |
-| `readonly-bash` | Allowlisted read-only shell with safe pipeline parser and explicit command families | Prefer no `bash` at all for read-only agents; give them `read`, `grep`, `glob`, `lsp`, web/GitHub/MCP tools. Retain a port only for justified read-only `git`, Kubernetes, or Flux CLI inspection. OMP approvals alone are not a read-only shell sandbox. | **Thin port for required CLI coverage — P0** |
+| `smart-tool-guards` | Scoped guard for native built-in `bash`: deterministic danger checks, strict model classification for deferred commands, and hidden trusted injection for protected read-only agents | Prefer no `bash` where OMP-native read/search tools cover the workflow. If guarded CLI access remains required, port the scope policy and classifier against documented OMP hooks while preserving native bash execution. The guard is authorization policy, not a shell sandbox. | **Thin port only for required CLI coverage — P0** |
 | `second-opinion` | External `codex review`, session-scope selection, cancellation, verdict message, address-comments prompt | Use OMP `reviewer` task agent or native advisor for most reviews. Retain an OMP command/tool only if an independent Codex CLI verdict is a required property. | **Redesign/optional port — P1** |
 | `session-local` | Agent-tree-scoped `local://` read/write/edit storage and exported storage helpers | Use native `local://`; OMP's internal router and task artifacts already understand it. Validate parent/child sharing and traversal protection before removing the extension. | **Native — P0** |
 | `smart-sessions` | LLM-updated session names, debounce/resummary, manual update/clear/cost, optional widget | Use OMP native session naming and `modelRoles.tiny`. Keep a cost command only if native session UI does not expose equivalent information. | **Native — P1** |
@@ -420,9 +421,9 @@ Controls are complementary:
 4. **Agent tool lists** make read-only agents structurally unable to mutate.
 5. **Named profiles** keep offline and provider-specific credentials/state separate.
 
-Port `guardrails.json` and the Nix-managed hook before enabling repository extensions. Add OMP auth/config paths, preserve SSH/GPG/cloud patterns, and test symlink/path-normalization bypasses. Do not treat `readonly_bash` or approval prompts as a confidentiality sandbox.
+Port `guardrails.json` and the Nix-managed hook before enabling repository extensions. Add OMP auth/config paths, preserve SSH/GPG/cloud patterns, and test symlink/path-normalization bypasses. Do not treat `smart-tool-guards` or approval prompts as a confidentiality sandbox.
 
-Sources: `extensions/guardrails.json`, `extensions/filter-outputs/README.md`, `extensions/readonly-bash/README.md`, `omp://approval-mode.md`, `omp://secrets.md`.
+Sources: `extensions/guardrails.json`, `extensions/filter-outputs/README.md`, `extensions/smart-tool-guards/README.md`, `omp://approval-mode.md`, `omp://secrets.md`.
 
 ## 12. Session and runtime-state migration
 

@@ -11,7 +11,7 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 | Mode | Alias | Purpose |
 |------|-------|---------|
 | `kuafu` | `build` | Default. General-purpose coding and implementation. |
-| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit is limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is guarded by `tool-smart-guard`. |
+| `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit is limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is guarded by `smart-tool-guards`. |
 | `houtu` | `execute` | Plan execution after handoff. Receives a prepared execution prompt in a child session. |
 | `luban` | — | Skill-first discipline mode adapted from obra/superpowers. |
 | `shennong` | `pm` | Product mode. Problem framing, prioritization, and de-risking before implementation; hands off to Kua Fu via `/mode kuafu`. |
@@ -92,13 +92,11 @@ When the active mode is `fuxi`, the modes extension's `tool_call` hook determini
 
 ### Bash Restrictions
 
-Fu Xi exposes built-in `bash`. `tool-smart-guard` guards only built-in `bash` when the latest valid persisted `agent-mode` entry is `fuxi`; other tools and modes bypass it.
+Fu Xi exposes built-in `bash`. The modes extension registers a scope provider that requests `smart-tool-guards` guarding only when the latest active mode is `fuxi`; other modes abstain. Positive `smart-tool-guards:bash` capability registration is required, so missing or failed guard loading blocks Fu Xi `bash` before execution.
 
-The modes extension requires positive smart-guard registration. Missing or failed guard loading blocks Fu Xi `bash` before execution.
+For guarded calls, malformed input and deterministic danger block first, exact trimmed `pwd` allows without model use, and all other commands defer to `smart-tool-guards.classifier`. Missing selection/model/auth, timeout or cancellation, provider errors, and malformed verdicts fail closed.
 
-The guard allows a narrow deterministic set of obvious-safe commands, blocks a narrow deterministic set of obvious-danger commands, and sends unknown commands to the classifier configured by `tool-smart-guard.classifier`. Invalid verdicts, unavailable models or auth, provider errors, and cancellation block the command.
-
-This is a best-effort accidental-mutation guard, not a shell sandbox or security guarantee. Mutable shell work requires switching to build mode.
+The guard preserves native command, cwd, timeout, and execution behavior after approval. It is an authorization guard, not a shell sandbox or security boundary. Mutable shell work requires switching to build mode.
 
 ### Delegation Restrictions
 

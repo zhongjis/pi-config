@@ -45,6 +45,7 @@ const {
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession,
+  isToolCallEventType: (toolName: string, event: { toolName?: string }) => event.toolName === toolName,
   // Mock loader simulates pi-mono: reload() applies additionalExtensionPaths
   // (an unknown path becomes an error row, mirroring a failed load) and then
   // runs extensionsOverride over the result.
@@ -111,6 +112,7 @@ vi.mock("../src/agent-types.js", () => ({
     isolated: false,
   })),
   getToolNamesForType: vi.fn(() => ["read"]),
+  resolveType: vi.fn((name: string) => name.toLowerCase()),
 }));
 
 vi.mock("../src/env.js", () => ({
@@ -125,6 +127,7 @@ vi.mock("../src/skill-loader.js", () => ({
   preloadSkills: vi.fn(() => []),
 }));
 
+import smartToolGuards from "../../smart-tool-guards/index.js";
 import {
   extensionCanonicalName,
   extensionCanonicalNames,
@@ -734,6 +737,7 @@ import {
   getAgentConfig,
   getConfig,
   getToolNamesForType,
+  resolveType,
 } from "../src/agent-types.js";
 
 const BUILTINS_7 = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -948,9 +952,9 @@ describe("agent-runner trusted session-local binding", () => {
       hidden?: boolean;
       factory(pi: unknown): void | Promise<void>;
     }> | undefined;
-    expect(factories).toHaveLength(1);
-    expect(factories?.[0]).toMatchObject({ name: "session-local", hidden: true });
-    return factories?.[0];
+    const factory = factories?.find(({ name }) => name === "session-local");
+    expect(factory).toMatchObject({ name: "session-local", hidden: true });
+    return factory;
   }
 
   it("loads one hidden hook-only factory with extensions:false without widening tools", async () => {
@@ -1039,6 +1043,120 @@ describe("agent-runner trusted session-local binding", () => {
       "/ext/mcp.ts",
       "<inline:session-local>",
     ]);
+  });
+});
+
+describe("agent-runner trusted smart-tool-guards binding", () => {
+  function factories() {
+    return lastLoaderOpts().extensionFactories as Array<{
+      name: string;
+      hidden?: boolean;
+      factory(pi: unknown): void | Promise<void>;
+    }>;
+  }
+
+  it.each(["chengfeng", "direnjie", "taishang", "xuannv", "yanluo"] as const)(
+    "guards canonical type %s through registry resolution with extensions:false",
+    async (canonicalType) => {
+      vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
+      const { session } = createSession("OK");
+      createAgentSession.mockResolvedValue({ session });
+
+      await runAgent(ctx, canonicalType, "go", { pi });
+
+      expect(factories()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "session-local", hidden: true }),
+        expect.objectContaining({ name: "smart-tool-guards", hidden: true }),
+      ]));
+      expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
+        "<inline:session-local>",
+        "<inline:smart-tool-guards>",
+      ]);
+      expect(lastToolsPassed()).toEqual(["read"]);
+    },
+  );
+
+  it.each(["jintong", "yunu"] as const)("leaves adjacent canonical type %s unguarded", async (canonicalType) => {
+    vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, canonicalType, "go", { pi });
+
+    expect(factories().map(({ name }) => name)).toEqual(["session-local"]);
+  });
+
+  it("survives isolation without widening tools", async () => {
+    vi.mocked(resolveType).mockReturnValueOnce("chengfeng");
+    vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ extensions: true }));
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ extensions: true }));
+    vi.mocked(getToolNamesForType).mockReturnValueOnce(["read"]);
+    withExtensions({ "/ext/unrelated.ts": ["unrelated_tool"] });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "chengfeng", "go", { pi, isolated: true });
+
+    expect(factories().map(({ name }) => name)).toEqual(["session-local", "smart-tool-guards"]);
+    expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
+      "<inline:session-local>",
+      "<inline:smart-tool-guards>",
+    ]);
+    expect(lastToolsPassed()).toEqual(["read"]);
+  });
+
+  it("survives include/exclude filtering while discovered smart-tool-guards coexists", async () => {
+    vi.mocked(resolveType).mockReturnValueOnce("chengfeng");
+    vi.mocked(getConfig).mockReturnValueOnce(
+      makeConfig({ extensions: ["mcp", "smart-tool-guards"], excludeExtensions: ["smart-tool-guards"] }),
+    );
+    vi.mocked(getAgentConfig).mockReturnValueOnce(
+      makeAgentConfig({ extensions: ["mcp", "smart-tool-guards"], excludeExtensions: ["smart-tool-guards"] }),
+    );
+    vi.mocked(getToolNamesForType).mockReturnValueOnce(["read"]);
+    withExtensions({
+      "/ext/mcp.ts": ["mcp_tool"],
+      "/ext/smart-tool-guards/index.ts": [],
+      "/ext/unrelated.ts": ["unrelated_tool"],
+    });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "chengfeng", "go", { pi });
+
+    expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
+      "/ext/mcp.ts",
+      "<inline:session-local>",
+      "<inline:smart-tool-guards>",
+    ]);
+    expect(lastToolsPassed()).toContain("mcp_tool");
+    expect(lastToolsPassed()).not.toContain("unrelated_tool");
+  });
+
+  it("coexists with repeated auto registration as one effective bash hook", async () => {
+    vi.mocked(resolveType).mockReturnValueOnce("chengfeng");
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+    await runAgent(ctx, "chengfeng", "go", { pi });
+    const inline = factories().find(({ name }) => name === "smart-tool-guards");
+    const events = {};
+    const handlers: Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>> = [];
+    const hookPi = {
+      events,
+      on: vi.fn((event: string, handler: (event: unknown, ctx: unknown) => unknown | Promise<unknown>) => {
+        if (event === "tool_call") handlers.push(handler);
+      }),
+    };
+
+    smartToolGuards(hookPi as never);
+    await inline?.factory(hookPi);
+    await inline?.factory(hookPi);
+
+    expect(handlers).toHaveLength(1);
+    await expect(handlers[0](
+      { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "rm out" } },
+      { cwd: "/tmp" },
+    )).resolves.toMatchObject({ block: true });
   });
 });
 

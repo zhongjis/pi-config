@@ -66,7 +66,6 @@ describe("ModeStateManager", () => {
 				{ name: "ask" },
 				{ name: "web_search" },
 				{ name: "clauderock" },
-				{ name: "readonly_bash" },
 				{ name: "Agent" },
 				{ name: "get_subagent_result" },
 				{ name: "steer_subagent" },
@@ -233,8 +232,8 @@ describe("ModeStateManager", () => {
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
 	});
 
-	it("activates built-in bash instead of readonly_bash from Fu Xi frontmatter", async () => {
-		const pi = createMockPi(["read", "write", "bash", "readonly_bash"]);
+	it("activates built-in bash from Fu Xi frontmatter", async () => {
+		const pi = createMockPi(["read", "write", "edit", "bash"]);
 		const state = new ModeStateManager(pi as never);
 		const source = readFileSync(join(process.cwd(), "modes", "fuxi", "mode.md"), "utf8");
 		const parsed = parseAgentMarkdown(source);
@@ -255,11 +254,10 @@ describe("ModeStateManager", () => {
 
 		const activeTools = pi.setActiveTools.mock.calls.at(-1)?.[0] ?? [];
 		expect(activeTools).toEqual(expect.arrayContaining(["read", "write", "edit", "bash"]));
-		expect(activeTools).not.toContain("readonly_bash");
 	});
 
 	it("uses extension_tools: none to disable extension tools", async () => {
-		const pi = createMockPi(["read", "write", "bash", "readonly_bash", "web_search", "clauderock"]);
+		const pi = createMockPi(["read", "write", "bash", "web_search", "clauderock"]);
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "prompt",
@@ -278,25 +276,6 @@ describe("ModeStateManager", () => {
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
 	});
 
-	it("exposes readonly_bash when exactly allowlisted", async () => {
-		const pi = createMockPi(["read", "write", "bash", "readonly_bash", "web_search"]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = {
-			body: "prompt",
-			builtinToolNames: ["read"],
-			extensionToolNames: ["readonly_bash"],
-			extensions: true,
-		};
-
-		const ctx = {
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		};
-
-		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "readonly_bash"]);
-	});
 
 	it("removes nested Agent tools unless allow_nesting is true", async () => {
 		const pi = createMockPi(["read", "Agent", "get_subagent_result", "steer_subagent"]);

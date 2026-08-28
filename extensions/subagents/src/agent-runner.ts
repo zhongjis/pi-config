@@ -22,9 +22,11 @@ import {
   computeActiveToolNames,
   DEFAULT_BUILTIN_TOOL_NAMES,
 } from "../../lib/active-tools.js";
+import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
 import { seedSessionLocalScope } from "../../session-local/storage.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType } from "./agent-types.js";
+import smartToolGuards from "../../smart-tool-guards/index.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType, resolveType } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
@@ -34,6 +36,15 @@ import type { SubagentType, ThinkingLevel } from "./types.js";
 
 const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
 const TRUSTED_SESSION_LOCAL_EXTENSION_PATH = `<inline:${TRUSTED_SESSION_LOCAL_EXTENSION_NAME}>`;
+const TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME = "smart-tool-guards";
+const TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH = `<inline:${TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME}>`;
+const GUARDED_CANONICAL_AGENT_TYPES = new Set([
+  "chengfeng",
+  "direnjie",
+  "taishang",
+  "xuannv",
+  "yanluo",
+]);
 
 /**
  * Tool names registered by THIS extension. Single source of truth so the
@@ -477,6 +488,8 @@ export async function runAgent(
   prompt: string,
   options: RunOptions,
 ): Promise<RunResult> {
+  const canonicalType = resolveType(type) ?? type;
+  const guardBash = GUARDED_CANONICAL_AGENT_TYPES.has(canonicalType.toLowerCase());
   const config = getConfig(type);
   const agentConfig = getAgentConfig(type);
 
@@ -568,8 +581,8 @@ export async function runAgent(
   // suppresses handler binding and tool registration; it is not a sandbox.
   const excludeNames = new Set((excludeExtensions ?? []).map((n) => n.toLowerCase()));
   const hasExcludes = excludeNames.size > 0;
-  // Always compose an override so the trusted inline session-local hook survives
-  // every loading mode while any discovered copy is removed. Other extensions
+  // Always compose an override so trusted inline hooks survive every loading
+  // mode while discovered session-local copies are removed. Other extensions
   // retain the existing include/exclude behavior and warning inputs.
   const loadAll = extensions === true || extensionsSpec?.wildcard === true;
   const additionalExtensionPaths = extensionsSpec?.paths.length ? extensionsSpec.paths : undefined;
@@ -577,7 +590,9 @@ export async function runAgent(
   let discoveredNames: Set<string> | undefined;
   const extensionsOverride = (base: LoadExtensionsResult): LoadExtensionsResult => {
     const discoveredExtensions = base.extensions.filter(
-      (extension) => extension.path !== TRUSTED_SESSION_LOCAL_EXTENSION_PATH,
+      (extension) =>
+        extension.path !== TRUSTED_SESSION_LOCAL_EXTENSION_PATH &&
+        extension.path !== TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH,
     );
     if (shouldFilterDiscovered) {
       discoveredNames = new Set(discoveredExtensions.flatMap((e) => extensionCanonicalNames(e.path)));
@@ -586,7 +601,10 @@ export async function runAgent(
     return {
       ...base,
       extensions: base.extensions.filter((extension) => {
-        if (extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH) return true;
+        if (
+          extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH ||
+          extension.path === TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH
+        ) return true;
 
         const canons = extensionCanonicalNames(extension.path);
         if (canons.includes(TRUSTED_SESSION_LOCAL_EXTENSION_NAME)) return false;
@@ -604,11 +622,21 @@ export async function runAgent(
     noExtensions,
     additionalExtensionPaths,
     extensionsOverride,
-    extensionFactories: [{
-      name: TRUSTED_SESSION_LOCAL_EXTENSION_NAME,
-      factory: sessionLocalTools,
-      hidden: true,
-    }],
+    extensionFactories: [
+      {
+        name: TRUSTED_SESSION_LOCAL_EXTENSION_NAME,
+        factory: sessionLocalTools,
+        hidden: true,
+      },
+      ...(guardBash ? [{
+        name: TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME,
+        factory: (extensionPi: ExtensionAPI) => {
+          registerGuardScopeProvider(extensionPi, "subagents:guarded", () => "guard");
+          smartToolGuards(extensionPi);
+        },
+        hidden: true,
+      }] : []),
+    ],
     noSkills,
     noPromptTemplates: true,
     noThemes: true,

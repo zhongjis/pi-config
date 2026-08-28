@@ -190,9 +190,8 @@ Precedence and rules:
 - `isolated: true` disables **all** extension tools regardless of
   `extensions`/`extension_tools`.
 - `extension_tools` can never grant built-ins.
-- Read-only recon agents must not receive mutating built-ins
-  (no `edit`/`write`/mutating `bash`) — match tool access to role scope
-  (see [`agents/AGENTS.md`](../../agents/AGENTS.md)).
+- Read-only recon agents may receive built-in `bash` only when a trusted runtime guard scopes it to read-only actions; they still receive no `edit`/`write`
+  (see [`agents/AGENTS.md`](../../agents/AGENTS.md) and [`extensions/smart-tool-guards/README.md`](../../extensions/smart-tool-guards/README.md)).
 - Prefer `bash` with `rg`/`fd` over the `grep`/`find`/`ls` built-ins.
 
 Tool-intelligence split to reflect in prompts and allowlists:
@@ -267,17 +266,14 @@ There is intentionally **no tool denylist**. Tool selection is allowlist-only.
 display_name: Taishang 太上老君
 description: Architecture decisions and debugging. Read-only consultation with deep analysis.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high
-inherit_context: false
-run_in_background: false
 discover_skills: false
-preload_skills: complexity
-builtin_tools: read
-extension_tools: readonly_bash,look_at,codegraph_*,lsp
+builtin_tools: read,bash
+extension_tools: look_at,codegraph_*,lsp
 extensions: true
 ---
 ```
 
-No `edit`/`write`; `readonly_bash` instead of `bash`. Preloads only the `complexity` skill.
+No `edit`/`write`; built-in `bash` is guarded by the trusted hidden `smart-tool-guards` subagent factory.
 
 ### Implementation worker (subagent)
 

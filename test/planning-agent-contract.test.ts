@@ -38,7 +38,7 @@ describe("planning agent contract", () => {
 
     expect(xuannv, "Xuannv agent must be loadable from agents/xuannv.md").toBeDefined();
     expect(xuannv?.allowNesting).toBe(true);
-    expect(xuannv?.builtinToolNames).toEqual(["read"]);
+    expect(xuannv?.builtinToolNames).toEqual(["read", "bash"]);
     expect(xuannv?.extensionToolNames).toEqual(
       expect.arrayContaining(["Agent", "get_subagent_result", "steer_subagent"]),
     );

@@ -14,7 +14,7 @@ describe("parseModeAgentConfig", () => {
 		const config = parseModeAgentConfig(`---
 prompt_mode: replace
 builtin_tools: read,write,edit
-extension_tools: ask,Agent,readonly_bash
+extension_tools: ask,Agent,look_at
 extensions: clauderock
 allow_delegation_to: chengfeng,yanluo
 disallow_delegation_to: houtu
@@ -28,7 +28,7 @@ Mode prompt.`);
 			body: "Mode prompt.",
 			promptMode: "replace",
 			builtinToolNames: ["read", "write", "edit"],
-			extensionToolNames: ["ask", "Agent", "readonly_bash"],
+			extensionToolNames: ["ask", "Agent", "look_at"],
 			extensions: ["clauderock"],
 			allowDelegationTo: ["chengfeng", "yanluo"],
 			disallowDelegationTo: ["houtu"],

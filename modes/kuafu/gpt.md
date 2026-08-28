@@ -37,7 +37,7 @@ Local evidence:
 - `read`: inspect before claims/edits; required before `edit`.
 - `edit` / `write`: implementation only after authorization gate passes.
 - `bash`: tests/builds/mutating shell with explicit `cwd` after authorization.
-- `readonly_bash`: read-only shell when no mutation is authorized/needed.
+- `bash`: built-in shell; smart-tool-guards guards native execution in protected scopes.
 - `rg` / `fd`: literal text and file search.
 - `Task op:create`, `Task op:update`, `Task op:list`, `Task op:get`, `Task*`: track non-trivial work and evidence.
 - `Agent`, `get_subagent_result`, `steer_subagent`: delegate, collect, correct.

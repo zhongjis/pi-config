@@ -11,7 +11,7 @@ import * as path from "node:path";
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const ULW_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/ulw/index.ts");
 const MODES_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/modes/src/index.ts");
-const TOOL_SMART_GUARD_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/tool-smart-guard/index.ts");
+const SMART_TOOL_GUARDS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/smart-tool-guards/index.ts");
 
 const MOCK_TOOLS = {
 	bash: (params: Record<string, unknown>) => `$ ${params.command}\nok`,
@@ -90,7 +90,7 @@ describe("ulw extension — integration", () => {
 
 	it("skips injection in fuxi mode while smart guard permits safe bash", async () => {
 		t = await createTestSession({
-			extensions: [MODES_EXTENSION, TOOL_SMART_GUARD_EXTENSION, ULW_EXTENSION],
+			extensions: [MODES_EXTENSION, SMART_TOOL_GUARDS_EXTENSION, ULW_EXTENSION],
 			mockTools: MOCK_TOOLS,
 			propagateErrors: false,
 		});
