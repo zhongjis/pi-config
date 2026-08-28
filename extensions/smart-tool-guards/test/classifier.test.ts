@@ -37,10 +37,12 @@ function writeClassifierConfig(cwd: string): void {
 function makeContext(cwd: string, options: {
 	available?: typeof PRIMARY[];
 	auth?: Auth;
+	readonly signal?: AbortSignal;
 } = {}) {
 	const available = options.available ?? [PRIMARY];
 	return {
 		cwd,
+		signal: options.signal,
 		modelRegistry: {
 			find: (provider: string, id: string) => available.find((model) => model.provider === provider && model.id === id),
 			getAll: () => available,
@@ -143,6 +145,27 @@ describe("smart-tool-guards classifier", () => {
 		await classify(REQUEST, makeContext(cwd) as never);
 		expect(timeoutSpy).toHaveBeenCalledWith(5_000);
 		expect(completeMock.mock.calls[0]?.[2]?.signal).toBe(controller.signal);
+	});
+
+	it("fails closed when caller cancellation reaches a pending classifier request", async () => {
+		writeClassifierConfig(cwd);
+		const caller = new AbortController();
+		let nestedSignal: AbortSignal | undefined;
+		let settleRequest: (() => void) | undefined;
+		completeMock.mockImplementation((_model, _context, options) => new Promise((resolve, reject) => {
+			nestedSignal = options?.signal;
+			settleRequest = () => {
+				if (nestedSignal?.aborted) reject(new DOMException("cancelled", "AbortError"));
+				else resolve(ALLOW_RESPONSE as never);
+			};
+		}));
+
+		const pending = classify(REQUEST, makeContext(cwd, { signal: caller.signal }) as never);
+		await vi.waitFor(() => expect(settleRequest).toBeTypeOf("function"));
+		caller.abort();
+		settleRequest?.();
+
+		await expect(pending).resolves.toEqual({ kind: "unavailable", reason: "Classifier unavailable." });
 	});
 
 	it("keeps concurrent requests isolated", async () => {

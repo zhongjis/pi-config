@@ -22,7 +22,7 @@ Guarded calls use this precedence:
 3. Exact trimmed `pwd` allows without a classifier call.
 4. Every other command defers to the classifier.
 
-The guard never rewrites input. Allowed calls continue through Pi's native `bash` executor with the original command, requested `cwd`, and requested `timeout`. Classifier context includes the requested values plus an effective cwd resolved from the session cwd; omitted timeout remains omitted. The classifier has its own five-second decision deadline, independent of native execution timeout.
+The guard never rewrites input. Allowed calls continue through Pi's native `bash` executor with the original command, requested `cwd`, and requested `timeout`. Classifier context includes the requested values plus an effective cwd resolved from the session cwd; omitted timeout remains omitted. Caller cancellation and the classifier's own five-second decision deadline both abort the nested model request, independently of native execution timeout.
 
 ## Classifier Contract
 

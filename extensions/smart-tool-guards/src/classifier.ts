@@ -33,7 +33,7 @@ export type ClassifierResult =
 	| { readonly kind: "block"; readonly reason: string }
 	| { readonly kind: "unavailable"; readonly reason: string };
 
-type ClassifierContext = Pick<ExtensionContext, "cwd" | "modelRegistry">;
+type ClassifierContext = Pick<ExtensionContext, "cwd" | "modelRegistry" | "signal">;
 type Verdict = Exclude<ClassifierResult, { kind: "unavailable" }>;
 
 function unavailable(): ClassifierResult {
@@ -85,6 +85,9 @@ export async function classify<PolicyId extends string, Target, Action, Context>
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(resolved.model);
 		if (!auth.ok || !auth.apiKey) return unavailable();
 
+		const deadlineSignal = AbortSignal.timeout(CLASSIFIER_DEADLINE_MS);
+		const signal = ctx.signal ? AbortSignal.any([ctx.signal, deadlineSignal]) : deadlineSignal;
+
 		const response = await complete(
 			resolved.model,
 			{
@@ -112,7 +115,7 @@ export async function classify<PolicyId extends string, Target, Action, Context>
 				apiKey: auth.apiKey,
 				headers: auth.headers,
 				reasoningEffort: resolved.thinkingLevel,
-				signal: AbortSignal.timeout(CLASSIFIER_DEADLINE_MS),
+				signal,
 			},
 		);
 		const textBlocks = response.content.filter(isTextContent);
