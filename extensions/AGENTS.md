@@ -73,6 +73,7 @@ pnpm lint:typecheck
 ## Gotchas
 - Root smoke discovery does not scan arbitrary nested entrypoints.
 - Many extension tests rely on root Vitest aliases/stubs; run validation from repo root unless a package README says otherwise.
+- Pi exposes distinct `pi.events` facade objects per extension. Cross-extension guard registration uses synchronous `smart-tool-guards:capability-query` and `smart-tool-guards:scope-query` channels; never use facade object identity as shared-bus identity.
 - `node_modules/` inside some extension folders are local package artifacts, not a signal to treat the whole repo as a workspace monorepo.
 
 ## Child DOX Index

@@ -176,10 +176,21 @@ function renderText(component: RenderableText, width = 80): string {
 function createMockPi() {
 	const tools = new Map<string, RegisteredTool>();
 	const handlers = new Map<string, (...args: any[]) => any>();
+	const eventListeners = new Map<string, Set<(data: unknown) => void>>();
 	let activeTools = ["read", "write", "plan_approve", "plan_scaffold"];
 	const pi = {
 		appendEntry: vi.fn(),
-		events: { emit: vi.fn() },
+		events: {
+			emit: vi.fn((channel: string, data: unknown) => {
+				for (const listener of [...(eventListeners.get(channel) ?? [])]) listener(data);
+			}),
+			on(channel: string, listener: (data: unknown) => void) {
+				const listeners = eventListeners.get(channel) ?? new Set<(data: unknown) => void>();
+				listeners.add(listener);
+				eventListeners.set(channel, listeners);
+				return () => listeners.delete(listener);
+			},
+		},
 		getActiveTools: () => activeTools,
 		getAllTools: () => [...tools.keys()].map((name) => ({ name })),
 		getFlag: vi.fn(() => "kuafu"),

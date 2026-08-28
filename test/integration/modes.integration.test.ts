@@ -314,15 +314,18 @@ describe("modes extension — integration", () => {
 		expect(result.text).toMatch(/smart guard.*not registered/i);
 	});
 
-	it("allows deterministic-safe Fu Xi bash through smart guard without classifier", async () => {
+	it("allows deterministic-safe Fu Xi bash after real mode reload", async () => {
 		const bash = vi.fn((params: Record<string, unknown>) => `$ ${params.command}\nok`);
 		t = await createTestSession({
 			extensions: [EXTENSION, SMART_TOOL_GUARDS_EXTENSION],
 			mockTools: { ...MOCK_TOOLS, bash },
 			propagateErrors: false,
 		});
+		await bindReloadCommandContext(t);
+		const previousRunner = (t.session as any).extensionRunner;
 
-		await switchMode(t, "fuxi");
+		await switchModeCommand(t, "fuxi");
+		expect((t.session as any).extensionRunner).not.toBe(previousRunner);
 		await t.run(
 			when("Inspect current directory", [
 				calls("bash", { command: "pwd" }),
@@ -335,15 +338,16 @@ describe("modes extension — integration", () => {
 		expect(t.events.toolResultsFor("bash")[0].isError).toBe(false);
 	});
 
-	it("blocks deterministic-dangerous Fu Xi bash before native execution", async () => {
+	it("blocks deterministic-dangerous Fu Xi bash after real mode reload", async () => {
 		const bash = vi.fn((params: Record<string, unknown>) => `$ ${params.command}\nok`);
 		t = await createTestSession({
 			extensions: [EXTENSION, SMART_TOOL_GUARDS_EXTENSION],
 			mockTools: { ...MOCK_TOOLS, bash },
 			propagateErrors: false,
 		});
+		await bindReloadCommandContext(t);
 
-		await switchMode(t, "fuxi");
+		await switchModeCommand(t, "fuxi");
 		await t.run(
 			when("Run destructive command", [
 				calls("bash", { command: "rm -rf /tmp/test" }),

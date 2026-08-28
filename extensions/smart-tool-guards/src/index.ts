@@ -9,7 +9,7 @@ import {
 import { evaluateBashPolicy } from "./bash-policy.js";
 import { classify } from "./classifier.js";
 
-const HOOK_REGISTRY_KEY = Symbol.for("pi-config.smart-tool-guards-bash-hook-registry");
+const hookedApis = new WeakSet<ExtensionAPI>();
 const INVALID_INPUT_REASON = "Blocked because bash tool input is invalid.";
 const CLASSIFIER_UNAVAILABLE_REASON = "Blocked because the bash safety classifier is unavailable.";
 const BASH_POLICY_ID = "bash-read-only-v1";
@@ -28,18 +28,6 @@ interface ValidBashInput {
 	timeout?: number;
 }
 
-function registrationKey(pi: ExtensionAPI): object {
-	return typeof pi.events === "object" && pi.events !== null ? pi.events : pi;
-}
-
-function hookRegistry(): WeakSet<object> {
-	const existing: unknown = Reflect.get(globalThis, HOOK_REGISTRY_KEY);
-	if (existing instanceof WeakSet) return existing as WeakSet<object>;
-	const registry = new WeakSet<object>();
-	Reflect.set(globalThis, HOOK_REGISTRY_KEY, registry);
-	return registry;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -52,9 +40,7 @@ function validBashInput(value: unknown): value is ValidBashInput {
 }
 
 export default function smartToolGuards(pi: ExtensionAPI): void {
-	const key = registrationKey(pi);
-	const registrations = hookRegistry();
-	if (registrations.has(key)) return;
+	if (hookedApis.has(pi)) return;
 
 	pi.on("tool_call", async (event, ctx) => {
 		if (!isToolCallEventType("bash", event)) return;
@@ -96,6 +82,9 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 		if (verdict.kind === "block") return { block: true, reason: verdict.reason };
 		return { block: true, reason: CLASSIFIER_UNAVAILABLE_REASON };
 	});
-	registrations.add(key);
+	pi.on("session_shutdown", () => {
+		hookedApis.delete(pi);
+	});
 	registerGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY);
+	hookedApis.add(pi);
 }

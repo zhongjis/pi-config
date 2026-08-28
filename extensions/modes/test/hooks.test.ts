@@ -53,10 +53,21 @@ import { ModeStateManager } from "../src/mode-state.js";
 
 function createMockPi() {
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>>>();
+	const eventListeners = new Map<string, Set<(data: unknown) => void>>();
 
 	return {
 		pi: {
-			events: {},
+			events: {
+				emit(channel: string, data: unknown) {
+					for (const listener of [...(eventListeners.get(channel) ?? [])]) listener(data);
+				},
+				on(channel: string, listener: (data: unknown) => void) {
+					const listeners = eventListeners.get(channel) ?? new Set<(data: unknown) => void>();
+					listeners.add(listener);
+					eventListeners.set(channel, listeners);
+					return () => listeners.delete(listener);
+				},
+			},
 			on(event: string, handler: (event: unknown, ctx: unknown) => unknown | Promise<unknown>) {
 				const next = handlers.get(event) ?? [];
 				next.push(handler);

@@ -39,9 +39,18 @@ import { ModeStateManager } from "../src/mode-state.js";
 import { runPlanApprovalFlow } from "../src/plan-approval.js";
 
 function createMockPi() {
+	const listeners = new Map<string, Set<(data: unknown) => void>>();
 	return {
 		events: {
-			emit: vi.fn(),
+			emit: vi.fn((channel: string, data: unknown) => {
+				for (const listener of [...(listeners.get(channel) ?? [])]) listener(data);
+			}),
+			on(channel: string, listener: (data: unknown) => void) {
+				const channelListeners = listeners.get(channel) ?? new Set<(data: unknown) => void>();
+				channelListeners.add(listener);
+				listeners.set(channel, channelListeners);
+				return () => channelListeners.delete(listener);
+			},
 		},
 		sendUserMessage: vi.fn(),
 		appendEntry: vi.fn(),

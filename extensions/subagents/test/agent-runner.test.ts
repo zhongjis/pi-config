@@ -1139,10 +1139,20 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     createAgentSession.mockResolvedValue({ session });
     await runAgent(ctx, "chengfeng", "go", { pi });
     const inline = factories().find(({ name }) => name === "smart-tool-guards");
-    const events = {};
+    const eventListeners = new Map<string, Set<(data: unknown) => void>>();
     const handlers: Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>> = [];
     const hookPi = {
-      events,
+      events: {
+        emit(channel: string, data: unknown) {
+          for (const listener of [...(eventListeners.get(channel) ?? [])]) listener(data);
+        },
+        on(channel: string, listener: (data: unknown) => void) {
+          const listeners = eventListeners.get(channel) ?? new Set<(data: unknown) => void>();
+          listeners.add(listener);
+          eventListeners.set(channel, listeners);
+          return () => listeners.delete(listener);
+        },
+      },
       on: vi.fn((event: string, handler: (event: unknown, ctx: unknown) => unknown | Promise<unknown>) => {
         if (event === "tool_call") handlers.push(handler);
       }),

@@ -17,15 +17,42 @@ vi.mock("../src/classifier.js", async (importOriginal) => {
 const classifyMock = vi.mocked(classify);
 type Handler = (event: ToolCallEvent, ctx: ExtensionContext) => unknown | Promise<unknown>;
 
-function makeRuntime(events: object = {}) {
+type ShutdownHandler = () => unknown | Promise<unknown>;
+type BusHandler = (data: unknown) => void;
+
+function eventBus() {
+	const listeners = new Map<string, Set<BusHandler>>();
+	return {
+		facade() {
+			return {
+				emit: (channel: string, data: unknown) => {
+					for (const handler of [...(listeners.get(channel) ?? [])]) handler(data);
+				},
+				on: (channel: string, handler: BusHandler) => {
+					const channelListeners = listeners.get(channel) ?? new Set<BusHandler>();
+					channelListeners.add(handler);
+					listeners.set(channel, channelListeners);
+					return () => {
+						channelListeners.delete(handler);
+						if (channelListeners.size === 0) listeners.delete(channel);
+					};
+				},
+			};
+		},
+	};
+}
+
+function makeRuntime(bus = eventBus()) {
 	const handlers: Handler[] = [];
+	const shutdownHandlers: ShutdownHandler[] = [];
 	const pi = {
-		events,
-		on: vi.fn((name: string, handler: Handler) => {
-			if (name === "tool_call") handlers.push(handler);
+		events: bus.facade(),
+		on: vi.fn((name: string, handler: Handler | ShutdownHandler) => {
+			if (name === "tool_call") handlers.push(handler as Handler);
+			if (name === "session_shutdown") shutdownHandlers.push(handler as ShutdownHandler);
 		}),
 	} as unknown as ExtensionAPI;
-	return { pi, handlers };
+	return { pi, handlers, shutdownHandlers };
 }
 
 function context(cwd = "/repo/worktree"): ExtensionContext {
@@ -53,10 +80,12 @@ beforeEach(() => {
 describe("smart-tool-guards bash hook", () => {
 	it("installs the hook before publishing capability", () => {
 		const registrationError = new Error("registration failed");
-		const pi = { on: vi.fn(() => { throw registrationError; }) } as unknown as ExtensionAPI;
+		const bus = eventBus();
+		const observer = makeRuntime(bus).pi;
+		const pi = { events: bus.facade(), on: vi.fn(() => { throw registrationError; }) } as unknown as ExtensionAPI;
 
 		expect(() => smartToolGuards(pi)).toThrow(registrationError);
-		expect(hasGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(false);
+		expect(hasGuardCapability(observer, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(false);
 	});
 
 	it("bypasses non-bash calls and all-abstain scope", async () => {
@@ -98,16 +127,19 @@ describe("smart-tool-guards bash hook", () => {
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
-	it("allows exact pwd without classifier and preserves input identity/content", async () => {
-		const { pi, handlers } = makeRuntime();
-		guard(pi);
-		smartToolGuards(pi);
-		const input = Object.freeze({ command: "pwd", cwd: "packages/app", timeout: 0 });
+	it("allows exact trimmed pwd without classifier and preserves input identity/content", async () => {
+		const bus = eventBus();
+		const providerRuntime = makeRuntime(bus);
+		const guardRuntime = makeRuntime(bus);
+		guard(providerRuntime.pi);
+		smartToolGuards(guardRuntime.pi);
+		classifyMock.mockResolvedValue({ kind: "unavailable", reason: "Classifier unavailable." });
+		const input = Object.freeze({ command: " \tpwd\n ", cwd: "packages/app", timeout: 0 });
 		const event = bashEvent(input);
 
-		expect(await handlers[0](event, context())).toBeUndefined();
+		expect(await guardRuntime.handlers[0](event, context())).toBeUndefined();
 		expect(event.input).toBe(input);
-		expect(event.input).toEqual({ command: "pwd", cwd: "packages/app", timeout: 0 });
+		expect(event.input).toEqual({ command: " \tpwd\n ", cwd: "packages/app", timeout: 0 });
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
@@ -170,23 +202,47 @@ describe("smart-tool-guards bash hook", () => {
 	it.each([
 		["mode first", ["mode", "subagent"]],
 		["subagent first", ["subagent", "mode"]],
-	] as const)("installs one hook and makes one classifier call with repeated init: %s", async (_name, order) => {
-		const events = {};
-		const first = makeRuntime(events);
-		const second = makeRuntime(events);
+	] as const)("dedupes same-facade init and installs on a new facade: %s", async (_name, order) => {
+		const bus = eventBus();
+		const providerRuntime = makeRuntime(bus);
+		const first = makeRuntime(bus);
+		const second = makeRuntime(bus);
 		const providers = {
 			mode: () => "abstain" as const,
 			subagent: () => "guard" as const,
 		};
-		for (const id of order) registerGuardScopeProvider(first.pi, id, providers[id]);
+		for (const id of order) registerGuardScopeProvider(providerRuntime.pi, id, providers[id]);
 
 		smartToolGuards(first.pi);
 		smartToolGuards(first.pi);
 		smartToolGuards(second.pi);
 		expect(first.handlers).toHaveLength(1);
-		expect(second.handlers).toHaveLength(0);
-		expect(hasGuardCapability(second.pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
-		expect(await first.handlers[0](bashEvent({ command: "git status" }), context())).toBeUndefined();
+		expect(second.handlers).toHaveLength(1);
+		expect(hasGuardCapability(makeRuntime(bus).pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
+		expect(await second.handlers[0](bashEvent({ command: "git status" }), context())).toBeUndefined();
 		expect(classifyMock).toHaveBeenCalledOnce();
+	});
+
+	it("reinstalls one hook and capability after shutdown on retained bus", async () => {
+		const bus = eventBus();
+		const firstProvider = makeRuntime(bus);
+		const first = makeRuntime(bus);
+		guard(firstProvider.pi);
+		smartToolGuards(first.pi);
+
+		expect(first.handlers).toHaveLength(1);
+		expect(hasGuardCapability(makeRuntime(bus).pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
+		for (const shutdown of [...firstProvider.shutdownHandlers, ...first.shutdownHandlers]) await shutdown();
+		expect(hasGuardCapability(makeRuntime(bus).pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(false);
+
+		const replacementProvider = makeRuntime(bus);
+		const replacement = makeRuntime(bus);
+		guard(replacementProvider.pi);
+		smartToolGuards(replacement.pi);
+		smartToolGuards(replacement.pi);
+
+		expect(replacement.handlers).toHaveLength(1);
+		expect(hasGuardCapability(makeRuntime(bus).pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
+		expect(await replacement.handlers[0](bashEvent({ command: "pwd" }), context())).toBeUndefined();
 	});
 });

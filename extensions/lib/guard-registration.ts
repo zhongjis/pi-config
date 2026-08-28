@@ -14,52 +14,49 @@ export interface GuardScopeError {
 }
 export type GuardScopeEvaluation = GuardScopeDecision | GuardScopeError;
 
-const CAPABILITY_REGISTRY_KEY = Symbol.for("pi-config.guard-registration-registry");
-const SCOPE_PROVIDER_REGISTRY_KEY = Symbol.for("pi-config.guard-scope-provider-registry");
+const CAPABILITY_QUERY_CHANNEL = "smart-tool-guards:capability-query";
+const SCOPE_QUERY_CHANNEL = "smart-tool-guards:scope-query";
 
-function getCapabilityRegistry(): WeakMap<object, Set<GuardCapability>> {
-	const existing: unknown = Reflect.get(globalThis, CAPABILITY_REGISTRY_KEY);
-	if (existing instanceof WeakMap) {
-		return existing as WeakMap<object, Set<GuardCapability>>;
-	}
-	const registry = new WeakMap<object, Set<GuardCapability>>();
-	Reflect.set(globalThis, CAPABILITY_REGISTRY_KEY, registry);
-	return registry;
+interface CapabilityQuery {
+	readonly capability: GuardCapability;
+	acknowledged: boolean;
 }
 
-function getScopeProviderRegistry(): WeakMap<object, Map<string, GuardScopeProvider>> {
-	const existing: unknown = Reflect.get(globalThis, SCOPE_PROVIDER_REGISTRY_KEY);
-	if (existing instanceof WeakMap) {
-		return existing as WeakMap<object, Map<string, GuardScopeProvider>>;
-	}
-	const registry = new WeakMap<object, Map<string, GuardScopeProvider>>();
-	Reflect.set(globalThis, SCOPE_PROVIDER_REGISTRY_KEY, registry);
-	return registry;
+interface ScopeQuery {
+	readonly providers: Map<string, GuardScopeProvider>;
 }
 
-function registrationKey(pi: ExtensionAPI): object {
-	return typeof pi.events === "object" && pi.events !== null ? pi.events : pi;
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCapabilityQuery(value: unknown, capability: GuardCapability): value is CapabilityQuery {
+	return isRecord(value) && value.capability === capability && typeof value.acknowledged === "boolean";
+}
+
+function isScopeQuery(value: unknown): value is ScopeQuery {
+	return isRecord(value) && value.providers instanceof Map;
 }
 
 export function registerGuardCapability(pi: ExtensionAPI, capability: GuardCapability): void {
-	const registrations = getCapabilityRegistry();
-	const key = registrationKey(pi);
-	const capabilities = registrations.get(key) ?? new Set<GuardCapability>();
-	capabilities.add(capability);
-	registrations.set(key, capabilities);
+	const unsubscribe = pi.events.on(CAPABILITY_QUERY_CHANNEL, (data: unknown) => {
+		if (isCapabilityQuery(data, capability)) data.acknowledged = true;
+	});
+	pi.on("session_shutdown", unsubscribe);
 }
 
 export function hasGuardCapability(pi: ExtensionAPI, capability: GuardCapability): boolean {
-	return getCapabilityRegistry().get(registrationKey(pi))?.has(capability) ?? false;
+	const query: CapabilityQuery = { capability, acknowledged: false };
+	pi.events.emit(CAPABILITY_QUERY_CHANNEL, query);
+	return query.acknowledged;
 }
 
 export function registerGuardScopeProvider(pi: ExtensionAPI, id: string, provider: GuardScopeProvider): void {
 	if (!id.trim()) throw new Error("Guard scope provider ID must not be empty.");
-	const registrations = getScopeProviderRegistry();
-	const key = registrationKey(pi);
-	const providers = registrations.get(key) ?? new Map<string, GuardScopeProvider>();
-	providers.set(id, provider);
-	registrations.set(key, providers);
+	const unsubscribe = pi.events.on(SCOPE_QUERY_CHANNEL, (data: unknown) => {
+		if (isScopeQuery(data)) data.providers.set(id, provider);
+	});
+	pi.on("session_shutdown", unsubscribe);
 }
 
 export async function evaluateGuardScope(
@@ -67,8 +64,9 @@ export async function evaluateGuardScope(
 	event: ToolCallEvent,
 	ctx: ExtensionContext,
 ): Promise<GuardScopeEvaluation> {
-	const providers = [...(getScopeProviderRegistry().get(registrationKey(pi)) ?? [])]
-		.sort(([left], [right]) => left.localeCompare(right));
+	const query: ScopeQuery = { providers: new Map() };
+	pi.events.emit(SCOPE_QUERY_CHANNEL, query);
+	const providers = [...query.providers].sort(([left], [right]) => left.localeCompare(right));
 	const evaluations: Array<
 		{ id: string; decision: GuardScopeDecision } | { id: string; error: true }
 	> = await Promise.all(providers.map(async ([id, provider]) => {
