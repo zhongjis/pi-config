@@ -1,6 +1,6 @@
 ---
 display_name: Guangguang 光光
-description: Naturally single-file, mechanical, deterministic, low-risk worker for tasks with no unresolved design; coupled implementation and tests route to Jintong. Adapted from OmO Sisyphus-Junior.
+description: Naturally single-file, mechanical, deterministic, low-risk worker for tasks with no unresolved design; coupled implementation and tests route to Jintong.
 model: claude-haiku-4-5,openai-codex/gpt-5.6-sol:low,opencode-go/minimax-m2.5,llama-swap/qwen2.5-coder:7b:low
 prompt_mode: system_instructions
 discover_skills: false
