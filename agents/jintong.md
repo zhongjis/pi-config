@@ -1,6 +1,6 @@
 ---
 display_name: Jintong 金童
-description: A focused build worker for isolated implementation, debugging, and verification tasks delegated by other agents.
+description: Default bounded non-UI implementation, debugging, and verification worker, including decision-complete cohesive multi-file changes.
 model: claude-sonnet-4-6,openai-codex/gpt-5.6-sol:medium,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false

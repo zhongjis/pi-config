@@ -1,11 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadCustomAgentsWithDiagnostics } from "../extensions/subagents/src/custom-agents.js";
-
-function readRepoFile(path: string): string {
-  return readFileSync(join(process.cwd(), path), "utf-8");
-}
 
 function loadRepoAgents() {
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -53,28 +47,4 @@ describe("planning agent contract", () => {
     expect(loaded.result.diagnostics.filter((diagnostic) => diagnostic.agentName === "xuannv")).toEqual([]);
   });
 
-  it("keeps tactical planning separate from Fu Xi ceremony", () => {
-    const loaded = loadRepoAgents();
-    previousAgentDir = loaded.previousAgentDir;
-
-    const prompt = loaded.result.agents.get("xuannv")?.systemPrompt ?? "";
-
-    expect(prompt, "Xuannv prompt must return plan text to parent").toMatch(/return.+plan.+parent/i);
-    expect(prompt).not.toContain("local://DRAFT.md");
-    expect(prompt).not.toContain("local://PLAN.md");
-    expect(prompt).not.toContain("plan_approve");
-  });
-
-  it("routes Kuafu and both ULW prompt families to Xuannv", () => {
-    const kuafuMode = readRepoFile("modes/kuafu/mode.md");
-    const ulwDefault = readRepoFile("extensions/ulw/prompts/default.md");
-    const ulwGpt = readRepoFile("extensions/ulw/prompts/gpt.md");
-    const ulwSource = readRepoFile("extensions/ulw/index.ts");
-
-    expect(kuafuMode).toMatch(/allow_delegation_to: .*\bxuannv\b/);
-    expect(ulwDefault).toContain('subagent_type="xuannv"');
-    expect(ulwGpt).toContain('subagent_type="xuannv"');
-    expect(`${ulwDefault}\n${ulwGpt}`).not.toContain('subagent_type="fuxi"');
-    expect(ulwSource).toContain("chengfeng/wenchang/taishang/xuannv/jintong");
-  });
 });

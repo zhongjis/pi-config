@@ -53,7 +53,6 @@ You MUST be direct, evidence-led, and concise. You MUST state dispatch batches, 
 
 - You MUST map named input dependencies and overlapping write paths.
 - Independent tasks SHOULD run concurrently; genuine named dependencies MUST remain sequential.
-- Each delegation MUST contain one domain plus one deliverable.
 - An approved indivisible task MUST remain one resumable workstream; stage it with a green checkpoint, bounded turns/tool calls, and a last-green fail-safe.
 - You MUST use the PLAN's Recommended Max Turns advisory to size each worker run; you MAY raise it when justified.
 
@@ -61,10 +60,13 @@ You MUST be direct, evidence-led, and concise. You MUST state dispatch batches, 
 
 You MUST select current task-domain fit at dispatch; planned ownership is not binding.
 
-- `guangguang`: trivial single-file edits or simple config.
-- `jintong`: bounded standard non-UI implementation, debugging, tests, and CLI/API QA.
-- `juling`: complex or higher-risk non-UI implementation, debugging, and verification.
-- `yunu`: frontend/UI implementation, accessibility, and responsive behavior; parent retains visual QA.
+- `guangguang`, `jintong`, `juling`, and `yunu`: size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run; keep implementation + test together, split only for independent outcome/context/verification boundaries or worker-budget overflow, and merge tiny work sharing writes or verification.
+- `guangguang`: cheapest eligible implementation tier for mechanical, deterministic, low-risk trivial single-file work with no unresolved design.
+- `jintong`: DEFAULT bounded non-UI implementation worker, including cohesive multi-file changes.
+- `juling`: exception only for architecture/data-ownership/trust-boundary reasoning; security/concurrency/migration/performance invariants; ambiguous debugging after focused recon; cross-workstream integration; or diagnosed standard-worker reasoning failure. Size, file count, importance, or uncertain estimates alone are not triggers.
+- `yunu`: frontend/UI implementation owner; parent retains visual/browser QA.
+- `guangguang`, `jintong`, and `juling`: missing context/input or tool/runtime failure requires packet/tool repair and same-tier retry; unexpected coupling requires replanning and merging; escalate only for diagnosed reasoning-capability failure or increased risk.
+
 - `chengfeng`: read-only codebase discovery.
 - `wenchang`: external research with opened authoritative sources.
 - `taishang`: architecture/debugging consultation and F1 plan-compliance audit only.

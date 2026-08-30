@@ -56,12 +56,20 @@ The plan contains these eight `## ` headers exactly once and in this order; `## 
 
 Every executable item is a column-zero task row. Implementation rows match `- [ ] N. <title>` with unique positive decimal `N`; final rows match `- [ ] F<number>. <title>`. Prose, headings, nested rows, and ordinary bullets never count as tasks.
 
-Target 5-8 todos per wave; fewer than 3 except final often signals under-splitting. Implementation plus tests is one todo. Size by one domain + one deliverable, not fixed file count. Keep an indivisible large item as one resumable workstream with green checkpoint and fail-safe.
+Target 5-8 todos per wave; fewer than 3 except final often signals under-splitting. Size each todo as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run. Split only for independent outcome, context, or verification boundaries, or worker-budget overflow. Merge tiny tasks that share writes or verification. Implementation plus tests is one todo; never split them to feed a cheaper worker. No fixed file-count guard. Preserve one logical plan item → one resumable worker session, staged with a green checkpoint and last-green fail-safe when oversized.
+
+Worker-fit rubric: Guangguang = mechanical, deterministic, low-risk, trivial single-file, no unresolved design; Jintong = DEFAULT bounded non-UI implementation, including cohesive multi-file changes; Juling = exception requiring a recorded positive trigger; Yunu = frontend owner.
+Juling triggers: architecture/data-ownership/trust-boundary reasoning; security/concurrency/migration/performance invariant; ambiguous debugging after focused recon; cross-workstream integration; diagnosed standard-worker reasoning failure. Size, file count, importance, or uncertain estimate alone are not triggers.
+Failure classification: Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge. Only diagnosed reasoning-capability failure or increased risk escalates.
 
 Each implementation todo contains:
 
 ```
 - [ ] N. <title>
+  Objective: <one observable outcome>
+  Artifacts: <exact code/doc/result expected>
+  Worker fit: <Guangguang | Jintong | Juling | Yunu> — advisory; runtime owns selection
+  Escalation triggers: <positive Juling trigger(s) or none>
   Must-have IDs: <M1, ...>
   What to do / Must NOT do: <decision-complete instructions>
   Parallelization: Wave <N> | Blocked by: <IDs or none> | Blocks: <IDs or none>
@@ -83,7 +91,7 @@ Every item must pass:
 - Every Must-have has a stable ID and maps to at least one todo.
 - Every todo maps to at least one Must-have and none maps to a Must-NOT-Have.
 - Dependency matrix contains every implementation todo exactly once, no unknown IDs, and matches each todo's dependency fields.
-- Every todo has exhaustive references, executable acceptance, happy + failure QA with exact invocation/evidence, Commit, and Recommended Max Turns.
+- Every todo has Objective, Artifacts, advisory Worker fit, Escalation triggers, exhaustive references, executable acceptance, happy + failure QA with exact invocation/evidence, Commit, and Recommended Max Turns.
 - F1-F4 each appear exactly once after all implementation todos:
   - `- [ ] F1. Plan compliance audit` — `taishang`.
   - `- [ ] F2. Code quality review` — Hou Tu runs the `orchestrator-owned code-quality gate`.

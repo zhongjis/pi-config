@@ -168,6 +168,7 @@ Before registering any new tool, extension, or MCP server:
 ## Always
 - Keep root guidance repo-wide only; push extension-only rules into `extensions/AGENTS.md`.
 - Treat root Vitest as two tiers: unit tests use stubs from `test/stubs/`; integration tests in `test/integration/` use the real pi runtime via `pi-test-harness`.
+- Prompt/config tests MUST assert parsed config, diagnostics, tool calls, state, or consumer behavior; NEVER assert exact prose, phrases, regex wording, or prompt substrings.
 - Follow `extensions/CONVENTIONS.md` for `pi.events`: `user-prompted` for same-run blocking tool prompts, `awaitingUserAction.suppressContinuationReminder` for persisted waits, `<namespace>:rpc:<method>` plus `:reply:${requestId}` for RPC.
 - Keep extension entrypoints as directories (`extensions/foo/index.ts`); no bare `.ts` files at the extensions root. Every extension directory must have a `README.md` (see `docs/specs/extensions.md`).
 

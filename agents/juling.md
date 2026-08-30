@@ -1,6 +1,6 @@
 ---
 display_name: Juling 巨灵神
-description: A heavy-duty build worker for complex, higher-risk bounded implementation, debugging, and verification tasks delegated by other agents — the opus-tier counterpart to Jintong.
+description: Exception-tier bounded implementation worker for architecture/data-ownership/trust-boundary reasoning, security/concurrency/migration/performance invariants, ambiguous debugging after focused recon, cross-workstream integration, or diagnosed Jintong reasoning failure; size alone is insufficient. Opus-tier counterpart to Jintong.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/glm-5.2,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false

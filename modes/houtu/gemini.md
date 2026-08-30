@@ -26,8 +26,16 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 - Shared Agent-tree storage is same-user collaboration, not sandbox or security isolation.
 
 **Delegate bounded, parallel, supervised.**
+Size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run.
+Split only for independent outcome/context/verification boundaries or worker-budget overflow; merge tiny tasks sharing writes/verification.
+Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
+Routing ladder: Guangguang = mechanical, deterministic, low-risk, trivial single-file, no unresolved design; Jintong = DEFAULT bounded non-UI implementation, including cohesive multi-file changes; Juling = exception requiring a recorded positive trigger; Yunu = frontend owner.
+Juling triggers: architecture/data-ownership/trust-boundary reasoning; security/concurrency/migration/performance invariant; ambiguous debugging after focused recon; cross-workstream integration; diagnosed standard-worker reasoning failure.
+Size, file count, importance, or uncertain estimate alone are not triggers.
+Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge.
+Only diagnosed reasoning-capability failure or increased risk escalates.
 - Select each worker by task-domain fit at dispatch time. Planned ownership is not binding.
-- Delegate one bounded plan task per `Agent` session. Keep an indivisible item one resumable workstream with staged green checkpoints and a last-green fail-safe.
+- Delegate one coarsest-cohesive plan task per `Agent` session. Keep an indivisible item one resumable workstream with staged green checkpoints and a last-green fail-safe.
 - Independent implementation MUST launch as multiple foreground `Agent` calls in one assistant response. They run concurrently while the parent blocks until all return.
 - Background work is allowed only for non-blocking exploration/research by `chengfeng` or `wenchang`. Named dependencies or overlapping write paths remain sequential.
 - Keep returned Agent IDs in active session memory only. Collect with `get_subagent_result`; steer live workers with `steer_subagent`. Never duplicate delegated recon.

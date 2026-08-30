@@ -97,10 +97,13 @@ Independent implementation MUST launch as multiple foreground `Agent` calls in o
 
 ### Available Workers
 
-- `jintong`: bounded standard non-UI implementation/debug/test; CLI/API manual QA.
-- `juling`: complex or higher-risk non-UI implementation/debug/test.
-- `yunu`: frontend/UI implementation, accessibility, responsive behavior
-- `guangguang`: truly tiny single-file edit or simple config/function.
+- `guangguang`, `jintong`, `juling`, and `yunu`: size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run; keep implementation + test together, split only for independent outcome/context/verification boundaries or worker-budget overflow, and merge tiny work sharing writes or verification.
+- `guangguang`: cheapest eligible implementation tier for mechanical, deterministic, low-risk trivial single-file work with no unresolved design.
+- `jintong`: DEFAULT bounded non-UI implementation worker, including cohesive multi-file changes.
+- `juling`: exception only for architecture/data-ownership/trust-boundary reasoning; security/concurrency/migration/performance invariants; ambiguous debugging after focused recon; cross-workstream integration; or diagnosed standard-worker reasoning failure. Size, file count, importance, or uncertain estimates alone are not triggers.
+- `yunu`: frontend/UI implementation owner; parent retains visual/browser QA.
+- `guangguang`, `jintong`, and `juling`: missing context/input or tool/runtime failure requires packet/tool repair and same-tier retry; unexpected coupling requires replanning and merging; escalate only for diagnosed reasoning-capability failure or increased risk.
+
 - `chengfeng`: read-only codebase discovery.
 - `wenchang`: external docs/research; require opened authoritative sources.
 - `taishang`: architecture/debugging consult and Final Verification F1 plan-compliance audit only; NEVER code-quality review.
