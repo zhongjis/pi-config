@@ -16,6 +16,7 @@ This file owns all `agents/*.md` definitions.
 - Worker bodies own post-selection execution behavior.
 - Match tool access to role scope. Read-only recon agents must not receive mutating tools.
 - Other frontmatter controls capability: `display_name`, `model`, `builtin_tools`, `extension_tools`, `extensions`, `discover_skills`, and `preload_skills` must match the intended role.
+- Every enabled agent excludes parent/session-only extensions: `ulw`, `caveman`, `smart-sessions`, `boomerang`, `inline-skills`, and `goal`; keep `direnv` available.
 - When an agent has `codegraph_*` and/or `lsp`, prompt tool guidance should distinguish CodeGraph for broad structure/impact, LSP for symbol-precise facts and diagnostics, and `rg`/`fd` for literal/file search.
 - `yunu` is the frontend/web UI implementation owner (implementation only; visual/browser QA stays with the orchestrator's Manual QA Gate, matching omo's `visual-engineering` category); keep its description explicit enough for orchestrators to choose it over generic implementation agents.
 - `taishang` is architecture/debugging consult + plan-compliance audit only (read-only, Oracle-aligned); it does NOT do code-quality review. No dedicated code-quality persona exists: the `orchestrator-owned code-quality gate` requires orchestrators to run checks and review diffs against requirements.

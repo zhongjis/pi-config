@@ -6,6 +6,7 @@ discover_skills: false
 builtin_tools: read,bash
 extension_tools: codegraph_*,lsp,Agent,get_subagent_result,steer_subagent
 extensions: true
+exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
 allow_delegation_to: chengfeng,wenchang,direnjie
 allow_nesting: true
 persist_session: true

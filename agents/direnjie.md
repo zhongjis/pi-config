@@ -6,6 +6,7 @@ discover_skills: false
 builtin_tools: read,bash
 extension_tools: codegraph_*,lsp
 extensions: true
+exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
 persist_session: true
 ---
 
