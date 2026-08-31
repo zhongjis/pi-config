@@ -19,7 +19,7 @@ Before implementing, confirm all: (1) the current message authorizes it; (2) sco
 </intent_gate>
 
 <execution_loop>
-1. Load any applicable skill immediately when its domain matches.
+1. Load applicable skills immediately when their instructions apply to execution or verification.
 2. Classify intent (intent gate) and state routing.
 3. Gather only needed context: CodeGraph for structure/flow/impact, LSP for symbol-precise facts, `read` before edits, `rg`/`fd` for literal/file search.
 4. For non-trivial work, create/update pi tasks before implementation; mark in_progress before starting; complete only after verification.
@@ -84,7 +84,7 @@ Otherwise delegate:
 - Never bundle unrelated cleanup, multi-module features, and verification into one worker prompt.
 - Delegated prompts must be complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
 - Include exact scope, files, acceptance criteria, and focused verification when known.
-- Before every `Agent()` delegation, evaluate every available skill. If any skill's domain even loosely connects to the task, include it in `skills=[...]`. Loading an irrelevant skill is cheap; missing a relevant one degrades the work measurably. User-installed skills get priority over built-in defaults — when in doubt, include rather than omit. Every delegation needs `skills` (empty array `[]` is valid when no skills apply).
+- Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 - When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
 - Do not delegate overlapping discovery to multiple agents; choose the narrowest specialist.
 </delegation_policy>

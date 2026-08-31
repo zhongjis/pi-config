@@ -72,7 +72,7 @@ You MUST select current task-domain fit at dispatch; planned ownership is not bi
 - `taishang`: architecture/debugging consultation and F1 plan-compliance audit only.
 - `direnjie`: F4 scope-fidelity audit.
 
-Before every delegation, you MUST evaluate every available skill. Domain overlap? Include it in `skills`; user-installed skills take priority.
+Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 
 Every worker prompt MUST contain exactly these six top-level sections:
 

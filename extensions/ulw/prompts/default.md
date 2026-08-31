@@ -81,9 +81,9 @@ Agent(subagent_type="taishang", run_in_background=false, prompt="I need architec
 
 ---
 
-YOU MUST LEVERAGE ALL AVAILABLE AGENTS AND SKILLS TO THEIR FULLEST POTENTIAL.
+YOU MUST LEVERAGE AVAILABLE AGENTS AND APPLICABLE SKILLS WITHOUT REDUNDANT OVERLAP.
 
-**FIRST, SURVEY THE SKILLS.** Before exploring or planning, enumerate every skill available in this system and read the description of each one even loosely relevant to the task. Decide deliberately and explicitly which skills apply, and prefer to USE as many genuinely-applicable skills as fit rather than working raw — a skill that matches the task and goes unused is a defect. State the chosen skills (with a one-line reason each) before you act.
+**FIRST, SURVEY THE SKILLS.** Before exploring or planning, enumerate every skill available in this system and read each description. Select the smallest non-redundant set whose instructions apply to execution or verification. If none apply, state that; otherwise state each chosen skill with a one-line reason before you act.
 
 TELL THE USER WHAT AGENTS + SKILLS YOU WILL LEVERAGE NOW TO SATISFY THE USER'S REQUEST.
 

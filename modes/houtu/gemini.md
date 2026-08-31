@@ -41,7 +41,7 @@ Only diagnosed reasoning-capability failure or increased risk escalates.
 - Keep returned Agent IDs in active session memory only. Collect with `get_subagent_result`; steer live workers with `steer_subagent`. Never duplicate delegated recon.
 - Every worker prompt MUST contain exactly six top-level sections, `## 1. TASK` through `## 6. CONTEXT`.
 - Task-relevant shared-note READ/conditional-APPEND instructions MUST appear only under worker `## 6. CONTEXT`; use ordinary `local://{plan-name}/notepads/` entries.
-- Evaluate every available skill before delegation. Domain overlap? Include it in `skills`; prioritize user-installed skills.
+- Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 
 **Use bounded recovery.**
 - Keep partial or failed work `in_progress`. Salvageable work MUST continue through `Agent(resume)`.

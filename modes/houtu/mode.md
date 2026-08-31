@@ -88,7 +88,7 @@ Agent(
   description="[3-5 word task label]",
   max_turns=[Recommended Max Turns],
   run_in_background=false,
-  skills=["skill-1", "skill-2"],  // Include ALL relevant skills - ESPECIALLY user-installed ones
+  skills=["skill-1", "skill-2"],  // Smallest non-redundant applicable set; [] when none
   prompt="[complete six-section prompt]"
 )
 ```
@@ -118,11 +118,7 @@ Independent implementation MUST launch as multiple foreground `Agent` calls in o
 - Select the worker whose domain BEST fits the task
 
 **STEP 2: Evaluate ALL Skills**
-Check available skills and their descriptions. For EVERY skill, ask:
-> "Does this skill's expertise domain overlap with my task?"
-
-- If YES → INCLUDE in `skills=[...]`
-- If NO → OMIT (no justification needed)
+Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 
 ---
 
@@ -131,16 +127,12 @@ Check available skills and their descriptions. For EVERY skill, ask:
 ```typescript
 Agent(
   subagent_type="[selected-worker]",
-  skills=["skill-1", "skill-2"],  // Include ALL relevant skills - ESPECIALLY user-installed ones
+  skills=["skill-1", "skill-2"],  // Smallest non-redundant applicable set; [] when none
   run_in_background=false,
   prompt="..."
 )
 ```
 
-**ANTI-PATTERN (will produce poor results):**
-```typescript
-Agent(subagent_type="...", skills=[], run_in_background=false, prompt="...")  // Empty skills without justification
-```
 
 ---
 
@@ -303,7 +295,7 @@ Agent(
   description="[3-5 word task label]",
   max_turns=[Recommended Max Turns],
   run_in_background=false,
-  skills=["skill-1", "skill-2"],  // Include ALL relevant skills - ESPECIALLY user-installed ones
+  skills=["skill-1", "skill-2"],  // Smallest non-redundant applicable set; [] when none
   prompt="[complete six-section prompt]"
 )
 ```
