@@ -6,7 +6,7 @@ discover_skills: false
 builtin_tools: read,bash
 extension_tools: look_at,codegraph_*,lsp
 extensions: true
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal,pi-hermes-memory
 persist_session: true
 ---
 

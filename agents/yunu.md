@@ -7,7 +7,7 @@ discover_skills: false
 preload_skills: impeccable
 builtin_tools: read,bash,edit,write
 extension_tools: look_at,codegraph_*,lsp
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal,pi-hermes-memory
 persist_session: true
 ---
 

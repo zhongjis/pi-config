@@ -6,7 +6,7 @@ prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read,bash,edit,write
 extension_tools: codegraph_*,lsp
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal,pi-hermes-memory
 persist_session: true
 ---
 
