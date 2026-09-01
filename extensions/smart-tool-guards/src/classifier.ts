@@ -6,6 +6,7 @@ import {
 	loadToolModelsConfig,
 	resolveToolModelSelection,
 } from "../../lib/tool-models.js";
+import type { ModelCandidate } from "../../lib/model.js";
 
 const CLASSIFIER_TOOL_KEY = "smart-tool-guards.classifier";
 const CLASSIFIER_DEADLINE_MS = 5_000;
@@ -33,7 +34,7 @@ export type ClassifierResult =
 	| { readonly kind: "block"; readonly reason: string }
 	| { readonly kind: "unavailable"; readonly reason: string };
 
-type ClassifierContext = Pick<ExtensionContext, "cwd" | "modelRegistry" | "signal">;
+type ClassifierContext = Pick<ExtensionContext, "cwd" | "modelRegistry" | "model" | "signal">;
 type Verdict = Exclude<ClassifierResult, { kind: "unavailable" }>;
 
 function unavailable(): ClassifierResult {
@@ -79,17 +80,32 @@ export async function classify<PolicyId extends string, Target, Action, Context>
 	try {
 		const config = loadToolModelsConfig(ctx.cwd);
 		const selection = getToolModelSelection(config, CLASSIFIER_TOOL_KEY);
-		const resolved = resolveToolModelSelection(selection, ctx.modelRegistry);
-		if (!resolved) return unavailable();
+		const chain = resolveToolModelSelection(selection, ctx.modelRegistry);
 
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(resolved.model);
-		if (!auth.ok || !auth.apiKey) return unavailable();
+		// Prefer the dedicated guard chain; fall back to the current session model
+		// so an unavailable or unauthed chain does not hard-block all guarded bash.
+		// Final rung still fails closed: if no candidate authenticates, block.
+		const candidates: Array<{ model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] }> = [];
+		if (chain) candidates.push(chain);
+		if (ctx.model) candidates.push({ model: ctx.model });
+
+		let selected:
+			| { model: any; thinkingLevel?: ModelCandidate["thinkingLevel"]; apiKey: string; headers?: Record<string, string> }
+			| undefined;
+		for (const candidate of candidates) {
+			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(candidate.model);
+			if (auth.ok && auth.apiKey) {
+				selected = { model: candidate.model, thinkingLevel: candidate.thinkingLevel, apiKey: auth.apiKey, headers: auth.headers };
+				break;
+			}
+		}
+		if (!selected) return unavailable();
 
 		const deadlineSignal = AbortSignal.timeout(CLASSIFIER_DEADLINE_MS);
 		const signal = ctx.signal ? AbortSignal.any([ctx.signal, deadlineSignal]) : deadlineSignal;
 
 		const response = await complete(
-			resolved.model,
+			selected.model,
 			{
 				systemPrompt: [
 					SYSTEM_WRAPPER,
@@ -112,9 +128,9 @@ export async function classify<PolicyId extends string, Target, Action, Context>
 				}],
 			},
 			{
-				apiKey: auth.apiKey,
-				headers: auth.headers,
-				reasoningEffort: resolved.thinkingLevel,
+				apiKey: selected.apiKey,
+				headers: selected.headers,
+				reasoningEffort: selected.thinkingLevel,
 				signal,
 			},
 		);

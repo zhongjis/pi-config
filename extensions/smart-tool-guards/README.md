@@ -26,7 +26,7 @@ The guard never rewrites input. Allowed calls continue through Pi's native `bash
 
 ## Classifier Contract
 
-Model selection resolves `smart-tool-guards.classifier` from layered `tool_models.json` config. Its built-in role is `guard.tool`.
+Model selection resolves `smart-tool-guards.classifier` from layered `tool_models.json` config. Its built-in role is `guard.tool`. When no model in that chain is available or authenticated, the classifier falls back to the current session model so an unavailable guard chain does not hard-block every guarded call; the chain is still preferred whenever one of its models resolves.
 
 Trusted policy instructions stay in the system prompt. The command and context are serialized only as an untrusted JSON user payload. A valid response is exactly one of:
 
@@ -42,7 +42,7 @@ Provider thinking blocks are ignored when accompanied by a text verdict. Markdow
 
 ## Failure Semantics
 
-Guarded execution fails closed. Scope-provider failure, malformed input, deterministic danger, classifier block, missing selection/model/auth, timeout or cancellation, provider failure, and malformed verdict all block before native execution. Classifier infrastructure failures collapse to the stable non-leaking reason `Blocked because the bash safety classifier is unavailable.`
+Guarded execution fails closed. Scope-provider failure, malformed input, deterministic danger, classifier block, timeout or cancellation, provider failure, and malformed verdict all block before native execution. When the resolved `guard.tool` chain has no available or authenticated model, the classifier falls back to the current session model; only when that fallback model is also missing or unauthenticated does it block. Classifier infrastructure failures collapse to the stable non-leaking reason `Blocked because the bash safety classifier is unavailable.`
 
 This is an authorization guard, not a shell sandbox or security boundary. Allowed shell commands retain native shell power.
 

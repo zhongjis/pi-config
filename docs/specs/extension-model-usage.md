@@ -53,7 +53,7 @@ Rules:
 
 Guarded built-in `bash` commands that are neither deterministic danger nor exact `pwd` resolve `smart-tool-guards.classifier`. Its built-in role is `guard.tool`, with chain `openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5`. Fu Xi and the protected read-only subagents opt into this guard through trusted scope providers; other callers bypass it.
 
-Global or project config may replace the entire `guard.tool` chain, repoint the tool key to another role, or set a direct tool `chain`; a direct chain wins over its role. Clearing the selection, an unavailable model or auth, provider errors, cancellation, and invalid classifier verdicts fail closed and block the guarded command.
+Global or project config may replace the entire `guard.tool` chain, repoint the tool key to another role, or set a direct tool `chain`; a direct chain wins over its role. When the selection is cleared or no `guard.tool` model is available or authenticated, the classifier falls back to the current session model; only a missing or unauthenticated fallback model, provider errors, cancellation, or invalid classifier verdicts fail closed and block the guarded command.
 
 ### `smart-sessions`
 

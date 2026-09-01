@@ -10,6 +10,7 @@ vi.mock("@earendil-works/pi-ai/compat", () => ({ complete: vi.fn() }));
 const completeMock = vi.mocked(complete);
 const PRIMARY = { id: "classifier-primary", name: "Primary", provider: "test-primary" };
 const FALLBACK = { id: "classifier-fallback", name: "Fallback", provider: "test-fallback" };
+const SESSION = { id: "session-model", name: "Session", provider: "test-session" };
 const ALLOW_RESPONSE = {
 	stopReason: "stop",
 	content: [{ type: "text", text: '{"version":1,"decision":"allow"}' }],
@@ -37,11 +38,13 @@ function writeClassifierConfig(cwd: string): void {
 function makeContext(cwd: string, options: {
 	available?: typeof PRIMARY[];
 	auth?: Auth;
+	model?: typeof PRIMARY;
 	readonly signal?: AbortSignal;
 } = {}) {
 	const available = options.available ?? [PRIMARY];
 	return {
 		cwd,
+		model: options.model,
 		signal: options.signal,
 		modelRegistry: {
 			find: (provider: string, id: string) => available.find((model) => model.provider === provider && model.id === id),
@@ -135,6 +138,35 @@ describe("smart-tool-guards classifier", () => {
 			FALLBACK,
 			expect.any(Object),
 			expect.objectContaining({ reasoningEffort: undefined }),
+		);
+	});
+
+	it("falls back to the current session model when the guard chain is unavailable", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [], model: SESSION });
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "allow" });
+		expect(completeMock).toHaveBeenCalledWith(
+			SESSION,
+			expect.any(Object),
+			expect.objectContaining({ reasoningEffort: undefined }),
+		);
+	});
+
+	it("returns unavailable when both the guard chain and session model are unavailable", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [], model: SESSION, auth: { ok: false, error: "no session auth" } });
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "unavailable", reason: "Classifier unavailable." });
+		expect(completeMock).not.toHaveBeenCalled();
+	});
+
+	it("prefers the guard chain over the session model when both are available", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [PRIMARY], model: SESSION });
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "allow" });
+		expect(completeMock).toHaveBeenCalledWith(
+			PRIMARY,
+			expect.any(Object),
+			expect.objectContaining({ reasoningEffort: "low" }),
 		);
 	});
 
