@@ -11,7 +11,7 @@
 
 import { getAvailableTypes } from "./agent-types.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
-import { type ModelRegistry, resolveModel } from "./model-resolver.js";
+import { type ModelRegistry, resolveModel } from "../../lib/model.js";
 
 /** Minimal event bus interface needed by the RPC handlers. */
 export interface EventBus {

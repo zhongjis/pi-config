@@ -70,13 +70,18 @@ export function parseModelChain(input: string): ModelCandidate[] {
  *
  * Matching strategies (in order):
  * 1. Exact `"provider/modelId"` match (only if available/authed)
- * 2. Fuzzy scored match: exact id > substring > name contains > all-parts-present
+ * 2. Fuzzy scored match: exact id > substring > name contains > all-parts-present.
+ *    Separators are normalized (dot vs dash) and a trailing 8-digit datestamp is
+ *    optional. There is NO cross-provider fallback: a `"provider/modelId"` query
+ *    only matches under that provider. An optional `preferProviders` list breaks
+ *    ties between equal-scoring matches.
  *
  * Returns the Model on success, or an error message string on failure.
  */
 export function resolveModel(
 	input: string,
 	registry: ModelRegistry,
+	preferProviders?: string[],
 ): any | string {
 	const all = (registry.getAvailable?.() ?? registry.getAll()) as ModelEntry[];
 	const availableSet = new Set(all.map((m) => `${m.provider}/${m.id}`.toLowerCase()));
@@ -92,16 +97,31 @@ export function resolveModel(
 		}
 	}
 
-	// 2. Fuzzy match against available models
-	const query = input.toLowerCase();
+	// 2. Fuzzy match against available models. Normalize separators so cosmetic
+	// punctuation differences still match — e.g. "claude-haiku-4.5" and
+	// "claude-haiku-4-5" (dot vs dash in the version). No cross-provider
+	// fallback: a "provider/modelId" query still only matches that provider
+	// because the provider token participates in every comparison.
+	const normalize = (s: string) => s.toLowerCase().replace(/\./g, "-");
+	const query = normalize(input);
+	// A bare 8-digit datestamp is not a meaningful query on its own; refuse to
+	// fuzzy-match it so it cannot vacuously latch onto a dated model id (which
+	// would otherwise substring-match, e.g. "20251001" in "...-4-5-20251001").
+	const datestampOnly = /^\d{8}$/.test(query);
+	const providerRank = (provider: string): number => {
+		if (!preferProviders || preferProviders.length === 0) return 0;
+		const idx = preferProviders.indexOf(provider);
+		return idx === -1 ? preferProviders.length : idx;
+	};
 
 	let bestMatch: ModelEntry | undefined;
 	let bestScore = 0;
 
 	for (const m of all) {
-		const id = m.id.toLowerCase();
-		const name = (m.name ?? m.id).toLowerCase();
-		const full = `${m.provider}/${m.id}`.toLowerCase();
+		if (datestampOnly) continue;
+		const id = normalize(m.id);
+		const name = normalize(m.name ?? m.id);
+		const full = normalize(`${m.provider}/${m.id}`);
 
 		let score = 0;
 		if (id === query || full === query) {
@@ -110,18 +130,26 @@ export function resolveModel(
 			score = 60 + (query.length / id.length) * 30;
 		} else if (name.includes(query)) {
 			score = 40 + (query.length / name.length) * 20;
-		} else if (
-			query
-				.split(/[\s\-/]+/)
-				.every(
-					(part) =>
-						id.includes(part) || name.includes(part) || m.provider.toLowerCase().includes(part),
-				)
-		) {
-			score = 20;
+		} else {
+			// All non-datestamp tokens present somewhere; a trailing 8-digit date
+			// stamp (e.g. "20251001") is optional. Require at least one
+			// non-datestamp token to actually match so a datestamp-only query
+			// cannot match vacuously.
+			const parts = query.split(/[\s\-/]+/).filter((part) => part.length > 0);
+			let matchedNonDate = false;
+			const allPresent = parts.every((part) => {
+				if (/^\d{8}$/.test(part)) return true;
+				const present = id.includes(part) || name.includes(part) || m.provider.toLowerCase().includes(part);
+				if (present) matchedNonDate = true;
+				return present;
+			});
+			if (allPresent && matchedNonDate) score = 20;
 		}
 
-		if (score > bestScore) {
+		if (
+			score > bestScore
+			|| (score === bestScore && score > 0 && bestMatch !== undefined && providerRank(m.provider) < providerRank(bestMatch.provider))
+		) {
 			bestScore = score;
 			bestMatch = m;
 		}

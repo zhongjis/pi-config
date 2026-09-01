@@ -14,6 +14,7 @@ import { CustomEditor, type AgentEndEvent, type ExtensionAPI, type ExtensionCont
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { isTui } from "../lib/mode.js";
+import { resolveModel } from "../lib/model.js";
 import { renderBoomerangCall, renderBoomerangResult } from "./render.js";
 import { registerCommitCommand, type BoomerangTaskSnapshot } from "./commit.js";
 
@@ -831,45 +832,13 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function resolveModel(modelSpec: string, ctx: ExtensionContext): Model<any> | undefined {
-    const slashIndex = modelSpec.indexOf("/");
-
-    if (slashIndex !== -1) {
-      const provider = modelSpec.slice(0, slashIndex);
-      const modelId = modelSpec.slice(slashIndex + 1);
-
-      if (!provider || !modelId) return undefined;
-
-      return ctx.modelRegistry.find(provider, modelId);
-    }
-
-    const allMatches = ctx.modelRegistry.getAll().filter((model) => model.id === modelSpec);
-
-    if (allMatches.length === 0) return undefined;
-    if (allMatches.length === 1) return allMatches[0];
-
-    const availableMatches = ctx.modelRegistry.getAvailable().filter((model) => model.id === modelSpec);
-
-    if (availableMatches.length === 1) return availableMatches[0];
-
-    if (availableMatches.length > 1) {
-      const preferredProviders = ["anthropic", "github-copilot", "openrouter"];
-      for (const provider of preferredProviders) {
-        const preferred = availableMatches.find((model) => model.provider === provider);
-        if (preferred) return preferred;
-      }
-      return availableMatches[0];
-    }
-
-    return undefined;
-  }
-
   async function resolveAndSwitchModel(
     modelSpecs: string[],
     ctx: ExtensionContext,
   ): Promise<{ model: Model<any>; alreadyActive: boolean } | undefined> {
     for (const spec of modelSpecs) {
-      const model = resolveModel(spec, ctx);
+      const result = resolveModel(spec, ctx.modelRegistry, ["anthropic", "github-copilot", "openrouter"]);
+      const model = typeof result === "string" ? undefined : result;
       if (!model) continue;
 
       if (ctx.model?.provider === model.provider && ctx.model?.id === model.id) {
