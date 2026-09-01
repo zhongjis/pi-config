@@ -12,7 +12,7 @@ import {
 
 const SUMMARY_CHAIN = "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b";
 const COMMIT_CHAIN = "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b";
-const GUARD_CHAIN = "openai-codex/gpt-5.6-luna:low,opencode/claude-haiku-4-5";
+const GUARD_CHAIN = "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5";
 
 function writeJson(path: string, value: unknown): void {
 	mkdirSync(dirname(path), { recursive: true });

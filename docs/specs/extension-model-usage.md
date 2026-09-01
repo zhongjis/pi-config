@@ -20,7 +20,7 @@ Later layers override earlier layers.
   "roles": {
     "summary.session": "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b",
     "commit": "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
-    "guard.tool": "openai-codex/gpt-5.6-luna:low,opencode/claude-haiku-4-5"
+    "guard.tool": "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5"
   },
   "tools": {
     "smart-sessions.summary": { "role": "summary.session" },
@@ -51,7 +51,7 @@ Rules:
 
 ### `smart-tool-guards`
 
-Guarded built-in `bash` commands that are neither deterministic danger nor exact `pwd` resolve `smart-tool-guards.classifier`. Its built-in role is `guard.tool`, with chain `openai-codex/gpt-5.6-luna:low,opencode/claude-haiku-4-5`. Fu Xi and the protected read-only subagents opt into this guard through trusted scope providers; other callers bypass it.
+Guarded built-in `bash` commands that are neither deterministic danger nor exact `pwd` resolve `smart-tool-guards.classifier`. Its built-in role is `guard.tool`, with chain `openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5`. Fu Xi and the protected read-only subagents opt into this guard through trusted scope providers; other callers bypass it.
 
 Global or project config may replace the entire `guard.tool` chain, repoint the tool key to another role, or set a direct tool `chain`; a direct chain wins over its role. Clearing the selection, an unavailable model or auth, provider errors, cancellation, and invalid classifier verdicts fail closed and block the guarded command.
 
