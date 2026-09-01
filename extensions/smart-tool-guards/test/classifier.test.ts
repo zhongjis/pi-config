@@ -170,6 +170,46 @@ describe("smart-tool-guards classifier", () => {
 		);
 	});
 
+	it("falls back to the session model when the guard chain model fails at completion", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [PRIMARY], model: SESSION });
+		completeMock.mockRejectedValueOnce(new Error("primary provider exploded"));
+		completeMock.mockResolvedValueOnce(ALLOW_RESPONSE as never);
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "allow" });
+		expect(completeMock).toHaveBeenCalledTimes(2);
+		expect(completeMock.mock.calls[0]?.[0]).toBe(PRIMARY);
+		expect(completeMock.mock.calls[1]?.[0]).toBe(SESSION);
+	});
+
+	it("falls back to the session model when the guard chain returns a malformed verdict", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [PRIMARY], model: SESSION });
+		completeMock.mockResolvedValueOnce({ stopReason: "stop", content: [{ type: "text", text: "not json" }] } as never);
+		completeMock.mockResolvedValueOnce(ALLOW_RESPONSE as never);
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "allow" });
+		expect(completeMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("returns the guard chain block without consulting the session model", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [PRIMARY], model: SESSION });
+		completeMock.mockResolvedValueOnce({
+			stopReason: "stop",
+			content: [{ type: "text", text: '{"version":1,"decision":"block","reason":"nope"}' }],
+		} as never);
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "block", reason: "nope" });
+		expect(completeMock).toHaveBeenCalledTimes(1);
+		expect(completeMock.mock.calls[0]?.[0]).toBe(PRIMARY);
+	});
+
+	it("fails closed when both the guard chain and session model fail at completion", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [PRIMARY], model: SESSION });
+		completeMock.mockRejectedValue(new Error("all providers down"));
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "unavailable", reason: "Classifier unavailable." });
+		expect(completeMock).toHaveBeenCalledTimes(2);
+	});
+
 	it("passes an independent five-second deadline signal", async () => {
 		writeClassifierConfig(cwd);
 		const controller = new AbortController();

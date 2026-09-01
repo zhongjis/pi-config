@@ -73,39 +73,20 @@ function parseVerdict(text: string): Verdict | undefined {
 		: undefined;
 }
 
-export async function classify<PolicyId extends string, Target, Action, Context>(
+async function attemptClassify<PolicyId extends string, Target, Action, Context>(
 	request: ClassifierRequest<PolicyId, Target, Action, Context>,
 	ctx: ClassifierContext,
-): Promise<ClassifierResult> {
+	candidate: { model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] },
+): Promise<Verdict | undefined> {
 	try {
-		const config = loadToolModelsConfig(ctx.cwd);
-		const selection = getToolModelSelection(config, CLASSIFIER_TOOL_KEY);
-		const chain = resolveToolModelSelection(selection, ctx.modelRegistry);
-
-		// Prefer the dedicated guard chain; fall back to the current session model
-		// so an unavailable or unauthed chain does not hard-block all guarded bash.
-		// Final rung still fails closed: if no candidate authenticates, block.
-		const candidates: Array<{ model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] }> = [];
-		if (chain) candidates.push(chain);
-		if (ctx.model) candidates.push({ model: ctx.model });
-
-		let selected:
-			| { model: any; thinkingLevel?: ModelCandidate["thinkingLevel"]; apiKey: string; headers?: Record<string, string> }
-			| undefined;
-		for (const candidate of candidates) {
-			const auth = await ctx.modelRegistry.getApiKeyAndHeaders(candidate.model);
-			if (auth.ok && auth.apiKey) {
-				selected = { model: candidate.model, thinkingLevel: candidate.thinkingLevel, apiKey: auth.apiKey, headers: auth.headers };
-				break;
-			}
-		}
-		if (!selected) return unavailable();
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(candidate.model);
+		if (!auth.ok || !auth.apiKey) return undefined;
 
 		const deadlineSignal = AbortSignal.timeout(CLASSIFIER_DEADLINE_MS);
 		const signal = ctx.signal ? AbortSignal.any([ctx.signal, deadlineSignal]) : deadlineSignal;
 
 		const response = await complete(
-			selected.model,
+			candidate.model,
 			{
 				systemPrompt: [
 					SYSTEM_WRAPPER,
@@ -128,9 +109,9 @@ export async function classify<PolicyId extends string, Target, Action, Context>
 				}],
 			},
 			{
-				apiKey: selected.apiKey,
-				headers: selected.headers,
-				reasoningEffort: selected.thinkingLevel,
+				apiKey: auth.apiKey,
+				headers: auth.headers,
+				reasoningEffort: candidate.thinkingLevel,
 				signal,
 			},
 		);
@@ -140,9 +121,39 @@ export async function classify<PolicyId extends string, Target, Action, Context>
 			|| textBlocks.length === 0
 			|| response.content.some((block) => block.type !== "text" && block.type !== "thinking")
 		) {
-			return unavailable();
+			return undefined;
 		}
-		return parseVerdict(textBlocks.map((block) => block.text).join("")) ?? unavailable();
+		return parseVerdict(textBlocks.map((block) => block.text).join(""));
+	} catch {
+		return undefined;
+	}
+}
+
+export async function classify<PolicyId extends string, Target, Action, Context>(
+	request: ClassifierRequest<PolicyId, Target, Action, Context>,
+	ctx: ClassifierContext,
+): Promise<ClassifierResult> {
+	try {
+		const config = loadToolModelsConfig(ctx.cwd);
+		const selection = getToolModelSelection(config, CLASSIFIER_TOOL_KEY);
+		const chain = resolveToolModelSelection(selection, ctx.modelRegistry);
+
+		// Prefer the dedicated guard chain, then fall back to the current session
+		// model, so an unavailable, unauthed, or non-responsive chain does not
+		// hard-block all guarded bash. A candidate is skipped whenever it cannot
+		// produce a valid verdict (missing auth, transport error, timeout, or
+		// malformed response); the first valid allow/block verdict wins. A valid
+		// block is never downgraded by a later candidate. When no candidate yields
+		// a verdict the guard still fails closed.
+		const candidates: Array<{ model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] }> = [];
+		if (chain) candidates.push(chain);
+		if (ctx.model) candidates.push({ model: ctx.model });
+
+		for (const candidate of candidates) {
+			const verdict = await attemptClassify(request, ctx, candidate);
+			if (verdict) return verdict;
+		}
+		return unavailable();
 	} catch {
 		return unavailable();
 	}

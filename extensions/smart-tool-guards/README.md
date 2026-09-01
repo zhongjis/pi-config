@@ -42,7 +42,7 @@ Provider thinking blocks are ignored when accompanied by a text verdict. Markdow
 
 ## Failure Semantics
 
-Guarded execution fails closed. Scope-provider failure, malformed input, deterministic danger, classifier block, timeout or cancellation, provider failure, and malformed verdict all block before native execution. When the resolved `guard.tool` chain has no available or authenticated model, the classifier falls back to the current session model; only when that fallback model is also missing or unauthenticated does it block. Classifier infrastructure failures collapse to the stable non-leaking reason `Blocked because the bash safety classifier is unavailable.`
+Guarded execution fails closed. Scope-provider failure, malformed input, and deterministic danger block before any model use. A valid classifier block also blocks and is never downgraded by a later candidate. The classifier tries each model candidate in order — the resolved `guard.tool` chain, then the current session model — and skips a candidate whenever it cannot produce a valid verdict (missing/unauthenticated model, transport or provider error, timeout or cancellation, or a malformed verdict), advancing to the next. Only when no candidate yields a verdict does it fail closed, collapsing to the stable non-leaking reason `Blocked because the bash safety classifier is unavailable.` This keeps an unavailable or non-responsive guard chain from hard-blocking every guarded call while still blocking when no model can classify at all.
 
 This is an authorization guard, not a shell sandbox or security boundary. Allowed shell commands retain native shell power.
 
