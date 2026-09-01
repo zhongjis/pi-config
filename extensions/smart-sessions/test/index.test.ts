@@ -199,6 +199,21 @@ describe("smart-sessions model selection", () => {
 		);
 	});
 
+	it("falls back to ctx.model when the summary chain has no available model", async () => {
+		// No available model matches the built-in summary.session chain, so the
+		// configured chain resolves to nothing and the current session model
+		// (ctx.model = mock-model) must be used instead of erroring out.
+		await runSummary([
+			{ id: "some-unrelated-model", name: "Unrelated", provider: "other" },
+		]);
+
+		expect(mockedComplete).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "mock-model", provider: "mock" }),
+			expect.any(Object),
+			expect.any(Object),
+		);
+	});
+
 	it("creates settings that preserve auto-detection by default", async () => {
 		const { ctx, mock } = registerExtension([
 			{ id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" },

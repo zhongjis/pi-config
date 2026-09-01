@@ -7,6 +7,7 @@ import {
 	BUILTIN_TOOL_MODELS_FILE,
 	getToolModelSelection,
 	loadToolModelsConfig,
+	resolveToolModelCandidates,
 	resolveToolModelSelection,
 } from "../tool-models.js";
 
@@ -199,5 +200,53 @@ describe("tool model config", () => {
 		);
 
 		expect(resolved?.model).toEqual({ id: "gemini-3-flash", name: "gemini-3-flash", provider: "google" });
+	});
+
+	it("orders candidates: chain model then ctx.model fallback", () => {
+		const registry = makeRegistry([{ id: "gemini-3-flash", provider: "google" }]);
+		const ctxModel = { id: "session-model", provider: "session" };
+		const result = resolveToolModelCandidates(
+			{ cwd, modelRegistry: registry, model: ctxModel },
+			"smart-sessions.summary",
+		);
+
+		expect(result.candidates.map((candidate) => candidate.model)).toEqual([
+			{ id: "gemini-3-flash", name: "gemini-3-flash", provider: "google" },
+			ctxModel,
+		]);
+		expect(result.chain).toBe(SUMMARY_CHAIN);
+	});
+
+	it("falls back to ctx.model when the chain has no available model", () => {
+		const registry = makeRegistry([]);
+		const ctxModel = { id: "session-model", provider: "session" };
+		const result = resolveToolModelCandidates(
+			{ cwd, modelRegistry: registry, model: ctxModel },
+			"smart-sessions.summary",
+		);
+
+		expect(result.candidates.map((candidate) => candidate.model)).toEqual([ctxModel]);
+	});
+
+	it("uses only the chain model when no ctx.model is present", () => {
+		const registry = makeRegistry([{ id: "gemini-3-flash", provider: "google" }]);
+		const result = resolveToolModelCandidates(
+			{ cwd, modelRegistry: registry },
+			"smart-sessions.summary",
+		);
+
+		expect(result.candidates.map((candidate) => candidate.model)).toEqual([
+			{ id: "gemini-3-flash", name: "gemini-3-flash", provider: "google" },
+		]);
+	});
+
+	it("yields no candidates when neither chain nor ctx.model resolves", () => {
+		const registry = makeRegistry([]);
+		const result = resolveToolModelCandidates(
+			{ cwd, modelRegistry: registry },
+			"smart-sessions.summary",
+		);
+
+		expect(result.candidates).toEqual([]);
 	});
 });

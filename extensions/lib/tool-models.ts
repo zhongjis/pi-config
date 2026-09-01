@@ -319,3 +319,28 @@ export function resolveToolModelSelection(
 	if (!selection) return undefined;
 	return resolveFirstAvailable(selection.candidates, registry);
 }
+
+export interface ToolModelCandidateSet {
+	candidates: Array<{ model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] }>;
+	chain?: string;
+}
+
+/**
+ * Ordered model candidates for a tool: the first available model from the
+ * configured chain, then the current session model (`ctx.model`) as a final
+ * fallback. Consumers iterate these so an unavailable, unauthed, or
+ * non-responsive chain does not strand the tool. `chain` is the configured
+ * chain string, for diagnostics.
+ */
+export function resolveToolModelCandidates(
+	ctx: { cwd: string; modelRegistry: ModelRegistry; model?: any },
+	toolKey: string,
+): ToolModelCandidateSet {
+	const config = loadToolModelsConfig(ctx.cwd);
+	const selection = getToolModelSelection(config, toolKey);
+	const chainModel = resolveToolModelSelection(selection, ctx.modelRegistry);
+	const candidates: Array<{ model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] }> = [];
+	if (chainModel) candidates.push(chainModel);
+	if (ctx.model) candidates.push({ model: ctx.model });
+	return { candidates, chain: selection?.chain };
+}

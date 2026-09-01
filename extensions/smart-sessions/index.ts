@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { getToolModelSelection, loadToolModelsConfig, resolveToolModelSelection } from "../lib/tool-models.js";
+import { resolveToolModelCandidates } from "../lib/tool-models.js";
 
 // -- Configuration --------------------------------------------------------
 
@@ -191,16 +191,15 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			return model ? { model } : { error: "MODEL_NOT_FOUND" };
 		}
 
-		const toolConfig = loadToolModelsConfig(ctx.cwd);
-		const selection = getToolModelSelection(toolConfig, SUMMARY_TOOL_KEY);
-		const resolved = resolveToolModelSelection(selection, ctx.modelRegistry);
-		if (resolved?.model) {
-			resolvedModelName = `${resolved.model.provider}/${resolved.model.id}`;
-			return { model: resolved.model, chain: selection?.chain };
+		const { candidates, chain } = resolveToolModelCandidates(ctx, SUMMARY_TOOL_KEY);
+		const model = candidates[0]?.model;
+		if (model) {
+			resolvedModelName = `${model.provider}/${model.id}`;
+			return { model, chain };
 		}
 
 		resolvedModelName = "";
-		return { error: `No summary model available (tried: ${selection?.chain ?? "none"})`, chain: selection?.chain };
+		return { error: `No summary model available (tried: ${chain ?? "none"})`, chain };
 	}
 
 	// -- Widget rendering -------------------------------------------------

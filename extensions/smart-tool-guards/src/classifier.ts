@@ -1,11 +1,7 @@
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import {
-	getToolModelSelection,
-	loadToolModelsConfig,
-	resolveToolModelSelection,
-} from "../../lib/tool-models.js";
+import { resolveToolModelCandidates } from "../../lib/tool-models.js";
 import type { ModelCandidate } from "../../lib/model.js";
 
 const CLASSIFIER_TOOL_KEY = "smart-tool-guards.classifier";
@@ -134,20 +130,7 @@ export async function classify<PolicyId extends string, Target, Action, Context>
 	ctx: ClassifierContext,
 ): Promise<ClassifierResult> {
 	try {
-		const config = loadToolModelsConfig(ctx.cwd);
-		const selection = getToolModelSelection(config, CLASSIFIER_TOOL_KEY);
-		const chain = resolveToolModelSelection(selection, ctx.modelRegistry);
-
-		// Prefer the dedicated guard chain, then fall back to the current session
-		// model, so an unavailable, unauthed, or non-responsive chain does not
-		// hard-block all guarded bash. A candidate is skipped whenever it cannot
-		// produce a valid verdict (missing auth, transport error, timeout, or
-		// malformed response); the first valid allow/block verdict wins. A valid
-		// block is never downgraded by a later candidate. When no candidate yields
-		// a verdict the guard still fails closed.
-		const candidates: Array<{ model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] }> = [];
-		if (chain) candidates.push(chain);
-		if (ctx.model) candidates.push({ model: ctx.model });
+		const { candidates } = resolveToolModelCandidates(ctx, CLASSIFIER_TOOL_KEY);
 
 		for (const candidate of candidates) {
 			const verdict = await attemptClassify(request, ctx, candidate);
