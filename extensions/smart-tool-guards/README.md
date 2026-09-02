@@ -19,7 +19,7 @@ Guarded calls use this precedence:
 
 1. Invalid `command`, `cwd`, or `timeout` input blocks.
 2. Deterministic danger blocks before model use, with stable finding codes for filesystem, VCS, external-system, privilege/system-control, redirection, shell/interpreter, downloaded-code, and uninspectable-syntax hazards.
-3. Exact trimmed `pwd` allows without a classifier call.
+3. Exact trimmed `pwd` and exact single-command, read-only `agent-browser` forms allow without a classifier call. The browser allowlist covers page inspection, runtime and metadata reads, documented output-only flags and filters, and help/version queries; URL reads, effectful waits, mutating siblings, wrappers, pipelines, and compound commands are excluded.
 4. Every other command defers to the classifier.
 
 The guard never rewrites input. Allowed calls continue through Pi's native `bash` executor with the original command, requested `cwd`, and requested `timeout`. Classifier context includes the requested values plus an effective cwd resolved from the session cwd; omitted timeout remains omitted. Caller cancellation and the classifier's own five-second decision deadline both abort the nested model request, independently of native execution timeout.

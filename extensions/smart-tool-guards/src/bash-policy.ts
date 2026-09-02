@@ -253,6 +253,52 @@ function subcommand(words: Word[], valueOptions: Set<string>, booleanOptions: Se
 	return undefined;
 }
 
+function isExactAgentBrowserReadOnly(words: Word[]): boolean {
+	const keyword = (index: number, value: string): boolean => words[index]?.text === value && !words[index]?.quoted;
+	const value = (index: number): boolean => words[index] !== undefined && !words[index].text.startsWith("-");
+	if (!keyword(0, "agent-browser")) return false;
+
+	if (words.length === 2 && ["--help", "-h", "--version", "-V"].some((flag) => keyword(1, flag))) return true;
+	if (words.length === 3 && value(1) && ["--help", "-h"].some((flag) => keyword(2, flag))) return true;
+
+	if (words.length === 2 && ["snapshot", "read", "cookies", "tab", "console", "errors", "session", "profiles"].some((command) => keyword(1, command))) return true;
+	if (words.length === 3 && (
+		["title", "url", "cdp-url"].some((command) => keyword(1, "get") && keyword(2, command)) ||
+		keyword(2, "list") && ["tab", "session", "device", "auth"].some((command) => keyword(1, command)) ||
+		["local", "session"].some((scope) => keyword(1, "storage") && keyword(2, scope)) ||
+		keyword(1, "clipboard") && keyword(2, "read") ||
+		keyword(1, "dialog") && keyword(2, "status") ||
+		keyword(1, "stream") && keyword(2, "status") ||
+		keyword(1, "webmcp") && keyword(2, "list") ||
+		keyword(1, "react") && ["tree", "suspense"].some((action) => keyword(2, action)) ||
+		keyword(1, "snapshot") && ["-i", "--json"].some((flag) => keyword(2, flag)) ||
+		keyword(2, "--json") && ["console", "profiles"].some((command) => keyword(1, command))
+	)) return true;
+
+	if (keyword(1, "get")) {
+		if (words.length === 4 && ["text", "html", "value", "count", "box", "styles"].some((action) => keyword(2, action)) && value(3)) return true;
+		if (words.length === 5 && keyword(2, "attr") && value(3) && value(4)) return true;
+	}
+	if (words.length === 4 && keyword(1, "is") && ["visible", "enabled", "checked"].some((action) => keyword(2, action)) && value(3)) return true;
+	if (words.length === 5 && keyword(1, "find") && value(2) && value(3) && keyword(4, "text")) return true;
+	if (keyword(1, "wait")) {
+		if (words.length === 3 && value(2)) return true;
+		if (words.length === 4 && ["--text", "--url", "--load"].some((flag) => keyword(2, flag)) && value(3)) return true;
+	}
+	if (words.length === 3 && keyword(1, "network") && keyword(2, "requests")) return true;
+	if (words.length === 5 && keyword(1, "network") && keyword(2, "requests") && ["--filter", "--type", "--method", "--status"].some((flag) => keyword(3, flag)) && value(4)) return true;
+	if (words.length === 4 && keyword(1, "network") && keyword(2, "request") && value(3)) return true;
+	if (words.length === 4 && keyword(1, "tab") && keyword(2, "list") && keyword(3, "--json")) return true;
+	if (words.length === 4 && keyword(1, "storage") && ["local", "session"].some((scope) => keyword(2, scope)) && value(3) && !["set", "clear"].includes(words[3].text)) return true;
+	if (words.length === 4 && keyword(1, "auth") && keyword(2, "show") && value(3)) return true;
+	if (words.length === 4 && ["plugin", "state"].some((command) => keyword(1, command)) && keyword(2, "show") && value(3)) return true;
+	if (words.length === 3 && ["plugin", "state"].some((command) => keyword(1, command)) && keyword(2, "list")) return true;
+	if (words.length === 4 && keyword(1, "react") && keyword(2, "inspect") && value(3)) return true;
+	if (words.length === 4 && keyword(1, "react") && keyword(2, "suspense") && ["--only-dynamic", "--json"].some((flag) => keyword(3, flag))) return true;
+	if (words.length === 5 && keyword(1, "react") && keyword(2, "suspense") && new Set(words.slice(3).map((word) => word.text)).size === 2 && words.slice(3).every((word) => !word.quoted && ["--only-dynamic", "--json"].includes(word.text))) return true;
+	return false;
+}
+
 function inspectCommand(words: Word[], add: (code: BashDangerCode, position: number) => void): { name: string; position: number } | undefined {
 	const argv = unwrap(words);
 	const executable = argv[0];
@@ -325,6 +371,6 @@ export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
 	const findings = [...earliest].map(([code, position]) => ({ code, position })).sort((left, right) =>
 		left.position - right.position || BASH_DANGER_CODES.indexOf(left.code) - BASH_DANGER_CODES.indexOf(right.code));
 	if (findings.length > 0) return { kind: "block", findings };
-	if (input.command.trim() === "pwd") return { kind: "allow" };
+	if (input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
 	return { kind: "defer" };
 }
