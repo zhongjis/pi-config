@@ -167,14 +167,23 @@ describe("smart-tool-guards native bash — integration", () => {
 		expect(bashUpdates(session)).toBe(0);
 		expect(session.events.toolCallsFor("bash").map(({ input }) => input.command)).toEqual(commands);
 		expect(session.events.toolResultsFor("bash")).toHaveLength(commands.length);
-		expect(session.events.toolResultsFor("bash").every(({ isError, text }) => isError && text.includes("dangerous"))).toBe(true);
+		const policyMessage = /^\[Smart Guard\]\[BLOCK\]\[source=policy\]\[profile=bash-read-only-v1\]\[scope=modes:fuxi\]\nBash not run: Read-only policy matched: [^\n]+\. Guard active: Fuxi plan mode requires read-only Bash\.$/;
+		expect(session.events.toolResultsFor("bash").every(
+			({ isError, text }) => isError && policyMessage.test(text),
+		)).toBe(true);
 		expect(readFileSync(join(root, "sentinel"), "utf8")).toBe("intact");
 	});
 
 	it.each([
-		["block", BLOCK, "classifier blocked"],
-		["malformed", "not-json", "classifier is unavailable"],
-	] as const)("preserves sentinel when classifier returns %s", async (_case, verdict, reason) => {
+		["block", BLOCK, [
+			"[Smart Guard][BLOCK][source=classifier][profile=bash-read-only-v1][scope=modes:fuxi]",
+			"Bash not run: classifier blocked. Guard active: Fuxi plan mode requires read-only Bash.",
+		].join("\n")],
+		["malformed", "not-json", [
+			"[Smart Guard][ERROR][source=classifier][profile=bash-read-only-v1][scope=modes:fuxi]",
+			"Bash not run: Classifier unavailable; guard failed closed. Guard active: Fuxi plan mode requires read-only Bash.",
+		].join("\n")],
+	] as const)("preserves sentinel when classifier returns %s", async (_case, verdict, expectedMessage) => {
 		const root = tempRoot();
 		writeFileSync(join(root, "sentinel"), "intact");
 		let classifierCalls = 0;
@@ -190,7 +199,7 @@ describe("smart-tool-guards native bash — integration", () => {
 		expect(bashUpdates(session)).toBe(0);
 		expect(session.events.toolCallsFor("bash")[0].input).toEqual({ command });
 		expect(session.events.toolResultsFor("bash")[0]).toMatchObject({ isError: true, mocked: false });
-		expect(session.events.toolResultsFor("bash")[0].text).toContain(reason);
+		expect(session.events.toolResultsFor("bash")[0].text).toBe(expectedMessage);
 		expect(readFileSync(join(root, "sentinel"), "utf8")).toBe("intact");
 	});
 
@@ -210,7 +219,10 @@ describe("smart-tool-guards native bash — integration", () => {
 		expect(bashUpdates(session)).toBe(0);
 		expect(session.events.toolCallsFor("bash")[0].input).toEqual({ command });
 		expect(session.events.toolResultsFor("bash")[0]).toMatchObject({ isError: true, mocked: false });
-		expect(session.events.toolResultsFor("bash")[0].text).toContain("classifier is unavailable");
+		expect(session.events.toolResultsFor("bash")[0].text).toBe([
+			"[Smart Guard][ERROR][source=classifier][profile=bash-read-only-v1][scope=modes:fuxi]",
+			"Bash not run: Classifier unavailable; guard failed closed. Guard active: Fuxi plan mode requires read-only Bash.",
+		].join("\n"));
 		expect(readFileSync(join(root, "sentinel"), "utf8")).toBe("intact");
 	});
 
@@ -223,7 +235,10 @@ describe("smart-tool-guards native bash — integration", () => {
 		await session.run(when("Unavailable classifier", [calls("bash", { command }), says("Blocked.")]));
 
 		expect(bashUpdates(session)).toBe(0);
-		expect(session.events.toolResultsFor("bash")[0].text).toContain("classifier is unavailable");
+		expect(session.events.toolResultsFor("bash")[0].text).toBe([
+			"[Smart Guard][ERROR][source=classifier][profile=bash-read-only-v1][scope=modes:fuxi]",
+			"Bash not run: Classifier unavailable; guard failed closed. Guard active: Fuxi plan mode requires read-only Bash.",
+		].join("\n"));
 		expect(readFileSync(join(root, "sentinel"), "utf8")).toBe("intact");
 	});
 
@@ -267,7 +282,10 @@ describe("smart-tool-guards native bash — integration", () => {
 
 		expect(allowSession.events.toolResultsFor("bash")[0]).toMatchObject({ text: "concurrent-allow", isError: false, mocked: false });
 		expect(blockSession.events.toolResultsFor("bash")[0]).toMatchObject({ isError: true, mocked: false });
-		expect(blockSession.events.toolResultsFor("bash")[0].text).toContain("classifier blocked");
+		expect(blockSession.events.toolResultsFor("bash")[0].text).toBe([
+			"[Smart Guard][BLOCK][source=classifier][profile=bash-read-only-v1][scope=modes:fuxi]",
+			"Bash not run: classifier blocked. Guard active: Fuxi plan mode requires read-only Bash.",
+		].join("\n"));
 		expect(readFileSync(join(allowRoot, "marker"), "utf8")).toBe("allow");
 		expect(readFileSync(join(blockRoot, "marker"), "utf8")).toBe("block");
 	});

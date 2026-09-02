@@ -358,7 +358,10 @@ describe("modes extension — integration", () => {
 		expect(bash).not.toHaveBeenCalled();
 		const [result] = t.events.toolResultsFor("bash");
 		expect(result).toMatchObject({ isError: true });
-		expect(result.text).toContain("dangerous");
+		expect(result.text).toBe([
+			"[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=modes:fuxi]",
+			"Bash not run: Read-only policy matched: filesystem-mutation. Guard active: Fuxi plan mode requires read-only Bash.",
+		].join("\n"));
 	});
 
 	// ── Mode switching via command ──────────────────────────────

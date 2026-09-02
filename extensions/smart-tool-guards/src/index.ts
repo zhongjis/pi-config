@@ -5,13 +5,12 @@ import {
 	evaluateGuardScope,
 	registerGuardCapability,
 	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
+	type GuardScopeEvaluation,
 } from "../../lib/guard-registration.js";
 import { evaluateBashPolicy } from "./bash-policy.js";
 import { classify } from "./classifier.js";
 
 const hookedApis = new WeakSet<ExtensionAPI>();
-const INVALID_INPUT_REASON = "Blocked because bash tool input is invalid.";
-const CLASSIFIER_UNAVAILABLE_REASON = "Blocked because the bash safety classifier is unavailable.";
 const BASH_POLICY_ID = "bash-read-only-v1";
 const BASH_POLICY_INSTRUCTIONS = [
 	"Allow only bash actions that are read-only.",
@@ -39,6 +38,50 @@ function validBashInput(value: unknown): value is ValidBashInput {
 		typeof value.timeout === "number" && Number.isFinite(value.timeout) && value.timeout >= 0;
 }
 
+type ActiveGuardScope = Extract<GuardScopeEvaluation, { readonly decision: "guard" | "error" }>;
+type GuardDenial =
+	| { readonly kind: "policy"; readonly detail: string }
+	| { readonly kind: "classifier-block"; readonly detail: string }
+	| { readonly kind: "input-error"; readonly detail: string }
+	| { readonly kind: "classifier-error"; readonly detail: string }
+	| { readonly kind: "scope-error"; readonly detail: string };
+
+const DENIAL_CATEGORY = {
+	policy: { category: "BLOCK", source: "policy" },
+	"classifier-block": { category: "BLOCK", source: "classifier" },
+	"input-error": { category: "ERROR", source: "input" },
+	"classifier-error": { category: "ERROR", source: "classifier" },
+	"scope-error": { category: "ERROR", source: "scope" },
+} as const;
+
+function normalizeLine(value: string): string {
+	return value.replace(/\s+/g, " ").trim();
+}
+
+function formatDenial(
+	scope: ActiveGuardScope,
+	denial: GuardDenial,
+): { readonly block: true; readonly reason: string } {
+	const failedProviderIds = scope.decision === "error" ? scope.failedProviderIds : [];
+	const scopeIds = [...new Set([
+		...scope.activeScopes.map(({ id }) => id),
+		...failedProviderIds,
+	])].sort((left, right) => left.localeCompare(right));
+	const activation = scope.activeScopes
+		.map(({ reason }) => normalizeLine(reason))
+		.join(" ");
+	const { category, source } = DENIAL_CATEGORY[denial.kind];
+	const detail = normalizeLine(denial.detail);
+	const terminatedDetail = /[.!?]$/.test(detail) ? detail : `${detail}.`;
+	return {
+		block: true,
+		reason: [
+			`[Smart Guard][${category}][source=${source}][profile=${BASH_POLICY_ID}][scope=${scopeIds.join(",") || "none"}]`,
+			`Bash not run: ${terminatedDetail}${activation ? ` Guard active: ${activation}` : ""}`,
+		].join("\n"),
+	};
+}
+
 export default function smartToolGuards(pi: ExtensionAPI): void {
 	if (hookedApis.has(pi)) return;
 
@@ -46,11 +89,18 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 		if (!isToolCallEventType("bash", event)) return;
 
 		const scope = await evaluateGuardScope(pi, event, ctx);
-		if (scope === "abstain") return;
-		if (typeof scope === "object") return scope;
+		if (scope.decision === "abstain") return;
+		if (scope.decision === "error") {
+			return formatDenial(scope, {
+				kind: "scope-error",
+				detail: `Scope evaluation failed for providers: ${scope.failedProviderIds.join(", ")}; guard failed closed.`,
+			});
+		}
 
 		const input: unknown = event.input;
-		if (!validBashInput(input)) return { block: true, reason: INVALID_INPUT_REASON };
+		if (!validBashInput(input)) {
+			return formatDenial(scope, { kind: "input-error", detail: "Malformed tool input." });
+		}
 
 		const effectiveCwd = resolve(ctx.cwd, input.cwd ?? ".");
 		const policy = evaluateBashPolicy({
@@ -60,10 +110,10 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 			effectiveCwd,
 		});
 		if (policy.kind === "block") {
-			return {
-				block: true,
-				reason: `Blocked dangerous bash command: ${policy.findings.map(({ code }) => code).join(", ")}`,
-			};
+			return formatDenial(scope, {
+				kind: "policy",
+				detail: `Read-only policy matched: ${policy.findings.map(({ code }) => code).join(", ")}.`,
+			});
 		}
 		if (policy.kind === "allow") return;
 
@@ -79,8 +129,16 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 			context: { effectiveCwd },
 		}, ctx);
 		if (verdict.kind === "allow") return;
-		if (verdict.kind === "block") return { block: true, reason: verdict.reason };
-		return { block: true, reason: CLASSIFIER_UNAVAILABLE_REASON };
+		if (verdict.kind === "block") {
+			return formatDenial(scope, {
+				kind: "classifier-block",
+				detail: normalizeLine(verdict.reason),
+			});
+		}
+		return formatDenial(scope, {
+			kind: "classifier-error",
+			detail: "Classifier unavailable; guard failed closed.",
+		});
 	});
 	pi.on("session_shutdown", () => {
 		hookedApis.delete(pi);

@@ -68,8 +68,8 @@ function bashEvent(input: Record<string, unknown>): ToolCallEvent {
 	} as ToolCallEvent;
 }
 
-function guard(pi: ExtensionAPI, id = "scope"): void {
-	registerGuardScopeProvider(pi, id, () => "guard");
+function guard(pi: ExtensionAPI, id = "scope", reason = "Guard reason."): void {
+	registerGuardScopeProvider(pi, id, () => ({ decision: "guard", reason }));
 }
 
 beforeEach(() => {
@@ -96,16 +96,34 @@ describe("smart-tool-guards bash hook", () => {
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
-	it("blocks scope-provider errors before input or policy evaluation", async () => {
+	it("formats scope-provider errors before input or policy evaluation", async () => {
+		const { pi, handlers } = makeRuntime();
+		guard(pi, "active", " Active\nreason. ");
+		registerGuardScopeProvider(pi, "broken", () => { throw new Error("secret"); });
+		smartToolGuards(pi);
+
+		expect(await handlers[0](bashEvent({ command: "pwd" }), context())).toEqual({
+			block: true,
+			reason: [
+				"[Smart Guard][ERROR][source=scope][profile=bash-read-only-v1][scope=active,broken]",
+				"Bash not run: Scope evaluation failed for providers: broken; guard failed closed. Guard active: Active reason.",
+			].join("\n"),
+		});
+		expect(classifyMock).not.toHaveBeenCalled();
+	});
+
+	it("omits Guard active when scope failure has no successful active scope", async () => {
 		const { pi, handlers } = makeRuntime();
 		registerGuardScopeProvider(pi, "broken", () => { throw new Error("secret"); });
 		smartToolGuards(pi);
 
 		expect(await handlers[0](bashEvent({ command: "pwd" }), context())).toEqual({
 			block: true,
-			reason: "Blocked because guard scope provider evaluation failed: broken.",
+			reason: [
+				"[Smart Guard][ERROR][source=scope][profile=bash-read-only-v1][scope=broken]",
+				"Bash not run: Scope evaluation failed for providers: broken; guard failed closed.",
+			].join("\n"),
 		});
-		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
 	it.each([
@@ -122,7 +140,10 @@ describe("smart-tool-guards bash hook", () => {
 		smartToolGuards(pi);
 		expect(await handlers[0](bashEvent(input), context())).toEqual({
 			block: true,
-			reason: "Blocked because bash tool input is invalid.",
+			reason: [
+				"[Smart Guard][ERROR][source=input][profile=bash-read-only-v1][scope=scope]",
+				"Bash not run: Malformed tool input. Guard active: Guard reason.",
+			].join("\n"),
 		});
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
@@ -143,16 +164,22 @@ describe("smart-tool-guards bash hook", () => {
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
-	it("blocks deterministic danger with stable codes before classifier", async () => {
+	it("formats deterministic policy findings with sorted scopes and no dangerous wording", async () => {
 		const { pi, handlers } = makeRuntime();
-		guard(pi);
+		guard(pi, "z-scope", " Second\nactivation. ");
+		guard(pi, "a-scope", "First activation.");
 		smartToolGuards(pi);
 		classifyMock.mockResolvedValue({ kind: "allow" });
 
-		expect(await handlers[0](bashEvent({ command: "rm out; git push" }), context())).toEqual({
+		const result = await handlers[0](bashEvent({ command: "rm out; git push" }), context());
+		expect(result).toEqual({
 			block: true,
-			reason: "Blocked dangerous bash command: filesystem-mutation, vcs-mutation",
+			reason: [
+				"[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=a-scope,z-scope]",
+				"Bash not run: Read-only policy matched: filesystem-mutation, vcs-mutation. Guard active: First activation. Second activation.",
+			].join("\n"),
 		});
+		expect((result as { reason: string }).reason).not.toMatch(/dangerous/i);
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
@@ -183,19 +210,44 @@ describe("smart-tool-guards bash hook", () => {
 		}, expect.objectContaining({ cwd: "/repo/worktree" }));
 	});
 
-	it("propagates classifier block and fails closed on unavailable", async () => {
+	it("formats classifier blocks and unavailable errors without leaking provider details", async () => {
 		const { pi, handlers } = makeRuntime();
 		guard(pi);
 		smartToolGuards(pi);
-		classifyMock.mockResolvedValueOnce({ kind: "block", reason: "Not read-only." });
+		classifyMock.mockResolvedValueOnce({ kind: "block", reason: " Not\n read-only. " });
 		expect(await handlers[0](bashEvent({ command: "git status" }), context())).toEqual({
 			block: true,
-			reason: "Not read-only.",
+			reason: [
+				"[Smart Guard][BLOCK][source=classifier][profile=bash-read-only-v1][scope=scope]",
+				"Bash not run: Not read-only. Guard active: Guard reason.",
+			].join("\n"),
 		});
-		classifyMock.mockResolvedValueOnce({ kind: "unavailable", reason: "Classifier unavailable." });
+		classifyMock.mockResolvedValueOnce({ kind: "unavailable", reason: "secret\nprovider failure" });
 		expect(await handlers[0](bashEvent({ command: "git status" }), context())).toEqual({
 			block: true,
-			reason: "Blocked because the bash safety classifier is unavailable.",
+			reason: [
+				"[Smart Guard][ERROR][source=classifier][profile=bash-read-only-v1][scope=scope]",
+				"Bash not run: Classifier unavailable; guard failed closed. Guard active: Guard reason.",
+			].join("\n"),
+		});
+	});
+
+	it.each([
+		["classifier blocked", "classifier blocked."],
+		["Stop!", "Stop!"],
+		["Unsafe?", "Unsafe?"],
+	] as const)("terminates normalized classifier detail without replacing punctuation: %s", async (reason, expected) => {
+		const { pi, handlers } = makeRuntime();
+		guard(pi);
+		smartToolGuards(pi);
+		classifyMock.mockResolvedValue({ kind: "block", reason: ` \n${reason}\t ` });
+
+		expect(await handlers[0](bashEvent({ command: "git status" }), context())).toEqual({
+			block: true,
+			reason: [
+				"[Smart Guard][BLOCK][source=classifier][profile=bash-read-only-v1][scope=scope]",
+				`Bash not run: ${expected} Guard active: Guard reason.`,
+			].join("\n"),
 		});
 	});
 
@@ -209,7 +261,7 @@ describe("smart-tool-guards bash hook", () => {
 		const second = makeRuntime(bus);
 		const providers = {
 			mode: () => "abstain" as const,
-			subagent: () => "guard" as const,
+			subagent: () => ({ decision: "guard" as const, reason: "Guarded subagent." }),
 		};
 		for (const id of order) registerGuardScopeProvider(providerRuntime.pi, id, providers[id]);
 

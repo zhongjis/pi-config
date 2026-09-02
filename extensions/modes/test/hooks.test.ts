@@ -206,7 +206,7 @@ describe("mode hooks", () => {
 		modesExtension(mock.pi as never);
 		const event = { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "pwd" } };
 
-		expect(await evaluateGuardScope(mock.pi as never, event as never, {} as never)).toBe("abstain");
+		expect(await evaluateGuardScope(mock.pi as never, event as never, {} as never)).toEqual({ decision: "abstain" });
 	});
 
 	it.each(["modes-first", "smart-tool-guards-first"] as const)(
@@ -226,14 +226,30 @@ describe("mode hooks", () => {
 			registerMode();
 
 			state.currentMode = "fuxi";
+			expect(await evaluateGuardScope(mock.pi as never, {
+				type: "tool_call",
+				toolCallId: "scope-call",
+				toolName: "bash",
+				input: { command: "pwd" },
+			} as never, {} as never)).toEqual({
+				decision: "guard",
+				activeScopes: [{
+					id: "modes:fuxi",
+					reason: "Fuxi plan mode requires read-only Bash.",
+				}],
+			});
 			const guarded = await mock.fire(
 				"tool_call",
 				{ type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "rm out" } },
 				{ cwd: "/tmp" },
 			);
-			expect(guarded.filter((result) => result !== undefined)).toEqual([
-				expect.objectContaining({ block: true }),
-			]);
+			expect(guarded.filter((result) => result !== undefined)).toEqual([{
+				block: true,
+				reason: [
+					"[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=modes:fuxi]",
+					"Bash not run: Read-only policy matched: filesystem-mutation. Guard active: Fuxi plan mode requires read-only Bash.",
+				].join("\n"),
+			}]);
 
 			state.currentMode = "houtu";
 			expect(await mock.fire(

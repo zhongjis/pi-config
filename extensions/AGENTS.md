@@ -57,6 +57,8 @@ pnpm lint:typecheck
   - `<namespace>:<event>` for lifecycle broadcasts
   - `<namespace>:rpc:<method>` + `:reply:${requestId}` for RPC
 - If a new extension needs special smoke handling, update `test/extensions.smoke.test.ts`.
+- Shared guard scope providers MUST return `"abstain"` or `{ decision: "guard", reason }`; blank reasons are errors.
+- Guard scope evaluation MUST preserve sorted active scopes and failed provider IDs with `error > guard > abstain`; smart-tool-guards alone formats denial messages.
 - Every locally registered tool needs width-safe `renderCall`/`renderResult` components, a maximum three rendered collapsed rows (except identity-preserved native streaming delegates), configured `keyHint("app.tools.expand", ...)` hints, unchanged model-facing content, and registered-definition coverage using Pi TUI visible-width APIs.
 
 ## Ask First

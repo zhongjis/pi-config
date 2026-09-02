@@ -631,7 +631,10 @@ export async function runAgent(
       ...(guardBash ? [{
         name: TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME,
         factory: (extensionPi: ExtensionAPI) => {
-          registerGuardScopeProvider(extensionPi, "subagents:guarded", () => "guard");
+          registerGuardScopeProvider(extensionPi, "subagents:guarded", () => ({
+            decision: "guard",
+            reason: "This guarded subagent requires read-only Bash.",
+          }));
           smartToolGuards(extensionPi);
         },
         hidden: true,

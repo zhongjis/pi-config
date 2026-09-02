@@ -1166,7 +1166,13 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     await expect(handlers[0](
       { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "rm out" } },
       { cwd: "/tmp" },
-    )).resolves.toMatchObject({ block: true });
+    )).resolves.toEqual({
+      block: true,
+      reason: [
+        "[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=subagents:guarded]",
+        "Bash not run: Read-only policy matched: filesystem-mutation. Guard active: This guarded subagent requires read-only Bash.",
+      ].join("\n"),
+    });
   });
 });
 

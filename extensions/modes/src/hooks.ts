@@ -190,7 +190,9 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 // ─── Hook registration ───────────────────────────────────────────────────────
 
 export function registerModeGuardScope(pi: ExtensionAPI, state: ModeStateManager): void {
-	registerGuardScopeProvider(pi, "modes:fuxi", () => state.currentMode === "fuxi" ? "guard" : "abstain");
+	registerGuardScopeProvider(pi, "modes:fuxi", () => state.currentMode === "fuxi"
+		? { decision: "guard", reason: "Fuxi plan mode requires read-only Bash." }
+		: "abstain");
 }
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {

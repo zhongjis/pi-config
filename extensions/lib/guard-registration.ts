@@ -3,16 +3,23 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from "@earendil-wo
 export const SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY = "smart-tool-guards:bash" as const;
 
 export type GuardCapability = typeof SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY;
-export type GuardScopeDecision = "guard" | "abstain";
+export type GuardScopeDecision = "abstain" | { readonly decision: "guard"; readonly reason: string };
 export type GuardScopeProvider = (
 	event: ToolCallEvent,
 	ctx: ExtensionContext,
 ) => GuardScopeDecision | Promise<GuardScopeDecision>;
-export interface GuardScopeError {
-	block: true;
-	reason: string;
+export interface GuardActiveScope {
+	readonly id: string;
+	readonly reason: string;
 }
-export type GuardScopeEvaluation = GuardScopeDecision | GuardScopeError;
+export type GuardScopeEvaluation =
+	| { readonly decision: "abstain" }
+	| { readonly decision: "guard"; readonly activeScopes: readonly GuardActiveScope[] }
+	| {
+		readonly decision: "error";
+		readonly failedProviderIds: readonly string[];
+		readonly activeScopes: readonly GuardActiveScope[];
+	};
 
 const CAPABILITY_QUERY_CHANNEL = "smart-tool-guards:capability-query";
 const SCOPE_QUERY_CHANNEL = "smart-tool-guards:scope-query";
@@ -68,27 +75,35 @@ export async function evaluateGuardScope(
 	pi.events.emit(SCOPE_QUERY_CHANNEL, query);
 	const providers = [...query.providers].sort(([left], [right]) => left.localeCompare(right));
 	const evaluations: Array<
-		{ id: string; decision: GuardScopeDecision } | { id: string; error: true }
-	> = await Promise.all(providers.map(async ([id, provider]) => {
-		try {
-			const decision: unknown = await provider(event, ctx);
-			return decision === "guard" || decision === "abstain"
-				? { id, decision }
-				: { id, error: true as const };
-		} catch {
-			return { id, error: true as const };
-		}
-	}));
+		GuardActiveScope | { readonly id: string; readonly abstain: true } | { readonly id: string; readonly error: true }
+	> =
+		await Promise.all(providers.map(async ([id, provider]) => {
+			try {
+				const decision: unknown = await provider(event, ctx);
+				if (decision === "abstain") return { id, abstain: true as const };
+				if (
+					isRecord(decision) &&
+					decision.decision === "guard" &&
+					typeof decision.reason === "string"
+				) {
+					const reason = decision.reason.replace(/\s+/g, " ").trim();
+					return reason ? { id, reason } : { id, error: true as const };
+				}
+				return { id, error: true as const };
+			} catch {
+				return { id, error: true as const };
+			}
+		}));
 	const failedProviderIds = evaluations
-		.filter((evaluation) => "error" in evaluation)
+		.filter((evaluation): evaluation is { readonly id: string; readonly error: true } => "error" in evaluation)
 		.map(({ id }) => id);
+	const activeScopes = evaluations
+		.filter((evaluation): evaluation is GuardActiveScope => "reason" in evaluation)
+		.map(({ id, reason }) => ({ id, reason }));
 	if (failedProviderIds.length > 0) {
-		return {
-			block: true,
-			reason: `Blocked because guard scope provider evaluation failed: ${failedProviderIds.join(", ")}.`,
-		};
+		return { decision: "error", failedProviderIds, activeScopes };
 	}
-	return evaluations.some((evaluation) => "decision" in evaluation && evaluation.decision === "guard")
-		? "guard"
-		: "abstain";
+	return activeScopes.length > 0
+		? { decision: "guard", activeScopes }
+		: { decision: "abstain" };
 }

@@ -90,11 +90,11 @@ describe("guard capability registration", () => {
 		legacyCapabilities.set(pi.events, new Set([SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY]));
 		Reflect.set(globalThis, Symbol.for("pi-config.guard-registration-registry"), legacyCapabilities);
 		const legacyScopes = new WeakMap<object, Map<string, GuardScopeProvider>>();
-		legacyScopes.set(pi.events, new Map([["legacy", () => "guard"]]));
+		legacyScopes.set(pi.events, new Map([["legacy", () => ({ decision: "guard", reason: "legacy" })]]));
 		Reflect.set(globalThis, Symbol.for("pi-config.guard-scope-provider-registry"), legacyScopes);
 
 		expect(hasGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(false);
-		expect(await evaluateGuardScope(pi, event, ctx)).toBe("abstain");
+		expect(await evaluateGuardScope(pi, event, ctx)).toEqual({ decision: "abstain" });
 		expect(() => registerGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).not.toThrow();
 		expect(hasGuardCapability(runtime(bus), SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
 	});
@@ -104,18 +104,30 @@ describe("guard scope providers", () => {
 	it.each([
 		["mode first", ["modes:fuxi", "subagents:guarded"]],
 		["subagent first", ["subagents:guarded", "modes:fuxi"]],
-	] as const)("activates when any provider guards: %s", async (_name, ids) => {
+	] as const)("returns sorted active scopes when providers guard: %s", async (_name, ids) => {
 		const bus = eventBus();
 		const providerRuntime = runtime(bus);
 		const evaluatorRuntime = runtime(bus);
 		const providers = {
-			"modes:fuxi": vi.fn<GuardScopeProvider>(() => "abstain"),
-			"subagents:guarded": vi.fn<GuardScopeProvider>(() => "guard"),
+			"modes:fuxi": vi.fn<GuardScopeProvider>(() => ({
+				decision: "guard",
+				reason: " Fuxi plan mode\nrequires read-only Bash. ",
+			})),
+			"subagents:guarded": vi.fn<GuardScopeProvider>(() => ({
+				decision: "guard",
+				reason: "Guarded subagent reason.",
+			})),
 		};
 		for (const id of ids) registerGuardScopeProvider(providerRuntime, id, providers[id]);
 		expect(providerRuntime.events).not.toBe(evaluatorRuntime.events);
 
-		expect(await evaluateGuardScope(evaluatorRuntime, event, ctx)).toBe("guard");
+		expect(await evaluateGuardScope(evaluatorRuntime, event, ctx)).toEqual({
+			decision: "guard",
+			activeScopes: [
+				{ id: "modes:fuxi", reason: "Fuxi plan mode requires read-only Bash." },
+				{ id: "subagents:guarded", reason: "Guarded subagent reason." },
+			],
+		});
 		expect(providers["modes:fuxi"]).toHaveBeenCalledOnce();
 		expect(providers["subagents:guarded"]).toHaveBeenCalledOnce();
 	});
@@ -125,19 +137,22 @@ describe("guard scope providers", () => {
 		registerGuardScopeProvider(pi, "modes:fuxi", () => "abstain");
 		registerGuardScopeProvider(pi, "subagents:guarded", async (): Promise<"abstain"> => "abstain");
 
-		expect(await evaluateGuardScope(pi, event, ctx)).toBe("abstain");
+		expect(await evaluateGuardScope(pi, event, ctx)).toEqual({ decision: "abstain" });
 	});
 
 	it("uses latest listener for a duplicate provider ID without removing others", async () => {
 		const bus = eventBus();
-		const replaced = vi.fn<GuardScopeProvider>(() => "guard");
+		const replaced = vi.fn<GuardScopeProvider>(() => ({ decision: "guard", reason: "stale" }));
 		const replacement = vi.fn<GuardScopeProvider>(() => "abstain");
-		const other = vi.fn<GuardScopeProvider>(() => "guard");
+		const other = vi.fn<GuardScopeProvider>(() => ({ decision: "guard", reason: "active" }));
 		registerGuardScopeProvider(runtime(bus), "modes:fuxi", replaced);
 		registerGuardScopeProvider(runtime(bus), "subagents:guarded", other);
 		registerGuardScopeProvider(runtime(bus), "modes:fuxi", replacement);
 
-		expect(await evaluateGuardScope(runtime(bus), event, ctx)).toBe("guard");
+		expect(await evaluateGuardScope(runtime(bus), event, ctx)).toEqual({
+			decision: "guard",
+			activeScopes: [{ id: "subagents:guarded", reason: "active" }],
+		});
 		expect(replaced).not.toHaveBeenCalled();
 		expect(replacement).toHaveBeenCalledOnce();
 		expect(other).toHaveBeenCalledOnce();
@@ -147,38 +162,39 @@ describe("guard scope providers", () => {
 		const bus = eventBus();
 		const shutdownHandlers: ShutdownHandler[] = [];
 		const pi = runtime(bus, shutdownHandlers);
-		registerGuardScopeProvider(pi, "modes:fuxi", () => "guard");
+		registerGuardScopeProvider(pi, "modes:fuxi", () => ({ decision: "guard", reason: "active" }));
 
-		expect(await evaluateGuardScope(runtime(bus), event, ctx)).toBe("guard");
+		expect((await evaluateGuardScope(runtime(bus), event, ctx)).decision).toBe("guard");
 		expect(shutdownHandlers).toHaveLength(1);
 		await shutdownHandlers[0]();
-		expect(await evaluateGuardScope(runtime(bus), event, ctx)).toBe("abstain");
+		expect(await evaluateGuardScope(runtime(bus), event, ctx)).toEqual({ decision: "abstain" });
 	});
 
 	it("does not let stale provider cleanup remove its replacement", async () => {
 		const bus = eventBus();
 		const oldShutdownHandlers: ShutdownHandler[] = [];
 		const replacementShutdownHandlers: ShutdownHandler[] = [];
-		const replacement = vi.fn<GuardScopeProvider>(() => "guard");
+		const replacement = vi.fn<GuardScopeProvider>(() => ({ decision: "guard", reason: "active" }));
 		registerGuardScopeProvider(runtime(bus, oldShutdownHandlers), "modes:fuxi", () => "abstain");
 		registerGuardScopeProvider(runtime(bus, replacementShutdownHandlers), "modes:fuxi", replacement);
 
 		expect(oldShutdownHandlers).toHaveLength(1);
 		await oldShutdownHandlers[0]();
-		expect(await evaluateGuardScope(runtime(bus), event, ctx)).toBe("guard");
+		expect((await evaluateGuardScope(runtime(bus), event, ctx)).decision).toBe("guard");
 		expect(replacement).toHaveBeenCalledOnce();
 	});
 
 	it.each([
 		["throw", () => { throw new Error("provider failed"); }],
 		["invalid return", () => "invalid" as never],
-	] as const)("returns an explicit blocking scope error on provider %s", async (_name, failingProvider) => {
+		["blank reason", () => ({ decision: "guard" as const, reason: " \n\t " })],
+	] as const)("returns sorted active scopes and failed IDs on provider %s", async (_name, failingProvider) => {
 		const results = [];
-		for (const ids of [["failing", "guarding"], ["guarding", "failing"]]) {
+		for (const ids of [["z-failing", "a-guarding"], ["a-guarding", "z-failing"]]) {
 			const pi = runtime();
 			const providers: Record<string, GuardScopeProvider> = {
-				failing: failingProvider,
-				guarding: () => "guard",
+				"z-failing": failingProvider,
+				"a-guarding": () => ({ decision: "guard", reason: " Active\nreason. " }),
 			};
 			for (const id of ids) registerGuardScopeProvider(pi, id, providers[id]);
 			results.push(await evaluateGuardScope(pi, event, ctx));
@@ -186,17 +202,18 @@ describe("guard scope providers", () => {
 
 		expect(results[0]).toEqual(results[1]);
 		expect(results[0]).toEqual({
-			block: true,
-			reason: expect.stringMatching(/scope provider.*failing/i),
+			decision: "error",
+			failedProviderIds: ["z-failing"],
+			activeScopes: [{ id: "a-guarding", reason: "Active reason." }],
 		});
 	});
 
 	it("isolates providers across separate buses", async () => {
 		const guardedBus = eventBus();
 		const separateBus = eventBus();
-		registerGuardScopeProvider(runtime(guardedBus), "modes:fuxi", () => "guard");
+		registerGuardScopeProvider(runtime(guardedBus), "modes:fuxi", () => ({ decision: "guard", reason: "active" }));
 
-		expect(await evaluateGuardScope(runtime(guardedBus), event, ctx)).toBe("guard");
-		expect(await evaluateGuardScope(runtime(separateBus), event, ctx)).toBe("abstain");
+		expect((await evaluateGuardScope(runtime(guardedBus), event, ctx)).decision).toBe("guard");
+		expect(await evaluateGuardScope(runtime(separateBus), event, ctx)).toEqual({ decision: "abstain" });
 	});
 });
