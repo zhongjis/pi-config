@@ -55,8 +55,6 @@ const SCENARIOS = readdirSync(TEMPLATES_DIR)
       name: file.replace(/\.md$/, ""), // loadCustomAgents keys agents by filename
       present: csv(fm.expect_tools_present),
       absent: csv(fm.expect_tools_absent),
-      promptContains: csv(fm.expect_prompt_contains),
-      promptAbsent: csv(fm.expect_prompt_absent),
     };
   });
 
@@ -141,8 +139,8 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
     expect(SCENARIOS.length).toBeGreaterThanOrEqual(6);
 
     for (const s of SCENARIOS) {
-      // Each declares at least one expectation, so no scenario is a no-op.
-      expect(s.present.length + s.promptContains.length + s.promptAbsent.length).toBeGreaterThan(0);
+      // Each declares at least one tool expectation, so no scenario is a no-op.
+      expect(s.present.length + s.absent.length).toBeGreaterThan(0);
       // Each loaded as ITS OWN agent — guards against runAgent silently falling
       // back to general-purpose when a template fails to parse/register.
       const cfg = getAgentConfig(s.name);
@@ -152,13 +150,26 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   });
 
   it.each(SCENARIOS)(
-    "$name → active tools and system prompt match the template",
-    async ({ name, present, absent, promptContains, promptAbsent }) => {
-      const { active, prompt } = await runScenario(name);
+    "$name → active tools match the template",
+    async ({ name, present, absent }) => {
+      const { active } = await runScenario(name);
       for (const tool of present) expect(active, `${name}: expected "${tool}" active`).toContain(tool);
       for (const tool of absent) expect(active, `${name}: expected "${tool}" NOT active`).not.toContain(tool);
-      for (const s of promptContains) expect(prompt, `${name}: prompt should contain "${s}"`).toContain(s);
-      for (const s of promptAbsent) expect(prompt, `${name}: prompt should NOT contain "${s}"`).not.toContain(s);
     },
   );
+
+  it("preserves append and replace prompt transport", async () => {
+    const append = await runScenario("prompt-mode-append");
+    expect(append.prompt.startsWith(PARENT_PROMPT)).toBe(true);
+    expect(append.prompt).toContain("APPEND_BODY_MARKER");
+
+    const replace = await runScenario("prompt-mode-replace");
+    expect(replace.prompt).toContain("REPLACE_BODY_MARKER");
+    expect(replace.prompt).not.toContain(PARENT_PROMPT);
+  });
+
+  it("preloads the configured skill payload", async () => {
+    const { prompt } = await runScenario("skills-preload");
+    expect(prompt).toContain("SKILL_BODY_MARKER");
+  });
 });

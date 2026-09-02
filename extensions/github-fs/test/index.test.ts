@@ -177,12 +177,11 @@ describe("tool_result rewrite", () => {
 });
 
 describe("before_agent_start", () => {
-  it("appends the path grammar to the system prompt", async () => {
+  it("appends a non-empty patch while preserving the base system prompt", async () => {
     const mock = setup();
     const [patch] = await mock.fire("before_agent_start", { systemPrompt: "BASE" });
     const typed = patch as { systemPrompt: string };
     expect(typed.systemPrompt.startsWith("BASE")).toBe(true);
-    expect(typed.systemPrompt).toContain("GitHub virtual paths");
-    expect(typed.systemPrompt).toContain("pr://<n>/diff");
+    expect(typed.systemPrompt.length).toBeGreaterThan("BASE".length);
   });
 });

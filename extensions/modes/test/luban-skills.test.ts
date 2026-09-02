@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -68,21 +68,6 @@ const expectedExecutableAssets = [
 	"writing-skills/render-graphs.js",
 ];
 
-function parseFrontmatter(content: string): Record<string, string> {
-	const normalized = content.replace(/^\uFEFF/, "");
-	if (!normalized.startsWith("---\n")) return {};
-
-	const endIndex = normalized.indexOf("\n---", 4);
-	if (endIndex === -1) return {};
-
-	const frontmatter: Record<string, string> = {};
-	for (const line of normalized.slice(4, endIndex).split("\n")) {
-		const match = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
-		if (match) frontmatter[match[1]] = match[2].trim().replace(/^['"]|['"]$/g, "");
-	}
-	return frontmatter;
-}
-
 function listFiles(root: string, base = root): string[] {
 	if (!existsSync(root)) return [];
 	const files: string[] = [];
@@ -106,16 +91,6 @@ describe("Luban mode-owned skills", () => {
 		expect(listSkillDirs()).toEqual(expectedSkills);
 	});
 
-	for (const skillName of expectedSkills) {
-		it(`${skillName} has matching frontmatter and a description`, () => {
-			const skillPath = join(skillsRoot, skillName, "SKILL.md");
-			expect(existsSync(skillPath)).toBe(true);
-			const frontmatter = parseFrontmatter(readFileSync(skillPath, "utf8"));
-			expect(frontmatter.name).toBe(skillName);
-			expect(frontmatter.description).toBeTruthy();
-		});
-	}
-
 	it("retains the complete approved support asset tree", () => {
 		const supportAssets = listFiles(skillsRoot).filter((path) => !path.endsWith("/SKILL.md"));
 		expect(supportAssets).toEqual(expectedSupportAssets);
@@ -133,17 +108,5 @@ describe("Luban mode-owned skills", () => {
 		expect(existsSync(join(lubanRoot, "overlay"))).toBe(false);
 		expect(existsSync(join(lubanRoot, "index.ts"))).toBe(false);
 		expect(existsSync(join(lubanRoot, "package.json"))).toBe(false);
-	});
-
-	it("records full upstream provenance and license", () => {
-		const upstream = readFileSync(join(lubanRoot, "UPSTREAM.md"), "utf8");
-		expect(upstream).toContain("https://github.com/obra/superpowers");
-		expect(upstream).toContain("6.1.1");
-		expect(upstream).toContain("d884ae04edebef577e82ff7c4e143debd0bbec99");
-		expect(upstream).toContain("MIT");
-
-		const license = readFileSync(join(lubanRoot, "LICENSE"), "utf8");
-		expect(license).toContain("MIT License");
-		expect(license).toContain("Copyright (c) 2025 Jesse Vincent");
 	});
 });

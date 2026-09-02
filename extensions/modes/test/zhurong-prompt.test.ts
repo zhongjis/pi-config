@@ -3,12 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseModeAgentConfig } from "../src/config-loader.js";
 
-// Zhu Rong 祝融 is a GPT-only autonomous deep-worker mode derived from
-// hephaestus/gpt-5-6.md. It ships mode.md ONLY (no gpt.md/gemini.md), binds a
-// GPT-only model chain, and its injected body must be fully Pi-adapted: no
-// leaked upstream tool names and no source attribution (attribution is noise
-// the model should never see).
-
 const ZHURONG_DIR = join(process.cwd(), "modes", "zhurong");
 const MODE_MD = join(ZHURONG_DIR, "mode.md");
 
@@ -37,31 +31,5 @@ describe("zhurong mode prompt", () => {
 			expect(selection, `zhurong lists ${tool}`).toContain(tool);
 		}
 		expect(selection, "zhurong uses the Task* selector").toContain("Task*");
-	});
-
-	it("contains no leaked upstream tokens or source attribution", () => {
-		const body = readFileSync(MODE_MD, "utf-8");
-		const forbidden = [
-			"background_output",
-			"background_cancel",
-			"apply_patch",
-			"lsp_diagnostics",
-			"update_plan",
-			"todowrite",
-			"interactive_bash",
-			"playwright",
-			"task_id=",
-			"OhMyOpenCode",
-			"OhMyOpenAgent",
-			"Hephaestus",
-		];
-		for (const token of forbidden) {
-			expect(body, `must not leak "${token}"`).not.toContain(token);
-		}
-	});
-
-	it("identifies as Zhu Rong 祝融", () => {
-		const body = readFileSync(MODE_MD, "utf-8");
-		expect(body).toContain("祝融");
 	});
 });

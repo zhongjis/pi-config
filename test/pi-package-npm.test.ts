@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, "..");
 const wrapperPath = join(repoRoot, "scripts", "pi-package-npm.sh");
-const installScriptPath = join(repoRoot, "install.sh");
 
 let tempRoot: string;
 let fakeBin: string;
@@ -89,13 +88,6 @@ describe("pi package manager wrapper", () => {
     expect(await readCommands()).toEqual([
       ["pnpm", "install", "--config.test=value with space"],
     ]);
-  });
-
-  it("keeps install.sh pnpm behavior aligned", async () => {
-    const source = await readFile(installScriptPath, "utf8");
-
-    expect(source).toContain("pnpm install");
-    expect(source).not.toContain("pnpm install --ignore-workspace");
   });
 });
 

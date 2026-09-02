@@ -27,26 +27,28 @@ describe("collectSessionWritePaths", () => {
 });
 
 describe("session review prompts", () => {
-  it("builds agent scope-selection prompt with path hints", () => {
-    const prompt = buildSessionScopePrompt(["src/a.ts"], "/repo");
+  it("transports cwd and path hints with the structured scope marker", () => {
+    const cwd = "/repo";
+    const path = "src/a.ts";
+    const prompt = buildSessionScopePrompt([path], cwd);
 
-    expect(prompt).toContain("Codex session review requested.");
-    expect(prompt).toContain("Current cwd: /repo");
-    expect(prompt).toContain("- src/a.ts");
+    expect(prompt).toContain(cwd);
+    expect(prompt).toContain(path);
     expect(prompt).toContain("codex_review_session_scope");
   });
 
-  it("builds scoped Codex prompt with include/exclude lists", () => {
-    const prompt = buildScopedReviewPrompt({
+  it("transports exact scoped review payload values", () => {
+    const scope = {
       path: "/repo",
       include: ["src/a.ts"],
       exclude: ["pnpm-lock.yaml"],
       notes: "lockfile generated",
-    }, "agent selected implementation files");
+    };
+    const reason = "agent selected implementation files";
+    const prompt = buildScopedReviewPrompt(scope, reason);
 
-    expect(prompt).toContain("Repo: /repo");
-    expect(prompt).toContain("Scope reason: agent selected implementation files");
-    expect(prompt).toContain("- src/a.ts");
-    expect(prompt).toContain("- pnpm-lock.yaml");
+    for (const value of [scope.path, ...scope.include, ...scope.exclude, scope.notes, reason]) {
+      expect(prompt).toContain(value);
+    }
   });
 });

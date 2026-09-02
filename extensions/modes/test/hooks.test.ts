@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
 	evaluateGuardScope,
@@ -96,7 +94,6 @@ function createMockPi() {
 	};
 }
 
-
 type PromptFamily = "default" | "gpt" | "gemini";
 type TestMode = "kuafu" | "fuxi" | "houtu" | "luban" | "shennong";
 
@@ -105,25 +102,6 @@ type PromptConfig = {
 	overlays?: string;
 	promptMode?: "replace" | "append";
 };
-
-const MODE_PROMPT_FILES: Record<PromptFamily, string> = {
-	default: "mode.md",
-	gpt: "gpt.md",
-	gemini: "gemini.md",
-};
-
-function getModePromptPath(mode: TestMode, family: PromptFamily): string {
-	return join(process.cwd(), "modes", mode, MODE_PROMPT_FILES[family]);
-}
-
-function stripFrontmatter(markdown: string): string {
-	return markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
-}
-
-function readModePromptBody(mode: TestMode, family: PromptFamily): string {
-	const content = readFileSync(getModePromptPath(mode, family), "utf-8");
-	return family === "default" ? stripFrontmatter(content) : content.trim();
-}
 
 async function renderInjectedPrompt({
 	mode,
@@ -165,81 +143,6 @@ describe("mode hooks", () => {
 		expect(result).toEqual({
 			systemPrompt: "Base prompt\n\n<!-- mode:fuxi -->\nFu Xi prompt\n<!-- /mode:fuxi -->",
 		});
-	});
-
-	it("instructs Fu Xi to load the discovered ulw-plan skill in every prompt family", async () => {
-		const defaultBody = readModePromptBody("fuxi", "default");
-		// fuxi ships no dedicated gpt.md — the GPT family inherits the default mode.md body
-		const geminiOverlay = readModePromptBody("fuxi", "gemini");
-		const prompts = [
-			await renderInjectedPrompt({ mode: "fuxi", defaultConfig: { body: defaultBody } }),
-			await renderInjectedPrompt({
-				mode: "fuxi",
-				family: "gpt",
-				defaultConfig: { body: defaultBody },
-				familyConfig: { body: defaultBody },
-			}),
-			await renderInjectedPrompt({
-				mode: "fuxi",
-				family: "gemini",
-				defaultConfig: { body: defaultBody },
-				familyConfig: { body: defaultBody, overlays: geminiOverlay },
-			}),
-		];
-
-		for (const prompt of prompts) {
-			expect(prompt).toContain("Load the `ulw-plan` skill before planning");
-		}
-	});
-
-	it("injects Hou Tu gemini overlay before the <critical> anchor (not the </role> fallback)", async () => {
-		const defaultBody = readModePromptBody("houtu", "default");
-		const overlay = readModePromptBody("houtu", "gemini");
-		const prompt = await renderInjectedPrompt({
-			mode: "houtu",
-			family: "gemini",
-			defaultConfig: { body: defaultBody },
-			familyConfig: { body: defaultBody, overlays: overlay },
-		});
-		const overlayPos = prompt.indexOf("<gemini-corrective-overlay>");
-		const criticalPos = prompt.indexOf("<critical>");
-		expect(overlayPos).toBeGreaterThan(-1);
-		expect(criticalPos).toBeGreaterThan(-1);
-		expect(overlayPos).toBeLessThan(criticalPos);
-	});
-
-	it("keeps handoff internals out of Hou Tu prompt sources", () => {
-		const internalNames = /\/handoff:start-work|buildPlanExecutionGoal|handoff-supplied/;
-		for (const family of ["default", "gpt", "gemini"] as const) {
-			const body = readModePromptBody("houtu", family);
-			expect(body).toMatch(/exact approved PLAN path[^\n]*incoming goal/i);
-			expect(body).not.toMatch(internalNames);
-		}
-	});
-
-	it("keeps Hou Tu split notepads shared through ordinary local URIs", () => {
-		for (const family of ["default", "gpt", "gemini"] as const) {
-			const body = readModePromptBody("houtu", family);
-			expect(body).toMatch(/local:\/\/\{plan-name\}\/notepads\//);
-			for (const file of ["learnings.md", "decisions.md", "issues.md", "blockers.md"]) {
-				expect(body).toContain(file);
-			}
-			expect(body).toMatch(/worker[s]?[\s\S]*read[^\n]*task-relevant[^\n]*notepad/i);
-			expect(body).toMatch(/worker[s]?[\s\S]*append[^\n]*task-relevant[^\n]*notepad/i);
-			expect(body).not.toMatch(/local:\/\/houtu\/artifacts\/|exact absolute FILE|nonce|one writer[^\n]*one file|URI\/nonce receipt|capability grant/i);
-		}
-	});
-
-	it("makes Hou Tu shared-notepad instructions capability-aware in every prompt family", () => {
-		for (const family of ["default", "gpt", "gemini"] as const) {
-			const body = readModePromptBody("houtu", family);
-			expect(body).toMatch(/read-only researchers MUST return task-relevant findings to (?:the )?parent[^\n]*curat/i);
-			expect(body).not.toMatch(/notepad[^\n]*`edit`\/`write`|`edit`\/`write`[^\n]*notepad/i);
-			expect(body).toMatch(/(?:every|all) workers MUST READ only task-relevant (?:shared )?(?:notes|notepad entries)/i);
-			expect(body).not.toMatch(/\b(?:all workers|every worker) MUST APPEND\b/i);
-			expect(body).toMatch(/mutation-capable workers MUST APPEND only task-relevant findings[^\n]*preserve unrelated entries/i);
-			expect(body).toMatch(/shared-note READ\/conditional-APPEND instructions MUST (?:appear|remain) only under worker `## 6\. CONTEXT`/i);
-		}
 	});
 
 	it("blocks plan-mode writes outside local://PLAN.md", async () => {

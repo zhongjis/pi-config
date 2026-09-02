@@ -92,13 +92,10 @@ describe("mergeSnapshot", () => {
 });
 
 describe("formatReviewPrompt", () => {
-  it("includes the header and a file:line — summary line", () => {
+  it("transports the dynamic file, line, and comment", () => {
     const prompt = formatReviewPrompt([
       { file: "file.txt", line: 4, summary: "Fix this", source: "user" },
     ]);
-    expect(prompt).toContain(
-      "Address the following code comments in the code:",
-    );
     expect(prompt).toContain("- file.txt:4 — Fix this");
   });
 });

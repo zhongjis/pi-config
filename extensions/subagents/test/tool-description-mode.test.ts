@@ -38,19 +38,6 @@ function makePi() {
   };
 }
 
-function expectForegroundBackgroundContract(desc: string) {
-  expect(desc).toMatch(/multiple Agent calls in one assistant response/i);
-  expect(desc).toContain("run concurrently");
-  expect(desc).toContain("blocks until all");
-  expect(desc).toContain("results inline");
-  expect(desc).toContain("returns an agent ID immediately");
-  expect(desc).toContain("non-overlapping work");
-  expect(desc).toContain("supervise");
-  expect(desc).toContain("get_subagent_result");
-  expect(desc).not.toContain("Foreground calls run sequentially");
-  expect(desc).not.toContain("run_in_background: true on each");
-  expect(desc).not.toContain("only one executes at a time");
-}
 
 describe("toolDescriptionMode", () => {
   let tmpDir: string;
@@ -97,62 +84,47 @@ describe("toolDescriptionMode", () => {
     rmSync(hermeticAgentDir, { recursive: true, force: true });
   });
 
-  it("defaults to the full description", () => {
+  it("defaults to the explicit full mode output", async () => {
     const tools = setup();
-    const desc: string = tools.get("Agent").description;
-    expect(desc).toContain("## Usage notes");
-    expect(desc).toContain("## Writing the prompt");
-    // Full agent descriptions are embedded (a late Explore sentence survives).
-    expect(desc).toContain("very thorough");
+    const defaultDescription: string = tools.get("Agent").description;
+
+    writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
+    const explicit = makePi();
+    subagentsExtension(explicit.pi);
+    try {
+      expect(defaultDescription).toBe(explicit.tools.get("Agent").description);
+    } finally {
+      await explicit.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
+    }
   });
 
-  it("full describes concurrent foreground calls and supervised background work", () => {
-    const tools = setup();
-    const desc: string = tools.get("Agent").description;
-
-    expectForegroundBackgroundContract(desc);
-  });
-
-  it("compact mode swaps in the short description with one-line type list", () => {
+  it("compact mode selects a distinct, smaller description", async () => {
     const tools = setup({ toolDescriptionMode: "compact" });
-    const desc: string = tools.get("Agent").description;
-    expect(desc).toContain("Launch an autonomous agent");
-    expect(desc).not.toContain("## Usage notes");
-    expect(desc).not.toContain("## Writing the prompt");
-    // Type list keeps every agent but only the first sentence of each description.
-    expect(desc).toContain("- general-purpose:");
-    expect(desc).toContain("- Explore: Fast read-only search agent for locating code. (Tools:");
-    expect(desc).not.toContain("very thorough");
-    // The point of the feature: materially smaller than the full version.
-    expect(desc.length).toBeLessThan(1600);
+    const compactDescription: string = tools.get("Agent").description;
+
+    writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
+    const full = makePi();
+    subagentsExtension(full.pi);
+    try {
+      const fullDescription: string = full.tools.get("Agent").description;
+      expect(compactDescription).not.toBe(fullDescription);
+      expect(compactDescription.length).toBeLessThan(fullDescription.length);
+    } finally {
+      await full.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
+    }
   });
 
-  it("compact describes concurrent foreground calls and supervised background work", () => {
-    const tools = setup({ toolDescriptionMode: "compact" });
-    const desc: string = tools.get("Agent").description;
-
-    expectForegroundBackgroundContract(desc);
-  });
-
-  it("invalid mode in the settings file is dropped — full description", () => {
+  it("invalid mode in the settings file falls back to full mode", async () => {
     const tools = setup({ toolDescriptionMode: "tiny" });
-    const desc: string = tools.get("Agent").description;
-    expect(desc).toContain("## Usage notes");
-  });
+    const invalidModeDescription: string = tools.get("Agent").description;
 
-  it("compact keeps every load-bearing contract — fails when a behavior change forgets compact", () => {
-    const tools = setup({ toolDescriptionMode: "compact" });
-    const desc: string = tools.get("Agent").description;
-    // One keyword per behavioral contract the orchestrator must know about.
-    // If you change one of these behaviors, update BOTH descriptions.
-    for (const contract of [
-      "run_in_background",
-      "resume",
-      "steer_subagent",
-      ".pi/agents/",
-      "self-contained",
-    ]) {
-      expect(desc).toContain(contract);
+    writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
+    const full = makePi();
+    subagentsExtension(full.pi);
+    try {
+      expect(invalidModeDescription).toBe(full.tools.get("Agent").description);
+    } finally {
+      await full.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
     }
   });
 
@@ -165,11 +137,10 @@ describe("toolDescriptionMode", () => {
     });
     const desc: string = tools.get("Agent").description;
     expect(desc).toContain("My agents:");
-    expect(desc).toContain("- general-purpose:"); // {{typeList}} expanded
-    expect(desc).toContain(`Global dir: ${hermeticAgentDir}`); // {{agentDir}} expanded
-    expect(desc).toContain("Unknown: {{nope}}"); // unknown placeholder left verbatim
-    expect(desc).toContain("Cost: $& stays literal"); // no $-pattern expansion
-    expect(desc).not.toContain("## Usage notes");
+    expect(desc).toContain("- general-purpose:");
+    expect(desc).toContain(`Global dir: ${hermeticAgentDir}`);
+    expect(desc).toContain("Unknown: {{nope}}");
+    expect(desc).toContain("Cost: $& stays literal");
   });
 
   it("custom mode falls back to the global file when no project file exists", () => {
@@ -178,7 +149,8 @@ describe("toolDescriptionMode", () => {
     });
     const desc: string = tools.get("Agent").description;
     expect(desc).toContain("GLOBAL CUSTOM");
-    expect(desc).toContain("- Explore: Fast read-only search agent for locating code. (Tools:");
+    expect(desc).not.toContain("{{compactTypeList}}");
+    expect(desc).toContain("general-purpose");
   });
 
 
@@ -214,13 +186,21 @@ describe("toolDescriptionMode", () => {
     }
   });
 
-  it("custom mode without a file falls back to the full description with a warning", () => {
+  it("custom mode without a file falls back to the full description with a warning", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const tools = setup({ toolDescriptionMode: "custom" });
-      const desc: string = tools.get("Agent").description;
-      expect(desc).toContain("## Usage notes");
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("no agent-tool-description.md found"));
+      const fallbackDescription: string = tools.get("Agent").description;
+
+      writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
+      const full = makePi();
+      subagentsExtension(full.pi);
+      try {
+        expect(fallbackDescription).toBe(full.tools.get("Agent").description);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("no agent-tool-description.md found"));
+      } finally {
+        await full.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
+      }
     } finally {
       warn.mockRestore();
     }

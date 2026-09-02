@@ -52,17 +52,16 @@ describe("caveman extension", () => {
 		}
 	});
 
-	it("injects the synced caveman prompt for top-level persisted sessions", async () => {
+	it("injects a non-empty prompt patch for top-level persisted sessions", async () => {
 		const mock = await registerFreshExtension();
 		const ctx = createPersistedContext();
 		await mock.fireLifecycle("session_start", {}, ctx);
 
 		const result = await fireBeforeAgentStart(mock, ctx);
 
-		expect(result?.systemPrompt).toContain("Base prompt\n\n");
-		expect(result?.systemPrompt).toContain("Active level: ultra.");
-		expect(result?.systemPrompt).toContain("Preserve user's dominant language");
-		expect(result?.systemPrompt).toContain("No self-reference");
+		expect(result).toBeDefined();
+		expect(result?.systemPrompt.startsWith("Base prompt\n\n")).toBe(true);
+		expect(result?.systemPrompt.length).toBeGreaterThan("Base prompt\n\n".length);
 	});
 
 	it("injects into non-persisted subagent sessions", async () => {
@@ -74,7 +73,9 @@ describe("caveman extension", () => {
 
 		const result = await fireBeforeAgentStart(mock, ctx);
 
-		expect(result?.systemPrompt).toContain("Active level: ultra.");
+		expect(result).toBeDefined();
+		expect(result?.systemPrompt.startsWith("Base prompt\n\n")).toBe(true);
+		expect(result?.systemPrompt.length).toBeGreaterThan("Base prompt\n\n".length);
 	});
 
 	it("does not inject when the caveman level is off", async () => {

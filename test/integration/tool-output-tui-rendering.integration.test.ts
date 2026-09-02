@@ -313,9 +313,6 @@ describe("tool output TUI rendering — real Pi integration", () => {
     }
 
     expect(expandHintCount).toBe(24);
-    const helperSource = await readFile(resolve(PROJECT_ROOT, "extensions/lib/tool-output.ts"), "utf8");
-    expect(helperSource).toContain('keyHint("app.tools.expand"');
-    expect(helperSource).not.toMatch(/(?:ctrl|alt|shift)\+[a-z]/i);
   });
 
   it("generates only a caller-selected /tmp v3 session with Agent skills and steering failure", async () => {

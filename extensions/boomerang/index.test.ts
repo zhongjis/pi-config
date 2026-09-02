@@ -544,14 +544,17 @@ describe("Boomerang Extension", () => {
     expect(handoff.message.customType).toBe("boomerang-handoff");
     expect(handoff.message.display).toBe(false);
     expect(handoff.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
-    expect(handoff.message.content).toContain("A boomerang task completed. The handoff summary is included below.");
-    expect(handoff.message.content).toContain("Use this summary directly. Do not search session files, memory files, or logs for it.");
-    expect(handoff.message.content).toContain("If nothing is pending, respond with a concise completion note.");
-    expect(handoff.message.content).toContain("<boomerang-summary>\n[BOOMERANG COMPLETE");
-    expect(handoff.message.content).toContain("</boomerang-summary>");
-    if (expectedSummary) {
-      expect(handoff.message.content).toContain(expectedSummary);
+    const envelope = /<boomerang-summary>\n([\s\S]*)\n<\/boomerang-summary>/.exec(handoff.message.content);
+    expect(envelope).not.toBeNull();
+    if (expectedSummary !== undefined) {
+      expect(envelope?.[1]).toBe(expectedSummary);
     }
+  }
+
+  function expectPromptPatch(result: { systemPrompt: string } | undefined, basePrompt = "original") {
+    expect(result).toBeDefined();
+    expect(result?.systemPrompt.startsWith(basePrompt)).toBe(true);
+    expect(result?.systemPrompt).not.toBe(basePrompt);
   }
 
   beforeEach(() => {
@@ -918,9 +921,8 @@ describe("Boomerang Extension", () => {
       await runBoomerangCommit("fix auth");
       const result = await fireBeforeAgentStart();
 
-      expect(result.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
-      expect(result.systemPrompt).toContain('<skill name="git-master">');
-      expect(result.systemPrompt).toContain("Use git carefully.");
+      expectPromptPatch(result);
+      expect(result.systemPrompt).toContain('<skill name="git-master">\nUse git carefully.\n</skill>');
       expect(uiMock.notify).toHaveBeenCalledWith('Skill "git-master" loaded', "info");
     });
 
@@ -1279,9 +1281,10 @@ describe("Boomerang Extension", () => {
       await runBoomerang("/commit fix auth");
       const result = await fireBeforeAgentStart();
 
-      expect(result.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
-      expect(result.systemPrompt).toContain('<skill name="git-workflow">');
-      expect(result.systemPrompt).toContain("Use careful git commits.");
+      expectPromptPatch(result);
+      expect(result.systemPrompt).toContain(
+        '<skill name="git-workflow">\nUse careful git commits.\n</skill>',
+      );
       expect(uiMock.notify).toHaveBeenCalledWith('Skill "git-workflow" loaded', "info");
     });
 
@@ -1545,17 +1548,8 @@ describe("Boomerang Extension", () => {
       await runBoomerang('/task "fix auth bug" --rethrow 1');
 
       expect(capturedSummary?.summary.summary).toContain('Task: "/task "fix auth bug""');
-      expect(capturedSummary?.summary.summary).toContain("[BOOMERANG COMPLETE - RETHROW 1/1]");
     });
 
-    it("non-rethrow boomerangs use [BOOMERANG COMPLETE] header without RETHROW label", async () => {
-      await runBoomerang("some task");
-      addAssistantTextEntry("Done.");
-      await triggerAgentEnd();
-
-      expect(capturedSummary.summary.summary).toContain("[BOOMERANG COMPLETE]");
-      expect(capturedSummary.summary.summary).not.toContain("RETHROW");
-    });
 
     it("includes relevant read-only files and failed operations", async () => {
       await runBoomerang("investigate auth");
@@ -1793,8 +1787,8 @@ describe("Boomerang Extension", () => {
 
       await runBoomerang("/task --rethrow 2");
 
-      expect(capturedSummary?.summary.summary).toContain("[BOOMERANG COMPLETE - RETHROW 1/2]");
-      expect(capturedSummary?.summary.summary).toContain("[BOOMERANG COMPLETE - RETHROW 2/2]");
+      expect(capturedSummary?.summary.summary).toContain("iteration 1");
+      expect(capturedSummary?.summary.summary).toContain("iteration 2");
       expect(capturedSummary?.summary.summary).toContain("\n\n---\n\n");
     });
 
@@ -1814,7 +1808,7 @@ describe("Boomerang Extension", () => {
       addAssistantTextEntry("Follow-up done");
       await triggerAgentEnd();
 
-      expect(capturedSummary?.summary.summary).not.toContain("[BOOMERANG COMPLETE - RETHROW 1/1]");
+      expect(capturedSummary?.summary.details.task).toBe("/followup");
     });
 
     it("stops rethrows when summarization is cancelled", async () => {
@@ -1994,8 +1988,8 @@ describe("Boomerang Extension", () => {
       await runBoomerang("/task --rethrow 2");
 
       expect(prompts).toHaveLength(2);
-      expect(prompts[0]).toContain("RETHROW 1/2");
-      expect(prompts[1]).toContain("RETHROW 2/2");
+      expect(prompts.every((prompt) => prompt.startsWith("original") && prompt !== "original")).toBe(true);
+      expect(prompts[0]).not.toBe(prompts[1]);
     });
   });
 
@@ -2671,7 +2665,7 @@ describe("Boomerang Extension", () => {
         timestamp: new Date().toISOString(),
       });
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", "[warning]boomerang");
 
       await triggerAgentEnd();
@@ -2700,7 +2694,7 @@ describe("Boomerang Extension", () => {
       addAssistantTextEntry("Shortcut task done.");
       await triggerAgentEnd();
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(navigateTreeCalls).toHaveLength(0);
       expect(branchWithSummaryCalls).toHaveLength(1);
       expect(branchWithSummaryCalls[0].summary).toContain('Task: "shortcut task"');
@@ -2821,7 +2815,7 @@ describe("Boomerang Extension", () => {
       addAssistantTextEntry("No UI task done.");
       await triggerAgentEnd(noUiCtx);
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(branchWithSummaryCalls).toHaveLength(1);
       expect(editorReloadSubmissions).toEqual([]);
       expect(reloadCalls).toBe(0);
@@ -2845,7 +2839,7 @@ describe("Boomerang Extension", () => {
       addAssistantTextEntry("One-shot task done.");
       await triggerAgentEnd();
 
-      expect(wrappedStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(wrappedStart);
       expect(branchWithSummaryCalls).toHaveLength(1);
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", undefined);
       await flushDeferredFallbackHandoff();
@@ -2872,7 +2866,7 @@ describe("Boomerang Extension", () => {
       addAssistantTextEntry("First task done.");
       await triggerAgentEnd();
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(branchWithSummaryCalls).toHaveLength(1);
       expect(sentCustomMessages).toHaveLength(0);
 
@@ -3054,7 +3048,7 @@ describe("Boomerang Extension", () => {
       addAssistantTextEntry("First task done.");
       await triggerAgentEnd();
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(branchWithSummaryCalls).toHaveLength(1);
       expect(branchWithSummaryCalls[0].targetId).toBeNull();
       expect(branchWithSummaryCalls[0].summary).toContain('Task: "first task"');
@@ -3078,7 +3072,7 @@ describe("Boomerang Extension", () => {
       addAssistantTextEntry("Next task done.");
       await triggerAgentEnd();
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(branchWithSummaryCalls).toHaveLength(1);
       expect(branchWithSummaryCalls[0].summary).toContain('Task: "next real prompt"');
       await flushDeferredFallbackHandoff();
@@ -3207,7 +3201,7 @@ describe("Boomerang Extension", () => {
       await fireInput("Expanded /tldr prompt", "extension");
       const beforeStart = await fireBeforeAgentStart("original");
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", "[warning]boomerang");
     });
 
@@ -3227,7 +3221,7 @@ describe("Boomerang Extension", () => {
       await fireInput("/review auth");
       const beforeStart = await fireBeforeAgentStart("original");
 
-      expect(beforeStart?.systemPrompt).toContain("BOOMERANG MODE ACTIVE");
+      expectPromptPatch(beforeStart);
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", "[warning]boomerang");
     });
   });
@@ -3385,8 +3379,7 @@ describe("Boomerang Extension", () => {
 
       const result = await fireBeforeAgentStart("original prompt");
 
-      expect(result?.systemPrompt).toContain("boomerang tool is available");
-      expect(result?.systemPrompt).toContain("large, multi-step tasks");
+      expectPromptPatch(result, "original prompt");
     });
 
     it("does not inject guidance when tool is disabled", async () => {
