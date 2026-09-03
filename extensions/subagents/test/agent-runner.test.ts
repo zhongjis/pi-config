@@ -971,7 +971,7 @@ describe("agent-runner trusted session-local binding", () => {
 
     const hookPi = { on: vi.fn(), registerTool: vi.fn() };
     await inline?.factory(hookPi);
-    expect(hookPi.on).toHaveBeenCalledTimes(3);
+    expect(hookPi.on).toHaveBeenCalledTimes(4);
     expect(hookPi.registerTool).not.toHaveBeenCalled();
   });
 

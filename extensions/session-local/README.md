@@ -31,6 +31,7 @@ Other extensions can import storage utilities:
 - `tool_call` — Intercept and rewrite `local://` paths in read/write/edit calls
 - `tool_result` — Rewrite resolved paths back to `local://` in results
 - `tool_execution_end` — Clean up resolution tracking
+- `before_agent_start` — Append `local://` path grammar to the cacheable system prompt so every session/mode/agent learns the read/write/edit usage
 
 ## Files Worth Reading
 

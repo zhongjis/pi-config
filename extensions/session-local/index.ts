@@ -36,6 +36,10 @@ interface ToolExecutionEndEvent {
   toolCallId: string;
 }
 
+interface BeforeAgentStartEvent {
+  systemPrompt: string;
+}
+
 interface ToolResultTextBlock {
   type: "text";
   text: string;
@@ -81,6 +85,18 @@ interface LocalResolution {
 const WRAPPER_MODE = "tool_call/tool_result local:// path rewriting with session-local storage";
 const LOCAL_ROOT_LISTING_FILE = ".local-root-listing.md";
 const SESSION_LOCAL_TOOL_NAMES = new Set(["read", "write", "edit"]);
+
+const PROMPT_GUIDE = [
+  "",
+  "",
+  "## Agent-tree-local storage (session-local)",
+  "Read and write scratch/working files at `local://` paths with the `read`, `write`, and `edit` tools — no separate tool:",
+  "- `write` to a `local://<rel/path>` path creates or overwrites a file; `read` and `edit` take the same `local://` paths.",
+  "- Files resolve under one per-Agent-tree root shared by a parent session and its fresh `Agent` descendants; unrelated sessions use separate roots.",
+  "- `read` of bare `local://` lists this tree's local storage and its backing directory.",
+  "- Only these three tools resolve `local://`; other tools such as `bash` and `mcporter` receive it as a literal string. Results echo `local://` paths, not the backing location, and `..` traversal is rejected.",
+  "This is same-user convenience scoping, not an OS sandbox.",
+].join("\n");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -306,5 +322,14 @@ export default function sessionLocalTools(pi: ExtensionAPI): void {
 
     localResolutions.delete(event.toolCallId);
     return undefined;
+  });
+
+  // Teach the model the local:// path grammar (part of the cacheable system prompt).
+  pi.on("before_agent_start", async (rawEvent) => {
+    const event = rawEvent as BeforeAgentStartEvent | null;
+    if (!event || typeof event.systemPrompt !== "string") {
+      return undefined;
+    }
+    return { systemPrompt: event.systemPrompt + PROMPT_GUIDE };
   });
 }
