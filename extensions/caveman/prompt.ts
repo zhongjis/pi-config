@@ -1,19 +1,33 @@
 import type { CavemanLevel } from "./config.js";
 
 declare const process: {
-  getBuiltinModule?: (name: string) => {
-    readFileSync: (path: string | URL, encoding: string) => string;
-  } | undefined;
+  env?: Record<string, string | undefined>;
+  getBuiltinModule?: (name: string) => unknown;
 };
 
-const fsModule = process.getBuiltinModule?.("fs");
-if (!fsModule) {
-  throw new Error("Caveman prompt loader requires Node.js fs builtin access");
+type FsBuiltinModule = {
+  existsSync: (path: string) => boolean;
+  readFileSync: (path: string | URL, encoding: string) => string;
+};
+
+type OsBuiltinModule = {
+  homedir: () => string;
+};
+
+const fsModule = process.getBuiltinModule?.("fs") as FsBuiltinModule | undefined;
+const osModule = process.getBuiltinModule?.("os") as OsBuiltinModule | undefined;
+if (!fsModule || !osModule) {
+  throw new Error("Caveman prompt loader requires Node.js fs/os builtin access");
 }
 
-const { readFileSync } = fsModule;
+const { existsSync, readFileSync } = fsModule;
+const { homedir } = osModule;
 
-const PROMPT_SOURCE_URL = new URL("./upstream-caveman.SKILL.md", import.meta.url);
+const BUNDLED_PROMPT_SOURCE_URL = new URL("./upstream-caveman.SKILL.md", import.meta.url);
+const GLOBAL_PROMPT_SOURCE_PATH = `${resolveHomeDirectory()}/.pi/agent/skills/caveman/SKILL.md`;
+const PROMPT_SOURCE = existsSync(GLOBAL_PROMPT_SOURCE_PATH)
+  ? GLOBAL_PROMPT_SOURCE_PATH
+  : BUNDLED_PROMPT_SOURCE_URL;
 const REQUIRED_SECTION_TITLES = ["Rules", "Intensity", "Auto-Clarity", "Boundaries"] as const;
 
 type RequiredSectionTitle = (typeof REQUIRED_SECTION_TITLES)[number];
@@ -56,7 +70,7 @@ let promptSourceCache: CavemanPromptSourceDocument | undefined;
 let runtimePromptCache: CavemanRuntimePrompt | undefined;
 
 export function getPromptSourcePath(): string {
-  return PROMPT_SOURCE_URL.pathname;
+  return typeof PROMPT_SOURCE === "string" ? PROMPT_SOURCE : PROMPT_SOURCE.pathname;
 }
 
 export function loadPromptSource(): CavemanPromptSourceDocument {
@@ -65,7 +79,8 @@ export function loadPromptSource(): CavemanPromptSourceDocument {
   }
 
   const raw = readPromptSource();
-  const content = stripLeadingSyncNote(raw);
+  const withoutFrontmatter = stripYamlFrontmatter(raw);
+  const content = stripLeadingSyncNote(withoutFrontmatter);
   const parsed = parsePromptSource(content);
 
   promptSourceCache = {
@@ -95,13 +110,27 @@ export function loadRuntimePrompt(): CavemanRuntimePrompt {
 }
 
 function readPromptSource(): string {
-  const source = readFileSync(PROMPT_SOURCE_URL, "utf-8").replace(/\r\n/g, "\n").trim();
+  const source = readFileSync(PROMPT_SOURCE, "utf-8").replace(/\r\n/g, "\n").trim();
 
   if (!source) {
     throw new Error(`Caveman prompt source is empty: ${getPromptSourcePath()}`);
   }
 
   return source;
+}
+
+function stripYamlFrontmatter(source: string): string {
+  const trimmedStart = source.trimStart();
+  if (!trimmedStart.startsWith("---\n")) {
+    return source;
+  }
+
+  const match = trimmedStart.match(/^---\n[\s\S]*?\n---(?:\n|$)/u);
+  if (!match) {
+    throw new Error(`Caveman prompt source has unterminated YAML frontmatter: ${getPromptSourcePath()}`);
+  }
+
+  return trimmedStart.slice(match[0].length).trim();
 }
 
 function stripLeadingSyncNote(source: string): string {
@@ -190,11 +219,11 @@ function normalizeRuntimeFragments(source: CavemanPromptSourceDocument): Caveman
 function normalizePrelude(prelude: string): string {
   return cleanNormalizedText(
     prelude
+      .replace(', until user say "stop caveman" or "normal mode"', "")
       .replace(
-        'Default: **full**. Switch: `/caveman lite|full|ultra`.',
-        'Default: **full**.',
-      )
-      .replace(' Off only: "stop caveman" / "normal mode".', ""),
+        "`/caveman lite|full|ultra|wenyan-lite|wenyan-full|wenyan-ultra|off`",
+        "`/caveman lite|full|ultra`",
+      ),
   );
 }
 
@@ -287,6 +316,17 @@ export function beforeExampleBlock(text: string): string {
   }
 
   return text.slice(0, match.index).trim();
+}
+
+function resolveHomeDirectory(): string {
+  const configuredHome = process.env?.HOME?.trim();
+  const resolvedHome = configuredHome || homedir();
+
+  if (!resolvedHome) {
+    throw new Error("Caveman prompt loader could not resolve the home directory");
+  }
+
+  return resolvedHome.replace(/\/+$/, "");
 }
 
 function collapseInline(text: string): string {
