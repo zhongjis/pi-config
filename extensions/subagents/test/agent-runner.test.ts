@@ -135,6 +135,7 @@ import {
   parseExtensionsSpec,
   resumeAgent,
   runAgent,
+  setRememberAgents,
   SUBAGENT_TOOL_NAMES,
 } from "../src/agent-runner.js";
 import { preloadSkills as _preloadSkills } from "../src/skill-loader.js";
@@ -210,6 +211,8 @@ beforeEach(() => {
   settingsManagerCreate.mockClear();
   loaderExtensionsRef.current = { extensions: [], errors: [], runtime: {} };
   lastSession = undefined;
+  // Reset rememberAgents to false (upstream default is true, but fork tests expect in-memory default)
+  setRememberAgents(false);
 });
 
 describe("agent-runner final output capture", () => {
@@ -557,8 +560,8 @@ describe("agent-runner usage callback wiring", () => {
     });
 
     expect(seen).toEqual([
-      { input: 100, output: 50, cacheWrite: 10, cost: 0 },
-      { input: 200, output: 80, cacheWrite: 20, cost: 0 },
+      { input: 100, output: 50, cacheWrite: 10, cacheRead: 0, cost: 0 },
+      { input: 200, output: 80, cacheWrite: 20, cacheRead: 0, cost: 0 },
     ]);
   });
 
@@ -577,7 +580,7 @@ describe("agent-runner usage callback wiring", () => {
       onAssistantUsage: (u) => seen.push(u),
     });
 
-    expect(seen).toEqual([{ input: 50, output: 0, cacheWrite: 0, cost: 0 }]);
+    expect(seen).toEqual([{ input: 50, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0 }]);
   });
 
   it("runAgent skips the callback when message_end has no usage field", async () => {
@@ -608,7 +611,7 @@ describe("agent-runner usage callback wiring", () => {
       onAssistantUsage: (u) => seen.push(u),
     });
 
-    expect(seen).toEqual([{ input: 10, output: 20, cacheWrite: 5, cost: 0 }]);
+    expect(seen).toEqual([{ input: 10, output: 20, cacheWrite: 5, cacheRead: 0, cost: 0 }]);
   });
 
   it("forwards compaction_end events to onCompaction (only when not aborted)", async () => {

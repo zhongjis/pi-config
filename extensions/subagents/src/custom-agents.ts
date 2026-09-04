@@ -4,12 +4,11 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import {
   invalidFrontmatterFieldMessage,
   parseAgentMarkdown,
 } from "../../lib/agent-frontmatter.js";
-import { normalizeThinkingLevel } from "./thinking-level.js";
 import type {
   AgentConfig,
   AgentDefinitionDiagnostic,
@@ -28,7 +27,7 @@ import type {
  * authority; .agents/agents is an additional read location.
  * Any name is allowed — names matching defaults (e.g. "Explore") override them.
  */
-export function loadCustomAgents(cwd: string): Map<string, AgentConfig> {
+export function loadCustomAgents(cwd: string, _strict?: boolean): Map<string, AgentConfig> {
   return loadCustomAgentsWithDiagnostics(cwd).agents;
 }
 
@@ -73,7 +72,7 @@ function loadFromDir(
       continue;
     }
 
-    const parsed = parseAgentMarkdown(content);
+    const parsed = parseAgentMarkdown(content.startsWith("\uFEFF") ? content.slice(1) : content);
     for (const field of parsed.invalidFields) {
       diagnostics.push({
         file: filePath,
@@ -89,7 +88,7 @@ function loadFromDir(
 
     // NEW-local fields the shared schema does not model. Parsed directly from
     // the raw frontmatter. `thinking` is normalized (legacy "none" -> "off")
-    // via the shared thinking-level helper.
+    // via a local helper.
     const fm = parsed.frontmatter;
 
     agents.set(name, {
@@ -105,8 +104,9 @@ function loadFromDir(
       excludeExtensions: parsed.excludeExtensions,
       discoverSkills: parsed.discoverSkills,
       preloadSkills: parsed.preloadSkills,
+      skills: true, // legacy field, kept for type compat; actual skill loading uses discoverSkills/preloadSkills
       model: parsed.model,
-      thinking: normalizeThinkingLevel(str(fm.thinking)),
+      thinking: normalizeThinking(fm.thinking),
       maxTurns: parsed.maxTurns,
       persistSession: fm.persist_session != null ? fm.persist_session === true : undefined,
       outputTranscript: fm.output_transcript != null ? fm.output_transcript !== false : undefined,
@@ -122,7 +122,18 @@ function loadFromDir(
   }
 }
 
+/** Normalize thinking level: "none" → "off", everything else passes through. */
+function normalizeThinking(val: unknown): import("./types.js").ThinkingLevel | undefined {
+  if (typeof val !== "string" || !val) return undefined;
+  return (val === "none" ? "off" : val) as import("./types.js").ThinkingLevel;
+}
+
 /** Extract a string or undefined. */
 function str(val: unknown): string | undefined {
   return typeof val === "string" ? val : undefined;
+}
+
+/** Parse raw agent file content (YAML frontmatter + body). Re-export for agent-file-toggle. */
+export function parseAgentFrontmatter<T extends Record<string, unknown>>(content: string): { frontmatter: T; body: string } {
+  return parseFrontmatter<T>(content.startsWith("\uFEFF") ? content.slice(1) : content);
 }

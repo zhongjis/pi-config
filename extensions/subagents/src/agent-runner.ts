@@ -14,25 +14,42 @@ import {
   DefaultResourceLoader,
   type ExtensionAPI,
   getAgentDir,
-  type ModelRuntime,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import {
-  computeActiveToolNames,
-  DEFAULT_BUILTIN_TOOL_NAMES,
-} from "../../lib/active-tools.js";
+import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType, resolveType } from "./agent-types.js";
+import { runInChildSessionContext } from "./child-context.js";
+import { buildParentContext, extractText } from "./context.js";
+import { DEFAULT_AGENTS } from "./default-agents.js";
+import { detectEnv } from "./env.js";
+import { createNestedSubagentTools, getMaxSubagentDepth, type NestedAgentManager } from "./nested-tools.js";
+import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
+import { preloadSkills } from "./skill-loader.js";
+import { createStructuredCapture, createStructuredOutputTool, structuredRetryPrompt } from "./structured-output.js";
+import type { SubagentType, ThinkingLevel } from "./types.js";
+import type { LifetimeUsage } from "./usage.js";
+import type { CompiledSchema } from "./workflow/json-schema.js";
+import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
 import { seedSessionLocalScope } from "../../session-local/storage.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType, resolveType } from "./agent-types.js";
-import { buildParentContext, extractText } from "./context.js";
-import { DEFAULT_AGENTS } from "./default-agents.js";
-import { detectEnv } from "./env.js";
-import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
-import { preloadSkills } from "./skill-loader.js";
-import type { SubagentType, ThinkingLevel } from "./types.js";
+
+/**
+ * Tool names registered by THIS extension. Single source of truth so the
+ * registration sites (index.ts) and the subagent exclusion list below can't
+ * drift apart. These are our own tools, not pi built-ins, so they can't be
+ * derived from pi — but they only need defining once.
+ */
+export const SUBAGENT_TOOL_NAMES = {
+  AGENT: "Agent",
+  WORKFLOW: "SubagentWorkflow",
+  GET_RESULT: "get_subagent_result",
+  STEER: "steer_subagent",
+} as const;
+
+/** Names of tools registered by this extension that subagents must NOT inherit. */
+const EXCLUDED_TOOL_NAMES: string[] = Object.values(SUBAGENT_TOOL_NAMES);
 
 const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
 const TRUSTED_SESSION_LOCAL_EXTENSION_PATH = `<inline:${TRUSTED_SESSION_LOCAL_EXTENSION_NAME}>`;
@@ -45,21 +62,6 @@ const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "xuannv",
   "yanluo",
 ]);
-
-/**
- * Tool names registered by THIS extension. Single source of truth so the
- * registration sites (index.ts) and the subagent exclusion list below can't
- * drift apart. These are our own tools, not pi built-ins, so they can't be
- * derived from pi — but they only need defining once.
- */
-export const SUBAGENT_TOOL_NAMES = {
-  AGENT: "Agent",
-  GET_RESULT: "get_subagent_result",
-  STEER: "steer_subagent",
-} as const;
-
-/** Names of tools registered by this extension that subagents must NOT inherit. */
-const EXCLUDED_TOOL_NAMES: string[] = Object.values(SUBAGENT_TOOL_NAMES);
 
 /** Directory name under getAgentDir() used to store child session files. */
 export const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
@@ -182,14 +184,51 @@ export function parseExtensionsSpec(
 }
 
 /**
+ * Parse raw `ext:` selector strings (from the `tools:` CSV) into the set of
+ * extension names to keep loaded and a per-extension tool-narrowing map.
+ *
+ * `ext:foo` → `extNames` has `foo`, no narrowing entry (all of foo's tools).
+ * `ext:foo/bar` → `extNames` has `foo`, `narrowing.foo` has `bar` (only `bar`).
+ * A name lands in `narrowing` only when a `/tool` form is seen, so a bare
+ * `ext:foo` alongside `ext:foo/bar` leaves narrowing in effect (narrowing wins).
+ * The split is on the first `/`; extension canonical names never contain `/`.
+ */
+export function parseExtSelectors(entries: string[]): {
+  extNames: Set<string>;
+  narrowing: Map<string, Set<string>>;
+} {
+  const extNames = new Set<string>();
+  const narrowing = new Map<string, Set<string>>();
+  for (const raw of entries) {
+    if (!raw) continue;
+    const body = raw.slice("ext:".length);
+    const slash = body.indexOf("/");
+    // Extension name matches case-insensitively (matches the loader-side canonical
+    // name). Tool names are case-preserved — they're matched against pi-mono's
+    // registered identifiers, which are case-sensitive.
+    const name = (slash === -1 ? body : body.slice(0, slash)).trim().toLowerCase();
+    if (!name) continue;
+    extNames.add(name);
+    if (slash === -1) continue;
+    const tool = body.slice(slash + 1).trim();
+    if (!tool) continue;
+    let set = narrowing.get(name);
+    if (!set) {
+      set = new Set();
+      narrowing.set(name, set);
+    }
+    set.add(tool);
+  }
+  return { extNames, narrowing };
+}
+
+/**
  * Keep a subagent's tool scope correct as extensions register tools over time.
  *
  * Extensions may call `registerTool` long after load — pi-mcp from `session_start`,
  * context-mode from `before_agent_start` — so scope has to be re-derived rather than
- * snapshotted. This re-reads the session's LIVE tool list on every re-narrow and
- * re-runs the shared `computeActiveToolNames` policy, so late arrivals are judged too.
- * (`computeActiveToolNames` snapshots its input, so the live re-read is what keeps a
- * late-registered MCP/context tool from being dropped forever.)
+ * snapshotted. `registerTool` writes into the very `extension.tools` maps this reads,
+ * so `inScope()` sees late arrivals on the next call.
  *
  * Two enforcement points, because neither covers the whole picture:
  *
@@ -206,7 +245,7 @@ export function parseExtensionsSpec(
  * clears `_eventListeners`, so they die with the session rather than leaking.
  *
  * Only meaningful when extensions are loaded — under `noExtensions`/`isolated` the
- * static `tools:` allowlist already gates the registry itself.
+ * static `allowedToolNames` allowlist already gates the registry itself.
  */
 export function installExtensionToolScope(
   session: AgentSession,
@@ -280,6 +319,33 @@ export function getDefaultMaxTurns(): number | undefined { return defaultMaxTurn
 /** Set the default max turns value. undefined or 0 = unlimited, otherwise minimum 1. */
 export function setDefaultMaxTurns(n: number | undefined): void { defaultMaxTurns = normalizeMaxTurns(n); }
 
+/**
+ * The turn limit a run of `type` will actually enforce: an explicit value if the
+ * caller supplied one, else the agent's own `max_turns`, else the project
+ * default. `undefined` = unlimited.
+ *
+ * Exported because the widget's turn counter (`↻3≤20`) has to predict this
+ * before the run starts, and a second copy of the expression would drift from
+ * the one below that enforces it.
+ */
+export function resolveEffectiveMaxTurns(type: string, explicit?: number): number | undefined {
+  return normalizeMaxTurns(explicit ?? getAgentConfig(type)?.maxTurns ?? defaultMaxTurns);
+}
+
+/**
+ * Project default for `persist_session`, from the `rememberAgents` setting.
+ * On by default: a persisted session is what lets `@handle` reopen an agent's
+ * conversation after its record has been evicted, which is the whole point of
+ * addressing an agent by a name that outlives one run. Per-agent frontmatter
+ * still overrides it in both directions.
+ */
+let rememberAgents = true;
+
+/** Whether subagent sessions are persisted by default. */
+export function getRememberAgents(): boolean { return rememberAgents; }
+/** Set whether subagent sessions are persisted by default. */
+export function setRememberAgents(b: boolean): void { rememberAgents = b; }
+
 /** Additional turns allowed after the soft limit steer message. */
 let graceTurns = 5;
 
@@ -292,7 +358,7 @@ export function setGraceTurns(n: number): void { graceTurns = Math.max(1, n); }
  * Try to find the right model for an agent type.
  * Priority: explicit option > config.model > parent model.
  */
-function resolveDefaultModel(
+export function resolveDefaultModel(
   parentModel: Model<any> | undefined,
   registry: { find(provider: string, modelId: string): Model<any> | undefined; getAvailable?(): Model<any>[] },
   configModel?: string,
@@ -336,11 +402,51 @@ export interface RunOptions {
   isolated?: boolean;
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
-  /** Override working directory (e.g. a caller-supplied `SpawnOptions.cwd`). */
-  cwd?: string;
   /**
-   * Where .pi config is discovered (project extensions, skills, pi
-   * settings). Default: same as the working directory. The manager sets
+   * Reopen this pi session file rather than starting an empty conversation.
+   * `createAgentSession` seeds itself from whatever its SessionManager holds,
+   * so pointing it at an existing file rehydrates that agent's history and the
+   * prompt continues it. Everything else — tools, model, system prompt, turn
+   * caps — is still resolved from the agent type, so the continuation runs
+   * under the type's *current* definition, not the one the original run used.
+   */
+  resumeSessionFile?: string;
+  /**
+   * Session ID of the parent session. When set and `persistSession` is true,
+   * child sessions are stored under
+   * `<agentDir>/subagent-sessions/<parentSessionId>/` unless frontmatter
+   * `session_dir` provides an explicit override.
+   */
+  parentSessionId?: string;
+  /**
+   * True when another agent spawned this one. Only top-level agents get a
+   * handle, so only they can be reopened by name — which is the whole reason
+   * `rememberAgents` persists a session at all. A nested run's transcript would
+   * be unreachable by anything, so it stays in memory unless its own
+   * frontmatter asks otherwise.
+   */
+  nested?: boolean;
+  /**
+   * True when a workflow run spawned this agent. Its final text is the value
+   * `agent()` resolves to rather than a report a person reads, and the prompt
+   * says so — but only when `structuredOutput` is unset, since that child
+   * already has a `StructuredOutput` tool to answer through and two competing
+   * "this is how you return your answer" instructions is worse than one.
+   */
+  workflow?: boolean;
+  /** Override working directory. */
+  cwd?: string;
+  /** Skill names to inject (preload) for this call only. Union with frontmatter preload_skills (deduped). Ignored when isolated: true. */
+  skills?: string[];
+  /**
+   * Directory the worktree copy was created from. Set only when `cwd` points
+   * into a worktree — the prompt then tells the agent to stay in the copy
+   * instead of following the inherited parent prompt back to the main tree.
+   */
+  worktreeBase?: string;
+  /**
+   * Where .pi config is discovered (project extensions, skills, pi settings,
+   * agent memory). Default: same as the working directory. The manager sets
    * this to the parent session's cwd when `SpawnOptions.cwd` points the
    * working directory elsewhere — the agent works *there* but carries the
    * parent project's config (the target's `.pi` extensions never execute).
@@ -348,6 +454,8 @@ export interface RunOptions {
    * WARNING for future callers: if you pass `cwd` pointing at a directory the
    * user didn't open, you almost certainly must pass `configCwd` too —
    * omitting it makes the target's `.pi` extensions execute in this process.
+   * (Worktree isolation is the one intentional exception: its copy IS the
+   * parent's repo, so config resolving inside it is correct.)
    */
   configCwd?: string;
   /** Called on tool start/end with activity info. */
@@ -361,22 +469,33 @@ export interface RunOptions {
    * Called once per assistant message_end with that message's usage delta.
    * Lets callers maintain a lifetime accumulator that survives compaction
    * (which replaces session.state.messages and resets stats-derived sums).
+   *
+   * `cost` is pi's own `usage.cost.total` for that message — priced from the
+   * model's rates, so it is 0 (not missing) for a model pi has no pricing for.
+   * We never price anything ourselves; every dollar figure this extension shows
+   * or reports traces back to this field.
    */
-  onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number; cost: number }) => void;
+  onAssistantUsage?: (usage: LifetimeUsage) => void;
   /**
    * Called when the session successfully compacts. `tokensBefore` is upstream's
    * pre-compaction context size estimate. Aborted compactions don't fire.
    */
   onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
-  /** Skill names to inject (preload) for this call only. Union with frontmatter preload_skills (deduped). Ignored when isolated: true. */
-  skills?: string[];
   /**
-   * Session ID of the parent session. When set and `persistSession` is true,
-   * child sessions are stored under
-   * `<agentDir>/subagent-sessions/<parentSessionId>/` unless frontmatter
-   * `session_dir` provides an explicit override.
+   * Make this child report through a `StructuredOutput` tool built from this
+   * schema, and put the validated payload on {@link RunResult.structuredJson}.
+   *
+   * Already compiled by the caller, so a schema this runtime cannot validate
+   * fails at the call that wrote it rather than inside the child.
    */
-  parentSessionId?: string;
+  structuredOutput?: CompiledSchema;
+  /** Runtime bridge for opt-in child-safe nested delegation. */
+  nestedRuntime?: {
+    manager: NestedAgentManager;
+    parentAgentId: string;
+    depth: number;
+    maxSubagentDepth?: number;
+  };
 }
 
 export interface RunResult {
@@ -396,6 +515,18 @@ export interface RunResult {
    * stop that produced text (a legitimate truncated answer).
    */
   failure?: string;
+  /**
+   * The validated `StructuredOutput` payload as canonical JSON, when the caller
+   * asked for a schema and the child produced one.
+   *
+   * Deliberately not folded into {@link responseText}: `record.result` picks up
+   * a worktree branch note on the way out, which would leave the caller with
+   * unparseable JSON, and merging the two would make "produced structured
+   * output" indistinguishable from "happened to answer in JSON".
+   */
+  structuredJson?: string;
+  /** Whether the extra structured-output prompt had to be sent. */
+  structuredRetried?: boolean;
 }
 
 /**
@@ -493,7 +624,7 @@ export async function runAgent(
   const config = getConfig(type);
   const agentConfig = getAgentConfig(type);
 
-  // Resolve working directory: caller-supplied cwd override > parent cwd
+  // Resolve working directory: worktree override > parent cwd
   const effectiveCwd = options.cwd ?? ctx.cwd;
   // Filesystem work happens in effectiveCwd; config discovery in configCwd.
   // They differ only for SpawnOptions.cwd spawns (config stays with the parent).
@@ -504,21 +635,25 @@ export async function runAgent(
   // Get parent system prompt for append-mode agents
   const parentSystemPrompt = ctx.getSystemPrompt();
 
-  // Build prompt extras (skill preloading)
+  // Build prompt extras (memory, skill preloading)
   const extras: PromptExtras = {};
+  if (options.worktreeBase) extras.worktreeBase = options.worktreeBase;
+  if (options.workflow && !options.structuredOutput) extras.workflowChild = true;
 
   // Resolve extensions/skills: isolated overrides to false
   const extensions = options.isolated ? false : config.extensions;
   // Nulling excludes under isolated also suppresses the orphaned-exclude warning —
-  // isolated is an intentional override, not a misconfiguration.
+  // isolation is an intentional override, not a misconfiguration.
   const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
-  // discover_skills gates the on-demand skill catalog; preload_skills are eagerly
-  // injected into the prompt. They are independent — the catalog can be on while
-  // some skills are preloaded. isolated overrides both to off.
-  const discoverSkills = options.isolated ? false : config.discoverSkills;
-  const preloadList = options.isolated ? [] : [...new Set([...config.preloadSkills, ...(options.skills ?? [])])];
-
-  // Skill preloading: eagerly inject the listed skills' content into the prompt.
+  // Skill preloading: union of config.preloadSkills and options.skills, deduped.
+  // options.skills=["a","b"] + config.preloadSkills=["a"] → ["a","b"].
+  const configPreloadSkills = (config as any).preloadSkills;
+  const preloadList = options.isolated ? [] : [
+    ...new Set([
+      ...(Array.isArray(configPreloadSkills) ? configPreloadSkills : []),
+      ...(Array.isArray(options.skills) ? options.skills : []),
+    ]),
+  ];
   if (preloadList.length > 0) {
     const loaded = preloadSkills(preloadList, configCwd);
     if (loaded.length > 0) {
@@ -526,7 +661,8 @@ export async function runAgent(
     }
   }
 
-  const toolNames = getToolNamesForType(type);
+  let toolNames = getToolNamesForType(type);
+
 
   // Build system prompt from agent config
   let systemPrompt: string;
@@ -540,15 +676,15 @@ export async function runAgent(
     systemPrompt = buildAgentPrompt({ ...fallback, name: type }, effectiveCwd, env, parentSystemPrompt, extras);
   }
 
-  // noSkills is driven only by discoverSkills; preloaded skills (if any) are already
-  // injected into the prompt and are independent of the on-demand skill catalog.
-  const noSkills = !discoverSkills;
-
-  // prompt_mode: system_instructions opts in to having pi inject the AGENTS.md walk
-  // (global agentDir + cwd→root ancestors) as `# Project Context` AFTER the
-  // systemPromptOverride — subagents get project guardrails as a single source of
-  // truth. isolated overrides to false (true isolation means no project context).
+  // prompt_mode: system_instructions opts in to having pi inject AGENTS.md/CLAUDE.md/APPEND_SYSTEM.md
+  // as Project Context (the same files pi itself injects for the top-level session). Every other
+  // prompt mode suppresses them — subagents get their instructions from the prompt, not inherited
+  // context files.
   const inheritContextFiles = !options.isolated && agentConfig?.promptMode === "system_instructions";
+
+  // When skills are preloaded or discover is disabled, don't run the skill loader again.
+  const discoverSkills = options.isolated ? false : (config as any).discoverSkills ?? true;
+  const noSkills = !discoverSkills || preloadList.length > 0;
 
   const agentDir = getAgentDir();
 
@@ -565,10 +701,13 @@ export async function runAgent(
   // would defeat prompt_mode: replace and isolated: true. Parent context, if
   // wanted, reaches the subagent via prompt_mode: append (parentSystemPrompt
   // is embedded in systemPromptOverride) or inherit_context (conversation).
-  // `extension_tools:` filters which extension tools surface to the LLM by TOOL
-  // NAME (exact or trailing-`*` wildcard). It does NOT control loading —
-  // `extensions:` is the sole authority for which extensions load. `isolated`
-  // means no extension tools at all.
+  // `ext:` selectors from the `tools:` CSV narrow which extension tools surface to
+  // the LLM. They do NOT control loading — `extensions:` is the sole authority for
+  // which extensions load. `ext:foo` against an extension that `extensions:` excluded
+  // is an orphan and warns after reload. `isolated` means no extension tools at all.
+  const { extNames, narrowing } = parseExtSelectors(
+    options.isolated ? [] : (agentConfig?.extSelectors ?? []),
+  );
   const noExtensions = extensions === false;
 
   const extensionsSpec = Array.isArray(extensions)
@@ -581,11 +720,17 @@ export async function runAgent(
   // suppresses handler binding and tool registration; it is not a sandbox.
   const excludeNames = new Set((excludeExtensions ?? []).map((n) => n.toLowerCase()));
   const hasExcludes = excludeNames.size > 0;
+  // The override filters loaded extensions down to `keepNames` minus `excludeNames`.
+  // It's only needed when we're neither loading everything without excludes
+  // (`extensions: true` or a `"*"` wildcard) nor nothing (`noExtensions`).
+  const loadAll = extensions === true || extensionsSpec?.wildcard === true;
+  const additionalExtensionPaths = extensionsSpec?.paths.length ? extensionsSpec.paths : undefined;
+  // Pre-filter discovered set, captured by the override — the exclude-typo warning
+  // must compare against this, not the surviving set (absence from survivors is
+  // an exclude *succeeding*).
   // Always compose an override so trusted inline hooks survive every loading
   // mode while discovered session-local copies are removed. Other extensions
   // retain the existing include/exclude behavior and warning inputs.
-  const loadAll = extensions === true || extensionsSpec?.wildcard === true;
-  const additionalExtensionPaths = extensionsSpec?.paths.length ? extensionsSpec.paths : undefined;
   const shouldFilterDiscovered = !noExtensions && (!loadAll || hasExcludes);
   let discoveredNames: Set<string> | undefined;
   const extensionsOverride = (base: LoadExtensionsResult): LoadExtensionsResult => {
@@ -647,7 +792,7 @@ export async function runAgent(
     systemPromptOverride: () => systemPrompt,
     appendSystemPromptOverride: () => [],
   });
-  await loader.reload();
+  await runInChildSessionContext(() => loader.reload());
 
   // Plain entries in `tools:` are expected to be built-in names (extension tools
   // go through `ext:`), so an unknown name there is unambiguously a typo. Previously
@@ -665,13 +810,16 @@ export async function runAgent(
     }
   }
 
-  // A subagent spawns mid-task, so a bad `extensions:` entry warns rather than
-  // aborts. Two distinct misconfigurations to catch:
+  // A subagent spawns mid-task, so a bad `extensions:`/`ext:` entry warns rather
+  // than aborts. Two distinct misconfigurations to catch:
   //   - `extensions: [foo]` but no extension named foo was discovered (typo or
   //     path that failed to load — path entries fold their canonical name into
   //     `keepNames`, so this covers them too).
-  //   - `exclude_extensions:` alongside `extensions: false` is contradictory —
-  //     nothing loads, so there is nothing to exclude.
+  //   - `tools: ext:foo` but foo isn't in the loaded set (because `extensions:`
+  //     didn't include it). Since v0.9, `ext:` no longer pulls extensions in;
+  //     loading is `extensions:`-authoritative.
+  // An exclude_extensions: alongside extensions: false is contradictory — nothing
+  // loads, so there is nothing to exclude.
   if (hasExcludes && noExtensions) {
     options.onToolActivity?.({
       type: "end",
@@ -691,14 +839,15 @@ export async function runAgent(
       }
     }
   }
-  if (keepNames.size > 0) {
+  if (keepNames.size > 0 || extNames.size > 0) {
     const survivingNames = new Set(
-      loader.getExtensions().extensions.flatMap((extension) =>
-        extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH
-          ? [TRUSTED_SESSION_LOCAL_EXTENSION_NAME]
-          : extensionCanonicalNames(extension.path),
-      ),
+      loader.getExtensions().extensions.flatMap((e) => extensionCanonicalNames(e.path)),
     );
+    // Trusted inline extensions are always present under their canonical names even though their
+    // path is `<inline:name>` — add them explicitly so a user-requested `extensions: [session-local]`
+    // doesn't spuriously report the extension as not loaded.
+    survivingNames.add(TRUSTED_SESSION_LOCAL_EXTENSION_NAME);
+    survivingNames.add(TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME);
     for (const name of keepNames) {
       if (!survivingNames.has(name)) {
         options.onToolActivity?.({
@@ -706,6 +855,14 @@ export async function runAgent(
           toolName: excludeNames.has(name)
             ? `extension-error:extension "${name}" is in both extensions: and exclude_extensions: for agent "${type}" — exclude wins`
             : `extension-error:extension "${name}" requested by agent "${type}" was not loaded`,
+        });
+      }
+    }
+    for (const name of extNames) {
+      if (!survivingNames.has(name)) {
+        options.onToolActivity?.({
+          type: "end",
+          toolName: `extension-error:ext:${name} referenced by agent "${type}" but extension "${name}" is not loaded (check extensions:/exclude_extensions:)`,
         });
       }
     }
@@ -719,6 +876,56 @@ export async function runAgent(
   // Resolve thinking level: explicit option > agent config > undefined (inherit)
   const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking;
 
+  const disallowedSet = agentConfig?.disallowedTools
+    ? new Set(agentConfig.disallowedTools)
+    : undefined;
+
+  // Nested delegation tools (opt-in, ownership-scoped). Empty unless the agent
+  // set `allowed_subagents` and a nestedRuntime was provided — and never when
+  // isolated. Their names collide with EXCLUDED_TOOL_NAMES by design, so the
+  // scoping below re-admits them explicitly (registry deny + active-set narrow).
+  const effectiveMaxDepth = options.nestedRuntime?.maxSubagentDepth ?? getMaxSubagentDepth();
+  // At (or past) the cap this agent can never spawn, so it can never own a child
+  // to fetch from or steer either — inject nothing rather than three tools whose
+  // every call is an error. This is also what makes `maxSubagentDepth` 0/1 mean
+  // "nesting off" instead of "nesting always fails".
+  const nestedRuntime = options.nestedRuntime && options.nestedRuntime.depth < effectiveMaxDepth
+    ? options.nestedRuntime
+    : undefined;
+  const nestedTools = agentConfig?.allowedSubagents && nestedRuntime && !options.isolated
+    ? createNestedSubagentTools({
+        manager: nestedRuntime.manager,
+        pi: options.pi,
+        parentAgentId: nestedRuntime.parentAgentId,
+        depth: nestedRuntime.depth,
+        maxSubagentDepth: effectiveMaxDepth,
+        allowedSubagents: agentConfig.allowedSubagents,
+        configCwd,
+      })
+    : [];
+  const nestedToolNames = new Set(nestedTools.map(tool => tool.name));
+
+  // The `agent({ schema })` contract: this child reports its answer by calling
+  // StructuredOutput, and `structuredJson` below is what the caller reads. The
+  // schema was already compiled by whoever asked for it, so a bad one failed
+  // before any of this ran.
+  const structuredCapture = options.structuredOutput ? createStructuredCapture() : undefined;
+  const structuredTools = options.structuredOutput && structuredCapture
+    ? [createStructuredOutputTool(options.structuredOutput, structuredCapture)]
+    : [];
+  const structuredToolNames = new Set(structuredTools.map(tool => tool.name));
+  // Re-admitted together at every gate below. Kept as one set so a new injected
+  // tool cannot be added to some of the three gates and forgotten at the rest.
+  //
+  // `disallowed_tools` is applied HERE rather than at the gates, because the two
+  // kinds answer to it differently: a nested delegation tool is an opt-in the
+  // agent's own frontmatter can take back, while StructuredOutput exists only
+  // because this call asked for a schema — removing it would make the request
+  // unsatisfiable by construction rather than merely restricted.
+  const readmitToolNames = new Set([
+    ...[...nestedToolNames].filter(name => !disallowedSet?.has(name)),
+    ...structuredToolNames,
+  ]);
 
   // ─── Tool scoping ───────────────────────────────────────────────────────
   //
@@ -738,11 +945,12 @@ export async function runAgent(
   //   - leave `allowedToolNames` unset, so pi's live gate admits tools whenever
   //     they register;
   //   - express the name-stable, permanent part of the scope (our own
-  //     orchestration tools and built-ins the agent didn't ask for) as
-  //     `excludeTools`, which pi re-applies on every registry refresh;
-  //   - enforce `extension_tools:` tool-name filtering on the ACTIVE set via the
-  //     live `computeActiveToolNames` re-narrow installed after bind — the active
-  //     set is what the LLM sees, so a registry tool never activated is uncallable.
+  //     orchestration tools, built-ins the agent didn't ask for, and
+  //     `disallowedTools`) as `excludeTools`, which pi re-applies on every
+  //     registry refresh;
+  //   - enforce `ext:` narrowing on the ACTIVE set via the live `inScope()`
+  //     predicate installed after bind — the active set is what the LLM sees,
+  //     so a registry tool that is never activated is invisible and uncallable.
   //
   // `noExtensions`/`isolated` keeps the historical static allowlist: nothing
   // async can appear there, and a hard registry gate is the correct boundary.
@@ -751,12 +959,35 @@ export async function runAgent(
   let sessionTools: string[] | undefined;
   let sessionExcludeTools: string[] | undefined;
   if (noExtensions) {
-    sessionTools = toolNames.filter((t) => !EXCLUDED_TOOL_NAMES.includes(t));
+    // Strict allowlist: built-ins the agent asked for, plus any opt-in nested
+    // tools (whose names would otherwise be dropped as EXCLUDED_TOOL_NAMES).
+    sessionTools = [
+      ...toolNames.filter(
+        (t) => !EXCLUDED_TOOL_NAMES.includes(t) && !disallowedSet?.has(t),
+      ),
+      ...[...nestedToolNames].filter((t) => !disallowedSet?.has(t)),
+      // Not filtered through `disallowedSet`, unlike the nested tools above:
+      // the caller asked for a schema, and removing the only tool that can
+      // satisfy it would make the request unsatisfiable by construction rather
+      // than merely restricted.
+      ...structuredToolNames,
+    ];
   } else {
-    const denyTools = new Set<string>(EXCLUDED_TOOL_NAMES);
+    // Deny the orchestration tools EXCEPT the nested ones this agent opted into —
+    // those are injected as customTools and must survive the registry gate.
+    const denyTools = new Set<string>(
+      EXCLUDED_TOOL_NAMES.filter((t) => !nestedToolNames.has(t)),
+    );
     // Keep only the built-ins the agent asked for — deny the rest.
     for (const name of BUILTIN_TOOL_NAMES) {
       if (!builtinToolNameSet.has(name)) denyTools.add(name);
+    }
+    if (disallowedSet) {
+      // disallowed_tools wins even over an opt-in nested tool of the same name.
+      // Not over StructuredOutput, though — see the allowlist branch above.
+      for (const name of disallowedSet) {
+        if (!structuredToolNames.has(name)) denyTools.add(name);
+      }
     }
     sessionExcludeTools = [...denyTools];
   }
@@ -764,12 +995,21 @@ export async function runAgent(
   const settingsManager = SettingsManager.create(configCwd, agentDir);
   const configuredSessionDir = resolveConfiguredSessionDir(agentConfig?.sessionDir, effectiveCwd);
   const defaultSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR ?? settingsManager.getSessionDir?.();
+  // Frontmatter wins when it says anything; otherwise the project default,
+  // which `rememberAgents` supplies for top-level agents only. Same precedence
+  // as `outputTranscript`.
+  const persistSession = agentConfig?.persistSession ?? (options.nested ? false : rememberAgents);
   const subagentSessionsDir = options.parentSessionId
-    ? join(getAgentDir(), SUBAGENT_SESSION_DIR_NAME, options.parentSessionId)
+    ? join(agentDir, SUBAGENT_SESSION_DIR_NAME, options.parentSessionId)
     : undefined;
-  const sessionManager = agentConfig?.persistSession
-    ? SessionManager.create(effectiveCwd, configuredSessionDir ?? subagentSessionsDir ?? defaultSessionDir)
-    : SessionManager.inMemory(effectiveCwd);
+  const sessionManager = options.resumeSessionFile
+    // Reopening an existing conversation: the file already carries its own
+    // header (cwd, parent) and history, so none of the create-time options
+    // apply. `sessionDir` still matters for a later /new or /branch off it.
+    ? SessionManager.open(options.resumeSessionFile, configuredSessionDir ?? defaultSessionDir)
+    : persistSession
+      ? SessionManager.create(effectiveCwd, configuredSessionDir ?? subagentSessionsDir ?? defaultSessionDir)
+      : SessionManager.inMemory(effectiveCwd);
 
   // Persist the parent branch's effective Agent-tree scope before the session
   // runtime exists, so session-local hooks observe it from their first bind.
@@ -782,19 +1022,24 @@ export async function runAgent(
   // Pi 0.80.8 replaced createAgentSession's modelRegistry option with
   // modelRuntime, but ExtensionContext still exposes only the registry facade.
   // Pass both so the full supported Pi range retains the parent's providers.
-  const parentModelRuntime = (ctx.modelRegistry as unknown as { runtime?: ModelRuntime }).runtime;
+  const parentModelRuntime = (ctx.modelRegistry as unknown as { runtime?: unknown }).runtime;
   const sessionOpts: Parameters<typeof createAgentSession>[0] & {
     modelRegistry: ExtensionContext["modelRegistry"];
-    modelRuntime?: ModelRuntime;
+    modelRuntime?: unknown;
   } = {
     cwd: effectiveCwd,
     agentDir,
     sessionManager,
     settingsManager,
     modelRegistry: ctx.modelRegistry,
-    ...(parentModelRuntime !== undefined && { modelRuntime: parentModelRuntime }),
+    // `as never` is what keeps this assignable across the supported Pi range:
+    // pre-0.80.8 the field exists only via the `modelRuntime?: unknown` shim
+    // above, while newer Pi types it as `ModelRuntime` — a shape an opaque
+    // `unknown` read off the private facade field can never satisfy.
+    ...(parentModelRuntime !== undefined && { modelRuntime: parentModelRuntime as never }),
     model,
     tools: sessionTools,
+    customTools: [...nestedTools, ...structuredTools],
     resourceLoader: loader,
   };
   if (sessionExcludeTools) {
@@ -804,7 +1049,7 @@ export async function runAgent(
     sessionOpts.thinkingLevel = thinkingLevel;
   }
 
-  const { session } = await createAgentSession(sessionOpts);
+  const { session } = await runInChildSessionContext(() => createAgentSession(sessionOpts));
 
   const baseSessionName = agentConfig?.name ?? type;
   session.setSessionName(
@@ -825,17 +1070,17 @@ export async function runAgent(
   });
 
   // With `allowedToolNames` unset, the registry is scoped by `excludeTools` but
-  // the ACTIVE set still needs managing: pi activates only its default built-ins
-  // at turn 1, and `extension_tools:` filtering has no registry-level expression
+  // the ACTIVE set still needs managing: pi activates only its four default
+  // built-ins at turn 1, and `ext:` narrowing has no registry-level expression
   // (we can't deny the name of a tool that hasn't registered yet). Both are
-  // handled below by re-deriving scope from the session's live tool list —
-  // `registerTool` grows that list, so late arrivals are judged too.
+  // handled below by re-deriving scope from the loader's live extension maps —
+  // `registerTool` writes into those same maps, so late arrivals are judged too.
   if (!noExtensions) {
     installExtensionToolScope(session, {
       builtinToolNames: toolNames,
       extensions,
       extensionTools: agentConfig?.extensionToolNames,
-      allowNesting: agentConfig?.allowNesting,
+      allowNesting: nestedToolNames.size > 0,
       isolated: options.isolated,
     });
   }
@@ -844,7 +1089,7 @@ export async function runAgent(
 
   // Track turns for graceful max_turns enforcement
   let turnCount = 0;
-  const maxTurns = normalizeMaxTurns(options.maxTurns ?? agentConfig?.maxTurns ?? defaultMaxTurns);
+  const maxTurns = resolveEffectiveMaxTurns(type, options.maxTurns);
   let softLimitReached = false;
   let aborted = false;
 
@@ -882,6 +1127,7 @@ export async function runAgent(
         input: u.input ?? 0,
         output: u.output ?? 0,
         cacheWrite: u.cacheWrite ?? 0,
+        cacheRead: u.cacheRead ?? 0,
         cost: u.cost?.total ?? 0,
       });
     }
@@ -905,8 +1151,20 @@ export async function runAgent(
   // Boundary for the history fallback: only assistant text produced from here
   // on counts as this run's output (a fresh session, so usually 0).
   const startLen = session.messages.length;
+  let structuredRetried = false;
   try {
     await session.prompt(effectivePrompt);
+
+    // One more prompt when a schema was asked for and nothing usable came back
+    // — the model answered in prose, or only ever called the tool invalidly.
+    // Inside this `try`, so the turn tracking, the text collector and above all
+    // the abort forwarding are still live: torn down first, a retry would be
+    // unkillable.
+    if (structuredCapture !== undefined && structuredCapture.json === undefined
+      && !aborted && options.signal?.aborted !== true) {
+      structuredRetried = true;
+      await session.prompt(structuredRetryPrompt(structuredCapture));
+    }
   } finally {
     unsubTurns();
     collector.unsubscribe();
@@ -914,7 +1172,23 @@ export async function runAgent(
   }
 
   const responseText = collector.getText().trim() || getLastAssistantText(session, startLen);
-  return { responseText, session, aborted, steered: softLimitReached, failure: finalTurnError(session, startLen) };
+  // A child asked for structured output that never gave any has failed, however
+  // articulate its prose was. Reported through `failure` so it travels the same
+  // path as a provider error rather than arriving as a successful empty answer.
+  const structuredFailure = structuredCapture !== undefined && structuredCapture.json === undefined
+    ? structuredCapture.lastError !== undefined
+      ? `The agent's StructuredOutput call did not match the required schema: ${structuredCapture.lastError}`
+      : "The agent did not report its answer through StructuredOutput."
+    : undefined;
+  return {
+    responseText,
+    session,
+    aborted,
+    steered: softLimitReached,
+    failure: finalTurnError(session, startLen) ?? structuredFailure,
+    ...(structuredCapture?.json !== undefined ? { structuredJson: structuredCapture.json } : {}),
+    ...(structuredRetried ? { structuredRetried } : {}),
+  };
 }
 
 /**
@@ -925,7 +1199,7 @@ export async function resumeAgent(
   prompt: string,
   options: {
     onToolActivity?: (activity: ToolActivity) => void;
-    onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number; cost: number }) => void;
+    onAssistantUsage?: (usage: LifetimeUsage) => void;
     onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
     signal?: AbortSignal;
   } = {},
@@ -947,6 +1221,7 @@ export async function resumeAgent(
             input: u.input ?? 0,
             output: u.output ?? 0,
             cacheWrite: u.cacheWrite ?? 0,
+            cacheRead: u.cacheRead ?? 0,
             cost: u.cost?.total ?? 0,
           });
         }

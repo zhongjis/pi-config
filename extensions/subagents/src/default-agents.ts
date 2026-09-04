@@ -19,8 +19,7 @@ export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([
       // inheritContext / runInBackground / isolated omitted — strategy fields, callers decide per-call.
       // Setting them to false would lock callsite intent (see resolveAgentInvocationConfig in invocation-config.ts).
       extensions: true,
-      discoverSkills: true,
-      preloadSkills: [],
+      skills: true,
       systemPrompt: "",
       promptMode: "append",
       isDefault: true,
@@ -34,8 +33,7 @@ export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([
       description: "Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"), grep for symbols or keywords (eg. \"API endpoints\"), or answer \"where is X defined / which files reference Y.\" Do NOT use it for code review, design-doc auditing, cross-file consistency checks, or open-ended analysis — it reads excerpts rather than whole files and will miss content past its read window. When calling, specify search breadth: \"quick\" for a single targeted lookup, \"medium\" for moderate exploration, or \"very thorough\" to search across multiple locations and naming conventions.",
       builtinToolNames: READ_ONLY_TOOLS,
       extensions: true,
-      discoverSkills: true,
-      preloadSkills: [],
+      skills: true,
       // Fast/cheap model for read-only search. Provider-preferred but resilient:
       // resolveModel matches this fuzzily (date-stamp optional) and falls back to
       // the same model under another provider if anthropic doesn't expose it.
@@ -80,8 +78,7 @@ Use Bash ONLY for read-only operations: ls, git status, git log, git diff, find,
       description: "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
       builtinToolNames: READ_ONLY_TOOLS,
       extensions: true,
-      discoverSkills: true,
-      preloadSkills: [],
+      skills: true,
       systemPrompt: `# CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS
 You are a software architect and planning specialist.
 Your role is EXCLUSIVELY to explore the codebase and design implementation plans.

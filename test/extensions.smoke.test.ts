@@ -82,6 +82,7 @@ const extensionEntries = discoverExtensionEntries();
 
 const EXPECTED_TOOL_NAMES = [
   "Agent",
+  "SubagentWorkflow",
   "Task",
   "ask",
   "bash",
@@ -167,8 +168,8 @@ describe("extension entrypoints", () => {
     const rawNames = registrations.map((definition) => definition.name);
     const uniqueNames = [...new Set(rawNames)];
 
-    expect(rawNames).toHaveLength(25);
-    expect(uniqueNames).toHaveLength(25);
+    expect(rawNames).toHaveLength(26);
+    expect(uniqueNames).toHaveLength(26);
     expect([...uniqueNames].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
 
     for (const definition of registrations) {

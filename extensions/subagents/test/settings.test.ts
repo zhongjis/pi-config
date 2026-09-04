@@ -217,12 +217,6 @@ describe("settings persistence", () => {
       }
     });
 
-    it("accepts scopeModels boolean (true and false)", () => {
-      writeProject({ scopeModels: true });
-      expect(loadSettings(projectDir)).toEqual({ scopeModels: true });
-      writeProject({ scopeModels: false });
-      expect(loadSettings(projectDir)).toEqual({ scopeModels: false });
-    });
 
     it("drops non-boolean scopeModels", () => {
       writeProject({ scopeModels: "yes" });
@@ -396,7 +390,6 @@ describe("settings persistence", () => {
           defaultMaxTurns: 50,
           graceTurns: 7,
           defaultJoinMode: "group",
-          scopeModels: true,
           disableDefaultAgents: true,
           toolDescriptionMode: "compact",
           fleetView: false,
@@ -408,7 +401,6 @@ describe("settings persistence", () => {
       expect(appliers.setDefaultMaxTurns).toHaveBeenCalledWith(50);
       expect(appliers.setGraceTurns).toHaveBeenCalledWith(7);
       expect(appliers.setDefaultJoinMode).toHaveBeenCalledWith("group");
-      expect(appliers.setScopeModels).toHaveBeenCalledWith(true);
       expect(appliers.setDisableDefaultAgents).toHaveBeenCalledWith(true);
       expect(appliers.setToolDescriptionMode).toHaveBeenCalledWith("compact");
       expect(appliers.setFleetView).toHaveBeenCalledWith(false);
@@ -429,10 +421,6 @@ describe("settings persistence", () => {
       expect(appliers.setFleetView).toHaveBeenCalledTimes(1); // absence is "use default"
     });
 
-    it("applies scopeModels: false", () => {
-      applySettings({ scopeModels: false }, appliers);
-      expect(appliers.setScopeModels).toHaveBeenCalledWith(false);
-    });
 
     it("applies disableDefaultAgents: false", () => {
       applySettings({ disableDefaultAgents: false }, appliers);
