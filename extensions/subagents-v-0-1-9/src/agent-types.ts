@@ -301,6 +301,8 @@ export function getConfig(type: string): {
   extensions: true | string[] | false;
   excludeExtensions?: string[];
   skills: true | string[] | false;
+  discoverSkills?: boolean;
+  preloadSkills?: string[];
   promptMode: "replace" | "append" | "system_instructions";
 } {
   const key = resolveKey(type);
@@ -314,6 +316,8 @@ export function getConfig(type: string): {
       extensions: config.extensions,
       excludeExtensions: config.excludeExtensions,
       skills: config.skills,
+      discoverSkills: config.discoverSkills,
+      preloadSkills: config.preloadSkills,
       promptMode: config.promptMode,
     };
   }
@@ -329,6 +333,8 @@ export function getConfig(type: string): {
       extensions: gp.extensions,
       excludeExtensions: gp.excludeExtensions,
       skills: gp.skills,
+      discoverSkills: gp.discoverSkills,
+      preloadSkills: gp.preloadSkills,
       promptMode: gp.promptMode,
     };
   }

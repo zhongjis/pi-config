@@ -1,10 +1,9 @@
 ---
-description: "ext: selecting the lazy extension surfaces its session_start tool."
+description: "Allows a lazy extension's session_start tool."
 extensions: "./ext-lazy.mjs, ./ext-alpha.mjs"
-tools: "*, ext:ext-lazy.mjs"
+extension_tools: lazy_tool
 expect_tools_present: "read, bash, lazy_tool"
 expect_tools_absent: "alpha_read, alpha_write"
 ---
-e2e template: the case a static allowlist can never express. `lazy_tool` does not
-exist when the session is constructed, so it cannot be listed up front — scope
-has to be re-derived once the extension registers it.
+e2e template: lazy_tool is allowed before it exists, then scope is re-derived
+when the extension registers it during session_start.

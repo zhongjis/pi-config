@@ -26,7 +26,7 @@ If the target is already known, use a direct tool — `read` for a known path, `
 - If an agent's description says it should be used proactively, try to use it without the user having to ask for it first.
 - Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
 - Use thinking to control extended thinking level.
-- Use inherit_context if the agent needs the parent conversation history.{{isolationGuideline}}{{scheduleGuideline}}
+- Use inherit_context if the agent needs the parent conversation history.
 
 ## Writing the prompt
 

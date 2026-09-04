@@ -1,10 +1,9 @@
 ---
-description: "Selects alpha but denylists alpha_write via disallowed_tools."
+description: "Allows alpha_read while excluding alpha_write and beta_tool."
 extensions: "./ext-alpha.mjs, ./ext-beta.mjs"
-tools: "*, ext:ext-alpha.mjs"
-disallowed_tools: "alpha_write"
+extension_tools: alpha_read
 expect_tools_present: "read, alpha_read"
 expect_tools_absent: "alpha_write, beta_tool"
 ---
-e2e template: disallowed_tools removes an extension tool even when the ext:
-selector would otherwise surface it.
+e2e template: an explicit extension_tools allowlist exposes alpha_read while
+the other loaded extension tools remain muted.

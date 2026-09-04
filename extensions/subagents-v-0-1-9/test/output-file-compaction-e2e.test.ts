@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
 import {
+  type AgentSession,
   createAgentSession,
   DefaultResourceLoader,
   getAgentDir,
@@ -19,8 +20,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { streamToOutputFile, writeInitialEntry } from "../src/output-file.js";
-import { fauxModelBackend } from "./helpers/faux-model-backend.js";
-import { registerFauxProvider } from "./helpers/pi-ai.js";
+import { createFauxModelRuntime, type FauxModelRuntime } from "./helpers/pi-ai.js";
 
 const TURNS_BEFORE_COMPACT = 6;
 
@@ -28,13 +28,23 @@ describe("output-file streaming across a real compaction (#145)", () => {
   let tmp: string;
   let prevAgentDir: string | undefined;
 
-  beforeEach(() => {
+  let fauxRuntime: FauxModelRuntime;
+  let session: AgentSession | undefined;
+  let cleanup: (() => void) | undefined;
+  beforeEach(async () => {
     tmp = mkdtempSync(join(tmpdir(), "issue-145-"));
     prevAgentDir = process.env.PI_CODING_AGENT_DIR;
     process.env.PI_CODING_AGENT_DIR = tmp; // hermetic: no dev-env extensions/themes
+    fauxRuntime = await createFauxModelRuntime({
+      provider: "faux",
+      models: [{ id: "faux-1", contextWindow: 200_000 }],
+    });
   });
 
   afterEach(() => {
+    cleanup?.();
+    session?.dispose();
+    fauxRuntime.dispose();
     if (prevAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
     rmSync(tmp, { recursive: true, force: true });
@@ -42,12 +52,7 @@ describe("output-file streaming across a real compaction (#145)", () => {
 
   it("keeps writing post-compaction messages to the output file", async () => {
     const cwd = tmp;
-    const faux = registerFauxProvider({
-      provider: "faux",
-      models: [{ id: "faux-1", contextWindow: 200_000 }],
-    });
-    const model = faux.getModel();
-    const backend = fauxModelBackend(model);
+    const { faux, model, modelRuntime } = fauxRuntime;
     // Context-branching responder: compaction issues a variable number of
     // model calls (summary, plus a turn-prefix summary when the cut point
     // splits a turn), so a fixed FIFO would desync. Decide from the request.
@@ -86,13 +91,11 @@ describe("output-file streaming across a real compaction (#145)", () => {
     });
     await loader.reload();
 
-    const { session } = await createAgentSession({
+    session = (await createAgentSession({
       cwd,
       agentDir,
       model,
-      // Registry for pre-0.80.8 Pi, runtime for post — each ignores the other.
-      modelRegistry: backend.modelRegistry as never,
-      modelRuntime: backend.modelRuntime as never,
+      modelRuntime,
       resourceLoader: loader,
       sessionManager: SessionManager.inMemory(cwd),
       settingsManager: SettingsManager.inMemory({
@@ -101,11 +104,11 @@ describe("output-file streaming across a real compaction (#145)", () => {
         compaction: { enabled: false, keepRecentTokens: 500 },
         retry: { enabled: false },
       }),
-    });
+    })).session;
 
     const outPath = join(tmp, "agent.output");
     writeInitialEntry(outPath, "agent-145", "repro", cwd);
-    const cleanup = streamToOutputFile(session as never, outPath, "agent-145", cwd);
+    cleanup = streamToOutputFile(session as never, outPath, "agent-145", cwd);
 
     const readEntries = () =>
       readFileSync(outPath, "utf-8")
@@ -130,6 +133,7 @@ describe("output-file streaming across a real compaction (#145)", () => {
     // The run continues after compaction...
     await session.prompt("final question");
     cleanup();
+    cleanup = undefined;
 
     // The post-compaction turn reaches the output file...
     const entries = readEntries();

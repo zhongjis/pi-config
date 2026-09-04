@@ -72,7 +72,7 @@ function loadFromDir(
       continue;
     }
 
-    const parsed = parseAgentMarkdown(content);
+    const parsed = parseAgentMarkdown(content.startsWith("\uFEFF") ? content.slice(1) : content);
     for (const field of parsed.invalidFields) {
       diagnostics.push({
         file: filePath,

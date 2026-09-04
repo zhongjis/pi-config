@@ -17,11 +17,9 @@
  * frontmatter declares the tools that must / must not be active. Adding a
  * scenario = adding a .md file; no test code changes needed.
  *
- * Headless: a faux Model object satisfies createAgentSession; we assert on the
- * pre-prompt gated tool set captured at onSessionCreated, so no LLM/network is
- * involved. cwd is the fixtures dir so the templates' relative `extensions:`
- * paths resolve and the .mjs fixtures can import `@sinclair/typebox` from the
- * repo's node_modules.
+ * Headless: each scenario uses a native faux provider on an isolated
+ * `ModelRuntime`; assertions inspect pre-prompt tool gating. cwd is the fixtures
+ * dir so relative extension paths resolve against the repo's node_modules.
  */
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +31,7 @@ import { runAgent } from "../src/agent-runner.js";
 import { getAgentConfig, registerAgents } from "../src/agent-types.js";
 import { loadCustomAgents } from "../src/custom-agents.js";
 import { resolveAgentInvocationConfig } from "../src/invocation-config.js";
-import { registerFauxProvider } from "./helpers/pi-ai.js";
+import { createFauxModelRuntime } from "./helpers/pi-ai.js";
 
 // Real pi-mono (loader + dynamic extension import + session construction) — a
 // cold run under full-suite contention can exceed vitest's 5s default.
@@ -57,8 +55,6 @@ const SCENARIOS = readdirSync(TEMPLATES_DIR)
       name: file.replace(/\.md$/, ""), // loadCustomAgents keys agents by filename
       present: csv(fm.expect_tools_present),
       absent: csv(fm.expect_tools_absent),
-      promptContains: csv(fm.expect_prompt_contains),
-      promptAbsent: csv(fm.expect_prompt_absent),
     };
   });
 
@@ -69,7 +65,6 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   let prevAgentDir: string | undefined;
   let prevHome: string | undefined;
   let hermeticDir: string;
-  let faux: ReturnType<typeof registerFauxProvider>;
 
   beforeAll(() => {
     // Isolate global discovery (getAgentDir / ~/.pi) so the dev's real agents
@@ -80,7 +75,6 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
     process.env.PI_CODING_AGENT_DIR = hermeticDir;
     process.env.HOME = hermeticDir;
 
-    faux = registerFauxProvider({ provider: "faux", models: [{ id: "faux-1", contextWindow: 200_000 }] });
 
     // Load the templates through the REAL loader (project agents come from
     // <cwd>/.pi/agents → FIXTURES_DIR/.pi/agents) and install them in the
@@ -89,7 +83,6 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   });
 
   afterAll(() => {
-    faux.unregister();
     if (prevAgentDir == null) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
     if (prevHome == null) delete process.env.HOME;
@@ -98,17 +91,11 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   });
 
   async function runScenario(agentName: string): Promise<{ active: string[]; prompt: string }> {
-    const model = faux.getModel();
-    const modelRegistry: any = {
-      find: () => model,
-      getAll: () => [model],
-      getAvailable: () => [model],
-      hasConfiguredAuth: () => true,
-      isUsingOAuth: () => false,
-      getApiKeyAndHeaders: async () => ({ apiKey: "faux", headers: {} }),
-      registerProvider: () => {},
-      unregisterProvider: () => {},
-    };
+    const fauxRuntime = await createFauxModelRuntime({
+      provider: "faux",
+      models: [{ id: "faux-1", contextWindow: 200_000 }],
+    });
+    const { model, modelRegistry } = fauxRuntime;
     // cwd = fixtures dir so the templates' relative extensions: paths resolve.
     // getSystemPrompt returns a distinctive marker so prompt_mode: append can be
     // proven to inherit the parent prompt.
@@ -137,8 +124,10 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
         },
       });
     } catch {
-      // Prompt may error (no live provider) — both observables are captured at
-      // onSessionCreated, before the turn.
+      // The empty faux queue may end the prompt after construction; both
+      // observables are already captured by onSessionCreated.
+    } finally {
+      fauxRuntime.dispose();
     }
     return { active, prompt };
   }
@@ -150,8 +139,8 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
     expect(SCENARIOS.length).toBeGreaterThanOrEqual(6);
 
     for (const s of SCENARIOS) {
-      // Each declares at least one expectation, so no scenario is a no-op.
-      expect(s.present.length + s.promptContains.length + s.promptAbsent.length).toBeGreaterThan(0);
+      // Each declares at least one tool expectation, so no scenario is a no-op.
+      expect(s.present.length + s.absent.length).toBeGreaterThan(0);
       // Each loaded as ITS OWN agent — guards against runAgent silently falling
       // back to general-purpose when a template fails to parse/register.
       const cfg = getAgentConfig(s.name);
@@ -161,13 +150,26 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
   });
 
   it.each(SCENARIOS)(
-    "$name → active tools and system prompt match the template",
-    async ({ name, present, absent, promptContains, promptAbsent }) => {
-      const { active, prompt } = await runScenario(name);
+    "$name → active tools match the template",
+    async ({ name, present, absent }) => {
+      const { active } = await runScenario(name);
       for (const tool of present) expect(active, `${name}: expected "${tool}" active`).toContain(tool);
       for (const tool of absent) expect(active, `${name}: expected "${tool}" NOT active`).not.toContain(tool);
-      for (const s of promptContains) expect(prompt, `${name}: prompt should contain "${s}"`).toContain(s);
-      for (const s of promptAbsent) expect(prompt, `${name}: prompt should NOT contain "${s}"`).not.toContain(s);
     },
   );
+
+  it("preserves append and replace prompt transport", async () => {
+    const append = await runScenario("prompt-mode-append");
+    expect(append.prompt.startsWith(PARENT_PROMPT)).toBe(true);
+    expect(append.prompt).toContain("APPEND_BODY_MARKER");
+
+    const replace = await runScenario("prompt-mode-replace");
+    expect(replace.prompt).toContain("REPLACE_BODY_MARKER");
+    expect(replace.prompt).not.toContain(PARENT_PROMPT);
+  });
+
+  it("preloads the configured skill payload", async () => {
+    const { prompt } = await runScenario("skills-preload");
+    expect(prompt).toContain("SKILL_BODY_MARKER");
+  });
 });
