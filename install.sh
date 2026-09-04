@@ -26,6 +26,7 @@ EXCLUDED_EXTENSION_ITEMS=(
   "AGENTS.md"
   "CONVENTIONS.md"
   "clauderock"
+  "subagents-v-0-1-9"
 )
 
 # Top-level items to symlink into ~/.pi/agent (allowlist).

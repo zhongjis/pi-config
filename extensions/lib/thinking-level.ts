@@ -5,7 +5,9 @@
  * frontmatter (e.g. `model: anthropic/claude-opus-4-7:high`).
  */
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+// Mirrors pi-ai's ModelThinkingLevel ('off' | ThinkingLevel) from @earendil-works/pi-ai/dist/types.d.ts
+// (not re-exported from package root; kept in sync manually).
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
 	"off",
@@ -14,6 +16,7 @@ const VALID_THINKING_LEVELS = new Set<ThinkingLevel>([
 	"medium",
 	"high",
 	"xhigh",
+	"max",
 ]);
 
 export function normalizeThinkingLevel(value: string | undefined): ThinkingLevel | undefined {

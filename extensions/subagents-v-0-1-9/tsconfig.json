@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "rootDir": "..",
+    "declaration": true,
+    "paths": {
+      "@earendil-works/pi-ai": ["./node_modules/@earendil-works/pi-ai"],
+      "@earendil-works/pi-coding-agent": ["./node_modules/@earendil-works/pi-coding-agent"],
+      "@earendil-works/pi-tui": ["./node_modules/@earendil-works/pi-tui"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "../lib/active-tools.ts",
+    "../lib/agent-frontmatter.ts",
+    "../lib/guard-registration.ts",
+    "../lib/model.ts",
+    "../lib/thinking-level.ts",
+    "../session-local/index.ts",
+    "../session-local/storage.ts",
+    "../smart-tool-guards/index.ts",
+    "../smart-tool-guards/src/**/*.ts"
+  ]
+}
