@@ -28,7 +28,7 @@ import { loadCustomAgents } from "./custom-agents.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
-import { type ModelRegistry, resolveModel } from "../../lib/model.js";
+import { type ModelRegistry, parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model.js";
 import { describeModel } from "./model-display.js";
 import { registerSubagentNotificationRenderer } from "./notification-rendering.js";
 import { startBackgroundSupervision } from "./supervision-loop.js";
@@ -1365,22 +1365,23 @@ Terse command-style prompts produce shallow, generic work.
       // Get agent config (if any)
       const customConfig = getAgentConfig(subagentType);
 
+      const callerModel = params.model != null
+        ? resolveFirstAvailable(parseModelChain(params.model), ctx.modelRegistry)
+        : undefined;
+      const configuredModel = customConfig?.model != null
+        ? resolveFirstAvailable(parseModelChain(customConfig.model), ctx.modelRegistry)
+        : undefined;
       const resolvedConfig = resolveAgentInvocationConfig(customConfig, params, {
         defaultRunInBackground: getBackgroundByDefault(),
+        frontmatterModelThinking: configuredModel?.thinkingLevel,
+        callerModelThinking: callerModel?.thinkingLevel,
       });
-
-      // Resolve model from agent config first; tool-call params only fill gaps.
-      let model = ctx.model;
-      if (resolvedConfig.modelInput) {
-        const resolved = resolveModel(resolvedConfig.modelInput, ctx.modelRegistry);
-        if (typeof resolved === "string") {
-          if (resolvedConfig.modelFromParams) return textResult(resolved);
-          // config-specified: silent fallback to parent
-        } else {
-          model = resolved;
-        }
+      const selectedModel = resolvedConfig.modelFromParams ? callerModel : configuredModel;
+      // Resume keeps its saved model; only fresh spawns require an available chain.
+      if (!params.resume && resolvedConfig.modelInput != null && !selectedModel) {
+        throw new Error(`No available model in chain: "${resolvedConfig.modelInput}".`);
       }
-
+      const model = selectedModel?.model ?? ctx.model;
 
       const thinking = resolvedConfig.thinking;
       const inheritContext = resolvedConfig.inheritContext;
@@ -1411,9 +1412,8 @@ Terse command-style prompts produce shallow, generic work.
       // resolves to nothing is still worth disclosing: it cannot have taken effect.
       const askedModel = ((asked: string | undefined) => {
         if (!asked) return undefined;
-        const resolvedAsked = resolveModel(asked, ctx.modelRegistry);
-        if (typeof resolvedAsked === "string") return asked;
-        return resolvedAsked.provider === model?.provider && resolvedAsked.id === model?.id ? undefined : asked;
+        if (!callerModel) return asked;
+        return callerModel.model.provider === model?.provider && callerModel.model.id === model?.id ? undefined : asked;
       })(resolvedConfig.overridden?.model);
       const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
       const agentInvocation: AgentInvocation = {

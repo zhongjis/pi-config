@@ -17,7 +17,7 @@ import {
 } from "./agent-types.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { resolveAgentInvocationConfig } from "./invocation-config.js";
-import { resolveModel } from "../../lib/model.js";
+import { parseModelChain, resolveFirstAvailable } from "../../lib/model.js";
 import {
   createOutputFilePath,
   getOutputTranscriptDefault,
@@ -217,20 +217,23 @@ export function createNestedSubagentTools(context: NestedToolContext): ToolDefin
       }
 
       const config = getAgentConfigIn(registry, resolvedType);
-      // Foreground regardless of `backgroundByDefault` — see the reasoning on
-      // ResolveOptions. An explicit `true` here still opts in.
+      const callerModel = params.model != null
+        ? resolveFirstAvailable(parseModelChain(params.model), ctx.modelRegistry)
+        : undefined;
+      const configuredModel = config?.model != null
+        ? resolveFirstAvailable(parseModelChain(config.model), ctx.modelRegistry)
+        : undefined;
+      // Foreground regardless of `backgroundByDefault` — see ResolveOptions.
       const invocation = resolveAgentInvocationConfig(config, params, {
         defaultRunInBackground: false,
+        frontmatterModelThinking: configuredModel?.thinkingLevel,
+        callerModelThinking: callerModel?.thinkingLevel,
       });
-      let model = ctx.model;
-      if (invocation.modelInput) {
-        const resolvedModel = resolveModel(invocation.modelInput, ctx.modelRegistry);
-        if (typeof resolvedModel === "string") {
-          if (invocation.modelFromParams) return textResult(resolvedModel, true);
-        } else {
-          model = resolvedModel;
-        }
+      const selectedModel = invocation.modelFromParams ? callerModel : configuredModel;
+      if (invocation.modelInput != null && !selectedModel) {
+        throw new Error(`No available model in chain: "${invocation.modelInput}".`);
       }
+      const model = selectedModel?.model ?? ctx.model;
 
       // Same scopeModels policy as the top-level Agent tool — a nested spawn
       // must not escape the allowlist. A "warn" verdict proceeds silently:

@@ -26,11 +26,11 @@ https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
 | `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
 | `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
 | `src/index.ts`, `src/workflow/` | `SubagentWorkflow` runs without requiring worktree isolation; schedule.ts removed | Workflows operate on repo-local runs; no croner dependency |
-| `src/invocation-config.ts`, `src/lib/` | Thinking level resolved through shared lib helpers rather than inline | Consistent thinking-level propagation across tool surfaces |
+| `src/index.ts`, `src/nested-tools.ts`, `src/invocation-config.ts` | Shared `extensions/lib/model.ts` chain resolution for both Agent paths; see [Model chains](#agent-frontmatter) | Preserve candidate thinking and fail closed on exhausted chains |
 | `src/index.ts`, `src/agent-policy-denial-result.ts`, `test/agent-policy-denial-result.test.ts`, `test/background-resume-wiring.test.ts`, `test/tool-description-mode.test.ts` | Registered `Agent` guidance stays target-neutral; fresh and resumed direct calls enforce persisted mode policy with structured failed results | Preserve mode-owned routing across mode switches and upstream resyncs |
 | `src/index.ts`, `src/agent-manager.ts`, `test/foreground-result-retrieval.test.ts`, `test/agent-identity-*.test.ts` | Foreground results expose canonical IDs; top-level names work for result/steer/resume; live resume rejects running/queued records before mutation | Continue the original session without guessing identity or restarting active work |
 
-Scheduling and worktree isolation are dropped from this fork. Agent target routing is mode-owned; other upstream execution and model-facing content is preserved except for the local identity and session-storage contracts. FleetView and Thinking Steps remain unchanged.
+Scheduling and worktree isolation are dropped from this fork. Agent target routing is mode-owned; other upstream execution and model-facing content is preserved except for the local model-chain, identity and session-storage contracts. FleetView and Thinking Steps remain unchanged.
 
 ## Features
 
@@ -331,7 +331,7 @@ All fields are optional — sensible defaults for everything.
 | `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |
 | `disallowed_tools` | — | Comma-separated tools to deny even if extensions provide them |
 | `isolation` | — | Set to `worktree` to run in an isolated git worktree, or `off` to refuse one even when the caller passes `isolation: "worktree"` (frontmatter is authoritative). `none`, `no`, and `false` are accepted spellings of `off` |
-| `model` | inherit parent | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`). Resolved tolerantly (`.`/`-` and a trailing date stamp are interchangeable) and falls back to the same model under another provider if the named one doesn't have it |
+| `model` | inherit parent | Ordered comma-separated chain of `provider/modelId[:thinking]` or fuzzy names. First available candidate wins; an exhausted chain fails before spawn |
 | `thinking` | inherit | off, minimal, low, medium, high, xhigh, max — actual availability depends on your pi version and model; pi clamps unsupported levels down |
 | `max_turns` | unlimited | Max agentic turns before graceful shutdown. `0` or omit for unlimited |
 | `persist_session` | `subagents.json` `rememberAgents` (default `true`) | Persist this subagent instead of keeping its session in memory; overrides `rememberAgents` in both directions. New persistent children default to `<agentDir>/subagent-sessions/<parentSessionId>/`, outside normal Pi session listings. The `.output` transcript is independent unless `output_transcript: false` |
@@ -346,7 +346,9 @@ All fields are optional — sensible defaults for everything.
 
 Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
 
-**Forgiving `model:` resolution.** A `model:` pin is matched against pi's model registry tolerantly, so cosmetic id variations don't silently drop the agent back to the parent's model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`), a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id and vice-versa), and a `provider/modelId` whose named provider doesn't carry that model retries the bare id against every provider. Precedence is **exact → fuzzy under the named provider → same model under any provider → unavailable**, so an exact match always wins and dated snapshots aren't conflated. If nothing resolves, the pin can't run and the agent inherits the parent model — `/agents → Agent types` flags this case as `(unavailable, fallback: inherit)` and shows the resolved target `(→ provider/id)` when resolution lands on a different provider or version than configured. (This is distinct from [Model Scope](#model-scope) enforcement, which matches the `enabledModels` allowlist by *exact* entry.)
+**Model chains (top-level and nested `Agent`).** Frontmatter `model` outranks the caller's `model`. Both accept ordered chains, for example `provider/primary:xhigh,other/fallback:high`, resolved by `extensions/lib/model.ts` against available models. Each candidate retains tolerant ID matching; provider-qualified candidates do not automatically retry another provider. An exhausted configured or explicit chain fails the tool call before spawning; only an omitted model inherits the parent.
+
+Thinking precedence is **frontmatter `thinking` → selected frontmatter candidate suffix → caller `thinking` → selected caller candidate suffix**. A candidate without a suffix never borrows one from an earlier candidate. Pi still clamps the resulting level to model support; requested-vs-effective values remain visible. Resume keeps its saved model.
 
 ### Nested subagents
 
@@ -422,7 +424,7 @@ Launch a sub-agent.
 | `description` | string | yes | Short 3-5 word summary (shown in UI) |
 | `name` | string | no | Memorable name for this top-level agent (`auth-audit`), accepted by `resume`, `steer_subagent` and `get_subagent_result`. Slugged and numbered on collision; the type-derived handle remains available |
 | `subagent_type` | string | yes | Target requested by the active mode's routing guidance. Unknown values first follow `fallbackSubagent`; runtime policy then authorizes the resolved target |
-| `model` | string | no | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`). Resolved tolerantly (`.`/`-` and a trailing date stamp interchangeable) with provider fallback |
+| `model` | string | no | Ordered model chain; used when frontmatter omits `model`. See [Model chains](#agent-frontmatter) |
 | `thinking` | string | no | Thinking level: off, minimal, low, medium, high, xhigh, max (availability depends on pi version and model) |
 | `max_turns` | number | no | Max agentic turns. Omit for unlimited (default) |
 | `run_in_background` | boolean | no | Defaults to `true`; `false` blocks and returns the result inline |
@@ -979,7 +981,7 @@ src/
 
   # Invocation surface
   invocation-config.ts # Shared tool-parameter schemas (isolation, join, thinking, ...)
-  model-resolver.ts   # Model resolution: exact provider/modelId with fuzzy fallback
+  # Model parsing and resolution: ../../lib/model.ts (shared ordered chains)
   enabled-models.ts   # Read pi's enabledModels settings (project over global)
   model-scope.ts      # scopeModels allowlist policy, shared by top-level and nested tools
   mention.ts          # `@handle message` grammar: suggestion triggers and send parsing

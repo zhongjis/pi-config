@@ -36,12 +36,13 @@ function makePi() {
 }
 
 function ctx() {
+  const model = { provider: "anthropic", id: "claude-haiku-4-5", name: "Haiku" };
   return {
     hasUI: false,
     ui: { setStatus: vi.fn(), setWidget: vi.fn(), notify: vi.fn() },
     cwd: process.cwd(),
     model: undefined,
-    modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
+    modelRegistry: { find: vi.fn(() => model), getAvailable: vi.fn(() => [model]) },
     sessionManager: { getSessionId: vi.fn(() => "s1"), getBranch: vi.fn(() => []) },
     getSystemPrompt: vi.fn(() => "parent"),
   } as any;

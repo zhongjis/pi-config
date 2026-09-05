@@ -1,3 +1,4 @@
+import type { ModelCandidate } from "../../lib/model.js";
 import { normalizeThinkingLevel } from "../../lib/thinking-level.js";
 import type { AgentConfig, JoinMode, ThinkingLevel } from "./types.js";
 
@@ -22,6 +23,9 @@ interface ResolveOptions {
    * a caller that supplies no options at all, which in-tree means tests.
    */
   defaultRunInBackground?: boolean;
+  /** Suffixes from candidates selected by extensions/lib/model.ts, never the whole chain. */
+  frontmatterModelThinking?: ModelCandidate["thinkingLevel"];
+  callerModelThinking?: ModelCandidate["thinkingLevel"];
 }
 
 export function resolveAgentInvocationConfig(
@@ -48,9 +52,12 @@ export function resolveAgentInvocationConfig(
   overridden?: { thinking?: ThinkingLevel; model?: string };
 } {
 
-  const overriddenThinking = agentConfig?.thinking != null && params.thinking != null
-    && agentConfig.thinking !== params.thinking
-    ? params.thinking as ThinkingLevel
+  const configuredThinking = agentConfig?.thinking ?? opts?.frontmatterModelThinking;
+  const callerThinking = params.thinking ?? opts?.callerModelThinking;
+  const thinking = normalizeThinkingLevel(configuredThinking ?? callerThinking) as ThinkingLevel | undefined;
+  const overriddenThinking = configuredThinking != null && callerThinking != null
+    && normalizeThinkingLevel(callerThinking) !== thinking
+    ? normalizeThinkingLevel(callerThinking) as ThinkingLevel | undefined
     : undefined;
   const overriddenModel = agentConfig?.model != null && params.model != null
     && agentConfig.model !== params.model
@@ -60,7 +67,7 @@ export function resolveAgentInvocationConfig(
   return {
     modelInput: agentConfig?.model ?? params.model,
     modelFromParams: agentConfig?.model == null && params.model != null,
-    thinking: normalizeThinkingLevel(agentConfig?.thinking ?? params.thinking) as ThinkingLevel | undefined,
+    thinking,
     maxTurns: agentConfig?.maxTurns ?? params.max_turns,
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,
     runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? opts?.defaultRunInBackground ?? false,
