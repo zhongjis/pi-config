@@ -52,16 +52,35 @@ function makePi() {
   return { pi, tools, lifecycle, emitted };
 }
 
-function makeCtx(cwd: string) {
+function makeCtx(cwd: string, entries: unknown[] = []) {
   return {
     hasUI: false,
     ui: { setStatus: vi.fn(), setWidget: vi.fn(), notify: vi.fn() },
     cwd,
     model: undefined,
     modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
-    sessionManager: { getSessionId: vi.fn(() => "session-1"), getBranch: vi.fn(() => []) },
+    sessionManager: {
+      getSessionId: vi.fn(() => "session-1"),
+      getBranch: vi.fn(() => []),
+      getEntries: vi.fn(() => entries),
+    },
     getSystemPrompt: vi.fn(() => "parent"),
   } as any;
+}
+
+function modePolicyEntries(permittedTypes: string[]): unknown[] {
+  return [{
+    type: "custom",
+    customType: "agent-mode",
+    data: {
+      mode: "test-mode",
+      delegationPolicy: {
+        version: 1,
+        allowDelegationTo: permittedTypes,
+        disallowDelegationTo: [],
+      },
+    },
+  }];
 }
 
 /** Flatten a tool result's content blocks to plain text. */
@@ -284,6 +303,127 @@ describe("Agent tool — background resume wiring", () => {
     // Foreground resume returns the answer inline — no background handoff text.
     expect(resultText(res)).toContain("inline answer");
     expect(resultText(res)).not.toContain("You will be notified");
+
+    await lifecycle.get("session_shutdown")?.({}, ctx);
+  });
+
+  it("allows a fresh target permitted by the active mode to reach execution", async () => {
+    const { pi, tools, lifecycle } = makePi();
+    subagentsExtension(pi);
+    const ctx = makeCtx(cwd, modePolicyEntries(["Explore"]));
+    vi.mocked(runAgent).mockClear();
+
+    const result = await tools.get("Agent").execute(
+      "allowed-call",
+      { prompt: "inspect", description: "Inspect code", subagent_type: "Explore", run_in_background: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    expect(result.details.subagentType).toBe("Explore");
+
+    await lifecycle.get("session_shutdown")?.({}, ctx);
+  });
+
+  it.each([
+    ["foreground", false],
+    ["background", true],
+  ] as const)("denies a forbidden fresh target before %s execution", async (_kind, runInBackground) => {
+    const { pi, tools, lifecycle, emitted } = makePi();
+    subagentsExtension(pi);
+    const ctx = makeCtx(cwd, modePolicyEntries(["Explore"]));
+    vi.mocked(runAgent).mockClear();
+
+    const result = await tools.get("Agent").execute(
+      "denied-call",
+      {
+        prompt: "implement",
+        description: "Implement change",
+        subagent_type: "general-purpose",
+        run_in_background: runInBackground,
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.details).toMatchObject({
+      displayName: "Agent",
+      description: "Implement change",
+      subagentType: "general-purpose",
+      toolUses: 0,
+      tokens: "",
+      durationMs: 0,
+      status: "error",
+      invocationStatus: "failed",
+      category: "delegation_policy_denied",
+      activeMode: "test-mode",
+      requestedType: "general-purpose",
+      permittedTypes: ["Explore"],
+    });
+    expect(result.details).not.toHaveProperty("resolvedType");
+    expect(runAgent).not.toHaveBeenCalled();
+    expect(writeInitialEntry).not.toHaveBeenCalled();
+    expect(emitted).not.toContainEqual(expect.objectContaining({ event: "subagents:created" }));
+
+    await lifecycle.get("session_shutdown")?.({}, ctx);
+  });
+
+  it("authorizes the resolved fallback target for malformed fresh requests", async () => {
+    const { pi, tools, lifecycle } = makePi();
+    subagentsExtension(pi);
+    const ctx = makeCtx(cwd, modePolicyEntries(["Explore"]));
+    vi.mocked(runAgent).mockClear();
+
+    const result = await tools.get("Agent").execute(
+      "fallback-call",
+      { prompt: "inspect", description: "Inspect code", subagent_type: "missing-agent", run_in_background: false },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.details).toMatchObject({
+      category: "delegation_policy_denied",
+      requestedType: "general-purpose",
+      permittedTypes: ["Explore"],
+    });
+    expect(runAgent).not.toHaveBeenCalled();
+
+    await lifecycle.get("session_shutdown")?.({}, ctx);
+  });
+
+  it("authorizes resume from the stored record type instead of the caller type", async () => {
+    const entries: unknown[] = [];
+    const { pi, tools, lifecycle } = makePi();
+    subagentsExtension(pi);
+    const ctx = makeCtx(cwd, entries);
+    const id = await spawnSettled(tools, ctx, "general-purpose");
+    entries.push(...modePolicyEntries(["Explore"]));
+    vi.mocked(resumeAgent).mockClear();
+
+    const result = await tools.get("Agent").execute(
+      "resume-call",
+      {
+        prompt: "continue",
+        description: "Continue work",
+        subagent_type: "Explore",
+        resume: id,
+        run_in_background: false,
+      },
+      undefined,
+      undefined,
+      ctx,
+    );
+
+    expect(result.details).toMatchObject({
+      category: "delegation_policy_denied",
+      requestedType: "general-purpose",
+      permittedTypes: ["Explore"],
+    });
+    expect(resumeAgent).not.toHaveBeenCalled();
 
     await lifecycle.get("session_shutdown")?.({}, ctx);
   });

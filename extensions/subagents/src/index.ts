@@ -16,6 +16,7 @@ import { defineTool, type ExtensionAPI, type ExtensionCommandContext, type Exten
 import { Container, Key, matchesKey, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { abortable } from "./abortable.js";
+import { buildAgentPolicyDenialDetails, registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
 import { hasAgentBadge, renderAgentName } from "./agent-color.js";
 import { buildNewAgentFile, disableInContent, enableInContent, isEmptyStub, locateAgentFile, personalAgentsDir, projectAgentsDir, serializeAgentFile } from "./agent-file-toggle.js";
 import { AgentManager, isTopLevelAgent } from "./agent-manager.js";
@@ -324,6 +325,8 @@ export default function (pi: ExtensionAPI) {
   // injected as scoped custom tools by the existing manager instead.
   if (inChildSessionContext()) return;
 
+  registerAgentPolicyDenialResultHook(pi);
+
   // ---- Register custom notification renderer ----
   registerSubagentNotificationRenderer(pi);
 
@@ -604,16 +607,28 @@ export default function (pi: ExtensionAPI) {
     if (reportUsage) pendingUsage.add(usage);
   });
 
+  const resolveAgentDelegationPolicy = (ctx: ExtensionContext, requestedType: string) =>
+    resolvePersistedDelegationPolicy({
+      entries: readModeEntries(ctx),
+      availableTypes: getAvailableTypes(),
+      requestedType,
+    });
+
+  const denyAgentDelegation = (ctx: ExtensionContext, requestedType: string, description: string) => {
+    const policy = resolveAgentDelegationPolicy(ctx, requestedType);
+    if (policy.decision.allowed) return undefined;
+    return textResult(
+      formatDelegationPolicyDenial(policy, requestedType),
+      buildAgentPolicyDenialDetails(policy, requestedType, description),
+    );
+  };
+
   // Inject the delegation-policy gate into the manager (defense in depth: the
   // Agent tool denies earlier, but any spawn reaching the manager is still
   // gated). The manager stays free of session-state imports — this closure
   // reads the persisted agent-mode policy from the spawn ctx and fails closed.
   manager.setPolicyChecker((ctx, type) => {
-    const decision = resolvePersistedDelegationPolicy({
-      entries: readModeEntries(ctx),
-      availableTypes: getAvailableTypes(),
-      requestedType: type,
-    });
+    const decision = resolveAgentDelegationPolicy(ctx, type);
     return decision.decision.allowed
       ? undefined
       : formatDelegationPolicyDenial(decision, type);
@@ -1081,30 +1096,11 @@ export default function (pi: ExtensionAPI) {
     widget.onTurnStart();
   });
 
-  /** Build the full type list text dynamically from available agents only. */
-  const buildTypeListText = () => {
-    const available = getAvailableTypes();
-
-    return available.map((name) => {
-      const cfg = getAgentConfig(name);
-      const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(cfg.model)})` : "";
-      const toolsSuffix = ` (Tools: ${formatToolsSuffix(cfg)})`;
-      return `- ${name}: ${cfg?.description ?? name}${modelSuffix}${toolsSuffix}`;
-    }).join("\n");
-  };
-
-  /** First sentence of an agent description — for the compact type list. */
-  const firstSentence = (text: string): string => {
-    const match = text.match(/^.*?[.!?](?=\s|$)/s);
-    return (match ? match[0] : text).replace(/\s+/g, " ").trim();
-  };
-
-  /** Compact type list: one line per agent, first sentence only. */
-  const buildCompactTypeListText = () =>
-    getAvailableTypes().map((name) => {
-      const cfg = getAgentConfig(name);
-      return `- ${name}: ${firstSentence(cfg?.description ?? name)} (Tools: ${formatToolsSuffix(cfg)})`;
-    }).join("\n");
+  // The Agent tool schema is static for a session, while modes can switch
+  // between turns. Keep both legacy template placeholders mode-safe by mapping
+  // them to the same target-neutral guidance; the active mode prompt owns routing.
+  const buildTargetNeutralTypeGuidance = () =>
+    "Targets are resolved from the current agent registry and active mode at execution time.";
 
   /** Derive a short model label from a model string. */
   function getModelLabelFromConfig(model: string): string {
@@ -1148,8 +1144,8 @@ export default function (pi: ExtensionAPI) {
   // Compact Agent tool description (#91, `toolDescriptionMode: "compact"`) —
   // the same load-bearing facts as the full version at ~75% fewer tokens, for
   // small/local models. Per-option details live in the param descriptions.
-  const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Agent types:
-${buildCompactTypeListText()}
+  const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Target selection:
+${buildTargetNeutralTypeGuidance()}
 
 Custom agents: .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global).
 
@@ -1160,10 +1156,9 @@ Notes:
 - The result is not shown to the user — summarize it for them. Verify an agent's claimed code changes before reporting work done.
 - resume continues a previous agent by ID; steer_subagent messages a running one.`;
 
-  const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously. Each agent type has specific capabilities and tools available to it.
+  const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously.
 
-Available agent types and the tools they have access to:
-${buildTypeListText()}
+${buildTargetNeutralTypeGuidance()}
 
 Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.
 
@@ -1208,8 +1203,8 @@ Terse command-style prompts produce shallow, generic work.
   // is customizable — the parameter schema stays code-owned.
   const renderToolDescriptionTemplate = (template: string): string => {
     const vars: Record<string, () => string> = {
-      typeList: buildTypeListText,
-      compactTypeList: buildCompactTypeListText,
+      typeList: buildTargetNeutralTypeGuidance,
+      compactTypeList: buildTargetNeutralTypeGuidance,
       agentDir: getAgentDir,
     };
     // Replacement callback (not a string) — agent descriptions may contain `$&` etc.
@@ -1258,7 +1253,7 @@ Terse command-style prompts produce shallow, generic work.
     promptSnippet: "Launch autonomous sub-agents for complex multi-step tasks",
     promptGuidelines: [
       "Use Agent with specialized agents when the task matches an agent type's description. Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results, but should not be used excessively when not needed. Importantly, avoid duplicating work that subagents are already doing — if you delegate research to a subagent, do not also perform the same searches yourself.",
-      "For broad codebase exploration or research, spawn Agent with an appropriate subagent_type (e.g. Explore). Otherwise use direct tools (read, grep, find) when the target is already known.",
+      "For broad codebase exploration or research, choose the subagent_type named by the active mode's routing guidance. Otherwise use direct tools (read, grep, find) when the target is already known.",
       "When an agent runs in the background, you will be notified on completion — do not poll or sleep waiting for it. Continue with other work instead.",
       "Trust but verify: an agent's summary describes intent, not outcome. When an agent writes or edits code, check the actual changes before reporting work as done.",
     ],
@@ -1276,7 +1271,7 @@ Terse command-style prompts produce shallow, generic work.
         }),
       ),
       subagent_type: Type.String({
-        description: `The type of specialized agent to use. Available types: ${getAvailableTypes().join(", ")}. Custom agents from .pi/agents/*.md (project) or ${getAgentDir()}/agents/*.md (global) are also available.`,
+        description: "The agent type to use, resolved from the current agent registry and active mode at execution time.",
       }),
       model: Type.Optional(
         Type.String({
@@ -1344,10 +1339,13 @@ Terse command-style prompts produce shallow, generic work.
       // unresolvable type falls back or fails closed.
       const dispatch = resolveSpawnType(rawType);
       // `resume` replays a stored session and ignores `subagent_type` entirely,
-      // but the parameter is required by the schema — so gating it here would
-      // make a live agent unresumable the moment its type is deleted, disabled,
-      // or gains a case-clashing sibling. Only a real spawn is gated.
-      if (!dispatch.ok && !params.resume) return textResult(dispatch.message);
+      // but the parameter is required by the schema. Fresh calls authorize the
+      // resolved dispatch target here, before manager/runner/output side effects.
+      if (!params.resume) {
+        if (!dispatch.ok) return textResult(dispatch.message);
+        const denial = denyAgentDelegation(ctx, dispatch.type, params.description);
+        if (denial) return denial;
+      }
       const subagentType = dispatch.ok ? dispatch.type : rawType;
       // What the caller actually asked for, named once: `fellBackFrom` is "" for
       // a blank request, so reading it inline invites the `??`-vs-`||` slip that
@@ -1483,6 +1481,8 @@ Terse command-style prompts produce shallow, generic work.
         if (!existing.session) {
           return textResult(`Agent "${params.resume}" has no active session to resume.`);
         }
+        const denial = denyAgentDelegation(ctx, existing.type, existing.description);
+        if (denial) return denial;
 
         // Background resume: detached run that notifies on completion, mirroring
         // a background spawn. Previously run_in_background was silently ignored
