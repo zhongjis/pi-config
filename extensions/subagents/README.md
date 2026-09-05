@@ -28,8 +28,9 @@ https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
 | `src/index.ts`, `src/workflow/` | `SubagentWorkflow` runs without requiring worktree isolation; schedule.ts removed | Workflows operate on repo-local runs; no croner dependency |
 | `src/invocation-config.ts`, `src/lib/` | Thinking level resolved through shared lib helpers rather than inline | Consistent thinking-level propagation across tool surfaces |
 | `src/index.ts`, `src/agent-policy-denial-result.ts`, `test/agent-policy-denial-result.test.ts`, `test/background-resume-wiring.test.ts`, `test/tool-description-mode.test.ts` | Registered `Agent` guidance stays target-neutral; fresh and resumed direct calls enforce persisted mode policy with structured failed results | Preserve mode-owned routing across mode switches and upstream resyncs |
+| `src/index.ts`, `src/agent-manager.ts`, `test/foreground-result-retrieval.test.ts`, `test/agent-identity-*.test.ts` | Foreground results expose canonical IDs; top-level names work for result/steer/resume; live resume rejects running/queued records before mutation | Continue the original session without guessing identity or restarting active work |
 
-Scheduling and worktree isolation are dropped from this fork. Agent target routing is mode-owned; other upstream execution and model-facing content is preserved. FleetView and Thinking Steps remain unchanged.
+Scheduling and worktree isolation are dropped from this fork. Agent target routing is mode-owned; other upstream execution and model-facing content is preserved except for the identity contract above. FleetView and Thinking Steps remain unchanged.
 
 ## Features
 
@@ -419,18 +420,24 @@ Launch a sub-agent.
 |-----------|------|----------|-------------|
 | `prompt` | string | yes | The task for the agent |
 | `description` | string | yes | Short 3-5 word summary (shown in UI) |
-| `name` | string | no | Memorable name for this agent (`auth-audit`), addressable as `@name` and accepted by `steer_subagent`/`get_subagent_result`. Additive — the type-derived handle is still assigned |
+| `name` | string | no | Memorable name for this top-level agent (`auth-audit`), accepted by `resume`, `steer_subagent` and `get_subagent_result`. Slugged and numbered on collision; the type-derived handle remains available |
 | `subagent_type` | string | yes | Target requested by the active mode's routing guidance. Unknown values first follow `fallbackSubagent`; runtime policy then authorizes the resolved target |
 | `model` | string | no | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`). Resolved tolerantly (`.`/`-` and a trailing date stamp interchangeable) with provider fallback |
 | `thinking` | string | no | Thinking level: off, minimal, low, medium, high, xhigh, max (availability depends on pi version and model) |
 | `max_turns` | number | no | Max agentic turns. Omit for unlimited (default) |
 | `run_in_background` | boolean | no | Defaults to `true`; `false` blocks and returns the result inline |
-| `resume` | string | no | Agent ID to resume a previous session |
+| `resume` | string | no | Canonical agent ID, live type-derived handle or assigned name of a retained session (no `@` prefix) |
 | `isolated` | boolean | no | No extension/MCP tools |
 | `isolation` | `"off"` \| `"worktree"` | no | `worktree` runs in an isolated git worktree; `off` (the default) does not. Absent from the schema entirely when `worktreeIsolation: false` |
 | `inherit_context` | boolean | no | Fork parent conversation into agent |
 
 When an active mode has a persisted delegation policy, fresh foreground and background calls are denied before any agent starts unless the resolved target is permitted. Resume authorization uses the stored agent record's type, not the caller's required `subagent_type` field. A denial is returned with structured policy details and marked as a tool error.
+
+#### Session resume
+
+Foreground results include `Agent ID: <id>` in model-visible content, including partial and error results. Use that ID to retrieve results or continue the same session; foreground resumes return it again.
+
+`resume` resolves an exact ID first, then a case-insensitive live handle or assigned name (`explore`, `explore-2`, `auth-audit`). Both foreground and background resumes require a retained top-level session whose current run has finished. Running or queued records are refused without mutation; use `steer_subagent` for a running agent or `get_subagent_result` to wait. Names do not restore evicted records, accept `@` prefixes, or bypass current-mode authorization.
 
 ### `SubagentWorkflow`
 

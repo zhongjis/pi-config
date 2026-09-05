@@ -1154,7 +1154,7 @@ Notes:
 - Parallel work: one message, multiple Agent calls — they run concurrently.
 - Foreground vs background: use foreground (default) when you need results before proceeding. Use run_in_background: true only for work you don't need immediately. Returns agent ID immediately; you will be notified when it completes — do NOT poll or sleep.
 - The result is not shown to the user — summarize it for them. Verify an agent's claimed code changes before reporting work done.
-- resume continues a previous agent by ID; steer_subagent messages a running one.`;
+- Foreground results include Agent ID. resume continues a retained session by ID, live handle or assigned name (no @ prefix); steer_subagent messages a running one.`;
 
   const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously.
 
@@ -1176,7 +1176,7 @@ If the target is already known, use a direct tool — \`read\` for a known path,
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
 - **Foreground vs background**: use foreground (default) when you need results before proceeding. Use background only when you can continue non-overlapping work while supervising each agent. Each background call returns an agent ID immediately. You will be notified when it completes — do NOT poll or sleep.
 - **Don't race**: after launching a background agent, you know nothing about its results. Never fabricate or predict them in any format. The completion notification arrives in a later turn. If the user asks before it lands, say the agent is still running — give status, not a guess.
-- Use resume with an agent ID to continue a previous agent's work. A new (non-resume) Agent call starts a fresh agent with no memory of prior runs, so the prompt must be self-contained.
+- Foreground results include Agent ID. Use resume with that ID, a live type-derived handle or assigned name (no @ prefix) to continue a retained session after its run finishes. A new (non-resume) Agent call starts a fresh agent with no memory of prior runs, so the prompt must be self-contained.
 - Use steer_subagent to send mid-run messages to a running background agent.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, etc.), since it is not aware of the user's intent.
 - If an agent's description says it should be used proactively, try to use it without the user having to ask for it first.
@@ -1267,7 +1267,7 @@ Terse command-style prompts produce shallow, generic work.
       name: Type.Optional(
         Type.String({
           description:
-            'Optional memorable name for this agent, e.g. "auth-audit", so it can be addressed as `@name` at the prompt and by steer_subagent / get_subagent_result. Letters, digits, `_` and `-`. Worth setting when several agents of the same type run at once; omit for one-off work. The agent stays reachable by its type either way.',
+            'Optional memorable name for this agent, e.g. "auth-audit", accepted by resume, steer_subagent and get_subagent_result. Letters, digits, `_` and `-`; collisions get numbered suffixes. Worth setting when several agents of the same type run at once. The type-derived handle remains available too.',
         }),
       ),
       subagent_type: Type.String({
@@ -1297,7 +1297,7 @@ Terse command-style prompts produce shallow, generic work.
       ),
       resume: Type.Optional(
         Type.String({
-          description: "Optional agent ID to resume from. Continues from previous context. Resumes detached like any other spawn; pass run_in_background: false to block and get the result inline. An agent can only be resumed once its current run has finished — use steer_subagent to reach one mid-run.",
+          description: "Optional agent ID, live type-derived handle or assigned name to resume from (no @ prefix). Continues a retained session from previous context; does not restore evicted records. Resumes detached like any other spawn; pass run_in_background: false to block and get the result inline. An agent can only be resumed once its current run has finished — use steer_subagent to reach one mid-run.",
         }),
       ),
       isolated: Type.Optional(
@@ -1474,7 +1474,7 @@ Terse command-style prompts produce shallow, generic work.
 
       // Resume existing agent
       if (params.resume) {
-        const existing = manager.getRecord(params.resume);
+        const existing = resolveAgentRef(params.resume);
         if (!existing || !isTopLevelAgent(existing)) {
           return textResult(`Agent not found: "${params.resume}". It may have been cleaned up.`);
         }
@@ -1484,23 +1484,18 @@ Terse command-style prompts produce shallow, generic work.
         const denial = denyAgentDelegation(ctx, existing.type, existing.description);
         if (denial) return denial;
 
+        // Reject before background wiring or foreground resume mutates the record.
+        if (existing.status === "running" || existing.status === "queued") {
+          return textResult(
+            `Agent "${params.resume}" is still ${existing.status} — it can only be resumed once its current run finishes.\n` +
+            `Use steer_subagent to send it a message mid-run, or get_subagent_result to wait for it.`,
+          );
+        }
+
         // Background resume: detached run that notifies on completion, mirroring
-        // a background spawn. Previously run_in_background was silently ignored
-        // on resume (this branch returned before the background branch below),
-        // so a resumed agent always blocked the main loop until it finished.
+        // a background spawn.
         if (runInBackground) {
           const id = existing.id;
-          // A detached resume hands control back while the record stays
-          // "running", so nothing stops the model from resuming the same agent
-          // again mid-run. manager.resume() refuses that (it would orphan the
-          // live run's abort controller); say why here, where the model can act
-          // on it, instead of letting it read as a generic failure.
-          if (existing.status === "running" || existing.status === "queued") {
-            return textResult(
-              `Agent "${params.resume}" is still ${existing.status} — it can only be resumed once its current run finishes.\n` +
-              `Use steer_subagent to send it a message mid-run, or get_subagent_result to wait for it.`,
-            );
-          }
 
           const record = await startBackgroundResume(ctx, existing, params.prompt, {
             outputTranscript,
@@ -1524,17 +1519,17 @@ Terse command-style prompts produce shallow, generic work.
           );
         }
 
-        const record = await manager.resume(params.resume, params.prompt, signal);
+        const record = await manager.resume(existing.id, params.prompt, signal);
         if (!record) {
           return textResult(`Failed to resume agent "${params.resume}".`);
         }
         // A failed resume surfaces the error, plus any partial output THIS
         // resume produced (never the previous turn's answer, #144).
         if (record.status === "error") {
-          return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, buildDetails(detailBaseFor(record), record));
+          return textResult(`Agent ID: ${record.id}\nAgent failed: ${record.error}${partialOutputSuffix(record)}`, buildDetails(detailBaseFor(record), record));
         }
         return textResult(
-          record.result?.trim() || "No output.",
+          `Agent ID: ${record.id}\n\n${record.result?.trim() || "No output."}`,
           buildDetails(detailBaseFor(record), record),
         );
       }
@@ -1755,7 +1750,7 @@ Terse command-style prompts produce shallow, generic work.
 
       if (record.status === "error") {
         // Error headline + any partial output the run produced before failing.
-        return textResult(`${fallbackNote}Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
+        return textResult(`${fallbackNote}Agent ID: ${record.id}\nAgent failed: ${record.error}${partialOutputSuffix(record)}`, details);
       }
 
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
@@ -1766,7 +1761,7 @@ Terse command-style prompts produce shallow, generic work.
         if (costText) statsParts.push(costText);
       }
       return textResult(
-        `${fallbackNote}Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getForegroundOutcomeNote(record.status)}.\n\n` +
+        `${fallbackNote}Agent ID: ${record.id}\nAgent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getForegroundOutcomeNote(record.status)}.\n\n` +
         (record.result?.trim() || "No output."),
         details,
       );
