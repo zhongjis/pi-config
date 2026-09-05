@@ -29,6 +29,7 @@ import { existsSync } from "node:fs";
 import { join, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { parseAgentFrontmatter } from "./custom-agents.js";
+import { BUILTIN_TOOL_NAMES } from "./agent-types.js";
 import type { AgentConfig } from "./types.js";
 
 export type AgentFileLocation = "project" | "workspace" | "personal";
@@ -186,7 +187,7 @@ export function isEmptyStub(content: string): boolean {
 /** The answers `/agents → Create agent → Manual` collects, before serialization. */
 export interface NewAgentInput {
   description: string;
-  /** Already-resolved `tools:` value ("none", "all", or a CSV of tool names). */
+  /** Wizard answer: "none", "all", or comma-separated built-in/custom tool names. */
   tools: string;
   /** `provider/modelId`, or undefined to inherit the parent's model. */
   model?: string;
@@ -195,74 +196,49 @@ export interface NewAgentInput {
   systemPrompt: string;
 }
 
-/**
- * Build the .md file the create wizard writes.
- *
- * `description` and `model` come straight from a free-text prompt, so they are
- * quoted rather than interpolated — `serializeAgentFile` above quotes the
- * description for the same reason. An unquoted YAML scalar mishandles ordinary
- * input in two ways, and both are silent: a colon ("Scout: find things") makes
- * the file unparseable, and since #212 an unparseable agent file is *skipped*,
- * so the wizard reports success for an agent that does not exist; a `#`
- * ("audit #security") opens a comment and truncates the value. `model` can
- * carry a colon too — pi accepts a `provider/model:thinking` suffix.
- *
- * `tools` and `thinking` are not quoted: both are chosen from fixed menus, and
- * `tools` is a CSV that must stay a bare scalar for the loader's parser.
- */
+/** Build current-schema frontmatter; JSON scalars/arrays are safe YAML values. */
 export function buildNewAgentFile(input: NewAgentInput): string {
-  const modelLine = input.model ? `\nmodel: ${JSON.stringify(input.model)}` : "";
-  const thinkingLine = input.thinking ? `\nthinking: ${input.thinking}` : "";
-  return `---
-description: ${JSON.stringify(input.description)}
-tools: ${input.tools}${modelLine}${thinkingLine}
-prompt_mode: replace
----
-
-${input.systemPrompt}
-`;
+  const tools = input.tools === "all" ? BUILTIN_TOOL_NAMES
+    : input.tools === "none" ? [] : input.tools.split(",").map(name => name.trim()).filter(Boolean);
+  const extensionTools = tools.filter(name => !BUILTIN_TOOL_NAMES.includes(name));
+  const fields = {
+    description: input.description,
+    builtin_tools: tools.filter(name => BUILTIN_TOOL_NAMES.includes(name)),
+    extension_tools: extensionTools.length > 0 ? extensionTools : undefined,
+    model: input.model,
+    thinking: input.thinking,
+    prompt_mode: "replace",
+  };
+  return `---\n${Object.entries(fields).filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join("\n")}\n---\n\n${input.systemPrompt}\n`;
 }
 
-/** Render a built-in tool list as a `tools:` frontmatter value. */
-function formatToolsField(tools: string[] | undefined): string {
-  if (tools === undefined) return "all";
-  if (tools.length === 0) return "none";
-  return tools.join(", ");
-}
-
-/** Serialize an AgentConfig to a full .md file (frontmatter + system prompt) for eject. */
+/** Serialize only fields consumed by the current loader, preserving explicit empty/false/zero values. */
 export function serializeAgentFile(cfg: AgentConfig): string {
-  const fmFields: string[] = [];
-  fmFields.push(`description: ${JSON.stringify(cfg.description)}`);
-  if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
-  if (cfg.color) fmFields.push(`color: ${JSON.stringify(cfg.color)}`);
-  // Absent means "all built-ins"; an EMPTY list means explicitly zero. Writing
-  // `all` for both would hand a deliberately tool-less agent the whole toolbox
-  // the first time it is ejected.
-  fmFields.push(`tools: ${formatToolsField(cfg.builtinToolNames)}`);
-  if (cfg.model) fmFields.push(`model: ${cfg.model}`);
-  if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
-  if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
-  if (cfg.allowedSubagents !== undefined) {
-    fmFields.push(`allowed_subagents: ${cfg.allowedSubagents === "all" ? "all" : cfg.allowedSubagents.join(", ")}`);
-  }
-  fmFields.push(`prompt_mode: ${cfg.promptMode}`);
-  if (cfg.extensions === false) fmFields.push("extensions: false");
-  else if (Array.isArray(cfg.extensions)) fmFields.push(`extensions: ${cfg.extensions.join(", ")}`);
-  if (cfg.excludeExtensions?.length) fmFields.push(`exclude_extensions: ${cfg.excludeExtensions.join(", ")}`);
-  if (cfg.skills === false) fmFields.push("skills: false");
-  else if (Array.isArray(cfg.skills)) fmFields.push(`skills: ${cfg.skills.join(", ")}`);
-  if (cfg.disallowedTools?.length) fmFields.push(`disallowed_tools: ${cfg.disallowedTools.join(", ")}`);
-  if (cfg.inheritContext) fmFields.push("inherit_context: true");
-  // Both cases, not just `true`: with `backgroundByDefault` on, omitting the
-  // field means background, so `false` is the only way to pin an agent file to
-  // foreground and is no longer interchangeable with absence. No caller can
-  // reach it yet — Eject only handles built-in defaults, which omit the field —
-  // so this keeps the writer symmetric with the loader, nothing more.
-  if (cfg.runInBackground !== undefined) fmFields.push(`run_in_background: ${cfg.runInBackground}`);
-  if (cfg.outputTranscript === false) fmFields.push("output_transcript: false");
-  if (cfg.isolated) fmFields.push("isolated: true");
-  if (cfg.memory) fmFields.push(`memory: ${cfg.memory}`);
-
-  return `---\n${fmFields.join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
+  const fields = {
+    description: cfg.description,
+    display_name: cfg.displayName,
+    builtin_tools: cfg.builtinToolNames ?? BUILTIN_TOOL_NAMES,
+    extension_tools: cfg.extensionToolNames,
+    allow_delegation_to: cfg.allowDelegationTo,
+    disallow_delegation_to: cfg.disallowDelegationTo,
+    allow_nesting: cfg.allowNesting,
+    extensions: cfg.extensions,
+    exclude_extensions: cfg.excludeExtensions,
+    discover_skills: cfg.discoverSkills,
+    preload_skills: cfg.preloadSkills,
+    model: cfg.model,
+    thinking: cfg.thinking,
+    max_turns: cfg.maxTurns,
+    persist_session: cfg.persistSession,
+    output_transcript: cfg.outputTranscript,
+    session_dir: cfg.sessionDir,
+    prompt_mode: cfg.promptMode,
+    inherit_context: cfg.inheritContext,
+    run_in_background: cfg.runInBackground,
+    isolated: cfg.isolated,
+    enabled: cfg.enabled,
+  };
+  return `---\n${Object.entries(fields).filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join("\n")}\n---\n\n${cfg.systemPrompt}\n`;
 }

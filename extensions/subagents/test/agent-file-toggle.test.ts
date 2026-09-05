@@ -23,6 +23,7 @@ import {
   locateAgentFile,
 } from "../src/agent-file-toggle.js";
 import { parseAgentFrontmatter } from "../src/custom-agents.js";
+import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 
 /** What the loader concludes about a file, via the same parser it really uses. */
 function loaderSeesDisabled(content: string): boolean {
@@ -365,7 +366,10 @@ describe("buildNewAgentFile", () => {
   const base = { tools: "read, grep", systemPrompt: "Do the thing.", description: "Scout" };
 
   /** What the loader makes of the generated file. */
-  const parse = (content: string) => parseFrontmatter<Record<string, unknown>>(content).frontmatter;
+  const parse = (content: string) => {
+    expect(parseAgentMarkdown(content).invalidFields).toEqual([]);
+    return parseFrontmatter<Record<string, unknown>>(content).frontmatter;
+  };
 
   it("round-trips an ordinary description", () => {
     expect(parse(buildNewAgentFile(base)).description).toBe("Scout");
@@ -407,7 +411,7 @@ describe("buildNewAgentFile", () => {
 
   it("emits the fields the wizard collects, and omits the ones left on inherit", () => {
     const full = parse(buildNewAgentFile({ ...base, model: "anthropic/x", thinking: "high" }));
-    expect(full).toMatchObject({ tools: "read, grep", model: "anthropic/x", thinking: "high", prompt_mode: "replace" });
+    expect(full).toMatchObject({ builtin_tools: ["read", "grep"], model: "anthropic/x", thinking: "high", prompt_mode: "replace" });
 
     const minimal = parse(buildNewAgentFile(base));
     expect(minimal.model).toBeUndefined();

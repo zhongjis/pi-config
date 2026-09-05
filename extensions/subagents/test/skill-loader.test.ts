@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { hermeticDir } from "./helpers/boot-extension.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { preloadSkills } from "../src/skill-loader.js";
 
@@ -233,5 +234,67 @@ describe("preloadSkills", () => {
     const result = preloadSkills(["evil-inner"], tmpDir);
     expect(result[0].content).toContain("not found");
     expect(result[0].content).not.toContain("TOP SECRET");
+  });
+});
+
+describe("skill identity and provenance", () => {
+  it.each(["vendored/SKILL.md", "vendored.md"])("uses YAML identity rather than %s and resolves relative resources", (layout) => {
+    const fixture = hermeticDir();
+    try {
+      const sourcePath = join(fixture.dir, ".pi", "skills", layout);
+      mkdirSync(dirname(sourcePath), { recursive: true });
+      writeFileSync(sourcePath, "---\nname: canonical\n---\nSKILL_PAYLOAD");
+      writeFileSync(join(dirname(sourcePath), "reference.txt"), "RELATIVE_RESOURCE");
+      const [skill] = preloadSkills(["canonical"], fixture.dir);
+      expect(skill).toMatchObject({ name: "canonical", sourcePath, baseDir: dirname(sourcePath) });
+      if (!skill.baseDir || !skill.sourcePath) throw new Error("Missing skill provenance");
+      expect(readFileSync(join(skill.baseDir, "reference.txt"), "utf8")).toBe("RELATIVE_RESOURCE");
+      expect(readFileSync(skill.sourcePath, "utf8").trim()).toBe(skill.content);
+      expect(preloadSkills(["vendored"], fixture.dir)[0]).not.toHaveProperty("sourcePath");
+    } finally {
+      fixture.restore();
+    }
+  });
+
+  it.each(["directory", "file"])("finds ancestor skills but stops at a git-root %s marker", (marker) => {
+    const fixture = hermeticDir();
+    try {
+      const repo = join(fixture.dir, "repo");
+      const cwd = join(repo, "packages", "app");
+      mkdirSync(cwd, { recursive: true });
+      if (marker === "directory") mkdirSync(join(repo, ".git"));
+      else writeFileSync(join(repo, ".git"), "gitdir: /unused/worktree");
+      const root = join(repo, ".agents", "skills", "renamed");
+      mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, "SKILL.md"), "---\nname: ancestor\n---\nANCESTOR_PAYLOAD");
+      const outside = join(fixture.dir, ".agents", "skills", "outside");
+      mkdirSync(outside, { recursive: true });
+      writeFileSync(join(outside, "SKILL.md"), "OUTSIDE_PAYLOAD");
+      expect(preloadSkills(["ancestor"], cwd)[0]).toMatchObject({ sourcePath: join(root, "SKILL.md"), baseDir: root });
+      expect(preloadSkills(["outside"], cwd)[0]).not.toHaveProperty("sourcePath");
+    } finally {
+      fixture.restore();
+    }
+  });
+
+  it("keeps canonical lookup inside nesting and symlink boundaries", () => {
+    const fixture = hermeticDir();
+    try {
+      const root = join(fixture.dir, ".pi", "skills");
+      const outer = join(root, "outer");
+      const nested = join(outer, "nested");
+      const external = join(fixture.dir, "external");
+      for (const dir of [nested, external]) mkdirSync(dir, { recursive: true });
+      writeFileSync(join(outer, "SKILL.md"), "---\nname: parent\n---\nPARENT_PAYLOAD");
+      writeFileSync(join(nested, "SKILL.md"), "---\nname: hidden\n---\nNESTED_PAYLOAD");
+      writeFileSync(join(external, "SKILL.md"), "---\nname: linked\n---\nLINKED_PAYLOAD");
+      symlinkSync(external, join(root, "linked-dir"));
+      symlinkSync(join(external, "SKILL.md"), join(root, "linked.md"));
+      for (const name of ["hidden", "linked", "../external"]) {
+        expect(preloadSkills([name], fixture.dir)[0]).not.toHaveProperty("sourcePath");
+      }
+    } finally {
+      fixture.restore();
+    }
   });
 });

@@ -52,7 +52,7 @@ Scheduling and worktree isolation are dropped from this fork. Agent target routi
 - **Persistent agent memory** — three scopes (project, local, user) with automatic read-only fallback for agents without write tools
 - **Git worktree isolation** — run agents in isolated repo copies; changes auto-committed to branches on completion
 - **Skill preloading** — inject named skills into agent system prompts, discovered from `.pi/skills/`, `.agents/skills/`, and global locations (Pi-standard `<name>/SKILL.md` directory layout supported)
-- **Tool denylist** — block specific tools via `disallowed_tools` frontmatter
+- **Tool allowlists** — select built-ins and custom tools with `builtin_tools` and `extension_tools`
 - **Styled completion notifications** — background agent results render as themed, compact notification boxes (icon, stats, result preview) instead of raw XML. Expandable to show full output. Group completions render each agent individually
 - **Event bus** — lifecycle events (`subagents:created`, `started`, `completed`, `failed`, `steered`, `compacted`) emitted via `pi.events`, enabling other extensions to react to sub-agent activity
 - **Cross-extension RPC** — other pi extensions can spawn, stop, and join subagents via the `pi.events` event bus (`subagents:rpc:ping`, `subagents:rpc:spawn`, `subagents:rpc:stop`, `subagents:rpc:consume`). Standardized reply envelopes with protocol versioning. Emits `subagents:ready` on session start. **[Full reference](https://github.com/tintinweb/pi-subagents/blob/master/docs/rpc.md)**
@@ -273,7 +273,7 @@ Default agents can be **ejected** (`/agents` → select agent → Eject) to expo
 
 ## Custom Agents
 
-Define custom agent types by creating `.md` files. The frontmatter `name:` is the `subagent_type` and dispatch identity, falling back to the filename when absent; `display_name` only changes the UI label. Claiming a default agent's name overrides it.
+Define custom agent types with `.md` files. The filename (without `.md`) is the dispatch identity; `display_name` changes only the UI label. A default agent's filename overrides that default.
 
 Agents are discovered from three locations (higher priority wins):
 
@@ -283,17 +283,16 @@ Agents are discovered from three locations (higher priority wins):
 | 2 | `.agents/agents/<name>.md` | Project — the shared cross-tool `.agents` workspace (same convention as `.agents/skills/`) |
 | 3 | `$PI_CODING_AGENT_DIR/agents/<name>.md` (default `~/.pi/agent/agents/<name>.md`) | Global — available everywhere |
 
-Project-level agents override global ones with the same name, so you can customize a global agent for a specific project. If both project locations define the same name, **`.pi/agents/` wins** — `.pi` stays the project authority; `.agents/agents/` is an additional read location for projects that keep their agent assets in the `.agents` workspace. The global location follows the upstream `PI_CODING_AGENT_DIR` env var — set it to relocate all pi-coding-agent state (agents, skills, settings) to a custom directory. An agent's name is its frontmatter `name:`, falling back to the filename, so two files can now claim the same one — the later load wins, and the warning below names the file that took over.
+Project-level agents override same-named global agents; `.pi/agents/` overrides `.agents/agents/`. The global location follows `PI_CODING_AGENT_DIR`.
 
-An unreadable or unparseable agent file is skipped, not fatal — a warning names the file and the error. If it was overriding a same-named agent, a second line names the file that loads instead. Set `strictAgentFiles: true` in `subagents.json` (or `/agents → Settings → Strict agent files`) to fail startup on a broken file instead; mid-session reloads still only warn.
+The shared schema rejects obsolete tool/skill fields with diagnostics. The generation wizard validates saved output before reporting success; malformed YAML or obsolete fields produce a warning instead.
 
 ### Example: `.pi/agents/auditor.md`
 
 ```markdown
 ---
-color: red
-description: Security Code Reviewer
-tools: read, grep, find, bash
+description: "Security Code Reviewer"
+builtin_tools: ["read", "grep", "find", "bash"]
 model: anthropic/claude-opus-4-6
 thinking: high
 max_turns: 30
@@ -321,30 +320,30 @@ All fields are optional — sensible defaults for everything.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `description` | filename | Agent description shown in tool listings |
-| `name` | filename | **The agent's type** — what `subagent_type` and `@handle` address. Claude Code's rule: the filename doesn't have to match, so `blubb.md` with `name: code-review` dispatches as `code-review`. Omit it and the filename is used. Any value works except one containing `:`, which Claude Code reserves for plugin-scoped identifiers — such a file is skipped with a warning. Two files may declare the same name; the later load wins, as a filename clash always did |
-| `display_name` | the type | Label shown in the UI (widget, agent list, badges) — cosmetic only, and independent of `name`. Claude Code has no equivalent; a file that sets only `name` badges as its type, unchanged |
-| `color` | — | Background color for the agent name badge in the Agent tool header, widget, FleetView, and conversation viewer. Supports Claude Code's `red`, `blue`, `green`, `yellow`, `purple`, `orange`, `pink`, `cyan` (the values its own default theme uses); quoted six-digit hex such as `"#8B5CF6"`; and Agency Agents aliases (`amber`, `teal`, `indigo`, `gold`, `neon-green`, `neon-cyan`, `metallic-blue`, `violet`, `rose`, `lime`, `gray`/`grey`, `fuchsia`, `slate`, `navy`). Badge text is black or white, whichever clears 4.5:1 against the rendered background — Claude Code uses one inverse color for every badge. Invalid values render no badge and preserve each surface's existing theme foreground |
-| `tools` | all 7 | Which tools the agent can call. Built-in names (`read, grep, …`), `*` / `all` (all built-ins), `none`, and `ext:<extension>` / `ext:<extension>/<tool>` selectors for extension tools. See [Tool & extension scoping](#tool--extension-scoping) below |
+| `display_name` | the filename | Cosmetic UI label |
+| `builtin_tools` | all installed built-ins | Explicit built-in names; `[]` selects none. `all` and `*` are not built-in names |
+| `extension_tools` | all loaded extension tools | Explicit custom/extension tool names; `[]` selects none |
 | `extensions` | `true` | Which extensions to load for the agent. `true` (all defaults), `false` (none), or an explicit list: `[mcp, "/abs/path.ts", "*"]`. See [Tool & extension scoping](#tool--extension-scoping) below |
 | `exclude_extensions` | — | Extension denylist applied after `extensions:` — exclude wins. Plain names only (case-insensitive), no paths or `*`. Useful with `extensions: true` to drop one extension (e.g. `pi-notify`) |
-| `skills` | `true` | `true` inherits the parent's skills; `false` inherits none. A comma-separated list preloads **only** those skills into the system prompt and does not inherit the rest (see [Skill Preloading](#skill-preloading) for discovery locations) |
-| `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |
-| `disallowed_tools` | — | Comma-separated tools to deny even if extensions provide them |
-| `isolation` | — | Set to `worktree` to run in an isolated git worktree, or `off` to refuse one even when the caller passes `isolation: "worktree"` (frontmatter is authoritative). `none`, `no`, and `false` are accepted spellings of `off` |
+| `discover_skills` | `true` | Include the discoverable skill catalog, independently of preloading |
+| `preload_skills` | empty | Comma-separated skill names eagerly injected into the system prompt; unioned with per-call `Agent.skills` (see [Skill Preloading](#skill-preloading)) |
 | `model` | inherit parent | Ordered comma-separated chain of `provider/modelId[:thinking]` or fuzzy names. First available candidate wins; an exhausted chain fails before spawn |
 | `thinking` | inherit | off, minimal, low, medium, high, xhigh, max — actual availability depends on your pi version and model; pi clamps unsupported levels down |
 | `max_turns` | unlimited | Max agentic turns before graceful shutdown. `0` or omit for unlimited |
 | `persist_session` | `subagents.json` `rememberAgents` (default `true`) | Persist this subagent instead of keeping its session in memory; overrides `rememberAgents` in both directions. New persistent children default to `<agentDir>/subagent-sessions/<parentSessionId>/`, outside normal Pi session listings. The `.output` transcript is independent unless `output_transcript: false` |
-| `output_transcript` | `true` (or `subagents.json` `outputTranscript`) | Write this subagent's `.output` transcript; when set, overrides the `subagents.json` `outputTranscript` default. Set `false` to write no transcript file or path. Governs only the transcript — independent of `persist_session`, `isolation: worktree`, and `memory:` |
+| `output_transcript` | `true` (or `subagents.json` `outputTranscript`) | Write this subagent's `.output` transcript; independent of `persist_session` |
 | `session_dir` | `<agentDir>/subagent-sessions/<parentSessionId>/` | Explicit directory for persistent sessions; relative paths resolve from the agent cwd. Overrides the isolated default without appending a parent directory. Existing saved sessions resume at their original file path; no logs are moved |
-| `allowed_subagents` | none | Opt in to scoped nested `Agent`, `get_subagent_result`, and `steer_subagent` tools. Omitted / empty / `none` / `false` = no nesting; `all` (or `"*"` / `true`) = any enabled agent; comma-separated list = only those agent types |
-| `prompt_mode` | `replace` | `replace`: body is the full system prompt (no AGENTS.md / CLAUDE.md inheritance). `append`: body appended to parent's prompt (agent acts as a "parent twin" — inherits parent's AGENTS.md / CLAUDE.md) |
+| `allow_nesting` | `false` | Enable scoped nested delegation on a non-isolated agent |
+| `allow_delegation_to` / `disallow_delegation_to` | — | Delegation target allowlist / denylist |
+| `prompt_mode` | `replace` | `replace`: full system prompt; `append`: specialization appended to parent prompt; `system_instructions`: body used as system instructions |
 | `inherit_context` | `false` | Fork parent conversation into agent |
 | `run_in_background` | — | Pin this agent to background (`true`) or foreground (`false`). Omit to follow `backgroundByDefault` |
-| `isolated` | `false` | Hermetic specialist mode: forces `extensions: false` + `skills: false` + drops `ext:` selectors. Only built-in tools. Distinct from `isolation: worktree` (filesystem) |
+| `isolated` | `false` | Built-ins only: suppress extensions, skill catalog/preloads, and inherited context |
 | `enabled` | `true` | Set to `false` to disable an agent (useful for hiding a default agent per-project) |
 
-Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
+Frontmatter is authoritative. `Agent` tool parameters only fill fields the agent config leaves unspecified.
+
+`/agents` manual creation and Eject emit current loader fields with quoted strings and arrays, retaining explicit `false`, empty lists/strings, and `max_turns: 0`. Eject omits historical fields the loader no longer consumes. Manual custom tool names go into `extension_tools`; built-in names go into `builtin_tools`. The “none” tool choice selects no built-ins; extensions remain independently configured.
 
 **Model chains (top-level and nested `Agent`).** Frontmatter `model` outranks the caller's `model`. Both accept ordered chains, for example `provider/primary:xhigh,other/fallback:high`, resolved by `extensions/lib/model.ts` against available models. Each candidate retains tolerant ID matching; provider-qualified candidates do not automatically retry another provider. An exhausted configured or explicit chain fails the tool call before spawning; only an omitted model inherits the parent.
 
@@ -352,63 +351,38 @@ Thinking precedence is **frontmatter `thinking` → selected frontmatter candida
 
 ### Nested subagents
 
-Nested delegation is default-off. Set `allowed_subagents` only on a non-isolated custom agent that owns a real fan-out responsibility:
+Nested delegation is default-off. Use current delegation fields on a non-isolated agent:
 
 ```yaml
 ---
-tools: read, grep, find
-extensions: false
-allowed_subagents: support-file-finder, support-callsite-tracer   # or `all`
+builtin_tools: ["read", "grep", "find"]
+allow_nesting: true
+allow_delegation_to: ["support-file-finder", "support-callsite-tracer"]
+disallow_delegation_to: ["writer"]
 ---
 ```
 
-**The allowlist is a privilege boundary, not just a routing hint.** A child runs with *its own* `tools:`, `extensions:`, and `isolated:` — the parent's restrictions are not inherited — so delegation grants the parent the union of what the listed agents can do. The read-only agent above can write and run commands through any listed agent that can, and `all` reaches every enabled agent including `general-purpose`. Choose the list as carefully as you would choose `tools:` itself; that is the main reason this is default-off.
-
-`allowed_subagents` is runtime-enforced. A comma-separated list restricts nesting to those types; `all` (or `"*"` / `true`, matching how `extensions:` and `skills:` take booleans) allows any enabled agent; omitted, empty, `none`, or `false` means no nested tools are injected at all. Unknown, disabled, and out-of-list types are rejected rather than falling back — regardless of the project's [fallback agent](#persistent-settings) setting, so a configured fallback can never hand a nested caller an agent outside its allowlist — and a nested `model:` is validated against [Model Scope](#model-scope) exactly like a top-level spawn. Result, resume, and steering operations are ownership-scoped, so a parent can control only its own children. Nested records remain internal to that parent and do not appear in top-level tools, lifecycle events, or agent UI — so when a parent finishes, is stopped, or ends a resumed turn, its nested children are stopped with it. They do write their own `.output` transcript (subject to the same `output_transcript` gate), filed under the root session's directory alongside their ancestors', so a nested run can still be inspected after the fact. Their token usage is folded into every ancestor's totals up to the top-level agent (lifecycle events, completion notifications, `/agents`), so nested spend stays attributable at any depth even though the children themselves stay hidden. A nested result that ends `stopped`, `aborted`, or `steered` is labelled as partial, the same guarantee top-level results carry.
-
-The hard cap is depth 2 by default: main session (0) → subagent (1) → nested child (2). Change it project-wide with `maxSubagentDepth` in `subagents.json` (or `/agents → Settings → Nested depth`); `0` or `1` turns nesting off everywhere. An agent already at the cap gets no nested tools at all — not even `get_subagent_result`, since it can never own a child. A child must independently set `allowed_subagents` to delegate again; isolated agents never receive nested tools.
-
-Nested children occupy no concurrency slot, in either pool — their parent already holds one, and queueing them behind it would deadlock a parent waiting on its own child. The depth cap bounds how *deep* nesting goes, not how *wide*: a parent's only limit on concurrent children is that each spawn costs it a turn. Pair `allowed_subagents` with a `max_turns` on that agent if you want a hard ceiling on its fan-out.
-
-Because a subagent session never activates this extension (that is what keeps a child from building a second agent manager, and it is why nested tools are injected directly instead), a subagent also gets none of the extension's other surfaces: no `/agents` command, no cross-extension RPC handlers, no `subagents:ready` event.
+A child uses its own tool permissions, not its parent's. Choose delegation targets as carefully as tool allowlists. Nested children are ownership-scoped, hidden from top-level management, and subject to the configured depth cap.
 
 ### Tool & extension scoping
 
-`extensions:` decides **which extensions load**, `tools:` decides **which tools surface to the LLM**. They compose:
+`extensions` selects what loads; `builtin_tools` and `extension_tools` select which tools surface.
 
 ```yaml
-# Default (both omitted): all extensions load, all 7 built-ins surface
-
-tools: read, grep, find           # narrow to listed built-ins; extensions still load
-tools: "*"                        # all 7 built-ins (alias: `all`)
-tools: none                       # zero built-ins (alias: `""`)
-tools: "*, ext:mcp/search"        # built-ins plus one extension tool
-
-extensions: false                 # no extensions load
-extensions: [mcp]                 # only mcp loads
-extensions: ["*", "/abs/foo.ts"]  # all defaults plus one path-loaded extension
-
-exclude_extensions: pi-notify     # everything except pi-notify (with extensions: true)
-
-# Specialist: load one extension, expose only one of its tools, keep built-ins
-extensions: [mcp]
-tools: "*, ext:mcp/search"
-
-isolated: true                    # hermetic: built-ins only, no extensions/skills/context
+builtin_tools: ["read", "grep", "find"]
+extension_tools: ["search"]
+extensions: ["mcp"]
+exclude_extensions: ["pi-notify"]
 ```
 
-A few rules the examples don't make obvious:
-
-- `extensions:` is the sole loading authority. `ext:foo` in `tools:` narrows what surfaces; it can't load `foo` on its own. Mismatches fire `extension-error:…` warnings.
-- Any `ext:` entry flips extension tools to an explicit allowlist — unnamed extensions still load (handlers fire) but expose no tools. So `tools: "*, ext:mcp/search"` exposes only `search` from `mcp`, nothing from any other extension.
-- Extension names match case-insensitively (`[Mcp]` = `[mcp]`); tool names in `ext:foo/bar` stay case-sensitive.
-- Extensions that register tools **lazily** work too. MCP-backed extensions typically can't enumerate their tools until their servers connect, so they register from `session_start` or `before_agent_start` rather than at load. Subagent scoping is re-derived as tools appear, so these surface normally — including under `ext:` selectors, which keep narrowing correctly no matter when a tool shows up.
-- Extensions bound into a subagent see **both ends** of that session's lifecycle: `session_start` when the agent starts, `session_shutdown` (reason `quit`) when its session is disposed — on quit, and when its record is evicted ~10 minutes after it finishes. Release per-session resources there; anything left armed outlives the session it belongs to. Handlers are given three seconds on quit, after which teardown proceeds regardless.
-- An installed **package** extension matches by its package short name (`@scope/pi-subagents` → `[pi-subagents]`), in addition to its path-derived name (a package whose entry is `src/index.ts` also answers to `[src]`). Prefer the package name — the path-derived one is incidental.
-- Plain `tools:` typos fail loudly: `tools: reed, grep` fires `tools-error:…` instead of silently producing an under-tooled agent.
-- `exclude_extensions:` wins over `extensions:` and over `ext:` selectors — an excluded extension never loads and a `tools: ext:` entry can't pull it back. Plain names only (no paths, no `*`); a name matching nothing fires an `extension-error:…` warning.
-- `exclude_extensions:` is **not a sandbox**: excluded extensions' factory code still executes once during loading. Exclusion suppresses their tools and their bound lifecycle hooks (`pi.on` handlers like `session_start` only fire for extensions bound to the session), but not other load-time side effects — a factory that subscribes directly to the shared `pi.events` bus stays live. Don't rely on it to contain an untrusted extension.
-- Array and string forms are equivalent: `[a, b]` == `"a, b"`.
+- Omit `builtin_tools` for all installed built-ins, or use `[]` for none.
+- Omit `extension_tools` for all loaded extension tools, or use `[]` for none.
+- Use exact tool names in allowlists; extension selection alone does not select tools.
+- `extensions` accepts `true`, `false`, or a list of names/paths. `exclude_extensions` takes precedence.
+- `isolated: true` suppresses extensions, skills and inherited context.
+- Exclusion is not a sandbox: extension factory side effects may run during discovery.
+- String CSV and array forms are accepted; emit quoted strings/arrays for safe YAML.
+- `tools`, `disallowed_tools`, `disallow_tools`, `skills`, and `inherit_skills` invalidate the definition. Use the current allowlists and skill fields above.
 
 **How an agent's scope is advertised.** The registered `Agent` affordance deliberately does not enumerate agent types or tool scopes: tool schemas are static for a session, while the active mode can switch between turns. The active mode prompt owns routing guidance, and runtime policy authorizes the resolved target. Inspect `/agents → Agent types` when you need the live registry and each agent's configured tools.
 
@@ -432,6 +406,7 @@ Launch a sub-agent.
 | `isolated` | boolean | no | No extension/MCP tools |
 | `isolation` | `"off"` \| `"worktree"` | no | `worktree` runs in an isolated git worktree; `off` (the default) does not. Absent from the schema entirely when `worktreeIsolation: false` |
 | `inherit_context` | boolean | no | Fork parent conversation into agent |
+| `skills` | string[] | no | Additional skill preloads, unioned with `preload_skills` independently of discovery; ignored on resume or when isolated |
 
 When an active mode has a persisted delegation policy, fresh foreground and background calls are denied before any agent starts unless the resolved target is permitted. Resume authorization uses the stored agent record's type, not the caller's required `subagent_type` field. A denial is returned with structured policy details and marked as a tool error.
 
@@ -872,7 +847,7 @@ The `user` scope previously hardcoded `~/.pi/agent-memory/`. If that legacy dire
 
 Memory uses a `MEMORY.md` index file and individual memory files with frontmatter. Agents with write tools get full read-write access. **Read-only agents** (no `write`/`edit` tools) automatically get read-only memory — they can consume memories written by other agents but cannot modify them. This prevents unintended tool escalation.
 
-The `disallowed_tools` field is respected when determining write capability — an agent with `tools: write` + `disallowed_tools: write` correctly gets read-only memory.
+`memory` is historical configuration and is not consumed by the current agent-file loader.
 
 ## Worktree Isolation
 
@@ -911,42 +886,43 @@ Skills can be preloaded by name and injected into the agent's system prompt:
 
 ```yaml
 ---
-skills: api-conventions, error-handling
+discover_skills: true
+preload_skills: api-conventions, error-handling
 ---
 ```
+
+`Agent({ ..., skills: ["api-conventions"] })` adds per-call preloads in foreground or background. Configured and per-call names are unioned and deduplicated. Per-call skills are ignored on resume; `isolated: true` suppresses both preloads and the catalog. Present or missing preloads never disable `discover_skills`. Agent frontmatter `skills` / `inherit_skills` are obsolete.
+
+Loaded skills include their source path and skill directory; relative references resolve from that directory, not the agent's working directory.
 
 **Discovery roots** (checked in this order, first match wins):
 
 | Scope | Path | Source |
 |---|---|---|
 | Project | `<cwd>/.pi/skills/` | Pi-standard |
-| Project | `<cwd>/.agents/skills/` | [Agent Skills spec](https://agentskills.io/integrate-skills) |
+| Project | `<cwd>/.agents/skills/`, then ancestors through the git root (inclusive) | [Agent Skills spec](https://agentskills.io/integrate-skills) |
 | User | `$PI_CODING_AGENT_DIR/skills/` (default `~/.pi/agent/skills/`) | Pi-standard |
 | User | `~/.agents/skills/` | [Agent Skills spec](https://agentskills.io/integrate-skills) |
 | User | `~/.pi/skills/` | Legacy (pre-Pi) |
 
-**Per root, a skill named `foo` resolves to the first of:**
-
-- `<root>/foo.md` — flat file at the top level
-- `<root>/foo/SKILL.md` — directory skill (top-level)
-- `<root>/*/.../foo/SKILL.md` — directory skill, found by recursive descent
+**Identity:** YAML frontmatter `name` takes precedence over the directory name or flat-file stem; a declared name replaces that fallback identity. Per root, sorted top-level `.md` files precede directory `SKILL.md` files, searched breadth-first.
 
 Recursion skips dotfile directories and `node_modules`. A directory that itself contains a `SKILL.md` is treated as a single skill — we don't descend into it. Traversal is byte-order sorted for deterministic resolution across filesystems.
 
 **Security:** symlinks are rejected at every layer (root, flat file, skill directory, `SKILL.md` inside a skill directory) — intentional deviation from Pi, which follows symlinks. Skill names with path-traversal characters (`..`, `/`, `\`, spaces, leading dot, >128 chars) are rejected.
 
-## Tool Denylist
+## Tool Allowlists
 
-Block specific tools from an agent even if extensions provide them:
+Select permitted tools explicitly rather than using obsolete denylist fields:
 
 ```yaml
 ---
-tools: read, bash, grep, write
-disallowed_tools: write, edit
+builtin_tools: ["read", "bash", "grep"]
+extension_tools: ["search"]
 ---
 ```
 
-This is useful for creating agents that inherit extension tools but should not have write access.
+An empty `extension_tools` list blocks all custom tools; omission permits all tools from loaded extensions.
 
 ## Architecture
 

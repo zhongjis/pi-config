@@ -201,6 +201,8 @@ interface SpawnArgs {
 
 interface SpawnOptions {
   description: string;
+  /** Per-call preloads, unioned with configured skills; ignored when isolated. */
+  skills?: string[];
   /**
    * Optional memorable name for this instance, becoming a second handle
    * (`@auth-audit`) alongside the type-derived one. Slugged, not validated —
@@ -766,6 +768,7 @@ export class AgentManager {
       parentSessionId: ctx.sessionManager.getSessionId(),
       model: options.model,
       maxTurns: options.maxTurns,
+      skills: options.skills,
       isolated: options.isolated,
       inheritContext: options.inheritContext,
       thinkingLevel: options.thinkingLevel,

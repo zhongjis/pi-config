@@ -647,7 +647,7 @@ export async function runAgent(
   const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
   // Skill preloading: union of config.preloadSkills and options.skills, deduped.
   // options.skills=["a","b"] + config.preloadSkills=["a"] → ["a","b"].
-  const configPreloadSkills = (config as any).preloadSkills;
+  const configPreloadSkills = config.preloadSkills;
   const preloadList = options.isolated ? [] : [
     ...new Set([
       ...(Array.isArray(configPreloadSkills) ? configPreloadSkills : []),
@@ -682,9 +682,9 @@ export async function runAgent(
   // context files.
   const inheritContextFiles = !options.isolated && agentConfig?.promptMode === "system_instructions";
 
-  // When skills are preloaded or discover is disabled, don't run the skill loader again.
-  const discoverSkills = options.isolated ? false : (config as any).discoverSkills ?? true;
-  const noSkills = !discoverSkills || preloadList.length > 0;
+  // Catalog discovery is independent of eager skill injection.
+  const discoverSkills = options.isolated ? false : config.discoverSkills ?? true;
+  const noSkills = !discoverSkills;
 
   const agentDir = getAgentDir();
 

@@ -3,13 +3,14 @@
  */
 
 import type { AgentConfig, EnvInfo } from "./types.js";
+import type { PreloadedSkill } from "./skill-loader.js";
 
 /** Extra sections to inject into the system prompt (memory, skills, etc.). */
 export interface PromptExtras {
   /** Persistent memory content to inject (first 200 lines of MEMORY.md + instructions). */
   memoryBlock?: string;
   /** Preloaded skill contents to inject. */
-  skillBlocks?: { name: string; content: string }[];
+  skillBlocks?: PreloadedSkill[];
   /**
    * Parent directory the worktree copy was created from. Set only for
    * `isolation: "worktree"` spawns — triggers the block that tells the agent
@@ -93,7 +94,9 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   }
   if (extras?.skillBlocks?.length) {
     for (const skill of extras.skillBlocks) {
-      extraSections.push(`\n# Preloaded Skill: ${skill.name}\n${skill.content}`);
+      const sourceLine = skill.sourcePath ? `Source: ${skill.sourcePath}\n` : "";
+      const baseDirLine = skill.baseDir ? `Skill directory: ${skill.baseDir}\nRelative references MUST resolve from this skill directory.\n` : "";
+      extraSections.push(`\n# Preloaded Skill: ${skill.name}\n${sourceLine}${baseDirLine}${skill.content}`);
     }
   }
   const extrasSuffix = extraSections.length > 0 ? "\n\n" + extraSections.join("\n") : "";

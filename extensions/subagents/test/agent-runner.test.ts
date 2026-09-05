@@ -2092,3 +2092,33 @@ describe("runAgent — per-call skills injection", () => {
     expect(mockPreloadSkills).not.toHaveBeenCalledWith(expect.arrayContaining(["a"]), expect.any(String));
   });
 });
+
+describe("skill discovery and preload independence", () => {
+  it.each([true, false].flatMap((discoverSkills) =>
+    [false, true].flatMap((isolated) =>
+      ["empty", "present", "missing"].map((preload) => ({ discoverSkills, isolated, preload })),
+    ),
+  ))("catalog=$discoverSkills isolated=$isolated preload=$preload", async ({ discoverSkills, isolated, preload }) => {
+    const configured = preload === "empty" ? [] : ["configured", "shared"];
+    const perCall = preload === "empty" ? [] : ["shared", "per-call"];
+    vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ discoverSkills, preloadSkills: configured }));
+    const { session } = createSession("SKILLS_DONE");
+    createAgentSession.mockResolvedValue({ session });
+    vi.mocked(_preloadSkills).mockReset();
+    vi.mocked(_preloadSkills).mockImplementation((names) => names.map((name) => ({
+      name, content: preload === "missing" ? `MISSING_${name}` : `PAYLOAD_${name}`,
+    })));
+    try {
+      await runAgent(ctx, "Explore", "go", { pi, skills: perCall, isolated });
+      expect(lastLoaderOpts().noSkills).toBe(isolated || !discoverSkills);
+      if (isolated || preload === "empty") {
+        expect(_preloadSkills).not.toHaveBeenCalled();
+      } else {
+        expect(_preloadSkills).toHaveBeenCalledExactlyOnceWith(["configured", "shared", "per-call"], ctx.cwd);
+      }
+    } finally {
+      vi.mocked(_preloadSkills).mockReset();
+      vi.mocked(_preloadSkills).mockReturnValue([]);
+    }
+  });
+});

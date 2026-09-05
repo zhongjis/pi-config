@@ -24,7 +24,7 @@ import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, getRememberAge
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes, getAvailableTypes, getConfig, getFallbackSubagent, isDefaultsDisabled, NO_FALLBACK, registerAgents, resolveSpawnType, resolveType, setDefaultsDisabled, setFallbackSubagent } from "./agent-types.js";
 import { inChildSessionContext } from "./child-context.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
-import { loadCustomAgents } from "./custom-agents.js";
+import { loadCustomAgents, loadCustomAgentsWithDiagnostics } from "./custom-agents.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
@@ -1310,6 +1310,11 @@ Terse command-style prompts produce shallow, generic work.
           description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
         }),
       ),
+      skills: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Skill names to preload for this call. Unioned with frontmatter preload_skills, deduped. Ignored on resume and when isolated: true; independent of discover_skills.",
+        }),
+      ),
     }),
 
     // ---- Custom rendering: Claude Code style ----
@@ -1564,6 +1569,7 @@ Terse command-style prompts produce shallow, generic work.
           thinkingLevel: thinking,
           isBackground: true,
           invocation: agentInvocation,
+          skills: params.skills,
           rootSessionId: ctx.sessionManager.getSessionId(),
           ...bgCallbacks,
         });
@@ -1716,6 +1722,7 @@ Terse command-style prompts produce shallow, generic work.
           inheritContext,
           thinkingLevel: thinking,
           invocation: agentInvocation,
+          skills: params.skills,
           signal,
           rootSessionId: ctx.sessionManager.getSessionId(),
           // Deliberately does NOT set fgId: that drives agentActivity, the
@@ -2782,45 +2789,56 @@ Terse command-style prompts produce shallow, generic work.
 
     ctx.ui.notify("Generating agent definition...", "info");
 
-    const generatePrompt = `Create a custom pi sub-agent definition file based on this description: "${description}"
+    const generatePrompt = `You MUST create a custom pi sub-agent definition for: ${JSON.stringify(description)}
+You MUST write only the requested file using the write tool: ${JSON.stringify(targetPath)}
 
-Write a markdown file to: ${targetPath}
-
-The file format is a markdown file with YAML frontmatter and a system prompt body:
+Supported frontmatter example (adapt values and system prompt to the request):
 
 \`\`\`markdown
 ---
-description: <one-line description shown in UI>
-color: <optional agent name badge color: red, blue, green, yellow, purple, orange, pink, cyan, an Agency Agents alias, or quoted "#RRGGBB">
-tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no tools. Omit for all tools>
-model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5". Omit to inherit parent model>
-thinking: <optional thinking level: ${THINKING_LEVELS.join(", ")}. Omit to inherit>
-max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
-prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
-extensions: <true (inherit all MCP/extension tools), false (none), or comma-separated names. Default: true>
-skills: <true (inherit all), false (none), or comma-separated skill names to preload into prompt. Default: true>
-disallowed_tools: <comma-separated tool names to block, even if otherwise available. Omit for none>
-inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>
-run_in_background: <pin this agent to background (true) or foreground (false). Omit to follow the backgroundByDefault setting, which is foreground>
-output_transcript: <false to write no transcript file or path for this agent. Independent of persist_session. Default: true>
-isolated: <true for no extension/MCP tools, only built-in tools. Default: false>
-memory: <"user" (global), "project" (per-project), or "local" (gitignored per-project) for persistent memory. Omit for none>
+description: "Review code changes"
+display_name: "Reviewer"
+builtin_tools: ${JSON.stringify(BUILTIN_TOOL_NAMES)}
+extension_tools: []
+allow_delegation_to: []
+disallow_delegation_to: []
+allow_nesting: false
+extensions: true
+exclude_extensions: []
+discover_skills: true
+preload_skills: []
+model: "anthropic/claude-haiku-4-5"
+thinking: "off"
+max_turns: 0
+prompt_mode: "replace"
+inherit_context: false
+run_in_background: false
+persist_session: false
+session_dir: "./agent-sessions"
+output_transcript: false
+isolated: false
+enabled: true
 ---
 
-<system prompt body — instructions for the agent>
+You MUST review changes and report actionable findings.
 \`\`\`
 
-Guidelines for choosing settings:
-- For read-only tasks (review, analysis): tools: read, bash, grep, find, ls
-- For code modification tasks: include edit, write
-- Use prompt_mode: append if the agent should keep the default system prompt and add specialization on top
-- Use prompt_mode: replace for fully custom agents with their own personality/instructions
-- Set inherit_context: true if the agent needs to know what was discussed in the parent conversation
-- Set isolated: true if the agent should NOT have access to MCP servers or other extensions
-- Set output_transcript: false to skip writing this agent's transcript; this alone doesn't keep the run off disk (persist_session, isolation: worktree commits, and memory still write) — set those too if that's the goal
-- Only include frontmatter fields that differ from defaults — omit fields where the default is fine
-
-Write the file using the write tool. Only write the file, nothing else.`;
+- You MUST use only the supported fields above.
+- You MUST quote strings and use arrays for name lists.
+- You SHOULD omit optional fields when defaults suffice, including model/thinking to inherit.
+- builtin_tools lists built-ins explicitly; [] selects none; omission selects all.
+- extension_tools lists custom tool names; [] selects none; omission allows all loaded extension tools.
+- extensions selects loaded extensions: true, false, or an array of names/paths. exclude_extensions removes named extensions.
+- discover_skills controls the catalog; preload_skills eagerly injects named skills independently.
+- allow_nesting enables delegation; allow_delegation_to/disallow_delegation_to constrain targets.
+- thinking accepts ${THINKING_LEVELS.join(", ")}; max_turns: 0 or omission means unlimited.
+- prompt_mode accepts replace, append, or system_instructions.
+- inherit_context forks parent history; run_in_background pins execution mode, otherwise the project setting applies.
+- persist_session and output_transcript independently control session/transcript persistence; session_dir overrides session storage.
+- isolated suppresses extensions, skills and inherited context; enabled: false disables the definition.
+- For read-only tasks, you SHOULD select builtin_tools: ["read", "bash", "grep", "find", "ls"].
+- For modifications, you SHOULD include edit and write.
+You MUST write only ${JSON.stringify(targetPath)} and finish.`;
 
     const { record } = await manager.spawnAndWait(pi, ctx, "general-purpose", generatePrompt, {
       description: `Generate ${name} agent`,
@@ -2838,12 +2856,23 @@ Write the file using the write tool. Only write the file, nothing else.`;
       return;
     }
 
-    reloadCustomAgents();
-
-    if (existsSync(targetPath)) {
-      ctx.ui.notify(`Created ${targetPath}`, "info");
-    } else {
+    if (!existsSync(targetPath)) {
       ctx.ui.notify("Agent generation completed but file was not created. Check the agent output.", "warning");
+      return;
+    }
+
+    try {
+      const loaded = loadCustomAgentsWithDiagnostics(process.cwd());
+      const diagnostics = loaded.diagnostics.filter(diagnostic => diagnostic.file === targetPath);
+      if (diagnostics.length > 0 || !loaded.agents.has(name)) {
+        ctx.ui.notify(`Invalid agent definition at ${targetPath}: ${diagnostics.map(diagnostic => diagnostic.message).join("; ")}`, "warning");
+        return;
+      }
+      registerAgents(loaded.agents);
+      ctx.ui.notify(`Created ${targetPath}`, "info");
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      ctx.ui.notify(`Invalid agent definition at ${targetPath}: ${error.message}`, "warning");
     }
   }
 
