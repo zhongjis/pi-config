@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
+import { ctx } from "./helpers/boot-extension.js";
 
 vi.mock("../src/agent-runner.js", () => ({
   runAgent: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock("../src/worktree.js", () => ({
 import { runAgent } from "../src/agent-runner.js";
 
 const mockPi = {} as any;
-const mockCtx = { cwd: "/tmp" } as any;
+const mockCtx = ctx({ cwd: "/tmp" });
 
 const TEN_MINUTES = 30 * 60_000; // fork uses 30-min retention (M11)
 const TICK = 60_000;

@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import type { AgentRecord } from "../src/types.js";
+import { ctx } from "./helpers/boot-extension.js";
 
 vi.mock("../src/agent-runner.js", () => ({
   runAgent: vi.fn(),
@@ -11,7 +12,7 @@ vi.mock("../src/agent-runner.js", () => ({
 import { runAgent } from "../src/agent-runner.js";
 
 const mockPi = {} as any;
-const mockCtx = { cwd: "/tmp" } as any;
+const mockCtx = ctx({ cwd: "/tmp" });
 
 const mockSession = () => ({ dispose: vi.fn() } as any);
 
