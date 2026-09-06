@@ -22,9 +22,6 @@ function makePi() {
     registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
-    registerEntryRenderer: vi.fn(),
-    registerFlag: vi.fn(),
-    getFlag: vi.fn(),
     on: vi.fn((event: string, handler: any) => lifecycle.set(event, handler)),
     events: {
       emit: vi.fn(),
@@ -63,10 +60,7 @@ function ctx() {
 const textOf = (r: any): string => r.content[0].text;
 
 describe("status note reaches the parent through the real handlers", () => {
-  afterEach(() => {
-    delete (globalThis as any)[Symbol.for("pi-subagents:manager")];
-    vi.restoreAllMocks();
-  });
+  afterEach(() => vi.restoreAllMocks());
 
   it("foreground turn-limit abort → the Agent result flags an incomplete outcome", async () => {
     vi.mocked(runAgent).mockResolvedValue({
@@ -80,7 +74,7 @@ describe("status note reaches the parent through the real handlers", () => {
 
     const res = await tools.get("Agent").execute(
       "tc1",
-      { prompt: "go", description: "d", subagent_type: "general-purpose", run_in_background: false },
+      { prompt: "go", description: "d", subagent_type: "general-purpose" },
       undefined, undefined, ctx(),
     );
 
@@ -117,7 +111,7 @@ describe("status note reaches the parent through the real handlers", () => {
     const parent = new AbortController();
     const call = tools.get("Agent").execute(
       "tc-stop",
-      { prompt: "go", description: "d", subagent_type: "general-purpose", run_in_background: false },
+      { prompt: "go", description: "d", subagent_type: "general-purpose" },
       parent.signal, undefined, ctx(),
     );
 
@@ -141,62 +135,6 @@ describe("status note reaches the parent through the real handlers", () => {
     // which is false under `pi -p`, scheduled jobs, and background-driven runs.
     expect(out).not.toContain("re-spawn");
     expect(out).not.toContain("ask before");
-  });
-
-  it("hides nested records from top-level tools, registry, transcripts, and lifecycle", async () => {
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText: "nested result",
-      session: { dispose: vi.fn() } as any,
-      aborted: false,
-      steered: false,
-    });
-    const { pi, tools } = makePi();
-    subagentsExtension(pi);
-    const registry = (globalThis as any)[Symbol.for("pi-subagents:manager")];
-
-    // External registry/RPC callers cannot mint internal ownership metadata.
-    const topId = registry.spawn(pi, ctx(), "general-purpose", "top", {
-      description: "top-level owner",
-      isBackground: false,
-      parentAgentId: "forged-parent",
-      depth: 99,
-      maxSubagentDepth: 99,
-      configCwd: "/untrusted/config",
-    });
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(registry.getRecord(topId)).toEqual(expect.objectContaining({
-      parentAgentId: undefined,
-      depth: 1,
-    }));
-
-    // Internal scoped tools receive the raw owning manager through nestedRuntime.
-    const rawManager = vi.mocked(runAgent).mock.calls[0][3].nestedRuntime.manager;
-    pi.events.emit.mockClear();
-    pi.appendEntry.mockClear();
-    pi.sendMessage.mockClear();
-    const id = rawManager.spawn(pi, ctx(), "general-purpose", "nested", {
-      description: "nested child",
-      isBackground: true,
-      parentAgentId: topId,
-      depth: 2,
-      maxSubagentDepth: 2,
-    });
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    expect(registry.getRecord(id)).toBeUndefined();
-    for (const [name, params] of [
-      ["get_subagent_result", { agent_id: id }],
-      ["steer_subagent", { agent_id: id, message: "stop" }],
-      ["Agent", { resume: id, prompt: "continue", description: "resume", subagent_type: "general-purpose" }],
-    ] as const) {
-      const result = await tools.get(name).execute("tc-nested", params, undefined, undefined, ctx());
-      expect(textOf(result)).toContain("Agent not found");
-    }
-    expect(pi.events.emit).not.toHaveBeenCalledWith("subagents:started", expect.objectContaining({ id }));
-    expect(pi.events.emit).not.toHaveBeenCalledWith("subagents:completed", expect.objectContaining({ id }));
-    expect(pi.events.emit).not.toHaveBeenCalledWith("subagents:failed", expect.objectContaining({ id }));
-    expect(pi.appendEntry).not.toHaveBeenCalledWith("subagents:record", expect.objectContaining({ id }));
-    expect(pi.sendMessage).not.toHaveBeenCalled();
   });
 
   it("background user-stop → get_subagent_result flags STOPPED BY THE USER (not completed)", async () => {
@@ -231,90 +169,5 @@ describe("status note reaches the parent through the real handlers", () => {
     // "everything the agent produced is above" would be a lie here. Folding the
     // two functions back together is exactly the regression this guards.
     expect(out).not.toContain("everything the agent produced is above");
-  });
-});
-
-// `subagents:compacted` is a documented cross-extension contract (README:495)
-// with an exact payload. Nothing inside this process reads it, so a dropped or
-// renamed field is completely silent here and only breaks a consumer. Its
-// sibling `subagents:started` is already covered — including the negative case
-// for nested children — so this is the twin that was missed.
-describe("subagents:compacted", () => {
-  /** Run an agent and fire one compaction from inside runAgent's callbacks. */
-  function runWithCompaction(info: { reason: string; tokensBefore: number }) {
-    vi.mocked(runAgent).mockImplementation(async (_ctx: any, _type: any, _prompt: any, opts: any) => {
-      opts.onCompaction?.(info);
-      return { responseText: "done", session: { dispose: vi.fn() } as any, aborted: false, steered: false };
-    });
-  }
-
-  it("emits the documented payload when a top-level agent's session compacts", async () => {
-    runWithCompaction({ reason: "threshold", tokensBefore: 12345 });
-    const { pi, tools } = makePi();
-    subagentsExtension(pi);
-
-    await tools.get("Agent").execute(
-      "tc-compact",
-      { prompt: "go", description: "compacting agent", subagent_type: "general-purpose" },
-      undefined, undefined, ctx(),
-    );
-
-    expect(pi.events.emit).toHaveBeenCalledWith("subagents:compacted", expect.objectContaining({
-      id: expect.any(String),
-      type: "general-purpose",
-      description: "compacting agent",
-      reason: "threshold",
-      tokensBefore: 12345,
-      compactionCount: 1,
-    }));
-  });
-
-  it("counts repeated compactions on the same agent", async () => {
-    vi.mocked(runAgent).mockImplementation(async (_ctx: any, _type: any, _prompt: any, opts: any) => {
-      opts.onCompaction?.({ reason: "overflow", tokensBefore: 1 });
-      opts.onCompaction?.({ reason: "overflow", tokensBefore: 2 });
-      return { responseText: "done", session: { dispose: vi.fn() } as any, aborted: false, steered: false };
-    });
-    const { pi, tools } = makePi();
-    subagentsExtension(pi);
-
-    await tools.get("Agent").execute(
-      "tc-compact2",
-      { prompt: "go", description: "twice", subagent_type: "general-purpose" },
-      undefined, undefined, ctx(),
-    );
-
-    const counts = pi.events.emit.mock.calls
-      .filter((c: any[]) => c[0] === "subagents:compacted")
-      .map((c: any[]) => c[1].compactionCount);
-    expect(counts).toEqual([1, 2]);
-  });
-
-  it("stays silent for a nested child, like every other lifecycle event", async () => {
-    // Nested records are internal to their parent; leaking their compactions
-    // would spam the parent session's bus with ids no consumer can resolve.
-    runWithCompaction({ reason: "threshold", tokensBefore: 999 });
-    const { pi, tools } = makePi();
-    subagentsExtension(pi);
-
-    await tools.get("Agent").execute(
-      "tc-parent",
-      { prompt: "go", description: "parent", subagent_type: "general-purpose" },
-      undefined, undefined, ctx(),
-    );
-    const rawManager = vi.mocked(runAgent).mock.calls[0][3].nestedRuntime.manager;
-    const parentId = vi.mocked(runAgent).mock.calls[0][3].nestedRuntime.parentAgentId;
-    pi.events.emit.mockClear();
-
-    rawManager.spawn(pi, ctx(), "general-purpose", "nested", {
-      description: "nested child",
-      isBackground: true,
-      parentAgentId: parentId,
-      depth: 2,
-      maxSubagentDepth: 2,
-    });
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    expect(pi.events.emit).not.toHaveBeenCalledWith("subagents:compacted", expect.anything());
   });
 });

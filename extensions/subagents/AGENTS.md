@@ -23,27 +23,9 @@
 - This is a pi extension. Respect the Claude Code-compatible tool names, calling conventions, and UI patterns the extension deliberately mirrors; don't diverge from them without a stated reason.
 - When reviewing a diff, favor solutions that are elegant, not overengineered — flag needless abstraction, layering, or defensive code that the change doesn't warrant.
 
-## Documentation
-
-Read the file that covers a surface before changing its behavior; update it in the same change.
-
-| File | Covers |
-|---|---|
-| `README.md` | User-facing reference: features, install, tool parameter tables, commands, settings and defaults, the event table, the RPC channel list, and the `src/` file map (`## Architecture`). Source of truth for defaults and setting names. |
-| `docs/workflows.md` | `SubagentWorkflow` in depth — how the model writes a script, editing and re-running it, saving a named workflow, `agent()` options, recipes, troubleshooting. Examples in `examples/workflows/`. |
-| `docs/rpc.md` | Calling this extension from another pi extension — `pi.events` lifecycle events (`subagents:completed`, `subagents:ready`, …), the `subagents:rpc:*` channels (`ping`, `spawn`, `stop`, `consume`), spawn options, error strings, and the `Symbol.for("pi-subagents:manager")` registry. Source: `src/cross-extension-rpc.ts`. |
-| `CONTRIBUTING.md` | Contributor guidelines and quality bar. |
-| `SECURITY.md` | Vulnerability reporting. |
-
-`README.md` holds the reference tables and links out; `docs/` holds the long-form guides. Each guide states its audience in its first three lines — read that before deciding it is the wrong file. Renaming an event, an RPC channel, a reply-envelope field, or a workflow global is a docs change too.
-
 ## Commands
 
 - After code changes (not docs), run the full check suite and fix all errors and warnings:
-  ```bash
-  npm run check       # lint + typecheck + test (what CI runs)
-  ```
-  The steps individually, when you need to isolate a failure:
   ```bash
   npm run lint        # biome
   npm run typecheck   # tsc --noEmit
@@ -53,7 +35,6 @@ Read the file that covers a surface before changing its behavior; update it in t
 - `npm run test` runs the whole suite, including `*-e2e.test.ts` files. To iterate on a single file, run it directly: `npx vitest run test/<file>.test.ts`.
 - If you create or modify a test file, run it and iterate on the test or implementation until it passes.
 - `npm run build` compiles with `tsc`; run it only when verifying the build output or when requested.
-- `npm run bench` runs the benchmarks in `test/perf/*.bench.ts` (absolute timings, ~1 min). Opt-in: it is not part of the check suite, and `npm run test` never picks bench files up. `npm run bench:ab -- <ref>` benchmarks the working tree against another commit and prints the delta — use it for a PR's `## Performance` section. The `*.perf.test.ts` guards beside them assert operation counts, not time, and DO run in the normal suite.
 - For ad-hoc scripts, write them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 
 ## Git
@@ -67,46 +48,13 @@ Read the file that covers a surface before changing its behavior; update it in t
 
 See `CONTRIBUTING.md` for the contributor guidelines and quality bar.
 
-### Filing PRs
-
-Write the body to a temp file and pass `--body-file` (`gh pr create`, `gh pr edit`); never multi-line markdown via `--body`. Create or edit a PR only when the user asks.
-
-- One logical change per PR. Title in conventional-commit form (`fix(ui): ...`), imperative, no trailing period.
-- Self-review the diff before filing; drop unrelated refactors and leftover debug code.
-- Write for a reviewer who will not read the whole diff: what changed, then what it costs.
-- Technical prose, no emojis, no marketing.
-- Every claim checkable — from the diff, or from a command you actually ran. Never quote a benchmark, test count, or "no change in output" you did not measure.
-- State what the change does *not* do: deliberate omissions, known gaps, untested surfaces.
-
-**Relations** — get the verbs right, and note `States as of opening.`
-
-- `Closes #N` only if the PR fully resolves N. Otherwise name the part delivered and say N stays open.
-- A merge does not auto-close another PR: say **supersedes**, credit the author (`thanks @user`), and say what of theirs was left out and why.
-- Name PRs touching the same lines; say whether it is a design conflict or just a rebase.
-
-**Sections**, in this order. Omit one only when it is genuinely empty, and say so:
-
-| Section | Content |
-|---|---|
-| Lead-in (no heading) | What this closes, supersedes, or partly addresses. |
-| `## Summary` | The problem and why it matters — not how it is fixed. Enumerate distinct failure modes. |
-| `## What changed` | The design: the one idea, then its consequences. Name files/symbols only where they help. |
-| `## Related work` | Table: number, title, state, relation to this PR. |
-| `## Behavior and compatibility` | Side effects, breaking changes (or an explicit "none", with reasoning), defaults, settings, migration. |
-| `## Performance` | Numbers with the method that produced them. "No measurable change" only if measured. |
-| `## Testing` | Commands and results, new coverage, and what is **not** covered. |
-
-Add sections a change needs; use fenced `text` blocks or screenshots for UI changes.
-
-Testing section: paste real results (`npm run lint`, `npm run typecheck`, `npm run build`, `npm run test` with pass/skip/file counts), not "tests pass". Mutation-check every new assertion — break the source line, confirm red, restore — and say what you broke.
-
-### Reviewing PRs
+When reviewing PRs:
 
 - Do not run `gh pr checkout`, `git switch`, or otherwise move the worktree to the PR branch unless the user explicitly asks.
 - Use `gh pr view`, `gh pr diff`, `gh api`, and local `git show`/`git diff` against fetched refs to inspect PR metadata, commits, and patches without changing branches.
 - If you need PR file contents, fetch/read them into temporary files or use `git show <ref>:<path>` without switching branches.
 
-### Posting issue and PR comments
+When posting issue/PR comments:
 
 - Write the comment to a temp file and post with `gh issue/pr comment --body-file` (never multi-line markdown via `--body`).
 - Keep comments concise, technical, and in the user's tone.
@@ -118,8 +66,7 @@ Location: `CHANGELOG.md` (single file, [Keep a Changelog](https://keepachangelog
 - All new entries go under `## [Unreleased]`, in the right subsection (`### Added`, `### Changed`, `### Fixed`, `### Removed`, `### Security`, `### Refactored`). Read the section first and append to existing subsections; never duplicate them.
 - One bullet per issue/PR. Never combine separate issues or pull requests into a single entry, even when they touch the same or similar components. (A PR together with the issue it closes or that diagnosed it is one change — one bullet citing both.)
 - Breaking changes are not a separate subsection. Call them out with a `> **⚠️ Breaking: …**` blockquote at the top of the version section, and/or a bold `**BREAKING:**` bullet under `### Changed`, with a migration note.
-- Entries are concise — a bold lead-in stating what changed, then a sentence or two on why it changed and anything a user must do about it. Aim for 2–4 sentences; a genuinely intricate change may run longer, but length is never the goal. Do not match the density of older entries, several of which are far too long.
-- Cut what the reader doesn't need: narration of the investigation, alternatives considered and rejected, restatements of the diff, and detail recoverable from the code or the linked issue. Name a file or symbol only when it helps someone find the change.
+- Entries are detailed — a bold lead-in summarizing the change, then prose explaining the behavior, rationale, and any migration. Match the surrounding density.
 - Released version sections (e.g. `## [0.12.0]`) are immutable; never modify them.
 - Attribute external contributions: `... ([#456](https://github.com/tintinweb/pi-subagents/pull/456) — thanks [@username](https://github.com/username))`.
 
@@ -133,10 +80,11 @@ Location: `CHANGELOG.md` (single file, [Keep a Changelog](https://keepachangelog
 Before a release:
 
 - Update `CHANGELOG.md` — move the `## [Unreleased]` entries under a new `## [X.Y.Z]` version section, and add a fresh empty `## [Unreleased]` for the next cycle.
-- Update `README.md` if user-facing behavior changed (features list, settings, usage), and the matching guide in `docs/` if the change touches workflows or the event/RPC surface.
+- Update `README.md` if user-facing behavior changed (features list, settings, usage).
 - Run the full check suite plus the e2e tests, and fix anything that fails:
   ```bash
-  npm run check                    # lint + typecheck + test
+  npm run lint
+  npm run typecheck
   npm run test:e2e                 # faux/scripted e2e — no network, no keys
   npm run build
   ```
@@ -159,13 +107,12 @@ If the user's instructions conflict with any rule in this document, ask for expl
 |------|------|-----|
 | `src/tool-rendering.ts`, `src/index.ts`, `test/tool-rendering.test.ts` | Width-safe call/result renderers for `Agent`, `get_subagent_result`, and `steer_subagent`, with configured expand hints and raw expanded tool output | Preserve Panda Harness supervision formatting |
 | `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
-| `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
-| `src/index.ts`, `src/workflow/` | `SubagentWorkflow` runs without requiring worktree isolation; `schedule.ts` and `schedule-store.ts` removed | Workflows operate on repo-local runs; `croner` dependency dropped |
-| `src/index.ts`, `src/nested-tools.ts`, `src/invocation-config.ts`, `test/model-chain-dispatch.test.ts` | Both Agent paths use `extensions/lib/model.ts` chain parsing/resolution; exhausted chains fail before spawn, absent models inherit. Thinking precedence: frontmatter thinking → selected frontmatter suffix → caller thinking → selected caller suffix | Keep model policy shared and preserve selected-candidate thinking and requested-vs-effective metadata |
-| `src/index.ts`, `src/agent-policy-denial-result.ts` | Registered Agent affordance stays target-neutral; direct calls enforce the persisted mode delegation policy and policy-denial results are marked as errors | Preserve mode-owned routing across mode switches and post-upstream resyncs |
-| `src/index.ts`, `src/agent-manager.ts`, `test/foreground-result-retrieval.test.ts`, `test/agent-identity-*.test.ts`, `test/agent-live-identity.e2e.test.ts` | Foreground results expose canonical IDs; shared spawn allocates top-level name aliases; resume resolves live IDs/handles/names and rejects running/queued records before mutation. Real-SDK coverage verifies named retrieval/resume preserve the record, session, and persisted conversation | Keep result retrieval, steering and continuation on the original session while preserving mode policy and ownership |
-| `src/agent-manager.ts`, `test/parent-session-storage.e2e.test.ts` | Forward the spawning session ID so new persistent children default to `<agentDir>/subagent-sessions/<parentSessionId>/`; explicit `session_dir` and saved-file resume paths stay unchanged | Keep child logs out of normal Pi session listings without moving existing logs |
-| `src/index.ts`, `src/agent-manager.ts`, `src/agent-runner.ts`, `src/skill-loader.ts`, `src/prompts.ts`, `test/agent-skills*`, `test/agent-runner.test.ts`, `test/skill-loader*.test.ts` | `Agent.skills` reaches foreground/background runners; preloads union and dedupe with `preload_skills` independently of `discover_skills`. YAML skill identity, git-bounded ancestor `.agents/skills`, and source-relative provenance retain sorted traversal and symlink/nesting guards | Restore skill delivery without changing resume, isolation, or programmatic spawn contracts |
-| `src/agent-file-toggle.ts`, `src/index.ts`, `test/agent-file-toggle.test.ts`, `test/agent-authoring*.e2e.test.ts` | Manual/Eject writers emit only current loader fields, JSON-quoted scalars/arrays, explicit installed built-ins, and preserve empty/false/zero values. Generated files pass loader diagnostics before success; command tests exercise saved artifact → shared parser → registry | Keep authoring compatible with strict tool/skill allowlists without reviving historical config |
+| `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
+| `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.83 test/runtime fixtures target `subagents`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
+| `src/index.ts`, `examples/agent-tool-description.md`, `test/tool-description-mode.test.ts`, `test/agent-manager.test.ts` | Agent descriptions document concurrent foreground calls plus supervised, explicitly collected background work; manager tests prove foreground runs can overlap | Match Panda Harness orchestration semantics without changing scheduling |
+| `src/agent-runner.ts`, `test/agent-runner.test.ts` | Fresh Agent sessions inherit the parent branch's internal `session-local` root scope; one hidden trusted hook survives extension isolation/filtering without registering tools | Share `local://` storage across an Agent tree without adding a public Agent parameter or widening tool scope |
+| `src/agent-runner.ts`, `test/agent-runner.test.ts`, `test/tool-scope-golden.test.ts` | A hidden trusted `smart-tool-guards` factory guards built-in `bash` for `chengfeng`, `direnjie`, `taishang`, `xuannv`, and `yanluo`; its `subagents:guarded` scope decision carries the activation reason `This guarded subagent requires read-only Bash.`; its exact inline path survives extension disablement, isolation, and include/exclude filtering without registering tools | Preserve read-only consultant shell access and explain guard activation without provider-owned formatting, a compatibility tool, or wider ordinary extension scope |
+| `src/index.ts`, `test/foreground-result-retrieval.test.ts` | Foreground terminal Agent results include their exact Agent ID in model-visible content, including turn-limit completion and failure | Let parent agents resume foreground sessions without inferring renderer-only IDs |
+| `src/agent-manager.ts`, `test/agent-manager.test.ts` | Terminal foreground and background Agent records retain their in-memory sessions for 30 minutes before timer cleanup | Preserve resumability across long parent verification while keeping retention bounded |
 
-Worktree isolation, scheduling (`schedule.ts`, `schedule-store.ts`, `croner`), agent mentions, and model-scope features are removed or dropped from this fork. Agent target routing is intentionally mode-owned rather than copied from upstream's global target lists. Other upstream execution and model-facing content is preserved except for the model-chain, identity, session-storage, skill-delivery, and authoring contracts above; FleetView and Thinking Steps remain unchanged.
+Upstream execution is otherwise preserved. Model-facing Agent guidance follows Panda Harness foreground/background supervision semantics. FleetView and Thinking Steps remain unchanged.

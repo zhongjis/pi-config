@@ -32,8 +32,6 @@ export interface SubagentSummaryAgent {
   maxTurns?: number | null;
   compactionCount?: number;
   error?: string;
-  /** Pre-formatted cost string (e.g. "~$0.0042"). When set, appended after token count. */
-  costText?: string;
 }
 
 export interface SubagentSummaryGroup {
@@ -138,7 +136,6 @@ function getAgentStats(agent: SubagentSummaryAgent): string {
   if (isPositive(agent.toolUses)) parts.push(formatTools(agent.toolUses));
   const tokenText = getTokenText(agent);
   if (tokenText) parts.push(tokenText);
-  if (agent.costText) parts.push(agent.costText);
   if (isPositive(agent.durationMs)) parts.push(formatSummaryMs(agent.durationMs));
   return formatSummaryStats(parts);
 }

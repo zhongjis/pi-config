@@ -1,18 +1,17 @@
 /**
- * skill-loader.ts — Preload named skills with source-relative provenance.
+ * skill-loader.ts — Preload specific skill files and inject their content into the system prompt.
  *
- * Roots, in precedence order: cwd/.pi/skills, cwd and ancestor .agents/skills
- * through the git root, getAgentDir()/skills, ~/.agents/skills, ~/.pi/skills.
- * YAML name overrides directory name or flat-file stem. Flat files precede
- * directory skills; directory traversal is sorted breadth-first, never nested
- * inside a skill. Dot directories, node_modules and symlinks are excluded.
+ * When skills is a string[], reads each named skill from Pi skill locations and
+ * returns their content for injection into the agent's system prompt.
+ *
+ * Skill name is resolved via YAML frontmatter `name:` field first, falling back
+ * to the directory name (for `<name>/SKILL.md`) or the filename stem (for `<name>.md`).
  */
 
-import type { Dirent } from "node:fs";
-import { existsSync, readdirSync } from "node:fs";
+import { type Dirent, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { isSymlink, isUnsafeName, safeReadFile } from "./fs-safety.js";
 
 export interface PreloadedSkill {
@@ -22,89 +21,207 @@ export interface PreloadedSkill {
   baseDir?: string;
 }
 
+interface LoadedSkill {
+  content: string;
+  sourcePath: string;
+  baseDir: string;
+}
+
+interface SkillSearchDir {
+  dir: string;
+  includeRootFiles: boolean;
+}
+
+/**
+ * Attempt to load named skills from project and global skill directories.
+ * Supports Pi directory skills (`<name>/SKILL.md`) plus legacy flat files.
+ *
+ * Skill name is matched against the YAML frontmatter `name:` field first,
+ * falling back to directory name or filename stem.
+ *
+ * @param skillNames  List of skill names to preload.
+ * @param cwd         Working directory for project-level skills.
+ * @returns Array of loaded skills (missing skills are skipped with a warning comment).
+ */
 export function preloadSkills(skillNames: string[], cwd: string): PreloadedSkill[] {
-  return skillNames.map((name) => loadSkill(name, cwd));
-}
+  const results: PreloadedSkill[] = [];
 
-function loadSkill(name: string, cwd: string): PreloadedSkill {
-  if (isUnsafeName(name)) {
-    return { name, content: `(Skill "${name}" skipped: name contains path traversal characters)` };
-  }
-  const roots = [join(resolve(cwd), ".pi", "skills")];
-  let current = resolve(cwd);
-  while (true) {
-    roots.push(join(current, ".agents", "skills"));
-    const parent = dirname(current);
-    if (existsSync(join(current, ".git")) || parent === current) break;
-    current = parent;
-  }
-  roots.push(
-    join(getAgentDir(), "skills"),
-    join(homedir(), ".agents", "skills"),
-    join(homedir(), ".pi", "skills"),
-  );
-  for (const root of new Set(roots)) {
-    const skill = findInRoot(root, name);
-    if (skill !== undefined) return skill;
-  }
-  return { name, content: `(Skill "${name}" not found in .pi/skills/, .agents/skills/, or global skill locations)` };
-}
-
-function findInRoot(root: string, name: string): PreloadedSkill | undefined {
-  if (isSymlink(root)) return undefined;
-  const queue: string[] = [root];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (current === undefined) continue;
-
-    let entries: Dirent<string>[];
-    try {
-      entries = readdirSync(current, { withFileTypes: true });
-    } catch {
+  for (const name of skillNames) {
+    // Unlike memory (which throws on unsafe names because it's part of agent setup),
+    // skills are optional — skip gracefully to avoid blocking agent startup.
+    if (isUnsafeName(name)) {
+      results.push({ name, content: `(Skill "${name}" skipped: name contains path traversal characters)` });
       continue;
     }
-    // Deterministic byte-order traversal — locale-independent.
-    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-
-    if (current === root) {
-      for (const entry of entries) {
-        if (!entry.isFile() || entry.name.startsWith(".") || !entry.name.endsWith(".md")) continue;
-        const skill = readSkill(join(current, entry.name), name);
-        if (skill !== undefined) return skill;
-      }
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-
-      // Dirent uses lstat semantics, so symlinked directories are excluded.
-      const path = join(current, entry.name);
-      const skillMd = join(path, "SKILL.md");
-      if (existsSync(skillMd)) {
-        const skill = readSkill(skillMd, name);
-        if (skill !== undefined) return skill;
-        continue; // Skills don't nest, even when this skill has another name.
-      }
-      queue.push(path);
+    const loaded = findAndReadSkill(name, cwd);
+    if (loaded !== undefined) {
+      results.push({ name, content: loaded.content, sourcePath: loaded.sourcePath, baseDir: loaded.baseDir });
+    } else {
+      // Include a note about missing skills so the agent knows it was requested but not found.
+      results.push({ name, content: `(Skill "${name}" not found in Pi skill locations)` });
     }
   }
+
+  return results;
+}
+
+/**
+ * Search for a skill file in Pi project and global directories.
+ * Project-level takes priority over global.
+ */
+function findAndReadSkill(name: string, cwd: string): LoadedSkill | undefined {
+  for (const dir of getSkillSearchDirs(cwd)) {
+    const loaded = tryReadSkillFile(dir, name);
+    if (loaded !== undefined) return loaded;
+  }
+
   return undefined;
 }
 
-function readSkill(sourcePath: string, name: string): PreloadedSkill | undefined {
-  const content = safeReadFile(sourcePath)?.trim();
-  if (content === undefined) return undefined;
-  let declaredName: unknown;
-  try {
-    declaredName = parseFrontmatter(content).frontmatter.name;
-  } catch (error) {
-    // Malformed optional skills must not block the remaining preloads.
-    if (error instanceof Error) return undefined;
-    throw error;
+/**
+ * Return Pi skill search directories relevant for named preloading.
+ * Mirrors standard locations enough for subagents while preserving legacy ~/.pi/skills.
+ */
+function getSkillSearchDirs(cwd: string): SkillSearchDir[] {
+  const dirs: SkillSearchDir[] = [
+    { dir: join(cwd, ".pi", "skills"), includeRootFiles: true },
+    ...getAncestorAgentSkillDirs(cwd).map((dir) => ({ dir, includeRootFiles: false })),
+    { dir: join(getAgentDir(), "skills"), includeRootFiles: true },
+    { dir: join(homedir(), ".agents", "skills"), includeRootFiles: false },
+    { dir: join(homedir(), ".pi", "skills"), includeRootFiles: true },
+  ];
+
+  const seen = new Set<string>();
+  return dirs.filter(({ dir }) => {
+    const key = resolve(dir);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Project `.agents/skills` are discovered from cwd and ancestors until the git root.
+ */
+function getAncestorAgentSkillDirs(cwd: string): string[] {
+  const dirs: string[] = [];
+  let current = resolve(cwd);
+
+  while (true) {
+    dirs.push(join(current, ".agents", "skills"));
+    if (existsSync(join(current, ".git"))) break;
+
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
-  const fallbackName = basename(sourcePath) === "SKILL.md" ? basename(dirname(sourcePath)) : basename(sourcePath, ".md");
-  const skillName = typeof declaredName === "string" ? declaredName.trim() : fallbackName;
-  if (skillName !== name) return undefined;
-  return { name, content, sourcePath, baseDir: dirname(sourcePath) };
+
+  return dirs;
+}
+
+/**
+ * Try to read a named skill from a search directory.
+ * Mirrors Pi discovery: recursive directory `SKILL.md`, root `.md` files only in Pi skill dirs.
+ */
+function tryReadSkillFile(searchDir: SkillSearchDir, name: string): LoadedSkill | undefined {
+  for (const sourcePath of collectSkillFiles(searchDir.dir, searchDir.includeRootFiles)) {
+    const loaded = readSkill(sourcePath);
+    if (loaded !== undefined && getSkillName(sourcePath, loaded.content) === name) return loaded;
+  }
+
+  return undefined;
+}
+
+function collectSkillFiles(dir: string, includeRootFiles: boolean): string[] {
+  const files: string[] = [];
+  collectSkillFilesInternal(dir, includeRootFiles, dir, files);
+  return files;
+}
+
+function collectSkillFilesInternal(dir: string, includeRootFiles: boolean, rootDir: string, files: string[]): void {
+  // Reject symlinked roots to prevent reading arbitrary files.
+  if (isSymlink(dir)) return;
+
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  const skillPath = join(dir, "SKILL.md");
+  if (entries.some((entry) => entry.name === "SKILL.md" && isReadableFile(skillPath))) {
+    files.push(skillPath);
+    return;
+  }
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+
+    const entryPath = join(dir, entry.name);
+    const kind = getEntryKind(entryPath, entry);
+    if (kind === "directory") {
+      collectSkillFilesInternal(entryPath, false, rootDir, files);
+      continue;
+    }
+
+    if (kind === "file" && includeRootFiles && dir === rootDir && entry.name.endsWith(".md")) {
+      files.push(entryPath);
+    }
+  }
+}
+
+function isReadableFile(path: string): boolean {
+  return getFileContent(path) !== undefined;
+}
+
+function getEntryKind(path: string, entry: { isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean }): "directory" | "file" | "other" {
+  if (!entry.isSymbolicLink()) {
+    if (entry.isDirectory()) return "directory";
+    if (entry.isFile()) return "file";
+    return "other";
+  }
+
+  try {
+    const stats = statSync(path);
+    if (stats.isDirectory()) return "directory";
+    if (stats.isFile()) return "file";
+  } catch {
+    return "other";
+  }
+
+  return "other";
+}
+
+function readSkill(sourcePath: string): LoadedSkill | undefined {
+  const content = getFileContent(sourcePath);
+  if (content === undefined) return undefined;
+  return { content: content.trim(), sourcePath, baseDir: dirname(sourcePath) };
+}
+
+function getFileContent(sourcePath: string): string | undefined {
+  // safeReadFile rejects symlinks to prevent reading arbitrary files.
+  return safeReadFile(sourcePath);
+}
+
+function getSkillName(sourcePath: string, content: string): string {
+  return parseFrontmatterName(content) ?? inferSkillNameFromPath(sourcePath);
+}
+
+function parseFrontmatterName(content: string): string | undefined {
+  if (!content.startsWith("---")) return undefined;
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
+  if (!match) return undefined;
+
+  for (const line of match[1].split(/\r?\n/)) {
+    const nameMatch = /^name:\s*["']?([^"'#\r\n]+)["']?\s*(?:#.*)?$/.exec(line.trim());
+    if (nameMatch) return nameMatch[1].trim();
+  }
+
+  return undefined;
+}
+
+function inferSkillNameFromPath(sourcePath: string): string {
+  if (basename(sourcePath) === "SKILL.md") return basename(dirname(sourcePath));
+  return basename(sourcePath).replace(/\.(md|txt)$/i, "");
 }

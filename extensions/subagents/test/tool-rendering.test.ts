@@ -84,7 +84,6 @@ beforeAll(() => {
     events: { emit: vi.fn(), on: vi.fn(() => vi.fn()) },
     appendEntry: vi.fn(),
     sendMessage: vi.fn(),
-    registerEntryRenderer: vi.fn(),
   };
   subagentsExtension(pi as unknown as ExtensionAPI);
 });

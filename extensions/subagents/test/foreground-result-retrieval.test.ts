@@ -1,4 +1,20 @@
-/** Foreground identity must reach the model through content, not just renderer details. */
+/**
+ * foreground-result-retrieval.test.ts — issue #174, via the REAL Agent,
+ * get_subagent_result, and resume paths.
+ *
+ * A foreground agent that wraps up at max_turns remains resumable. Its exact
+ * Agent ID must therefore reach model-visible content, not renderer-only
+ * details, so the parent can continue that session without inventing an ID.
+ *
+ * These tests pin three lifecycle guarantees:
+ *
+ *   1. Foreground completion does not clean up the record.
+ *   2. The foreground result exposes the real ID and that ID resumes.
+ *   3. Session switching still evicts consumed foreground records.
+ *
+ * The turn-limit shape stays covered because issue #174 occurred after a
+ * graceful max_turns wrap-up (`status: "steered"`).
+ */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,13 +22,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/agent-runner.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn(), resumeAgent: vi.fn() };
+  return { ...actual, resumeAgent: vi.fn(), runAgent: vi.fn() };
 });
 
 import { resumeAgent, runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
-import type { BootedPi } from "./helpers/boot-extension.js";
-import { perfSession } from "./helpers/perf-fixtures.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -21,9 +35,6 @@ function makePi() {
     registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
-    registerEntryRenderer: vi.fn(),
-    registerFlag: vi.fn(),
-    getFlag: vi.fn(),
     on: vi.fn((event: string, handler: any) => lifecycle.set(event, handler)),
     events: {
       emit: vi.fn(),
@@ -36,13 +47,12 @@ function makePi() {
 }
 
 function ctx() {
-  const model = { provider: "anthropic", id: "claude-haiku-4-5", name: "Haiku" };
   return {
     hasUI: false,
     ui: { setStatus: vi.fn(), setWidget: vi.fn(), notify: vi.fn() },
     cwd: process.cwd(),
     model: undefined,
-    modelRegistry: { find: vi.fn(() => model), getAvailable: vi.fn(() => [model]) },
+    modelRegistry: { find: vi.fn(), getAvailable: vi.fn(() => []) },
     sessionManager: { getSessionId: vi.fn(() => "s1"), getBranch: vi.fn(() => []) },
     getSystemPrompt: vi.fn(() => "parent"),
   } as any;
@@ -50,21 +60,20 @@ function ctx() {
 
 const textOf = (r: any): string => r.content[0].text;
 
-async function runForegroundSteeredAgent(
-  tools: BootedPi["tools"],
-  status: "completed" | "steered" | "stopped" | "aborted" | "error" = "steered",
-) {
-  const session = perfSession();
-  const controller = new AbortController();
-  vi.mocked(runAgent).mockImplementation(async () => {
-    if (status === "stopped") controller.abort();
-    return {
-      responseText: "THE-RESULT-PAYLOAD",
-      session,
-      aborted: status === "aborted",
-      steered: status === "steered",
-      failure: status === "error" ? "provider failed" : undefined,
-    };
+/**
+ * Run a FOREGROUND agent that wraps up at the turn limit — the exact #174
+ * shape. `steered: true` is what agent-manager turns into status "steered",
+ * which produces the reporter's turn-limit completion note.
+ *
+ * Returns the tool result plus the authoritative ID from structured details
+ * so tests can compare it with the model-visible handle.
+ */
+async function runForegroundSteeredAgent(tools: Map<string, any>) {
+  vi.mocked(runAgent).mockResolvedValue({
+    responseText: "THE-RESULT-PAYLOAD",
+    session: { dispose: vi.fn() } as any,
+    aborted: false,
+    steered: true,
   });
   const res = await tools.get("Agent").execute(
     "tc-fg",
@@ -73,15 +82,14 @@ async function runForegroundSteeredAgent(
       description: "Locate organization-scope changes",
       subagent_type: "Explore",
       max_turns: 20,
-      run_in_background: false,
     },
-    controller.signal,
+    undefined,
     undefined,
     ctx(),
   );
-  const id = /Agent ID: (\S+)/.exec(textOf(res))?.[1];
-  if (!id) throw new Error("Foreground content did not supply an Agent ID");
-  return { res, id, session };
+  const id = (res as any).details?.agentId as string | undefined;
+  expect(id, "foreground spawn should have produced a record id in details").toBeTruthy();
+  return { res, id: id as string };
 }
 
 describe("issue #174: foreground agent that hits max_turns", () => {
@@ -135,48 +143,37 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     await lifecycle.get("session_shutdown")?.({}, ctx());
   });
 
-  it.each(["completed", "steered", "stopped", "aborted", "error"] as const)(
-    "returns an ID in %s content that retrieves and resumes the original session",
-    async (status) => {
-      const { pi, tools, lifecycle } = makePi();
-      subagentsExtension(pi);
-      try {
-        vi.mocked(runAgent).mockClear();
-        const { res, id, session } = await runForegroundSteeredAgent(tools, status);
-        expect(res.details).toMatchObject({ agentId: id, status });
-        expect(textOf(res)).toContain("THE-RESULT-PAYLOAD");
-        const read = await tools.get("get_subagent_result").execute(
-          "tc-read", { agent_id: id }, undefined, undefined, ctx(),
-        );
-        expect(textOf(read)).toContain(`Agent: ${id}`);
-        expect(textOf(read)).toContain("THE-RESULT-PAYLOAD");
+  it("hands the model the real agent id and that id resumes", async () => {
+    const { pi, tools, lifecycle } = makePi();
+    subagentsExtension(pi);
+    const { res, id } = await runForegroundSteeredAgent(tools);
 
-        for (const failure of [undefined, "resume failed"]) {
-          vi.mocked(resumeAgent).mockResolvedValue({ text: "CONTINUED-PAYLOAD", failure });
-          const resumed = await tools.get("Agent").execute(
-            "tc-resume",
-            { resume: id, prompt: "continue", description: "Continue work", subagent_type: "Explore", run_in_background: false },
-            undefined, undefined, ctx(),
-          );
-          expect(/Agent ID: (\S+)/.exec(textOf(resumed))?.[1]).toBe(id);
-          expect(textOf(resumed)).toContain("CONTINUED-PAYLOAD");
-          expect(resumed.details).toMatchObject({ agentId: id, status: failure ? "error" : "completed" });
-          expect(resumeAgent).toHaveBeenLastCalledWith(session, "continue", expect.any(Object));
-        }
-        expect(runAgent).toHaveBeenCalledTimes(1);
-      } finally {
-        await lifecycle.get("session_shutdown")?.({}, ctx());
-      }
-    },
-  );
+    expect(textOf(res)).toContain(`Agent ID: ${id}`);
+
+    vi.mocked(resumeAgent).mockResolvedValue({ text: "RESUMED-PAYLOAD" });
+    const resumed = await tools.get("Agent").execute(
+      "tc-resume",
+      {
+        prompt: "Continue from the previous result.",
+        description: "Continue organization-scope changes",
+        subagent_type: "Explore",
+        resume: id,
+      },
+      undefined,
+      undefined,
+      ctx(),
+    );
+    expect(textOf(resumed)).toBe("RESUMED-PAYLOAD");
+
+    await lifecycle.get("session_shutdown")?.({}, ctx());
+  });
 
   it("survives a subagent session's OWN activation lifecycle (adversarial: cross-activation eviction)", async () => {
     // The one mechanism that could produce the reported symptom with no
-    // user-visible session change: a second activation of this extension in the
-    // same process. Child sessions no longer reach it — activation returns early
-    // under `inChildSessionContext()` — but any other in-process activation still
-    // can, and if its session_start / session_shutdown reached the PARENT's
-    // manager, that activation ending would wipe the parent's records.
+    // user-visible session change: subagent sessions re-activate this extension
+    // in the same process (session.bindExtensions in agent-runner.ts). If a
+    // child activation's session_start / session_shutdown reached the PARENT's
+    // manager, a finishing subagent would wipe the parent's records.
     const parent = makePi();
     subagentsExtension(parent.pi);
     await parent.lifecycle.get("session_start")?.({}, ctx());

@@ -1,5 +1,4 @@
-import type { ModelCandidate } from "../../lib/model.js";
-import { normalizeThinkingLevel } from "../../lib/thinking-level.js";
+import { normalizeThinkingLevel } from "./thinking-level.js";
 import type { AgentConfig, JoinMode, ThinkingLevel } from "./types.js";
 
 interface AgentInvocationParams {
@@ -11,27 +10,9 @@ interface AgentInvocationParams {
   isolated?: boolean;
 }
 
-interface ResolveOptions {
-  /**
-   * What an unqualified spawn means — neither the call nor the agent file said.
-   *
-   * Top-level callers pass the `backgroundByDefault` setting (default `true`,
-   * following Claude Code). Nested callers pass `false` unconditionally: a
-   * detached child is killed by `abortOwnedChildren` when its parent settles
-   * and has no notification path of its own, so backgrounding one loses its
-   * work. Both call sites pass it explicitly; the `false` fallback only covers
-   * a caller that supplies no options at all, which in-tree means tests.
-   */
-  defaultRunInBackground?: boolean;
-  /** Suffixes from candidates selected by extensions/lib/model.ts, never the whole chain. */
-  frontmatterModelThinking?: ModelCandidate["thinkingLevel"];
-  callerModelThinking?: ModelCandidate["thinkingLevel"];
-}
-
 export function resolveAgentInvocationConfig(
   agentConfig: AgentConfig | undefined,
   params: AgentInvocationParams,
-  opts?: ResolveOptions,
 ): {
   modelInput?: string;
   modelFromParams: boolean;
@@ -40,44 +21,15 @@ export function resolveAgentInvocationConfig(
   inheritContext: boolean;
   runInBackground: boolean;
   isolated: boolean;
-  /**
-   * Caller parameters an agent file's frontmatter outranked, so the surfaces can
-   * say "(asked X)" instead of presenting the effective value as the requested
-   * one (#182). Populated only where both sides named something and they
-   * disagree — a caller who asked for what they got was still honored.
-   *
-   * `max_turns` is deliberately absent: no surface renders a requested-vs-
-   * effective turn limit, so recording one would be dead data.
-   */
-  overridden?: { thinking?: ThinkingLevel; model?: string };
 } {
-
-  const configuredThinking = agentConfig?.thinking ?? opts?.frontmatterModelThinking;
-  const callerThinking = params.thinking ?? opts?.callerModelThinking;
-  const thinking = normalizeThinkingLevel(configuredThinking ?? callerThinking) as ThinkingLevel | undefined;
-  const overriddenThinking = configuredThinking != null && callerThinking != null
-    && normalizeThinkingLevel(callerThinking) !== thinking
-    ? normalizeThinkingLevel(callerThinking) as ThinkingLevel | undefined
-    : undefined;
-  const overriddenModel = agentConfig?.model != null && params.model != null
-    && agentConfig.model !== params.model
-    ? params.model
-    : undefined;
-
   return {
     modelInput: agentConfig?.model ?? params.model,
     modelFromParams: agentConfig?.model == null && params.model != null,
-    thinking,
+    thinking: normalizeThinkingLevel(agentConfig?.thinking ?? params.thinking),
     maxTurns: agentConfig?.maxTurns ?? params.max_turns,
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,
-    runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? opts?.defaultRunInBackground ?? false,
+    runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? false,
     isolated: agentConfig?.isolated ?? params.isolated ?? false,
-    // Undefined rather than an empty object when nothing was overridden: callers
-    // spread this into the invocation snapshot, and an always-present key would
-    // put `requestedThinking: undefined` on every record.
-    overridden: overriddenThinking || overriddenModel
-      ? { thinking: overriddenThinking, model: overriddenModel }
-      : undefined,
   };
 }
 

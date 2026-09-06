@@ -1,5 +1,6 @@
-Launch a new agent to handle complex, multi-step tasks autonomously.
+Launch a new agent to handle complex, multi-step tasks autonomously. Each agent type has specific capabilities and tools available to it.
 
+Available agent types and the tools they have access to:
 {{typeList}}
 
 Custom agents can be defined in .pi/agents/<name>.md (project) or {{agentDir}}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.
@@ -13,12 +14,12 @@ If the target is already known, use a direct tool — `read` for a known path, `
 ## Usage notes
 
 - Always include a short (3-5 word) description summarizing what the agent will do (shown in UI).
-- When you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently. If the user specifies that they want you to run agents "in parallel", you MUST send a single message with multiple Agent tool use content blocks.
+- Multiple Agent calls in one assistant response run concurrently. For foreground calls, the parent blocks until all return and receives results inline. If the user asks to run agents "in parallel", send one message with multiple tool calls.
 - When the agent is done, it returns a single message back to you. The result is not visible to the user — to show the user, send a text message with a concise summary.
-- Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting the work as done.
-- **Foreground vs background**: use foreground (default) when you need results before proceeding. Use background only when you can continue non-overlapping work while supervising each agent. Each background call returns an agent ID immediately. You will be notified when it completes — do NOT poll or sleep.
-- **Don't race**: after launching a background agent, you know nothing about its results. Never fabricate or predict them in any format. The completion notification arrives in a later turn. If the user asks before it lands, say the agent is still running — give status, not a guess.
-- Foreground results include Agent ID. Use resume with that ID, a live type-derived handle or assigned name (no @ prefix) to continue a retained session after its run finishes. A new (non-resume) Agent call starts a fresh agent with no memory of prior runs, so the prompt must be self-contained.
+- Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting work as done.
+- Use run_in_background only for work you don't need immediately. Each call returns an agent ID immediately. Continue only non-overlapping work, supervise each agent, then collect via get_subagent_result. You will be notified when it completes — do NOT poll or sleep.
+- Foreground vs background: use foreground (default) when you need results before proceeding. Use background only when you can continue non-overlapping work while supervising.
+- Use resume with an agent ID to continue a previous agent's work. A new (non-resume) Agent call starts a fresh agent with no memory of prior runs, so the prompt must be self-contained.
 - Use steer_subagent to send mid-run messages to a running background agent.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, etc.), since it is not aware of the user's intent.
 - If an agent's description says it should be used proactively, try to use it without the user having to ask for it first.
@@ -28,7 +29,7 @@ If the target is already known, use a direct tool — `read` for a known path, `
 
 ## Writing the prompt
 
-Brief the agent like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters.
+Provide clear, detailed prompts so the agent can work autonomously. Brief it like a smart colleague who just walked into the room — it hasn't seen this conversation, doesn't know what you've tried, doesn't understand why this task matters.
 - Explain what you're trying to accomplish and why.
 - Describe what you've already learned or ruled out.
 - Give enough context about the surrounding problem that the agent can make judgment calls rather than just following a narrow instruction.

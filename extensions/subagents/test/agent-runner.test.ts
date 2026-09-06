@@ -135,7 +135,6 @@ import {
   parseExtensionsSpec,
   resumeAgent,
   runAgent,
-  setRememberAgents,
   SUBAGENT_TOOL_NAMES,
 } from "../src/agent-runner.js";
 import { preloadSkills as _preloadSkills } from "../src/skill-loader.js";
@@ -211,8 +210,6 @@ beforeEach(() => {
   settingsManagerCreate.mockClear();
   loaderExtensionsRef.current = { extensions: [], errors: [], runtime: {} };
   lastSession = undefined;
-  // Reset rememberAgents to false (upstream default is true, but fork tests expect in-memory default)
-  setRememberAgents(false);
 });
 
 describe("agent-runner final output capture", () => {
@@ -560,8 +557,8 @@ describe("agent-runner usage callback wiring", () => {
     });
 
     expect(seen).toEqual([
-      { input: 100, output: 50, cacheWrite: 10, cacheRead: 0, cost: 0 },
-      { input: 200, output: 80, cacheWrite: 20, cacheRead: 0, cost: 0 },
+      { input: 100, output: 50, cacheWrite: 10, cost: 0 },
+      { input: 200, output: 80, cacheWrite: 20, cost: 0 },
     ]);
   });
 
@@ -580,7 +577,7 @@ describe("agent-runner usage callback wiring", () => {
       onAssistantUsage: (u) => seen.push(u),
     });
 
-    expect(seen).toEqual([{ input: 50, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0 }]);
+    expect(seen).toEqual([{ input: 50, output: 0, cacheWrite: 0, cost: 0 }]);
   });
 
   it("runAgent skips the callback when message_end has no usage field", async () => {
@@ -611,7 +608,7 @@ describe("agent-runner usage callback wiring", () => {
       onAssistantUsage: (u) => seen.push(u),
     });
 
-    expect(seen).toEqual([{ input: 10, output: 20, cacheWrite: 5, cacheRead: 0, cost: 0 }]);
+    expect(seen).toEqual([{ input: 10, output: 20, cacheWrite: 5, cost: 0 }]);
   });
 
   it("forwards compaction_end events to onCompaction (only when not aborted)", async () => {
@@ -2090,35 +2087,5 @@ describe("runAgent — per-call skills injection", () => {
     await runAgent(ctx, "Worker" as any, "go", { pi, isolated: true, skills: ["a"] });
     // isolated overrides to empty list; preloadSkills should not be called with non-empty list
     expect(mockPreloadSkills).not.toHaveBeenCalledWith(expect.arrayContaining(["a"]), expect.any(String));
-  });
-});
-
-describe("skill discovery and preload independence", () => {
-  it.each([true, false].flatMap((discoverSkills) =>
-    [false, true].flatMap((isolated) =>
-      ["empty", "present", "missing"].map((preload) => ({ discoverSkills, isolated, preload })),
-    ),
-  ))("catalog=$discoverSkills isolated=$isolated preload=$preload", async ({ discoverSkills, isolated, preload }) => {
-    const configured = preload === "empty" ? [] : ["configured", "shared"];
-    const perCall = preload === "empty" ? [] : ["shared", "per-call"];
-    vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ discoverSkills, preloadSkills: configured }));
-    const { session } = createSession("SKILLS_DONE");
-    createAgentSession.mockResolvedValue({ session });
-    vi.mocked(_preloadSkills).mockReset();
-    vi.mocked(_preloadSkills).mockImplementation((names) => names.map((name) => ({
-      name, content: preload === "missing" ? `MISSING_${name}` : `PAYLOAD_${name}`,
-    })));
-    try {
-      await runAgent(ctx, "Explore", "go", { pi, skills: perCall, isolated });
-      expect(lastLoaderOpts().noSkills).toBe(isolated || !discoverSkills);
-      if (isolated || preload === "empty") {
-        expect(_preloadSkills).not.toHaveBeenCalled();
-      } else {
-        expect(_preloadSkills).toHaveBeenCalledExactlyOnceWith(["configured", "shared", "per-call"], ctx.cwd);
-      }
-    } finally {
-      vi.mocked(_preloadSkills).mockReset();
-      vi.mocked(_preloadSkills).mockReturnValue([]);
-    }
   });
 });

@@ -1,7 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { hermeticDir } from "./helpers/boot-extension.js";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { preloadSkills } from "../src/skill-loader.js";
 
@@ -237,64 +236,65 @@ describe("preloadSkills", () => {
   });
 });
 
-describe("skill identity and provenance", () => {
-  it.each(["vendored/SKILL.md", "vendored.md"])("uses YAML identity rather than %s and resolves relative resources", (layout) => {
-    const fixture = hermeticDir();
-    try {
-      const sourcePath = join(fixture.dir, ".pi", "skills", layout);
-      mkdirSync(dirname(sourcePath), { recursive: true });
-      writeFileSync(sourcePath, "---\nname: canonical\n---\nSKILL_PAYLOAD");
-      writeFileSync(join(dirname(sourcePath), "reference.txt"), "RELATIVE_RESOURCE");
-      const [skill] = preloadSkills(["canonical"], fixture.dir);
-      expect(skill).toMatchObject({ name: "canonical", sourcePath, baseDir: dirname(sourcePath) });
-      if (!skill.baseDir || !skill.sourcePath) throw new Error("Missing skill provenance");
-      expect(readFileSync(join(skill.baseDir, "reference.txt"), "utf8")).toBe("RELATIVE_RESOURCE");
-      expect(readFileSync(skill.sourcePath, "utf8").trim()).toBe(skill.content);
-      expect(preloadSkills(["vendored"], fixture.dir)[0]).not.toHaveProperty("sourcePath");
-    } finally {
-      fixture.restore();
-    }
+describe("preloadSkills — frontmatter-name matching and metadata", () => {
+  let tmpDir: string;
+  let originalAgentDir: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "pi-skill-fm-test-"));
+    originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(tmpDir, "user-agent-dir");
   });
 
-  it.each(["directory", "file"])("finds ancestor skills but stops at a git-root %s marker", (marker) => {
-    const fixture = hermeticDir();
-    try {
-      const repo = join(fixture.dir, "repo");
-      const cwd = join(repo, "packages", "app");
-      mkdirSync(cwd, { recursive: true });
-      if (marker === "directory") mkdirSync(join(repo, ".git"));
-      else writeFileSync(join(repo, ".git"), "gitdir: /unused/worktree");
-      const root = join(repo, ".agents", "skills", "renamed");
-      mkdirSync(root, { recursive: true });
-      writeFileSync(join(root, "SKILL.md"), "---\nname: ancestor\n---\nANCESTOR_PAYLOAD");
-      const outside = join(fixture.dir, ".agents", "skills", "outside");
-      mkdirSync(outside, { recursive: true });
-      writeFileSync(join(outside, "SKILL.md"), "OUTSIDE_PAYLOAD");
-      expect(preloadSkills(["ancestor"], cwd)[0]).toMatchObject({ sourcePath: join(root, "SKILL.md"), baseDir: root });
-      expect(preloadSkills(["outside"], cwd)[0]).not.toHaveProperty("sourcePath");
-    } finally {
-      fixture.restore();
+  afterEach(() => {
+    if (originalAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = originalAgentDir;
     }
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("keeps canonical lookup inside nesting and symlink boundaries", () => {
-    const fixture = hermeticDir();
-    try {
-      const root = join(fixture.dir, ".pi", "skills");
-      const outer = join(root, "outer");
-      const nested = join(outer, "nested");
-      const external = join(fixture.dir, "external");
-      for (const dir of [nested, external]) mkdirSync(dir, { recursive: true });
-      writeFileSync(join(outer, "SKILL.md"), "---\nname: parent\n---\nPARENT_PAYLOAD");
-      writeFileSync(join(nested, "SKILL.md"), "---\nname: hidden\n---\nNESTED_PAYLOAD");
-      writeFileSync(join(external, "SKILL.md"), "---\nname: linked\n---\nLINKED_PAYLOAD");
-      symlinkSync(external, join(root, "linked-dir"));
-      symlinkSync(join(external, "SKILL.md"), join(root, "linked.md"));
-      for (const name of ["hidden", "linked", "../external"]) {
-        expect(preloadSkills([name], fixture.dir)[0]).not.toHaveProperty("sourcePath");
-      }
-    } finally {
-      fixture.restore();
-    }
+  const projectSkillsRoot = () => join(tmpDir, ".pi", "skills");
+
+  function writeSkillDirWithFrontmatter(root: string, dirName: string, skillName: string, body: string) {
+    const dir = join(root, dirName);
+    mkdirSync(dir, { recursive: true });
+    const content = `---\nname: ${skillName}\n---\n${body}`;
+    writeFileSync(join(dir, "SKILL.md"), content);
+  }
+
+  it("(RED→GREEN) finds a skill by frontmatter name: field even when dir name differs", () => {
+    // Dir is "somedir" but frontmatter declares name: my-skill
+    writeSkillDirWithFrontmatter(projectSkillsRoot(), "somedir", "my-skill", "# My Skill body");
+    const result = preloadSkills(["my-skill"], tmpDir);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("my-skill");
+    expect(result[0].content).toContain("My Skill body");
+  });
+
+  it("(RED→GREEN) does NOT find the skill by dir name when frontmatter name differs", () => {
+    // Dir is "somedir" but frontmatter declares name: my-skill
+    writeSkillDirWithFrontmatter(projectSkillsRoot(), "somedir", "my-skill", "# My Skill body");
+    // Searching by dir name should NOT find it
+    const result = preloadSkills(["somedir"], tmpDir);
+    expect(result[0].content).toContain("not found");
+  });
+
+  it("(RED→GREEN) returned PreloadedSkill has sourcePath and baseDir set", () => {
+    writeSkillDirWithFrontmatter(projectSkillsRoot(), "somedir", "my-skill", "# My Skill");
+    const result = preloadSkills(["my-skill"], tmpDir);
+    expect(result[0].sourcePath).toBeDefined();
+    expect(result[0].sourcePath).toContain("SKILL.md");
+    expect(result[0].baseDir).toBeDefined();
+    // baseDir should be the dir containing SKILL.md
+    expect(result[0].baseDir).toContain("somedir");
+  });
+
+  it("(RED→GREEN) unknown skill name returns a not-found entry, not an empty array", () => {
+    const result = preloadSkills(["totally-unknown-skill"], tmpDir);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("totally-unknown-skill");
+    expect(result[0].content).toContain("not found");
   });
 });

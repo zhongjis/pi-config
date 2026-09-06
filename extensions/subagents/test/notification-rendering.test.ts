@@ -66,7 +66,6 @@ const pi = {
   on: vi.fn((event: string, handler: LifecycleHandler) => lifecycle.set(event, handler)),
   events: { emit: vi.fn(), on: vi.fn(() => vi.fn()) },
   appendEntry: vi.fn(),
-  registerEntryRenderer: vi.fn(),
   sendMessage,
 };
 
@@ -303,10 +302,9 @@ describe("subagent notification rendering migration", () => {
         description: "Delivery regression",
         status: "completed",
         toolUses: 0,
-        turnCount: expect.any(Number),
+        turnCount: 0,
         maxTurns: undefined,
         totalTokens: 0,
-        totalCost: expect.any(Number),
         durationMs: 0,
         outputFile: undefined,
         error: undefined,

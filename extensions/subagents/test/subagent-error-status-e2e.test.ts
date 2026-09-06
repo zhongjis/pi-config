@@ -4,10 +4,7 @@
  * failure, not as "completed" with an empty (or stale) result.
  *
  * Full-stack: real pi loader + real extension + real runAgent + real child
- * sessions on a faux model. Faux is the point, not a shortcut — the scenario is
- * a provider error with zero content, which no live model will produce on
- * request. Each run pins `live: false` so the pre-publish smoke's global
- * `PI_E2E_LIVE=1` can't swap a real model in and turn this suite red.
+ * sessions on a faux model.
  */
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
@@ -43,12 +40,11 @@ describe("issue #144 — empty-error final turns must not be 'completed'", () =>
     run = await runPrintMode({
       prompt: "Delegate.",
       respond: routeBySession({
-        parentInitial: agentCall({ run_in_background: false, description: "doomed", prompt: "Do work." }),
+        parentInitial: agentCall({ description: "doomed", prompt: "Do work." }),
         parentFinal: "parent done",
         // The child's one and only turn: provider error, zero content.
         subagent: () => fauxAssistantMessage([], { stopReason: "error", errorMessage: FATAL }),
       }),
-      live: false,
     });
 
     // DESIRED: the orchestrator sees a failure naming the provider error —
@@ -62,7 +58,7 @@ describe("issue #144 — empty-error final turns must not be 'completed'", () =>
     run = await runPrintMode({
       prompt: "Delegate.",
       respond: routeBySession({
-        parentInitial: agentCall({ run_in_background: false, description: "masked", prompt: "Do work." }),
+        parentInitial: agentCall({ description: "masked", prompt: "Do work." }),
         parentFinal: "parent done",
         subagent: (ctx) => {
           const hasToolResult = ctx.messages.some((m) => m.role === "toolResult");
@@ -76,7 +72,6 @@ describe("issue #144 — empty-error final turns must not be 'completed'", () =>
               ]);
         },
       }),
-      live: false,
     });
 
     // The orchestrator sees the failure (not the earlier text as a clean
@@ -94,11 +89,10 @@ describe("issue #144 — empty-error final turns must not be 'completed'", () =>
     run = await runPrintMode({
       prompt: "Delegate.",
       respond: routeBySession({
-        parentInitial: agentCall({ run_in_background: false, description: "empty", prompt: "Do work." }),
+        parentInitial: agentCall({ description: "empty", prompt: "Do work." }),
         parentFinal: "parent done",
         subagent: () => fauxAssistantMessage([], { stopReason: "error", errorMessage: FATAL }),
       }),
-      live: false,
     });
 
     const toolResult = agentToolResult(run.parentSession);

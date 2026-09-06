@@ -98,47 +98,6 @@ describe("toolDescriptionMode", () => {
     }
   });
 
-  it("keeps subagent_type structurally target-neutral", () => {
-    const tools = setup();
-    const schema = tools.get("Agent").parameters.properties.subagent_type;
-
-    expect(schema.type).toBe("string");
-    expect(schema).not.toHaveProperty("enum");
-    expect(schema).not.toHaveProperty("const");
-  });
-
-  it.each(["full", "compact", "custom"] as const)(
-    "%s mode stays stable when the global agent registry changes",
-    async (toolDescriptionMode) => {
-      const beforeTools = setup({ toolDescriptionMode }, () => {
-        if (toolDescriptionMode === "custom") {
-          writeFileSync(
-            join(tmpDir, ".pi", "agent-tool-description.md"),
-            "{{typeList}}\n{{compactTypeList}}",
-          );
-        }
-      });
-      const beforeTool = beforeTools.get("Agent");
-
-      mkdirSync(join(tmpDir, ".pi", "agents"), { recursive: true });
-      writeFileSync(
-        join(tmpDir, ".pi", "agents", "later-agent.md"),
-        "---\ndescription: Added after registration\n---\n\nLater.",
-      );
-      const second = makePi();
-      subagentsExtension(second.pi);
-      try {
-        const afterTool = second.tools.get("Agent");
-        expect(afterTool.description).toBe(beforeTool.description);
-        expect(afterTool.parameters.properties.subagent_type).toEqual(
-          beforeTool.parameters.properties.subagent_type,
-        );
-      } finally {
-        await second.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
-      }
-    },
-  );
-
   it("compact mode selects a distinct, smaller description", async () => {
     const tools = setup({ toolDescriptionMode: "compact" });
     const compactDescription: string = tools.get("Agent").description;
@@ -169,24 +128,19 @@ describe("toolDescriptionMode", () => {
     }
   });
 
-  it("custom mode substitutes structural placeholders without constraining the schema", () => {
+  it("custom mode renders the project template with placeholders substituted", () => {
     const tools = setup({ toolDescriptionMode: "custom" }, () => {
       writeFileSync(
         join(tmpDir, ".pi", "agent-tool-description.md"),
         "My agents:\n{{typeList}}\n\nGlobal dir: {{agentDir}}\nUnknown: {{nope}}\nCost: $& stays literal",
       );
     });
-    const tool = tools.get("Agent");
-    const schema = tool.parameters.properties.subagent_type;
-
-    expect(tool.description).toContain("My agents:");
-    expect(tool.description).toContain(`Global dir: ${hermeticAgentDir}`);
-    expect(tool.description).toContain("Unknown: {{nope}}");
-    expect(tool.description).toContain("Cost: $& stays literal");
-    expect(tool.description).not.toContain("{{typeList}}");
-    expect(schema.type).toBe("string");
-    expect(schema).not.toHaveProperty("enum");
-    expect(schema).not.toHaveProperty("const");
+    const desc: string = tools.get("Agent").description;
+    expect(desc).toContain("My agents:");
+    expect(desc).toContain("- general-purpose:");
+    expect(desc).toContain(`Global dir: ${hermeticAgentDir}`);
+    expect(desc).toContain("Unknown: {{nope}}");
+    expect(desc).toContain("Cost: $& stays literal");
   });
 
   it("custom mode falls back to the global file when no project file exists", () => {
@@ -196,6 +150,7 @@ describe("toolDescriptionMode", () => {
     const desc: string = tools.get("Agent").description;
     expect(desc).toContain("GLOBAL CUSTOM");
     expect(desc).not.toContain("{{compactTypeList}}");
+    expect(desc).toContain("general-purpose");
   });
 
 
