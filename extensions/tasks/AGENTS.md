@@ -1,59 +1,32 @@
-# tasks
+## Purpose
 
-## Overview
-Task-tracking extension: a single `Task` tool (op create/update/list/get), persistent widget, file-backed DAG, auto-clear, and planning-handoff cleanup.
+Maintain persistent task tracking, dependencies, and task supervision state.
 
-## Where to Look
-| Task | Location | Notes |
-|------|----------|-------|
-| Registration + lifecycle | `src/index.ts`, `src/lifecycle/store-glue.ts` | Tool/RPC wiring and reminders |
-| Persistence + DAG | `src/task-store.ts` | CRUD, blockers, locking, migrations |
-| Planning handoff | `src/bridge/rpc-handlers.ts` | Deletes session-tagged planning tasks |
-| Tool definition | `src/tools/task.ts`, `src/tools/description.ts` | Single `Task` tool: schema, ops, batch create/update |
-| Settings/widget | `src/tasks-config.ts`, `src/ui/` | Scope, auto-clear, TUI |
-| Key regressions | `test/registration.test.ts`, `test/handoff-cleanup.test.ts`, `test/task-tool.test.ts`, `test/tool-rendering.test.ts` | Surface, handoff, op-dispatch behavior |
+## Ownership
 
-## Commands
-Run from `extensions/tasks/`.
+- Owns the `Task` tool, task store, widget, continuation state, and task RPC handlers.
+- Planning producers and handoff callers retain their own orchestration responsibilities.
 
-```bash
-pnpm run test
-pnpm run typecheck
-pnpm run lint
-pnpm run build
-```
+## Local Contracts
 
-## Always
-- Keep lifecycle/tool text aligned: `pending -> in_progress -> completed`.
-- Keep the single-tool surface: one `Task` tool with `op` (create/update/list/get); no per-op tools and no task-owned process/execution tools.
-- Preserve task scope, auto-clear delay, blocker edges, locking, and reserved planning provenance.
-- Keep `tasks:rpc:clear-planning-tasks` request/reply behavior; cleanup deletes matching planning tasks without external execution RPC.
+- Batch creation MUST remain all-or-nothing on malformed input.
+- Batch updates MUST remain best-effort, with per-item acceptance/rejection reporting.
+- Dependency edges MUST remain bidirectional; deletion removes the task and its edges.
+- Persistence MUST retain advisory locking and atomic replacement.
+- Schema-v1 migration MUST occur on first write under lock, preserving pre-v2 snapshots.
+- State-machine changes MUST preserve illegal-transition and late-reply protections.
 
-## Ask First
-- Changing default `taskScope` or `autoClearCompleted` semantics.
-- Changing on-disk schema, config path, blocker edges, or planning provenance keys.
+## Work Guidance
 
-## Never
-- Never add task-owned worker invocation or execution orchestration.
-- Never surface internal continuation-reminder text.
-- Never break file-locking/shared-list behavior.
+- [README](README.md) owns tool semantics, scope settings, storage, and RPC names.
+- You MUST preserve [upstream provenance and adaptations](README.md#upstream) and [LICENSE](LICENSE).
+- Store changes SHOULD use existing migration, DAG, and corruption regressions.
 
-## Gotchas
-- `src/index.ts` owns runtime wiring; registration changes need `test/registration.test.ts` updates.
-- Completed-task auto-clear is intentionally delayed by turns.
-- `create` is all-or-nothing; `update` is best-effort per item (reports applied/rejected, hard error only when zero applied).
+## Verification
 
-## Local Tweaks
-
-| File | What | Why |
-|------|------|-----|
-| `index.ts` | Directory re-export entrypoint while package metadata points to `./index.ts`. | Repo smoke/install discovery. |
-| `src/index.ts`, `src/bridge/rpc-handlers.ts` | Planning provenance plus `tasks:rpc:clear-planning-tasks`. | Fu Xi plan handoff cleanup. |
-| `src/lifecycle/store-glue.ts` | Transient context-hook reminders with local cooldown/stagnation cap. | Avoid stale persisted reminders while preserving cadence. |
-| `src/tools/task.ts` | Consolidated `Task` tool (op create/update/list/get) replacing the former six task tools; dead background-process tools removed. | One tool + batch; no process execution seam. |
-| `src/tools/rendering.ts`, `src/ui/task-widget.ts` | Shared width-safe tool reports with op-keyed action/list/get parsing plus compact grouped list/widget output. | Scan-friendly TUI while preserving complete model-visible and expanded content. |
-| `package.json`, `README.md` | Repo-local package/test wiring and concise docs. | Root dependency/test model; no npm install guidance. |
-| `package.json` | `peerDependencies` for pi packages (+typebox) use pnpm `catalog:` | Versions centralized in root `pnpm-workspace.yaml` `catalog:`. Re-apply after upstream sync (upstream ships literal ranges). |
+- From repository root: `pnpm exec vitest run --project unit extensions/tasks/test`.
+- [Task tool](test/task-tool.test.ts), [FSM](test/fsm-illegal-transition.test.ts), and [migration](test/migration-idempotent.test.ts) tests cover distinct contracts.
 
 ## Child DOX Index
-No child `AGENTS.md` files.
+
+- None; this document owns the entire subtree, including migrations and regressions.

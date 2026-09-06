@@ -1,50 +1,32 @@
-# init
+## Purpose
 
-## Overview
+Dispatch Pi-native prompts for hierarchical AGENTS.md initialization and DOX migration.
 
-Slash-command extension for AGENTS.md/DOX initialization prompts. `/init-deep` remains preserved; `/init-dox` owns the canonical DOX action prompt.
+## Ownership
 
-## Provenance
-
-- `/init-deep`: upstream init-deep SUL concepts informed prompt shape only; wording is original, Pi-native, and never a wholesale copy.
-- `/init-dox`: DOX source is `agent0ai/dox` upstream `main` (MIT), adopted as docs/process layer only, not a Pi extension/package.
-
-## Structure
-
-```
-extensions/init/
-├── index.ts                  # re-export shim
-├── src/index.ts              # command registration
-├── src/init-deep-template.ts # preserved /init-deep prompt
-├── src/init-dox-template.ts  # canonical /init-dox DOX prompt
-├── test/init.test.ts         # focused command/template contract tests
-├── AGENTS.md
-└── README.md
-```
+- Owns command registration, hidden follow-up dispatch, and initialization templates.
+- Generated repository documents remain owned by their target DOX hierarchy.
 
 ## Local Contracts
 
-- Register exactly `/init-deep` and `/init-dox` from `src/index.ts` unless a later plan item changes the command surface.
-- Keep root `index.ts` as `export { default } from "./src/index.js";`.
-- Keep long prompts in `src/*-template.ts`; do not inline them into command registration.
-- Preserve `/init-deep` behavior and raw-arg semantics.
-- Keep README concise (~120 lines max) and update it with any command-surface change.
+- Both commands MUST forward raw arguments and trigger the follow-up turn.
+- Notifications MUST require UI; headless dispatch remains supported.
+- DOX work MUST remain documentation-only unless the user explicitly authorizes broader changes.
+- Scoped requests MUST constrain migration to the requested paths.
+- Create-new initialization MUST read existing documents before regeneration.
+- Root entrypoint remains a re-export shim; templates stay under source.
+
+## Work Guidance
+
+- [README](README.md) owns command grammar, depth/reset behavior, and provenance.
+- Template edits MUST preserve the distinction between init-deep and DOX migration.
+- DOX process attribution MUST remain intact; init-deep wording remains local/Pi-native.
 
 ## Verification
 
-```bash
-pnpm test:extensions -- extensions/init/test/init.test.ts
-pnpm lint:typecheck
-# Stale-path scan for the old init directory name must return no matches.
-test -f extensions/init/README.md && test -f extensions/init/AGENTS.md
-```
-
-## Never
-
-- Do not add package/config/toolchain files in this extension.
-- Do not nest deeper than `src/` or `test/`.
-- Do not copy large upstream SUL prompt text wholesale.
+- From repository root: `pnpm exec vitest run --project unit extensions/init/test/init.test.ts`.
+- [Command/template tests](test/init.test.ts) cover arguments, dispatch, headless behavior, and scope contracts.
 
 ## Child DOX Index
 
-No child `AGENTS.md` files. This file owns all files under `extensions/init/`.
+- None; this document owns the entire subtree.

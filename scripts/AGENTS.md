@@ -1,33 +1,34 @@
-# scripts
-
 ## Purpose
 
-Repo helper scripts used by install, packaging, sync, and maintenance flows.
+Repository maintenance, validation, and runtime package-command helpers.
 
 ## Ownership
 
-This file owns `scripts/`.
+- This document owns every script in this directory.
+- [../package.json](../package.json) owns root command entrypoints.
+- [lint-typecheck.mjs](lint-typecheck.mjs) coordinates root and package checks.
+- [pi-package-npm.sh](pi-package-npm.sh) selects ephemeral build tools and package managers.
+- Prompt export/sync scripts maintain the [reference archive](../docs/references/oh-my-openagent/README.md).
 
 ## Local Contracts
 
-- Scripts must be runnable from the repo root unless their header says otherwise.
-- Do not add global installs or host-mutating setup as a default path; prefer Nix/project-scoped execution.
-- Keep sync scripts explicit about temp directories, upstream source, and files intentionally ignored.
-- Preserve executable semantics when editing shell scripts.
-- `pi-package-npm.sh` must preserve package-local manager config and forward Pi's arguments unchanged.
-- Oh My OpenAgent generated final-prompt updates run through `pnpm sync:oh-my-openagent-prompts`; verify with `pnpm check:oh-my-openagent-prompts`. The active mode-owned `ulw-plan` is not a sync target.
+- You MUST preserve command arguments and exit failures across wrappers.
+- You MUST keep archive refreshes within the documented generated target.
+- Archive `check` compares without replacing; `sync` replaces generated content.
+- Default archive regeneration fetches pinned upstream dependencies; it is not an offline check.
 
 ## Work Guidance
 
-- Use the existing script language and style.
-- For scripts called by docs or root commands, update the relevant AGENTS/docs reference when names or behavior change.
-- Avoid adding new scripts when an existing root command or package script can cover the workflow.
+- You SHOULD use fixture-driven tests for wrapper and archive changes.
+- You MUST preserve the archive's documented provenance and licensing.
 
 ## Verification
 
-- For script behavior changes, run the script's dry-run/status mode if available.
-- For syntax-only shell checks, prefer the narrowest available check in the current environment.
+- Package wrapper: `pnpm exec vitest run --project unit test/pi-package-npm.test.ts`.
+- Archive helpers: `pnpm exec vitest run --project unit test/oh-my-openagent-final-prompts.test.ts`.
+- Aggregate checks: `pnpm lint:typecheck`.
+- Archive comparison: `pnpm check:oh-my-openagent-prompts` (fetches upstream).
 
 ## Child DOX Index
 
-No child `AGENTS.md` files. This file owns all files under `scripts/`.
+- None; this document owns all scripts and remaining files here.

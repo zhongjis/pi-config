@@ -1,35 +1,27 @@
-# .agents
-
 ## Purpose
 
-Repo-local agent skills and source snapshots used to teach Pi-specific workflows.
+Repository-owned maintenance skills and their supporting references.
 
 ## Ownership
 
-This file owns `.agents/` except where a child `AGENTS.md` exists. Existing child docs keep ownership of their subtree.
+- [skills/](skills/) is the repository skill source.
+- [../.pi/skills](../.pi/skills) symlinks to this tree.
+- This document owns all skills and supporting files below `.agents/`.
+- External global skills and mode-owned skills are outside this scope.
 
 ## Local Contracts
 
-- Skill directories under `.agents/skills/` are AI instruction assets, not runtime extension code.
-- Do not edit mirrored upstream snapshots unless explicitly asked to refresh or patch that snapshot.
-- Keep skill guidance source-grounded: cite local files or opened upstream sources instead of relying on memory.
-- Preserve provenance in skill files when vendoring or adapting outside material.
+- You MUST keep skill instructions and relative references together.
+- You MUST preserve upstream attribution in imported skill material.
+- You MUST distinguish repository maintenance skills from active-mode skills.
 
 ## Work Guidance
 
-- Prefer updating the specific skill directory that owns the behavior.
-- For `pi-docs-playbook`, read its child `AGENTS.md` before touching that skill.
-- Keep repo-specific skill instructions concise and operational; move long references into `references/`, `guides/`, or `source/` as appropriate.
+- You MUST follow [system-prompts](skills/system-prompts/SKILL.md) when authoring prompts.
+- You SHOULD link authoritative references instead of copying their contracts.
 
 ## Verification
 
-- For instruction-only edits, re-read the changed skill files and confirm linked paths resolve.
-- If a skill includes scripts or generated artifacts, run the skill-local verification documented in that skill directory.
-
 ## Child DOX Index
 
-| Path | Owner Doc | Scope |
-|------|-----------|-------|
-| `skills/pi-docs-playbook/` | `skills/pi-docs-playbook/AGENTS.md` | Pi documentation playbook skill, local navigation aids, and mirrored upstream source rules. |
-| `skills/pi-tool-output-presentation/` | `skills/pi-tool-output-presentation/AGENTS.md` | Reusable Pi tool TUI output presentation workflow and eval prompts. |
-| `skills/pi-docs-playbook/source/` | `skills/pi-docs-playbook/source/AGENTS.md` | Mirrored upstream pi source snapshot rules. |
+- None; this document owns the entire subtree.

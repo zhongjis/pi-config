@@ -1,48 +1,32 @@
-# pm-marketplace — Agent Guide
+## Purpose
 
-Vendored from https://github.com/phuryn/pm-skills. Opt-in via `/mode shennong`.
-See `README.md` for user-facing docs and `AGENTS.md` (this file) for maintainer rules.
+Expose vendored product-management workflows only in Shen Nong mode.
 
 ## Ownership
 
-`index.ts` is a local mode-gated wrapper. `pm-skills/` is vendored — do not hand-edit.
+- This parent owns runtime registration, resource gating, update checks, package metadata, and tests.
+- The child owns pinned skill/command materials; persona content remains in [Shen Nong mode](../../modes/shennong/mode.md).
 
-Pinned SHA lives in `package.json` → `piVendor.commit` (and `pm-skills/PROVENANCE.md`).
+## Local Contracts
 
-## Local Tweaks
+- Resource visibility and PM command execution MUST remain gated to the latest persisted `shennong` mode.
+- Commands are discovered from plugin command directories, not a duplicated static catalog.
+- Persona content MUST NOT be injected by this extension.
+- Update checks MUST remain non-blocking, fail-silent, throttled to 24 hours, and bounded to five seconds.
+- Syncs MUST keep package `piVendor.commit` aligned with child provenance.
 
-| File | What |
-|------|------|
-| `index.ts` | Mode-gated wrapper; `resources_discover` + 32 `/pm:*` command registration + background update-check |
-| Command registration logic | Dynamic discovery of `pm-skills/*/commands/` dirs; registers each as a `/pm:*` command |
+## Work Guidance
 
-## Re-vendoring
+- [README](README.md) owns runtime behavior and plugin overview.
+- Vendoring SHOULD use the parent's installed vendoring skill router.
+- You MUST preserve [upstream attribution](README.md#upstream) and the child's license/provenance.
 
-Use the `pi-extension-vendoring` / `skill-maintainer` skill. Steps:
-1. Re-clone upstream at new SHA.
-1. Re-clone upstream at new SHA.
-2. Re-copy the 7 `skills/` and `commands/` subtrees into `pm-skills/`.
-3. Bump `piVendor.commit` in `package.json` and `pm-skills/PROVENANCE.md`.
-4. Run `pnpm lint:typecheck` and the extension tests.
+## Verification
 
-Never run `git clone` inside this repo worktree. Use `/tmp`.
-
-## Ask first
-
-- Bumping to a major upstream version with migration notes.
-- Adding or dropping plugin subdirectories.
-
-## Never
-
-- Do not hand-edit `pm-skills/` for Pi-specific content.
-- Do not add context injection or message mutation to `index.ts`.
-
-## References
-
-- `README.md` — user-facing
-- `pm-skills/PROVENANCE.md` — vendoring record
-- `pm-skills/LICENSE` — upstream MIT license
+- From repository root: `pnpm exec vitest run --project unit extensions/pm-marketplace/test/index.test.ts`.
+- [Runtime tests](test/index.test.ts) cover mode gating, command behavior, and resource discovery.
 
 ## Child DOX Index
 
-No child `AGENTS.md` files. This file owns all files under `extensions/pm-marketplace/`, including `pm-skills/`.
+- [pm-skills](pm-skills/AGENTS.md) — pinned upstream skills, command workflows, omissions, and license.
+- Everything outside that child remains owned here.

@@ -1,29 +1,25 @@
-# themes
-
 ## Purpose
 
-Theme JSON assets for local Pi UI presentation.
+Local Pi theme assets.
 
 ## Ownership
 
-This file owns `themes/`.
+- [github-diff.json](github-diff.json) is the sole theme asset.
+- This document owns the entire themes directory.
+- [../install.sh](../install.sh) owns runtime symlinking.
 
 ## Local Contracts
 
-- Keep theme files valid JSON.
-- Do not rename or remove a theme file without updating any install/runtime reference that expects it.
-- Treat visual token changes as user-facing behavior.
+- The asset names the theme `github-diff`.
+- Its `$schema` points to the Pi theme schema.
+- `vars` holds reusable colors; `colors` assigns presentation roles.
+- `export` contains exported-page background colors.
+- You MUST preserve the asset's Pi theme JSON structure.
 
 ## Work Guidance
 
-- Make the smallest token change that achieves the requested visual effect.
-- Preserve existing naming style and JSON formatting.
-
 ## Verification
-
-- Parse changed JSON with a JSON parser.
-- If a visual change matters, inspect the affected UI manually in Pi when practical.
 
 ## Child DOX Index
 
-No child `AGENTS.md` files. This file owns all files under `themes/`.
+- None; this document owns the asset and remaining files here.

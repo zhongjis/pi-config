@@ -1,27 +1,31 @@
-# lsp
+## Purpose
 
-Vendored from `https://github.com/dreki-gg/pi-extensions/tree/524efa3c9a28291a578d820c460c6637b200fb02/packages/lsp` / `@dreki-gg/pi-lsp@0.4.1`.
+Expose language-server queries through the unified `lsp` tool.
 
-## Local Tweaks
+## Ownership
 
-Intentional divergences from upstream. Current-state snapshot — preserve these on sync.
+- Owns client/protocol handling, activation leases, status, and local tests.
+- Home Manager owns managed server definitions; this extension owns loading and project overrides.
 
-| File | What | Why |
-|------|------|-----|
-| `README.md` | Local concise README replaces upstream install/marketing content and records npm tarball integrity/provenance plus managed `~/.pi/agent/lsp.json` ownership. | Repo vendors extensions locally and forbids `pi install npm:...`; future syncs must preserve local Home Manager config ownership and `install.sh` extension loading. |
-| `AGENTS.md` | Local-only sync manifest. | Protects intentional divergences during future upstream syncs. |
-| `LICENSE` | Added root upstream MIT license from pinned commit; npm tarball metadata declares MIT but omits the license file. | Keeps license text with copied source. |
-| `package.json` | Local package metadata points `pi.extensions` to `./index.ts`, keeps only runtime dependency `effect`, and records `piVendor` provenance. | Fits repo extension layout without adding root dependencies/scripts/tsconfig changes. |
-| `config.ts` | Uses managed global config at `~/.pi/agent/lsp.json` and project overrides at `.pi/lsp.json`; scaffolds only to the managed path. | Matches Home Manager-owned LSP config and avoids stale upstream config shadowing it. |
-| `tools/programs.ts` | Diagnostics now returns typed no-server/all-fail errors and avoids false clean output when some servers fail. | Prevents agents from trusting incomplete diagnostic checks. |
-| `client-pool.ts` | Process-global canonical-root + resolved-config client pooling with refcounts; shared clients stay alive across sessions until final holder release triggers shutdown. | Prevents duplicate LSP processes for the same canonical root/config identity and makes final-holder lifecycle explicit. |
-| `tools.ts` | Uses shared width-safe call/summary/expanded primitives with owner-local parsing. Calls show operation, decisive path/query, and active project; collapsed results show terminal/running/error state, counts, and highlights; expanded output preserves raw `content`. | Aligns LSP query reports with CodeGraph without changing client behavior or forcing global expansion state. |
-| `protocol.ts` | Clears current child/buffer and rejects pending requests on current process exit/error while ignoring stale child events. | Allows safe LSP respawn without stale processes clobbering new connections. |
-| `client.ts` | Resets initialization, document, diagnostic, capability, and pending state when a server exits. | Restarted servers need fresh initialize and didOpen state. |
-| `index.ts` | Status/help/scaffold text points to managed and project config paths; footer status stays compact (`LSP 0/N`, `LSP R/N running`); `/lsp-restart` releases only this session's leases while shared servers stay up until the final holder exits. | UI must match local config search order, avoid long footer lines, and preserve session-lease restart semantics. |
-| `test/` | Local Vitest coverage for registered-tool rendering (frozen raw parity, owner-shape summaries, partial/error/malformed states, ANSI/CJK width safety at 20/40/80/120), config precedence, compact status formatting, diagnostics failure handling, protocol respawn, client-pool refcounting, and activation lifecycle release/shutdown. | Guards local renderer and runtime divergences from upstream regressions. |
-| `package.json` | `peerDependencies` for Pi packages (+typebox) use pnpm `catalog:`. | Versions are centralized in root `pnpm-workspace.yaml`; re-apply after upstream sync because upstream ships literal ranges. |
+## Local Contracts
+
+- Clients share only when canonical workspace root and full resolved configuration match.
+- Restart/shutdown MUST release this activation's leases; only the final holder stops a shared server.
+- Managed configuration is `~/.pi/agent/lsp.json`; project overrides use `.pi/lsp.json`.
+- You MUST NOT recreate root `lsp.json` or treat `.pi-lsp.json` as the active override.
+- Installation uses the extension directory link, not a settings package entry.
+
+## Work Guidance
+
+- [README configuration](README.md#settings--configuration) owns managed-config details and precedence.
+- You MUST preserve [README Local Tweaks](README.md#local-tweaks), [provenance](README.md#upstream), and [LICENSE](LICENSE).
+- Configuration changes MUST respect ownership outside this repository.
+
+## Verification
+
+- From repository root: `pnpm exec vitest run --project unit extensions/lsp/test`.
+- [Client pool](test/client-pool.test.ts), [lifecycle](test/lifecycle.test.ts), and [configuration](test/config.test.ts) cover sharing and ownership.
 
 ## Child DOX Index
 
-No child `AGENTS.md` files. This file owns all files under `extensions/lsp/`.
+- None; this document owns the entire subtree.

@@ -1,37 +1,33 @@
-# test
-
 ## Purpose
 
-Root Vitest smoke, shared unit tests, integration tests, fixtures, and Pi package stubs.
+Shared test harness, smoke coverage, fixtures, stubs, and runtime integration tests.
 
 ## Ownership
 
-This file owns `test/`. Extension-local tests remain owned by their extension directory.
+- This document owns root tests, `fixtures/`, `stubs/`, `types/`, and shared setup.
+- The integration child owns real-runtime tests and their helpers.
+- Extension-specific unit tests belong beside their extension, not here.
+- [../vitest.config.ts](../vitest.config.ts) owns project selection and aliases.
 
 ## Local Contracts
 
-- Unit tests use stubs from `test/stubs/` and fixtures from `test/fixtures/`.
-- Integration tests under `test/integration/` use the real Pi runtime through `pi-test-harness`.
-- Root smoke coverage is centralized in `test/extensions.smoke.test.ts`.
-- Do not delete or skip failing tests to pass checks; fix code or update tests only when behavior intentionally changes.
+- You MUST follow the [testing guide](../docs/guides/testing/README.md).
+- Unit tests use local Pi stubs; integration tests use real packages.
+- Repository testing infrastructure stays outside runtime installation.
+- Smoke coverage checks loading and registration, not behavioral correctness.
 
 ## Work Guidance
 
-- Put extension-specific unit tests in `extensions/<name>/test/` unless the coverage is shared harness behavior.
-- Update stubs only when the Pi API shape used by tests changes.
-- Keep integration tests focused on real runtime behavior that stubs cannot prove.
+- You MUST follow [unit conventions](../docs/guides/testing/unit-test.md) for shared unit coverage.
+- You SHOULD keep smoke tests cheap and behavioral assertions focused.
+- You MUST add stub capabilities to the appropriate existing module.
 
 ## Verification
 
-- Run `pnpm test:extensions` for unit/smoke changes.
-- Run `pnpm test:integration` for integration harness changes.
-- Run `pnpm lint:typecheck` when test types, imports, or config-sensitive paths change.
+- Unit project: `pnpm test:extensions`.
+- Focused shared test: `pnpm exec vitest run --project unit test/planning-agent-contract.test.ts`.
+- Real-runtime project: `pnpm test:integration`.
 
 ## Child DOX Index
 
-| Path | Owner Doc | Scope |
-|------|-----------|-------|
-| `fixtures/` | this file | Shared mock Pi/context builders. |
-| `integration/` | this file + `docs/guides/testing/integration-test.md` | Real Pi runtime integration tests. |
-| `stubs/` | this file | Stubbed Pi packages for unit tests. |
-| `types/` | this file | Test-only type declarations. |
+- [integration/AGENTS.md](integration/AGENTS.md) — real Pi sessions, boundaries, and cleanup.
