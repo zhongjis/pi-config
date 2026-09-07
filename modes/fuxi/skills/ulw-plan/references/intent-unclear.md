@@ -11,7 +11,7 @@ Read this when desired OUTCOME is fuzzy: vague request, bootstrap, `/handoff:sta
 
 ## Research and topology
 
-Research rather than interrogate. Fan out more parallel `chengfeng` and `wenchang` lanes than CLEAR, then independently verify material claims. Every wave names the exact gap it serves. Continue only while a named-gap wave adds material evidence. Stop at sufficiency or after the first wave that adds no new useful fact; never re-explore to double-check.
+Research rather than interrogate. Research named gaps using relevant local or external sources. Parallelize independent read-only research when useful; use direct tools when sufficient. Independently verify material subagent claims. Every wave names the exact gap it serves. Continue only while a named-gap wave adds material evidence. Stop at sufficiency or after the first wave that adds no new useful fact; never re-explore to double-check.
 
 For Architecture classification, bootstrap, Discord, or external-source requests, conditionally load `references/adversarial-research.md` and run its shared five-phase workflow before synthesis. While active, it may use multiple named phase-specific waves; apply the wider UNCLEAR stop policy to each named gap/phase, stopping at sufficiency or its first no-new-useful-fact wave.
 

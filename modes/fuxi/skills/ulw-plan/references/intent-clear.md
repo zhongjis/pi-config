@@ -11,7 +11,7 @@ Read this when routing resolved to CLEAR: the user knows the desired outcome; on
 
 ## Research
 
-Explore before asking. Dispatch parallel read-only internal pattern/test-infra and external contract research in one turn; use direct CodeGraph/read/rg/ast/LSP while it runs. For each named open gap, run one sufficient evidence wave. Stop that gap when evidence makes its clearance answerable; never rerun a wave to double-check.
+Explore before asking. Research named gaps using relevant local or external sources. Parallelize independent read-only research when useful; use direct tools when sufficient. For each named open gap, run one sufficient evidence wave. Stop that gap when evidence makes its clearance answerable; never rerun a wave to double-check.
 
 For Architecture classification, Discord, or external-source requests, conditionally load `references/adversarial-research.md` and run its shared five-phase workflow before interview synthesis. That workflow may use multiple phase-specific waves; ordinary CLEAR gaps still use exactly one sufficient wave, and each adversarial phase stops at evidence sufficiency.
 

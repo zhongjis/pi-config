@@ -1,6 +1,6 @@
 ---
 name: ulw-plan
-description: "MUST USE for explicit planning, interviewing, or work breakdown; for post-discovery design uncertainty such as ambiguous scope, competing decompositions, unclear boundaries, or dependency ordering; for architecture decisions or vague outcomes; and when the user says ulw-plan, plan this, make a plan, plan before coding, interview me, break this down, start planning, plan mode, just make it good, or figure out what to build."
+description: 'MUST USE for explicit planning, requirements interviews, work breakdown, architecture decisions, vague goals, or post-discovery uncertainty about scope, decomposition, boundaries, or dependencies.'
 metadata:
   short-description: Explore-first planning consultant that waits for your okay before planning
   upstream: https://github.com/code-yeongyu/oh-my-openagent
