@@ -117,6 +117,28 @@ describe("subagent tool rendering migration", () => {
     conversation: "[User]: full verbose conversation",
   };
 
+  it.each(["Agent", "get_subagent_result"])("explicit_precedence_and_pending_to_actual_metadata_remain_truthful (%s)", (name) => {
+    const tool = requireTool(name);
+    for (const thinking of [undefined, "low", "off"]) {
+      const details = { ...base, status: "running", thinking, tags: ["thinking: default (pending)"] };
+      const result: ToolResult = { content: [{ type: "text", text: "unchanged" }], details };
+      const collapsed = tool.renderResult(result, { expanded: false }, theme);
+      const expanded = tool.renderResult(result, { expanded: true }, theme);
+      const label = `thinking: ${thinking ?? "default (pending)"}`;
+      expect(renderText(collapsed, 240)).toContain(label);
+      expect(renderText(expanded)).toContain(label);
+      if (thinking) expect(renderText(expanded)).not.toContain("default (pending)");
+      for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+        expect(collapsed.render(width).length).toBeLessThanOrEqual(3);
+        for (const component of [collapsed, expanded]) for (const line of component.render(width)) {
+          expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+        }
+      }
+      expect(result.content).toEqual([{ type: "text", text: "unchanged" }]);
+      expect(details.thinking).toBe(thinking);
+    }
+  });
+
   it.each(["Agent", "get_subagent_result"])("B02 %s renders compact report and complete expanded result", (name) => {
     const tool = requireTool(name);
     const result: ToolResult = Object.freeze({

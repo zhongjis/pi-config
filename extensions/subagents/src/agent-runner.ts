@@ -688,8 +688,7 @@ export async function runAgent(
   const model = selected.model;
 
   // Resolved direct/RPC options remain authoritative.
-  const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking ?? selected.thinkingLevel
-    ?? options.pi.getThinkingLevel?.();
+  const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking ?? selected.thinkingLevel;
 
 
   // ─── Tool scoping ───────────────────────────────────────────────────────

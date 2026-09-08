@@ -16,6 +16,9 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Foreground results and background follow-up notifications MUST retain distinct delivery paths.
 - Run reports MUST derive model/thinking from SDK session getters, including inherited models and clamping/off.
 - Queued/pre-session reports NEVER present requested model/thinking as actual execution.
+- Omitted thinking MUST use SDK selected-model defaults, NEVER parent thinking.
+- `thinkingDefault` MUST track configuration intent only; unknown intent stays unlabelled.
+- `thinking: default (pending)` MUST survive queued retrieval until session metadata replaces it; resume retains session thinking.
 - Foreground, retrieval, and resume MUST share structured result/error, transcript, and diagnostic details.
 - Compact run results MUST fit three physical rows including the configured expand hint; expanded reports retain complete answer/error before metadata and artifacts.
 - Runtime diagnostics MUST remain visible expanded without counting as tool executions; expanded Run MUST explicitly show zero tools.

@@ -12,6 +12,58 @@ import type { AgentRecord } from "../src/types.js";
 import { agentCall, type PrintModeRun, routeBySession, runPrintMode } from "./helpers/print-mode-runner.js";
 
 describe("Packet B actual SDK metadata", () => {
+  it.each([
+    { id: "omitted_thinking_explicit_chain_uses_sdk_default_not_parent", model: "model: faux/faux-1\n" },
+    { id: "omitted_thinking_inherited_model_uses_sdk_default_not_parent", model: "" },
+  ])("$id", async ({ model }) => {
+    for (const defaultThinkingLevel of ["low", undefined]) {
+      const cwd = mkdtempSync(join(tmpdir(), "subagents-default-thinking-"));
+      let run: PrintModeRun | undefined;
+      try {
+        mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
+        writeFileSync(join(cwd, ".pi", "agents", "defaults.md"), `---\ndescription: Defaults\n${model}extensions: false\n---\nReport.\n`);
+        writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({ defaultThinkingLevel }));
+        run = await runPrintMode({ cwd, prompt: "Delegate.", reasoning: true, parentThinking: "high",
+          respond: routeBySession({
+            parentInitial: agentCall({ subagent_type: "defaults", prompt: "Report.", description: "defaults" }),
+            subagent: "Done",
+          }),
+        });
+        expect(run.parentSession.thinkingLevel).toBe("high");
+        const result = run.parentSession.messages.find((m): m is ToolResultMessage<unknown> => m.role === "toolResult" && m.toolName === "Agent");
+        expect(result?.details).toMatchObject({ thinking: defaultThinkingLevel ?? "medium" });
+        const id = result?.content.filter((b) => b.type === "text").map((b) => b.text).join("").match(/Agent ID: (\S+)/)?.[1];
+        expect(run.manager?.getRecord(id ?? "")).toMatchObject({ session: { thinkingLevel: defaultThinkingLevel ?? "medium" }, invocation: { thinking: defaultThinkingLevel ?? "medium" } });
+      } finally {
+        try { await run?.dispose(); } finally { rmSync(cwd, { recursive: true, force: true }); }
+      }
+    }
+  });
+  it("omitted_thinking_background_pending_is_replaced_on_retrieval", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "subagents-pending-"));
+    let run: PrintModeRun | undefined;
+    try {
+      mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
+      writeFileSync(join(cwd, ".pi", "agents", "pending.md"), "---\ndescription: Pending\nextensions: false\n---\nReport.\n");
+      run = await runPrintMode({ cwd, prompt: "Delegate.", reasoning: true, parentThinking: "high", respond: routeBySession({
+        parentInitial: agentCall({ subagent_type: "pending", prompt: "Report.", description: "pending", run_in_background: true }),
+        parentFinal: (ctx) => {
+          if (ctx.messages.some((m) => m.role === "toolResult" && m.toolName === "get_subagent_result")) return "Done";
+          const first = ctx.messages.find((m): m is ToolResultMessage<unknown> => m.role === "toolResult" && m.toolName === "Agent");
+          const id = first?.content.filter((b) => b.type === "text").map((b) => b.text).join("").match(/Agent ID: (\S+)/)?.[1];
+          if (!id) throw new Error("Missing Agent ID");
+          return { type: "toolCall", id: "retrieve", name: "get_subagent_result", arguments: { agent_id: id, wait: true } };
+        },
+        subagent: "Done",
+      }) });
+      const results = run.parentSession.messages.filter((m): m is ToolResultMessage<unknown> => m.role === "toolResult" && ["Agent", "get_subagent_result"].includes(m.toolName));
+      expect(results[0]?.details).toMatchObject({ thinking: undefined, tags: expect.arrayContaining(["thinking: default (pending)"]) });
+      expect(results[1]?.details).toMatchObject({ thinking: "medium", tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
+    } finally {
+      try { await run?.dispose(); } finally { rmSync(cwd, { recursive: true, force: true }); }
+    }
+  });
+
   it.each([false, true])("B01 actual same-parent model and clamped thinking survive retrieval and resume (background=%s)", async (background) => {
     const cwd = mkdtempSync(join(tmpdir(), "subagents-metadata-"));
     let run: PrintModeRun | undefined;

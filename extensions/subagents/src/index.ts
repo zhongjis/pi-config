@@ -248,6 +248,7 @@ function buildDetails(
     ...record.invocation,
     modelName: record.session?.model ? `${record.session.model.provider}/${record.session.model.id}` : undefined,
     thinking: record.session?.thinkingLevel,
+    thinkingDefault: !record.session && record.invocation?.thinkingDefault,
   };
   return {
     ...base,
@@ -926,7 +927,7 @@ Terse command-style prompts produce shallow, generic work.
       ),
       thinking: Type.Optional(
         Type.String({
-          description: `Thinking level: ${THINKING_LEVELS.join(", ")}. Overrides agent default.`,
+          description: `Thinking level: ${THINKING_LEVELS.join(", ")}. Frontmatter and selected model suffix take precedence. Omitted: selected-model SDK default, not parent thinking.`,
         }),
       ),
       max_turns: Type.Optional(
@@ -1066,8 +1067,7 @@ Terse command-style prompts produce shallow, generic work.
         }
       }
 
-      const thinking = resolveAgentInvocationConfig(customConfig, params, selected.thinkingLevel).thinking
-        ?? pi.getThinkingLevel?.();
+      const thinking = resolveAgentInvocationConfig(customConfig, params, selected.thinkingLevel).thinking;
       const inheritContext = resolvedConfig.inheritContext;
       const runInBackground = resolvedConfig.runInBackground;
       const isolated = resolvedConfig.isolated;
@@ -1086,6 +1086,7 @@ Terse command-style prompts produce shallow, generic work.
       // Actual model/thinking are available only after the SDK creates the session.
       const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
       const agentInvocation: AgentInvocation = {
+        thinkingDefault: thinking === undefined,
         // Explicit value only — the default fallback would just add noise.
         // Normalize so `0` (unlimited) doesn't surface as a misleading "max turns: 0".
         maxTurns: normalizeMaxTurns(resolvedConfig.maxTurns),
@@ -1884,7 +1885,7 @@ description: <one-line description shown in UI>
 builtin_tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no built-in tools. Omit for all>
 extension_tools: <comma-separated extension/MCP tool names (exact or trailing-* wildcard, e.g. codegraph_*). Use "none" for none. Omit for all>
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5". Omit to inherit parent model>
-thinking: <optional thinking level: ${THINKING_LEVELS.join(", ")}. Omit to inherit>
+thinking: <optional thinking level: ${THINKING_LEVELS.join(", ")}. Omit for model default>
 max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
 prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
 extensions: <true (inherit all MCP/extension tools), false (none), or comma-separated names. Default: true>
@@ -1976,12 +1977,12 @@ Write the file using the write tool. Only write the file, nothing else.`;
     }
 
     // 5. Thinking
-    // "inherit" is a UI-only pseudo-choice (omit the field); the rest mirror pi.
-    const thinkingChoice = await ctx.ui.select("Thinking level", ["inherit", ...THINKING_LEVELS]);
+    // "model default" omits the field; the rest mirror pi.
+    const thinkingChoice = await ctx.ui.select("Thinking level", ["model default", ...THINKING_LEVELS]);
     if (!thinkingChoice) return;
 
     let thinkingLine = "";
-    if (thinkingChoice !== "inherit") thinkingLine = `\nthinking: ${thinkingChoice}`;
+    if (thinkingChoice !== "model default") thinkingLine = `\nthinking: ${thinkingChoice}`;
 
     // 6. System prompt
     const systemPrompt = await ctx.ui.editor("System prompt", "");

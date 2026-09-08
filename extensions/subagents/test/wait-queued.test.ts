@@ -88,6 +88,29 @@ async function spawnBackground(tools: Map<string, any>): Promise<{ id: string; q
 }
 
 describe("get_subagent_result wait:true on a queued agent", () => {
+  it("queued_retrieval_retains_default_intent_without_claiming_actual_thinking", async () => {
+    const { pi, tools, lifecycle } = makePi();
+    subagentsExtension(pi);
+    const resolvers = deferredRuns();
+    try {
+      let queuedId: string | undefined;
+      for (let i = 0; i < 10 && !queuedId; i++) {
+        const { id, queued } = await spawnBackground(tools);
+        if (queued) queuedId = id;
+      }
+      expect(queuedId).toBeDefined();
+      const pending = await tools.get("get_subagent_result").execute("pending", { agent_id: queuedId, wait: false }, undefined, undefined, ctx());
+      expect(pending.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.arrayContaining(["thinking: default (pending)"]) });
+      const explicit = await tools.get("Agent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "general-purpose", run_in_background: true, thinking: "high" }, undefined, undefined, ctx());
+      const retrieved = await tools.get("get_subagent_result").execute("explicit-pending", { agent_id: explicit.details.agentId, wait: false }, undefined, undefined, ctx());
+      expect(retrieved.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
+    } finally {
+      await lifecycle.get("session_shutdown")?.();
+      while (resolvers.length) resolvers.shift()?.(undefined);
+      await flush();
+    }
+  });
+
   it("waits through queue start and returns the result (no 'still running')", async () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);

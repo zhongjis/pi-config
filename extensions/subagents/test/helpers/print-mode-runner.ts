@@ -112,6 +112,7 @@ export interface RunPrintModeOptions {
   maxModelCalls?: number;
   /** Faux reasoning capability for thinking-precedence integration tests. */
   reasoning?: boolean;
+  parentThinking?: AgentSession["thinkingLevel"];
   /**
    * Honor the subagent hold condition — block the parent agent loop until
    * background subagents finish (the pi-chonky-step monkey-patch). Default true.
@@ -338,6 +339,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
     cwd,
     agentDir,
     model,
+    thinkingLevel: options.parentThinking,
     modelRuntime: fauxRuntime?.modelRuntime,
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(cwd),

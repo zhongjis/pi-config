@@ -187,6 +187,7 @@ export function buildInvocationTags(
   const tags: string[] = [];
   if (!invocation) return { tags };
   if (invocation.thinking) tags.push(`thinking: ${invocation.thinking}`);
+  else if (invocation.thinkingDefault) tags.push("thinking: default (pending)");
   if (invocation.isolated) tags.push("isolated");
   if (invocation.inheritContext) tags.push("inherit context");
   if (invocation.runInBackground) tags.push("background");

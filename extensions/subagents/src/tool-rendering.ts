@@ -74,6 +74,7 @@ function getRunMetadata(details: AgentDetails): string[] {
   const lines: string[] = [];
   if (details.modelName) lines.push(`model: ${details.modelName}`);
   if (details.thinking) lines.push(`thinking: ${details.thinking}`);
+  else if (details.tags?.includes("thinking: default (pending)")) lines.push("thinking: default (pending)");
   if (details.turnCount) lines.push(`turns: ${details.turnCount}`);
   if (details.maxTurns) lines.push(`soft limit: ${details.maxTurns}`);
   if (details.toolUses > 0) lines.push(`tools: ${details.toolUses}`);

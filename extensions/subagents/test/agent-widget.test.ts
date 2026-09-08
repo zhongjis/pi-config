@@ -6,11 +6,20 @@ import type { AgentRecord, WidgetMode } from "../src/types.js";
 import {
   type AgentActivity,
   AgentWidget,
+  buildInvocationTags,
   fgPreservingNestedStyles,
   formatSessionTokens,
   type Theme,
   type UICtx,
 } from "../src/ui/agent-widget.js";
+
+it("thinking_default_intent_is_pending_only_without_actual_metadata", () => {
+  expect(buildInvocationTags(undefined).tags).toEqual([]);
+  expect(buildInvocationTags({}).tags).toEqual([]);
+  expect(buildInvocationTags({ thinkingDefault: false }).tags).toEqual([]);
+  expect(buildInvocationTags({ thinkingDefault: true }).tags).toEqual(["thinking: default (pending)"]);
+  expect(buildInvocationTags({ thinkingDefault: true, thinking: "off" }).tags).toEqual(["thinking: off"]);
+});
 
 describe("formatSessionTokens", () => {
   const theme = { fg: (c: string, s: string) => `<${c}>${s}</${c}>`, bold: (s: string) => s };

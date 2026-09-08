@@ -302,6 +302,16 @@ describe("agent-runner final output capture", () => {
     }));
   });
 
+  it.each([undefined, "faux/selected"])("omitted_thinking_direct_runner_leaves_sdk_default (%s)", async (modelConfig) => {
+    const { session } = createSession("DONE");
+    createAgentSession.mockResolvedValue({ session });
+    const model = { provider: "faux", id: "selected", name: "Selected" };
+    const context = { ...ctx, model, modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model] } };
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: modelConfig }));
+    await runAgent(context, "Explore", "go", { pi: { ...pi, getThinkingLevel: () => "high" } });
+    expect(createAgentSession.mock.calls[0][0]).not.toHaveProperty("thinkingLevel");
+  });
+
   it("A03 direct runner resolves configured chains and preserves explicit Model overrides", async () => {
     const { session } = createSession("DONE");
     createAgentSession.mockResolvedValue({ session });
