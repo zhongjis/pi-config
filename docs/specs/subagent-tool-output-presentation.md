@@ -19,7 +19,7 @@ The interface needs progressive disclosure without changing the tool results con
 Present all Subagent tool output through a consistent human-facing system:
 
 - A compact call header identifies the operation, Subagent, and bounded task.
-- A collapsed result uses no more than three visual lines to show lifecycle status and essential statistics, the most decision-relevant activity/result/error or next action, and an expand hint only when expansion reveals useful information.
+- A collapsed run result uses no more than three visual lines: status plus the decision-relevant activity/result/error or next action; available model and thinking; configured expand hint. Run statistics appear only expanded.
 - An expanded result renders a structured run report: status or error first, complete requested result content as readable Markdown, then secondary run metadata and artifacts.
 - Starting or resuming a Subagent and checking its result share one run-report presentation model. Steering uses a smaller action-report renderer built from the same status, width, and theme conventions.
 - Human-facing rendering consumes additive, JSON-safe presentation details derived from runtime state. It does not parse human prose when structured state is available.
@@ -35,17 +35,17 @@ This creates three deliberate disclosure levels:
 ## User Stories
 
 1. As a user, I want to identify the Subagent and delegated task from the call header, so that I know what the row represents before reading its result.
-2. As a user, I want a running Subagent's status, current activity, and elapsed time visible at a glance, so that I can tell whether work is progressing.
+2. As a user, I want a running Subagent's status and current activity visible at a glance, with elapsed time available expanded, so that I can tell whether work is progressing.
 3. As a user, I want a queued Subagent clearly distinguished from a running one, so that waiting for capacity does not look like stalled execution.
 4. As a user, I want background delivery distinguished from lifecycle status, so that “started in background” is not mistaken for completion.
-5. As a user, I want a completed Subagent summarized with its result preview and useful statistics, so that I can often understand the outcome without expanding it.
+5. As a user, I want a completed Subagent summarized with its result preview and available model/thinking, so that I can understand the outcome without scanning telemetry.
 6. As a user, I want graceful turn-limit completion described in plain language, so that an internal `steered` state does not look like manual steering or failure.
 7. As a user, I want user-initiated or external stops distinguished from hard-limit aborts, so that I understand why work ended.
 8. As a user, I want failures to show the decisive error before telemetry, so that diagnosis starts with the cause.
 9. As a user, I want policy denials and invalid requests distinguished from Subagent runtime failures, so that I choose the correct recovery action.
 10. As a user, I want a background acknowledgement to show the agent ID and next supervision action, so that I can continue the workflow immediately.
 11. As a user, I want the collapsed result limited to a few lines, so that multiple concurrent Subagents remain scannable.
-12. As a user, I want absent or zero-value statistics omitted, so that empty telemetry does not distract from meaningful state.
+12. As a user, I want run statistics hidden collapsed and available expanded, so that telemetry does not distract from meaningful state.
 13. As a user, I want status expressed through text as well as color and symbols, so that the interface remains understandable without color perception.
 14. As a user, I want the expand shortcut displayed only when expansion adds information, so that hints remain useful rather than repetitive.
 15. As a user, I want long descriptions and previews truncated safely in collapsed mode, so that one run cannot dominate the terminal.
@@ -90,18 +90,18 @@ This creates three deliberate disclosure levels:
 - Human labels map lifecycle outcomes explicitly: queued, running, completed, completed at turn limit, stopped, aborted by hard limit, and failed. Invocation outcomes such as background start, live resume, restored-session resume, policy denial, and missing target remain distinct from lifecycle state.
 - Starting or resuming a Subagent and checking a Subagent result use one run-report renderer. Their adapters populate the same presentation model from authoritative runtime state.
 - Model is the SDK session's `provider/id`, even when identical to the parent; thinking is the effective SDK getter, including clamping/off. Queued/pre-session details omit actual model/thinking until available. Resume describes the retained session, not newly resolved spawn settings.
-- Run metadata uses distinct `model`, `thinking`, `turns`, `soft limit`, and `tokens` labels. Retained runtime warnings appear under Diagnostics and never count as tool uses.
+- Expanded Run metadata uses distinct `model`, `thinking`, `turns`, `soft limit`, and `tokens` labels. Retained runtime warnings appear under Diagnostics and never count as tool uses.
 - Steering uses a dedicated action-report renderer because it reports delivery of an instruction rather than a Subagent run result. It follows the same status, theme, width, fallback, and expand-hint conventions.
 - Structured presentation details are additive and JSON-safe. They contain no live session, runtime, provider, component, or other non-serializable objects.
 - Model-facing `content` remains byte-for-byte unchanged for every state and tool. `isError`, result consumption, notification delivery, persistence, resume behavior, RPC behavior, and public lifecycle events also remain unchanged.
 - Expanded “lossless” means all content requested by the tool call remains visible in the rendered component. It does not require byte-identical visual formatting. Markdown may change styling and wrapping but may not omit text.
 - Missing, malformed, or unsupported presentation details trigger a safe raw-content fallback. Renderer failure must not hide the result or crash the containing tool row.
-- Collapsed `renderResult` output uses at most three visual lines: status plus essential statistics; one decision-relevant activity, result, error, identifier, or next-action line; and an expand hint when useful. The call header is separate from this limit.
+- Collapsed run `renderResult` output uses at most three visual lines: status plus primary preview without redundant `status:`, `result:`, `activity:`, or `error:` labels; available model without `model:` plus thinking; configured expand hint. Queued IDs/next actions and `thinking: default (pending)` remain available. Turns, soft limit, tools, tokens, and duration appear only expanded. The call header is separate from this limit.
 - Collapsed mode may truncate previews and secondary identifiers to fit. Expanded mode provides complete values and artifacts. If a shortened identifier is shown collapsed, the complete identifier is available expanded.
 - Status always includes readable text. Icons and semantic theme colors reinforce status but never carry meaning alone.
 - Running and partial results prioritize current activity. Successful terminal results prioritize the complete result. Failed terminal results prioritize error and recovery information. Metadata follows the primary content.
 - Aggregate input/output/cache usage is labeled `tokens`. The interface uses `context` only for measured context-window occupancy.
-- Empty and zero-value metadata is omitted. Empty successful output receives an explicit, quiet empty-result message rather than being confused with missing details.
+- Unavailable metadata is omitted; expanded Run explicitly shows zero tools. Empty successful output receives an explicit, quiet empty-result message rather than being confused with missing details.
 - Expanded output uses lightweight section headings and separators inside Pi's existing tool container. It does not add a nested outer border.
 - Metadata uses aligned labels when width permits and stacked labels when it does not. Artifact paths and URLs remain selectable and wrap without semantic truncation in expanded mode.
 - Every rendered line respects visible terminal-cell width after ANSI styling. Width handling covers CJK text, emoji, combining characters, long unbroken strings, paths, URLs, Markdown, and code blocks.
@@ -117,7 +117,7 @@ This creates three deliberate disclosure levels:
 - One shared table exercises run-report rendering for both starting/resuming and checking a Subagent. Thin adapter tests verify that each tool supplies correct structured presentation data without duplicating renderer assertions.
 - Steering receives focused contract tests for call preview, delivered result, rejected or missing target, failure, truncation, expansion, and raw fallback.
 - State coverage includes queued, running partial, foreground completion, background acknowledgement, background completion, completed at turn limit, stopped, hard-limit abort, runtime error, policy denial, missing agent, live resume, restored-session resume, empty output, and malformed details.
-- Collapsed tests assert no more than three result lines, omission of zero statistics, decision-relevant ordering, conditional expand hints, safe preview truncation, and complete identifiers in expanded mode.
+- Collapsed tests assert no more than three result lines, omission of all run statistics, model/thinking-only metadata, decision-relevant ordering, configured expand hints, safe preview truncation, and complete identifiers in expanded mode.
 - Expanded tests assert status/error-first hierarchy, complete Markdown result text, metadata and artifact grouping, verbose conversation preservation, empty-result messaging, and raw-content fallback.
 - Compatibility tests capture model-facing `content` and `isError` before and after presentation changes and assert byte-for-byte equality for every tool/state fixture.
 - Width tests render at 8, 20, 40, 80, and 120 columns with CJK text, emoji, combining characters, ANSI styling, long unbroken text, long paths, URLs, Markdown, and code blocks. Every returned line must fit its visible width. Expanded values may wrap but may not use semantic ellipsis.

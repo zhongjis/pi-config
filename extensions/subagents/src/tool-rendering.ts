@@ -70,11 +70,12 @@ function getStatusSummary(status: AgentDetails["status"]): string {
   return status;
 }
 
-function getRunMetadata(details: AgentDetails): string[] {
+function getRunMetadata(details: AgentDetails, expanded: boolean): string[] {
   const lines: string[] = [];
-  if (details.modelName) lines.push(`model: ${details.modelName}`);
+  if (details.modelName) lines.push(`${expanded ? "model: " : ""}${details.modelName}`);
   if (details.thinking) lines.push(`thinking: ${details.thinking}`);
   else if (details.tags?.includes("thinking: default (pending)")) lines.push("thinking: default (pending)");
+  if (!expanded) return lines;
   if (details.turnCount) lines.push(`turns: ${details.turnCount}`);
   if (details.maxTurns) lines.push(`soft limit: ${details.maxTurns}`);
   if (details.toolUses > 0) lines.push(`tools: ${details.toolUses}`);
@@ -112,11 +113,10 @@ export function renderAgentToolResult(
   const primary = error || (waiting
     ? `${details.status === "queued" ? "waiting for a slot" : "started in background"} · id: ${details.agentId ?? "unavailable"} · next: get_subagent_result`
     : active ? details.activity || "starting session" : details.result?.trim() || "No output.");
-  const metadata = getRunMetadata(details);
+  const metadata = getRunMetadata(details, Boolean(options.expanded));
 
   if (!options.expanded) {
-    const label = error ? "error" : active ? "activity" : waiting ? "next" : "result";
-    const lines = [`status: ${status} · ${label}: ${firstMeaningfulLine(primary)}`];
+    const lines = [`${status} · ${firstMeaningfulLine(primary)}`];
     if (metadata.length) lines.push(metadata.join(" · "));
     return renderToolSummary(lines, theme, { expandable: true });
   }

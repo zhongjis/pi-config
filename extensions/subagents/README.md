@@ -17,7 +17,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 
 | File | What | Why |
 |------|------|-----|
-| `src/tool-rendering.ts`, `src/index.ts`, `src/types.ts`, `src/agent-manager.ts`, `src/ui/agent-widget.ts`, `test/tool-rendering.test.ts`, `test/runtime-metadata-e2e.test.ts` | Three-row compact run reports; complete Markdown result/error before Run metadata, diagnostics, and transcript artifacts; SDK model/thinking across foreground, retrieval, and resume | Truthful supervision without rewriting model-facing content; malformed/legacy details retain raw output |
+| `src/tool-rendering.ts`, `src/index.ts`, `src/types.ts`, `src/agent-manager.ts`, `src/ui/agent-widget.ts`, `test/tool-rendering.test.ts`, `test/runtime-metadata-e2e.test.ts` | Compact status/preview, model/thinking, and configured expand hint; telemetry only expanded; complete Markdown result/error before Run metadata, diagnostics, and artifacts; SDK metadata across foreground, retrieval, and resume | Quiet, truthful supervision without rewriting model-facing content; malformed/legacy details retain raw output |
 | `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
 | `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
 | `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.83 test/runtime fixtures target `subagents`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
@@ -154,12 +154,12 @@ Agent and result-retrieval reports use at most three compact result rows, includ
 
 ```
 ▸ Agent · Health probe
-├─ status: completed · result: READY
-├─ model: provider/model · thinking: high · turns: 1 · soft limit: 1
+├─ completed · HEALTH_OK chengfeng
+├─ openai-codex/gpt-5.6-luna · thinking: medium
 └─ ctrl+o to expand full result
 ```
 
-The decisive answer/error precedes telemetry. Expansion shows the complete Markdown answer or error, then Run metadata (including zero tool uses), diagnostic warnings, and transcript artifacts; requested verbose conversation remains accessible. Legacy or malformed details use a compact raw preview and retain the complete raw body when expanded.
+Compact rows omit redundant status/result/activity/error labels and the model prefix; turns, soft limit, tools, tokens, and duration appear only expanded. Queued IDs/next actions and pending thinking remain available. Expansion shows the complete Markdown answer or error, then Run metadata (including zero tool uses), diagnostic warnings, and transcript artifacts; requested verbose conversation remains accessible. Legacy or malformed details use a compact raw preview and retain the complete raw body when expanded.
 
 Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Resume uses the retained session rather than re-resolving changed spawn configuration. Turns and soft limit have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
 

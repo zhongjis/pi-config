@@ -127,7 +127,7 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     expect(isRenderable(collapsed)).toBe(true);
     expect(isRenderable(expanded)).toBe(true);
     if (!isRenderable(collapsed) || !isRenderable(expanded)) throw new Error("Agent renderer returned no component");
-    expect(collapsed.render(120).join("\n")).toContain("status: completed");
+    expect(collapsed.render(120).join("\n")).toContain(`completed · ${raw}`);
     expect(expanded.render(120).join("\n")).toContain(raw);
 
     await registry.lifecycle.get("session_shutdown")?.[0]?.();

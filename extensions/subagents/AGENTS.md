@@ -20,7 +20,8 @@ Run isolated Agent sessions with foreground results and background supervision.
 - `thinkingDefault` MUST track configuration intent only; unknown intent stays unlabelled.
 - `thinking: default (pending)` MUST survive queued retrieval until session metadata replaces it; resume retains session thinking.
 - Foreground, retrieval, and resume MUST share structured result/error, transcript, and diagnostic details.
-- Compact run results MUST fit three physical rows including the configured expand hint; expanded reports retain complete answer/error before metadata and artifacts.
+- Compact Agent and retrieval results MUST fit within three physical rows: status plus primary preview without redundant labels; available model (without `model:`) and thinking; configured expand hint. Queued IDs/next actions and pending thinking remain visible within the width budget.
+- Turns, soft limit, tools, tokens, and duration MUST appear only expanded; expanded reports retain complete answer/error before metadata and artifacts.
 - Runtime diagnostics MUST remain visible expanded without counting as tool executions; expanded Run MUST explicitly show zero tools.
 - Legacy/malformed details MUST retain full raw content expanded and obey the compact row budget.
 - Runtime metadata MUST preserve non-runtime invocation tags; resume turns MUST count `turn_end`, not usage messages.

@@ -131,12 +131,10 @@ describe("subagent TUI rendering — integration", () => {
 			{ state: {} },
 		));
 
-		expect(foreground).toContain("status: running");
-		expect(foreground).toContain("activity: reading");
-		expect(background).toContain("status: started");
+		expect(foreground).toContain("running · reading");
+		expect(background).toContain("started in background");
 		expect(background).toContain("id: bg-1");
-		expect(completed).toContain("status: completed");
-		expect(completed).toContain("result: Agent result body");
+		expect(completed).toContain("completed · Agent result body");
 	});
 
 	it("keeps widget registration and status churn bounded during a mixed burst", () => {
