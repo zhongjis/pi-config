@@ -50,7 +50,7 @@ function makePi() {
   };
 
   return {
-    pi: pi as unknown as ExtensionAPI,
+    pi: pi as unknown as ExtensionAPI & Parameters<typeof thinkingStepsExtension>[0],
     tools,
     commands,
     shortcuts,
@@ -115,6 +115,7 @@ describe("subagents + thinking-steps presentation coexistence", () => {
         tokens: "42 tokens",
         durationMs: 125,
         status: "completed",
+        result: raw,
       },
     };
     const collapsed = agentTool?.renderResult?.(result, { expanded: false, isPartial: false }, theme, {
@@ -127,7 +128,7 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     expect(isRenderable(expanded)).toBe(true);
     if (!isRenderable(collapsed) || !isRenderable(expanded)) throw new Error("Agent renderer returned no component");
     expect(collapsed.render(120).join("\n")).toContain("status: completed");
-    expect(expanded.render(120).join("\n").trimEnd()).toBe(raw);
+    expect(expanded.render(120).join("\n")).toContain(raw);
 
     await registry.lifecycle.get("session_shutdown")?.[0]?.();
   });

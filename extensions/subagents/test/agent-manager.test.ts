@@ -559,14 +559,20 @@ describe("AgentManager — lifetime usage + compaction count are eagerly initial
 
     // Now resume — drive callbacks via the mocked resumeAgent
     const { resumeAgent: resumeMock } = await import("../src/agent-runner.js");
-    vi.mocked(resumeMock).mockImplementation(async (_session, _prompt, opts: any) => {
-      opts.onAssistantUsage?.({ input: 70, output: 30, cacheWrite: 5 });
-      opts.onCompaction?.({ reason: "overflow", tokensBefore: 999 });
+    manager.getRecord(id)!.turnCount = 4;
+    let turnsAfterUsage: number | undefined;
+    vi.mocked(resumeMock).mockImplementation(async (_session, _prompt, opts) => {
+      opts?.onAssistantUsage?.({ input: 70, output: 30, cacheWrite: 5, cost: 0 });
+      turnsAfterUsage = manager.getRecord(id)!.turnCount;
+      opts?.onTurnEnd?.(1);
+      opts?.onCompaction?.({ reason: "overflow", tokensBefore: 999 });
       return { text: "second" };
     });
 
     await manager.resume(id, "more");
 
+    expect(turnsAfterUsage).toBe(4);
+    expect(manager.getRecord(id)!.turnCount).toBe(5);
     expect(manager.getRecord(id)!.lifetimeUsage).toEqual({ input: 70, output: 30, cacheWrite: 5 });
     expect(manager.getRecord(id)!.compactionCount).toBe(1);
   });

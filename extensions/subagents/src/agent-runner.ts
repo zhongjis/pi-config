@@ -30,6 +30,7 @@ import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType, res
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
+import { resolveAgentModel } from "./model-resolution.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
@@ -288,40 +289,9 @@ export function getGraceTurns(): number { return graceTurns; }
 /** Set the grace turns value (minimum 1). */
 export function setGraceTurns(n: number): void { graceTurns = Math.max(1, n); }
 
-/**
- * Try to find the right model for an agent type.
- * Priority: explicit option > config.model > parent model.
- */
-function resolveDefaultModel(
-  parentModel: Model<any> | undefined,
-  registry: { find(provider: string, modelId: string): Model<any> | undefined; getAvailable?(): Model<any>[] },
-  configModel?: string,
-): Model<any> | undefined {
-  if (configModel) {
-    const slashIdx = configModel.indexOf("/");
-    if (slashIdx !== -1) {
-      const provider = configModel.slice(0, slashIdx);
-      const modelId = configModel.slice(slashIdx + 1);
-
-      // Build a set of available model keys for fast lookup
-      const available = registry.getAvailable?.();
-      const availableKeys = available
-        ? new Set(available.map((m: any) => `${m.provider}/${m.id}`))
-        : undefined;
-      const isAvailable = (p: string, id: string) =>
-        !availableKeys || availableKeys.has(`${p}/${id}`);
-
-      const found = registry.find(provider, modelId);
-      if (found && isAvailable(provider, modelId)) return found;
-    }
-  }
-
-  return parentModel;
-}
-
 /** Info about a tool event in the subagent. */
 export interface ToolActivity {
-  type: "start" | "end";
+  type: "start" | "end" | "diagnostic";
   toolName: string;
 }
 
@@ -658,7 +628,7 @@ export async function runAgent(
     for (const name of agentConfig.builtinToolNames) {
       if (!knownBuiltins.has(name)) {
         options.onToolActivity?.({
-          type: "end",
+          type: "diagnostic",
           toolName: `tools-error:tool "${name}" requested by agent "${type}" is not a known built-in`,
         });
       }
@@ -674,7 +644,7 @@ export async function runAgent(
   //     nothing loads, so there is nothing to exclude.
   if (hasExcludes && noExtensions) {
     options.onToolActivity?.({
-      type: "end",
+      type: "diagnostic",
       toolName: `extension-error:exclude_extensions has no effect for agent "${type}" — extensions: false loads nothing`,
     });
   }
@@ -685,7 +655,7 @@ export async function runAgent(
     for (const name of excludeNames) {
       if (!discoveredNames.has(name)) {
         options.onToolActivity?.({
-          type: "end",
+          type: "diagnostic",
           toolName: `extension-error:exclude_extensions: "${name}" for agent "${type}" did not match any discovered extension`,
         });
       }
@@ -702,7 +672,7 @@ export async function runAgent(
     for (const name of keepNames) {
       if (!survivingNames.has(name)) {
         options.onToolActivity?.({
-          type: "end",
+          type: "diagnostic",
           toolName: excludeNames.has(name)
             ? `extension-error:extension "${name}" is in both extensions: and exclude_extensions: for agent "${type}" — exclude wins`
             : `extension-error:extension "${name}" requested by agent "${type}" was not loaded`,
@@ -712,12 +682,14 @@ export async function runAgent(
   }
 
   // Resolve model: explicit option > config.model > parent model
-  const model = options.model ?? resolveDefaultModel(
-    ctx.model, ctx.modelRegistry, agentConfig?.model,
-  );
+  const selected = options.model
+    ? { model: options.model, thinkingLevel: undefined }
+    : resolveAgentModel(agentConfig?.model, ctx.modelRegistry, ctx.model);
+  const model = selected.model;
 
-  // Resolve thinking level: explicit option > agent config > undefined (inherit)
-  const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking;
+  // Resolved direct/RPC options remain authoritative.
+  const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking ?? selected.thinkingLevel
+    ?? options.pi.getThinkingLevel?.();
 
 
   // ─── Tool scoping ───────────────────────────────────────────────────────
@@ -818,7 +790,7 @@ export async function runAgent(
   await session.bindExtensions({
     onError: (err) => {
       options.onToolActivity?.({
-        type: "end",
+        type: "diagnostic",
         toolName: `extension-error:${err.extensionPath}`,
       });
     },
@@ -849,11 +821,19 @@ export async function runAgent(
   let aborted = false;
 
   let currentMessageText = "";
+  let completedTools = 0;
+  let allToolsTerminate = true;
   const unsubTurns = session.subscribe((event: AgentSessionEvent) => {
     if (event.type === "turn_end") {
       turnCount++;
       options.onTurnEnd?.(turnCount);
-      if (maxTurns != null) {
+      const unfinished = event.message.role === "assistant"
+        && event.message.stopReason !== "error" && event.message.stopReason !== "aborted"
+        && event.message.content.some((block) => block.type === "toolCall")
+        && !(completedTools > 0 && allToolsTerminate);
+      completedTools = 0;
+      allToolsTerminate = true;
+      if (maxTurns != null && unfinished) {
         if (!softLimitReached && turnCount >= maxTurns) {
           softLimitReached = true;
           session.steer("You have reached your turn limit. Wrap up immediately — provide your final answer now.");
@@ -874,6 +854,8 @@ export async function runAgent(
       options.onToolActivity?.({ type: "start", toolName: event.toolName });
     }
     if (event.type === "tool_execution_end") {
+      completedTools++;
+      allToolsTerminate = allToolsTerminate && event.result?.terminate === true;
       options.onToolActivity?.({ type: "end", toolName: event.toolName });
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
@@ -925,6 +907,7 @@ export async function resumeAgent(
   prompt: string,
   options: {
     onToolActivity?: (activity: ToolActivity) => void;
+    onTurnEnd?: (turnCount: number) => void;
     onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number; cost: number }) => void;
     onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
     signal?: AbortSignal;
@@ -937,8 +920,10 @@ export async function resumeAgent(
   const collector = collectResponseText(session);
   const cleanupAbort = forwardAbortSignal(session, options.signal);
 
-  const unsubEvents = (options.onToolActivity || options.onAssistantUsage || options.onCompaction)
+  let turnCount = 0;
+  const unsubEvents = (options.onToolActivity || options.onTurnEnd || options.onAssistantUsage || options.onCompaction)
     ? session.subscribe((event: AgentSessionEvent) => {
+        if (event.type === "turn_end") options.onTurnEnd?.(++turnCount);
         if (event.type === "tool_execution_start") options.onToolActivity?.({ type: "start", toolName: event.toolName });
         if (event.type === "tool_execution_end") options.onToolActivity?.({ type: "end", toolName: event.toolName });
         if (event.type === "message_end" && event.message.role === "assistant") {

@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { defineTool, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Key, matchesKey, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../lib/model.js";
 import { AgentManager } from "./agent-manager.js";
 import { registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, SUBAGENT_TOOL_NAMES, setDefaultMaxTurns, setGraceTurns, steerAgent } from "./agent-runner.js";
@@ -25,7 +26,7 @@ import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ModeStateE
 import { isModelInScope, readEnabledModels, resolveEnabledModels } from "./enabled-models.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
-import { type ModelRegistry, resolveModel } from "../../lib/model.js";
+import { resolveAgentModel } from "./model-resolution.js";
 import { registerSubagentNotificationRenderer } from "./notification-rendering.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
@@ -138,10 +139,10 @@ function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
   };
 
   const callbacks = {
-    onToolActivity: (activity: { type: "start" | "end"; toolName: string }) => {
+    onToolActivity: (activity: { type: "start" | "end" | "diagnostic"; toolName: string }) => {
       if (activity.type === "start") {
         state.activeTools.set(activity.toolName + "_" + Date.now(), activity.toolName);
-      } else {
+      } else if (activity.type === "end") {
         for (const [key, name] of state.activeTools) {
           if (name === activity.toolName) { state.activeTools.delete(key); break; }
         }
@@ -239,19 +240,36 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
 /** Build AgentDetails from a base + record-specific fields. */
 function buildDetails(
   base: Pick<AgentDetails, "displayName" | "description" | "subagentType" | "modelName" | "tags">,
-  record: { toolUses: number; startedAt: number; completedAt?: number; status: string; error?: string; id?: string; session?: any; lifetimeUsage: LifetimeUsage },
+  record: AgentRecord,
   activity?: AgentActivity,
   overrides?: Partial<AgentDetails>,
 ): AgentDetails {
+  const invocation = {
+    ...record.invocation,
+    modelName: record.session?.model ? `${record.session.model.provider}/${record.session.model.id}` : undefined,
+    thinking: record.session?.thinkingLevel,
+  };
   return {
     ...base,
+    ...buildInvocationTags(invocation),
+    tags: [...new Set([
+      ...(base.tags ?? []).filter((tag) => !tag.startsWith("thinking:")),
+      ...[getPromptModeLabel(base.subagentType)].filter((tag): tag is string => Boolean(tag)),
+      ...buildInvocationTags(invocation).tags,
+    ])],
+    thinking: invocation.thinking,
+    result: record.result ?? "",
+    outputFile: record.outputFile,
+    diagnostics: record.diagnostics ? [...record.diagnostics] : undefined,
+    delivery: record.isBackground ? "background" : "foreground",
     toolUses: record.toolUses,
     tokens: formatLifetimeTokens(record),
-    turnCount: activity?.turnCount,
-    maxTurns: activity?.maxTurns,
+    turnCount: record.turnCount ?? activity?.turnCount,
+    maxTurns: record.maxTurns ?? activity?.maxTurns,
     durationMs: (record.completedAt ?? Date.now()) - record.startedAt,
     status: record.status as AgentDetails["status"],
     agentId: record.id,
+    activity: activity ? describeActivity(activity.activeTools, activity.responseText) : undefined,
     error: record.error,
     ...overrides,
   };
@@ -278,6 +296,8 @@ function buildDelegationPolicyDenialDetails(
     status: "error",
     invocationStatus: "failed",
     category: DELEGATION_POLICY_DENIED,
+    error: formatDelegationPolicyDenial(policy, requestedType),
+    result: "",
     activeMode: policy.activeMode,
     requestedType,
     permittedTypes: policy.permittedTypes,
@@ -986,22 +1006,36 @@ Terse command-style prompts produce shallow, generic work.
 
       const displayName = getDisplayName(subagentType);
 
+      // Resume the retained session; current spawn configuration does not replace it.
+      if (params.resume) {
+        const existing = manager.getRecord(params.resume);
+        if (!existing) {
+          return textResult(`Agent not found: "${params.resume}". It may have been cleaned up.`);
+        }
+        if (!existing.session) {
+          return textResult(`Agent "${params.resume}" has no active session to resume.`);
+        }
+        const record = await manager.resume(params.resume, params.prompt, signal);
+        if (!record) return textResult(`Failed to resume agent "${params.resume}".`);
+        const details = buildDetails({
+          displayName: getDisplayName(record.type),
+          description: record.description,
+          subagentType: record.type,
+        }, record);
+        if (record.status === "error") {
+          return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
+        }
+        return textResult(record.result?.trim() || "No output.", details);
+      }
+
       // Get agent config (if any)
       const customConfig = getAgentConfig(subagentType);
 
       const resolvedConfig = resolveAgentInvocationConfig(customConfig, params);
 
       // Resolve model from agent config first; tool-call params only fill gaps.
-      let model = ctx.model;
-      if (resolvedConfig.modelInput) {
-        const resolved = resolveModel(resolvedConfig.modelInput, ctx.modelRegistry);
-        if (typeof resolved === "string") {
-          if (resolvedConfig.modelFromParams) return textResult(resolved);
-          // config-specified: silent fallback to parent
-        } else {
-          model = resolved;
-        }
-      }
+      const selected = resolveAgentModel(resolvedConfig.modelInput, ctx.modelRegistry, ctx.model);
+      const model = selected.model;
 
       // Scope validation: the effective resolved model is checked against the
       // user's enabledModels list (read in `enabled-models.ts`).
@@ -1032,7 +1066,8 @@ Terse command-style prompts produce shallow, generic work.
         }
       }
 
-      const thinking = resolvedConfig.thinking;
+      const thinking = resolveAgentInvocationConfig(customConfig, params, selected.thinkingLevel).thinking
+        ?? pi.getThinkingLevel?.();
       const inheritContext = resolvedConfig.inheritContext;
       const runInBackground = resolvedConfig.runInBackground;
       const isolated = resolvedConfig.isolated;
@@ -1048,15 +1083,9 @@ Terse command-style prompts produce shallow, generic work.
         writeInitialEntry(rec.outputFile, agentId, params.prompt, ctx.cwd);
       };
 
-      const parentModelId = ctx.model?.id;
-      const effectiveModelId = model?.id;
-      const modelName = effectiveModelId && effectiveModelId !== parentModelId
-        ? (model?.name ?? effectiveModelId).replace(/^Claude\s+/i, "").toLowerCase()
-        : undefined;
+      // Actual model/thinking are available only after the SDK creates the session.
       const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
       const agentInvocation: AgentInvocation = {
-        modelName,
-        thinking,
         // Explicit value only — the default fallback would just add noise.
         // Normalize so `0` (unlimited) doesn't surface as a misleading "max turns: 0".
         maxTurns: normalizeMaxTurns(resolvedConfig.maxTurns),
@@ -1072,33 +1101,8 @@ Terse command-style prompts produce shallow, generic work.
         displayName,
         description: params.description,
         subagentType,
-        modelName,
         tags: agentTags.length > 0 ? agentTags : undefined,
       };
-
-      // Resume existing agent
-      if (params.resume) {
-        const existing = manager.getRecord(params.resume);
-        if (!existing) {
-          return textResult(`Agent not found: "${params.resume}". It may have been cleaned up.`);
-        }
-        if (!existing.session) {
-          return textResult(`Agent "${params.resume}" has no active session to resume.`);
-        }
-        const record = await manager.resume(params.resume, params.prompt, signal);
-        if (!record) {
-          return textResult(`Failed to resume agent "${params.resume}".`);
-        }
-        // A failed resume surfaces the error, plus any partial output THIS
-        // resume produced (never the previous turn's answer, #144).
-        if (record.status === "error") {
-          return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, buildDetails(detailBase, record));
-        }
-        return textResult(
-          record.result?.trim() || "No output.",
-          buildDetails(detailBase, record),
-        );
-      }
 
       // Background execution
       if (runInBackground) {
@@ -1180,7 +1184,7 @@ Terse command-style prompts produce shallow, generic work.
           `\nYou will be notified when this agent completes.\n` +
           `Use get_subagent_result to retrieve full results, or steer_subagent to send it messages.\n` +
           `Do not duplicate this agent's work.`,
-          { ...detailBase, toolUses: 0, tokens: "", durationMs: 0, status: "background" as const, agentId: id },
+          record ? buildDetails(detailBase, record, bgState, { status: isQueued ? "queued" : "background" }) : undefined,
         );
       }
 
@@ -1190,14 +1194,17 @@ Terse command-style prompts produce shallow, generic work.
       let fgId: string | undefined;
 
       const streamUpdate = () => {
+        const liveRecord = fgId ? manager.getRecord(fgId) : undefined;
         const details: AgentDetails = {
           ...detailBase,
+          ...(liveRecord ? buildDetails(detailBase, liveRecord, fgState) : {}),
           toolUses: fgState.toolUses,
           tokens: formatLifetimeTokens(fgState),
           turnCount: fgState.turnCount,
           maxTurns: fgState.maxTurns,
           durationMs: Date.now() - startedAt,
           status: "running",
+          result: fgState.responseText,
           activity: describeActivity(fgState.activeTools, fgState.responseText),
           spinnerFrame: spinnerFrame % SPINNER.length,
         };
@@ -1383,15 +1390,17 @@ Terse command-style prompts produce shallow, generic work.
         cancelNudge(params.agent_id);
       }
 
+      const details = buildDetails({ displayName, description: record.description, subagentType: record.type }, record, agentActivity.get(record.id));
       // Verbose: include full conversation
       if (params.verbose && record.session) {
         const conversation = getAgentConversation(record.session);
+        details.conversation = conversation;
         if (conversation) {
           output += `\n\n--- Agent Conversation ---\n${conversation}`;
         }
       }
 
-      return textResult(output);
+      return textResult(output, details);
     },
   }));
 
@@ -1476,10 +1485,9 @@ Terse command-style prompts produce shallow, generic work.
     if (!cfg?.model) return "inherit"; // no model configured → really inherits parent
     const label = getModelLabelFromConfig(cfg.model);
     if (!registry) return label;
-    const resolved = resolveModel(cfg.model, registry);
-    // Configured but unresolvable: the runtime silently falls back to the parent
-    // model, so flag it (and the fallback) rather than hiding the config.
-    if (typeof resolved === "string") return `${label} (unavailable, fallback: inherit)`;
+    const selected = resolveFirstAvailable(parseModelChain(cfg.model), registry);
+    if (!selected) return `${label} (unavailable)`;
+    const resolved = selected.model;
     // Surface what it actually resolved to when that differs from the config —
     // e.g. a provider fallback or a looser version pin. Cosmetic separator/date
     // differences are normalized away so an effectively-identical match stays quiet.

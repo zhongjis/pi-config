@@ -2,11 +2,10 @@
  * types.ts — Type definitions for the subagent system.
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { LifetimeUsage } from "./usage.js";
 
-export type { ThinkingLevel };
+export type ThinkingLevel = AgentSession["thinkingLevel"];
 
 /** Agent type: any string name (built-in defaults or user-defined). */
 export type SubagentType = string;
@@ -98,6 +97,9 @@ export interface AgentRecord {
   result?: string;
   error?: string;
   toolUses: number;
+  diagnostics?: string[];
+  turnCount?: number;
+  maxTurns?: number;
   startedAt: number;
   completedAt?: number;
   session?: AgentSession;
@@ -136,7 +138,7 @@ export interface AgentRecord {
    * which only the Agent-tool path populates.
    */
   isBackground?: boolean;
-  /** Resolved spawn params, captured for UI display. Fixed at spawn time. */
+  /** Effective runtime metadata, refreshed from the retained session. */
   invocation?: AgentInvocation;
   /** Wall-clock ms of the last auto-steer emitted by background supervision (cooldown gate). */
   lastSupervisionSteerAt?: number;
@@ -145,9 +147,9 @@ export interface AgentRecord {
 }
 
 export interface AgentInvocation {
-  /** Short display name, e.g. "haiku" — only set when different from parent. */
+  /** Actual provider/model ID; absent until a session exists. */
   modelName?: string;
-  thinking?: ThinkingLevel;
+  thinking?: AgentSession["thinkingLevel"];
   maxTurns?: number;
   isolated?: boolean;
   inheritContext?: boolean;

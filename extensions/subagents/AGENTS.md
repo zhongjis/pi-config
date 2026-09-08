@@ -14,6 +14,15 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Retention MUST remain bounded; resume is not durable-session availability.
 - Rendering changes MUST preserve model-visible completion notifications and tool results.
 - Foreground results and background follow-up notifications MUST retain distinct delivery paths.
+- Run reports MUST derive model/thinking from SDK session getters, including inherited models and clamping/off.
+- Queued/pre-session reports NEVER present requested model/thinking as actual execution.
+- Foreground, retrieval, and resume MUST share structured result/error, transcript, and diagnostic details.
+- Compact run results MUST fit three physical rows including the configured expand hint; expanded reports retain complete answer/error before metadata and artifacts.
+- Runtime diagnostics MUST remain visible expanded without counting as tool executions; expanded Run MUST explicitly show zero tools.
+- Legacy/malformed details MUST retain full raw content expanded and obey the compact row budget.
+- Runtime metadata MUST preserve non-runtime invocation tags; resume turns MUST count `turn_end`, not usage messages.
+- Configured model chains MUST fail when exhausted; only absent model configuration inherits the parent.
+- Final answers at the soft turn limit MUST complete normally; unfinished tool turns receive wrap-up steering.
 
 ## Work Guidance
 

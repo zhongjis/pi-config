@@ -93,149 +93,103 @@ afterAll(async () => {
 });
 
 describe("subagent tool rendering migration", () => {
-  it("renders running Agent call and result with requested hierarchy", () => {
-    const tool = requireTool("Agent");
-    const args = {
-      subagent_type: "Explore",
-      description: "Review 界面 boundary fix",
+  it("preserves Agent description and skills call preview and width safety", () => {
+    const call = requireTool("Agent").renderCall({
+      subagent_type: "Explore", description: "Review 界面 boundary fix",
       skills: ["codebase-design", "typescript-best-practices", "react-best-practices", "diagnosing-bugs"],
-    };
-    const details: AgentDetails = {
-      displayName: "Explore",
-      description: args.description,
-      subagentType: "Explore",
-      status: "running",
-      activity: "thinking…",
-      tags: ["thinking: high"],
-      turnCount: 11,
-      toolUses: 21,
-      tokens: "488.9k token",
-      durationMs: 12_000,
-      spinnerFrame: 0,
-    };
-    const result: ToolResult = Object.freeze({
-      content: Object.freeze([{ type: "text" as const, text: "21 tool uses..." }]),
-      details: Object.freeze(details),
-      isError: false,
-    });
-
-    const call = tool.renderCall(args, theme);
-    const collapsed = tool.renderResult(result, { expanded: false, isPartial: true }, theme, { args });
-    const text = renderText(collapsed);
-
-    expect(rawText(call)).toBe(
-      "▸ Agent · Review 界面 boundary fix · skills: 4 · codebase-design, typescript-best-practices, react-best-practices, diagnosing-bugs",
-    );
-    expect(text).toContain("├─ status: running");
-    expect(text).toContain("├─ activity: thinking…");
-    expect(text).toContain("├─ model: thinking high · ↻11");
-    expect(text).toContain("├─ tools: 21");
-    expect(text).toContain("├─ context: 488.9k");
-    expect(text).toContain("to expand full result");
-    expect(result.content[0]?.text).toBe("21 tool uses...");
-    expect(result.isError).toBe(false);
+    }, theme);
+    expect(rawText(call)).toBe("▸ Agent · Review 界面 boundary fix · skills: 4 · codebase-design, typescript-best-practices, react-best-practices, diagnosing-bugs");
     expectWidthSafe(call);
-    expectWidthSafe(collapsed);
   });
 
-  it("renders completed get_subagent_result history and preserves full expansion", () => {
-    const tool = requireTool("get_subagent_result");
-    const args = { agent_id: "d398d6ea-cbc8-4d8", wait: true };
-    const raw = [
-      "Agent: d398d6ea-cbc8-4d8",
-      "Type: Cheng Feng 乘风 | Status: completed | Turns: 27 | Tool uses: 82 | 302.4k token | Context: 91% | Duration: 328.3s",
-      "Description: Trace both output renderers",
-      "",
-      "**Answer**",
-      "Renderer migration map complete.",
-    ].join("\n");
-    const result: ToolResult = Object.freeze({
-      content: Object.freeze([{ type: "text" as const, text: raw }]),
-      isError: false,
-    });
-
-    const call = tool.renderCall(args, theme);
-    const collapsed = tool.renderResult(result, { expanded: false }, theme, { args });
-    const expanded = tool.renderResult(result, { expanded: true }, theme, { args });
-    const text = renderText(collapsed);
-
+  it("preserves get_subagent_result ID and wait call preview and width safety", () => {
+    const call = requireTool("get_subagent_result").renderCall({ agent_id: "d398d6ea-cbc8-4d8", wait: true }, theme);
     expect(rawText(call)).toBe("▸ get_subagent_result · d398d6ea-cbc8-4d8 · wait");
-    expect(text).toContain("├─ status: completed");
-    expect(text).toContain("├─ agent: Cheng Feng 乘风");
-    expect(text).toContain("├─ tools: 82");
-    expect(text).toContain("├─ context: 302.4k");
-    expect(text).toContain("├─ turns: 27");
-    expect(text).toContain("├─ duration: 328.3s");
-    expect(text).toContain("├─ result: **Answer**");
-    expect(text).toContain("to expand full result");
-    expect(rawText(expanded)).toBe(raw);
-    expect(result.content[0]?.text).toBe(raw);
-    expect(result.isError).toBe(false);
     expectWidthSafe(call);
-    expectWidthSafe(collapsed);
-    expectWidthSafe(expanded);
+  });
+  const answer = "**Decisive answer**\n\n- 界面 🚀 é\n\n```ts\nconst complete = true;\n```\n\n" + "Complete retained line.\n".repeat(60);
+  const base: AgentDetails = {
+    displayName: "Explore", description: "Review", subagentType: "Explore",
+    status: "completed", result: answer, modelName: "provider/model", thinking: "off",
+    turnCount: 2, maxTurns: 1, toolUses: 0, tokens: "488.9k token", durationMs: 12000,
+    outputFile: "/tmp/完整路径/agent.output", agentId: "actual-id",
+    diagnostics: ["extension-error:exclude_extensions has no effect"],
+    conversation: "[User]: full verbose conversation",
+  };
+
+  it.each(["Agent", "get_subagent_result"])("B02 %s renders compact report and complete expanded result", (name) => {
+    const tool = requireTool(name);
+    const result: ToolResult = Object.freeze({
+      content: Object.freeze([{ type: "text" as const, text: "Agent ID: actual-id\nMODEL-FACING ENVELOPE" }]),
+      details: Object.freeze(base), isError: false,
+    });
+    const collapsed = tool.renderResult(result, { expanded: false }, theme);
+    const expanded = tool.renderResult(result, { expanded: true }, theme);
+    const compact = renderText(collapsed, 240);
+    expect(compact).toContain("Decisive answer");
+    expect(compact).not.toContain("result: Agent ID");
+    expect(compact).toContain("model: provider/model · thinking: off");
+    expect(compact).toContain("turns: 2 · soft limit: 1");
+    expect(compact).toContain("tokens: 488.9k");
+    expect(compact).not.toContain("context:");
+    expect(compact).not.toContain("tools: 0");
+    expect(compact).toContain("to expand full result");
+    const full = renderText(expanded);
+    expect(full.indexOf("Decisive answer")).toBeLessThan(full.indexOf("Run"));
+    expect(full).toContain("const complete = true;");
+    expect(full.match(/Complete retained line\./g)).toHaveLength(60);
+    expect(full).toContain("tools: 0");
+    expect(full).toContain("Artifacts");
+    expect(full).toContain(base.outputFile);
+    expect(full).toContain("exclude_extensions has no effect");
+    expect(full).toContain("full verbose conversation");
+    for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+      expect(collapsed.render(width).length).toBeLessThanOrEqual(3);
+      for (const component of [collapsed, expanded]) for (const line of component.render(width)) {
+        expect(visibleWidth(line), `${JSON.stringify(line)} at ${width}`).toBeLessThanOrEqual(width);
+        expect(line).not.toContain("�");
+      }
+    }
+    expect(result.content[0]?.text).toBe("Agent ID: actual-id\nMODEL-FACING ENVELOPE");
+    expect(result.isError).toBe(false);
   });
 
-  it("renders a running poll with activity and next action while omitting zero stats", () => {
-    const tool = requireTool("get_subagent_result");
-    const raw = [
-      "Agent: agent-789",
-      "Type: Jintong 金童 | Status: running | Turns: 2 | Tool uses: 0 | Duration: 0.0s (running)",
-      "Description: Renderer poll",
-      "",
-      "Turns: 2",
-      "Max turns: unlimited",
-      "Current activity: editing renderer tests",
-      "",
-      "Agent is still running. Use wait: true or check back later.",
-    ].join("\n");
-    const result: ToolResult = { content: [{ type: "text", text: raw }] };
-    const rendered = renderText(tool.renderResult(result, { expanded: false }, theme));
-
-    expect(rendered).toContain("├─ status: running");
-    expect(rendered).toContain("├─ activity: editing renderer tests");
-    expect(rendered).toContain("├─ agent: Jintong 金童");
-    expect(rendered).toContain("├─ turns: 2");
-    expect(rendered).toContain("├─ next: wait true or check back later");
-    expect(rendered).not.toContain("tools: 0");
-    expect(rendered).not.toContain("duration: 0.0s");
-    expect(rendered).not.toContain("result: Agent is still running");
+  it.each(["queued", "running", "steered", "stopped", "aborted", "error"] as const)("B02 truthful %s transition", (status) => {
+    const result = { content: [{ type: "text" as const, text: "envelope" }], details: {
+      ...base, status, activity: "reading 界面", error: status === "error" ? "Decisive failure" : undefined,
+    } };
+    const tool = requireTool("Agent");
+    const compact = renderText(tool.renderResult(result, { expanded: false }, theme), 240);
+    const full = renderText(tool.renderResult(result, { expanded: true }, theme));
+    const decisive = status === "error" ? "Decisive failure" : status === "running" ? "reading 界面" : status === "queued" ? "waiting for a slot" : "Decisive answer";
+    expect(compact).toContain(decisive);
+    expect(full).toContain(decisive);
   });
 
-  it("preserves raw fallbacks and complete Agent expansion", () => {
-    const agent = requireTool("Agent");
-    const history = requireTool("get_subagent_result");
-    const longRaw = Array.from({ length: 60 }, (_, index) => `line ${index + 1}`).join("\n");
-    const details: AgentDetails = {
-      displayName: "Explore",
-      description: "Long result",
-      subagentType: "Explore",
-      status: "completed",
-      toolUses: 1,
-      tokens: "2.4k token",
-      durationMs: 1500,
-    };
-    const agentResult: ToolResult = Object.freeze({
-      content: Object.freeze([{ type: "text" as const, text: longRaw }]),
-      details: Object.freeze(details),
-    });
-    const malformed = Object.freeze({
-      content: Object.freeze([{ type: "text" as const, text: "Agent not found: missing" }]),
-    });
-    const malformedAgent = Object.freeze({
-      content: Object.freeze([{ type: "text" as const, text: "raw Agent fallback" }]),
-      details: "broken",
-    });
-
-    expect(rawText(agent.renderResult(agentResult, { expanded: true }, theme))).toBe(longRaw);
-    expect(rawText(agent.renderResult(malformedAgent, { expanded: false }, theme))).toBe("raw Agent fallback");
-    expect(renderText(history.renderResult(malformed, { expanded: false }, theme))).toContain(
-      "error: Agent not found: missing",
-    );
-    expect(rawText(history.renderResult(malformed, { expanded: true }, theme))).toBe("Agent not found: missing");
-    expect(agentResult.content[0]?.text).toBe(longRaw);
-    expect(malformed.content[0]?.text).toBe("Agent not found: missing");
-    expect(malformedAgent.content[0]?.text).toBe("raw Agent fallback");
+  it.each(["Agent", "get_subagent_result"])("B03 %s shows exact denial and preserves legacy/malformed raw fallback", (name) => {
+    const tool = requireTool(name);
+    const reason = "Delegation denied: only Explore is permitted.";
+    const denied = Object.freeze({ content: [{ type: "text" as const, text: reason }], isError: true, details: {
+      ...base, status: "error" as const, category: "delegation_policy_denied" as const, result: "", error: reason,
+    } });
+    for (const expanded of [false, true]) {
+      expect(renderText(tool.renderResult(denied, { expanded }, theme))).toContain(reason);
+    }
+    for (const details of [undefined, "broken", { ...base, result: undefined }, { ...base, tags: 42 }, { ...base, error: {} }]) {
+      const raw = "Agent: legacy\n\n**Entire original body**\n" + "retained\n".repeat(60);
+      const result = { content: [{ type: "text" as const, text: raw }], details };
+      expect(rawText(tool.renderResult(result, { expanded: true }, theme))).toBe(raw);
+      const collapsed = tool.renderResult(result, { expanded: false }, theme);
+      expect(renderText(collapsed)).toContain("Agent: legacy");
+      expect(renderText(collapsed)).toContain("to expand full result");
+      for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+        const lines = collapsed.render(width);
+        expect(lines.length).toBeLessThanOrEqual(3);
+        for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+      }
+    }
+    expect(denied.content[0]?.text).toBe(reason);
+    expect(denied.isError).toBe(true);
   });
 
   it("renders steer_subagent call preview and delivered expansion without mutating frozen input", () => {

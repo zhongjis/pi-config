@@ -80,7 +80,7 @@ export interface AgentDetails {
   activity?: string;
   /** Current spinner frame index (for animated running indicator). */
   spinnerFrame?: number;
-  /** Short model name if different from parent (e.g. "haiku", "sonnet"). */
+  /** Actual session provider/model ID, including when inherited from parent. */
   modelName?: string;
   /** Notable config tags (e.g. ["thinking: high", "isolated"]). */
   tags?: string[];
@@ -89,6 +89,12 @@ export interface AgentDetails {
   /** Effective max turns (undefined = unlimited). */
   maxTurns?: number;
   agentId?: string;
+  thinking?: string;
+  result?: string;
+  outputFile?: string;
+  conversation?: string;
+  diagnostics?: string[];
+  delivery?: "foreground" | "background";
   error?: string;
   /**
    * Stable delegation-policy denial metadata (mirrors the OLD subagent

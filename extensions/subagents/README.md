@@ -17,13 +17,14 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 
 | File | What | Why |
 |------|------|-----|
-| `src/tool-rendering.ts`, `src/index.ts`, `test/tool-rendering.test.ts` | Width-safe call/result renderers for `Agent`, `get_subagent_result`, and `steer_subagent`, with configured expand hints and raw expanded tool output | Preserve Panda Harness supervision formatting |
+| `src/tool-rendering.ts`, `src/index.ts`, `src/types.ts`, `src/agent-manager.ts`, `src/ui/agent-widget.ts`, `test/tool-rendering.test.ts`, `test/runtime-metadata-e2e.test.ts` | Three-row compact run reports; complete Markdown result/error before Run metadata, diagnostics, and transcript artifacts; SDK model/thinking across foreground, retrieval, and resume | Truthful supervision without rewriting model-facing content; malformed/legacy details retain raw output |
 | `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
 | `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
 | `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.83 test/runtime fixtures target `subagents`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
 | `src/agent-manager.ts`, `test/agent-manager.test.ts` | Terminal Agent records retain their in-memory sessions for 30 minutes before timer cleanup | Preserve resumability across long parent verification while keeping retention bounded |
+| `src/model-resolution.ts`, `src/invocation-config.ts`, `src/cross-extension-rpc.ts`, `src/agent-runner.ts` | Ordered available-model chains and thinking precedence; exhausted chains fail; final answers at the soft limit complete without steering; diagnostics do not count as tool uses | Honor configured routing and report actual execution |
 
-Upstream execution and model-facing content are otherwise preserved. FleetView and Thinking Steps remain unchanged.
+Upstream provenance and public RPC/events remain unchanged. FleetView and Thinking Steps remain unchanged.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
@@ -148,18 +149,18 @@ While subagents are running, a Claude Code-style navigable list renders **below*
 
 The list is ordered earliest-launched first, and only shows agents you can actually open (pending/queued agents with no session yet appear once they start). At an **empty prompt**, press `↓` (or `←`) to move focus from the prompt into the list — the selected row is marked `●`, the rest `○`. `↑`/`↓` move the selection, `Enter` opens the selected agent's live conversation overlay (it auto-updates as the agent works), and `Esc` (or `↑` above `main`) returns to the prompt. Selecting `main` returns to the normal view. Inside the overlay, press `Enter` to steer the running agent — type a message and `Enter` to send it (`Esc` or an empty submit returns), and it redirects the agent the same way the `steer_subagent` tool does. A viewer stays open when its agent finishes so you can read the final output, and finished agents linger in the list for a few seconds before dropping out. Typing anything at a non-empty prompt behaves normally — the list only captures arrow keys when the prompt is empty. Disable it entirely via `/agents → Settings → Fleet view`.
 
-Individual agent results render Claude Code-style in the conversation:
+Agent and result-retrieval reports use at most three compact result rows, including the configured `app.tools.expand` hint:
 
-| State | Example |
-|-------|---------|
-| **Running** | `⠹ ↻3≤30 · 3 tool uses · 12.4k token (8%)` / `⎿ searching, reading 3 files…` |
-| **Completed** | `✓ ↻8 · 5 tool uses · 33.8k token (62%) · 12.3s` / `⎿ Done` |
-| **Wrapped up** | `✓ ↻50≤50 · 50 tool uses · 89.1k token (84% · ⇊2) · 45.2s` / `⎿ Wrapped up (turn limit)` |
-| **Stopped** | `■ ↻3 · 3 tool uses · 12.4k token (8%)` / `⎿ Stopped` |
-| **Error** | `✗ ↻3 · 3 tool uses · 12.4k token (8%)` / `⎿ Error: timeout` |
-| **Aborted** | `✗ ↻55≤50 · 55 tool uses · 102.3k token (95% · ⇊3)` / `⎿ Aborted (max turns exceeded)` |
+```
+▸ Agent · Health probe
+├─ status: completed · result: READY
+├─ model: provider/model · thinking: high · turns: 1 · soft limit: 1
+└─ ctrl+o to expand full result
+```
 
-Completed results can be expanded (ctrl+o in pi) to show the full agent output inline.
+The decisive answer/error precedes telemetry. Expansion shows the complete Markdown answer or error, then Run metadata (including zero tool uses), diagnostic warnings, and transcript artifacts; requested verbose conversation remains accessible. Legacy or malformed details use a compact raw preview and retain the complete raw body when expanded.
+
+Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Resume uses the retained session rather than re-resolving changed spawn configuration. Turns and soft limit have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
 
 By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of `persist_session` (the pi session on disk), and it does not affect `isolation: worktree` (which commits the agent's work to a git branch) or `memory:` (durable files) — set those accordingly if the goal is to keep a run off disk entirely. Background agent completion notifications render as styled boxes:
 
@@ -177,7 +178,7 @@ Group completions render each agent as a separate block. The LLM receives struct
 | Type | Tools | Model | Prompt Mode | Description |
 |------|-------|-------|-------------|-------------|
 | `general-purpose` | all 7 | inherit | `append` (parent twin) | Inherits the parent's full system prompt — same rules, CLAUDE.md, project conventions |
-| `Explore` | read, bash, grep, find, ls | haiku (falls back to inherit) | `replace` (standalone) | Fast codebase exploration (read-only) |
+| `Explore` | read, bash, grep, find, ls | haiku (must be available) | `replace` (standalone) | Fast codebase exploration (read-only) |
 | `Plan` | read, bash, grep, find, ls | inherit | `replace` (standalone) | Software architect for implementation planning (read-only) |
 
 The `general-purpose` agent is a **parent twin** — it receives the parent's entire system prompt plus a sub-agent context bridge, so it follows the same rules the parent does. Explore and Plan use standalone prompts tailored to their read-only roles.
@@ -253,7 +254,7 @@ All fields are optional — sensible defaults for everything.
 
 Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
 
-**Forgiving `model:` resolution.** A `model:` pin is matched against pi's model registry tolerantly, so cosmetic id variations don't silently drop the agent back to the parent's model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`), a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id and vice-versa), and a `provider/modelId` whose named provider doesn't carry that model retries the bare id against every provider. Precedence is **exact → fuzzy under the named provider → same model under any provider → unavailable**, so an exact match always wins and dated snapshots aren't conflated. If nothing resolves, the pin can't run and the agent inherits the parent model — `/agents → Agent types` flags this case as `(unavailable, fallback: inherit)` and shows the resolved target `(→ provider/id)` when resolution lands on a different provider or version than configured. (This is distinct from [Model Scope](#model-scope) enforcement, which matches the `enabledModels` allowlist by *exact* entry.)
+**Forgiving `model:` resolution.** A `model:` pin is matched against pi's model registry tolerantly, so cosmetic id variations don't silently drop the agent back to the parent's model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`), a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id and vice-versa), and a `provider/modelId` whose named provider doesn't carry that model retries the bare id against every provider. Precedence is **exact → fuzzy under the named provider → same model under any provider → unavailable**, so an exact match always wins and dated snapshots aren't conflated. A comma-separated chain tries candidates in order against available models; a selected candidate's thinking suffix wins over the tool-call thinking value, while explicit agent thinking remains authoritative. If no configured candidate resolves, execution fails rather than silently inheriting. Only an absent model setting inherits the parent. `/agents → Agent types` flags exhausted chains as `(unavailable)` and shows the resolved target when it differs from configuration. (This is distinct from [Model Scope](#model-scope) enforcement, which matches the `enabledModels` allowlist by *exact* entry.)
 
 ### Tool & extension scoping
 
@@ -349,7 +350,7 @@ Settings                                    ← max concurrency, max turns, grac
 ```
 
 - **Running agents** — select one to open its live conversation viewer. While it's still running, press `Enter` to open the steering composer, then `Enter` again to send a message that redirects the agent (same mechanism as the `steer_subagent` tool; `Esc` or an empty submit returns), or press `x` (then `x` again to confirm) to stop/abort it — including **background** agents, which a global Esc can't unambiguously target (Esc still stops a blocking foreground `Agent` call). A stopped agent reports its partial output flagged as incomplete, not as a completion.
-- **Agent types** — unified list with source indicators: `•` (project), `◦` (global), `✕` (disabled). Each row shows the agent's model, and the highlighted agent's full description appears below the list. The model column flags `(unavailable, fallback: inherit)` when a configured model can't be resolved (it would silently inherit the parent model), and shows `(→ provider/id)` when it resolves to a different provider or version than configured. Select an agent to manage it:
+- **Agent types** — unified list with source indicators: `•` (project), `◦` (global), `✕` (disabled). Each row shows the agent's model, and the highlighted agent's full description appears below the list. The model column flags `(unavailable)` when no configured chain candidate is available, and shows `(→ provider/id)` when it resolves to a different provider or version than configured. Select an agent to manage it:
   - **Default agents** (no override): Eject (export as `.md`), Disable
   - **Default agents** (ejected/overridden): Edit, Disable, Reset to default, Delete
   - **Custom agents**: Edit, Disable, Delete
@@ -363,7 +364,7 @@ Settings                                    ← max concurrency, max turns, grac
 
 Instead of hard-aborting at the turn limit, agents get a graceful shutdown:
 
-1. At `max_turns` — steering message: *"Wrap up immediately — provide your final answer now."*
+1. At the `max_turns` soft limit, a final answer completes normally. Only an unfinished tool-use turn receives the wrap-up steering message.
 2. Up to 5 grace turns to finish cleanly
 3. Hard abort only after the grace period
 

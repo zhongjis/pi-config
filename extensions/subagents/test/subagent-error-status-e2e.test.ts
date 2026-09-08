@@ -21,7 +21,7 @@ function agentToolResult(session: AgentSession): string {
   const msg = [...session.messages].reverse().find(
     (m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "Agent",
   );
-  return ((msg?.content ?? []) as Array<{ text?: string }>).map((b) => b.text ?? "").join("");
+  return (msg?.role === "toolResult" ? msg.content : []).map((b) => b.type === "text" ? b.text : "").join("");
 }
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -36,14 +36,15 @@ describe("issue #144 — empty-error final turns must not be 'completed'", () =>
     run = undefined;
   });
 
-  it("a run whose ONLY turn errors with no output is a failure, not an empty success", async () => {
+  it("A03 does not retry another candidate after provider execution failure", async () => {
+    let childCalls = 0;
     run = await runPrintMode({
       prompt: "Delegate.",
       respond: routeBySession({
-        parentInitial: agentCall({ description: "doomed", prompt: "Do work." }),
+        parentInitial: agentCall({ description: "doomed", prompt: "Do work.", model: "faux/faux-1,faux/faux-1:high" }),
         parentFinal: "parent done",
         // The child's one and only turn: provider error, zero content.
-        subagent: () => fauxAssistantMessage([], { stopReason: "error", errorMessage: FATAL }),
+        subagent: () => { childCalls++; return fauxAssistantMessage([], { stopReason: "error", errorMessage: FATAL }); },
       }),
     });
 
@@ -52,6 +53,7 @@ describe("issue #144 — empty-error final turns must not be 'completed'", () =>
     const toolResult = agentToolResult(run.parentSession);
     expect(toolResult).toContain(FATAL);
     expect(toolResult).not.toContain("No output.");
+    expect(childCalls).toBe(1);
   });
 
   it("an earlier turn's text must not mask a failed final turn as a fresh success", async () => {

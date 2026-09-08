@@ -251,24 +251,24 @@ describe("cross-extension RPC", () => {
       deps = { events, pi: { events }, getCtx: () => ctx, manager };
     });
 
-    it("resolves a string model to a Model instance before manager.spawn", async () => {
+    it("A03 resolves a string chain and suffix before manager.spawn", async () => {
       registerRpcHandlers(deps);
       const reply = vi.fn();
       events.on("subagents:rpc:spawn:reply:req-m1", reply);
       events.emit("subagents:rpc:spawn", {
         requestId: "req-m1", type: "general-purpose", prompt: "x",
-        options: { model: "openai-codex/gpt-5.5" },
+        options: { model: "missing/nope,openai-codex/gpt-5.5:high" },
       });
 
       await vi.waitFor(() => expect(reply).toHaveBeenCalled());
       expect(reply).toHaveBeenCalledWith({ success: true, data: { id: "agent-42" } });
       expect(manager.spawn).toHaveBeenCalledWith(
         deps.pi, ctx, "general-purpose", "x",
-        { model: fakeModel },
+        { model: fakeModel, thinkingLevel: "high" },
       );
     });
 
-    it("passes a Model object through unchanged", async () => {
+    it("A03 passes a Model object through unchanged", async () => {
       registerRpcHandlers(deps);
       const reply = vi.fn();
       events.on("subagents:rpc:spawn:reply:req-m2", reply);

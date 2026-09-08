@@ -16,6 +16,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Context } from "@earendil-works/pi-ai";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agentCall,
@@ -42,6 +43,78 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
     await run?.dispose();
     run = undefined;
     for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  it.each([
+    { frontmatter: "", call: "off", expected: "high" },
+    { frontmatter: "thinking: minimal\n", call: "off", expected: "minimal" },
+    { frontmatter: "", call: "low", expected: "low", suffix: "" },
+  ])("A01 selects first available chain candidate and thinking precedence ($expected)", async ({ frontmatter, call, expected, suffix = ":high" }) => {
+    const cwd = mkdtempSync(join(tmpdir(), "subagents-chain-"));
+    let localRun: PrintModeRun | undefined;
+    try {
+      mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
+      writeFileSync(join(cwd, ".pi", "agents", "chain.md"),
+        `---\ndescription: Chain\nmodel: missing/nope:low,faux/faux-1${suffix}\n${frontmatter}---\nReport.\n`);
+      localRun = await runPrintMode({ cwd, reasoning: true, prompt: "Delegate.", respond: routeBySession({
+        parentInitial: agentCall({ subagent_type: "chain", description: "chain", prompt: "Report.", model: "missing/call", thinking: call }),
+        parentFinal: "Done", subagent: "CHAIN_OK",
+      }) });
+      const output = agentToolResults(localRun.parentSession).join("\n");
+      expect(output).toContain("CHAIN_OK");
+      const id = output.match(/Agent ID: (\S+)/)?.[1];
+      const record = localRun.manager?.getRecord(id ?? "");
+      if (!record || typeof record !== "object" || !("session" in record) || !record.session || typeof record.session !== "object") throw new Error("Missing child session");
+      const session = record.session as AgentSession;
+      expect(session.model?.provider).toBe("faux");
+      expect(session.model?.id).toBe("faux-1");
+      expect(session.thinkingLevel).toBe(expected);
+    } finally {
+      try { await localRun?.dispose(); } finally { rmSync(cwd, { recursive: true, force: true }); }
+    }
+  });
+
+  it("A02 rejects exhausted configured chain without invoking a child", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "subagents-exhausted-"));
+    let localRun: PrintModeRun | undefined;
+    let childCalls = 0;
+    try {
+      mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
+      writeFileSync(join(cwd, ".pi", "agents", "exhausted.md"), "---\ndescription: Exhausted\nmodel: missing/one,missing/two\n---\nReport.\n");
+      localRun = await runPrintMode({ cwd, prompt: "Delegate.", respond: routeBySession({
+        parentInitial: agentCall({ subagent_type: "exhausted", description: "exhausted", prompt: "Report." }),
+        parentFinal: "Done", subagent: () => { childCalls++; return "MUST_NOT_RUN"; },
+      }) });
+      expect(agentToolResults(localRun.parentSession).join("\n")).toContain("No available model in configured chain");
+      expect(childCalls).toBe(0);
+    } finally {
+      try { await localRun?.dispose(); } finally { rmSync(cwd, { recursive: true, force: true }); }
+    }
+  });
+
+  it("A04 A05 final answer at one turn completes with zero tools despite configuration warnings", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "subagents-final-"));
+    let localRun: PrintModeRun | undefined;
+    let childCalls = 0;
+    try {
+      mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
+      writeFileSync(join(cwd, ".pi", "agents", "final.md"),
+        "---\ndescription: Final\nbuiltin_tools: missing-tool\nmax_turns: 1\n---\nReport.\n");
+      localRun = await runPrintMode({ cwd, prompt: "Delegate.", respond: routeBySession({
+        parentInitial: agentCall({ subagent_type: "final", description: "final", prompt: "Report." }),
+        parentFinal: "Done", subagent: () => { childCalls++; return "FINAL_OK"; },
+      }) });
+      const output = agentToolResults(localRun.parentSession).join("\n");
+      const id = output.match(/Agent ID: (\S+)/)?.[1];
+      const record = localRun.manager?.getRecord(id ?? "");
+      if (!record || typeof record !== "object" || !("toolUses" in record) || !("status" in record)) throw new Error("Missing child record");
+      expect(childCalls).toBe(1);
+      expect(record.toolUses).toBe(0);
+      expect(record.status).toBe("completed");
+      expect(output).toContain("0 tool uses");
+    } finally {
+      try { await localRun?.dispose(); } finally { rmSync(cwd, { recursive: true, force: true }); }
+    }
   });
 
   it("spawns a FOREGROUND subagent and routes its real output back to the parent", async () => {

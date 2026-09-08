@@ -110,6 +110,8 @@ export interface RunPrintModeOptions {
   steps?: FauxResponseStep[];
   /** Faux mode: how many model calls to pad the queue for. Default 16. */
   maxModelCalls?: number;
+  /** Faux reasoning capability for thinking-precedence integration tests. */
+  reasoning?: boolean;
   /**
    * Honor the subagent hold condition — block the parent agent loop until
    * background subagents finish (the pi-chonky-step monkey-patch). Default true.
@@ -291,7 +293,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
     }
     fauxRuntime = await createFauxModelRuntime({
       provider: "faux",
-      models: [{ id: "faux-1", contextWindow: 200_000 }],
+      models: [{ id: "faux-1", contextWindow: 200_000, reasoning: options.reasoning }],
     });
     model = fauxRuntime.model;
 

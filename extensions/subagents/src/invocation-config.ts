@@ -13,6 +13,7 @@ interface AgentInvocationParams {
 export function resolveAgentInvocationConfig(
   agentConfig: AgentConfig | undefined,
   params: AgentInvocationParams,
+  selectedThinking?: string,
 ): {
   modelInput?: string;
   modelFromParams: boolean;
@@ -25,7 +26,7 @@ export function resolveAgentInvocationConfig(
   return {
     modelInput: agentConfig?.model ?? params.model,
     modelFromParams: agentConfig?.model == null && params.model != null,
-    thinking: normalizeThinkingLevel(agentConfig?.thinking ?? params.thinking),
+    thinking: normalizeThinkingLevel(agentConfig?.thinking ?? selectedThinking ?? params.thinking),
     maxTurns: agentConfig?.maxTurns ?? params.max_turns,
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,
     runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? false,

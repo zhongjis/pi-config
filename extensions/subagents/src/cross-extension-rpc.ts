@@ -9,9 +9,10 @@
  *   error   → { success: false, error: string }
  */
 
+import type { ModelRegistry } from "../../lib/model.js";
 import { getAvailableTypes } from "./agent-types.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
-import { type ModelRegistry, resolveModel } from "../../lib/model.js";
+import { resolveAgentModel } from "./model-resolution.js";
 
 /** Minimal event bus interface needed by the RPC handlers. */
 export interface EventBus {
@@ -116,14 +117,13 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
             `Model override "${normalizedOptions.model}" provided but ctx.modelRegistry is unavailable`,
           );
         }
-        const resolved = resolveModel(normalizedOptions.model, registry);
-        if (typeof resolved === "string") {
-          // resolveModel returns a human-readable error string when the
-          // input doesn't match any available model. Surface it instead of
-          // silently falling back so the caller sees the auth/typo issue.
-          throw new Error(resolved);
-        }
-        normalizedOptions = { ...normalizedOptions, model: resolved };
+        const selected = resolveAgentModel(normalizedOptions.model, registry);
+        normalizedOptions = {
+          ...normalizedOptions,
+          model: selected.model,
+          ...(normalizedOptions.thinkingLevel == null && selected.thinkingLevel != null
+            ? { thinkingLevel: selected.thinkingLevel } : {}),
+        };
       }
 
       return { id: manager.spawn(pi, ctx, type, prompt, normalizedOptions) };

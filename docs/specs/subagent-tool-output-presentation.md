@@ -1,6 +1,8 @@
 # Subagent Tool Output Presentation
 
-**Status:** proposed
+**Status:** planned
+
+Implemented run-report contract: `Agent` and `get_subagent_result` now share actual-session metadata and compact/expanded rendering. The owning [Subagent contract](../../extensions/subagents/AGENTS.md) records implemented guarantees. Broader stories below remain design targets where not covered by that contract.
 
 ## Problem Statement
 
@@ -87,6 +89,8 @@ This creates three deliberate disclosure levels:
 - A shared run-report presentation model separates lifecycle status, invocation outcome, delivery mode, activity, result or error, statistics, continuation state, and artifacts. Background is a delivery mode, not a lifecycle status.
 - Human labels map lifecycle outcomes explicitly: queued, running, completed, completed at turn limit, stopped, aborted by hard limit, and failed. Invocation outcomes such as background start, live resume, restored-session resume, policy denial, and missing target remain distinct from lifecycle state.
 - Starting or resuming a Subagent and checking a Subagent result use one run-report renderer. Their adapters populate the same presentation model from authoritative runtime state.
+- Model is the SDK session's `provider/id`, even when identical to the parent; thinking is the effective SDK getter, including clamping/off. Queued/pre-session details omit actual model/thinking until available. Resume describes the retained session, not newly resolved spawn settings.
+- Run metadata uses distinct `model`, `thinking`, `turns`, `soft limit`, and `tokens` labels. Retained runtime warnings appear under Diagnostics and never count as tool uses.
 - Steering uses a dedicated action-report renderer because it reports delivery of an instruction rather than a Subagent run result. It follows the same status, theme, width, fallback, and expand-hint conventions.
 - Structured presentation details are additive and JSON-safe. They contain no live session, runtime, provider, component, or other non-serializable objects.
 - Model-facing `content` remains byte-for-byte unchanged for every state and tool. `isError`, result consumption, notification delivery, persistence, resume behavior, RPC behavior, and public lifecycle events also remain unchanged.

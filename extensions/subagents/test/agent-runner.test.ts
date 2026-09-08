@@ -222,6 +222,51 @@ describe("agent-runner final output capture", () => {
     expect(result.responseText).toBe("LOCKED");
   });
 
+  it.each([false, true])("A04 does not steer a final answer or terminating tool completion (%s)", async (terminatingTool) => {
+    const { session, listeners } = createSession("DONE");
+    session.prompt.mockImplementation(async () => {
+      if (terminatingTool) for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: { terminate: true } });
+      for (const listener of listeners) listener({ type: "turn_end", message: {
+        role: "assistant", stopReason: terminatingTool ? "toolUse" : "stop",
+        content: terminatingTool ? [{ type: "toolCall", name: "read" }] : [{ type: "text", text: "DONE" }],
+      }, toolResults: [] });
+    });
+    createAgentSession.mockResolvedValue({ session });
+    const result = await runAgent(ctx, "Explore", "go", { pi, maxTurns: 1 });
+    expect(session.steer).not.toHaveBeenCalled();
+    expect(session.abort).not.toHaveBeenCalled();
+    expect(result.steered).toBe(false);
+  });
+
+  it("A04 unfinished tool turns retain the soft warning and hard abort", async () => {
+    const { session, listeners } = createSession("DONE");
+    session.prompt.mockImplementation(async () => {
+      for (let turn = 0; turn < 10; turn++) {
+        for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
+        for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
+        if (session.abort.mock.calls.length) break;
+      }
+    });
+    createAgentSession.mockResolvedValue({ session });
+    const result = await runAgent(ctx, "Explore", "go", { pi, maxTurns: 1 });
+    expect(session.steer).toHaveBeenCalledTimes(1);
+    expect(session.abort).toHaveBeenCalledTimes(1);
+    expect(result.aborted).toBe(true);
+  });
+
+  it("A05 reports warnings separately from real tool completions", async () => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ builtinToolNames: ["missing-tool"] }));
+    const { session, listeners } = createSession("DONE");
+    session.prompt.mockImplementation(async () => {
+      for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
+    });
+    createAgentSession.mockResolvedValue({ session });
+    const activities: Array<{ type: string; toolName: string }> = [];
+    await runAgent(ctx, "Explore", "go", { pi, onToolActivity: (activity) => activities.push(activity) });
+    expect(activities.filter((activity) => activity.type === "end")).toEqual([{ type: "end", toolName: "read" }]);
+    expect(activities.some((activity) => activity.type === "diagnostic" && activity.toolName.startsWith("tools-error:"))).toBe(true);
+  });
+
   it("binds extensions before prompting", async () => {
     const { session } = createSession("BOUND");
     createAgentSession.mockResolvedValue({ session });
@@ -255,6 +300,33 @@ describe("agent-runner final output capture", () => {
       cwd: "/tmp/worktree",
       agentDir: "/mock/agent-dir",
     }));
+  });
+
+  it("A03 direct runner resolves configured chains and preserves explicit Model overrides", async () => {
+    const { session } = createSession("DONE");
+    createAgentSession.mockResolvedValue({ session });
+    const model = { provider: "faux", id: "selected", name: "Selected" };
+    const context = { ...ctx, modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model] } };
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope,faux/selected:high" }));
+    await runAgent(context, "Explore", "go", { pi });
+    expect(createAgentSession.mock.calls[0][0].model).toBe(model);
+    expect(createAgentSession.mock.calls[0][0].thinkingLevel).toBe("high");
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope" }));
+    const override = createAgentSession.mock.calls[0][0].model;
+    await runAgent(context, "Explore", "go", { pi, model: override, thinkingLevel: "low" });
+    expect(createAgentSession.mock.calls[1][0].model).toBe(override);
+    expect(createAgentSession.mock.calls[1][0].thinkingLevel).toBe("low");
+  });
+
+  it("A02 direct runner rejects exhausted configuration and inherits only when absent", async () => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope" }));
+    await expect(runAgent(ctx, "Explore", "go", { pi })).rejects.toThrow("No available model in configured chain");
+    expect(createAgentSession).not.toHaveBeenCalled();
+    const { session } = createSession("DONE");
+    createAgentSession.mockResolvedValue({ session });
+    const parent = { provider: "parent", id: "parent" };
+    await runAgent({ ...ctx, model: parent }, "Explore", "go", { pi });
+    expect(createAgentSession.mock.calls[0][0].model).toBe(parent);
   });
 
   it("passes the parent model runtime while retaining the legacy model registry", async () => {
@@ -593,6 +665,21 @@ describe("agent-runner usage callback wiring", () => {
     await runAgent(ctx, "Explore", "go", { pi, onAssistantUsage: cb });
 
     expect(cb).not.toHaveBeenCalled();
+  });
+
+  it("resume reports completed turn_end separately from assistant usage", async () => {
+    const { session, listeners } = createSession("RESUMED");
+    const onTurnEnd = vi.fn();
+    const onAssistantUsage = vi.fn();
+    session.prompt = vi.fn(async () => {
+      emitMessageEnd(listeners, { input: 10 });
+      emitMessageEnd(listeners, { input: 20 });
+      expect(onTurnEnd).not.toHaveBeenCalled();
+      for (const listener of listeners) listener({ type: "turn_end" });
+    });
+    await resumeAgent(session as unknown as Parameters<typeof resumeAgent>[0], "continue", { onTurnEnd, onAssistantUsage });
+    expect(onAssistantUsage).toHaveBeenCalledTimes(2);
+    expect(onTurnEnd).toHaveBeenCalledExactlyOnceWith(1);
   });
 
   it("resumeAgent forwards usage on message_end the same way", async () => {
@@ -1339,7 +1426,7 @@ describe("agent-runner async extension tool registration", () => {
     // A lazy MCP server connects mid-conversation (context-mode registers at
     // before_agent_start, i.e. after runAgent already installed the scope).
     registerLate("/ext/mcp.ts", "mcp_search");
-    for (const l of listeners) l({ type: "turn_end" });
+    for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
     expect(session.getActiveToolNames()).toContain("mcp_search");
   });
@@ -1354,7 +1441,7 @@ describe("agent-runner async extension tool registration", () => {
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
-    for (const l of listeners) l({ type: "turn_end" });
+    for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
     const active = session.getActiveToolNames();
     expect(active).toContain("foo_late");
@@ -1372,7 +1459,7 @@ describe("agent-runner async extension tool registration", () => {
 
     registerLate("/ext/foo.ts", "keep_me");
     registerLate("/ext/foo.ts", "drop_me");
-    for (const l of listeners) l({ type: "turn_end" });
+    for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
     expect(session.getActiveToolNames()).toContain("keep_me");
     expect(session.getActiveToolNames()).not.toContain("drop_me");
@@ -1424,7 +1511,7 @@ describe("agent-runner async extension tool registration", () => {
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
-    for (const l of listeners) l({ type: "turn_end" });
+    for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
     expect(session.getActiveToolNames()).toContain("foo_late");
     expect(session.getActiveToolNames()).not.toContain("bar_late");

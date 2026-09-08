@@ -69,6 +69,7 @@ function agentResult(status: string, overrides: Record<string, unknown> = {}) {
 			tokens: "󰾆 42",
 			durationMs: 125,
 			status,
+			result: "Agent result body",
 			...overrides,
 		},
 	};
@@ -133,7 +134,7 @@ describe("subagent TUI rendering — integration", () => {
 		expect(foreground).toContain("status: running");
 		expect(foreground).toContain("activity: reading");
 		expect(background).toContain("status: started");
-		expect(background).toContain("agent: bg-1");
+		expect(background).toContain("id: bg-1");
 		expect(completed).toContain("status: completed");
 		expect(completed).toContain("result: Agent result body");
 	});

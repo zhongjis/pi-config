@@ -203,7 +203,8 @@ export class AgentManager {
       // only filter excludes only explicit `false`, so undefined agents — which
       // have no inline surface — stay visible instead of vanishing.
       isBackground: options.isBackground,
-      invocation: options.invocation,
+      invocation: { ...options.invocation, modelName: undefined, thinking: undefined },
+      maxTurns: options.maxTurns,
     };
     this.agents.set(id, record);
 
@@ -269,9 +270,16 @@ export class AgentManager {
       parentSessionId: getParentSessionId(ctx),
       onToolActivity: (activity) => {
         if (activity.type === "end") record.toolUses++;
+        if (activity.type === "diagnostic") {
+          record.diagnostics ??= [];
+          record.diagnostics.push(activity.toolName);
+        }
         options.onToolActivity?.(activity);
       },
-      onTurnEnd: options.onTurnEnd,
+      onTurnEnd: (turnCount) => {
+        record.turnCount = turnCount;
+        options.onTurnEnd?.(turnCount);
+      },
       onTextDelta: options.onTextDelta,
       onAssistantUsage: (usage) => {
         addUsage(record.lifetimeUsage, usage);
@@ -286,6 +294,11 @@ export class AgentManager {
       },
       onSessionCreated: (session) => {
         record.session = session;
+        record.invocation = {
+          ...record.invocation,
+          modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
+          thinking: session.thinkingLevel,
+        };
         // Flush any steers that arrived before the session was ready
         if (record.pendingSteers?.length) {
           for (const msg of record.pendingSteers) {
@@ -313,6 +326,11 @@ export class AgentManager {
         }
         record.result = responseText;
         record.session = session;
+        record.invocation = {
+          ...record.invocation,
+          modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
+          thinking: session.thinkingLevel,
+        };
         record.completedAt ??= Date.now();
 
         detach();
@@ -444,11 +462,22 @@ export class AgentManager {
     record.completedAt = undefined;
     record.result = undefined;
     record.error = undefined;
+    record.invocation = {
+      ...record.invocation,
+      modelName: record.session.model ? `${record.session.model.provider}/${record.session.model.id}` : undefined,
+      thinking: record.session.thinkingLevel,
+    };
 
+    const previousTurns = record.turnCount ?? 0;
     try {
       const { text, failure } = await resumeAgent(record.session, prompt, {
+        onTurnEnd: (turnCount) => { record.turnCount = previousTurns + turnCount; },
         onToolActivity: (activity) => {
           if (activity.type === "end") record.toolUses++;
+          if (activity.type === "diagnostic") {
+            record.diagnostics ??= [];
+            record.diagnostics.push(activity.toolName);
+          }
         },
         onAssistantUsage: (usage) => {
           addUsage(record.lifetimeUsage, usage);
