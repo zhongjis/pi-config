@@ -313,6 +313,48 @@ describe("handoff extension", () => {
 		});
 	});
 
+	it.each(["investigate auth flow", ""])("exports a distinct file summary for goal %j without creating a session", async (goal: string) => {
+		await withTempHome(async () => {
+			const mock = createMockPi();
+			await initExtension(mock);
+			const session = createCommandContext({ summaryChoice: "anthropic/claude-haiku-4-5" });
+			await mock.executeCommand("handoff", "investigate auth flow", session.ctx);
+			const sessionPrompt = completeMock.mock.calls[0][1].systemPrompt;
+			const file = createCommandContext({ summaryChoice: "anthropic/claude-haiku-4-5" });
+			const summary = "file summary result";
+			completeMock.mockResolvedValue({ stopReason: "stop", content: [{ type: "text", text: summary }] });
+			await mock.executeCommand("handoff:file", goal, file.ctx);
+			const path = String(file.ui.notify.mock.calls[0][0]).replace("Handoff document written to ", "");
+			try {
+				expect(completeMock).toHaveBeenCalledTimes(2);
+				expect(completeMock.mock.calls[1][1].systemPrompt).not.toBe(sessionPrompt);
+				expect(await readFile(path, "utf8")).toContain(summary);
+				expect(file.ctx.newSession).not.toHaveBeenCalled();
+			} finally {
+				await rm(path, { force: true });
+			}
+		});
+	});
+
+	it("exports without summarization when explicitly disabled", async () => {
+		await withTempHome(async () => {
+			const mock = createMockPi();
+			await initExtension(mock);
+			const { ctx, ui } = createCommandContext();
+			await mock.executeCommand("handoff:file", "-no-summarize investigate auth flow", ctx);
+			const path = String(ui.notify.mock.calls[0][0]).replace("Handoff document written to ", "");
+			try {
+				expect(await readFile(path, "utf8")).toContain("investigate auth flow");
+				expect(completeMock).not.toHaveBeenCalled();
+				expect(ui.select).not.toHaveBeenCalled();
+				expect(ui.custom).not.toHaveBeenCalled();
+				expect(ctx.newSession).not.toHaveBeenCalled();
+			} finally {
+				await rm(path, { force: true });
+			}
+		});
+	});
+
 	it("does not call setEditorText when ctx.hasUI is false", async () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();

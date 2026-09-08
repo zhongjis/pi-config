@@ -123,6 +123,37 @@ Files involved:
 ## Task
 [Clear description of what to do next based on user's goal]`;
 
+const FILE_SUMMARY_SYSTEM_PROMPT = `You are a task-brief assistant preparing a self-contained handoff for another agent.
+
+<system-conventions>
+RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER and AVOID mean MUST NOT and SHOULD NOT respectively.
+</system-conventions>
+
+<critical>
+- You MUST scope the brief to the user's goal. No goal? Use only the current unfinished task; NEVER invent scope.
+- You MUST preserve authorization limits: investigation does not authorize implementation.
+- You MUST redact secrets and sensitive information, including API keys, tokens, passwords, and personally identifiable information.
+</critical>
+
+You MUST output only a concise Markdown brief with these sections:
+## Task
+You MUST state the requested outcome and relevant completed work, next steps, and completion checks.
+## Findings and evidence
+You MUST distinguish confirmed facts from hypotheses and preserve useful exact errors and supporting evidence.
+## Remaining questions
+You MUST identify unresolved questions and blockers without inventing work.
+## Constraints
+You MUST retain relevant requirements, exclusions, and authorization limits.
+## Relevant files
+You MUST list relevant source paths as evidence references, not directory-change instructions.
+
+<critical>
+- You MUST include essential task context directly; NEVER rely on inaccessible prior sessions or temporary notes.
+- The receiver uses its own cwd. You NEVER infer, request, or prescribe a target location or directory change.
+- You MUST omit unrelated session history.
+- You MUST preserve scope, authorization limits, and secret redaction throughout.
+</critical>`;
+
 export interface ParsedHandoffArgs {
   goal: string;
   mode: HandoffMode;
@@ -411,6 +442,7 @@ export async function runHandoffFileCommand(
       summaryModel,
       messages,
       args.goal,
+      FILE_SUMMARY_SYSTEM_PROMPT,
     );
     if (summary === null) {
       return "Handoff cancelled.";
@@ -679,6 +711,7 @@ async function generateContextSummaryWithUi(
   summaryModel: SummaryModelChoice,
   messages: Array<SessionEntry & { type: "message" }>,
   goal: string,
+  systemPrompt = SUMMARY_SYSTEM_PROMPT,
 ): Promise<string | null> {
   return await ctx.ui.custom<string | null>(
     (
@@ -712,6 +745,7 @@ async function generateContextSummaryWithUi(
             messages,
             goal,
             loader.signal,
+            systemPrompt,
           );
 
           if (summary && summary.trim().length > 0) {
@@ -738,6 +772,7 @@ async function generateContextSummary(
   messages: Array<SessionEntry & { type: "message" }>,
   goal: string,
   signal?: AbortSignal,
+  systemPrompt = SUMMARY_SYSTEM_PROMPT,
 ): Promise<string | null> {
   const conversationText = serializeConversation(
     convertToLlm(messages.map((entry) => entry.message)),
@@ -755,7 +790,7 @@ async function generateContextSummary(
 
   const response = await complete(
     model,
-    { systemPrompt: SUMMARY_SYSTEM_PROMPT, messages: [userMessage] },
+    { systemPrompt, messages: [userMessage] },
     { apiKey, headers, signal },
   );
 

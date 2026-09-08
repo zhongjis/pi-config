@@ -10,6 +10,10 @@ Transfer focused context or an approved plan into a new session.
 ## Local Contracts
 
 - Session transfer and file export MUST retain their separate output paths.
+- File summaries MUST be self-contained task briefs scoped to the goal, or current unfinished task when omitted.
+- File briefs MUST use Task, Findings and evidence, Remaining questions, Constraints, and Relevant files sections.
+- File briefs MUST preserve evidence, authorization limits, and secret redaction.
+- File export MUST remain target-agnostic: the receiver uses its own cwd; source paths are evidence, never directory-change instructions.
 - Explicit no-summary requests MUST bypass summarization.
 - Approved-plan execution MUST retain the start-work handoff path.
 - The direct bridge MUST unsubscribe on session shutdown.

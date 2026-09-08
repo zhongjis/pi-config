@@ -19,6 +19,8 @@ Session handoff system for transferring context to a new focused session.
 - `/handoff:file [-no-summarize] [goal]` — Write a handoff document to a temp file (`$TMPDIR/handoff-<timestamp>.md`) for another agent to pick up
 - `/handoff:start-work` — Hand off an approved plan to an execution agent in a new session
 
+With summarization enabled, `/handoff:file` asks the model for a self-contained brief focused on the supplied goal, or the current unfinished task when omitted. Sections cover Task, Findings and evidence, Remaining questions, Constraints, and Relevant files. Instructions preserve authorization limits and require secret redaction. The receiving agent uses its own working directory; source paths are evidence references, not instructions to change directories. File export creates no new session; `/handoff` keeps its existing session-summary behavior.
+
 ## Hooks
 
 - `session_shutdown` — Unsubscribe the direct handoff bridge
