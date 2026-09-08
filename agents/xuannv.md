@@ -1,7 +1,7 @@
 ---
 display_name: Xuannv 九天玄女
 description: Coarsest-cohesive tactical planning advisor; emits advisory worker-fit and escalation evidence for executable parent plans without durable planning ceremony.
-model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
+model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-6-astra:high,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
 discover_skills: false
 builtin_tools: read,bash
 extension_tools: codegraph_*,lsp,Agent,get_subagent_result,steer_subagent

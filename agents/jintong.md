@@ -1,7 +1,7 @@
 ---
 display_name: Jintong 金童
 description: Default bounded non-UI implementation, debugging, and verification worker, including decision-complete cohesive multi-file changes.
-model: claude-sonnet-4-6,openai-codex/gpt-5.6-sol:medium,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high
+model: claude-sonnet-4-6,openai-codex/gpt-6-astra:low,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read,bash,edit,write
