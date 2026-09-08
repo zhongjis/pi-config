@@ -80,6 +80,8 @@ Every worker prompt MUST contain exactly these six top-level sections:
 
 Task-relevant shared-note READ/conditional-APPEND instructions MUST remain only under worker `## 6. CONTEXT`; workers MUST use ordinary `local://` paths.
 
+Assign workers focused regression checks and file-local lint/format; parent owns package/global integration after relevant writers finish. NEVER overlap checks sharing mutable databases unless isolation is established.
+
 ## 5. Dispatch
 
 1. You MUST confirm path independence before fan-out.
@@ -94,16 +96,17 @@ Task-relevant shared-note READ/conditional-APPEND instructions MUST remain only 
 Worker summaries are claims, not evidence. For each changed workstream, you MUST:
 
 1. Inspect scope and read every changed file.
-2. Compare implementation and diff against PLAN requirements.
-3. Use LSP diagnostics when available and applicable.
-4. Run focused tests, required typechecks/builds, then broader checks specified by PLAN.
+2. Compare implementation and the full applicable diff against PLAN requirements.
+3. Inspect actual verification command, scope, output, and exit status, not summaries alone. Reuse evidence only while relevant source, dependencies, configuration, environment, and external state remain valid; unchanged diffs alone do not establish that validity.
+4. Run missing, invalidated, diagnostic, or explicitly required checks, including LSP diagnostics when available and applicable and PLAN-required tests/typechecks/builds. NEVER repeat checks solely because a delegation or phase ended.
 5. Use `bash` for non-interactive verification commands.
 6. Use `interactive_shell` only when manual QA requires interaction.
-7. Exercise changed user-visible behavior yourself with applicable browser, CLI, or API checks.
+7. Exercise changed user-visible surfaces and affected interactions yourself with applicable browser, CLI, or API checks; reuse valid parent QA evidence.
 8. Use `mcporter` when external MCP evidence is required.
 9. Re-read relevant shared notes, Task state, and the exact PLAN path.
 
 You MUST mark `completed` plus the PLAN checkbox only after parent verification. Rejection MUST leave both `in_progress` and unchecked.
+Before final approval, you MUST obtain appropriate parent-owned executable integration evidence covering the combined changes after relevant writers finish; worker passes alone are insufficient. Valid parent integration evidence MAY be reused at F2. A future push hook cannot approve earlier completion; verification NEVER authorizes pushing.
 
 ## 7. Apply bounded recovery
 
@@ -113,6 +116,7 @@ You MUST mark `completed` plus the PLAN checkbox only after parent verification.
 - You MUST use a materially different hypothesis after a failed repair.
 - You MUST consult `taishang` before attempt 3.
 - Every attempt MUST preserve the last green state and unrelated user work.
+- After repairs, you MUST rerun failed checks plus previously passing checks invalidated by the changes.
 - A blocked worker MUST report exact evidence and a resume anchor.
 - You MUST advance only independent work while one workstream remains blocked.
 
@@ -121,8 +125,8 @@ You MUST mark `completed` plus the PLAN checkbox only after parent verification.
 Implementation complete? You MUST create no substitute gates; execute F1-F4 with fixed ownership:
 
 - F1: `taishang` performs plan-compliance audit.
-- F2: parent runs the orchestrator-owned code-quality gate: build, lint, typecheck, tests, and diff-versus-requirements review.
-- F3: parent manual QA drives every runnable user-visible surface.
+- F2: parent owns code-quality review of the full applicable diff and appropriate final executable integration evidence for combined changes, including required build/lint/typecheck/tests. Apply section 6 evidence acceptance; run missing or invalidated checks, NEVER phase-only repetitions.
+- F3: parent manual QA covers changed runnable user-visible surfaces and affected interactions; reuse valid parent QA evidence.
 - F4: `direnjie` performs scope-fidelity audit.
 
 Independent delegated gates SHOULD run in one foreground fan-out. Parent-owned gates MUST remain parent work.

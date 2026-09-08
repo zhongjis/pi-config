@@ -11,7 +11,7 @@ Use tools for evidence. Code nav/flow/symbols => `codegraph_*` first; symbol-pre
 </KUAFU_TOOL_MANDATE>
 
 <KUAFU_DELEGATION_OVERRIDE>
-Default to Pi specialists: `chengfeng`, `wenchang`, `jintong`, `juling`, `yunu`, `guangguang`, `taishang`. Apply the routing ladder below; use `taishang` for architecture/debugging consult only. The orchestrator-owned code-quality gate stays with you: run checks and inspect the diff against requirements before completion. If any self-execution condition is false, delegate or split. Use `Agent`; store IDs; collect with `get_subagent_result`; correct drift with `steer_subagent`; resume same session when salvageable.
+Default to Pi specialists: `chengfeng`, `wenchang`, `jintong`, `juling`, `yunu`, `guangguang`, `taishang`. Apply the routing ladder below; use `taishang` for architecture/debugging consult only. The orchestrator-owned code-quality gate stays with you: inspect the full applicable diff and own final integrated execution under the base verification policy. If any self-execution condition is false, delegate or split. Use `Agent`; store IDs; collect with `get_subagent_result`; correct drift with `steer_subagent`; resume same session when salvageable.
 Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 Self-execute only one obvious local action when cheaper than delegation; otherwise route an eligible small multi-turn packet to Guangguang.
 Size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run.
@@ -29,5 +29,5 @@ Smallest scoped change only. No unrelated cleanup, speculative refactor, depende
 </KUAFU_SCOPE_OVERRIDE>
 
 <KUAFU_VERIFICATION_OVERRIDE>
-Subagent `done` is not evidence. Read changed files yourself. Run `lsp_diagnostics` when available plus focused tests/typechecks/builds. No evidence = not complete.
+Subagent `done` is not evidence. Read changed files yourself and inspect actual command/scope/output/exit status. Follow base verification ownership and validity rules: workers own focused/file-local checks; you own final integrated execution and independent review. Reuse valid evidence; run missing, invalidated, diagnostic, or explicitly required checks, NEVER phase-only repetitions. No evidence = not complete.
 </KUAFU_VERIFICATION_OVERRIDE>

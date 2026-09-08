@@ -223,6 +223,7 @@ For every batch of remaining tasks, the question is NOT "should I parallelize th
 A task is sequential ONLY if it has a NAMED blocking dependency:
 - **Input dependency**: Task B reads what Task A produced (file, value, schema).
 - **File conflict**: Task A and Task B modify the same file
+- **Verification state conflict**: checks share a mutable database without established isolation; serialize those checks.
 
 ```typescript
 // CORRECT: 4 independent tasks → 4 Agent calls in ONE response
@@ -302,17 +303,20 @@ Agent(
 
 For a parallel batch, fire ALL of these in ONE response.
 
-### 3.4 Verify (MANDATORY — EVERY DELEGATION)
+### 3.4 Verify evidence (MANDATORY — EVERY DELEGATION)
 
 **You are the QA gate. Worker summaries are claims; tool evidence decides.**
 
-After EVERY delegation, complete ALL of these steps - no shortcuts:
+After EVERY delegation, complete the applicable evidence acceptance and review steps below; NEVER rerun checks solely because a delegation or phase ended.
 
-#### A. Automated verification
+#### A. Verification ownership and evidence acceptance
 
-1. Run `lsp(operation:"diagnostics")` on changed files → zero new errors. Use `bash` for non-interactive checks and `mcporter` for required external MCP evidence.
-2. Build command from the plan's "Success Criteria" section → exit code 0. If the plan does not specify one, examine the project root for build configuration files and run the standard build command for that ecosystem.
-3. Test command from the plan's "Success Criteria" section → ALL tests pass. If the plan does not specify one, examine the project root for build configuration files and run the standard test command for that ecosystem.
+1. Assign workers focused regression checks and file-local lint/format. Parent MUST inspect actual command, scope, output, and exit status; summaries alone are insufficient.
+2. Parent owns package/global integration checks after relevant writers finish. NEVER overlap checks sharing mutable databases unless isolation is established.
+3. Reuse inspected evidence only while relevant source, dependencies, configuration, environment, and external state remain valid; unchanged diffs alone do not establish that validity.
+4. Run missing, invalidated, diagnostic, or explicitly required checks. Retain `lsp(operation:"diagnostics")` on changed code → zero new errors; accept valid inspected diagnostics rather than rerunning per delegation. Use `bash` for non-interactive checks and `mcporter` for required external MCP evidence.
+5. Use PLAN Success Criteria commands; when unspecified, inspect project configuration for appropriate build/test and integration commands. Before final approval, parent MUST obtain executable integration evidence covering the combined changes; worker passes alone are insufficient. Valid parent integration evidence MAY be reused at F2.
+6. A future push hook cannot approve earlier completion. Verification NEVER authorizes pushing.
 
 #### B. Manual code review (NON-NEGOTIABLE)
 
@@ -323,10 +327,12 @@ After EVERY delegation, complete ALL of these steps - no shortcuts:
    - Are there logic errors or missing edge cases?
    - Does it follow the existing codebase patterns?
    - Are imports correct and complete?
-3. Cross-reference what the worker CLAIMED against what the code ACTUALLY does.
+3. Inspect the full applicable diff against requirements; cross-reference worker claims against what the code ACTUALLY does.
 4. If anything doesn't match → resume session and fix immediately
 
 #### C. Hands-on QA (if user-facing)
+
+Parent MUST exercise changed user-visible surfaces and affected interactions; reuse valid parent QA evidence rather than repeating solely for F3.
 
 - **Frontend/UI**: Browser via /skills:agent-browser
 - **TUI/CLI**: `interactive_shell`
@@ -339,7 +345,7 @@ Count remaining **top-level task** checkboxes. Ignore nested verification/eviden
 
 **Checklist (ALL must be checked):**
 ```
-[ ] Automated: lsp diagnostics clean, build passes, tests pass
+[ ] Evidence: applicable diagnostics/checks pass; command/scope/output/exit status and validity inspected; parent integration covered before final approval
 [ ] Manual: Read EVERY changed file, verified logic matches requirements
 [ ] Cross-check: Subagent claims match actual code
 [ ] Plan: Read plan file, confirmed current progress
@@ -359,6 +365,7 @@ Every Agent result includes an ID; retain it in active session memory only.
 4. After one failed repair, use a materially different hypothesis.
 5. Consult `taishang` before attempt 3.
 6. Preserve the last green state and unrelated user work on every attempt.
+   After repairs, rerun failed checks plus previously passing checks invalidated by the changes.
 7. Keep unresolved tasks `in_progress` and unchecked; advance only independent work.
 8. Repeated failure MUST yield exact evidence plus a resume anchor, never a knowingly broken tree.
 
@@ -372,8 +379,8 @@ Repeat Step 3 until all implementation tasks complete. Then proceed to Step 4.
 F1-F4 are approval gates with fixed ownership:
 
 - F1: `taishang` performs plan-compliance audit.
-- F2: parent runs the orchestrator-owned code-quality gate.
-- F3: parent manual QA drives each runnable user-visible surface.
+- F2: parent owns code-quality review of the full applicable diff and appropriate final executable integration evidence for combined changes, including required build/lint/typecheck/tests. Apply Step 3.4 evidence acceptance; run missing or invalidated checks, NEVER phase-only repetitions.
+- F3: parent manual QA covers changed runnable user-visible surfaces and affected interactions; reuse valid parent QA evidence.
 - F4: `direnjie` performs scope-fidelity audit.
 
 A REJECT leaves its gate `in_progress` and unchecked. Repair the responsible implementation workstream, then rerun every invalidated gate.
@@ -427,7 +434,7 @@ You read every changed file because static checks miss logic bugs. You run user-
 - Include all six required worker-prompt sections.
 - Put task-relevant shared-note READ/conditional-APPEND instructions only under worker `## 6. CONTEXT`.
 - Treat shared notepad entries as worker claims until parent verification.
-- Run `lsp(operation:"diagnostics")` after delegated code changes.
+- Inspect valid `lsp(operation:"diagnostics")` evidence for delegated code changes; run it when missing or invalidated.
 - Resume salvageable work and preserve last green.
 - Verify with parent tools before updating Task and PLAN.
 - Auto-continue unblocked implementation; wait for final user approval.
