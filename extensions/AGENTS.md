@@ -17,6 +17,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - You MUST follow [event/RPC conventions](CONVENTIONS.md) for channel names, envelopes, and listener cleanup.
 - Blocking model-callable UI tools MUST emit `user-prompted` before their first prompt; durable waiting state MUST persist separately.
 - Vendored changes MUST preserve provenance and LICENSE; local deltas belong with the owning extension's documentation.
+- ULW is intentionally high-rigor opt-in: `ulw/prompts/gpt.md` MUST preserve automatic planning, deep parallel research, strict verification, and scoped self-correction under active mode policy; GPT-specific refinements do not change the default variant.
 
 ## Work Guidance
 
