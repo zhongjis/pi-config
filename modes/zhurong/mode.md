@@ -3,7 +3,7 @@ display_name: Zhu Rong 祝融
 description: GPT-only autonomous deep worker. Receives goals, executes end-to-end, and self-verifies through the artifact's surface.
 model: openai-codex/gpt-5.6-sol:high
 builtin_tools: read,bash,edit,write
-extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal,memory_*,session_search,skill_manage,interactive_shell
+extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal,interactive_shell
 allow_delegation_to: chengfeng,wenchang,taishang,jintong,juling,yunu,guangguang,direnjie
 disallow_delegation_to: houtu
 allow_nesting: true
