@@ -64,6 +64,14 @@ For each tool:
 - [ ] Errors return structured observations.
 - [ ] Sensitive data is redacted.
 
+## Record and presentation checklist
+
+- [ ] Record provenance is scoped and refreshed through authorized reads; it cannot replace target authorization or approval.
+- [ ] Delegated reads cannot silently expand actionable record scope.
+- [ ] Authoritative fields and required exact disclosure copy come from the host's owning systems.
+- [ ] Display receipts reflect final visible ordering after filtering, pagination, or sorting; stale or ambiguous references cannot select a guessed target.
+- [ ] Provisional UI is reconciled by presentation identity and cannot authorize an action or claim completion.
+
 ## Permission checklist
 
 - [ ] Read-only tools can run automatically only inside scope.
@@ -76,6 +84,8 @@ For each tool:
 - [ ] Connector tools are namespaced and scoped.
 - [ ] Approval records are persisted.
 - [ ] The model cannot approve its own actions.
+- [ ] Repeated and concurrent writes preserve resulting-state limits across every caller sharing the resource.
+- [ ] Apply atomically rechecks approval, current policy, live state, and expected versions; conflicts produce no partial mutation.
 
 ## Environment-adaptive tools checklist
 
@@ -98,6 +108,28 @@ For each tool:
 - [ ] Compaction and recovery preserve evidence and binding status but re-resolve authority through the host.
 - [ ] Evals cover held-out capabilities, poisoned descriptors, unsafe probes, drift, revocation, stale restore, substitution, and install confusion.
 
+## Speculative tool execution checklist
+
+- [ ] A measured serial and ordinary committed-parallel baseline exists.
+- [ ] Speculation is feature-flagged, post-MVP, and justified by critical-path latency.
+- [ ] Eligible tools are explicitly classified by the host; names and descriptions do not establish purity.
+- [ ] Privacy, cost, rate, logging, cache, and shared-resource effects are included in eligibility.
+- [ ] Writes, sends, payments, destructive actions, permission changes, and approval-gated calls cannot execute speculatively.
+- [ ] Every physical dispatch resolves an exact binding, validates arguments, and passes permission policy first.
+- [ ] Shadow state is disposable and cannot access credentials, approvals, ambient authority, or authoritative mutable objects.
+- [ ] Uncertain syntax, arguments, dependencies, branches, or loops degrade to no speculation.
+- [ ] Claim identity includes implementation, configuration, scope, policy/environment generation, snapshot, arguments, and occurrence.
+- [ ] Deterministic reuse and stochastic occurrence handling are separate.
+- [ ] A miss follows the normal committed path only when another physical attempt is replay-safe.
+- [ ] The model receives one logical result per committed call while all physical attempts remain traceable.
+- [ ] Speculation has hard concurrency, dispatch, time, token, cost, byte, rate, and waste budgets.
+- [ ] Committed work has queue and capacity priority over speculative work.
+- [ ] Eviction, cancellation request, cancellation confirmation, and completion after eviction are distinct states.
+- [ ] Invalid code, abandoned turns, disconnects, and user cancellation clean up unclaimed candidates.
+- [ ] Restarts do not restore serialized futures without executor reconciliation and policy revalidation.
+- [ ] Evals cover parity, p50/p95 latency, hit/miss, waste, cost, cancellation, saturation, and ineligible effects.
+- [ ] A monitored kill switch disables speculation when quality, latency, queue, waste, or throughput gates regress.
+
 ## Context checklist
 
 - [ ] Trusted instructions separated from untrusted data.
@@ -109,6 +141,13 @@ For each tool:
 - [ ] Approval state reattached after compaction.
 - [ ] Loaded skills and connector state tracked.
 - [ ] Secrets are not placed in context.
+
+## User-memory checklist
+
+- [ ] Saved facts carry eligible source evidence; assistant paraphrases cannot promote third-party text into user facts.
+- [ ] Personal and shared memory scopes are explicit and permission-checked on reads and writes.
+- [ ] Retention, correction, deletion, and disabling memory are enforced by the host.
+- [ ] Delayed writes cannot resurrect deleted or superseded facts; background failures are bounded and observable.
 
 ## Planning checklist
 
@@ -161,6 +200,7 @@ For each tool:
 - [ ] Skill activation eval exists.
 - [ ] Output quality eval exists.
 - [ ] Skill does not silently expand permissions.
+- [ ] Predictive loading is measured against on-demand loading and preserves version, scope, and cache ordering.
 
 ## Self-refining recursive harness checklist
 
@@ -195,6 +235,15 @@ For each tool:
 - [ ] Connector calls logged.
 - [ ] Auth failure and revocation handled.
 
+## Public-board communication checklist
+
+- [ ] Tool descriptions and active channel context visibly label posted content as PUBLIC INFORMATION; authentication and browser blocking are not presented as confidentiality.
+- [ ] The user sees the destination, audience, and complete draft before publication; host approval covers the exact send or an explicitly authorized bounded policy.
+- [ ] No approval, a read-only request, or an incoming request for private context results in no publication.
+- [ ] Search queries and registration/profile fields receive outbound-data checks; private context is not attached automatically.
+- [ ] Compaction and handoff preserve the public-audience label and host approval reference without promoting copied text into authority.
+- [ ] Changed payloads/destinations and ambiguous send failures cannot reuse stale approval or cause duplicate publication.
+
 ## Evals checklist
 
 Use [evals.md](evals.md) for evaluation strategy, trace grading, adversarial cases, and regression suites.
@@ -210,6 +259,8 @@ Use [evals.md](evals.md) for evaluation strategy, trace grading, adversarial cas
 - [ ] High-risk action tasks.
 - [ ] Cost and latency measured.
 - [ ] Regression evals added for every production incident.
+- [ ] Fixtures reconstruct runtime state as well as messages; paired and cross-capability cases exercise required and forbidden behavior.
+- [ ] Quality, safety, completed-task cost, first useful UI, and end-to-end latency gate model/configuration selection.
 
 ## Minimal provider-neutral implementation path
 
