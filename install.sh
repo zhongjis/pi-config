@@ -34,6 +34,7 @@ ALLOWED_ITEMS=(
   "agents"
   "modes"
   "caveman.json"
+  "pi-herdr-btw.json"
   "session-summary.json"
   "tool_models.json"
   "scripts"
