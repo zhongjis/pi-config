@@ -1,7 +1,3 @@
-import { createHash } from "node:crypto";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -12,7 +8,8 @@ import { buildBudgetLimitedPrompt, buildContinuationPrompt } from "./goal/prompt
 import { renderGoalCall, renderGoalResult } from "./goal/render.js";
 import { GoalAlreadyExistsError } from "./goal/errors.js";
 import { accountGoalUsage, clearGoal, createGoal, readGoal, updateGoal } from "./goal/store.js";
-import type { Goal, GoalAccountingMode, GoalStoreRef, TokenUsageSnapshot } from "./goal/types.js";
+import type { Goal, GoalAccountingMode, TokenUsageSnapshot } from "./goal/types.js";
+import { goalStoreRef } from "./goal/context.js";
 import { COMPLETABLE_GOAL_STATUS_VALUES, isRecord } from "./goal/types.js";
 import { updateGoalUi } from "./goal/ui.js";
 
@@ -381,27 +378,6 @@ function queueGoalContinuation(pi: ExtensionAPI, ctx: ExtensionContext, goal: Go
 
 function queueHiddenGoalPrompt(pi: ExtensionAPI, customType: string, content: string): void {
 	pi.sendMessage({ customType, content, display: false }, { triggerTurn: true, deliverAs: "followUp" });
-}
-
-function goalStoreRef(ctx: ExtensionContext): GoalStoreRef {
-	const sessionFile = ctx.sessionManager.getSessionFile();
-	const baseDir =
-		sessionFile === undefined
-			? join(agentDir(), "extensions", "goal", "no-session", cwdStoreKey(ctx.cwd))
-			: join(ctx.sessionManager.getSessionDir(), "extensions", "goal");
-
-	return {
-		baseDir,
-		threadId: ctx.sessionManager.getSessionId(),
-	};
-}
-
-function agentDir(): string {
-	return process.env["PI_CODING_AGENT_DIR"] ?? join(homedir(), ".pi", "agent");
-}
-
-function cwdStoreKey(cwd: string): string {
-	return createHash("sha256").update(cwd).digest("hex").slice(0, 24);
 }
 
 function toolText(text: string, isError = false): GoalToolResult {

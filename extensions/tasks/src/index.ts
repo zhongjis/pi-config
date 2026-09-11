@@ -12,6 +12,7 @@ import { type ExtensionAPI, getAgentDir } from "@earendil-works/pi-coding-agent"
 import { installPandaWarnFileSink } from "../../lib/warn.js";
 import { registerTaskRpcHandlers } from "./bridge/rpc-handlers.js";
 import { createTaskRuntime, registerLifecycleEvents } from "./lifecycle/store-glue.js";
+import { registerFinishContinuation } from "./lifecycle/finish-continuation.js";
 import { registerTaskTools } from "./tools/index.js";
 
 export default function (pi: ExtensionAPI) {
@@ -20,5 +21,6 @@ export default function (pi: ExtensionAPI) {
 
   registerTaskRpcHandlers(pi, runtime);
   registerLifecycleEvents(pi, runtime);
+  registerFinishContinuation(pi, runtime);
   registerTaskTools({ pi, runtime });
 }

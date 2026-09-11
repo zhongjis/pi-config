@@ -73,10 +73,12 @@ describe("Task consolidated tool", () => {
     });
     expect(text(created)).toContain("Created 3 tasks: #1, #2, #3");
     expect(text(created)).toContain("#2: Bravo");
+    expect(created.details).toEqual({ taskIds: ["1", "2", "3"] });
 
     const listed = await mock.executeTool("Task", { op: "list" });
     expect(text(listed)).toContain("#1 [pending] Alpha");
     expect(text(listed)).toContain("#3 [pending] Charlie");
+    expect(listed.details).toBeUndefined();
   });
 
   it("S1b: single get returns full detail", async () => {
@@ -88,6 +90,7 @@ describe("Task consolidated tool", () => {
     expect(text(got)).toContain("Task #1: Solo");
     expect(text(got)).toContain("Status: pending");
     expect(text(got)).toContain("desc-solo");
+    expect(got.details).toBeUndefined();
   });
 
   it("S2: batch update applies mixed statuses in one call", async () => {
@@ -112,6 +115,13 @@ describe("Task consolidated tool", () => {
 
     expect(text(await mock.executeTool("Task", { op: "get", taskId: "1" }))).toContain("Status: completed");
     expect(text(await mock.executeTool("Task", { op: "get", taskId: "2" }))).toContain("Status: in_progress");
+    expect(updated.details).toEqual({ taskIds: ["1", "2"] });
+    const unchanged = await mock.executeTool("Task", { op: "update", tasks: [
+      { taskId: "1", status: "in_progress" }, { taskId: "2", description: "2" }, { taskId: "missing", subject: "X" },
+    ] });
+    expect(unchanged.details).toEqual({ taskIds: ["2"] });
+    const deleted = await mock.executeTool("Task", { op: "update", tasks: [{ taskId: "2", status: "deleted" }] });
+    expect(deleted.details).toEqual({ taskIds: [] });
   });
 
   it("S3: batch update is best-effort — illegal transition rejected, valid applied, tree intact", async () => {
@@ -135,6 +145,7 @@ describe("Task consolidated tool", () => {
     expect(text(mixed)).toContain("Rejected 1 task");
     expect(text(mixed)).toContain(ILLEGAL_TRANSITION_CODE);
     expect(mixed.isError).toBeFalsy(); // partial success is not a hard error
+    expect(mixed.details).toEqual({ taskIds: ["2"] });
 
     // #1 unchanged (still completed), #2 advanced
     expect(text(await mock.executeTool("Task", { op: "get", taskId: "1" }))).toContain("Status: completed");
@@ -153,6 +164,7 @@ describe("Task consolidated tool", () => {
     });
     expect(rejected.isError).toBe(true);
     expect(text(rejected)).toContain(ILLEGAL_TRANSITION_CODE);
+    expect(rejected.details).toBeUndefined();
     expect(text(await mock.executeTool("Task", { op: "get", taskId: "1" }))).toContain("Status: completed");
   });
 

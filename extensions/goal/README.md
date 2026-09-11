@@ -60,3 +60,4 @@ Features added on top of upstream (see AGENTS.md `## Local Tweaks`):
 
 - **Compact tool-result rendering** (`src/goal/render.ts`): the `create_goal`/`get_goal`/`update_goal` tools show a collapsed `keyword: content` summary (objective, status, elapsed time, tokens) with an expand hint; expanding shows the raw JSON. Model-visible `result.content` is unchanged.
 - **Footer bridge:** the goal status indicator is published for the `qol` extension's footer instead of clobbering the shared footer slot; a standalone Codex-style footer is the fallback when `qol` is absent.
+- **Shared context reader** (`src/goal/context.ts`): `goalStoreRef` is the single context-to-storage resolver; `readGoalForContext` returns a Goal or null and propagates lookup errors. Tasks defers continuation for every existing Goal status and fails closed on lookup errors. Goal scheduling is unchanged.

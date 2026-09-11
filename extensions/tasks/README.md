@@ -39,6 +39,20 @@ Takes `taskId` and returns full task details including owner, dependencies, and 
 
 Shows running, ready, blocked, and completed counts. Running and ready work appear before blocked and completed work when space is limited.
 
+## Finish nudges
+
+After a clean `agent_end`, `agent_settled` may trigger a hidden follow-up when Pi is idle with no queued messages. Only successful `Task` create/update IDs from the current real-user-input episode qualify; list/get, failed updates, and deletions do not enroll work. Successful mutations expose surviving IDs in `details.taskIds`.
+
+- Local session/memory tasks only (`PI_TASKS=off` is in-memory); shared/project/named lists, nonempty owners, Fuxi planning tasks, and child agents are excluded.
+- At most two nudges per real-user episode. Another nudge requires a new forward status high-water mark on enrolled tasks. Metadata edits, new tasks, deletion, and status churn do not renew the allowance. Stagnation/cap produces one visible unresolved-task notice, never task mutations.
+- Abort/error, same-run `user-prompted`, latest mode `planReviewPending` / `awaitingUserAction.suppressContinuationReminder`, and running subagents suppress automatic follow-ups. The host `active_agent` system tag identifies children; assistant prose is not parsed for authority.
+- Any existing Goal record (including complete, paused, blocked, or budget-limited) owns continuation. Goal read failures suppress nudges; live guards and task state are checked again after the asynchronous lookup.
+- Conservative ceiling: any `process` / `interactive_shell` invocation suppresses that run because no authoritative live wait state is available. A future live-state accessor can narrow this guard.
+- Real input and session/tree changes invalidate stale decisions; synthetic follow-ups never reset the cap. Event-bus listeners attach only at `session_start` and are removed on shutdown, so filtered-out factories do not subscribe.
+- Each nudge includes at most 10 task IDs/statuses/subjects, with subjects normalized to one line and truncated to 120 Unicode code points. It requires dependency order and passing required verification before marking tasks completed; authorization boundaries remain authoritative.
+
+The periodic transient tool-activity reminder remains independent and unchanged.
+
 ## Commands
 
 `/tasks` — interactive menu: view tasks, create task, clear tasks, settings.

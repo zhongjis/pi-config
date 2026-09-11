@@ -35,7 +35,7 @@ export default function myTool(pi: ExtensionAPI) {
 }
 ```
 
-**Why:** `extensions/task-continuation-reminder/index.ts` listens for this event to suppress same-run automatic follow-ups while the agent is waiting for the user to answer a blocking prompt.
+**Why:** `extensions/tasks/src/lifecycle/finish-continuation.ts` listens for this event to suppress same-run automatic finish follow-ups after a blocking prompt.
 
 **When to emit:**
 - Tool calls `ctx.ui.custom()`, `ctx.ui.confirm()`, `ctx.ui.select()`, `ctx.ui.input()`, or `ctx.ui.editor()` during `execute()`.
@@ -62,8 +62,9 @@ awaitingUserAction: {
 ```
 
 Current repo behavior:
-- `extensions/task-continuation-reminder/index.ts` suppresses reminders for same-run `user-prompted`.
-- It also suppresses reminders when latest `agent-mode` state contains `awaitingUserAction.suppressContinuationReminder === true`.
+- `extensions/tasks/src/lifecycle/finish-continuation.ts` suppresses finish follow-ups for same-run `user-prompted` and removes its listener on shutdown.
+- It also suppresses finish follow-ups when latest `agent-mode` state contains `awaitingUserAction.suppressContinuationReminder === true`.
+- Any existing Goal record owns continuation; Tasks never overrides Goal status or limits. The periodic transient Task tool-activity reminder is separate.
 - `planReviewPending` is supported for current plan-review flow compatibility, but new generic waiting flows should prefer `awaitingUserAction`.
 
 ## Current event families

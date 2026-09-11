@@ -139,7 +139,7 @@ function executeCreate(
 
   const header = `Created ${pluralTasks(created.length)}: ${created.map(t => `#${t.id}`).join(", ")}`;
   const detail = created.map(t => `#${t.id}: ${t.subject}`).join("\n");
-  return textResult(`${header}\n${detail}`);
+  return { ...textResult(`${header}\n${detail}`), details: { taskIds: created.map(task => task.id) } };
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +168,7 @@ function executeUpdate(runtime: TaskToolDeps["runtime"], items: UpdateItem[] | u
 
   const applied: string[] = [];
   const rejected: string[] = [];
+  const taskIds: string[] = [];
 
   for (const item of items) {
     const taskId = item.taskId as string;
@@ -196,6 +197,7 @@ function executeUpdate(runtime: TaskToolDeps["runtime"], items: UpdateItem[] | u
       applyUpdateSideEffects(runtime, taskId, rawFields.status);
       const fieldSummary = changedFields.length > 0 ? changedFields.join(", ") : "no change";
       applied.push(`#${taskId} (${fieldSummary})${warnings.length > 0 ? ` [warning: ${warnings.join("; ")}]` : ""}`);
+      if (task) taskIds.push(taskId);
     } catch (err) {
       rejected.push(`#${taskId} (${err instanceof Error ? err.message : String(err)})`);
     }
@@ -209,7 +211,7 @@ function executeUpdate(runtime: TaskToolDeps["runtime"], items: UpdateItem[] | u
 
   const msg = lines.join("\n");
   // Hard error only when nothing applied (mirrors the former single-update throw).
-  return applied.length === 0 ? errorResult(msg) : textResult(msg);
+  return applied.length === 0 ? errorResult(msg) : { ...textResult(msg), details: { taskIds } };
 }
 
 // ---------------------------------------------------------------------------
