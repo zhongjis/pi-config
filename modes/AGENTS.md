@@ -22,7 +22,8 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - Hou Tu GPT MUST pass only the smallest task/verification-applicable skill set; `skills=[]` when none apply.
 - Kua Fu/Hou Tu families MUST assign workers focused regression and file-local lint/format; parent owns package/global integration after relevant writers finish. Checks sharing mutable databases MUST NOT overlap without established isolation.
 - Parent MUST read changed files, review the full applicable diff, and inspect actual command/scope/output/exit status, NEVER summaries alone. Evidence is reusable only while relevant source/dependencies/configuration/environment/external state remain valid.
-- Parent MUST obtain appropriate final executable integration evidence for combined changes; worker passes alone are insufficient. Run missing, invalidated, diagnostic, or explicitly required checks, NEVER delegation/phase-only repetitions; repairs invalidate affected previously passing checks.
+- Parent MUST obtain appropriate final executable integration evidence for combined changes; worker passes alone are insufficient. Outside Kua Fu GPT recovery, run missing, invalidated, diagnostic, or explicitly required checks, NEVER delegation/phase-only repetitions; repairs invalidate affected previously passing checks.
+- Kua Fu GPT MUST require current-message edit authorization, limit bug fixes to the smallest concrete fix, and re-run only failed focused checks during recovery; evidence-validity completion gates remain.
 - Parent QA MUST cover changed user-visible surfaces and affected interactions; valid parent QA/integration evidence MAY be reused. Hou Tu retains F1=`taishang`, F2=parent code-quality/integration, F3=parent QA, F4=`direnjie`.
 - Future push hooks MUST NOT approve earlier completion; verification NEVER authorizes pushing.
 
