@@ -26,6 +26,8 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Legacy/malformed details MUST retain full raw content expanded and obey the compact row budget.
 - Runtime metadata MUST preserve non-runtime invocation tags; resume turns MUST count `turn_end`, not usage messages.
 - Configured model chains MUST fail when exhausted; only absent model configuration inherits the parent.
+- Agent advertisements MUST preserve verbatim model chains or explicit parent inheritance in full lists; compact lists omit models.
+- Full/compact lists and custom placeholders MUST separate built-in and configured extension selectors, distinguish omitted/all from empty/none, and mark extensions unavailable under isolation or `extensions: false`; configuration NEVER verifies runtime loading, authentication, or permissions.
 - Selected candidate `:fast` fixes Fast on; no suffix fixes off, NEVER inherited/session toggles. Validate explicit on before child creation; unsupported capability MUST NOT trigger fallback selection. Preserve selected metadata through Agent/RPC/manager/runner; direct model options MUST NOT bypass frontmatter.
 - Hidden `subagent-fast` hooks MUST survive isolation/excludes and remove discovered interactive `fast` copies. Apply strict request-local metadata without shared-model mutation, including after OAuth drift; provider errors surface normally. Resume retains the original captured policy.
 - Final answers at the soft turn limit MUST complete normally; unfinished tool turns receive wrap-up steering.

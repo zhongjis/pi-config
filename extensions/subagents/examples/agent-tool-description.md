@@ -1,6 +1,6 @@
-Launch a new agent to handle complex, multi-step tasks autonomously. Each agent type has specific capabilities and tools available to it.
+Launch a new agent to handle complex, multi-step tasks autonomously.
 
-Available agent types and the tools they have access to:
+Available agent types and configured defaults (not invocation overrides). Configuration only; runtime access depends on extension loading, authentication, and permissions:
 {{typeList}}
 
 Custom agents can be defined in .pi/agents/<name>.md (project) or {{agentDir}}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.

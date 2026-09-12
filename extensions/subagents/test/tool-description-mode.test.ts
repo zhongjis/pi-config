@@ -84,6 +84,40 @@ describe("toolDescriptionMode", () => {
     rmSync(hermeticAgentDir, { recursive: true, force: true });
   });
 
+  it.each(["full", "compact", "custom"])("advertises configured metadata in %s mode", (mode) => {
+    const model = "anthropic/claude-sonnet-4-6:high:fast, openai-codex/gpt-5.5:medium, llama-swap/qwen:14b:low";
+    const fixtures = [
+      { name: "chain", fields: `model: ${model}\nbuiltin_tools: read,bash\nextension_tools: lsp,codegraph_*,vendor_*`, builtins: "read, bash", extensions: "lsp, codegraph_*, vendor_*" },
+      { name: "inherit", fields: "", builtins: "all", extensions: "all available within runtime policy" },
+      { name: "none", fields: "builtin_tools: none\nextension_tools: none", builtins: "none", extensions: "none" },
+      { name: "isolated", fields: "isolated: true\nextension_tools: vendor_*", builtins: "all", extensions: "unavailable" },
+      { name: "disabled", fields: "extensions: false\nextension_tools: vendor_*", builtins: "all", extensions: "unavailable" },
+    ];
+    const tools = setup({ toolDescriptionMode: mode }, () => {
+      const dir = join(tmpDir, ".pi", "agents");
+      mkdirSync(dir);
+      for (const fixture of fixtures) {
+        writeFileSync(join(dir, `${fixture.name}.md`), `---\ndescription: Fixture researcher. Further details.\n${fixture.fields}\n---\nResearch only.\n`);
+      }
+      if (mode === "custom") {
+        writeFileSync(join(tmpDir, ".pi", "agent-tool-description.md"), "{{typeList}}\nCOMPACT\n{{compactTypeList}}");
+      }
+    });
+    const description: string = tools.get("Agent").description;
+    const sections = mode === "custom" ? description.split("\nCOMPACT\n") : [description];
+    for (const [index, section] of sections.entries()) {
+      const compact = mode === "compact" || index === 1;
+      for (const fixture of fixtures) {
+        const row = section.split("\n").find((line) => line.startsWith(`- ${fixture.name}:`));
+        expect(row).toBeDefined();
+        const metadata = new Map([...row?.matchAll(/\((Model chain|Built-in tools|Configured extension tools): ([^)]*)\)/g) ?? []].map((match) => [match[1], match[2]]));
+        expect(metadata.get("Built-in tools")).toBe(fixture.builtins);
+        expect(metadata.get("Configured extension tools")).toBe(fixture.extensions);
+        expect(metadata.get("Model chain")).toBe(compact ? undefined : fixture.name === "chain" ? model : "inherit parent");
+      }
+    }
+  });
+
   it("defaults to the explicit full mode output", async () => {
     const tools = setup();
     const defaultDescription: string = tools.get("Agent").description;

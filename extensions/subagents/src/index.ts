@@ -731,14 +731,16 @@ export default function (pi: ExtensionAPI) {
     widget.onTurnStart();
   });
 
-  /** Format an agent's tool scope: "*" when it has all built-ins, else a comma-separated list. */
+  /** Advertise configuration, not resolved runtime access. */
   const formatToolsSuffix = (cfg: AgentConfig | undefined): string => {
     const tools = cfg?.builtinToolNames;
-    if (!tools || tools.length === 0) return "*";
-    const isFullSet =
-      tools.length === BUILTIN_TOOL_NAMES.length
-      && BUILTIN_TOOL_NAMES.every((t) => tools.includes(t));
-    return isFullSet ? "*" : tools.join(", ");
+    const builtins = !tools || (tools.length === BUILTIN_TOOL_NAMES.length
+      && BUILTIN_TOOL_NAMES.every((tool) => tools.includes(tool)))
+      ? "all" : tools.join(", ");
+    const extensions = cfg?.isolated || cfg?.extensions === false
+      ? "unavailable"
+      : cfg?.extensionToolNames?.join(", ") ?? "all available within runtime policy";
+    return `(Built-in tools: ${builtins || "none"}) (Configured extension tools: ${extensions || "none"})`;
   };
 
   /** Build the full type list text dynamically from available agents only. */
@@ -747,9 +749,7 @@ export default function (pi: ExtensionAPI) {
 
     return available.map((name) => {
       const cfg = getAgentConfig(name);
-      const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(cfg.model)})` : "";
-      const toolsSuffix = ` (Tools: ${formatToolsSuffix(cfg)})`;
-      return `- ${name}: ${cfg?.description ?? name}${modelSuffix}${toolsSuffix}`;
+      return `- ${name}: ${cfg?.description ?? name} (Model chain: ${cfg?.model ?? "inherit parent"}) ${formatToolsSuffix(cfg)}`;
     }).join("\n");
   };
 
@@ -763,7 +763,7 @@ export default function (pi: ExtensionAPI) {
   const buildCompactTypeListText = () =>
     getAvailableTypes().map((name) => {
       const cfg = getAgentConfig(name);
-      return `- ${name}: ${firstSentence(cfg?.description ?? name)} (Tools: ${formatToolsSuffix(cfg)})`;
+      return `- ${name}: ${firstSentence(cfg?.description ?? name)} ${formatToolsSuffix(cfg)}`;
     }).join("\n");
 
   /** Derive a short model label from a model string. */
@@ -801,6 +801,8 @@ export default function (pi: ExtensionAPI) {
   const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Agent types:
 ${buildCompactTypeListText()}
 
+Configuration only; runtime access depends on extension loading, authentication, and permissions.
+
 Custom agents: .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global).
 
 Notes:
@@ -810,9 +812,9 @@ Notes:
 - The result is not shown to the user — summarize it for them. Verify an agent's claimed code changes before reporting work done.
 - resume continues a previous agent by ID; steer_subagent messages a running one.`;
 
-  const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously. Each agent type has specific capabilities and tools available to it.
+  const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously.
 
-Available agent types and the tools they have access to:
+Available agent types and configured defaults (not invocation overrides). Configuration only; runtime access depends on extension loading, authentication, and permissions:
 ${buildTypeListText()}
 
 Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.
