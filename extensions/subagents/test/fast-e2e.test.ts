@@ -3,8 +3,8 @@ import { join, resolve } from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { expect, it, vi } from "vitest";
 import { createFastSession } from "../../../test/integration/helpers/fast-session.js";
+import { resumeAgent, runAgent } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
-import { runAgent, resumeAgent } from "../src/agent-runner.js";
 import type { AgentConfig } from "../src/types.js";
 
 const beta = "fast-mode-2026-02-01";

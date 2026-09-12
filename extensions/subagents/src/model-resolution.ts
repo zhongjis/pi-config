@@ -1,7 +1,7 @@
 import type { Model } from "@earendil-works/pi-ai";
+import { assertFastSupported } from "../../lib/fast.js";
 import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../lib/model-selection.js";
 import type { ThinkingLevel } from "../../lib/thinking-level.js";
-import { assertFastSupported } from "../../lib/fast.js";
 
 export interface SelectedAgentModel {
   model: Model<string> | undefined;

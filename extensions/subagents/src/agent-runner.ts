@@ -22,6 +22,7 @@ import {
   computeActiveToolNames,
   DEFAULT_BUILTIN_TOOL_NAMES,
 } from "../../lib/active-tools.js";
+import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
 import { seedSessionLocalScope } from "../../session-local/storage.js";
@@ -31,7 +32,6 @@ import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
 import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
-import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
