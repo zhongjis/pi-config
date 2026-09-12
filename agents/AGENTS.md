@@ -15,6 +15,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 - You MUST align tool allowlists with each agent's stated role.
 - Read-only consultants MUST NOT receive mutating tools; bash requires runtime guarding.
 - Mode frontmatter, not guide tables, authorizes mode-scoped delegation.
+- Custom Subagents MUST use `prompt_mode: system_instructions` to inherit global/project AGENTS.md without parent identity, subject to runtime isolation.
 
 ## Work Guidance
 

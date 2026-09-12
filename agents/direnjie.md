@@ -2,6 +2,7 @@
 display_name: Di Renjie 狄仁杰
 description: A plan gap analyzer — catches hidden assumptions, guardrail gaps, and execution risks before finalization for planning.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-6-astra:medium,opencode-go/deepseek-v4-pro:high,llama-swap/qwen2.5-coder:14b:high
+prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read,bash
 extension_tools: codegraph_*,lsp
