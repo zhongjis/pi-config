@@ -401,17 +401,19 @@ describe("spawn RPC delegation policy", () => {
 });
 
 it("RPC frontmatter wins over caller model and carries the selected fast candidate to the manager", async () => {
-  const model = { provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-7", name: "Opus" };
-  const modelInput = "missing,anthropic/claude-opus-4-7:low:fast";
+  const model = { provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-8", name: "Opus" };
+  const callerModel = { provider: "fixture", api: "anthropic-messages", id: "caller", name: "Caller" };
+  const modelInput = "fixture/unavailable,anthropic/claude-opus-4-8:low:fast";
   registerAgents(new Map([["rpc-fast", { name: "rpc-fast", description: "test", model: modelInput, extensions: false, discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
   const events = createEventBus();
   const spawn = vi.fn<SpawnCapable["spawn"]>(() => "id");
-  const ctx = { modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model], isUsingOAuth: () => false } };
+  const models = [model, callerModel];
+  const ctx = { modelRegistry: { find: (provider: string, id: string) => models.find((candidate) => candidate.provider === provider && candidate.id === id), getAll: () => models, getAvailable: () => models, isUsingOAuth: () => false } };
   const handle = registerRpcHandlers({ events, pi: {}, getCtx: () => ctx, manager: { spawn, abort: () => true } });
   const reply = vi.fn();
   events.on("subagents:rpc:spawn:reply:fast", reply);
   try {
-    events.emit("subagents:rpc:spawn", { requestId: "fast", type: "rpc-fast", prompt: "go", options: { model: "missing/override" } });
+    events.emit("subagents:rpc:spawn", { requestId: "fast", type: "rpc-fast", prompt: "go", options: { model: "fixture/caller" } });
     await vi.waitFor(() => expect(reply).toHaveBeenCalled());
     expect(reply).toHaveBeenCalledWith({ success: true, data: { id: "id" } });
     expect(spawn.mock.calls[0]?.[4]).toMatchObject({ model, selectedModel: { model, modelInput, thinkingLevel: "low", fast: true } });

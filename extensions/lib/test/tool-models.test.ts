@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -94,17 +94,35 @@ describe("tool model config", () => {
 		expect(config.diagnostics).toEqual([]);
 	});
 
-	it("keeps the installed tool model chains resolvable and wires smart guard", () => {
-		const installed = JSON.parse(readFileSync(join(process.cwd(), "tool_models.json"), "utf8"));
-
-		expect(installed.roles["summary.session"].split(",")[0]).toBe("openai-codex/gpt-5.6-luna");
-		expect(installed.roles.commit.split(",")[0]).toBe("openai-codex/gpt-5.6-luna");
-		expect(installed.roles["guard.tool"]).toBe(GUARD_CHAIN);
-		expect(installed.tools).toEqual({
-			"smart-sessions.summary": { role: "summary.session" },
-			"boomerang.commit": { role: "commit" },
-			"smart-tool-guards.classifier": { role: "guard.tool" },
+	it("resolves configured role chains through known tool wiring", () => {
+		writeJson(join(agentDir, "tool_models.json"), {
+			version: 1,
+			roles: {
+				"summary.session": "fixture/missing-summary,fixture/summary:low:fast",
+				commit: "fixture/missing-commit,fixture/commit:medium",
+				"guard.tool": "fixture/missing-guard,fixture/guard:high",
+			},
 		});
+		const registry = makeRegistry([
+			{ provider: "fixture", id: "summary" },
+			{ provider: "fixture", id: "commit" },
+			{ provider: "fixture", id: "guard" },
+		]);
+		const config = loadToolModelsConfig(cwd);
+		const expectations = [
+			{ tool: "smart-sessions.summary", role: "summary.session", id: "summary", thinkingLevel: "low", fast: true },
+			{ tool: "boomerang.commit", role: "commit", id: "commit", thinkingLevel: "medium" },
+			{ tool: "smart-tool-guards.classifier", role: "guard.tool", id: "guard", thinkingLevel: "high" },
+		];
+		for (const { tool, role, id, ...metadata } of expectations) {
+			const selection = getToolModelSelection(config, tool);
+			expect(selection).toMatchObject({ toolKey: tool, role, source: "global" });
+			expect(resolveToolModelSelection(selection, registry)).toEqual({
+				model: { provider: "fixture", id, name: id },
+				...metadata,
+			});
+		}
+		expect(config.diagnostics).toEqual([]);
 	});
 
 	it("lets project config override global config", () => {

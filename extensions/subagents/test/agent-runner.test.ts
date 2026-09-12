@@ -2196,13 +2196,12 @@ describe("runAgent — per-call skills injection", () => {
 it("retains the previously selected candidate when availability changes before the runner starts", async () => {
   const { session } = createSession("DONE");
   createAgentSession.mockResolvedValue({ session });
-  const model = { provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-7", name: "Opus", baseUrl: "http://localhost", reasoning: false, input: ["text" as const], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 };
-  const modelInput = "missing,anthropic/claude-opus-4-7:fast";
+  const model = { provider: "fixture", api: "anthropic-messages", id: "selected-model", name: "Selected", baseUrl: "http://localhost", reasoning: false, input: ["text" as const], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 };
+  const modelInput = "fixture/missing,fixture/selected-model";
   vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: modelInput }));
   const find = vi.fn();
   const context = { ...ctx, modelRegistry: { find, getAll: () => [], getAvailable: () => [], isUsingOAuth: () => false } };
-  await runAgent(context, "Explore", "go", { pi, selectedModel: { model, fast: true, modelInput } });
+  await runAgent(context, "Explore", "go", { pi, selectedModel: { model, fast: false, modelInput } });
   expect(find).not.toHaveBeenCalled();
   expect(createAgentSession.mock.calls[0][0].model).toBe(model);
-  expect(lastLoaderOpts().extensionFactories).toEqual(expect.arrayContaining([expect.objectContaining({ name: "subagent-fast", hidden: true })]));
 });

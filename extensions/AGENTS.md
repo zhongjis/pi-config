@@ -30,6 +30,8 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 
 ## Verification
 
+- Tests MUST protect mechanics and contracts, not prompt prose or mutable personal model choices; controlled string fixtures MAY exercise those contracts.
+
 - From repository root: `pnpm test:extensions` runs shared unit coverage.
 - Focused checks: `pnpm exec vitest run --project unit <path>`; use an existing test file or directory.
 - [Root Vitest config](../vitest.config.ts) owns project selection and exclusions; [package scripts](../package.json) own common commands.
