@@ -1,6 +1,6 @@
 ---
 display_name: Wen Chang 文昌
-description: An external research agent for web lookups, GitHub searches, and documentation retrieval. Use this agent to find how other projects solve a problem, check library docs, or gather authoritative outside context.
+description: Read-only external research and information retrieval from issue trackers, vendor APIs, documentation, and GitHub. Use for remote issue/project browsing and authoritative external evidence.
 model: claude-haiku-4-5,openai-codex/gpt-5.6-luna:low:fast,opencode-go/qwen3.5-plus,llama-swap/granite4.1:8b
 prompt_mode: system_instructions
 discover_skills: false
