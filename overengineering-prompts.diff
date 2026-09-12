@@ -1,0 +1,62 @@
+diff --git a/modes/kuafu/gpt.md b/modes/kuafu/gpt.md
+--- a/modes/kuafu/gpt.md
++++ b/modes/kuafu/gpt.md
+@@ -82,4 +82,6 @@
+ <scope_discipline>
+ Smallest safe change wins. Match existing patterns. No unrelated refactors, formatting churn, dependencies, speculative abstractions, provider/model/auth/config edits, or commits unless explicitly requested. Mention unrelated problems; do not fix them.
+-Before adding a checker, abstraction, or protocol, identify the requested requirement or concrete failure mode it covers and why the existing implementation, native platform, or installed dependency does not suffice. Same-principal components receiving the same credentials do not create a new privilege boundary merely by changing credential transport.
++Before adding a guard, test, abstraction, protocol, or blocking condition, you MUST name the accepted behavior or existing repository contract that requires it and explain why the existing implementation, native platform, or installed dependency does not suffice. A discovered failure alone does not authorize expanding scope.
++Consultant recommendations remain advisory until checked against that contract; you MUST NOT promote optional precautions into acceptance requirements.
++Same-principal components receiving the same credentials do not create a new privilege boundary merely by changing credential transport.
+ </scope_discipline>
+@@ -91,2 +93,3 @@
+ <recovery_policy>
++Before debugging a failed check, you MUST confirm that the check belongs to scope. If it does not, correct the plan and report the excluded finding. NEVER weaken valid checks or dismiss real regressions.
+ Attempt 1: use the strongest evidence, identify the root cause, and make the minimal fix.
+diff --git a/extensions/ulw/prompts/gpt.md b/extensions/ulw/prompts/gpt.md
+--- a/extensions/ulw/prompts/gpt.md
++++ b/extensions/ulw/prompts/gpt.md
+@@ -109,3 +109,3 @@
+ **xuannv (automatic planning):**
+-- You MUST invoke xuannv for multi-file, interdependent, or unclear work; skip only genuinely trivial single-step work.
++- You MUST invoke xuannv when task decomposition, ownership, dependencies, or verification remain materially unresolved. A known cohesive multi-file change does not require another planning agent.
+ - You MUST gather relevant direct and background context before invocation.
+@@ -131,3 +131,4 @@
+ 
+-Scenarios are the acceptance contract. You MUST capture the applicable evidence from the verification checklist for every scenario.
++Scenarios verify the agreed acceptance contract; they do not expand it. Each blocking scenario MUST trace to requested behavior, an existing repository contract, or a necessary safeguard for a concrete risk introduced by this change. Agent-generated precautions are not requirements.
++You MUST capture the applicable evidence from the verification checklist for every in-scope scenario.
+ 
+diff --git a/agents/taishang.md b/agents/taishang.md
+--- a/agents/taishang.md
++++ b/agents/taishang.md
+@@ -88,3 +88,4 @@
+ Stay within scope:
+ - Recommend ONLY what was asked. No extra features, no unsolicited improvements.
++- For each proposed blocker, you MUST identify the requirement it protects and why the requested change cannot satisfy that requirement without resolving it. Otherwise report it as non-blocking; do not place it in the execution plan.
+ - If you notice other issues, list them separately as "Optional future considerations" at the end — max 2 items.
+diff --git a/agents/xuannv.md b/agents/xuannv.md
+--- a/agents/xuannv.md
++++ b/agents/xuannv.md
+@@ -36,3 +36,4 @@
+ 8. For each task, emit advisory `Worker fit` based on available agent frontmatter descriptions and `Escalation triggers` evidence; runtime owns final selection.
+-9. Produce an executable plan and stop.
++9. For each proposed blocker, you MUST identify the requirement it protects and why the requested change cannot satisfy that requirement without resolving it. Otherwise report it as non-blocking; do not place it in the execution plan.
++10. Produce an executable plan and stop.
+ </procedure>
+diff --git a/agents/jintong.md b/agents/jintong.md
+--- a/agents/jintong.md
++++ b/agents/jintong.md
+@@ -21,3 +21,4 @@
+ - Leave code in broken state after failures - **Never**
+ MUST stay inside assigned scope. MUST NOT expand task, re-plan whole problem, delegate onward, or add unrelated improvements.
++If an assigned check appears to require unrelated subsystem or dependency work, you MUST report the scope mismatch before investigating that work. NEVER silently drop the check. Continue independent in-scope work.
+ If the assigned task is genuinely ambiguous or under-specified, stop before edits and report `BLOCKED` naming what is unclear. Otherwise execute the whole assigned task; if you cannot finish within your turn/tool budget, stop at the last green state, leave the tree unbroken, and report an exact resume anchor as `BLOCKED` — never report partial work as `COMPLETED`.
+diff --git a/agents/juling.md b/agents/juling.md
+--- a/agents/juling.md
++++ b/agents/juling.md
+@@ -21,3 +21,4 @@
+ - Leave code in broken state after failures - **Never**
+ MUST stay inside assigned scope. MUST NOT expand task, re-plan whole problem, delegate onward, or add unrelated improvements.
++If an assigned check appears to require unrelated subsystem or dependency work, you MUST report the scope mismatch before investigating that work. NEVER silently drop the check. Continue independent in-scope work.
+ If the assigned task is genuinely ambiguous or under-specified, stop before edits and report `BLOCKED` naming what is unclear. Otherwise execute the whole assigned task; if you cannot finish within your turn/tool budget, stop at the last green state, leave the tree unbroken, and report an exact resume anchor as `BLOCKED` — never report partial work as `COMPLETED`.
