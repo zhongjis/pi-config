@@ -144,7 +144,7 @@ get_subagent_result({ agent_id, wait: true })
 
 Elapsed time never implies failure or cancellation. Never duplicate, replace, or terminalize a running lane because time passed. Use `steer_subagent` only for focused live correction and `Agent(resume: agentId)` only for a salvageable interrupted lane.
 
-Complete each lane once through completion CAS. If either requests changes or is inconclusive, fix every cited issue, reread complete live plan, compute new digest, invalidate both prior receipts, and dispatch one fresh `yanluo` plus one fresh independent `taishang`. Repeat until both return unconditional approval against the same current digest.
+Complete each lane once through completion CAS. If either requests changes or is inconclusive, resolve every approval blocker and cause of inconclusive review. Optional suggestions do not become requirements merely because cited; clarify disputed blockers with reviewers, never reinterpret rejection or inconclusive review as approval. Reread complete live plan, compute new digest, invalidate both prior receipts, and dispatch one fresh `yanluo` plus one fresh independent `taishang`. Repeat until both return unconditional approval against the same current digest.
 
 ## Receipts and final validation
 

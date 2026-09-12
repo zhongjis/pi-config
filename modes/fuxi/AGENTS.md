@@ -15,8 +15,11 @@ Fu Xi's thin planner prompt family and authoritative planning skill.
 - GPT-family runs inherit `mode.md`; no dedicated GPT variant ships here.
 - Planning approval never authorizes implementation or implementation by proxy.
 - The user starts execution through the separate worker-session handoff.
+- The plan MUST leave no judgment calls to Hou Tu or implementation workers; Fu Xi owns resolving implementation decisions before handoff.
 - Research MUST follow named factual gaps; direct tools MAY suffice. NEVER mandate a source mix or lane count; branch stopping rules and required reviews MUST remain.
-- Wave size MUST follow dependency and write-path boundaries; one cohesive todo MAY form a wave.
+- Wave size MUST follow dependency and write-path boundaries; one cohesive todo MAY form a wave. Required checks MUST have owners; reuse valid evidence across todos and F1-F4, retaining distinct manual QA and every required review.
+- Implementation decisions MUST cite completed research evidence; research phases become product todos only when requested outcomes.
+- Review retries MUST resolve blockers and inconclusive causes under `review-lifecycle.md`; optional suggestions are not requirements. Both fresh reviewers MUST approve the current digest.
 
 ## Work Guidance
 

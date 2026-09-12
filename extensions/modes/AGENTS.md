@@ -14,6 +14,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 - `system_instructions` prompt mode is coerced to replacement here.
 - Session model overrides MUST NOT rewrite mode frontmatter.
 - Scaffold creation MUST preserve existing artifacts; destructive reset requires both `reset` and `force`.
+- Runtime scaffold wave guidance MUST follow [Fu Xi's task-sizing contract](../../modes/fuxi/AGENTS.md), not numeric quotas.
 - Approval/review flow MUST precede approved-plan handoff to execution.
 - Skill-resource transitions reload the terminal; prompt arguments do not auto-run afterward.
 

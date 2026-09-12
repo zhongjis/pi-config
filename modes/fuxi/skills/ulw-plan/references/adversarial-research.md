@@ -16,7 +16,7 @@ Run phases in order. Each phase may use multiple named, phase-specific waves whe
 2. **Verify:** route each collect lane to an independent falsification pass; return `verdict`, `evidence`, and `confidence`.
 3. **Design:** convert only verified facts into implementation waves, dependency matrix, acceptance criteria, and QA artifacts.
 4. **Adversarial:** reject designs that can pass through worker self-report, grep-only QA, stale generated state, or missing done-claim proof.
-5. **Synthesize:** produce one evidence-backed plan whose todos preserve the collect → verify → design → adversarial chain.
+5. **Synthesize:** produce one evidence-backed plan whose implementation decisions cite the completed collect → verify → design → adversarial evidence. Research phases are not product todos unless executing them is itself a requested outcome.
 
 ## Evidence safeguards
 

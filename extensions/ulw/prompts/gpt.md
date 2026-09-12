@@ -127,6 +127,8 @@ You MUST define scenarios covering **happy path**, **edge** (boundary / empty / 
 - The real surface and artifact that prove it.
 - The test file and test ID, or justified TDD exemption.
 
+You MUST choose representative cases for distinct failure modes. Use cross-product matrices only for concrete interaction risks not covered by those cases. A mocked platform result proves caller handling, not the platform behavior that produced it. Existing assertions, command logs, and surface artifacts MAY satisfy multiple scenario evidence paths; do not build per-scenario reporting machinery unless a required observable cannot otherwise be captured.
+
 Scenarios are the acceptance contract. You MUST capture the applicable evidence from the verification checklist for every scenario.
 
 ## TDD (MANDATORY on every production change)

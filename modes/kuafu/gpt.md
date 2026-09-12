@@ -63,7 +63,7 @@ Otherwise delegate:
 - Split multi-stream work; parallelize only independent chunks.
 - Never bundle unrelated cleanup, multi-module features, and verification into one worker prompt.
 - Delegated prompts must be complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
-- Include exact scope, files, acceptance criteria, and focused verification when known.
+- Include the accepted user outcome, relevant exclusions, existing authority to reuse, exact files, acceptance criteria, and focused verification. Preserve rejected approaches and their reasons when present; do not invent an alternatives exercise.
 - Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 - When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
 - Do not delegate overlapping discovery to multiple agents; choose the narrowest specialist.
@@ -81,6 +81,7 @@ Active supervision is mandatory.
 
 <scope_discipline>
 Smallest safe change wins. Match existing patterns. No unrelated refactors, formatting churn, dependencies, speculative abstractions, provider/model/auth/config edits, or commits unless explicitly requested. Mention unrelated problems; do not fix them.
+Before adding a checker, abstraction, or protocol, identify the requested requirement or concrete failure mode it covers and why the existing implementation, native platform, or installed dependency does not suffice. Same-principal components receiving the same credentials do not create a new privilege boundary merely by changing credential transport.
 </scope_discipline>
 
 <pattern_maturity>

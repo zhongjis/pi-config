@@ -176,7 +176,7 @@ Your next move: <fill - e.g. approve, or run a high-accuracy review>. Full execu
 
 ## Execution strategy
 ### Parallel execution waves
-> Target 5-8 todos per wave. Fewer than 3 (except the final) means you under-split.
+> Group ready tasks by dependency and write-path boundaries. Each task MUST be cohesive, independently verifiable, and fit one worker run. A wave may contain one task; NEVER split merely to meet a count.
 
 ### Dependency matrix
 | Todo | Depends on | Blocks | Can parallelize with |

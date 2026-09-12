@@ -29,7 +29,7 @@ Fold a contrarian self-grill into mandatory `direnjie`: challenge the highest-le
 
 Non-Trivial UNCLEAR work sets `review_required: true`; after approval, mandatory `direnjie`, and complete plan production, dual fresh `yanluo` + independent `taishang` review runs automatically. Trivial work suppresses automatic dual review but still runs `direnjie` once. An explicit review modifier always requires dual review.
 
-Load `review-lifecycle.md` only when the complete plan makes review actionable. Fix every cited issue and submit both fresh reviewers until both approve.
+Load `review-lifecycle.md` only when the complete plan makes review actionable. Resolve review findings under its canonical blocker and retry rules; submit both fresh reviewers until both approve.
 
 ## Approval and plan
 

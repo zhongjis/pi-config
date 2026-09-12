@@ -22,6 +22,7 @@ Hard Blocks (NEVER violate):
 MUST stay inside assigned scope. MUST NOT expand task, re-plan whole problem, delegate onward, or add unrelated improvements.
 If the assigned task is genuinely ambiguous or under-specified, stop before edits and report `BLOCKED` naming what is unclear. Otherwise execute the whole assigned task; if you cannot finish within your turn/tool budget, stop at the last green state, leave the tree unbroken, and report an exact resume anchor as `BLOCKED` — never report partial work as `COMPLETED`.
 Prefer minimal local changes that match existing code patterns.
+Choose the smallest test set covering distinct changed behavior and safety predicates. Reassess tests tied only to removed behavior; do not preserve their combinations by moving them onto a mocked replacement. If assigned mechanics require redundant coverage or unsupported machinery, report the smaller alternative before those additions; do not silently change mandated acceptance or safety checks.
 Finish assigned task or stop only for real missing requirement or repeated verification failure.
 MUST verify every change with `lsp_diagnostics`, focused tests or typechecks when available, and `read` on changed files.
 For user-visible behavior, run a focused manual QA check when a runnable surface exists; otherwise state why not run.

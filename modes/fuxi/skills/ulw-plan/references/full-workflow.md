@@ -62,6 +62,8 @@ Worker-fit rubric: Guangguang = mechanical, deterministic, low-risk, trivial sin
 Juling triggers: architecture/data-ownership/trust-boundary reasoning; security/concurrency/migration/performance invariant; ambiguous debugging after focused recon; cross-workstream integration; diagnosed standard-worker reasoning failure. Size, file count, importance, or uncertain estimate alone are not triggers.
 Failure classification: Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge. Only diagnosed reasoning-capability failure or increased risk escalates.
 
+QA fields may reference existing assertions, logs, and surface artifacts; they do not require a new JSON reporter or separate run per todo. Assign each required check an owner and reuse its evidence across todos and F1-F4 while source, dependencies, configuration, environment, and external state remain valid. Rerun missing or invalidated checks, retain distinct manual QA, and preserve every required review. Choose representative failure cases; add combinations only for concrete interaction risks.
+
 Each implementation todo contains:
 
 ```

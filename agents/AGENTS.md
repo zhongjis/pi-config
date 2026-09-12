@@ -19,7 +19,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 ## Work Guidance
 
 - You SHOULD keep routing descriptions specific to worker capability.
-- You MUST preserve orchestrator-owned verification and code-quality review.
+- You MUST preserve orchestrator-owned verification and code-quality review; Jintong SHOULD minimize redundant test mechanics and report smaller alternatives without weakening mandated acceptance or safety checks.
 
 ## Verification
 
