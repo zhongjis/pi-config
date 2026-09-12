@@ -5,7 +5,7 @@ Three-mode rendering of assistant thinking blocks in Pi's interactive TUI only: 
 
 - Source: https://github.com/fluxgear/pi-thinking-steps
 - Last synced: v1.0.11 (commit `d0a59a4f394a8b13f58aa84c30e2dc4071b7c2fd`, MIT)
-- Local changes: adapted from the `@mariozechner/pi-*` (0.69.0-era) API to the `@earendil-works/pi-*` 0.80.x runtime. The internal-renderer patch no longer resolves Pi internals by filesystem path (dead on the Bun binary); it bare-imports the runtime-aliased `AssistantMessageComponent` and sources the theme from `ctx.ui.theme`. See `AGENTS.md` → `## Local Tweaks`.
+- Local changes: adapted from the `@mariozechner/pi-*` (0.69.0-era) API to the `@earendil-works/pi-*` 0.80.x runtime. The internal-renderer patch no longer resolves Pi internals by filesystem path (dead on the Bun binary); it bare-imports the runtime-aliased `AssistantMessageComponent` and sources the theme from `ctx.ui.theme`. The Pi 0.85.1 compatibility patch preserves assistant Markdown transformers (including native Mermaid) and streaming state alongside the custom thinking display.
 
 ## Commands
 

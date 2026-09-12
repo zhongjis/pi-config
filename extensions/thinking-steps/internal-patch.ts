@@ -1,12 +1,12 @@
 import type { AssistantMessage, ThinkingContent } from "@earendil-works/pi-ai";
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
-import { Box, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { Box, Markdown, Spacer, Text, type MarkdownTheme } from "@earendil-works/pi-tui";
 import { decrementPatchRefCount, getPatchCleanup, getPatchInstallPromise, incrementPatchRefCount, resolveThinkingMessageScope, setPatchCleanup, setPatchInstallPromise } from "./state.js";
 import { ThinkingStepsComponent } from "./render.js";
 import type { ThinkingSourceBlock, ThinkingThemeLike } from "./types.js";
 
 interface AssistantMessageComponentPrototype {
-	updateContent(message: AssistantMessage): void;
+	updateContent(message: AssistantMessage, isStreaming?: boolean): void;
 	setHideThinkingBlock(hide: boolean): void;
 	setHiddenThinkingLabel(label: string): void;
 	contentContainer: {
@@ -15,7 +15,9 @@ interface AssistantMessageComponentPrototype {
 	};
 	lastMessage?: AssistantMessage;
 	hideThinkingBlock: boolean;
-	markdownTheme: unknown;
+	markdownTheme: MarkdownTheme;
+	isStreaming?: boolean;
+	markdownTransformers?: Array<(markdown: string, context: { messageType: "assistant"; isStreaming: boolean; availableWidth: number }) => unknown>;
 	hiddenThinkingLabel: string;
 	outputPad: number;
 	hasToolCalls: boolean;
@@ -140,7 +142,7 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 	): void => {
 		try {
 			withOriginalInstanceMethods(instance, () => {
-				originalUpdateContent.call(instance, message);
+				originalUpdateContent.call(instance, message, instance.isStreaming);
 			});
 		} catch (fallbackError) {
 			throw new Error(fallbackErrorMessage, {
@@ -194,8 +196,9 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 		}
 	};
 
-	const patchedUpdateContent = function patchedUpdateContent(this: AssistantMessageComponentPrototype, message: AssistantMessage): void {
+	const patchedUpdateContent = function patchedUpdateContent(this: AssistantMessageComponentPrototype, message: AssistantMessage, isStreaming = this.isStreaming ?? false): void {
 		this.lastMessage = message;
+		this.isStreaming = isStreaming;
 		if (!hasPatchableContentContainer(this)) {
 			fallbackToOriginalUpdateContent(this, message, "updateContent");
 			return;
@@ -219,7 +222,19 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 
 			for (const content of message.content) {
 				if (content.type === "text" && content.text.trim()) {
-					this.contentContainer.addChild(new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme as any));
+					// Pi's transformer helper is private; preserve its ordered, fault-isolated pipeline.
+					const options: NonNullable<ConstructorParameters<typeof Markdown>[5]> & { transform: (markdown: string, availableWidth: number) => string } = {
+						transform: (markdown: string, availableWidth: number): string => {
+							for (const transformer of this.markdownTransformers ?? []) {
+								try {
+									const transformed = transformer(markdown, { messageType: "assistant", isStreaming, availableWidth });
+									if (typeof transformed === "string") markdown = transformed;
+								} catch { /* Match native Pi: a failed transformer leaves the previous text intact. */ }
+							}
+							return markdown;
+						},
+					};
+					this.contentContainer.addChild(new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme, undefined, options));
 					continue;
 				}
 
