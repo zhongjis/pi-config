@@ -14,7 +14,7 @@ import { CustomEditor, type AgentEndEvent, type ExtensionAPI, type ExtensionCont
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { isTui } from "../lib/mode.js";
-import { resolveModel } from "../lib/model.js";
+import { resolveModel } from "../lib/model-selection.js";
 import { renderBoomerangCall, renderBoomerangResult } from "./render.js";
 import { registerCommitCommand, type BoomerangTaskSnapshot } from "./commit.js";
 

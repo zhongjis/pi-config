@@ -22,7 +22,7 @@ Each surface decides a different question. They compose; none replaces another.
 
 | Surface | Decides | Mechanism | Source |
 |---|---|---|---|
-| **Shared library** | How a spec string resolves to a model | `parseModelChain` + `resolveModel` + `resolveFirstAvailable` | [`extensions/lib/model.ts`](../../extensions/lib/model.ts) |
+| **Shared library** | How a spec string resolves to a model | `parseModelChain` + `resolveModel` + `resolveFirstAvailable` | [`extensions/lib/model-selection.ts`](../../extensions/lib/model-selection.ts) |
 | **Profiles** | Which models are visible at all | Patches `registry.getAvailable()` to a provider allowlist; force-switches the session model | [`extensions/profiles/index.ts`](../../extensions/profiles/index.ts) |
 | **Modes** | Which model the main session uses per mode | Applies mode-frontmatter `model:` through the shared library | [`extensions/modes/src/`](../../extensions/modes/src/) |
 | **Subagents** | Which model each agent runs on | Resolves the `model` param or agent-config chain, falling back to the parent model | [`extensions/subagents/src/`](../../extensions/subagents/src/) |
@@ -46,7 +46,7 @@ level are optional. A comma joins specs into a chain.
 gpt-5.4-mini, claude-haiku-4-5, opencode-go/qwen3.5-plus:high, llama-swap/qwen2.5-coder:7b
 ```
 
-Two functions parse this ([`model.ts:41-62`](../../extensions/lib/model.ts)):
+Two functions parse this ([`model-selection.ts:41-62`](../../extensions/lib/model-selection.ts)):
 
 - **`parseModelPattern(segment)`** splits the trailing `:level` suffix when the
   suffix is a valid thinking level. It uses `lastIndexOf(":")`, so a model id
@@ -61,7 +61,7 @@ Two functions parse this ([`model.ts:41-62`](../../extensions/lib/model.ts)):
 ## Resolution engine
 
 `resolveModel(input, registry)` turns one spec into a model instance, or returns
-an error string ([`model.ts:77-141`](../../extensions/lib/model.ts)). It reads from
+an error string ([`model-selection.ts:77-141`](../../extensions/lib/model-selection.ts)). It reads from
 `registry.getAvailable?.() ?? registry.getAll()`, so it sees only authed,
 profile-allowed models.
 
@@ -88,7 +88,7 @@ register that id, the fuzzy pass may pick the wrong one. Prefix the provider
 
 **`resolveFirstAvailable(candidates, registry)`** walks a parsed chain and
 returns the first candidate that resolves, with its thinking level
-([`model.ts:147-158`](../../extensions/lib/model.ts)). It returns `undefined` when
+([`model-selection.ts:147-158`](../../extensions/lib/model-selection.ts)). It returns `undefined` when
 the whole chain fails. This is the core fallback primitive — every chain-aware
 caller uses it.
 

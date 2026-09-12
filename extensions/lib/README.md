@@ -8,7 +8,7 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 |------|------|
 | `active-tools.ts` | Shared active-tool allowlist policy for built-ins and extension tools |
 | `agent-frontmatter.ts` | Shared agent/mode frontmatter parser (`builtin_tools`, `extension_tools`, delegation, model) |
-| `model.ts` | Parse and resolve model spec strings (`provider/model:level,fallback`) |
+| `model-selection.ts` | Parse and resolve model spec strings (`provider/model:level,fallback`) |
 | `thinking-level.ts` | `ThinkingLevel` type, validation, normalization |
 | `clipboard.ts` | System clipboard read/write |
 | `logger.ts` | Debug logging with `--debug` flag support |

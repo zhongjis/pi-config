@@ -34,7 +34,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   };
 });
 
-vi.mock("../../lib/model.js", () => ({
+vi.mock("../../lib/model-selection.js", () => ({
   parseModelChain: vi.fn(() => []),
   resolveFirstAvailable: vi.fn(() => ({
     model: mocks.model,

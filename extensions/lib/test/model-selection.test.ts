@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseModelChain, resolveFirstAvailable, resolveModel, type ModelRegistry } from "../model.js";
+import { parseModelChain, resolveFirstAvailable, resolveModel, type ModelRegistry } from "../model-selection.js";
 
 const MODELS = [
   { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: "anthropic" },

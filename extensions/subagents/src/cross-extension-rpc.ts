@@ -9,7 +9,7 @@
  *   error   → { success: false, error: string }
  */
 
-import type { ModelRegistry } from "../../lib/model.js";
+import type { ModelRegistry } from "../../lib/model-selection.js";
 import { getAvailableTypes } from "./agent-types.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { resolveAgentModel } from "./model-resolution.js";

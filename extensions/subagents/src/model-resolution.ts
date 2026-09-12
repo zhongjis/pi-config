@@ -1,5 +1,5 @@
 import type { Model } from "@earendil-works/pi-ai";
-import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../lib/model.js";
+import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../lib/model-selection.js";
 import type { ThinkingLevel } from "../../lib/thinking-level.js";
 
 /** Resolve configuration once; availability fallback never retries execution. */

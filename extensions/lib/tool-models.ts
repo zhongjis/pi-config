@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { parseModelChain, resolveFirstAvailable } from "./model.js";
-import type { ModelCandidate, ModelRegistry } from "./model.js";
+import { parseModelChain, resolveFirstAvailable } from "./model-selection.js";
+import type { ModelCandidate, ModelRegistry } from "./model-selection.js";
 
 export interface ToolModelRuleFile {
 	role?: string | null;

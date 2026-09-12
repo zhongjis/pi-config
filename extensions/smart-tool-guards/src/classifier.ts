@@ -2,7 +2,7 @@ import { complete } from "@earendil-works/pi-ai/compat";
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveToolModelCandidates } from "../../lib/tool-models.js";
-import type { ModelCandidate } from "../../lib/model.js";
+import type { ModelCandidate } from "../../lib/model-selection.js";
 
 const CLASSIFIER_TOOL_KEY = "smart-tool-guards.classifier";
 const CLASSIFIER_DEADLINE_MS = 5_000;

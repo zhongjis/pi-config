@@ -5,8 +5,8 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { Model } from "@earendil-works/pi-ai";
 import { DEFAULT_COMPACTION_SETTINGS } from "@earendil-works/pi-coding-agent";
-import { resolveModel } from "../lib/model.js";
-import type { ModelCandidate, ModelRegistry } from "../lib/model.js";
+import { resolveModel } from "../lib/model-selection.js";
+import type { ModelCandidate, ModelRegistry } from "../lib/model-selection.js";
 import { getToolModelSelection, loadToolModelsConfig } from "../lib/tool-models.js";
 
 const COMMIT_TOOL_KEY = "boomerang.commit";

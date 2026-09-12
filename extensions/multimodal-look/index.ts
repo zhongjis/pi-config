@@ -14,7 +14,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
-import { parseModelChain, resolveFirstAvailable } from "../lib/model.js";
+import { parseModelChain, resolveFirstAvailable } from "../lib/model-selection.js";
 import {
   extractToolText,
   firstMeaningfulLine,

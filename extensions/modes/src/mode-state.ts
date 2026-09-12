@@ -3,7 +3,7 @@ import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/ac
 import { MODES, MODE_COLORS, MODE_META, RESET, SKILL_GATED_MODES } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
 import { getModePromptSource } from "../../lib/model-family.js";
-import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model.js";
+import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model-selection.js";
 import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource, VersionedDelegationPolicy } from "./types.js";
 
 function colored(mode: Mode, text: string): string {

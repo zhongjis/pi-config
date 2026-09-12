@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { resolveModel } from "../lib/model.js";
+import { resolveModel } from "../lib/model-selection.js";
 
 // ---------------------------------------------------------------------------
 // Types
