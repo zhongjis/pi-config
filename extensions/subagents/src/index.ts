@@ -1126,6 +1126,7 @@ Terse command-style prompts produce shallow, generic work.
           id = manager.spawn(pi, ctx, subagentType, params.prompt, {
             description: params.description,
             model,
+            selectedModel: { ...selected, modelInput: resolvedConfig.modelInput },
             maxTurns: effectiveMaxTurns,
             isolated,
             inheritContext,
@@ -1255,6 +1256,7 @@ Terse command-style prompts produce shallow, generic work.
         const fgResult = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
           description: params.description,
           model,
+          selectedModel: { ...selected, modelInput: resolvedConfig.modelInput },
           maxTurns: effectiveMaxTurns,
           isolated,
           inheritContext,

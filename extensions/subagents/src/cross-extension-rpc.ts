@@ -10,7 +10,7 @@
  */
 
 import type { ModelRegistry } from "../../lib/model-selection.js";
-import { getAvailableTypes } from "./agent-types.js";
+import { getAgentConfig, getAvailableTypes } from "./agent-types.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { resolveAgentModel } from "./model-resolution.js";
 
@@ -110,17 +110,19 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
       // agent's auth lookup doesn't crash with "No API key found for
       // undefined".
       let normalizedOptions = options ?? {};
-      if (typeof normalizedOptions.model === "string") {
+      const modelInput = getAgentConfig(type)?.model ?? (typeof normalizedOptions.model === "string" ? normalizedOptions.model : undefined);
+      if (modelInput !== undefined) {
         const registry = (ctx as { modelRegistry?: ModelRegistry }).modelRegistry;
         if (!registry) {
           throw new Error(
             `Model override "${normalizedOptions.model}" provided but ctx.modelRegistry is unavailable`,
           );
         }
-        const selected = resolveAgentModel(normalizedOptions.model, registry);
+        const selected = resolveAgentModel(modelInput, registry);
         normalizedOptions = {
           ...normalizedOptions,
           model: selected.model,
+          selectedModel: { ...selected, modelInput },
           ...(normalizedOptions.thinkingLevel == null && selected.thinkingLevel != null
             ? { thinkingLevel: selected.thinkingLevel } : {}),
         };

@@ -13,6 +13,7 @@ export * from "./utils.js";
 export * from "./ux.js";
 export * from "./mode.js";
 export * from "./model-selection.js";
+export * from "./fast.js";
 export * from "./model-family.js";
 export * from "./thinking-level.js";
 export * from "./active-tools.js";

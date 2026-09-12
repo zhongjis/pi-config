@@ -15,6 +15,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 
 - You MUST preserve behavior across localized refactors and extension boundaries.
 - You MUST follow [event/RPC conventions](CONVENTIONS.md) for channel names, envelopes, and listener cleanup.
+- [Fast](fast/README.md) owns interactive command/status telemetry; [lib](lib/README.md#fast-request-helpers), [modes](modes/AGENTS.md), and [subagents](subagents/AGENTS.md) own recipes and policy contracts.
 - Blocking model-callable UI tools MUST emit `user-prompted` before their first prompt; durable waiting state MUST persist separately.
 - Vendored changes MUST preserve provenance and LICENSE; local deltas belong with the owning extension's documentation.
 - `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display.

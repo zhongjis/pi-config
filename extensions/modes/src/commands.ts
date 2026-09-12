@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { MODE_COLORS, MODES, MODE_ALIASES, MODE_META, RESET } from "./constants.js";
-import { resolveModelFromStr, type ModeStateManager } from "./mode-state.js";
+import type { ModeStateManager } from "./mode-state.js";
+import { parseModelChain, resolveFirstAvailable } from "../../lib/model-selection.js";
 import type { Mode } from "./types.js";
 
 function colored(mode: Mode, text: string): string {
@@ -93,24 +94,22 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 			}
 
 			const arg = args.trim();
-			if (arg === "--reset") {
-				state.modelOverride = undefined;
-				await state.applyMode(ctx);
-				state.persistState();
-				ctx.ui.notify("Model override cleared", "success" as never);
-				return;
-			}
-
-			const resolved = resolveModelFromStr(arg, ctx.modelRegistry);
+			const resolved = arg === "--reset" || resolveFirstAvailable(parseModelChain(arg), ctx.modelRegistry);
 			if (!resolved) {
 				ctx.ui.notify(`Model not available: "${arg}"`, "error");
 				return;
 			}
 
-			state.modelOverride = arg;
-			await state.applyMode(ctx);
+			const previous = state.modelOverride;
+			state.modelOverride = arg === "--reset" ? undefined : arg;
+			try {
+				await state.applyMode(ctx, state.modelOverride !== previous);
+			} catch (error) {
+				state.modelOverride = previous;
+				throw error;
+			}
 			state.persistState();
-			ctx.ui.notify(`Model override set: ${arg}`, "success" as never);
+			ctx.ui.notify(arg === "--reset" ? "Model override cleared" : `Model override set: ${arg}`, "success" as never);
 		},
 	});
 

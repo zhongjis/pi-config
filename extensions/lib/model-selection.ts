@@ -1,7 +1,7 @@
 /**
  * Model spec string parsing and resolution.
  *
- * Handles the `provider/modelId:thinkingLevel,fallback,...` format used in
+ * Handles the `provider/modelId:thinkingLevel:fast,fallback,...` format used in
  * agent frontmatter `model` fields. Shared by extensions/modes and
  * extensions/subagent.
  */
@@ -16,6 +16,7 @@ import { isValidThinkingLevel } from "./thinking-level.js";
 export interface ModelCandidate {
 	model: string;
 	thinkingLevel?: ThinkingLevel;
+	fast?: boolean;
 }
 
 export interface ModelEntry {
@@ -35,18 +36,19 @@ export interface ModelRegistry {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse a single model segment: `"provider/modelId:level"` → `{ model, thinkingLevel }`.
- * The `:level` suffix is optional.
+ * Parse terminal `:fast`, then an optional recognized thinking suffix.
+ * Unknown suffixes and earlier colons remain part of the model ID.
  */
 export function parseModelPattern(segment: string): ModelCandidate {
-	const colonIdx = segment.lastIndexOf(":");
-	if (colonIdx === -1) return { model: segment };
-	const prefix = segment.slice(0, colonIdx);
-	const suffix = segment.slice(colonIdx + 1);
-	if (isValidThinkingLevel(suffix)) {
-		return { model: prefix, thinkingLevel: suffix };
+	const fast = segment.endsWith(":fast");
+	const model = fast ? segment.slice(0, -5) : segment;
+	const candidate: ModelCandidate = fast ? { model, fast: true } : { model };
+	const colonIdx = model.lastIndexOf(":");
+	const suffix = model.slice(colonIdx + 1);
+	if (colonIdx !== -1 && isValidThinkingLevel(suffix)) {
+		return { ...candidate, model: model.slice(0, colonIdx), thinkingLevel: suffix };
 	}
-	return { model: segment };
+	return candidate;
 }
 
 /**
@@ -83,6 +85,7 @@ export function resolveModel(
 	registry: ModelRegistry,
 	preferProviders?: string[],
 ): any | string {
+	if (!input.trim()) return "Model not found: empty model ID.";
 	const all = (registry.getAvailable?.() ?? registry.getAll()) as ModelEntry[];
 	const availableSet = new Set(all.map((m) => `${m.provider}/${m.id}`.toLowerCase()));
 
@@ -175,11 +178,11 @@ export function resolveModel(
 export function resolveFirstAvailable(
 	candidates: ModelCandidate[],
 	registry: ModelRegistry,
-): { model: any; thinkingLevel?: ThinkingLevel } | undefined {
+): { model: ReturnType<ModelRegistry["find"]>; thinkingLevel?: ThinkingLevel; fast?: boolean } | undefined {
 	for (const candidate of candidates) {
 		const result = resolveModel(candidate.model, registry);
 		if (typeof result !== "string") {
-			return { model: result, thinkingLevel: candidate.thinkingLevel };
+			return { model: result, thinkingLevel: candidate.thinkingLevel, ...(candidate.fast === undefined ? {} : { fast: candidate.fast }) };
 		}
 	}
 	return undefined;

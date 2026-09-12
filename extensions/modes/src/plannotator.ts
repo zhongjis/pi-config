@@ -122,7 +122,7 @@ export async function prepareApprovedPlanHandoff(
 			summarize: false,
 			source: "prepareApprovedPlanHandoff",
 		});
-		if (!bridgeResult.success) {
+		if (bridgeResult.success === false) {
 			console.error("[modes/plannotator] Handoff bridge registration failed:", bridgeResult.error);
 		}
 	}

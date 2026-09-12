@@ -24,6 +24,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/agent-manager.ts`, `test/agent-manager.test.ts` | Terminal Agent records retain their in-memory sessions for 30 minutes before timer cleanup | Preserve resumability across long parent verification while keeping retention bounded |
 | `src/model-resolution.ts`, `src/invocation-config.ts`, `src/cross-extension-rpc.ts`, `src/agent-runner.ts` | Ordered available-model chains and thinking precedence; exhausted chains fail; final answers at the soft limit complete without steering; diagnostics do not count as tool uses | Honor configured routing and report actual execution |
 | `src/index.ts`, `src/agent-runner.ts`, `src/tool-rendering.ts`, thinking regression tests | Omitted thinking delegates to the selected-model SDK default; pending configuration becomes actual session metadata | Never inherit parent thinking implicitly or present a pending default as actual |
+| `src/model-resolution.ts`, `src/index.ts`, `src/cross-extension-rpc.ts`, `src/agent-manager.ts`, `src/agent-runner.ts` | Selected `:fast` metadata travels unchanged to an always-retained hidden request policy; no suffix means fixed off, including isolated/resumed children | Frontmatter authority and concurrent registry safety without inheriting parent `/fast` state |
 
 Upstream provenance and public RPC/events remain unchanged. FleetView and Thinking Steps remain unchanged.
 
@@ -235,8 +236,8 @@ All fields are optional — sensible defaults for everything.
 | `description` | filename | Agent description shown in tool listings |
 | `display_name` | — | Display name for UI (e.g. widget, agent list) |
 | `tools` | all 7 | Which tools the agent can call. Built-in names (`read, grep, …`), `*` / `all` (all built-ins), `none`, and `ext:<extension>` / `ext:<extension>/<tool>` selectors for extension tools. See [Tool & extension scoping](#tool--extension-scoping) below |
-| `extensions` | `true` | Which user-configured extensions to load for the agent. `true` (all defaults), `false` (none), or an explicit list: `[mcp, "/abs/path.ts", "*"]`. The hidden hook-only `session-local` runtime remains bound so Agent-tree `local://` paths work. See [Tool & extension scoping](#tool--extension-scoping) below |
-| `exclude_extensions` | — | User-extension denylist applied after `extensions:` — exclude wins except for trusted hook-only `session-local` plumbing. Plain names only (case-insensitive), no paths or `*`. Useful with `extensions: true` to drop one extension (e.g. `pi-notify`) |
+| `extensions` | `true` | Which user-configured extensions to load for the agent. `true` (all defaults), `false` (none), or an explicit list: `[mcp, "/abs/path.ts", "*"]`. Hidden hook-only `session-local` and `subagent-fast` runtimes remain bound for Agent-tree storage and fixed request policy. See [Tool & extension scoping](#tool--extension-scoping) below |
+| `exclude_extensions` | — | User-extension denylist applied after `extensions:` — exclude wins except for trusted hook-only `session-local` and `subagent-fast` plumbing. Plain names only (case-insensitive), no paths or `*`. Useful with `extensions: true` to drop one extension (e.g. `pi-notify`) |
 | `skills` | `true` | Inherit skills from parent. Can be a comma-separated list of skill names to preload (see [Skill Preloading](#skill-preloading) for discovery locations) |
 | `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |
 | `disallowed_tools` | — | Comma-separated tools to deny even if extensions provide them |
@@ -250,10 +251,12 @@ All fields are optional — sensible defaults for everything.
 | `prompt_mode` | `replace` | `replace`: body is the full system prompt (no AGENTS.md / CLAUDE.md inheritance). `append`: body appended to parent's prompt (agent acts as a "parent twin" — inherits parent's AGENTS.md / CLAUDE.md) |
 | `inherit_context` | `false` | Fork parent conversation into agent |
 | `run_in_background` | `false` | Run in background by default |
-| `isolated` | `false` | Hermetic specialist mode: forces user extensions off, disables skills/context, and drops `ext:` selectors. Only built-in tools surface; the hidden hook-only `session-local` runtime remains bound. Distinct from `isolation: worktree` (filesystem) |
+| `isolated` | `false` | Hermetic specialist mode: forces user extensions off, disables skills/context, and drops `ext:` selectors. Only built-in tools surface; hidden hook-only `session-local` and `subagent-fast` runtimes remain bound. Distinct from `isolation: worktree` (filesystem) |
 | `enabled` | `true` | Set to `false` to disable an agent (useful for hiding a default agent per-project) |
 
 Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
+
+Model candidates accept `provider/model[:thinking]:fast`; no suffix means fixed off, never the parent's `/fast` toggle. Resume retains the selected setting. See [child policy contracts](AGENTS.md#local-contracts) for validation/isolation and [shared helpers](../lib/README.md#fast-request-helpers) for strict request mechanics.
 
 Thinking precedence: agent frontmatter → selected model-chain suffix → invocation override → SDK selected-model default. Omission never inherits parent thinking, even when the model is inherited. The installed SDK resolves its native per-model/global/Pi defaults (per-model support depends on SDK version). Before session creation, Agent reports and queued retrieval display `thinking: default (pending)` only when the invocation retains omitted-thinking intent; unknown direct/RPC intent stays unlabelled. Runtime reports replace the pending tag with the session's actual level. Resume retains the existing session level.
 

@@ -1,9 +1,9 @@
 {
   "version": 1,
   "roles": {
-    "summary.session": "openai-codex/gpt-5.6-luna,anthropic/claude-haiku-4-5,gemini-3-flash,qwen3.5-plus",
-    "commit": "openai-codex/gpt-5.6-luna,anthropic/claude-haiku-4-5,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
-    "guard.tool": "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5"
+    "summary.session": "openai-codex/gpt-5.6-luna:medium:fast,anthropic/claude-haiku-4-5,gemini-3-flash,qwen3.5-plus",
+    "commit": "openai-codex/gpt-5.6-luna:medium:fast,anthropic/claude-haiku-4-5,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
+    "guard.tool": "openai-codex/gpt-5.6-luna:low:fast,anthropic/claude-haiku-4-5"
   },
   "tools": {
     "smart-sessions.summary": { "role": "summary.session" },

@@ -12,6 +12,7 @@ import { isAbsolute } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
+import type { SelectedAgentModel } from "./model-resolution.js";
 import type { AgentInvocation, AgentRecord, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage } from "./usage.js";
 
@@ -69,6 +70,7 @@ interface SpawnArgs {
 interface SpawnOptions {
   description: string;
   model?: Model<any>;
+  selectedModel?: SelectedAgentModel;
   maxTurns?: number;
   isolated?: boolean;
   inheritContext?: boolean;
@@ -255,6 +257,7 @@ export class AgentManager {
       pi,
       agentId: id,
       model: options.model,
+      selectedModel: options.selectedModel,
       maxTurns: options.maxTurns,
       isolated: options.isolated,
       inheritContext: options.inheritContext,

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { registerAgents } from "../src/agent-types.js";
 import { type EventBus, PROTOCOL_VERSION, type RpcDeps, registerRpcHandlers, type SpawnCapable } from "../src/cross-extension-rpc.js";
 
 /** Simple in-process event bus for testing. */
@@ -264,7 +265,7 @@ describe("cross-extension RPC", () => {
       expect(reply).toHaveBeenCalledWith({ success: true, data: { id: "agent-42" } });
       expect(manager.spawn).toHaveBeenCalledWith(
         deps.pi, ctx, "general-purpose", "x",
-        { model: fakeModel, thinkingLevel: "high" },
+        { model: fakeModel, thinkingLevel: "high", selectedModel: { model: fakeModel, thinkingLevel: "high", modelInput: "missing/nope,openai-codex/gpt-5.5:high" } },
       );
     });
 
@@ -397,4 +398,22 @@ describe("spawn RPC delegation policy", () => {
     expect(call.error).toMatch(/^delegation_policy_denied:/);
     expect(manager.spawn).not.toHaveBeenCalled();
   });
+});
+
+it("RPC frontmatter wins over caller model and carries the selected fast candidate to the manager", async () => {
+  const model = { provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-7", name: "Opus" };
+  const modelInput = "missing,anthropic/claude-opus-4-7:low:fast";
+  registerAgents(new Map([["rpc-fast", { name: "rpc-fast", description: "test", model: modelInput, extensions: false, discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
+  const events = createEventBus();
+  const spawn = vi.fn<SpawnCapable["spawn"]>(() => "id");
+  const ctx = { modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model], isUsingOAuth: () => false } };
+  const handle = registerRpcHandlers({ events, pi: {}, getCtx: () => ctx, manager: { spawn, abort: () => true } });
+  const reply = vi.fn();
+  events.on("subagents:rpc:spawn:reply:fast", reply);
+  try {
+    events.emit("subagents:rpc:spawn", { requestId: "fast", type: "rpc-fast", prompt: "go", options: { model: "missing/override" } });
+    await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+    expect(reply).toHaveBeenCalledWith({ success: true, data: { id: "id" } });
+    expect(spawn.mock.calls[0]?.[4]).toMatchObject({ model, selectedModel: { model, modelInput, thinkingLevel: "low", fast: true } });
+  } finally { handle.unsubPing(); handle.unsubSpawn(); handle.unsubStop(); registerAgents(new Map()); }
 });

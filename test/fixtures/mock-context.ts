@@ -58,6 +58,7 @@ export function createMockContext() {
     isIdle: () => true,
     model: { id: "mock-model", provider: "mock" },
     modelRegistry: {
+      isUsingOAuth: () => false,
       getApiKeyAndHeaders: async () => ({ apiKey: "mock-key", headers: {}, ok: true }),
       getAvailable: () => [{ id: "mock-model", provider: "mock" }]
     },

@@ -30,11 +30,13 @@ import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType, res
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
-import { resolveAgentModel } from "./model-resolution.js";
+import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
+import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
 
+const TRUSTED_FAST_EXTENSION_PATH = "<inline:subagent-fast>";
 const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
 const TRUSTED_SESSION_LOCAL_EXTENSION_PATH = `<inline:${TRUSTED_SESSION_LOCAL_EXTENSION_NAME}>`;
 const TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME = "smart-tool-guards";
@@ -301,6 +303,7 @@ export interface RunOptions {
   /** Manager-assigned id; suffixes session name to disambiguate parallel spawns (e.g. `Explore#a1b2c3d4`). */
   agentId?: string;
   model?: Model<any>;
+  selectedModel?: SelectedAgentModel;
   maxTurns?: number;
   signal?: AbortSignal;
   isolated?: boolean;
@@ -462,6 +465,17 @@ export async function runAgent(
   const guardBash = GUARDED_CANONICAL_AGENT_TYPES.has(canonicalType.toLowerCase());
   const config = getConfig(type);
   const agentConfig = getAgentConfig(type);
+  // Preserve an already selected candidate, but never let direct options bypass frontmatter.
+  const selected: SelectedAgentModel = options.selectedModel && options.selectedModel.modelInput === agentConfig?.model
+    ? options.selectedModel
+    : agentConfig?.model != null
+      ? resolveAgentModel(agentConfig.model, ctx.modelRegistry, ctx.model)
+      : options.selectedModel ?? { model: options.model ?? ctx.model };
+  const model = selected.model;
+  const usingOAuth = !!model && (ctx.modelRegistry.isUsingOAuth?.(model) ?? false);
+  if (selected.fast) assertFastSupported(model, usingOAuth);
+  const fastPolicy = { enabled: selected.fast === true, usingOAuth, strict: true };
+  const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking ?? selected.thinkingLevel;
 
   // Resolve working directory: caller-supplied cwd override > parent cwd
   const effectiveCwd = options.cwd ?? ctx.cwd;
@@ -562,7 +576,8 @@ export async function runAgent(
     const discoveredExtensions = base.extensions.filter(
       (extension) =>
         extension.path !== TRUSTED_SESSION_LOCAL_EXTENSION_PATH &&
-        extension.path !== TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH,
+        extension.path !== TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH &&
+        extension.path !== TRUSTED_FAST_EXTENSION_PATH,
     );
     if (shouldFilterDiscovered) {
       discoveredNames = new Set(discoveredExtensions.flatMap((e) => extensionCanonicalNames(e.path)));
@@ -573,11 +588,12 @@ export async function runAgent(
       extensions: base.extensions.filter((extension) => {
         if (
           extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH ||
-          extension.path === TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH
+          extension.path === TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH ||
+          extension.path === TRUSTED_FAST_EXTENSION_PATH
         ) return true;
 
         const canons = extensionCanonicalNames(extension.path);
-        if (canons.includes(TRUSTED_SESSION_LOCAL_EXTENSION_NAME)) return false;
+        if (canons.includes(TRUSTED_SESSION_LOCAL_EXTENSION_NAME) || canons.includes("fast")) return false;
         if (noExtensions) return false;
         if (!shouldFilterDiscovered) return true;
         if (canons.some((name) => excludeNames.has(name))) return false;
@@ -593,6 +609,16 @@ export async function runAgent(
     additionalExtensionPaths,
     extensionsOverride,
     extensionFactories: [
+      {
+        name: "subagent-fast",
+        hidden: true,
+        factory: (extensionPi: ExtensionAPI) => {
+          extensionPi.on("before_provider_request", (event, childCtx) => transformFastPayload(event.payload, childCtx.model, fastPolicy));
+          extensionPi.on("before_provider_headers", (event, childCtx) => {
+            Object.assign(event.headers, transformFastHeaders(event.headers, childCtx.model, fastPolicy));
+          });
+        },
+      },
       {
         name: TRUSTED_SESSION_LOCAL_EXTENSION_NAME,
         factory: sessionLocalTools,
@@ -680,15 +706,6 @@ export async function runAgent(
       }
     }
   }
-
-  // Resolve model: explicit option > config.model > parent model
-  const selected = options.model
-    ? { model: options.model, thinkingLevel: undefined }
-    : resolveAgentModel(agentConfig?.model, ctx.modelRegistry, ctx.model);
-  const model = selected.model;
-
-  // Resolved direct/RPC options remain authoritative.
-  const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking ?? selected.thinkingLevel;
 
 
   // ─── Tool scoping ───────────────────────────────────────────────────────

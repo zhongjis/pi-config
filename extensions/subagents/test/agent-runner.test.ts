@@ -312,7 +312,7 @@ describe("agent-runner final output capture", () => {
     expect(createAgentSession.mock.calls[0][0]).not.toHaveProperty("thinkingLevel");
   });
 
-  it("A03 direct runner resolves configured chains and preserves explicit Model overrides", async () => {
+  it("A03 direct runner resolves configured chains and does not bypass frontmatter with direct options", async () => {
     const { session } = createSession("DONE");
     createAgentSession.mockResolvedValue({ session });
     const model = { provider: "faux", id: "selected", name: "Selected" };
@@ -323,9 +323,8 @@ describe("agent-runner final output capture", () => {
     expect(createAgentSession.mock.calls[0][0].thinkingLevel).toBe("high");
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope" }));
     const override = createAgentSession.mock.calls[0][0].model;
-    await runAgent(context, "Explore", "go", { pi, model: override, thinkingLevel: "low" });
-    expect(createAgentSession.mock.calls[1][0].model).toBe(override);
-    expect(createAgentSession.mock.calls[1][0].thinkingLevel).toBe("low");
+    await expect(runAgent(context, "Explore", "go", { pi, model: override, thinkingLevel: "low" })).rejects.toThrow("No available model");
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
   });
 
   it("A02 direct runner rejects exhausted configuration and inherits only when absent", async () => {
@@ -1062,6 +1061,7 @@ describe("agent-runner trusted session-local binding", () => {
 
     const inline = trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
     expect(lastToolsPassed()).toEqual(["read"]);
@@ -1084,6 +1084,7 @@ describe("agent-runner trusted session-local binding", () => {
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
     expect(lastToolsPassed()).toEqual(["read"]);
@@ -1109,6 +1110,7 @@ describe("agent-runner trusted session-local binding", () => {
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
       "/ext/mcp.ts",
+      "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
     expect(lastToolsPassed()).toContain("mcp_tool");
@@ -1138,6 +1140,7 @@ describe("agent-runner trusted session-local binding", () => {
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
       "/ext/mcp.ts",
+      "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
   });
@@ -1166,6 +1169,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
         expect.objectContaining({ name: "smart-tool-guards", hidden: true }),
       ]));
       expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
+        "<inline:subagent-fast>",
         "<inline:session-local>",
         "<inline:smart-tool-guards>",
       ]);
@@ -1180,7 +1184,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 
     await runAgent(ctx, canonicalType, "go", { pi });
 
-    expect(factories().map(({ name }) => name)).toEqual(["session-local"]);
+    expect(factories().map(({ name }) => name)).toEqual(["subagent-fast", "session-local"]);
   });
 
   it("survives isolation without widening tools", async () => {
@@ -1194,8 +1198,9 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 
     await runAgent(ctx, "chengfeng", "go", { pi, isolated: true });
 
-    expect(factories().map(({ name }) => name)).toEqual(["session-local", "smart-tool-guards"]);
+    expect(factories().map(({ name }) => name)).toEqual(["subagent-fast", "session-local", "smart-tool-guards"]);
     expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
+      "<inline:subagent-fast>",
       "<inline:session-local>",
       "<inline:smart-tool-guards>",
     ]);
@@ -1223,6 +1228,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 
     expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
       "/ext/mcp.ts",
+      "<inline:subagent-fast>",
       "<inline:session-local>",
       "<inline:smart-tool-guards>",
     ]);
@@ -2185,4 +2191,18 @@ describe("runAgent — per-call skills injection", () => {
     // isolated overrides to empty list; preloadSkills should not be called with non-empty list
     expect(mockPreloadSkills).not.toHaveBeenCalledWith(expect.arrayContaining(["a"]), expect.any(String));
   });
+});
+
+it("retains the previously selected candidate when availability changes before the runner starts", async () => {
+  const { session } = createSession("DONE");
+  createAgentSession.mockResolvedValue({ session });
+  const model = { provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-7", name: "Opus", baseUrl: "http://localhost", reasoning: false, input: ["text" as const], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 };
+  const modelInput = "missing,anthropic/claude-opus-4-7:fast";
+  vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: modelInput }));
+  const find = vi.fn();
+  const context = { ...ctx, modelRegistry: { find, getAll: () => [], getAvailable: () => [], isUsingOAuth: () => false } };
+  await runAgent(context, "Explore", "go", { pi, selectedModel: { model, fast: true, modelInput } });
+  expect(find).not.toHaveBeenCalled();
+  expect(createAgentSession.mock.calls[0][0].model).toBe(model);
+  expect(lastLoaderOpts().extensionFactories).toEqual(expect.arrayContaining([expect.objectContaining({ name: "subagent-fast", hidden: true })]));
 });

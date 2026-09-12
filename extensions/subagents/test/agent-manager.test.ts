@@ -1188,3 +1188,14 @@ describe("AgentManager.getRunning()", () => {
     expect(running.every((r) => r.status === "running")).toBe(true);
   });
 });
+
+it("forwards selected fast metadata unchanged from Agent/RPC options into the runner", async () => {
+  resolvedRun();
+  const manager = new AgentManager();
+  const selectedModel = { model: undefined, fast: false };
+  try {
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", { description: "test", selectedModel });
+    await manager.getRecord(id)!.promise;
+    expect(vi.mocked(runAgent).mock.lastCall?.[3].selectedModel).toBe(selectedModel);
+  } finally { manager.dispose(); }
+});

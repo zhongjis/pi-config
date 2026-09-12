@@ -74,6 +74,14 @@ By default, each mode selects its model from the `model` frontmatter chain in `m
 
 The override is persisted in the session JSONL and survives `/reload`. It does **not** change the mode's frontmatter — it's a runtime override only.
 
+### Fast defaults
+
+Model candidates accept `provider/model[:thinking]:fast`, for example `anthropic/claude-opus-4-7:high:fast`. Only the selected available candidate determines the default; no suffix means off. Unsupported explicit fast fails before applying the model or committing a mode switch, rather than trying the next candidate for speed support.
+
+Defaults and `/fast` overrides live in the current session branch. Repeated prompts, same-mode selection, and reload preserve the override. Actual mode transitions reset to the new effective candidate's default, even for the same model. A changed `/mode-model` override/reset applies that effective chain's default; it remains session-local.
+
+The [Fast extension](../fast/README.md) applies defaults using [strict request helpers](../lib/README.md#fast-request-helpers).
+
 ## Hooks
 
 - `session_start`, `session_tree` — Restore mode state

@@ -139,3 +139,24 @@ describe("resolveModel", () => {
 		expect(r).toContain('Model not found: "nonexistent-model"');
 	});
 });
+
+describe("fast candidate metadata", () => {
+  it("peels terminal fast then recognized thinking while preserving colons and unknown suffixes", () => {
+    expect(parseModelChain("p/id:version:high:fast,p/id:fast,p/id:weird:fast,p/id:fast:high,p/id:fast:unknown,p/id:FAST")).toEqual([
+      { model: "p/id:version", thinkingLevel: "high", fast: true },
+      { model: "p/id", fast: true },
+      { model: "p/id:weird", fast: true },
+      { model: "p/id:fast", thinkingLevel: "high" },
+      { model: "p/id:fast:unknown" },
+      { model: "p/id:FAST" },
+    ]);
+  });
+  it("carries only the selected candidate fast flag and keeps legacy shape otherwise", () => {
+    expect(resolveFirstAvailable(parseModelChain("missing:fast,gemini-flash:low:fast"), makeRegistry())).toEqual({ model: MODELS[1], thinkingLevel: "low", fast: true });
+    expect(resolveFirstAvailable(parseModelChain("missing:fast,gemini-flash"), makeRegistry())).toEqual({ model: MODELS[1], thinkingLevel: undefined });
+  });
+});
+
+it("rejects suffix-only candidates rather than fuzzy resolving an empty model ID", () => {
+  for (const spec of [":fast", ":low:fast"]) expect(resolveFirstAvailable(parseModelChain(spec), makeRegistry())).toBeUndefined();
+});

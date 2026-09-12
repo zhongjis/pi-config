@@ -76,4 +76,4 @@ Current repo behavior:
 | `subagents:rpc:*` | Subagent ping / spawn / stop RPC | Request includes `requestId`; reply on `:reply:${requestId}` with success/error envelope | Public cross-extension |
 | `handoff:rpc:prepare` | Direct handoff bridge | Same scoped reply-channel RPC contract | Repo-internal unless explicitly reused |
 | `tasks:rpc:*` | Task-specific integration helpers | Same scoped reply-channel RPC contract | Internal |
-
+| `fast:policy-changed` | Refresh Fast UI after a mode default changes | `{ sessionId: string }`; notification only, never policy transport | Session-scoped; requests read branch-local `fast-policy` entries |

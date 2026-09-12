@@ -14,6 +14,9 @@ Provide shared extension utilities and integration primitives.
 - Utilities include clipboard I/O, logging, caches, and stream wrappers; not all helpers are pure.
 - RPC requests MUST carry `requestId`; replies use `{ success: true, data? }` or `{ success: false, error: string }`.
 - Temporary RPC reply listeners MUST unsubscribe on settlement or timeout.
+- Model chains parse terminal `:fast` after an optional thinking suffix; absent fast metadata retains the legacy object shape and means off to consumers.
+- `fast.ts` owns stateless eligibility, transforms, and branch-policy reading; preserve [helper contracts](README.md#fast-request-helpers). Callers MUST validate explicit on before strict application; NEVER mutate shared models.
+- Fast allowlist changes require official provider evidence for exact public model IDs, matching regression tests, and updated [support documentation and sources](README.md#fast-request-helpers); no inferred aliases, wildcards, or internal models.
 
 ## Work Guidance
 

@@ -2,8 +2,14 @@
 
 Enables provider Fast mode for the active model with a single `/fast` toggle. Detects the current model's provider and applies the matching mechanism:
 
-- **OpenAI Codex** (`gpt-5.4`, `gpt-5.5`): injects `service_tier: "priority"`.
-- **Anthropic Claude Opus** (`claude-opus-4-6`, `claude-opus-4-7`, `claude-opus-4-8`): injects `speed: "fast"` and the required `anthropic-beta` header.
+- **OpenAI Codex** (`gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`): injects `service_tier: "priority"`. [1]
+- **Anthropic Claude Opus** (`claude-opus-4-8`, `claude-opus-5`): injects `speed: "fast"` and the required `anthropic-beta` header. [2]
+
+Exact IDs only; no aliases or wildcard matching. The internal `codex-auto-review` model is excluded.
+
+Sources:
+- [1] [Official Codex model catalog](https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json)
+- [2] [Anthropic Fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)
 
 ## Upstream
 
@@ -21,17 +27,18 @@ Because the two upstream packages are merged into one local extension behind a p
 
 ## Hooks
 
-- `session_start` — Initialize per-session state (Fast off by default).
-- `model_select` — Refresh footer status and sync the active model's beta header when the model changes.
-- `before_provider_request` — Inject the provider-specific Fast field into eligible request payloads.
+- `session_start`, `model_select` — Refresh footer from branch-local policy.
+- `before_provider_request` — Apply the provider-specific Fast field.
+- `before_provider_headers` — Merge/mask request-local beta headers, never mutate shared model headers.
+- `fast:policy-changed` — Session-ID-scoped UI refresh only; request policy always reads the current branch.
 
 ## Settings / Configuration
 
-None. State is session-only: `/fast` toggles Fast mode for the current session, and the toggle persists until the session ends. There are no config files.
+No config files. `fast-policy` custom entries persist the session's mode default or `/fast` override across reload and branch navigation. Standalone sessions default off. See [mode defaults](../modes/README.md#fast-defaults) for transition rules.
 
 ## Behavior
 
-Fast mode is applied only when all conditions match:
+Interactive `/fast` activation requires all conditions below (unsupported models remain enabled-but-inactive):
 
 - The active model's provider has a Fast profile (`openai-codex` or `anthropic`).
 - The model's API matches the profile (`openai-codex-responses` / `anthropic-messages`).
@@ -40,3 +47,5 @@ Fast mode is applied only when all conditions match:
 - The request payload does not already include the injected field.
 
 When enabled and eligible, the footer shows `fast` and outbound payloads receive the provider-specific field. When enabled but the active model is ineligible, no footer is shown and `/fast` reports why. For Anthropic OAuth models, the `anthropic-beta` header retains the required Claude Code OAuth beta values alongside `fast-mode-2026-02-01`.
+
+[Shared helpers](../lib/README.md#fast-request-helpers) define strict request mechanics; [subagents](../subagents/AGENTS.md) own fixed child policy.

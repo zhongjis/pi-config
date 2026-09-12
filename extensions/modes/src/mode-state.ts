@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
 import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
 import { MODES, MODE_COLORS, MODE_META, RESET, SKILL_GATED_MODES } from "./constants.js";
 import { loadAgentConfig } from "./config-loader.js";
@@ -115,8 +116,9 @@ export class ModeStateManager {
 		return this.cachedConfigs[cacheKey]!;
 	}
 
-	async applyMode(ctx: ExtensionContext): Promise<void> {
+	async applyMode(ctx: ExtensionContext, resetFast = false): Promise<void> {
 		const config = this.loadConfig(this.currentMode);
+		await this.applyModelFromConfig(config, ctx, resetFast);
 		const allToolNames = this.pi.getAllTools().map((t) => t.name);
 		const activeToolNames = this.pi.getActiveTools().filter((t) => allToolNames.includes(t));
 
@@ -137,8 +139,6 @@ export class ModeStateManager {
 			this.pi.setActiveTools(nextActiveToolNames);
 		}
 
-		await this.applyModelFromConfig(config, ctx);
-
 		this.updateStatus(ctx);
 	}
 
@@ -154,21 +154,24 @@ export class ModeStateManager {
 	 * observable outcome while eliminating flicker on same-mode re-apply (e.g.
 	 * before_agent_start firing on every user message).
 	 */
-	async applyModelFromConfig(config: ModeConfig, ctx: ExtensionContext): Promise<void> {
+	async applyModelFromConfig(config: ModeConfig, ctx: ExtensionContext, resetFast = false): Promise<void> {
 		const modelSpec = this.modelOverride ?? config.model;
-		if (!modelSpec) return;
-		const candidates = parseModelChain(modelSpec);
-		const resolved = resolveFirstAvailable(candidates, ctx.modelRegistry);
-		if (!resolved) return;
-		this.resolvedFamily = getModePromptSource(resolved.model);
+		const resolved = modelSpec ? resolveFirstAvailable(parseModelChain(modelSpec), ctx.modelRegistry) : undefined;
+		const previous = readFastPolicy(ctx.sessionManager?.getBranch?.() ?? []);
+		const initializeFast = resetFast || !previous || previous.mode !== this.currentMode;
+		if (!resolved) {
+			if (initializeFast) this.persistFastDefault(ctx, false);
+			return;
+		}
 
 		// Guard 2: skip setModel if already the active model.
 		const current = ctx.model;
 		const sameModel =
 			current && current.provider === resolved.model.provider && current.id === resolved.model.id;
-		if (!sameModel) {
-			await this.pi.setModel(resolved.model);
-		}
+		if (resolved.fast && (initializeFast || !sameModel)) assertFastSupported(resolved.model, ctx.modelRegistry.isUsingOAuth(resolved.model));
+		if (!sameModel && await this.pi.setModel(resolved.model) === false) throw new Error(`Could not apply mode model: ${modelSpec}`);
+		this.resolvedFamily = getModePromptSource(resolved.model);
+		if (initializeFast) this.persistFastDefault(ctx, resolved.fast === true);
 
 		// Guard 3: skip setThinkingLevel if already at that level.
 		// setModel() internally preserves current level for reasoning-capable models, so
@@ -176,6 +179,11 @@ export class ModeStateManager {
 		if (resolved.thinkingLevel && resolved.thinkingLevel !== this.pi.getThinkingLevel()) {
 			this.pi.setThinkingLevel(resolved.thinkingLevel);
 		}
+	}
+
+	private persistFastDefault(ctx: ExtensionContext, enabled: boolean): void {
+		this.pi.appendEntry<FastPolicyEntry>("fast-policy", { version: 1, mode: this.currentMode, source: "mode", enabled });
+		this.pi.events?.emit("fast:policy-changed", { sessionId: ctx.sessionManager?.getSessionId?.() });
 	}
 
 	updateStatus(ctx: ExtensionContext): void {
@@ -191,10 +199,19 @@ export class ModeStateManager {
 
 	async switchMode(mode: Mode, ctx: ExtensionContext): Promise<boolean> {
 		const previousMode = this.currentMode;
+		const previousConfigs = this.cachedConfigs;
+		const previousFamily = this.resolvedFamily;
 		this.currentMode = mode;
 		this.cachedConfigs = {};
 		this.resolvedFamily = "default";
-		await this.applyMode(ctx);
+		try {
+			await this.applyMode(ctx, mode !== previousMode);
+		} catch (error) {
+			this.currentMode = previousMode;
+			this.cachedConfigs = previousConfigs;
+			this.resolvedFamily = previousFamily;
+			throw error;
+		}
 		this.persistState();
 		return mode !== previousMode && (SKILL_GATED_MODES.has(previousMode) || SKILL_GATED_MODES.has(mode));
 	}
