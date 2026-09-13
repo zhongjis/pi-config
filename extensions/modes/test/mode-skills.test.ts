@@ -56,10 +56,7 @@ describe("mode skill discovery", () => {
 		const cases = [
 			{ mode: "kuafu", expected: [] },
 			{ mode: "houtu", expected: [] },
-			{ mode: "shennong", expected: [] },
-			{ mode: "zhurong", expected: [] },
 			{ mode: "fuxi", expected: ["modes/fuxi/skills"] },
-			{ mode: "luban", expected: ["modes/luban/skills"] },
 		] as const;
 
 		for (const { mode, expected } of cases) {

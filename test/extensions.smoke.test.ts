@@ -132,6 +132,10 @@ describe("extension entrypoints", () => {
     expect(new Set(extensionEntries).size).toBe(extensionEntries.length);
   });
 
+  it("does not discover the retired PM marketplace", () => {
+    expect(extensionEntries.some((entry) => entry.startsWith("../extensions/pm-marketplace/"))).toBe(false);
+  });
+
   it("locks package names for subagents and tasks", () => {
     const cases: Array<[string, string]> = [
       ["extensions/subagents/package.json", "@tintinweb/pi-subagents"],

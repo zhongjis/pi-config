@@ -9,6 +9,9 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 
 ## Local Contracts
 
+- Only `kuafu`, `fuxi`, and `houtu` are registered, selectable, and cycled modes; aliases remain `build`, `plan`, and `execute`.
+- Reject retired or malformed saved modes before restoring associated model override or planning/review state; fall back to clean `kuafu`. Preserve valid saved state and existing CLI precedence, including explicit `kuafu` restoration.
+
 - Mode prompts MUST retain global AGENTS rules and shared frontmatter semantics.
 - Replacement MUST strip prior mode bodies; append mode stacks them.
 - `system_instructions` prompt mode is coerced to replacement here.

@@ -53,5 +53,4 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - [profiles](profiles/AGENTS.md) — provider registry filtering and activation precedence.
 - [multimodal-look](multimodal-look/AGENTS.md) — isolated vision inspection.
 - [init](init/AGENTS.md) — documentation initialization prompts.
-- [pm-marketplace](pm-marketplace/AGENTS.md) — mode-gated PM resource runtime.
 - [herdr-btw](herdr-btw/AGENTS.md) — vendored `/btw` Herdr side-thread launch and merge.

@@ -1,19 +1,18 @@
 # modes
 
-Agent modes extension with six personas — switch behavior, prompt, and tool sets per mode.
+Agent modes extension with three personas — switch behavior, prompt, and tool sets per mode.
 
 ## What It Does
 
-Six modes with distinct agent personas:
+Three modes with distinct agent personas:
 
 | Mode | Alias | Description |
 |------|-------|-------------|
 | Kua Fu 夸父 | `build` | Default. Senior engineer who ships by orchestrating specialists. |
 | Fu Xi 伏羲 | `plan` | Planning and decomposition. Drafts plans with gap review. |
 | Hou Tu 后土 | `execute` | Focused execution worker. Runs plans step by step. |
-| Lu Ban 鲁班 | — | Skill-first discipline mode adapted from obra/superpowers. |
-| Shen Nong 神農 | `pm` | Product mode. Frames the problem, prioritizes, and de-risks; hands off to Kua Fu. |
-| Zhu Rong 祝融 | — | GPT-only autonomous deep worker. Receives goals, executes end-to-end, and self-verifies through the artifact's surface. Ships `mode.md` only. |
+
+Retired or malformed saved modes fall back to clean `kuafu`, discarding their model override and planning/review state. Valid saved state still restores when `--mode` is absent or explicitly `kuafu`; other CLI values retain their existing precedence.
 
 Each mode reads its prompt from `modes/<mode>/mode.md`. Global AGENTS.md rules stay active in all modes.
 
@@ -55,7 +54,7 @@ Create canonical upstream-format `local://DRAFT.md` and, unless `draftOnly` is s
 
 ## Commands
 
-- `/mode [kuafu|fuxi|houtu|luban|shennong|zhurong|build|plan|execute]` — Switch agent mode
+- `/mode [kuafu|fuxi|houtu|build|plan|execute]` — Switch agent mode
 - `/mode-model` — Show or override the mode's model
 - `/mode-model <provider/modelId>` — Set a session-scoped model override
 - `/mode-model --reset` — Clear the model override and revert to mode's chain

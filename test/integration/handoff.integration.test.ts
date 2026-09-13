@@ -50,7 +50,7 @@ describe("handoff extension — integration", () => {
 		expect(commandNames).toContain("handoff:start-work");
 	});
 
-	it("completes every canonical mode and seeds shennong handoffs", async () => {
+	it("completes every canonical mode and seeds houtu handoffs", async () => {
 		t = await createTestSession({
 			extensions: [EXTENSION],
 			mockTools: MOCK_TOOLS,
@@ -65,9 +65,17 @@ describe("handoff extension — integration", () => {
 		const handoffModeCmd = commands.find((command) => command.name === "handoff:mode");
 		expect(handoffModeCmd).toBeDefined();
 		expect(handoffModeCmd!.getArgumentCompletions!("")?.map(({ value }) => value)).toEqual(MODES);
+		for (const retired of ["luban", "shennong", "zhurong"]) {
+			const errors: string[] = [];
+			await handoffModeCmd?.handler(`${retired} -no-summarize execute requirements`, {
+				ui: { notify: (_message: string, level: string) => errors.push(level) },
+				newSession: async () => { throw new Error("Retired mode must not create a session"); },
+			});
+			expect(errors).toEqual(["error"]);
+		}
 
 		const seededEntries: Array<{ type: string; data: unknown }> = [];
-		await handoffModeCmd!.handler("shennong -no-summarize define requirements", {
+		await handoffModeCmd!.handler("houtu -no-summarize execute requirements", {
 			hasUI: true,
 			sessionManager: {
 				getSessionFile: () => "/tmp/test.jsonl",
@@ -83,7 +91,7 @@ describe("handoff extension — integration", () => {
 			ui: { notify: () => {} },
 		});
 
-		expect(seededEntries).toEqual([{ type: "agent-mode", data: { mode: "shennong" } }]);
+		expect(seededEntries).toEqual([{ type: "agent-mode", data: { mode: "houtu" } }]);
 	});
 
 	// ── Direct handoff bridge event flow ────────────────────────

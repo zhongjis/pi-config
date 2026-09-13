@@ -1,6 +1,6 @@
 # Modes Extension
 
-The modes extension implements agent persona switching for six modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), **Hou Tu 后土** (execute), **Lu Ban 鲁班** (luban), **Shen Nong 神農** (pm/product), and **Zhu Rong 祝融** (deep worker). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
+The modes extension implements agent persona switching for three modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), and **Hou Tu 后土** (execute). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
 
 For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.md).
 
@@ -13,18 +13,7 @@ For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.m
 | `kuafu` | `build` | Default. General-purpose coding and implementation. |
 | `fuxi` | `plan` | Plan drafting with restricted tool access. Write/edit is limited to `PLAN.md`/`DRAFT.md`; built-in `bash` is guarded by `smart-tool-guards`. |
 | `houtu` | `execute` | Plan execution after handoff. Receives a prepared execution prompt in a child session. |
-| `luban` | — | Skill-first discipline mode adapted from obra/superpowers. |
-| `shennong` | `pm` | Product mode. Problem framing, prioritization, and de-risking before implementation; hands off to Kua Fu via `/mode kuafu`. |
-| `zhurong` | — | GPT-only autonomous deep worker. Receives goals, executes end-to-end, and self-verifies through the artifact's surface. |
 
-
-### Lu Ban Validation Policy
-
-Lu Ban follows Superpowers skill gates, then validates implementation by risk. Low-risk work uses implementer self-checks plus focused verification. High-risk work uses the orchestrator-owned code-quality gate after implementation. Taishang is reserved for architecture, debugging, or plan-compliance uncertainty.
-
-User approval is reserved for product intent: unclear goals, missing success criteria, scope decomposition, high-risk expansion beyond the approved spec, unresolved ambiguity, or destructive actions. Routine technical validation stays inside the agent loop.
-
-CodeGraph checks are best effort for Lu Ban final checkpoints. A stale or unavailable CodeGraph index should be recorded, not treated as a blocker.
 ---
 
 ## Mode Switching
@@ -35,7 +24,7 @@ Six ways to switch modes:
 |--------|---------|-------|
 | **`/mode` command** | `/mode fuxi` | Interactive selector when called with no arguments. Accepts mode names or aliases. |
 | **`/mode:<name>` shortcut** | `/mode:plan do the thing` | Switches mode, then delivers any trailing text as a follow-up message. Works with names (`fuxi`) and aliases (`plan`). |
-| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → luban → shennong → zhurong → kuafu. |
+| **Keyboard shortcut** | `Ctrl+Shift+M` | Cycles through modes in order: kuafu → fuxi → houtu → kuafu. |
 | **Tab in empty editor** | Press `Tab` with no text | Same cycle behavior as Ctrl+Shift+M. |
 | **Bare word input** | Type `fuxi` or `plan` | Transformed into `/mode:fuxi` before submission. Recognized words: all mode names and aliases. |
 | **CLI `--mode` flag** | `pi --mode fuxi` | Sets the initial mode at startup. Overrides session-restored mode. |

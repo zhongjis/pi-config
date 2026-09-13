@@ -73,11 +73,10 @@ Current vendored extensions:
 
 ### Agent Modes
 
-Four agent personas switch context and tool access:
+Three agent personas switch context and tool access:
 - **Kua Fu 夸父** (build) — default, general-purpose implementation
 - **Fu Xi 伏羲** (plan) — plan drafting with restricted tools
 - **Hou Tu 后土** (execute) — plan execution after handoff
-- **Lu Ban 鲁班** (luban) — skill-first discipline mode adapted from obra/superpowers
 
 See [modes.md](specs/modes.md) and [orchestration-flow.md](specs/orchestration-flow.md) for details.
 

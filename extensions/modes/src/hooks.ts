@@ -168,8 +168,15 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "agent-mode")
 			.pop() as { data?: ModeState } | undefined;
 
-		if (modeEntry?.data) {
-			state.currentMode = modeEntry.data.mode ?? state.currentMode;
+		if (modeEntry && !MODES.some((mode) => mode === modeEntry.data?.mode)) {
+			state.currentMode = "kuafu";
+			state.modelOverride = undefined;
+			state.planTitle = undefined;
+			state.planTitleSource = undefined;
+			state.planContent = undefined;
+			state.resetPlanReviewState();
+		} else if (modeEntry?.data) {
+			state.currentMode = modeEntry.data.mode;
 			state.planTitle = modeEntry.data.planTitle;
 			state.planTitleSource = modeEntry.data.planTitleSource;
 			state.planContent = modeEntry.data.planContent;

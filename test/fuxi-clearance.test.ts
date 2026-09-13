@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-type ModeName = "kuafu" | "fuxi" | "houtu" | "luban";
+type ModeName = "kuafu" | "fuxi" | "houtu";
 type PromptFamily = "default" | "gpt" | "gemini";
 
 const MODE_PROMPT_FILES: Record<PromptFamily, string> = {
@@ -10,7 +10,7 @@ const MODE_PROMPT_FILES: Record<PromptFamily, string> = {
   gpt: "gpt.md",
   gemini: "gemini.md",
 };
-const ALL_MODES: ModeName[] = ["kuafu", "fuxi", "houtu", "luban"];
+const ALL_MODES: ModeName[] = ["kuafu", "fuxi", "houtu"];
 
 function getModePromptPath(mode: ModeName, family: PromptFamily): string {
   return join(process.cwd(), "modes", mode, MODE_PROMPT_FILES[family]);

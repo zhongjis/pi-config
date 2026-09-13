@@ -125,7 +125,6 @@ describe("modes extension — integration", () => {
 		});
 
 		const fuxiSkillsDir = path.resolve(PROJECT_ROOT, "modes/fuxi/skills");
-		const lubanSkillsDir = path.resolve(PROJECT_ROOT, "modes/luban/skills");
 		const discoveredPaths = async () => {
 			const runner = (t.session as any).extensionRunner;
 			const resources = await runner.emitResourcesDiscover(PROJECT_ROOT, "reload");
@@ -141,8 +140,6 @@ describe("modes extension — integration", () => {
 		await expectPaths([]);
 		await switchMode(t, "fuxi");
 		await expectPaths([fuxiSkillsDir]);
-		await switchMode(t, "luban");
-		await expectPaths([lubanSkillsDir]);
 		await switchMode(t, "houtu");
 		await expectPaths([]);
 		await switchMode(t, "kuafu");
@@ -160,22 +157,14 @@ describe("modes extension — integration", () => {
 
 		let names = skillNames(t);
 		expect(names).not.toContain("ulw-plan");
-		expect(names).not.toContain("brainstorming");
 
 		await switchModeCommand(t, "fuxi");
 		names = skillNames(t);
 		expect(names).toContain("ulw-plan");
-		expect(names).not.toContain("brainstorming");
-
-		await switchModeCommand(t, "luban");
-		names = skillNames(t);
-		expect(names).not.toContain("ulw-plan");
-		expect(names).toContain("brainstorming");
 
 		await switchModeCommand(t, "houtu");
 		names = skillNames(t);
 		expect(names).not.toContain("ulw-plan");
-		expect(names).not.toContain("brainstorming");
 	});
 
 	// ── Default mode (kuafu) allows writes ──────────────────────

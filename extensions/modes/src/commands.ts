@@ -33,14 +33,14 @@ async function switchModeCommand(
 export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager): void {
 	// CLI flag
 	pi.registerFlag("mode", {
-		description: "Agent mode: kuafu (build), fuxi (plan), houtu (execute), luban, shennong (pm), zhurong",
+		description: "Agent mode: kuafu (build), fuxi (plan), houtu (execute)",
 		type: "string",
 		default: "kuafu",
 	});
 
 	// /mode command
 	pi.registerCommand("mode", {
-		description: "Switch agent mode (kuafu/fuxi/houtu/luban/shennong/zhurong)",
+		description: "Switch agent mode (kuafu/fuxi/houtu)",
 		getArgumentCompletions: (prefix) => {
 			const query = prefix.trim().toLowerCase();
 			const filtered = MODES

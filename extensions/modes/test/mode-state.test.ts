@@ -134,8 +134,6 @@ describe("ModeStateManager", () => {
 		};
 
 		await expect(state.switchMode("fuxi", ctx as never)).resolves.toBe(true);
-		await expect(state.switchMode("luban", ctx as never)).resolves.toBe(true);
-		await expect(state.switchMode("shennong", ctx as never)).resolves.toBe(true);
 		await expect(state.switchMode("kuafu", ctx as never)).resolves.toBe(true);
 
 		expect(reload).not.toHaveBeenCalled();
@@ -152,19 +150,13 @@ describe("ModeStateManager", () => {
 		state.currentMode = "fuxi";
 		expect(state.nextMode()).toBe("houtu");
 		state.currentMode = "houtu";
-		expect(state.nextMode()).toBe("luban");
-		state.currentMode = "luban";
-		expect(state.nextMode()).toBe("shennong");
-		state.currentMode = "shennong";
-		expect(state.nextMode()).toBe("zhurong");
-		state.currentMode = "zhurong";
 		expect(state.nextMode()).toBe("kuafu");
 	});
 
 	it("returns true when leaving a mode-local skill mode", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.currentMode = "shennong";
+		state.currentMode = "fuxi";
 		state.cachedConfigs["kuafu:default"] = { body: "" };
 		const reload = vi.fn(async () => {});
 		const ctx = {
@@ -198,8 +190,8 @@ describe("ModeStateManager", () => {
 	it("returns false on same-mode no-op", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["luban:default"] = { body: "" };
-		state.currentMode = "luban";
+		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.currentMode = "fuxi";
 		const reload = vi.fn(async () => {});
 		const ctx = {
 			hasUI: false,
@@ -208,7 +200,7 @@ describe("ModeStateManager", () => {
 			reload,
 		};
 
-		await expect(state.switchMode("luban", ctx as never)).resolves.toBe(false);
+		await expect(state.switchMode("fuxi", ctx as never)).resolves.toBe(false);
 		expect(reload).not.toHaveBeenCalled();
 	});
 

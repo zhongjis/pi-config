@@ -5,8 +5,9 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 ## Ownership
 
 - [README.md](README.md) owns prompt construction and the current family matrix.
-- This document owns shared mode docs and `houtu/`, `kuafu/`, `shennong/`, `zhurong/`.
-- Fu Xi and Lu Ban children own their prompts and local skills.
+- This document owns shared mode docs and `houtu/`, `kuafu/`.
+- The Fu Xi child owns its prompts and local skills.
+- The active mode set is `kuafu`, `fuxi`, and `houtu`.
 - Runtime discovery and switching belong to [../extensions/modes/](../extensions/modes/).
 
 ## Local Contracts
@@ -46,4 +47,3 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 ## Child DOX Index
 
 - [fuxi/AGENTS.md](fuxi/AGENTS.md) — thin planner prompts and authoritative planning skill.
-- [luban/AGENTS.md](luban/AGENTS.md) — skill-first prompts and pinned Superpowers snapshot.

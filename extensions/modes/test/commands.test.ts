@@ -40,11 +40,11 @@ describe("registerModeCommands", () => {
 		const modeCommand = mock.commands.get("mode");
 		expect(modeCommand).toBeDefined();
 
-		const select = vi.fn(async (_title: string, items: string[]) => items[3]);
+		const select = vi.fn(async (_title: string, items: string[]) => items[2]);
 		await modeCommand?.handler("", { ui: { select } });
 
 		expect(select).toHaveBeenCalledWith("Agent Mode", expect.any(Array));
-		expect(state.switchMode).toHaveBeenCalledWith("luban", { ui: { select } });
+		expect(state.switchMode).toHaveBeenCalledWith("houtu", { ui: { select } });
 	});
 
 	it("terminally reloads resource-changing prompt switches and asks for resubmission", async () => {

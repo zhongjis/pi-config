@@ -4,10 +4,9 @@ Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior pa
 
 ## Scope Guardrails
 
-- In scope: existing Kuafu/Fuxi/Houtu/Luban default, GPT, and Gemini prompt bodies.
+- In scope: existing Kuafu/Fuxi/Houtu default, GPT, and Gemini prompt bodies.
 - Out of scope: new prompt families, model-chain edits, provider edits, auth edits, registry edits, and new model-chain routing.
 - Do not claim local prompts are exact upstream copies.
-- Do not claim Luban has upstream agent parity.
 - Do not edit prompt, test, or code files unless the active task explicitly includes them.
 
 ## Construction Semantics
@@ -25,7 +24,6 @@ Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior pa
 | kuafu | Yes | Yes | Yes |
 | fuxi | Yes | — (inherits default) | Yes |
 | houtu | Yes | Yes | Yes |
-| luban | Yes | Yes | Yes |
 
 ## Upstream Provenance Rule
 
@@ -38,16 +36,6 @@ Before prompt edits, record:
 - local adaptation source and Pi-native tool mapping.
 
 Use `docs/specs/mode-prompt-parity.md` as the current provenance baseline. Preserve behavior parity and Pi tool adaptation; do not present local prompts as exact upstream copies.
-
-## Luban / Superpowers Finding
-
-No explicit global agent profile found; local Luban grounded in `using-superpowers` plus workflow skills.
-
-Details from current parity evidence:
-
-- Superpowers source: `obra/superpowers` `skills/` at commit `896224c4b1879920ab573417e68fd51d2ccc9072`.
-- Task-specific embedded prompts exist, but they are not a global Superpowers agent profile.
-- Local Luban behavior comes from `modes/luban/skills/using-superpowers/SKILL.md` and workflow skills such as brainstorming, writing plans, subagent-driven development, executing plans, dispatching parallel agents, and verification-before-completion.
 
 ## Parity Review Checklist
 

@@ -95,7 +95,7 @@ function createMockPi() {
 }
 
 type PromptFamily = "default" | "gpt" | "gemini";
-type TestMode = "kuafu" | "fuxi" | "houtu" | "luban" | "shennong";
+type TestMode = "kuafu" | "fuxi" | "houtu";
 
 type PromptConfig = {
 	body: string;
@@ -131,6 +131,51 @@ async function renderInjectedPrompt({
 }
 
 describe("mode hooks", () => {
+	it.each(["luban", "shennong", "zhurong", "unknown", "", null, undefined, 42, {}, []])(
+		"discards invalid saved mode %j and its associated state", async (mode) => {
+			const mock = createMockPi();
+			const state = new ModeStateManager(mock.pi as never);
+			registerModeHooks(mock.pi as never, state);
+			await mock.fire("session_start", {}, {
+				hasUI: false, ui: { setStatus: vi.fn() },
+				modelRegistry: { getAll: () => [], getAvailable: () => [] },
+				sessionManager: { getSessionId: () => "invalid-mode", getEntries: () => [{
+					type: "custom", customType: "agent-mode", data: { mode, modelOverride: "stale/model",
+						planTitle: "stale", planTitleSource: "cached-state", planContent: "stale",
+						planReviewId: "stale", planReviewPending: true, planReviewApproved: true,
+						planReviewFeedback: "stale", awaitingUserAction: { kind: "plannotator-review" } },
+				}] },
+			});
+			expect(state.currentMode).toBe("kuafu");
+			for (const value of [state.modelOverride, state.planTitle, state.planTitleSource, state.planContent,
+				state.pendingPlanReviewId, state.planReviewFeedback, state.awaitingUserAction]) expect(value).toBeUndefined();
+			expect(state.planReviewPending).toBe(false);
+			expect(state.planReviewApproved).toBe(false);
+		},
+	);
+
+	it.each([undefined, "kuafu", "houtu", "execute", "invalid"] )(
+		"preserves CLI precedence and valid saved state with flag %j", async (flag) => {
+			const mock = createMockPi();
+			vi.spyOn(mock.pi, "getFlag").mockImplementation(() => flag as never);
+			const state = new ModeStateManager(mock.pi as never);
+			registerModeHooks(mock.pi as never, state);
+			await mock.fire("session_start", {}, {
+				hasUI: false, ui: { setStatus: vi.fn() },
+				modelRegistry: { getAll: () => [], getAvailable: () => [] },
+				sessionManager: { getSessionId: () => "valid-mode", getEntries: () => [{
+					type: "custom", customType: "agent-mode", data: { mode: "fuxi", modelOverride: "saved/model",
+						planReviewId: "review", planReviewPending: true, planContent: "plan" },
+				}] },
+			});
+			const restores = !flag || flag === "kuafu";
+			expect(state.currentMode).toBe(restores ? "fuxi" : flag === "invalid" ? "kuafu" : "houtu");
+			expect(state.modelOverride).toBe(restores ? "saved/model" : undefined);
+			expect(state.pendingPlanReviewId).toBe(restores ? "review" : undefined);
+			expect(state.planReviewPending).toBe(restores);
+			expect(state.planContent).toBe(restores ? "plan" : undefined);
+		},
+	);
 	it("appends mode prompt with HTML markers during before_agent_start", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
@@ -289,20 +334,6 @@ describe("mode hooks", () => {
 		expect(systemPromptAfterKuafu).toContain("Base");
 	});
 
-	it("injects luban prompt with HTML markers", async () => {
-		const mock = createMockPi();
-		const state = new ModeStateManager(mock.pi as never);
-		state.currentMode = "luban";
-		state.cachedConfigs["luban:default"] = { body: "Lu Ban prompt", promptMode: "replace" };
-
-		registerModeHooks(mock.pi as never, state);
-
-		const [result] = await mock.fire("before_agent_start", { systemPrompt: "Base prompt" }, { hasUI: false });
-
-		expect(result).toEqual({
-			systemPrompt: "Base prompt\n\n<!-- mode:luban -->\nLu Ban prompt\n<!-- /mode:luban -->",
-		});
-	});
 
 	it("rebinds activeCtx on session_switch and session_tree", async () => {
 		const mock = createMockPi();

@@ -8,7 +8,6 @@ Purpose: record accepted Oh My OpenAgent (omo) synchronization baselines and loc
 - Upstream repo: `https://github.com/code-yeongyu/oh-my-openagent`.
 - Current Oh My OpenAgent reference archive: generated final prompts at `docs/references/oh-my-openagent/final-prompts/`; refresh with `pnpm sync:oh-my-openagent-prompts`, verify with `pnpm check:oh-my-openagent-prompts`, never hand-edit generated files. The archive README pins the source SHA.
 - Earlier path-level audit evidence used commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`; it remains evidence for the paths below, not the current release baseline.
-- Superpowers repo: `https://github.com/obra/superpowers`, `main` inspected at commit `896224c4b1879920ab573417e68fd51d2ccc9072`, path `skills/`.
 
 Required upstream paths verified in the earlier `f7ec55526b2a3603665c5c0308b031a4f14900b0` audit:
 
@@ -51,7 +50,6 @@ Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md) and [`modes
 | Kuafu | Sisyphus | present | present | present |
 | Fuxi | Prometheus | present | absent (inherits default) | present |
 | Houtu | Atlas | present | present | present |
-| Luban | Superpowers skills persona/profile check | present | present | present |
 
 ## Upstream-to-Local Map
 
@@ -116,28 +114,6 @@ Local invariants before edits:
 - GPT passes the smallest task/verification-applicable skill set (`skills=[]` when none apply), without exhaustive catalog reevaluation. Default/Gemini skill selection remains unchanged.
 - Bounded recovery uses `Agent(resume)` for salvageable work; a fresh session is allowed only when its predecessor is unavailable or unsalvageable and receives failure context. Consult `taishang` before attempt 3.
 - Final ownership is fixed: F1 `taishang`; F2 parent code-quality gate; F3 parent manual QA; F4 `direnjie`. Rejection leaves the gate `in_progress` and unchecked, repairs the responsible implementation workstream, then reruns every invalidated gate. All families surface all four verdicts. Default/Gemini retain explicit final user okay; GPT reports verified completion after required gates pass unless the user explicitly requested a final approval checkpoint.
-
-### Luban <- Superpowers skills
-
-Superpowers finding:
-
-- Inspected `obra/superpowers` `skills/` at `896224c4b1879920ab573417e68fd51d2ccc9072`.
-- No explicit top-level agent persona/profile was found in `skills/`. The tree contains skills with `name`/`description` frontmatter and workflow instructions.
-- Task-specific embedded prompts exist, e.g. `requesting-code-review/code-reviewer.md`, `subagent-driven-development/implementer-prompt.md`, and reviewer prompts. These are not a global Superpowers agent profile.
-
-Local persona/behavior source:
-
-- Primary source: `modes/luban/skills/using-superpowers/SKILL.md` — invoke relevant skills before any response/action; 1% applicability triggers skill use; Superpowers skills override default system behavior, while user instructions remain highest priority.
-- Workflow sources: `modes/luban/skills/brainstorming/SKILL.md`, `modes/luban/skills/writing-plans/SKILL.md`, `modes/luban/skills/subagent-driven-development/SKILL.md`, `modes/luban/skills/executing-plans/SKILL.md`, `modes/luban/skills/dispatching-parallel-agents/SKILL.md`, `modes/luban/skills/verification-before-completion/SKILL.md`.
-
-Local invariants before edits:
-
-- Luban must not claim Sisyphus/Prometheus/Atlas parity or an upstream Superpowers agent profile.
-- Luban is Pi-local skill-first mode: skill gate before action, current skill text loaded, skill workflow followed exactly unless user instructions override.
-- Design-to-implementation flow stays skill-driven: brainstorming -> writing-plans -> subagent-driven-development or executing-plans -> verification-before-completion.
-- Preserve Pi routing: `chengfeng`, `wenchang`, `taishang`, `jintong`, `guangguang`, `yunu`, `Agent`, `Task*`, CodeGraph, and guarded built-in `bash` for protected read-only agents. Taishang remains limited to architecture, debugging, and plan-compliance review; code-quality review uses the orchestrator-owned code-quality gate.
-- Parallelism is safety-gated, not maximized. Implementation parallelism needs independent scope and conflict plan.
-- GPT replacement must be self-contained. Gemini overlay must reinforce skill loading, tool use, and verification only.
 
 ## Non-Goals
 
