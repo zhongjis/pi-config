@@ -21,7 +21,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 1. Define acceptance criteria and authoritative evidence/tests before spawning. Mark required versus optional inputs; missing required evidence MUST block acceptance. Independent verification MUST inspect evidence, not merely count reviewer votes. Keep baseline changes outside the producing agent's authority.
 2. Discover the work-list inline. Assign stable item/stage labels and disjoint write ownership; serialize overlapping writers. Separate proposals from actions requiring approval. Workflow opt-in does not authorize every action or shell command.
 3. Choose the simplest sufficient structure. Use `pipeline` for independent item chains; use a `parallel` barrier only for true cross-item dependencies such as global deduplication or synthesis. Overlap can reduce idle time, not guarantee latency wins under caps/contention.
-4. Define result schemas, failure handling, and stopping conditions. Retain item identity and test `value === null`, NEVER general truthiness: scalar fields/transformed results may be `false`, `0`, or `""`; text results may be empty strings. Schema results themselves are objects. Report attempted/successful/missing items and optional gaps rather than silently filtering them. Stop downstream acceptance when required results are missing.
+4. Define result schemas, failure handling, and stopping conditions. Retain item identity and test `value === null`, NEVER general truthiness: scalar fields/transformed results may be `false`, `0`, or `""`; text results may be empty strings. Schema results themselves are objects. Report attempted/successful/missing/rejected items and optional gaps rather than silently filtering them. Stop downstream acceptance when required results are missing or rejected.
 5. Bound attempts/rounds and work-list size for the task. Log branch choices, retries, and omissions; return a meaningful stop reason (accepted, missing evidence, verification failed, or attempt limit). Runtime caps are backstops, not task budgets. Await every launch.
 6. Write the script inline first. Include literal `meta`, explicit concurrent `opts.phase`, and relevant input/version identity in prompts/args. Before replay, assess changed upstream results, external inputs, and repeatable side effects.
 7. You MUST review syntax, arguments, and null paths before launch. Runnable mock checks SHOULD cover nontrivial branching/repair logic: success, null/falsy data, failed verification, and bounded termination. AVOID new checker infrastructure for simple ephemeral scripts. Inspect actual evidence after authorized execution; NEVER equate a completed workflow with accepted work.
@@ -38,15 +38,20 @@ SubagentWorkflow returns immediately with a task ID and notifies on completion. 
 
 Each fenced script is complete. Supply the stated JSON args; execution still requires opt-in.
 
+You SHOULD select read-only types for evidence readers/verifiers. Both examples REQUIRE `readOnlyAgentType`: before invocation, choose it from the current Agent tool roster and check its configured tool/extension permissions permit only read-only work. No suitable type? You MUST stop before spawning; NEVER silently substitute general-purpose. The scripts reject absent/blank selectors; caller selection performs the permission check, not the script. Replace the sample placeholder with that live selector. “Change nothing” is prompt guidance, not configured permission enforcement or filesystem isolation. Gates require separate command authorization and are not restricted by the agent's tool permissions.
+
 ### 1. Read-only evidence pipeline with coverage
 
-Args: `{ "items": [{ "id": "readme", "path": "README.md", "required": true }] }`. Each item collects evidence then independently checks the claim against that source. `value` deliberately permits falsy values. Optional gaps remain visible.
+Args: `{ "readOnlyAgentType": "<live read-only selector>", "items": [{ "id": "readme", "path": "README.md", "required": true }] }`. Each item collects evidence then independently checks the claim against that source. `value` deliberately permits falsy values. Optional gaps remain visible.
 
 ```js
 export const meta = {
   name: 'source-evidence', description: 'Collect and verify source evidence',
   phases: [{ title: 'Read' }, { title: 'Verify' }]
 };
+if (typeof args?.readOnlyAgentType !== 'string' || !args.readOnlyAgentType.trim()) {
+  throw new Error('Provide a readOnlyAgentType checked against the current Agent roster permissions');
+}
 if (!Array.isArray(args?.items) || args.items.length === 0 || args.items.length > 20 ||
     args.items.some(item => !item || typeof item.id !== 'string' || !item.id ||
       typeof item.path !== 'string' || !item.path || typeof item.required !== 'boolean') ||
@@ -65,30 +70,35 @@ const verdictSchema = {
 };
 const values = await pipeline(args.items,
   item => agent(`Read ${item.path}; change nothing. Report its purpose with a source location.`,
-    { label: `read:${item.id}`, phase: 'Read', schema: evidenceSchema }),
+    { agentType: args.readOnlyAgentType, label: `read:${item.id}`, phase: 'Read', schema: evidenceSchema }),
   async (value, item) => {
     if (value === null) return null;
     const verdict = await agent(`Independently read ${item.path}; change nothing. Check this claim against the source, citing evidence: ${JSON.stringify(value)}`,
-      { label: `verify:${item.id}`, phase: 'Verify', schema: verdictSchema });
+      { agentType: args.readOnlyAgentType, label: `verify:${item.id}`, phase: 'Verify', schema: verdictSchema });
     return verdict === null ? null : { ...value, verdict };
   }
 );
 const items = args.items.map((item, index) => ({ ...item, result: values[index] }));
-const missing = items.filter(item => item.result === null || !item.result.verdict.supported);
-log(`${items.length - missing.length}/${items.length} verified; gaps: ${missing.map(item => item.id).join(', ')}`);
-return { accepted: !missing.some(item => item.required), attempted: items.length,
-  successful: items.length - missing.length, missing: missing.map(item => item.id), items };
+const missing = items.filter(item => item.result === null);
+const rejected = items.filter(item => item.result !== null && !item.result.verdict.supported);
+const successful = items.length - missing.length - rejected.length;
+log(`${successful}/${items.length} verified; missing: ${missing.map(item => item.id).join(', ')}; rejected: ${rejected.map(item => item.id).join(', ')}`);
+return { accepted: ![...missing, ...rejected].some(item => item.required), attempted: items.length,
+  successful, missing: missing.map(item => item.id), rejected: rejected.map(item => item.id), items };
 ```
 
 ### 2. Bounded repair with independent command verification
 
-Args: `{ "task": "Fix the failing parser test; edits only in src/parser.js", "check": "npm test" }`. Use only an already-authorized edit scope and check command. You MUST instruct the repair agent to preserve the acceptance command and checks; prompts alone do not protect tests or baselines. Verification runs even when repair text is empty; a missing repair or verifier result never passes. Each attempt starts fresh to support structured calls/gates; use child `resume` only with its restrictions below.
+Args: `{ "readOnlyAgentType": "<live read-only selector>", "task": "Fix the failing parser test; edits only in src/parser.js", "check": "npm test" }`. Use only an already-authorized edit scope and check command. You MUST instruct the repair agent to preserve the acceptance command and checks; prompts alone do not protect tests or baselines. Verification runs even when repair text is empty; a missing repair or verifier result never passes. Each attempt starts fresh to support structured calls/gates; use child `resume` only with its restrictions below.
 
 ```js
 export const meta = {
   name: 'bounded-repair', description: 'Repair within scope and verify at most twice',
   phases: [{ title: 'Repair' }, { title: 'Verify' }]
 };
+if (typeof args?.readOnlyAgentType !== 'string' || !args.readOnlyAgentType.trim()) {
+  throw new Error('Provide a readOnlyAgentType checked against the current Agent roster permissions');
+}
 if (typeof args?.task !== 'string' || !args.task.trim() ||
     typeof args?.check !== 'string' || !args.check.trim()) {
   throw new Error('Provide an authorized task and acceptance command');
@@ -103,7 +113,7 @@ for (let attempt = 1; attempt <= 2; attempt++) {
     return { accepted: false, reason: 'missing required repair result', attempts };
   }
   const verified = await agent(`Change nothing. Inspect the authorized acceptance command ${args.check} and report verification context.`,
-    { label: `verify:${attempt}`, phase: 'Verify', gate: args.check });
+    { agentType: args.readOnlyAgentType, label: `verify:${attempt}`, phase: 'Verify', gate: args.check });
   attempts.push({ attempt, repaired, verified });
   if (verified !== null) return { accepted: true, reason: 'acceptance command passed', attempts };
   reason = 'verification failed or missing';
