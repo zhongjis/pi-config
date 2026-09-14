@@ -16,6 +16,7 @@ import { defineTool, type ExtensionAPI, type ExtensionCommandContext, type Exten
 import { Container, Key, matchesKey, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../lib/model-selection.js";
+import { firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 import { AgentManager } from "./agent-manager.js";
 import { registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
 import { getAgentConversation, getDefaultMaxTurns, getGraceTurns, normalizeMaxTurns, SUBAGENT_TOOL_NAMES, setDefaultMaxTurns, setGraceTurns, steerAgent } from "./agent-runner.js";
@@ -51,7 +52,7 @@ import {
   type UICtx,
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx, type FleetWorkflow } from "./ui/fleet-list.js";
-import { renderWorkflowCard, renderWorkflowEntryCard } from "./ui/workflow-card.js";
+import { renderWorkflowCard, renderWorkflowEntryCard } from "./ui/workflow-report.js";
 import { openWorkflowFromFleet, showWorkflowsMenu, type WorkflowMenuDeps, type WorkflowUIContext } from "./ui/workflow-menu.js";
 import { addUsage, getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, PendingUsagePool } from "./usage.js";
 import { decideWorkflowCollision } from "./workflow/collisions.js";
@@ -62,7 +63,8 @@ import { extractMeta, type WorkflowMeta, workflowCallName } from "./workflow/met
 import { elapsedMs } from "./workflow/progress.js";
 import { runWorkflow } from "./workflow/runtime.js";
 import { resolveWorkflowScript } from "./workflow/saved.js";
-import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, formatWorkflowNotification, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./workflow/task.js";
+import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./workflow/task.js";
+import { workflowCompletionText } from "./workflow/notification.js";
 import { workflowSkillPath, workflowToolDescription } from "./workflow/tool-description.js";
 
 export const WORKFLOW_FILE_FLAG = "subagents-workflow-file";
@@ -1511,22 +1513,6 @@ Terse command-style prompts produce shallow, generic work.
    * agent uses — held briefly by `scheduleNudge`, delivered as a follow-up that
    * triggers a turn, rendered by the existing `subagent-notification` renderer.
    */
-  function workflowCompletionText(ctx: ExtensionContext, task: WorkflowTask): string {
-    const notification = formatWorkflowNotification(task);
-    const result = workflowResultText(task);
-    if (result.length <= 4000) return notification;
-    try {
-      const path = join(dirname(createOutputFilePath(ctx.cwd, task.id, ctx.sessionManager.getSessionId())), `${task.id}.workflow-result.txt`);
-      writeFileSync(path, result, "utf-8");
-      return `${notification}\nFull workflow result: ${path}`;
-    } catch (error) {
-      const warning = `Full workflow result could not be saved: ${error instanceof Error ? error.message : String(error)}`;
-      if (ctx.hasUI) ctx.ui.notify(warning, "warning");
-      else console.warn(`[pi-subagents] ${warning}`);
-      return `${notification}\nWarning: ${warning}. Full output remains in the expanded workflow report.`;
-    }
-  }
-
   function notifyWorkflowFinished(ctx: ExtensionContext, task: WorkflowTask) {
     if (!workflowSessionActive || workflowTasks.get(task.id) !== task) return;
     widget.update();
@@ -1549,6 +1535,7 @@ Terse command-style prompts produce shallow, generic work.
           durationMs: elapsedMs(task, Date.now()),
           error: task.error,
           resultPreview: result.length > 500 ? `${result.slice(0, 500)}…` : result,
+          workflow: workflowEntryData(task),
         },
       }, { deliverAs: "followUp", triggerTurn: true });
     });
@@ -1606,11 +1593,7 @@ Terse command-style prompts produce shallow, generic work.
     }),
 
     renderCall(args, theme) {
-      return new Text(
-        `${theme.fg("toolTitle", "▸ ")}${theme.bold(theme.fg("toolTitle", "SubagentWorkflow"))}  ${theme.fg("muted", workflowCallName(args))}`,
-        0,
-        0,
-      );
+      return renderToolCall("SubagentWorkflow", workflowCallName(args).replace(/\r\n?|\n/g, " "), theme);
     },
 
     renderResult(result, options, theme, renderContext) {
@@ -1619,7 +1602,10 @@ Terse command-style prompts produce shallow, generic work.
       const task = taskId !== undefined ? workflowTasks.get(taskId) : undefined;
       // No task means the run predates this session (a reloaded transcript) or
       // the call never started one — show what `execute` said instead.
-      if (renderContext.isError || !task) return new Text(text, 0, 0);
+      if (renderContext.isError || !task) {
+        const status = renderContext.isError ? "Failed" : "Live workflow state unavailable in this session";
+        return options.expanded ? renderToolExpanded(`${status}\n${text || "No output."}`) : renderToolSummary([status, firstMeaningfulLine(text) || "No output"], theme, { expandable: true });
+      }
       return renderWorkflowCard(
         {
           progress: task.workflowProgress,

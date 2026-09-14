@@ -20,12 +20,8 @@
  * layout this replaced spelled that out as "Not started yet"; the left pane is
  * too narrow to hold the words, and a numbered row with no count says it.
  *
- * **The glyphs are not the card's glyphs.** `workflow-card.ts` keys off the raw
- * entry `state`; this file keys off the *derived* `displayState(entry, active)`
- * and splits cases the card cannot see — skipped, blocked, queued and
- * interrupted all render as a plain ✘ or ⟳ inline but are distinct here. `◌`
- * (U+25CC) appears only in this file, and a running row animates a spinner where
- * the card draws a static `⟳`.
+ * Agent glyphs follow `displayState(entry, active)`, as do transcript reports.
+ * The inspector additionally animates running rows and supports controls.
  *
  * **The phases pane is stranger still**: a phase that has not finished shows
  * *its number*, not a glyph. That is deliberate, recovered behaviour.
@@ -781,7 +777,7 @@ function resolveWorkflowLayout(input: WorkflowDialogInput): { lines: WorkflowCar
         rightWidth,
       ),
     );
-    // Rebuilt rather than filtered out of `agentStatSegments`: the model and the
+    // Keep the model and the
     // agent type are already on the line above, and the token count wants its
     // unit here exactly as it has one in the row.
     const stats: string[] = [];

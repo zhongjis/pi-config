@@ -9,7 +9,7 @@ import { AgentManager } from "../src/agent-manager.js";
 import type { AgentRecord } from "../src/types.js";
 import { AgentWidget } from "../src/ui/agent-widget.js";
 import { FleetList, type FleetWorkflow } from "../src/ui/fleet-list.js";
-import { renderWorkflowCard, renderWorkflowEntryCard } from "../src/ui/workflow-card.js";
+import { renderWorkflowCard, renderWorkflowEntryCard } from "../src/ui/workflow-report.js";
 import { handleWorkflowDialogKey, initialWorkflowDialogState, layoutWorkflowDialog, plainWorkflowDialogLines, resolveWorkflowDialog, WorkflowDialog } from "../src/ui/workflow-dialog.js";
 import { showWorkflowDialog } from "../src/ui/workflow-menu.js";
 import { workflowEntryData } from "../src/workflow/entry.js";
@@ -180,4 +180,78 @@ it("hides owned children only from ordinary UI and allows a workflow-only fleet 
   await Promise.resolve();
   expect(open).toHaveBeenCalledWith("wf_test");
   fleet.dispose(); widget.dispose();
+});
+
+describe("workflow disclosure states", () => {
+  it.each([
+    [undefined, "no output"], [null, "null"], ["", "no output"], [[], "array · 0 items"],
+    [[1, 2], "array · 2 items"], [{ research: 1, review: 2 }, "structured result"],
+  ])("summarizes returned %j without stale activity", (value, summary) => {
+    const task = createWorkflowTask({ id: "wf_empty", script: "" });
+    task.status = "completed"; task.value = value;
+    const text = plain(renderWorkflowCard({ task, progress: [{ type: "workflow_log", message: "stale-activity" }] }, theme).render(120));
+    expect(text).toContain(summary);
+    expect(text).not.toContain("stale-activity");
+  });
+
+  it("distinguishes queued work, child errors, and replayed work in the retained roster", () => {
+    const task = createWorkflowTask({ id: "wf_states", script: "" });
+    const entries: WorkflowAgentEntry[] = [
+      { ...agent, index: 0, label: "waiting", agentType: "fixture", queuedAt: 10 },
+      { ...agent, index: 1, label: "failure", state: "error", error: "child-failure" },
+      { ...agent, index: 2, label: "skip", state: "error", skipped: true },
+      { ...agent, index: 3, label: "block", state: "error", blocked: true },
+      { ...agent, index: 4, label: "reused", state: "done", cached: true },
+    ];
+    expect(plain(renderWorkflowCard({ task, progress: entries }, theme).render(120))).toContain("1 queued");
+    task.status = "completed"; task.value = { result: "answer" };
+    const report = plain(renderWorkflowCard({ task, progress: entries, expanded: true }, theme).render(120));
+    for (const marker of ["Completed with agent errors", "Interrupted", "Failed", "Skipped", "Blocked", "Replayed"]) expect(report).toContain(marker);
+    expect(report).not.toContain("5 agents completed");
+  });
+});
+
+it("fits serialized notification identities, structured Unicode results, and full artifact paths", () => {
+  const task = createWorkflowTask({ id: "wf_width", script: "" });
+  task.status = "completed";
+  task.workflowName = "界🙂 é\r\n".repeat(8);
+  task.scriptPath = "/tmp/" + "長".repeat(70);
+  task.resultPath = "/tmp/" + "result".repeat(30);
+  task.value = { ["字段".repeat(30)]: "\u001b[36m結果🙂 é\u001b[0m\r\n".repeat(10), tail: "json-tail" };
+  task.workflowProgress = [{ ...agent, state: "done", label: "子🙂\nagent", agentType: "fixture" }];
+  const snapshot: unknown = JSON.parse(JSON.stringify(workflowEntryData(task)));
+  for (const expanded of [false, true]) {
+    const component = renderWorkflowEntryCard(snapshot, theme, expanded);
+    assert.ok(component);
+    for (const width of widths) {
+      const rows = component.render(width);
+      fits(rows, width);
+      if (!expanded) expect(rows.length).toBeLessThanOrEqual(3);
+    }
+    if (expanded) {
+      const report = plain(component.render(40));
+      expect(report).toContain("json-tail");
+      expect(report.replace(/\n/g, "")).toContain(task.resultPath);
+    }
+  }
+});
+
+it("does not advertise a reserved journal as a written artifact after a zero-child failure", () => {
+  const task = createWorkflowTask({ id: "wf_failure", script: "", journalPath: "/reserved-unwritten-journal" });
+  task.status = "failed"; task.error = "script-failed";
+  const report = plain(renderWorkflowCard({ task, progress: [], expanded: true }, theme).render(120));
+  expect(report).toContain("script-failed");
+  expect(report).not.toContain("/reserved-unwritten-journal");
+  expect(report).not.toContain("can reuse successful journal entries");
+});
+
+it("snapshots JSON-serializable object returns without requiring structured-clone compatibility", () => {
+  const task = createWorkflowTask({ id: "wf_json", script: "" });
+  task.status = "completed";
+  task.value = { date: new Date("2026-09-14T00:00:00Z"), answer: "retained-json-answer", omitted: () => true };
+  const snapshot = workflowEntryData(task);
+  expect(snapshot.value).toEqual({ date: "2026-09-14T00:00:00.000Z", answer: "retained-json-answer" });
+  const report = renderWorkflowEntryCard(snapshot, theme, true);
+  assert.ok(report);
+  expect(plain(report.render(80))).toContain("retained-json-answer");
 });

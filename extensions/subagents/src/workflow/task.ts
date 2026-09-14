@@ -35,6 +35,9 @@ export interface WorkflowTask {
   script: string;
   /** Where the script can be edited and re-run from. */
   scriptPath?: string;
+  /** Presentation facts set only by the existing completion artifact writer. */
+  resultPath?: string;
+  resultArtifactError?: string;
   args?: unknown;
   meta?: WorkflowMeta;
   workflowName?: string;

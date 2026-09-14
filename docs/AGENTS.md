@@ -22,6 +22,7 @@ Human-facing contracts, decisions, guides, ideas, and supporting evidence.
 - You SHOULD link authoritative contracts rather than duplicate them.
 - You MUST verify inventories against current owners before repeating them.
 - Mode construction belongs to [../modes/README.md](../modes/README.md), not historical inventory tables.
+- Workflow presentation scope lives in [its spec](specs/workflow-tool-output-presentation.md); [the implementation plan](guides/workflow-presentation-implementation.md) records execution and verification, never weaker acceptance.
 
 ## Verification
 

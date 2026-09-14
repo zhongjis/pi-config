@@ -9,7 +9,7 @@
  * session file.
  *
  * Deliberately free of any renderer import. The card this data renders through
- * lives in `ui/workflow-card.ts` (`renderWorkflowEntryCard`), so the shape a
+ * lives in `ui/workflow-report.ts` (`renderWorkflowEntryCard`), so the shape a
  * session file stores does not depend on the code that draws it.
  */
 
@@ -23,6 +23,13 @@ export const WORKFLOW_ENTRY_TYPE = "subagents:workflow";
 /** The persisted snapshot of a settled run. */
 export interface WorkflowEntryData {
   name: string;
+  readonly id?: string;
+  readonly scriptPath?: string;
+  readonly resultPath?: string;
+  readonly resultArtifactError?: string;
+  readonly totalToolCalls?: number;
+  readonly resumedFrom?: string;
+  readonly pausedAt?: number;
   status: WorkflowRunStatus;
   startTime: number;
   endTime?: number;
@@ -39,13 +46,20 @@ export interface WorkflowEntryData {
 export function workflowEntryData(task: WorkflowTask): WorkflowEntryData {
   return {
     name: task.workflowName ?? task.id,
+    id: task.id,
+    scriptPath: task.scriptPath,
+    resultPath: task.resultPath,
+    resultArtifactError: task.resultArtifactError,
+    totalToolCalls: task.totalToolCalls,
+    resumedFrom: task.resumedFrom,
+    pausedAt: task.pausedAt,
     status: task.status,
     startTime: task.startTime,
     endTime: task.endTime,
     totalPausedMs: task.totalPausedMs,
-    value: task.value,
+    value: task.value !== null && typeof task.value === "object" ? JSON.parse(JSON.stringify(task.value)) : task.value,
     error: task.error,
-    progress: task.workflowProgress,
+    progress: task.workflowProgress.map(entry => ({ ...entry })),
     agentCount: task.agentCount,
     totalTokens: task.totalTokens,
     ...(task.meta !== undefined ? { meta: task.meta } : {}),

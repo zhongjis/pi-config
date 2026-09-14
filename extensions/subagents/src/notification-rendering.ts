@@ -6,6 +6,9 @@ import {
   renderSubagentSummary,
   type SubagentSummaryStatus,
 } from "./ui/summary-renderer.js";
+import { isWorkflowEntryData } from "./workflow/entry-validation.js";
+import { renderWorkflowEntryCard } from "./ui/workflow-report.js";
+import { extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 
 function toSummaryStatus(status: string): SubagentSummaryStatus {
   switch (status) {
@@ -104,9 +107,14 @@ class NotificationSummaryComponent implements Component {
 export function registerSubagentNotificationRenderer(pi: ExtensionAPI): void {
   pi.registerMessageRenderer<NotificationDetails>(
     "subagent-notification",
-    (message, { expanded }) => {
+    (message, { expanded }, theme) => {
       const detail = message.details;
       if (!isNotificationDetails(detail)) return undefined;
+      if (detail.workflow !== undefined) {
+        if (isWorkflowEntryData(detail.workflow)) return renderWorkflowEntryCard(detail.workflow, theme, expanded);
+        const raw = typeof message.content === "string" ? message.content : extractToolText({ content: message.content });
+        return expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw) || "No output"], theme, { expandable: true });
+      }
       return new NotificationSummaryComponent([detail, ...(detail.others ?? [])], expanded);
     },
   );

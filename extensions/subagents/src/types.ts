@@ -4,6 +4,7 @@
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { LifetimeUsage } from "./usage.js";
+import type { WorkflowEntryData } from "./workflow/entry.js";
 
 export type ThinkingLevel = AgentSession["thinkingLevel"];
 
@@ -179,6 +180,8 @@ export interface NotificationDetails {
   outputFile?: string;
   error?: string;
   resultPreview: string;
+  /** Complete workflow presentation, independent of live task retention. */
+  workflow?: WorkflowEntryData;
   /** Additional agents in a group notification. */
   others?: NotificationDetails[];
 }

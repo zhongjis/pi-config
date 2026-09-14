@@ -1,69 +1,14 @@
-/**
- * workflow-card.ts — the inline transcript card for a running workflow.
- *
- * ```
- * ▸ Workflow  review-changes                       3/7 agents · 1m12s
- *   Review changed files across dimensions, verify each finding
- *   ╭─ Review
- *   │ ├─ ✔ review:bugs      · Explore · haiku · 18.4k · 12 tool calls · 42s
- *   │ ├─ ⟳ review:perf      · Explore · 8 tool calls · 21s
- *   │ └─ ⟳ review:security
- *   ╰─ Verify
- *     └─ ⟳ verify:auth.ts   · Plan · 3 tool calls · 9s
- *   ⎿  scanned 41 changed files
- * ```
- *
- * Two things about this file are easy to get wrong.
- *
- * **The glyphs are not the dialog's glyphs.** The inline row keys off the *raw*
- * entry `state` (start | progress | done | error), not the derived display
- * state, so a skipped or blocked agent renders as a plain ✘ here while the
- * workflows dialog distinguishes them. `displayState` is deliberately not
- * consulted below.
- *
- * **The layout is pure.** `layoutWorkflowCard` returns coloured segments and
- * never touches a theme or a terminal, so the same layout drives the `Workflow`
- * tool's `renderResult` and a standalone session entry (a workflow launched from
- * a CLI flag has no tool call to attach to). Theme application is the thin
- * `styleWorkflowCardLines` wrapper on top.
- *
- * All state derivation lives in `src/workflow/progress.ts`; this file only
- * arranges what that module returns.
- */
+/** Workflow transcript reports and formatting shared with the inspector. */
 
-import { type Component, stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
-import type { WorkflowEntryData } from "../workflow/entry.js";
+import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { WorkflowMeta } from "../workflow/meta.js";
 import {
-  buildPhaseGroups,
-  collapse,
-  formatDuration,
-  header,
-  sizeWarning,
-  stats,
   type WorkflowAgentEntry,
   type WorkflowEntry,
   type WorkflowRunStatus,
 } from "../workflow/progress.js";
 import type { Theme } from "./agent-widget.js";
 
-/**
- * Header re-render cadence. Claude Code ticks the workflow clock once a second,
- * not at the 80ms spinner cadence — the running glyph is static, so there is
- * nothing to animate faster than the elapsed time changes.
- */
-export const WORKFLOW_TICK_MS = 1000;
-
-/** Widest label column before stats stop being aligned and just follow the label. */
-const LABEL_COLUMN_MAX = 28;
-
-/** Fallback width when the caller does not know the terminal's. */
-const DEFAULT_WIDTH = 80;
-
-/* ------------------------------------------------------------------------- *
- * Glyphs
- * ------------------------------------------------------------------------- */
 
 export interface WorkflowGlyphs {
   /** Tool-title pointer, matching the Agent tool's `▸`. */
@@ -147,6 +92,12 @@ export type WorkflowCardLine = WorkflowCardSegment[];
 
 /** The subset of the task record the card reads. */
 export interface WorkflowCardTask {
+  readonly id?: string;
+  readonly scriptPath?: string;
+  readonly resultPath?: string;
+  readonly resultArtifactError?: string;
+  readonly totalToolCalls?: number;
+  readonly resumedFrom?: string;
   status: WorkflowRunStatus;
   workflowName?: string;
   summary?: string;
@@ -170,16 +121,7 @@ export interface WorkflowCardInput {
   agentCap?: number;
   tokenCap?: number;
   now?: number;
-  width?: number;
-  /** Swap in the ASCII glyph tier for terminals without unicode. */
-  ascii?: boolean;
-  /**
-   * Lead with `▸ SubagentWorkflow`.
-   *
-   * True where the card stands alone — the session entry a flag-launched run
-   * writes, which has no tool call above it to say what it is. False as a tool
-   * result, where the call line directly above already does.
-   */
+  /** Include workflow identity for standalone entries and notifications. */
   showToolTitle?: boolean;
   /** Compact by default; expansion preserves the entire retained report. */
   expanded?: boolean;
@@ -244,36 +186,6 @@ export function formatThinking(entry: WorkflowAgentEntry): string | undefined {
  */
 export const REPLAYED_ANNOTATION = "from resume journal";
 
-/**
- * The `·`-separated tail of an agent row, in the recovered order: agentType,
- * model, tokens, toolCalls, durationMs. Absent values drop out entirely rather
- * than rendering a placeholder.
- */
-export function agentStatSegments(entry: WorkflowAgentEntry): string[] {
-  const parts: string[] = [];
-  if (entry.agentType) parts.push(entry.agentType);
-  const model = formatModel(entry);
-  if (model) parts.push(model);
-  if (entry.tokens) parts.push(formatCompactTokens(entry.tokens));
-  if (entry.toolCalls) parts.push(`${entry.toolCalls} tool call${entry.toolCalls === 1 ? "" : "s"}`);
-  if (entry.durationMs) parts.push(formatDuration(entry.durationMs));
-  return parts;
-}
-
-/**
- * The recovered inline mapping — keyed on the raw entry state. `skipped` and
- * `blocked` are not distinguished here; that is the dialog's job.
- */
-function rowGlyph(entry: WorkflowAgentEntry, glyphs: WorkflowGlyphs): WorkflowCardSegment {
-  if (entry.state === "done") return { text: glyphs.tick, color: "success" };
-  if (entry.state === "error") return { text: glyphs.cross, color: "error" };
-  return { text: glyphs.running };
-}
-
-/* ------------------------------------------------------------------------- *
- * Layout
- * ------------------------------------------------------------------------- */
-
 /** Trim a line to `width`, cutting inside whichever segment crosses the edge. */
 export function clampLine(line: WorkflowCardLine, width: number): WorkflowCardLine {
   const clamped: WorkflowCardLine = [];
@@ -297,149 +209,6 @@ export function clampLine(line: WorkflowCardLine, width: number): WorkflowCardLi
   return clamped;
 }
 
-const lineWidth = (line: WorkflowCardLine) => line.reduce((sum, s) => sum + visibleWidth(s.text), 0);
-
-/**
- * Build the card.
- *
- * Everything derived — the phase tree, the header counts, the logs, the size
- * warning — comes from `progress.ts`; what happens here is purely arrangement.
- */
-export function layoutWorkflowCard(input: WorkflowCardInput): WorkflowCardLine[] {
-  const glyphs = input.ascii ? ASCII_GLYPHS : UNICODE_GLYPHS;
-  const width = Math.max(0, Math.floor(input.width ?? DEFAULT_WIDTH));
-  if (width === 0) return [];
-  const fitLine = (line: WorkflowCardLine): WorkflowCardLine => input.expanded ? line : clampLine(line, width);
-  const now = input.now ?? Date.now();
-
-  const groups = buildPhaseGroups(input.progress, input.meta?.phases);
-  const { agents, logs } = collapse(input.progress);
-  const totals = stats(input.progress, input.agentCount ?? 0);
-  const head = header(input.task, input.meta, groups, input.agentCount ?? 0, now);
-
-  const lines: WorkflowCardLine[] = [];
-
-  // ---- Header: `<name>` with the stats flush right ----
-  // The tool name appears only when nothing above the card already carries it.
-  // As a tool result there is a `▸ SubagentWorkflow …` call line directly above,
-  // and repeating it put two near-identical pointer lines back to back.
-  const left: WorkflowCardLine = input.showToolTitle
-    ? [
-        { text: `${glyphs.pointer} `, color: "toolTitle" },
-        { text: "SubagentWorkflow", color: "toolTitle", bold: true },
-        { text: "  " },
-        { text: head.name, color: "muted" },
-      ]
-    : [{ text: "  " }, { text: head.name, color: "toolTitle", bold: true }];
-  const statsWidth = visibleWidth(head.stats);
-  const clampedLeft = clampLine(left, Math.max(0, width - statsWidth - 1));
-  const gap = Math.max(1, width - lineWidth(clampedLeft) - statsWidth);
-  if (input.expanded) lines.push(left, [{ text: `  ${head.stats}`, color: "dim" }]);
-  else lines.push(clampLine([...clampedLeft, { text: " ".repeat(gap) }, { text: head.stats, color: "dim" }], width));
-
-  if (head.subtext) lines.push(fitLine([{ text: `  ${head.subtext}`, color: "dim" }]));
-
-  // ---- Phase tree ----
-  // Stats line up in one column across the whole card, not per group, so the
-  // eye can scan them; a label past the cap just pushes its own stats along.
-  const labelColumn = Math.min(
-    LABEL_COLUMN_MAX,
-    Math.max(0, ...groups.flatMap(group => group.agents.map(a => visibleWidth(a.label)))),
-  );
-
-  groups.forEach((group, groupIndex) => {
-    const lastGroup = groupIndex === groups.length - 1;
-    lines.push(
-      fitLine(
-        [
-          { text: "  " },
-          // One box, not a stack of them: only the first group opens it and
-          // only the last closes it. Everything between branches off the side,
-          // or three phases read as three half-drawn boxes.
-          {
-            text: `${
-              lastGroup ? glyphs.groupBottom
-              : groupIndex === 0 ? glyphs.groupTop
-              : glyphs.groupMid
-            } `,
-            color: "dim",
-          },
-          { text: group.title },
-        ],
-      ),
-    );
-
-    const rail = lastGroup ? "  " : `${glyphs.vertical} `;
-    group.agents.forEach((entry, agentIndex) => {
-      const lastAgent = agentIndex === group.agents.length - 1;
-      const segments: WorkflowCardLine = [
-        { text: "  " },
-        { text: rail, color: "dim" },
-        { text: `${lastAgent ? glyphs.lastBranch : glyphs.branch} `, color: "dim" },
-        rowGlyph(entry, glyphs),
-        { text: " " },
-      ];
-
-      // Prepended rather than folded into `agentStatSegments`, which is the
-      // ported stat tail in its recovered order. A replayed agent otherwise
-      // renders as a tick with no tokens and no duration — indistinguishable
-      // from one that somehow did the work for free.
-      const statParts = entry.cached
-        ? [REPLAYED_ANNOTATION, ...agentStatSegments(entry)]
-        : agentStatSegments(entry);
-      const pad = Math.max(0, labelColumn - visibleWidth(entry.label));
-      segments.push({ text: statParts.length > 0 ? entry.label + " ".repeat(pad) : entry.label });
-      for (const part of statParts) {
-        segments.push({ text: " · ", color: "dim" }, { text: part, color: "dim" });
-      }
-      lines.push(fitLine(segments));
-      if (input.expanded) {
-        const thinking = formatThinking(entry);
-        if (thinking) lines.push([{ text: `      ${thinking}`, color: "dim" }]);
-        for (const [label, value] of [["Prompt", entry.promptPreview], ["Result", entry.resultPreview], ["Error", entry.error]]) {
-          if (value) lines.push([{ text: `      ${label}: ${value}` }]);
-        }
-      }
-    });
-  });
-
-  // ---- log() output, below the tree ----
-  for (const message of logs) {
-    const [first, ...rest] = message.split("\n");
-    lines.push(fitLine([{ text: `  ${glyphs.log}  ${first}` }]));
-    for (const continuation of rest) {
-      lines.push(fitLine([{ text: `     ${continuation}` }]));
-    }
-  }
-
-  // ---- Size warning ----
-  const totalTokens =
-    input.totalTokens ?? agents.reduce((sum, entry) => sum + (entry.tokens ?? 0), 0);
-  const warning = sizeWarning({
-    scheduledAgents: Math.max(input.agentCount ?? 0, totals.total),
-    startedAgents: totals.started,
-    totalTokens,
-    agentCap: input.agentCap,
-    tokenCap: input.tokenCap,
-  });
-  if (warning) {
-    lines.push(
-      fitLine([{ text: `  ${glyphs.warning} Large workflow · /agents → Workflows to inspect`, color: "warning" }]),
-    );
-  }
-
-  return lines;
-}
-
-/* ------------------------------------------------------------------------- *
- * Rendering
- * ------------------------------------------------------------------------- */
-
-/** The card as plain text — what the layout tests assert against. */
-export function plainWorkflowCardLines(lines: readonly WorkflowCardLine[]): string[] {
-  return lines.map(line => line.map(segment => segment.text).join(""));
-}
-
 /** Apply the theme. Nothing here changes the layout, only its colours. */
 export function styleWorkflowCardLines(lines: readonly WorkflowCardLine[], theme: Theme): string[] {
   return lines.map(line =>
@@ -449,65 +218,5 @@ export function styleWorkflowCardLines(lines: readonly WorkflowCardLine[], theme
         return segment.color ? theme.fg(segment.color, text) : text;
       })
       .join(""),
-  );
-}
-
-/** The card as a component, for a tool result or a session entry renderer. */
-export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Component {
-  return {
-    invalidate() {},
-    render(width) {
-      if (!Number.isFinite(width) || width <= 0) return [];
-      const { agents, logs } = collapse(input.progress);
-      const status = { running: "Running", paused: "Paused", completed: "Completed", failed: "Failed", killed: "Stopped" }[input.task.status];
-      const value = input.task.error ?? (typeof input.task.value === "string" ? input.task.value : input.task.value === undefined ? undefined : JSON.stringify(input.task.value, null, 2));
-      if (!input.expanded) {
-        const preview = firstMeaningfulLine(value ?? logs.at(-1) ?? input.meta?.description ?? "");
-        const name = input.task.workflowName ?? input.meta?.name ?? "Workflow";
-        const detail = agents.find(a => a.state === "start" || a.state === "progress")?.label;
-        return renderToolSummary([
-          `${status} · ${input.showToolTitle && preview ? `${name}: ${preview}` : preview || name}`,
-          detail ? `${detail} · /agents → Workflows` : "/agents → Workflows",
-        ], theme, { expandable: true }).render(width);
-      }
-      const lines = styleWorkflowCardLines(layoutWorkflowCard({ ...input, width }), theme);
-      return renderToolExpanded([`${status}${value ? `\n${value}` : ""}`, ...lines].join("\n")).render(width);
-    },
-  };
-}
-
-/**
- * The card for a session entry, from the JSON a flag-launched run persisted.
- *
- * The same layout the tool result uses, not a second one — the only difference
- * is `showToolTitle`, because a session entry stands alone and nothing above it
- * says what it is. Returns undefined for an entry with no data, which is what
- * pi's renderer contract wants for "nothing to draw".
- */
-export function renderWorkflowEntryCard(data: WorkflowEntryData | undefined, theme: Theme, expanded = false): Component | undefined {
-  if (!data) return undefined;
-  if (!Array.isArray(data.progress) || !["running", "paused", "completed", "failed", "killed"].includes(data.status)) {
-    const raw = JSON.stringify(data, null, 2);
-    return expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw)], theme, { expandable: true });
-  }
-  return renderWorkflowCard(
-    {
-      progress: data.progress,
-      task: {
-        status: data.status,
-        workflowName: data.name,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        totalPausedMs: data.totalPausedMs,
-        value: data.value,
-        error: data.error,
-      },
-      meta: data.meta,
-      agentCount: data.agentCount,
-      totalTokens: data.totalTokens,
-      showToolTitle: true,
-      expanded,
-    },
-    theme,
   );
 }
