@@ -252,6 +252,27 @@ describe("cross-extension RPC", () => {
       deps = { events, pi: { events }, getCtx: () => ctx, manager };
     });
 
+    it.each([undefined, "openai-codex/gpt-5.5"])("strips internal workflow options before spawning with model %s", async (model) => {
+      registerRpcHandlers(deps);
+      const reply = vi.fn();
+      events.on("subagents:rpc:spawn:reply:internal", reply);
+      const options = Object.freeze({
+        description: "ordinary RPC child", isBackground: true, model,
+        workflowId: "wf_forged", structuredOutput: { validate: () => true },
+      });
+      events.emit("subagents:rpc:spawn", { requestId: "internal", type: "general-purpose", prompt: "task", options });
+
+      await vi.waitFor(() => expect(reply).toHaveBeenCalled());
+      expect(reply).toHaveBeenCalledWith({ success: true, data: { id: "agent-42" } });
+      const forwarded = vi.mocked(manager.spawn).mock.calls[0][4];
+      expect(forwarded).not.toHaveProperty("workflowId");
+      expect(forwarded).not.toHaveProperty("structuredOutput");
+      expect(forwarded).toMatchObject({ description: "ordinary RPC child", isBackground: true });
+      if (model !== undefined) expect(forwarded.model).toBe(fakeModel);
+      expect(options.workflowId).toBe("wf_forged");
+      expect(options.structuredOutput.validate()).toBe(true);
+    });
+
     it("A03 resolves a string chain and suffix before manager.spawn", async () => {
       registerRpcHandlers(deps);
       const reply = vi.fn();

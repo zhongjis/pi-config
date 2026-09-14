@@ -4,7 +4,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 
 ## Ownership
 
-- Owns agent discovery, execution, steering/resume, notifications, and local UI/tests.
+- Owns agent discovery, execution, steering/resume, notifications, scripted workflows (`src/workflow/`), and local UI/tests.
 - Agent definitions remain outside this runtime; shared utilities belong to [lib](../lib/AGENTS.md).
 
 ## Local Contracts
@@ -35,17 +35,26 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Selected candidate `:fast` fixes Fast on; no suffix fixes off, NEVER inherited/session toggles. Validate explicit on before child creation; unsupported capability MUST NOT trigger fallback selection. Preserve selected metadata through Agent/RPC/manager/runner; direct model options MUST NOT bypass frontmatter.
 - Hidden `subagent-fast` hooks MUST survive isolation/excludes and remove discovered interactive `fast` copies. Apply strict request-local metadata without shared-model mutation, including after OAuth drift; provider errors surface normally. Resume retains the original captured policy.
 - Final answers at the soft turn limit MUST complete normally; unfinished tool turns receive wrap-up steering.
+- `workflowsEnabled` MUST default false; disabled workflows MUST add no tool schema or workflow prompt cost. Settings changes require reload for registration.
+- Workflows MUST support model-authored inline/file/named scripts, arguments, same-session journal prefix replay, parallel/pipeline execution, structured output, gates, and one-level saved-workflow composition. Ship extension code and test fixtures, not reusable workflows or research deliverables.
+- Workflow effort MUST follow local thinking authority (frontmatter → model-chain suffix → invocation → SDK default); preserve ordered model chains, `:fast`, `local://`, retention, and usage controls.
+- Workflows MUST NOT bypass delegation permissions. Workflow pool accounting and child ownership MUST remain independent; owned children MUST NOT receive recursive workflow tools.
+- There is no filesystem isolation backend: workflow isolation options MUST be rejected. Gates MUST run in the effective child cwd; NEVER add automatic branches, commits, or filesystem copies.
+- Scripts, journals, and full-result artifacts for truncated notifications persist in the ephemeral session task area; artifact failures MUST remain visible. Prefix replay MUST stay within the same session; execution is not a sandbox, transaction, rollback, or cross-session recovery guarantee.
+- Inspector supervision MUST support pause/skip/retry/cancel; skips MUST settle while paused, and usage MUST retain all retry attempts. Ordinary agent lists MUST hide owned children; FleetView represents each workflow with one row. CLI file execution uses `--subagents-workflow-file`.
+- Preserve the original `v0.14.3` provenance separately from the full `v0.19.0` workflow import and lowercase-name collision fix recorded in [README](README.md#upstream).
 
 ## Work Guidance
 
 - You MUST preserve upstream execution contracts and [README Local Tweaks](README.md#local-tweaks).
-- [README](README.md) owns configuration, supervision, and isolation behavior; NEVER infer disk isolation from transcript settings alone.
+- [README](README.md) owns configuration, supervision, and storage behavior; NEVER infer disk isolation from transcript settings alone.
 - You MUST preserve the [MIT license](LICENSE) and [pinned provenance](README.md#upstream).
 
 ## Verification
 
 - From repository root: `pnpm exec vitest run --project unit extensions/subagents/test`.
 - [Agent manager](test/agent-manager.test.ts) covers retention; [notification rendering](test/notification-rendering.test.ts) covers presentation.
+- Workflow QA MUST use a fresh Pi session through `interactive_shell`, with the model generating and executing its own script; inspect the invocation, inspector, child ordering, and completion evidence.
 - Root unit selection excludes e2e-named tests; those require separate runtime verification.
 - `pnpm exec vitest run --project subagents-e2e extensions/subagents/test/controls-runtime-e2e.test.ts` verifies native usage aggregation, retained request provenance, and queued inline completion.
 

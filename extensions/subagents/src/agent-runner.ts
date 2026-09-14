@@ -34,8 +34,24 @@ import { detectEnv } from "./env.js";
 import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
+import { createStructuredCapture, createStructuredOutputTool, STRUCTURED_OUTPUT_TOOL_NAME, type StructuredCapture, structuredRetryPrompt } from "./structured-output.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
+import type { CompiledSchema } from "./workflow/json-schema.js";
+
+const structuredSessions = new WeakMap<AgentSession, StructuredCapture>();
+
+function structuredFailure(capture?: StructuredCapture): string | undefined {
+  return capture && capture.json === undefined
+    ? `StructuredOutput was not produced: ${capture.lastError ?? "the tool was not called with a valid payload"}.`
+    : undefined;
+}
+
+async function repairStructuredOutput(session: AgentSession, capture: StructuredCapture): Promise<boolean> {
+  if (capture.json !== undefined) return false;
+  await session.prompt(structuredRetryPrompt(capture));
+  return true;
+}
 
 const TRUSTED_FAST_EXTENSION_PATH = "<inline:subagent-fast>";
 const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
@@ -60,6 +76,7 @@ export const SUBAGENT_TOOL_NAMES = {
   AGENT: "Agent",
   GET_RESULT: "get_subagent_result",
   STEER: "steer_subagent",
+  WORKFLOW: "SubagentWorkflow",
 } as const;
 
 /** Names of tools registered by this extension that subagents must NOT inherit. */
@@ -220,6 +237,7 @@ export function installExtensionToolScope(
     extensionTools: string[] | undefined;
     allowNesting: boolean | undefined;
     isolated: boolean | undefined;
+    structuredOutput?: boolean;
   },
 ): void {
   const { builtinToolNames, extensions, extensionTools, allowNesting, isolated } = ctx;
@@ -229,8 +247,8 @@ export function installExtensionToolScope(
   // filters extension tools by `extensionTools` (exact names or trailing-`*`
   // wildcards), and drops the nested-subagent tools unless `allowNesting`. Its
   // output order follows the live available list, so this IS the final active set.
-  const computeActive = (): string[] =>
-    computeActiveToolNames({
+  const computeActive = (): string[] => {
+    const active = computeActiveToolNames({
       availableToolNames: session.getAllTools().map((t) => t.name),
       builtinToolNames,
       builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
@@ -238,7 +256,10 @@ export function installExtensionToolScope(
       extensionTools,
       allowNesting,
       isolated,
-    });
+    }).filter(name => name !== SUBAGENT_TOOL_NAMES.WORKFLOW);
+    if (ctx.structuredOutput && !active.includes(STRUCTURED_OUTPUT_TOOL_NAME)) active.push(STRUCTURED_OUTPUT_TOOL_NAME);
+    return active;
+  };
 
   const renarrow = () => {
     const next = computeActive();
@@ -299,6 +320,8 @@ export interface ToolActivity {
 }
 
 export interface RunOptions {
+  workflow?: boolean;
+  structuredOutput?: CompiledSchema;
   /** ExtensionAPI instance — used for pi.exec() instead of execSync. */
   pi: ExtensionAPI;
   /** Manager-assigned id; suffixes session name to disambiguate parallel spawns (e.g. `Explore#a1b2c3d4`). */
@@ -354,6 +377,8 @@ export interface RunOptions {
 }
 
 export interface RunResult {
+  structuredJson?: string;
+  structuredRetried?: boolean;
   responseText: string;
   session: AgentSession;
   /** True if the agent was hard-aborted (max_turns + grace exceeded). */
@@ -523,6 +548,15 @@ export async function runAgent(
     const fallback = DEFAULT_AGENTS.get("general-purpose");
     if (!fallback) throw new Error(`No fallback config available for unknown type "${type}"`);
     systemPrompt = buildAgentPrompt({ ...fallback, name: type }, effectiveCwd, env, parentSystemPrompt, extras);
+  }
+
+  if (options.workflow && !options.structuredOutput) {
+    systemPrompt += `
+
+<workflow_child>
+Your final message IS the return value of this task. A workflow script captures it and passes it to the next stage.
+Return only the answer, in exactly the shape the prompt asks for — no preamble, no summary of what you did, no offer to continue.
+</workflow_child>`;
   }
 
   // noSkills is driven only by discoverSkills; preloaded skills (if any) are already
@@ -793,7 +827,13 @@ export async function runAgent(
     sessionOpts.thinkingLevel = thinkingLevel;
   }
 
+  const structuredCapture = options.structuredOutput ? createStructuredCapture() : undefined;
+  if (options.structuredOutput && structuredCapture) {
+    sessionOpts.customTools = [createStructuredOutputTool(options.structuredOutput, structuredCapture)];
+    sessionOpts.tools?.push(STRUCTURED_OUTPUT_TOOL_NAME);
+  }
   const { session } = await createAgentSession(sessionOpts);
+  if (structuredCapture) structuredSessions.set(session, structuredCapture);
 
   const baseSessionName = agentConfig?.name ?? type;
   session.setSessionName(
@@ -826,6 +866,7 @@ export async function runAgent(
       extensionTools: agentConfig?.extensionToolNames,
       allowNesting: agentConfig?.allowNesting,
       isolated: options.isolated,
+      structuredOutput: structuredCapture !== undefined,
     });
   }
 
@@ -905,9 +946,15 @@ export async function runAgent(
   // Boundary for the history fallback: only assistant text produced from here
   // on counts as this run's output (a fresh session, so usually 0).
   const startLen = session.messages.length;
+  let structuredRetried = false;
   try {
     if (options.signal?.aborted) aborted = true;
-    else await session.prompt(effectivePrompt);
+    else {
+      await session.prompt(effectivePrompt);
+      if (structuredCapture && !aborted && !options.signal?.aborted && !finalTurnError(session, startLen)) {
+        structuredRetried = await repairStructuredOutput(session, structuredCapture);
+      }
+    }
   } finally {
     unsubTurns();
     collector.unsubscribe();
@@ -915,7 +962,10 @@ export async function runAgent(
   }
 
   const responseText = collector.getText().trim() || getLastAssistantText(session, startLen);
-  return { responseText, session, aborted, steered: softLimitReached, failure: finalTurnError(session, startLen) };
+  return { responseText, session, aborted, steered: softLimitReached,
+    structuredJson: structuredCapture?.json, structuredRetried,
+    failure: finalTurnError(session, startLen) ?? structuredFailure(structuredCapture),
+  };
 }
 
 /**
@@ -931,7 +981,7 @@ export async function resumeAgent(
     onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
     signal?: AbortSignal;
   } = {},
-): Promise<{ text: string; failure?: string }> {
+): Promise<{ text: string; failure?: string; structuredJson?: string; structuredRetried?: boolean }> {
   // Boundary for the history fallback: the session already holds prior turns,
   // so only assistant text produced by THIS resume prompt counts as its output
   // — a failed resume must not surface the previous turn's answer (#144).
@@ -961,8 +1011,16 @@ export async function resumeAgent(
       })
     : () => {};
 
+  const capture = structuredSessions.get(session);
+  if (capture) { capture.json = undefined; capture.called = false; capture.lastError = undefined; }
+  let structuredRetried = false;
   try {
-    await session.prompt(prompt);
+    if (!options.signal?.aborted) {
+      await session.prompt(prompt);
+      if (capture && !options.signal?.aborted && !finalTurnError(session, startLen)) {
+        structuredRetried = await repairStructuredOutput(session, capture);
+      }
+    }
   } finally {
     collector.unsubscribe();
     unsubEvents();
@@ -971,7 +1029,8 @@ export async function resumeAgent(
 
   return {
     text: collector.getText().trim() || getLastAssistantText(session, startLen),
-    failure: finalTurnError(session, startLen),
+    failure: finalTurnError(session, startLen) ?? structuredFailure(capture),
+    structuredJson: capture?.json, structuredRetried,
   };
 }
 

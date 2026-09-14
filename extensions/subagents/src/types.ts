@@ -90,6 +90,11 @@ export type JoinMode = 'async' | 'group' | 'smart';
 export type WidgetMode = 'all' | 'background' | 'off';
 
 export interface AgentRecord {
+  /** Workflow-owned children retain accounting but report through their workflow. */
+  workflowId?: string;
+  cwd?: string;
+  structuredJson?: string;
+  structuredRetried?: boolean;
   id: string;
   type: SubagentType;
   description: string;

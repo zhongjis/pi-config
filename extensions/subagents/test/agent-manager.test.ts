@@ -1384,3 +1384,57 @@ describe("AgentManager — independent foreground pool", () => {
     expect(manager.getLifetimeCost()).toBe(0.75);
   });
 });
+
+describe("workflow pool ownership", () => {
+  let manager: AgentManager;
+  afterEach(() => manager?.dispose());
+
+  it("does not consume foreground/background slots or notifications, but retains usage and internal visibility", async () => {
+    const completed = vi.fn();
+    const started = vi.fn();
+    const usage = vi.fn();
+    manager = new AgentManager(completed, 1, started);
+    manager.setMaxConcurrentForeground(1);
+    manager.setUsageListener(usage);
+    let finishWorkflow: (() => void) | undefined;
+    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
+      options.onAssistantUsage?.({ input: 2, output: 3, cacheWrite: 0, cacheRead: 7, cost: 0.25 });
+      await new Promise<void>(resolve => { finishWorkflow = resolve; });
+      return { responseText: "workflow", session: mockSession(), aborted: false, steered: false };
+    }).mockResolvedValue({ responseText: "ordinary", session: mockSession(), aborted: false, steered: false });
+    const pending = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "workflow", {
+      description: "workflow", workflowId: "wf-1",
+    });
+    const workflow = manager.listAgents()[0];
+    expect(workflow.workflowId).toBe("wf-1");
+    expect(manager.getRunning()).toEqual([]);
+    const ordinary = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "ordinary", { description: "ordinary" });
+    expect(ordinary.record.status).toBe("completed");
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(manager.getLifetimeCost()).toBe(0.25);
+    expect(workflow.lifetimeUsage.cacheRead).toBe(7);
+    expect(usage).toHaveBeenCalledTimes(1);
+    finishWorkflow?.();
+    await pending;
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(manager.listAgents()).toContain(workflow);
+  });
+
+  it("tracks resumed workflow promises, rejects concurrent resumes, and aborts via manager", async () => {
+    const { resumeAgent } = await import("../src/agent-runner.js");
+    manager = new AgentManager();
+    resolvedRun();
+    const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "child", workflowId: "wf" });
+    vi.mocked(resumeAgent).mockImplementationOnce(async (_session, _prompt, options) => {
+      await new Promise<void>(resolve => options?.signal?.addEventListener("abort", () => resolve(), { once: true }));
+      return { text: "cancelled" };
+    });
+    const resumed = manager.resume(record.id, "next");
+    await expect(manager.resume(record.id, "overlap")).rejects.toThrow("already running");
+    expect(manager.abort(record.id)).toBe(true);
+    await manager.waitForAll();
+    expect((await resumed)?.status).toBe("stopped");
+    expect(await record.promise).toBe("cancelled");
+  });
+});

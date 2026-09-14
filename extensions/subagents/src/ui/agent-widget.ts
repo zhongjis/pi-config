@@ -263,7 +263,7 @@ export class AgentWidget {
   ) {}
 
   /**
-   * Agents eligible for the widget, per the current `WidgetMode`:
+   * Top-level agents eligible for the widget, per the current `WidgetMode`:
    *   - `off`: none (the widget's existing empty-state path hides it entirely).
    *   - `background`: drop only agents *known* to be foreground
    *     (`isBackground === false`); keep everything else — background, queued,
@@ -271,10 +271,10 @@ export class AgentWidget {
    *     record flag rather than the UI-only `invocation` snapshot (which only the
    *     Agent-tool path sets), and excluding rather than allow-listing, means
    *     only proven-foreground runs drop out — nothing else silently vanishes.
-   *   - `all`: every agent.
+   *   - `all`: every agent not owned by a workflow.
    */
   private widgetAgents() {
-    const all = this.manager.listAgents();
+    const all = this.manager.listAgents().filter(a => !a.workflowId);
     switch (this.mode()) {
       case "off": return [];
       case "background": return all.filter(a => a.isBackground !== false);

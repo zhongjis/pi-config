@@ -15,6 +15,7 @@ import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
 import type { AgentInvocation, AgentRecord, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
+import type { CompiledSchema } from "./workflow/json-schema.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
@@ -67,7 +68,10 @@ interface SpawnArgs {
   options: SpawnOptions;
 }
 
-interface SpawnOptions {
+export interface SpawnOptions {
+  /** Internal ownership: the workflow runtime owns its independent concurrency pool. */
+  workflowId?: string;
+  structuredOutput?: CompiledSchema;
   description: string;
   model?: Model<any>;
   selectedModel?: SelectedAgentModel;
@@ -220,6 +224,8 @@ export class AgentManager {
     const abortController = new AbortController();
     const record: AgentRecord = {
       id,
+      workflowId: options.workflowId,
+      cwd: options.cwd ?? ctx.cwd,
       type,
       description: options.description,
       status: "queued",
@@ -240,7 +246,7 @@ export class AgentManager {
     record.promise = new Promise<string>(resolve => {
       this.runs.set(id, {
         resolve, detach: () => {}, active: false,
-        pool: options.isBackground ? "background" : foreground ? "foreground" : undefined,
+        pool: options.workflowId !== undefined ? undefined : options.isBackground ? "background" : foreground ? "foreground" : undefined,
       });
     });
     this.agents.set(id, record);
@@ -257,7 +263,7 @@ export class AgentManager {
         if (signal.aborted) this.abort(id);
       }
       if (record.status === "stopped") return id;
-      if (!options.bypassQueue && !this.poolHasRoom(foreground, options.isBackground)) {
+      if (options.workflowId === undefined && !options.bypassQueue && !this.poolHasRoom(foreground, options.isBackground)) {
         this.queue.push({ id, args, foreground });
         return id;
       }
@@ -288,11 +294,13 @@ export class AgentManager {
       if (run.pool === "background") this.runningBackground++;
       if (run.pool === "foreground") this.runningForeground++;
     }
-    this.onStart?.(record);
+    if (record.workflowId === undefined) this.onStart?.(record);
 
     void runAgent(ctx, type, prompt, {
       pi,
       agentId: id,
+      workflow: options.workflowId !== undefined,
+      structuredOutput: options.structuredOutput,
       model: options.model,
       selectedModel: options.selectedModel,
       maxTurns: options.maxTurns,
@@ -330,7 +338,7 @@ export class AgentManager {
       },
       onCompaction: (info) => {
         record.compactionCount++;
-        this.onCompact?.(record, info);
+        if (record.workflowId === undefined) this.onCompact?.(record, info);
         options.onCompaction?.(info);
       },
       onSessionCreated: (session) => {
@@ -350,7 +358,9 @@ export class AgentManager {
         options.onSessionCreated?.(session);
       },
     })
-      .then(({ responseText, session, aborted, steered, failure }) => {
+      .then(({ responseText, session, aborted, steered, failure, structuredJson, structuredRetried }) => {
+        record.structuredJson = structuredJson;
+        record.structuredRetried = structuredRetried;
         // Don't overwrite status if externally stopped via abort()
         if (record.status !== "stopped") {
           // Precedence: a hard abort keeps "aborted"; then a failed final turn
@@ -407,9 +417,9 @@ export class AgentManager {
   }
 
   private completeRun(record: AgentRecord): void {
-    if (!record.isBackground) record.resultConsumed = true;
+    if (!record.isBackground || record.workflowId !== undefined) record.resultConsumed = true;
     try {
-      this.onComplete?.(record);
+      if (record.workflowId === undefined) this.onComplete?.(record);
     } catch (error) {
       // Notification failures are diagnostics, never failures of the child run.
       record.diagnostics ??= [];
@@ -423,6 +433,7 @@ export class AgentManager {
     const run = this.runs.get(id);
     if (!run) return;
     this.runs.delete(id);
+    if (this.disposed) { record.outputCleanup?.(); record.session?.dispose(); }
     run.detach();
     if (run.active) {
       if (run.pool === "background") this.runningBackground--;
@@ -483,9 +494,26 @@ export class AgentManager {
     id: string,
     prompt: string,
     signal?: AbortSignal,
+    ctx?: ExtensionContext,
   ): Promise<AgentRecord | undefined> {
     const record = this.agents.get(id);
-    if (!record?.session) return undefined;
+    if (!record?.session || this.disposed) return undefined;
+    if (this.runs.has(id)) throw new Error("Agent is already running.");
+    if (ctx) {
+      const denial = this.policyCheck?.(ctx, record.type);
+      if (denial) throw new Error(denial);
+    }
+    const controller = new AbortController();
+    record.abortController = controller;
+    const parentSignal = signal;
+    const onAbort = () => this.abort(id);
+    record.promise = new Promise<string>(resolve => {
+      this.runs.set(id, { resolve, active: true, pool: undefined,
+        detach: () => parentSignal?.removeEventListener("abort", onAbort) });
+    });
+    signal = controller.signal;
+    record.structuredJson = undefined;
+    record.structuredRetried = undefined;
 
     record.status = "running";
     record.startedAt = Date.now();
@@ -498,9 +526,11 @@ export class AgentManager {
       thinking: record.session.thinkingLevel,
     };
 
+    parentSignal?.addEventListener("abort", onAbort, { once: true });
+    if (parentSignal?.aborted) onAbort();
     const previousTurns = record.turnCount ?? 0;
     try {
-      const { text, failure } = await resumeAgent(record.session, prompt, {
+      const { text, failure, structuredJson, structuredRetried } = await resumeAgent(record.session, prompt, {
         onTurnEnd: (turnCount) => { record.turnCount = previousTurns + turnCount; },
         onToolActivity: (activity) => {
           if (activity.type === "end") record.toolUses++;
@@ -517,20 +547,24 @@ export class AgentManager {
         },
         onCompaction: (info) => {
           record.compactionCount++;
-          this.onCompact?.(record, info);
+          if (record.workflowId === undefined) this.onCompact?.(record, info);
         },
         signal,
       });
       // Same contract as the spawn path (#144): a failed final turn is an
       // error, not a completion — but the resumed text stays available.
-      record.status = failure ? "error" : "completed";
+      record.structuredJson = structuredJson;
+      record.structuredRetried = structuredRetried;
+      record.status = signal.aborted ? "stopped" : failure ? "error" : "completed";
       if (failure) record.error = failure;
       record.result = text;
       record.completedAt = Date.now();
     } catch (err) {
-      record.status = "error";
+      record.status = signal.aborted ? "stopped" : "error";
       record.error = err instanceof Error ? err.message : String(err);
       record.completedAt = Date.now();
+    } finally {
+      this.releaseRun(id, record);
     }
 
     return record;
@@ -577,7 +611,7 @@ export class AgentManager {
 
   /** Records currently executing (status === "running"). Used by background supervision. */
   getRunning(): AgentRecord[] {
-    return [...this.agents.values()].filter((r) => r.status === "running");
+    return [...this.agents.values()].filter((r) => r.workflowId === undefined && r.status === "running");
   }
 
   abort(id: string): boolean {
@@ -603,6 +637,8 @@ export class AgentManager {
 
   /** Dispose a record's session and remove it from the map. */
   private removeRecord(id: string, record: AgentRecord): void {
+    record.outputCleanup?.();
+    record.outputCleanup = undefined;
     record.session?.dispose?.();
     record.session = undefined;
     this.agents.delete(id);

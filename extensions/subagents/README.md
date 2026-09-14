@@ -13,6 +13,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 - **Local import commit:** `5bec4ea2378fd39241ab6088144e372314f1b464`
 - **Adapted:** Panda Harness presentation, root test/discovery wiring, orchestration guidance, and Agent-tree `local://` inheritance.
 - **Selective control backports:** `v0.19.0` (`4f572eaa04c09d3dbc16e4a5f13a16b295e84e14`), adapted without changing the base pin or execution/persistence defaults.[1]
+- **Selective workflow import:** full `v0.19.0` scripted `SubagentWorkflow` feature from `4f572eaa04c09d3dbc16e4a5f13a16b295e84e14`, plus lowercase workflow-name collision fix `e955e29c51b7a6cce37e1108cd2d6c57a77e151c`; separate from the original base provenance above.[1][2]
 
 ## Local Tweaks
 
@@ -21,7 +22,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/tool-rendering.ts`, `src/index.ts`, `src/types.ts`, `src/agent-manager.ts`, `src/ui/agent-widget.ts`, `test/tool-rendering.test.ts`, `test/runtime-metadata-e2e.test.ts` | Compact status/preview, model/thinking, and configured expand hint; telemetry only expanded; complete Markdown result/error before Run metadata, diagnostics, and artifacts; SDK metadata across foreground, retrieval, and resume | Quiet, truthful supervision without rewriting model-facing content; malformed/legacy details retain raw output |
 | `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
 | `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
-| `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.83 test/runtime fixtures target `subagents`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
+| `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.85.1 SDK alignment target `subagents`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
 | `src/agent-manager.ts`, `test/agent-manager.test.ts` | Terminal Agent records retain their in-memory sessions for 30 minutes before timer cleanup | Preserve resumability across long parent verification while keeping retention bounded |
 | `src/model-resolution.ts`, `src/invocation-config.ts`, `src/cross-extension-rpc.ts`, `src/agent-runner.ts` | Ordered available-model chains and thinking precedence; exhausted chains fail; final answers at the soft limit complete without steering; diagnostics do not count as tool uses | Honor configured routing and report actual execution |
 | `src/index.ts`, `src/agent-runner.ts`, `src/tool-rendering.ts`, thinking regression tests | Omitted thinking delegates to the selected-model SDK default; pending configuration becomes actual session metadata | Never inherit parent thinking implicitly or present a pending default as actual |
@@ -29,8 +30,9 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/index.ts`, `examples/agent-tool-description.md`, `test/tool-description-mode.test.ts` | Full advertisements retain verbatim model chains or parent inheritance; full/compact/custom lists separate built-in and configured extension selectors, including none/unavailable | Advertise configuration without claiming runtime loading, authentication, or permissions; compact lists still omit models |
 | `src/agent-manager.ts`, `src/agent-runner.ts`, `src/usage.ts`, `src/settings.ts`, `src/index.ts`, control regression tests | Independent foreground queue and opt-in native usage reporting; retain existing live cost bridge | Bound blocking fan-out and report each usage delta once without double-counting footer cost |
 | `src/types.ts`, `src/ui/agent-widget.ts`, `src/tool-rendering.ts`, `src/index.ts`, rendering/runtime tests | Requested/effective discrepancies and optional estimated cost appear only in expanded Run metadata | Preserve actual SDK metadata and the compact three-row layout |
+| `src/workflow/`, workflow registration/settings and UI integration | Selectively import scripted workflows; preserve local thinking/`:fast`, delegation, usage, and session-local contracts; reject filesystem isolation; retain retry-attempt usage and settle queued skips while paused | Opt-in model-generated orchestration with correct supervision and accounting |
 
-Upstream provenance and public RPC/events remain unchanged. FleetView and Thinking Steps remain unchanged.
+The base upstream provenance and existing Agent RPC/events remain unchanged. Workflow supervision extends FleetView; Thinking Steps remains unchanged.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
@@ -53,7 +55,6 @@ https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
 - **Fuzzy model selection** — specify models by name (`"haiku"`, `"sonnet"`) instead of full IDs, with automatic filtering to only available/configured models
 - **Context inheritance** — optionally fork the parent conversation into a sub-agent so it knows what's been discussed
 - **Persistent agent memory** — three scopes (project, local, user) with automatic read-only fallback for agents without write tools
-- **Git worktree isolation** — run agents in isolated repo copies; changes auto-committed to branches on completion
 - **Skill preloading** — inject named skills into agent system prompts, discovered from `.pi/skills/`, `.agents/skills/`, and global locations (Pi-standard `<name>/SKILL.md` directory layout supported)
 - **Tool denylist** — block specific tools via `disallowed_tools` frontmatter
 - **Styled completion notifications** — background agent results render as themed, compact notification boxes (icon, stats, result preview) instead of raw XML. Expandable to show full output. Group completions render each agent individually
@@ -168,7 +169,7 @@ Compact rows omit redundant status/result/activity/error labels and the model pr
 
 Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Expanded Run metadata discloses requested model/thinking when they differ from actual execution, with equivalent fuzzy model names kept quiet. Resume retains the original request and session rather than presenting resume-call overrides as applied. Optional estimated cost is also expanded-only; compact rows and model-visible result text remain unchanged. Resume uses the retained session rather than re-resolving changed spawn configuration. Turns and soft limit have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
 
-By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of `persist_session` (the pi session on disk), and it does not affect `isolation: worktree` (which commits the agent's work to a git branch) or `memory:` (durable files) — set those accordingly if the goal is to keep a run off disk entirely. Background agent completion notifications render as styled boxes:
+By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of `persist_session` (the pi session on disk) and `memory:` (durable files). Workflow scripts/journals also have separate storage. Background agent completion notifications render as styled boxes:
 
 ```
 ✓ Find auth files completed
@@ -245,20 +246,19 @@ All fields are optional — sensible defaults for everything.
 | `skills` | `true` | Inherit skills from parent. Can be a comma-separated list of skill names to preload (see [Skill Preloading](#skill-preloading) for discovery locations) |
 | `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |
 | `disallowed_tools` | — | Comma-separated tools to deny even if extensions provide them |
-| `isolation` | — | Set to `worktree` to run in an isolated git worktree |
 | `model` | inherit parent | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`). Resolved tolerantly (`.`/`-` and a trailing date stamp are interchangeable) and falls back to the same model under another provider if the named one doesn't have it |
 | `thinking` | model default | off, minimal, low, medium, high, xhigh, max — actual availability depends on your pi version and model; pi clamps unsupported levels down |
 | `max_turns` | unlimited | Max agentic turns before graceful shutdown. `0` or omit for unlimited |
 | `persist_session` | `false` | Persist this subagent as a normal pi session instead of keeping the session in memory only. The subagent's `.output` transcript is still written either way unless `output_transcript: false` |
-| `output_transcript` | `true` (or `subagents.json` `outputTranscript`) | Write this subagent's `.output` transcript; when set, overrides the `subagents.json` `outputTranscript` default. Set `false` to write no transcript file or path. Governs only the transcript — independent of `persist_session`, `isolation: worktree`, and `memory:` |
+| `output_transcript` | `true` (or `subagents.json` `outputTranscript`) | Write this subagent's `.output` transcript; when set, overrides the `subagents.json` `outputTranscript` default. Set `false` to write no transcript file or path. Governs only the transcript — independent of `persist_session` and `memory:` |
 | `session_dir` | pi default | Optional session directory when `persist_session: true`; omitted uses pi's normal session location, and relative paths resolve from the agent cwd |
 | `prompt_mode` | `replace` | `replace`: body is the full system prompt (no AGENTS.md / CLAUDE.md inheritance). `append`: body appended to parent's prompt (agent acts as a "parent twin" — inherits parent's AGENTS.md / CLAUDE.md) |
 | `inherit_context` | `false` | Fork parent conversation into agent |
 | `run_in_background` | `false` | Run in background by default |
-| `isolated` | `false` | Hermetic specialist mode: forces user extensions off, disables skills/context, and drops `ext:` selectors. Only built-in tools surface; hidden hook-only `session-local` and `subagent-fast` runtimes remain bound. Distinct from `isolation: worktree` (filesystem) |
+| `isolated` | `false` | Hermetic specialist mode: forces user extensions off, disables skills/context, and drops `ext:` selectors. Only built-in tools surface; hidden hook-only `session-local` and `subagent-fast` runtimes remain bound. Not filesystem isolation |
 | `enabled` | `true` | Set to `false` to disable an agent (useful for hiding a default agent per-project) |
 
-Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, `isolated`, or `isolation`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
+Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, or `isolated`, those values are locked for that agent. `Agent` tool parameters only fill fields the agent config leaves unspecified.
 
 Model candidates accept `provider/model[:thinking]:fast`; no suffix means fixed off, never the parent's `/fast` toggle. Resume retains the selected setting. See [child policy contracts](AGENTS.md#local-contracts) for validation/isolation and [shared helpers](../lib/README.md#fast-request-helpers) for strict request mechanics.
 
@@ -320,7 +320,6 @@ Launch a sub-agent.
 | `run_in_background` | boolean | no | Run without blocking |
 | `resume` | string | no | Agent ID to resume a previous session |
 | `isolated` | boolean | no | No extension/MCP tools |
-| `isolation` | `"worktree"` | no | Run in an isolated git worktree |
 | `inherit_context` | boolean | no | Fork parent conversation into agent |
 
 ### `get_subagent_result`
@@ -343,6 +342,32 @@ Send a steering message to a running agent. The message interrupts after the cur
 |-----------|------|----------|-------------|
 | `agent_id` | string | yes | Agent ID to steer |
 | `message` | string | yes | Message to inject into agent conversation |
+
+### `SubagentWorkflow` (opt-in)
+
+Scripted orchestration and supervision are selectively vendored from upstream; local execution policies remain authoritative.[1][2]
+
+Set `workflowsEnabled: true` in `subagents.json` or enable workflows in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled workflows add no tool schema or workflow prompt cost. Registration changes, including disabling, require reload.
+
+The model generates a task-specific script at runtime rather than selecting a shipped research recipe. Inputs:
+
+| Parameter | Purpose |
+|-----------|---------|
+| `script` | Inline generated workflow script |
+| `scriptPath` | Read a workflow script from a file |
+| `name` | Select a saved workflow by name |
+| `args` | Arguments supplied to the script |
+| `resumeFromRunId` | Resume through journal prefix replay within the same session |
+
+Source precedence is `scriptPath` → `script` → `name`. The script API supports parallel fan-out, pipelines with sequential stages per item and concurrent items, structured child output, gates, and one-level saved-workflow composition. Owned children cannot invoke the workflow tool recursively. CLI file execution uses `--subagents-workflow-file=<path>`.
+
+Workflow effort follows local thinking authority: agent frontmatter → selected model-chain suffix → invocation effort/thinking override → SDK selected-model default, never implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
+
+Workflows MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children MUST NOT receive recursive workflow tools. The inspector provides pause, skip, retry, and cancel controls; FleetView represents each workflow as one row rather than duplicating its owned children.
+
+There is no filesystem isolation backend. Workflow isolation options MUST be rejected, and gates MUST run in the effective child cwd. Scripts and journals persist in the ephemeral session task area, independently of Agent transcript settings. Truncated completion notifications link a full `<run-id>.workflow-result.txt` artifact; write failures are reported instead of claiming the artifact exists. Prefix replay is same-session only: it is not durable cross-session recovery, a sandbox, a transaction, or rollback. Skips, retries, cancellation, and replay do not undo external side effects.
+
+Saved-workflow composition is an API capability, not a bundle of reusable workflow files or research deliverables. Validate real behavior in a fresh interactive Pi session with a model-generated script; see [verification requirements](AGENTS.md#verification).
 
 ## Commands
 
@@ -435,13 +460,14 @@ Runtime tuning values set via `/agents` → Settings (background/foreground conc
 
 **Precedence:** project overrides global on any field present in both. Missing fields fall back to the hardcoded defaults (max concurrency `4`, default max turns unlimited, grace turns `5`, join mode `smart`, defaults enabled).
 
-**Control settings** (applied live):
+**Control settings** (applied live except workflow registration):
 
 | Setting | Default | Behavior |
 |---------|---------|----------|
 | `maxConcurrentForeground` | `0` | Independent blocking-agent limit; `0` means unlimited |
 | `reportUsage` | `false` | Report pending subagent usage through final Agent/retrieval/steering tool results into native Pi session totals |
 | `showCost` | `false` | Show a positive estimated per-agent cost only in expanded Run metadata |
+| `workflowsEnabled` | `false` | Enable scripted workflows; reload required for registration changes; disabled adds no workflow tool schema/prompt cost |
 
 Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
 
@@ -449,7 +475,7 @@ The custom QoL footer retains its live accounting: parent assistant-message cost
 
 **Disable defaults** (`disableDefaultAgents`, default `false`): when on, the three built-in agents (general-purpose, Explore, Plan) are not registered — only your project/global custom agents are advertised and spawnable. User-defined agents are unaffected, including ones that override a default by name. The Agent tool's type list updates on the next pi session (the tool schema is registered at startup).
 
-**Output transcript** (`outputTranscript`, default `true`): the project/global default for writing each subagent's `.output` transcript. Toggle via `/agents → Settings → Output transcript`, or set `false` in `subagents.json` to make transcripts opt-in project-wide — useful when run transcripts shouldn't sit on disk for backup or DLP tooling to pick up. A custom agent's `output_transcript` frontmatter overrides this per agent. Applied live at spawn time. Governs only the transcript, not `persist_session`, worktree commits, or memory files.
+**Output transcript** (`outputTranscript`, default `true`): the project/global default for writing each subagent's `.output` transcript. Toggle via `/agents → Settings → Output transcript`, or set `false` in `subagents.json` to make transcripts opt-in project-wide — useful when run transcripts shouldn't sit on disk for backup or DLP tooling to pick up. A custom agent's `output_transcript` frontmatter overrides this per agent. Applied live at spawn time. Governs only the transcript, not `persist_session`, memory files, or workflow scripts/journals.
 
 **Tool description** (`toolDescriptionMode`, default `"full"`): which Agent tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (~1,400 tokens with the default agents); `"compact"` is ~75% smaller — one-line agent type list, terse usage notes — for small/local models where tool-spec tokens are expensive. Per-option details stay in the parameter descriptions in every mode (the parameter schema is never customizable). Applies on the next pi session.
 
@@ -557,7 +583,7 @@ pi.events.emit("subagents:rpc:spawn", {
 
 `options.model` accepts either a `Model` object (e.g. `ctx.model`) or a `"provider/modelId"` string — strings are resolved against `ctx.modelRegistry` at the RPC boundary, so cross-extension callers can forward serializable values without losing auth context.
 
-`options.cwd` (absolute path to an existing directory — anything else returns an error envelope; `null` means unset) runs the agent in a different working directory than the parent session. Its tools operate there and the prompt's environment block describes it, but **`.pi` config still loads from the parent session's project** — the target directory's `.pi` extensions never execute, and its agents/skills/settings are not picked up. Combined with `isolation: "worktree"`, the worktree is created *from* the target directory's repo, the agent works at the equivalent subdirectory inside the copy (a monorepo-package cwd stays scoped to that package), and the resulting `pi-agent-*` branch lands in that repo — the completion message names it. On session end, worktree registrations are pruned in every repo that received one; only a hard crash can leave a stale entry (then: `git worktree prune` in the target repo). Agents with `memory:` keep reading/writing the parent project's memory.
+`options.cwd` (absolute path to an existing directory — anything else returns an error envelope; `null` means unset) runs the agent in a different working directory than the parent session. Its tools operate there and the prompt's environment block describes it, but **`.pi` config still loads from the parent session's project** — the target directory's `.pi` extensions never execute, and its agents/skills/settings are not picked up. Agents with `memory:` keep reading/writing the parent project's memory.
 
 ### Stop
 
@@ -595,23 +621,6 @@ The `user` scope previously hardcoded `~/.pi/agent-memory/`. If that legacy dire
 Memory uses a `MEMORY.md` index file and individual memory files with frontmatter. Agents with write tools get full read-write access. **Read-only agents** (no `write`/`edit` tools) automatically get read-only memory — they can consume memories written by other agents but cannot modify them. This prevents unintended tool escalation.
 
 The `disallowed_tools` field is respected when determining write capability — an agent with `tools: write` + `disallowed_tools: write` correctly gets read-only memory.
-
-## Worktree Isolation
-
-Set `isolation: worktree` to run an agent in a temporary git worktree:
-
-```
-Agent({ subagent_type: "refactor", prompt: "...", isolation: "worktree" })
-```
-
-The agent gets a full, isolated copy of the repository. On completion:
-- **No changes:** worktree is cleaned up automatically
-- **Changes made:** changes are committed to a new branch (`pi-agent-<id>`) and returned in the result
-- **Agent committed its own work:** the branch is created at the agent's HEAD, preserving its commits (uncommitted leftovers are committed on top first)
-
-The automatic preservation commit uses `--no-verify`, so local pre-commit hooks can't block it — the commit is local-only and never pushed, and pre-push/server-side hooks still apply.
-
-If the worktree cannot be created (not a git repo, no commits, or `git worktree add` fails), the `Agent` tool returns a clear error instead of running unisolated — `isolation: "worktree"` is a strict guarantee, not a hint. Initialize git and commit at least once, or omit `isolation`.
 
 ## Skill Preloading
 
@@ -672,7 +681,7 @@ src/
   memory.ts           # Persistent agent memory (resolve, read, build prompt blocks)
   skill-loader.ts     # Preload skills (Pi-standard + Agent Skills spec layouts)
   output-file.ts      # Streaming output file transcripts for agent sessions
-  worktree.ts         # Git worktree isolation (create, cleanup, prune)
+  workflow/           # Script execution, journal replay, composition, and workflow supervision
   prompts.ts          # Config-driven system prompt builder
   context.ts          # Parent conversation context for inherit_context
   env.ts              # Environment detection (git, platform)
@@ -688,3 +697,5 @@ MIT — [tintinweb](https://github.com/tintinweb)
 ## Sources
 
 [1] Upstream control implementation, v0.19.0 (https://github.com/tintinweb/pi-subagents/tree/4f572eaa04c09d3dbc16e4a5f13a16b295e84e14/src)
+
+[2] Upstream lowercase workflow-name collision fix (https://github.com/tintinweb/pi-subagents/commit/e955e29c51b7a6cce37e1108cd2d6c57a77e151c)

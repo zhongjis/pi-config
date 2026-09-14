@@ -2214,3 +2214,84 @@ it("does not prompt when the parent aborted during session startup", async () =>
   expect(session.prompt).not.toHaveBeenCalled();
   expect(result.aborted).toBe(true);
 });
+
+describe("workflow structured output", () => {
+  const schema = {
+    schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+    check(value: unknown): true | string {
+      return typeof value === "object" && value !== null && "answer" in value && typeof value.answer === "string"
+        ? true : "answer must be a string";
+    },
+  };
+
+  it("injects before session creation, repairs prose once, and resets capture on resume", async () => {
+    const { session } = createSession("prose");
+    createAgentSession.mockResolvedValue({ session });
+    let calls = 0;
+    session.prompt.mockImplementation(async () => {
+      calls++;
+      const tool = createAgentSession.mock.calls[0][0].customTools[0];
+      if (calls === 2 || calls === 4) await tool.execute("result", { answer: `answer-${calls}` });
+    });
+    const result = await runAgent(ctx, "Explore", "answer", { pi, workflow: true, structuredOutput: schema });
+    expect(createAgentSession.mock.calls[0][0].tools).toContain("StructuredOutput");
+    expect(result.structuredJson).toBe('{"answer":"answer-2"}');
+    expect(result.structuredRetried).toBe(true);
+    expect(result.failure).toBeUndefined();
+    const resumed = await resumeAgent(result.session, "again");
+    expect(resumed.structuredJson).toBe('{"answer":"answer-4"}');
+    expect(resumed.structuredRetried).toBe(true);
+    expect(session.prompt).toHaveBeenCalledTimes(4);
+  });
+
+  it("fails after a single prose repair and does not reuse a prior answer", async () => {
+    const { session } = createSession("prose");
+    createAgentSession.mockResolvedValue({ session });
+    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema });
+    expect(result.failure).toContain("StructuredOutput was not produced");
+    expect(result.structuredJson).toBeUndefined();
+    expect(session.prompt).toHaveBeenCalledTimes(2);
+  });
+
+  it("validates payloads with a model-visible tool error", async () => {
+    const { session } = createSession("prose");
+    createAgentSession.mockResolvedValue({ session });
+    session.prompt.mockImplementation(async () => {
+      const tool = createAgentSession.mock.calls[0][0].customTools[0];
+      await expect(tool.execute("bad", { answer: 5 })).rejects.toThrow("answer must be a string");
+      await tool.execute("good", { answer: "validated" });
+    });
+    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema });
+    expect(result.structuredJson).toBe('{"answer":"validated"}');
+    expect(result.structuredRetried).toBe(false);
+    expect(session.prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps StructuredOutput through live narrowing but blocks child workflow tools", async () => {
+    vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ extensions: true }));
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ extensions: true, extensionToolNames: [], allowNesting: true }));
+    const { session, listeners } = createSession("prose");
+    createAgentSession.mockResolvedValue({ session });
+    const result = await runAgent(ctx, "Explore", "answer", { pi, workflow: true, structuredOutput: schema });
+    expect(session.getActiveToolNames()).toContain("StructuredOutput");
+    expect(createAgentSession.mock.calls[0][0].excludeTools).toContain("SubagentWorkflow");
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "StructuredOutput" } })).resolves.toBeUndefined();
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "SubagentWorkflow" } })).resolves.toMatchObject({ block: true });
+    for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", content: [], stopReason: "stop" } });
+    await resumeAgent(result.session, "again");
+    expect(session.getActiveToolNames()).toContain("StructuredOutput");
+    expect(session.getActiveToolNames()).not.toContain("SubagentWorkflow");
+  });
+
+  it("never prompts a pre-aborted structured session", async () => {
+    const { session } = createSession("prose");
+    createAgentSession.mockResolvedValue({ session });
+    const result = await runAgent(ctx, "Explore", "answer", {
+      pi, structuredOutput: schema, signal: AbortSignal.abort(),
+    });
+    expect(result.aborted).toBe(true);
+    expect(session.prompt).not.toHaveBeenCalled();
+    await resumeAgent(result.session, "again", { signal: AbortSignal.abort() });
+    expect(session.prompt).not.toHaveBeenCalled();
+  });
+});

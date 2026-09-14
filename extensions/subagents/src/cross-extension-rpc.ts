@@ -109,7 +109,10 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
       // — same pattern the scheduler path already uses — so the spawned
       // agent's auth lookup doesn't crash with "No API key found for
       // undefined".
-      let normalizedOptions = options ?? {};
+      // Ownership and compiled schemas are internal, never caller-controlled RPC options.
+      let normalizedOptions = { ...options };
+      delete normalizedOptions.workflowId;
+      delete normalizedOptions.structuredOutput;
       const modelInput = getAgentConfig(type)?.model ?? (typeof normalizedOptions.model === "string" ? normalizedOptions.model : undefined);
       if (modelInput !== undefined) {
         const registry = (ctx as { modelRegistry?: ModelRegistry }).modelRegistry;
