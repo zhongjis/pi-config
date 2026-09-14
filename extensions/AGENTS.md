@@ -20,6 +20,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - Vendored changes MUST preserve provenance and LICENSE; local deltas belong with the owning extension's documentation.
 - `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display.
 - ULW is intentionally high-rigor opt-in: `ulw/prompts/gpt.md` MUST preserve automatic planning, deep parallel research, strict verification, and scoped self-correction under active mode policy; GPT-specific refinements do not change the default variant.
+- ULW GPT MUST respect proposal-only scope and planner approval/handoff gates; research tracks follow distinct factual gaps, not mandatory lane counts.
 - ULW GPT scenario evidence MUST follow distinct failure modes; combinations require concrete interaction risks. Mocked results prove caller handling only; existing evidence MAY serve multiple scenarios without bespoke reporting.
 
 ## Work Guidance
