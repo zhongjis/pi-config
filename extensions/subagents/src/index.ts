@@ -63,7 +63,7 @@ import { elapsedMs } from "./workflow/progress.js";
 import { runWorkflow } from "./workflow/runtime.js";
 import { resolveWorkflowScript } from "./workflow/saved.js";
 import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, formatWorkflowNotification, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./workflow/task.js";
-import { fullWorkflowToolDescription } from "./workflow/tool-description.js";
+import { workflowSkillPath, workflowToolDescription } from "./workflow/tool-description.js";
 
 export const WORKFLOW_FILE_FLAG = "subagents-workflow-file";
 export { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData };
@@ -1560,13 +1560,8 @@ Terse command-style prompts produce shallow, generic work.
   const workflowTool = defineTool({
     name: SUBAGENT_TOOL_NAMES.WORKFLOW,
     label: "SubagentWorkflow",
-    description: renderToolDescriptionTemplate(fullWorkflowToolDescription),
-    promptSnippet: "Run a deterministic script that orchestrates many subagents",
-    promptGuidelines: [
-      "Use SubagentWorkflow when the number of agents depends on something discovered at runtime, when work flows through stages, or when findings should be independently verified. Use Agent for one delegated task or a handful you can name up front.",
-      "Prefer `pipeline` over `parallel` — a barrier costs wall-clock whenever the stages are unevenly sized.",
-      "A workflow runs in the background and notifies you when it finishes — do not poll or sleep waiting for it.",
-    ],
+    description: workflowToolDescription,
+    promptSnippet: "Run an explicitly opted-in multi-agent workflow",
     parameters: Type.Object({
       script: Type.Optional(
         Type.String({
@@ -1729,7 +1724,10 @@ Terse command-style prompts produce shallow, generic work.
     },
   });
 
-  if (isWorkflowsEnabled()) pi.registerTool(workflowTool);
+  if (isWorkflowsEnabled()) {
+    pi.registerTool(workflowTool);
+    pi.on("resources_discover", () => isWorkflowsEnabled() ? { skillPaths: [workflowSkillPath] } : undefined);
+  }
 
   /**
    * Act on {@link decideWorkflowCollision} — the half that needs the host.

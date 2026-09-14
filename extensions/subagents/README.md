@@ -31,8 +31,11 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/agent-manager.ts`, `src/agent-runner.ts`, `src/usage.ts`, `src/settings.ts`, `src/index.ts`, control regression tests | Independent foreground queue and opt-in native usage reporting; retain existing live cost bridge | Bound blocking fan-out and report each usage delta once without double-counting footer cost |
 | `src/types.ts`, `src/ui/agent-widget.ts`, `src/tool-rendering.ts`, `src/index.ts`, rendering/runtime tests | Requested/effective discrepancies and optional estimated cost appear only in expanded Run metadata | Preserve actual SDK metadata and the compact three-row layout |
 | `src/workflow/`, workflow registration/settings and UI integration | Selectively import scripted workflows; preserve local thinking/`:fast`, delegation, usage, and session-local contracts; reject filesystem isolation; retain retry-attempt usage and settle queued skips while paused | Opt-in model-generated orchestration with correct supervision and accounting |
+| `src/workflow/tool-description.ts`, `skills/subagent-workflows/SKILL.md`, `src/index.ts` | Keep the adapted workflow manual in an extension-owned authoring skill; short tool metadata points to its module-resolved path | Progressive disclosure through native `resources_discover` only when workflows are enabled; no package metadata auto-discovery or personal skill installation |
 
 The base upstream provenance and existing Agent RPC/events remain unchanged. Workflow supervision extends FleetView; Thinking Steps remains unchanged.
+
+The bundled [workflow authoring skill](skills/subagent-workflows/SKILL.md) preserves the imported manual's decoded runtime text, except the live roster pointer and authoring-only opt-in clarification. Its upstream description was deliberately adapted from Claude Code's Workflow guidance in the workflow import above. Read it before authoring or modifying scripts; reading or invoking it alone does not authorize workflow execution. The current Agent tool description owns the available agent roster. Installation of the whole extension includes the skill; disabled workflows discover no skill.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 

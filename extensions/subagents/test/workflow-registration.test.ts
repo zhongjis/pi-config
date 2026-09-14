@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { AgentSession, ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, type ExtensionAPI, type ExtensionContext, parseFrontmatter, type ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/agent-runner.js", async () => {
@@ -121,13 +121,15 @@ function boot(settings: Record<string, unknown> = {}) {
     await vi.waitFor(() => expect(api.sendMessage.mock.calls.some(([message]) => message.content.includes(`<task-id>${id}</task-id>`))).toBe(true));
     return required(api.sendMessage.mock.calls.find(([message]) => message.content.includes(`<task-id>${id}</task-id>`)))[0];
   };
-  return { api, ui, tools, ctx, commands, execute, finish, notification, lifecycle,
+  const discover = async () => Promise.all((hooks.get("resources_discover") ?? []).map(hook => hook({ type: "resources_discover", cwd: dir, reason: "startup" }, ctx)));
+  return { api, ui, tools, ctx, commands, execute, finish, notification, lifecycle, discover,
     setFlag: (value: unknown) => { flag = value; }, setForeign: (value: typeof foreign) => { foreign = value; } };
 }
 
 it("registers no workflow tool by default; the flag is read only at startup", async () => {
   const host = boot();
   expect(host.tools.has("SubagentWorkflow")).toBe(false);
+  expect(await host.discover()).toEqual([]);
   expect(host.api.getFlag).not.toHaveBeenCalled();
   expect(host.api.registerFlag).toHaveBeenCalledWith(WORKFLOW_FILE_FLAG, expect.objectContaining({ type: "string" }));
   host.setFlag("missing.js");
@@ -157,6 +159,25 @@ it("persists the Settings toggle but registers its schema only on the next activ
   await host.lifecycle("session_shutdown");
   const reloaded = boot({ ...loadSettings(dir) });
   expect(reloaded.tools.get("SubagentWorkflow")?.parameters.properties).toHaveProperty("resumeFromRunId");
+});
+
+it("discovers the bundled authoring skill only when workflows are enabled", async () => {
+  const host = boot({ workflowsEnabled: true });
+  const resources = await host.discover();
+  expect(resources).toEqual([{ skillPaths: [expect.any(String)] }]);
+  const resource = required(resources[0]);
+  assert.ok(resource !== null && typeof resource === "object" && "skillPaths" in resource);
+  assert.ok(Array.isArray(resource.skillPaths));
+  const path: unknown = resource.skillPaths[0];
+  assert.ok(typeof path === "string");
+  expect(path).toBe(join(originalCwd, "extensions/subagents/skills/subagent-workflows/SKILL.md"));
+  const { frontmatter, body } = parseFrontmatter(readFileSync(path, "utf8"));
+  expect(frontmatter.name).toBe("subagent-workflows");
+  expect(frontmatter.description).toEqual(expect.any(String));
+  expect(body.length).toBeGreaterThan(19000);
+  const tool = required(host.tools.get("SubagentWorkflow"));
+  expect(tool.description.length).toBeLessThan(1000);
+  expect(tool.description).toContain(path);
 });
 
 it("runs owned children, emits one owner notification, and drains native usage once on a final workflow result", async () => {
@@ -235,6 +256,17 @@ it("runs the CLI file once and writes one entry without triggering a turn", asyn
   expect(renderer({ data }, { expanded: false }, plainTheme).render(80).join("\n")).not.toContain("entry tail");
   await host.lifecycle("session_start");
   expect(host.api.appendEntry).toHaveBeenCalledTimes(1);
+});
+
+it("stops discovering the authoring skill when startup collision handling disables workflows", async () => {
+  const host = boot({ workflowsEnabled: true });
+  vi.spyOn(await import("../src/workflow/collisions.js"), "decideWorkflowCollision").mockReturnValue({
+    kind: "standDown", message: "fixture collision", withdraw: true,
+  });
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  await host.lifecycle("session_start");
+  expect(host.api.setActiveTools).toHaveBeenCalled();
+  expect(await host.discover()).toEqual([undefined]);
 });
 
 it("rejects a bare workflow-file flag and reports same-name tool collisions", async () => {
