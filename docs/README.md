@@ -94,6 +94,7 @@ See [modes.md](specs/modes.md) and [orchestration-flow.md](specs/orchestration-f
 | [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Planned restore-first continuation for persisted subagent sessions |
 | [workflow-tool-output-presentation.md](specs/workflow-tool-output-presentation.md) | Workflow tool/notification disclosure, complete results, and task/Subagent identity |
 | [workflow-presentation-implementation.md](guides/workflow-presentation-implementation.md) | Implementation plan and verification evidence for workflow presentation |
+| [subagents-upstream-upgrade.md](specs/subagents-upstream-upgrade.md) | Draft v0.19.0 upstream sync, local compatibility, and Scripted Workflows |
 | [omp-harness-migration.md](specs/omp-harness-migration.md) | Draft feature inventory and migration design for replacing Pi with OMP |
 | [testing/README.md](guides/testing/README.md) | Extension testing policy and two-tier model |
 | [testing/unit-test.md](guides/testing/unit-test.md) | Unit test conventions |
