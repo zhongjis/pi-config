@@ -14,6 +14,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 
 - You MUST follow [frontmatter semantics](../docs/guides/agent-frontmatter.md).
 - `mode.md` supplies frontmatter and the default body.
+- Every active mode MUST allow `SubagentWorkflow` in `extension_tools`; existing delegation and role restrictions still apply.
 - `gpt.md` replaces only the body; it MUST be self-contained.
 - Absent GPT variants inherit the default body.
 - `gemini.md` is a body-only corrective overlay on the default.
