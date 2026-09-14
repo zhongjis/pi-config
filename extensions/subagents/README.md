@@ -12,6 +12,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 - **License:** MIT
 - **Local import commit:** `5bec4ea2378fd39241ab6088144e372314f1b464`
 - **Adapted:** Panda Harness presentation, root test/discovery wiring, orchestration guidance, and Agent-tree `local://` inheritance.
+- **Selective control backports:** `v0.19.0` (`4f572eaa04c09d3dbc16e4a5f13a16b295e84e14`), adapted without changing the base pin or execution/persistence defaults.[1]
 
 ## Local Tweaks
 
@@ -26,6 +27,8 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/index.ts`, `src/agent-runner.ts`, `src/tool-rendering.ts`, thinking regression tests | Omitted thinking delegates to the selected-model SDK default; pending configuration becomes actual session metadata | Never inherit parent thinking implicitly or present a pending default as actual |
 | `src/model-resolution.ts`, `src/index.ts`, `src/cross-extension-rpc.ts`, `src/agent-manager.ts`, `src/agent-runner.ts` | Selected `:fast` metadata travels unchanged to an always-retained hidden request policy; no suffix means fixed off, including isolated/resumed children | Frontmatter authority and concurrent registry safety without inheriting parent `/fast` state |
 | `src/index.ts`, `examples/agent-tool-description.md`, `test/tool-description-mode.test.ts` | Full advertisements retain verbatim model chains or parent inheritance; full/compact/custom lists separate built-in and configured extension selectors, including none/unavailable | Advertise configuration without claiming runtime loading, authentication, or permissions; compact lists still omit models |
+| `src/agent-manager.ts`, `src/agent-runner.ts`, `src/usage.ts`, `src/settings.ts`, `src/index.ts`, control regression tests | Independent foreground queue and opt-in native usage reporting; retain existing live cost bridge | Bound blocking fan-out and report each usage delta once without double-counting footer cost |
+| `src/types.ts`, `src/ui/agent-widget.ts`, `src/tool-rendering.ts`, `src/index.ts`, rendering/runtime tests | Requested/effective discrepancies and optional estimated cost appear only in expanded Run metadata | Preserve actual SDK metadata and the compact three-row layout |
 
 Upstream provenance and public RPC/events remain unchanged. FleetView and Thinking Steps remain unchanged.
 
@@ -163,7 +166,7 @@ Agent and result-retrieval reports use at most three compact result rows, includ
 
 Compact rows omit redundant status/result/activity/error labels and the model prefix; turns, soft limit, tools, tokens, and duration appear only expanded. Queued IDs/next actions and pending thinking remain available. Expansion shows the complete Markdown answer or error, then Run metadata (including zero tool uses), diagnostic warnings, and transcript artifacts; requested verbose conversation remains accessible. Legacy or malformed details use a compact raw preview and retain the complete raw body when expanded.
 
-Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Resume uses the retained session rather than re-resolving changed spawn configuration. Turns and soft limit have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
+Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Expanded Run metadata discloses requested model/thinking when they differ from actual execution, with equivalent fuzzy model names kept quiet. Resume retains the original request and session rather than presenting resume-call overrides as applied. Optional estimated cost is also expanded-only; compact rows and model-visible result text remain unchanged. Resume uses the retained session rather than re-resolving changed spawn configuration. Turns and soft limit have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
 
 By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of `persist_session` (the pi session on disk), and it does not affect `isolation: worktree` (which commits the agent's work to a git branch) or `memory:` (durable files) — set those accordingly if the goal is to keep a run off disk entirely. Background agent completion notifications render as styled boxes:
 
@@ -386,7 +389,7 @@ Instead of hard-aborting at the turn limit, agents get a graceful shutdown:
 
 Background agents are subject to a configurable concurrency limit (default: 4). Excess agents are automatically queued and start as running agents complete. The widget shows queued agents as a collapsed count.
 
-Foreground agents bypass the queue — they block the parent anyway.
+Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeground` (`0` = unlimited, the default). Set it in `/agents → Settings` to bound new blocking Agent calls without competing with background capacity. Queued calls still wait for their complete inline result; Esc cancels a queued or running foreground call. Detached/RPC spawns and resume do not use the foreground pool. Stopping queued work or shutting down releases its waiting caller.
 
 ## Join Strategies
 
@@ -425,12 +428,24 @@ When on, each subagent spawn's effective model is validated against pi's own `en
 
 ## Persistent Settings
 
-Runtime tuning values set via `/agents` → Settings (max concurrency, default max turns, grace turns, default join mode, scheduling on/off, scope models on/off, disable defaults on/off, output transcript on/off, tool description full/compact/custom, widget all/background/off) persist across pi restarts. Two files, merged on load:
+Runtime tuning values set via `/agents` → Settings (background/foreground concurrency, usage reporting, expanded cost display, default max turns, grace turns, default join mode, scheduling on/off, scope models on/off, disable defaults on/off, output transcript on/off, tool description full/compact/custom, widget all/background/off) persist across pi restarts. Two files, merged on load:
 
 - **Global:** `~/.pi/agent/subagents.json` — your machine-wide defaults. Edit by hand; the `/agents` menu never writes here.
 - **Project:** `<cwd>/.pi/subagents.json` — per-project overrides. Written by `/agents` → Settings.
 
 **Precedence:** project overrides global on any field present in both. Missing fields fall back to the hardcoded defaults (max concurrency `4`, default max turns unlimited, grace turns `5`, join mode `smart`, defaults enabled).
+
+**Control settings** (applied live):
+
+| Setting | Default | Behavior |
+|---------|---------|----------|
+| `maxConcurrentForeground` | `0` | Independent blocking-agent limit; `0` means unlimited |
+| `reportUsage` | `false` | Report pending subagent usage through final Agent/retrieval/steering tool results into native Pi session totals |
+| `showCost` | `false` | Show a positive estimated per-agent cost only in expanded Run metadata |
+
+Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
+
+The custom QoL footer retains its live accounting: parent assistant-message cost plus the manager's subagent cost. It does not add native tool-result usage a second time. Native session totals may lag the live footer until a tool result reports pending spend. `showCost` affects presentation only; zero/unpriced costs are omitted rather than described as free.
 
 **Disable defaults** (`disableDefaultAgents`, default `false`): when on, the three built-in agents (general-purpose, Explore, Plan) are not registered — only your project/global custom agents are advertised and spawnable. User-defined agents are unaffected, including ones that override a default by name. The Agent tool's type list updates on the next pi session (the tool schema is registered at startup).
 
@@ -669,3 +684,7 @@ src/
 ## License
 
 MIT — [tintinweb](https://github.com/tintinweb)
+
+## Sources
+
+[1] Upstream control implementation, v0.19.0 (https://github.com/tintinweb/pi-subagents/tree/4f572eaa04c09d3dbc16e4a5f13a16b295e84e14/src)

@@ -47,8 +47,8 @@ function isAgentDetails(value: unknown): value is AgentDetails {
     && typeof candidate.result === "string"
     && typeof candidate.tokens === "string"
     && [candidate.toolUses, candidate.durationMs].every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0)
-    && [candidate.turnCount, candidate.maxTurns].every((v) => v === undefined || (typeof v === "number" && Number.isFinite(v) && v >= 0))
-    && [candidate.error, candidate.activity, candidate.modelName, candidate.thinking, candidate.outputFile, candidate.agentId, candidate.conversation, candidate.delivery]
+    && [candidate.turnCount, candidate.maxTurns, candidate.cost].every((v) => v === undefined || (typeof v === "number" && Number.isFinite(v) && v >= 0))
+    && [candidate.error, candidate.activity, candidate.modelName, candidate.thinking, candidate.requestedModel, candidate.requestedThinking, candidate.outputFile, candidate.agentId, candidate.conversation, candidate.delivery]
       .every((v) => v === undefined || typeof v === "string")
     && [candidate.tags, candidate.diagnostics].every((v) => v === undefined || (Array.isArray(v) && v.every((s) => typeof s === "string")));
 }
@@ -76,6 +76,11 @@ function getRunMetadata(details: AgentDetails, expanded: boolean): string[] {
   if (details.thinking) lines.push(`thinking: ${details.thinking}`);
   else if (details.tags?.includes("thinking: default (pending)")) lines.push("thinking: default (pending)");
   if (!expanded) return lines;
+  if (details.requestedModel) lines.push(`requested model: ${details.requestedModel}`);
+  if (details.requestedThinking) lines.push(`requested thinking: ${details.requestedThinking}`);
+  if (details.cost !== undefined && details.cost > 0) {
+    lines.push(`cost: ~$${details.cost < 0.001 ? details.cost.toPrecision(3) : details.cost.toFixed(3)}`);
+  }
   if (details.turnCount) lines.push(`turns: ${details.turnCount}`);
   if (details.maxTurns) lines.push(`soft limit: ${details.maxTurns}`);
   if (details.toolUses > 0) lines.push(`tools: ${details.toolUses}`);

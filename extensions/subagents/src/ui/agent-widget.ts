@@ -82,6 +82,9 @@ export interface AgentDetails {
   spinnerFrame?: number;
   /** Actual session provider/model ID, including when inherited from parent. */
   modelName?: string;
+  readonly cost?: number;
+  readonly requestedModel?: string;
+  readonly requestedThinking?: AgentInvocation["thinking"];
   /** Notable config tags (e.g. ["thinking: high", "isolated"]). */
   tags?: string[];
   /** Current turn count. */

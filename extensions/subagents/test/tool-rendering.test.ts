@@ -133,6 +133,70 @@ describe("subagent tool rendering migration", () => {
     }
   });
 
+  it.each(["Agent", "get_subagent_result"])("keeps compact rows identical with optional run disclosures (%s)", (name) => {
+    const tool = requireTool(name);
+    const details = { ...base, result: "\u001b[32m界面健康 🚀 é\u001b[0m", modelName: "provider/界面-model" };
+    const original: ToolResult = { content: [{ type: "text", text: "unchanged" }], details };
+    const disclosed: ToolResult = { ...original, details: { ...details, cost: 0.123, requestedModel: "provider/requested", requestedThinking: "high" } satisfies AgentDetails };
+    for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+      const rows = tool.renderResult(disclosed, { expanded: false }, theme).render(width);
+      expect(rows).toEqual(tool.renderResult(original, { expanded: false }, theme).render(width));
+      expect(rows.length).toBeLessThanOrEqual(3);
+      for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it.each(["Agent", "get_subagent_result"])("discloses requested settings and estimated cost after complete output (%s)", (name) => {
+    for (const error of [undefined, "Decisive failure"]) {
+      const details: AgentDetails = { ...base, status: error ? "error" : "completed", error, cost: 0.123, requestedModel: "provider/requested", requestedThinking: "high" };
+      const result: ToolResult = { content: [{ type: "text", text: "unchanged envelope" }], details, isError: Boolean(error) };
+      const before = structuredClone(result);
+      const component = requireTool(name).renderResult(result, { expanded: true }, theme);
+      const full = renderText(component);
+      expect(full.match(/Complete retained line\./g)).toHaveLength(60);
+      expect(full.lastIndexOf("Complete retained line.")).toBeLessThan(full.indexOf("Run"));
+      for (const field of ["model: provider/model", "thinking: off", "requested model: provider/requested", "requested thinking: high", "cost: ~$0.123", "tools: 0"]) {
+        expect(full).toContain(field);
+        expect(full.indexOf(field)).toBeGreaterThan(full.indexOf("Run"));
+      }
+      if (error) expect(full.indexOf(error)).toBeLessThan(full.indexOf("Decisive answer"));
+      expectWidthSafe(component);
+      expect(result).toEqual(before);
+    }
+  });
+
+  it.each([0.00000012, Number.MIN_VALUE])("keeps very small positive cost meaningful (%s)", (cost) => {
+    const result: ToolResult = { content: [], details: { ...base, cost } };
+    const full = renderText(requireTool("Agent").renderResult(result, { expanded: true }, theme));
+    const amount = full.match(/cost: ~\$([^\s]+)/)?.[1];
+    expect(amount).toBeDefined();
+    expect(Number(amount)).toBeGreaterThan(0);
+  });
+
+  it.each([undefined, 0])("omits unpriced or zero cost (%s)", (cost) => {
+    const result: ToolResult = { content: [], details: { ...base, cost } };
+    expect(renderText(requireTool("Agent").renderResult(result, { expanded: true }, theme))).not.toContain("cost:");
+  });
+
+  it.each([
+    { cost: -1 }, { cost: NaN }, { cost: Infinity }, { cost: -Infinity }, { cost: "0.123" }, { cost: null },
+    { requestedModel: 42 }, { requestedThinking: false },
+  ])("preserves complete raw fallback for malformed optional metadata (%j)", (invalid) => {
+    const raw = "Raw first line\n\nRaw final line";
+    const result: ToolResult = { content: [{ type: "text", text: raw }], details: { ...base, ...invalid } };
+    for (const name of ["Agent", "get_subagent_result"]) {
+      const tool = requireTool(name);
+      expect(rawText(tool.renderResult(result, { expanded: true }, theme))).toBe(raw);
+      const compact = tool.renderResult(result, { expanded: false }, theme);
+      expect(renderText(compact)).toContain("Raw first line");
+      for (const width of [1, 8, 20, 80]) {
+        const rows = compact.render(width);
+        expect(rows.length).toBeLessThanOrEqual(3);
+        for (const row of rows) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+      }
+    }
+  });
+
   it.each(["Agent", "get_subagent_result"])("compact_pending_omits_unknown_model_and_telemetry (%s)", (name) => {
     const result: ToolResult = { content: [{ type: "text", text: "queued envelope" }], details: {
       ...base, status: "queued", modelName: undefined, thinking: undefined, tags: ["thinking: default (pending)"],

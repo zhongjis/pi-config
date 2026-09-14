@@ -9,6 +9,12 @@ import type { JoinMode, WidgetMode } from "./types.js";
 
 export interface SubagentsSettings {
   maxConcurrent?: number;
+  /** Foreground concurrency; 0 (default) is unlimited. */
+  maxConcurrentForeground?: number;
+  /** Opt-in native tool-result usage reporting. Defaults to false. */
+  reportUsage?: boolean;
+  /** Expanded-only per-agent cost metadata. Defaults to false. */
+  showCost?: boolean;
   /**
    * 0 = unlimited — the extension's single source of truth for that convention:
    * `normalizeMaxTurns()` in agent-runner.ts treats 0 → `undefined`, and the
@@ -91,6 +97,9 @@ export type ToolDescriptionMode = "full" | "compact" | "custom";
 /** Setter hooks used by applySettings to wire persisted values into in-memory state. */
 export interface SettingsAppliers {
   setMaxConcurrent: (n: number) => void;
+  setMaxConcurrentForeground?: (n: number) => void;
+  setReportUsage?: (b: boolean) => void;
+  setShowCost?: (b: boolean) => void;
   setDefaultMaxTurns: (n: number) => void;
   setGraceTurns: (n: number) => void;
   setDefaultJoinMode: (mode: JoinMode) => void;
@@ -121,6 +130,12 @@ function sanitize(raw: unknown): SubagentsSettings {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
   const out: SubagentsSettings = {};
+  if (typeof r.maxConcurrentForeground === "number" && Number.isInteger(r.maxConcurrentForeground)
+    && r.maxConcurrentForeground >= 0 && r.maxConcurrentForeground <= MAX_CONCURRENT_CEILING) {
+    out.maxConcurrentForeground = r.maxConcurrentForeground;
+  }
+  if (typeof r.reportUsage === "boolean") out.reportUsage = r.reportUsage;
+  if (typeof r.showCost === "boolean") out.showCost = r.showCost;
   if (
     Number.isInteger(r.maxConcurrent) &&
     (r.maxConcurrent as number) >= 1 &&
@@ -213,6 +228,9 @@ export function saveSettings(s: SubagentsSettings, cwd: string = process.cwd()):
 
 /** Apply persisted settings to the in-memory state via caller-supplied setters. */
 export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers): void {
+  if (typeof s.maxConcurrentForeground === "number") appliers.setMaxConcurrentForeground?.(s.maxConcurrentForeground);
+  if (typeof s.reportUsage === "boolean") appliers.setReportUsage?.(s.reportUsage);
+  if (typeof s.showCost === "boolean") appliers.setShowCost?.(s.showCost);
   if (typeof s.maxConcurrent === "number") appliers.setMaxConcurrent(s.maxConcurrent);
   if (typeof s.defaultMaxTurns === "number") appliers.setDefaultMaxTurns(s.defaultMaxTurns);
   if (typeof s.graceTurns === "number") appliers.setGraceTurns(s.graceTurns);

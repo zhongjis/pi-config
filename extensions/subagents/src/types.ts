@@ -147,6 +147,9 @@ export interface AgentRecord {
 }
 
 export interface AgentInvocation {
+  /** Original caller/configuration intent, retained across resume. */
+  requestedModel?: string;
+  requestedThinking?: ThinkingLevel;
   /** Actual provider/model ID; absent until a session exists. */
   modelName?: string;
   thinking?: AgentSession["thinkingLevel"];

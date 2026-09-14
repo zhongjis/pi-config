@@ -991,7 +991,7 @@ describe("AgentManager — resolved runs with a failed final turn map to error (
 
   it("an external stop still wins over a late failure resolution", async () => {
     manager = new AgentManager();
-    let resolveRun: ((v: unknown) => void) | undefined;
+    let resolveRun: ((v: Awaited<ReturnType<typeof runAgent>>) => void) | undefined;
     const session = mockSession();
     vi.mocked(runAgent).mockImplementation(() => new Promise((r) => { resolveRun = r; }));
 
@@ -1198,4 +1198,189 @@ it("forwards selected fast metadata unchanged from Agent/RPC options into the ru
     await manager.getRecord(id)!.promise;
     expect(vi.mocked(runAgent).mock.lastCall?.[3].selectedModel).toBe(selectedModel);
   } finally { manager.dispose(); }
+});
+
+describe("AgentManager — independent foreground pool", () => {
+  let manager: AgentManager;
+  const finishes = new Map<string, () => void>();
+  const starts: string[] = [];
+  const ids = new Map<string, string>();
+
+  const foreground = (name: string, signal?: AbortSignal) =>
+    manager.spawnAndWait(mockPi, mockCtx, "general-purpose", name, { description: name, signal },
+      id => { ids.set(name, id); });
+  const record = (name: string) => {
+    const id = ids.get(name);
+    const found = id ? manager.getRecord(id) : undefined;
+    if (!found) throw new Error(`Missing record: ${name}`);
+    return found;
+  };
+  const prepare = () => {
+    finishes.clear(); starts.length = 0; ids.clear();
+    manager = new AgentManager(undefined, 1);
+    vi.mocked(runAgent).mockImplementation((_ctx, _type, prompt, options) => {
+      starts.push(prompt);
+      return new Promise(resolve => {
+        const finish = () => resolve({ responseText: prompt, session: mockSession(), aborted: false, steered: false });
+        finishes.set(prompt, finish);
+        options.signal?.addEventListener("abort", finish, { once: true });
+      });
+    });
+  };
+  afterEach(() => { manager?.dispose(); });
+
+  it("limits foreground FIFO independently of a saturated background pool", async () => {
+    prepare(); manager.setMaxConcurrentForeground(1);
+    manager.spawn(mockPi, mockCtx, "general-purpose", "bg", { description: "bg", isBackground: true });
+    manager.spawn(mockPi, mockCtx, "general-purpose", "bg2", { description: "bg2", isBackground: true });
+    const a = foreground("a"), b = foreground("b"), c = foreground("c");
+    expect(starts).toEqual(["bg", "a"]);
+    expect(record("b").status).toBe("queued");
+    let completed = false; void b.then(() => { completed = true; });
+    await Promise.resolve(); expect(completed).toBe(false);
+    finishes.get("a")?.(); await a;
+    expect(starts).toEqual(["bg", "a", "b"]);
+    finishes.get("b")?.(); await b;
+    expect(starts).toEqual(["bg", "a", "b", "c"]);
+    finishes.get("c")?.(); await c;
+  });
+
+  it("preserves immediate unlimited overlap and per-spawn callbacks", async () => {
+    prepare();
+    expect(manager.getMaxConcurrentForeground()).toBe(0);
+    const callback = vi.fn();
+    const a = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "a", { description: "a" }, callback);
+    const b = foreground("b");
+    manager.spawn(mockPi, mockCtx, "general-purpose", "detached", { description: "detached" });
+    expect(starts).toEqual(["a", "b", "detached"]);
+    expect(callback).toHaveBeenCalledTimes(1);
+    finishes.get("a")?.(); finishes.get("b")?.(); await Promise.all([a, b]);
+  });
+
+  it.each(["signal", "stop", "abortAll", "dispose"] as const)("releases queued waiters on %s without starting them", async action => {
+    prepare(); manager.setMaxConcurrentForeground(1);
+    const signal = new AbortController();
+    const a = foreground("a"), b = foreground("b", signal.signal);
+    switch (action) {
+      case "signal": signal.abort(); break;
+      case "stop": manager.abort(record("b").id); break;
+      case "abortAll": expect(manager.abortAll()).toBe(2); break;
+      case "dispose": manager.dispose(); break;
+    }
+    expect((await b).record.status).toBe("stopped");
+    expect(starts).toEqual(["a"]);
+    finishes.get("a")?.(); await a;
+  });
+
+  it("does not start a foreground call with an already aborted parent", async () => {
+    prepare(); const signal = new AbortController(); signal.abort();
+    expect((await foreground("a", signal.signal)).record.status).toBe("stopped");
+    expect(starts).toEqual([]);
+  });
+
+  it("honors cancellation during synchronous registration before queueing", async () => {
+    prepare(); manager.setMaxConcurrentForeground(1);
+    const a = foreground("a"); const signal = new AbortController();
+    const b = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "b",
+      { description: "b", signal: signal.signal }, () => signal.abort());
+    expect((await b).record.status).toBe("stopped");
+    finishes.get("a")?.(); await a;
+    expect(starts).toEqual(["a"]);
+  });
+
+  it("holds a cancelled running slot until the runner settles", async () => {
+    prepare(); manager.setMaxConcurrentForeground(1);
+    const a = foreground("a"), b = foreground("b");
+    manager.abort(record("a").id);
+    expect(starts).toEqual(["a"]);
+    await a; expect(starts).toEqual(["a", "b"]);
+    finishes.get("b")?.(); await b;
+  });
+
+  it("drains after a queued startup failure without losing a slot", async () => {
+    prepare(); manager.setMaxConcurrentForeground(1);
+    const a = foreground("a"), b = foreground("b"), c = foreground("c");
+    vi.mocked(runAgent).mockImplementationOnce(() => { throw new Error("startup failed"); });
+    finishes.get("a")?.(); await a;
+    expect((await b).record.error).toBe("startup failed");
+    expect(starts).toEqual(["a", "c"]);
+    finishes.get("c")?.(); await c;
+  });
+
+  it("preserves a successful result when completion notification throws", async () => {
+    prepare(); manager.dispose();
+    const notify = vi.fn(() => { throw new Error("notification failed"); });
+    manager = new AgentManager(notify);
+    const pending = foreground("a");
+    finishes.get("a")?.();
+    const { record: completed } = await pending;
+    await Promise.resolve(); // Observe any detached completion handler too.
+    expect(completed.status).toBe("completed");
+    expect(completed.result).toBe("a");
+    expect(completed.error).toBeUndefined();
+    expect(completed.diagnostics).toEqual(["Completion callback failed: notification failed"]);
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains queued startup failures when completion notifications throw", async () => {
+    prepare(); manager.dispose();
+    const notify = vi.fn(() => { throw new Error("notification failed"); });
+    manager = new AgentManager(notify); manager.setMaxConcurrentForeground(1);
+    const a = foreground("a"), b = foreground("b"), c = foreground("c"), d = foreground("d");
+    vi.mocked(runAgent).mockImplementationOnce(() => { throw new Error("startup failed"); });
+    expect(() => manager.setMaxConcurrentForeground(2)).not.toThrow();
+    const { record: failed } = await b;
+    expect(failed.status).toBe("error");
+    expect(failed.error).toBe("startup failed");
+    expect(failed.diagnostics).toEqual(["Completion callback failed: notification failed"]);
+    expect(starts).toEqual(["a", "c"]);
+    finishes.get("c")?.(); await c;
+    expect(starts).toEqual(["a", "c", "d"]);
+    finishes.get("a")?.(); finishes.get("d")?.(); await Promise.all([a, d]);
+    expect(notify).toHaveBeenCalledTimes(4);
+    expect(manager.hasRunning()).toBe(false);
+  });
+
+  it("clearing the limit drains queued calls immediately", async () => {
+    prepare(); manager.setMaxConcurrentForeground(1);
+    const a = foreground("a"), b = foreground("b"), c = foreground("c");
+    manager.setMaxConcurrentForeground(0);
+    expect(starts).toEqual(["a", "b", "c"]);
+    finishes.forEach(finish => { finish(); }); await Promise.all([a, b, c]);
+  });
+
+  it("direct spawn and resume bypass a saturated foreground pool", async () => {
+    prepare(); manager.setMaxConcurrentForeground(1);
+    const a = foreground("a"), b = foreground("b");
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "direct", { description: "direct", isBackground: false });
+    expect(starts).toEqual(["a", "direct"]);
+    finishes.get("direct")?.(); await manager.getRecord(id)?.promise;
+    const { resumeAgent } = await import("../src/agent-runner.js");
+    vi.mocked(resumeAgent).mockResolvedValue({ text: "resumed" });
+    expect((await manager.resume(id, "resume"))?.result).toBe("resumed");
+    finishes.get("a")?.(); await a; finishes.get("b")?.(); await b;
+  });
+
+  it("reports fresh and resumed usage once alongside live costs", async () => {
+    prepare(); const listener = vi.fn(); manager.setUsageListener(listener);
+    const delta = { input: 10, output: 20, cacheWrite: 5, cacheRead: 100, cost: 0.25 };
+    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
+      options.onAssistantUsage?.(delta);
+      return { responseText: "done", session: mockSession(), aborted: false, steered: false };
+    });
+    const { id, record: completed } = await foreground("a");
+    const { resumeAgent } = await import("../src/agent-runner.js");
+    vi.mocked(resumeAgent).mockImplementation(async (_session, _prompt, options) => {
+      options?.onAssistantUsage?.(delta); return { text: "resumed" };
+    });
+    await manager.resume(id, "resume");
+    expect(listener.mock.calls).toEqual([[delta], [delta]]);
+    expect(manager.getLifetimeCost()).toBe(0.5);
+    expect(completed.lifetimeCost).toBe(0.5);
+    expect(completed.lifetimeUsage).toEqual({ input: 20, output: 40, cacheWrite: 10, cacheRead: 200, cost: 0.5 });
+    manager.setUsageListener(undefined);
+    await manager.resume(id, "again");
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(manager.getLifetimeCost()).toBe(0.75);
+  });
 });

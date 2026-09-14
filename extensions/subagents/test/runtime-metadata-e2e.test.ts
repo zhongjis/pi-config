@@ -127,12 +127,17 @@ describe("Packet B actual SDK metadata", () => {
       try {
         setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: "ctrl+o" } }, { "app.tools.expand": "ctrl+e" }));
         const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
-        const presentation = { content: retrieved.content, details: retrieved.details };
+        // Faux is unpriced; exercise priced/discrepant metadata through the real TUI.
+        const presentation = { content: retrieved.content, details: { ...details, cost: 0.0123, requestedModel: "requested/model", requestedThinking: "max" } };
         const collapsed = renderAgentToolResult(presentation, { expanded: false }, theme);
         const expanded = renderAgentToolResult(presentation, { expanded: true }, theme);
         expect(collapsed.render(120).join("\n")).toContain("ctrl+e");
         const report = expanded.render(120).join("\n");
         expect(report).toContain("exclude_extensions has no effect");
+        expect(report).toContain("cost: ~$0.012");
+        expect(report).toContain("requested model: requested/model");
+        expect(report).toContain("requested thinking: max");
+        expect(collapsed.render(120).join("\n")).not.toMatch(/cost:|requested/);
         expect(report).toContain("Artifacts");
         expect(report).toContain("const complete = true;");
         for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {

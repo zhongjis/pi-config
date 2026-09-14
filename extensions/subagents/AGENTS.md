@@ -14,6 +14,9 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Retention MUST remain bounded; resume is not durable-session availability.
 - Rendering changes MUST preserve model-visible completion notifications and tool results.
 - Foreground results and background follow-up notifications MUST retain distinct delivery paths.
+- Foreground capacity MUST remain independent of background capacity and unlimited by default; queued blocking callers MUST settle on completion, cancellation, startup failure, or shutdown. Detached spawns and resume bypass the foreground pool.
+- `reportUsage` MUST default off and report each collected delta once through final tool results, including cache reads; display-token totals stay unchanged. Disabled/session-ended pools MUST retain no pending deltas.
+- QoL's live manager-cost bridge remains independent of native reported usage; NEVER add both for the same spend. `showCost` MUST affect presentation only and default off.
 - Run reports MUST derive model/thinking from SDK session getters, including inherited models and clamping/off.
 - Queued/pre-session reports NEVER present requested model/thinking as actual execution.
 - Omitted thinking MUST use SDK selected-model defaults, NEVER parent thinking.
@@ -21,7 +24,8 @@ Run isolated Agent sessions with foreground results and background supervision.
 - `thinking: default (pending)` MUST survive queued retrieval until session metadata replaces it; resume retains session thinking.
 - Foreground, retrieval, and resume MUST share structured result/error, transcript, and diagnostic details.
 - Compact Agent and retrieval results MUST fit within three physical rows: status plus primary preview without redundant labels; available model (without `model:`) and thinking; configured expand hint. Queued IDs/next actions and pending thinking remain visible within the width budget.
-- Turns, soft limit, tools, tokens, and duration MUST appear only expanded; expanded reports retain complete answer/error before metadata and artifacts.
+- Turns, soft limit, tools, tokens, duration, estimated cost, and requested/effective discrepancies MUST appear only expanded; expanded reports retain complete answer/error before metadata and artifacts. Zero/unpriced costs stay omitted.
+- Request provenance MUST survive resume; diagnostic model resolution MUST preserve execution policy and treat equivalent fuzzy identities as equal.
 - Runtime diagnostics MUST remain visible expanded without counting as tool executions; expanded Run MUST explicitly show zero tools.
 - Legacy/malformed details MUST retain full raw content expanded and obey the compact row budget.
 - Runtime metadata MUST preserve non-runtime invocation tags; resume turns MUST count `turn_end`, not usage messages.
@@ -43,6 +47,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 - From repository root: `pnpm exec vitest run --project unit extensions/subagents/test`.
 - [Agent manager](test/agent-manager.test.ts) covers retention; [notification rendering](test/notification-rendering.test.ts) covers presentation.
 - Root unit selection excludes e2e-named tests; those require separate runtime verification.
+- `pnpm exec vitest run --project subagents-e2e extensions/subagents/test/controls-runtime-e2e.test.ts` verifies native usage aggregation, retained request provenance, and queued inline completion.
 
 ## Child DOX Index
 

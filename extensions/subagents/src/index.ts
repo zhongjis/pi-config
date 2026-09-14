@@ -32,6 +32,7 @@ import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./o
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { getForegroundOutcomeNote, getStatusNote } from "./status-note.js";
 import { startBackgroundSupervision } from "./supervision-loop.js";
+import { normalizeThinkingLevel } from "./thinking-level.js";
 import { renderAgentToolCall, renderAgentToolResult, renderGetSubagentResult, renderGetSubagentResultCall, renderSteerSubagentCall, renderSteerSubagentResult } from "./tool-rendering.js";
 import { type AgentConfig, type AgentInvocation, type AgentRecord, type JoinMode, type NotificationDetails, type SubagentType, type WidgetMode } from "./types.js";
 import {
@@ -50,7 +51,7 @@ import {
   type UICtx,
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx } from "./ui/fleet-list.js";
-import { addUsage, getLifetimeTotal, getSessionContextPercent, type LifetimeUsage } from "./usage.js";
+import { addUsage, getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, PendingUsagePool } from "./usage.js";
 
 // ---- Shared helpers ----
 
@@ -237,45 +238,6 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
   ].filter(Boolean).join('\n');
 }
 
-/** Build AgentDetails from a base + record-specific fields. */
-function buildDetails(
-  base: Pick<AgentDetails, "displayName" | "description" | "subagentType" | "modelName" | "tags">,
-  record: AgentRecord,
-  activity?: AgentActivity,
-  overrides?: Partial<AgentDetails>,
-): AgentDetails {
-  const invocation = {
-    ...record.invocation,
-    modelName: record.session?.model ? `${record.session.model.provider}/${record.session.model.id}` : undefined,
-    thinking: record.session?.thinkingLevel,
-    thinkingDefault: !record.session && record.invocation?.thinkingDefault,
-  };
-  return {
-    ...base,
-    ...buildInvocationTags(invocation),
-    tags: [...new Set([
-      ...(base.tags ?? []).filter((tag) => !tag.startsWith("thinking:")),
-      ...[getPromptModeLabel(base.subagentType)].filter((tag): tag is string => Boolean(tag)),
-      ...buildInvocationTags(invocation).tags,
-    ])],
-    thinking: invocation.thinking,
-    result: record.result ?? "",
-    outputFile: record.outputFile,
-    diagnostics: record.diagnostics ? [...record.diagnostics] : undefined,
-    delivery: record.isBackground ? "background" : "foreground",
-    toolUses: record.toolUses,
-    tokens: formatLifetimeTokens(record),
-    turnCount: record.turnCount ?? activity?.turnCount,
-    maxTurns: record.maxTurns ?? activity?.maxTurns,
-    durationMs: (record.completedAt ?? Date.now()) - record.startedAt,
-    status: record.status as AgentDetails["status"],
-    agentId: record.id,
-    activity: activity ? describeActivity(activity.activeTools, activity.responseText) : undefined,
-    error: record.error,
-    ...overrides,
-  };
-}
-
 /**
  * Build the AgentDetails for a delegation-policy denial. Mirrors the OLD
  * subagent extension: `category` + `invocationStatus: "failed"` let the
@@ -329,6 +291,84 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
 }
 
 export default function (pi: ExtensionAPI) {
+  let reportUsage = false;
+  let showCost = false;
+  let pendingUsage = new PendingUsagePool();
+  function setReportUsage(enabled: boolean): void {
+    reportUsage = enabled;
+    if (!enabled) pendingUsage = new PendingUsagePool();
+  }
+  function setShowCost(enabled: boolean): void { showCost = enabled; }
+
+  // tool_result runs only for final results, including thrown/cancelled calls.
+  // No execute/stream callback drains the pool, so cancellation cannot lose deltas.
+  pi.on("tool_result", (event) => {
+    if (!reportUsage || !event.toolCallId || !Object.values(SUBAGENT_TOOL_NAMES).some((name) => name === event.toolName)) return;
+    const usage = pendingUsage.drain();
+    if (!usage) return;
+    const prior = event.usage;
+    if (!prior) return { usage };
+    return { usage: {
+      ...prior,
+      input: prior.input + usage.input,
+      output: prior.output + usage.output,
+      cacheRead: prior.cacheRead + usage.cacheRead,
+      cacheWrite: prior.cacheWrite + usage.cacheWrite,
+      totalTokens: prior.totalTokens + usage.totalTokens,
+      cost: {
+        input: prior.cost.input + usage.cost.input,
+        output: prior.cost.output + usage.cost.output,
+        cacheRead: prior.cost.cacheRead + usage.cost.cacheRead,
+        cacheWrite: prior.cost.cacheWrite + usage.cost.cacheWrite,
+        total: prior.cost.total + usage.cost.total,
+      },
+    } };
+  });
+
+  /** Build AgentDetails from a base + record-specific fields. */
+  function buildDetails(
+    base: Pick<AgentDetails, "displayName" | "description" | "subagentType" | "modelName" | "tags">,
+    record: AgentRecord,
+    activity?: AgentActivity,
+    overrides?: Partial<AgentDetails>,
+  ): AgentDetails {
+    const invocation = {
+      ...record.invocation,
+      modelName: record.session?.model ? `${record.session.model.provider}/${record.session.model.id}` : undefined,
+      thinking: record.session?.thinkingLevel,
+      thinkingDefault: !record.session && record.invocation?.thinkingDefault,
+    };
+    return {
+      ...base,
+      ...buildInvocationTags(invocation),
+      tags: [...new Set([
+        ...(base.tags ?? []).filter((tag) => !tag.startsWith("thinking:")),
+        ...[getPromptModeLabel(base.subagentType)].filter((tag): tag is string => Boolean(tag)),
+        ...buildInvocationTags(invocation).tags,
+      ])],
+      thinking: invocation.thinking,
+      ...(record.session && invocation.requestedModel !== undefined && invocation.requestedModel !== invocation.modelName
+        ? { requestedModel: invocation.requestedModel } : {}),
+      ...(record.session && invocation.requestedThinking !== undefined && invocation.requestedThinking !== invocation.thinking
+        ? { requestedThinking: invocation.requestedThinking } : {}),
+      ...(showCost ? { cost: record.lifetimeCost ?? 0 } : {}),
+      result: record.result ?? "",
+      outputFile: record.outputFile,
+      diagnostics: record.diagnostics ? [...record.diagnostics] : undefined,
+      delivery: record.isBackground ? "background" : "foreground",
+      toolUses: record.toolUses,
+      tokens: formatLifetimeTokens(record),
+      turnCount: record.turnCount ?? activity?.turnCount,
+      maxTurns: record.maxTurns ?? activity?.maxTurns,
+      durationMs: (record.completedAt ?? Date.now()) - record.startedAt,
+      status: record.status as AgentDetails["status"],
+      agentId: record.id,
+      activity: activity ? describeActivity(activity.activeTools, activity.responseText) : undefined,
+      error: record.error,
+      ...overrides,
+    };
+  }
+
   // Mark structured delegation-policy denials (details.category ===
   // "delegation_policy_denied") as tool errors so the LLM sees a failed Agent
   // call instead of a success. Registered once per activation.
@@ -516,6 +556,8 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
+  manager.setUsageListener((usage) => { if (reportUsage) pendingUsage.add(usage); });
+
   // Inject the delegation-policy gate into the manager (defense in depth: the
   // Agent tool and RPC handler both deny earlier, but any spawn reaching the
   // manager is still gated). The manager stays free of session-state imports —
@@ -572,6 +614,7 @@ export default function (pi: ExtensionAPI) {
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
   pi.on("session_start", async (_event, ctx) => {
     currentCtx = ctx;
+    pendingUsage = new PendingUsagePool();
     manager.clearCompleted(true);
     manager.resetLifetimeCost();
     // Start the idle-agent auto-supervision loop once per activation (guarded so a
@@ -603,6 +646,8 @@ export default function (pi: ExtensionAPI) {
   // On shutdown, abort all agents immediately and clean up.
   // If the session is going down, there's nothing left to consume agent results.
   pi.on("session_shutdown", async () => {
+    manager.setUsageListener(undefined);
+    pendingUsage = new PendingUsagePool();
     rpcHandle?.unsubSpawn();
     rpcHandle?.unsubStop();
     rpcHandle?.unsubPing();
@@ -780,6 +825,9 @@ export default function (pi: ExtensionAPI) {
   applyAndEmitLoaded(
     {
       setMaxConcurrent: (n) => manager.setMaxConcurrent(n),
+      setMaxConcurrentForeground: (n) => manager.setMaxConcurrentForeground(n),
+      setReportUsage,
+      setShowCost,
       setDefaultMaxTurns,
       setGraceTurns,
       setDefaultJoinMode,
@@ -1087,7 +1135,21 @@ Terse command-style prompts produce shallow, generic work.
 
       // Actual model/thinking are available only after the SDK creates the session.
       const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
+      let requestedModel = params.model;
+      if (requestedModel != null) {
+        try {
+          const requested = resolveFirstAvailable(parseModelChain(requestedModel), ctx.modelRegistry)?.model;
+          if (requested) requestedModel = `${requested.provider}/${requested.id}`;
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          console.warn(`[pi-subagents] Could not resolve requested model for disclosure: ${reason}`);
+          requestedModel = params.model; // Preserve raw intent without invalidating the effective selection.
+        }
+      }
+      const requestedThinking = normalizeThinkingLevel(params.thinking?.trim().toLowerCase()) ?? thinking;
       const agentInvocation: AgentInvocation = {
+        requestedModel,
+        requestedThinking: THINKING_LEVELS.some((level) => level === requestedThinking) ? requestedThinking : undefined,
         thinkingDefault: thinking === undefined,
         // Explicit value only — the default fallback would just add noise.
         // Normalize so `0` (unlimited) doesn't surface as a misleading "max turns: 0".
@@ -2019,6 +2081,9 @@ ${systemPrompt}
   function snapshotSettings(): SubagentsSettings {
     return {
       maxConcurrent: manager.getMaxConcurrent(),
+      maxConcurrentForeground: manager.getMaxConcurrentForeground(),
+      reportUsage,
+      showCost,
       // 0 = unlimited — per SubagentsSettings.defaultMaxTurns docstring and
       // normalizeMaxTurns() in agent-runner.ts (which maps 0 → undefined).
       defaultMaxTurns: getDefaultMaxTurns() ?? 0,
@@ -2033,7 +2098,7 @@ ${systemPrompt}
     };
   }
 
-  const NUMERIC_IDS = new Set(["maxConcurrent", "defaultMaxTurns", "graceTurns"]);
+  const NUMERIC_IDS = new Set(["maxConcurrent", "maxConcurrentForeground", "defaultMaxTurns", "graceTurns"]);
 
   async function showSettings(ctx: ExtensionCommandContext) {
     function buildItems(): SettingItem[] {
@@ -2048,6 +2113,27 @@ ${systemPrompt}
           description: "Max concurrent background agents (Enter to type)",
           currentValue: String(mc),
           values: [String(mc)],
+        },
+        {
+          id: "maxConcurrentForeground",
+          label: "Foreground concurrency",
+          description: "Max concurrent foreground agents (0 = unlimited, Enter to type)",
+          currentValue: String(manager.getMaxConcurrentForeground()),
+          values: [String(manager.getMaxConcurrentForeground())],
+        },
+        {
+          id: "reportUsage",
+          label: "Report usage",
+          description: "Report subagent usage on the next final Agent, retrieval, or steer result",
+          currentValue: reportUsage ? "on" : "off",
+          values: ["on", "off"],
+        },
+        {
+          id: "showCost",
+          label: "Expanded cost",
+          description: "Show per-agent cost only in expanded tool reports",
+          currentValue: showCost ? "on" : "off",
+          values: ["on", "off"],
         },
         {
           id: "defaultMaxTurns",
@@ -2122,6 +2208,18 @@ ${systemPrompt}
           manager.setMaxConcurrent(n);
           notifyApplied(ctx, `Max concurrency set to ${n}`);
         }
+      } else if (id === "maxConcurrentForeground") {
+        const n = Number(value);
+        if (Number.isInteger(n) && n >= 0 && n <= 1024) {
+          manager.setMaxConcurrentForeground(n);
+          notifyApplied(ctx, `Foreground concurrency set to ${n || "unlimited"}`);
+        }
+      } else if (id === "reportUsage") {
+        setReportUsage(value === "on");
+        notifyApplied(ctx, `Usage reporting ${reportUsage ? "enabled" : "disabled"}`);
+      } else if (id === "showCost") {
+        setShowCost(value === "on");
+        notifyApplied(ctx, `Expanded cost ${showCost ? "enabled" : "disabled"}`);
       } else if (id === "defaultMaxTurns") {
         const n = parseInt(value, 10);
         if (n === 0) {
@@ -2211,13 +2309,17 @@ ${systemPrompt}
 
     // If a numeric field ID was returned, prompt for typed input
     if (result && NUMERIC_IDS.has(result)) {
-      const current = result === "maxConcurrent"
+      const current = result === "maxConcurrentForeground"
+        ? String(manager.getMaxConcurrentForeground())
+        : result === "maxConcurrent"
         ? String(manager.getMaxConcurrent())
         : result === "defaultMaxTurns"
           ? String(getDefaultMaxTurns() ?? 0)
           : String(getGraceTurns());
 
-      const label = result === "maxConcurrent"
+      const label = result === "maxConcurrentForeground"
+        ? "Foreground concurrency (0 = unlimited, up to 1024)"
+        : result === "maxConcurrent"
         ? "Max concurrency (1+)"
         : result === "defaultMaxTurns"
           ? "Default max turns (0 = unlimited)"
@@ -2229,7 +2331,8 @@ ${systemPrompt}
       while (input != null) {
         const trimmed = input.trim();
         const n = Number(trimmed);
-        if (trimmed !== "" && Number.isInteger(n)) {
+        if (trimmed !== "" && Number.isInteger(n)
+          && (result !== "maxConcurrentForeground" || (n >= 0 && n <= 1024))) {
           applyValue(result, String(n));
           await showSettings(ctx);
           return;

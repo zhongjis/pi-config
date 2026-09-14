@@ -56,10 +56,8 @@ describe("usage", () => {
       expect(getLifetimeTotal({ input: 100, output: 200, cacheWrite: 50 })).toBe(350);
     });
 
-    // getSessionTokens reads upstream session stats (resets at compaction);
-    // getLifetimeTotal reads our independent accumulator (survives compaction).
-    // They agree pre-compaction, diverge after — both legitimate signals.
-    it("agrees with getSessionTokens pre-compaction, diverges after", () => {
+    // Pi 0.85.1 session stats include entries retained across compaction.
+    it("agrees with all-entry session stats across compaction", () => {
       let sessionStatsTokens = { input: 100, output: 200, cacheWrite: 50 };
       const session = {
         getSessionStats: () => ({ tokens: sessionStatsTokens }),
@@ -69,18 +67,15 @@ describe("usage", () => {
       expect(getSessionTokens(session)).toBe(350);
       expect(getLifetimeTotal(lifetime)).toBe(350);
 
-      // Compaction: upstream replaces session.state.messages, so stats reset.
-      // Our accumulator is independent — it keeps growing.
-      sessionStatsTokens = { input: 0, output: 0, cacheWrite: 0 };
+      // Compaction leaves the all-entry stats unchanged.
+      expect(getSessionTokens(session)).toBe(350);
+      expect(getLifetimeTotal(lifetime)).toBe(350);
 
-      expect(getSessionTokens(session)).toBe(0);            // reset
-      expect(getLifetimeTotal(lifetime)).toBe(350);          // preserved
-
-      // Subsequent message_end events feed both: session re-fills, accumulator continues
-      sessionStatsTokens = { input: 80, output: 150, cacheWrite: 30 };
+      // Subsequent message_end events grow both totals.
+      sessionStatsTokens = { input: 180, output: 350, cacheWrite: 80 };
       lifetime.input += 80; lifetime.output += 150; lifetime.cacheWrite += 30;
 
-      expect(getSessionTokens(session)).toBe(260);           // post-compaction window
+      expect(getSessionTokens(session)).toBe(610);           // all session entries
       expect(getLifetimeTotal(lifetime)).toBe(610);          // 350 + 260, monotone
     });
 

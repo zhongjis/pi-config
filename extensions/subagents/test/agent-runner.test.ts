@@ -627,7 +627,7 @@ describe("agent-runner usage callback wiring", () => {
     const seen: Array<{ input: number; output: number; cacheWrite: number }> = [];
     session.prompt = vi.fn(async () => {
       // Two assistant messages over the run
-      emitMessageEnd(listeners, { input: 100, output: 50, cacheWrite: 10 });
+      emitMessageEnd(listeners, { input: 100, output: 50, cacheWrite: 10, cacheRead: 500, cost: { total: 0.25 } });
       emitMessageEnd(listeners, { input: 200, output: 80, cacheWrite: 20 });
       session.messages.push({ role: "assistant", content: [{ type: "text", text: "OK" }] });
     });
@@ -638,8 +638,8 @@ describe("agent-runner usage callback wiring", () => {
     });
 
     expect(seen).toEqual([
-      { input: 100, output: 50, cacheWrite: 10, cost: 0 },
-      { input: 200, output: 80, cacheWrite: 20, cost: 0 },
+      { input: 100, output: 50, cacheWrite: 10, cacheRead: 500, cost: 0.25 },
+      { input: 200, output: 80, cacheWrite: 20, cacheRead: 0, cost: 0 },
     ]);
   });
 
@@ -658,7 +658,7 @@ describe("agent-runner usage callback wiring", () => {
       onAssistantUsage: (u) => seen.push(u),
     });
 
-    expect(seen).toEqual([{ input: 50, output: 0, cacheWrite: 0, cost: 0 }]);
+    expect(seen).toEqual([{ input: 50, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0 }]);
   });
 
   it("runAgent skips the callback when message_end has no usage field", async () => {
@@ -696,7 +696,7 @@ describe("agent-runner usage callback wiring", () => {
     const seen: any[] = [];
 
     session.prompt = vi.fn(async () => {
-      emitMessageEnd(listeners, { input: 10, output: 20, cacheWrite: 5 });
+      emitMessageEnd(listeners, { input: 10, output: 20, cacheWrite: 5, cacheRead: 50, cost: { total: 0.5 } });
       session.messages.push({ role: "assistant", content: [{ type: "text", text: "RESUMED" }] });
     });
 
@@ -704,7 +704,7 @@ describe("agent-runner usage callback wiring", () => {
       onAssistantUsage: (u) => seen.push(u),
     });
 
-    expect(seen).toEqual([{ input: 10, output: 20, cacheWrite: 5, cost: 0 }]);
+    expect(seen).toEqual([{ input: 10, output: 20, cacheWrite: 5, cacheRead: 50, cost: 0.5 }]);
   });
 
   it("forwards compaction_end events to onCompaction (only when not aborted)", async () => {
@@ -2204,4 +2204,13 @@ it("retains the previously selected candidate when availability changes before t
   await runAgent(context, "Explore", "go", { pi, selectedModel: { model, fast: false, modelInput } });
   expect(find).not.toHaveBeenCalled();
   expect(createAgentSession.mock.calls[0][0].model).toBe(model);
+});
+
+it("does not prompt when the parent aborted during session startup", async () => {
+  const signal = new AbortController();
+  const { session } = createSession("UNREACHABLE");
+  createAgentSession.mockImplementation(async () => { signal.abort(); return { session }; });
+  const result = await runAgent(ctx, "Explore", "go", { pi, signal: signal.signal });
+  expect(session.prompt).not.toHaveBeenCalled();
+  expect(result.aborted).toBe(true);
 });

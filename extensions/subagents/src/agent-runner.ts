@@ -35,6 +35,7 @@ import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.j
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
+import type { LifetimeUsage } from "./usage.js";
 
 const TRUSTED_FAST_EXTENSION_PATH = "<inline:subagent-fast>";
 const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
@@ -332,10 +333,10 @@ export interface RunOptions {
   onTurnEnd?: (turnCount: number) => void;
   /**
    * Called once per assistant message_end with that message's usage delta.
-   * Lets callers maintain a lifetime accumulator that survives compaction
-   * (which replaces session.state.messages and resets stats-derived sums).
+   * Lets callers accumulate observed billing deltas independently of history.
+   * SDK session stats also retain pre-compaction usage via session entries.
    */
-  onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number; cost: number }) => void;
+  onAssistantUsage?: (usage: LifetimeUsage) => void;
   /**
    * Called when the session successfully compacts. `tokensBefore` is upstream's
    * pre-compaction context size estimate. Aborted compactions don't fire.
@@ -875,11 +876,12 @@ export async function runAgent(
       options.onToolActivity?.({ type: "end", toolName: event.toolName });
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
-      const u = (event.message as any).usage;
+      const u = event.message.usage;
       if (u) options.onAssistantUsage?.({
         input: u.input ?? 0,
         output: u.output ?? 0,
         cacheWrite: u.cacheWrite ?? 0,
+        cacheRead: u.cacheRead ?? 0,
         cost: u.cost?.total ?? 0,
       });
     }
@@ -904,7 +906,8 @@ export async function runAgent(
   // on counts as this run's output (a fresh session, so usually 0).
   const startLen = session.messages.length;
   try {
-    await session.prompt(effectivePrompt);
+    if (options.signal?.aborted) aborted = true;
+    else await session.prompt(effectivePrompt);
   } finally {
     unsubTurns();
     collector.unsubscribe();
@@ -924,7 +927,7 @@ export async function resumeAgent(
   options: {
     onToolActivity?: (activity: ToolActivity) => void;
     onTurnEnd?: (turnCount: number) => void;
-    onAssistantUsage?: (usage: { input: number; output: number; cacheWrite: number; cost: number }) => void;
+    onAssistantUsage?: (usage: LifetimeUsage) => void;
     onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
     signal?: AbortSignal;
   } = {},
@@ -943,11 +946,12 @@ export async function resumeAgent(
         if (event.type === "tool_execution_start") options.onToolActivity?.({ type: "start", toolName: event.toolName });
         if (event.type === "tool_execution_end") options.onToolActivity?.({ type: "end", toolName: event.toolName });
         if (event.type === "message_end" && event.message.role === "assistant") {
-          const u = (event.message as any).usage;
+          const u = event.message.usage;
           if (u) options.onAssistantUsage?.({
             input: u.input ?? 0,
             output: u.output ?? 0,
             cacheWrite: u.cacheWrite ?? 0,
+            cacheRead: u.cacheRead ?? 0,
             cost: u.cost?.total ?? 0,
           });
         }

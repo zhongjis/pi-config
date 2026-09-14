@@ -64,6 +64,7 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import type { AgentRecord } from "../../src/types.js";
 import { createFauxModelRuntime, type FauxModelRuntime, getModel } from "./pi-ai.js";
 
 /** Path to the pi-subagents extension entrypoint (repo `src/index.ts`). */
@@ -75,7 +76,8 @@ const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 export interface ManagerHandle {
   waitForAll(): Promise<void>;
   hasRunning(): boolean;
-  getRecord(id: string): unknown;
+  getRecord(id: string): AgentRecord | undefined;
+  getLifetimeCost(): number;
 }
 
 /** A faux reply in any convenient shape; normalized to an AssistantMessage. */
