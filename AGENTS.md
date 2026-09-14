@@ -83,6 +83,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - Use `direnv` as the default development-shell loader; the flake remains the environment source of truth.
 - Prefer behavior-preserving extension changes and small, localized refactors.
 - Keep runtime installation separate from repository-only testing infrastructure. Root `AGENTS.md` is Nix-managed; `install.sh` does not install it.
+- Keep global subagent defaults in root `subagents.json`: `maxConcurrentForeground: 4`, `reportUsage: true`, `showCost: true`; `install.sh` symlinks it to `~/.pi/agent/subagents.json`.
 - Use [CONTEXT.md](CONTEXT.md) for terminology and [README.md](README.md) for repository entrypoints.
 
 ## Child DOX Index

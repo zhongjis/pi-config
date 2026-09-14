@@ -36,6 +36,7 @@ ALLOWED_ITEMS=(
   "caveman.json"
   "pi-herdr-btw.json"
   "session-summary.json"
+  "subagents.json"
   "tool_models.json"
   "scripts"
   "themes"
