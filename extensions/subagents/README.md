@@ -36,7 +36,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 
 The base upstream provenance and existing Agent RPC/events remain unchanged. Workflow supervision extends FleetView; Thinking Steps remains unchanged.
 
-The bundled [workflow authoring skill](skills/subagent-workflows/SKILL.md) preserves the imported manual's decoded runtime text, except the live roster pointer and authoring-only opt-in clarification. Its upstream description was deliberately adapted from Claude Code's Workflow guidance in the workflow import above. Read it before authoring or modifying scripts; reading or invoking it alone does not authorize workflow execution. The current Agent tool description owns the available agent roster. Installation of the whole extension includes the skill; disabled workflows discover no skill.
+The bundled [workflow authoring skill](skills/subagent-workflows/SKILL.md) refines the imported Claude Code Workflow guidance while preserving the API and provenance above. It is a self-contained author/modify/debug/replay guide: acceptance-first steps, complete executable examples, API reference, and replay safety. Local guidance emphasizes authoritative evidence, explicit coverage gaps, bounded feedback, and separate action authorization without adding a graph runtime. Reading or invoking the skill alone does not authorize workflow execution. The current Agent tool description owns the available agent roster. Installation of the whole extension includes the skill; disabled workflows discover no skill.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 

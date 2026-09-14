@@ -38,6 +38,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 - `workflowsEnabled` MUST default false; disabled workflows MUST add no tool schema or workflow prompt cost. Settings changes require reload for registration.
 - Workflow authoring guidance MUST live in bundled `skills/subagent-workflows/SKILL.md`, discovered through native `resources_discover` only when workflows are enabled; NEVER advertise it through package metadata or personal skill installation.
 - The short workflow description MUST point to the resolved bundled skill; reading/invoking this authoring skill MUST NOT grant execution opt-in. Agent roster authority remains the current Agent tool description.
+- The authoring skill MUST remain self-contained with acceptance-first steps, complete runnable JavaScript examples, and the full API/replay contract. Preserve imported provenance, not verbatim prose. MUST distinguish execution opt-in from action authorization, retain null/falsy coverage, bound attempts, and verify authoritative evidence without weakening criteria.
 - Workflows MUST support model-authored inline/file/named scripts, arguments, same-session journal prefix replay, parallel/pipeline execution, structured output, gates, and one-level saved-workflow composition. Ship extension code and test fixtures, not reusable workflows or research deliverables.
 - Workflow effort MUST follow local thinking authority (frontmatter → model-chain suffix → invocation → SDK default); preserve ordered model chains, `:fast`, `local://`, retention, and usage controls.
 - Workflows MUST NOT bypass delegation permissions. Workflow pool accounting and child ownership MUST remain independent; owned children MUST NOT receive recursive workflow tools.
@@ -58,6 +59,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 
 - From repository root: `pnpm exec vitest run --project unit extensions/subagents/test`.
 - [Agent manager](test/agent-manager.test.ts) covers retention; [notification rendering](test/notification-rendering.test.ts) covers presentation.
+- `test/workflow-registration.test.ts` checks enabled-only skill discovery and example parsing; `test/workflow-skill.test.ts` executes fenced examples with mock hosts to check coverage, failed verification, and bounded termination.
 - Workflow QA MUST use a fresh Pi session through `interactive_shell`, with the model generating and executing its own script; inspect the invocation, inspector, child ordering, and completion evidence.
 - Root unit selection excludes e2e-named tests; those require separate runtime verification.
 - `pnpm exec vitest run --project subagents-e2e extensions/subagents/test/controls-runtime-e2e.test.ts` verifies native usage aggregation, retained request provenance, and queued inline completion.

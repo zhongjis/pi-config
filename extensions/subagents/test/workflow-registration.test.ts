@@ -11,6 +11,7 @@ import { WORKFLOW_ENTRY_TYPE, WORKFLOW_FILE_FLAG } from "../src/index.js";
 import { loadSettings } from "../src/settings.js";
 import { decideWorkflowCollision } from "../src/workflow/collisions.js";
 import * as workflowHost from "../src/workflow/host.js";
+import { validateScript } from "../src/workflow/runtime.js";
 import { listSavedWorkflows, resolveWorkflowScript } from "../src/workflow/saved.js";
 
 it("registers no workflow tool by default; the flag is read only at startup", async () => {
@@ -61,7 +62,11 @@ it("discovers the bundled authoring skill only when workflows are enabled", asyn
   const { frontmatter, body } = parseFrontmatter(readFileSync(path, "utf8"));
   expect(frontmatter.name).toBe("subagent-workflows");
   expect(frontmatter.description).toEqual(expect.any(String));
-  expect(body.length).toBeGreaterThan(19000);
+  const examples = [...body.matchAll(/^```js\n([\s\S]*?)^```/gm)].map(match => match[1]);
+  expect(examples.length).toBeGreaterThanOrEqual(2);
+  expect(examples.length).toBeLessThanOrEqual(3);
+  const names = examples.map(script => validateScript(script).meta.name);
+  expect(new Set(names).size).toBe(examples.length);
   const tool = required(host.tools.get("SubagentWorkflow"));
   expect(tool.description.length).toBeLessThan(1000);
   expect(tool.description).toContain(path);
