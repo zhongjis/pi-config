@@ -12,7 +12,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Fresh descendants MUST inherit the parent's Agent-tree `local://` root, not its conversation by default.
 - Terminal sessions remain resumable for 30 minutes in the current parent session; switch, reload, or shutdown may clean them sooner.
 - Retention MUST remain bounded; resume is not durable-session availability.
-- Rendering changes MUST preserve model-visible completion notifications and tool results.
+- Rendering changes MUST preserve model-visible completion notifications and tool results. Collapsed completion notifications MUST flatten multiline previews and mark width clipping with an ellipsis; expanded previews retain their original content.
 - Foreground results and background follow-up notifications MUST retain distinct delivery paths.
 - Foreground capacity MUST remain independent of background capacity and unlimited by default; queued blocking callers MUST settle on completion, cancellation, startup failure, or shutdown. Detached spawns and resume bypass the foreground pool.
 - `reportUsage` MUST default off and report each collected delta once through final tool results, including cache reads; display-token totals stay unchanged. Disabled/session-ended pools MUST retain no pending deltas.

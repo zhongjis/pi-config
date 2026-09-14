@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestSession, type TestSession } from "./helpers/faux-session.js";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import * as path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagents/src/ui/agent-widget.js";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
@@ -40,9 +42,9 @@ async function shutdownSession(session: SessionLike | undefined): Promise<void> 
 	}
 }
 
-function renderText(component: unknown): string {
+function renderText(component: unknown, width = 120): string {
 	if (component && typeof component === "object" && "render" in component && typeof component.render === "function") {
-		return component.render(120).join("\n");
+		return component.render(width).join("\n");
 	}
 	if (component && typeof component === "object" && "text" in component && typeof component.text === "string") {
 		return component.text;
@@ -184,6 +186,39 @@ describe("subagent TUI rendering — integration", () => {
 		expect(uiCtx.setWidget.mock.calls.filter((call) => call[0] === "agents" && typeof call[1] === "function")).toHaveLength(1);
 
 		widget.dispose();
+	});
+
+	it("clips notification previews on native grapheme and terminal-cell boundaries", async () => {
+		t = await createTestSession({ extensions: [SUBAGENT_EXTENSION], propagateErrors: false });
+		const renderer = (t.session as SessionLike).extensionRunner?.getMessageRenderer("subagent-notification");
+		if (!renderer) throw new Error("Notification renderer not registered");
+
+		for (const grapheme of ["界", "🧩", "e\u0301"]) {
+			const resultPreview = `${grapheme.repeat(100)}\nretained ending`;
+			const message = Object.freeze({
+				content: resultPreview,
+				details: Object.freeze({
+					id: "preview-1", description: "Workflow preview", status: "completed",
+					toolUses: 0, turnCount: 0, totalTokens: 0, durationMs: 0, resultPreview,
+				}),
+			});
+			const before = JSON.stringify(message);
+			const collapsed = renderer(message, { expanded: false }, THEME);
+			const expanded = renderer(message, { expanded: true }, THEME);
+			const preview = stripVTControlCharacters(renderText(collapsed).split("\n")[1] ?? "").replace(/^└─ /, "");
+			expect(preview).toMatch(/…$/u);
+			expect(visibleWidth(preview)).toBeLessThanOrEqual(80);
+			expect(preview.slice(0, -1).split(grapheme).join("")).toBe("");
+			expect(renderText(expanded, 500).split("\n").slice(1).map(stripVTControlCharacters)).toEqual([`  ${grapheme.repeat(100)}`, "  retained ending"]);
+			for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+				for (const component of [collapsed, expanded]) {
+					for (const line of renderText(component, width).split("\n")) {
+						expect(visibleWidth(line), `width ${width}: ${JSON.stringify(line)}`).toBeLessThanOrEqual(width);
+					}
+				}
+			}
+			expect(JSON.stringify(message)).toBe(before);
+		}
 	});
 
 	it("renders grouped completion notifications as one grouped surface", async () => {

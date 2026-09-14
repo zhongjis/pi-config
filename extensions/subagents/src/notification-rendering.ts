@@ -24,8 +24,7 @@ function toSummaryStatus(status: string): SubagentSummaryStatus {
 }
 
 function compactResultPreview(text: string, maxLength = 80): string | undefined {
-  const firstLine = text.split("\n")[0]?.slice(0, maxLength) ?? "";
-  return firstLine || undefined;
+  return truncateToWidth(text.replace(/\s+/g, " ").trim(), maxLength, "…") || undefined;
 }
 
 function isFiniteNumber(value: unknown): value is number {

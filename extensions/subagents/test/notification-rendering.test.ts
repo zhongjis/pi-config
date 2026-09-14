@@ -153,9 +153,41 @@ describe("subagent notification rendering migration", () => {
   it("renders a completed individual summary with stats, result, and transcript", () => {
     expect(render(notification())).toEqual([
       "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
-      "└─ Found the gap.",
+      "└─ Found the gap. Additional detail.",
       "  transcript: /tmp/subagents/agent-1.output",
     ]);
+  });
+
+  it.each([
+    ["pretty object", JSON.stringify({ status: "ok", count: 2 }, null, 2), '{ "status": "ok", "count": 2 }'],
+    ["pretty array", JSON.stringify(["alpha", "beta"], null, 2), '[ "alpha", "beta" ]'],
+    ["multiline prose", "First finding.\n  Second finding.", "First finding. Second finding."],
+    ["truncated JSON", '{\n  "status": "ok",\n  "items": [\n    "partial…', '{ "status": "ok", "items": [ "partial…'],
+  ])("flattens %s only in the collapsed notification", (_label, resultPreview, expected) => {
+    const message = Object.freeze({
+      content: resultPreview,
+      details: Object.freeze(notification({ resultPreview, outputFile: undefined })),
+    });
+    const before = JSON.stringify(message);
+    const renderer = requireRenderer();
+    const collapsed = renderer(message, { expanded: false }, theme)?.render(120) ?? [];
+    expect(collapsed.slice(1)).toEqual([`└─ ${expected}`]);
+    const expanded = renderer(message, { expanded: true }, theme)?.render(120) ?? [];
+    expect(expanded.slice(1)).toEqual(resultPreview.split("\n").map((line) => `  ${line}`));
+    expect(JSON.stringify(message)).toBe(before);
+  });
+
+  it("normalizes surrounding whitespace and CRLF without inventing blank output", () => {
+    expect(render(notification({ resultPreview: "\n  First.\r\n\tSecond.  " }))[1]).toBe("└─ First. Second.");
+    expect(render(notification({ resultPreview: " \n\t\r\n ", outputFile: undefined }))).toHaveLength(1);
+  });
+
+  it("marks only clipped previews with an ellipsis and retains expanded text", () => {
+    const resultPreview = `${"x".repeat(100)}\nretained ending`;
+    const details = notification({ resultPreview, outputFile: undefined });
+    expect(render(details)[1]).toBe(`└─ ${"x".repeat(79)}…`);
+    expect(render(details, true).slice(1)).toEqual([`  ${"x".repeat(100)}`, "  retained ending"]);
+    expect(render(notification({ resultPreview: "x".repeat(80) }))[1]).toBe(`└─ ${"x".repeat(80)}`);
   });
 
   it("renders grouped details in others order with one summary per agent", () => {
