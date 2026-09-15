@@ -66,15 +66,15 @@ describe("agent routing contract", () => {
   it.each([
     [
       "yunu",
-      "gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-6-astra:medium,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high",
+      "gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:medium,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high",
     ],
     [
       "guangguang",
-      "claude-haiku-4-5,openai-codex/gpt-5.6-terra:high,opencode-go/minimax-m2.5,llama-swap/qwen2.5-coder:7b:low",
+      "claude-haiku-4-5,openai-codex/gpt-5.6-lua:fast:low,opencode-go/minimax-m2.5,llama-swap/qwen2.5-coder:7b:low",
     ],
     [
       "jintong",
-      "claude-sonnet-4-6,openai-codex/gpt-5.6-sol:medium,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high",
+      "claude-sonnet-4-6,openai-codex/gpt-5.6-terra:high,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high",
     ],
     [
       "juling",
