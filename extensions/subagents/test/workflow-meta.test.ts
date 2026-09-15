@@ -216,3 +216,20 @@ describe("extractMeta — isolation", () => {
     expect(meta.name).toBe("wf");
   });
 });
+
+it('copies inputSchema into host-realm plain JSON', () => {
+  const { meta } = extractMeta("export const meta={name:'x',description:'x',inputSchema:{type:'array',items:{type:'string'}}}; return args");
+  expect(meta.inputSchema).toEqual({ type: 'array', items: { type: 'string' } });
+  expect(Object.getPrototypeOf(meta.inputSchema)).toBe(Object.prototype);
+});
+
+it.each([
+  "inputSchema: { get type() { while (true) {} } }",
+  "get inputSchema() { while (true) {} }",
+  "inputSchema: { type: undefined }",
+  "inputSchema: { type: NaN }",
+  "inputSchema: new Date(0)",
+  "inputSchema: { toJSON() { while (true) {} } }",
+])('rejects non-JSON schema without running accessors: %s', field => {
+  expect(() => extractMeta(`export const meta={name:'x',description:'x',${field}}; return args`)).toThrow(/meta.inputSchema/);
+});

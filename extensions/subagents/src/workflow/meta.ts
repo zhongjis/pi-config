@@ -34,6 +34,7 @@ export interface WorkflowMeta {
   /** Shown in the saved-workflow listing. Not used by the runtime. */
   whenToUse?: string;
   phases?: WorkflowPhaseMeta[];
+  inputSchema?: Record<string, unknown>;
 }
 
 export interface MetaExtraction {
@@ -203,7 +204,7 @@ function assertPhases(value: unknown): WorkflowPhaseMeta[] | undefined {
     if (model !== undefined && typeof model !== "string") {
       fail(`\`meta.phases[${index}].model\` must be a string.`);
     }
-    return { title, ...(detail !== undefined ? { detail } : {}), ...(model !== undefined ? { model } : {}) };
+    return { title, ...(typeof detail === "string" ? { detail } : {}), ...(typeof model === "string" ? { model } : {}) };
   });
 }
 
@@ -238,6 +239,7 @@ export function extractMeta(source: string): MetaExtraction {
 
   const fragment = source.slice(open, close);
   let value: unknown;
+  const context = createContext({});
   try {
     // Empty context: a pure literal needs no globals, so anything reaching for
     // one (a variable, a helper call) throws here and is reported as impure.
@@ -248,7 +250,7 @@ export function extractMeta(source: string): MetaExtraction {
     // would wedge pi itself. `timeout` only governs synchronous execution, which
     // is all a literal can contain.
     value = new Script(`(${fragment})`, { filename: "workflow-meta.js" })
-      .runInContext(createContext({}), { timeout: META_EVAL_TIMEOUT_MS });
+      .runInContext(context, { timeout: META_EVAL_TIMEOUT_MS });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     if (/timed out|Script execution/i.test(detail)) {
@@ -275,12 +277,49 @@ export function extractMeta(source: string): MetaExtraction {
     fail("`meta.whenToUse` must be a string.");
   }
   const phases = assertPhases(raw.phases);
+  let inputSchema: Record<string, unknown> | undefined;
+  if (Object.hasOwn(raw, "inputSchema")) {
+    try {
+      // Inspect and serialize inside the timed realm: accessors/proxies must not
+      // run unbounded on the host, and JSON must not silently drop schema data.
+      context.metaValue = raw;
+      const json: unknown = new Script(`(() => {
+        const seen = new Set();
+        function check(value) {
+          if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+          if (typeof value === 'number' && Number.isFinite(value)) return;
+          if (typeof value !== 'object' || seen.has(value)) throw Error('expected plain JSON');
+          const proto = Object.getPrototypeOf(value);
+          if (proto !== null && proto !== Object.prototype && proto !== Array.prototype) throw Error('expected plain JSON');
+          seen.add(value);
+          for (const key of Reflect.ownKeys(value)) {
+            if (Array.isArray(value) && key === 'length') continue;
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            if (typeof key !== 'string' || !descriptor.enumerable || !('value' in descriptor)) throw Error('expected JSON data properties');
+            check(descriptor.value);
+          }
+          seen.delete(value);
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(metaValue, 'inputSchema');
+        if (!('value' in descriptor)) throw Error('expected a data property');
+        check(descriptor.value);
+        return JSON.stringify(descriptor.value);
+      })()`).runInContext(context, { timeout: META_EVAL_TIMEOUT_MS });
+      if (typeof json !== "string") throw new Error("expected JSON");
+      const parsed: unknown = JSON.parse(json);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected a JSON Schema object");
+      inputSchema = parsed as Record<string, unknown>;
+    } catch (error) {
+      fail(`meta.inputSchema must be plain JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   const meta: WorkflowMeta = {
     name: raw.name,
     description: raw.description,
     ...(raw.whenToUse !== undefined ? { whenToUse: raw.whenToUse as string } : {}),
     ...(phases !== undefined ? { phases } : {}),
+    ...(inputSchema !== undefined ? { inputSchema } : {}),
   };
 
   // Strip only the `export ` keyword. Replacing it with spaces rather than

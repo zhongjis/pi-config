@@ -66,6 +66,13 @@ const DETERMINISM_PRELUDE =
   " };" +
   "})();";
 
+const WRAPPER_START = "(async () => {" + DETERMINISM_PRELUDE + "\n";
+const WRAPPER_END = "\n})()";
+
+export function workflowWrapper(body: string): string {
+  return WRAPPER_START + body + WRAPPER_END;
+}
+
 export const WORKER_SOURCE = `"use strict";
 
 const { parentPort, workerData } = require("node:worker_threads");
@@ -747,7 +754,7 @@ async function main() {
   sandbox.meta = realmParse(workerData.metaJson);
   sandbox.args = workerData.argsJson === undefined ? undefined : realmParse(workerData.argsJson);
 
-  const script = new vm.Script("(async () => {" + PRELUDE + "\\n" + workerData.body + "\\n})()", {
+  const script = new vm.Script(${JSON.stringify(WRAPPER_START)} + workerData.body + ${JSON.stringify(WRAPPER_END)}, {
     filename: "workflow.js",
     // The wrapper adds exactly one line above the body; undo it so a thrown
     // error points at the line the author wrote.

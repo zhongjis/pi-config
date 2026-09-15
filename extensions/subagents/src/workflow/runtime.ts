@@ -14,12 +14,13 @@
  */
 
 import { cpus } from "node:os";
+import { Script } from "node:vm";
 import { Worker } from "node:worker_threads";
 import { type JournalKeyInput, journalKey, type WorkflowJournalEntry } from "./journal.js";
-import { type CompiledSchema, compileJsonSchema } from "./json-schema.js";
+import { type CompiledSchema, compileInputSchema, compileJsonSchema } from "./json-schema.js";
 import { extractMeta, type WorkflowMeta } from "./meta.js";
 import type { WorkflowAgentEntry, WorkflowEntry } from "./progress.js";
-import { WORKER_SOURCE } from "./worker-source.js";
+import { WORKER_SOURCE, workflowWrapper } from "./worker-source.js";
 
 /** Matches the `script` field's `maxLength` in the tool schema. */
 export const MAX_SCRIPT_LENGTH = 524_288;
@@ -534,15 +535,32 @@ export function validateScript(script: string): { meta: WorkflowMeta; body: stri
       "Workflow script contains control characters. Only tab, carriage return and newline are allowed.",
     );
   }
-  return extractMeta(script);
+  const extracted = extractMeta(script);
+  const wrapped = workflowWrapper(extracted.body);
+  // Function compiles without execution and preserves native SyntaxError details.
+  // Bun lazily parses vm.Script; cached data also enforces the exact script context.
+  new Function(wrapped);
+  new Script(wrapped, { filename: "workflow.js", lineOffset: -1 }).createCachedData();
+  return extracted;
+}
+
+/** Synchronous admission, shared with direct runtime callers; never runs the body. */
+export function admitWorkflow(script: string, args: unknown): { meta: WorkflowMeta; body: string } {
+  assertBoundarySafe(args, "args");
+  const extracted = validateScript(script);
+  if (extracted.meta.inputSchema !== undefined) {
+    const schema = compileInputSchema(extracted.meta.inputSchema);
+    if (schema.ok === false) throw new WorkflowRuntimeError(schema.message);
+    const valid = schema.compiled.check(args);
+    if (valid !== true) throw new WorkflowRuntimeError(`args do not match meta.inputSchema: ${valid}`);
+  }
+  return extracted;
 }
 
 export async function runWorkflow(options: RunWorkflowOptions): Promise<WorkflowRunResult> {
   const { script, host } = options;
 
-  assertBoundarySafe(options.args, "args");
-
-  const { meta, body } = validateScript(script);
+  const { meta, body } = admitWorkflow(script, options.args);
   const agentCap = options.agentCap ?? WORKFLOW_AGENT_CAP;
   const itemCap = options.itemCap ?? WORKFLOW_ITEM_CAP;
   const semaphore = new Semaphore(options.concurrency ?? workflowConcurrency());
@@ -792,7 +810,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
       let compiledSchema: CompiledSchema | undefined;
       if (payload.schema !== undefined) {
         const compilation = compileJsonSchema(payload.schema);
-        if (!compilation.ok) {
+        if (compilation.ok === false) {
           respond(callId, false, undefined, compilation.message, true);
           return;
         }
@@ -1106,7 +1124,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
         respond(callId, false, undefined, error instanceof Error ? error.message : String(error));
         return;
       }
-      if (!source.ok) {
+      if (source.ok === false) {
         respond(callId, false, undefined, source.message);
         return;
       }

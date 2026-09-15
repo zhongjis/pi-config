@@ -11,6 +11,8 @@ import { WORKFLOW_ENTRY_TYPE, WORKFLOW_FILE_FLAG } from "../src/index.js";
 import { loadSettings } from "../src/settings.js";
 import { decideWorkflowCollision } from "../src/workflow/collisions.js";
 import * as workflowHost from "../src/workflow/host.js";
+import * as workflowTask from "../src/workflow/task.js";
+import * as outputFile from "../src/output-file.js";
 import { validateScript } from "../src/workflow/runtime.js";
 import { listSavedWorkflows, resolveWorkflowScript } from "../src/workflow/saved.js";
 
@@ -101,7 +103,7 @@ it("reuses omitted source and original args, and actually replays only an unchan
   const changed = await host.execute({ resumeFromRunId: firstId, args: { prompt: "changed" } });
   expect((await host.notification(required(changed.details?.taskId))).content).toContain("<result>changed</result>");
   expect(runAgent).toHaveBeenCalledTimes(2);
-  expect((await host.execute({ resumeFromRunId: "wf_unknown" })).content[0].text).toContain("No workflow run");
+  await expect(host.execute({ resumeFromRunId: "wf_unknown" })).rejects.toThrow("No workflow run");
 });
 
 it("does not claim replay when a journal has no recorded prefix", async () => {
@@ -131,7 +133,11 @@ it.each(["session_shutdown", "session_start"])("%s waits for owned teardown and 
   await stopping;
   await new Promise(resolve => setTimeout(resolve, 250));
   expect(host.api.sendMessage).not.toHaveBeenCalled();
-  expect((await host.execute({ resumeFromRunId: required(result.details?.taskId) })).content[0].text).toContain(event === "session_shutdown" ? "unavailable" : "No workflow run");
+  if (event === "session_shutdown") {
+    expect((await host.execute({ resumeFromRunId: required(result.details?.taskId) })).content[0].text).toContain("unavailable");
+  } else {
+    await expect(host.execute({ resumeFromRunId: required(result.details?.taskId) })).rejects.toThrow("No workflow run");
+  }
 });
 
 it("runs the CLI file once and writes one entry without triggering a turn", async () => {
@@ -305,4 +311,54 @@ it("diagnoses a failed collision check instead of silently ignoring it", async (
   await host.lifecycle("session_start");
   expect(warn).toHaveBeenCalledWith(expect.stringContaining("Workflow collision check failed"));
   expect(host.tools.has("SubagentWorkflow")).toBe(true);
+});
+
+const inputScript = "export const meta={name:'input',description:'input',inputSchema:{type:'object',properties:{message:{type:'string',pattern:'\\\\S'}},required:['message'],additionalProperties:false}};";
+
+it.each([
+  { script: source + " const broken = ;", args: { prompt: 'no launch' }, error: /Unexpected token/ },
+  { script: inputScript + 'return args.message', args: { message: 42 }, error: /args/ },
+  { script: inputScript + 'return args.message', args: { message: '   ' }, error: /args/ },
+])('rejects admission before artifacts or launches: $args', async ({ script, args, error }) => {
+  const host = boot({ workflowsEnabled: true });
+  const createHost = vi.spyOn(workflowHost, 'createWorkflowHost');
+  const allocate = vi.spyOn(workflowTask, 'workflowRunId');
+  const persist = vi.spyOn(outputFile, 'createOutputFilePath');
+  await expect(host.execute({ script, args })).rejects.toThrow(error);
+  expect(allocate).not.toHaveBeenCalled();
+  expect(persist).not.toHaveBeenCalled();
+  expect(createHost).not.toHaveBeenCalled();
+  expect(runAgent).not.toHaveBeenCalled();
+  expect(host.api.sendMessage).not.toHaveBeenCalled();
+  host.ui.select.mockResolvedValueOnce(undefined);
+  await required(host.commands.get('agents')).handler('', host.ctx);
+  expect(host.ui.select.mock.calls.at(-1)?.[1]).toContain('Workflows (0)');
+});
+
+it('admits valid inputs, preserves effective resume args, and leaves body throws asynchronous', async () => {
+  const host = boot({ workflowsEnabled: true });
+  const first = await host.execute({ script: inputScript + 'return await Promise.resolve(args.message)', args: { message: 'valid' } });
+  const id = required(first.details?.taskId);
+  expect((await host.notification(id)).content).toContain('<result>valid</result>');
+  const resumed = await host.execute({ resumeFromRunId: id });
+  expect((await host.notification(required(resumed.details?.taskId))).content).toContain('<result>valid</result>');
+  await expect(host.execute({ resumeFromRunId: id, args: null })).rejects.toThrow(/args/);
+  const scalar = "export const meta={name:'null',description:'null',inputSchema:{type:'null'}}; return args;";
+  await expect(host.execute({ resumeFromRunId: id, script: scalar })).rejects.toThrow(/args/);
+  const overridden = await host.execute({ resumeFromRunId: id, script: scalar, args: null });
+  await host.notification(required(overridden.details?.taskId));
+  const dynamic = await host.execute({ script: inputScript + "throw new Error('runtime')", args: { message: 'valid' } });
+  expect((await host.notification(required(dynamic.details?.taskId))).content).toContain('runtime');
+});
+
+it.each([{}, { scriptPath: 'missing.js' }, { name: '../invalid' }, { script: 'return 1' },
+  { script: source + '\u0000' }, { script: source + ' '.repeat(524_288) },
+  { script: "export const meta={name:'bad',description:'bad',inputSchema:[]}; return 1" },
+])('rejects source and static admission errors: %s', async params => {
+  const host = boot({ workflowsEnabled: true });
+  const allocate = vi.spyOn(workflowTask, 'workflowRunId');
+  await expect(host.execute(params)).rejects.toThrow();
+  expect(allocate).not.toHaveBeenCalled();
+  expect(runAgent).not.toHaveBeenCalled();
+  expect(host.api.sendMessage).not.toHaveBeenCalled();
 });

@@ -61,7 +61,7 @@ import { createWorkflowHost } from "./workflow/host.js";
 import { appendJournal, readJournal, type WorkflowJournalEntry } from "./workflow/journal.js";
 import { extractMeta, type WorkflowMeta, workflowCallName } from "./workflow/meta.js";
 import { elapsedMs } from "./workflow/progress.js";
-import { runWorkflow } from "./workflow/runtime.js";
+import { admitWorkflow, runWorkflow } from "./workflow/runtime.js";
 import { resolveWorkflowScript } from "./workflow/saved.js";
 import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./workflow/task.js";
 import { workflowCompletionText } from "./workflow/notification.js";
@@ -1622,7 +1622,7 @@ Terse command-style prompts produce shallow, generic work.
     execute: async (toolCallId, params, _signal, _onUpdate, ctx) => {
       if (!isWorkflowsEnabled() || !workflowSessionActive) return textResult("Workflows are unavailable in this session.");
       const resumeFrom = resolveResumeTarget(params.resumeFromRunId, workflowTasks);
-      if (resumeFrom !== undefined && !resumeFrom.ok) return textResult(resumeFrom.message);
+      if (resumeFrom !== undefined && !resumeFrom.ok) throw new Error(resumeFrom.message);
 
       // A resume with no source of its own re-runs what that run ran. The
       // common case is an edited script, but "run that again, cheaply" should
@@ -1635,17 +1635,10 @@ Terse command-style prompts produce shallow, generic work.
           : params,
         ctx.cwd,
       );
-      if (!resolved.ok) return textResult(resolved.message);
+      if (!resolved.ok) throw new Error(resolved.message);
 
-      // Parsed before anything is scheduled: a bad `meta` is an authoring error
-      // the model can fix immediately, and reporting it as a background run
-      // that failed a second later would just cost a turn.
-      let meta: WorkflowMeta;
-      try {
-        meta = extractMeta(resolved.script).meta;
-      } catch (err) {
-        return textResult(err instanceof Error ? err.message : String(err));
-      }
+      const args = params.args === undefined ? prior?.args : params.args;
+      const { meta } = admitWorkflow(resolved.script, args);
 
       const runId = workflowRunId();
       // Every invocation lands on disk next to the agent transcripts, so
@@ -1671,7 +1664,7 @@ Terse command-style prompts produce shallow, generic work.
         id: runId,
         script: resolved.script,
         scriptPath: resolved.scriptPath ?? savedPath,
-        args: params.args === undefined ? prior?.args : params.args,
+        args,
         meta,
         toolCallId,
         ...(journalPath !== undefined ? { journalPath } : {}),

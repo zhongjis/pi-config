@@ -26,13 +26,15 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 6. Write the script inline first. Include literal `meta`, explicit concurrent `opts.phase`, and relevant input/version identity in prompts/args. Before replay, assess changed upstream results, external inputs, and repeatable side effects.
 7. You MUST review syntax, arguments, and null paths before launch. Runnable mock checks SHOULD cover nontrivial branching/repair logic: success, null/falsy data, failed verification, and bounded termination. AVOID new checker infrastructure for simple ephemeral scripts. Inspect actual evidence after authorized execution; NEVER equate a completed workflow with accepted work.
 
+Before execution, you MUST check live agent selectors and authorized cwd/paths/commands. Use only documented option combinations; child `resume` excludes schema/gate/configuration overrides. Mock success, missing/null results, rejected evidence, thrown stages, and exhausted attempts; retain item identity when orchestration converts throws to null. Check provider/model availability separately; compilation cannot establish runtime readiness.
+
 ## Invocation and supervision
 
 Explicit opt-in means the user asks in their own words to run a workflow/multi-agent orchestration, requests a specific saved workflow, or invokes a skill/command explicitly requesting execution. A task merely benefiting from orchestration does not count. Without opt-in, you MUST ask before execution; individual Agent calls remain subject to active delegation rules.
 
 Pass `script` inline, not through a newly written file. Each invocation persists its script in the session task area and returns its path. For iteration, edit that file and call `{scriptPath: "<returned path>"}`. Repeated-use scripts MAY live in `.pi/workflows/<name>.js`, `.agents/workflows/`, or `<agent dir>/workflows/`; invoke with `{name: "<name>"}`. Source precedence: `scriptPath` → `script` → `name`. Pass `args` as actual JSON values, not JSON-encoded strings.
 
-SubagentWorkflow returns immediately with a task ID and notifies on completion. You MUST NOT poll. Use `/agents → Workflows` for progress and pause/skip/retry/cancel supervision; pause prevents new starts, not already-running effects. Inspect completion and linked full-result artifacts. Scripts/journals are ephemeral session artifacts, independent of transcript settings.
+SubagentWorkflow rejects source/resume, static/full-body syntax, and declared-input-schema errors in the initiating call, before allocating a run or writing artifacts. Admission compiles but NEVER runs the body. Valid calls return immediately with a task ID and notify on completion; dynamic body throws, agent/gate/provider/state failures remain asynchronous. You MUST NOT poll. Use `/agents → Workflows` for progress and pause/skip/retry/cancel supervision; pause prevents new starts, not already-running effects. Inspect completion and linked full-result artifacts. Scripts/journals are ephemeral session artifacts, independent of transcript settings.
 
 ## Runnable examples
 
@@ -47,16 +49,21 @@ Args: `{ "readOnlyAgentType": "<live read-only selector>", "items": [{ "id": "re
 ```js
 export const meta = {
   name: 'source-evidence', description: 'Collect and verify source evidence',
-  phases: [{ title: 'Read' }, { title: 'Verify' }]
+  phases: [{ title: 'Read' }, { title: 'Verify' }],
+  inputSchema: {
+    type: 'object', properties: {
+      readOnlyAgentType: { type: 'string', pattern: '\\S' },
+      items: { type: 'array', minItems: 1, maxItems: 20, items: {
+        type: 'object', properties: {
+          id: { type: 'string', pattern: '\\S' }, path: { type: 'string', pattern: '\\S' },
+          required: { type: 'boolean' }
+        }, required: ['id', 'path', 'required'], additionalProperties: false
+      } }
+    }, required: ['readOnlyAgentType', 'items'], additionalProperties: false
+  }
 };
-if (typeof args?.readOnlyAgentType !== 'string' || !args.readOnlyAgentType.trim()) {
-  throw new Error('Provide a readOnlyAgentType checked against the current Agent roster permissions');
-}
-if (!Array.isArray(args?.items) || args.items.length === 0 || args.items.length > 20 ||
-    args.items.some(item => !item || typeof item.id !== 'string' || !item.id ||
-      typeof item.path !== 'string' || !item.path || typeof item.required !== 'boolean') ||
-    new Set(args.items.map(item => item.id)).size !== args.items.length) {
-  throw new Error('Provide 1..20 uniquely labelled source items with required flags');
+if (new Set(args.items.map(item => item.id)).size !== args.items.length) {
+  throw new Error('Provide uniquely labelled source items');
 }
 const evidenceSchema = {
   type: 'object', properties: {
@@ -94,15 +101,14 @@ Args: `{ "readOnlyAgentType": "<live read-only selector>", "task": "Fix the fail
 ```js
 export const meta = {
   name: 'bounded-repair', description: 'Repair within scope and verify at most twice',
-  phases: [{ title: 'Repair' }, { title: 'Verify' }]
+  phases: [{ title: 'Repair' }, { title: 'Verify' }],
+  inputSchema: {
+    type: 'object', properties: {
+      readOnlyAgentType: { type: 'string', pattern: '\\S' },
+      task: { type: 'string', pattern: '\\S' }, check: { type: 'string', pattern: '\\S' }
+    }, required: ['readOnlyAgentType', 'task', 'check'], additionalProperties: false
+  }
 };
-if (typeof args?.readOnlyAgentType !== 'string' || !args.readOnlyAgentType.trim()) {
-  throw new Error('Provide a readOnlyAgentType checked against the current Agent roster permissions');
-}
-if (typeof args?.task !== 'string' || !args.task.trim() ||
-    typeof args?.check !== 'string' || !args.check.trim()) {
-  throw new Error('Provide an authorized task and acceptance command');
-}
 let reason = 'attempt limit';
 const attempts = [];
 for (let attempt = 1; attempt <= 2; attempt++) {
@@ -129,6 +135,8 @@ Signatures below describe the API, not TypeScript to paste into scripts.
 ### Script grammar
 
 Scripts MUST begin with `export const meta = {...}`. The object is a pure literal: no variables, calls, spreads, or template interpolation. Required nonempty strings: `name`, `description` (one-line card text). Optional `whenToUse` describes saved-workflow discovery; optional `phases` is an array of `{title, detail?, model?}`. Match `phase()` titles exactly; unmatched titles create their own groups. Phase `model` is display-only, not an override.
+
+Optional pure-literal `meta.inputSchema` validates invocation `args` before launch. Use a JSON Schema document for object, array, scalar, or union args; unlike `agent({schema})`, object roots are not required. Declare required fields, bounds, and `additionalProperties: false` where appropriate. Nonblank strings need `pattern: "\\S"`; `minLength: 1` alone accepts whitespace. Keep semantic checks such as unique IDs by property in the body. Schema validity NEVER proves permissions, path existence, command safety, or evidence quality.
 
 Scripts are plain JavaScript in an async context: top-level `await` and `return` work; TypeScript annotations/interfaces/generics do not. Standard built-ins such as JSON, Array, and Math are available. No filesystem or Node.js APIs. `eval`, `Function`, `Date.now()`, `Math.random()`, and argumentless `new Date()` throw. Pass timestamps/version identities through `args`; vary prompts/labels by index rather than random values. Explicit control flow does not make agent answers or concurrent completion order deterministic.
 
@@ -171,7 +179,7 @@ Fatal cap breaches and nested-workflow load failures propagate through orchestra
 
 1. Read `<run id>.workflow.jsonl` beside the persisted script for actual settled results before diagnosing unexpected/empty output; cached results are not necessarily nonempty. Use the inspector/progress and available child transcripts for labels, errors, and branch logs, not journal fields.
 2. Fix syntax, options, missing required evidence, or prompts without relaxing acceptance. For changed upstream/external inputs, include their relevant identity in call inputs and revalidate mutable evidence live; matching prompts do not prove unchanged files.
-3. Resume only a finished run in the same session with `{scriptPath, resumeFromRunId}`. Stop a running/paused run in `/agents → Workflows` first. Omitted source/args reuse recorded source (or its editable file) and original args.
+3. Resume only a finished run in the same session with `{scriptPath, resumeFromRunId}`. Stop a running/paused run in `/agents → Workflows` first. Omitted source/args reuse recorded source (or its editable file) and original args; explicit `null` overrides prior args. Edited source/schema validates these effective args before launch.
 4. Replay re-executes script control flow and caches only the longest successfully journaled unchanged positional prefix of `agent()` calls. First failed, changed, new, or missing entry ends reuse; that call and all later calls run live, even if later calls match. Missing journals mean no cached prefix. Runs containing child-session `resume` calls decline journal replay.
 5. You MUST reassess side effects before retries/replay. This is neither cross-session recovery nor a transaction, rollback, or exactly-once guarantee. Cached calls do not rerun their gates; live calls can repeat external writes. Serialize or make authorized effects safely repeatable; otherwise stop for a decision.
 

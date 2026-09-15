@@ -91,19 +91,27 @@ describe("complete workflow skill examples", () => {
   it.each([0, 1])("rejects absent or invalid read-only selectors before spawning example %s", async index => {
     for (const selector of [undefined, "", "   ", false]) {
       let calls = 0;
-      const result = await runWorkflow({ script: script(index),
-        args: { ...(selector === undefined ? {} : { readOnlyAgentType: selector }), items: [{ id: "one", path: "source", required: true }], task: "Fix fixture", check: "fixture-check" },
+      await expect(runWorkflow({ script: script(index),
+        args: { ...(selector === undefined ? {} : { readOnlyAgentType: selector }), ...(index === 0 ? { items: [{ id: "one", path: "source", required: true }] } : { task: "Fix fixture", check: "fixture-check" }) },
         host: host(() => { calls++; return { ok: true, text: "" }; }),
-      });
-      expect(result.status).toBe("failed");
+      })).rejects.toThrow(/args/);
       expect(calls).toBe(0);
     }
   });
 
   it.each([0, 1])("rejects missing required args before spawning example %s", async index => {
     let calls = 0;
-    const result = await runWorkflow({ script: script(index), args: { readOnlyAgentType }, host: host(() => { calls++; return { ok: true, text: "" }; }) });
-    expect(result.status).toBe("failed");
+    await expect(runWorkflow({ script: script(index), args: { readOnlyAgentType }, host: host(() => { calls++; return { ok: true, text: "" }; }) })).rejects.toThrow(/args/);
+    expect(calls).toBe(0);
+  });
+
+  it('keeps the semantic duplicate-ID guard before spawning', async () => {
+    let calls = 0;
+    const result = await runWorkflow({ script: script(0),
+      args: { readOnlyAgentType, items: [{ id: 'same', path: 'a', required: true }, { id: 'same', path: 'b', required: false }] },
+      host: host(() => { calls++; return { ok: true, text: '' }; }),
+    });
+    expect(result.status).toBe('failed');
     expect(calls).toBe(0);
   });
 });

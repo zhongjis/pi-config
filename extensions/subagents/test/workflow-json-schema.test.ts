@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { compileJsonSchema } from "../src/workflow/json-schema.js";
+import { compileInputSchema, compileJsonSchema } from "../src/workflow/json-schema.js";
 
 /** A schema shaped like the one Claude Code's own example passes. */
 const FINDINGS = {
@@ -135,4 +135,24 @@ describe("checking a payload", () => {
       expect(() => compiled.check(value)).not.toThrow();
     }
   });
+});
+
+it.each([
+  { schema: { type: 'string', pattern: '\\S' }, good: 'yes', bad: '   ' },
+  { schema: { type: 'array', items: { type: 'number' } }, good: [1], bad: ['1'] },
+  { schema: { anyOf: [{ type: 'null' }, { type: 'boolean' }] }, good: null, bad: 0 },
+  { schema: { type: ['string', 'number'] }, good: 0, bad: false },
+])('validates non-object workflow inputs without widening agent schemas: $schema', ({ schema, good, bad }) => {
+  const compiled = compileInputSchema(schema);
+  expect(compiled.ok).toBe(true);
+  if (!compiled.ok) throw new Error(compiled.message);
+  expect(compiled.compiled.check(good)).toBe(true);
+  expect(compiled.compiled.check(bad)).not.toBe(true);
+  expect(compileJsonSchema(schema).ok).toBe(false);
+});
+
+it.each([null, [], { description: 'x'.repeat(70_000) }])('names the input-schema boundary: %s', schema => {
+  const result = compileInputSchema(schema);
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.message).toContain('meta.inputSchema');
 });

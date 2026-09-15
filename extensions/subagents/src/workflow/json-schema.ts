@@ -56,11 +56,19 @@ export type SchemaCompilation =
  * hear about that before a model is paid to discover it.
  */
 export function compileJsonSchema(schema: unknown): SchemaCompilation {
+  return compileSchema(schema, "agent() opts.schema", true);
+}
+
+export function compileInputSchema(schema: unknown): SchemaCompilation {
+  return compileSchema(schema, "meta.inputSchema", false);
+}
+
+function compileSchema(schema: unknown, label: string, objectRoot: boolean): SchemaCompilation {
   if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
-    return { ok: false, message: "agent() opts.schema must be a JSON Schema object." };
+    return { ok: false, message: `${label} must be a JSON Schema object.` };
   }
   const root = schema as Record<string, unknown>;
-  if (root.type !== "object") {
+  if (objectRoot && root.type !== "object") {
     return {
       ok: false,
       message:
@@ -73,12 +81,12 @@ export function compileJsonSchema(schema: unknown): SchemaCompilation {
   try {
     serialized = JSON.stringify(root);
   } catch {
-    return { ok: false, message: "agent() opts.schema must be JSON-serializable." };
+    return { ok: false, message: `${label} must be JSON-serializable.` };
   }
   if (serialized.length > MAX_SCHEMA_BYTES) {
     return {
       ok: false,
-      message: `agent() opts.schema is too large (${serialized.length} bytes; the limit is ${MAX_SCHEMA_BYTES}).`,
+      message: `${label} is too large (${serialized.length} bytes; the limit is ${MAX_SCHEMA_BYTES}).`,
     };
   }
 
@@ -90,7 +98,7 @@ export function compileJsonSchema(schema: unknown): SchemaCompilation {
   } catch (error) {
     return {
       ok: false,
-      message: `agent() opts.schema is not a schema this runtime can validate: ${
+      message: `${label} is not a schema this runtime can validate: ${
         error instanceof Error ? error.message : String(error)
       }`,
     };
