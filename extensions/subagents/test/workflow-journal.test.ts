@@ -74,6 +74,26 @@ describe("journalKey", () => {
     // not throw away an hour of recorded results.
     expect(journalKey({ prompt: "a", label: "x" })).toBe(journalKey({ prompt: "a", label: "x" }));
   });
+
+  it("journalKey hash stable", () => {
+    // Guards on-disk compatibility: the hash of a representative schema-less
+    // call must not drift, or every journal already written stops matching.
+    // nodeKey is deliberately not among the hashed inputs, so it cannot move
+    // these values.
+    expect(journalKey({ prompt: "audit" })).toBe("cfee5e02172d10cae5185a88333a9692");
+    expect(
+      journalKey({
+        prompt: "audit",
+        label: "one",
+        model: "haiku",
+        agentType: "Explore",
+        effort: "high",
+        isolation: "worktree",
+        gate: "npm test",
+        resume: "prev",
+      }),
+    ).toBe("6baff91a4c0484790ff442da1b686b1d");
+  });
 });
 
 describe("journal files", () => {

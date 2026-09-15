@@ -67,6 +67,8 @@ export interface WorkflowJournalEntry {
    * partway through, which is why the flag is on the journal and not derived.
    */
   resumed?: true;
+  /** Stable author identity (agent({key})); position-independent match handle. */
+  nodeKey?: string;
 }
 
 /**
@@ -161,6 +163,7 @@ function isEntry(value: unknown): value is WorkflowJournalEntry {
     typeof entry.key === "string" &&
     typeof entry.ok === "boolean" &&
     (entry.text === undefined || typeof entry.text === "string") &&
-    (entry.resumed === undefined || entry.resumed === true)
+    (entry.resumed === undefined || entry.resumed === true) &&
+    (entry.nodeKey === undefined || typeof entry.nodeKey === "string")
   );
 }

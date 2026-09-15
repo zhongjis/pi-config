@@ -417,6 +417,8 @@ interface AgentCallPayload {
   effort?: string;
   /** Raw JSON Schema from `agent({ schema })`, compiled before anything spawns. */
   schema?: unknown;
+  /** Stable author identity from agent({key}); orthogonal to the payload hash. */
+  nodeKey?: string;
 }
 
 type WorkerMessage =
@@ -601,6 +603,17 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
   const journalResumes = journalEntries.some(entry => entry.resumed);
   let prefixIntact = journalEntries.length > 0 && !journalResumes;
   let replayedCount = 0;
+  /**
+   * nodeKey → its recorded entry, so a call with `agent({ key })` can find its
+   * result even when the run repositions it. First-wins on duplicate keys;
+   * `replayAt` consumes each on use, so a repeated key falls back to live.
+   */
+  const journalByNodeKey = new Map<string, WorkflowJournalEntry>();
+  for (const entry of journalEntries) {
+    if (entry.nodeKey !== undefined && !journalByNodeKey.has(entry.nodeKey)) {
+      journalByNodeKey.set(entry.nodeKey, entry);
+    }
+  }
 
   /* --- live control ---------------------------------------------------- */
 
@@ -679,10 +692,24 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
   });
 
   /** The journal entry to reuse at `index`, or undefined to run it live. */
-  function replayAt(index: number, key: string): WorkflowJournalEntry | undefined {
+  function replayAt(index: number, key: string, nodeKey?: string): WorkflowJournalEntry | undefined {
     if (!prefixIntact) return undefined;
-    const entry = journalEntries[index];
-    if (entry === undefined || entry.index !== index || entry.key !== key || !entry.ok) {
+    let entry: WorkflowJournalEntry | undefined;
+    if (nodeKey !== undefined) {
+      // Matched by author identity, so its recorded position is irrelevant — a
+      // run that reorders the call still finds it. Consumed on use so a
+      // duplicate key later this run cannot claim the same entry twice.
+      entry = journalByNodeKey.get(nodeKey);
+      if (entry !== undefined) journalByNodeKey.delete(nodeKey);
+    } else {
+      entry = journalEntries[index];
+    }
+    // The prefix guard is unchanged: a keyed hit still dies the moment an
+    // earlier call missed. `key` only changes how an entry is found, never
+    // whether an out-of-prefix result may be reused. The positional path also
+    // requires the entry to sit at its recorded index; the keyed path does not.
+    const positionMatches = nodeKey !== undefined || (entry !== undefined && entry.index === index);
+    if (entry === undefined || !positionMatches || entry.key !== key || !entry.ok) {
       prefixIntact = false;
       return undefined;
     }
@@ -824,6 +851,9 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
         return;
       }
       const index = agentCount++;
+      // Position-independent match handle for this call's journal entry, carried
+      // onto whatever this run records so a resume-of-resume keeps the identity.
+      const nodeKey = payload.nodeKey;
       // A resumed call is the same child again: it keeps the agent id, so an
       // abort still reaches it, and it keeps its spawn contract, so the row
       // reads the same as the row it continues.
@@ -859,7 +889,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
         ...payload,
         schema: payload.schema !== undefined ? JSON.stringify(payload.schema) : undefined,
       };
-      let replayed = replayAt(index, journalKey(keyInput));
+      let replayed = replayAt(index, journalKey(keyInput), nodeKey);
       // A replayed answer still has to satisfy the schema. The key covers a
       // schema that *changed*, but not a journal that was hand-edited, and not
       // the empty text a torn entry leaves behind — either would hand the
@@ -894,7 +924,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
         // Re-recorded so this run's journal is complete on its own terms: a
         // resume of a resume must not have to walk back through a chain of
         // earlier files to find the prefix.
-        recordJournal?.({ index, key: replayed.key, ok: true, text: replayedText });
+        recordJournal?.({ index, key: replayed.key, ok: true, text: replayedText, ...(nodeKey !== undefined ? { nodeKey } : {}) });
         respond(callId, true, replayedText);
         return;
       }
@@ -904,7 +934,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
 
       /** A skip the user asked for, before the child ever started. */
       const settleSkipped = (extra: Partial<WorkflowAgentEntry>) => {
-        recordJournal?.({ index, key, ok: false, ...resumeMark });
+        recordJournal?.({ index, key, ok: false, ...resumeMark, ...(nodeKey !== undefined ? { nodeKey } : {}) });
         emit([{ ...base, queuedAt, ...extra, state: "error", skipped: true, error: "Skipped by user." }]);
         // `null`, exactly as a terminal failure gives — a skipped agent is one
         // the script's `.filter(Boolean)` was already written to survive.
@@ -1072,14 +1102,14 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
           if (result.ok) {
             const text = result.text ?? "";
             emit([{ ...common, state: "done", resultPreview: preview(text) }]);
-            recordJournal?.({ index, key, ok: true, text, ...resumeMark });
+            recordJournal?.({ index, key, ok: true, text, ...resumeMark, ...(nodeKey !== undefined ? { nodeKey } : {}) });
             respond(callId, true, text);
             return;
           }
           // Recorded as a failure rather than left out: a gap would be read as an
           // unchanged prefix on the next resume, silently skipping the retry this
           // whole mechanism exists to make cheap.
-          recordJournal?.({ index, key, ok: false, ...resumeMark });
+          recordJournal?.({ index, key, ok: false, ...resumeMark, ...(nodeKey !== undefined ? { nodeKey } : {}) });
           // A dead agent is a null in the script, not a thrown error: Claude Code
           // scripts .filter(Boolean) rather than try/catch around every call.
           emit([

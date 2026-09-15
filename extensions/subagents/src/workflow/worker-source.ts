@@ -77,6 +77,27 @@ export const WORKER_SOURCE = `"use strict";
 
 const { parentPort, workerData } = require("node:worker_threads");
 const vm = require("node:vm");
+const { AsyncLocalStorage } = require("node:async_hooks");
+
+/*
+ * Auto-key context for pipeline()/parallel() children.
+ *
+ * A stage or thunk runs inside a store naming its structural position, so an
+ * agent() call it makes can be handed a stable nodeKey derived from that
+ * position rather than from when it happened to settle. Identity only — the
+ * key never enters the payload hash. AsyncLocalStorage isolates concurrent
+ * chains, so one item's store can never leak into another item's agent() call,
+ * and a lost context (an await before agent()) simply yields no store, which
+ * falls back to positional matching rather than a wrong key.
+ */
+const autoKeyStore = new AsyncLocalStorage();
+
+/* A child store that nests under the current one, so paths never collide. */
+function childAutoKeyStore(segment) {
+  const parent = autoKeyStore.getStore();
+  const base = parent ? parent.path + "/" : "";
+  return { path: base + segment, next: 0 };
+}
 
 const port = parentPort;
 const ITEM_CAP = workerData.itemCap;
@@ -338,6 +359,7 @@ const AGENT_OPTIONS = [
   "resume",
   "effort",
   "schema",
+  "key",
 ];
 
 /** Claude Code options this runtime does not have, and why. */
@@ -473,6 +495,22 @@ async function agentIn(scope, prompt, opts) {
   const gate = optionalText(options.gate, "agent() opts.gate");
   const resume = optionalText(options.resume, "agent() opts.resume");
   const effort = optionalText(options.effort, "agent() opts.effort");
+  // A stable identity the author gives a call so its cached result can be
+  // matched across a resume that repositions it. Not the label: label is
+  // display and is part of the payload hash, this is neither.
+  const nodeKey = optionalText(options.key, "agent() opts.key");
+  // Auto-assigned when the author gave no key and a pipeline/parallel store is
+  // on the async stack: a stable identity from the child's structural position,
+  // so replay survives the completion-order reshuffle those helpers produce.
+  // An explicit key always wins; a lost async context (getStore undefined)
+  // falls back to positional matching — safe degradation, never a wrong key.
+  let autoKey;
+  const store = autoKeyStore.getStore();
+  if (store !== undefined) {
+    autoKey = store.path + ":a" + store.next;
+    store.next = store.next + 1;
+  }
+  const effectiveKey = nodeKey !== undefined ? nodeKey : autoKey;
   const schema = options.schema;
   if (schema !== undefined) {
     if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
@@ -535,6 +573,7 @@ async function agentIn(scope, prompt, opts) {
     resume: resume,
     effort: effort,
     schema: schema,
+    nodeKey: effectiveKey,
   });
   if (result === undefined || result === null) return null;
   if (schema === undefined) return result;
@@ -562,13 +601,15 @@ async function parallel(thunks) {
     }
   }
   const settled = await Promise.all(
-    list.map(async function (thunk) {
-      try {
-        return await thunk();
-      } catch (error) {
-        if (isFatal(error)) throw error;
-        return null;
-      }
+    list.map(async function (thunk, i) {
+      return autoKeyStore.run(childAutoKeyStore("par" + i), async function () {
+        try {
+          return await thunk();
+        } catch (error) {
+          if (isFatal(error)) throw error;
+          return null;
+        }
+      });
     })
   );
   return toRealmArray(settled);
@@ -595,7 +636,9 @@ async function pipeline(items, ...stages) {
       let value = item;
       for (let s = 0; s < stages.length; s++) {
         try {
-          value = await stages[s](value, item, index);
+          value = await autoKeyStore.run(childAutoKeyStore("pl" + index + "." + s), function () {
+            return stages[s](value, item, index);
+          });
         } catch (error) {
           if (isFatal(error)) throw error;
           return null;
