@@ -16,6 +16,8 @@ Callable Subagent definitions and their bounded delegation contracts.
 - Read-only consultants MUST NOT receive mutating tools; bash requires runtime guarding.
 - Mode frontmatter, not guide tables, authorizes mode-scoped delegation.
 - Custom Subagents MUST use `prompt_mode: system_instructions` to inherit global/project AGENTS.md without parent identity, subject to runtime isolation.
+- Frontmatter `description` is model-visible routing text; it MUST state the same duty boundary as the prompt body.
+- Kua Fu/Hou Tu routing prose MUST remain consistent with callable-agent descriptions.
 
 ## Work Guidance
 
@@ -25,7 +27,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 ## Verification
 
 - You MUST use the frontmatter guide's verification checklist after definition edits.
-- Xuannv loading coverage: `pnpm exec vitest run --project unit test/planning-agent-contract.test.ts`.
+- Agent routing/loading coverage: `pnpm exec vitest run --project unit test/planning-agent-contract.test.ts`.
 
 ## Child DOX Index
 

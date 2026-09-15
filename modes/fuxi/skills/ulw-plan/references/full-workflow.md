@@ -58,8 +58,8 @@ Every executable item is a column-zero task row. Implementation rows match `- [ 
 
 Group independent, ready todos into waves based on dependency and write-path boundaries. A single cohesive todo is a valid wave. Size each todo as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run. Split only for independent outcome, context, or verification boundaries, or worker-budget overflow. Merge tiny tasks that share writes or verification. Implementation plus tests is one todo; never split them to feed a cheaper worker. No fixed file-count guard. Preserve one logical plan item → one resumable worker session, staged with a green checkpoint and last-green fail-safe when oversized.
 
-Worker-fit rubric: Guangguang = mechanical, deterministic, low-risk, trivial single-file, no unresolved design; Jintong = DEFAULT bounded non-UI implementation, including cohesive multi-file changes; Juling = exception requiring a recorded positive trigger; Yunu = frontend owner.
-Juling triggers: architecture/data-ownership/trust-boundary reasoning; security/concurrency/migration/performance invariant; ambiguous debugging after focused recon; cross-workstream integration; diagnosed standard-worker reasoning failure. Size, file count, importance, or uncertain estimate alone are not triggers.
+Worker-fit rubric: Cangjie = standalone human-facing docs/technical prose from supplied or locally verified facts; Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; Jintong = DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work; Juling = substantial cross-module/cross-system work or elevated reasoning; Yunu = frontend/web visual-engineering implementation.
+Juling triggers: substantial cross-module/cross-system effort; elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after focused recon; cross-workstream integration; diagnosed Jintong reasoning failure. Multiple files alone are insufficient; substantial effort across modules qualifies. External research stays with Wenchang; behavior-coupled docs stay with the implementation owner; architecture/policy decisions and publication stay with the orchestrator.
 Failure classification: Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge. Only diagnosed reasoning-capability failure or increased risk escalates.
 
 QA fields may reference existing assertions, logs, and surface artifacts; they do not require a new JSON reporter or separate run per todo. Assign each required check an owner and reuse its evidence across todos and F1-F4 while source, dependencies, configuration, environment, and external state remain valid. Rerun missing or invalidated checks, retain distinct manual QA, and preserve every required review. Choose representative failure cases; add combinations only for concrete interaction risks.
@@ -70,7 +70,7 @@ Each implementation todo contains:
 - [ ] N. <title>
   Objective: <one observable outcome>
   Artifacts: <exact code/doc/result expected>
-  Worker fit: <Guangguang | Jintong | Juling | Yunu> — advisory; runtime owns selection
+  Worker fit: <Cangjie | Guangguang | Jintong | Juling | Yunu> — advisory; runtime owns selection
   Escalation triggers: <positive Juling trigger(s) or none>
   Must-have IDs: <M1, ...>
   What to do / Must NOT do: <decision-complete instructions>

@@ -92,17 +92,20 @@ Codebase discovery, tracing, and pattern finding.
 **Wenchang 文昌**:
 Docs, web, and external-library research.
 
+**Cangjie 仓颉**:
+Standalone human-facing documentation and technical prose from supplied or locally verified facts.
+
 **Jintong 金童**:
-Standard bounded non-UI implementation, debug, and test (sonnet tier).
+Default clear, standard-risk, low-to-moderate non-UI implementation, including cohesive multi-file work.
 
 **Juling 巨灵**:
-Complex or higher-risk non-UI implementation (opus tier).
+Substantial cross-module or elevated-reasoning non-UI implementation.
 
 **Yunu 玉女**:
-Frontend and web-UI implementation (implementation only; visual/browser QA stays with the orchestrator).
+Frontend/web visual-engineering implementation; visual/browser QA stays with the orchestrator.
 
 **Guangguang 光光**:
-Trivial single-file edits, typos, and obvious config nits.
+Quick, deterministic, low-risk, naturally single-file implementation with no unresolved design.
 
 **Taishang 太上**:
 Read-only architecture/debugging consult and plan-compliance audit only; does not do code-quality review.

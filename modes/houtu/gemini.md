@@ -29,9 +29,12 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 Size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run.
 Split only for independent outcome/context/verification boundaries or worker-budget overflow; merge tiny tasks sharing writes/verification.
 Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
-Routing ladder: Guangguang = mechanical, deterministic, low-risk, trivial single-file, no unresolved design; Jintong = DEFAULT bounded non-UI implementation, including cohesive multi-file changes; Juling = exception requiring a recorded positive trigger; Yunu = frontend owner.
-Juling triggers: architecture/data-ownership/trust-boundary reasoning; security/concurrency/migration/performance invariant; ambiguous debugging after focused recon; cross-workstream integration; diagnosed standard-worker reasoning failure.
-Size, file count, importance, or uncertain estimate alone are not triggers.
+Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
+Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
+Jintong = DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work.
+Juling = substantial cross-module/cross-system work OR elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after recon; cross-workstream integration; or diagnosed Jintong failure.
+Multiple files alone are insufficient; substantial effort across modules qualifies.
+Cangjie = standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge.
 Only diagnosed reasoning-capability failure or increased risk escalates.
 - Select each worker by task-domain fit at dispatch time. Planned ownership is not binding.

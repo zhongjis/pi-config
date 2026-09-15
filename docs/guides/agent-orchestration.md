@@ -45,20 +45,21 @@ Details of each mode's lifecycle, restrictions, and gates are in
 ## Subagent roster (delegation targets)
 
 Orchestrators route to these leaf specialists. Only `xuannv` can itself delegate
-(to read-only recon/research/analysis agents); implementation workers are leaves.
+(to read-only recon/research/analysis agents); implementation and writing workers are leaves.
 
 | Agent | Role | Writes code? | Can delegate? |
 |-------|------|:---:|:---:|
 | `chengfeng` | Codebase recon / tracing | no | no |
 | `wenchang` | External docs / web research | no | no |
+| `cangjie` | Standalone human-facing documentation / technical prose | no | no |
 | `taishang` | Architecture + debugging consult, plan-compliance | no | no |
 | `direnjie` | Gap analysis (assumptions, guardrails, scope) | no | no |
 | `yanluo` | High-accuracy finalized-plan review | no | no |
 | `xuannv` | Tactical planning advisor (returns plan text) | no | **yes** |
-| `guangguang` | Trivial single-file edits | yes | no |
-| `jintong` | Standard bounded implementation | yes | no |
-| `juling` | Complex/higher-risk implementation (opus-tier) | yes | no |
-| `yunu` | Frontend/UI implementation (implementation only; visual/browser QA stays with the orchestrator) | yes | no |
+| `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
+| `jintong` | Clear, standard-risk, low-to-moderate non-UI implementation | yes | no |
+| `juling` | Substantial cross-module or elevated-reasoning non-UI implementation | yes | no |
+| `yunu` | Frontend/web visual-engineering implementation; orchestrator owns visual/browser QA | yes | no |
 
 Roles and tool posture are defined in each `agents/<name>.md`; see
 [agent-frontmatter.md](agent-frontmatter.md).
@@ -75,6 +76,7 @@ this table is a convenience snapshot.
 |---|:---:|:---:|:---:|
 | chengfeng | ✓ | ✓ | ✓ |
 | wenchang | ✓ | ✓ | ✓ |
+| cangjie | ✓ | — | ✓ |
 | taishang | ✓ | ✓ | ✓ |
 | direnjie | ✓ | ✓ | ✓ |
 | yanluo | — | ✓ | — |
@@ -85,10 +87,10 @@ this table is a convenience snapshot.
 | yunu | ✓ | ✓ | ✓ |
 | houtu | ✗ | ✗ | — |
 
-Notes: `fuxi` allows only `yunu`
-among writers (for UI feasibility input), not general implementation; `yanluo` is
-fuxi-only, `xuannv` is kuafu-only; **Hou Tu is never a delegation target** — it is
-reached through the approval → `/handoff:start-work` bridge, not by delegation.
+Notes: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `yunu` only
+for UI feasibility input, not general implementation. `yanluo` is fuxi-only and
+`xuannv` is kuafu-only. **Hou Tu is never a delegation target** — it is reached
+through the approval → `/handoff:start-work` bridge, not by delegation.
 
 Delegation is **mode-scoped and fail-closed**: the allowlist sets candidates, the
 blocklist removes them, and any target outside the resolved set is denied at every

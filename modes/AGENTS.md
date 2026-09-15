@@ -18,6 +18,8 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - `gpt.md` replaces only the body; it MUST be self-contained.
 - Absent GPT variants inherit the default body.
 - `gemini.md` is a body-only corrective overlay on the default.
+- Kua Fu/Hou Tu default, GPT, and Gemini routing prose MUST match model-visible descriptions in `agents/*.md`.
+- Kua Fu/Hou Tu MAY delegate standalone prose to Cangjie; Fu Xi owns plan prose and MUST NOT delegate to Cangjie.
 - Runtime discovers only the active mode's existing skills; bodies load on demand.
 - [Hou Tu GPT](houtu/gpt.md) MUST follow user corrections immediately, gate Task/PLAN completion on independent verification, and require final user okay only for explicitly requested checkpoints. Default/Gemini retain their final user-okay requirement.
 - Hou Tu GPT completion MUST cover remaining in-scope top-level tasks and F1-F4, excluding nested checkboxes; canceled PLAN tasks MUST remain `[-]` with existing Task mirrors `deleted`, NEVER completed.
