@@ -14,7 +14,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
-import { parseModelChain, resolveFirstAvailable } from "../lib/model-selection.js";
+import {
+  getToolModelSelection,
+  loadToolModelsConfig,
+  resolveToolModelSelection,
+} from "../lib/tool-models.js";
 import {
   extractToolText,
   firstMeaningfulLine,
@@ -30,14 +34,6 @@ const SUPPORTED_MIME_TYPES = new Set([
   "image/webp",
   "image/gif",
 ]);
-
-const VISION_MODEL_CHAIN = [
-  "gpt-5.5:medium",
-  "mimo-v2.5",
-  "kimi-k2.6",
-  "glm-4.6v",
-  "gpt-5-nano",
-].join(",");
 
 /** Sessions already warned about look_at falling back to the current agent model. */
 const FALLBACK_WARNED_SESSIONS = new Set<string>();
@@ -248,10 +244,9 @@ async function runVisionInspection(
   goal: string,
   signal?: AbortSignal,
 ) {
-  let resolved = resolveFirstAvailable(
-    parseModelChain(VISION_MODEL_CHAIN),
-    ctx.modelRegistry,
-  );
+  const config = loadToolModelsConfig(ctx.cwd);
+  const selection = getToolModelSelection(config, "multimodal-look.inspect");
+  let resolved = resolveToolModelSelection(selection, ctx.modelRegistry);
   let fallback = false;
 
   if (!resolved) {

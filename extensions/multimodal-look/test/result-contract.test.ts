@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,11 +9,6 @@ const mocks = vi.hoisted(() => ({
   dispose: vi.fn(),
   abort: vi.fn(),
   prompt: vi.fn(),
-  model: {
-    provider: "test",
-    id: "vision",
-    input: ["text", "image"],
-  },
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
@@ -34,13 +29,27 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   };
 });
 
-vi.mock("../../lib/model-selection.js", () => ({
-  parseModelChain: vi.fn(() => []),
-  resolveFirstAvailable: vi.fn(() => ({
-    model: mocks.model,
-    thinkingLevel: undefined,
-  })),
-}));
+interface TestModel {
+  readonly provider: string;
+  readonly id: string;
+  readonly input: readonly string[];
+}
+
+const configuredModel = {
+  provider: "fixture",
+  id: "configured-vision",
+  input: ["text", "image"],
+} as const satisfies TestModel;
+
+function createRegistry(models: readonly TestModel[] = [configuredModel]) {
+  return {
+    find(provider: string, modelId: string) {
+      return models.find((model) => model.provider === provider && model.id === modelId);
+    },
+    getAll: () => models,
+    getAvailable: () => models,
+  };
+}
 
 import multimodalLook from "../index.js";
 
@@ -92,11 +101,13 @@ function registerTool(): ToolDefinition {
   return registered!;
 }
 
-function createContext() {
+function createContext(
+  options: { readonly models?: readonly TestModel[]; readonly current?: TestModel } = {},
+) {
   return {
     cwd: testRoot,
-    modelRegistry: {},
-    model: undefined,
+    modelRegistry: createRegistry(options.models),
+    model: options.current,
     sessionManager: { getSessionId: () => "look-at-test-session" },
     hasUI: false,
     ui: { notify: vi.fn() },
@@ -110,6 +121,11 @@ function renderText(component: RenderableText, width = 120): string {
 
 beforeEach(async () => {
   testRoot = await mkdtemp(join(tmpdir(), "look-at-contract-"));
+  await mkdir(join(testRoot, ".pi"));
+  await writeFile(
+    join(testRoot, ".pi", "tool_models.json"),
+    JSON.stringify({ version: 1, roles: { "vision.inspect": "fixture/configured-vision:high" } }),
+  );
   const listeners = new Set<(event: unknown) => void>();
   const session = {
     messages: [],
@@ -159,9 +175,12 @@ describe("look_at result contract", () => {
       mimeType: "image/png",
       bytes: imageBytes.byteLength,
       source: "sample.png",
-      model: "test/vision",
+      model: "fixture/configured-vision",
       fallback: false,
     });
+    expect(mocks.createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: configuredModel, thinkingLevel: "high", noTools: "all" }),
+    );
     expect((result.content[0] as TextBlock).text).not.toContain(PNG_BASE64);
 
     const collapsed = renderText(
@@ -177,6 +196,50 @@ describe("look_at result contract", () => {
     expect(collapsed).toContain(`findings: ${mocks.analysis}`);
     expect(expanded).toBe(mocks.analysis);
     expect(`${collapsed}\n${expanded}`).not.toContain(PNG_BASE64);
+  });
+
+  it("falls back only to an image-capable current model when the configured chain is unavailable", async () => {
+    const tool = registerTool();
+    const current = {
+      provider: "fixture",
+      id: "current-vision",
+      input: ["text", "image"],
+    } as const satisfies TestModel;
+
+    const result = await tool.execute(
+      "look-at-fallback",
+      { image_data: PNG_BASE64, goal: "Inspect the image" },
+      undefined,
+      undefined,
+      createContext({ models: [], current }),
+    );
+
+    expect(result.details).toMatchObject({ model: "fixture/current-vision", fallback: true });
+    expect(mocks.createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: current, thinkingLevel: undefined, noTools: "all" }),
+    );
+  });
+
+  it("rejects a text-only current model before creating a child session", async () => {
+    const tool = registerTool();
+    const current = {
+      provider: "fixture",
+      id: "current-text",
+      input: ["text"],
+    } as const satisfies TestModel;
+
+    await expect(
+      tool.execute(
+        "look-at-no-vision",
+        { image_data: PNG_BASE64, goal: "Inspect the image" },
+        undefined,
+        undefined,
+        createContext({ models: [], current }),
+      ),
+    ).rejects.toThrow(
+      "look_at could not find an available vision model for the active profile, and the current model (fixture/current-text) does not support image input.",
+    );
+    expect(mocks.createAgentSession).not.toHaveBeenCalled();
   });
 
   it("preserves data URI MIME and canonical image bytes", async () => {

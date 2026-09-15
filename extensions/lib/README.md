@@ -9,6 +9,7 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 | `active-tools.ts` | Shared active-tool allowlist policy for built-ins and extension tools |
 | `agent-frontmatter.ts` | Shared agent/mode frontmatter parser (`builtin_tools`, `extension_tools`, delegation, model) |
 | `model-selection.ts` | Parse and resolve model spec strings (`provider/model:level:fast,fallback`); selected candidate alone carries optional `fast` metadata |
+| `tool-model-defaults.ts` | Built-in shared tool-model roles and tool mappings |
 | `fast.ts` | `getFastProfile`, `getFastEligibility`, `transformFastPayload`, `transformFastHeaders` — stateless Codex/Anthropic request recipes |
 | `thinking-level.ts` | `ThinkingLevel` type, validation, normalization |
 | `clipboard.ts` | System clipboard read/write |

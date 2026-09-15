@@ -20,12 +20,14 @@ Later layers override earlier layers.
   "roles": {
     "summary.session": "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b",
     "commit": "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
-    "guard.tool": "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5"
+    "guard.tool": "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5",
+    "vision.inspect": "gpt-5.5:medium,mimo-v2.5,kimi-k2.6,glm-4.6v,gpt-5-nano"
   },
   "tools": {
     "smart-sessions.summary": { "role": "summary.session" },
     "boomerang.commit": { "role": "commit" },
-    "smart-tool-guards.classifier": { "role": "guard.tool" }
+    "smart-tool-guards.classifier": { "role": "guard.tool" },
+    "multimodal-look.inspect": { "role": "vision.inspect" }
   }
 }
 ```
@@ -46,6 +48,7 @@ Rules:
 | `smart-sessions.summary` | `summary.session` | One-line session-name summary | `extensions/smart-sessions/index.ts` |
 | `boomerang.commit` | `commit` | `/boomerang:commit` target model | `extensions/boomerang/commit.ts` |
 | `smart-tool-guards.classifier` | `guard.tool` | Classify deferred guarded built-in `bash` commands | `extensions/smart-tool-guards/src/classifier.ts` |
+| `multimodal-look.inspect` | `vision.inspect` | Inspect one image in an isolated child session | `extensions/multimodal-look/index.ts` |
 
 ## Extension behavior
 
@@ -64,6 +67,10 @@ When either field is blank or missing, `smart-sessions` resolves `smart-sessions
 ### `boomerang`
 
 `/boomerang:commit` resolves `boomerang.commit` at command time from `ctx.cwd`, then feeds the candidates into the existing commit resolver. The existing context-window gate remains: if every configured commit model is unavailable or too small, it falls back to the current model with the existing warning.
+
+### `multimodal-look`
+
+`look_at` resolves `multimodal-look.inspect` through `vision.inspect`; global and project layers may replace the role, repoint the tool, or set a preferred direct chain. The default chain is `gpt-5.5:medium,mimo-v2.5,kimi-k2.6,glm-4.6v,gpt-5-nano`. If no configured candidate resolves, it uses the current model only when that model declares image input support; otherwise the existing explicit error is thrown before a child session is created. The isolated session and main-session model behavior remain unchanged.
 
 ## Related docs
 

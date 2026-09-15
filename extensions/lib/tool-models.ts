@@ -3,6 +3,9 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { parseModelChain, resolveFirstAvailable } from "./model-selection.js";
 import type { ModelCandidate, ModelRegistry } from "./model-selection.js";
+import { BUILTIN_TOOL_MODELS_FILE } from "./tool-model-defaults.js";
+
+export { BUILTIN_TOOL_MODELS_FILE };
 
 export interface ToolModelRuleFile {
 	role?: string | null;
@@ -57,20 +60,6 @@ export interface ToolModelSelection {
 	source: ToolModelsSource;
 	path?: string;
 }
-
-export const BUILTIN_TOOL_MODELS_FILE: ToolModelsFile = {
-	version: 1,
-	roles: {
-		"summary.session": "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b",
-		commit: "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
-		"guard.tool": "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5",
-	},
-	tools: {
-		"smart-sessions.summary": { role: "summary.session" },
-		"boomerang.commit": { role: "commit" },
-		"smart-tool-guards.classifier": { role: "guard.tool" },
-	},
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -14,6 +14,7 @@ import {
 const SUMMARY_CHAIN = "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b";
 const COMMIT_CHAIN = "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b";
 const GUARD_CHAIN = "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5";
+const VISION_CHAIN = "gpt-5.5:medium,mimo-v2.5,kimi-k2.6,glm-4.6v,gpt-5-nano" as const;
 
 function writeJson(path: string, value: unknown): void {
 	mkdirSync(dirname(path), { recursive: true });
@@ -69,11 +70,13 @@ describe("tool model config", () => {
 				"summary.session": SUMMARY_CHAIN,
 				commit: COMMIT_CHAIN,
 				"guard.tool": GUARD_CHAIN,
+				"vision.inspect": VISION_CHAIN,
 			},
 			tools: {
 				"smart-sessions.summary": { role: "summary.session" },
 				"boomerang.commit": { role: "commit" },
 				"smart-tool-guards.classifier": { role: "guard.tool" },
+				"multimodal-look.inspect": { role: "vision.inspect" },
 			},
 		});
 		expect(getToolModelSelection(config, "smart-sessions.summary")).toMatchObject({
@@ -91,6 +94,11 @@ describe("tool model config", () => {
 			role: "guard.tool",
 			source: "built-in",
 		});
+		expect(getToolModelSelection(config, "multimodal-look.inspect")).toMatchObject({
+			chain: VISION_CHAIN,
+			role: "vision.inspect",
+			source: "built-in",
+		});
 		expect(config.diagnostics).toEqual([]);
 	});
 
@@ -101,18 +109,21 @@ describe("tool model config", () => {
 				"summary.session": "fixture/missing-summary,fixture/summary:low:fast",
 				commit: "fixture/missing-commit,fixture/commit:medium",
 				"guard.tool": "fixture/missing-guard,fixture/guard:high",
+				"vision.inspect": "fixture/missing-vision,fixture/vision:medium",
 			},
 		});
 		const registry = makeRegistry([
 			{ provider: "fixture", id: "summary" },
 			{ provider: "fixture", id: "commit" },
 			{ provider: "fixture", id: "guard" },
+			{ provider: "fixture", id: "vision" },
 		]);
 		const config = loadToolModelsConfig(cwd);
 		const expectations = [
 			{ tool: "smart-sessions.summary", role: "summary.session", id: "summary", thinkingLevel: "low", fast: true },
 			{ tool: "boomerang.commit", role: "commit", id: "commit", thinkingLevel: "medium" },
 			{ tool: "smart-tool-guards.classifier", role: "guard.tool", id: "guard", thinkingLevel: "high" },
+			{ tool: "multimodal-look.inspect", role: "vision.inspect", id: "vision", thinkingLevel: "medium" },
 		];
 		for (const { tool, role, id, ...metadata } of expectations) {
 			const selection = getToolModelSelection(config, tool);
