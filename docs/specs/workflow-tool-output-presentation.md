@@ -4,7 +4,7 @@ Status: shipped
 
 ## Problem Statement
 
-Pi users cannot reliably tell what a SubagentWorkflow produced or which Subagents ran from its current transcript presentation. A completed object result appears as `Completed · {`. The collapsed activity row selects only the first currently active task, so all child identity disappears on completion; even while running, the task label does not identify the configured Subagent type. Expanded reports mix the answer with repeated identity, per-child telemetry, prompts, previews, and logs. Completion notifications foreground usage and retain only a 500-character preview, so expansion cannot recover the answer.
+The original presentation defect hid SubagentWorkflow results and child identity: a completed object appeared as `Completed · {`, terminal activity lost the roster, expanded output mixed answers with telemetry, and notification expansion could not recover the complete answer. The 2026-09-16 amendment also addresses silent child failures and domain rejection presented as successful completion.
 
 The reported `graph-engineering-research` run completed four of four agents in 138.124 seconds; all journal entries had successful, nonempty results. The first declared task was `eigent`, using `wenchang`. Its returned object had `research` and `review` fields. This was a presentation defect, not evidence of skipped work. Execution success does not establish research accuracy.
 
@@ -12,15 +12,24 @@ The reported `graph-engineering-research` run completed four of four agents in 1
 
 The tool row supervises execution. The notification announces the outcome. Both expand into trustworthy, state-specific reports. Keep one workflow identity header, meaningful result summaries, explicit lifecycle text, and a lasting task-label/Subagent-type roster. Put resource usage only in expanded reports. Preserve complete retained output and make any omission explicit and recoverable.
 
-The following mockups reproduce the accepted final proposal. Values are illustrative except the recorded run facts above. `[expand]` represents the configured Pi expansion binding, never literal UI copy. Placeholder paths mean complete existing paths; placeholders for JSON mean the actual complete returned content, not explanatory text in the product. Spacing adapts to terminal width.
+These mockups describe the current shipped contract, including the 2026-09-16 failure/outcome amendment. Values are illustrative except the recorded run facts above. The legacy research return has no declared outcome. `[expand]` represents the configured Pi expansion binding, never literal UI copy. Placeholder paths mean complete existing paths; JSON placeholders mean complete returned content. Spacing adapts to terminal width.
+
+### Execution and objective outcome
+
+- Execution lifecycle and declared objective outcome are independent. A normal script return completes execution, not necessarily the user's objective. Execution failure takes presentation precedence.
+- Required `agent()` calls reject on terminal provider, schema-result, or gate failure. `{optional:true}` returns null only for ordinary terminal failures; policy, configuration, programming, and fatal errors still reject. User skips remain null, including required calls.
+- Thrown `parallel` thunks and `pipeline` stages reject orchestration. A null stage result short-circuits that item's remaining pipeline stages; false, 0, and empty strings remain valid. Direct dependent calls MUST handle user-skip null explicitly.
+- `outcome.succeed(value?)`, `outcome.partial(reason, value?)`, and `outcome.fail(reason, value?)` declare objective outcome explicitly. Partial/failed reasons MUST be nonblank. Arbitrary payload fields such as `accepted:false` are NEVER inferred; plain legacy returns show `Outcome not declared`.
+- Helpers shallow-freeze the reserved `$subagentWorkflowOutcome` envelope and metadata, not user values. Root returns normalize outcome separately from payload; nested calls retain envelopes for explicit propagation. Malformed envelopes fail execution. Optional persisted outcome keeps legacy snapshots valid; malformed snapshots retain raw fallback.
+- Model-facing completion notifications intentionally disclose outcome, `Execution: ...`, and completed/failed/skipped child counts. Delivery timing/channel, one-owner follow-up, usage, replay/resume, permissions, and artifact behavior remain preserved.
 
 ### Tool — collapsed, completed
 
 ```text
 ▸ SubagentWorkflow · graph-engineering-research
-  Completed · structured result
-  4 agents completed · fields: research, review
-  [expand] result · /agents › Workflows
+  Outcome not declared · structured result
+  Execution: completed · 4 agents completed · fields: research, review
+  [expand] result and diagnostics · /agents › Workflows
 ```
 
 ### Tool — collapsed, running
@@ -38,7 +47,8 @@ Show the first active task label and configured Subagent type, plus the other ac
 
 ```text
 ▸ SubagentWorkflow · graph-engineering-research
-  Completed · 4 agents completed
+  Outcome not declared · 4 agents completed
+  Execution: completed
 
   Result
     <complete returned JSON, formatted and wrapped>
@@ -68,27 +78,28 @@ The roster remains visible after completion. Do not repeat the workflow heading 
 ### Notification — collapsed
 
 ```text
-Workflow completed · graph-engineering-research
-  4 agents completed · returned research, review
-  [expand] result · /agents › Workflows
+Workflow outcome not declared · graph-engineering-research
+  Execution: completed · 4 agents completed · returned research, review
+  [expand] result and diagnostics · /agents › Workflows
 ```
 
 No tokens or tools compete with the outcome, and completion is explicit text rather than an icon alone.
 
-### Notification — collapsed, child failure
+### Notification — collapsed, explicit outcome and child failures
 
 ```text
-Workflow completed with agent errors · <name>
-  1 agent failed · returned result available
-  [expand] result and diagnostics
+Workflow outcome partial: optional evidence missing · <name>
+  Execution: completed · 1 agent completed · 1 agent failed · 1 agent skipped
+  [expand] result and diagnostics · /agents › Workflows
 ```
 
-Script failure remains `Workflow failed`, distinct from a completed script with child errors. This labels execution facts, not whether the user's broader task succeeded.
+An explicit `outcome.fail('verification_failed', value)` instead displays `Workflow outcome failed: verification_failed · <name>` even when every child completed. Uncaught required child/script failure displays `Workflow execution failed · <name> · <error>`; it does not become a completed workflow with a missing result. Optional failures and user skips remain independently visible in child counts. A normal plain return with child errors still has `Outcome not declared`, not inferred objective success.
 
 ### Notification — expanded
 
 ```text
-Workflow completed · graph-engineering-research
+Workflow outcome not declared · graph-engineering-research · 4 agents completed
+Execution: completed
 
   Result
     <complete returned JSON>
@@ -124,7 +135,7 @@ If display remains bounded, disclose the exact omission and working full-output 
 11. As a Pi user, I want finished tasks removed from current activity, so that stale labels do not imply ongoing execution.
 12. As a Pi user, I want a complete expanded task-label/type/status roster after completion, so that I can verify which Subagents ran.
 13. As a Pi user, I want tool rosters grouped by phase, so that task identity retains its workflow context.
-14. As a Pi user, I want explicit Running, Paused, Stopped, Failed, and Completed labels, so that status remains understandable without color.
+14. As a Pi user, I want explicit execution and declared-outcome labels, so that status remains understandable without color and completion never implies acceptance.
 15. As a Pi user, I want child errors distinguished from script failure, so that a successfully returned script is not represented as universal child success.
 16. As a Pi user, I want skipped, blocked, interrupted, and replayed work represented truthfully, so that incomplete or reused work is not counted as fresh success.
 17. As a Pi user, I want running reports to prioritize activity, so that I can supervise current work.
@@ -144,15 +155,21 @@ If display remains bounded, disclose the exact omission and working full-output 
 31. As a Unicode/ANSI user, I want terminal-cell-safe wrapping and clipping, so that CJK, emoji, combining characters, paths, and styled text fit every row.
 32. As a Pi user, I want usage, tools, duration, and model diagnostics only expanded, so that collapsed views remain quiet.
 33. As a Pi user, I want legacy or malformed presentation data to fall back to original content, so that renderer evolution cannot hide valid results.
-34. As the parent Agent, I want model-facing result and notification content, error flags, execution, timing, and resume semantics unchanged, so that a visual redesign cannot alter orchestration.
+34. As the parent Agent, I want explicit required/optional failure handling and outcome/execution/settlement notification fields, while delivery timing/channel, usage, replay/resume, and permissions remain preserved.
 35. As a maintainer, I want tests through registered tool and message renderers plus real Pi captures, so that verification covers the user-facing seams rather than only formatter internals.
 36. As a Pi user, I want unavailable historical live state identified honestly, so that a reload is not presented as continued live supervision or durable recovery.
+37. As a Pi user, I want one stable phase-grouped inspector roster, so that opening details or changing selection does not relocate agents between panes.
+38. As a Pi user, I want inspector rows to show only the effective runtime model, so that requested model chains are not mistaken for the model actually running; unresolved sessions say `model pending`.
+39. As a wide-terminal user, I want roster and selected-agent details side by side; as a narrow-terminal user, I want an explicit detail view with a reliable back action.
+40. As a Pi user, I want running details to lead with current activity and terminal details to lead with outcome or error, so that the decisive state appears first.
+41. As a Pi user, I want concise default controls and contextual supervision controls, so that navigation stays readable without hiding pause, skip, retry, stop, or conversation access.
+42. As a Pi user, I want unavailable live detail identified honestly, so that the inspector does not fabricate timelines, tool names, dependencies, or future agent rows.
 
 ## Implementation Decisions
 
 - Keep the existing call/result separation. The call header owns workflow identity; standalone notifications and workflow entries carry their own identity. The immediate background acknowledgement is not final completion, and live state comes from the current workflow task rather than only the partial-result flag.
 - Reuse the workflow progress projection to derive observed counts and child display states. Keep scheduled-so-far distinct from fixed total, and configured Subagent type distinct from task label, runtime handle, and conversation record ID. Omit unavailable identity rather than inventing a type.
-- Use explicit lifecycle text with semantic theme colors as reinforcement. Paused workflows may still have active children. Distinguish failed, skipped, blocked, interrupted, and cached/replayed children, preserving their underlying execution semantics and error flags.
+- Use explicit lifecycle and declared-outcome text with semantic colors. Paused workflows may still have active children. Distinguish failed, skipped, blocked, interrupted, and cached/replayed children; child settlement is not objective acceptance.
 - For successful strings use meaningful returned text; for absent/empty output show an empty state; for objects and arrays show structural summaries and available keys/counts. Do not infer natural-language outcomes from arbitrary object fields or fall back to stale activity logs on terminal success.
 - Collapsed tool results have at most three physical rows excluding the call header. Collapsed workflow notifications have at most three physical rows including their identity header. Prefer state and decisive error before secondary facts at narrow widths. Omit collapsed usage telemetry. Use configured expansion hints and existing inspector navigation.
 - Expanded tool reports order Activity/Result/Error before the phase-grouped identity roster, Run metadata, actual artifacts, and a separately labeled retained-details/log appendix. Expanded notifications order outcome, complete result, compact roster, Run, and existing full-result path. No nested outer boxes or repeated tool identity headings.
@@ -160,36 +177,40 @@ If display remains bounded, disclose the exact omission and working full-output 
 - Extend workflow-specific presentation data additively with serializable identity, complete retained result, progress/aggregate facts, run metadata, and actual artifact outcomes. Reuse the existing notification channel with an optional workflow payload; ordinary Agent notifications keep their behavior.
 - Capture existing full-result artifact-write success/failure as structured data, without parsing model-facing prose, adding writes, or changing their timing. Render only actual paths and report write failures. A retained full result remains readable even when its artifact write fails.
 - Persist only plain presentation snapshots where the existing entry/notification path already persists data. Missing live tasks retain the existing honest raw acknowledgement fallback unless a supported snapshot is already available. This feature does not promise new session restoration, retention, or post-expiry inspector access.
-- Preserve model-facing content byte-for-byte, existing error flags, execution, notification timing and follow-up behavior, usage accounting, public lifecycle events, and resume semantics. No new model calls, inferred summaries, dependencies, or execution controls.
+- Extend model-facing completion text intentionally with outcome, execution, and child settlement. Preserve payload content, existing tool error flags, notification timing/follow-up, usage accounting, public lifecycle events, permissions, and replay/resume mechanics. Required/optional failure handling changes only as specified above; no new model calls, inferred summaries, dependencies, or execution controls.
+- The live inspector uses one phase-grouped roster with selection keyed by stable workflow entry index. Wide terminals keep roster and state-first detail side by side; narrow terminals drill into detail and use explicit back navigation. Resizing preserves selection.
+- Inspector rows show explicit lifecycle text and only effective session `modelId`; queued or started-but-unresolved work says `model pending`, replayed work says `model not run`, and terminal work without session metadata says `model unavailable`. Requested chains and requested/effective discrepancies remain in expanded diagnostics, not the supervision roster.
+- Declared empty phases remain visible as scheduling placeholders, but agents not yet emitted by the runtime are never invented. Detail uses retained aggregate facts and previews only. Default help stays concise; valid pause/resume, skip, retry, stop, conversation, and paging controls are contextual.
 
 ## Testing Decisions
 
 The user approved the existing public verification seams: capture the registered workflow tool and notification renderer, invoke their render methods as Pi does, then exercise a fresh Pi session through interactive_shell with real workflow children.
 
-Tests assert externally visible behavior and unchanged model-facing payloads, not private helper calls or mutable prompt prose. Prior art includes workflow registration/rendering tests, generic notification tests, serialized workflow-entry tests, and native Pi TUI width tests.
+Tests assert externally visible behavior, explicit outcome/failure contracts, and preserved payload/delivery invariants, not mutable prompt prose. Public seams include workflow registration/rendering, serialized workflow entries, fixture-host execution, and native Pi TUI width tests.
 
 Required cases:
 
 - The reported object result with `research` and `review`: no brace-only collapsed preview; all four task labels and Subagent types survive expanded completion.
-- Running-to-terminal transitions, concurrent first-active identity and extra-active count, queued and paused states, stopped/interrupted work, script failure, completed script with child errors, skipped/blocked/replayed children.
+- Running-to-terminal transitions; execution failure versus declared failed/partial/succeeded outcome; undeclared legacy returns; required rejection and downstream suppression; optional null, skips, falsy pipeline results, thrown orchestration, nested outcomes, and malformed envelopes. Retain queued/paused/stopped, blocked/interrupted, and replayed-child coverage.
 - Strings, arbitrary objects, arrays, null/absent/empty results, no agents, long field names, and stale logs after successful empty completion.
 - Notification results over 500 characters and over the existing model-facing truncation threshold; late/tail content remains available expanded; successful artifact creation and write failure both have truthful routes/diagnostics.
 - Complete retained per-child previews, effective model/thinking metadata, and logs remain in the expanded appendix after serialization. Missing live task, legacy entries, malformed workflow payload, generic Agent notifications, and raw/empty fallback remain safe.
 - Configured expansion hints, useful disclosure, no duplicated identity, and no collapsed tools/tokens/duration telemetry.
 - Widths 0, 1, 2, 8, 20, 40, 80, and 120 with CJK, emoji, combining characters, ANSI, CR/LF, unbroken paths, JSON, and Markdown. Every line fits terminal-cell width; collapsed limits apply after rendering.
-- Model-facing content and error flags remain unchanged; completion is delivered once through the existing follow-up path and timing; no new side effects or changes to child scheduling/resume.
+- Model-facing notification extensions disclose outcome/execution/settlement without changing returned payload, tool error flags, one-owner follow-up timing/channel, usage, permissions, artifact behavior, or replay/resume. Required failure intentionally stops dependent work.
 - Focused tests, extension type checking, relevant lint/static checks, and real Pi interactive-shell captures of collapsed/expanded tool and notification states, including a failure or long-result case. Inspect the workflow inspector, child order, and completion evidence; clean up temporary sessions and processes.
+- Inspector tests cover stable selection while progress grows, phase placeholders, every display state, effective-model/pending rules, wide/narrow transitions, state-first detail, contextual controls, timer disposal/settlement, overlay conversation restoration, and the same width matrix.
 
 ## Out of Scope
 
-- Changing workflow execution, scripts, scheduling, model selection, permissions, schemas used by child agents, gates, replay/resume, notification timing, or model-facing content.
-- Redesigning the inspector, fleet widget, conversation viewer, global Pi expansion, theme system, or unrelated tools/ordinary Agent notifications.
+- Changes beyond the shipped failure/outcome amendment: unrelated scheduling, model selection, permissions, child schemas, gate commands, replay/resume mechanics, notification timing/channel, or payload rewriting. Required/optional execution semantics and corresponding notification disclosure are explicitly in scope.
+- Redesigning the fleet widget, conversation viewer, global Pi expansion, theme system, or unrelated tools/ordinary Agent notifications.
 - Adding durable workflow recovery, extending session retention, adding automatic summaries/model calls, or inventing recovery guarantees.
 - Creating new artifacts solely to avoid showing retained details; existing writes and their failure behavior stay unchanged.
 
 ## Further Notes
 
-Taishang approved the proposal as feasible with four corrections now included: separate task/type identity; distinguish script completion from child success; add structured notification details instead of trying to recover discarded previews; and preserve retained information without relying on expired live state.
+The original presentation review required task/type identity, distinction between script completion and child success, structured notification snapshots, and retained information independent of expired live state. The 2026-09-16 amendment adds required-by-default failure handling and explicit objective outcomes without relaxing those presentation requirements.
 
 The native renderer probe reproduced the brace and missing terminal label using the actual recorded result and reconstructed progress. Its running/expanded controls retained the task label. This is source/runtime evidence, not a historical screenshot replay.
 

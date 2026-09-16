@@ -40,6 +40,7 @@ describe("deep research saved workflow", () => {
   it("core: accepts independently cited complete coverage", async () => {
     const { result, calls } = await run();
     expect(result.status).toBe("completed");
+    expect(result.outcome).toEqual({ status: "succeeded" });
     expect(result.value).toMatchObject({ accepted: true, stopReason: "covered", citedFindings: [
       { id: "c1", evidenceIds: ["e1"] }, { id: "c2", evidenceIds: ["e2"] }, { id: "c3", evidenceIds: ["e3"] },
     ], coverage: args.requirements.map(requirement => ({ requirement, verified: true, unresolved: false })), metrics: { rounds: 1, scheduledCalls: 5 } });
@@ -67,22 +68,23 @@ describe("deep research saved workflow", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it.each(["null", "throw"])("preserves discovery identity and partial coverage on %s", async failure => {
-    const { result } = await run(request => {
+  it.each(["null", "throw"])("stops dependent analysis on required discovery failure: %s", async failure => {
+    const { result, calls } = await run(request => {
       if (request.label === "discover:2") {
         if (failure === "throw") throw new Error("fixture discovery failed");
         return missing;
       }
-      if (request.phaseTitle === "Verify") return ok({ verdicts: [verdict(1, "A"), verdict(2, "C")] });
       return happy(request);
     });
-    expect(result.value).toMatchObject({ accepted: false, stopReason: "missing_required_result", citedFindings: [{ id: "c1" }, { id: "c2" }],
-      coverage: [{ requirement: "A", verified: true }, { requirement: "B", attempted: ["q2"], missing: ["q2"], verified: false }, { requirement: "C", verified: true }] });
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatch(/fixture/);
+    expect(calls.every(call => call.phaseTitle === "Discover")).toBe(true);
   });
 
-  it.each(["Challenge", "Verify"])("blocks acceptance when %s is missing", async phase => {
-    const { result } = await run(request => request.phaseTitle === phase ? missing : happy(request));
-    expect(result.value).toMatchObject({ accepted: false, stopReason: "missing_required_result" });
+  it.each(["Challenge", "Verify"])("stops execution when required %s fails", async phase => {
+    const { result, calls } = await run(request => request.phaseTitle === phase ? missing : happy(request));
+    expect(result.status).toBe("failed");
+    if (phase === "Challenge") expect(calls.some(call => call.phaseTitle === "Verify")).toBe(false);
   });
 
   it("excludes challenged claims even with favorable votes", async () => {
@@ -109,6 +111,7 @@ describe("deep research saved workflow", () => {
     const bad = { ...verdict(1, "A"), evidence: [{ evidenceId: kind === "unknown" ? "e999" : kind === "foreign" ? "e2" : "e1", source: "forged", excerpt: "assertion" }] };
     const { result } = await run(request => request.phaseTitle === "Verify" ? ok({ verdicts: [bad, verdict(2, "B"), verdict(3, "C")] }) : happy(request));
     expect(result.value).toMatchObject({ accepted: false, stopReason: "verification_failed", citedFindings: [{ id: "c2" }, { id: "c3" }] });
+    expect(result.outcome).toEqual({ status: "failed", reason: "verification_failed" });
   });
 
   it("rejects discovery claims with invalid local evidence references", async () => {
@@ -172,7 +175,8 @@ describe("deep research saved workflow", () => {
 
   it("enforces discovery array bounds at the runtime boundary", async () => {
     const { result } = await run(request => request.label === "discover:1" ? ok({ ...discovery("A"), evidence: Array(4).fill({ source: "source:A", excerpt: "fact" }) }) : happy(request));
-    expect(result.value).toMatchObject({ accepted: false, stopReason: "missing_required_result", coverage: [{ missing: ["q1"] }, {}, {}] });
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("schema");
   });
 
   it("converges when further evidence only repeats an independently checked source", async () => {

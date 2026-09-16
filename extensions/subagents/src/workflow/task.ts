@@ -17,6 +17,7 @@
 import { randomUUID } from "node:crypto";
 import type { WorkflowJournalEntry } from "./journal.js";
 import type { WorkflowMeta } from "./meta.js";
+import { outcomeLabel, type WorkflowOutcome } from "./outcome.js";
 import { collapse, elapsedMs, stats, type WorkflowEntry, type WorkflowRunStatus } from "./progress.js";
 import type { WorkflowControl, WorkflowRunResult } from "./runtime.js";
 
@@ -89,6 +90,7 @@ export interface WorkflowTask {
 
   /** The script's return value, once the run produced one. */
   value?: unknown;
+  outcome?: WorkflowOutcome;
   error?: string;
 }
 
@@ -208,6 +210,7 @@ export function completeWorkflowTask(task: WorkflowTask, result: WorkflowRunResu
   task.agentCount = Math.max(task.agentCount, result.agentCount);
   task.replayedCount = result.replayedCount;
   task.value = result.value;
+  task.outcome = result.outcome;
   task.error = result.error;
   task.endTime = Date.now();
 }
@@ -285,8 +288,11 @@ export function resolveResumeTarget(
 /** `<task-notification>`, in the same shape a finished background agent sends. */
 export function formatWorkflowNotification(task: WorkflowTask, now = Date.now()): string {
   const totals = stats(task.workflowProgress, task.agentCount);
+  const agents = collapse(task.workflowProgress).agents;
+  const skipped = agents.filter(agent => agent.skipped).length;
+  const failed = agents.filter(agent => agent.state === "error" && !agent.skipped).length;
   const status =
-    task.status === "completed" ? "Done"
+    task.status === "completed" ? outcomeLabel(task.outcome)
     : task.status === "killed" ? "Stopped"
     : `Error: ${task.error ?? "unknown"}`;
   const result = workflowResultText(task);
@@ -296,7 +302,7 @@ export function formatWorkflowNotification(task: WorkflowTask, now = Date.now())
     task.toolCallId ? `<tool-use-id>${escapeXml(task.toolCallId)}</tool-use-id>` : null,
     task.scriptPath ? `<script>${escapeXml(task.scriptPath)}</script>` : null,
     `<status>${escapeXml(status)}</status>`,
-    `<summary>Workflow "${escapeXml(task.workflowName ?? task.id)}" ${task.status} — ${totals.done}/${totals.total} agents${
+    `<summary>Workflow "${escapeXml(task.workflowName ?? task.id)}" — Execution: ${task.status} — ${totals.done}/${totals.total} agents completed, ${failed} failed, ${skipped} skipped${
       task.replayedCount > 0 ? `, ${task.replayedCount} replayed from ${escapeXml(task.resumedFrom ?? "an earlier run")}` : ""
     }</summary>`,
     `<result>${escapeXml(result.length > 4000 ? `${result.slice(0, 4000)}\n...(truncated)` : result)}</result>`,

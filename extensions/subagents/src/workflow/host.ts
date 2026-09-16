@@ -123,7 +123,8 @@ export function createWorkflowHost(deps: WorkflowHostOptions): WorkflowHost {
         });
         return toSpawnResult(record);
       } catch (error) {
-        return { ok: false, skipped: signal.aborted, error: error instanceof Error ? error.message : String(error) };
+        if (!signal.aborted) throw error;
+        return { ok: false, skipped: true, error: error instanceof Error ? error.message : String(error) };
       }
     },
     abortAgent(agentId) {

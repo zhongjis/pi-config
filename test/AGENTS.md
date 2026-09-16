@@ -8,7 +8,7 @@ Shared test harness, smoke coverage, fixtures, stubs, and runtime integration te
 - The integration child owns real-runtime tests and their helpers.
 - Extension-specific unit tests belong beside their extension, not here.
 - [../vitest.config.ts](../vitest.config.ts) owns project selection and aliases.
-- `deep-research-workflow.test.ts` executes the saved deep-research source through the real workflow loader/runtime with fixture agents.
+- `deep-research-workflow.test.ts` and `last30days-workflow.test.ts` execute saved workflow sources through the real runtime with fixture agents, covering explicit outcomes and dependent-stage failure handling.
 - `install-workflows.test.ts` exercises real installer workflow-link handling inside isolated fixture repositories and temporary homes.
 
 ## Local Contracts

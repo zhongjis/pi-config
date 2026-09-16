@@ -1,3 +1,5 @@
+import { WORKFLOW_OUTCOME_KEY, type WorkflowOutcome } from "./outcome.js";
+
 /**
  * runtime.ts — the host half of a workflow run.
  *
@@ -221,7 +223,7 @@ export interface WorkflowControl {
   isPaused(): boolean;
   /**
    * Give up on the agent at `index`: its `agent()` call returns `null`, exactly
-   * as a terminal failure does, and the row renders skipped.
+   * for required and optional calls alike, and the row renders skipped.
    *
    * Immediate for a running agent and for one held at a pause. An agent parked
    * behind the concurrency limit takes its skip when it reaches the front —
@@ -286,6 +288,7 @@ export interface RunWorkflowOptions {
 export interface WorkflowRunResult {
   status: "completed" | "failed" | "killed";
   meta: WorkflowMeta;
+  outcome?: WorkflowOutcome;
   /** The script's return value, JSON-checked at the boundary. */
   value?: unknown;
   error?: string;
@@ -402,6 +405,7 @@ class Semaphore {
  * ------------------------------------------------------------------------- */
 
 interface AgentCallPayload {
+  optional?: boolean;
   prompt: string;
   label?: string;
   model?: string;
@@ -489,12 +493,7 @@ async function applyGate(
   agentId: string,
   runGate: NonNullable<WorkflowHost["runGate"]>,
 ): Promise<WorkflowSpawnResult> {
-  let outcome: WorkflowGateResult;
-  try {
-    outcome = await runGate(command, { agentId, cwd: result.cwd });
-  } catch (error) {
-    outcome = { ok: false, output: error instanceof Error ? error.message : String(error) };
-  }
+  const outcome = await runGate(command, { agentId, cwd: result.cwd });
   if (outcome.ok) return result;
   const { text: _discarded, ...rest } = result;
   const output = outcome.output.trim();
@@ -845,8 +844,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
       }
 
       if (agentCount >= agentCap) {
-        // Fatal, so parallel()/pipeline() rethrow instead of folding it into a
-        // null. A cap that silently drops work is worse than no cap.
+        // A cap breach is a configuration error, never an optional null.
         respond(callId, false, undefined, `Workflow exceeded its cap of ${agentCap} agents.`, true);
         return;
       }
@@ -936,8 +934,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
       const settleSkipped = (extra: Partial<WorkflowAgentEntry>) => {
         recordJournal?.({ index, key, ok: false, ...resumeMark, ...(nodeKey !== undefined ? { nodeKey } : {}) });
         emit([{ ...base, queuedAt, ...extra, state: "error", skipped: true, error: "Skipped by user." }]);
-        // `null`, exactly as a terminal failure gives — a skipped agent is one
-        // the script's `.filter(Boolean)` was already written to survive.
+        // A deliberate user skip remains null even for a required call.
         respond(callId, true, null);
       };
 
@@ -1018,7 +1015,8 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
           live.started = true;
           inflight.add(agentId);
 
-          let result: WorkflowSpawnResult;
+          let result: WorkflowSpawnResult = { ok: false };
+          let unexpectedError = false;
           try {
             result =
               resumed !== undefined && resumeAgent !== undefined
@@ -1061,7 +1059,8 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
               }
             }
           } catch (error) {
-            result = { ok: false, error: error instanceof Error ? error.message : String(error) };
+            unexpectedError = true;
+            result = { ...result, ok: false, error: error instanceof Error ? error.message : String(error) };
           } finally {
             inflight.delete(agentId);
             live.started = false;
@@ -1110,8 +1109,7 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
           // unchanged prefix on the next resume, silently skipping the retry this
           // whole mechanism exists to make cheap.
           recordJournal?.({ index, key, ok: false, ...resumeMark, ...(nodeKey !== undefined ? { nodeKey } : {}) });
-          // A dead agent is a null in the script, not a thrown error: Claude Code
-          // scripts .filter(Boolean) rather than try/catch around every call.
+          // Required failures reject; optional terminal failures and user skips settle null.
           emit([
             {
               ...common,
@@ -1124,7 +1122,8 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
               ...(result.skipped ? { skipped: true } : {}),
             },
           ]);
-          respond(callId, true, null);
+          if (result.skipped || (payload.optional && !unexpectedError)) respond(callId, true, null);
+          else respond(callId, false, undefined, `${label}: ${result.error ?? "Agent failed."}`, unexpectedError);
           return;
         }
       } finally {
@@ -1197,9 +1196,13 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
             finish({ status: "failed", error: unawaitedLaunchMessage(unawaited) });
             break;
           }
+          const value = message.resultJson === undefined ? undefined : JSON.parse(message.resultJson);
+          // The worker validates the reserved envelope before sending it.
+          const declared = value !== null && typeof value === "object" && Object.hasOwn(value, WORKFLOW_OUTCOME_KEY);
           finish({
             status: "completed",
-            ...(message.resultJson === undefined ? {} : { value: JSON.parse(message.resultJson) }),
+            ...(declared ? { outcome: value[WORKFLOW_OUTCOME_KEY], ...(Object.hasOwn(value, "value") ? { value: value.value } : {}) }
+              : value === undefined ? {} : { value }),
           });
           break;
         }

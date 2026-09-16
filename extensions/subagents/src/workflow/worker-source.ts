@@ -1,3 +1,5 @@
+import { isWorkflowOutcome, WORKFLOW_OUTCOME_KEY } from "./outcome.js";
+
 /**
  * worker-source.ts — the JavaScript that runs inside the workflow worker thread.
  *
@@ -146,9 +148,7 @@ port.on("message", function (message) {
     return;
   }
   const error = new Error(message.error || "The workflow host rejected the call.");
-  // Fatal errors are the run's, not the item's: parallel() and pipeline()
-  // swallow ordinary failures into null, and a cap breach must not be
-  // silently absorbed that way.
+  // Preserve fatal classification when nested workflow resolution adds context.
   if (message.fatal) error.workflowFatal = true;
   waiter.reject(error);
 });
@@ -360,6 +360,7 @@ const AGENT_OPTIONS = [
   "effort",
   "schema",
   "key",
+  "optional",
 ];
 
 /** Claude Code options this runtime does not have, and why. */
@@ -485,6 +486,9 @@ async function agentIn(scope, prompt, opts) {
     );
   }
 
+  if (options.optional !== undefined && typeof options.optional !== "boolean") {
+    throw new Error("agent() opts.optional must be a boolean.");
+  }
   const label = optionalText(options.label, "agent() opts.label");
   const phaseName = optionalText(options.phase, "agent() opts.phase");
   const model = optionalText(options.model, "agent() opts.model");
@@ -574,6 +578,7 @@ async function agentIn(scope, prompt, opts) {
     effort: effort,
     schema: schema,
     nodeKey: effectiveKey,
+    optional: options.optional === true,
   });
   if (result === undefined || result === null) return null;
   if (schema === undefined) return result;
@@ -583,15 +588,13 @@ async function agentIn(scope, prompt, opts) {
   try {
     return realmParse(result);
   } catch (error) {
-    logIn(scope, "agent(): the host returned a structured result that is not JSON");
-    return null;
+    throw new Error("agent(): the host returned a structured result that is not JSON");
   }
 }
 
 /**
  * A barrier: every thunk starts now, and nothing past the await runs until all
- * of them have settled. A thunk that throws resolves to null rather than
- * failing its siblings — the script filters, it does not try/catch.
+ * of them succeed. Thrown failures reject; optional agent failures remain null.
  */
 async function parallel(thunks) {
   const list = toList(thunks, "parallel(thunks)");
@@ -603,12 +606,7 @@ async function parallel(thunks) {
   const settled = await Promise.all(
     list.map(async function (thunk, i) {
       return autoKeyStore.run(childAutoKeyStore("par" + i), async function () {
-        try {
-          return await thunk();
-        } catch (error) {
-          if (isFatal(error)) throw error;
-          return null;
-        }
+        return await thunk();
       });
     })
   );
@@ -621,7 +619,7 @@ async function parallel(thunks) {
  * a barrier makes every stage wait on its slowest sibling, and with agents in
  * the stages that latency is measured in minutes.
  *
- * A stage that throws drops that item to null and skips its remaining stages.
+ * A null stage result skips remaining stages for that item. Throws reject.
  * Every stage sees (previousResult, originalItem, index).
  */
 async function pipeline(items, ...stages) {
@@ -635,14 +633,10 @@ async function pipeline(items, ...stages) {
     list.map(async function (item, index) {
       let value = item;
       for (let s = 0; s < stages.length; s++) {
-        try {
-          value = await autoKeyStore.run(childAutoKeyStore("pl" + index + "." + s), function () {
-            return stages[s](value, item, index);
-          });
-        } catch (error) {
-          if (isFatal(error)) throw error;
-          return null;
-        }
+        value = await autoKeyStore.run(childAutoKeyStore("pl" + index + "." + s), function () {
+          return stages[s](value, item, index);
+        });
+        if (value === null) return null;
       }
       return value;
     })
@@ -734,6 +728,7 @@ async function workflowIn(scope, nameOrRef, args) {
 
   const value = await run(child.agent, child.phase, child.log, child.workflow, child.console, args);
   checkBoundary(value, 'the result of workflow("' + label + '")');
+  validateOutcomeEnvelope(value);
   return value;
 }
 
@@ -768,6 +763,23 @@ function makeBudget() {
  * Run
  * ------------------------------------------------------------------ */
 
+const OUTCOME_KEY = ${JSON.stringify(WORKFLOW_OUTCOME_KEY)};
+const validOutcome = ${isWorkflowOutcome.toString()};
+function validateOutcomeEnvelope(value) {
+  if (value === null || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, OUTCOME_KEY)) return;
+  if (Array.isArray(value) || !validOutcome(value[OUTCOME_KEY]) ||
+      Object.keys(value).some(key => key !== OUTCOME_KEY && key !== "value")) {
+    throw new Error("Malformed reserved workflow outcome envelope.");
+  }
+}
+function makeOutcome(status, reason, value) {
+  const metadata = status === "succeeded" ? { status } : { status, reason };
+  if (!validOutcome(metadata)) throw new Error("outcome reason must be a nonblank string.");
+  const envelope = { [OUTCOME_KEY]: Object.freeze(realmParse(JSON.stringify(metadata))) };
+  if (value !== undefined) envelope.value = value;
+  return Object.freeze(envelope);
+}
+
 async function main() {
   rootScope = makeScope(undefined, 0);
   const sandbox = {
@@ -778,6 +790,11 @@ async function main() {
     log: rootScope.log,
     workflow: rootScope.workflow,
     budget: makeBudget(),
+    outcome: Object.freeze({
+      succeed: value => makeOutcome("succeeded", undefined, value),
+      partial: (reason, value) => makeOutcome("partial", reason, value),
+      fail: (reason, value) => makeOutcome("failed", reason, value),
+    }),
     console: rootScope.console,
   };
   const context = vm.createContext(sandbox, {
@@ -806,6 +823,7 @@ async function main() {
 
   const value = await script.runInContext(context);
   checkBoundary(value, "the workflow result");
+  validateOutcomeEnvelope(value);
   flushProgress();
   port.postMessage({
     type: "complete",

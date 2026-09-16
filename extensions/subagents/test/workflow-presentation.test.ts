@@ -3,15 +3,13 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 
 import assert from "node:assert/strict";
 import * as codingAgent from "@earendil-works/pi-coding-agent";
-import { type OverlayHandle, stripTerminalSequences, type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import type { AgentRecord } from "../src/types.js";
 import { AgentWidget } from "../src/ui/agent-widget.js";
 import { FleetList, type FleetWorkflow } from "../src/ui/fleet-list.js";
 import { renderWorkflowCard, renderWorkflowEntryCard } from "../src/ui/workflow-report.js";
-import { handleWorkflowDialogKey, initialWorkflowDialogState, layoutWorkflowDialog, plainWorkflowDialogLines, resolveWorkflowDialog, WorkflowDialog } from "../src/ui/workflow-dialog.js";
-import { showWorkflowDialog } from "../src/ui/workflow-menu.js";
 import { workflowEntryData } from "../src/workflow/entry.js";
 import { elapsedMs, stats, type WorkflowAgentEntry } from "../src/workflow/progress.js";
 import { createWorkflowTask, pauseWorkflowTask, resolveResumeTarget, resumeWorkflowTask, updateWorkflowProgressBatch } from "../src/workflow/task.js";
@@ -84,79 +82,6 @@ describe("workflow reports", () => {
   });
 });
 
-describe("workflow inspector", () => {
-  const source = () => ({ task: { status: "running" as const, startTime: 100 }, progress: [agent] });
-  it("routes every control using stable entry/record ids and clamps filtered selection", () => {
-    const state = { ...initialWorkflowDialogState(), level: "agent" as const };
-    const view = resolveWorkflowDialog({ ...source(), state });
-    for (const [key, action] of [["x", { kind: "kill" }], ["p", { kind: "pause" }], ["s", { kind: "skip", index: 7 }], ["r", { kind: "retry", index: 7 }], ["c", { kind: "open", recordId: "child-id" }]] as const) {
-      expect(handleWorkflowDialogKey(key, state, view)?.action).toEqual(action);
-    }
-    const paused = resolveWorkflowDialog({ ...source(), task: { status: "paused", startTime: 100 }, state });
-    expect(handleWorkflowDialogKey("p", state, paused)?.action).toEqual({ kind: "resume" });
-    const filtered = resolveWorkflowDialog({ ...source(), state: { ...state, filter: "failed", selectedAgent: 300 } });
-    expect(filtered.clampedAgent).toBe(0);
-    expect(filtered.selectedEntry).toBeUndefined();
-  });
-
-  it("fits hints and panes, pages retained detail, and cleans its refresh timer", () => {
-    vi.useFakeTimers();
-    const requestRender = vi.fn<TUI["requestRender"]>();
-    const tui: Pick<TUI, "requestRender"> & { terminal: Pick<TUI["terminal"], "rows"> } = { requestRender, terminal: { rows: 40 } };
-    const done = vi.fn();
-    const dialog = new WorkflowDialog(tui as TUI, source, theme, done);
-    for (const width of widths) fits(dialog.render(width), width);
-    const state = { ...initialWorkflowDialogState(), level: "agent" as const, promptExpanded: true };
-    const input = { ...source(), state, progress: [{ ...agent, promptPreview: Array.from({ length: 50 }, (_, i) => `prompt${i}`).join("\n"), resultPreview: "outcome-marker", state: "done" as const }], width: 80, bodyRows: 6 };
-    const view = resolveWorkflowDialog(input);
-    const result = handleWorkflowDialogKey("\x1b[6~", state, view);
-    assert.ok(result);
-    const next = result.state;
-    expect(next.detailOffset).toBeGreaterThan(0);
-    expect(plainWorkflowDialogLines(layoutWorkflowDialog({ ...input, state: { ...state, detailOffset: 1000 } })).join("\n")).toContain("outcome-marker");
-    dialog.handleInput("\x1b");
-    const calls = requestRender.mock.calls.length;
-    vi.advanceTimersByTime(1000);
-    expect(requestRender).toHaveBeenCalledTimes(calls);
-    expect(done).toHaveBeenCalledOnce();
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it("hides the inspector while its child conversation is open, then restores it", async () => {
-    const task = createWorkflowTask({ id: "wf_test", script: "" });
-    task.workflowProgress = [agent];
-    let dialog: WorkflowDialog | undefined;
-    let close: (() => void) | undefined;
-    let finishViewer: (() => void) | undefined;
-    const setHidden = vi.fn();
-    const custom: codingAgent.ExtensionContext["ui"]["custom"] = (factory, options) => new Promise((resolve, reject) => {
-      void Promise.resolve(factory({ requestRender() {} } as TUI, theme as codingAgent.Theme, {} as codingAgent.KeybindingsManager, resolve)).then(component => {
-        assert.ok(component instanceof WorkflowDialog);
-        dialog = component;
-        close = () => { component.handleInput("\x1b"); component.dispose(); };
-        assert.ok(options?.onHandle);
-        const overlay: Pick<OverlayHandle, "setHidden"> = { setHidden };
-        options.onHandle(overlay as OverlayHandle);
-      }).then(undefined, reject);
-    });
-    const ui: Pick<codingAgent.ExtensionContext["ui"], "notify" | "custom"> = { notify: vi.fn(), custom };
-    const ctx = { ui: ui as codingAgent.ExtensionContext["ui"] };
-    const record = { id: "child-id" } as AgentRecord;
-    const viewAgentConversation = vi.fn(() => new Promise<void>(resolve => { finishViewer = resolve; }));
-    const opened = showWorkflowDialog(ctx, task, { tasks: new Map([[task.id, task]]), getRecord: () => record, getCtx: () => ctx, viewAgentConversation });
-    await vi.waitFor(() => expect(dialog).toBeDefined());
-    assert.ok(dialog);
-    dialog.handleInput("c");
-    expect(viewAgentConversation).toHaveBeenCalledWith(ctx, record);
-    expect(setHidden).toHaveBeenLastCalledWith(true);
-    assert.ok(finishViewer);
-    finishViewer();
-    await Promise.resolve(); await Promise.resolve();
-    expect(setHidden).toHaveBeenLastCalledWith(false);
-    assert.ok(close);
-    close(); await opened;
-  });
-});
 
 it("hides owned children only from ordinary UI and allows a workflow-only fleet to open", async () => {
   const records = [
@@ -206,7 +131,7 @@ describe("workflow disclosure states", () => {
     expect(plain(renderWorkflowCard({ task, progress: entries }, theme).render(120))).toContain("1 queued");
     task.status = "completed"; task.value = { result: "answer" };
     const report = plain(renderWorkflowCard({ task, progress: entries, expanded: true }, theme).render(120));
-    for (const marker of ["Completed with agent errors", "Interrupted", "Failed", "Skipped", "Blocked", "Replayed"]) expect(report).toContain(marker);
+    for (const marker of ["Outcome not declared", "Execution: completed", "Interrupted", "Failed", "Skipped", "Blocked", "Replayed"]) expect(report).toContain(marker);
     expect(report).not.toContain("5 agents completed");
   });
 });

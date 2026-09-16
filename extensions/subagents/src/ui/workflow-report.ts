@@ -3,6 +3,7 @@ import { keyHint } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import { firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
 import { isWorkflowEntryData } from "../workflow/entry-validation.js";
+import { outcomeLabel } from "../workflow/outcome.js";
 import { buildPhaseGroups, collapse, displayState, elapsedMs, formatDuration, sizeWarning, stats, type WorkflowAgentEntry } from "../workflow/progress.js";
 import type { Theme } from "./agent-widget.js";
 import { formatModel, formatThinking, REPLAYED_ANNOTATION, type WorkflowCardInput } from "./workflow-card.js";
@@ -43,7 +44,7 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const running = agents.filter(entry => displayState(entry, active) === "running");
       const queued = agents.filter(entry => displayState(entry, active) === "queued");
       const childErrors = agents.some(entry => entry.state === "error");
-      const status = { running: "Running", paused: "Paused", completed: childErrors ? "Completed with agent errors" : "Completed", failed: "Failed", killed: "Stopped" }[task.status];
+      const status = { running: "Running", paused: "Paused", completed: outcomeLabel(task.outcome), failed: "Execution failed", killed: "Stopped" }[task.status];
       const counts = observedCounts(agents, active);
       const activity = [running.length ? `${running.length} active` : "", queued.length ? `${queued.length} queued` : ""].filter(Boolean).join(" · ") || "waiting for workflow progress";
       const name = task.workflowName ?? input.meta?.name ?? "Workflow";
@@ -53,19 +54,19 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const first = running[0] ?? queued[0];
       const current = first ? [first.label, first.agentType, running.length > 1 ? `+${running.length - 1} active tasks` : ""].filter(Boolean).join(" · ") : counts;
       if (!input.expanded) {
-        const second = active ? current : [counts, task.status === "completed" ? fields.length ? `${input.showToolTitle ? "returned" : "fields:"} ${fields.join(", ")}` : input.showToolTitle ? summary : "" : ""].filter(Boolean).join(" · ");
+        const second = active ? current : [task.status === "completed" ? "Execution: completed" : "", counts, task.status === "completed" ? fields.length ? `${input.showToolTitle ? "returned" : "fields:"} ${fields.join(", ")}` : input.showToolTitle ? summary : "" : ""].filter(Boolean).join(" · ");
         const lines = [
           input.showToolTitle ? `${identity}${task.status === "failed" && task.error ? ` · ${firstMeaningfulLine(task.error)}` : ""}` : `${status} · ${summary}`,
           second,
           `${keyHint("app.tools.expand", active ? "details" : "result and diagnostics")} · /agents › Workflows`,
         ];
-        const color = task.status === "failed" ? "error" : childErrors || task.status === "killed" || task.status === "paused" ? "warning" : task.status === "completed" ? "success" : "accent";
+        const color = task.status === "failed" || (task.status === "completed" && task.outcome?.status === "failed") ? "error" : childErrors || task.status === "killed" || task.status === "paused" || task.outcome?.status === "partial" ? "warning" : task.status === "completed" && task.outcome?.status === "succeeded" ? "success" : "accent";
         return lines.map((line, index) => truncateToWidth(theme.fg(index === 0 ? color : "muted", line.replace(/\r\n?|\n/g, " ")), Math.floor(width), "…"));
       }
 
       const components: Component[] = [];
       const text = (value: string) => components.push(renderToolExpanded(value));
-      text(`${identity} · ${counts}\n`);
+      text(`${identity} · ${counts}\nExecution: ${task.status}\n`);
       if (active) {
         text(`Activity\n${activity}\n${current}${logs.length ? `\n${logs.at(-1)}` : ""}`);
       } else if (task.status === "failed" || task.status === "killed") {

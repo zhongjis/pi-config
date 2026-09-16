@@ -42,7 +42,7 @@ describe("local workflow host", () => {
   it("enforces delegation policy before child creation", async () => {
     const { host } = setup();
     manager.setPolicyChecker(() => "denied by policy");
-    expect(await host.spawnAgent(request)).toMatchObject({ ok: false, error: "denied by policy" });
+    await expect(host.spawnAgent(request)).rejects.toThrow("denied by policy");
     expect(runAgent).not.toHaveBeenCalled();
     expect(manager.listAgents()).toEqual([]);
     await host.dispose?.();
@@ -72,7 +72,8 @@ describe("local workflow host", () => {
     const { host, exec } = setup();
     vi.mocked(runAgent).mockResolvedValue({ session: session(), responseText: "bad", failure: "provider failed", aborted: false, steered: false });
     const result = await runWorkflow({ script: head + 'return await agent("task", { gate: "false" });', host });
-    expect(result.value).toBeNull();
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("provider failed");
     expect(exec).not.toHaveBeenCalled();
   });
 
@@ -80,8 +81,8 @@ describe("local workflow host", () => {
     const { host, exec } = setup();
     exec.mockRejectedValue(new Error("shell failed"));
     const result = await runWorkflow({ script: head + 'const answer = await agent("task", { gate: "false" }); return { answer, spent: budget.spent() };', host });
-    expect(result.value).toEqual({ answer: null, spent: 3 });
-    expect(result.progress.at(-1)).toMatchObject({ state: "error", error: "shell failed" });
+    expect(result.status).toBe("failed");
+    expect(result.progress.at(-1)).toMatchObject({ state: "error", error: "shell failed", tokens: 8 });
   });
 
   it("resumes the owned session, enforces current policy, and returns incremental usage", async () => {
@@ -127,4 +128,13 @@ describe("workflow gate shell smoke", () => {
     expect(await host.runGate?.("printf '%s' \"$PWD\"", { agentId: "child", cwd: "/tmp" })).toEqual({ ok: true, output: "/tmp" });
     await host.dispose?.();
   });
+});
+
+it("optional calls cannot hide policy/configuration rejection", async () => {
+  const { host } = setup();
+  manager.setPolicyChecker(() => "denied by policy");
+  const result = await runWorkflow({ script: head + 'return await agent("task", { optional: true });', host });
+  expect(result.status).toBe("failed");
+  expect(result.error).toContain("denied by policy");
+  expect(runAgent).not.toHaveBeenCalled();
 });

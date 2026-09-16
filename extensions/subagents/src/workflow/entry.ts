@@ -1,3 +1,5 @@
+import type { WorkflowOutcome } from "./outcome.js";
+
 /**
  * entry.ts — what a finished workflow leaves behind in the session transcript.
  *
@@ -35,6 +37,7 @@ export interface WorkflowEntryData {
   endTime?: number;
   totalPausedMs?: number;
   value?: unknown;
+  outcome?: WorkflowOutcome;
   error?: string;
   progress: WorkflowEntry[];
   agentCount: number;
@@ -59,6 +62,7 @@ export function workflowEntryData(task: WorkflowTask): WorkflowEntryData {
     totalPausedMs: task.totalPausedMs,
     value: task.value !== null && typeof task.value === "object" ? JSON.parse(JSON.stringify(task.value)) : task.value,
     error: task.error,
+    ...(task.outcome === undefined ? {} : { outcome: { ...task.outcome } }),
     progress: task.workflowProgress.map(entry => ({ ...entry })),
     agentCount: task.agentCount,
     totalTokens: task.totalTokens,

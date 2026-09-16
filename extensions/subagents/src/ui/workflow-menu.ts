@@ -78,14 +78,7 @@ export async function showWorkflowDialog(
         // dialog has to follow it rather than snapshot it at open time.
         () => ({
           progress: task.workflowProgress,
-          task: {
-            status: task.status,
-            workflowName: task.workflowName,
-            startTime: task.startTime,
-            endTime: task.endTime,
-            totalPausedMs: task.totalPausedMs,
-            pausedAt: task.pausedAt,
-          },
+          task,
           meta: task.meta,
           agentCount: task.agentCount,
         }),
@@ -183,7 +176,7 @@ export async function showWorkflowsMenu(
   // the second run of a workflow onto the first — the run id makes it so.
   const labels = tasks.map(
     task =>
-      `${task.meta?.name ?? task.id} — ${task.status}, ${task.agentCount} agent${
+      `${task.meta?.name ?? task.id} — Execution: ${task.status}, ${task.agentCount} agent${
         task.agentCount === 1 ? "" : "s"
       } · ${task.id}`,
   );

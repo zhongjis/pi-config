@@ -223,7 +223,7 @@ CONTEXT: The deterministic engine, not agents, will collect, normalize, deduplic
 
 if (resolution === null) {
   log('Resolve returned no required result.');
-  return { accepted: false, status: 'rejected', reason: 'missing resolution', resolution: null, engine: null, triage: null, specialistAnnotations: [], verification: null, gaps: ['Resolver returned no shared plan.'] };
+  return outcome.fail('missing resolution', { accepted: false, status: 'rejected', reason: 'missing resolution', resolution: null, engine: null, triage: null, specialistAnnotations: [], verification: null, gaps: ['Resolver returned no shared plan.'] });
 }
 const plannedSources = [...new Set(resolution.sharedPlan.enginePlan.subqueries.flatMap(subquery => subquery.sources))];
 const unavailableSources = plannedSources.filter(source => !args.activeSources.includes(source));
@@ -242,7 +242,7 @@ if (unavailableSources.length !== 0 || targetIssues.length !== 0 || duplicatePee
     comparisonMismatch ? 'Comparison intent and peer targeting must agree.' : ''
   ];
   log(`Invalid resolution: ${issues.filter(Boolean).join(' ')}`);
-  return { accepted: false, status: 'rejected', reason: 'invalid resolution', resolution, engine: null, triage: null, specialistAnnotations: [], verification: null, gaps: collectGaps(resolution.gaps, issues) };
+  return outcome.fail('invalid resolution', { accepted: false, status: 'rejected', reason: 'invalid resolution', resolution, engine: null, triage: null, specialistAnnotations: [], verification: null, gaps: collectGaps(resolution.gaps, issues) });
 }
 
 phase('Engine');
@@ -267,7 +267,7 @@ CONTEXT: The engine owns all source adapters, normalization, deduplication, clus
 
 if (engine === null || !engine.completed || !engine.rawArtifactPath.startsWith(`${args.memoryDir}/`)) {
   log('Engine failed or returned no raw artifact.');
-  return { accepted: false, status: 'rejected', reason: 'engine failure', resolution, engine, triage: null, specialistAnnotations: [], verification: null, gaps: collectGaps(resolution.gaps, engine === null ? ['Engine returned no required result.'] : engine.gaps, engine === null ? [] : [engine.failureReason]) };
+  return outcome.fail('engine failure', { accepted: false, status: 'rejected', reason: 'engine failure', resolution, engine, triage: null, specialistAnnotations: [], verification: null, gaps: collectGaps(resolution.gaps, engine === null ? ['Engine returned no required result.'] : engine.gaps, engine === null ? [] : [engine.failureReason]) });
 }
 
 phase('Triage');
@@ -287,7 +287,7 @@ MUST NOT DO:
 
 if (triage === null || new Set(triage.lanes.map(item => item.lane)).size !== triage.lanes.length || triage.evidenceSufficient !== (triage.lanes.length === 0)) {
   log('Triage returned no valid bounded lane selection.');
-  return { accepted: false, status: 'rejected', reason: 'missing triage', resolution, engine, triage, specialistAnnotations: [], verification: null, gaps: collectGaps(resolution.gaps, engine.gaps, ['Triage result was missing or internally inconsistent.']) };
+  return outcome.fail('missing triage', { accepted: false, status: 'rejected', reason: 'missing triage', resolution, engine, triage, specialistAnnotations: [], verification: null, gaps: collectGaps(resolution.gaps, engine.gaps, ['Triage result was missing or internally inconsistent.']) });
 }
 
 phase('Specialists');
@@ -305,7 +305,7 @@ MUST DO:
 MUST NOT DO:
 - Change files, run commands, collect new sources, replace source records, create replacement claims, or invent evidence.
 - Treat an annotation as a vote for acceptance.`,
-    { agentType: args.specialistAgentType, label: `specialist:${lane.lane}`, phase: 'Specialists', schema: specialistSchema }
+    { agentType: args.specialistAgentType, label: `specialist:${lane.lane}`, phase: 'Specialists', schema: specialistSchema, optional: true }
   );
   if (result === null) return null;
   return { requestedLane: lane.lane, result };
@@ -339,12 +339,12 @@ MUST NOT DO:
 
 if (verification === null) {
   log('Verify returned no required verdict.');
-  return { accepted: false, status: 'rejected', reason: 'verification rejection', resolution, engine, triage, specialistAnnotations, verification: null, gaps: collectGaps(resolution.gaps, engine.gaps, specialistAnnotations.flatMap(item => item.gaps), ['Verifier returned no required result.']) };
+  return outcome.fail('verification rejection', { accepted: false, status: 'rejected', reason: 'verification rejection', resolution, engine, triage, specialistAnnotations, verification: null, gaps: collectGaps(resolution.gaps, engine.gaps, specialistAnnotations.flatMap(item => item.gaps), ['Verifier returned no required result.']) });
 }
 
 const accepted = verification.accepted && verification.originalEvidenceAccepted && verification.rawArtifactInspected;
 log(`Engine evidence ${accepted ? 'accepted' : 'rejected'}; ${triage.lanes.length} specialist lane(s) selected.`);
-return {
+const result = {
   accepted,
   status: accepted ? 'accepted' : 'rejected',
   reason: accepted ? 'accepted' : 'verification rejection',
@@ -355,3 +355,5 @@ return {
   verification,
   gaps: collectGaps(resolution.gaps, engine.gaps, specialistAnnotations.flatMap(item => item.gaps), verification.gaps)
 };
+return !accepted ? outcome.fail(result.reason, result)
+  : result.gaps.length ? outcome.partial('accepted with coverage gaps', result) : outcome.succeed(result);

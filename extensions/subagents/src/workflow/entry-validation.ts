@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { Check } from "typebox/value";
 import type { WorkflowEntryData } from "./entry.js";
+import { isWorkflowOutcome } from "./outcome.js";
 
 const text = Type.Optional(Type.String());
 const number = Type.Optional(Type.Number());
@@ -45,5 +46,6 @@ function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
 
 /** The entry and notification boundary; no live task lookup or restoration. */
 export function isWorkflowEntryData(value: unknown): value is WorkflowEntryData {
-  return isJsonValue(value) && Check(snapshot, value);
+  return isJsonValue(value) && Check(snapshot, value) &&
+    (!("outcome" in value) || value.outcome === undefined || isWorkflowOutcome(value.outcome));
 }

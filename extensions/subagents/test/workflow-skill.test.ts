@@ -35,7 +35,14 @@ describe("complete workflow skill examples", () => {
           : { supported: true, evidence: "independently checked source:1" }) };
       }),
     });
+    if (required) {
+      expect(result.status).toBe("failed");
+      expect(result.error).toContain("unavailable");
+      expect(calls).not.toContain("verify:missing");
+      return;
+    }
     expect(result.status).toBe("completed");
+    expect(result.outcome).toEqual({ status: "partial", reason: "optional evidence gaps" });
     expect(result.value).toMatchObject({ accepted: !required, attempted: 4, successful: 3, missing: ["missing"], rejected: [],
       items: [...values.map(value => ({ result: { value } })), { id: "missing", result: null }] });
     expect(calls).not.toContain("verify:missing");
@@ -47,8 +54,8 @@ describe("complete workflow skill examples", () => {
         ? { ok: true, text: JSON.stringify({ value: false, evidence: "source:1" }) }
         : { ok: false, error: "verifier unavailable" }),
     });
-    expect(result.status).toBe("completed");
-    expect(result.value).toMatchObject({ accepted: false, successful: 0, missing: ["one"] });
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("verifier unavailable");
   });
 
   it.each([true, false])("retains rejected required=%s evidence separately from missing", async required => {
@@ -59,6 +66,7 @@ describe("complete workflow skill examples", () => {
         : { supported: false, evidence: "source:1 contradicts claim" }) })),
     });
     expect(result.status).toBe("completed");
+    expect(result.outcome?.status).toBe(required ? "failed" : "partial");
     expect(result.value).toMatchObject({ accepted: !required, attempted: 1, successful: 0, missing: [], rejected: ["rejected"],
       items: [{ id: "rejected", result: { verdict: { supported: false, evidence: "source:1 contradicts claim" } } }] });
   });
@@ -78,6 +86,7 @@ describe("complete workflow skill examples", () => {
     });
     expect(result.status).toBe("completed");
     expect(result.value).toMatchObject({ accepted: scenario.accepted, reason: scenario.reason });
+    expect(result.outcome?.status).toBe(scenario.accepted ? "succeeded" : "failed");
     expect(calls).toHaveLength(scenario.calls);
     for (const request of calls) {
       expect(request.agentType).toBe(request.label.startsWith("verify:") ? readOnlyAgentType : "general-purpose");

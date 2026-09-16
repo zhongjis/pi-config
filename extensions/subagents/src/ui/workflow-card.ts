@@ -1,3 +1,5 @@
+import type { WorkflowOutcome } from "../workflow/outcome.js";
+
 /** Workflow transcript reports and formatting shared with the inspector. */
 
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -107,6 +109,7 @@ export interface WorkflowCardTask {
   totalPausedMs?: number;
   pausedAt?: number;
   value?: unknown;
+  outcome?: WorkflowOutcome;
   error?: string;
 }
 

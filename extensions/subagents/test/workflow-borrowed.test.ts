@@ -102,15 +102,14 @@ describe("gate", () => {
       host,
     });
 
-    expect(result.status).toBe("completed");
+    expect(result.status).toBe("failed");
     // Not a new state and not a new entry type: a gated agent whose command
     // fails is a failed agent, so every renderer already knows what to do.
     const entry = latest(result.progress, 0);
     expect(entry?.state).toBe("error");
     expect(entry?.error).toBe("FAIL src/auth.test.ts\n1 failing");
     expect(entry?.skipped).toBeUndefined();
-    // ...and the script sees the same null a dead agent produces.
-    expect(result.value).toBeNull();
+    expect(result.error).toContain("FAIL src/auth.test.ts");
     expect(gateCalls).toEqual([{ command: "npm test", agentId: "wf-agent-0", cwd: undefined }]);
   });
 
@@ -155,7 +154,8 @@ describe("gate", () => {
     // reason it died with a stale test failure.
     expect(gateCalls).toEqual([]);
     expect(latest(result.progress, 0)?.error).toBe("child exploded");
-    expect(result.value).toBeNull();
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("child exploded");
   });
 
   it("does not run for an agent the user skipped", async () => {
@@ -273,7 +273,7 @@ describe("resume", () => {
 
     const result = await run(
       [
-        'const first = await agent("fix it", { label: "impl", gate: "npm test" });',
+        'const first = await agent("fix it", { label: "impl", gate: "npm test", optional: true });',
         'const second = await agent("still failing, try again", { resume: "impl" });',
         "return [first, second];",
       ].join("\n"),
@@ -311,7 +311,7 @@ describe("resume", () => {
   it("does not offer a failed child as a resume target", async () => {
     const { host } = stubHost({ reply: () => ({ ok: false, error: "child exploded" }) });
     const result = await run(
-      ['await agent("a", { label: "impl" });', 'await agent("b", { resume: "impl" });', "return null;"].join(
+      ['await agent("a", { label: "impl", optional: true });', 'await agent("b", { resume: "impl" });', "return null;"].join(
         "\n",
       ),
       { host },

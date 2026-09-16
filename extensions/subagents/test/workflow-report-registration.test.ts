@@ -29,7 +29,7 @@ it("presents structured results and every configured child identity through regi
   const tool = required(host.tools.get("SubagentWorkflow"));
   const before = JSON.stringify({ result, message });
   const compact = tool.renderResult(result, { expanded: false }, plainTheme, { isError: false }).render(120).join("\n");
-  expect(compact).toContain("Completed · structured result");
+  expect(compact).toContain("Outcome not declared · structured result");
   expect(compact).toContain("4 agents completed · fields: research, review");
   expect(compact).not.toMatch(/Completed · \{(?:\n|$)/);
   const report = tool.renderResult(result, { expanded: true }, plainTheme, { isError: false }).render(120).join("\n");
@@ -39,7 +39,7 @@ it("presents structured results and every configured child identity through regi
   const renderMessage = workflowMessageRenderer(host);
   const notification = renderMessage(message, { expanded: false }, plainTheme).render(120);
   expect(notification).toHaveLength(3);
-  expect(notification.join("\n")).toContain("Workflow completed · graph-engineering-research");
+  expect(notification.join("\n")).toContain("Workflow outcome not declared · graph-engineering-research");
   expect(notification.join("\n")).toContain("returned research, review");
   expect(notification.join("\n")).not.toMatch(/\d[\d,.]* (tokens|tools)|duration/i);
   await host.lifecycle("session_shutdown");
@@ -136,4 +136,24 @@ it("falls back to original message content for malformed workflow snapshots", as
   const renderer = workflowMessageRenderer(host);
   expect(renderer(malformed, { expanded: true }, plainTheme).render(80).join("\n")).toBe(malformed.content);
   expect(renderer(malformed, { expanded: false }, plainTheme).render(20).length).toBeLessThanOrEqual(3);
+});
+
+it.each(["fail", "partial", "succeed"])("renders explicit %s separately from execution after reload", async method => {
+  const host = boot({ workflowsEnabled: true });
+  const result = await host.execute({ script: `export const meta={name:'outcome',description:'fixture'};
+    await agent('evidence', {agentType:'fixture'});
+    return outcome.${method}(${method === "succeed" ? "" : "'verification failed', "}{ retained: 'payload-tail' });` });
+  const message = await host.notification(required(result.details?.taskId));
+  const restored = JSON.parse(JSON.stringify(message));
+  const renderer = workflowMessageRenderer(host);
+  const status = method === "fail" ? "failed" : method === "succeed" ? "succeeded" : "partial";
+  for (const expanded of [false, true]) {
+    const report = renderer(restored, { expanded }, plainTheme).render(120).join("\n");
+    expect(report).toContain(`outcome ${status}`);
+    expect(report).toContain("Execution: completed");
+    expect(report).toContain("1 agent completed");
+    if (expanded) expect(report).toContain("payload-tail");
+  }
+  expect(message.content).toContain(`Outcome ${status}`);
+  expect(host.api.sendMessage.mock.calls[0]?.[1]).toEqual({ deliverAs: "followUp", triggerTurn: true });
 });

@@ -84,11 +84,12 @@ for (let round = 1; round <= (args.maxRounds ?? 3); round++) {
       } else frontier.push({ id: `q${frontier.length + 1}`, requirement, question, attempted: false });
     }
   });
+  if (discovered.some(value => value === null)) { stopReason = 'missing_required_result'; break; }
   const [skeptic] = await parallel([() => call({
     phase: 'Challenge', label: `skeptic:${round}`,
     instructions: 'Read only. Fresh skeptical review: inspect sources for contradictions and unsupported claims. Challenge claim IDs with concrete reasons. Disagreement is triage, never proof. Existing unresolved challenges remain unless independently resolved.'
   }, { evidence, claims, challenges }, challengeSchema)]);
-  if (skeptic === null) missingStages.push(`skeptic:${round}`);
+  if (skeptic === null) { missingStages.push(`skeptic:${round}`); stopReason = 'missing_required_result'; break; }
   else for (const challenge of skeptic.challenges) {
     if (!claims.some(claim => claim.id === challenge.claimId)) verificationFailed = true;
     challenges.push({ id: `h${challenges.length + 1}`, ...challenge, resolved: false });
@@ -146,10 +147,11 @@ for (let round = 1; round <= (args.maxRounds ?? 3); round++) {
   if (!improved) { stopReason = 'converged'; break; }
 }
 for (const item of coverage) item.deferred = frontier.filter(entry => entry.requirement === item.requirement && !entry.attempted).map(entry => entry.id);
-return {
+const result = {
   accepted: stopReason === 'covered', stopReason,
   citedFindings: claims.filter(claim => claim.status === 'supported').map(claim => ({ ...claim, evidenceIds: claim.verifiedEvidence.map(entry => entry.evidenceId) })),
   contestedClaims: claims.filter(claim => claim.status === 'contested'), rejectedClaims,
   gaps: coverage.filter(item => item.unresolved), coverage, evidence, claims, challenges, frontier, deferredQuestions, missingStages,
   metrics: { rounds, scheduledCalls, frontierQuestions: frontier.length, evidenceStrength: previousStrength, verifiedCoverage: previousCoverage, resolvedChallenges: previousResolved }
 };
+return result.accepted ? outcome.succeed(result) : outcome.fail(stopReason, result);

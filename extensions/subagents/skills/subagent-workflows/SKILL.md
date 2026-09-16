@@ -28,7 +28,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 8. Write the script inline first. Include literal `meta`, explicit concurrent `opts.phase`, and relevant input/version identity in prompts/args. Before replay, assess changed upstream results, external inputs, and repeatable side effects.
 9. You MUST review syntax, arguments, and null paths before launch. Runnable mock checks SHOULD cover nontrivial branching/repair logic: success, null/falsy data, failed verification, and bounded termination. AVOID new checker infrastructure for simple ephemeral scripts. Inspect actual evidence after authorized execution; NEVER equate a completed workflow with accepted work.
 
-Before execution, you MUST check live agent selectors and authorized cwd/paths/commands. Use only documented option combinations; child `resume` excludes schema/gate/configuration overrides. Mock success, missing/null results, rejected evidence, thrown stages, and exhausted attempts; retain item identity when orchestration converts throws to null. Check provider/model availability separately; compilation cannot establish runtime readiness. After an authorized provider-facing schema change or repair, you MUST run one single-agent canary on the intended selector/provider before costly fan-out.
+Before execution, you MUST check live agent selectors and authorized cwd/paths/commands. Use only documented option combinations; child `resume` excludes schema/gate/configuration overrides. Mock success, missing/null results, rejected evidence, thrown stages, and exhausted attempts; retain item identity for explicit optional gaps; unexpected throws reject orchestration. Check provider/model availability separately; compilation cannot establish runtime readiness. After an authorized provider-facing schema change or repair, you MUST run one single-agent canary on the intended selector/provider before costly fan-out.
 
 ## Invocation and supervision
 
@@ -79,11 +79,10 @@ const verdictSchema = {
 };
 const values = await pipeline(args.items,
   item => agent(`Read ${item.path}; change nothing. Report its purpose with a source location.`,
-    { agentType: args.readOnlyAgentType, label: `read:${item.id}`, phase: 'Read', schema: evidenceSchema }),
+    { agentType: args.readOnlyAgentType, label: `read:${item.id}`, phase: 'Read', schema: evidenceSchema, optional: !item.required }),
   async (value, item) => {
-    if (value === null) return null;
     const verdict = await agent(`Independently read ${item.path}; change nothing. Check this claim against the source, citing evidence: ${JSON.stringify(value)}`,
-      { agentType: args.readOnlyAgentType, label: `verify:${item.id}`, phase: 'Verify', schema: verdictSchema });
+      { agentType: args.readOnlyAgentType, label: `verify:${item.id}`, phase: 'Verify', schema: verdictSchema, optional: !item.required });
     return verdict === null ? null : { ...value, verdict };
   }
 );
@@ -92,13 +91,15 @@ const missing = items.filter(item => item.result === null);
 const rejected = items.filter(item => item.result !== null && !item.result.verdict.supported);
 const successful = items.length - missing.length - rejected.length;
 log(`${successful}/${items.length} verified; missing: ${missing.map(item => item.id).join(', ')}; rejected: ${rejected.map(item => item.id).join(', ')}`);
-return { accepted: ![...missing, ...rejected].some(item => item.required), attempted: items.length,
+const result = { accepted: ![...missing, ...rejected].some(item => item.required), attempted: items.length,
   successful, missing: missing.map(item => item.id), rejected: rejected.map(item => item.id), items };
+return !result.accepted ? outcome.fail('required evidence missing or rejected', result)
+  : missing.length || rejected.length ? outcome.partial('optional evidence gaps', result) : outcome.succeed(result);
 ```
 
 ### 2. Bounded repair with independent command verification
 
-Args: `{ "readOnlyAgentType": "<live read-only selector>", "task": "Fix the failing parser test; edits only in src/parser.js", "check": "npm test" }`. Use only an already-authorized edit scope and check command. You MUST instruct the repair agent to preserve the acceptance command and checks; prompts alone do not protect tests or baselines. Verification runs even when repair text is empty; a missing repair or verifier result never passes. Each attempt starts fresh to support structured calls/gates; use child `resume` only with its restrictions below.
+Args: `{ "readOnlyAgentType": "<live read-only selector>", "task": "Fix the failing parser test; edits only in src/parser.js", "check": "npm test" }`. Use only an already-authorized edit scope and check command. You MUST preserve acceptance commands/checks; prompts alone do not protect baselines. Optional calls here deliberately preserve attempts and allow at most two gate checks; they NEVER authorize broader repairs. Verification runs even for empty repair text. A missing repair stops immediately. Fresh attempts support schemas/gates; child `resume` has the restrictions below.
 
 ```js
 export const meta = {
@@ -115,19 +116,19 @@ let reason = 'attempt limit';
 const attempts = [];
 for (let attempt = 1; attempt <= 2; attempt++) {
   const repaired = await agent(`${args.task}\nAttempt ${attempt}. Run the authorized acceptance command ${args.check} and inspect its failure evidence before repairing within the stated scope. Preserve the command and acceptance checks. Previous stop: ${reason}`,
-    { label: `repair:${attempt}`, phase: 'Repair' });
+    { label: `repair:${attempt}`, phase: 'Repair', optional: true });
   if (repaired === null) {
     attempts.push({ attempt, repaired, verified: null });
-    return { accepted: false, reason: 'missing required repair result', attempts };
+    return outcome.fail('missing required repair result', { accepted: false, reason: 'missing required repair result', attempts });
   }
   const verified = await agent(`Change nothing. Inspect the authorized acceptance command ${args.check} and report verification context.`,
-    { agentType: args.readOnlyAgentType, label: `verify:${attempt}`, phase: 'Verify', gate: args.check });
+    { agentType: args.readOnlyAgentType, label: `verify:${attempt}`, phase: 'Verify', gate: args.check, optional: true });
   attempts.push({ attempt, repaired, verified });
-  if (verified !== null) return { accepted: true, reason: 'acceptance command passed', attempts };
+  if (verified !== null) return outcome.succeed({ accepted: true, reason: 'acceptance command passed', attempts });
   reason = 'verification failed or missing';
   log(`Attempt ${attempt}: ${reason}`);
 }
-return { accepted: false, reason: `attempt limit: ${reason}`, attempts };
+return outcome.fail(`attempt limit: ${reason}`, { accepted: false, reason: `attempt limit: ${reason}`, attempts });
 ```
 
 ## API reference
@@ -144,13 +145,14 @@ Scripts are plain JavaScript in an async context: top-level `await` and `return`
 
 ### `agent(prompt, opts?) → Promise<value | null>`
 
-Without schema, returns final text, including valid empty strings. With `schema`, the child receives a `StructuredOutput` tool and returns a validated JSON object: no manual parsing. Use only a conservative provider-supported schema subset: local validation NEVER proves provider acceptance. The schema root MUST explicitly declare `type: 'object'`; root scalar/array schemas or root `anyOf` without that type are unsupported. Wrap scalars/arrays in an object property, then unwrap only after checking the agent result for null. Example schema: `{type: 'object', properties: {value: {type: 'boolean'}}, required: ['value'], additionalProperties: false}`; after `result !== null`, `result.value` may validly be `false`. Invalid payloads are rejected for correction; missing structured output gets one additional prompt then fails. Skip, terminal API failure after retries, or failed gate returns `null`. You MUST handle null after every stage, including schema stages.
+Without schema, returns final text, including valid empty strings. With `schema`, the child receives a `StructuredOutput` tool and returns a validated JSON object: no manual parsing. Use only a conservative provider-supported schema subset: local validation NEVER proves provider acceptance. The schema root MUST explicitly declare `type: 'object'`; root scalar/array schemas or root `anyOf` without that type are unsupported. Wrap scalars/arrays in an object property, then unwrap only after checking the agent result for null. Example schema: `{type: 'object', properties: {value: {type: 'boolean'}}, required: ['value'], additionalProperties: false}`; after `result !== null`, `result.value` may validly be `false`. Invalid payloads are rejected for correction; missing structured output gets one additional prompt then fails. Required calls reject on terminal provider, schema-result, or gate failure, stopping awaited dependent work. `{optional: true}` converts only ordinary terminal child failures to `null`; invalid options/schemas, missing host capabilities, cap breaches, and programming exceptions still reject. Explicit user skip returns `null` even for required calls: handle it before direct dependent calls. `pipeline` handles that stop automatically. NEVER use optional merely to hide failures; use it for bounded repair or disclosed optional gaps.
 
 All accepted options:
 
 | Option | Contract |
 |---|---|
 | `label: string` | Display identity; use stable item/stage labels. |
+| `optional: boolean` | Default false. Permit ordinary terminal child failure to return null for deliberate recovery; inspect retained child diagnostics. |
 | `phase: string` | Explicit progress group; use inside concurrent stages to avoid global `phase()` races. |
 | `schema: object` | Conservative provider-supported JSON Schema subset with root `type: 'object'` for validated object output; composes with `agentType`. Use explicit required properties and evidence fields; wrap scalar/array values in properties. |
 | `agentType: string` | Custom type from the current Agent tool registry; default general-purpose. |
@@ -162,13 +164,21 @@ All accepted options:
 
 Unlisted options are rejected by name, including isolation options. A gate runs after work: it cannot undo effects or authorize the agent's actions or its own command. No filesystem isolation is provided.
 
+### Explicit domain outcomes
+
+`outcome` is frozen. Return `outcome.succeed(value?)`, `outcome.partial(reason, value?)`, or `outcome.fail(reason, value?)`; failure/partial reasons MUST be nonblank strings. Helpers shallow-freeze envelopes/metadata, NEVER recursively freeze user payloads. Omitted values stay omitted; false, 0, empty strings, and null stay intact.
+
+Wire shape: `{ $subagentWorkflowOutcome: {status: 'succeeded'}, value? }`; partial/failed metadata adds `reason`. This reserved top-level key MUST NOT be used for ordinary payloads. Malformed envelopes fail execution. Root returns normalize into separate outcome metadata and payload; nested calls retain envelopes for explicit propagation.
+
+Execution `completed` means the script returned, not that its objective passed. Plain returns remain valid with outcome undeclared; `{accepted: false}` has no runtime meaning. You MUST declare acceptance/rejection explicitly. Keep partial evidence in the payload, with missing/rejected identities and stop reason. `outcome.fail` declares domain failure; throwing declares execution failure.
+
 ### Orchestration and progress
 
 | Hook | Contract |
 |---|---|
-| `pipeline(items, stage1, stage2, ...) → Promise<array>` | Each item traverses stages independently, without stage barriers. Every callback receives `(prevResult, originalItem, index)` (first result is the item). A thrown stage produces null at that item's position and skips remaining stages; an agent's returned null still needs an explicit guard in later stages. Retain original items/indexes for coverage. Each stage call is auto-keyed by `(item, stage)`, so a resume reuses it regardless of the completion order it settled in. |
-| `parallel(thunks) → Promise<array>` | Concurrent zero-argument async thunks; waits for all, preserving input positions. Ordinary thrown failures become null. Use the barrier for cross-item dependencies, not merely mapping/flattening. Each thunk is auto-keyed by position, so a resume reuses its agents regardless of settle order. |
-| `workflow(nameOrRef, args?) → Promise<value>` | Inline saved name or `{scriptPath: '...'}` composition; returns the child's return value. Child args become its `args`. Shares concurrency, agent counter, abort signal, and token accounting; appears in a nested progress group. Only one nesting level: a child's `workflow()` throws. Unknown names, unreadable paths, and syntax errors throw; catch only when an optional child failure is acceptable. |
+| `pipeline(items, stage1, stage2, ...) → Promise<array>` | Each item traverses stages independently, without stage barriers. Every callback receives `(prevResult, originalItem, index)` (first result is the item). A returned null skips that item's remaining stages; false, 0, and empty strings continue. A thrown stage rejects the pipeline. A null original item still enters stage 1; only stage results short-circuit. Retain original items/indexes for coverage. Each stage call is auto-keyed by `(item, stage)`, so a resume reuses it regardless of the completion order it settled in. |
+| `parallel(thunks) → Promise<array>` | Concurrent zero-argument async thunks; success waits for all, preserving input positions. Throws reject; optional child failures remain null. Uncaught rejection ends the run and aborts unfinished owned children. Use the barrier for cross-item dependencies, not merely mapping/flattening. Each thunk is auto-keyed by position, so a resume reuses its agents regardless of settle order. |
+| `workflow(nameOrRef, args?) → Promise<value>` | Inline saved name or `{scriptPath: '...'}` composition; returns the child's return value, including any explicit outcome envelope unchanged. Return that envelope to propagate its outcome; when composing, inspect `child.$subagentWorkflowOutcome` and `child.value` before declaring the parent's outcome. NEVER silently discard a nested failure/partial outcome. Child args become its `args`. Shares concurrency, agent counter, abort signal, and token accounting; appears in a nested progress group. Only one nesting level: a child's `workflow()` throws. Unknown names, unreadable paths, and syntax errors throw; catch only when an optional child failure is acceptable. |
 | `phase(title) → void` | Sets the progress group for subsequent agent calls. |
 | `log(message) → void` | User-visible narrator progress line. |
 | `args` | Tool input verbatim; undefined when omitted. Arrays/objects MUST be actual JSON values. |

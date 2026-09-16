@@ -181,11 +181,11 @@ describe("script globals", () => {
     expect(result.value).toContain("workflow.js:3:");
   });
 
-  it("maps a failed agent to null rather than throwing", async () => {
+  it("maps an explicitly optional failed agent to null", async () => {
     const { host } = stubHost(request =>
       request.prompt === "bad" ? { ok: false, error: "child exploded" } : { ok: true, text: "fine" },
     );
-    const result = await run('return [await agent("bad"), await agent("good")];', { host });
+    const result = await run('return [await agent("bad", { optional: true }), await agent("good")];', { host });
 
     expect(result.status).toBe("completed");
     expect(result.value).toEqual([null, "fine"]);
@@ -195,7 +195,7 @@ describe("script globals", () => {
 });
 
 describe("parallel", () => {
-  it("is a barrier and folds a throwing thunk to null", async () => {
+  it("rejects a throwing thunk rather than hiding it", async () => {
     const { host } = stubHost(async request => {
       if (request.prompt === "slow") await sleep(60);
       return { ok: true, text: `ok:${request.prompt}` };
@@ -215,12 +215,8 @@ describe("parallel", () => {
       { host, concurrency: 4 },
     );
 
-    expect(result.status).toBe("completed");
-    const value = result.value as { values: (string | null)[]; order: string[] };
-    // The thrown thunk becomes null; its siblings are untouched.
-    expect(value.values).toEqual(["ok:fast", null, "ok:slow"]);
-    // "after" last is the barrier: nothing past the await runs early.
-    expect(value.order).toEqual(["fast", "slow", "after"]);
+    expect(result.status).toBe("failed");
+    expect(result.error).toBe("thunk exploded");
   });
 
   it("rejects more items than the cap allows", async () => {
@@ -282,7 +278,7 @@ describe("pipeline", () => {
     expect(result.value).toEqual(["X/x/0", "Y/y/1"]);
   });
 
-  it("drops a throwing item to null without touching its siblings", async () => {
+  it("rejects a throwing pipeline stage", async () => {
     const { host } = stubHost();
     const result = await run(
       [
@@ -293,7 +289,8 @@ describe("pipeline", () => {
       ].join("\n"),
       { host },
     );
-    expect(result.value).toEqual(["keep:done", null]);
+    expect(result.status).toBe("failed");
+    expect(result.error).toBe("stage failed");
   });
 
   it("rejects more items than the cap allows", async () => {
@@ -1060,7 +1057,7 @@ describe("structured output", () => {
       { host: stub.host },
     );
 
-    expect(result.value).toBe(true);
+    expect(result.status).toBe("failed");
     expect(agentEntries(result.progress).at(-1)).toMatchObject({ state: "error" });
     expect(String(agentEntries(result.progress).at(-1)?.error)).toMatch(/not JSON|did not match/);
   });
@@ -1072,7 +1069,7 @@ describe("structured output", () => {
       { host: stub.host },
     );
 
-    expect(result.value).toBe(true);
+    expect(result.status).toBe("failed");
     expect(String(agentEntries(result.progress).at(-1)?.error)).toMatch(/findings/);
   });
 
