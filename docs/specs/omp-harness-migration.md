@@ -148,7 +148,7 @@ flowchart LR
 
 This removes the Fu Xi/Hou Tu state bridge while retaining its user-visible outcome: reviewed plan, explicit approval, clean execution context, supervised parallel work, and parent-owned verification.
 
-Sources: `docs/specs/modes.md`, `docs/specs/orchestration-flow.md`, `docs/specs/mode-scoped-subagent-delegation.md`, `extensions/modes/README.md`, `omp://resolve-tool-runtime.md`, `omp://session-tree-plan.md`, `omp://task-agent-discovery.md`.
+Sources: `docs/specs/modes.md`, `docs/guides/orchistration.md`, `docs/specs/mode-scoped-subagent-delegation.md`, `extensions/modes/README.md`, `omp://resolve-tool-runtime.md`, `omp://session-tree-plan.md`, `omp://task-agent-discovery.md`.
 
 ## 5. Active custom agent inventory and conversion
 
@@ -735,7 +735,7 @@ None is currently an architectural blocker. They are bounded compatibility or pr
 - `README.md`, `AGENTS.md`, `install.sh`, `package.json`
 - `docs/README.md`
 - `docs/specs/modes.md`
-- `docs/specs/orchestration-flow.md`
+- `docs/guides/orchistration.md`
 - `docs/specs/model-selection-and-fallback.md`
 - `docs/specs/extension-model-usage.md`
 - `docs/specs/subagent-session-restoration.md`

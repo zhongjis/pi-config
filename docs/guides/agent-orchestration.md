@@ -8,7 +8,7 @@ Where the details live:
 
 | Topic | Source of truth |
 |-------|-----------------|
-| Workflow lifecycles (plan-execute, build) | [`docs/specs/orchestration-flow.md`](../specs/orchestration-flow.md) |
+| Workflow lifecycles and how-to | [`docs/guides/orchistration.md`](orchistration.md) |
 | Delegation authorization internals | [`docs/specs/mode-scoped-subagent-delegation.md`](../specs/mode-scoped-subagent-delegation.md) |
 | Mode switching, plan approval, restrictions | [`docs/specs/modes.md`](../specs/modes.md) · [`extensions/modes/README.md`](../../extensions/modes/README.md) |
 | `Agent` tool API (spawn / resume / supervise) | [`extensions/subagents/README.md`](../../extensions/subagents/README.md) |
@@ -33,11 +33,11 @@ subagents it may call, *how* it routes, and *when* it hands off.
 | Mode | Alias | Orchestration role |
 |------|-------|--------------------|
 | **Kua Fu 夸父** | `build` | Default build orchestrator. Intent-gates the request, routes bounded work to specialists, verifies. Uses `xuannv` for tactical planning. |
-| **Fu Xi 伏羲** | `plan` | Planner. Interview → draft → Di Renjie gap review → `PLAN.md` → approval → Hou Tu handoff. Writes only `PLAN.md`/`DRAFT.md`; does not implement. |
+| **Fu Xi 伏羲** | `plan` | Planner. Interview → draft → approved brief → `PLAN.md` → Di Renjie gap review → plan approval → Hou Tu handoff. Writes only `PLAN.md`/`DRAFT.md`; does not implement. |
 | **Hou Tu 后土** | `execute` | Execution conductor. Runs an approved plan as a pi-task DAG, delegating every task; verifies through a final gate wave. Writes no code directly. |
 
 Details of each mode's lifecycle, restrictions, and gates are in
-[`orchestration-flow.md`](../specs/orchestration-flow.md) and
+[`orchistration.md`](orchistration.md) and
 [`modes.md`](../specs/modes.md).
 
 ---
@@ -120,4 +120,4 @@ diagnostics/tests/build itself — a subagent's self-report is never sufficient.
 Code-quality review is **orchestrator-owned** in every mode; `taishang` is
 architecture/debugging/plan-compliance only, never a code-quality reviewer. Hou Tu's
 per-task and final-gate verification is detailed in
-[orchestration-flow.md](../specs/orchestration-flow.md).
+[orchistration.md](orchistration.md).

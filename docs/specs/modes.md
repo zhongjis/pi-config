@@ -2,7 +2,7 @@
 
 The modes extension implements agent persona switching for three modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), and **Hou Tu 后土** (execute). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
 
-For the broader plan lifecycle, see [orchestration-flow.md](orchestration-flow.md).
+For the practical plan and build lifecycles, see [orchistration.md](../guides/orchistration.md).
 
 ---
 
@@ -184,7 +184,7 @@ When a plan is approved, the modes extension prepares for Hou Tu execution witho
 3. The handoff runtime resolves prepared args from the bridge or resolver, creates a new child session, seeds `agent-mode: houtu`, preloads a deterministic execution prompt, and waits for the user to press Enter in the child session.
 4. The modes extension does not directly execute the plan, and the handoff runtime does not auto-send the execution prompt.
 
-See [orchestration-flow.md](orchestration-flow.md) for the end-to-end lifecycle.
+See [orchistration.md](../guides/orchistration.md) for the end-to-end user workflow.
 
 ---
 

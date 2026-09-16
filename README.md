@@ -75,7 +75,7 @@ See `docs/guides/testing/README.md` for the exact maintenance rules.
 - `docs/specs/extension-model-usage.md` — `tool_models.json` role schema for extension-owned LLM calls
 - `docs/specs/model-selection-and-fallback.md` — model-chain parsing and fallback behavior
 - `docs/guides/testing/README.md` — extension testing policy
-- `docs/specs/orchestration-flow.md` — orchestration design notes
+- `docs/guides/orchistration.md` — practical orchestration lifecycle and workflow guide
 
 ## Local workflow preference
 
