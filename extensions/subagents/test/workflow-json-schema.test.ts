@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { createStructuredCapture, createStructuredOutputTool } from "../src/structured-output.js";
 import { compileInputSchema, compileJsonSchema } from "../src/workflow/json-schema.js";
 
 /** A schema shaped like the one Claude Code's own example passes. */
@@ -40,7 +41,7 @@ describe("compiling a script-supplied schema", () => {
     expect(compileJsonSchema(FINDINGS).ok).toBe(true);
   });
 
-  it("keeps the schema object as given, for the tool and the journal key", () => {
+  it("keeps the schema object as given, for the journal key", () => {
     expect(compile(FINDINGS).schema).toBe(FINDINGS);
   });
 
@@ -155,4 +156,108 @@ it.each([null, [], { description: 'x'.repeat(70_000) }])('names the input-schema
   const result = compileInputSchema(schema);
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.message).toContain('meta.inputSchema');
+});
+
+// ─── Provider-portability: stripUnsupported ──────────────────────────────────
+
+const DENYLIST = new Set([
+  "minItems", "maxItems", "uniqueItems", "minContains", "maxContains",
+  "minLength", "maxLength", "pattern", "format",
+  "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+  "minProperties", "maxProperties",
+]);
+
+/** Recursively collect every key found anywhere in an object graph. */
+function allKeys(node: unknown, found: Set<string> = new Set()): Set<string> {
+  if (typeof node !== "object" || node === null || Array.isArray(node)) return found;
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+    found.add(k);
+    allKeys(v, found);
+  }
+  return found;
+}
+
+const NESTED_SCHEMA = {
+  type: "object",
+  properties: {
+    a: {
+      type: "array",
+      maxItems: 3,
+      minItems: 1,
+      uniqueItems: true,
+      items: { type: "string", pattern: "^x$", minLength: 1 },
+    },
+    w: { type: "number", minimum: 0.1, maximum: 1 },
+    grp: {
+      anyOf: [
+        { type: "string", maxLength: 2 },
+        { type: "object", properties: { n: { type: "integer", minimum: 1 } } },
+      ],
+    },
+  },
+  required: ["a"],
+  additionalProperties: false,
+} as const;
+
+describe("providerSchema (stripUnsupported)", () => {
+  it("S1: strips all denylist keywords recursively, preserves structural keys", () => {
+    const compiled = (compileJsonSchema(NESTED_SCHEMA) as { ok: true; compiled: { providerSchema: Record<string, unknown> } }).compiled;
+    const keys = allKeys(compiled.providerSchema);
+    for (const k of DENYLIST) {
+      expect(keys.has(k), `providerSchema should not contain '${k}'`).toBe(false);
+    }
+    // structural keys must survive
+    expect(keys.has("type")).toBe(true);
+    expect(keys.has("properties")).toBe(true);
+    expect(keys.has("required")).toBe(true);
+    expect(keys.has("items")).toBe(true);
+    expect(keys.has("anyOf")).toBe(true);
+    // additionalProperties:false (boolean) must survive
+    const ps = compiled.providerSchema as Record<string, unknown>;
+    expect(ps.additionalProperties).toBe(false);
+  });
+
+  it("S2: full schema still validates — stripping providerSchema does not weaken check", () => {
+    const result = compileJsonSchema(NESTED_SCHEMA);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { compiled } = result;
+    // maxItems violation: 4 items where maxItems:3
+    expect(compiled.check({ a: ["x", "x", "x", "x"] })).not.toBe(true);
+    // pattern violation: 'nope' does not match '^x$'
+    expect(compiled.check({ a: ["nope"] })).not.toBe(true);
+    // compiled.schema still holds banned keywords
+    const schemaKeys = allKeys(compiled.schema);
+    expect(schemaKeys.has("maxItems")).toBe(true);
+    expect(schemaKeys.has("minimum")).toBe(true);
+    expect(schemaKeys.has("pattern")).toBe(true);
+  });
+
+  it("S3: tool parameters === compiled.providerSchema, no denylist keywords inside", () => {
+    const result = compileJsonSchema(NESTED_SCHEMA);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { compiled } = result;
+    const tool = createStructuredOutputTool(compiled, createStructuredCapture());
+    expect(tool.parameters).toBe((compiled as unknown as { providerSchema: unknown }).providerSchema);
+    const keys = allKeys(tool.parameters);
+    for (const k of DENYLIST) {
+      expect(keys.has(k), `tool.parameters should not contain '${k}'`).toBe(false);
+    }
+  });
+
+  it("S4: compile(FINDINGS).schema is still identity-equal, providerSchema is different and stripped", () => {
+    const result = compileJsonSchema(FINDINGS);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const { compiled } = result;
+    // identity guarantee unchanged
+    expect(compiled.schema).toBe(FINDINGS);
+    // providerSchema is a different object
+    const ps = (compiled as unknown as { providerSchema: unknown }).providerSchema;
+    expect(ps).not.toBe(FINDINGS);
+    // FINDINGS has minimum:1 on line; providerSchema must not
+    const psKeys = allKeys(ps);
+    expect(psKeys.has("minimum")).toBe(false);
+  });
 });

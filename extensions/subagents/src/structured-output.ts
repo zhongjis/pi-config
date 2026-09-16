@@ -72,11 +72,11 @@ export function createStructuredOutputTool(
     promptGuidelines: [
       "Your final answer MUST be reported by calling StructuredOutput. Prose outside that call is discarded.",
     ],
-    // The caller's schema *is* the tool's input schema, verbatim — that is what
-    // makes the provider fill the fields. pi types this as TypeBox's `TSchema`,
-    // which v1 defines as an open interface, so a plain JSON Schema satisfies
-    // it without a cast at runtime or a conversion at author time.
-    parameters: compiled.schema,
+    // `providerSchema` is a constraint-stripped copy of the caller's schema.
+    // Anthropic rejects keywords like maxItems/pattern in tool input schemas
+    // (live 400); providerSchema carries only structural keywords every provider
+    // accepts. Local validation (`check`) still uses the full `schema`.
+    parameters: compiled.providerSchema,
     // "prefer", not "require": a provider that cannot constrain sampling should
     // fall through to validation-and-retry rather than fail the call outright.
     constrainedSampling: { type: "json_schema", strict: "prefer" },

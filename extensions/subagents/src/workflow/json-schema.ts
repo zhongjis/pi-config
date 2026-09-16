@@ -37,8 +37,16 @@ const MAX_SCHEMA_BYTES = 64 * 1024;
 const MAX_REPORTED_ERRORS = 5;
 
 export interface CompiledSchema {
-  /** The schema as given, for the tool's `parameters` and the journal key. */
+  /**
+   * The schema as given — used as the journal key and for local `check`.
+   * NOT sent to the provider (constraint keywords break Anthropic's validator).
+   */
   readonly schema: Record<string, unknown>;
+  /**
+   * A deep copy of `schema` with all constraint/format keywords stripped.
+   * This is what the tool sends as `parameters` so every provider accepts it.
+   */
+  readonly providerSchema: Record<string, unknown>;
   /** `true`, or a human-readable account of what is wrong. */
   check(value: unknown): true | string;
 }
@@ -104,7 +112,7 @@ function compileSchema(schema: unknown, label: string, objectRoot: boolean): Sch
     };
   }
 
-  return { ok: true, compiled: { schema: root, check: value => checkAgainst(root, value) } };
+  return { ok: true, compiled: { schema: root, providerSchema: stripUnsupported(root), check: value => checkAgainst(root, value) } };
 }
 
 function checkAgainst(schema: Record<string, unknown>, value: unknown): true | string {
@@ -134,4 +142,78 @@ function checkAgainst(schema: Record<string, unknown>, value: unknown): true | s
     return reported.join("; ") || "the value does not match the required schema";
   }
   return reported.length > 0 ? reported.join("; ") : "the value does not match the required schema";
+}
+
+// ─── Provider-schema stripping ─────────────────────────────────────────────────────────
+
+/**
+ * Keyword categories Anthropic's tool-schema validator rejects.
+ * Stripped from `providerSchema`; kept in `schema` for local `check`.
+ */
+const PROVIDER_DENYLIST = new Set([
+  // arrays
+  "minItems", "maxItems", "uniqueItems", "minContains", "maxContains",
+  // strings
+  "minLength", "maxLength", "pattern", "format",
+  // numbers
+  "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+  // objects
+  "minProperties", "maxProperties",
+]);
+
+/** Known schema-bearing keys that hold an object-of-subschemas (recurse each value). */
+const OBJECT_OF_SCHEMAS = new Set(["properties", "patternProperties", "$defs", "definitions"]);
+
+/** Known schema-bearing keys that hold a single subschema (recurse if plain object). */
+const SINGLE_SCHEMA = new Set([
+  "additionalProperties", "contains", "propertyNames", "not", "if", "then", "else",
+]);
+
+/** Known schema-bearing keys that hold an array-of-subschemas (map each element). */
+const ARRAY_OF_SCHEMAS = new Set(["prefixItems", "anyOf", "allOf", "oneOf"]);
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Return a deep copy of `node` with every constraint/format keyword removed at
+ * every schema position. Structural keywords and literal data are preserved.
+ * Input is never mutated.
+ */
+export function stripUnsupported(node: unknown): Record<string, unknown> {
+  if (!isPlainObject(node)) return {} as Record<string, unknown>;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (PROVIDER_DENYLIST.has(key)) continue;
+
+    if (OBJECT_OF_SCHEMAS.has(key) && isPlainObject(value)) {
+      const mapped: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value)) {
+        mapped[k] = isPlainObject(v) ? stripUnsupported(v) : v;
+      }
+      result[key] = mapped;
+    } else if (key === "items") {
+      // items is either an array-of-schemas or a single schema
+      if (Array.isArray(value)) {
+        result[key] = value.map(el => isPlainObject(el) ? stripUnsupported(el) : el);
+      } else if (isPlainObject(value)) {
+        result[key] = stripUnsupported(value);
+      } else {
+        result[key] = value;
+      }
+    } else if (ARRAY_OF_SCHEMAS.has(key)) {
+      if (Array.isArray(value)) {
+        result[key] = value.map(el => isPlainObject(el) ? stripUnsupported(el) : el);
+      } else {
+        result[key] = value;
+      }
+    } else if (SINGLE_SCHEMA.has(key)) {
+      result[key] = isPlainObject(value) ? stripUnsupported(value) : value;
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
 }
