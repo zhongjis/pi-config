@@ -96,6 +96,7 @@ See [modes.md](specs/modes.md) for the shipped mode contract and [orchistration.
 | [subagents-upstream-upgrade.md](specs/subagents-upstream-upgrade.md) | Draft v0.19.0 upstream sync, local compatibility, and Scripted Workflows |
 | [omp-harness-migration.md](specs/omp-harness-migration.md) | Draft feature inventory and migration design for replacing Pi with OMP |
 | [agent-graph-implementation.md](guides/agent-graph-implementation.md) | Draft Section 1 implementation plan for the XState-based `agent_graph` runtime |
+| [agent-graph-reusable-workflows.md](specs/agent-graph-reusable-workflows.md) | Draft reusable agent-graph workflow portfolio (shared subgraphs + fuxi/houtu/kuafu flows) and its runtime hardening + test strategy |
 | [testing/README.md](guides/testing/README.md) | Extension testing policy and two-tier model |
 | [testing/unit-test.md](guides/testing/unit-test.md) | Unit test conventions |
 | [testing/integration-test.md](guides/testing/integration-test.md) | Integration test approach |
