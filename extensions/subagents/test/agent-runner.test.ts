@@ -2267,20 +2267,20 @@ describe("workflow structured output", () => {
     expect(session.prompt).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps StructuredOutput through live narrowing but blocks child workflow tools", async () => {
+  it("keeps StructuredOutput through live narrowing but blocks child orchestration tools", async () => {
     vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ extensions: true }));
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ extensions: true, extensionToolNames: [], allowNesting: true }));
     const { session, listeners } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
     const result = await runAgent(ctx, "Explore", "answer", { pi, workflow: true, structuredOutput: schema });
     expect(session.getActiveToolNames()).toContain("StructuredOutput");
-    expect(createAgentSession.mock.calls[0][0].excludeTools).toContain("SubagentWorkflow");
+    expect(createAgentSession.mock.calls[0][0].excludeTools).toContain("agent_graph");
     await expect(session.agent.beforeToolCall?.({ toolCall: { name: "StructuredOutput" } })).resolves.toBeUndefined();
-    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "SubagentWorkflow" } })).resolves.toMatchObject({ block: true });
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "agent_graph" } })).resolves.toMatchObject({ block: true });
     for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", content: [], stopReason: "stop" } });
     await resumeAgent(result.session, "again");
     expect(session.getActiveToolNames()).toContain("StructuredOutput");
-    expect(session.getActiveToolNames()).not.toContain("SubagentWorkflow");
+    expect(session.getActiveToolNames()).not.toContain("agent_graph");
   });
 
   it("never prompts a pre-aborted structured session", async () => {
