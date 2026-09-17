@@ -78,14 +78,14 @@ describe("runGraph — end to end via XState actors", () => {
     expect(result.status).toBe("aborted");
   });
 
-  it("fails a node type that is not implemented yet", async () => {
+  it("fails a human_gate when the host cannot await human input", async () => {
     const graph: AgentGraph = {
       nodes: { g: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object" } } },
       edges: [],
     };
     const result = await runGraph(graph, {}, { host: host(() => okText("x")) });
     expect(result.status).toBe("failed");
-    expect(result.nodes.g.error).toContain("not supported yet");
+    expect(result.nodes.g.error).toContain("await human input");
   });
 
   it("reports node updates as the run progresses", async () => {
