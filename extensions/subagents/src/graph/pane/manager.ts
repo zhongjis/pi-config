@@ -229,7 +229,8 @@ export class WorkflowPaneManager {
   /**
    * Which run the switcher points at: the pinned run if it still exists, else the
    * last-active run (the `pickTask` rule). A vanished pin falls back to last-active.
-   * Resets the panel's node selection and scroll when the shown run changes.
+   * Resets the panel's node selection, scroll, and stage collapse when the shown run
+   * changes, but keeps the filter (a persistent user intent, not per-graph).
    */
   private resolveRunIndex(tasks: readonly WorkflowTask[]): number {
     if (tasks.length === 0) return 0;
@@ -247,6 +248,8 @@ export class WorkflowPaneManager {
     if (shownId !== this.lastPanelRunId) {
       this.panelState.selectedNodeId = undefined;
       this.panelState.scroll = 0;
+      // Stages differ per graph; keep the user's filter intent across the switch.
+      this.panelState.collapsedStages = [];
       this.lastPanelRunId = shownId;
     }
     return index;

@@ -48,10 +48,14 @@ export interface PanelState {
   runIndex: number;
   /** Body scroll offset, in rendered lines. */
   scroll: number;
+  /** Roster filter: show all nodes, only running, or only failed. (v1.5) */
+  filter: "all" | "running" | "failed";
+  /** Collapsed stage numbers (the adapter's `phaseIndex`); a collapsed stage renders only its header. (v1.5) */
+  collapsedStages: number[];
 }
 
 export function initialPanelState(): PanelState {
-  return { runIndex: 0, scroll: 0 };
+  return { runIndex: 0, scroll: 0, filter: "all", collapsedStages: [] };
 }
 
 /** One switchable run, built by the manager from a background task. */
@@ -150,9 +154,27 @@ function stageGroups(agents: readonly WorkflowAgentEntry[]): StageGroup[] {
     }));
 }
 
-/** Roster order: stage-ordered node ids, for `↑↓` selection. */
-function orderedNodeIds(agents: readonly WorkflowAgentEntry[]): string[] {
-  return stageGroups(agents).flatMap(group => group.agents.map(agent => agent.label));
+/** The roster filter mode. (v1.5) */
+type PanelFilter = PanelState["filter"];
+
+/** Whether a node's display state passes the active filter. (v1.5) */
+function matchesFilter(state: WorkflowDisplayState, filter: PanelFilter): boolean {
+  return filter === "all" || state === filter;
+}
+
+/**
+ * Roster order for `↑↓` selection: stage-ordered node ids, minus nodes hidden by
+ * the filter or by a collapsed stage. Navigation moves over this visible order only.
+ */
+function visibleNodeIds(
+  agents: readonly WorkflowAgentEntry[], active: boolean, filter: PanelFilter, collapsedStages: readonly number[],
+): string[] {
+  const collapsed = new Set(collapsedStages);
+  return stageGroups(agents)
+    .filter(group => !collapsed.has(group.stage))
+    .flatMap(group => group.agents)
+    .filter(agent => matchesFilter(displayState(agent, active), filter))
+    .map(agent => agent.label);
 }
 
 interface Counts {
@@ -210,12 +232,13 @@ function switcherLines(
 }
 
 function summaryStrip(
-  agents: readonly WorkflowAgentEntry[], active: boolean, glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number,
+  agents: readonly WorkflowAgentEntry[], active: boolean, filter: PanelFilter,
+  glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number,
 ): WorkflowCardLine {
   const counts = countStates(agents, active);
   const dot = ascii ? "*" : "●";
   const sep: WorkflowCardSegment = { text: "  ·  ", color: "dim" };
-  return clampLine([
+  const line: WorkflowCardLine = [
     { text: ` ${dot} running ${counts.running}`, color: "accent" },
     sep,
     { text: `${glyphs.queued} queued ${counts.queued}`, color: "dim" },
@@ -223,7 +246,10 @@ function summaryStrip(
     { text: `${glyphs.tick} done ${counts.done}`, color: "success" },
     sep,
     { text: `${glyphs.cross} failed ${counts.failed}`, color: "error" },
-  ], width);
+  ];
+  // The counts are the true observability read; the filter is only a roster lens.
+  if (filter !== "all") line.push({ text: ` · filter: ${filter}`, color: "warning" });
+  return clampLine(line, width);
 }
 
 function rowActivity(entry: WorkflowAgentEntry, state: WorkflowDisplayState, now: number): string {
@@ -255,17 +281,24 @@ function agentRow(
 }
 
 function rosterLines(
-  groups: readonly StageGroup[], selectedId: string | undefined, active: boolean,
-  glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number, now: number,
+  groups: readonly StageGroup[], selectedId: string | undefined, active: boolean, filter: PanelFilter,
+  collapsedStages: readonly number[], glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number, now: number,
 ): { lines: WorkflowCardLine[]; rowForNode: Map<string, number> } {
   const lines: WorkflowCardLine[] = [];
   const rowForNode = new Map<string, number>();
   const ruleChar = ascii ? "-" : "─";
+  const collapsed = new Set(collapsedStages);
   for (const group of groups) {
+    const shown = group.agents.filter(agent => matchesFilter(displayState(agent, active), filter));
+    // A filter that matches no node in this stage hides the whole stage.
+    if (shown.length === 0) continue;
+    const isCollapsed = collapsed.has(group.stage);
+    const marker = ascii ? (isCollapsed ? "> " : "v ") : isCollapsed ? "▸ " : "▾ ";
     const anyFailed = group.agents.some(agent => agent.state === "error" && !agent.skipped);
     const allDone = group.total > 0 && group.done === group.total;
     const headColor: WorkflowCardColor = allDone ? "success" : anyFailed ? "error" : "muted";
-    const label = ` Stage ${group.stage + 1} `;
+    // The `done/total` rollup stays the TRUE totals even when the filter hides rows.
+    const label = ` ${marker}Stage ${group.stage + 1} `;
     const count = `${group.done}/${group.total}`;
     const ruleLen = Math.max(1, width - visibleWidth(label) - visibleWidth(count) - 2);
     lines.push(clampLine([
@@ -273,7 +306,8 @@ function rosterLines(
       { text: `${ruleChar.repeat(ruleLen)} `, color: "dim" },
       { text: count, color: "dim" },
     ], width));
-    for (const agent of group.agents) {
+    if (isCollapsed) continue;
+    for (const agent of shown) {
       rowForNode.set(agent.label, lines.length);
       lines.push(agentRow(agent, agent.label === selectedId, active, glyphs, width, now));
     }
@@ -297,6 +331,32 @@ function runtimeFacts(entry: WorkflowAgentEntry): string {
   if (entry.toolCalls) parts.push(`${entry.toolCalls} tool${entry.toolCalls === 1 ? "" : "s"}`);
   if (entry.durationMs != null) parts.push(formatDuration(entry.durationMs));
   return parts.join(" · ");
+}
+
+/**
+ * Transitive downstream nodes a failed node took down: walk `dependents` from the
+ * failure and collect every reachable node whose display state is `skipped`. A skip
+ * cascades (a skipped node's own dependents skip too), so the walk is transitive, with
+ * a visited-set that both bounds it and guards against cycles.
+ */
+function blastRadius(
+  entry: WorkflowAgentEntry, byId: Map<string, WorkflowAgentEntry>, active: boolean,
+): string[] {
+  const skipped: string[] = [];
+  const seen = new Set<string>([entry.label]);
+  const queue = [...(entry.dependents ?? [])];
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (id === undefined || seen.has(id)) continue;
+    seen.add(id);
+    const node = byId.get(id);
+    if (!node) continue;
+    if (displayState(node, active) === "skipped") skipped.push(id);
+    for (const next of node.dependents ?? []) {
+      if (!seen.has(next)) queue.push(next);
+    }
+  }
+  return skipped;
 }
 
 function detailLines(
@@ -338,6 +398,17 @@ function detailLines(
   const chain = dependents.length > 0 ? dependents.map(id => `${arrow} ${id}`).join(" ") : "—";
   lines.push(clampLine([{ text: "  Unblocks (downstream): ", color: "muted" }, { text: chain, color: "dim" }], width));
 
+  // Blast radius: the downstream nodes a failure skipped, walked transitively through the DAG.
+  if (state === "failed") {
+    const skipped = blastRadius(entry, byId, active);
+    lines.push(clampLine(
+      skipped.length > 0
+        ? [{ text: "  Blast radius: ", color: "muted" }, { text: skipped.join(", "), color: "warning" }]
+        : [{ text: "  Blast radius: ", color: "muted" }, { text: "none yet", color: "dim" }],
+      width,
+    ));
+  }
+
   const outcome = outcomeText(entry, state);
   if (outcome) {
     lines.push(clampLine([
@@ -365,7 +436,7 @@ function footerLine(
   return clampLine([
     { text: ` ${dot} ${live ? "live" : "done"}`, color: live ? "accent" : "dim" },
     { text: `  ${range}`, color: "dim" },
-    { text: `  ${upDown} node · ${arrow} run · esc close`, color: "dim" },
+    { text: `  ${upDown} node · ${arrow} run · f filter · space fold · esc close`, color: "dim" },
   ], width);
 }
 
@@ -403,13 +474,16 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
   headerLines.push(...switcherLines(runs, index, glyphs, ascii, width));
   const head = header(source.task, source.meta, buildPhaseGroups(source.progress, source.meta?.phases), source.agentCount ?? 0, now);
   headerLines.push(clampLine([{ text: " " }, { text: head.stats, color: "dim" }], width));
-  headerLines.push(summaryStrip(agents, active, glyphs, ascii, width));
+  headerLines.push(summaryStrip(agents, active, state.filter, glyphs, ascii, width));
 
-  const order = orderedNodeIds(agents);
-  const selectedId = state.selectedNodeId != null && order.includes(state.selectedNodeId) ? state.selectedNodeId : order[0];
+  // Selection persists on a valid node even when the filter or a collapse hides its row
+  // (its detail still shows); otherwise it falls to the first visible node.
+  const visibleOrder = visibleNodeIds(agents, active, state.filter, state.collapsedStages);
+  const exists = agents.some(agent => agent.label === state.selectedNodeId);
+  const selectedId = state.selectedNodeId != null && exists ? state.selectedNodeId : visibleOrder[0];
   const selectedEntry = selectedId != null ? agents.find(agent => agent.label === selectedId) : undefined;
 
-  const { lines: roster, rowForNode } = rosterLines(groups, selectedId, active, glyphs, ascii, width, now);
+  const { lines: roster, rowForNode } = rosterLines(groups, selectedId, active, state.filter, state.collapsedStages, glyphs, ascii, width, now);
   const bodyLines: WorkflowCardLine[] = [...roster];
   if (selectedEntry) {
     bodyLines.push([]);
@@ -438,7 +512,7 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
 }
 
 /* ------------------------------------------------------------------------- *
- * Keys (v1 subset)
+ * Keys
  * ------------------------------------------------------------------------- */
 
 /**
@@ -446,9 +520,11 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
  *
  * Mirrors `applyPaneKey`: only `esc`/`q` at the top level closes; a key the panel
  * does not own leaves the state as-is and re-renders idempotently. Run switching
- * (`←/→`) resets node selection and scroll. `c` (open conversation) is deliberately
- * unhandled in v1 — the pure panel has no host, so conversation-open is wired by the
- * manager in a later slice.
+ * (`←/→`) resets node selection, scroll, and stage collapse but keeps the filter.
+ * `f` cycles the roster filter, `space`/`enter` fold the selected node's stage, and
+ * node navigation moves over the visible (filtered, non-collapsed) order only. `c`
+ * (open conversation) is deliberately unhandled — the pure panel has no host, so
+ * conversation-open is wired by the manager in a later slice.
  */
 export function applyPanelKey(
   runs: readonly PanelRun[], state: PanelState, data: string, opts: PanelOptions,
@@ -460,12 +536,15 @@ export function applyPanelKey(
 
   const index = clamp(state.runIndex, 0, runs.length - 1);
   const run = runs[index];
-  const order = orderedNodeIds(collapse(run.source.progress).agents);
+  const agents = collapse(run.source.progress).agents;
+  const active = isActive(run.status);
+  const order = visibleNodeIds(agents, active, state.filter, state.collapsedStages);
 
   if (matchesKey(data, "left") || matchesKey(data, "right")) {
     const nextIndex = clamp(index + (matchesKey(data, "right") ? 1 : -1), 0, runs.length - 1);
     if (nextIndex === index) return render(state);
-    return render({ runIndex: nextIndex, scroll: 0 });
+    // Persist the filter across a run switch; stages differ per graph, so reset collapse.
+    return render({ runIndex: nextIndex, scroll: 0, filter: state.filter, collapsedStages: [] });
   }
 
   if (matchesKey(data, "pageDown") || matchesKey(data, "pageUp")) {
@@ -473,10 +552,42 @@ export function applyPanelKey(
     return render({ ...state, runIndex: index, scroll: Math.max(0, state.scroll + delta) });
   }
 
+  if (matchesKey(data, "f")) {
+    const nextFilter: PanelFilter =
+      state.filter === "all" ? "running" : state.filter === "running" ? "failed" : "all";
+    // If the current selection is filtered out, snap it to the first visible node.
+    const nextOrder = visibleNodeIds(agents, active, nextFilter, state.collapsedStages);
+    const stillVisible = state.selectedNodeId != null && nextOrder.includes(state.selectedNodeId);
+    return render({
+      ...state,
+      runIndex: index,
+      filter: nextFilter,
+      selectedNodeId: stillVisible ? state.selectedNodeId : nextOrder[0],
+    });
+  }
+
+  if (matchesKey(data, "space") || matchesKey(data, "enter")) {
+    const currentId = state.selectedNodeId != null && agents.some(agent => agent.label === state.selectedNodeId)
+      ? state.selectedNodeId
+      : order[0];
+    const target = currentId != null ? agents.find(agent => agent.label === currentId) : undefined;
+    if (!target) return render({ ...state, runIndex: index });
+    const stage = target.phaseIndex ?? 0;
+    const collapsed = new Set(state.collapsedStages);
+    if (collapsed.has(stage)) collapsed.delete(stage);
+    else collapsed.add(stage);
+    return render({ ...state, runIndex: index, collapsedStages: [...collapsed].sort((a, b) => a - b) });
+  }
+
   const down = matchesKey(data, "down") || matchesKey(data, "j");
   const up = matchesKey(data, "up") || matchesKey(data, "k");
   if (down || up) {
     if (order.length === 0) return render({ ...state, runIndex: index });
+    // A set-but-hidden selection (filtered out or in a collapsed stage) snaps to the first
+    // visible node; an unset selection defaults to the first node and then moves from there.
+    if (state.selectedNodeId != null && !order.includes(state.selectedNodeId)) {
+      return render({ ...state, runIndex: index, selectedNodeId: order[0] });
+    }
     const currentId = state.selectedNodeId != null && order.includes(state.selectedNodeId) ? state.selectedNodeId : order[0];
     const nextPos = clamp(order.indexOf(currentId) + (down ? 1 : -1), 0, order.length - 1);
     return render({ ...state, runIndex: index, selectedNodeId: order[nextPos] });

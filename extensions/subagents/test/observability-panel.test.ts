@@ -192,7 +192,7 @@ describe("observability panel — keys", () => {
 
   it("switches runs with ←/→, resetting node selection and scroll", () => {
     const runs = [graphRun(), otherRun()];
-    const start: PanelState = { runIndex: 0, selectedNodeId: "d", scroll: 4 };
+    const start: PanelState = { ...initialPanelState(), selectedNodeId: "d", scroll: 4 };
     const right = applyPanelKey(runs, start, "\x1b[C", opts);
     expect(right.state.runIndex).toBe(1);
     expect(right.state.selectedNodeId).toBeUndefined();
@@ -202,7 +202,7 @@ describe("observability panel — keys", () => {
     const left = applyPanelKey(runs, right.state, "\x1b[D", opts);
     expect(left.state.runIndex).toBe(0);
     // Left at the first run is a clamped no-op.
-    const clamped = applyPanelKey(runs, { runIndex: 0, scroll: 0 }, "\x1b[D", opts);
+    const clamped = applyPanelKey(runs, initialPanelState(), "\x1b[D", opts);
     expect(clamped.state.runIndex).toBe(0);
   });
 
@@ -220,5 +220,127 @@ describe("observability panel — keys", () => {
     expect(applyPanelKey([], initialPanelState(), "\x1b", opts).close).toBe(true);
     const nav = applyPanelKey([], initialPanelState(), "j", opts);
     expect(nav.close).toBe(false);
+  });
+});
+
+describe("observability panel — v1.5 filter, collapse, blast radius", () => {
+  const opts = { width: 60, now: NOW } as const;
+
+  it("cycles the roster filter all → running → failed → all with f", () => {
+    const r1 = applyPanelKey([graphRun()], initialPanelState(), "f", opts);
+    expect(r1.state.filter).toBe("running");
+    const r2 = applyPanelKey([graphRun()], r1.state, "f", opts);
+    expect(r2.state.filter).toBe("failed");
+    const r3 = applyPanelKey([graphRun()], r2.state, "f", opts);
+    expect(r3.state.filter).toBe("all");
+  });
+
+  it("filters the roster to matching nodes, dropping empty stages but keeping true rollups", () => {
+    const running = text([graphRun()], { ...initialPanelState(), filter: "running" }, { width: 120, now: NOW });
+    // Only the stage with a running node (b, in Stage 2) survives; its neighbours drop out.
+    expect(running).toContain("Stage 2");
+    expect(running).not.toContain("Stage 1");
+    expect(running).not.toContain("Stage 3");
+    // The rollup stays the TRUE total (b running + c queued), not the one filtered row.
+    expect(running).toContain("0/2");
+    // The summary strip surfaces the active filter; the live counts stay unfiltered.
+    expect(running).toContain("filter: running");
+    expect(running).toContain("queued 1");
+  });
+
+  it("snaps the selection to the first visible node when a filter hides it", () => {
+    // Select the done node "a", then filter to running — "a" is no longer visible.
+    const r = applyPanelKey([graphRun()], { ...initialPanelState(), selectedNodeId: "a" }, "f", opts);
+    expect(r.state.filter).toBe("running");
+    expect(r.state.selectedNodeId).toBe("b");
+  });
+
+  it("navigates over the filtered visible order only", () => {
+    const failed: PanelState = { ...initialPanelState(), filter: "failed" };
+    // Only d is visible under the failed filter, so navigation clamps onto it.
+    const down = applyPanelKey([graphRun()], failed, "j", opts);
+    expect(down.state.selectedNodeId).toBe("d");
+    const up = applyPanelKey([graphRun()], down.state, "k", opts);
+    expect(up.state.selectedNodeId).toBe("d");
+  });
+
+  it("collapses the selected node's stage with space: hides its rows, flips ▾ to ▸", () => {
+    const base: PanelState = { ...initialPanelState(), selectedNodeId: "b" };
+    const dims = { width: 70, now: NOW } as const;
+    const expanded = plain(renderPanelLines([graphRun()], base, dims)).join("\n");
+    expect(expanded).toContain("▾ Stage 2");
+    expect(expanded).toMatch(/c\s+queued/); // c's row shows while its stage is expanded
+    const toggled = applyPanelKey([graphRun()], base, " ", dims);
+    expect(toggled.state.collapsedStages).toContain(1);
+    const collapsed = plain(toggled.lines).join("\n");
+    expect(collapsed).toContain("▸ Stage 2");
+    expect(collapsed).not.toContain("▾ Stage 2");
+    expect(collapsed).not.toMatch(/c\s+queued/); // c's row is hidden under the collapsed stage
+    // enter toggles the same fold back open.
+    const reopened = applyPanelKey([graphRun()], toggled.state, "\r", dims);
+    expect(reopened.state.collapsedStages).not.toContain(1);
+  });
+
+  it("skips collapsed stages during node navigation", () => {
+    // Stage 2 (b, c) is folded; moving down from a jumps straight to d in Stage 3.
+    const collapsed: PanelState = { ...initialPanelState(), selectedNodeId: "a", collapsedStages: [1] };
+    const down = applyPanelKey([graphRun()], collapsed, "j", opts);
+    expect(down.state.selectedNodeId).toBe("d");
+  });
+
+  it("resets collapse but keeps the filter across a run switch", () => {
+    const runs = [graphRun(), otherRun()];
+    const start: PanelState = { ...initialPanelState(), filter: "failed", collapsedStages: [1], selectedNodeId: "d", scroll: 3 };
+    const right = applyPanelKey(runs, start, "\x1b[C", opts);
+    expect(right.state.runIndex).toBe(1);
+    expect(right.state.filter).toBe("failed");
+    expect(right.state.collapsedStages).toEqual([]);
+    expect(right.state.selectedNodeId).toBeUndefined();
+    expect(right.state.scroll).toBe(0);
+  });
+
+  it("shows the transitive blast radius of a failed node", () => {
+    // A fails → B skipped (depends on A) → C skipped (depends on B): the skip cascades.
+    const progress: WorkflowEntry[] = [
+      agent({ index: 0, label: "A", phaseIndex: 0, state: "error", deps: [], dependents: ["B"], error: "kaboom" }),
+      agent({ index: 1, label: "B", phaseIndex: 1, state: "error", skipped: true, deps: ["A"], dependents: ["C"] }),
+      agent({ index: 2, label: "C", phaseIndex: 2, state: "error", skipped: true, deps: ["B"], dependents: [] }),
+    ];
+    const run: PanelRun = {
+      id: "wf_bl",
+      name: "blast",
+      status: "failed",
+      source: { progress, task: { status: "failed", workflowName: "blast", startTime: NOW - 1_000 }, agentCount: 3 },
+    };
+    const rendered = text([run], { ...initialPanelState(), selectedNodeId: "A" }, { width: 70, now: NOW });
+    expect(rendered).toContain("Blast radius: B, C");
+  });
+
+  it("shows 'none yet' blast radius for a failed leaf with no skipped downstream", () => {
+    const rendered = text([graphRun()], { ...initialPanelState(), selectedNodeId: "d" }, { width: 60, now: NOW });
+    expect(rendered).toContain("Blast radius: none yet");
+  });
+
+  it("renders ASCII collapse indicators and the filter/fold hints", () => {
+    // Wide enough that the full footer hint escapes clamping (narrow widths truncate it, per v1).
+    const rendered = text([graphRun()], { ...initialPanelState(), collapsedStages: [1] }, { width: 120, ascii: true, now: NOW });
+    expect(rendered).toContain("v Stage 1"); // expanded, ASCII tier
+    expect(rendered).toContain("> Stage 2"); // collapsed, ASCII tier
+    expect(rendered).toContain("f filter");
+    expect(rendered).toContain("space fold");
+    for (const glyph of ["▾", "▸"]) expect(rendered).not.toContain(glyph);
+  });
+
+  it("keeps every line within width with filter, collapse, and blast radius active", () => {
+    const state: PanelState = { ...initialPanelState(), filter: "failed", selectedNodeId: "d", collapsedStages: [0] };
+    for (const width of [10, 20, 40, 60, 80, 120]) {
+      for (const ascii of [false, true]) {
+        const lines = plain(renderPanelLines([graphRun(), otherRun()], state, { width, ascii, now: NOW }));
+        for (const line of lines) {
+          expect(stripTerminalSequences(line)).not.toMatch(/[\r\n]/);
+          expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+        }
+      }
+    }
   });
 });
