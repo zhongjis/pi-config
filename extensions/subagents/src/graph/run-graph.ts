@@ -15,8 +15,8 @@
 import { createActor } from "xstate";
 import type { AgentGraph, AgentNode, GraphNode } from "./ir.js";
 import { compileJsonSchema } from "./json-schema.js";
-import { agentNodeLogic } from "./node-actor.js";
-import type { NodeHost, NodeSpawnRequest, NodeSpawnResult } from "./node-host.js";
+import { type NodeExecInput, nodeLogic } from "./node-actor.js";
+import type { NodeHost, NodeSpawnResult } from "./node-host.js";
 import type { NodeRun } from "./scheduler.js";
 import { Scheduler } from "./scheduler.js";
 import { MISSING, type ResolutionContext, resolveValueRef } from "./value-ref.js";
@@ -62,18 +62,20 @@ function parseOutput(node: GraphNode, result: NodeSpawnResult): unknown {
   return result.output;
 }
 
-function buildRequest(nodeId: string, node: AgentNode, attempt: number, ctx: ResolutionContext): NodeSpawnRequest {
-  const request: NodeSpawnRequest = {
+function buildExecInput(nodeId: string, node: AgentNode, host: NodeHost, ctx: ResolutionContext): NodeExecInput {
+  const exec: NodeExecInput = {
+    host,
     nodeId,
-    attempt,
     agentType: node.agent,
     prompt: interpolate(node.prompt, node.input, ctx),
   };
   if (node.outputSchema !== undefined) {
     const compiled = compileJsonSchema(node.outputSchema);
-    if (compiled.ok) request.schema = compiled.compiled;
+    if (compiled.ok) exec.schema = compiled.compiled;
   }
-  return request;
+  if (node.validation?.gate !== undefined) exec.gate = node.validation.gate;
+  if (node.retry?.maxAttempts !== undefined) exec.maxAttempts = node.retry.maxAttempts;
+  return exec;
 }
 
 /** The resolution context over the scheduler's current completed outputs. */
@@ -101,8 +103,8 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
   const launch = (id: string, node: AgentNode): void => {
     scheduler.markRunning(id);
     report(id);
-    const request = buildRequest(id, node, scheduler.nodes.get(id)?.attempt ?? 1, contextOf(scheduler, input));
-    const actor = createActor(agentNodeLogic, { input: { host: options.host, request } });
+    const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input));
+    const actor = createActor(nodeLogic, { input: exec });
     const done = new Promise<string>(resolve => {
       actor.subscribe(snapshot => {
         if (snapshot.status === "done") resolve(id);

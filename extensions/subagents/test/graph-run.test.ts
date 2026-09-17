@@ -45,8 +45,15 @@ describe("runGraph — end to end via XState actors", () => {
   });
 
   it("drives a review->fix loop to approval through real actors", async () => {
+    // Approve on the 3rd scheduler-level run of review (loop iterations), counted
+    // here since request.attempt is the node-internal retry counter, not the loop.
+    let reviews = 0;
     const result = await runGraph(reviewGraph, {}, {
-      host: host((id, attempt) => (id === "review" ? okText(JSON.stringify({ approved: attempt >= 3 })) : okText("ok"))),
+      host: host(id => {
+        if (id !== "review") return okText("ok");
+        reviews++;
+        return okText(JSON.stringify({ approved: reviews >= 3 }));
+      }),
     });
     expect(result.status).toBe("completed");
     expect(result.nodes.review.attempt).toBe(3);

@@ -11,8 +11,9 @@
  * a rejected promise would collapse that distinction into an actor error. A schema
  * mismatch is a node failure, so it comes back the same way — as `ok: false`.
  *
- * Deterministic gate validation and the retry/repair lifecycle are layered on in
- * a later phase; this actor owns the spawn and the schema re-check.
+ * `agentNodeLogic` is the single-attempt primitive (spawn + schema re-check).
+ * `nodeLogic` is the full node-completion lifecycle used by the runner: spawn ->
+ * schema -> gate, retried up to maxAttempts on validation failure.
  */
 
 import { fromPromise } from "xstate";
@@ -49,6 +50,51 @@ export const agentNodeLogic = fromPromise<NodeSpawnResult, AgentNodeInput>(async
   if (!result.ok) return result;
   const schema = input.request.schema;
   return schema === undefined ? result : checkNodeSchema(result, schema);
+});
+
+export interface NodeExecInput {
+  host: NodeHost;
+  nodeId: string;
+  agentType: string;
+  prompt: string;
+  schema?: CompiledSchema;
+  /** Deterministic gate command run after a successful, schema-valid spawn. */
+  gate?: string;
+  /** Total attempts including the first; >1 retries on validation failure. */
+  maxAttempts?: number;
+}
+
+/**
+ * The full node-completion lifecycle as one XState actor: spawn -> schema -> gate,
+ * retried up to `maxAttempts` on validation failure.
+ *
+ * Retry here is node-internal (a validation failure re-runs the same node); it is
+ * distinct from a scheduler loop, which re-enters a node across a cycle. One actor
+ * spans every attempt, so `actor.stop()` aborts whichever spawn is in flight. A
+ * user skip stops retrying immediately; a requested gate with no `runGate` fails
+ * loudly rather than passing unverified work.
+ */
+export const nodeLogic = fromPromise<NodeSpawnResult, NodeExecInput>(async ({ input, signal }) => {
+  const attempts = Math.max(1, input.maxAttempts ?? 1);
+  let last: NodeSpawnResult = { ok: false, error: "node did not run" };
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (signal.aborted) return { ok: false, skipped: true, error: "Aborted." };
+    const request: NodeSpawnRequest = { nodeId: input.nodeId, attempt, agentType: input.agentType, prompt: input.prompt };
+    if (input.schema !== undefined) request.schema = input.schema;
+    let result = await input.host.spawnAgent(request, signal);
+    if (result.ok && input.schema !== undefined) result = checkNodeSchema(result, input.schema);
+    if (result.ok && input.gate !== undefined) {
+      if (input.host.runGate === undefined) {
+        return { ...result, ok: false, error: "This host cannot run gate commands." };
+      }
+      const gate = await input.host.runGate(input.gate, { cwd: result.cwd, signal });
+      if (!gate.ok) result = { ...result, ok: false, error: gate.output.trim() || `Gate command failed: ${input.gate}` };
+    }
+    if (result.ok) return result;
+    last = result;
+    if (result.skipped) return result; // user skip: do not retry
+  }
+  return last;
 });
 
 export type { NodeSpawnRequest };
