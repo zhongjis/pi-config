@@ -132,10 +132,10 @@ Scope is split into two milestones:
 
 - The `/agents → Graph runs` overlay (`WorkflowDialog`) is byte-for-byte
   unchanged.
-- The 8 known WIP `applyPaneKey`/manager tests (they assert an abandoned
-  `selectedPhase` / `level:"phases"→"agent"` roster-nav model) keep compiling and
-  keep their exact current baseline — the panel does not touch that API. Their
-  reconciliation is a tracked decision (below), not part of shipping the panel.
+- The `applyPaneKey` roster path stays a working fallback with its real API
+  (`selectedIndex`, `level:"roster"|"detail"`); the panel does not touch it. The
+  8 abandoned-model WIP tests were reconciled to real coverage once the panel
+  shipped (see WIP-test reconciliation below); the extension suite is fully green.
 - Every rendered line stays within the requested width; the body fills exactly
   the pane height (header + scrolled window + footer), reusing pass 1's `rows`.
 
@@ -199,14 +199,15 @@ State→glyph/color reuses the existing vocabulary (`success`/`error`/`warning`/
 `dim`/`accent`/`muted`); an ASCII tier reuses `ASCII_DIALOG_GLYPHS` gated on the
 pane's `ascii` flag.
 
-### WIP-test reconciliation (tracked decision)
+### WIP-test reconciliation (resolved)
 
-The 8 red baseline tests target an in-pane roster drill-down (`selectedPhase`,
+The 8 red baseline tests targeted an in-pane roster drill-down (`selectedPhase`,
 `level:"phases"→"agent"`) that was never implemented and is superseded by the
-panel's own navigation. Decision: **replace** them with panel tests once the
-panel ships, in a clearly-labeled commit, rather than leaving permanent red or
-silently deleting. Until then they stay at baseline (the panel does not touch
-their API).
+panel's own navigation. Resolved: while shipping the panel they were left at
+baseline (the panel did not touch their API), then reconciled to real coverage —
+the manager input-channel tests now assert the panel's `panelState`, and the
+`applyPaneKey` tests assert the real roster-fallback API. The extension suite is
+now fully green.
 
 ## Testing Decisions
 
@@ -222,8 +223,8 @@ their API).
   stage-collapse transitions (v1.5); ASCII tier; empty / no-run / single-node
   edge cases; and render-throw → roster fallback (asserted at the manager or
   render wrapper).
-- Gate every slice on `tsc --noEmit`, `biome check`, and
-  `pnpm test:extensions` staying at the 8-failure baseline (no new failures).
+- Gate every slice on `tsc --noEmit`, `biome check`, and `pnpm test:extensions`
+  (the suite is fully green — no failures).
 
 ## Out of Scope
 
