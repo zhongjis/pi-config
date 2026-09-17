@@ -83,4 +83,15 @@ describe("GraphRunReporter", () => {
     completeGraphTask(t, { status: "aborted", outputs: {}, nodes: {} });
     expect(t.status).toBe("killed");
   });
+
+  it("setResolved plumbs model and modelId into the node's progress entry", () => {
+    const t = task();
+    const reporter = new GraphRunReporter(t, graph);
+    reporter.update("a", { status: "running", attempt: 1 });
+    reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" });
+    const { agents } = collapse(t.workflowProgress);
+    const a = agents.find(e => e.label === "a");
+    expect(a?.model).toBe("haiku 4.5");
+    expect(a?.modelId).toBe("anthropic/claude-haiku-4-5");
+  });
 });

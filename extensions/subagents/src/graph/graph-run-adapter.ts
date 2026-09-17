@@ -14,6 +14,7 @@
  */
 
 import type { AgentGraph } from "./ir.js";
+import type { NodeResolvedInfo } from "./node-host.js";
 import type { WorkflowAgentEntry } from "./progress.js";
 import type { RunGraphResult } from "./run-graph.js";
 import type { NodeRun } from "./scheduler.js";
@@ -37,6 +38,8 @@ export class GraphRunReporter {
   private readonly deps = new Map<string, string[]>();
   private readonly agentType = new Map<string, string>();
   private readonly stage = new Map<string, number>();
+  private readonly resolved = new Map<string, { model?: string; modelId?: string }>();
+  private readonly lastRun = new Map<string, Readonly<NodeRun>>();
   private readonly queuedAt: number;
 
   constructor(
@@ -80,12 +83,20 @@ export class GraphRunReporter {
   }
 
   update(nodeId: string, run: Readonly<NodeRun>, now: number = Date.now()): void {
+    this.lastRun.set(nodeId, run);
     updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
+  }
+
+  setResolved(nodeId: string, info: NodeResolvedInfo, now: number = Date.now()): void {
+    this.resolved.set(nodeId, { model: info.modelName, modelId: info.modelId });
+    const run = this.lastRun.get(nodeId);
+    if (run !== undefined) updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
   }
 
   private entry(nodeId: string, run: Readonly<NodeRun>, now: number): WorkflowAgentEntry {
     const deps = this.deps.get(nodeId) ?? [];
     const stage = this.stage.get(nodeId) ?? 0;
+    const res = this.resolved.get(nodeId);
     const base: WorkflowAgentEntry = {
       type: "workflow_agent",
       index: this.index.get(nodeId) ?? 0,
@@ -97,6 +108,8 @@ export class GraphRunReporter {
       promptPreview: deps.length > 0 ? `depends on: ${deps.join(", ")}` : "entry node",
       queuedAt: this.queuedAt,
       ...(run.attempt > 0 ? { attempt: run.attempt } : {}),
+      ...(res?.model !== undefined ? { model: res.model } : {}),
+      ...(res?.modelId !== undefined ? { modelId: res.modelId } : {}),
     };
     switch (run.status) {
       case "pending":

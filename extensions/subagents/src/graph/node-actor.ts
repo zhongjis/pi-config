@@ -18,7 +18,7 @@
 
 import { fromPromise } from "xstate";
 import type { CompiledSchema } from "./json-schema.js";
-import type { NodeHost, NodeSpawnRequest, NodeSpawnResult } from "./node-host.js";
+import type { NodeHost, NodeResolvedInfo, NodeSpawnRequest, NodeSpawnResult } from "./node-host.js";
 
 export interface AgentNodeInput {
   host: NodeHost;
@@ -58,6 +58,7 @@ export interface NodeExecInput {
   agentType: string;
   prompt: string;
   schema?: CompiledSchema;
+  onResolved?(info: NodeResolvedInfo): void;
   /** Deterministic gate command run after a successful, schema-valid spawn. */
   gate?: string;
   /** Total attempts including the first; >1 retries on validation failure. */
@@ -80,6 +81,7 @@ export const nodeLogic = fromPromise<NodeSpawnResult, NodeExecInput>(async ({ in
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (signal.aborted) return { ok: false, skipped: true, error: "Aborted." };
     const request: NodeSpawnRequest = { nodeId: input.nodeId, attempt, agentType: input.agentType, prompt: input.prompt };
+    if (input.onResolved !== undefined) request.onResolved = input.onResolved;
     if (input.schema !== undefined) request.schema = input.schema;
     let result = await input.host.spawnAgent(request, signal);
     if (result.ok && input.schema !== undefined) result = checkNodeSchema(result, input.schema);

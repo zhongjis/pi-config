@@ -30,7 +30,7 @@ import type {
 } from "./ir.js";
 import { compileJsonSchema } from "./json-schema.js";
 import { checkNodeSchema, type NodeExecInput, nodeLogic } from "./node-actor.js";
-import type { NodeHost, NodeSpawnResult } from "./node-host.js";
+import type { NodeHost, NodeResolvedInfo, NodeSpawnResult } from "./node-host.js";
 import type { NodeRun, SchedulerState, SettleInput } from "./scheduler.js";
 import { Scheduler } from "./scheduler.js";
 import { validateFragment, validateGraph } from "./validate.js";
@@ -69,6 +69,8 @@ export interface RunGraphOptions {
   resources?: Record<string, { capacity: number }>;
   /** Fired whenever a node changes state — the monitor's data feed. */
   onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>): void;
+  /** Fired once the child agent's effective model is known. */
+  onNodeResolved?(nodeId: string, info: NodeResolvedInfo): void;
   /** Hands the caller the run's control surface, once, before the first node. */
   onControl?(control: GraphControl): void;
   /** Restore progress from a prior run's snapshot (durable resume). */
@@ -120,7 +122,13 @@ function parseOutput(node: GraphNode, result: NodeSpawnResult): unknown {
   return result.output;
 }
 
-function buildExecInput(nodeId: string, node: AgentNode, host: NodeHost, ctx: ResolutionContext): NodeExecInput {
+function buildExecInput(
+  nodeId: string,
+  node: AgentNode,
+  host: NodeHost,
+  ctx: ResolutionContext,
+  options: RunGraphOptions,
+): NodeExecInput {
   const exec: NodeExecInput = {
     host,
     nodeId,
@@ -133,6 +141,10 @@ function buildExecInput(nodeId: string, node: AgentNode, host: NodeHost, ctx: Re
   }
   if (node.validation?.gate !== undefined) exec.gate = node.validation.gate;
   if (node.retry?.maxAttempts !== undefined) exec.maxAttempts = node.retry.maxAttempts;
+  if (options.onNodeResolved !== undefined) {
+    const cb = options.onNodeResolved;
+    exec.onResolved = info => cb(nodeId, info);
+  }
   return exec;
 }
 
@@ -286,7 +298,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     scheduler.markRunning(id);
     report(id);
     acquire(resources);
-    const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input));
+    const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input), options);
     const actor = createActor(nodeLogic, { input: exec });
     const done = new Promise<string>(resolve => {
       // Resolve on any terminal transition — done, or stopped by a skip/retry —

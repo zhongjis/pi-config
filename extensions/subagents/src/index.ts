@@ -1515,6 +1515,9 @@ Terse command-style prompts produce shallow, generic work.
           reporter.update(nodeId, run);
           workflowPane?.sync();
         },
+        onNodeResolved: (nodeId, info) => {
+          reporter.setResolved(nodeId, info);
+        },
       });
       completeGraphTask(task, result);
       workflowPane?.sync();

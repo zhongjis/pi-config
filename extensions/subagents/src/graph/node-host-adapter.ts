@@ -41,7 +41,9 @@ function reportResolved(record: AgentRecord, report: NodeSpawnRequest["onResolve
   report?.({
     recordId: record.id,
     ...record.invocation,
-    ...(record.session?.model ? { modelId: record.session.model.id } : {}),
+    ...(record.session?.model
+      ? { modelName: record.session.model.name ?? record.session.model.id, modelId: record.session.model.id }
+      : {}),
   });
 }
 
