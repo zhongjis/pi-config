@@ -42,7 +42,7 @@ import { admitWorkflow, runWorkflow } from "./graph/runtime.js";
 import { resolveWorkflowScript } from "./graph/saved.js";
 import { resolveSavedGraph } from "./graph/saved-graph.js";
 import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./graph/task.js";
-import { workflowSkillPath, workflowToolDescription } from "./graph/tool-description.js";
+import { graphSkillPath, graphToolDescription, workflowSkillPath, workflowToolDescription } from "./graph/tool-description.js";
 import { validateGraph } from "./graph/validate.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
@@ -1795,7 +1795,7 @@ Terse command-style prompts produce shallow, generic work.
 
   if (isWorkflowsEnabled()) {
     pi.registerTool(workflowTool);
-    pi.on("resources_discover", () => isWorkflowsEnabled() ? { skillPaths: [workflowSkillPath] } : undefined);
+    pi.on("resources_discover", () => (isWorkflowsEnabled() ? { skillPaths: [workflowSkillPath, graphSkillPath] } : undefined));
   }
 
   // The typed graph runtime's public tool. Gated by the same workflow opt-in and
@@ -1806,10 +1806,7 @@ Terse command-style prompts produce shallow, generic work.
   const agentGraphTool = defineTool({
     name: SUBAGENT_TOOL_NAMES.AGENT_GRAPH,
     label: "agent_graph",
-    description:
-      "Execute a typed agent graph (nodes + edges) only with explicit user opt-in to workflow/multi-agent " +
-      "orchestration; otherwise ask first. `graph` is a saved graph name (`.pi/agent-graphs/<name>.graph.json`) " +
-      "or an inline AgentGraph object; `input` is the graph input. The graph is validated before anything runs.",
+    description: graphToolDescription,
     promptSnippet: "Run a typed agent graph",
     parameters: Type.Object({
       graph: Type.Union(

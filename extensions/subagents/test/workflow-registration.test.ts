@@ -52,10 +52,10 @@ it("persists the Settings toggle but registers its schema only on the next activ
   expect(reloaded.tools.get("SubagentWorkflow")?.parameters.properties).toHaveProperty("resumeFromRunId");
 });
 
-it("discovers the bundled authoring skill only when workflows are enabled", async () => {
+it("discovers the bundled authoring skills only when workflows are enabled", async () => {
   const host = boot({ workflowsEnabled: true });
   const resources = await host.discover();
-  expect(resources).toEqual([{ skillPaths: [expect.any(String)] }]);
+  expect(resources).toEqual([{ skillPaths: [expect.any(String), expect.any(String)] }]);
   const resource = required(resources[0]);
   assert.ok(resource !== null && typeof resource === "object" && "skillPaths" in resource);
   assert.ok(Array.isArray(resource.skillPaths));
@@ -65,6 +65,10 @@ it("discovers the bundled authoring skill only when workflows are enabled", asyn
   const { frontmatter, body } = parseFrontmatter(readFileSync(path, "utf8"));
   expect(frontmatter.name).toBe("subagent-workflows");
   expect(frontmatter.description).toEqual(expect.any(String));
+  const graphPath: unknown = resource.skillPaths[1];
+  assert.ok(typeof graphPath === "string");
+  expect(graphPath).toBe(join(originalCwd, "extensions/subagents/skills/agent-graphs/SKILL.md"));
+  expect(parseFrontmatter(readFileSync(graphPath, "utf8")).frontmatter.name).toBe("agent-graphs");
   const examples = [...body.matchAll(/^```js\n([\s\S]*?)^```/gm)].map(match => match[1]);
   expect(examples.length).toBeGreaterThanOrEqual(2);
   expect(examples.length).toBeLessThanOrEqual(3);
