@@ -969,6 +969,8 @@ Use this sequence:
 
 The two current script workflows are out of scope and are discarded, not ported, so nothing external gates removing the legacy runtime once Section 1 reaches parity for in-scope use. The hard case the graph model must still handle on its own terms is independent fan-out plus in-graph synthesis and bounded loops — the logic that had no `action` node to land on and must map onto agent nodes, conditions, and typed wiring instead.
 
+**Status update (shipped):** Steps 10–11 are complete. The two out-of-scope scripts (`deep-research.js`, `last30days.js`) were discarded and the legacy `SubagentWorkflow` script runtime removed. The reusable-workflow portfolio ([spec](../specs/agent-graph-reusable-workflows.md)) was authored, validated, and run for real first — hardening the runtime — so the reusable-workflow replacement now exists. The removal is recorded in [ADR 0002](../adr/0002-remove-subagentworkflow-script-runtime.md), which supersedes this section's deferral of legacy removal.
+
 ---
 
 ## Summary
