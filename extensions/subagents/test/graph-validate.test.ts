@@ -78,6 +78,14 @@ describe("validateGraph — accepts well-formed graphs", () => {
     };
     expect(validateGraph(graph).ok).toBe(true);
   });
+
+  it("accepts an agent prompt whose placeholder is wired in input", () => {
+    const graph: AgentGraph = {
+      nodes: { a: { type: "agent", agent: "x", prompt: `Fix \${task}`, input: { task: { path: "$.task" } } } },
+      edges: [],
+    };
+    expect(validateGraph(graph)).toEqual({ ok: true, errors: [] });
+  });
 });
 
 describe("validateGraph — rejects malformed graphs", () => {
@@ -96,6 +104,29 @@ describe("validateGraph — rejects malformed graphs", () => {
   it("rejects an unknown node type", () => {
     const errors = bad({ nodes: { a: { type: "action", action: "sh" } }, edges: [] });
     expect(errors.some(e => e.includes("nodes.a.type") && e.includes("agent | human_gate | graph | expand"))).toBe(true);
+  });
+
+  it("rejects an agent prompt whose placeholder is not wired in input", () => {
+    const errors = bad({
+      nodes: { a: { type: "agent", agent: "x", prompt: `Fix \${task} for \${owner}`, input: { task: { path: "$.task" } } } },
+      edges: [],
+    });
+    expect(errors).toContain(`nodes.a.prompt: references \${owner} but node.input has no "owner" mapping`);
+    expect(errors.some(e => e.includes(`\${task}`))).toBe(false);
+  });
+
+  it("rejects a human_gate prompt placeholder that is not wired in input", () => {
+    const errors = bad({
+      nodes: {
+        g: {
+          type: "human_gate",
+          prompt: `Approve \${plan}?`,
+          outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] },
+        },
+      },
+      edges: [],
+    });
+    expect(errors).toContain(`nodes.g.prompt: references \${plan} but node.input has no "plan" mapping`);
   });
 
   it("rejects an agent node missing agent/prompt", () => {

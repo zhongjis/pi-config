@@ -482,7 +482,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
         launchHumanGate(id, node);
         continue;
       }
-      scheduler.settle(id, { ok: false, error: `node type "${node.type}" is not supported yet` });
+      scheduler.settle(id, { ok: false, error: `node type "${(node as { type: string }).type}" is not supported yet` });
       report(id);
       progressed = true;
     }
@@ -495,7 +495,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
         // finishing the run.
         await new Promise<void>(resolve => {
           wakePause = resolve;
-          options.signal?.addEventListener("abort", resolve, { once: true });
+          options.signal?.addEventListener("abort", () => resolve(), { once: true });
         });
         continue;
       }

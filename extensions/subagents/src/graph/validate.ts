@@ -125,6 +125,24 @@ class Validator {
     if (compiled.ok === false) this.err(path, compiled.message);
   }
 
+  /**
+   * A prompt template resolves `${name}` only from the node's own `input` map
+   * (see run-graph.ts `interpolate`), so an unmapped placeholder would silently
+   * reach the agent as a literal `${name}`. Flag it at authoring time instead.
+   */
+  promptPlaceholders(path: string, prompt: unknown, input: unknown): void {
+    if (typeof prompt !== "string") return;
+    const keys = isPlainObject(input) ? new Set(Object.keys(input)) : new Set<string>();
+    const re = /\$\{([A-Za-z_$][\w$]*)\}/g;
+    const missing = new Set<string>();
+    for (let match = re.exec(prompt); match !== null; match = re.exec(prompt)) {
+      if (!keys.has(match[1])) missing.add(match[1]);
+    }
+    for (const name of missing) {
+      this.err(`${path}.prompt`, `references \${${name}} but node.input has no "${name}" mapping`);
+    }
+  }
+
   node(id: NodeId, node: unknown): void {
     const path = `nodes.${id}`;
     if (!isPlainObject(node)) {
@@ -141,6 +159,7 @@ class Validator {
         if (!isNonEmptyString(node.agent)) this.err(`${path}.agent`, "must be a non-empty agent selector");
         if (!isNonEmptyString(node.prompt)) this.err(`${path}.prompt`, "must be a non-empty prompt");
         this.inputMap(`${path}.input`, node.input);
+        this.promptPlaceholders(path, node.prompt, node.input);
         if (node.outputSchema !== undefined) this.schema(`${path}.outputSchema`, node.outputSchema, true);
         if (node.validation !== undefined) {
           if (!isPlainObject(node.validation)) this.err(`${path}.validation`, "must be an object");
@@ -162,6 +181,7 @@ class Validator {
       case "human_gate":
         if (!isNonEmptyString(node.prompt)) this.err(`${path}.prompt`, "must be a non-empty prompt");
         this.inputMap(`${path}.input`, node.input);
+        this.promptPlaceholders(path, node.prompt, node.input);
         if (node.outputSchema === undefined) this.err(`${path}.outputSchema`, "is required for a human_gate node");
         else this.schema(`${path}.outputSchema`, node.outputSchema, true);
         break;
