@@ -6,6 +6,24 @@ This plan covers **Section 1 only** — the `agent_graph` runtime and tool insid
 `extensions/subagents`. Section 2 (reusable workflow portfolio, mode integration) is
 deferred and out of scope here.
 
+## Status — shipped
+
+Section 1 is implemented and green on `main` (unit suite passes except pre-existing
+Herdr-pane WIP + a macOS `/tmp` gate test). Delivered: `xstate` dep + `src/graph/`
+module; IR + validator; XState node actor with schema/gate/bounded-retry lifecycle;
+pure scheduler (readiness, conditions, bounded loops, skips, resources); async
+`run-graph` driver with global + per-resource concurrency and live controls
+(pause/resume/skip/retry); all four node types — **agent, subgraph, expand,
+human_gate**; real `AgentManager` `NodeHost` adapter; the `agent_graph` tool
+(saved `.graph.json` + inline, validated, opt-in, background task + notify);
+the `/agents → Workflows` monitor showing graph runs grouped by topological stage
+with per-node status, dependency hints, and controls; **durable human_gate
+persistence** across a restart (persist at gate → reload on `session_start` →
+re-surface, proven end-to-end); and the `agent-graphs` authoring skill.
+
+Deferred / out of scope: legacy script-runtime removal (§2.8, gated on the deferred
+Fuxi/Houtu migration) and the Section 2 reusable-workflow portfolio.
+
 ## Locked decisions
 
 - **Replace** the `SubagentWorkflow` script runtime with a typed, graph-first runtime on **XState v5**.
