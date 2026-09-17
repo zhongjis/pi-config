@@ -36,6 +36,7 @@ function preview(value: unknown): string {
 export class GraphRunReporter {
   private readonly index = new Map<string, number>();
   private readonly deps = new Map<string, string[]>();
+  private readonly dependents = new Map<string, string[]>();
   private readonly agentType = new Map<string, string>();
   private readonly stage = new Map<string, number>();
   private readonly resolved = new Map<string, { model?: string; modelId?: string }>();
@@ -60,6 +61,15 @@ export class GraphRunReporter {
       );
       const node = graph.nodes[id];
       this.agentType.set(id, node.type === "agent" ? node.agent : node.type);
+    }
+    // Downstream is the inverse of deps: each node lists the nodes it unblocks, so
+    // the monitor can join a failure to its blast radius without re-walking edges.
+    for (const id of ids) {
+      for (const dep of this.deps.get(id) ?? []) {
+        const list = this.dependents.get(dep) ?? [];
+        list.push(id);
+        this.dependents.set(dep, list);
+      }
     }
     // Topological layer of each node (longest forward-dependency chain), so the
     // monitor groups nodes by DAG stage instead of a flat roster — a graph-shaped
@@ -106,6 +116,8 @@ export class GraphRunReporter {
       phaseTitle: `Stage ${stage + 1}`,
       agentType: this.agentType.get(nodeId),
       promptPreview: deps.length > 0 ? `depends on: ${deps.join(", ")}` : "entry node",
+      deps,
+      dependents: this.dependents.get(nodeId) ?? [],
       queuedAt: this.queuedAt,
       ...(run.attempt > 0 ? { attempt: run.attempt } : {}),
       ...(res?.model !== undefined ? { model: res.model } : {}),

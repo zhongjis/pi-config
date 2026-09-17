@@ -109,6 +109,13 @@ export interface WorkflowAgentEntry {
   tokens?: number;
   toolCalls?: number;
   durationMs?: number;
+  /**
+   * Forward, non-loop predecessors — the nodes this one waits on (upstream).
+   * Set by the graph adapter from the run's topology; absent for non-graph runs.
+   */
+  deps?: string[];
+  /** Forward successors — the nodes this one unblocks (downstream); inverse of {@link deps}. */
+  dependents?: string[];
 }
 
 export type WorkflowEntry = WorkflowPhaseEntry | WorkflowLogEntry | WorkflowAgentEntry;

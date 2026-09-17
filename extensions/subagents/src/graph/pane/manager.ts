@@ -15,13 +15,20 @@
 
 import { type FSWatcher, mkdirSync, watch } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { initialPanelState, type PanelRun, type PanelState } from "../../ui/observability-panel.js";
 import { initialWorkflowDialogState, type WorkflowDialogSource, type WorkflowDialogState } from "../../ui/workflow-dialog.js";
 import type { WorkflowTask } from "../task.js";
 import {
   type PaneExec,
   WorkflowPaneController,
 } from "./controller.js";
-import { applyPaneKey, renderWorkflowPaneLines, toPaneSource } from "./render.js";
+import {
+  applyObservabilityPaneKey,
+  applyPaneKey,
+  renderObservabilityPaneLines,
+  renderWorkflowPaneLines,
+  toPaneSource,
+} from "./render.js";
 import { paneDirFor, readInput, readRecord, readViewport, writeSnapshotAtomic } from "./store.js";
 
 /** Fallback width before the viewer has reported its terminal size. */
@@ -62,7 +69,13 @@ export class WorkflowPaneManager {
   /** Serialise sync bodies so a debounced write and a tick cannot race a split. */
   private inFlight = false;
   private again = false;
-  /** The pane's own view state, driven by forwarded keys. See `applyPaneKey`. */
+  /** The observability panel's view state, driven by forwarded keys. See `applyObservabilityPaneKey`. */
+  private panelState: PanelState = initialPanelState();
+  /** The run the user pinned with `←/→`; unset means follow the last-active run. */
+  private pinnedRunId: string | undefined;
+  /** The run the panel last rendered, so a switch resets node selection and scroll. */
+  private lastPanelRunId: string | undefined;
+  /** The roster view state, kept for the on-throw fallback render. See `applyPaneKey`. */
   private paneState: WorkflowDialogState = initialWorkflowDialogState();
   /** Highest input sequence already applied, so each keystroke lands once. */
   private lastInputSeq = 0;
@@ -199,6 +212,85 @@ export class WorkflowPaneManager {
     return task;
   }
 
+  /** All runs this session has seen, newest first — the switcher's run list order. */
+  private sortedTasks(): WorkflowTask[] {
+    return [...this.getTasks()].sort((a, b) => b.startTime - a.startTime);
+  }
+
+  private toRuns(tasks: readonly WorkflowTask[]): PanelRun[] {
+    return tasks.map(task => ({
+      id: task.id,
+      name: task.workflowName ?? task.meta?.name ?? task.id,
+      status: task.status,
+      source: toPaneSource(task),
+    }));
+  }
+
+  /**
+   * Which run the switcher points at: the pinned run if it still exists, else the
+   * last-active run (the `pickTask` rule). A vanished pin falls back to last-active.
+   * Resets the panel's node selection and scroll when the shown run changes.
+   */
+  private resolveRunIndex(tasks: readonly WorkflowTask[]): number {
+    if (tasks.length === 0) return 0;
+    let index = -1;
+    if (this.pinnedRunId !== undefined) {
+      index = tasks.findIndex(task => task.id === this.pinnedRunId);
+      if (index < 0) this.pinnedRunId = undefined;
+    }
+    if (index < 0) {
+      const active = this.pickTask();
+      index = active ? tasks.findIndex(task => task.id === active.id) : -1;
+      if (index < 0) index = 0;
+    }
+    const shownId = tasks[index]?.id;
+    if (shownId !== this.lastPanelRunId) {
+      this.panelState.selectedNodeId = undefined;
+      this.panelState.scroll = 0;
+      this.lastPanelRunId = shownId;
+    }
+    return index;
+  }
+
+  /** Render the panel, falling back to the roster render if the panel ever throws. */
+  private renderPanelOrRoster(tasks: readonly WorkflowTask[], width: number, rows: number | undefined): string[] {
+    const runs = this.toRuns(tasks);
+    const index = this.resolveRunIndex(tasks);
+    this.panelState.runIndex = index;
+    try {
+      return renderObservabilityPaneLines(runs, this.panelState, { width, rows });
+    } catch {
+      const task = tasks[index] ?? tasks[0];
+      return renderWorkflowPaneLines(toPaneSource(task), { width, state: this.paneState, rows });
+    }
+  }
+
+  /** Apply a key through the panel, falling back to the roster handler if it throws. */
+  private applyPanelOrRosterKey(
+    tasks: readonly WorkflowTask[], data: string, width: number, rows: number | undefined,
+  ): { lines: string[]; close: boolean } {
+    const runs = this.toRuns(tasks);
+    const index = this.resolveRunIndex(tasks);
+    this.panelState.runIndex = index;
+    try {
+      const result = applyObservabilityPaneKey(runs, this.panelState, data, { width, rows });
+      this.panelState = result.state;
+      if (this.panelState.runIndex !== index) {
+        this.pinnedRunId = runs[this.panelState.runIndex]?.id;
+        this.lastPanelRunId = this.pinnedRunId;
+      }
+      return { lines: result.lines, close: result.close };
+    } catch {
+      const task = tasks[index];
+      const source: WorkflowDialogSource = task
+        ? toPaneSource(task)
+        : { progress: [], task: { status: "completed", startTime: 0 }, agentCount: 0 };
+      const result = applyPaneKey(source, this.paneState, data, { width, rows });
+      this.paneState = result.state;
+      return { lines: result.lines, close: result.close };
+    }
+  }
+
   /**
    * Apply the latest forwarded keystroke, if newer than the last one applied, and
    * write the resulting snapshot immediately (not debounced) for responsiveness.
@@ -208,9 +300,8 @@ export class WorkflowPaneManager {
     const input = readInput(this.dir);
     if (!input || input.seq <= this.lastInputSeq) return;
     this.lastInputSeq = input.seq;
-    // Track the shown run so a switch resets the view; when there is no run an
-    // empty source still lets esc close the pane.
-    const task = this.pickAndTrack();
+    // Keep the roster fallback's view state fresh (paneState reset + lastShownTaskId).
+    this.pickAndTrack();
     let data: string;
     try {
       data = Buffer.from(input.data, "base64").toString("utf8");
@@ -221,12 +312,8 @@ export class WorkflowPaneManager {
       const vp = readViewport(this.dir);
       const width = vp?.cols ?? DEFAULT_WIDTH;
       const rows = vp?.rows;
-      const source: WorkflowDialogSource = task
-        ? toPaneSource(task)
-        : { progress: [], task: { status: "completed", startTime: 0 }, agentCount: 0 };
-      const { state, lines, close } = applyPaneKey(source, this.paneState, data, { width, rows });
-      this.paneState = state;
-      // esc/q at the overview level is the pane's one honoured action: a real,
+      const { lines, close } = this.applyPanelOrRosterKey(this.sortedTasks(), data, width, rows);
+      // esc/q at the top level is the pane's one honoured action: a real,
       // user-initiated close. Do not paint a fresh snapshot after it.
       if (close) {
         await this.controller?.closeForUser();
@@ -286,7 +373,8 @@ export class WorkflowPaneManager {
 
   private async syncNow(force: boolean): Promise<void> {
     if (!this.enabled || !this.controller || this.disposed) return;
-    const task = this.pickAndTrack();
+    // Keep the roster fallback's view state fresh (paneState reset + lastShownTaskId).
+    this.pickAndTrack();
 
     try {
       if (force) {
@@ -302,8 +390,9 @@ export class WorkflowPaneManager {
       const vp = readViewport(this.dir);
       const width = vp?.cols ?? DEFAULT_WIDTH;
       const rows = vp?.rows;
-      const lines = task
-        ? renderWorkflowPaneLines(toPaneSource(task), { width, state: this.paneState, rows })
+      const tasks = this.sortedTasks();
+      const lines = tasks.length > 0
+        ? this.renderPanelOrRoster(tasks, width, rows)
         : ["", "  No graph runs in this session yet."];
       writeSnapshotAtomic(this.dir, {
         version: 1,

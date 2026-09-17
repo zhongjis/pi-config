@@ -10,6 +10,13 @@
  */
 
 import type { Theme } from "../../ui/agent-widget.js";
+import {
+  applyPanelKey,
+  type PanelOptions,
+  type PanelRun,
+  type PanelState,
+  renderPanelLines,
+} from "../../ui/observability-panel.js";
 import type { WorkflowCardColor } from "../../ui/workflow-card.js";
 import { styleWorkflowCardLines } from "../../ui/workflow-card.js";
 import {
@@ -161,5 +168,36 @@ export function applyPaneKey(
       state: nextState,
       rows: opts.rows,
     }),
+  };
+}
+
+/**
+ * Render the run observability panel for the pane, as ANSI strings clamped to
+ * `width`. Mirrors {@link renderWorkflowPaneLines} but drives the panel renderer;
+ * the manager falls back to the roster render on a throw.
+ */
+export function renderObservabilityPaneLines(
+  runs: readonly PanelRun[],
+  state: PanelState,
+  opts: PanelOptions,
+): string[] {
+  return styleWorkflowCardLines(renderPanelLines(runs, state, opts), PANE_ANSI_THEME);
+}
+
+/**
+ * Apply one forwarded keystroke to the panel's view state and re-render. Mirrors
+ * {@link applyPaneKey}: read-only, only `esc`/`q` at the top level closes.
+ */
+export function applyObservabilityPaneKey(
+  runs: readonly PanelRun[],
+  state: PanelState,
+  data: string,
+  opts: PanelOptions,
+): { state: PanelState; lines: string[]; close: boolean } {
+  const result = applyPanelKey(runs, state, data, opts);
+  return {
+    state: result.state,
+    lines: styleWorkflowCardLines(result.lines, PANE_ANSI_THEME),
+    close: result.close,
   };
 }
