@@ -15,7 +15,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { WorkflowJournalEntry } from "./journal.js";
 import { outcomeLabel, type WorkflowOutcome } from "./outcome.js";
 import { collapse, elapsedMs, stats, type WorkflowEntry, type WorkflowRunStatus } from "./progress.js";
 import type { WorkflowControl, WorkflowMeta, WorkflowRunResult } from "./workflow-types.js";
@@ -57,11 +56,9 @@ export interface WorkflowTask {
 
   /** Where this run records its own settled calls, for a later resume. */
   journalPath?: string;
-  /** A previous run's journal, when this call asked to resume one. */
-  replay?: readonly WorkflowJournalEntry[];
   /** The run id this one resumed, for the result line that says so. */
   resumedFrom?: string;
-  /** How many agents came back from {@link replay} instead of being spawned. */
+  /** How many agents were restored from an earlier run instead of being spawned. */
   replayedCount: number;
 
   /** The append-only event log, in emission order. */
@@ -102,7 +99,6 @@ export function createWorkflowTask(init: {
   toolCallId?: string;
   startTime?: number;
   journalPath?: string;
-  replay?: readonly WorkflowJournalEntry[];
   resumedFrom?: string;
 }): WorkflowTask {
   return {
@@ -116,7 +112,6 @@ export function createWorkflowTask(init: {
     workflowName: init.meta?.name,
     toolCallId: init.toolCallId,
     journalPath: init.journalPath,
-    replay: init.replay,
     resumedFrom: init.resumedFrom,
     replayedCount: 0,
     workflowProgress: [],

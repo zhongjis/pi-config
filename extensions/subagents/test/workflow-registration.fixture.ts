@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { AgentSession, ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 
@@ -26,7 +26,6 @@ type Result = { content: { type: string; text?: string }[]; details?: { taskId?:
 const plainTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
 type Tool = { name: string; description: string; parameters: { properties: Record<string, unknown> }; renderResult(result: Result, options: { expanded: boolean }, theme: typeof plainTheme, context: { isError: boolean }): { render(width: number): string[] }; execute(id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, update: undefined, ctx: ExtensionContext): Promise<Result> };
 type Hook = (event: unknown, ctx: ExtensionContext) => unknown;
-const source = "export const meta = {name:'fixture', description:'registration test'}; return await agent(args.prompt, {agentType:'fixture'});";
 const model = { provider: "test", id: "chosen", name: "Chosen", reasoning: true };
 let dir: string;
 let originalCwd: string;
@@ -101,24 +100,13 @@ function boot(settings: Record<string, unknown> = {}) {
   extension(extensionApi as ExtensionAPI);
   const lifecycle = async (name: string) => { for (const hook of hooks.get(name) ?? []) await hook({}, ctx); };
   shutdown = () => lifecycle("session_shutdown");
-  const execute = async (input: Record<string, unknown>) => {
-    const result = await required(tools.get("SubagentWorkflow")).execute("call", input, undefined, undefined, ctx);
-    const path = result.content[0]?.text?.match(/Script: (.+)/)?.[1];
-    if (path?.includes("/pi-subagents-")) artifactDirs.add(dirname(path));
-    return result;
-  };
-  const finish = async (result: Result) => {
-    let event = { type: "tool_result", toolName: "SubagentWorkflow", toolCallId: "call", input: {}, isError: false, ...result };
-    for (const hook of hooks.get("tool_result") ?? []) event = { ...event, ...await hook(event, ctx) as object };
-    return event as Result;
-  };
   const notification = async (id: string) => {
     await vi.waitFor(() => expect(api.sendMessage.mock.calls.some(([message]) => message.content.includes(`<task-id>${id}</task-id>`))).toBe(true));
     return required(api.sendMessage.mock.calls.find(([message]) => message.content.includes(`<task-id>${id}</task-id>`)))[0];
   };
   const discover = async () => Promise.all((hooks.get("resources_discover") ?? []).map(hook => hook({ type: "resources_discover", cwd: dir, reason: "startup" }, ctx)));
-  return { api, ui, tools, ctx, commands, execute, finish, notification, lifecycle, discover,
+  return { api, ui, tools, ctx, commands, notification, lifecycle, discover,
     setFlag: (value: unknown) => { flag = value; }, setForeign: (value: typeof foreign) => { foreign = value; } };
 }
 
-export { artifactDirs, boot, dir, originalCwd, plainTheme, required, session, settingsUI, source };
+export { artifactDirs, boot, dir, originalCwd, plainTheme, required, session, settingsUI };
