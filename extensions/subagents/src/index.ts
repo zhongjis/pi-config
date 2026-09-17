@@ -27,6 +27,7 @@ import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ModeStateE
 import { isModelInScope, readEnabledModels, resolveEnabledModels } from "./enabled-models.js";
 import { decideWorkflowCollision } from "./graph/collisions.js";
 import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./graph/entry.js";
+import { deleteGraphSnapshot, readGraphSnapshots, writeGraphSnapshot } from "./graph/graph-persist.js";
 import { completeGraphTask, GraphRunReporter } from "./graph/graph-run-adapter.js";
 import { createWorkflowHost } from "./graph/host.js";
 import type { AgentGraph } from "./graph/ir.js";
@@ -41,6 +42,7 @@ import { runGraph } from "./graph/run-graph.js";
 import { admitWorkflow, runWorkflow } from "./graph/runtime.js";
 import { resolveWorkflowScript } from "./graph/saved.js";
 import { resolveSavedGraph } from "./graph/saved-graph.js";
+import type { SchedulerState } from "./graph/scheduler.js";
 import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./graph/task.js";
 import { graphSkillPath, graphToolDescription, workflowSkillPath, workflowToolDescription } from "./graph/tool-description.js";
 import { validateGraph } from "./graph/validate.js";
@@ -694,6 +696,7 @@ export default function (pi: ExtensionAPI) {
     await workflowPane.reconcile();
     resolveWorkflowCollisions(ctx);
     runWorkflowFlag(ctx);
+    if (isWorkflowsEnabled()) resumeDurableGraphRuns(ctx);
   });
 
   pi.on("session_before_switch", async () => {
@@ -1473,7 +1476,7 @@ Terse command-style prompts produce shallow, generic work.
    * either way. Mirrors {@link runWorkflowTask} but drives the graph runtime and
    * maps node updates onto the task's progress log via {@link GraphRunReporter}.
    */
-  async function runGraphTask(ctx: ExtensionContext, task: WorkflowTask, graph: AgentGraph, input: unknown): Promise<void> {
+  async function runGraphTask(ctx: ExtensionContext, task: WorkflowTask, graph: AgentGraph, input: unknown, restore?: SchedulerState): Promise<void> {
     const host = createNodeHost({
       pi,
       ctx,
@@ -1488,12 +1491,25 @@ Terse command-style prompts produce shallow, generic work.
       const result = await runGraph(graph, input, {
         host,
         signal: task.abortController.signal,
+        ...(restore !== undefined ? { restore } : {}),
         loadGraph: name => {
           const resolved = resolveSavedGraph(name, ctx.cwd);
           return resolved.ok ? (resolved.graph as AgentGraph) : undefined;
         },
         onControl: control => {
           task.control = control;
+        },
+        onGateWaiting: (nodeId, state) => {
+          writeGraphSnapshot(ctx.cwd, {
+            version: 1,
+            runId: task.id,
+            ...(task.meta?.name !== undefined ? { name: task.meta.name } : {}),
+            graph,
+            input,
+            waitingGate: nodeId,
+            state,
+            savedAt: Date.now(),
+          });
         },
         onNodeUpdate: (nodeId, run) => {
           reporter.update(nodeId, run);
@@ -1502,8 +1518,12 @@ Terse command-style prompts produce shallow, generic work.
       });
       completeGraphTask(task, result);
       workflowPane?.sync();
+      // A run aborted mid-gate (e.g. session shutdown) keeps its snapshot so a
+      // later session can resume it; a genuinely settled run clears it.
+      if (result.status !== "aborted") deleteGraphSnapshot(ctx.cwd, task.id);
     } catch (err) {
       failWorkflowTask(task, err instanceof Error ? err.message : String(err));
+      deleteGraphSnapshot(ctx.cwd, task.id);
       workflowPane?.sync();
     } finally {
       await host.dispose();
@@ -1511,12 +1531,47 @@ Terse command-style prompts produce shallow, generic work.
   }
 
   /** Detached graph run, added to {@link workflowRuns} so shutdown awaits it. */
-  function launchGraph(ctx: ExtensionContext, task: WorkflowTask, graph: AgentGraph, input: unknown, finished: () => void): void {
-    const run = runGraphTask(ctx, task, graph, input).then(() => {
-      if (workflowSessionActive && workflowTasks.get(task.id) === task) finished();
-    }).catch(error => console.warn(`[pi-subagents] graph completion: ${String(error)}`));
+  function launchGraph(
+    ctx: ExtensionContext,
+    task: WorkflowTask,
+    graph: AgentGraph,
+    input: unknown,
+    finished: () => void,
+    restore?: SchedulerState,
+  ): void {
+    const run = runGraphTask(ctx, task, graph, input, restore)
+      .then(() => {
+        if (workflowSessionActive && workflowTasks.get(task.id) === task) finished();
+      })
+      .catch(error => console.warn(`[pi-subagents] graph completion: ${String(error)}`));
     workflowRuns.add(run);
     void run.finally(() => workflowRuns.delete(run));
+  }
+
+  /**
+   * Reload graph runs that a prior session left paused at a human_gate.
+   *
+   * Each persisted snapshot becomes a fresh task and re-launches with its restored
+   * state, so completed nodes keep their outputs and the waiting gate is
+   * re-surfaced. The on-disk snapshot is removed on reload; the run re-persists if
+   * it reaches the gate again and clears for good when it settles.
+   */
+  function resumeDurableGraphRuns(ctx: ExtensionContext): void {
+    for (const snap of readGraphSnapshots(ctx.cwd)) {
+      if (workflowTasks.has(snap.runId)) continue;
+      const name = snap.name ?? snap.runId;
+      const task = createWorkflowTask({
+        id: snap.runId,
+        script: "",
+        meta: { name, description: `agent graph ${name}` },
+      });
+      workflowTasks.set(snap.runId, task);
+      deleteGraphSnapshot(ctx.cwd, snap.runId);
+      launchGraph(ctx, task, snap.graph, snap.input, () => notifyWorkflowFinished(ctx, task), snap.state);
+    }
+    widget.update();
+    fleet.update();
+    workflowPane?.sync();
   }
 
   async function stopWorkflows(): Promise<void> {
