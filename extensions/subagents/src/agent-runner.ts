@@ -31,13 +31,13 @@ import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType, res
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
+import type { CompiledSchema } from "./graph/json-schema.js";
 import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, STRUCTURED_OUTPUT_TOOL_NAME, type StructuredCapture, structuredRetryPrompt } from "./structured-output.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
-import type { CompiledSchema } from "./graph/json-schema.js";
 
 const structuredSessions = new WeakMap<AgentSession, StructuredCapture>();
 
@@ -77,6 +77,7 @@ export const SUBAGENT_TOOL_NAMES = {
   GET_RESULT: "get_subagent_result",
   STEER: "steer_subagent",
   WORKFLOW: "SubagentWorkflow",
+  AGENT_GRAPH: "agent_graph",
 } as const;
 
 /** Names of tools registered by this extension that subagents must NOT inherit. */

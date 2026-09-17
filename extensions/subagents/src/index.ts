@@ -25,6 +25,24 @@ import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ModeStateEntryLike, type ResolvedDelegationPolicy, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { isModelInScope, readEnabledModels, resolveEnabledModels } from "./enabled-models.js";
+import { decideWorkflowCollision } from "./graph/collisions.js";
+import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./graph/entry.js";
+import { createWorkflowHost } from "./graph/host.js";
+import type { AgentGraph } from "./graph/ir.js";
+import { appendJournal, readJournal, type WorkflowJournalEntry } from "./graph/journal.js";
+import { extractMeta, type WorkflowMeta, workflowCallName } from "./graph/meta.js";
+import { createNodeHost } from "./graph/node-host-adapter.js";
+import { workflowCompletionText } from "./graph/notification.js";
+import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
+import { createWorkflowPaneManager, type WorkflowPaneManager } from "./graph/pane/manager.js";
+import { elapsedMs } from "./graph/progress.js";
+import { runGraph } from "./graph/run-graph.js";
+import { admitWorkflow, runWorkflow } from "./graph/runtime.js";
+import { resolveWorkflowScript } from "./graph/saved.js";
+import { resolveSavedGraph } from "./graph/saved-graph.js";
+import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./graph/task.js";
+import { workflowSkillPath, workflowToolDescription } from "./graph/tool-description.js";
+import { validateGraph } from "./graph/validate.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { resolveAgentModel } from "./model-resolution.js";
@@ -52,22 +70,9 @@ import {
   type UICtx,
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx, type FleetWorkflow } from "./ui/fleet-list.js";
-import { renderWorkflowCard, renderWorkflowEntryCard } from "./ui/workflow-report.js";
 import { openWorkflowFromFleet, showWorkflowsMenu, type WorkflowMenuDeps, type WorkflowUIContext } from "./ui/workflow-menu.js";
+import { renderWorkflowCard, renderWorkflowEntryCard } from "./ui/workflow-report.js";
 import { addUsage, getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, PendingUsagePool } from "./usage.js";
-import { decideWorkflowCollision } from "./graph/collisions.js";
-import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./graph/entry.js";
-import { createWorkflowHost } from "./graph/host.js";
-import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
-import { createWorkflowPaneManager, type WorkflowPaneManager } from "./graph/pane/manager.js";
-import { appendJournal, readJournal, type WorkflowJournalEntry } from "./graph/journal.js";
-import { extractMeta, type WorkflowMeta, workflowCallName } from "./graph/meta.js";
-import { elapsedMs } from "./graph/progress.js";
-import { admitWorkflow, runWorkflow } from "./graph/runtime.js";
-import { resolveWorkflowScript } from "./graph/saved.js";
-import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./graph/task.js";
-import { workflowCompletionText } from "./graph/notification.js";
-import { workflowSkillPath, workflowToolDescription } from "./graph/tool-description.js";
 
 export const WORKFLOW_FILE_FLAG = "subagents-workflow-file";
 export { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData };
@@ -1740,6 +1745,63 @@ Terse command-style prompts produce shallow, generic work.
     pi.registerTool(workflowTool);
     pi.on("resources_discover", () => isWorkflowsEnabled() ? { skillPaths: [workflowSkillPath] } : undefined);
   }
+
+  // The typed graph runtime's public tool. Gated by the same workflow opt-in and
+  // session flag as SubagentWorkflow; a graph is data (saved `.graph.json` or
+  // inline), validated before any actor starts, then executed via the real
+  // AgentManager-backed NodeHost. Runs to completion and returns the outcome —
+  // live graph monitoring in `/agents → Workflows` is layered on separately.
+  const agentGraphTool = defineTool({
+    name: SUBAGENT_TOOL_NAMES.AGENT_GRAPH,
+    label: "agent_graph",
+    description:
+      "Execute a typed agent graph (nodes + edges) only with explicit user opt-in to workflow/multi-agent " +
+      "orchestration; otherwise ask first. `graph` is a saved graph name (`.pi/agent-graphs/<name>.graph.json`) " +
+      "or an inline AgentGraph object; `input` is the graph input. The graph is validated before anything runs.",
+    promptSnippet: "Run a typed agent graph",
+    parameters: Type.Object({
+      graph: Type.Union(
+        [
+          Type.String({ description: "Saved graph name, e.g. `shared/review-loop`." }),
+          Type.Object({}, { additionalProperties: true, description: "Inline AgentGraph { nodes, edges, outputs? }." }),
+        ],
+        { description: "A saved-graph name or an inline AgentGraph." },
+      ),
+      input: Type.Optional(Type.Any({ description: "Graph input, readable via ValueRefs that omit `node`." })),
+    }),
+    renderCall(args, theme) {
+      const graph = args.graph as unknown;
+      const name = typeof graph === "string" ? graph : ((graph as { name?: string } | null)?.name ?? "inline graph");
+      return renderToolCall("agent_graph", String(name), theme);
+    },
+    execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+      if (!isWorkflowsEnabled() || !workflowSessionActive) return textResult("Agent graphs are unavailable in this session.");
+      let graph: unknown;
+      if (typeof params.graph === "string") {
+        const resolved = resolveSavedGraph(params.graph, ctx.cwd);
+        if (!resolved.ok) throw new Error(resolved.message);
+        graph = resolved.graph;
+      } else {
+        graph = params.graph;
+      }
+      const verdict = validateGraph(graph);
+      if (!verdict.ok) throw new Error(`Invalid agent graph:\n- ${verdict.errors.join("\n- ")}`);
+
+      const host = createNodeHost({ pi, ctx, manager, workflowId: workflowRunId() });
+      try {
+        const result = await runGraph(graph as AgentGraph, params.input, { host, signal });
+        const nodeLines = Object.entries(result.nodes).map(([id, node]) => `  ${id}: ${node.status}${node.error ? ` (${node.error})` : ""}`);
+        const outputs = Object.keys(result.outputs).length > 0 ? `Outputs:\n${JSON.stringify(result.outputs, null, 2)}` : "No declared outputs.";
+        return {
+          content: [{ type: "text" as const, text: `Agent graph ${result.status}.\nNodes:\n${nodeLines.join("\n")}\n${outputs}` }],
+          details: { graphStatus: result.status },
+        };
+      } finally {
+        await host.dispose();
+      }
+    },
+  });
+  if (isWorkflowsEnabled()) pi.registerTool(agentGraphTool);
 
   /**
    * Act on {@link decideWorkflowCollision} — the half that needs the host.
