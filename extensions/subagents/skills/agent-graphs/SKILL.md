@@ -19,7 +19,7 @@ agent_graph({ graph: "shared/review-loop", input: { task: "..." } })   // saved
 agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...} })  // inline
 ```
 
-- **Saved graphs** live at `.pi/agent-graphs/<name>.graph.json` (namespaced with
+- **Saved graphs** live at `agent-graphs/<name>.graph.json` (namespaced with
   `/`, e.g. `shared/review-loop`). Author with normal file tools; no CRUD tool.
 - The call returns a **task id immediately** and runs in the background; you are
   notified on completion. Do not poll. Watch it in `/agents → Workflows` (nodes
@@ -115,4 +115,4 @@ even when their dependencies would allow parallelism.
    conditional edges show which branch fired; expanded nodes appear as they insert.
 4. Depend only on validated structured output (`outputSchema` + `ValueRef`), never
    on an agent's prose.
-5. Promote a proven inline graph to `.pi/agent-graphs/shared/<name>.graph.json`.
+5. Promote a proven inline graph to `agent-graphs/shared/<name>.graph.json`.

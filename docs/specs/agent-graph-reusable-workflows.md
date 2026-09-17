@@ -44,7 +44,7 @@ shared/context-gather   shared/review-loop   shared/work-verify
    review loop                                 shared/work-verify
 ```
 
-Each flow is plain version-controlled JSON under `.pi/agent-graphs/`, validated
+Each flow is plain version-controlled JSON under `agent-graphs/`, validated
 before any node runs. Authoring hazards are turned into validation errors so a
 mis-wired graph fails at the tool call, not mid-run. Once the portfolio runs
 end-to-end, the reusable-workflow parity it establishes unblocks removing the
@@ -96,7 +96,7 @@ legacy script runtime (design §2.8 deferral is superseded).
 15. As a graph author, I want bounded loops to require an explicit `loop` cap on any
     cycle-closing edge, so that a review loop can never run forever.
 16. As a graph author, I want a proven ad-hoc graph promotable to a saved
-    `.pi/agent-graphs/shared/<name>.graph.json` without rewrite, so that successful
+    `agent-graphs/shared/<name>.graph.json` without rewrite, so that successful
     structures become reusable workflows.
 17. As a maintainer, I want the portfolio documented as a spec with a testing
     strategy, so that future edits have a contract to check against.
@@ -107,7 +107,7 @@ legacy script runtime (design §2.8 deferral is superseded).
 
 ### Portfolio and storage
 
-- Six saved graphs live under `.pi/agent-graphs/`, namespaced by `/`:
+- Six saved graphs live under `agent-graphs/`, namespaced by `/`:
   `shared/context-gather`, `shared/review-loop`, `shared/work-verify`,
   `fuxi/ulw-plan`, `houtu/execute-plan`, `kuafu/ulw`. Each is a standalone
   `<name>.graph.json` holding an `AgentGraph`.
@@ -237,7 +237,7 @@ legacy script runtime (design §2.8 deferral is superseded).
   Kua Fu share one evidence format and the monitor still shows gathering as part of
   the current run.
 - The promotion path (design §2.4) is preserved: an inline `GraphFragment` proven
-  useful can be saved under `.pi/agent-graphs/shared/<name>.graph.json` with no
+  useful can be saved under `agent-graphs/shared/<name>.graph.json` with no
   rewrite.
 - `houtu/execute-plan` and `kuafu/ulw` depend on an upstream agent emitting a
   well-formed `GraphFragment`. The runtime's contract is to validate and reject a

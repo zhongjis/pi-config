@@ -35,7 +35,7 @@ tests living beside the graph runtime with only shared monitor types entangling 
 ## Decision
 
 Remove the `SubagentWorkflow` script runtime. `agent_graph` is the single execution tool;
-saved graphs live under `.pi/agent-graphs/`.
+saved graphs live under `agent-graphs/`.
 
 Removed:
 

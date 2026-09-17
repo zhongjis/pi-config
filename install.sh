@@ -32,6 +32,7 @@ EXCLUDED_EXTENSION_ITEMS=(
 # Everything else (test infra, build config, node_modules, runtime state, etc.) stays out of repo-managed symlinks.
 ALLOWED_ITEMS=(
   "agents"
+  "agent-graphs"
   "modes"
   "caveman.json"
   "pi-herdr-btw.json"
@@ -264,6 +265,24 @@ remove_legacy_git_symlink() {
   fi
 }
 
+link_agent_graphs() {
+  local source_path="$REPO_DIR/agent-graphs"
+  local target_path="$TARGET/agent-graphs"
+
+  if [ -L "$target_path" ]; then
+    if [ "$(readlink "$target_path")" = "$source_path" ]; then
+      return 0
+    fi
+    rm "$target_path"
+  elif [ -e "$target_path" ]; then
+    printf 'Refusing to replace non-symlink destination: %s\n' "$target_path" >&2
+    return 1
+  fi
+
+  ln -s "$source_path" "$target_path"
+  echo "Linked agent-graphs"
+}
+
 # Symlink only allowlisted items from repo into ~/.pi/agent/
 for name in "${ALLOWED_ITEMS[@]}"; do
   local_path="$REPO_DIR/$name"
@@ -277,6 +296,11 @@ for name in "${ALLOWED_ITEMS[@]}"; do
   # Skip Nix-managed items
   if is_nix_managed "$name"; then
     echo "Skipping (Nix-managed): $name"
+    continue
+  fi
+
+  if [ "$name" = "agent-graphs" ]; then
+    link_agent_graphs
     continue
   fi
 

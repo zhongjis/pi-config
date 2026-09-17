@@ -3,9 +3,10 @@
  *
  * A saved graph is a plain JSON file holding an {@link AgentGraph}. Names are
  * namespaced with `/` (e.g. `shared/review-loop`), mapping to
- * `<root>/shared/review-loop.graph.json`. Roots mirror the saved-workflow lookup
- * — project `.pi` first, the shared `.agents` workspace, then the user's agent dir
- * — so both conventions stay aligned.
+ * `<root>/shared/review-loop.graph.json`. Roots search, highest priority first:
+ * project `.pi/agent-graphs`, the repo-committed `agent-graphs`, the shared
+ * `.agents` workspace, then the user's agent dir (`~/.pi/agent/agent-graphs`,
+ * where install.sh links a repo's committed graphs for global use).
  *
  * Nothing here validates the graph's shape; the caller runs {@link validateGraph}
  * on whatever JSON comes back, so an inline graph and a saved one fail the same
@@ -24,7 +25,12 @@ const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
 /** Lookup roots for a saved graph, highest priority first. */
 export function agentGraphRoots(cwd: string): string[] {
-  return [join(cwd, ".pi", "agent-graphs"), join(cwd, ".agents", "agent-graphs"), join(getAgentDir(), "agent-graphs")];
+  return [
+    join(cwd, ".pi", "agent-graphs"),
+    join(cwd, "agent-graphs"),
+    join(cwd, ".agents", "agent-graphs"),
+    join(getAgentDir(), "agent-graphs"),
+  ];
 }
 
 export type SavedGraph =

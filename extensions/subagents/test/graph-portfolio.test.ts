@@ -8,7 +8,7 @@ import { validateGraph } from "../src/graph/validate.js";
  * must always resolve and validate. These saved graphs are Pi's known-good
  * starting points, so a shape regression in one of them should fail here rather
  * than at a live tool call. `cwd` is the repo root, mirroring how the runtime
- * resolves `.pi/agent-graphs/<name>.graph.json` in production.
+ * resolves `agent-graphs/<name>.graph.json` in production.
  */
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 

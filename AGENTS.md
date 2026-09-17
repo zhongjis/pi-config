@@ -84,12 +84,14 @@ When the user requests a durable behavior change, record it here or in the relev
 - Prefer behavior-preserving extension changes and small, localized refactors.
 - Keep runtime installation separate from repository-only testing infrastructure. Root `AGENTS.md` is Nix-managed; `install.sh` does not install it.
 - Keep global subagent defaults in root `subagents.json`: `workflowsEnabled: true`, `maxConcurrentForeground: 4`, `reportUsage: true`, `showCost: true`; `install.sh` symlinks it to `~/.pi/agent/subagents.json`. Enable workflows for all modes while preserving their delegation restrictions.
+- Install repository-owned `agent-graphs/` (the reusable agent-graph portfolio) through `install.sh`; correct global symlinks are idempotent, wrong or dangling symlinks may be replaced, and non-symlink conflicts must remain untouched.
 - Use [CONTEXT.md](CONTEXT.md) for terminology and [README.md](README.md) for repository entrypoints.
 
 ## Child DOX Index
 
 - [.agents/AGENTS.md](.agents/AGENTS.md) — repository-owned maintenance skills and references; `.pi/skills` links to this skill tree.
 - [agents/AGENTS.md](agents/AGENTS.md) — Subagent definitions and delegation contracts.
+- [agent-graphs/AGENTS.md](agent-graphs/AGENTS.md) — the repo-committed reusable agent-graph portfolio, installed globally via `install.sh`.
 - [docs/AGENTS.md](docs/AGENTS.md) — human-facing specifications, decisions, guides, and reference material.
 - [extensions/AGENTS.md](extensions/AGENTS.md) — extension implementation, shared integration contracts, and local extension indexes.
 - [modes/AGENTS.md](modes/AGENTS.md) — Mode Agent prompts, model-family variants, and mode-owned skills.

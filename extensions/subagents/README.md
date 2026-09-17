@@ -357,7 +357,7 @@ Set `workflowsEnabled: true` in `subagents.json` or enable workflows in `/agents
 | Parameter | Purpose |
 |-----------|---------|
 | `graph` | Inline `AgentGraph` object (nodes + edges) to execute immediately |
-| `name` | Select a saved graph by name (resolved from `.pi/agent-graphs/<name>.graph.json`; namespaced with `/`, e.g. `shared/review-loop`) |
+| `name` | Select a saved graph by name (resolved from `agent-graphs/<name>.graph.json`; namespaced with `/`, e.g. `shared/review-loop`) |
 | `input` | Input values passed to the graph |
 
 Source precedence is `graph` → `name`. The tool validates the graph structure before allocating a run; invalid graphs are rejected in the initiating tool call. Valid calls return a background run ID immediately; graph/agent/gate/condition failures are reported asynchronously.
@@ -373,7 +373,7 @@ Source precedence is `graph` → `name`. The tool validates the graph structure 
 
 Typed node `outputSchema` drives declarative edge conditions and bounded loops. A node may carry a `validation.gate` shell command and `retry` configuration.
 
-Saved graphs live at `.pi/agent-graphs/<name>.graph.json`. A reusable portfolio ships with this config: `shared/context-gather`, `shared/review-loop`, `shared/work-verify`, `fuxi/ulw-plan`, `houtu/execute-plan`, `kuafu/ulw`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
+Saved graphs live at `agent-graphs/<name>.graph.json`. A reusable portfolio ships with this config: `shared/context-gather`, `shared/review-loop`, `shared/work-verify`, `fuxi/ulw-plan`, `houtu/execute-plan`, `kuafu/ulw`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
 
 Graph effort follows local thinking authority: agent frontmatter → model-chain suffix → invocation override → SDK default, never implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 
