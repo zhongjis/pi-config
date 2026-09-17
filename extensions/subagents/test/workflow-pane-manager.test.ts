@@ -62,18 +62,19 @@ function manager(getTasks: () => WorkflowTask[]) {
 }
 
 const b64 = (s: string) => Buffer.from(s).toString("base64");
-const paneState = (mgr: WorkflowPaneManager) => (mgr as unknown as { paneState: { selectedPhase: number; level: string } }).paneState;
+const panelState = (mgr: WorkflowPaneManager) => (mgr as unknown as { panelState: { selectedNodeId?: string; runIndex: number; scroll: number } }).panelState;
 const processInput = (mgr: WorkflowPaneManager) => (mgr as unknown as { processInputFile: () => Promise<void> }).processInputFile();
 
 describe("input channel", () => {
-  it("applies a forwarded key to the per-pane view state and writes a fresh snapshot", () => {
+  it("drives the panel view state from a forwarded key and writes a fresh snapshot", () => {
     const task = twoPhaseTask("wf_a", 1000);
     const mgr = manager(() => [task]);
 
+    // `j` selects the next node in the stage-ordered roster (a0 -> a1).
     writeInputAtomic(dir, { seq: 1, data: b64("j") });
     processInput(mgr);
 
-    expect(paneState(mgr).selectedPhase).toBe(1);
+    expect(panelState(mgr).selectedNodeId).toBe("a1");
     const snap = JSON.parse(readFileSync(join(dir, STATE_FILE), "utf8"));
     expect(Array.isArray(snap.lines)).toBe(true);
     expect(snap.lines.length).toBeGreaterThan(0);
@@ -85,17 +86,17 @@ describe("input channel", () => {
 
     writeInputAtomic(dir, { seq: 1, data: b64("j") });
     processInput(mgr);
-    expect(paneState(mgr).selectedPhase).toBe(1);
+    expect(panelState(mgr).selectedNodeId).toBe("a1");
 
     // Same seq, different key — must be ignored (stale/echo).
     writeInputAtomic(dir, { seq: 1, data: b64("k") });
     processInput(mgr);
-    expect(paneState(mgr).selectedPhase).toBe(1);
+    expect(panelState(mgr).selectedNodeId).toBe("a1");
 
-    // A higher seq is honoured again.
+    // A higher seq is honoured again (`k` moves the selection back up).
     writeInputAtomic(dir, { seq: 2, data: b64("k") });
     processInput(mgr);
-    expect(paneState(mgr).selectedPhase).toBe(0);
+    expect(panelState(mgr).selectedNodeId).toBe("a0");
   });
 
   it("decodes control-byte ESC sequences (down arrow) from base64", () => {
@@ -104,25 +105,23 @@ describe("input channel", () => {
 
     writeInputAtomic(dir, { seq: 1, data: b64("\x1b[B") });
     processInput(mgr);
-    expect(paneState(mgr).selectedPhase).toBe(1);
+    expect(panelState(mgr).selectedNodeId).toBe("a1");
   });
 
-  it("resets the view to the overview when the shown run changes", async () => {
+  it("resets node selection when the shown run changes", async () => {
     let tasks = [twoPhaseTask("wf_a", 1000)];
     const mgr = manager(() => tasks);
 
-    // Drill into run A.
+    // Select a node in run A.
     writeInputAtomic(dir, { seq: 1, data: b64("j") });
     processInput(mgr);
-    writeInputAtomic(dir, { seq: 2, data: b64("\r") });
-    processInput(mgr);
-    expect(paneState(mgr).level).toBe("agent");
+    expect(panelState(mgr).selectedNodeId).toBe("a1");
 
-    // A newer run appears; the next render must start it at the overview.
+    // A newer run appears; the next render must start it with no selection.
     tasks = [twoPhaseTask("wf_b", 2000)];
     await (mgr as unknown as { syncNow: (force: boolean) => Promise<void> }).syncNow(false);
-    expect(paneState(mgr).level).toBe("phases");
-    expect(paneState(mgr).selectedPhase).toBe(0);
+    expect(panelState(mgr).selectedNodeId).toBeUndefined();
+    expect(panelState(mgr).scroll).toBe(0);
   });
 });
 

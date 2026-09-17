@@ -102,16 +102,16 @@ describe("renderWorkflowPaneLines", () => {
 });
 
 describe("applyPaneKey — read-only in-pane navigation", () => {
-  it("moves the phase selection on a down key", () => {
+  it("moves the node selection on a down key", () => {
     const start = initialWorkflowDialogState();
     const { state } = applyPaneKey(source(), start, "j", { width: 60, now: NOW });
-    expect(state.selectedPhase).toBe(1);
+    expect(state.selectedIndex).toBe(1);
   });
 
-  it("opens the selected phase into the agent level on enter", () => {
+  it("opens the selected node into the detail level on enter", () => {
     const start = initialWorkflowDialogState();
     const { state } = applyPaneKey(source(), start, "\r", { width: 60, now: NOW });
-    expect(state.level).toBe("agent");
+    expect(state.level).toBe("detail");
   });
 
   it("leaves state unchanged for a key that is not the dialog's", () => {
@@ -128,7 +128,7 @@ describe("applyPaneKey — read-only in-pane navigation", () => {
     }
   });
 
-  it("still suppresses mutating hints after navigating into the agent level", () => {
+  it("still suppresses mutating hints after navigating into the detail level", () => {
     const start = initialWorkflowDialogState();
     const { lines } = applyPaneKey(source(), start, "\r", { width: 60, now: NOW });
     const joined = lines.join("\n");
@@ -139,12 +139,12 @@ describe("applyPaneKey — read-only in-pane navigation", () => {
 
   it("renders from an explicitly supplied view state", () => {
     const overview = renderWorkflowPaneLines(source(), { width: 60, now: NOW }).join("\n");
-    const atAgent = renderWorkflowPaneLines(source(), {
+    const atDetail = renderWorkflowPaneLines(source(), {
       width: 60,
       now: NOW,
-      state: { ...initialWorkflowDialogState(), level: "agent" },
+      state: { ...initialWorkflowDialogState(), level: "detail" },
     }).join("\n");
-    expect(atAgent).not.toBe(overview);
+    expect(atDetail).not.toBe(overview);
   });
 
   it("reports close=true for esc at the overview level", () => {
@@ -155,10 +155,10 @@ describe("applyPaneKey — read-only in-pane navigation", () => {
   it("treats esc at the detail level as back, not close", () => {
     const start = initialWorkflowDialogState();
     const drilled = applyPaneKey(source(), start, "\r", { width: 60, now: NOW });
-    expect(drilled.state.level).toBe("agent");
+    expect(drilled.state.level).toBe("detail");
     const backed = applyPaneKey(source(), drilled.state, "\x1b", { width: 60, now: NOW });
     expect(backed.close).toBe(false);
-    expect(backed.state.level).toBe("phases");
+    expect(backed.state.level).toBe("roster");
   });
 
   it("never reports close for a navigation key", () => {
