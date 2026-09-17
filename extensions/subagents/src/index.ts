@@ -677,6 +677,10 @@ export default function (pi: ExtensionAPI) {
       sessionId: ctx.sessionManager.getSessionId(),
       ppid: process.pid,
       getTasks: () => workflowTasks.values(),
+      viewAgentConversation: (recordId) => {
+        const record = manager.getRecord(recordId);
+        if (currentCtx && record) return viewAgentConversation(currentCtx, record);
+      },
       onError: (err, label) =>
         console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
     });

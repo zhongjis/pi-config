@@ -39,7 +39,7 @@ export class GraphRunReporter {
   private readonly dependents = new Map<string, string[]>();
   private readonly agentType = new Map<string, string>();
   private readonly stage = new Map<string, number>();
-  private readonly resolved = new Map<string, { model?: string; modelId?: string }>();
+  private readonly resolved = new Map<string, { model?: string; modelId?: string; recordId?: string }>();
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
   private readonly queuedAt: number;
 
@@ -98,7 +98,14 @@ export class GraphRunReporter {
   }
 
   setResolved(nodeId: string, info: NodeResolvedInfo, now: number = Date.now()): void {
-    this.resolved.set(nodeId, { model: info.modelName, modelId: info.modelId });
+    // Merge: recordId and model/modelId arrive on separate `onResolved` calls, so a later
+    // one must not clobber an earlier one's fields.
+    const prev = this.resolved.get(nodeId) ?? {};
+    this.resolved.set(nodeId, {
+      model: info.modelName ?? prev.model,
+      modelId: info.modelId ?? prev.modelId,
+      recordId: info.recordId ?? prev.recordId,
+    });
     const run = this.lastRun.get(nodeId);
     if (run !== undefined) updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
   }
@@ -122,6 +129,7 @@ export class GraphRunReporter {
       ...(run.attempt > 0 ? { attempt: run.attempt } : {}),
       ...(res?.model !== undefined ? { model: res.model } : {}),
       ...(res?.modelId !== undefined ? { modelId: res.modelId } : {}),
+      ...(res?.recordId !== undefined ? { recordId: res.recordId } : {}),
     };
     switch (run.status) {
       case "pending":

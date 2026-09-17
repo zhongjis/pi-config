@@ -38,13 +38,13 @@ function twoPhaseTask(id: string, startTime: number): WorkflowTask {
   task.workflowProgress = [
     { type: "workflow_phase", index: 0, title: "Discover" },
     { type: "workflow_phase", index: 1, title: "Review" },
-    { type: "workflow_agent", index: 0, label: "a0", phaseIndex: 0, state: "done" },
+    { type: "workflow_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", recordId: "rec-a0" },
     { type: "workflow_agent", index: 1, label: "a1", phaseIndex: 1, state: "progress" },
   ];
   return task;
 }
 
-function manager(getTasks: () => WorkflowTask[]) {
+function manager(getTasks: () => WorkflowTask[], viewAgentConversation?: (recordId: string) => void) {
   const mgr = createWorkflowPaneManager({
     enabled: true,
     exec: vi.fn(ok) as any,
@@ -56,6 +56,7 @@ function manager(getTasks: () => WorkflowTask[]) {
     getTasks,
     viewerPath: "/viewer/viewer.mjs",
     dir,
+    viewAgentConversation,
   });
   managers.push(mgr);
   return mgr;
@@ -127,6 +128,24 @@ describe("input channel", () => {
     await (mgr as unknown as { syncNow: (force: boolean) => Promise<void> }).syncNow(false);
     expect(panelState(mgr).cursor).toBeUndefined();
     expect(panelState(mgr).scroll).toBe(0);
+  });
+
+  it("opens the selected node's conversation on c without closing the pane", async () => {
+    const view = vi.fn();
+    const task = twoPhaseTask("wf_a", 1000);
+    const mgr = manager(() => [task], view);
+    // Walk the cursor to the node with a recordId (stage 0 header, then a0).
+    writeInputAtomic(dir, { seq: 1, data: b64("j") });
+    processInput(mgr);
+    writeInputAtomic(dir, { seq: 2, data: b64("j") });
+    processInput(mgr);
+    expect(panelState(mgr).cursor).toEqual({ kind: "node", id: "a0" });
+
+    writeInputAtomic(dir, { seq: 3, data: b64("c") });
+    await processInput(mgr);
+    expect(view).toHaveBeenCalledWith("rec-a0");
+    // Open is not a close: the snapshot is still written for that keystroke.
+    expect(existsSync(join(dir, STATE_FILE))).toBe(true);
   });
 });
 

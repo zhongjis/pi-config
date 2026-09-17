@@ -94,4 +94,27 @@ describe("GraphRunReporter", () => {
     expect(a?.model).toBe("haiku 4.5");
     expect(a?.modelId).toBe("anthropic/claude-haiku-4-5");
   });
+
+  it("setResolved merges recordId and model across calls without clobbering, in either order", () => {
+    const t = task();
+    const reporter = new GraphRunReporter(t, graph);
+    reporter.update("a", { status: "running", attempt: 1 });
+    reporter.setResolved("a", { recordId: "r1" });
+    reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" });
+    const a = collapse(t.workflowProgress).agents.find(e => e.label === "a");
+    expect(a?.recordId).toBe("r1");
+    expect(a?.model).toBe("haiku 4.5");
+    expect(a?.modelId).toBe("anthropic/claude-haiku-4-5");
+
+    // Reverse order clobbers nothing either.
+    const t2 = task();
+    const r2 = new GraphRunReporter(t2, graph);
+    r2.update("a", { status: "running", attempt: 1 });
+    r2.setResolved("a", { modelName: "sonnet", modelId: "mid" });
+    r2.setResolved("a", { recordId: "r2" });
+    const a2 = collapse(t2.workflowProgress).agents.find(e => e.label === "a");
+    expect(a2?.recordId).toBe("r2");
+    expect(a2?.model).toBe("sonnet");
+    expect(a2?.modelId).toBe("mid");
+  });
 });

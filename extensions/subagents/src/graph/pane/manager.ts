@@ -53,6 +53,8 @@ export interface WorkflowPaneManagerOptions {
   viewerPath?: string;
   /** Overridable for tests; defaults to the per-pane {@link paneDirFor} directory. */
   dir?: string;
+  /** Open the selected node's conversation overlay in the main Pi TUI (wired by the extension). */
+  viewAgentConversation?: (recordId: string) => void | Promise<void>;
 }
 
 export class WorkflowPaneManager {
@@ -82,12 +84,15 @@ export class WorkflowPaneManager {
   /** The run currently shown, so switching runs resets the view to the overview. */
   private lastShownTaskId: string | undefined;
   private inputWatcher: FSWatcher | undefined;
+  /** Opens the selected node's conversation overlay; called on the `c` key. */
+  private readonly viewAgentConversation: ((recordId: string) => void | Promise<void>) | undefined;
 
   constructor(options: WorkflowPaneManagerOptions) {
     this.enabled = options.enabled;
     this.getTasks = options.getTasks;
     this.onError = options.onError ?? (() => {});
     this.sessionId = options.sessionId;
+    this.viewAgentConversation = options.viewAgentConversation;
 
     if (!this.enabled) {
       // Strict no-op: never resolve a directory, a viewer path, or a controller.
@@ -282,6 +287,8 @@ export class WorkflowPaneManager {
         this.pinnedRunId = runs[this.panelState.runIndex]?.id;
         this.lastPanelRunId = this.pinnedRunId;
       }
+      // `c` opens the selected node's conversation in the main TUI. Not a close: still paint a snapshot.
+      if (result.action?.kind === "open") void this.viewAgentConversation?.(result.action.recordId);
       return { lines: result.lines, close: result.close };
     } catch {
       const task = tasks[index];

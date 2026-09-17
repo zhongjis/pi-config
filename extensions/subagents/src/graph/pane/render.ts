@@ -193,11 +193,12 @@ export function applyObservabilityPaneKey(
   state: PanelState,
   data: string,
   opts: PanelOptions,
-): { state: PanelState; lines: string[]; close: boolean } {
+): { state: PanelState; lines: string[]; close: boolean; action?: { kind: "open"; recordId: string } } {
   const result = applyPanelKey(runs, state, data, opts);
   return {
     state: result.state,
     lines: styleWorkflowCardLines(result.lines, PANE_ANSI_THEME),
     close: result.close,
+    action: result.action,
   };
 }

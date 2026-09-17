@@ -507,8 +507,14 @@ function detailLines(
   return lines;
 }
 
+/** The recordId of the resolved cursor's node when it is a node that has one — the `c` (open) target. */
+function openableRecordId(cursor: Target | undefined, agents: readonly WorkflowAgentEntry[]): string | undefined {
+  if (cursor?.kind !== "node") return undefined;
+  return agents.find(agent => agent.label === cursor.id)?.recordId;
+}
+
 function footerLine(
-  run: PanelRun, scroll: number, bodyLength: number, capacity: number, ascii: boolean, width: number,
+  run: PanelRun, scroll: number, bodyLength: number, capacity: number, ascii: boolean, width: number, canOpen: boolean,
 ): WorkflowCardLine {
   const live = isActive(run.status);
   const dot = live ? (ascii ? "*" : "●") : (ascii ? "o" : "○");
@@ -519,7 +525,7 @@ function footerLine(
   return clampLine([
     { text: ` ${dot} ${live ? "live" : "done"}`, color: live ? "accent" : "dim" },
     { text: `  ${range}`, color: "dim" },
-    { text: `  ${upDown} node · ${arrow} run · f filter · space fold · esc close`, color: "dim" },
+    { text: `  ${upDown} move · ${arrow} run · f filter · space fold${canOpen ? " · c convo" : ""} · esc close`, color: "dim" },
   ], width);
 }
 
@@ -595,7 +601,7 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
   if (rows != null) {
     while (out.length < rows - 1) out.push([]);
   }
-  out.push(footerLine(run, scroll, bodyLines.length, capacity, ascii, width));
+  out.push(footerLine(run, scroll, bodyLines.length, capacity, ascii, width, openableRecordId(cursor, agents) !== undefined));
   if (rows != null && out.length > rows) out.length = rows;
   return out.map(line => clampLine(line, width));
 }
@@ -612,13 +618,13 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
  * (`←/→`) resets the cursor, scroll, and stage collapse but keeps the filter. `f`
  * cycles the roster filter, `space`/`enter` fold the cursor's stage, and `↑↓` move
  * the cursor over the visible stage-header/node targets so a collapsed stage keeps
- * a selectable header to re-expand from. `c`
- * (open conversation) is deliberately unhandled — the pure panel has no host, so
- * conversation-open is wired by the manager in a later slice.
+ * a selectable header to re-expand from. `c` returns an `open` action for the
+ * selected node when it has a `recordId`, which the manager turns into a
+ * conversation overlay; a stage cursor or a record-less node leaves `c` unowned.
  */
 export function applyPanelKey(
   runs: readonly PanelRun[], state: PanelState, data: string, opts: PanelOptions,
-): { state: PanelState; lines: WorkflowCardLine[]; close: boolean } {
+): { state: PanelState; lines: WorkflowCardLine[]; close: boolean; action?: { kind: "open"; recordId: string } } {
   const render = (next: PanelState, close = false) => ({ state: next, lines: renderPanelLines(runs, next, opts), close });
 
   if (matchesKey(data, "escape") || matchesKey(data, "q")) return render(state, true);
@@ -682,6 +688,13 @@ export function applyPanelKey(
     // Unset or stale cursor: down starts at the first target, up stays at the first.
     const nextPos = current < 0 ? 0 : clamp(current + (down ? 1 : -1), 0, targets.length - 1);
     return render({ ...state, runIndex: index, cursor: targets[nextPos] });
+  }
+
+  if (matchesKey(data, "c")) {
+    const resolved = targetIndex(targets, state.cursor) >= 0 ? state.cursor : targets[0];
+    const recordId = openableRecordId(resolved, agents);
+    // Only a node with a recordId can open; a stage cursor or record-less node leaves `c` unowned.
+    if (recordId !== undefined) return { ...render(state), action: { kind: "open", recordId } };
   }
 
   // A key the panel does not own leaves state unchanged.

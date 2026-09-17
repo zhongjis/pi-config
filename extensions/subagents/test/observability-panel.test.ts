@@ -506,3 +506,50 @@ describe("observability panel — Wave B full node detail sections", () => {
     expect(detailStatus).toContain("1m05s");
   });
 });
+
+describe("observability panel — Wave C open conversation", () => {
+  const recordRun = (): PanelRun => ({
+    id: "wf_c",
+    name: "convo",
+    status: "running",
+    source: {
+      progress: [
+        agent({ index: 0, label: "a", phaseIndex: 0, state: "done", deps: [], dependents: ["b"], recordId: "rec-a" }),
+        agent({ index: 1, label: "b", phaseIndex: 1, state: "progress", deps: ["a"], dependents: [], startedAt: NOW - 1_000 }),
+      ],
+      task: { status: "running", workflowName: "convo", startTime: NOW - 5_000 },
+      agentCount: 2,
+    },
+  });
+
+  it("emits an open action for c on a node cursor whose entry has a recordId, without closing", () => {
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "a" } };
+    const r = applyPanelKey([recordRun()], state, "c", { width: 80, now: NOW });
+    expect(r.action).toEqual({ kind: "open", recordId: "rec-a" });
+    expect(r.close).toBe(false);
+  });
+
+  it("emits no action for c on a node cursor without a recordId", () => {
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "b" } };
+    const r = applyPanelKey([recordRun()], state, "c", { width: 80, now: NOW });
+    expect(r.action).toBeUndefined();
+  });
+
+  it("emits no action for c on a stage cursor", () => {
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "stage", stage: 0 } };
+    const r = applyPanelKey([recordRun()], state, "c", { width: 80, now: NOW });
+    expect(r.action).toBeUndefined();
+  });
+
+  it("shows the c convo hint only for a node-with-recordId cursor and reads ↑↓ move", () => {
+    const opts = { width: 120, now: NOW } as const;
+    const withRecord = text([recordRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" } }, opts);
+    expect(withRecord).toContain("c convo");
+    expect(withRecord).toContain("↑↓ move");
+    expect(withRecord).not.toContain("↑↓ node");
+    const noRecord = text([recordRun()], { ...initialPanelState(), cursor: { kind: "node", id: "b" } }, opts);
+    expect(noRecord).not.toContain("c convo");
+    const stageCursor = text([recordRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 0 } }, opts);
+    expect(stageCursor).not.toContain("c convo");
+  });
+});
