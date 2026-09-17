@@ -84,7 +84,6 @@ When the user requests a durable behavior change, record it here or in the relev
 - Prefer behavior-preserving extension changes and small, localized refactors.
 - Keep runtime installation separate from repository-only testing infrastructure. Root `AGENTS.md` is Nix-managed; `install.sh` does not install it.
 - Keep global subagent defaults in root `subagents.json`: `workflowsEnabled: true`, `maxConcurrentForeground: 4`, `reportUsage: true`, `showCost: true`; `install.sh` symlinks it to `~/.pi/agent/subagents.json`. Enable workflows for all modes while preserving their delegation restrictions.
-- Install repository-owned `workflows/` through `install.sh`; correct global symlinks are idempotent, wrong or dangling symlinks may be replaced, and non-symlink conflicts must remain untouched.
 - Use [CONTEXT.md](CONTEXT.md) for terminology and [README.md](README.md) for repository entrypoints.
 
 ## Child DOX Index
@@ -97,6 +96,5 @@ When the user requests a durable behavior change, record it here or in the relev
 - [scripts/AGENTS.md](scripts/AGENTS.md) — repository maintenance and validation helpers.
 - [test/AGENTS.md](test/AGENTS.md) — shared test harness, stubs, fixtures, and real-runtime integration tests.
 - [themes/AGENTS.md](themes/AGENTS.md) — local Pi theme assets.
-- [workflows/AGENTS.md](workflows/AGENTS.md) — reusable saved workflow sources, bounds, result contracts, and focused verification.
 
 Root owns files outside these subtrees, including installation, environment and package manifests, root documentation, and `.pi/` configuration and local artifacts. The `.pi/skills` symlink uses the `.agents/AGENTS.md` chain.

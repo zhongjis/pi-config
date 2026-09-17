@@ -40,7 +40,6 @@ ALLOWED_ITEMS=(
   "tool_models.json"
   "scripts"
   "themes"
-  "workflows"
 )
 
 # Native npm modules like node-pty may fall back to local compilation in the install shell.
@@ -265,23 +264,6 @@ remove_legacy_git_symlink() {
   fi
 }
 
-link_workflows() {
-  local source_path="$REPO_DIR/workflows"
-  local target_path="$TARGET/workflows"
-
-  if [ -L "$target_path" ]; then
-    if [ "$(readlink "$target_path")" = "$source_path" ]; then
-      return 0
-    fi
-    rm "$target_path"
-  elif [ -e "$target_path" ]; then
-    printf 'Refusing to replace non-symlink destination: %s\n' "$target_path" >&2
-    return 1
-  fi
-
-  ln -s "$source_path" "$target_path"
-  echo "Linked workflows"
-}
 # Symlink only allowlisted items from repo into ~/.pi/agent/
 for name in "${ALLOWED_ITEMS[@]}"; do
   local_path="$REPO_DIR/$name"
@@ -298,10 +280,6 @@ for name in "${ALLOWED_ITEMS[@]}"; do
     continue
   fi
 
-  if [ "$name" = "workflows" ]; then
-    link_workflows
-    continue
-  fi
   target_path="$TARGET/$name"
   if [ -e "$target_path" ] || [ -L "$target_path" ]; then
     rm -rf "$target_path"
