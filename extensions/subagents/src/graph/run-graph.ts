@@ -23,12 +23,13 @@ import type {
   GraphEdge,
   GraphFragment,
   GraphNode,
+  HumanGateNode,
   NodeId,
   SubgraphNode,
   ValueRef,
 } from "./ir.js";
 import { compileJsonSchema } from "./json-schema.js";
-import { type NodeExecInput, nodeLogic } from "./node-actor.js";
+import { checkNodeSchema, type NodeExecInput, nodeLogic } from "./node-actor.js";
 import type { NodeHost, NodeSpawnResult } from "./node-host.js";
 import type { NodeRun, SettleInput } from "./scheduler.js";
 import { Scheduler } from "./scheduler.js";
@@ -105,7 +106,7 @@ function interpolate(prompt: string, input: AgentNode["input"], ctx: ResolutionC
 /** Parse a completed node's output for the scheduler: JSON when schema'd, else text. */
 function parseOutput(node: GraphNode, result: NodeSpawnResult): unknown {
   if (!result.ok || result.output === undefined) return undefined;
-  if (node.type === "agent" && node.outputSchema !== undefined) {
+  if ((node.type === "agent" && node.outputSchema !== undefined) || node.type === "human_gate") {
     try {
       return JSON.parse(result.output);
     } catch {
@@ -320,6 +321,31 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     inflight.set(id, { done, resources: [], stop: () => {}, result: () => settle });
   };
 
+  /** Await a human decision for a human_gate node. Abortable via its own controller. */
+  const launchHumanGate = (id: string, node: HumanGateNode): void => {
+    scheduler.markRunning(id);
+    report(id);
+    const awaitGate = options.host.awaitHumanGate?.bind(options.host);
+    const prompt = interpolate(node.prompt, node.input, contextOf(scheduler, input));
+    const compiled = compileJsonSchema(node.outputSchema);
+    const schema = compiled.ok ? compiled.compiled : undefined;
+    const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+    let settle: SettleInput = { ok: false, error: `human_gate node "${id}" did not resolve` };
+    const done = (async (): Promise<string> => {
+      if (awaitGate === undefined) {
+        settle = { ok: false, error: `human_gate node "${id}" needs a host that can await human input` };
+        return id;
+      }
+      const request = schema !== undefined ? { nodeId: id, prompt, schema } : { nodeId: id, prompt };
+      let result = await awaitGate(request, signal);
+      if (result.ok && schema !== undefined) result = checkNodeSchema(result, schema);
+      settle = { ok: result.ok, output: parseOutput(node, result), error: result.error, skipped: result.skipped };
+      return id;
+    })();
+    inflight.set(id, { done, resources: [], stop: () => controller.abort(), result: () => settle });
+  };
+
   /** Splice a fragment resolved from an expand node's source into the live run. Synchronous. */
   const expandNode = (id: string, node: ExpandNode): void => {
     scheduler.markRunning(id);
@@ -422,6 +448,16 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       if (node.type === "expand") {
         expandNode(id, node);
         progressed = true;
+        continue;
+      }
+      if (node.type === "human_gate") {
+        if (options.host.awaitHumanGate === undefined) {
+          scheduler.settle(id, { ok: false, error: `human_gate node "${id}" needs a host that can await human input` });
+          report(id);
+          progressed = true;
+          continue;
+        }
+        launchHumanGate(id, node);
         continue;
       }
       scheduler.settle(id, { ok: false, error: `node type "${node.type}" is not supported yet` });

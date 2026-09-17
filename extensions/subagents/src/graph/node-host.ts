@@ -64,6 +64,14 @@ export interface NodeGateResult {
   output: string;
 }
 
+/** A pause point awaiting a human decision (approve / reject / supply data). */
+export interface HumanGateRequest {
+  nodeId: string;
+  prompt: string;
+  /** The shape the human's response must satisfy. */
+  schema?: CompiledSchema;
+}
+
 /**
  * The one seam a graph run needs into the rest of the extension.
  *
@@ -74,4 +82,10 @@ export interface NodeGateResult {
 export interface NodeHost {
   spawnAgent(request: NodeSpawnRequest, signal: AbortSignal): Promise<NodeSpawnResult>;
   runGate?(command: string, options: { cwd?: string; signal: AbortSignal }): Promise<NodeGateResult>;
+  /**
+   * Await a human decision for a `human_gate` node. The result's `output` is the
+   * human-supplied value (JSON when a schema is set). A host without this fails a
+   * human_gate loudly rather than passing it unattended.
+   */
+  awaitHumanGate?(request: HumanGateRequest, signal: AbortSignal): Promise<NodeSpawnResult>;
 }
