@@ -36,6 +36,7 @@ export class GraphRunReporter {
   private readonly index = new Map<string, number>();
   private readonly deps = new Map<string, string[]>();
   private readonly agentType = new Map<string, string>();
+  private readonly stage = new Map<string, number>();
   private readonly queuedAt: number;
 
   constructor(
@@ -57,6 +58,22 @@ export class GraphRunReporter {
       const node = graph.nodes[id];
       this.agentType.set(id, node.type === "agent" ? node.agent : node.type);
     }
+    // Topological layer of each node (longest forward-dependency chain), so the
+    // monitor groups nodes by DAG stage instead of a flat roster — a graph-shaped
+    // view. Back-edges are already excluded from deps, so the recursion is finite;
+    // the seen-set guards any stray forward cycle.
+    const depthOf = (id: string, seen: Set<string>): number => {
+      const cached = this.stage.get(id);
+      if (cached !== undefined) return cached;
+      if (seen.has(id)) return 0;
+      seen.add(id);
+      const d = (this.deps.get(id) ?? []).reduce((max, dep) => Math.max(max, depthOf(dep, seen) + 1), 0);
+      seen.delete(id);
+      this.stage.set(id, d);
+      return d;
+    };
+    for (const id of ids) depthOf(id, new Set());
+
     // The run's total is known up front — every declared node — so the header
     // reads N/total from the first frame rather than growing as nodes appear.
     this.task.agentCount = Math.max(this.task.agentCount, ids.length);
@@ -68,11 +85,14 @@ export class GraphRunReporter {
 
   private entry(nodeId: string, run: Readonly<NodeRun>, now: number): WorkflowAgentEntry {
     const deps = this.deps.get(nodeId) ?? [];
+    const stage = this.stage.get(nodeId) ?? 0;
     const base: WorkflowAgentEntry = {
       type: "workflow_agent",
       index: this.index.get(nodeId) ?? 0,
       label: nodeId,
       state: "start",
+      phaseIndex: stage,
+      phaseTitle: `Stage ${stage + 1}`,
       agentType: this.agentType.get(nodeId),
       promptPreview: deps.length > 0 ? `depends on: ${deps.join(", ")}` : "entry node",
       queuedAt: this.queuedAt,

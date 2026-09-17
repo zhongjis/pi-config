@@ -34,6 +34,11 @@ describe("GraphRunReporter", () => {
     expect(b?.state).toBe("start");
     expect(b?.startedAt).toBeDefined();
     expect(b?.promptPreview).toBe("depends on: a");
+    // Nodes are grouped by topological stage for a graph-shaped monitor view.
+    expect(a?.phaseIndex).toBe(0);
+    expect(a?.phaseTitle).toBe("Stage 1");
+    expect(b?.phaseIndex).toBe(1);
+    expect(b?.phaseTitle).toBe("Stage 2");
     expect(t.agentCount).toBe(2);
     expect(t.doneCount).toBe(1);
   });
