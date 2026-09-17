@@ -7,6 +7,7 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
+import { renderObservabilityPaneLines } from "../src/graph/pane/render.js";
 import type { WorkflowAgentEntry, WorkflowEntry, WorkflowRunStatus } from "../src/graph/progress.js";
 import {
   applyPanelKey,
@@ -76,7 +77,7 @@ describe("observability panel — rendering", () => {
   });
 
   it("joins upstream dependency state for the selected node", () => {
-    const rendered = text([graphRun()], { ...initialPanelState(), selectedNodeId: "d" }, { width: 60, now: NOW });
+    const rendered = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "d" } }, { width: 60, now: NOW });
     expect(rendered).toContain("Waits on (upstream)");
     // d waits on b (running) and c (queued); each dep is shown with its live state.
     const detail = rendered.slice(rendered.indexOf("Waits on (upstream)"));
@@ -85,16 +86,16 @@ describe("observability panel — rendering", () => {
   });
 
   it("lists downstream nodes the selection unblocks", () => {
-    const rendered = text([graphRun()], { ...initialPanelState(), selectedNodeId: "a" }, { width: 60, now: NOW });
+    const rendered = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" } }, { width: 60, now: NOW });
     expect(rendered).toContain("Unblocks (downstream)");
     expect(rendered).toContain("→ b → c");
     // A leaf node gates nothing.
-    const leaf = text([graphRun()], { ...initialPanelState(), selectedNodeId: "d" }, { width: 60, now: NOW });
+    const leaf = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "d" } }, { width: 60, now: NOW });
     expect(leaf.slice(leaf.indexOf("Unblocks (downstream)"))).toContain("—");
   });
 
   it("shows a failed node's error in its detail", () => {
-    const rendered = text([graphRun()], { ...initialPanelState(), selectedNodeId: "d" }, { width: 60, now: NOW });
+    const rendered = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "d" } }, { width: 60, now: NOW });
     expect(rendered).toContain("boom");
   });
 
@@ -127,7 +128,7 @@ describe("observability panel — rendering", () => {
   });
 
   it("renders an ASCII tier free of box-drawing and unicode glyphs", () => {
-    const rendered = text([graphRun(), otherRun()], { ...initialPanelState(), selectedNodeId: "a" }, { width: 60, ascii: true, now: NOW });
+    const rendered = text([graphRun(), otherRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" } }, { width: 60, ascii: true, now: NOW });
     expect(rendered).toContain("Stage 1");
     expect(rendered).toContain("-> b -> c");
     for (const glyph of ["─", "‹", "›", "●", "○", "↑", "↓", "←", "→", "✔", "✘", "◌", "❯"]) {
@@ -154,7 +155,7 @@ describe("observability panel — no-run and single-node edge cases", () => {
       status: "completed",
       source: { progress: [agent({ index: 0, label: "only", phaseIndex: 0, state: "done", deps: [], dependents: [] })], task: { status: "completed", startTime: NOW - 1_000 }, agentCount: 1 },
     };
-    const rendered = text([single], { ...initialPanelState(), selectedNodeId: "only" }, { width: 50, now: NOW });
+    const rendered = text([single], { ...initialPanelState(), cursor: { kind: "node", id: "only" } }, { width: 50, now: NOW });
     expect(rendered).toContain("Stage 1");
     expect(rendered).toContain("only");
     expect(rendered).toContain("entry node");
@@ -164,21 +165,26 @@ describe("observability panel — no-run and single-node edge cases", () => {
 describe("observability panel — keys", () => {
   const opts = { width: 60, now: NOW } as const;
 
-  it("moves node selection with j/k (down/up) from the default first node", () => {
+  it("moves the cursor with j/k over the interleaved target order from an unset cursor", () => {
     const down = applyPanelKey([graphRun()], initialPanelState(), "j", opts);
-    expect(down.state.selectedNodeId).toBe("b");
+    expect(down.state.cursor).toEqual({ kind: "stage", stage: 0 });
     expect(down.close).toBe(false);
     const down2 = applyPanelKey([graphRun()], down.state, "j", opts);
-    expect(down2.state.selectedNodeId).toBe("c");
+    expect(down2.state.cursor).toEqual({ kind: "node", id: "a" });
     const up = applyPanelKey([graphRun()], down2.state, "k", opts);
-    expect(up.state.selectedNodeId).toBe("b");
+    expect(up.state.cursor).toEqual({ kind: "stage", stage: 0 });
   });
 
-  it("clamps node selection at the roster ends", () => {
-    const first = applyPanelKey([graphRun()], { ...initialPanelState(), selectedNodeId: "a" }, "k", opts);
-    expect(first.state.selectedNodeId).toBe("a");
-    const last = applyPanelKey([graphRun()], { ...initialPanelState(), selectedNodeId: "d" }, "j", opts);
-    expect(last.state.selectedNodeId).toBe("d");
+  it("stays at the first target on up from an unset cursor", () => {
+    const up = applyPanelKey([graphRun()], initialPanelState(), "k", opts);
+    expect(up.state.cursor).toEqual({ kind: "stage", stage: 0 });
+  });
+
+  it("clamps the cursor at the target-list ends", () => {
+    const first = applyPanelKey([graphRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 0 } }, "k", opts);
+    expect(first.state.cursor).toEqual({ kind: "stage", stage: 0 });
+    const last = applyPanelKey([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "d" } }, "j", opts);
+    expect(last.state.cursor).toEqual({ kind: "node", id: "d" });
   });
 
   it("scrolls the body with pageDown/pageUp, clamped at zero", () => {
@@ -190,12 +196,12 @@ describe("observability panel — keys", () => {
     expect(stay.state.scroll).toBe(0);
   });
 
-  it("switches runs with ←/→, resetting node selection and scroll", () => {
+  it("switches runs with ←/→, resetting the cursor and scroll", () => {
     const runs = [graphRun(), otherRun()];
-    const start: PanelState = { ...initialPanelState(), selectedNodeId: "d", scroll: 4 };
+    const start: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "d" }, scroll: 4 };
     const right = applyPanelKey(runs, start, "\x1b[C", opts);
     expect(right.state.runIndex).toBe(1);
-    expect(right.state.selectedNodeId).toBeUndefined();
+    expect(right.state.cursor).toBeUndefined();
     expect(right.state.scroll).toBe(0);
     // The switcher now points at the second run.
     expect(plain(right.lines).join("\n")).toContain("graph-y");
@@ -248,54 +254,64 @@ describe("observability panel — v1.5 filter, collapse, blast radius", () => {
     expect(running).toContain("queued 1");
   });
 
-  it("snaps the selection to the first visible node when a filter hides it", () => {
-    // Select the done node "a", then filter to running — "a" is no longer visible.
-    const r = applyPanelKey([graphRun()], { ...initialPanelState(), selectedNodeId: "a" }, "f", opts);
+  it("snaps the cursor to the first target when a filter hides it", () => {
+    // Cursor on the done node "a", then filter to running — "a" is no longer a target.
+    const r = applyPanelKey([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" } }, "f", opts);
     expect(r.state.filter).toBe("running");
-    expect(r.state.selectedNodeId).toBe("b");
+    expect(r.state.cursor).toEqual({ kind: "stage", stage: 1 });
   });
 
-  it("navigates over the filtered visible order only", () => {
+  it("navigates over the filtered target order only", () => {
     const failed: PanelState = { ...initialPanelState(), filter: "failed" };
-    // Only d is visible under the failed filter, so navigation clamps onto it.
-    const down = applyPanelKey([graphRun()], failed, "j", opts);
-    expect(down.state.selectedNodeId).toBe("d");
-    const up = applyPanelKey([graphRun()], down.state, "k", opts);
-    expect(up.state.selectedNodeId).toBe("d");
+    // Under the failed filter only Stage 3 (d) survives → targets [stage 2 header, node d].
+    const j1 = applyPanelKey([graphRun()], failed, "j", opts);
+    expect(j1.state.cursor).toEqual({ kind: "stage", stage: 2 });
+    const j2 = applyPanelKey([graphRun()], j1.state, "j", opts);
+    expect(j2.state.cursor).toEqual({ kind: "node", id: "d" });
+    const j3 = applyPanelKey([graphRun()], j2.state, "j", opts);
+    expect(j3.state.cursor).toEqual({ kind: "node", id: "d" }); // clamps at the last target
   });
 
-  it("collapses the selected node's stage with space: hides its rows, flips ▾ to ▸", () => {
-    const base: PanelState = { ...initialPanelState(), selectedNodeId: "b" };
+  it("collapses the cursor's node stage with space: hides its rows, flips ▾ to ▸, lands on the header", () => {
+    const base: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "b" } };
     const dims = { width: 70, now: NOW } as const;
     const expanded = plain(renderPanelLines([graphRun()], base, dims)).join("\n");
     expect(expanded).toContain("▾ Stage 2");
     expect(expanded).toMatch(/c\s+queued/); // c's row shows while its stage is expanded
     const toggled = applyPanelKey([graphRun()], base, " ", dims);
     expect(toggled.state.collapsedStages).toContain(1);
-    const collapsed = plain(toggled.lines).join("\n");
-    expect(collapsed).toContain("▸ Stage 2");
-    expect(collapsed).not.toContain("▾ Stage 2");
-    expect(collapsed).not.toMatch(/c\s+queued/); // c's row is hidden under the collapsed stage
+    // Collapsing lands the cursor on the now-folded stage header, not a hidden node.
+    expect(toggled.state.cursor).toEqual({ kind: "stage", stage: 1 });
+    const collapsedPlain = plain(toggled.lines);
+    const detailIdx = collapsedPlain.findIndex(line => line.includes("Stage ── 2"));
+    const roster = collapsedPlain.slice(0, detailIdx).join("\n");
+    expect(roster).toContain("▸ Stage 2");
+    expect(roster).not.toContain("▾ Stage 2");
+    expect(roster).not.toMatch(/c\s+queued/); // c's roster row is hidden under the collapsed stage
     // enter toggles the same fold back open.
     const reopened = applyPanelKey([graphRun()], toggled.state, "\r", dims);
     expect(reopened.state.collapsedStages).not.toContain(1);
   });
 
-  it("skips collapsed stages during node navigation", () => {
-    // Stage 2 (b, c) is folded; moving down from a jumps straight to d in Stage 3.
-    const collapsed: PanelState = { ...initialPanelState(), selectedNodeId: "a", collapsedStages: [1] };
+  it("keeps a collapsed stage's header in the nav order instead of skipping it", () => {
+    // Stage 2 (b, c) is folded; from node a, ↓ lands on the collapsed header, not straight to d.
+    const collapsed: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "a" }, collapsedStages: [1] };
     const down = applyPanelKey([graphRun()], collapsed, "j", opts);
-    expect(down.state.selectedNodeId).toBe("d");
+    expect(down.state.cursor).toEqual({ kind: "stage", stage: 1 });
+    const down2 = applyPanelKey([graphRun()], down.state, "j", opts);
+    expect(down2.state.cursor).toEqual({ kind: "stage", stage: 2 });
+    const down3 = applyPanelKey([graphRun()], down2.state, "j", opts);
+    expect(down3.state.cursor).toEqual({ kind: "node", id: "d" });
   });
 
   it("resets collapse but keeps the filter across a run switch", () => {
     const runs = [graphRun(), otherRun()];
-    const start: PanelState = { ...initialPanelState(), filter: "failed", collapsedStages: [1], selectedNodeId: "d", scroll: 3 };
+    const start: PanelState = { ...initialPanelState(), filter: "failed", collapsedStages: [1], cursor: { kind: "node", id: "d" }, scroll: 3 };
     const right = applyPanelKey(runs, start, "\x1b[C", opts);
     expect(right.state.runIndex).toBe(1);
     expect(right.state.filter).toBe("failed");
     expect(right.state.collapsedStages).toEqual([]);
-    expect(right.state.selectedNodeId).toBeUndefined();
+    expect(right.state.cursor).toBeUndefined();
     expect(right.state.scroll).toBe(0);
   });
 
@@ -312,12 +328,12 @@ describe("observability panel — v1.5 filter, collapse, blast radius", () => {
       status: "failed",
       source: { progress, task: { status: "failed", workflowName: "blast", startTime: NOW - 1_000 }, agentCount: 3 },
     };
-    const rendered = text([run], { ...initialPanelState(), selectedNodeId: "A" }, { width: 70, now: NOW });
+    const rendered = text([run], { ...initialPanelState(), cursor: { kind: "node", id: "A" } }, { width: 70, now: NOW });
     expect(rendered).toContain("Blast radius: B, C");
   });
 
   it("shows 'none yet' blast radius for a failed leaf with no skipped downstream", () => {
-    const rendered = text([graphRun()], { ...initialPanelState(), selectedNodeId: "d" }, { width: 60, now: NOW });
+    const rendered = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "d" } }, { width: 60, now: NOW });
     expect(rendered).toContain("Blast radius: none yet");
   });
 
@@ -332,7 +348,7 @@ describe("observability panel — v1.5 filter, collapse, blast radius", () => {
   });
 
   it("keeps every line within width with filter, collapse, and blast radius active", () => {
-    const state: PanelState = { ...initialPanelState(), filter: "failed", selectedNodeId: "d", collapsedStages: [0] };
+    const state: PanelState = { ...initialPanelState(), filter: "failed", cursor: { kind: "node", id: "d" }, collapsedStages: [0] };
     for (const width of [10, 20, 40, 60, 80, 120]) {
       for (const ascii of [false, true]) {
         const lines = plain(renderPanelLines([graphRun(), otherRun()], state, { width, ascii, now: NOW }));
@@ -342,5 +358,82 @@ describe("observability panel — v1.5 filter, collapse, blast radius", () => {
         }
       }
     }
+  });
+});
+
+describe("observability panel — Wave A cursor, collapse un-trap, stage detail, highlight", () => {
+  const opts = { width: 60, now: NOW } as const;
+
+  it("keeps a collapsed stage's header navigable so it can be re-expanded (un-trap)", () => {
+    // Cursor on Stage 2 (b, c); space collapses it.
+    const start: PanelState = { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } };
+    const collapsed = applyPanelKey([graphRun()], start, " ", opts);
+    expect(collapsed.state.collapsedStages).toContain(1);
+    // The cursor stays on the header — never stranded on a now-hidden node.
+    expect(collapsed.state.cursor).toEqual({ kind: "stage", stage: 1 });
+    // The stage's rows are hidden from the roster while collapsed.
+    const collapsedPlain = plain(collapsed.lines);
+    const detailIdx = collapsedPlain.findIndex(line => line.includes("Stage ── 2"));
+    expect(collapsedPlain.slice(0, detailIdx).join("\n")).not.toMatch(/c\s+queued/);
+    // enter on the still-navigable header re-expands it; its nodes reappear.
+    const reopened = applyPanelKey([graphRun()], collapsed.state, "\r", opts);
+    expect(reopened.state.collapsedStages).not.toContain(1);
+    expect(plain(reopened.lines).join("\n")).toMatch(/c\s+queued/);
+  });
+
+  it("moves the cursor to the stage header when collapsing from a node, not stranding it", () => {
+    const start: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "b" } };
+    const collapsed = applyPanelKey([graphRun()], start, " ", opts);
+    expect(collapsed.state.collapsedStages).toContain(1);
+    expect(collapsed.state.cursor).toEqual({ kind: "stage", stage: 1 });
+    const reopened = applyPanelKey([graphRun()], collapsed.state, "\r", opts);
+    expect(reopened.state.collapsedStages).not.toContain(1);
+  });
+
+  it("walks stage headers and nodes interleaved with ↓, not node-only", () => {
+    // graphProgress: stage0[a], stage1[b,c], stage2[d].
+    const expected: PanelState["cursor"][] = [
+      { kind: "stage", stage: 0 },
+      { kind: "node", id: "a" },
+      { kind: "stage", stage: 1 },
+      { kind: "node", id: "b" },
+      { kind: "node", id: "c" },
+      { kind: "stage", stage: 2 },
+      { kind: "node", id: "d" },
+    ];
+    let state = initialPanelState();
+    const seen: PanelState["cursor"][] = [];
+    for (let i = 0; i < expected.length; i++) {
+      state = applyPanelKey([graphRun()], state, "j", opts).state;
+      seen.push(state.cursor);
+    }
+    expect(seen).toEqual(expected);
+    // Clamps at the last target and retraces the order on the way up.
+    expect(applyPanelKey([graphRun()], state, "j", opts).state.cursor).toEqual({ kind: "node", id: "d" });
+    expect(applyPanelKey([graphRun()], state, "k", opts).state.cursor).toEqual({ kind: "stage", stage: 2 });
+  });
+
+  it("renders the selected row as a full-width reverse-video bar via the pane theme", () => {
+    const width = 60;
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "b" } };
+    const lines = renderObservabilityPaneLines([graphRun()], state, { width, now: NOW });
+    const reversed = lines.filter(line => line.includes("\x1b[7m"));
+    expect(reversed.length).toBe(1);
+    // The inverted run spans the whole pane width.
+    expect(visibleWidth(reversed[0])).toBe(width);
+    expect(stripTerminalSequences(reversed[0])).toContain("b");
+  });
+
+  it("shows a stage summary in the detail zone when the cursor is on a stage header", () => {
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } };
+    const lines = plain(renderPanelLines([graphRun()], state, { width: 60, now: NOW }));
+    const detailStart = lines.findIndex(line => line.includes("Stage ── 2"));
+    expect(detailStart).toBeGreaterThan(-1);
+    const detail = lines.slice(detailStart).join("\n");
+    // Header: Stage <n> + done/total (b, c → 0/2).
+    expect(detail).toContain("0/2");
+    // One line per node in the stage, with its live state.
+    expect(detail).toMatch(/b\s+running/);
+    expect(detail).toMatch(/c\s+queued/);
   });
 });

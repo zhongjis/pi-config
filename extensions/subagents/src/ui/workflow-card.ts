@@ -88,6 +88,8 @@ export interface WorkflowCardSegment {
   text: string;
   color?: WorkflowCardColor;
   bold?: boolean;
+  /** Draw the segment as a monochrome reverse-video bar; ignores `color`/`bold`. */
+  reverse?: boolean;
 }
 
 export type WorkflowCardLine = WorkflowCardSegment[];
@@ -217,6 +219,7 @@ export function styleWorkflowCardLines(lines: readonly WorkflowCardLine[], theme
   return lines.map(line =>
     line
       .map(segment => {
+        if (segment.reverse) return `\x1b[7m${segment.text}\x1b[0m`;
         const text = segment.bold ? theme.bold(segment.text) : segment.text;
         return segment.color ? theme.fg(segment.color, text) : text;
       })

@@ -246,7 +246,7 @@ export class WorkflowPaneManager {
     }
     const shownId = tasks[index]?.id;
     if (shownId !== this.lastPanelRunId) {
-      this.panelState.selectedNodeId = undefined;
+      this.panelState.cursor = undefined;
       this.panelState.scroll = 0;
       // Stages differ per graph; keep the user's filter intent across the switch.
       this.panelState.collapsedStages = [];
