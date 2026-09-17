@@ -1,7 +1,7 @@
 /**
  * graph-run-adapter.ts — bridge a graph run into the workflow monitor.
  *
- * The `/agents → Workflows` dialog, the fleet widget, the inline card and the
+ * The `/agents → Graph runs` dialog, the fleet widget, the inline card and the
  * Herdr pane all render a {@link WorkflowTask}'s append-only progress log. A
  * graph run is node-shaped rather than script-shaped, so this maps each node's
  * {@link NodeRun} state onto a `workflow_agent` progress entry (keyed by a stable

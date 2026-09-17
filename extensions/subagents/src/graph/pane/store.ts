@@ -39,7 +39,7 @@ export interface PaneSnapshot {
  * The ownership record. `sentinel` is the pane label we set with `rename`; the
  * controller re-checks it before touching a pane, so a pane the user renamed or
  * repurposed reads as "not ours" and is left alone. `closedByUser` survives a
- * manual close so the pane is not auto-reopened until `/workflow-pane`.
+ * manual close so the pane is not auto-reopened until `/graph-runs`.
  */
 export interface PaneRecord {
   paneId: string;

@@ -1,4 +1,4 @@
-/** `/agents → Workflows`: stable phase-grouped roster with contextual agent detail. */
+/** `/agents → Graph runs`: stable phase-grouped roster with contextual agent detail. */
 
 import {
   type Component,
@@ -109,11 +109,11 @@ export function dialogRowGlyph(
 
 export const WORKFLOW_DIALOG_COPY = {
   waitingForSlot: "Waiting for an agent slot.",
-  waitingForResume: "Workflow paused; running agents finish, but no new agents start.",
-  stoppedEarly: "The workflow stopped before this agent finished.",
+  waitingForResume: "Run paused; running agents finish, but no new agents start.",
+  stoppedEarly: "The graph run stopped before this agent finished.",
   skippedByUser: "Skipped by user.",
   noOutcome: "No retained outcome preview.",
-  noAgents: "Waiting for workflow to schedule agents.",
+  noAgents: "Waiting for the graph to schedule agents.",
 } as const;
 
 export type WorkflowDialogLevel = "roster" | "detail";
@@ -145,6 +145,7 @@ export interface WorkflowDialogInput extends WorkflowDialogSource {
   ascii?: boolean;
   spinnerFrame?: number;
   bodyRows?: number;
+  fillBody?: boolean;
 }
 
 export interface WorkflowDialogActions {
@@ -529,17 +530,19 @@ function resolveWorkflowLayout(input: WorkflowDialogInput): { lines: WorkflowCar
   const allDetail = detailRows(view.selectedEntry, view, detailWidth, now);
   const detailOffset = Math.min(Math.max(0, input.state.detailOffset), Math.max(0, allDetail.length - capacity));
   const detail = allDetail.slice(detailOffset, detailOffset + capacity);
-  const bodyRows = Math.min(
-    capacity,
-    Math.max(MIN_PANE_BODY_ROWS, roster.length, view.narrow && input.state.level !== "detail" ? 0 : detail.length),
-  );
+  const bodyRows = input.fillBody
+    ? capacity
+    : Math.min(
+        capacity,
+        Math.max(MIN_PANE_BODY_ROWS, roster.length, view.narrow && input.state.level !== "detail" ? 0 : detail.length),
+      );
   const frame = view.narrow
     ? singlePaneFrame(
-        input.state.level === "detail" ? (view.selectedEntry?.label ?? "Agent detail") : "Workflow agents",
+        input.state.level === "detail" ? (view.selectedEntry?.label ?? "Node detail") : "Graph nodes",
         input.state.level === "detail" ? detail : roster, frameWidth, bodyRows, glyphs,
       )
     : twoPaneFrame({
-        leftTitle: "Workflow agents", rightTitle: view.selectedEntry?.label ?? "Agent detail",
+        leftTitle: "Graph nodes", rightTitle: view.selectedEntry?.label ?? "Node detail",
         leftRows: roster, rightRows: detail, width: frameWidth, bodyRows, glyphs,
       });
   lines.push(...frame.map(line => [{ text: " " }, ...line]));

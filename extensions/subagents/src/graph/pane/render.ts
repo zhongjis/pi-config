@@ -4,7 +4,7 @@
  * The whole point of Option F is that the extension keeps ownership of the
  * layout: this module calls the real `layoutWorkflowDialog` at the overview
  * level and themes it with an ANSI palette, so the side pane can never drift
- * from `/agents → Workflows`. Nothing here reaches for a host — it imports only
+ * from `/agents → Graph runs`. Nothing here reaches for a host — it imports only
  * pi-tui-backed pure modules — which is what lets it run in the extension
  * process and hand finished strings to the viewer.
  */
@@ -16,6 +16,7 @@ import {
   handleWorkflowDialogKey,
   initialWorkflowDialogState,
   layoutWorkflowDialog,
+  MIN_PANE_BODY_ROWS,
   resolveWorkflowDialog,
   type WorkflowDialogActions,
   type WorkflowDialogInput,
@@ -25,6 +26,9 @@ import {
 import type { WorkflowTask } from "../task.js";
 
 const RESET = "\x1b[0m";
+
+/** Header (name/subtext/status/blank) + frame borders + footer ≈ 9 rows of chrome; the rest is body. */
+const PANE_CHROME_ROWS = 9;
 
 /** SGR colour code per card colour. Kept legible over clever: one hue each. */
 const SGR: Record<WorkflowCardColor, string> = {
@@ -97,8 +101,9 @@ const PANE_AVAILABLE: Partial<Record<keyof WorkflowDialogActions, boolean>> = {
  */
 export function renderWorkflowPaneLines(
   source: WorkflowDialogSource,
-  opts: { width: number; ascii?: boolean; now?: number; state?: WorkflowDialogState },
+  opts: { width: number; ascii?: boolean; now?: number; state?: WorkflowDialogState; rows?: number },
 ): string[] {
+  const bodyRows = opts.rows != null ? Math.max(MIN_PANE_BODY_ROWS, opts.rows - PANE_CHROME_ROWS) : undefined;
   const input: WorkflowDialogInput = {
     ...source,
     state: opts.state ?? initialWorkflowDialogState(),
@@ -106,6 +111,8 @@ export function renderWorkflowPaneLines(
     width: opts.width,
     ascii: opts.ascii,
     now: opts.now,
+    bodyRows,
+    fillBody: opts.rows != null,
   };
   return styleWorkflowCardLines(layoutWorkflowDialog(input), PANE_ANSI_THEME);
 }
@@ -114,7 +121,7 @@ export function renderWorkflowPaneLines(
  * Apply one forwarded keystroke to the pane's view state and re-render.
  *
  * Reuses the overlay's pure key handler, so navigation (↑↓, enter, f, esc, page)
- * behaves identically to `/agents → Workflows`. The pane is READ-ONLY: any
+ * behaves identically to `/agents → Graph runs`. The pane is READ-ONLY: any
  * `action` the handler returns (kill/pause/resume/skip/retry/open/cancel) is
  * deliberately ignored. A key the handler does not own leaves the state as-is and
  * re-renders idempotently.
@@ -123,8 +130,9 @@ export function applyPaneKey(
   source: WorkflowDialogSource,
   state: WorkflowDialogState,
   data: string,
-  opts: { width: number; now?: number; ascii?: boolean },
+  opts: { width: number; now?: number; ascii?: boolean; rows?: number },
 ): { state: WorkflowDialogState; lines: string[]; close: boolean } {
+  const bodyRows = opts.rows != null ? Math.max(MIN_PANE_BODY_ROWS, opts.rows - PANE_CHROME_ROWS) : undefined;
   const input: WorkflowDialogInput = {
     ...source,
     state,
@@ -132,6 +140,8 @@ export function applyPaneKey(
     width: opts.width,
     ascii: opts.ascii,
     now: opts.now,
+    bodyRows,
+    fillBody: opts.rows != null,
   };
   const view = resolveWorkflowDialog(input);
   const result = handleWorkflowDialogKey(data, state, view);
@@ -149,6 +159,7 @@ export function applyPaneKey(
       ascii: opts.ascii,
       now: opts.now,
       state: nextState,
+      rows: opts.rows,
     }),
   };
 }

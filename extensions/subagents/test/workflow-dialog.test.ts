@@ -62,7 +62,7 @@ describe("workflow inspector model", () => {
       meta: { name: "audit", description: "", phases: [{ title: "Research" }, { title: "Verify" }, { title: "Report" }] },
       state: initialWorkflowDialogState(), width: 120,
     });
-    for (const marker of ["Research", "Verify", "Report", "Running", "Queued", "Completed", "Waiting for workflow to schedule"]) {
+    for (const marker of ["Research", "Verify", "Report", "Running", "Queued", "Completed", "Waiting for the graph to schedule"]) {
       expect(rendered).toContain(marker);
     }
   });

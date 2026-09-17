@@ -218,11 +218,13 @@ export class WorkflowPaneManager {
       return; // Undecodable chunk; drop it.
     }
     try {
-      const width = readViewport(this.dir)?.cols ?? DEFAULT_WIDTH;
+      const vp = readViewport(this.dir);
+      const width = vp?.cols ?? DEFAULT_WIDTH;
+      const rows = vp?.rows;
       const source: WorkflowDialogSource = task
         ? toPaneSource(task)
         : { progress: [], task: { status: "completed", startTime: 0 }, agentCount: 0 };
-      const { state, lines, close } = applyPaneKey(source, this.paneState, data, { width });
+      const { state, lines, close } = applyPaneKey(source, this.paneState, data, { width, rows });
       this.paneState = state;
       // esc/q at the overview level is the pane's one honoured action: a real,
       // user-initiated close. Do not paint a fresh snapshot after it.
@@ -297,10 +299,12 @@ export class WorkflowPaneManager {
     }
 
     try {
-      const width = readViewport(this.dir)?.cols ?? DEFAULT_WIDTH;
+      const vp = readViewport(this.dir);
+      const width = vp?.cols ?? DEFAULT_WIDTH;
+      const rows = vp?.rows;
       const lines = task
-        ? renderWorkflowPaneLines(toPaneSource(task), { width, state: this.paneState })
-        : ["", "  No workflow runs in this session yet."];
+        ? renderWorkflowPaneLines(toPaneSource(task), { width, state: this.paneState, rows })
+        : ["", "  No graph runs in this session yet."];
       writeSnapshotAtomic(this.dir, {
         version: 1,
         sessionId: this.sessionId,

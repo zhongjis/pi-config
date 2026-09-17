@@ -1911,7 +1911,7 @@ Terse command-style prompts produce shallow, generic work.
     // Actions
     options.push("Create new agent");
     options.push("Settings");
-    if (isWorkflowsEnabled()) options.push(`Workflows (${workflowTasks.size})`);
+    if (isWorkflowsEnabled()) options.push(`Graph runs (${workflowTasks.size})`);
 
     const noAgentsMsg = allNames.length === 0 && agents.length === 0
       ? "No agents found. Create specialized subagents that can be delegated to.\n\n" +
@@ -1934,7 +1934,7 @@ Terse command-style prompts produce shallow, generic work.
       await showAgentsMenu(ctx);
     } else if (choice === "Create new agent") {
       await showCreateWizard(ctx);
-    } else if (choice.startsWith("Workflows (")) {
+    } else if (choice.startsWith("Graph runs (")) {
       await showWorkflowsMenu(ctx, workflowMenuDeps);
       await showAgentsMenu(ctx);
     } else if (choice === "Settings") {
@@ -2697,13 +2697,13 @@ ${systemPrompt}
     description: "Manage agents",
     handler: async (_args, ctx) => { await showAgentsMenu(ctx); },
   });
-  pi.registerCommand("workflow-pane", {
-    description: "Open/reopen the workflow inspector in a Herdr side pane",
+  pi.registerCommand("graph-runs", {
+    description: "Open/reopen the graph run monitor in a Herdr side pane",
     handler: async (_args, ctx) => {
       // Clears any manual-close flag and force-opens for the active run. Off the
       // Herdr path there is nothing to open, so say why rather than doing nothing.
       if (!workflowPane?.isEnabled()) {
-        ctx.ui.notify("Workflow pane needs a Herdr-managed pane.", "warning");
+        ctx.ui.notify("Graph run monitor needs a Herdr-managed pane.", "warning");
         return;
       }
       await workflowPane.forceOpen();
