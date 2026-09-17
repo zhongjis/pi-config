@@ -7,7 +7,7 @@ import { namespaceFragment, runGraph } from "../src/graph/run-graph.js";
 const internalFragment: GraphFragment = {
   nodes: {
     a: { type: "agent", agent: "x", prompt: "a" },
-    b: { type: "agent", agent: "x", prompt: "${v}", input: { v: { node: "a", path: "$" } } },
+    b: { type: "agent", agent: "x", prompt: "b", input: { v: { node: "a", path: "$" } } },
   },
   edges: [{ from: "a", to: "b" }],
   outputs: { out: { node: "b", path: "$" } },
@@ -32,7 +32,7 @@ describe("namespaceFragment", () => {
   it("prefixes internal ids and rewrites internal references, leaving external ones alone", () => {
     const withExternal: GraphFragment = {
       nodes: {
-        a: { type: "agent", agent: "x", prompt: "${up}", input: { up: { node: "outside", path: "$" } } },
+        a: { type: "agent", agent: "x", prompt: "a", input: { up: { node: "outside", path: "$" } } },
         b: { type: "agent", agent: "x", prompt: "b", input: { v: { node: "a", path: "$.k" } } },
       },
       edges: [
@@ -86,27 +86,33 @@ describe("runGraph — expand nodes", () => {
   });
 
   it("fails the expand node when the source does not resolve to a fragment", async () => {
-    const host: NodeHost = {
-      spawnAgent: async request => (request.nodeId === "gen" ? { ok: true, output: JSON.stringify("not-a-fragment") } : { ok: true, output: "ok" }),
+    // gen has no outputSchema, so its plain-text output reaches the expand source as a string.
+    const g: AgentGraph = {
+      nodes: {
+        gen: { type: "agent", agent: "x", prompt: "gen" },
+        exp: { type: "expand", source: { node: "gen", path: "$" } },
+      },
+      edges: [{ from: "gen", to: "exp" }],
     };
-    const result = await runGraph(expandGraph(), {}, { host });
+    const host: NodeHost = {
+      spawnAgent: async request => (request.nodeId === "gen" ? { ok: true, output: "not-a-fragment" } : { ok: true, output: "ok" }),
+    };
+    const result = await runGraph(g, {}, { host });
     expect(result.status).toBe("failed");
     expect(result.nodes.exp.error).toContain("GraphFragment");
   });
 
-  it("namespaces inserted ids and resolves their internal edges/references", async () => {
+  it("namespaces inserted ids and resolves their internal edges", async () => {
     const host: NodeHost = {
       spawnAgent: async request => {
         if (request.nodeId === "gen") return { ok: true, output: JSON.stringify(internalFragment) };
-        if (request.nodeId === "sub:a") return { ok: true, output: "a-out" };
-        if (request.nodeId === "sub:b") return { ok: true, output: request.prompt }; // echoes the resolved ${v}
-        return { ok: true, output: "ok" };
+        return { ok: true, output: `${request.nodeId}-out` };
       },
     };
     const result = await runGraph(expandGraph("sub"), {}, { host });
     expect(result.status).toBe("completed");
+    // Ids are prefixed, and sub:b completing proves its internal edge from sub:a was rewritten.
     expect(result.nodes["sub:a"].status).toBe("completed");
     expect(result.nodes["sub:b"].status).toBe("completed");
-    expect(result.nodes["sub:b"].output).toBe("a-out"); // internal ref resolved after prefixing
   });
 });

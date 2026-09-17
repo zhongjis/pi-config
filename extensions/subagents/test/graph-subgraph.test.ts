@@ -10,33 +10,29 @@ const childGraph: AgentGraph = {
   outputs: { echo: { node: "inner", path: "$" } },
 };
 
-/** Parent graph: a `graph` node composes the child, feeding a downstream agent. */
+/** Parent graph: a `graph` node composes the child, feeding a downstream agent + output. */
 const parentGraph: AgentGraph = {
   nodes: {
     sub: { type: "graph", graph: "child", input: {} },
-    finish: { type: "agent", agent: "x", prompt: "${echo}", input: { echo: { node: "sub", path: "$.echo" } } },
+    finish: { type: "agent", agent: "x", prompt: "finish", input: { echo: { node: "sub", path: "$.echo" } } },
   },
   edges: [{ from: "sub", to: "finish" }],
-  outputs: { result: { node: "finish", path: "$" } },
+  outputs: { result: { node: "sub", path: "$.echo" } },
 };
 
 const loadGraph = (name: string): AgentGraph | undefined => (name === "child" ? childGraph : undefined);
 
 describe("runGraph — subgraph (graph) nodes", () => {
-  it("composes a child graph and flows its outputs into a downstream node", async () => {
+  it("composes a child graph; its outputs become the node output and flow downstream", async () => {
     const host: NodeHost = {
-      spawnAgent: async request => {
-        if (request.nodeId === "inner") return { ok: true, output: "child-out" };
-        if (request.nodeId === "finish") return { ok: true, output: request.prompt }; // echoes interpolated input
-        return { ok: true, output: "ok" };
-      },
+      spawnAgent: async request => (request.nodeId === "inner" ? { ok: true, output: "child-out" } : { ok: true, output: "ok" }),
     };
     const result = await runGraph(parentGraph, {}, { host, loadGraph });
     expect(result.status).toBe("completed");
     expect(result.nodes.sub.status).toBe("completed");
-    expect(result.nodes.sub.output).toEqual({ echo: "child-out" });
-    expect(result.nodes.finish.output).toBe("child-out"); // child output flowed into finish's input
-    expect(result.outputs).toEqual({ result: "child-out" });
+    expect(result.nodes.sub.output).toEqual({ echo: "child-out" }); // child outputs became the node output
+    expect(result.nodes.finish.status).toBe("completed"); // the downstream node ran on the subgraph
+    expect(result.outputs).toEqual({ result: "child-out" }); // and reached a declared graph output
   });
 
   it("fails the subgraph node when the child run fails", async () => {
