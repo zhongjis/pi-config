@@ -37,6 +37,20 @@ import { MISSING, type ResolutionContext, resolveValueRef } from "./value-ref.js
 
 export const DEFAULT_CONCURRENCY = 8;
 
+/**
+ * The run's control surface, handed to the caller once via
+ * {@link RunGraphOptions.onControl}. Shape matches the script runtime's control
+ * so the same `/agents` dialog keys drive both. Skip/retry address a node by its
+ * declaration index (the order the monitor lists nodes in).
+ */
+export interface GraphControl {
+  pause(): void;
+  resume(): void;
+  isPaused(): boolean;
+  skip(index: number): boolean;
+  retry(index: number): boolean;
+}
+
 export interface RunGraphOptions {
   host: NodeHost;
   concurrency?: number;
@@ -54,6 +68,8 @@ export interface RunGraphOptions {
   resources?: Record<string, { capacity: number }>;
   /** Fired whenever a node changes state — the monitor's data feed. */
   onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>): void;
+  /** Hands the caller the run's control surface, once, before the first node. */
+  onControl?(control: GraphControl): void;
 }
 
 export interface RunGraphResult {
@@ -251,8 +267,13 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input));
     const actor = createActor(nodeLogic, { input: exec });
     const done = new Promise<string>(resolve => {
-      actor.subscribe(snapshot => {
-        if (snapshot.status === "done") resolve(id);
+      // Resolve on any terminal transition — done, or stopped by a skip/retry —
+      // so a cancelled node's inflight entry never hangs the run loop.
+      actor.subscribe({
+        next: snapshot => {
+          if (snapshot.status === "done" || snapshot.status === "stopped") resolve(id);
+        },
+        complete: () => resolve(id),
       });
       actor.start();
     });
@@ -325,6 +346,47 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     report(id);
   };
 
+  const orderedIds = Object.keys(graph.nodes);
+  const intents = new Map<string, "skip" | "retry">();
+  let paused = false;
+  let wakePause: (() => void) | undefined;
+  options.onControl?.({
+    pause: () => {
+      paused = true;
+    },
+    resume: () => {
+      paused = false;
+      wakePause?.();
+      wakePause = undefined;
+    },
+    isPaused: () => paused,
+    skip: index => {
+      const id = orderedIds[index];
+      if (id === undefined) return false;
+      const entry = inflight.get(id);
+      if (entry !== undefined) {
+        intents.set(id, "skip");
+        entry.stop();
+        return true;
+      }
+      if (scheduler.nodes.get(id)?.status === "pending") {
+        scheduler.settle(id, { ok: false, skipped: true });
+        report(id);
+        return true;
+      }
+      return false;
+    },
+    retry: index => {
+      const id = orderedIds[index];
+      if (id === undefined) return false;
+      const entry = inflight.get(id);
+      if (entry === undefined) return false;
+      intents.set(id, "retry");
+      entry.stop();
+      return true;
+    },
+  });
+
   while (true) {
     if (options.signal?.aborted) {
       stopAll();
@@ -336,6 +398,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     // node inserts fresh roots that would otherwise be force-skipped as stuck.
     let progressed = false;
     for (const id of scheduler.ready()) {
+      if (paused) break; // pause stops new admission; inflight nodes still finish
       if (inflight.size >= concurrency) break;
       if (inflight.has(id)) continue;
       const node = nodeDefs.get(id);
@@ -369,6 +432,15 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     if (progressed) continue;
 
     if (inflight.size === 0) {
+      if (paused && !options.signal?.aborted) {
+        // Held with nothing running: wait for resume (or abort) rather than
+        // finishing the run.
+        await new Promise<void>(resolve => {
+          wakePause = resolve;
+          options.signal?.addEventListener("abort", resolve, { once: true });
+        });
+        continue;
+      }
       if (scheduler.resolveSkips() > 0) continue;
       if (scheduler.isDone()) break;
       scheduler.forceSkipStuck();
@@ -379,7 +451,16 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     const entry = inflight.get(settledId);
     inflight.delete(settledId);
     if (entry !== undefined) release(entry.resources);
-    scheduler.settle(settledId, entry?.result() ?? { ok: false, error: "node produced no result" });
+    const intent = intents.get(settledId);
+    intents.delete(settledId);
+    if (intent === "retry") {
+      scheduler.retry(settledId);
+      report(settledId);
+      continue;
+    }
+    const settle: SettleInput =
+      intent === "skip" ? { ok: false, skipped: true } : (entry?.result() ?? { ok: false, error: "node produced no result" });
+    scheduler.settle(settledId, settle);
     report(settledId);
   }
 

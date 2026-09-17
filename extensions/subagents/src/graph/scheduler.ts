@@ -186,6 +186,16 @@ export class Scheduler {
     }
   }
 
+  /** Reset a running node to pending so the driver re-runs it (user retry). */
+  retry(id: NodeId): boolean {
+    const run = this.nodes.get(id);
+    if (run?.status !== "running") return false;
+    run.status = "pending";
+    run.output = undefined;
+    run.error = undefined;
+    return true;
+  }
+
   /** Record a node's disposition and re-activate any bounded loop targets. */
   settle(id: NodeId, result: SettleInput): void {
     const run = this.nodes.get(id);

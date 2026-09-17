@@ -1492,6 +1492,9 @@ Terse command-style prompts produce shallow, generic work.
           const resolved = resolveSavedGraph(name, ctx.cwd);
           return resolved.ok ? (resolved.graph as AgentGraph) : undefined;
         },
+        onControl: control => {
+          task.control = control;
+        },
         onNodeUpdate: (nodeId, run) => {
           reporter.update(nodeId, run);
           workflowPane?.sync();
