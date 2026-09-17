@@ -187,6 +187,50 @@ describe("esc-at-overview closes via the extension", () => {
   });
 });
 
+describe("auto-open gating", () => {
+  const splitCalled = (exec: any) =>
+    exec.mock.calls.some((c: any[]) => c[0] === "herdr" && c[1]?.[1] === "split");
+  const syncNow = (mgr: WorkflowPaneManager, force: boolean) =>
+    (mgr as unknown as { syncNow: (f: boolean) => Promise<void> }).syncNow(force);
+  function mgrWith(exec: any, getTasks: () => WorkflowTask[]) {
+    const mgr = createWorkflowPaneManager({
+      enabled: true,
+      exec,
+      parentPaneId: "%p0",
+      socket: "sock",
+      cwd: "/work",
+      sessionId: "sess1234",
+      ppid: 4242,
+      getTasks,
+      viewerPath: "/viewer/viewer.mjs",
+      dir,
+    });
+    managers.push(mgr);
+    return mgr;
+  }
+
+  it("does not split a pane on sync when no run exists", async () => {
+    const exec = vi.fn(ok);
+    const mgr = mgrWith(exec as any, () => []);
+    await syncNow(mgr, false);
+    expect(splitCalled(exec)).toBe(false);
+  });
+
+  it("splits a pane on sync once a run exists", async () => {
+    const exec = vi.fn(ok);
+    const mgr = mgrWith(exec as any, () => [twoPhaseTask("wf_a", 1000)]);
+    await syncNow(mgr, false);
+    expect(splitCalled(exec)).toBe(true);
+  });
+
+  it("force-opens on demand even with no run", async () => {
+    const exec = vi.fn(ok);
+    const mgr = mgrWith(exec as any, () => []);
+    await syncNow(mgr, true);
+    expect(splitCalled(exec)).toBe(true);
+  });
+});
+
 describe("disabled manager", () => {
   it("never processes input and holds no view state machinery", () => {
     const mgr = createWorkflowPaneManager({

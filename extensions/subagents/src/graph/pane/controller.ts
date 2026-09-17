@@ -92,7 +92,7 @@ export class WorkflowPaneController {
     this.cwd = options.cwd;
     this.viewerPath = options.viewerPath;
     this.ppid = options.ppid;
-    this.sentinel = options.sentinel ?? `Workflow · ${options.sessionId.slice(0, 8)}`;
+    this.sentinel = options.sentinel ?? `Agent Graph · ${options.sessionId.slice(0, 8)}`;
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 

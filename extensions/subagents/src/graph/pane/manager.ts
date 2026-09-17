@@ -387,9 +387,11 @@ export class WorkflowPaneManager {
     this.pickAndTrack();
 
     try {
+      // Auto-open only once a run exists this session; a forced open (/graph-runs)
+      // still opens on demand. Keeps an empty pane from appearing at session start.
       if (force) {
         await this.controller.ensurePane(true);
-      } else if (!readRecord(this.dir)?.closedByUser) {
+      } else if (this.pickTask() !== undefined && !readRecord(this.dir)?.closedByUser) {
         await this.controller.ensurePane(false);
       }
     } catch (err) {
