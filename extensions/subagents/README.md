@@ -14,6 +14,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 - **Adapted:** Panda Harness presentation, root test/discovery wiring, orchestration guidance, and Agent-tree `local://` inheritance.
 - **Selective control backports:** `v0.19.0` (`4f572eaa04c09d3dbc16e4a5f13a16b295e84e14`), adapted without changing the base pin or execution/persistence defaults.[1]
 - **Selective workflow import:** full `v0.19.0` scripted `SubagentWorkflow` feature from `4f572eaa04c09d3dbc16e4a5f13a16b295e84e14`, plus lowercase workflow-name collision fix `e955e29c51b7a6cce37e1108cd2d6c57a77e151c`; separate from the original base provenance above.[1][2]
+- **Scripted workflow removed:** the imported `SubagentWorkflow` script runtime was subsequently removed and replaced by the typed `agent_graph` graph runtime. See [ADR-0002](../../docs/adr/0002-remove-subagentworkflow-script-runtime.md).
 
 ## Local Tweaks
 
@@ -30,14 +31,13 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/index.ts`, `examples/agent-tool-description.md`, `test/tool-description-mode.test.ts` | Full advertisements retain verbatim model chains or parent inheritance; full/compact/custom lists separate built-in and configured extension selectors, including none/unavailable | Advertise configuration without claiming runtime loading, authentication, or permissions; compact lists still omit models |
 | `src/agent-manager.ts`, `src/agent-runner.ts`, `src/usage.ts`, `src/settings.ts`, `src/index.ts`, control regression tests | Independent foreground queue and opt-in native usage reporting; retain existing live cost bridge | Bound blocking fan-out and report each usage delta once without double-counting footer cost |
 | `src/types.ts`, `src/ui/agent-widget.ts`, `src/tool-rendering.ts`, `src/index.ts`, rendering/runtime tests | Requested/effective discrepancies and optional estimated cost appear only in expanded Run metadata | Preserve actual SDK metadata and the compact three-row layout |
-| `src/workflow/`, workflow registration/settings and UI integration | Selectively import scripted workflows; preserve local thinking/`:fast`, delegation, usage, and session-local contracts; reject filesystem isolation; retain retry-attempt usage and settle queued skips while paused | Opt-in model-generated orchestration with correct supervision and accounting |
-| `src/index.ts`, `src/workflow/{runtime,meta,json-schema,worker-source}.ts`, workflow tests and authoring skill | Synchronous source/resume, full-body compilation, and declared input-schema admission before run allocation | Reject correctable authoring/input errors in the initiating tool call; preserve asynchronous execution failures |
-| `src/workflow/tool-description.ts`, `skills/subagent-workflows/SKILL.md`, `src/index.ts` | Keep the adapted workflow manual in an extension-owned authoring skill; short tool metadata points to its module-resolved path | Progressive disclosure through native `resources_discover` only when workflows are enabled; no package metadata auto-discovery or personal skill installation |
-| `src/ui/workflow-report.ts`, `src/workflow/entry*.ts`, `src/workflow/notification.ts`, workflow presentation tests | Three-row workflow summaries, explicit task/type rosters, state-first expanded reports, and complete retained notification results with actual artifact outcomes | [Workflow presentation contract](../../docs/specs/workflow-tool-output-presentation.md); preserve model content, delivery timing, ordinary Agent notifications, and ephemeral retention |
+| `src/graph/`, `src/index.ts`, workflow registration/settings and UI integration | Typed `agent_graph` graph runtime: IR (`ir.ts`), validation (`validate.ts`), run-graph (`run-graph.ts`), scheduler (`scheduler.ts`), node actors (`node-actor.ts`, `node-host.ts`, `node-host-adapter.ts`), graph-run adapter (`graph-run-adapter.ts`), persistence (`graph-persist.ts`), saved-graph resolution (`saved-graph.ts`), conditions (`condition.ts`), value refs (`value-ref.ts`), JSON schema (`json-schema.ts`), workflow types (`workflow-types.ts`), entry validation (`entry.ts`, `entry-validation.ts`), outcome (`outcome.ts`), notifications (`notification.ts`), task (`task.ts`), progress (`progress.ts`), pane (`pane/`), and tool description (`tool-description.ts`); preserve local thinking/`:fast`, delegation, usage, and session-local contracts | Opt-in typed-graph orchestration with correct supervision and accounting |
+| `src/graph/tool-description.ts`, `skills/agent-graphs/SKILL.md`, `src/index.ts` | Keep the graph authoring manual in an extension-owned skill; short tool metadata points to its module-resolved path | Progressive disclosure through native `resources_discover` only when workflows are enabled; no package metadata auto-discovery or personal skill installation |
+| `src/ui/workflow-report.ts`, `src/ui/workflow-card.ts`, `src/ui/workflow-dialog.ts`, `src/ui/workflow-menu.ts`, graph presentation tests | Three-row graph-run summaries, explicit task/type rosters, state-first expanded reports, and complete retained notification results with actual artifact outcomes | Graph presentation contract; preserve model content, delivery timing, ordinary Agent notifications, and ephemeral retention |
 
-The base upstream provenance and existing Agent RPC/events remain unchanged. Workflow supervision extends FleetView; Thinking Steps remains unchanged.
+The base upstream provenance and existing Agent RPC/events remain unchanged. Graph-run supervision extends FleetView; Thinking Steps remains unchanged.
 
-The bundled [workflow authoring skill](skills/subagent-workflows/SKILL.md) refines the imported Claude Code Workflow guidance while preserving the API and provenance above. It is a self-contained author/modify/debug/replay guide: acceptance-first steps, complete executable examples, API reference, and replay safety. Local guidance emphasizes authoritative evidence, explicit coverage gaps, bounded feedback, and separate action authorization without adding a graph runtime. Reading or invoking the skill alone does not authorize workflow execution. The current Agent tool description owns the available agent roster. Installation of the whole extension includes the skill; disabled workflows discover no skill.
+The bundled [graph authoring skill](skills/agent-graphs/SKILL.md) covers the typed `agent_graph` API: saved and inline graphs, node types (`agent`, `human_gate`, `graph`, `expand`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled workflows discover no skill.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
@@ -174,7 +174,7 @@ Compact rows omit redundant status/result/activity/error labels and the model pr
 
 Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Expanded Run metadata discloses requested model/thinking when they differ from actual execution, with equivalent fuzzy model names kept quiet. Resume retains the original request and session rather than presenting resume-call overrides as applied. Optional estimated cost is also expanded-only; compact rows and model-visible result text remain unchanged. Resume uses the retained session rather than re-resolving changed spawn configuration. Turns and soft limit have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
 
-By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of `persist_session` (the pi session on disk) and `memory:` (durable files). Workflow scripts/journals also have separate storage. Background agent completion notifications render as styled boxes:
+By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of `persist_session` (the pi session on disk) and `memory:` (durable files). Background agent completion notifications render as styled boxes:
 
 ```
 ✓ Find auth files completed
@@ -348,37 +348,38 @@ Send a steering message to a running agent. The message interrupts after the cur
 | `agent_id` | string | yes | Agent ID to steer |
 | `message` | string | yes | Message to inject into agent conversation |
 
-### `SubagentWorkflow` (opt-in)
+### `agent_graph` (opt-in)
 
-Scripted orchestration and supervision are selectively vendored from upstream; local execution policies remain authoritative.[1][2]
+Typed graph orchestration — the single multi-agent execution tool in this extension. The tool validates the graph before anything runs, then executes it in the background and notifies on completion; monitor progress in `/agents → Workflows`.
 
-Set `workflowsEnabled: true` in `subagents.json` or enable workflows in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled workflows add no tool schema or workflow prompt cost. Registration changes, including disabling, require reload.
-
-The model generates a task-specific script at runtime rather than selecting a shipped research recipe. Inputs:
+Set `workflowsEnabled: true` in `subagents.json` or enable workflows in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled workflows add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
 
 | Parameter | Purpose |
 |-----------|---------|
-| `script` | Inline generated workflow script |
-| `scriptPath` | Read a workflow script from a file |
-| `name` | Select a saved workflow by name |
-| `args` | Arguments supplied to the script |
-| `resumeFromRunId` | Resume through journal prefix replay within the same session |
+| `graph` | Inline `AgentGraph` object (nodes + edges) to execute immediately |
+| `name` | Select a saved graph by name (resolved from `.pi/agent-graphs/<name>.graph.json`; namespaced with `/`, e.g. `shared/review-loop`) |
+| `input` | Input values passed to the graph |
 
-Source precedence is `scriptPath` → `script` → `name`. The script API supports parallel fan-out, pipelines with sequential stages per item and concurrent items, structured child output, gates, and one-level saved-workflow composition. Owned children cannot invoke the workflow tool recursively. CLI file execution uses `--subagents-workflow-file=<path>`.
+Source precedence is `graph` → `name`. The tool validates the graph structure before allocating a run; invalid graphs are rejected in the initiating tool call. Valid calls return a background run ID immediately; graph/agent/gate/condition failures are reported asynchronously.
 
-The initiating tool rejects source/resume, static/full-body syntax, and declared `meta.inputSchema` errors before allocating a run, persisting artifacts, or launching work. Admission never executes the body; valid calls return background IDs immediately, with body/agent/gate/provider/state failures reported asynchronously. Optional literal `meta.inputSchema` accepts JSON Schema documents describing object, array, scalar, or union args; `agent({schema})` remains object-root only. Resume reuses omitted args, while explicit `null` overrides them; edited scripts/schemas validate those effective args.
+**Node types:**
 
-Required `agent()` calls reject on terminal child/schema/gate failures. Use `{ optional: true }` only for intentional recovery or optional gaps; configuration, policy, and programming errors still reject. User skips remain `null`. `pipeline()` stops that item's later stages after null (not false/0/empty text); thrown stages and `parallel()` thunks reject.
+| Type | Description |
+|------|-------------|
+| `agent` | Runs a Pi subagent with the given prompt and agent type |
+| `human_gate` | Pauses the run for approve/reject from a human |
+| `graph` | Runs a saved subgraph as a nested execution |
+| `expand` | Splices a runtime-generated `GraphFragment` into the run |
 
-Return `outcome.succeed(value?)`, `outcome.partial(reason, value?)`, or `outcome.fail(reason, value?)` to declare objective outcome independently of execution completion. Plain returns have no declared outcome; fields such as `accepted` are never inferred. Helpers return shallow-frozen `{ $subagentWorkflowOutcome: {status, reason?}, value? }` envelopes; reasons must be nonblank. Root results normalize metadata separately from payload; nested `workflow()` returns retain envelopes for inspection/propagation. Notifications show declared outcome, execution, and child counts without changing delivery channels. See the bundled authoring skill for bounded repair and replay guidance.
+Typed node `outputSchema` drives declarative edge conditions and bounded loops. A node may carry a `validation.gate` shell command and `retry` configuration.
 
-Workflow effort follows local thinking authority: agent frontmatter → selected model-chain suffix → invocation effort/thinking override → SDK selected-model default, never implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
+Saved graphs live at `.pi/agent-graphs/<name>.graph.json`. A reusable portfolio ships with this config: `shared/context-gather`, `shared/review-loop`, `shared/work-verify`, `fuxi/ulw-plan`, `houtu/execute-plan`, `kuafu/ulw`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
 
-Workflows MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children MUST NOT receive recursive workflow tools. `/agents → Workflows` keeps one phase-grouped agent roster: wide terminals show selected detail beside it, while narrow terminals open detail with an explicit back action. Rows use explicit states and the effective runtime model only (`model pending` until resolution); requested chains stay in expanded diagnostics. Contextual controls provide pause/resume, skip, retry, stop, and child conversation access. FleetView represents each workflow as one row rather than duplicating its owned children.
+Graph effort follows local thinking authority: agent frontmatter → model-chain suffix → invocation override → SDK default, never implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 
-There is no filesystem isolation backend. Workflow isolation options MUST be rejected, and gates MUST run in the effective child cwd. Scripts and journals persist in the ephemeral session task area, independently of Agent transcript settings. Truncated completion notifications link a full `<run-id>.workflow-result.txt` artifact; write failures are reported instead of claiming the artifact exists. Prefix replay is same-session only: it is not durable cross-session recovery, a sandbox, a transaction, or rollback. Skips, retries, cancellation, and replay do not undo external side effects.
+Graph runs MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children do not receive the `agent_graph` tool recursively. `/agents → Workflows` keeps one phase-grouped run roster with contextual controls: pause/resume, skip, retry, stop, and child conversation access. FleetView represents each graph run as one row rather than duplicating its owned children.
 
-Saved-workflow composition is an API capability, not a bundle of reusable workflow files or research deliverables. Validate real behavior in a fresh interactive Pi session with a model-generated script; see [verification requirements](AGENTS.md#verification).
+The authoring skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover` when workflows are enabled. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
 
 ## Commands
 
@@ -478,7 +479,7 @@ Runtime tuning values set via `/agents` → Settings (background/foreground conc
 | `maxConcurrentForeground` | `0` | Independent blocking-agent limit; `0` means unlimited |
 | `reportUsage` | `false` | Report pending subagent usage through final Agent/retrieval/steering tool results into native Pi session totals |
 | `showCost` | `false` | Show a positive estimated per-agent cost only in expanded Run metadata |
-| `workflowsEnabled` | `false` | Enable scripted workflows; reload required for registration changes; disabled adds no workflow tool schema/prompt cost |
+| `workflowsEnabled` | `false` | Enable typed graph workflows (`agent_graph`); reload required for registration changes; disabled adds no graph tool schema/prompt cost |
 
 Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
 
@@ -486,7 +487,7 @@ The custom QoL footer retains its live accounting: parent assistant-message cost
 
 **Disable defaults** (`disableDefaultAgents`, default `false`): when on, the three built-in agents (general-purpose, Explore, Plan) are not registered — only your project/global custom agents are advertised and spawnable. User-defined agents are unaffected, including ones that override a default by name. The Agent tool's type list updates on the next pi session (the tool schema is registered at startup).
 
-**Output transcript** (`outputTranscript`, default `true`): the project/global default for writing each subagent's `.output` transcript. Toggle via `/agents → Settings → Output transcript`, or set `false` in `subagents.json` to make transcripts opt-in project-wide — useful when run transcripts shouldn't sit on disk for backup or DLP tooling to pick up. A custom agent's `output_transcript` frontmatter overrides this per agent. Applied live at spawn time. Governs only the transcript, not `persist_session`, memory files, or workflow scripts/journals.
+**Output transcript** (`outputTranscript`, default `true`): the project/global default for writing each subagent's `.output` transcript. Toggle via `/agents → Settings → Output transcript`, or set `false` in `subagents.json` to make transcripts opt-in project-wide — useful when run transcripts shouldn't sit on disk for backup or DLP tooling to pick up. A custom agent's `output_transcript` frontmatter overrides this per agent. Applied live at spawn time. Governs only the transcript, not `persist_session` or memory files.
 
 **Tool description** (`toolDescriptionMode`, default `"full"`): which Agent tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (~1,400 tokens with the default agents); `"compact"` is ~75% smaller — one-line agent type list, terse usage notes — for small/local models where tool-spec tokens are expensive. Per-option details stay in the parameter descriptions in every mode (the parameter schema is never customizable). Applies on the next pi session.
 
@@ -692,7 +693,7 @@ src/
   memory.ts           # Persistent agent memory (resolve, read, build prompt blocks)
   skill-loader.ts     # Preload skills (Pi-standard + Agent Skills spec layouts)
   output-file.ts      # Streaming output file transcripts for agent sessions
-  workflow/           # Script execution, journal replay, composition, and workflow supervision
+  graph/              # Typed graph runtime: IR, validation, run-graph, scheduler, node actors, persistence, saved-graph resolution, conditions, value refs, JSON schema, progress, notifications, and pane UI
   prompts.ts          # Config-driven system prompt builder
   context.ts          # Parent conversation context for inherit_context
   env.ts              # Environment detection (git, platform)
