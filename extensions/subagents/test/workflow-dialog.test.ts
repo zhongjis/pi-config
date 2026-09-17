@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import type * as codingAgent from "@earendil-works/pi-coding-agent";
 import { type OverlayHandle, stripTerminalSequences, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { WorkflowAgentEntry, WorkflowEntry } from "../src/graph/progress.js";
+import { createWorkflowTask } from "../src/graph/task.js";
 import type { AgentRecord } from "../src/types.js";
 import {
   handleWorkflowDialogKey,
@@ -16,8 +18,6 @@ import {
   workflowAgentModel,
 } from "../src/ui/workflow-dialog.js";
 import { showWorkflowDialog, showWorkflowsMenu } from "../src/ui/workflow-menu.js";
-import type { WorkflowAgentEntry, WorkflowEntry } from "../src/graph/progress.js";
-import { createWorkflowTask } from "../src/graph/task.js";
 
 const theme = { fg: (_: string, text: string) => `\x1b[36m${text}\x1b[39m`, bold: (text: string) => `\x1b[1m${text}\x1b[22m` };
 const widths = [0, 1, 2, 8, 20, 40, 80, 120];

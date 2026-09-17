@@ -6,13 +6,13 @@ import * as codingAgent from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
+import { workflowEntryData } from "../src/graph/entry.js";
+import { elapsedMs, stats, type WorkflowAgentEntry } from "../src/graph/progress.js";
+import { createWorkflowTask, pauseWorkflowTask, resolveResumeTarget, resumeWorkflowTask, updateWorkflowProgressBatch } from "../src/graph/task.js";
 import type { AgentRecord } from "../src/types.js";
 import { AgentWidget } from "../src/ui/agent-widget.js";
 import { FleetList, type FleetWorkflow } from "../src/ui/fleet-list.js";
 import { renderWorkflowCard, renderWorkflowEntryCard } from "../src/ui/workflow-report.js";
-import { workflowEntryData } from "../src/graph/entry.js";
-import { elapsedMs, stats, type WorkflowAgentEntry } from "../src/graph/progress.js";
-import { createWorkflowTask, pauseWorkflowTask, resolveResumeTarget, resumeWorkflowTask, updateWorkflowProgressBatch } from "../src/graph/task.js";
 
 const theme = { fg: (_: string, s: string) => `\x1b[36m${s}\x1b[39m`, bold: (s: string) => `\x1b[1m${s}\x1b[22m` };
 const agent: WorkflowAgentEntry = { type: "workflow_agent", index: 7, label: "child", state: "progress", recordId: "child-id", model: "actual-sdk-model", thinking: "off" };
@@ -91,9 +91,9 @@ it("hides owned children only from ordinary UI and allows a workflow-only fleet 
   const manager = new AgentManager();
   vi.spyOn(manager, "listAgents").mockReturnValue(records);
   const widget = new AgentWidget(manager, new Map());
-  expect(widget["widgetAgents"]().map(r => r.id)).toEqual(["ordinary"]);
+  expect(widget.widgetAgents().map(r => r.id)).toEqual(["ordinary"]);
   const fleet = new FleetList(manager, new Map());
-  expect(fleet["agentRecords"]().map(r => r.id)).toEqual(["ordinary"]);
+  expect(fleet.agentRecords().map(r => r.id)).toEqual(["ordinary"]);
   expect(manager.listAgents()).toHaveLength(2);
   records.splice(0, 1);
   const run: FleetWorkflow = { id: "wf_test", name: "run", status: "running", doneCount: 0, totalCount: 1, startedAt: 1, tokens: 0 };

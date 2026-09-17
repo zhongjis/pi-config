@@ -135,9 +135,6 @@ export function readJournal(path: string): WorkflowJournalEntry[] {
       if (!isEntry(parsed)) continue;
       entries.push(parsed);
     } catch {
-      // A half-written final line, or someone editing the file. Skipping it
-      // keeps what came before, and a shorter prefix is still a useful one.
-      continue;
     }
   }
   entries.sort((a, b) => a.index - b.index);

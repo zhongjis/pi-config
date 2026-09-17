@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { createStructuredCapture, createStructuredOutputTool } from "../src/structured-output.js";
 import { compileInputSchema, compileJsonSchema } from "../src/graph/json-schema.js";
+import { createStructuredCapture, createStructuredOutputTool } from "../src/structured-output.js";
 
 /** A schema shaped like the one Claude Code's own example passes. */
 const FINDINGS = {

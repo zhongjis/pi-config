@@ -3,8 +3,8 @@
  */
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type { LifetimeUsage } from "./usage.js";
 import type { WorkflowEntryData } from "./graph/entry.js";
+import type { LifetimeUsage } from "./usage.js";
 
 export type ThinkingLevel = AgentSession["thinkingLevel"];
 

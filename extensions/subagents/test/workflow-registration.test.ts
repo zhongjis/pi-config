@@ -1,3 +1,4 @@
+// biome-ignore assist/source/organizeImports: the fixture's vi.mock must be imported before ../src modules so the mock applies
 import { artifactDirs, boot, dir, originalCwd, plainTheme, required, session, settingsUI, source } from "./workflow-registration.fixture.js";
 import { runAgent } from "../src/agent-runner.js";
 import assert from "node:assert/strict";

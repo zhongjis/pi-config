@@ -1,14 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 import { SUBAGENT_RESULT_PREVIEW_LINES } from "./constants.js";
+import { isWorkflowEntryData } from "./graph/entry-validation.js";
 import type { NotificationDetails } from "./types.js";
 import {
   renderSubagentSummary,
   type SubagentSummaryStatus,
 } from "./ui/summary-renderer.js";
-import { isWorkflowEntryData } from "./graph/entry-validation.js";
 import { renderWorkflowEntryCard } from "./ui/workflow-report.js";
-import { extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 
 function toSummaryStatus(status: string): SubagentSummaryStatus {
   switch (status) {
