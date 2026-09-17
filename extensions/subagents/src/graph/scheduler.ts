@@ -54,6 +54,12 @@ function isSettled(status: NodeStatus | undefined): boolean {
   return status === "completed" || status === "failed" || status === "skipped";
 }
 
+/** A serializable snapshot of a run's progress, for durable pause/resume. */
+export interface SchedulerState {
+  nodes: Record<NodeId, { status: NodeStatus; output?: unknown; attempt: number }>;
+  loopCounts: Record<string, number>;
+}
+
 export class Scheduler {
   readonly nodes = new Map<NodeId, NodeRun>();
   /** Mutable edge list so an expand node can splice a fragment's edges in at runtime. */
@@ -252,6 +258,32 @@ export class Scheduler {
   runStatus(): "completed" | "failed" {
     for (const run of this.nodes.values()) if (run.status === "failed") return "failed";
     return "completed";
+  }
+
+  /** Serialize the run's progress for durable persistence. */
+  snapshotState(): SchedulerState {
+    const nodes: SchedulerState["nodes"] = {};
+    for (const [id, run] of this.nodes) {
+      nodes[id] = { status: run.status, attempt: run.attempt, ...(run.output !== undefined ? { output: run.output } : {}) };
+    }
+    return { nodes, loopCounts: Object.fromEntries(this.loopCounts) };
+  }
+
+  /**
+   * Restore progress from a snapshot. A node that was mid-flight (`running`) when
+   * the snapshot was taken cannot resume its actor, so it is reset to `pending`
+   * and re-run; completed/skipped/failed nodes keep their disposition and output.
+   */
+  hydrate(state: SchedulerState): void {
+    for (const [id, saved] of Object.entries(state.nodes)) {
+      const run = this.nodes.get(id);
+      if (run === undefined) continue;
+      run.status = saved.status === "running" ? "pending" : saved.status;
+      run.output = saved.output;
+      run.attempt = saved.attempt;
+    }
+    this.loopCounts.clear();
+    for (const [key, value] of Object.entries(state.loopCounts)) this.loopCounts.set(key, value);
   }
 }
 

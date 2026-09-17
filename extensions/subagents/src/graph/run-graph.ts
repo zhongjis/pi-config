@@ -31,7 +31,7 @@ import type {
 import { compileJsonSchema } from "./json-schema.js";
 import { checkNodeSchema, type NodeExecInput, nodeLogic } from "./node-actor.js";
 import type { NodeHost, NodeSpawnResult } from "./node-host.js";
-import type { NodeRun, SettleInput } from "./scheduler.js";
+import type { NodeRun, SchedulerState, SettleInput } from "./scheduler.js";
 import { Scheduler } from "./scheduler.js";
 import { validateFragment, validateGraph } from "./validate.js";
 import { MISSING, type ResolutionContext, resolveValueRef } from "./value-ref.js";
@@ -71,6 +71,10 @@ export interface RunGraphOptions {
   onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>): void;
   /** Hands the caller the run's control surface, once, before the first node. */
   onControl?(control: GraphControl): void;
+  /** Restore progress from a prior run's snapshot (durable resume). */
+  restore?: SchedulerState;
+  /** Fired when a human_gate begins awaiting, carrying the run state to persist. */
+  onGateWaiting?(nodeId: string, state: SchedulerState): void;
 }
 
 export interface RunGraphResult {
@@ -225,6 +229,7 @@ export function namespaceFragment(fragment: GraphFragment, namespace: string | u
 
 export async function runGraph(graph: AgentGraph, input: unknown, options: RunGraphOptions): Promise<RunGraphResult> {
   const scheduler = new Scheduler(graph, input);
+  if (options.restore !== undefined) scheduler.hydrate(options.restore);
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
   const inflight = new Map<string, Inflight>();
   // Node definitions grow at runtime when an expand node splices a fragment in.
@@ -338,9 +343,17 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
         return id;
       }
       const request = schema !== undefined ? { nodeId: id, prompt, schema } : { nodeId: id, prompt };
-      let result = await awaitGate(request, signal);
-      if (result.ok && schema !== undefined) result = checkNodeSchema(result, schema);
-      settle = { ok: result.ok, output: parseOutput(node, result), error: result.error, skipped: result.skipped };
+      // Persist the waiting state so a restart can resume this gate.
+      options.onGateWaiting?.(id, scheduler.snapshotState());
+      try {
+        let result = await awaitGate(request, signal);
+        if (result.ok && schema !== undefined) result = checkNodeSchema(result, schema);
+        settle = { ok: result.ok, output: parseOutput(node, result), error: result.error, skipped: result.skipped };
+      } catch (err) {
+        settle = signal.aborted
+          ? { ok: false, skipped: true, error: "Aborted." }
+          : { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
       return id;
     })();
     inflight.set(id, { done, resources: [], stop: () => controller.abort(), result: () => settle });
