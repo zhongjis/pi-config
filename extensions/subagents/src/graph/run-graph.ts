@@ -227,7 +227,23 @@ export function namespaceFragment(fragment: GraphFragment, namespace: string | u
   return result;
 }
 
+/**
+ * A model calling `agent_graph` often passes a structured `input` as a JSON
+ * string rather than an object, so `$.field` ValueRefs would resolve to MISSING
+ * and every `${placeholder}` would reach the agent literally. Parse a JSON
+ * string back to its value at the one entry point every run shares.
+ */
+function coerceGraphInput(input: unknown): unknown {
+  if (typeof input !== "string") return input;
+  try {
+    return JSON.parse(input);
+  } catch {
+    return input;
+  }
+}
+
 export async function runGraph(graph: AgentGraph, input: unknown, options: RunGraphOptions): Promise<RunGraphResult> {
+  input = coerceGraphInput(input);
   const scheduler = new Scheduler(graph, input);
   if (options.restore !== undefined) scheduler.hydrate(options.restore);
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);

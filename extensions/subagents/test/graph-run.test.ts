@@ -44,6 +44,26 @@ describe("runGraph — end to end via XState actors", () => {
     expect(result.outputs).toEqual({ r: "out" });
   });
 
+  it("coerces a JSON-string graph input so input placeholders resolve", async () => {
+    // A model often passes structured `input` to the tool as a JSON string; the
+    // run must still substitute `${task}` from `$.task` rather than send it literally.
+    const graph: AgentGraph = {
+      nodes: { a: { type: "agent", agent: "x", prompt: `Do \${task}`, input: { task: { path: "$.task" } } } },
+      edges: [],
+      outputs: { r: { node: "a", path: "$" } },
+    };
+    const prompts: string[] = [];
+    const recording: NodeHost = {
+      spawnAgent: async request => {
+        prompts.push(request.prompt);
+        return okText("ok");
+      },
+    };
+    const result = await runGraph(graph, '{"task":"HELLO"}', { host: recording });
+    expect(result.status).toBe("completed");
+    expect(prompts).toContain("Do HELLO");
+  });
+
   it("drives a review->fix loop to approval through real actors", async () => {
     // Approve on the 3rd scheduler-level run of review (loop iterations), counted
     // here since request.attempt is the node-internal retry counter, not the loop.
