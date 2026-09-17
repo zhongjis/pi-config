@@ -117,4 +117,30 @@ describe("GraphRunReporter", () => {
     expect(a2?.model).toBe("sonnet");
     expect(a2?.modelId).toBe("mid");
   });
+
+  it("plumbs live tool-call and token counts from getActivity, re-emitting only on change", () => {
+    const t = task();
+    let activity: { toolCalls?: number; tokens?: number } | undefined = { toolCalls: 2, tokens: 100 };
+    const reporter = new GraphRunReporter(t, graph, Date.now(), () => activity);
+    reporter.update("a", { status: "running", attempt: 1 });
+    reporter.setResolved("a", { recordId: "r1" });
+
+    const first = collapse(t.workflowProgress).agents.find(e => e.label === "a");
+    expect(first?.toolCalls).toBe(2);
+    expect(first?.tokens).toBe(100);
+
+    // A refresh after the counts climb re-emits the running node's entry with the new counts.
+    const beforeChange = t.workflowProgress.length;
+    activity = { toolCalls: 5, tokens: 250 };
+    reporter.refresh();
+    expect(t.workflowProgress.length).toBeGreaterThan(beforeChange);
+    const updated = collapse(t.workflowProgress).agents.find(e => e.label === "a");
+    expect(updated?.toolCalls).toBe(5);
+    expect(updated?.tokens).toBe(250);
+
+    // A refresh with unchanged counts appends nothing.
+    const afterChange = t.workflowProgress.length;
+    reporter.refresh();
+    expect(t.workflowProgress.length).toBe(afterChange);
+  });
 });

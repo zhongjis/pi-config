@@ -76,6 +76,14 @@ describe("observability panel — rendering", () => {
     expect(rendered).toContain("failed 1");
   });
 
+  it("shows a running node's live tool-call count in its roster row", () => {
+    // Node b is running with toolCalls: 3 in the fixture → its roster row shows the live count.
+    const rendered = text([graphRun()], initialPanelState(), { width: 120, now: NOW });
+    const running = rendered.split("\n").find(line => line.includes("running") && line.includes("b"));
+    expect(running).toBeDefined();
+    expect(running).toContain("3 tools");
+  });
+
   it("joins upstream dependency state for the selected node", () => {
     const rendered = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "d" } }, { width: 60, now: NOW });
     expect(rendered).toContain("Waits on (upstream)");

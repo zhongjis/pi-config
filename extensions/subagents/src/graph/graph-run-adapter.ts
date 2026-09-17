@@ -41,12 +41,15 @@ export class GraphRunReporter {
   private readonly stage = new Map<string, number>();
   private readonly resolved = new Map<string, { model?: string; modelId?: string; recordId?: string }>();
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
+  /** Last-emitted activity counts per node, so `refresh` only re-emits on a real change. */
+  private readonly lastCounts = new Map<string, string>();
   private readonly queuedAt: number;
 
   constructor(
     private readonly task: WorkflowTask,
     graph: AgentGraph,
     now: number = Date.now(),
+    private readonly getActivity?: (recordId: string) => { toolCalls?: number; tokens?: number } | undefined,
   ) {
     this.queuedAt = now;
     const ids = Object.keys(graph.nodes);
@@ -97,6 +100,28 @@ export class GraphRunReporter {
     updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
   }
 
+  /**
+   * Re-emit every running node whose live activity counts changed since the last emit.
+   *
+   * The counts (tool calls, tokens) climb during a run, but node entries otherwise
+   * re-emit only on status transitions, so a periodic tick calls this to keep them live.
+   */
+  // ponytail: re-emit appends to the progress log per activity change; fine for normal runs, upgrade = in-place last-write.
+  refresh(now: number = Date.now()): void {
+    if (this.getActivity === undefined) return;
+    const changed: WorkflowAgentEntry[] = [];
+    for (const [nodeId, run] of this.lastRun) {
+      if (run.status !== "running") continue;
+      const recordId = this.resolved.get(nodeId)?.recordId;
+      const act = recordId !== undefined ? this.getActivity(recordId) : undefined;
+      const key = `${act?.toolCalls ?? ""}|${act?.tokens ?? ""}`;
+      if (this.lastCounts.get(nodeId) === key) continue;
+      this.lastCounts.set(nodeId, key);
+      changed.push(this.entry(nodeId, run, now));
+    }
+    if (changed.length > 0) updateWorkflowProgressBatch(this.task, changed);
+  }
+
   setResolved(nodeId: string, info: NodeResolvedInfo, now: number = Date.now()): void {
     // Merge: recordId and model/modelId arrive on separate `onResolved` calls, so a later
     // one must not clobber an earlier one's fields.
@@ -114,6 +139,9 @@ export class GraphRunReporter {
     const deps = this.deps.get(nodeId) ?? [];
     const stage = this.stage.get(nodeId) ?? 0;
     const res = this.resolved.get(nodeId);
+    // Live tool-call / token counts, read from the record once it has one. Queued nodes (no
+    // recordId) add nothing; `toolCalls` keeps a real 0, `tokens` only shows once it is non-zero.
+    const act = res?.recordId !== undefined && this.getActivity !== undefined ? this.getActivity(res.recordId) : undefined;
     const base: WorkflowAgentEntry = {
       type: "workflow_agent",
       index: this.index.get(nodeId) ?? 0,
@@ -130,6 +158,8 @@ export class GraphRunReporter {
       ...(res?.model !== undefined ? { model: res.model } : {}),
       ...(res?.modelId !== undefined ? { modelId: res.modelId } : {}),
       ...(res?.recordId !== undefined ? { recordId: res.recordId } : {}),
+      ...(act?.toolCalls !== undefined ? { toolCalls: act.toolCalls } : {}),
+      ...(act?.tokens ? { tokens: act.tokens } : {}),
     };
     switch (run.status) {
       case "pending":

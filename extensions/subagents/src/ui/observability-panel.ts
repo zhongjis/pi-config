@@ -288,7 +288,10 @@ function rowActivity(entry: WorkflowAgentEntry, state: WorkflowDisplayState, now
     const waits = (entry.deps ?? []).join(", ");
     return waits ? `waits: ${waits}` : "";
   }
-  if (state === "running" && entry.startedAt != null) return formatDuration(Math.max(0, now - entry.startedAt));
+  if (state === "running" && entry.startedAt != null) {
+    const elapsed = formatDuration(Math.max(0, now - entry.startedAt));
+    return entry.toolCalls != null ? `${elapsed} · ${entry.toolCalls} tools` : elapsed;
+  }
   if (entry.durationMs != null) return formatDuration(entry.durationMs);
   return "";
 }
@@ -451,7 +454,8 @@ function detailLines(
   const model = entry.model ?? entry.modelId ?? "model pending";
 
   lines.push(clampLine([{ text: " Node ", color: "muted", bold: true }, { text: `${sep} ${entry.label}`, color: "dim" }], width));
-  // ponytail: no live per-node tool/token feed; upgrade = add an onToolActivity hook to NodeHost → GraphRunReporter.setActivity → entry.toolCalls/tokens.
+  // Live per-node tool/token counts arrive on the entry (GraphRunReporter reads the record); the
+  // status line keeps stage + elapsed, and `runtimeFacts` below surfaces the counts.
   const liveFacts = state === "running"
     ? ` · Stage ${(entry.phaseIndex ?? 0) + 1}${entry.startedAt != null ? ` · ${formatDuration(Math.max(0, now - entry.startedAt))}` : ""}`
     : "";

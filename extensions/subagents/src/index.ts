@@ -1463,7 +1463,17 @@ Terse command-style prompts produce shallow, generic work.
       outputTranscript: getOutputTranscriptDefault,
       workflowId: task.id,
     });
-    const reporter = new GraphRunReporter(task, graph);
+    const reporter = new GraphRunReporter(task, graph, Date.now(), recordId => {
+      const r = manager.getRecord(recordId);
+      return r ? { toolCalls: r.toolUses, tokens: getLifetimeTotal(r.lifetimeUsage) } : undefined;
+    });
+    // Node entries otherwise re-emit only on status transitions, so a periodic tick refreshes the
+    // live tool-call / token counts of running nodes; `unref` keeps it from holding the process open.
+    const activityTick = setInterval(() => {
+      reporter.refresh();
+      workflowPane?.sync();
+    }, 1000);
+    activityTick.unref?.();
     try {
       const result = await runGraph(graph, input, {
         host,
@@ -1506,6 +1516,7 @@ Terse command-style prompts produce shallow, generic work.
       deleteGraphSnapshot(ctx.cwd, task.id);
       workflowPane?.sync();
     } finally {
+      clearInterval(activityTick);
       await host.dispose();
     }
   }
