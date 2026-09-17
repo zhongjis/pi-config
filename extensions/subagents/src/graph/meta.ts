@@ -19,23 +19,7 @@
  */
 
 import { createContext, Script } from "node:vm";
-
-/** A phase declared up front, so the UI can show it before any agent runs. */
-export interface WorkflowPhaseMeta {
-  title: string;
-  detail?: string;
-  /** Set when a phase pins a model; display-only, the runtime does not read it. */
-  model?: string;
-}
-
-export interface WorkflowMeta {
-  name: string;
-  description: string;
-  /** Shown in the saved-workflow listing. Not used by the runtime. */
-  whenToUse?: string;
-  phases?: WorkflowPhaseMeta[];
-  inputSchema?: Record<string, unknown>;
-}
+import type { WorkflowMeta, WorkflowPhaseMeta } from "./workflow-types.js";
 
 export interface MetaExtraction {
   meta: WorkflowMeta;

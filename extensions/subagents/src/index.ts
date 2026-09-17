@@ -32,7 +32,7 @@ import { completeGraphTask, GraphRunReporter } from "./graph/graph-run-adapter.j
 import { createWorkflowHost } from "./graph/host.js";
 import type { AgentGraph } from "./graph/ir.js";
 import { appendJournal, readJournal, type WorkflowJournalEntry } from "./graph/journal.js";
-import { extractMeta, type WorkflowMeta, workflowCallName } from "./graph/meta.js";
+import { extractMeta, workflowCallName } from "./graph/meta.js";
 import { createNodeHost } from "./graph/node-host-adapter.js";
 import { workflowCompletionText } from "./graph/notification.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
@@ -46,6 +46,7 @@ import type { SchedulerState } from "./graph/scheduler.js";
 import { completeWorkflowTask, createWorkflowTask, failWorkflowTask, resolveResumeTarget, updateWorkflowProgressBatch, type WorkflowTask, workflowResultText, workflowRunId } from "./graph/task.js";
 import { graphSkillPath, graphToolDescription, workflowSkillPath, workflowToolDescription } from "./graph/tool-description.js";
 import { validateGraph } from "./graph/validate.js";
+import type { WorkflowMeta } from "./graph/workflow-types.js";
 import { GroupJoinManager } from "./group-join.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
 import { resolveAgentModel } from "./model-resolution.js";

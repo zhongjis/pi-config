@@ -1,4 +1,4 @@
-import { WORKFLOW_OUTCOME_KEY, type WorkflowOutcome } from "./outcome.js";
+import { WORKFLOW_OUTCOME_KEY } from "./outcome.js";
 
 /**
  * runtime.ts — the host half of a workflow run.
@@ -20,9 +20,12 @@ import { Script } from "node:vm";
 import { Worker } from "node:worker_threads";
 import { type JournalKeyInput, journalKey, type WorkflowJournalEntry } from "./journal.js";
 import { type CompiledSchema, compileInputSchema, compileJsonSchema } from "./json-schema.js";
-import { extractMeta, type WorkflowMeta } from "./meta.js";
+import { extractMeta } from "./meta.js";
 import type { WorkflowAgentEntry, WorkflowEntry } from "./progress.js";
 import { WORKER_SOURCE, workflowWrapper } from "./worker-source.js";
+import type { WorkflowControl, WorkflowMeta, WorkflowRunResult } from "./workflow-types.js";
+
+export type { WorkflowControl, WorkflowRunResult };
 
 /** Matches the `script` field's `maxLength` in the tool schema. */
 export const MAX_SCRIPT_LENGTH = 524_288;
@@ -204,45 +207,6 @@ export interface WorkflowHost {
   loadWorkflow?(ref: WorkflowScriptRef): Promise<WorkflowScriptSource> | WorkflowScriptSource;
 }
 
-/**
- * What a run can be told to do while it is going, from the workflows dialog.
- *
- * Every method is best-effort and idempotent: the dialog renders off a progress
- * log that lags the runtime slightly, so it will sometimes ask for something
- * that has just stopped being possible. `false` means "there was nothing to do
- * that to" — a caller can say so, but it is never an error.
- */
-export interface WorkflowControl {
-  /**
-   * Stop *starting* agents. Ones already running are left to finish, because
-   * killing model work mid-turn throws away everything it has spent and there
-   * is no way to hand it back its context.
-   */
-  pause(): void;
-  resume(): void;
-  isPaused(): boolean;
-  /**
-   * Give up on the agent at `index`: its `agent()` call returns `null`, exactly
-   * for required and optional calls alike, and the row renders skipped.
-   *
-   * Immediate for a running agent and for one held at a pause. An agent parked
-   * behind the concurrency limit takes its skip when it reaches the front —
-   * the alternative is a cancellable semaphore for a case that resolves itself
-   * as soon as any sibling finishes.
-   */
-  skip(index: number): boolean;
-  /**
-   * Start the agent at `index` over: the child is stopped and the same call is
-   * re-run, so the script's `agent()` promise is still the one waiting and it
-   * gets the new answer.
-   *
-   * Only while it is running — that is the whole window. Once the call has
-   * settled its value is already the script's, and re-running would produce a
-   * result with nowhere to go.
-   */
-  retry(index: number): boolean;
-}
-
 export interface RunWorkflowOptions {
   /** Full script source, starting with `export const meta = { … }`. */
   script: string;
@@ -283,21 +247,6 @@ export interface RunWorkflowOptions {
     /** Called as each call of *this* run settles, so it can be resumed in turn. */
     append?(entry: WorkflowJournalEntry): void;
   };
-}
-
-export interface WorkflowRunResult {
-  status: "completed" | "failed" | "killed";
-  meta: WorkflowMeta;
-  outcome?: WorkflowOutcome;
-  /** The script's return value, JSON-checked at the boundary. */
-  value?: unknown;
-  error?: string;
-  /** The append-only log, in emission order. */
-  progress: WorkflowEntry[];
-  /** Agents scheduled, including those that failed. */
-  agentCount: number;
-  /** How many of those came back from the journal instead of being spawned. */
-  replayedCount: number;
 }
 
 /* ------------------------------------------------------------------------- *

@@ -16,10 +16,9 @@
 
 import { randomUUID } from "node:crypto";
 import type { WorkflowJournalEntry } from "./journal.js";
-import type { WorkflowMeta } from "./meta.js";
 import { outcomeLabel, type WorkflowOutcome } from "./outcome.js";
 import { collapse, elapsedMs, stats, type WorkflowEntry, type WorkflowRunStatus } from "./progress.js";
-import type { WorkflowControl, WorkflowRunResult } from "./runtime.js";
+import type { WorkflowControl, WorkflowMeta, WorkflowRunResult } from "./workflow-types.js";
 
 const escapeXml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
