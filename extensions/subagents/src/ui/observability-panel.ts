@@ -14,7 +14,7 @@
  * needs is each node's `deps`/`dependents`, which the graph adapter already emits.
  */
 
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import {
   buildPhaseGroups,
   collapse,
@@ -432,9 +432,17 @@ function blastRadius(
   return skipped;
 }
 
+/** A wrapped detail section: a `muted` label line, then `wrapTextWithAnsi` body lines indented 4 and clamped to width. */
+function detailSection(lines: WorkflowCardLine[], label: string, body: string, bodyColor: WorkflowCardColor, width: number): void {
+  lines.push(clampLine([{ text: `  ${label}`, color: "muted" }], width));
+  for (const text of wrapTextWithAnsi(body, Math.max(1, width - 4))) {
+    lines.push(clampLine([{ text: `    ${text}`, color: bodyColor }], width));
+  }
+}
+
 function detailLines(
   entry: WorkflowAgentEntry, agents: readonly WorkflowAgentEntry[], active: boolean,
-  glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number,
+  glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number, now: number,
 ): WorkflowCardLine[] {
   const lines: WorkflowCardLine[] = [];
   const sep = ascii ? "--" : "──";
@@ -443,10 +451,14 @@ function detailLines(
   const model = entry.model ?? entry.modelId ?? "model pending";
 
   lines.push(clampLine([{ text: " Node ", color: "muted", bold: true }, { text: `${sep} ${entry.label}`, color: "dim" }], width));
+  // ponytail: no live per-node tool/token feed; upgrade = add an onToolActivity hook to NodeHost → GraphRunReporter.setActivity → entry.toolCalls/tokens.
+  const liveFacts = state === "running"
+    ? ` · Stage ${(entry.phaseIndex ?? 0) + 1}${entry.startedAt != null ? ` · ${formatDuration(Math.max(0, now - entry.startedAt))}` : ""}`
+    : "";
   lines.push(clampLine([
     { text: "  " },
     { text: statusWord(state), color: stateColor(state), bold: true },
-    { text: ` · ${entry.agentType ?? "node"} · ${model}`, color: "dim" },
+    { text: ` · ${entry.agentType ?? "node"} · ${model}${liveFacts}`, color: "dim" },
   ], width));
 
   // Waits on (upstream): each dependency joined against the collapsed roster for its live state.
@@ -484,13 +496,11 @@ function detailLines(
 
   const outcome = outcomeText(entry, state);
   if (outcome) {
-    lines.push(clampLine([
-      { text: `  ${state === "done" ? "Outcome" : "Error"}: `, color: "muted" },
-      { text: outcome, color: state === "failed" || state === "blocked" ? "error" : "dim" },
-    ], width));
+    const isError = state === "failed" || state === "blocked";
+    detailSection(lines, state === "done" ? "Outcome" : "Error", outcome, isError ? "error" : "dim", width);
   }
   const prompt = entry.promptPreview?.trim();
-  if (prompt) lines.push(clampLine([{ text: "  Prompt: ", color: "muted" }, { text: prompt, color: "dim" }], width));
+  if (prompt) detailSection(lines, "Prompt", prompt, "dim", width);
   const facts = runtimeFacts(entry);
   if (facts) lines.push(clampLine([{ text: "  Runtime: ", color: "muted" }, { text: facts, color: "dim" }], width));
 
@@ -560,7 +570,7 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
     const selectedEntry = agents.find(agent => agent.label === cursor.id);
     if (selectedEntry) {
       bodyLines.push([]);
-      bodyLines.push(...detailLines(selectedEntry, agents, active, glyphs, ascii, width));
+      bodyLines.push(...detailLines(selectedEntry, agents, active, glyphs, ascii, width, now));
     }
   } else if (cursor?.kind === "stage") {
     const group = groups.find(candidate => candidate.stage === cursor.stage);

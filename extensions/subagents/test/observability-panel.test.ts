@@ -437,3 +437,72 @@ describe("observability panel — Wave A cursor, collapse un-trap, stage detail,
     expect(detail).toMatch(/c\s+queued/);
   });
 });
+
+describe("observability panel — Wave B full node detail sections", () => {
+  const soloRun = (over: Partial<WorkflowAgentEntry>, status: WorkflowRunStatus = "completed"): PanelRun => ({
+    id: "wf_detail",
+    name: "detail",
+    status,
+    source: {
+      progress: [agent({ index: 0, label: "solo", phaseIndex: 0, deps: [], dependents: [], ...over })],
+      task: { status, workflowName: "detail", startTime: NOW - 5_000 },
+      agentCount: 1,
+    },
+  });
+
+  // Contiguous 4-space-indented body lines directly under a section label.
+  const bodyUnder = (lines: string[], label: string, width: number): string[] => {
+    const labelIdx = lines.indexOf(label);
+    expect(labelIdx).toBeGreaterThan(-1);
+    const body: string[] = [];
+    for (let i = labelIdx + 1; i < lines.length; i++) {
+      if (!lines[i].startsWith("    ")) break;
+      expect(visibleWidth(lines[i])).toBeLessThanOrEqual(width);
+      body.push(lines[i]);
+    }
+    return body;
+  };
+
+  it("wraps a long done-node Outcome into a label line plus multiple width-safe body lines", () => {
+    const width = 40;
+    const long = "found the seam ".repeat(20).trim(); // long, single line, no newlines
+    const run = soloRun({ state: "done", resultPreview: long });
+    const lines = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
+    expect(bodyUnder(lines, "  Outcome", width).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("wraps a long node Prompt into a label line plus multiple width-safe body lines", () => {
+    const width = 40;
+    const long = "investigate the auth flow ".repeat(10).trim();
+    const run = soloRun({ state: "done", promptPreview: long });
+    const lines = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
+    expect(bodyUnder(lines, "  Prompt", width).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("wraps a long failed-node Error into a label line plus multiple width-safe body lines", () => {
+    const width = 40;
+    const long = "boom while verifying ".repeat(12).trim();
+    const run = soloRun({ state: "error", error: long }, "failed");
+    const lines = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
+    expect(bodyUnder(lines, "  Error", width).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows elapsed since startedAt and the stage on a running node's status line", () => {
+    const width = 70;
+    const progress: WorkflowEntry[] = [
+      agent({ index: 0, label: "up", phaseIndex: 0, state: "done", deps: [], dependents: ["run"] }),
+      agent({ index: 1, label: "run", phaseIndex: 1, state: "progress", agentType: "verifier", deps: ["up"], dependents: [], startedAt: NOW - 65_000 }),
+    ];
+    const run: PanelRun = {
+      id: "wf_run",
+      name: "live",
+      status: "running",
+      source: { progress, task: { status: "running", workflowName: "live", startTime: NOW - 90_000 }, agentCount: 2 },
+    };
+    const rendered = text([run], { ...initialPanelState(), cursor: { kind: "node", id: "run" } }, { width, now: NOW });
+    // The detail status line (not a roster row) names the running state, its stage, and elapsed.
+    const detailStatus = rendered.split("\n").find(line => line.includes("Stage 2") && line.includes("running"));
+    expect(detailStatus).toBeDefined();
+    expect(detailStatus).toContain("1m05s");
+  });
+});
