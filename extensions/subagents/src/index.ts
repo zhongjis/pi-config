@@ -58,6 +58,8 @@ import { addUsage, getLifetimeTotal, getSessionContextPercent, type LifetimeUsag
 import { decideWorkflowCollision } from "./workflow/collisions.js";
 import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./workflow/entry.js";
 import { createWorkflowHost } from "./workflow/host.js";
+import { isHerdrPaneEnabled } from "./workflow/pane/controller.js";
+import { createWorkflowPaneManager, type WorkflowPaneManager } from "./workflow/pane/manager.js";
 import { appendJournal, readJournal, type WorkflowJournalEntry } from "./workflow/journal.js";
 import { extractMeta, type WorkflowMeta, workflowCallName } from "./workflow/meta.js";
 import { elapsedMs } from "./workflow/progress.js";
@@ -635,6 +637,10 @@ export default function (pi: ExtensionAPI) {
   // Background auto-supervision loop handle. Started on session_start, stopped on
   // switch/shutdown. `undefined` = not running (used as the double-start guard).
   let supervisionStop: (() => void) | undefined;
+  // The workflow inspector's Herdr side pane, constructed per activation. A
+  // strict no-op when there is no Herdr-managed pane to split off, in which case
+  // the in-Pi overlay stays the only inspector.
+  let workflowPane: WorkflowPaneManager | undefined;
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
   pi.on("session_start", async (_event, ctx) => {
@@ -663,20 +669,41 @@ export default function (pi: ExtensionAPI) {
       // also avoids the race where a consumer loaded after us misses the event.
       pi.events.emit("subagents:ready", {});
     }
+    // Rebuild the workflow inspector's side pane for this activation. Disposal
+    // of any prior instance is defensive: a double-bound session_start must not
+    // leak a controller or its timers.
+    await workflowPane?.dispose();
+    workflowPane = createWorkflowPaneManager({
+      enabled: isHerdrPaneEnabled(process.env, ctx.mode),
+      exec: (command, args, options) => pi.exec(command, args, options),
+      parentPaneId: process.env.HERDR_PANE_ID ?? "",
+      socket: process.env.HERDR_SOCKET_PATH ?? "",
+      cwd: ctx.cwd,
+      sessionId: ctx.sessionManager.getSessionId(),
+      ppid: process.pid,
+      getTasks: () => workflowTasks.values(),
+      onError: (err, label) =>
+        console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
+    });
+    await workflowPane.reconcile();
     resolveWorkflowCollisions(ctx);
     runWorkflowFlag(ctx);
   });
 
-  pi.on("session_before_switch", () => {
+  pi.on("session_before_switch", async () => {
     manager.clearCompleted(true);
     supervisionStop?.();
     supervisionStop = undefined;
+    await workflowPane?.dispose();
+    workflowPane = undefined;
   });
 
   // On shutdown, abort all agents immediately and clean up.
   // If the session is going down, there's nothing left to consume agent results.
   pi.on("session_shutdown", async () => {
     await stopWorkflows();
+    await workflowPane?.dispose();
+    workflowPane = undefined;
     manager.setUsageListener(undefined);
     pendingUsage = new PendingUsagePool();
     rpcHandle?.unsubSpawn();
@@ -1491,7 +1518,10 @@ Terse command-style prompts produce shallow, generic work.
           outputTranscript: getOutputTranscriptDefault,
           workflowId: task.id,
         }),
-        onProgress: entries => updateWorkflowProgressBatch(task, entries),
+        onProgress: entries => {
+          updateWorkflowProgressBatch(task, entries);
+          workflowPane?.sync();
+        },
         // The dialog's pause / skip / retry keys run through this; it is dropped
         // again when the task settles.
         onControl: control => { task.control = control; },
@@ -1503,8 +1533,10 @@ Terse command-style prompts produce shallow, generic work.
         },
       });
       completeWorkflowTask(task, result);
+      workflowPane?.sync();
     } catch (err) {
       failWorkflowTask(task, err instanceof Error ? err.message : String(err));
+      workflowPane?.sync();
     }
   }
 
@@ -1678,6 +1710,7 @@ Terse command-style prompts produce shallow, generic work.
       // first agent has not started yet.
       widget.update();
       fleet.update();
+      workflowPane?.sync();
 
       // Background, like Claude Code: the id comes back now and the run keeps
       // going without the tool call.
@@ -1835,6 +1868,7 @@ Terse command-style prompts produce shallow, generic work.
     workflowTasks.set(task.id, task);
     widget.update();
     fleet.update();
+    workflowPane?.sync();
     report(`Running workflow ${meta.name}…`, "info");
 
     // Detached: session_start is awaited by the host, and a workflow can run for
@@ -2848,6 +2882,18 @@ ${systemPrompt}
   pi.registerCommand("agents", {
     description: "Manage agents",
     handler: async (_args, ctx) => { await showAgentsMenu(ctx); },
+  });
+  pi.registerCommand("workflow-pane", {
+    description: "Open/reopen the workflow inspector in a Herdr side pane",
+    handler: async (_args, ctx) => {
+      // Clears any manual-close flag and force-opens for the active run. Off the
+      // Herdr path there is nothing to open, so say why rather than doing nothing.
+      if (!workflowPane?.isEnabled()) {
+        ctx.ui.notify("Workflow pane needs a Herdr-managed pane.", "warning");
+        return;
+      }
+      await workflowPane.forceOpen();
+    },
   });
   const workflowMenuDeps: WorkflowMenuDeps = {
     tasks: workflowTasks,
