@@ -426,6 +426,15 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     },
   });
 
+  // Resolves the moment the run is aborted, so the loop unblocks even when an
+  // inflight node (e.g. a human_gate whose resolver ignores the signal) never
+  // settles — otherwise shutdown would hang on a parked gate.
+  const ABORTED = Symbol("aborted");
+  const abortRace = new Promise<typeof ABORTED>(resolve => {
+    if (options.signal?.aborted) resolve(ABORTED);
+    else options.signal?.addEventListener("abort", () => resolve(ABORTED), { once: true });
+  });
+
   while (true) {
     if (options.signal?.aborted) {
       stopAll();
@@ -496,7 +505,12 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       continue;
     }
 
-    const settledId = await Promise.race([...inflight.values()].map(entry => entry.done));
+    const settled = await Promise.race<string | typeof ABORTED>([abortRace, ...[...inflight.values()].map(entry => entry.done)]);
+    if (settled === ABORTED) {
+      stopAll();
+      return { status: "aborted", outputs: {}, nodes: snapshotNodes(scheduler) };
+    }
+    const settledId = settled;
     const entry = inflight.get(settledId);
     inflight.delete(settledId);
     if (entry !== undefined) release(entry.resources);
