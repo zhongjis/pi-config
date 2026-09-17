@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { runWorkflow, type WorkflowHost, type WorkflowSpawnRequest, type WorkflowSpawnResult } from "../src/workflow/runtime.js";
+import { runWorkflow, type WorkflowHost, type WorkflowSpawnRequest, type WorkflowSpawnResult } from "../src/graph/runtime.js";
 
 const skill = readFileSync(new URL("../skills/subagent-workflows/SKILL.md", import.meta.url), "utf8");
 const scripts = [...skill.matchAll(/^```js\n([\s\S]*?)^```/gm)].map(match => match[1]);

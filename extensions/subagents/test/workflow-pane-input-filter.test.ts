@@ -4,7 +4,7 @@
 // fragments split across reads. Forwarding those made the extension read a
 // stray ESC as `cancel` and self-close the pane (the "seems crashed" bug).
 import { describe, expect, it } from "vitest";
-import { classifyPaneKey } from "../src/workflow/pane/input-filter.mjs";
+import { classifyPaneKey } from "../src/graph/pane/input-filter.mjs";
 
 describe("classifyPaneKey", () => {
   it("forwards the nav keys the inspector uses", () => {

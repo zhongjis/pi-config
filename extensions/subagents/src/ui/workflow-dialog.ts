@@ -9,7 +9,7 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import type { WorkflowMeta } from "../workflow/meta.js";
+import type { WorkflowMeta } from "../graph/meta.js";
 import {
   buildPhaseGroups,
   displayState,
@@ -19,7 +19,7 @@ import {
   type WorkflowAgentEntry,
   type WorkflowDisplayState,
   type WorkflowEntry,
-} from "../workflow/progress.js";
+} from "../graph/progress.js";
 import { SPINNER, type Theme } from "./agent-widget.js";
 import {
   ASCII_GLYPHS,

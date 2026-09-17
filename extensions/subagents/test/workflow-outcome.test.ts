@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { workflowEntryData } from "../src/workflow/entry.js";
-import { isWorkflowEntryData } from "../src/workflow/entry-validation.js";
-import { runWorkflow, type WorkflowHost } from "../src/workflow/runtime.js";
-import { completeWorkflowTask, createWorkflowTask, formatWorkflowNotification, updateWorkflowProgressBatch } from "../src/workflow/task.js";
+import { workflowEntryData } from "../src/graph/entry.js";
+import { isWorkflowEntryData } from "../src/graph/entry-validation.js";
+import { runWorkflow, type WorkflowHost } from "../src/graph/runtime.js";
+import { completeWorkflowTask, createWorkflowTask, formatWorkflowNotification, updateWorkflowProgressBatch } from "../src/graph/task.js";
 
 const head = 'export const meta = { name: "contract", description: "fixture" };\n';
 const host: WorkflowHost = { spawnAgent: async () => ({ ok: false, error: "provider unavailable" }), abortAgent() {} };

@@ -6,7 +6,7 @@ import {
   renderSubagentSummary,
   type SubagentSummaryStatus,
 } from "./ui/summary-renderer.js";
-import { isWorkflowEntryData } from "./workflow/entry-validation.js";
+import { isWorkflowEntryData } from "./graph/entry-validation.js";
 import { renderWorkflowEntryCard } from "./ui/workflow-report.js";
 import { extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 

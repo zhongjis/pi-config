@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { runWorkflow, type WorkflowHost } from "../src/workflow/runtime.js";
+import { runWorkflow, type WorkflowHost } from "../src/graph/runtime.js";
 
 /** Claude Code's canonical review-changes example, verbatim from its tool description. */
 const CC_SCRIPT = `export const meta = {

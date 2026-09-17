@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, expect, it } from "vitest";
-import { runWorkflow, type WorkflowSpawnRequest, type WorkflowSpawnResult } from "../extensions/subagents/src/workflow/runtime.js";
-import { resolveWorkflowSource } from "../extensions/subagents/src/workflow/saved.js";
+import { runWorkflow, type WorkflowSpawnRequest, type WorkflowSpawnResult } from "../extensions/subagents/src/graph/runtime.js";
+import { resolveWorkflowSource } from "../extensions/subagents/src/graph/saved.js";
 
 const args = { question: "Compare options", requirements: ["A", "B", "C"], readOnlyAgentType: "fixture-reader", evidenceContext: "fixture sources" } as const;
 const ok = (value: unknown): WorkflowSpawnResult => ({ ok: true, text: JSON.stringify(value) });

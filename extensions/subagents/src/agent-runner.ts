@@ -37,7 +37,7 @@ import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, STRUCTURED_OUTPUT_TOOL_NAME, type StructuredCapture, structuredRetryPrompt } from "./structured-output.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
-import type { CompiledSchema } from "./workflow/json-schema.js";
+import type { CompiledSchema } from "./graph/json-schema.js";
 
 const structuredSessions = new WeakMap<AgentSession, StructuredCapture>();
 

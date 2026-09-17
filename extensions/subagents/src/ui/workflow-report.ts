@@ -2,9 +2,9 @@
 import { keyHint } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import { firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
-import { isWorkflowEntryData } from "../workflow/entry-validation.js";
-import { outcomeLabel } from "../workflow/outcome.js";
-import { buildPhaseGroups, collapse, displayState, elapsedMs, formatDuration, sizeWarning, stats, type WorkflowAgentEntry } from "../workflow/progress.js";
+import { isWorkflowEntryData } from "../graph/entry-validation.js";
+import { outcomeLabel } from "../graph/outcome.js";
+import { buildPhaseGroups, collapse, displayState, elapsedMs, formatDuration, sizeWarning, stats, type WorkflowAgentEntry } from "../graph/progress.js";
 import type { Theme } from "./agent-widget.js";
 import { formatModel, formatThinking, REPLAYED_ANNOTATION, type WorkflowCardInput } from "./workflow-card.js";
 

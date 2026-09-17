@@ -18,7 +18,7 @@ import {
   writeRecord,
   writeSnapshotAtomic,
   writeViewport,
-} from "../src/workflow/pane/store.js";
+} from "../src/graph/pane/store.js";
 
 let dir: string;
 

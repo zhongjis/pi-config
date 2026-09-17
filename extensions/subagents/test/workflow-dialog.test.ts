@@ -16,8 +16,8 @@ import {
   workflowAgentModel,
 } from "../src/ui/workflow-dialog.js";
 import { showWorkflowDialog, showWorkflowsMenu } from "../src/ui/workflow-menu.js";
-import type { WorkflowAgentEntry, WorkflowEntry } from "../src/workflow/progress.js";
-import { createWorkflowTask } from "../src/workflow/task.js";
+import type { WorkflowAgentEntry, WorkflowEntry } from "../src/graph/progress.js";
+import { createWorkflowTask } from "../src/graph/task.js";
 
 const theme = { fg: (_: string, text: string) => `\x1b[36m${text}\x1b[39m`, bold: (text: string) => `\x1b[1m${text}\x1b[22m` };
 const widths = [0, 1, 2, 8, 20, 40, 80, 120];

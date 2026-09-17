@@ -1,14 +1,14 @@
-import type { WorkflowOutcome } from "../workflow/outcome.js";
+import type { WorkflowOutcome } from "../graph/outcome.js";
 
 /** Workflow transcript reports and formatting shared with the inspector. */
 
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { WorkflowMeta } from "../workflow/meta.js";
+import type { WorkflowMeta } from "../graph/meta.js";
 import {
   type WorkflowAgentEntry,
   type WorkflowEntry,
   type WorkflowRunStatus,
-} from "../workflow/progress.js";
+} from "../graph/progress.js";
 import type { Theme } from "./agent-widget.js";
 
 

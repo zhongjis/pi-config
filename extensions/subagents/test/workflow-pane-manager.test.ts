@@ -7,9 +7,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createWorkflowPaneManager, type WorkflowPaneManager } from "../src/workflow/pane/manager.js";
-import { readRecord, STATE_FILE, writeInputAtomic, writeRecord } from "../src/workflow/pane/store.js";
-import { createWorkflowTask, type WorkflowTask } from "../src/workflow/task.js";
+import { createWorkflowPaneManager, type WorkflowPaneManager } from "../src/graph/pane/manager.js";
+import { readRecord, STATE_FILE, writeInputAtomic, writeRecord } from "../src/graph/pane/store.js";
+import { createWorkflowTask, type WorkflowTask } from "../src/graph/task.js";
 
 let dir: string;
 let managers: WorkflowPaneManager[] = [];

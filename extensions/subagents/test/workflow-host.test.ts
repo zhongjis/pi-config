@@ -3,8 +3,8 @@ import { promisify } from "node:util";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
-import { createWorkflowHost } from "../src/workflow/host.js";
-import { runWorkflow, type WorkflowSpawnRequest } from "../src/workflow/runtime.js";
+import { createWorkflowHost } from "../src/graph/host.js";
+import { runWorkflow, type WorkflowSpawnRequest } from "../src/graph/runtime.js";
 
 vi.mock("../src/agent-runner.js", () => ({ runAgent: vi.fn(), resumeAgent: vi.fn() }));
 

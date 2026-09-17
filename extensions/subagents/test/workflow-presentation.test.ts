@@ -10,9 +10,9 @@ import type { AgentRecord } from "../src/types.js";
 import { AgentWidget } from "../src/ui/agent-widget.js";
 import { FleetList, type FleetWorkflow } from "../src/ui/fleet-list.js";
 import { renderWorkflowCard, renderWorkflowEntryCard } from "../src/ui/workflow-report.js";
-import { workflowEntryData } from "../src/workflow/entry.js";
-import { elapsedMs, stats, type WorkflowAgentEntry } from "../src/workflow/progress.js";
-import { createWorkflowTask, pauseWorkflowTask, resolveResumeTarget, resumeWorkflowTask, updateWorkflowProgressBatch } from "../src/workflow/task.js";
+import { workflowEntryData } from "../src/graph/entry.js";
+import { elapsedMs, stats, type WorkflowAgentEntry } from "../src/graph/progress.js";
+import { createWorkflowTask, pauseWorkflowTask, resolveResumeTarget, resumeWorkflowTask, updateWorkflowProgressBatch } from "../src/graph/task.js";
 
 const theme = { fg: (_: string, s: string) => `\x1b[36m${s}\x1b[39m`, bold: (s: string) => `\x1b[1m${s}\x1b[22m` };
 const agent: WorkflowAgentEntry = { type: "workflow_agent", index: 7, label: "child", state: "progress", recordId: "child-id", model: "actual-sdk-model", thinking: "off" };

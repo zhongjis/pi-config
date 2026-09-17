@@ -9,12 +9,12 @@ import { describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import { WORKFLOW_ENTRY_TYPE, WORKFLOW_FILE_FLAG } from "../src/index.js";
 import { loadSettings } from "../src/settings.js";
-import { decideWorkflowCollision } from "../src/workflow/collisions.js";
-import * as workflowHost from "../src/workflow/host.js";
-import * as workflowTask from "../src/workflow/task.js";
+import { decideWorkflowCollision } from "../src/graph/collisions.js";
+import * as workflowHost from "../src/graph/host.js";
+import * as workflowTask from "../src/graph/task.js";
 import * as outputFile from "../src/output-file.js";
-import { validateScript } from "../src/workflow/runtime.js";
-import { listSavedWorkflows, resolveWorkflowScript } from "../src/workflow/saved.js";
+import { validateScript } from "../src/graph/runtime.js";
+import { listSavedWorkflows, resolveWorkflowScript } from "../src/graph/saved.js";
 
 it("registers no workflow tool by default; the flag is read only at startup", async () => {
   const host = boot();
@@ -158,7 +158,7 @@ it("runs the CLI file once and writes one entry without triggering a turn", asyn
 
 it("stops discovering the authoring skill when startup collision handling disables workflows", async () => {
   const host = boot({ workflowsEnabled: true });
-  vi.spyOn(await import("../src/workflow/collisions.js"), "decideWorkflowCollision").mockReturnValue({
+  vi.spyOn(await import("../src/graph/collisions.js"), "decideWorkflowCollision").mockReturnValue({
     kind: "standDown", message: "fixture collision", withdraw: true,
   });
   vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -7,8 +7,8 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { initialWorkflowDialogState, type WorkflowDialogSource } from "../src/ui/workflow-dialog.js";
-import { applyPaneKey, PANE_ANSI_THEME, renderWorkflowPaneLines, toPaneSource } from "../src/workflow/pane/render.js";
-import { createWorkflowTask } from "../src/workflow/task.js";
+import { applyPaneKey, PANE_ANSI_THEME, renderWorkflowPaneLines, toPaneSource } from "../src/graph/pane/render.js";
+import { createWorkflowTask } from "../src/graph/task.js";
 
 const NOW = 1_700_000_000_000;
 

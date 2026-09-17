@@ -26,7 +26,7 @@
  */
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { CompiledSchema } from "./workflow/json-schema.js";
+import type { CompiledSchema } from "./graph/json-schema.js";
 
 /**
  * Deliberately NOT added to `SUBAGENT_TOOL_NAMES`: that list becomes

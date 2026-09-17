@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { WorkflowAgentEntry, WorkflowEntry } from "../src/workflow/progress.js";
+import type { WorkflowAgentEntry, WorkflowEntry } from "../src/graph/progress.js";
 import {
   type RunWorkflowOptions,
   runWorkflow,
@@ -15,7 +15,7 @@ import {
   type WorkflowRunResult,
   type WorkflowSpawnRequest,
   type WorkflowSpawnResult,
-} from "../src/workflow/runtime.js";
+} from "../src/graph/runtime.js";
 
 const HEAD = 'export const meta = { name: "probe", description: "a test workflow" };\n';
 

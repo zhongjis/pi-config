@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { runWorkflow, type WorkflowSpawnResult } from "../extensions/subagents/src/workflow/runtime.js";
+import { runWorkflow, type WorkflowSpawnResult } from "../extensions/subagents/src/graph/runtime.js";
 
 const script = readFileSync(new URL("../workflows/last30days.js", import.meta.url), "utf8");
 const args = { topic: "fixture", windowStart: "2026-09-01", windowEnd: "2026-09-16", resolverAgentType: "reader", engineAgentType: "engine", specialistAgentType: "reader", verifierAgentType: "reader", skillDir: "/fixture/skill", memoryDir: "/fixture/output", activeSources: ["reddit"] };

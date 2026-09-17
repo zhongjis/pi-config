@@ -7,8 +7,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isHerdrPaneEnabled, WorkflowPaneController } from "../src/workflow/pane/controller.js";
-import { readRecord, writeRecord } from "../src/workflow/pane/store.js";
+import { isHerdrPaneEnabled, WorkflowPaneController } from "../src/graph/pane/controller.js";
+import { readRecord, writeRecord } from "../src/graph/pane/store.js";
 
 let dir: string;
 

@@ -16,7 +16,7 @@
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentRecord } from "../types.js";
-import { pauseWorkflowTask, resumeWorkflowTask, type WorkflowTask } from "../workflow/task.js";
+import { pauseWorkflowTask, resumeWorkflowTask, type WorkflowTask } from "../graph/task.js";
 import { WorkflowDialog } from "./workflow-dialog.js";
 
 /** Everything the menu and the inspector need from the extension around them. */
