@@ -1488,6 +1488,10 @@ Terse command-style prompts produce shallow, generic work.
       const result = await runGraph(graph, input, {
         host,
         signal: task.abortController.signal,
+        loadGraph: name => {
+          const resolved = resolveSavedGraph(name, ctx.cwd);
+          return resolved.ok ? (resolved.graph as AgentGraph) : undefined;
+        },
         onNodeUpdate: (nodeId, run) => {
           reporter.update(nodeId, run);
           workflowPane?.sync();
