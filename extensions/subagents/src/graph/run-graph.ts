@@ -2,23 +2,37 @@
  * run-graph.ts — the async driver that executes an AgentGraph.
  *
  * Ties the pieces together: the pure {@link Scheduler} decides which nodes may
- * run, this launches each runnable agent node as an XState {@link agentNodeLogic}
+ * run, this launches each runnable agent node as an XState {@link nodeLogic}
  * actor (so cancellation and lifecycle are XState's), feeds every settle back into
  * the scheduler, and honours a global concurrency cap. The scheduler stays pure;
  * all the async lives here.
  *
- * Only `agent` nodes execute here. `human_gate`, `graph`, and `expand` are layered
- * on in later phases; reaching one now fails that node loudly rather than being
- * silently skipped, so an unfinished capability never masquerades as success.
+ * `agent` nodes spawn a child agent; `graph` nodes recurse into a saved subgraph
+ * (resolved through the injected {@link RunGraphOptions.loadGraph} so this file
+ * stays filesystem-free); `expand` nodes splice a runtime {@link GraphFragment}
+ * into the live scheduler. `human_gate` is layered on in a later phase; reaching
+ * one now fails that node loudly rather than being silently skipped.
  */
 
 import { createActor } from "xstate";
-import type { AgentGraph, AgentNode, GraphNode } from "./ir.js";
+import type {
+  AgentGraph,
+  AgentNode,
+  Condition,
+  ExpandNode,
+  GraphEdge,
+  GraphFragment,
+  GraphNode,
+  NodeId,
+  SubgraphNode,
+  ValueRef,
+} from "./ir.js";
 import { compileJsonSchema } from "./json-schema.js";
 import { type NodeExecInput, nodeLogic } from "./node-actor.js";
 import type { NodeHost, NodeSpawnResult } from "./node-host.js";
-import type { NodeRun } from "./scheduler.js";
+import type { NodeRun, SettleInput } from "./scheduler.js";
 import { Scheduler } from "./scheduler.js";
+import { validateFragment, validateGraph } from "./validate.js";
 import { MISSING, type ResolutionContext, resolveValueRef } from "./value-ref.js";
 
 export const DEFAULT_CONCURRENCY = 8;
@@ -27,6 +41,17 @@ export interface RunGraphOptions {
   host: NodeHost;
   concurrency?: number;
   signal?: AbortSignal;
+  /**
+   * Resolves a `graph` node's saved-graph reference to an inline {@link AgentGraph}.
+   * Injected so this driver never touches the filesystem or the saved-graph store.
+   */
+  loadGraph?: (name: string) => AgentGraph | undefined;
+  /**
+   * Named resource capacities. A node's declared `resources` are each admitted
+   * only while their in-use count is below the configured capacity; a resource
+   * absent here is unlimited.
+   */
+  resources?: Record<string, { capacity: number }>;
   /** Fired whenever a node changes state — the monitor's data feed. */
   onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>): void;
 }
@@ -35,6 +60,18 @@ export interface RunGraphResult {
   status: "completed" | "failed" | "aborted";
   outputs: Record<string, unknown>;
   nodes: Record<string, { status: NodeRun["status"]; attempt: number; output?: unknown; error?: string }>;
+}
+
+/** One unit of in-flight async work — an agent actor or a recursing subgraph. */
+interface Inflight {
+  /** Resolves with the node id once the work has settled. */
+  done: Promise<string>;
+  /** The scheduler disposition, read after `done` resolves. */
+  result(): SettleInput;
+  /** Named resources held for the duration, released on settle. */
+  resources: string[];
+  /** Cancel the work (abort path). */
+  stop(): void;
 }
 
 /** Substitute `${name}` in a prompt with the resolved value of that input. */
@@ -85,13 +122,120 @@ function contextOf(scheduler: Scheduler, input: unknown): ResolutionContext {
   return { input, outputs };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Resolve a node's input ValueRefs into a plain object, omitting missing values. */
+function resolveInputMap(input: Record<string, ValueRef> | undefined, ctx: ResolutionContext): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  if (input === undefined) return result;
+  for (const [name, ref] of Object.entries(input)) {
+    const value = resolveValueRef(ref, ctx);
+    if (value !== MISSING) result[name] = value;
+  }
+  return result;
+}
+
+/** The options a subgraph node passes down to its child run (loader/resources/signal shared). */
+function childOptions(options: RunGraphOptions): RunGraphOptions {
+  const child: RunGraphOptions = { host: options.host };
+  if (options.concurrency !== undefined) child.concurrency = options.concurrency;
+  if (options.signal !== undefined) child.signal = options.signal;
+  if (options.loadGraph !== undefined) child.loadGraph = options.loadGraph;
+  if (options.resources !== undefined) child.resources = options.resources;
+  return child;
+}
+
+/** Rewrite a ValueRef's `node` when it points at a fragment-internal id. */
+function rewriteRef(ref: ValueRef, rename: (id: NodeId) => NodeId): ValueRef {
+  return ref.node === undefined ? ref : { ...ref, node: rename(ref.node) };
+}
+
+/** Rewrite every ValueRef embedded in a condition tree. */
+function rewriteCondition(cond: Condition, rename: (id: NodeId) => NodeId): Condition {
+  if ("and" in cond) return { and: cond.and.map(sub => rewriteCondition(sub, rename)) };
+  if ("or" in cond) return { or: cond.or.map(sub => rewriteCondition(sub, rename)) };
+  if ("not" in cond) return { not: rewriteCondition(cond.not, rename) };
+  if ("exists" in cond) return { exists: rewriteRef(cond.exists, rename) };
+  if ("eq" in cond) return { eq: [rewriteRef(cond.eq[0], rename), cond.eq[1]] };
+  if ("ne" in cond) return { ne: [rewriteRef(cond.ne[0], rename), cond.ne[1]] };
+  if ("gt" in cond) return { gt: [rewriteRef(cond.gt[0], rename), cond.gt[1]] };
+  if ("gte" in cond) return { gte: [rewriteRef(cond.gte[0], rename), cond.gte[1]] };
+  if ("lt" in cond) return { lt: [rewriteRef(cond.lt[0], rename), cond.lt[1]] };
+  return { lte: [rewriteRef(cond.lte[0], rename), cond.lte[1]] };
+}
+
+/** Rewrite a node's own ValueRefs (input map, or an expand node's source). */
+function rewriteNode(node: GraphNode, rename: (id: NodeId) => NodeId): GraphNode {
+  if (node.type === "expand") return { ...node, source: rewriteRef(node.source, rename) };
+  if (node.input === undefined) return node;
+  const input: Record<string, ValueRef> = {};
+  for (const [name, ref] of Object.entries(node.input)) input[name] = rewriteRef(ref, rename);
+  return { ...node, input };
+}
+
+/**
+ * Relocate a fragment under `namespace`: every fragment-internal id becomes
+ * `${namespace}:${id}`, and every reference to one — edge from/to, condition
+ * ValueRefs, node input/source ValueRefs, and fragment outputs — is rewritten to
+ * the new id. A reference to an id that is *not* internal to the fragment (already
+ * in the run graph) is left untouched. With no namespace the fragment is returned
+ * unchanged.
+ */
+export function namespaceFragment(fragment: GraphFragment, namespace: string | undefined): GraphFragment {
+  if (namespace === undefined) return fragment;
+  const internal = new Set(Object.keys(fragment.nodes));
+  const rename = (id: NodeId): NodeId => (internal.has(id) ? `${namespace}:${id}` : id);
+
+  const nodes: Record<NodeId, GraphNode> = {};
+  for (const [id, node] of Object.entries(fragment.nodes)) nodes[rename(id)] = rewriteNode(node, rename);
+
+  const edges = fragment.edges.map(edge => {
+    const next: GraphEdge = { ...edge, from: rename(edge.from), to: rename(edge.to) };
+    if (edge.when !== undefined) next.when = rewriteCondition(edge.when, rename);
+    return next;
+  });
+
+  const result: GraphFragment = { nodes, edges };
+  if (fragment.outputs !== undefined) {
+    const outputs: Record<string, ValueRef> = {};
+    for (const [name, ref] of Object.entries(fragment.outputs)) outputs[name] = rewriteRef(ref, rename);
+    result.outputs = outputs;
+  }
+  return result;
+}
+
 export async function runGraph(graph: AgentGraph, input: unknown, options: RunGraphOptions): Promise<RunGraphResult> {
   const scheduler = new Scheduler(graph, input);
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
-  const inflight = new Map<string, { actor: ReturnType<typeof createActor>; done: Promise<string> }>();
+  const inflight = new Map<string, Inflight>();
+  // Node definitions grow at runtime when an expand node splices a fragment in.
+  const nodeDefs = new Map<NodeId, GraphNode>(Object.entries(graph.nodes));
+  // Live count of each named resource in use by inflight nodes.
+  const inUse = new Map<string, number>();
+
+  const capacityOf = (name: string): number | undefined => options.resources?.[name]?.capacity;
+  const canAdmit = (resources: string[]): boolean => {
+    for (const name of resources) {
+      const cap = capacityOf(name);
+      if (cap !== undefined && (inUse.get(name) ?? 0) >= cap) return false;
+    }
+    return true;
+  };
+  const acquire = (resources: string[]): void => {
+    for (const name of resources) inUse.set(name, (inUse.get(name) ?? 0) + 1);
+  };
+  const release = (resources: string[]): void => {
+    for (const name of resources) {
+      const next = (inUse.get(name) ?? 0) - 1;
+      if (next <= 0) inUse.delete(name);
+      else inUse.set(name, next);
+    }
+  };
 
   const stopAll = (): void => {
-    for (const { actor } of inflight.values()) actor.stop();
+    for (const entry of inflight.values()) entry.stop();
     inflight.clear();
   };
 
@@ -100,9 +244,10 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     if (run !== undefined) options.onNodeUpdate?.(id, run);
   };
 
-  const launch = (id: string, node: AgentNode): void => {
+  const launchAgent = (id: string, node: AgentNode, resources: string[]): void => {
     scheduler.markRunning(id);
     report(id);
+    acquire(resources);
     const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input));
     const actor = createActor(nodeLogic, { input: exec });
     const done = new Promise<string>(resolve => {
@@ -111,7 +256,73 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       });
       actor.start();
     });
-    inflight.set(id, { actor, done });
+    inflight.set(id, {
+      done,
+      resources,
+      stop: () => actor.stop(),
+      result: () => {
+        const out = (actor.getSnapshot().output ?? { ok: false, error: "node produced no result" }) as NodeSpawnResult;
+        return { ok: out.ok, output: parseOutput(node, out), error: out.error, skipped: out.skipped };
+      },
+    });
+  };
+
+  const launchSubgraph = (id: string, node: SubgraphNode): void => {
+    scheduler.markRunning(id);
+    report(id);
+    // Resolve the child input now, against the context at launch time.
+    const childInput = resolveInputMap(node.input, contextOf(scheduler, input));
+    let settle: SettleInput = { ok: false, error: `subgraph node "${id}" did not run` };
+    const done = (async (): Promise<string> => {
+      const loader = options.loadGraph;
+      if (loader === undefined) {
+        settle = { ok: false, error: `subgraph node "${id}" needs a loadGraph loader, but none was provided` };
+        return id;
+      }
+      const childGraph = loader(node.graph);
+      if (childGraph === undefined) {
+        settle = { ok: false, error: `subgraph "${node.graph}" could not be resolved` };
+        return id;
+      }
+      const validation = validateGraph(childGraph);
+      if (!validation.ok) {
+        settle = { ok: false, error: `subgraph "${node.graph}" is invalid: ${validation.errors.join("; ")}` };
+        return id;
+      }
+      const childResult = await runGraph(childGraph, childInput, childOptions(options));
+      settle =
+        childResult.status === "completed"
+          ? { ok: true, output: childResult.outputs }
+          : { ok: false, error: `subgraph "${node.graph}" ${childResult.status}` };
+      return id;
+    })();
+    inflight.set(id, { done, resources: [], stop: () => {}, result: () => settle });
+  };
+
+  /** Splice a fragment resolved from an expand node's source into the live run. Synchronous. */
+  const expandNode = (id: string, node: ExpandNode): void => {
+    scheduler.markRunning(id);
+    report(id);
+    const source = resolveValueRef(node.source, contextOf(scheduler, input));
+    if (source === MISSING || !isPlainObject(source)) {
+      scheduler.settle(id, { ok: false, error: `expand node "${id}" source did not resolve to a GraphFragment` });
+      report(id);
+      return;
+    }
+    const fragment = source as unknown as GraphFragment;
+    const validation = validateFragment(fragment, scheduler.nodeIds());
+    if (!validation.ok) {
+      scheduler.settle(id, { ok: false, error: `expand node "${id}" fragment is invalid: ${validation.errors.join("; ")}` });
+      report(id);
+      return;
+    }
+    // Namespacing relocates the (already valid) fragment so its ids and internal
+    // references are isolated from the run graph.
+    const placed = namespaceFragment(fragment, node.namespace);
+    for (const [fid, fnode] of Object.entries(placed.nodes)) nodeDefs.set(fid, fnode);
+    scheduler.insertFragment(placed);
+    scheduler.settle(id, { ok: true, output: {} });
+    report(id);
   };
 
   while (true) {
@@ -120,17 +331,42 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       return { status: "aborted", outputs: {}, nodes: snapshotNodes(scheduler) };
     }
 
+    // Did this pass settle or splice anything synchronously? If so we must
+    // re-evaluate readiness before treating the run as quiescent — an expand
+    // node inserts fresh roots that would otherwise be force-skipped as stuck.
+    let progressed = false;
     for (const id of scheduler.ready()) {
       if (inflight.size >= concurrency) break;
       if (inflight.has(id)) continue;
-      const node = graph.nodes[id];
-      if (node.type !== "agent") {
-        scheduler.settle(id, { ok: false, error: `node type "${node.type}" is not supported yet` });
+      const node = nodeDefs.get(id);
+      if (node === undefined) {
+        scheduler.settle(id, { ok: false, error: `no definition found for node "${id}"` });
         report(id);
+        progressed = true;
         continue;
       }
-      launch(id, node);
+      const resources = node.type === "agent" && node.resources !== undefined ? node.resources : [];
+      // Blocked purely by resource capacity: leave pending, retry on a later pass.
+      if (!canAdmit(resources)) continue;
+      if (node.type === "agent") {
+        launchAgent(id, node, resources);
+        continue;
+      }
+      if (node.type === "graph") {
+        launchSubgraph(id, node);
+        continue;
+      }
+      if (node.type === "expand") {
+        expandNode(id, node);
+        progressed = true;
+        continue;
+      }
+      scheduler.settle(id, { ok: false, error: `node type "${node.type}" is not supported yet` });
+      report(id);
+      progressed = true;
     }
+
+    if (progressed) continue;
 
     if (inflight.size === 0) {
       if (scheduler.resolveSkips() > 0) continue;
@@ -142,14 +378,8 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     const settledId = await Promise.race([...inflight.values()].map(entry => entry.done));
     const entry = inflight.get(settledId);
     inflight.delete(settledId);
-    const result = (entry?.actor.getSnapshot().output ?? { ok: false, error: "node produced no result" }) as NodeSpawnResult;
-    const node = graph.nodes[settledId];
-    scheduler.settle(settledId, {
-      ok: result.ok,
-      output: parseOutput(node, result),
-      error: result.error,
-      skipped: result.skipped,
-    });
+    if (entry !== undefined) release(entry.resources);
+    scheduler.settle(settledId, entry?.result() ?? { ok: false, error: "node produced no result" });
     report(settledId);
   }
 

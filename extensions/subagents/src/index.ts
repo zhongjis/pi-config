@@ -27,6 +27,7 @@ import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ModeStateE
 import { isModelInScope, readEnabledModels, resolveEnabledModels } from "./enabled-models.js";
 import { decideWorkflowCollision } from "./graph/collisions.js";
 import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./graph/entry.js";
+import { completeGraphTask, GraphRunReporter } from "./graph/graph-run-adapter.js";
 import { createWorkflowHost } from "./graph/host.js";
 import type { AgentGraph } from "./graph/ir.js";
 import { appendJournal, readJournal, type WorkflowJournalEntry } from "./graph/journal.js";
@@ -1467,6 +1468,50 @@ Terse command-style prompts produce shallow, generic work.
     void run.finally(() => workflowRuns.delete(run));
   }
 
+  /**
+   * Run a graph task to completion against the real manager, settling the record
+   * either way. Mirrors {@link runWorkflowTask} but drives the graph runtime and
+   * maps node updates onto the task's progress log via {@link GraphRunReporter}.
+   */
+  async function runGraphTask(ctx: ExtensionContext, task: WorkflowTask, graph: AgentGraph, input: unknown): Promise<void> {
+    const host = createNodeHost({
+      pi,
+      ctx,
+      manager,
+      signal: task.abortController.signal,
+      scopeModels: isScopeModelsEnabled,
+      outputTranscript: getOutputTranscriptDefault,
+      workflowId: task.id,
+    });
+    const reporter = new GraphRunReporter(task, graph);
+    try {
+      const result = await runGraph(graph, input, {
+        host,
+        signal: task.abortController.signal,
+        onNodeUpdate: (nodeId, run) => {
+          reporter.update(nodeId, run);
+          workflowPane?.sync();
+        },
+      });
+      completeGraphTask(task, result);
+      workflowPane?.sync();
+    } catch (err) {
+      failWorkflowTask(task, err instanceof Error ? err.message : String(err));
+      workflowPane?.sync();
+    } finally {
+      await host.dispose();
+    }
+  }
+
+  /** Detached graph run, added to {@link workflowRuns} so shutdown awaits it. */
+  function launchGraph(ctx: ExtensionContext, task: WorkflowTask, graph: AgentGraph, input: unknown, finished: () => void): void {
+    const run = runGraphTask(ctx, task, graph, input).then(() => {
+      if (workflowSessionActive && workflowTasks.get(task.id) === task) finished();
+    }).catch(error => console.warn(`[pi-subagents] graph completion: ${String(error)}`));
+    workflowRuns.add(run);
+    void run.finally(() => workflowRuns.delete(run));
+  }
+
   async function stopWorkflows(): Promise<void> {
     workflowSessionActive = false;
     for (const task of workflowTasks.values()) {
@@ -1774,31 +1819,58 @@ Terse command-style prompts produce shallow, generic work.
       const name = typeof graph === "string" ? graph : ((graph as { name?: string } | null)?.name ?? "inline graph");
       return renderToolCall("agent_graph", String(name), theme);
     },
-    execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+    renderResult(result, options, theme, renderContext) {
+      const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+      const taskId = (result.details as { taskId?: string } | undefined)?.taskId;
+      const task = taskId !== undefined ? workflowTasks.get(taskId) : undefined;
+      if (renderContext.isError || !task) {
+        const status = renderContext.isError ? "Failed" : "Live graph state unavailable in this session";
+        return options.expanded
+          ? renderToolExpanded(`${status}\n${text || "No output."}`)
+          : renderToolSummary([status, firstMeaningfulLine(text) || "No output"], theme, { expandable: true });
+      }
+      return renderWorkflowCard(
+        { progress: task.workflowProgress, task, expanded: options.expanded, meta: task.meta, agentCount: task.agentCount, totalTokens: task.totalTokens },
+        theme,
+      );
+    },
+    execute: async (toolCallId, params, _signal, _onUpdate, ctx) => {
       if (!isWorkflowsEnabled() || !workflowSessionActive) return textResult("Agent graphs are unavailable in this session.");
       let graph: unknown;
+      let graphName: string;
       if (typeof params.graph === "string") {
         const resolved = resolveSavedGraph(params.graph, ctx.cwd);
         if (!resolved.ok) throw new Error(resolved.message);
         graph = resolved.graph;
+        graphName = params.graph;
       } else {
         graph = params.graph;
+        graphName = (graph as { name?: string } | null)?.name ?? "inline graph";
       }
       const verdict = validateGraph(graph);
       if (!verdict.ok) throw new Error(`Invalid agent graph:\n- ${verdict.errors.join("\n- ")}`);
 
-      const host = createNodeHost({ pi, ctx, manager, workflowId: workflowRunId() });
-      try {
-        const result = await runGraph(graph as AgentGraph, params.input, { host, signal });
-        const nodeLines = Object.entries(result.nodes).map(([id, node]) => `  ${id}: ${node.status}${node.error ? ` (${node.error})` : ""}`);
-        const outputs = Object.keys(result.outputs).length > 0 ? `Outputs:\n${JSON.stringify(result.outputs, null, 2)}` : "No declared outputs.";
-        return {
-          content: [{ type: "text" as const, text: `Agent graph ${result.status}.\nNodes:\n${nodeLines.join("\n")}\n${outputs}` }],
-          details: { graphStatus: result.status },
-        };
-      } finally {
-        await host.dispose();
-      }
+      const runId = workflowRunId();
+      const task = createWorkflowTask({ id: runId, script: "", meta: { name: graphName, description: `agent graph ${graphName}` }, toolCallId });
+      workflowTasks.set(runId, task);
+      widget.update();
+      fleet.update();
+      workflowPane?.sync();
+
+      // Background, like SubagentWorkflow: the id comes back now and the run
+      // keeps going without the tool call holding it.
+      launchGraph(ctx, task, graph as AgentGraph, params.input, () => notifyWorkflowFinished(ctx, task));
+
+      return {
+        content: [{
+          type: "text" as const,
+          text:
+            `Agent graph "${graphName}" started in the background.\n` +
+            `Task ID: ${runId}\n` +
+            `\nYou will be notified when it finishes — do NOT poll or sleep waiting for it.`,
+        }],
+        details: { taskId: runId },
+      };
     },
   });
   if (isWorkflowsEnabled()) pi.registerTool(agentGraphTool);

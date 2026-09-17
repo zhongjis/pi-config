@@ -1,0 +1,110 @@
+/**
+ * graph-run-adapter.ts — bridge a graph run into the workflow monitor.
+ *
+ * The `/agents → Workflows` dialog, the fleet widget, the inline card and the
+ * Herdr pane all render a {@link WorkflowTask}'s append-only progress log. A
+ * graph run is node-shaped rather than script-shaped, so this maps each node's
+ * {@link NodeRun} state onto a `workflow_agent` progress entry (keyed by a stable
+ * per-node index, last-write-wins) — which is exactly what those surfaces already
+ * know how to collapse and draw. Each node row carries its incoming dependencies
+ * so the roster reads as a graph, not a flat list.
+ *
+ * Keeping this in one adapter means the monitor stays unaware it is showing a
+ * graph, and the graph runtime stays unaware of the monitor.
+ */
+
+import type { AgentGraph } from "./ir.js";
+import type { WorkflowAgentEntry } from "./progress.js";
+import type { RunGraphResult } from "./run-graph.js";
+import type { NodeRun } from "./scheduler.js";
+import { updateWorkflowProgressBatch, type WorkflowTask } from "./task.js";
+
+const PREVIEW = 200;
+function preview(value: unknown): string {
+  if (value === undefined) return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length <= PREVIEW ? text : `${text.slice(0, PREVIEW - 1)}…`;
+}
+
+/**
+ * Feeds a graph run's node updates into a workflow task's progress log.
+ *
+ * Node indices and dependency labels are computed once from the graph topology;
+ * `update` then re-emits one entry per node state change.
+ */
+export class GraphRunReporter {
+  private readonly index = new Map<string, number>();
+  private readonly deps = new Map<string, string[]>();
+  private readonly agentType = new Map<string, string>();
+  private readonly queuedAt: number;
+
+  constructor(
+    private readonly task: WorkflowTask,
+    graph: AgentGraph,
+    now: number = Date.now(),
+  ) {
+    this.queuedAt = now;
+    const ids = Object.keys(graph.nodes);
+    ids.forEach((id, i) => {
+      this.index.set(id, i);
+    });
+    for (const id of ids) {
+      // Forward (non-loop) predecessors are the node's real dependencies.
+      this.deps.set(
+        id,
+        graph.edges.filter(edge => edge.to === id && edge.loop === undefined).map(edge => edge.from),
+      );
+      const node = graph.nodes[id];
+      this.agentType.set(id, node.type === "agent" ? node.agent : node.type);
+    }
+    // The run's total is known up front — every declared node — so the header
+    // reads N/total from the first frame rather than growing as nodes appear.
+    this.task.agentCount = Math.max(this.task.agentCount, ids.length);
+  }
+
+  update(nodeId: string, run: Readonly<NodeRun>, now: number = Date.now()): void {
+    updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
+  }
+
+  private entry(nodeId: string, run: Readonly<NodeRun>, now: number): WorkflowAgentEntry {
+    const deps = this.deps.get(nodeId) ?? [];
+    const base: WorkflowAgentEntry = {
+      type: "workflow_agent",
+      index: this.index.get(nodeId) ?? 0,
+      label: nodeId,
+      state: "start",
+      agentType: this.agentType.get(nodeId),
+      promptPreview: deps.length > 0 ? `depends on: ${deps.join(", ")}` : "entry node",
+      queuedAt: this.queuedAt,
+      ...(run.attempt > 0 ? { attempt: run.attempt } : {}),
+    };
+    switch (run.status) {
+      case "pending":
+        return { ...base, blocked: true };
+      case "running":
+        return { ...base, startedAt: now, lastProgressAt: now };
+      case "completed":
+        return { ...base, state: "done", startedAt: now, lastProgressAt: now, resultPreview: preview(run.output) };
+      case "failed":
+        return { ...base, state: "error", startedAt: now, lastProgressAt: now, error: run.error };
+      case "skipped":
+        return { ...base, state: "error", skipped: true };
+      default:
+        return base;
+    }
+  }
+}
+
+/** Settle a workflow task from a graph run's result. */
+export function completeGraphTask(task: WorkflowTask, result: RunGraphResult, now: number = Date.now()): void {
+  task.control = undefined;
+  task.status = result.status === "aborted" ? "killed" : result.status;
+  task.value = result.outputs;
+  task.endTime = now;
+  if (result.status === "failed") {
+    const failed = Object.entries(result.nodes)
+      .filter(([, node]) => node.status === "failed")
+      .map(([id, node]) => `${id}: ${node.error ?? "failed"}`);
+    task.error = failed.length > 0 ? failed.join("; ") : "Graph run failed.";
+  }
+}

@@ -27,7 +27,7 @@
  */
 
 import { evaluateCondition } from "./condition.js";
-import type { AgentGraph, GraphEdge, NodeId, ValueRef } from "./ir.js";
+import type { AgentGraph, GraphEdge, GraphFragment, NodeId, ValueRef } from "./ir.js";
 import { MISSING, type ResolutionContext, resolveValueRef } from "./value-ref.js";
 
 export type NodeStatus = "pending" | "running" | "completed" | "failed" | "skipped";
@@ -56,6 +56,8 @@ function isSettled(status: NodeStatus | undefined): boolean {
 
 export class Scheduler {
   readonly nodes = new Map<NodeId, NodeRun>();
+  /** Mutable edge list so an expand node can splice a fragment's edges in at runtime. */
+  private readonly edges: GraphEdge[];
   private readonly loopCounts = new Map<string, number>();
   private totalRuns = 0;
 
@@ -65,6 +67,24 @@ export class Scheduler {
     private readonly maxTotalRuns = 1000,
   ) {
     for (const id of Object.keys(graph.nodes)) this.nodes.set(id, { status: "pending", attempt: 0 });
+    this.edges = [...graph.edges];
+  }
+
+  /** The ids of every node currently in the run — a fragment must not collide with these. */
+  nodeIds(): Set<NodeId> {
+    return new Set(this.nodes.keys());
+  }
+
+  /**
+   * Splice a validated {@link GraphFragment} into the live run: each new node
+   * starts `pending` and the fragment's edges join the edge list, so the next
+   * ready()/settle() sees the additions exactly like the original graph's nodes.
+   */
+  insertFragment(fragment: GraphFragment): void {
+    for (const id of Object.keys(fragment.nodes)) {
+      if (!this.nodes.has(id)) this.nodes.set(id, { status: "pending", attempt: 0 });
+    }
+    this.edges.push(...fragment.edges);
   }
 
   private context(): ResolutionContext {
@@ -74,11 +94,11 @@ export class Scheduler {
   }
 
   private incoming(id: NodeId): GraphEdge[] {
-    return this.graph.edges.filter(edge => edge.to === id);
+    return this.edges.filter(edge => edge.to === id);
   }
 
   private outgoing(id: NodeId): GraphEdge[] {
-    return this.graph.edges.filter(edge => edge.from === id);
+    return this.edges.filter(edge => edge.from === id);
   }
 
   private edgeActive(edge: GraphEdge, ctx: ResolutionContext): boolean {
