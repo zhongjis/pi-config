@@ -46,7 +46,7 @@ export interface WorkflowMenuDeps {
  *
  * All six controls are wired: `onKill` aborts the run's controller, while
  * pause/resume and per-agent skip/retry go through `task.control`, the handle
- * `runWorkflow` hands back. `onOpenAgent` is the odd one out — it opens the
+ * the graph run hands back. `onOpenAgent` is the odd one out — it opens the
  * child's conversation rather than changing the run. The dialog derives its key
  * hints from the actions it is handed, so the footer advertises exactly what
  * works — see `WorkflowDialogActions`.

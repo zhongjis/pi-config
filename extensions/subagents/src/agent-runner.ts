@@ -76,7 +76,6 @@ export const SUBAGENT_TOOL_NAMES = {
   AGENT: "Agent",
   GET_RESULT: "get_subagent_result",
   STEER: "steer_subagent",
-  WORKFLOW: "SubagentWorkflow",
   AGENT_GRAPH: "agent_graph",
 } as const;
 
@@ -257,7 +256,7 @@ export function installExtensionToolScope(
       extensionTools,
       allowNesting,
       isolated,
-    }).filter(name => name !== SUBAGENT_TOOL_NAMES.WORKFLOW);
+    });
     if (ctx.structuredOutput && !active.includes(STRUCTURED_OUTPUT_TOOL_NAME)) active.push(STRUCTURED_OUTPUT_TOOL_NAME);
     return active;
   };

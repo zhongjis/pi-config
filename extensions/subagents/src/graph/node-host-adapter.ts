@@ -1,15 +1,14 @@
 /**
  * node-host-adapter.ts — the real {@link NodeHost} over `AgentManager`.
  *
- * The graph-native counterpart of host.ts's `createWorkflowHost`: it resolves a
+ * The real {@link NodeHost} over `AgentManager`: it resolves a
  * node's agent type/model, spawns through `AgentManager`, and maps the resulting
  * record back to a {@link NodeSpawnResult}. It implements the graph's node seam,
  * so `run-graph.ts` never touches the manager directly.
  *
  * Cancellation is the caller's `AbortSignal` (the node actor's), combined with an
  * optional run-wide `deps.signal`; there is no per-agent abort handle because a
- * node actor's `stop()` already carries the signal here. Modelled on the proven
- * `createWorkflowHost` so the two stay behaviourally aligned.
+ * node actor's `stop()` already carries the signal here.
  */
 
 import type { ExecResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";

@@ -1,7 +1,7 @@
 /**
  * task.ts — the background record one workflow run lives in.
  *
- * A `SubagentWorkflow` tool call returns a task id immediately and the run continues
+ * An `agent_graph` tool call returns a task id immediately and the run continues
  * without it, so the run's state cannot live in the tool call's closure: the
  * inline card, the completion notification and (later) the `/agents → Workflows` dialog
  * all read it after `execute` has returned. This is that record, shaped after
