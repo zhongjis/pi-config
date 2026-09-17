@@ -1,0 +1,83 @@
+{
+  "name": "work-verify",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "implementation": { "type": "string" } },
+    "required": ["implementation"]
+  },
+  "nodes": {
+    "tests": {
+      "type": "agent",
+      "agent": "jintong",
+      "prompt": "Run the project's tests for this change and report whether they pass:\n${implementation}",
+      "input": { "implementation": { "path": "$.implementation" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "passed": { "type": "boolean" },
+          "output": { "type": "string" }
+        },
+        "required": ["passed"]
+      }
+    },
+    "static-check": {
+      "type": "agent",
+      "agent": "jintong",
+      "prompt": "Run static checks (lint and typecheck) for this change and report whether they pass:\n${implementation}",
+      "input": { "implementation": { "path": "$.implementation" } },
+      "validation": { "gate": "true" },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "passed": { "type": "boolean" },
+          "output": { "type": "string" }
+        },
+        "required": ["passed"]
+      }
+    },
+    "review": {
+      "type": "agent",
+      "agent": "yanluo",
+      "prompt": "Review this implementation for correctness and risk:\n${implementation}\n\nReturn approved and a list of concerns.",
+      "input": { "implementation": { "path": "$.implementation" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "approved": { "type": "boolean" },
+          "concerns": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["approved", "concerns"]
+      }
+    },
+    "summarize": {
+      "type": "agent",
+      "agent": "jintong",
+      "prompt": "Summarize verification for the change. Tests passed: ${testsPassed}. Static checks passed: ${staticPassed}. Review approved: ${reviewApproved}. Review concerns: ${concerns}. Report deterministicPass (tests AND static both passed), reviewApproved, and the list of concerns.",
+      "input": {
+        "testsPassed": { "node": "tests", "path": "$.passed" },
+        "staticPassed": { "node": "static-check", "path": "$.passed" },
+        "reviewApproved": { "node": "review", "path": "$.approved" },
+        "concerns": { "node": "review", "path": "$.concerns" }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "deterministicPass": { "type": "boolean" },
+          "reviewApproved": { "type": "boolean" },
+          "concerns": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["deterministicPass", "reviewApproved"]
+      }
+    }
+  },
+  "edges": [
+    { "from": "tests", "to": "summarize" },
+    { "from": "static-check", "to": "summarize" },
+    { "from": "review", "to": "summarize" }
+  ],
+  "outputs": {
+    "deterministicPass": { "node": "summarize", "path": "$.deterministicPass" },
+    "reviewApproved": { "node": "summarize", "path": "$.reviewApproved" },
+    "concerns": { "node": "summarize", "path": "$.concerns" }
+  }
+}

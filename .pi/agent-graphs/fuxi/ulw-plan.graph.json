@@ -1,0 +1,99 @@
+{
+  "name": "ulw-plan",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "request": { "type": "string" } },
+    "required": ["request"]
+  },
+  "nodes": {
+    "context": {
+      "type": "graph",
+      "graph": "shared/context-gather",
+      "input": { "task": { "path": "$.request" } }
+    },
+    "intake": {
+      "type": "agent",
+      "agent": "direnjie",
+      "prompt": "Assess whether the request has clear, actionable requirements.\n\nRequest: ${request}\nGathered context: ${context}\n\nReturn clear (true only if you can plan without guessing) and the list of requirements.",
+      "input": {
+        "request": { "path": "$.request" },
+        "context": { "node": "context", "path": "$.summary" }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "clear": { "type": "boolean" },
+          "requirements": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["clear", "requirements"]
+      }
+    },
+    "clarify": {
+      "type": "human_gate",
+      "prompt": "Requirements are unclear. Approve to proceed with best-effort assumptions, or reject to stop and gather more detail.",
+      "outputSchema": {
+        "type": "object",
+        "properties": { "approved": { "type": "boolean" } },
+        "required": ["approved"]
+      }
+    },
+    "plan-author": {
+      "type": "agent",
+      "agent": "xuannv",
+      "prompt": "Author an implementation plan for the request '${request}'.\n\nRequirements: ${requirements}\nGathered context: ${context}\n\nReturn a concrete, ordered plan.",
+      "input": {
+        "request": { "path": "$.request" },
+        "requirements": { "node": "intake", "path": "$.requirements" },
+        "context": { "node": "context", "path": "$.summary" }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "plan": { "type": "string" } },
+        "required": ["plan"]
+      }
+    },
+    "gap-analysis": {
+      "type": "agent",
+      "agent": "direnjie",
+      "prompt": "Analyze this plan for hidden assumptions, gaps, and execution risks:\n${plan}\n\nReturn the list of gaps.",
+      "input": { "plan": { "node": "plan-author", "path": "$.plan" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "gaps": { "type": "array", "items": { "type": "string" } } },
+        "required": ["gaps"]
+      }
+    },
+    "review": {
+      "type": "graph",
+      "graph": "shared/review-loop",
+      "input": {
+        "task": { "path": "$.request" },
+        "artifact": { "node": "plan-author", "path": "$.plan" }
+      }
+    },
+    "plan": {
+      "type": "agent",
+      "agent": "cangjie",
+      "prompt": "Produce the final, reviewed plan document for the request '${request}'.",
+      "input": { "request": { "path": "$.request" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "plan": { "type": "string" } },
+        "required": ["plan"]
+      }
+    }
+  },
+  "edges": [
+    { "from": "context", "to": "intake" },
+    { "from": "intake", "to": "plan-author", "when": { "eq": [{ "node": "intake", "path": "$.clear" }, true] } },
+    { "from": "intake", "to": "clarify", "when": { "eq": [{ "node": "intake", "path": "$.clear" }, false] } },
+    { "from": "clarify", "to": "plan-author", "when": { "eq": [{ "node": "clarify", "path": "$.approved" }, true] } },
+    { "from": "plan-author", "to": "gap-analysis" },
+    { "from": "gap-analysis", "to": "review" },
+    { "from": "review", "to": "plan" }
+  ],
+  "outputs": {
+    "plan": { "node": "plan", "path": "$.plan" },
+    "approved": { "node": "review", "path": "$.approved" }
+  }
+}

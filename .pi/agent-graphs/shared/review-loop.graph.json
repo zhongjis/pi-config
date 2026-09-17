@@ -1,0 +1,64 @@
+{
+  "name": "review-loop",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "task": { "type": "string" },
+      "artifact": { "type": "string" }
+    },
+    "required": ["task", "artifact"]
+  },
+  "nodes": {
+    "review": {
+      "type": "agent",
+      "agent": "yanluo",
+      "prompt": "Review this artifact against the task '${task}':\n\n${artifact}\n\nReturn approved (true only if it fully satisfies the task) and a list of concrete issues to fix.",
+      "input": {
+        "task": { "path": "$.task" },
+        "artifact": { "path": "$.artifact" }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "approved": { "type": "boolean" },
+          "issues": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["approved", "issues"]
+      }
+    },
+    "revise": {
+      "type": "agent",
+      "agent": "jintong",
+      "prompt": "Revise the work for task '${task}' to address these review issues:\n${issues}\n\nApply the fixes and report the revised artifact.",
+      "input": {
+        "task": { "path": "$.task" },
+        "issues": { "node": "review", "path": "$.issues" }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "revised": { "type": "string" } },
+        "required": ["revised"]
+      }
+    },
+    "done": {
+      "type": "agent",
+      "agent": "cangjie",
+      "prompt": "The artifact for task '${task}' is approved. Write a short summary of the approved result.",
+      "input": { "task": { "path": "$.task" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"]
+      }
+    }
+  },
+  "edges": [
+    { "from": "review", "to": "done", "when": { "eq": [{ "node": "review", "path": "$.approved" }, true] } },
+    { "from": "review", "to": "revise", "when": { "eq": [{ "node": "review", "path": "$.approved" }, false] } },
+    { "from": "revise", "to": "review", "loop": { "maxIterations": 3 } }
+  ],
+  "outputs": {
+    "approved": { "node": "review", "path": "$.approved" },
+    "summary": { "node": "done", "path": "$.summary" }
+  }
+}

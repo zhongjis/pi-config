@@ -1,0 +1,94 @@
+{
+  "name": "context-gather",
+  "inputSchema": {
+    "type": "object",
+    "properties": { "task": { "type": "string" } },
+    "required": ["task"]
+  },
+  "nodes": {
+    "repo-map": {
+      "type": "agent",
+      "agent": "chengfeng",
+      "prompt": "Map the repository structure relevant to this task: ${task}. Report a short summary and the key files.",
+      "input": { "task": { "path": "$.task" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "summary": { "type": "string" },
+          "files": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["summary"]
+      }
+    },
+    "relevant-code": {
+      "type": "agent",
+      "agent": "chengfeng",
+      "prompt": "Find the code most relevant to this task: ${task}. Report a summary and the relevant file paths.",
+      "input": { "task": { "path": "$.task" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "summary": { "type": "string" },
+          "files": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["summary"]
+      }
+    },
+    "tests": {
+      "type": "agent",
+      "agent": "chengfeng",
+      "prompt": "Find existing tests and test conventions relevant to this task: ${task}. Report a short summary.",
+      "input": { "task": { "path": "$.task" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"]
+      }
+    },
+    "docs-history": {
+      "type": "agent",
+      "agent": "wenchang",
+      "prompt": "Find docs, specs, or prior decisions relevant to this task: ${task}. Report a short summary.",
+      "input": { "task": { "path": "$.task" } },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"]
+      }
+    },
+    "synthesize": {
+      "type": "agent",
+      "agent": "jintong",
+      "prompt": "Synthesize the gathered context for the task: ${task}\n\nRepository map: ${repoMap}\nRelevant code: ${code}\nTests: ${tests}\nDocs and history: ${docs}\n\nReturn a GatheredContext with a summary, relevant files, constraints, and unknowns.",
+      "input": {
+        "task": { "path": "$.task" },
+        "repoMap": { "node": "repo-map", "path": "$.summary" },
+        "code": { "node": "relevant-code", "path": "$.summary" },
+        "tests": { "node": "tests", "path": "$.summary" },
+        "docs": { "node": "docs-history", "path": "$.summary" }
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "summary": { "type": "string" },
+          "relevantFiles": { "type": "array", "items": { "type": "string" } },
+          "constraints": { "type": "array", "items": { "type": "string" } },
+          "unknowns": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["summary"]
+      }
+    }
+  },
+  "edges": [
+    { "from": "repo-map", "to": "synthesize" },
+    { "from": "relevant-code", "to": "synthesize" },
+    { "from": "tests", "to": "synthesize" },
+    { "from": "docs-history", "to": "synthesize" }
+  ],
+  "outputs": {
+    "summary": { "node": "synthesize", "path": "$.summary" },
+    "relevantFiles": { "node": "synthesize", "path": "$.relevantFiles" },
+    "constraints": { "node": "synthesize", "path": "$.constraints" },
+    "unknowns": { "node": "synthesize", "path": "$.unknowns" }
+  }
+}
