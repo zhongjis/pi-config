@@ -6,6 +6,11 @@ Run isolated Agent sessions with foreground results and background supervision.
 
 - Owns agent discovery, execution, steering/resume, notifications, the typed `agent_graph` graph runtime (`src/graph/`), and local UI/tests.
 - Agent definitions remain outside this runtime; shared utilities belong to [lib](../lib/AGENTS.md).
+- `src/index.ts` owns activation order, manager/registry ownership, live settings/appliers, UI composition, lifecycle hooks, and registration. Extracted modules MUST NOT import it.
+- `src/graph/workflow-runtime.ts` owns graph tasks/runs, session history, execution/resume/stop, the complete typed graph tool, completion snapshots, and the fleet adapter.
+- `src/notification-coordinator.ts` owns held nudges, smart batches, grouped/individual delivery, and pending-nudge cancellation; lifecycle cleanup ordering remains activation-owned.
+- `src/agent-tool.ts` and `src/result-tools.ts` own complete tool definitions; `src/agent-result.ts` shares foreground/retrieval/resume report semantics.
+- `src/ui/agents-menu.ts` owns agent navigation, conversations, CRUD, and authoring wizards. `src/ui/settings-menu.ts` owns presentation/input only; setting mutation and persistence remain in activation.
 
 ## Local Contracts
 
