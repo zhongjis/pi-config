@@ -80,6 +80,27 @@ describe("workflow reports", () => {
     expect(resumeWorkflowTask(task, 1000)).toBe(true);
     expect(elapsedMs(task, 1100)).toBe(200);
   });
+  it("surfaces run id in second row when active but no agent has reported yet (M1)", () => {
+    vi.spyOn(codingAgent, "keyHint").mockReturnValue("expand details");
+    const task = createWorkflowTask({ id: "wf_ack", script: "" });
+    task.status = "running";
+
+    // Active, no agents → id: prefix in collapsed row
+    const collapsed = renderWorkflowCard({ task, progress: [] }, theme).render(80);
+    expect(plain(collapsed)).toContain("id: wf_ack");
+    expect(collapsed.length).toBeLessThanOrEqual(3);
+
+    // Regression: agent present → agent label leads, id not shown
+    const withAgent = renderWorkflowCard({ task, progress: [{ ...agent, state: "progress" }] }, theme).render(80);
+    expect(plain(withAgent)).toContain("child");
+    expect(plain(withAgent)).not.toContain("id: wf_ack");
+
+    // Regression: settled → id not shown
+    task.status = "completed";
+    task.value = "done";
+    const settled = renderWorkflowCard({ task, progress: [] }, theme).render(80);
+    expect(plain(settled)).not.toContain("id: wf_ack");
+  });
 });
 
 

@@ -1687,10 +1687,13 @@ Terse command-style prompts produce shallow, generic work.
       const taskId = (result.details as { taskId?: string } | undefined)?.taskId;
       const task = taskId !== undefined ? workflowTasks.get(taskId) : undefined;
       if (renderContext.isError || !task) {
-        const status = renderContext.isError ? "Failed" : "Live graph state unavailable in this session";
+        const status = renderContext.isError
+          ? "Failed"
+          : "Live graph state unavailable in this session — see /agents › Workflows or the completion notification";
+        const expandLabel = renderContext.isError ? "diagnostics" : "details";
         return options.expanded
           ? renderToolExpanded(`${status}\n${text || "No output."}`)
-          : renderToolSummary([status, firstMeaningfulLine(text) || "No output"], theme, { expandable: true });
+          : renderToolSummary([status, firstMeaningfulLine(text) || "No output"], theme, { expandable: true, expandLabel });
       }
       return renderWorkflowCard(
         { progress: task.workflowProgress, task, expanded: options.expanded, meta: task.meta, agentCount: task.agentCount, totalTokens: task.totalTokens },

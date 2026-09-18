@@ -54,7 +54,7 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const first = running[0] ?? queued[0];
       const current = first ? [first.label, first.agentType, running.length > 1 ? `+${running.length - 1} active tasks` : ""].filter(Boolean).join(" · ") : counts;
       if (!input.expanded) {
-        const second = active ? current : [task.status === "completed" ? "Execution: completed" : "", counts, task.status === "completed" ? fields.length ? `${input.showToolTitle ? "returned" : "fields:"} ${fields.join(", ")}` : input.showToolTitle ? summary : "" : ""].filter(Boolean).join(" · ");
+        const second = active ? (!first && task.id ? `id: ${task.id} · ${current}` : current) : [task.status === "completed" ? "Execution: completed" : "", counts, task.status === "completed" ? fields.length ? `${input.showToolTitle ? "returned" : "fields:"} ${fields.join(", ")}` : input.showToolTitle ? summary : "" : ""].filter(Boolean).join(" · ");
         const lines = [
           input.showToolTitle ? `${identity}${task.status === "failed" && task.error ? ` · ${firstMeaningfulLine(task.error)}` : ""}` : `${status} · ${summary}`,
           second,

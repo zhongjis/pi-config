@@ -6,12 +6,20 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { NotificationDetails } from "../src/types.js";
 
+// Stub keyHint so workflow-card renders (used by G2 tests) do not need a real TUI theme.
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
+  return { ...actual, keyHint: (_key: string, label?: string) => label ?? "" };
+});
+
 vi.mock("../src/agent-runner.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
   return { ...actual, runAgent: vi.fn() };
 });
 
 import { runAgent } from "../src/agent-runner.js";
+import { workflowEntryData } from "../src/graph/entry.js";
+import { createWorkflowTask } from "../src/graph/task.js";
 import subagentsExtension from "../src/index.js";
 
 type Renderable = {
@@ -344,5 +352,26 @@ describe("subagent notification rendering migration", () => {
       },
     });
     expect(options).toEqual({ deliverAs: "followUp", triggerTurn: true });
+  });
+
+  it("renders workflow card for valid workflow entry in notification (G2 valid)", () => {
+    const task = createWorkflowTask({ id: "wf_note", script: "" });
+    task.status = "completed";
+    task.value = "answer";
+    task.workflowName = "notify-demo";
+    const wf = workflowEntryData(task);
+    const output = render(notification({ workflow: wf }), false, 120).join("\n");
+    expect(output).toContain("notify-demo");
+    expect(output).not.toContain("Renderer migration");
+  });
+
+  it("falls back to raw content for invalid workflow entry in notification (G2 invalid)", () => {
+    const renderer = requireRenderer();
+    const result = renderer(
+      { details: notification({ workflow: { not: "valid" } as unknown as NotificationDetails["workflow"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],
+      { expanded: false },
+      theme,
+    );
+    expect(result?.render(120).join("\n")).toContain("raw-graph-text");
   });
 });
