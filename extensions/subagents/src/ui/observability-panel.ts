@@ -348,8 +348,6 @@ function switcherLines(
     : [clampLine(lineA, width)];
 }
 
-const MAX_EXPANDED_INPUT_ROWS = 4;
-
 function safeInputJson(input: unknown): string {
   try {
     return JSON.stringify(input, null, 2) ?? String(input);
@@ -373,31 +371,56 @@ function graphContextLines(
   }
   if (source.input === undefined) return lines;
   const input = source.input;
+  const expanded = expandedSections.includes("full-inputs");
+
+  // Ordered key/value pairs. Objects surface every key when expanded, the primary
+  // key only when collapsed; non-object input is a single "Input" pair.
+  const pairs: Array<{ label: string; value: string }> = [];
   if (input !== null && typeof input === "object" && !Array.isArray(input)) {
     const values = input as Record<string, unknown>;
     const schema = source.meta?.inputSchema;
     const required = schema && typeof schema === "object" && Array.isArray((schema as { required?: unknown }).required)
       ? (schema as { required: unknown[] }).required.filter((name): name is string => typeof name === "string")
       : [];
-    const key = required.find(name => Object.hasOwn(values, name)) ?? Object.keys(values)[0];
-    if (key !== undefined) lines.push(clampLine([{ text: ` ${key}: ${formatInputValue(values[key])}`, color: "muted" }], width));
+    const keys = Object.keys(values);
+    const primary = required.find(name => Object.hasOwn(values, name)) ?? keys[0];
+    const ordered = primary === undefined
+      ? []
+      : expanded ? [primary, ...keys.filter(name => name !== primary)] : [primary];
+    for (const key of ordered) pairs.push({ label: key, value: formatInputValue(values[key]) });
   } else {
-    lines.push(clampLine([{ text: ` Input: ${formatInputValue(input)}`, color: "muted" }], width));
+    pairs.push({ label: "Input", value: formatInputValue(input) });
   }
-  const expanded = expandedSections.includes("full-inputs");
-  lines.push(clampLine([{ text: ` Full inputs · e ${expanded ? "collapse" : "expand"}`, color: "dim" }], width));
-  if (expanded) {
-    const inputLines = wrapTextWithAnsi(safeInputJson(input), Math.max(1, width - 4));
-    const inputRows = maxRows == null
-      ? MAX_EXPANDED_INPUT_ROWS
-      : Math.max(0, maxRows - lines.length - 1);
-    const visibleRows = Math.min(MAX_EXPANDED_INPUT_ROWS, inputRows);
-    for (const text of inputLines.slice(0, visibleRows)) {
-      lines.push(clampLine([{ text: `    ${text}`, color: "muted" }], width));
+
+  // Collapsed clamps the primary pair to one line; expanded wraps every pair in
+  // place so the full inputs read as prose, not JSON.
+  const valueLines: WorkflowCardLine[] = [];
+  for (const { label, value } of pairs) {
+    const text = ` ${label}: ${value}`;
+    if (expanded) {
+      valueLines.push(...wrapTextWithAnsi(text, width).map(t => clampLine([{ text: t, color: "muted" }], width)));
+    } else {
+      valueLines.push(clampLine([{ text, color: "muted" }], width));
     }
-    const omitted = inputLines.length - visibleRows;
-    if (omitted > 0) lines.push(clampLine([{ text: `  …${omitted} lines omitted`, color: "dim" }], width));
   }
+
+  const affordance = clampLine(
+    [{ text: ` Full inputs · e ${expanded ? "collapse" : "expand"}`, color: "dim" }], width);
+
+  // The header zone does not scroll, so bound the expanded value to the budget left
+  // after the description and affordance. Only a genuine overflow drops a hint.
+  if (expanded && maxRows != null) {
+    const budget = Math.max(0, maxRows - lines.length - 1);
+    if (valueLines.length > budget) {
+      const shown = Math.max(0, budget - 1);
+      const hidden = valueLines.length - shown;
+      lines.push(...valueLines.slice(0, shown));
+      lines.push(clampLine([{ text: `  …${hidden} more · widen pane`, color: "dim" }], width));
+      lines.push(affordance);
+      return lines;
+    }
+  }
+  lines.push(...valueLines, affordance);
   return lines;
 }
 

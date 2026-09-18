@@ -101,7 +101,11 @@ describe("observability panel — rendering", () => {
     expect(collapsed).toContain("task: Map the repository");
     expect(collapsed).toContain("Full inputs · e expand");
     const expanded = applyPanelKey([run], initialPanelState(), "e", { width: 100, now: NOW });
-    expect(plain(expanded.lines).join("\n")).toContain('"extra": {');
+    expect(collapsed).not.toContain("extra");
+    const expandedText = plain(expanded.lines).join("\n");
+    expect(expandedText).toContain("extra:");
+    expect(expandedText).toContain("json");
+    expect(expandedText).not.toContain('"extra": {');
   });
 
   it("shows scalar live input before Full inputs", () => {
@@ -149,7 +153,7 @@ describe("observability panel — rendering", () => {
     expect(lines[1]).toContain("1/4");
   });
 
-  it("caps expanded full inputs with an omission count while retaining the footer", () => {
+  it("caps expanded full inputs with an overflow hint while retaining the footer", () => {
     const run = graphRun();
     (run.source as typeof run.source & { input?: unknown }).input = { task: "x".repeat(100), extra: Array.from({ length: 20 }, () => "value") };
     run.source.meta = {
@@ -164,7 +168,7 @@ describe("observability panel — rendering", () => {
     ));
     expect(lines).toHaveLength(12);
     expect(lines.join("\n")).toContain("task:");
-    expect(lines.join("\n")).toMatch(/…\d+ lines omitted/);
+    expect(lines.join("\n")).toMatch(/…\d+ more/);
     expect(lines.at(-1)).toContain("live");
     for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
   });
