@@ -185,6 +185,27 @@ describe("GraphRunReporter", () => {
     reporter.refresh();
     expect(t.workflowProgress.length).toBe(afterChange);
   });
+
+  it("pins startedAt across re-emits within an attempt and resets it on a new attempt", () => {
+    const t = task();
+    let activity: { toolCalls?: number; tokens?: number } | undefined = { toolCalls: 1 };
+    const reporter = new GraphRunReporter(t, graph, 1_000, () => activity);
+
+    // First running emit stamps startedAt; re-emits from setResolved/refresh must not restamp it.
+    reporter.update("a", { status: "running", attempt: 1 }, 1_000);
+    reporter.setResolved("a", { recordId: "r1" }, 5_000);
+    activity = { toolCalls: 9 };
+    reporter.refresh(9_000);
+    expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(1_000);
+
+    // A new attempt (retry / loop re-entry) resets startedAt to the new start.
+    reporter.update("a", { status: "running", attempt: 2 }, 20_000);
+    expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(20_000);
+
+    // A terminal emit anchors to the current attempt's start, not `now`.
+    reporter.update("a", { status: "completed", attempt: 2, output: "x" }, 25_000);
+    expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(20_000);
+  });
 });
 
 describe("GraphRunReporter — static graph progress", () => {

@@ -53,6 +53,8 @@ export class GraphRunReporter {
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
   /** Last-emitted activity counts per node, so `refresh` only re-emits on a real change. */
   private readonly lastCounts = new Map<string, string>();
+  /** Per-node running start, pinned per attempt so re-emits don't restamp elapsed. */
+  private readonly runStart = new Map<string, { at: number; attempt: number }>();
   private readonly queuedAt: number;
 
   constructor(
@@ -178,12 +180,18 @@ export class GraphRunReporter {
     switch (run.status) {
       case "pending":
         return { ...base, blocked: true };
-      case "running":
-        return { ...base, startedAt: now, lastProgressAt: now };
+      case "running": {
+        let start = this.runStart.get(nodeId);
+        if (start === undefined || start.attempt !== run.attempt) {
+          start = { at: now, attempt: run.attempt };
+          this.runStart.set(nodeId, start);
+        }
+        return { ...base, startedAt: start.at, lastProgressAt: now };
+      }
       case "completed":
-        return { ...base, state: "done", startedAt: now, lastProgressAt: now, resultPreview: resultText(run.output) };
+        return { ...base, state: "done", startedAt: this.runStart.get(nodeId)?.at ?? now, lastProgressAt: now, resultPreview: resultText(run.output) };
       case "failed":
-        return { ...base, state: "error", startedAt: now, lastProgressAt: now, error: run.error };
+        return { ...base, state: "error", startedAt: this.runStart.get(nodeId)?.at ?? now, lastProgressAt: now, error: run.error };
       case "skipped":
         return { ...base, state: "error", skipped: true };
       default:
