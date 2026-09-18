@@ -26,6 +26,7 @@ import {
   ASCII_GLYPHS,
   clampLine,
   formatCompactTokens,
+  highlightRow,
   REPLAYED_ANNOTATION,
   styleWorkflowCardLines,
   UNICODE_GLYPHS,
@@ -266,6 +267,7 @@ function workflowStatusLine(task: WorkflowCardTask, width: number): WorkflowCard
     : task.status === "failed" ? "error"
     : task.status === "paused" ? "warning"
     : task.status === "running" ? "accent"
+    : task.status === "killed" ? "warning"
     : "dim";
   const line: WorkflowCardLine = [
     { text: " Execution: ", color: "dim" },
@@ -414,10 +416,10 @@ function agentRow(options: {
   const model = workflowAgentModel(options.entry, state);
   const annotations = subStatusAnnotations(options.entry, state, options.now);
   const left: WorkflowCardLine = [
-    { text: options.selected ? ` ${options.glyphs.pointer} ` : "   ", color: "accent" },
+    { text: options.selected ? ` ${options.glyphs.pointer} ` : "   " },
     dialogRowGlyph(state, options.glyphs, options.spinnerFrame),
     { text: ` ${status} `, color },
-    { text: options.entry.label, color: options.selected ? "accent" : undefined },
+    { text: options.entry.label },
   ];
   for (const note of annotations.filter(note => note !== REPLAYED_ANNOTATION)) {
     left.push({ text: " · ", color: "dim" }, { text: note, color: "dim" });
@@ -435,10 +437,9 @@ function renderRoster(
   return items.slice(range.start, range.end).map(item => {
     if (item.kind === "phase") return phaseRow(item.group, width);
     if (item.kind === "empty") return clampLine([{ text: `   ${item.text}`, color: "dim" }], width);
-    return agentRow({
-      entry: item.entry, selected: item.entry.index === view.selectedEntry?.index, width, glyphs,
-      workflowActive: view.workflowActive, spinnerFrame, now,
-    });
+    const selected = item.entry.index === view.selectedEntry?.index;
+    const row = agentRow({ entry: item.entry, selected, width, glyphs, workflowActive: view.workflowActive, spinnerFrame, now });
+    return selected ? highlightRow(row, width) : row;
   });
 }
 

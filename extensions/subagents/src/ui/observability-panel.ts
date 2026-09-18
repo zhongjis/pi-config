@@ -46,6 +46,7 @@ import {
 } from "../graph/progress.js";
 import {
   clampLine,
+  highlightRow,
   type WorkflowCardColor,
   type WorkflowCardLine,
   type WorkflowCardSegment,
@@ -158,7 +159,7 @@ function runStateColor(status: WorkflowRunStatus): WorkflowCardColor {
     case "completed": return "success";
     case "failed": return "error";
     case "paused": return "warning";
-    case "killed": return "dim";
+    case "killed": return "warning";
   }
 }
 
@@ -168,7 +169,7 @@ function runStatusDot(status: WorkflowRunStatus, glyphs: WorkflowDialogGlyphs, _
     case "paused": return { text: glyphs.queued, color: "warning" };
     case "completed": return { text: "+", color: "success" };
     case "failed": return { text: glyphs.cross, color: "error" };
-    case "killed": return { text: glyphs.cross, color: "dim" };
+    case "killed": return { text: glyphs.cross, color: "warning" };
   }
 }
 
@@ -480,19 +481,6 @@ function agentRow(
   if (entry.agentType) line.push({ text: ` · ${entry.agentType}`, color: "muted" });
   if (model) line.push({ text: ` · ${model}`, color: "muted" });
   return clampLine(line, width);
-}
-
-/**
- * The selected row as one continuous reverse-video bar: keep the text (glyph,
- * label, status), drop per-segment colour, and pad to the full width so the whole
- * row inverts. This is the panel's "you are here", replacing the faint pointer.
- */
-function highlightRow(line: WorkflowCardLine, width: number): WorkflowCardLine {
-  const clamped = clampLine(line, width);
-  const used = clamped.reduce((sum, segment) => sum + visibleWidth(segment.text), 0);
-  const reversed: WorkflowCardLine = clamped.map(segment => ({ text: segment.text, reverse: true }));
-  if (used < width) reversed.push({ text: " ".repeat(width - used), reverse: true });
-  return reversed;
 }
 
 /**

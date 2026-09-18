@@ -43,9 +43,9 @@ const SGR: Record<WorkflowCardColor, string> = {
   error: "31", // red
   warning: "33", // yellow
   dim: "90", // bright black
-  muted: "37", // grey/default foreground
+  muted: "39", // default foreground — terminal-adaptive, legible on light and dark
   toolTitle: "36", // cyan — the run's name
-  accent: "35", // magenta — the selection
+  accent: "35", // magenta — the running state
 };
 
 /**

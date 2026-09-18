@@ -226,3 +226,17 @@ export function styleWorkflowCardLines(lines: readonly WorkflowCardLine[], theme
       .join(""),
   );
 }
+
+/**
+ * Render one line as a full-width reverse-video bar: keep the text (glyph,
+ * label, status), drop per-segment colour, and pad to `width` so the whole row
+ * inverts. Shared "you are here" selection affordance for both roster surfaces —
+ * theme-robust and unambiguous, so hue stays free to carry state, not selection.
+ */
+export function highlightRow(line: WorkflowCardLine, width: number): WorkflowCardLine {
+  const clamped = clampLine(line, width);
+  const used = clamped.reduce((sum, segment) => sum + visibleWidth(segment.text), 0);
+  const reversed: WorkflowCardLine = clamped.map(segment => ({ text: segment.text, reverse: true }));
+  if (used < width) reversed.push({ text: " ".repeat(width - used), reverse: true });
+  return reversed;
+}
