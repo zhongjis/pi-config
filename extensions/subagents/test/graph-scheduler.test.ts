@@ -16,7 +16,7 @@ function drive(sched: Scheduler, outcome: (id: string, attempt: number) => Settl
       continue;
     }
     // Quiescent: resolve skips, then break dead cycles, then finish.
-    if (sched.resolveSkips() > 0) continue;
+    if (sched.resolveSkips().length > 0) continue;
     if (!sched.isDone()) {
       sched.forceSkipStuck();
       continue;
@@ -114,5 +114,31 @@ describe("Scheduler — failure propagation", () => {
     expect(sched.nodes.get("fix")?.status).toBe("skipped");
     expect(sched.nodes.get("done")?.status).toBe("skipped");
     expect(sched.runStatus()).toBe("failed");
+  });
+});
+
+describe("Scheduler — reported automatic skips", () => {
+  it("returns skipped ids in scheduler iteration order", () => {
+    const conditional: AgentGraph = {
+      nodes: { root: agent(), first: agent(), second: agent() },
+      edges: [
+        { from: "root", to: "first" },
+        { from: "root", to: "second" },
+      ],
+    };
+    const skips = new Scheduler(conditional, {});
+    skips.markRunning("root");
+    skips.settle("root", { ok: false, error: "boom" });
+
+    expect(skips.resolveSkips()).toEqual(["first", "second"]);
+
+    const stuck: AgentGraph = {
+      nodes: { first: agent(), second: agent() },
+      edges: [
+        { from: "first", to: "second" },
+        { from: "second", to: "first" },
+      ],
+    };
+    expect(new Scheduler(stuck, {}).forceSkipStuck()).toEqual(["first", "second"]);
   });
 });

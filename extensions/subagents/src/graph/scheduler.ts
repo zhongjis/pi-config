@@ -144,11 +144,11 @@ export class Scheduler {
    * whose forward deps have all settled but has no active incoming edge will never
    * run, so it is skipped. Deferring this until quiescence is what lets a loop
    * re-run an upstream and change a downstream's fate before it is skipped. Returns
-   * how many nodes changed, so the driver can re-check for cascades.
+   * the changed ids in scheduler iteration order so callers can report each update.
    */
-  resolveSkips(): number {
+  resolveSkips(): NodeId[] {
     const ctx = this.context();
-    let changed = 0;
+    const changed: NodeId[] = [];
     for (const [id, run] of this.nodes) {
       if (run.status !== "pending") continue;
       const incoming = this.incoming(id);
@@ -157,7 +157,7 @@ export class Scheduler {
       if (!forward.every(edge => isSettled(this.nodes.get(edge.from)?.status))) continue;
       if (incoming.some(edge => this.edgeActive(edge, ctx))) continue;
       run.status = "skipped";
-      changed++;
+      changed.push(id);
     }
     return changed;
   }
@@ -167,14 +167,15 @@ export class Scheduler {
    *
    * A cycle with no live entry leaves nodes waiting on each other forever; once
    * nothing is ready, running, or resolvable as a skip, those are dead and are
-   * marked skipped so the run can finish. Returns how many changed.
+   * marked skipped so the run can finish. Returns changed ids in scheduler
+   * iteration order.
    */
-  forceSkipStuck(): number {
-    let changed = 0;
-    for (const run of this.nodes.values()) {
+  forceSkipStuck(): NodeId[] {
+    const changed: NodeId[] = [];
+    for (const [id, run] of this.nodes) {
       if (run.status === "pending") {
         run.status = "skipped";
-        changed++;
+        changed.push(id);
       }
     }
     return changed;

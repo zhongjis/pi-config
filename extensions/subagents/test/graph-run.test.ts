@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
+import type { NodeRun } from "../src/graph/scheduler.js";
 
 /** A host that scripts each spawn by node id + attempt. */
 function host(script: (nodeId: string, attempt: number) => NodeSpawnResult): NodeHost {
@@ -116,5 +117,113 @@ describe("runGraph — end to end via XState actors", () => {
     });
     expect(seen).toContain("implement:running");
     expect(seen).toContain("done:completed");
+  });
+});
+
+type NodeUpdate = { id: string; run: NodeRun };
+
+/** Copy callback values immediately: scheduler-owned NodeRun objects are live references. */
+function snapshotNodeUpdate(id: string, run: Readonly<NodeRun>): NodeUpdate {
+  return { id, run: { ...run } };
+}
+
+describe("runGraph — static progress reporting", () => {
+  const graph: AgentGraph = {
+    nodes: {
+      first: { type: "agent", agent: "x", prompt: "first" },
+      second: { type: "agent", agent: "x", prompt: "second" },
+    },
+    edges: [{ from: "first", to: "second" }],
+  };
+
+  it("reports the post-hydration static topology in declaration order before scheduling, even when aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const events: string[] = [];
+    const updates: NodeUpdate[] = [];
+
+    const result = await runGraph(graph, {}, {
+      host: host(() => okText("unused")),
+      signal: controller.signal,
+      onControl: () => events.push("control"),
+      onNodeUpdate: (id, run) => {
+        updates.push(snapshotNodeUpdate(id, run));
+        events.push(`${id}:${run.status}`);
+      },
+    });
+
+    expect(result.status).toBe("aborted");
+    expect(events).toEqual(["control", "first:pending", "second:pending"]);
+    expect(updates).toEqual([
+      { id: "first", run: { status: "pending", attempt: 0 } },
+      { id: "second", run: { status: "pending", attempt: 0 } },
+    ]);
+  });
+
+  it("reports restored statuses faithfully before scheduling", async () => {
+    const updates: NodeUpdate[] = [];
+    await runGraph(graph, {}, {
+      host: host(() => okText("done")),
+      restore: {
+        nodes: {
+          first: { status: "completed", attempt: 1, output: "saved" },
+          second: { status: "running", attempt: 2 },
+        },
+        loopCounts: {},
+      },
+      onNodeUpdate: (id, run) => updates.push(snapshotNodeUpdate(id, run)),
+    });
+
+    expect(updates.slice(0, 2)).toEqual([
+      { id: "first", run: { status: "completed", attempt: 1, output: "saved" } },
+      { id: "second", run: { status: "pending", attempt: 2, output: undefined } },
+    ]);
+  });
+
+  it("reports automatic conditional skips", async () => {
+    const updates: NodeUpdate[] = [];
+    const conditional: AgentGraph = {
+      nodes: {
+        root: { type: "agent", agent: "x", prompt: "root" },
+        branch: { type: "agent", agent: "x", prompt: "branch" },
+      },
+      edges: [{ from: "root", to: "branch", when: { eq: [{ node: "root", path: "$" }, "yes"] } }],
+    };
+
+    await runGraph(conditional, {}, {
+      host: host(() => okText("no")),
+      onNodeUpdate: (id, run) => updates.push(snapshotNodeUpdate(id, run)),
+    });
+
+    expect(updates.filter(update => update.id === "branch").map(update => update.run.status)).toEqual([
+      "pending",
+      "skipped",
+    ]);
+  });
+
+  it("reports every node force-skipped from a stuck cycle", async () => {
+    const updates: NodeUpdate[] = [];
+    const cycle: AgentGraph = {
+      nodes: {
+        left: { type: "agent", agent: "x", prompt: "left" },
+        right: { type: "agent", agent: "x", prompt: "right" },
+      },
+      edges: [
+        { from: "left", to: "right" },
+        { from: "right", to: "left" },
+      ],
+    };
+
+    await runGraph(cycle, {}, {
+      host: host(() => okText("unused")),
+      onNodeUpdate: (id, run) => updates.push(snapshotNodeUpdate(id, run)),
+    });
+
+    expect(updates.map(update => `${update.id}:${update.run.status}`)).toEqual([
+      "left:pending",
+      "right:pending",
+      "left:skipped",
+      "right:skipped",
+    ]);
   });
 });

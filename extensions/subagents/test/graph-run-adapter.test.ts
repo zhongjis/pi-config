@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { completeGraphTask, GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import type { AgentGraph } from "../src/graph/ir.js";
+import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { collapse } from "../src/graph/progress.js";
-import type { RunGraphResult } from "../src/graph/run-graph.js";
+import { type RunGraphResult, runGraph } from "../src/graph/run-graph.js";
+import type { NodeRun } from "../src/graph/scheduler.js";
 import { createWorkflowTask } from "../src/graph/task.js";
+import { initialPanelState } from "../src/ui/observability-panel.js";
+
+// The pane needs the installed TUI helpers; the default unit stub intentionally omits them.
+vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
 const graph: AgentGraph = {
   nodes: {
@@ -165,5 +171,62 @@ describe("GraphRunReporter", () => {
     const afterChange = t.workflowProgress.length;
     reporter.refresh();
     expect(t.workflowProgress.length).toBe(afterChange);
+  });
+});
+
+describe("GraphRunReporter — static graph progress", () => {
+  it("pre-seeds all static stages through runGraph updates before synthesize starts", async () => {
+    const staged: AgentGraph = {
+      nodes: {
+        research: { type: "agent", agent: "jintong", prompt: "research" },
+        review: { type: "agent", agent: "jintong", prompt: "review" },
+        test: { type: "agent", agent: "jintong", prompt: "test" },
+        document: { type: "agent", agent: "jintong", prompt: "document" },
+        synthesize: { type: "agent", agent: "jintong", prompt: "synthesize" },
+      },
+      edges: [
+        { from: "research", to: "synthesize" },
+        { from: "review", to: "synthesize" },
+        { from: "test", to: "synthesize" },
+        { from: "document", to: "synthesize" },
+      ],
+    };
+    const t = task();
+    const reporter = new GraphRunReporter(t, staged, 1_700_000_000_000);
+    const controller = new AbortController();
+    const roots = new Map<string, (result: NodeSpawnResult) => void>();
+    const graphHost: NodeHost = {
+      spawnAgent: request => {
+        if (request.nodeId === "synthesize") return Promise.resolve({ ok: true, output: "done" });
+        return new Promise(resolve => roots.set(request.nodeId, resolve));
+      },
+    };
+
+    const run = runGraph(staged, {}, {
+      host: graphHost,
+      signal: controller.signal,
+      onNodeUpdate: (id, node) => reporter.update(id, { ...node } satisfies NodeRun, 1_700_000_000_000),
+    });
+    await vi.waitFor(() => expect(roots.size).toBe(4));
+    roots.get("research")?.({ ok: true, output: "research complete" });
+    await vi.waitFor(() => {
+      expect(collapse(t.workflowProgress).agents.find(agent => agent.label === "research")?.state).toBe("done");
+    });
+
+    const { agents } = collapse(t.workflowProgress);
+    expect(agents).toHaveLength(5);
+    expect(agents.find(agent => agent.label === "synthesize")?.phaseIndex).toBe(1);
+    const { renderObservabilityPaneLines, toPaneSource } = await import("../src/graph/pane/render.js");
+    const rendered = renderObservabilityPaneLines(
+      [{ id: t.id, name: "demo", status: t.status, source: toPaneSource(t) }],
+      initialPanelState(),
+      { width: 100, rows: 40, now: 1_700_000_000_000 },
+    ).join("\n");
+    expect(rendered).toContain("1/5 agents");
+    expect(rendered).toContain("Stage 2");
+    expect(rendered).toContain("synthesize");
+
+    controller.abort();
+    await expect(run).resolves.toMatchObject({ status: "aborted" });
   });
 });

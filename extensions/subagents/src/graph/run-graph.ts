@@ -67,7 +67,10 @@ export interface RunGraphOptions {
    * absent here is unlimited.
    */
   resources?: Record<string, { capacity: number }>;
-  /** Fired whenever a node changes state — the monitor's data feed. */
+  /**
+   * Reports the initial post-hydration snapshot for each static node, then
+   * running, settled, retried, and automatic-skip updates.
+   */
   onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>): void;
   /** Fired once the child agent's effective model is known. */
   onNodeResolved?(nodeId: string, info: NodeResolvedInfo): void;
@@ -453,6 +456,9 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       return true;
     },
   });
+  // Seed the monitor from authoritative hydrated state before scheduling. Dynamic
+  // expand nodes remain reported only through their runtime transitions.
+  for (const id of orderedIds) report(id);
 
   // Resolves the moment the run is aborted, so the loop unblocks even when an
   // inflight node (e.g. a human_gate whose resolver ignores the signal) never
@@ -527,9 +533,12 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
         });
         continue;
       }
-      if (scheduler.resolveSkips() > 0) continue;
+      const resolvedSkips = scheduler.resolveSkips();
+      for (const id of resolvedSkips) report(id);
+      if (resolvedSkips.length > 0) continue;
       if (scheduler.isDone()) break;
-      scheduler.forceSkipStuck();
+      const stuckSkips = scheduler.forceSkipStuck();
+      for (const id of stuckSkips) report(id);
       continue;
     }
 
