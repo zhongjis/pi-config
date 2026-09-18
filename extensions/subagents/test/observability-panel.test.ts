@@ -84,7 +84,7 @@ describe("observability panel — rendering", () => {
     expect(running).toContain("3 tools");
   });
 
-  it("joins upstream dependency state for the selected node", () => {
+  it("joins upstream dependency state for the selected node (always-on detail)", () => {
     const rendered = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "d" } }, { width: 60, now: NOW });
     expect(rendered).toContain("Waits on (upstream)");
     // d waits on b (running) and c (queued); each dep is shown with its live state.
@@ -117,19 +117,33 @@ describe("observability panel — rendering", () => {
   });
 
   it("fills exactly the requested pane height", () => {
+    const states: PanelState[] = [
+      initialPanelState(),
+      { ...initialPanelState(), cursor: { kind: "node", id: "d" }, focus: "detail", expandedSections: ["outcome"] },
+      { ...initialPanelState(), cursor: { kind: "node", id: "a" }, focus: "detail", expandedSections: ["outcome"] },
+    ];
     for (const rows of [12, 24, 40]) {
-      const lines = renderPanelLines([graphRun()], initialPanelState(), { width: 50, rows, now: NOW });
-      expect(lines.length).toBe(rows);
+      for (const state of states) {
+        // Both zones (roster + divider + capped detail) still fill the height exactly.
+        expect(renderPanelLines([graphRun()], state, { width: 50, rows, now: NOW }).length).toBe(rows);
+      }
     }
   });
 
   it("keeps every rendered line within the requested width", () => {
+    const states: PanelState[] = [
+      initialPanelState(),
+      { ...initialPanelState(), cursor: { kind: "node", id: "d" }, focus: "detail" },
+      { ...initialPanelState(), cursor: { kind: "node", id: "a" }, focus: "detail", expandedSections: ["outcome"] },
+    ];
     for (const width of [10, 20, 40, 60, 80, 120]) {
       for (const rows of [undefined, 24]) {
-        const lines = plain(renderPanelLines([graphRun(), otherRun()], initialPanelState(), { width, rows, now: NOW }));
-        for (const line of lines) {
-          expect(stripTerminalSequences(line)).not.toMatch(/[\r\n]/);
-          expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+        for (const state of states) {
+          const lines = plain(renderPanelLines([graphRun(), otherRun()], state, { width, rows, now: NOW }));
+          for (const line of lines) {
+            expect(stripTerminalSequences(line)).not.toMatch(/[\r\n]/);
+            expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+          }
         }
       }
     }
@@ -139,7 +153,7 @@ describe("observability panel — rendering", () => {
     const rendered = text([graphRun(), otherRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" } }, { width: 60, ascii: true, now: NOW });
     expect(rendered).toContain("Stage 1");
     expect(rendered).toContain("-> b -> c");
-    for (const glyph of ["─", "‹", "›", "●", "○", "↑", "↓", "←", "→", "✔", "✘", "◌", "❯"]) {
+    for (const glyph of ["─", "‹", "›", "●", "○", "↑", "↓", "←", "→", "✔", "✘", "◌", "❯", "⏎"]) {
       expect(rendered).not.toContain(glyph);
     }
   });
@@ -195,7 +209,13 @@ describe("observability panel — keys", () => {
     expect(last.state.cursor).toEqual({ kind: "node", id: "d" });
   });
 
-  it("scrolls the body with pageDown/pageUp, clamped at zero", () => {
+  it("resets the detail cursor when the roster cursor moves", () => {
+    const start: PanelState = { ...initialPanelState(), cursor: { kind: "stage", stage: 0 }, detailCursor: 3 };
+    const down = applyPanelKey([graphRun()], start, "j", opts);
+    expect(down.state.detailCursor).toBe(0);
+  });
+
+  it("scrolls the roster with pageDown/pageUp, clamped at zero", () => {
     const down = applyPanelKey([graphRun()], initialPanelState(), "\x1b[6~", opts);
     expect(down.state.scroll).toBe(5);
     const up = applyPanelKey([graphRun()], down.state, "\x1b[5~", opts);
@@ -211,6 +231,7 @@ describe("observability panel — keys", () => {
     expect(right.state.runIndex).toBe(1);
     expect(right.state.cursor).toBeUndefined();
     expect(right.state.scroll).toBe(0);
+    expect(right.state.focus).toBe("roster");
     // The switcher now points at the second run.
     expect(plain(right.lines).join("\n")).toContain("graph-y");
     const left = applyPanelKey(runs, right.state, "\x1b[D", opts);
@@ -234,6 +255,142 @@ describe("observability panel — keys", () => {
     expect(applyPanelKey([], initialPanelState(), "\x1b", opts).close).toBe(true);
     const nav = applyPanelKey([], initialPanelState(), "j", opts);
     expect(nav.close).toBe(false);
+  });
+});
+
+describe("observability panel — two-level focus (v3)", () => {
+  const opts = { width: 60, now: NOW } as const;
+
+  // A node with BOTH a Prompt and an Outcome, i.e. two navigable detail sections.
+  const bothRun = (over: Partial<WorkflowAgentEntry> = {}, status: WorkflowRunStatus = "completed"): PanelRun => ({
+    id: "wf_both",
+    name: "both",
+    status,
+    source: {
+      progress: [agent({ index: 0, label: "solo", phaseIndex: 0, state: "done", deps: [], dependents: [], promptPreview: "investigate the auth flow ".repeat(10).trim(), resultPreview: "found the seam ".repeat(20).trim(), ...over })],
+      task: { status, workflowName: "both", startTime: NOW - 5_000 },
+      agentCount: 1,
+    },
+  });
+
+  it("enters the detail on a node with an expandable section with enter", () => {
+    // Node a has a resultPreview → one navigable (Outcome) section.
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "a" }, collapsedStages: [1] };
+    const r = applyPanelKey([graphRun()], state, "\r", opts);
+    expect(r.state.focus).toBe("detail");
+    expect(r.state.detailCursor).toBe(0);
+    expect(r.state.cursor).toEqual({ kind: "node", id: "a" });
+    // enter no longer folds: the collapse set is untouched.
+    expect(r.state.collapsedStages).toEqual([1]);
+    expect(r.close).toBe(false);
+  });
+
+  it("is a no-op on enter for a running node with no prompt/outcome", () => {
+    // Node b is running with no promptPreview/resultPreview → no navigable section.
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "b" } };
+    const r = applyPanelKey([graphRun()], state, "\r", opts);
+    expect(r.state.focus).toBe("roster");
+    expect(r.close).toBe(false);
+  });
+
+  it("is a no-op on enter for a stage cursor", () => {
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } };
+    const r = applyPanelKey([graphRun()], state, "\r", opts);
+    expect(r.state.focus).toBe("roster");
+    expect(r.close).toBe(false);
+  });
+
+  it("moves the detail cursor over the navigable sections with ↑↓, clamped at the ends", () => {
+    const start: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "solo" }, focus: "detail" };
+    const d1 = applyPanelKey([bothRun()], start, "j", opts); // Prompt → Outcome
+    expect(d1.state.detailCursor).toBe(1);
+    const d2 = applyPanelKey([bothRun()], d1.state, "j", opts); // clamps at Outcome
+    expect(d2.state.detailCursor).toBe(1);
+    const u1 = applyPanelKey([bothRun()], d2.state, "k", opts); // Outcome → Prompt
+    expect(u1.state.detailCursor).toBe(0);
+    const u2 = applyPanelKey([bothRun()], u1.state, "k", opts); // clamps at Prompt
+    expect(u2.state.detailCursor).toBe(0);
+  });
+
+  it("toggles a section's expansion with enter/space, growing then shrinking it", () => {
+    // The focused section's label is a padded reverse-video bar, so match by substring.
+    const bodyUnder = (lines: string[], label: string): number => {
+      const idx = lines.findIndex(line => line.includes(label));
+      let n = 0;
+      for (let i = idx + 1; i < lines.length && lines[i].startsWith("    "); i++) n++;
+      return n;
+    };
+    const wide = { width: 80, now: NOW } as const;
+    const start: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "solo" }, focus: "detail", detailCursor: 0 };
+    const collapsed = bodyUnder(plain(renderPanelLines([bothRun()], start, wide)), "Prompt");
+    expect(collapsed).toBeLessThanOrEqual(2);
+
+    const expanded = applyPanelKey([bothRun()], start, "\r", wide);
+    expect(expanded.state.expandedSections).toContain("prompt");
+    const expandedBody = bodyUnder(plain(expanded.lines), "Prompt");
+    expect(expandedBody).toBeGreaterThan(collapsed);
+
+    // space is the same toggle; a second press collapses it back.
+    const recollapsed = applyPanelKey([bothRun()], expanded.state, " ", wide);
+    expect(recollapsed.state.expandedSections).not.toContain("prompt");
+    expect(bodyUnder(plain(recollapsed.lines), "Prompt")).toBe(collapsed);
+  });
+
+  it("backs out of the detail to the roster on esc without closing, then closes from the roster", () => {
+    const detail: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "a" }, focus: "detail" };
+    const back = applyPanelKey([graphRun()], detail, "\x1b", opts);
+    expect(back.state.focus).toBe("roster");
+    expect(back.close).toBe(false);
+    // From the roster, esc closes (the existing top-level contract).
+    expect(applyPanelKey([graphRun()], back.state, "\x1b", opts).close).toBe(true);
+  });
+
+  it("scrolls the detail zone with pageDown/pageUp in detail focus, leaving roster scroll alone", () => {
+    const detail: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "a" }, focus: "detail" };
+    const down = applyPanelKey([graphRun()], detail, "\x1b[6~", opts);
+    expect(down.state.detailScroll).toBe(5);
+    expect(down.state.scroll).toBe(0);
+    const up = applyPanelKey([graphRun()], down.state, "\x1b[5~", opts);
+    expect(up.state.detailScroll).toBe(0);
+  });
+
+  it("moves the reverse-video bar onto the focused detail section while the detail owns focus", () => {
+    const width = 60;
+    const detail: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "solo" }, focus: "detail", detailCursor: 0 };
+    const lines = renderObservabilityPaneLines([bothRun()], detail, { width, now: NOW });
+    const reversed = lines.filter(line => line.includes("\x1b[7m"));
+    // Exactly one reverse bar, and it sits on the Prompt label (not a roster row).
+    expect(reversed.length).toBe(1);
+    expect(stripTerminalSequences(reversed[0])).toContain("Prompt");
+  });
+});
+
+describe("observability panel — auto-fit stage-complete roster (fix #2)", () => {
+  it("keeps every stage header visible on a short pane while the detail is present", () => {
+    const rendered = text([graphRun()], initialPanelState(), { width: 60, rows: 14, now: NOW });
+    for (const header of ["Stage 1", "Stage 2", "Stage 3"]) expect(rendered).toContain(header);
+    // The detail zone still renders below the roster (the default cursor's stage aggregate).
+    expect(rendered).toContain("Tokens:");
+  });
+
+  it("expands every stage's nodes when the full roster fits", () => {
+    const rendered = text([graphRun()], initialPanelState(), { width: 60, rows: 40, now: NOW });
+    for (const header of ["▾ Stage 1", "▾ Stage 2", "▾ Stage 3"]) expect(rendered).toContain(header);
+    expect(rendered).not.toContain("▸");
+  });
+
+  it("shows only the focused stage's nodes when the full roster does not fit, moving with the cursor", () => {
+    const onStage2 = text([graphRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } }, { width: 60, rows: 17, now: NOW });
+    expect(onStage2).toContain("▾ Stage 2");
+    expect(onStage2).toContain("▸ Stage 1");
+    expect(onStage2).toContain("▸ Stage 3");
+    expect(onStage2).toMatch(/b\s+running/);
+
+    // Focusing another stage moves the expansion to it.
+    const onStage3 = text([graphRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 2 } }, { width: 60, rows: 17, now: NOW });
+    expect(onStage3).toContain("▾ Stage 3");
+    expect(onStage3).toContain("▸ Stage 2");
+    expect(onStage3).toContain("▸ Stage 1");
   });
 });
 
@@ -288,17 +445,17 @@ describe("observability panel — v1.5 filter, collapse, blast radius", () => {
     expect(expanded).toMatch(/c\s+queued/); // c's row shows while its stage is expanded
     const toggled = applyPanelKey([graphRun()], base, " ", dims);
     expect(toggled.state.collapsedStages).toContain(1);
-    // Collapsing lands the cursor on the now-folded stage header, not a hidden node.
+    // Collapsing lands the cursor on the now-folded stage header, not a hidden node; focus stays roster.
     expect(toggled.state.cursor).toEqual({ kind: "stage", stage: 1 });
-    const collapsedPlain = plain(toggled.lines);
-    const detailIdx = collapsedPlain.findIndex(line => line.includes("Stage ── 2"));
-    const roster = collapsedPlain.slice(0, detailIdx).join("\n");
+    expect(toggled.state.focus).toBe("roster");
+    const roster = plain(toggled.lines).join("\n");
     expect(roster).toContain("▸ Stage 2");
     expect(roster).not.toContain("▾ Stage 2");
     expect(roster).not.toMatch(/c\s+queued/); // c's roster row is hidden under the collapsed stage
-    // enter toggles the same fold back open.
-    const reopened = applyPanelKey([graphRun()], toggled.state, "\r", dims);
+    // space (the fold key in roster focus) toggles the same fold back open.
+    const reopened = applyPanelKey([graphRun()], toggled.state, " ", dims);
     expect(reopened.state.collapsedStages).not.toContain(1);
+    expect(plain(reopened.lines).join("\n")).toMatch(/c\s+queued/);
   });
 
   it("keeps a collapsed stage's header in the nav order instead of skipping it", () => {
@@ -380,11 +537,9 @@ describe("observability panel — Wave A cursor, collapse un-trap, stage detail,
     // The cursor stays on the header — never stranded on a now-hidden node.
     expect(collapsed.state.cursor).toEqual({ kind: "stage", stage: 1 });
     // The stage's rows are hidden from the roster while collapsed.
-    const collapsedPlain = plain(collapsed.lines);
-    const detailIdx = collapsedPlain.findIndex(line => line.includes("Stage ── 2"));
-    expect(collapsedPlain.slice(0, detailIdx).join("\n")).not.toMatch(/c\s+queued/);
-    // enter on the still-navigable header re-expands it; its nodes reappear.
-    const reopened = applyPanelKey([graphRun()], collapsed.state, "\r", opts);
+    expect(plain(collapsed.lines).join("\n")).not.toMatch(/c\s+queued/);
+    // space on the still-navigable header re-expands it; its nodes reappear.
+    const reopened = applyPanelKey([graphRun()], collapsed.state, " ", opts);
     expect(reopened.state.collapsedStages).not.toContain(1);
     expect(plain(reopened.lines).join("\n")).toMatch(/c\s+queued/);
   });
@@ -394,7 +549,7 @@ describe("observability panel — Wave A cursor, collapse un-trap, stage detail,
     const collapsed = applyPanelKey([graphRun()], start, " ", opts);
     expect(collapsed.state.collapsedStages).toContain(1);
     expect(collapsed.state.cursor).toEqual({ kind: "stage", stage: 1 });
-    const reopened = applyPanelKey([graphRun()], collapsed.state, "\r", opts);
+    const reopened = applyPanelKey([graphRun()], collapsed.state, " ", opts);
     expect(reopened.state.collapsedStages).not.toContain(1);
   });
 
@@ -432,17 +587,20 @@ describe("observability panel — Wave A cursor, collapse un-trap, stage detail,
     expect(stripTerminalSequences(reversed[0])).toContain("b");
   });
 
-  it("shows a stage summary in the detail zone when the cursor is on a stage header", () => {
+  it("shows stage aggregates in the detail zone without repeating the per-node roster rows", () => {
     const state: PanelState = { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } };
-    const lines = plain(renderPanelLines([graphRun()], state, { width: 60, now: NOW }));
+    const lines = plain(renderPanelLines([graphRun()], state, { width: 70, now: NOW }));
     const detailStart = lines.findIndex(line => line.includes("Stage ── 2"));
     expect(detailStart).toBeGreaterThan(-1);
     const detail = lines.slice(detailStart).join("\n");
-    // Header: Stage <n> + done/total (b, c → 0/2).
-    expect(detail).toContain("0/2");
-    // One line per node in the stage, with its live state.
-    expect(detail).toMatch(/b\s+running/);
-    expect(detail).toMatch(/c\s+queued/);
+    // Aggregate counts across the stage (b running + c queued), plus a rolled-up facts line.
+    expect(detail).toContain("running 1");
+    expect(detail).toContain("queued 1");
+    expect(detail).toContain("Tokens:");
+    expect(detail).toContain("Tools:");
+    // The aggregate never repeats the per-node glyph rows the roster already shows.
+    expect(detail).not.toMatch(/b\s+running/);
+    expect(detail).not.toMatch(/c\s+queued/);
   });
 });
 
@@ -471,28 +629,43 @@ describe("observability panel — Wave B full node detail sections", () => {
     return body;
   };
 
-  it("wraps a long done-node Outcome into a label line plus multiple width-safe body lines", () => {
+  it("caps a long done-node Outcome at two lines with an expand affordance by default", () => {
     const width = 40;
     const long = "found the seam ".repeat(20).trim(); // long, single line, no newlines
     const run = soloRun({ state: "done", resultPreview: long });
-    const lines = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
-    expect(bodyUnder(lines, "  Outcome", width).length).toBeGreaterThanOrEqual(2);
+    const rendered = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
+    expect(bodyUnder(rendered, "  Outcome", width).length).toBeLessThanOrEqual(2);
+    expect(rendered.join("\n")).toContain("expand (+");
   });
 
-  it("wraps a long node Prompt into a label line plus multiple width-safe body lines", () => {
+  it("expands a long done-node Outcome to the full wrap when its key is expanded", () => {
+    const width = 40;
+    const long = "found the seam ".repeat(20).trim();
+    const run = soloRun({ state: "done", resultPreview: long });
+    const rendered = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" }, expandedSections: ["outcome"] }, { width, now: NOW }));
+    expect(bodyUnder(rendered, "  Outcome", width).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("caps a long node Prompt at two lines by default, expanding to the full wrap on demand", () => {
     const width = 40;
     const long = "investigate the auth flow ".repeat(10).trim();
     const run = soloRun({ state: "done", promptPreview: long });
-    const lines = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
-    expect(bodyUnder(lines, "  Prompt", width).length).toBeGreaterThanOrEqual(2);
+    const collapsed = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
+    expect(bodyUnder(collapsed, "  Prompt", width).length).toBeLessThanOrEqual(2);
+    expect(collapsed.join("\n")).toContain("expand (+");
+    const expanded = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" }, expandedSections: ["prompt"] }, { width, now: NOW }));
+    expect(bodyUnder(expanded, "  Prompt", width).length).toBeGreaterThanOrEqual(3);
   });
 
-  it("wraps a long failed-node Error into a label line plus multiple width-safe body lines", () => {
+  it("caps a long failed-node Error at two lines by default, expanding to the full wrap on demand", () => {
     const width = 40;
     const long = "boom while verifying ".repeat(12).trim();
     const run = soloRun({ state: "error", error: long }, "failed");
-    const lines = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
-    expect(bodyUnder(lines, "  Error", width).length).toBeGreaterThanOrEqual(2);
+    const collapsed = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" } }, { width, now: NOW }));
+    expect(bodyUnder(collapsed, "  Error", width).length).toBeLessThanOrEqual(2);
+    expect(collapsed.join("\n")).toContain("expand (+");
+    const expanded = plain(renderPanelLines([run], { ...initialPanelState(), cursor: { kind: "node", id: "solo" }, expandedSections: ["outcome"] }, { width, now: NOW }));
+    expect(bodyUnder(expanded, "  Error", width).length).toBeGreaterThanOrEqual(3);
   });
 
   it("shows elapsed since startedAt and the stage on a running node's status line", () => {
@@ -512,6 +685,76 @@ describe("observability panel — Wave B full node detail sections", () => {
     const detailStatus = rendered.split("\n").find(line => line.includes("Stage 2") && line.includes("running"));
     expect(detailStatus).toBeDefined();
     expect(detailStatus).toContain("1m05s");
+  });
+
+  it("pins a node's Outcome at the bottom of the detail zone (output-at-bottom)", () => {
+    const width = 60;
+    const progress: WorkflowEntry[] = [
+      agent({ index: 0, label: "up", phaseIndex: 0, state: "done", deps: [], dependents: ["leaf"] }),
+      agent({ index: 1, label: "leaf", phaseIndex: 1, state: "done", agentType: "verifier", model: "sonnet", deps: ["up"], dependents: [], durationMs: 3_000, tokens: 1_200, toolCalls: 4, promptPreview: "verify the fix", resultPreview: "all green" }),
+    ];
+    const run: PanelRun = {
+      id: "wf_pin",
+      name: "pin",
+      status: "completed",
+      source: { progress, task: { status: "completed", workflowName: "pin", startTime: NOW - 10_000 }, agentCount: 2 },
+    };
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "leaf" } };
+    const lines = plain(renderPanelLines([run], state, { width, rows: 40, now: NOW }));
+    const outcomeIdx = lines.findIndex(line => line.includes("Outcome"));
+    const promptIdx = lines.findIndex(line => line.includes("Prompt"));
+    const runtimeIdx = lines.findIndex(line => line.includes("Runtime"));
+    const waitsIdx = lines.findIndex(line => line.includes("Waits on"));
+    expect(outcomeIdx).toBeGreaterThan(-1);
+    // The Outcome section sits below every other detail section — pinned at the very bottom.
+    expect(outcomeIdx).toBeGreaterThan(waitsIdx);
+    expect(outcomeIdx).toBeGreaterThan(promptIdx);
+    expect(outcomeIdx).toBeGreaterThan(runtimeIdx);
+    // Collapsed by default, but a short outcome fits on the first body line.
+    expect(lines[outcomeIdx + 1]).toContain("all green");
+  });
+
+  it("keeps model / elapsed / runtime readable (muted), reserving dim for chrome (fix #4)", () => {
+    const width = 80;
+    const progress: WorkflowEntry[] = [
+      agent({ index: 0, label: "up", phaseIndex: 0, state: "done", deps: [], dependents: ["run"] }),
+      agent({ index: 1, label: "run", phaseIndex: 1, state: "progress", agentType: "verifier", model: "sonnet", deps: ["up"], dependents: [], startedAt: NOW - 65_000, tokens: 500, toolCalls: 2 }),
+    ];
+    const run: PanelRun = {
+      id: "wf_color",
+      name: "color",
+      status: "running",
+      source: { progress, task: { status: "running", workflowName: "color", startTime: NOW - 90_000 }, agentCount: 2 },
+    };
+    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "run" } };
+    // Assert on the structured segments (with .color), not the flattened text.
+    const segments = renderPanelLines([run], state, { width, now: NOW }).flat();
+    const statusValue = segments.find(seg => seg.text.includes("sonnet") && seg.text.includes("verifier"));
+    expect(statusValue?.color).toBe("muted");
+    expect(statusValue?.color).not.toBe("dim");
+    const runtimeValue = segments.find(seg => seg.text.includes("tok") && seg.text.includes("tools"));
+    expect(runtimeValue?.color).not.toBe("dim");
+  });
+});
+
+describe("observability panel — footer hints per focus", () => {
+  const opts = { width: 120, now: NOW } as const;
+
+  it("reads the roster hints in roster focus", () => {
+    const rendered = text([graphRun(), otherRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" } }, opts);
+    expect(rendered).toContain("↑↓ move");
+    expect(rendered).toContain("⏎ detail");
+    expect(rendered).toContain("space fold");
+    expect(rendered).toContain("←→ run");
+    expect(rendered).toContain("esc close");
+  });
+
+  it("reads the detail hints in detail focus", () => {
+    const rendered = text([graphRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" }, focus: "detail" }, opts);
+    expect(rendered).toContain("↑↓ section");
+    expect(rendered).toContain("⏎ expand");
+    expect(rendered).toContain("f filter");
+    expect(rendered).toContain("esc back");
   });
 });
 

@@ -155,49 +155,99 @@ Scope is split into two milestones:
 
 ```
 interface PanelState {
-  selectedNodeId?: string;              // node selection
+  cursor?: Target;                      // stage-header or node selection
   runIndex: number;                     // which run the switcher points at
+  scroll: number;                       // roster scroll offset (pages the focused stage's nodes)
+  detailScroll: number;                 // detail-zone scroll offset (v2)
   filter: "all" | "running" | "failed"; // v1.5
-  collapsedStages: Set<number>;         // v1.5
-  scroll: number;                       // body scroll offset
+  collapsedStages: number[];            // v1.5 — manual force-collapse over auto-fit (v3)
+  focus: "roster" | "detail";           // which zone owns the cursor (v3)
+  detailCursor: number;                 // index into the detail's navigable sections (v3)
+  expandedSections: string[];           // expanded section keys, global: "prompt"/"outcome" (v3)
 }
 ```
 
 The manager owns one `PanelState` plus the run list. Default `runIndex` resolves
 to the last active run (newest live, else newest overall — the existing
-`pickTask` rule). Switching runs resets `selectedNodeId`/`scroll`.
+`pickTask` rule). Switching runs resets to the roster overview (`cursor`, `scroll`,
+`detailScroll`, `collapsedStages`, `focus`, `detailCursor`, `expandedSections`) while
+keeping the filter.
 
 ### Keys (panel view)
 
-- `↑↓` / `j`/`k`, `pageUp`/`pageDown` — move node selection / scroll body.
-- `←` / `→` — switch run.
+Two-level focus (`focus: "roster" | "detail"`) mirrors the always-on two-zone body. (v3)
+
+**Roster focus (default):**
+- `↑↓` / `j`/`k` — move the cursor over the stage-header/node targets; the detail below
+  mirrors the cursor (and its detail cursor re-tops).
+- `⏎ enter` — drill INTO the detail (`focus:"detail"`) when the cursor is a node with at
+  least one expandable section; a stage cursor or a node with no Prompt/Outcome is a no-op.
+- `space` — toggle collapse of the cursor's stage; the manual override over auto-fit, and it
+  lands the cursor on the folded header so a collapsed stage stays re-expandable (the un-trap). (v1.5)
+- `esc` / `q` — close the pane.
+- `pageUp`/`pageDown` — page the roster (the focused stage's node window).
+
+**Detail focus:**
+- `↑↓` / `j`/`k` — move the detail cursor over the navigable sections (Prompt, Outcome), clamped;
+  the focused section is auto-followed into view.
+- `⏎ enter` / `space` — expand/collapse the focused section (toggles its key in `expandedSections`).
+- `esc` / `q` — back out to the roster (does NOT close).
+- `pageUp`/`pageDown` — scroll the detail zone.
+
+**Both focuses:**
+- `←` / `→` — switch run (resets to the roster overview, keeps the filter).
 - `f` — cycle filter all → running → failed (v1.5).
-- `space` / `enter` — toggle collapse of the selected node's stage (v1.5).
 - `c` — open the selected node's conversation (only if it has a `recordId`).
-- `esc` / `q` — close the pane (same contract as the roster).
 
 The panel is **read-only** like the roster: it never wires kill/pause/skip/retry.
 
 ### Rendering (top to bottom)
 
-1. **Run switcher** — `‹ <name> ›  <status-dot> <status>  <i>/<n>`; a second
-   line lists other runs as `<dot> <name>` health chips; `←→ run` hint.
-2. **Header stats** — reuse `header()`: `<done>/<total> nodes · <elapsed>` plus a
-   terminal suffix (`· done`/`· failed`/`· stopped`) when the run has ended.
-3. **Summary strip** — colored counts `● running N · ◌ queued N · ✓ done N ·
-   ✗ failed N`, each in its state color.
-4. **Roster by stage** — `Stage k ── N/M` headers (dependency order); rows via
-   `dialogRowGlyph`: `<sel> <glyph> <id>  <state>  <model>` with live activity or
-   `waits: …`. Selected row marked with the accent pointer.
-5. **Node detail** — `<state> · <agentType> · <model>`; **Waits on (upstream)**
-   (`<glyph> <depId> <state>` per dep); **Unblocks (downstream)** (`→ a → b`);
-   Outcome/Error preview; Prompt preview; runtime facts (tokens / tool calls /
-   duration). A failed node's detail adds **Blast radius** (downstream skipped).
-6. **Footer** — `● live`/`○ done` + scroll range + control hints.
+The **header zone** is always three lines — run switcher, header stats, summary strip — over
+a body that fills the rest of the pane, and a one-line footer.
 
-State→glyph/color reuses the existing vocabulary (`success`/`error`/`warning`/
-`dim`/`accent`/`muted`); an ASCII tier reuses `ASCII_DIALOG_GLYPHS` gated on the
-pane's `ascii` flag.
+1. **Run switcher** — `‹ <name> ›  <status-dot> <status>  <i>/<n>`; a second line lists other
+   runs as `<dot> <name>` health chips; `←→ run` hint.
+2. **Header stats** — reuse `header()`: `<done>/<total> nodes · <elapsed>` plus a terminal
+   suffix (`· done`/`· failed`/`· stopped`) when the run has ended.
+3. **Summary strip** — colored counts `● running N · ◌ queued N · ✓ done N · ✗ failed N`.
+
+**Body — always two stacked zones (v3):** an auto-fit stage-complete roster on top and an
+always-on, capped node/stage detail below, split by a one-line blank divider. Both zones render
+at every focus; `enter` no longer gates the detail, it moves the cursor into it. When the pane has
+a fixed height, headers win the budget first, the detail asks for up to ~40% (≥ 5 rows when there
+is room), and the roster keeps the rest; with no fixed height both zones render in full.
+
+**Auto-fit roster (fixes later-stage clipping)** — every shown stage always emits a header
+(`Stage k ── N/M`, rows via `dialogRowGlyph`). When the fully-expanded roster fits the roster
+budget, every stage shows its node rows; otherwise only the FOCUSED stage (the resolved cursor's
+stage) expands and the others render header-only (`▸`), so no stage header is ever clipped. A
+manually collapsed stage (`space`) is always header-only. The `visibleTargets` order and the
+renderer share one `isExpanded` decision, so navigation and rendering never disagree.
+
+**Node detail (capped + expandable)** — `Node ── <label>`; `<state> · <agentType> · <model>[ ·
+Stage n · elapsed]`; **Waits on (upstream)** (`<glyph> <depId> <state>` per dep, or `entry node`);
+**Unblocks (downstream)** (`→ a → b`); **Blast radius** (failed only); **Prompt** (navigable); runtime
+facts; **Outcome/Error** (navigable, pinned bottom). Prompt and Outcome collapse to their label
+plus up to two wrapped lines; when truncated the second line ends with a `dim` `⏎ expand (+N)`
+affordance. Entering detail focus and pressing `enter`/`space` expands the focused section (its key
+in `expandedSections`, shared across nodes: `"prompt"` / `"outcome"`). The Outcome/Error section
+stays **pinned to the bottom** of the detail zone: the body scrolls under it. (v3)
+- **Stage detail** — aggregates only: a `Stage ── n` header, a summary-strip count line, a
+  rolled-up facts line (`Tokens: Σ · Tools: Σ · <wall-clock>`), and a `Failed: …` rollup when
+  the stage has failures. It never repeats the per-node rows the roster already shows; a stage
+  cursor is a single non-navigable block (`enter` does nothing). (v2)
+
+4. **Footer** — `● live`/`○ done` + scroll range (roster range in roster focus, detail range in
+   detail focus) + focus-specific control hints (`⏎ detail`/`space fold` vs. `⏎ expand`, `esc
+   close` vs. `esc back`).
+
+**Color hierarchy** — `dim` is reserved for **chrome** (separators, rules, the stage-header
+count, switcher/footer hints). Everything an operator reads is promoted: model, elapsed,
+tokens, runtime facts, the detail status value and the prompt body render `muted` or at the
+default foreground, never `dim`. State→glyph/color otherwise reuses the existing vocabulary
+(`success`/`error`/`warning`/`accent`); an ASCII tier reuses `ASCII_DIALOG_GLYPHS` gated on
+the pane's `ascii` flag. (v2)
 
 ### WIP-test reconciliation (resolved)
 
@@ -250,3 +300,14 @@ now fully green.
   pane and fills height without disturbing the roster/overlay/WIP tests), then
   v1.5 = filter + stage collapse + blast radius, then harden (ASCII tier, width/
   CJK safety, tests, throw→roster fallback).
+- v2 = roster/detail split: `enter` drills the cursor into a two-zone detail (roster above a
+  node/stage detail), `esc` backs out before closing, `space` becomes the sole fold key, the
+  node outcome is pinned at the bottom, a stage cursor shows aggregates instead of repeating its
+  rows, and `dim` is reserved for chrome so model/elapsed/tokens/prompt read clearly.
+- v3 = always-on capped detail + auto-fit roster + two-level focus: the detail is always
+  visible (no detail mode) with `focus:"roster"|"detail"`; the roster auto-fits so every stage
+  header always shows (expand-all-if-it-fits, else focused-stage-only); Prompt and Outcome
+  collapse to two lines with a `⏎ expand (+N)` affordance and expand via `expandedSections`;
+  `enter` moves the cursor into the detail to pick a section, `esc` backs out; the Outcome stays
+  pinned at the bottom. `PanelState.mode` becomes `focus`, plus `detailCursor` and
+  `expandedSections`; `collapsedStages` is now the manual override over auto-fit.

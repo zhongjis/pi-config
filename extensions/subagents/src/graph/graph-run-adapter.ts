@@ -38,6 +38,7 @@ export class GraphRunReporter {
   private readonly deps = new Map<string, string[]>();
   private readonly dependents = new Map<string, string[]>();
   private readonly agentType = new Map<string, string>();
+  private readonly prompt = new Map<string, string>();
   private readonly stage = new Map<string, number>();
   private readonly resolved = new Map<string, { model?: string; modelId?: string; recordId?: string }>();
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
@@ -64,6 +65,8 @@ export class GraphRunReporter {
       );
       const node = graph.nodes[id];
       this.agentType.set(id, node.type === "agent" ? node.agent : node.type);
+      // Only agent / human_gate nodes carry a prompt; subgraph and expand nodes have none.
+      if (node.type === "agent" || node.type === "human_gate") this.prompt.set(id, node.prompt);
     }
     // Downstream is the inverse of deps: each node lists the nodes it unblocks, so
     // the monitor can join a failure to its blast radius without re-walking edges.
@@ -150,7 +153,8 @@ export class GraphRunReporter {
       phaseIndex: stage,
       phaseTitle: `Stage ${stage + 1}`,
       agentType: this.agentType.get(nodeId),
-      promptPreview: deps.length > 0 ? `depends on: ${deps.join(", ")}` : "entry node",
+      // ponytail: the pre-interpolation template (`${ref}` unresolved — P2 per ir.ts); good enough, upgrade = capture the resolved NodeSpawnRequest.prompt via onResolved.
+      ...(this.prompt.get(nodeId) ? { promptPreview: preview(this.prompt.get(nodeId)!) } : {}),
       deps,
       dependents: this.dependents.get(nodeId) ?? [],
       queuedAt: this.queuedAt,

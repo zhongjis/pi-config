@@ -18,7 +18,7 @@ function task() {
 }
 
 describe("GraphRunReporter", () => {
-  it("maps node states onto the progress log with dependency hints", () => {
+  it("maps node states onto the progress log, carrying each node's prompt", () => {
     const t = task();
     const reporter = new GraphRunReporter(t, graph);
     reporter.update("a", { status: "running", attempt: 1 });
@@ -30,10 +30,10 @@ describe("GraphRunReporter", () => {
     const b = agents.find(entry => entry.label === "b");
     expect(a?.state).toBe("done");
     expect(a?.resultPreview).toContain("diff");
-    expect(a?.promptPreview).toBe("entry node");
+    expect(a?.promptPreview).toBe("a");
     expect(b?.state).toBe("start");
     expect(b?.startedAt).toBeDefined();
-    expect(b?.promptPreview).toBe("depends on: a");
+    expect(b?.promptPreview).toBe("b");
     // Nodes are grouped by topological stage for a graph-shaped monitor view.
     expect(a?.phaseIndex).toBe(0);
     expect(a?.phaseTitle).toBe("Stage 1");
@@ -41,6 +41,29 @@ describe("GraphRunReporter", () => {
     expect(b?.phaseTitle).toBe("Stage 2");
     expect(t.agentCount).toBe(2);
     expect(t.doneCount).toBe(1);
+  });
+
+  it("truncates a long node prompt with preview() and omits promptPreview for prompt-less nodes", () => {
+    const long = "investigate the auth flow ".repeat(20).trim(); // > 200 chars, single line
+    const promptGraph: AgentGraph = {
+      nodes: {
+        big: { type: "agent", agent: "jintong", prompt: long },
+        sub: { type: "graph", graph: "other" },
+      },
+      edges: [{ from: "big", to: "sub" }],
+    };
+    const t = task();
+    const reporter = new GraphRunReporter(t, promptGraph);
+    reporter.update("big", { status: "running", attempt: 1 });
+    reporter.update("sub", { status: "running", attempt: 1 });
+    const { agents } = collapse(t.workflowProgress);
+    const big = agents.find(entry => entry.label === "big");
+    const sub = agents.find(entry => entry.label === "sub");
+    // A prompt over the 200-char cap is truncated with an ellipsis.
+    expect(big?.promptPreview?.length).toBeLessThanOrEqual(200);
+    expect(big?.promptPreview?.endsWith("\u2026")).toBe(true);
+    // A subgraph node has no prompt, so the field is omitted entirely.
+    expect(sub?.promptPreview).toBeUndefined();
   });
 
   it("renders a pending node as blocked and a skipped node as skipped", () => {
