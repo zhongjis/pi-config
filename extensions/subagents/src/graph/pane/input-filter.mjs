@@ -25,15 +25,14 @@ export function classifyPaneKey(chunk) {
 
 /**
  * The exact keys the read-only inspector reacts to: arrows (normal + application
- * cursor mode), page up/down, and the single-char nav keys `j k f e` plus
- * Enter. Everything else — including mutating keys (`x p s r c`), space, tab,
- * and `q` (handled locally as close) — is intentionally absent so it is dropped
- * rather than forwarded.
+ * cursor mode), page up/down, Enter, Space, and the single-char nav keys `j k f e`.
+ * Everything else — including mutating keys (`x p s r c`), tab, and `q` (handled
+ * locally as close) — is intentionally absent so it is dropped rather than forwarded.
  */
 const FORWARD = new Set([
   "\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D", // arrow keys
   "\x1bOA", "\x1bOB", "\x1bOC", "\x1bOD", // arrows in application cursor mode
   "\x1b[5~", "\x1b[6~", // page up / page down
   "\r", "\n", // enter
-  "j", "k", "f", "e", // down / up / filter / expand
+  " ", "j", "k", "f", "e", // fold / down / up / filter / expand
 ]);

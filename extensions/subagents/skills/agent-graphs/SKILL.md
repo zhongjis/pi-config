@@ -30,6 +30,7 @@ agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...
 
 ```jsonc
 {
+  "description": "Optional live-run purpose shown in /graph-runs",
   "inputSchema": { /* optional JSON Schema for `input` */ },
   "nodes": { "<id>": { /* GraphNode */ } },
   "edges": [ { "from": "<id>", "to": "<id>", "when": <Condition>, "loop": { "maxIterations": 3 } } ],

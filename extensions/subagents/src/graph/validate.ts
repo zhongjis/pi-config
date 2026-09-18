@@ -281,6 +281,7 @@ export function validateGraph(graph: unknown): ValidationResult {
   if (graph.id !== undefined && !isNonEmptyString(graph.id)) errors.push("id: must be a non-empty string when present");
   if (graph.name !== undefined && typeof graph.name !== "string") errors.push("name: must be a string when present");
   if (graph.version !== undefined && typeof graph.version !== "number") errors.push("version: must be a number when present");
+  if (graph.description !== undefined && typeof graph.description !== "string") errors.push("description: must be a string when present");
   if (graph.inputSchema !== undefined) {
     const compiled = compileInputSchema(graph.inputSchema);
     if (compiled.ok === false) errors.push(`inputSchema: ${compiled.message}`);

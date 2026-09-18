@@ -15,7 +15,9 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { pauseWorkflowTask, resumeWorkflowTask, type WorkflowTask } from "../graph/task.js";
+import type { WorkflowRun } from "../graph/history-view.js";
+import { toPaneSource } from "../graph/pane/render.js";
+import { pauseWorkflowTask, resumeWorkflowTask } from "../graph/task.js";
 import type { AgentRecord } from "../types.js";
 import { WorkflowDialog } from "./workflow-dialog.js";
 
@@ -28,7 +30,7 @@ export interface WorkflowMenuDeps {
    * settled and was swept between render and keypress must be a no-op, not a
    * crash.
    */
-  tasks: ReadonlyMap<string, WorkflowTask>;
+  tasks: ReadonlyMap<string, WorkflowRun>;
   /** The record behind an agent id, or undefined once it has been swept. */
   getRecord(id: string): AgentRecord | undefined;
   /** The conversation overlay `c` opens on an agent row. */
@@ -53,7 +55,7 @@ export interface WorkflowMenuDeps {
  */
 export async function showWorkflowDialog(
   ctx: WorkflowUIContext,
-  task: WorkflowTask,
+  task: WorkflowRun,
   deps: WorkflowMenuDeps,
 ): Promise<void> {
   // Overlaid on the same terms as the conversation viewer, because they are
@@ -76,18 +78,15 @@ export async function showWorkflowDialog(
         tui,
         // Re-read on every render: the run is in the background, so the
         // dialog has to follow it rather than snapshot it at open time.
-        () => ({
-          progress: task.workflowProgress,
-          task,
-          meta: task.meta,
-          agentCount: task.agentCount,
+        () => task.type === "history" ? toPaneSource(task) : ({
+          progress: task.workflowProgress, task, meta: task.meta, agentCount: task.agentCount,
         }),
         theme,
         done,
-        {
+        task.type === "history" ? {} : {
           onKill: () => {
             if (task.abortController.signal.aborted) return;
-            task.abortController.abort();
+            task.abortController.abort("user");
             ctx.ui.notify(`Stopped workflow "${task.meta?.name ?? task.id}".`, "info");
           },
           onPause: () => {
@@ -176,7 +175,7 @@ export async function showWorkflowsMenu(
   // the second run of a workflow onto the first — the run id makes it so.
   const labels = tasks.map(
     task =>
-      `${task.meta?.name ?? task.id} — Execution: ${task.status}, ${task.agentCount} agent${
+      `${task.meta?.name ?? task.id}${task.type === "history" ? " · History (read-only)" : ""} — Execution: ${task.status}, ${task.agentCount} agent${
         task.agentCount === 1 ? "" : "s"
       } · ${task.id}`,
   );

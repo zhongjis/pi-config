@@ -1,5 +1,6 @@
 {
   "name": "context-gather",
+  "description": "Gather repository context for an implementation task.",
   "inputSchema": {
     "type": "object",
     "properties": { "task": { "type": "string" } },

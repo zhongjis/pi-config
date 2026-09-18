@@ -379,6 +379,8 @@ Graph effort follows local thinking authority: agent frontmatter → model-chain
 
 Graph runs MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children do not receive the `agent_graph` tool recursively. `/agents → Workflows` keeps one phase-grouped run roster with contextual controls: pause/resume, skip, retry, stop, and child conversation access. FleetView represents each graph run as one row rather than duplicating its owned children.
 
+Settled runs remain visible after same-session reload in `/agents → Graph runs` and Herdr as **read-only metadata history**, not execution recovery. The exact Pi session ID owns `graph-history.json` under the repository's session-local OS storage; forks/new sessions are isolated. History is bounded to 20 runs/8 MiB and retains no full prompts, inputs, outputs, errors, or artifact paths. Live runs win over same-ID history; graph resume checkpoints remain separate. See the [presentation contract](../../docs/specs/workflow-tool-output-presentation.md#implementation-decisions) for bounds and lifecycle behavior.
+
 The authoring skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover` when workflows are enabled. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
 
 ## Commands

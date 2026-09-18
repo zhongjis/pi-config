@@ -248,7 +248,7 @@ export function namespaceFragment(fragment: GraphFragment, namespace: string | u
  * and every `${placeholder}` would reach the agent literally. Parse a JSON
  * string back to its value at the one entry point every run shares.
  */
-function coerceGraphInput(input: unknown): unknown {
+export function coerceGraphInput(input: unknown): unknown {
   if (typeof input !== "string") return input;
   try {
     return JSON.parse(input);

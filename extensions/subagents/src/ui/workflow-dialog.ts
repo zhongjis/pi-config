@@ -1,3 +1,4 @@
+import { type HistoricalWorkflow, historyDisclosure } from "../graph/history-view.js";
 /** `/agents → Graph runs`: stable phase-grouped roster with contextual agent detail. */
 
 import {
@@ -131,6 +132,9 @@ export function initialWorkflowDialogState(selectedIndex?: number): WorkflowDial
 }
 
 export interface WorkflowDialogSource {
+  history?: HistoricalWorkflow["history"];
+  /** Live graph input; history deliberately omits it. */
+  input?: unknown;
   progress: readonly WorkflowEntry[];
   task: WorkflowCardTask;
   meta?: WorkflowMeta;
@@ -167,6 +171,7 @@ export type WorkflowDialogAction =
   | { kind: "open"; recordId: string };
 
 export interface ResolvedWorkflowDialog {
+  readOnly?: boolean;
   groups: PhaseGroup[];
   agents: WorkflowAgentEntry[];
   selectedPosition: number;
@@ -192,6 +197,7 @@ export function resolveWorkflowDialog(input: WorkflowDialogInput): ResolvedWorkf
   return {
     groups,
     agents,
+    readOnly: input.history !== undefined,
     selectedPosition,
     selectedEntry: agents[selectedPosition],
     workflowActive: input.task.status === "running" || input.task.status === "paused",
@@ -488,7 +494,7 @@ function detailRows(entry: WorkflowAgentEntry | undefined, view: ResolvedWorkflo
 function footerLines(
   input: WorkflowDialogInput, view: ResolvedWorkflowDialog, detailCount: number, detailOffset: number, width: number, glyphs: WorkflowDialogGlyphs,
 ): WorkflowCardLine[] {
-  const can = (action: keyof WorkflowDialogActions) => input.available?.[action] ?? true;
+  const can = (action: keyof WorkflowDialogActions) => !input.history && (input.available?.[action] ?? true);
   const inNarrowDetail = view.narrow && input.state.level === "detail";
   const primary = [
     inNarrowDetail ? `${glyphs.upDown} scroll` : `${glyphs.upDown} select`,
@@ -522,6 +528,9 @@ function resolveWorkflowLayout(input: WorkflowDialogInput): { lines: WorkflowCar
   lines.push(clampLine([{ text: " " }, { text: head.name, color: "toolTitle", bold: true }], width));
   lines.push(rightAlign(head.subtext ? [{ text: " " }, { text: head.subtext, color: "dim" }] : [], [{ text: head.stats, color: "dim" }], width));
   lines.push(workflowStatusLine(input.task, width), []);
+  if (input.history) {
+    for (const text of wrapTextWithAnsi(historyDisclosure(input.history), width)) lines.push(clampLine([{ text, color: "dim" }], width));
+  }
 
   const frameWidth = Math.max(1, width - 1);
   const rosterWidth = view.narrow ? Math.max(1, frameWidth - 2) : leftPaneWidth(frameWidth);
@@ -583,6 +592,7 @@ export function handleWorkflowDialogKey(
   if ((matchesKey(data, "enter") || matchesKey(data, "right")) && view.narrow && !narrowDetail) {
     return view.selectedEntry ? { state: { ...state, level: "detail", detailOffset: 0 } } : { state };
   }
+  if (view.readOnly) return undefined;
   if (matchesKey(data, "c")) {
     const recordId = view.selectedEntry?.recordId;
     return recordId ? { state, action: { kind: "open", recordId } } : undefined;

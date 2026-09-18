@@ -71,9 +71,8 @@ Scope is split into two milestones:
    far the run has progressed through that layer.
 7. As an operator, I want a summary strip of live counts (running / queued /
    done / failed) for the run, so I get the observability read in one line.
-8. As an operator, I want each node row to show its state glyph, id, agent/model,
-   and live activity (elapsed / tool calls) or its outcome, so a row is
-   self-describing.
+8. As an operator, I want each node row to show a static `*` running or `+` done
+   glyph, id, live activity, agent type, and model, so a row is self-describing.
 9. As an operator, I want a blocked node to show what it is waiting on inline, so
    I understand a stall without opening detail.
 10. As an operator, I want to select a node and see its detail, so I can inspect
@@ -104,6 +103,10 @@ Scope is split into two milestones:
     visibility.
 22. As an operator, I want a run that has finished to remain inspectable in the
     switcher, so I can review a completed or failed run after it ends.
+23. As an operator, I want a live run's description, main input, and expandable full
+    input rendered near its header, so I retain execution context without exposing it in history.
+24. As an operator, I want complete retained node output to scroll when expanded, so a
+    long result is inspectable rather than tail-clipped.
 
 ## Implementation Decisions
 
@@ -180,8 +183,8 @@ Two-level focus (`focus: "roster" | "detail"`) mirrors the always-on two-zone bo
 **Roster focus (default):**
 - `↑↓` / `j`/`k` — move the cursor over the stage-header/node targets; the detail below
   mirrors the cursor (and its detail cursor re-tops).
-- `⏎ enter` — drill INTO the detail (`focus:"detail"`) when the cursor is a node with at
-  least one expandable section; a stage cursor or a node with no Prompt/Outcome is a no-op.
+- `⏎ enter` — toggle the selected stage header, or drill INTO the detail (`focus:"detail"`)
+  for a node with at least one expandable section.
 - `space` — toggle collapse of the cursor's stage; the manual override over auto-fit, and it
   lands the cursor on the folded header so a collapsed stage stays re-expandable (the un-trap). (v1.5)
 - `esc` / `q` — close the pane.
@@ -198,19 +201,23 @@ Two-level focus (`focus: "roster" | "detail"`) mirrors the always-on two-zone bo
 - `←` / `→` — switch run (resets to the roster overview, keeps the filter).
 - `f` — cycle filter all → running → failed (v1.5).
 - `c` — open the selected node's conversation (only if it has a `recordId`).
+- `e` — expand/collapse complete live graph input near the header; history has no input context.
 
 The panel is **read-only** like the roster: it never wires kill/pause/skip/retry.
 
 ### Rendering (top to bottom)
 
-The **header zone** is always three lines — run switcher, header stats, summary strip — over
+The **header zone** is a run switcher, optional live context, header stats, and summary strip over
 a body that fills the rest of the pane, and a one-line footer.
 
-1. **Run switcher** — `‹ <name> ›  <status-dot> <status>  <i>/<n>`; a second line lists other
-   runs as `<dot> <name>` health chips; `←→ run` hint.
-2. **Header stats** — reuse `header()`: `<done>/<total> nodes · <elapsed>` plus a terminal
+1. **Run switcher** — `‹ <name> ›  <status-dot> <status>  <i>/<n>`; other
+   runs appear as `<dot> <name>` health chips when present. Run navigation stays in the footer.
+2. **Live context** — optional graph description, the first required input (else first input), and
+   `Full inputs · e expand`; expanded JSON shows a bounded header preview plus an explicit omitted-line
+   count so the footer remains visible. This is live-only and omitted for historical runs.
+3. **Header stats** — reuse `header()`: `<done>/<total> nodes · <elapsed>` plus a terminal
    suffix (`· done`/`· failed`/`· stopped`) when the run has ended.
-3. **Summary strip** — colored counts `● running N · ◌ queued N · ✓ done N · ✗ failed N`.
+4. **Summary strip** — colored counts `* running N · ◌ queued N · + done N · ✗ failed N`.
 
 **Body — always two stacked zones (v3):** an auto-fit stage-complete roster on top and an
 always-on, capped node/stage detail below, split by a one-line blank divider. Both zones render
@@ -228,17 +235,17 @@ renderer share one `isExpanded` decision, so navigation and rendering never disa
 **Node detail (capped + expandable)** — `Node ── <label>`; `<state> · <agentType> · <model>[ ·
 Stage n · elapsed]`; **Waits on (upstream)** (`<glyph> <depId> <state>` per dep, or `entry node`);
 **Unblocks (downstream)** (`→ a → b`); **Blast radius** (failed only); **Prompt** (navigable); runtime
-facts; **Outcome/Error** (navigable, pinned bottom). Prompt and Outcome collapse to their label
-plus up to two wrapped lines; when truncated the second line ends with a `dim` `⏎ expand (+N)`
-affordance. Entering detail focus and pressing `enter`/`space` expands the focused section (its key
-in `expandedSections`, shared across nodes: `"prompt"` / `"outcome"`). The Outcome/Error section
-stays **pinned to the bottom** of the detail zone: the body scrolls under it. (v3)
+facts; **Outcome/Error** (navigable). Prompt and Outcome collapse to their label plus up to two
+wrapped lines; when truncated the second line ends with a `dim` `⏎ expand (+N)` affordance.
+Entering detail focus and pressing `enter`/`space` expands the focused section (its key in
+`expandedSections`, shared across nodes: `"prompt"` / `"outcome"`). Expanded retained output
+scrolls with all other detail content and is never fixed-pane tail-clipped. (v3)
 - **Stage detail** — aggregates only: a `Stage ── n` header, a summary-strip count line, a
   rolled-up facts line (`Tokens: Σ · Tools: Σ · <wall-clock>`), and a `Failed: …` rollup when
-  the stage has failures. It never repeats the per-node rows the roster already shows; a stage
-  cursor is a single non-navigable block (`enter` does nothing). (v2)
+  the stage has failures. It never repeats the per-node rows the roster already shows; `enter`
+  or `space` toggles the selected stage header. (v2)
 
-4. **Footer** — `● live`/`○ done` + scroll range (roster range in roster focus, detail range in
+5. **Footer** — `* live`/`+ done` + scroll range (roster range in roster focus, detail range in
    detail focus) + focus-specific control hints (`⏎ detail`/`space fold` vs. `⏎ expand`, `esc
    close` vs. `esc back`).
 

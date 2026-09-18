@@ -72,6 +72,19 @@ describe("GraphRunReporter", () => {
     expect(sub?.promptPreview).toBeUndefined();
   });
 
+  it("retains complete node output while keeping prompt previews capped", () => {
+    const t = task();
+    const reporter = new GraphRunReporter(t, graph);
+    const output = "retained output ".repeat(40).trim();
+    reporter.update("a", { status: "completed", attempt: 1, output });
+    const entry = collapse(t.workflowProgress).agents.find(agent => agent.label === "a");
+    expect(entry?.resultPreview).toBe(output);
+
+    reporter.update("b", { status: "completed", attempt: 1, output: Symbol("result") });
+    const b = collapse(t.workflowProgress).agents.find(agent => agent.label === "b");
+    expect(b?.resultPreview).toBe("Symbol(result)");
+  });
+
   it("renders a pending node as blocked and a skipped node as skipped", () => {
     const t = task();
     const reporter = new GraphRunReporter(t, graph);

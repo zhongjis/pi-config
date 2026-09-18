@@ -12,6 +12,10 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Fresh descendants MUST inherit the parent's Agent-tree `local://` root, not its conversation by default.
 - Terminal sessions remain resumable for 30 minutes in the current parent session; switch, reload, or shutdown may clean them sooner.
 - Retention MUST remain bounded; resume is not durable-session availability.
+- Settled graph metadata history lives in session-local OS storage keyed by the exact Pi session ID, separate from Agent-tree sharing and graph resume checkpoints. Keep at most 20 unique runs, 200 nodes/run, 64 phases, 32 dependencies/node, 160-character sanitized display strings, and 8 MiB/session; evict oldest runs and disclose omitted nodes.
+- History MUST contain no prompts, inputs, outputs, errors, outcome reasons, scripts, artifact paths, logs, or conversation handles. It is read-only metadata, not execution recovery. Live runs supersede same-ID snapshots in both Graph runs inspectors.
+- Live graph inspectors may show optional graph descriptions, inputs, and complete retained node output; these are never copied into graph history.
+- Load history before UI managers; capture completed/failed/explicit user-stopped runs before notification. Disable capture before lifecycle aborts and flush writes before replacing the session store. Unknown versions remain untouched with writes disabled; I/O failures emit only one generic warning per session.
 - Rendering changes MUST preserve model-visible completion notifications and tool results. Collapsed completion notifications MUST flatten multiline previews and mark width clipping with an ellipsis; expanded previews retain their original content.
 - Foreground results and background follow-up notifications MUST retain distinct delivery paths.
 - Foreground capacity MUST remain independent of background capacity and unlimited by default; queued blocking callers MUST settle on completion, cancellation, startup failure, or shutdown. Detached spawns and resume bypass the foreground pool.
@@ -58,6 +62,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 
 - From repository root: `pnpm exec vitest run --project unit extensions/subagents/test`.
 - [Agent manager](test/agent-manager.test.ts) covers retention; [notification rendering](test/notification-rendering.test.ts) covers presentation.
+- `test/graph-history*.test.ts` covers metadata privacy/bounds, exact-session reload/isolation, lifecycle suppression, and read-only inspector adapters.
 - `test/workflow-registration.test.ts` checks enabled-only skill discovery and `agent_graph` tool registration; `test/graph-tool.test.ts` drives the tool end to end, and `test/graph-portfolio.test.ts` validates the saved reusable-workflow graphs.
 - Graph QA MUST use a fresh Pi session through `interactive_shell`, running a saved graph and inspecting the tool call, the monitor, node ordering, and completion evidence.
 - Root unit selection excludes e2e-named tests; those require separate runtime verification.

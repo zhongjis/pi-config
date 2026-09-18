@@ -55,6 +55,14 @@ let parentTimer = null;
 let parentGone = false;
 let lastLines = [];
 let inputSeq = 0;
+try {
+  const input = JSON.parse(readFileSync(inputFile, "utf8"));
+  if (input && Number.isSafeInteger(input.seq) && input.seq >= 0 && typeof input.data === "string") {
+    inputSeq = input.seq;
+  }
+} catch {
+  // A missing or malformed slot starts a fresh input sequence.
+}
 let escPending = false;
 let escTimer = null;
 

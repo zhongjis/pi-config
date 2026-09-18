@@ -88,6 +88,16 @@ describe("validateGraph — accepts well-formed graphs", () => {
   });
 });
 
+  it("accepts an optional description but rejects a non-string value", () => {
+    const graph = {
+      description: "Gather repository context before implementation.",
+      nodes: { a: { type: "agent", agent: "x", prompt: "p" } },
+      edges: [],
+    };
+    expect(validateGraph(graph)).toEqual({ ok: true, errors: [] });
+    expect(validateGraph({ ...graph, description: 1 }).errors).toContain("description: must be a string when present");
+  });
+
 describe("validateGraph — rejects malformed graphs", () => {
   const bad = (graph: unknown): string[] => validateGraph(graph).errors;
 

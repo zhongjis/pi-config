@@ -1,3 +1,5 @@
+import { GraphHistoryStore } from "./graph/history.js";
+import { mergeWorkflowRuns } from "./graph/history-view.js";
 /**
  * pi-agents — A pi extension providing Claude Code-style autonomous sub-agents.
  *
@@ -34,7 +36,7 @@ import { workflowCompletionText } from "./graph/notification.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
 import { createWorkflowPaneManager, type WorkflowPaneManager } from "./graph/pane/manager.js";
 import { elapsedMs } from "./graph/progress.js";
-import { runGraph } from "./graph/run-graph.js";
+import { coerceGraphInput, runGraph } from "./graph/run-graph.js";
 import { resolveSavedGraph } from "./graph/saved-graph.js";
 import type { SchedulerState } from "./graph/scheduler.js";
 import { createWorkflowTask, failWorkflowTask, type WorkflowTask, workflowResultText, workflowRunId } from "./graph/task.js";
@@ -639,7 +641,8 @@ export default function (pi: ExtensionAPI) {
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
   pi.on("session_start", async (_event, ctx) => {
-    await stopWorkflows();
+    await stopWorkflows("reload");
+    workflowHistory = await GraphHistoryStore.load(ctx.sessionManager.getSessionId(), message => ctx.ui.notify(message, "warning"));
     workflowSessionActive = true;
     currentCtx = ctx;
     pendingUsage = new PendingUsagePool();
@@ -676,7 +679,7 @@ export default function (pi: ExtensionAPI) {
       cwd: ctx.cwd,
       sessionId: ctx.sessionManager.getSessionId(),
       ppid: process.pid,
-      getTasks: () => workflowTasks.values(),
+      getTasks: () => getWorkflowRuns().values(),
       viewAgentConversation: (recordId) => {
         const record = manager.getRecord(recordId);
         if (currentCtx && record) return viewAgentConversation(currentCtx, record);
@@ -689,6 +692,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_before_switch", async () => {
+    await stopWorkflows("switch");
     manager.clearCompleted(true);
     supervisionStop?.();
     supervisionStop = undefined;
@@ -698,8 +702,8 @@ export default function (pi: ExtensionAPI) {
 
   // On shutdown, abort all agents immediately and clean up.
   // If the session is going down, there's nothing left to consume agent results.
-  pi.on("session_shutdown", async () => {
-    await stopWorkflows();
+  pi.on("session_shutdown", async (event) => {
+    await stopWorkflows(event?.reason === "reload" ? "reload" : "shutdown");
     await workflowPane?.dispose();
     workflowPane = undefined;
     manager.setUsageListener(undefined);
@@ -1444,7 +1448,9 @@ Terse command-style prompts produce shallow, generic work.
     },
   }));
 
+  let workflowHistory: GraphHistoryStore | undefined;
   const workflowTasks = new Map<string, WorkflowTask>();
+  const getWorkflowRuns = () => mergeWorkflowRuns(workflowTasks.values(), workflowHistory?.runs ?? []);
   const workflowRuns = new Set<Promise<void>>();
   let workflowSessionActive = true;
 
@@ -1530,9 +1536,14 @@ Terse command-style prompts produce shallow, generic work.
     finished: () => void,
     restore?: SchedulerState,
   ): void {
-    const run = runGraphTask(ctx, task, graph, input, restore)
+    const normalizedInput = coerceGraphInput(input);
+    task.args = normalizedInput;
+    const run = runGraphTask(ctx, task, graph, normalizedInput, restore)
       .then(() => {
-        if (workflowSessionActive && workflowTasks.get(task.id) === task) finished();
+        if (workflowSessionActive && workflowTasks.get(task.id) === task) {
+          workflowHistory?.capture(task);
+          finished();
+        }
       })
       .catch(error => console.warn(`[pi-subagents] graph completion: ${String(error)}`));
     workflowRuns.add(run);
@@ -1554,7 +1565,12 @@ Terse command-style prompts produce shallow, generic work.
       const task = createWorkflowTask({
         id: snap.runId,
         script: "",
-        meta: { name, description: `agent graph ${name}` },
+        args: snap.input,
+        meta: {
+          name,
+          description: snap.graph.description ?? `agent graph ${name}`,
+          inputSchema: snap.graph.inputSchema,
+        },
       });
       workflowTasks.set(snap.runId, task);
       deleteGraphSnapshot(ctx.cwd, snap.runId);
@@ -1565,13 +1581,16 @@ Terse command-style prompts produce shallow, generic work.
     workflowPane?.sync();
   }
 
-  async function stopWorkflows(): Promise<void> {
+  async function stopWorkflows(cause: "reload" | "switch" | "shutdown"): Promise<void> {
+    workflowHistory?.disableCapture(cause);
     workflowSessionActive = false;
     for (const task of workflowTasks.values()) {
       cancelNudge(task.id);
-      task.abortController.abort();
+      task.abortController.abort(cause);
     }
     await Promise.allSettled(workflowRuns);
+    await workflowHistory?.flush();
+    workflowHistory = undefined;
     workflowTasks.clear();
   }
 
@@ -1693,7 +1712,19 @@ Terse command-style prompts produce shallow, generic work.
       if (!verdict.ok) throw new Error(`Invalid agent graph:\n- ${verdict.errors.join("\n- ")}`);
 
       const runId = workflowRunId();
-      const task = createWorkflowTask({ id: runId, script: "", meta: { name: graphName, description: `agent graph ${graphName}` }, toolCallId });
+      const input = coerceGraphInput(params.input);
+      const liveGraph = graph as AgentGraph;
+      const task = createWorkflowTask({
+        id: runId,
+        script: "",
+        args: input,
+        meta: {
+          name: graphName,
+          description: liveGraph.description ?? `agent graph ${graphName}`,
+          inputSchema: liveGraph.inputSchema,
+        },
+        toolCallId,
+      });
       workflowTasks.set(runId, task);
       widget.update();
       fleet.update();
@@ -1701,7 +1732,7 @@ Terse command-style prompts produce shallow, generic work.
 
       // Background: the id comes back now and the run
       // keeps going without the tool call holding it.
-      launchGraph(ctx, task, graph as AgentGraph, params.input, () => notifyWorkflowFinished(ctx, task));
+      launchGraph(ctx, task, liveGraph, input, () => notifyWorkflowFinished(ctx, task));
 
       return {
         content: [{
@@ -1926,7 +1957,7 @@ Terse command-style prompts produce shallow, generic work.
     // Actions
     options.push("Create new agent");
     options.push("Settings");
-    if (isWorkflowsEnabled()) options.push(`Graph runs (${workflowTasks.size})`);
+    if (isWorkflowsEnabled()) options.push(`Graph runs (${getWorkflowRuns().size})`);
 
     const noAgentsMsg = allNames.length === 0 && agents.length === 0
       ? "No agents found. Create specialized subagents that can be delegated to.\n\n" +
@@ -2725,7 +2756,7 @@ ${systemPrompt}
     },
   });
   const workflowMenuDeps: WorkflowMenuDeps = {
-    tasks: workflowTasks,
+    get tasks() { return getWorkflowRuns(); },
     getRecord: id => manager.getRecord(id),
     viewAgentConversation,
     // Read lazily: `currentCtx` is rebound on every session_start, and the

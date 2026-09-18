@@ -149,6 +149,21 @@ describe("input channel", () => {
   });
 });
 
+describe("external stage folding", () => {
+  it("forwards Space to fold and reopen the selected stage", async () => {
+    const task = twoPhaseTask("wf_a", 1000);
+    const mgr = manager(() => [task]);
+    writeInputAtomic(dir, { seq: 1, data: b64("j") });
+    await processInput(mgr);
+    writeInputAtomic(dir, { seq: 2, data: b64(" ") });
+    await processInput(mgr);
+    expect((panelState(mgr) as { collapsedStages?: number[] }).collapsedStages).toContain(0);
+    writeInputAtomic(dir, { seq: 3, data: b64(" ") });
+    await processInput(mgr);
+    expect((panelState(mgr) as { collapsedStages?: number[] }).collapsedStages).not.toContain(0);
+  });
+});
+
 describe("esc-at-overview closes via the extension", () => {
   it("closes the recorded pane, marks closedByUser, and writes no new snapshot", async () => {
     const task = twoPhaseTask("wf_a", 1000);

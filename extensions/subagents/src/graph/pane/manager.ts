@@ -17,7 +17,7 @@ import { type FSWatcher, mkdirSync, watch } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { initialPanelState, type PanelRun, type PanelState } from "../../ui/observability-panel.js";
 import { initialWorkflowDialogState, type WorkflowDialogSource, type WorkflowDialogState } from "../../ui/workflow-dialog.js";
-import type { WorkflowTask } from "../task.js";
+import type { WorkflowRun } from "../history-view.js";
 import {
   type PaneExec,
   WorkflowPaneController,
@@ -47,7 +47,7 @@ export interface WorkflowPaneManagerOptions {
   sessionId: string;
   ppid: number;
   /** Live runs, read on every sync rather than snapshotted. */
-  getTasks: () => Iterable<WorkflowTask>;
+  getTasks: () => Iterable<WorkflowRun>;
   onError?: (err: unknown, label: string) => void;
   /** Overridable for tests; defaults to the sibling `viewer.mjs`. */
   viewerPath?: string;
@@ -59,7 +59,7 @@ export interface WorkflowPaneManagerOptions {
 
 export class WorkflowPaneManager {
   private readonly enabled: boolean;
-  private readonly getTasks: () => Iterable<WorkflowTask>;
+  private readonly getTasks: () => Iterable<WorkflowRun>;
   private readonly onError: (err: unknown, label: string) => void;
   private readonly dir: string;
   private readonly sessionId: string;
@@ -124,6 +124,8 @@ export class WorkflowPaneManager {
     if (!this.enabled || this.inputWatcher || this.disposed) return;
     try {
       mkdirSync(this.dir, { recursive: true });
+      // The persisted slot predates this manager; do not replay it on directory events.
+      this.lastInputSeq = readInput(this.dir)?.seq ?? 0;
       this.inputWatcher = watch(this.dir, () => void this.processInputFile());
     } catch (err) {
       this.onError(err, "workflow pane input watch");
@@ -196,7 +198,7 @@ export class WorkflowPaneManager {
     }
   }
 
-  private pickTask(): WorkflowTask | undefined {
+  private pickTask(): WorkflowRun | undefined {
     const tasks = [...this.getTasks()];
     if (tasks.length === 0) return undefined;
     const live = tasks.filter(task => task.status === "running" || task.status === "paused");
@@ -208,7 +210,7 @@ export class WorkflowPaneManager {
    * Pick the run to show and reset the view when it changes. A stale phase/agent
    * index from a previous run must not carry over into a new one.
    */
-  private pickAndTrack(): WorkflowTask | undefined {
+  private pickAndTrack(): WorkflowRun | undefined {
     const task = this.pickTask();
     if (task?.id !== this.lastShownTaskId) {
       this.paneState = initialWorkflowDialogState();
@@ -218,11 +220,11 @@ export class WorkflowPaneManager {
   }
 
   /** All runs this session has seen, newest first — the switcher's run list order. */
-  private sortedTasks(): WorkflowTask[] {
+  private sortedTasks(): WorkflowRun[] {
     return [...this.getTasks()].sort((a, b) => b.startTime - a.startTime);
   }
 
-  private toRuns(tasks: readonly WorkflowTask[]): PanelRun[] {
+  private toRuns(tasks: readonly WorkflowRun[]): PanelRun[] {
     return tasks.map(task => ({
       id: task.id,
       name: task.workflowName ?? task.meta?.name ?? task.id,
@@ -237,7 +239,7 @@ export class WorkflowPaneManager {
    * Resets the panel's node selection, scroll, and stage collapse when the shown run
    * changes, but keeps the filter (a persistent user intent, not per-graph).
    */
-  private resolveRunIndex(tasks: readonly WorkflowTask[]): number {
+  private resolveRunIndex(tasks: readonly WorkflowRun[]): number {
     if (tasks.length === 0) return 0;
     let index = -1;
     if (this.pinnedRunId !== undefined) {
@@ -261,7 +263,7 @@ export class WorkflowPaneManager {
   }
 
   /** Render the panel, falling back to the roster render if the panel ever throws. */
-  private renderPanelOrRoster(tasks: readonly WorkflowTask[], width: number, rows: number | undefined): string[] {
+  private renderPanelOrRoster(tasks: readonly WorkflowRun[], width: number, rows: number | undefined): string[] {
     const runs = this.toRuns(tasks);
     const index = this.resolveRunIndex(tasks);
     this.panelState.runIndex = index;
@@ -275,7 +277,7 @@ export class WorkflowPaneManager {
 
   /** Apply a key through the panel, falling back to the roster handler if it throws. */
   private applyPanelOrRosterKey(
-    tasks: readonly WorkflowTask[], data: string, width: number, rows: number | undefined,
+    tasks: readonly WorkflowRun[], data: string, width: number, rows: number | undefined,
   ): { lines: string[]; close: boolean } {
     const runs = this.toRuns(tasks);
     const index = this.resolveRunIndex(tasks);

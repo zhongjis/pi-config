@@ -20,11 +20,20 @@ import type { RunGraphResult } from "./run-graph.js";
 import type { NodeRun } from "./scheduler.js";
 import { updateWorkflowProgressBatch, type WorkflowTask } from "./task.js";
 
-const PREVIEW = 200;
-function preview(value: unknown): string {
+const PROMPT_PREVIEW = 200;
+function promptPreview(value: unknown): string {
   if (value === undefined) return "";
   const text = typeof value === "string" ? value : JSON.stringify(value);
-  return text.length <= PREVIEW ? text : `${text.slice(0, PREVIEW - 1)}…`;
+  return text.length <= PROMPT_PREVIEW ? text : `${text.slice(0, PROMPT_PREVIEW - 1)}…`;
+}
+function resultText(value: unknown): string {
+  if (value === undefined) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
 }
 
 /**
@@ -145,6 +154,7 @@ export class GraphRunReporter {
     // Live tool-call / token counts, read from the record once it has one. Queued nodes (no
     // recordId) add nothing; `toolCalls` keeps a real 0, `tokens` only shows once it is non-zero.
     const act = res?.recordId !== undefined && this.getActivity !== undefined ? this.getActivity(res.recordId) : undefined;
+    const prompt = this.prompt.get(nodeId);
     const base: WorkflowAgentEntry = {
       type: "workflow_agent",
       index: this.index.get(nodeId) ?? 0,
@@ -154,7 +164,7 @@ export class GraphRunReporter {
       phaseTitle: `Stage ${stage + 1}`,
       agentType: this.agentType.get(nodeId),
       // ponytail: the pre-interpolation template (`${ref}` unresolved — P2 per ir.ts); good enough, upgrade = capture the resolved NodeSpawnRequest.prompt via onResolved.
-      ...(this.prompt.get(nodeId) ? { promptPreview: preview(this.prompt.get(nodeId)!) } : {}),
+      ...(prompt ? { promptPreview: promptPreview(prompt) } : {}),
       deps,
       dependents: this.dependents.get(nodeId) ?? [],
       queuedAt: this.queuedAt,
@@ -171,7 +181,7 @@ export class GraphRunReporter {
       case "running":
         return { ...base, startedAt: now, lastProgressAt: now };
       case "completed":
-        return { ...base, state: "done", startedAt: now, lastProgressAt: now, resultPreview: preview(run.output) };
+        return { ...base, state: "done", startedAt: now, lastProgressAt: now, resultPreview: resultText(run.output) };
       case "failed":
         return { ...base, state: "error", startedAt: now, lastProgressAt: now, error: run.error };
       case "skipped":

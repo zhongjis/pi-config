@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
-import { runGraph } from "../src/graph/run-graph.js";
+import { coerceGraphInput, runGraph } from "../src/graph/run-graph.js";
 import type { NodeRun } from "../src/graph/scheduler.js";
 
 /** A host that scripts each spawn by node id + attempt. */
@@ -63,6 +63,11 @@ describe("runGraph — end to end via XState actors", () => {
     const result = await runGraph(graph, '{"task":"HELLO"}', { host: recording });
     expect(result.status).toBe("completed");
     expect(prompts).toContain("Do HELLO");
+  });
+
+  it("normalizes JSON objects without changing scalar input", () => {
+    expect(coerceGraphInput('{"task":"HELLO"}')).toEqual({ task: "HELLO" });
+    expect(coerceGraphInput("HELLO")).toBe("HELLO");
   });
 
   it("drives a review->fix loop to approval through real actors", async () => {

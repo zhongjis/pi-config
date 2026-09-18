@@ -8,6 +8,7 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { renderObservabilityPaneLines } from "../src/graph/pane/render.js";
+import { coerceGraphInput } from "../src/graph/run-graph.js";
 import type { WorkflowAgentEntry, WorkflowEntry, WorkflowRunStatus } from "../src/graph/progress.js";
 import {
   applyPanelKey,
@@ -76,12 +77,38 @@ describe("observability panel — rendering", () => {
     expect(rendered).toContain("failed 1");
   });
 
-  it("shows a running node's live tool-call count in its roster row", () => {
-    // Node b is running with toolCalls: 3 in the fixture → its roster row shows the live count.
+  it("shows static graph glyphs, agent type, model, and live activity in roster rows", () => {
     const rendered = text([graphRun()], initialPanelState(), { width: 120, now: NOW });
     const running = rendered.split("\n").find(line => line.includes("running") && line.includes("b"));
-    expect(running).toBeDefined();
+    expect(running).toContain("*");
+    expect(running).toContain("reviewer");
+    expect(running).toContain("sonnet");
     expect(running).toContain("3 tools");
+    expect(rendered).toContain("+ a  done");
+  });
+
+  it("shows live graph context below the run header and expands full inputs with e", () => {
+    const run = graphRun();
+    (run.source as typeof run.source & { input?: unknown }).input = coerceGraphInput('{"task":"Map the repository","extra":{"json":true}}');
+    run.source.meta = {
+      name: "graph-x",
+      description: "Gather repository context before implementation.",
+      inputSchema: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
+    };
+    const collapsed = text([run], initialPanelState(), { width: 100, now: NOW });
+    expect(collapsed).toContain("Description");
+    expect(collapsed).toContain("Gather repository context before implementation.");
+    expect(collapsed).toContain("task: Map the repository");
+    expect(collapsed).toContain("Full inputs · e expand");
+    const expanded = applyPanelKey([run], initialPanelState(), "e", { width: 100, now: NOW });
+    expect(plain(expanded.lines).join("\n")).toContain('"extra": {');
+  });
+
+  it("shows scalar live input before Full inputs", () => {
+    const run = graphRun();
+    (run.source as typeof run.source & { input?: unknown }).input = "Map the repository";
+    const rendered = text([run], initialPanelState(), { width: 100, now: NOW });
+    expect(rendered.indexOf("Input: Map the repository")).toBeLessThan(rendered.indexOf("Full inputs"));
   });
 
   it("joins upstream dependency state for the selected node (always-on detail)", () => {
@@ -90,6 +117,7 @@ describe("observability panel — rendering", () => {
     // d waits on b (running) and c (queued); each dep is shown with its live state.
     const detail = rendered.slice(rendered.indexOf("Waits on (upstream)"));
     expect(detail).toMatch(/b\s+running/);
+    expect(detail).toMatch(/\* b\s+running/);
     expect(detail).toMatch(/c\s+queued/);
   });
 
@@ -114,6 +142,31 @@ describe("observability panel — rendering", () => {
     expect(rendered).toContain("1/2");
     // The other run appears as a health chip.
     expect(rendered).toContain("graph-y");
+  });
+
+  it("uses one switcher row when no other run chips exist", () => {
+    const lines = plain(renderPanelLines([graphRun()], initialPanelState(), { width: 70, now: NOW }));
+    expect(lines[1]).toContain("1/4");
+  });
+
+  it("caps expanded full inputs with an omission count while retaining the footer", () => {
+    const run = graphRun();
+    (run.source as typeof run.source & { input?: unknown }).input = { task: "x".repeat(100), extra: Array.from({ length: 20 }, () => "value") };
+    run.source.meta = {
+      name: "graph-x",
+      description: "Inspect inputs.",
+      inputSchema: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
+    };
+    const lines = plain(renderPanelLines(
+      [run],
+      { ...initialPanelState(), expandedSections: ["full-inputs"] },
+      { width: 20, rows: 12, now: NOW },
+    ));
+    expect(lines).toHaveLength(12);
+    expect(lines.join("\n")).toContain("task:");
+    expect(lines.join("\n")).toMatch(/…\d+ lines omitted/);
+    expect(lines.at(-1)).toContain("live");
+    for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
   });
 
   it("fills exactly the requested pane height", () => {
@@ -293,11 +346,12 @@ describe("observability panel — two-level focus (v3)", () => {
     expect(r.close).toBe(false);
   });
 
-  it("is a no-op on enter for a stage cursor", () => {
+  it("folds and reopens a stage cursor with enter", () => {
     const state: PanelState = { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } };
-    const r = applyPanelKey([graphRun()], state, "\r", opts);
-    expect(r.state.focus).toBe("roster");
-    expect(r.close).toBe(false);
+    const folded = applyPanelKey([graphRun()], state, "\r", opts);
+    expect(folded.state.collapsedStages).toContain(1);
+    const reopened = applyPanelKey([graphRun()], folded.state, "\r", opts);
+    expect(reopened.state.collapsedStages).not.toContain(1);
   });
 
   it("moves the detail cursor over the navigable sections with ↑↓, clamped at the ends", () => {
@@ -380,14 +434,14 @@ describe("observability panel — auto-fit stage-complete roster (fix #2)", () =
   });
 
   it("shows only the focused stage's nodes when the full roster does not fit, moving with the cursor", () => {
-    const onStage2 = text([graphRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } }, { width: 60, rows: 17, now: NOW });
+    const onStage2 = text([graphRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 1 } }, { width: 60, rows: 16, now: NOW });
     expect(onStage2).toContain("▾ Stage 2");
     expect(onStage2).toContain("▸ Stage 1");
     expect(onStage2).toContain("▸ Stage 3");
     expect(onStage2).toMatch(/b\s+running/);
 
     // Focusing another stage moves the expansion to it.
-    const onStage3 = text([graphRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 2 } }, { width: 60, rows: 17, now: NOW });
+    const onStage3 = text([graphRun()], { ...initialPanelState(), cursor: { kind: "stage", stage: 2 } }, { width: 60, rows: 16, now: NOW });
     expect(onStage3).toContain("▾ Stage 3");
     expect(onStage3).toContain("▸ Stage 2");
     expect(onStage3).toContain("▸ Stage 1");
@@ -687,31 +741,18 @@ describe("observability panel — Wave B full node detail sections", () => {
     expect(detailStatus).toContain("1m05s");
   });
 
-  it("pins a node's Outcome at the bottom of the detail zone (output-at-bottom)", () => {
+  it("keeps expanded Outcome in the scrollable detail body", () => {
     const width = 60;
-    const progress: WorkflowEntry[] = [
-      agent({ index: 0, label: "up", phaseIndex: 0, state: "done", deps: [], dependents: ["leaf"] }),
-      agent({ index: 1, label: "leaf", phaseIndex: 1, state: "done", agentType: "verifier", model: "sonnet", deps: ["up"], dependents: [], durationMs: 3_000, tokens: 1_200, toolCalls: 4, promptPreview: "verify the fix", resultPreview: "all green" }),
-    ];
-    const run: PanelRun = {
-      id: "wf_pin",
-      name: "pin",
-      status: "completed",
-      source: { progress, task: { status: "completed", workflowName: "pin", startTime: NOW - 10_000 }, agentCount: 2 },
+    const fullOutput = Array.from({ length: 300 }, (_, i) => `outcome-${i}`).join(" ");
+    const run = soloRun({ state: "done", resultPreview: fullOutput });
+    const state: PanelState = {
+      ...initialPanelState(), cursor: { kind: "node", id: "solo" }, focus: "detail", expandedSections: ["outcome"],
     };
-    const state: PanelState = { ...initialPanelState(), cursor: { kind: "node", id: "leaf" } };
-    const lines = plain(renderPanelLines([run], state, { width, rows: 40, now: NOW }));
-    const outcomeIdx = lines.findIndex(line => line.includes("Outcome"));
-    const promptIdx = lines.findIndex(line => line.includes("Prompt"));
-    const runtimeIdx = lines.findIndex(line => line.includes("Runtime"));
-    const waitsIdx = lines.findIndex(line => line.includes("Waits on"));
-    expect(outcomeIdx).toBeGreaterThan(-1);
-    // The Outcome section sits below every other detail section — pinned at the very bottom.
-    expect(outcomeIdx).toBeGreaterThan(waitsIdx);
-    expect(outcomeIdx).toBeGreaterThan(promptIdx);
-    expect(outcomeIdx).toBeGreaterThan(runtimeIdx);
-    // Collapsed by default, but a short outcome fits on the first body line.
-    expect(lines[outcomeIdx + 1]).toContain("all green");
+    const lines = plain(renderPanelLines([run], state, { width, rows: 24, now: NOW }));
+    expect(lines.join("\n")).toContain("outcome-0");
+    let advanced = applyPanelKey([run], state, "\x1b[6~", { width, rows: 24, now: NOW });
+    for (let i = 0; i < 20; i++) advanced = applyPanelKey([run], advanced.state, "\x1b[6~", { width, rows: 24, now: NOW });
+    expect(plain(advanced.lines).join("\n")).toContain("outcome-299");
   });
 
   it("keeps model / elapsed / runtime readable (muted), reserving dim for chrome (fix #4)", () => {
@@ -740,12 +781,13 @@ describe("observability panel — Wave B full node detail sections", () => {
 describe("observability panel — footer hints per focus", () => {
   const opts = { width: 120, now: NOW } as const;
 
-  it("reads the roster hints in roster focus", () => {
+  it("keeps run navigation in the footer but not the header", () => {
     const rendered = text([graphRun(), otherRun()], { ...initialPanelState(), cursor: { kind: "node", id: "a" } }, opts);
     expect(rendered).toContain("↑↓ move");
     expect(rendered).toContain("⏎ detail");
     expect(rendered).toContain("space fold");
     expect(rendered).toContain("←→ run");
+    expect(rendered.split("\n").slice(0, 2).join("\n")).not.toContain("←→ run");
     expect(rendered).toContain("esc close");
   });
 

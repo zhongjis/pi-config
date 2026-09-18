@@ -30,7 +30,7 @@ import {
   type WorkflowDialogSource,
   type WorkflowDialogState,
 } from "../../ui/workflow-dialog.js";
-import type { WorkflowTask } from "../task.js";
+import type { WorkflowRun } from "../history-view.js";
 
 const RESET = "\x1b[0m";
 
@@ -69,7 +69,7 @@ export const PANE_ANSI_THEME: Theme = {
  * built from a background task so the pane follows a run the same way the overlay
  * does.
  */
-export function toPaneSource(task: WorkflowTask): WorkflowDialogSource {
+export function toPaneSource(task: WorkflowRun): WorkflowDialogSource {
   return {
     progress: task.workflowProgress,
     task: {
@@ -78,10 +78,12 @@ export function toPaneSource(task: WorkflowTask): WorkflowDialogSource {
       startTime: task.startTime,
       endTime: task.endTime,
       totalPausedMs: task.totalPausedMs,
-      pausedAt: task.pausedAt,
+      pausedAt: task.type === "local_workflow" ? task.pausedAt : undefined,
     },
     meta: task.meta,
     agentCount: task.agentCount,
+    history: task.type === "history" ? task.history : undefined,
+    input: task.type === "local_workflow" ? task.args : undefined,
   };
 }
 

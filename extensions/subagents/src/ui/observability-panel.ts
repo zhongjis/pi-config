@@ -1,3 +1,4 @@
+import { historyDisclosure } from "../graph/history-view.js";
 /**
  * observability-panel.ts — the `/graph-runs` pane's default view.
  *
@@ -161,11 +162,11 @@ function runStateColor(status: WorkflowRunStatus): WorkflowCardColor {
   }
 }
 
-function runStatusDot(status: WorkflowRunStatus, glyphs: WorkflowDialogGlyphs, ascii: boolean): WorkflowCardSegment {
+function runStatusDot(status: WorkflowRunStatus, glyphs: WorkflowDialogGlyphs, _ascii: boolean): WorkflowCardSegment {
   switch (status) {
-    case "running": return { text: ascii ? "*" : "●", color: "accent" };
+    case "running": return { text: "*", color: "accent" };
     case "paused": return { text: glyphs.queued, color: "warning" };
-    case "completed": return { text: glyphs.tick, color: "success" };
+    case "completed": return { text: "+", color: "success" };
     case "failed": return { text: glyphs.cross, color: "error" };
     case "killed": return { text: glyphs.cross, color: "dim" };
   }
@@ -322,11 +323,10 @@ function countStates(agents: readonly WorkflowAgentEntry[], active: boolean): Co
 
 function switcherLines(
   runs: readonly PanelRun[], index: number, glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number,
-): WorkflowCardLine[] {
+ ): WorkflowCardLine[] {
   const current = runs[index];
   const open = ascii ? "<" : "‹";
   const close = ascii ? ">" : "›";
-  const arrow = ascii ? "left/right" : "←→";
   const name = truncateToWidth(current.name, Math.max(4, Math.floor(width * 0.5)), glyphs.ellipsis);
   const lineA: WorkflowCardLine = [
     { text: `${open} `, color: "dim" },
@@ -343,26 +343,77 @@ function switcherLines(
     if (chips.length > 0) chips.push({ text: " · ", color: "dim" });
     chips.push(runStatusDot(run.status, glyphs, ascii), { text: ` ${run.name}`, color: "dim" });
   });
-  const lineB: WorkflowCardLine = chips.length > 0
-    ? [{ text: " " }, ...chips, { text: `   ${arrow} run`, color: "dim" }]
-    : [{ text: ` ${arrow} run`, color: "dim" }];
+  return chips.length > 0
+    ? [clampLine(lineA, width), clampLine([{ text: " " }, ...chips], width)]
+    : [clampLine(lineA, width)];
+}
 
-  return [clampLine(lineA, width), clampLine(lineB, width)];
+const MAX_EXPANDED_INPUT_ROWS = 4;
+
+function safeInputJson(input: unknown): string {
+  try {
+    return JSON.stringify(input, null, 2) ?? String(input);
+  } catch {
+    return "[unserializable input]";
+  }
+}
+
+function formatInputValue(input: unknown): string {
+  return typeof input === "string" ? input : safeInputJson(input);
+}
+
+function graphContextLines(
+  source: WorkflowDialogSource, width: number, expandedSections: readonly string[], maxRows?: number,
+ ): WorkflowCardLine[] {
+  if (source.history) return [];
+  const lines: WorkflowCardLine[] = [];
+  const description = source.meta?.description?.trim();
+  if (description) {
+    lines.push(...wrapTextWithAnsi(` Description: ${description}`, width).map(text => clampLine([{ text, color: "muted" }], width)));
+  }
+  if (source.input === undefined) return lines;
+  const input = source.input;
+  if (input !== null && typeof input === "object" && !Array.isArray(input)) {
+    const values = input as Record<string, unknown>;
+    const schema = source.meta?.inputSchema;
+    const required = schema && typeof schema === "object" && Array.isArray((schema as { required?: unknown }).required)
+      ? (schema as { required: unknown[] }).required.filter((name): name is string => typeof name === "string")
+      : [];
+    const key = required.find(name => Object.hasOwn(values, name)) ?? Object.keys(values)[0];
+    if (key !== undefined) lines.push(clampLine([{ text: ` ${key}: ${formatInputValue(values[key])}`, color: "muted" }], width));
+  } else {
+    lines.push(clampLine([{ text: ` Input: ${formatInputValue(input)}`, color: "muted" }], width));
+  }
+  const expanded = expandedSections.includes("full-inputs");
+  lines.push(clampLine([{ text: ` Full inputs · e ${expanded ? "collapse" : "expand"}`, color: "dim" }], width));
+  if (expanded) {
+    const inputLines = wrapTextWithAnsi(safeInputJson(input), Math.max(1, width - 4));
+    const inputRows = maxRows == null
+      ? MAX_EXPANDED_INPUT_ROWS
+      : Math.max(0, maxRows - lines.length - 1);
+    const visibleRows = Math.min(MAX_EXPANDED_INPUT_ROWS, inputRows);
+    for (const text of inputLines.slice(0, visibleRows)) {
+      lines.push(clampLine([{ text: `    ${text}`, color: "muted" }], width));
+    }
+    const omitted = inputLines.length - visibleRows;
+    if (omitted > 0) lines.push(clampLine([{ text: `  …${omitted} lines omitted`, color: "dim" }], width));
+  }
+  return lines;
 }
 
 function summaryStrip(
   agents: readonly WorkflowAgentEntry[], active: boolean, filter: PanelFilter,
-  glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number,
+  glyphs: WorkflowDialogGlyphs, _ascii: boolean, width: number,
 ): WorkflowCardLine {
   const counts = countStates(agents, active);
-  const dot = ascii ? "*" : "●";
+  const dot = "*";
   const sep: WorkflowCardSegment = { text: "  ·  ", color: "dim" };
   const line: WorkflowCardLine = [
     { text: ` ${dot} running ${counts.running}`, color: "accent" },
     sep,
     { text: `${glyphs.queued} queued ${counts.queued}`, color: "dim" },
     sep,
-    { text: `${glyphs.tick} done ${counts.done}`, color: "success" },
+    { text: `+ done ${counts.done}`, color: "success" },
     sep,
     { text: `${glyphs.cross} failed ${counts.failed}`, color: "error" },
   ];
@@ -384,20 +435,27 @@ function rowActivity(entry: WorkflowAgentEntry, state: WorkflowDisplayState, now
   return "";
 }
 
+function graphRowGlyph(state: WorkflowDisplayState, glyphs: WorkflowDialogGlyphs): WorkflowCardSegment {
+  if (state === "running") return { text: "*", color: "accent" };
+  if (state === "done") return { text: "+", color: "success" };
+  return dialogRowGlyph(state, glyphs);
+}
+
 function agentRow(
   entry: WorkflowAgentEntry, active: boolean, glyphs: WorkflowDialogGlyphs, width: number, now: number,
-): WorkflowCardLine {
+ ): WorkflowCardLine {
   const state = displayState(entry, active);
   const model = entry.model ?? entry.modelId ?? "";
   const line: WorkflowCardLine = [
     { text: "   " },
-    dialogRowGlyph(state, glyphs),
+    graphRowGlyph(state, glyphs),
     { text: ` ${entry.label}` },
     { text: `  ${statusWord(state)}`, color: stateColor(state) },
   ];
-  if (model) line.push({ text: `  ${model}`, color: "muted" });
   const activity = rowActivity(entry, state, now);
   if (activity) line.push({ text: `  ${activity}`, color: "muted" });
+  if (entry.agentType) line.push({ text: ` · ${entry.agentType}`, color: "muted" });
+  if (model) line.push({ text: ` · ${model}`, color: "muted" });
   return clampLine(line, width);
 }
 
@@ -490,7 +548,7 @@ function stageAggregateLines(
 ): WorkflowCardLine[] {
   const lines: WorkflowCardLine[] = [];
   const sep = ascii ? "--" : "──";
-  const dot = ascii ? "*" : "●";
+  const dot = "*";
   lines.push(clampLine([
     { text: " Stage ", color: "muted", bold: true },
     { text: `${sep} ${group.stage + 1}`, color: "dim" },
@@ -503,7 +561,7 @@ function stageAggregateLines(
     countSep,
     { text: `${glyphs.queued} queued ${counts.queued}`, color: "dim" },
     countSep,
-    { text: `${glyphs.tick} done ${counts.done}`, color: "success" },
+    { text: `+ done ${counts.done}`, color: "success" },
     countSep,
     { text: `${glyphs.cross} failed ${counts.failed}`, color: "error" },
   ], width));
@@ -586,15 +644,13 @@ function blastRadius(
  * ------------------------------------------------------------------------- */
 
 /**
- * One block of the node/stage detail. `navigable` sections (Prompt, Outcome) accept
- * the detail cursor and expand/collapse via `key`; `pinned` keeps the outcome anchored
- * at the bottom of the detail zone while the rest of the body scrolls under it. Control
- * data stays typed here, never smuggled into the rendered strings.
+ * One block of node or stage detail. `navigable` sections accept the detail cursor and
+ * expand/collapse via `key`; the complete detail body scrolls as one unit. Control data stays
+ * typed here, never smuggled into the rendered strings.
  */
 interface DetailSection {
   key: string;
   navigable: boolean;
-  pinned?: boolean;
   lines: WorkflowCardLine[];
 }
 
@@ -628,10 +684,9 @@ function collapsibleSection(
 
 /**
  * The node cursor's detail as ordered {@link DetailSection}s so the caller can render
- * collapsed/expanded per `expandedSections`, highlight the focused navigable section, and
- * keep the Outcome/Error pinned at the bottom. Order: header, status, upstream, downstream,
- * blast radius (failed only), Prompt (navigable), runtime facts, Outcome/Error (navigable,
- * pinned). The stage counterpart is {@link stageAggregateLines}.
+ * collapsed/expanded per `expandedSections` and highlight the focused navigable section.
+ * Order: header, status, upstream, downstream, blast radius (failed only), Prompt, runtime
+ * facts, Outcome/Error. The stage counterpart is {@link stageAggregateLines}.
  */
 function nodeDetailSections(
   entry: WorkflowAgentEntry, agents: readonly WorkflowAgentEntry[], active: boolean,
@@ -676,7 +731,7 @@ function nodeDetailSections(
     const depState = dep ? displayState(dep, active) : "queued";
     waits.push(clampLine([
       { text: "    " },
-      dialogRowGlyph(depState, glyphs),
+      graphRowGlyph(depState, glyphs),
       { text: ` ${depId}  ${statusWord(depState)}`, color: dep ? stateColor(depState) : "dim" },
     ], width));
   }
@@ -718,12 +773,12 @@ function nodeDetailSections(
     ] });
   }
 
-  // Outcome LAST + pinned, so the node's result/error stays at the very bottom of the detail zone.
+  // Outcome is last so expanded retained output scrolls as a single detail body.
   const outcome = outcomeText(entry, state);
   if (outcome) {
     const isError = state === "failed" || state === "blocked";
     sections.push({
-      key: "outcome", navigable: true, pinned: true,
+      key: "outcome", navigable: true,
       lines: collapsibleSection(
         state === "done" ? "Outcome" : "Error", outcome, isError ? "error" : "muted",
         expandedSections.includes("outcome"), enterGlyph, width,
@@ -762,13 +817,13 @@ function footerLine(
   ascii: boolean, width: number, canOpen: boolean,
 ): WorkflowCardLine {
   const live = isActive(run.status);
-  const dot = live ? (ascii ? "*" : "●") : (ascii ? "o" : "○");
+  const dot = live ? "*" : "+";
   const end = Math.min(bodyLength, scroll + capacity);
   const range = bodyLength > 0 ? `${scroll + 1}-${end}/${bodyLength}` : "0/0";
   const upDown = ascii ? "up/down" : "↑↓";
   const arrow = ascii ? "left/right" : "←→";
   const enter = ascii ? "enter" : "⏎";
-  const convo = canOpen ? " · c convo" : "";
+  const convo = canOpen && !run.source.history ? " · c convo" : "";
   const hints = focus === "detail"
     ? `${upDown} section · ${enter} expand · f filter${convo} · esc back`
     : `${upDown} move · ${enter} detail · space fold · f filter · ${arrow} run${convo} · esc close`;
@@ -848,11 +903,15 @@ function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOpti
   const agents = collapse(source.progress).agents;
   const groups = stageGroups(agents);
 
+  const switcher = switcherLines(runs, index, glyphs, ascii, width);
+  const maxContextRows = rows == null ? undefined : Math.max(2, rows - switcher.length - 4);
   const head = header(source.task, source.meta, buildPhaseGroups(source.progress, source.meta?.phases), source.agentCount ?? 0, now);
   const headerLines: WorkflowCardLine[] = [
-    ...switcherLines(runs, index, glyphs, ascii, width),
+    ...switcher,
+    ...graphContextLines(source, width, state.expandedSections, maxContextRows),
     clampLine([{ text: " " }, { text: head.stats, color: "muted" }], width),
     summaryStrip(agents, active, state.filter, glyphs, ascii, width),
+    ...(source.history ? wrapTextWithAnsi(historyDisclosure(source.history), width).map(text => clampLine([{ text, color: "dim" }], width)) : []),
   ];
 
   const shown = shownStages(groups, active, state.filter);
@@ -927,24 +986,19 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
     ? rosterAll
     : [clampLine([{ text: "  No nodes scheduled yet.", color: "dim" }], width)];
 
-  // Detail zone: flatten the sections into a scrollable body plus a pinned outcome, moving the
-  // reverse bar onto the focused navigable section's label line when the detail owns focus.
+  // Detail zone: flatten all sections into one scrollable body, moving the reverse bar onto
+  // the focused navigable section's label line when the detail owns focus.
   const highlightSection = state.focus === "detail" && navigable.length > 0
     ? navigable[clamp(state.detailCursor, 0, navigable.length - 1)]
     : undefined;
   const detailBody: WorkflowCardLine[] = [];
-  const pinned: WorkflowCardLine[] = [];
   let focusedBodyLine: number | undefined;
   for (const section of detailSections) {
     const sectionLines = section === highlightSection
       ? section.lines.map((line, i) => (i === 0 ? highlightRow(line, width) : line))
       : section.lines;
-    if (section.pinned) {
-      pinned.push(...sectionLines);
-    } else {
-      if (section === highlightSection) focusedBodyLine = detailBody.length;
-      detailBody.push(...sectionLines);
-    }
+    if (section === highlightSection) focusedBodyLine = detailBody.length;
+    detailBody.push(...sectionLines);
   }
 
   let bodyOut: WorkflowCardLine[];
@@ -953,24 +1007,18 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
   let footCapacity: number;
 
   if (capacity == null) {
-    // No fixed height: paint both zones fully, the outcome still last in the detail.
-    bodyOut = [...rosterBody, [], ...detailBody, ...pinned];
+    bodyOut = [...rosterBody, [], ...detailBody];
     footScroll = 0;
-    footBodyLength = state.focus === "detail" ? detailBody.length + pinned.length : rosterBody.length;
+    footBodyLength = state.focus === "detail" ? detailBody.length : rosterBody.length;
     footCapacity = footBodyLength;
   } else {
-    // Detail body scrolls under a pinned outcome; the focused section is auto-followed into view.
-    const bodyCap = Math.max(1, (detailCap as number) - pinned.length);
-    const detailScroll = follow(detailBody.length, focusedBodyLine, state.detailScroll, bodyCap);
-    let bottomZone: WorkflowCardLine[] = [...detailBody.slice(detailScroll, detailScroll + bodyCap), ...pinned];
-    // Guard the rare case where the outcome alone overruns its budget: keep the pinned tail visible.
-    if (bottomZone.length > (detailCap as number)) bottomZone = bottomZone.slice(bottomZone.length - (detailCap as number));
-    bodyOut = [...rosterBody, [], ...bottomZone];
-    // Degenerate tiny panes can push past the window; never let the body eat the footer.
+    const bodyCap = Math.max(1, detailCap as number);
+    const detailScroll = follow(detailBody.length, state.detailScroll === 0 ? focusedBodyLine : undefined, state.detailScroll, bodyCap);
+    bodyOut = [...rosterBody, [], ...detailBody.slice(detailScroll, detailScroll + bodyCap)];
     if (bodyOut.length > capacity) bodyOut = bodyOut.slice(0, capacity);
     if (state.focus === "detail") {
       footScroll = detailScroll;
-      footBodyLength = detailBody.length + pinned.length;
+      footBodyLength = detailBody.length;
       footCapacity = detailCap as number;
     } else {
       footScroll = 0;
@@ -981,10 +1029,11 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
 
   const out: WorkflowCardLine[] = [...headerLines, ...bodyOut];
   if (rows != null) {
-    while (out.length < rows - 1) out.push([]);
+    const contentRows = Math.max(0, rows - 1);
+    if (out.length > contentRows) out.length = contentRows;
+    while (out.length < contentRows) out.push([]);
   }
   out.push(footerLine(plan.run, state.focus, footScroll, footBodyLength, footCapacity, ascii, width, openableRecordId(resolvedCursor, agents) !== undefined));
-  if (rows != null && out.length > rows) out.length = rows;
   return out.map(line => clampLine(line, width));
 }
 
@@ -999,9 +1048,9 @@ const toggleSection = (keys: readonly string[], key: string): string[] =>
  * Apply one forwarded keystroke to the panel's read-only view state and re-render.
  *
  * Two-level focus mirrors the always-on two-zone body. In `focus:"roster"`, `↑↓`/`j`/`k`
- * move the roster cursor (the detail below mirrors it), `enter` drills a node with an
- * expandable section INTO the detail, `space` folds the cursor's stage (landing the cursor
- * on the header so it stays re-expandable — the un-trap), and `esc`/`q` closes. In
+ * move the roster cursor (the detail below mirrors it), `enter` folds a selected stage or drills
+ * a node with an expandable section INTO detail, `space` folds the cursor's stage (landing it on
+ * the header so it stays re-expandable — the un-trap), and `esc`/`q` closes. In
  * `focus:"detail"`, `↑↓` move over the Prompt/Outcome sections, `enter`/`space` expand or
  * collapse the focused one, and `esc`/`q` backs out to the roster. `←/→` switches run
  * (resetting to the roster overview, keeping the filter), `f` cycles the filter, `pageUp`/
@@ -1055,12 +1104,17 @@ export function applyPanelKey(
     });
   }
 
+  if (matchesKey(data, "e") && !plan.run.source.history && plan.run.source.input !== undefined) {
+    return render({ ...state, runIndex: index, expandedSections: toggleSection(state.expandedSections, "full-inputs") });
+  }
+
   if (matchesKey(data, "enter")) {
     if (state.focus === "detail") {
       if (navigable.length === 0) return render({ ...state, runIndex: index });
       const key = navigable[clamp(state.detailCursor, 0, navigable.length - 1)].key;
       return render({ ...state, runIndex: index, expandedSections: toggleSection(state.expandedSections, key) });
     }
+    if (resolvedCursor?.kind === "stage") return applyPanelKey(runs, state, " ", opts);
     // Roster focus: drill a node with an expandable section into the detail; else stay put.
     if (resolvedCursor?.kind === "node" && navigable.length > 0) {
       return render({ ...state, runIndex: index, focus: "detail", detailCursor: 0, detailScroll: 0, cursor: resolvedCursor });
@@ -1097,7 +1151,7 @@ export function applyPanelKey(
     if (state.focus === "detail") {
       if (navigable.length === 0) return render({ ...state, runIndex: index });
       const next = clamp(state.detailCursor + (down ? 1 : -1), 0, navigable.length - 1);
-      return render({ ...state, runIndex: index, detailCursor: next });
+      return render({ ...state, runIndex: index, detailCursor: next, detailScroll: 0 });
     }
     if (targets.length === 0) return render({ ...state, runIndex: index });
     const current = targetIndex(targets, state.cursor);
@@ -1107,7 +1161,7 @@ export function applyPanelKey(
     return render({ ...state, runIndex: index, cursor: targets[nextPos], detailCursor: 0, detailScroll: 0 });
   }
 
-  if (matchesKey(data, "c")) {
+  if (matchesKey(data, "c") && !plan.run.source.history) {
     const recordId = openableRecordId(resolvedCursor, agents);
     // Only a node with a recordId can open; a stage cursor or record-less node leaves `c` unowned.
     if (recordId !== undefined) return { ...render(state), action: { kind: "open", recordId } };

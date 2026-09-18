@@ -32,3 +32,13 @@ describe("agent-graph reusable-workflow portfolio", () => {
     });
   }
 });
+
+it("describes the context-gather graph", () => {
+  const resolved = resolveSavedGraph("shared/context-gather", REPO_ROOT);
+  expect(resolved.ok, resolved.ok ? "" : resolved.message).toBe(true);
+  if (!resolved.ok) return;
+  const description = (resolved.graph as { description?: unknown }).description;
+  expect(typeof description).toBe("string");
+  if (typeof description !== "string") return;
+  expect(description.trim()).not.toBe("");
+});
