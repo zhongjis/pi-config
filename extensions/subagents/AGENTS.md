@@ -44,7 +44,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 - The graph tool description MUST point to the resolved bundled skill; reading/invoking this authoring skill MUST NOT grant execution opt-in. Agent roster authority remains the current Agent tool description.
 - A graph is validated before any node runs; conditions, ValueRef wiring, and outputs MUST depend only on validated structured node output, never on an agent's prose. An unmapped `${placeholder}` is a validation error.
 - Completion notifications MUST disclose execution and child settlement independently, prioritizing execution failure; delivery timing/channels remain unchanged.
-- Graph runs MUST NOT bypass delegation permissions. Pool accounting and child ownership MUST remain independent; owned children MUST NOT receive recursive orchestration tools.
+- Graph runs MUST NOT bypass delegation permissions: the `agent_graph` tool pre-flights every node agent (recursing resolvable subgraphs, guarding cycles) against the same delegation gate the manager enforces, and rejects a disallowed graph as a tool error before any task or spawn; a spawn denied mid-run MUST fail that node, never crash the run. Pool accounting and child ownership MUST remain independent; owned children MUST NOT receive recursive orchestration tools.
 - There is no filesystem isolation backend. A node's validation gate MUST run in the effective child cwd; NEVER add automatic branches, commits, or filesystem copies.
 - Full-result artifacts for truncated notifications persist in the ephemeral session task area; artifact failures MUST remain visible. Execution is not a sandbox, transaction, rollback, or cross-session recovery guarantee.
 - Graph-run transcript presentation MUST follow [the presentation spec](../../docs/specs/workflow-tool-output-presentation.md): three-row collapsed reports, structural result summaries, active task/type identity, and complete phase-grouped rosters; telemetry belongs expanded.
@@ -63,7 +63,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 - From repository root: `pnpm exec vitest run --project unit extensions/subagents/test`.
 - [Agent manager](test/agent-manager.test.ts) covers retention; [notification rendering](test/notification-rendering.test.ts) covers presentation.
 - `test/graph-history*.test.ts` covers metadata privacy/bounds, exact-session reload/isolation, lifecycle suppression, and read-only inspector adapters.
-- `test/workflow-registration.test.ts` checks enabled-only skill discovery and `agent_graph` tool registration; `test/graph-tool.test.ts` drives the tool end to end, and `test/graph-portfolio.test.ts` validates the saved reusable-workflow graphs.
+- `test/workflow-registration.test.ts` checks enabled-only skill discovery and `agent_graph` tool registration; `test/graph-tool.test.ts` drives the tool end to end, `test/graph-delegation-preflight.test.ts` covers the pre-run delegation gate, and `test/graph-portfolio.test.ts` validates the saved reusable-workflow graphs.
 - Graph QA MUST use a fresh Pi session through `interactive_shell`, running a saved graph and inspecting the tool call, the monitor, node ordering, and completion evidence.
 - Root unit selection excludes e2e-named tests; those require separate runtime verification.
 - `pnpm exec vitest run --project subagents-e2e extensions/subagents/test/controls-runtime-e2e.test.ts` verifies native usage aggregation, retained request provenance, and queued inline completion.

@@ -11,7 +11,7 @@
   "nodes": {
     "review": {
       "type": "agent",
-      "agent": "yanluo",
+      "agent": "direnjie",
       "prompt": "Review this artifact against the task '${task}':\n\n${artifact}\n\nReturn approved (true only if it fully satisfies the task) and a list of concrete issues to fix.",
       "input": {
         "task": { "path": "$.task" },

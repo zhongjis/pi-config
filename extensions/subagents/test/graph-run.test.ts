@@ -125,6 +125,26 @@ describe("runGraph — end to end via XState actors", () => {
   });
 });
 
+describe("runGraph — a throwing host is a soft failure, not a crash", () => {
+  it("resolves with the node failed when spawnAgent rejects with a non-abort error", async () => {
+    const graph: AgentGraph = {
+      nodes: { a: { type: "agent", agent: "x", prompt: "a" } },
+      edges: [],
+      outputs: { r: { node: "a", path: "$" } },
+    };
+    const throwing: NodeHost = {
+      spawnAgent: async () => {
+        throw new Error("delegation_policy_denied: cannot delegate to x");
+      },
+    };
+    // Must settle to a failed result rather than escaping as an uncaught actor error.
+    const result = await runGraph(graph, {}, { host: throwing });
+    expect(result.status).toBe("failed");
+    expect(result.nodes.a.status).toBe("failed");
+    expect(result.nodes.a.error).toContain("delegation_policy_denied");
+  }, 4000);
+});
+
 type NodeUpdate = { id: string; run: NodeRun };
 
 /** Copy callback values immediately: scheduler-owned NodeRun objects are live references. */

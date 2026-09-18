@@ -303,12 +303,17 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     acquire(resources);
     const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input), options);
     const actor = createActor(nodeLogic, { input: exec });
+    let failure: string | undefined;
     const done = new Promise<string>(resolve => {
       // Resolve on any terminal transition — done, or stopped by a skip/retry —
       // so a cancelled node's inflight entry never hangs the run loop.
       actor.subscribe({
         next: snapshot => {
           if (snapshot.status === "done" || snapshot.status === "stopped") resolve(id);
+        },
+        error: err => {
+          failure = err instanceof Error ? err.message : String(err);
+          resolve(id);
         },
         complete: () => resolve(id),
       });
@@ -319,6 +324,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       resources,
       stop: () => actor.stop(),
       result: () => {
+        if (failure !== undefined) return { ok: false, error: failure };
         const out = (actor.getSnapshot().output ?? { ok: false, error: "node produced no result" }) as NodeSpawnResult;
         return { ok: out.ok, output: parseOutput(node, out), error: out.error, skipped: out.skipped };
       },

@@ -27,6 +27,7 @@ import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ModeStateEntryLike, type ResolvedDelegationPolicy, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { isModelInScope, readEnabledModels, resolveEnabledModels } from "./enabled-models.js";
+import { checkGraphDelegation } from "./graph/delegation-preflight.js";
 import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./graph/entry.js";
 import { deleteGraphSnapshot, readGraphSnapshots, writeGraphSnapshot } from "./graph/graph-persist.js";
 import { completeGraphTask, GraphRunReporter } from "./graph/graph-run-adapter.js";
@@ -587,7 +588,7 @@ export default function (pi: ExtensionAPI) {
   // manager is still gated). The manager stays free of session-state imports —
   // this closure reads the persisted agent-mode policy from the spawn ctx and
   // fails closed on denial.
-  manager.setPolicyChecker((ctx, type) => {
+  const delegationDenial = (ctx: ExtensionContext, type: string): string | undefined => {
     const decision = resolvePersistedDelegationPolicy({
       entries: readModeEntries(ctx),
       availableTypes: getAvailableTypes(),
@@ -596,7 +597,8 @@ export default function (pi: ExtensionAPI) {
     return decision.decision.allowed
       ? undefined
       : formatDelegationPolicyDenial(decision, type);
-  });
+  };
+  manager.setPolicyChecker((ctx, type) => delegationDenial(ctx, type));
 
   // Expose manager via Symbol.for() global registry for cross-package access.
   // Standard Node.js pattern for cross-package singletons (used by OpenTelemetry, etc.).
@@ -1714,6 +1716,18 @@ Terse command-style prompts produce shallow, generic work.
       const runId = workflowRunId();
       const input = coerceGraphInput(params.input);
       const liveGraph = graph as AgentGraph;
+      // Pre-flight the delegation policy over every agent this graph (and its
+      // subgraphs) will spawn, using the same gate the manager enforces at spawn
+      // time. Rejecting here surfaces as a tool error before any task or spawn.
+      const preflight = checkGraphDelegation(
+        liveGraph,
+        type => delegationDenial(ctx, type),
+        name => {
+          const resolved = resolveSavedGraph(name, ctx.cwd);
+          return resolved.ok ? (resolved.graph as AgentGraph) : undefined;
+        },
+      );
+      if (!preflight.ok) throw new Error(preflight.error);
       const task = createWorkflowTask({
         id: runId,
         script: "",

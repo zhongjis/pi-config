@@ -47,6 +47,19 @@ describe("createNodeHost", () => {
     await host.dispose();
   });
 
+  it("returns a failed result (not a throw) when the manager denies the spawn", async () => {
+    const { host } = setup();
+    manager.setPolicyChecker(() => 'delegation_policy_denied: Agent "kuafu" cannot delegate to "yanluo".');
+    const result = await host.spawnAgent(
+      { nodeId: "review", attempt: 1, agentType: "general-purpose", prompt: "task" },
+      new AbortController().signal,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.skipped).toBeFalsy();
+    expect(result.error).toContain("delegation_policy_denied");
+    await host.dispose();
+  });
+
   it("runs a gate command via pi.exec", async () => {
     const { host, exec } = setup();
     const gate = await host.runGate?.("true", { signal: new AbortController().signal });

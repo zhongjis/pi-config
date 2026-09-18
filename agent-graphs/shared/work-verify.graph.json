@@ -37,7 +37,7 @@
     },
     "review": {
       "type": "agent",
-      "agent": "yanluo",
+      "agent": "taishang",
       "prompt": "Review this implementation for correctness and risk:\n${implementation}\n\nReturn approved and a list of concerns.",
       "input": { "implementation": { "path": "$.implementation" } },
       "outputSchema": {

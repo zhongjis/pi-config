@@ -133,8 +133,9 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
         );
         return toNodeResult(record);
       } catch (error) {
-        if (!combined.aborted) throw error;
-        return { ok: false, skipped: true, error: error instanceof Error ? error.message : String(error) };
+        const message = error instanceof Error ? error.message : String(error);
+        if (combined.aborted) return { ok: false, skipped: true, error: message };
+        return { ok: false, error: message };
       }
     },
 
