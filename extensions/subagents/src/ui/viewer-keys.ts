@@ -18,6 +18,7 @@ export type ViewerScrollKeybinding =
 /** Structural subset of pi-tui's `KeybindingsManager` (which satisfies it). */
 export interface ViewerKeybindings {
   matches(data: string, keybinding: ViewerScrollKeybinding): boolean;
+  getKeys?(keybinding: ViewerScrollKeybinding): KeyId[];
 }
 
 export interface ViewerKeys {
@@ -25,15 +26,23 @@ export interface ViewerKeys {
   scrollDown(data: string): boolean;
   pageUp(data: string): boolean;
   pageDown(data: string): boolean;
+  navigationHint(): string;
 }
 
 export function createViewerKeys(keybindings?: ViewerKeybindings): ViewerKeys {
   const matches = (data: string, id: ViewerScrollKeybinding, fallback: KeyId): boolean =>
     keybindings ? keybindings.matches(data, id) : matchesKey(data, fallback);
+  const label = (id: ViewerScrollKeybinding, fallback: string): string => {
+    const keys = keybindings?.getKeys?.(id);
+    return keys ? keys.join("/") || "Unbound" : fallback;
+  };
   return {
     scrollUp: (data) => matches(data, "tui.select.up", "up") || matchesKey(data, "k"),
     scrollDown: (data) => matches(data, "tui.select.down", "down") || matchesKey(data, "j"),
     pageUp: (data) => matches(data, "tui.select.pageUp", "pageUp") || matchesKey(data, "shift+up"),
     pageDown: (data) => matches(data, "tui.select.pageDown", "pageDown") || matchesKey(data, "shift+down"),
+    navigationHint: () => keybindings?.getKeys
+      ? `${label("tui.select.up", "↑")}/${label("tui.select.down", "↓")} scroll · ${label("tui.select.pageUp", "PgUp")}/${label("tui.select.pageDown", "PgDn")} page`
+      : "↑↓ scroll · PgUp/PgDn or Shift+↑↓",
   };
 }

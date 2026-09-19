@@ -1,4 +1,4 @@
-import { KeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
+import { KeybindingsManager, stripTerminalSequences, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRecord } from "../src/types.js";
 import { ConversationViewer } from "../src/ui/conversation-viewer.js";
@@ -13,6 +13,10 @@ const SHIFT_UP = "\x1b[1;2A";
 const SHIFT_DOWN = "\x1b[1;2B";
 const PAGE_UP = "\x1b[5~";
 const PAGE_DOWN = "\x1b[6~";
+
+function stripAnsi(text: string): string {
+  return typeof stripTerminalSequences === "function" ? stripTerminalSequences(text) : text;
+}
 
 function createEmacsKeybindings(): KeybindingsManager {
   return new KeybindingsManager(TUI_KEYBINDINGS, {
@@ -137,4 +141,18 @@ describe("ConversationViewer custom keybindings", () => {
     viewer.handleInput(UP);
     expect(scrollOffset(viewer)).toBe(bottom - 1);
   });
+  it("shows configured navigation bindings for viewer-dispatched actions", () => {
+    const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+      "tui.select.up": "ctrl+p",
+      "tui.select.down": "ctrl+n",
+      "tui.select.pageUp": "ctrl+b",
+      "tui.select.pageDown": "ctrl+f",
+    });
+    const footer = stripAnsi(createViewer(keybindings).render(120).at(-2) ?? "");
+
+    for (const id of ["tui.select.up", "tui.select.down", "tui.select.pageUp", "tui.select.pageDown"] as const) {
+      expect(footer.toLowerCase()).toContain(keybindings.getKeys(id)[0]!);
+    }
+  });
+
 });
