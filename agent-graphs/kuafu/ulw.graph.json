@@ -2,14 +2,32 @@
   "name": "ulw",
   "inputSchema": {
     "type": "object",
-    "properties": { "request": { "type": "string" } },
-    "required": ["request"]
+    "properties": {
+      "request": { "type": "string" },
+      "tasks": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
+            "question": { "type": "string" },
+            "reason": { "type": "string" }
+          },
+          "required": ["source", "question"]
+        }
+      }
+    },
+    "required": ["request", "tasks"]
   },
   "nodes": {
     "context": {
       "type": "graph",
       "graph": "shared/context-gather",
-      "input": { "task": { "path": "$.request" } }
+      "input": {
+        "request": { "path": "$.request" },
+        "tasks": { "path": "$.tasks" }
+      }
     },
     "classify": {
       "type": "agent",

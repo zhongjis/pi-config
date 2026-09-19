@@ -55,9 +55,9 @@ legacy script runtime (design §2.8 deferral is superseded).
 1. As a graph author, I want three shared subgraphs (`shared/context-gather`,
    `shared/review-loop`, `shared/work-verify`), so that I can compose flows instead
    of re-authoring the same shapes.
-2. As a graph author, I want `shared/context-gather` to fan out repository
-   discovery lanes in parallel and synthesize one typed `GatheredContext`, so that
-   planning and implementation flows share one evidence format.
+2. As a graph author, I want `shared/context-gather` to route caller-planned
+   source tasks on demand and synthesize one typed `GatheredContext`, so that
+   planning and implementation flows share an evidence format without static lanes.
 3. As a graph author, I want `shared/review-loop` to review an artifact and iterate
    revise→review until approved or a bounded cap, so that I get bounded critique
    without an unbounded loop.
@@ -118,12 +118,16 @@ legacy script runtime (design §2.8 deferral is superseded).
 
 ### `shared/context-gather`
 
-- Fan out four discovery lanes from the graph `input` — `repo-map`,
-  `relevant-code`, `tests`, `docs-history` — as parallel `agent` nodes, joining
-  into a `synthesize` node.
-- `synthesize` emits a typed `GatheredContext`
-  (`summary`, `relevantFiles`, `constraints`, `unknowns`) via `outputSchema`.
-- Graph `outputs` expose the synthesized context so a parent `graph` node returns it.
+- Requires `{ request, tasks }`; each caller task names one of `project`, `platform`,
+  `upstream`, `work-records`, or `practice` plus a question. Callers check applicable
+  Skills before creating tasks; this graph never adds practice research by default.
+- A router groups supplied tasks into five conditional, batched source lanes: `project`
+  uses `chengfeng`; the other sources use `wenchang`. A loose evaluator compares
+  request, tasks, and evidence, then may route one gap-closing second round only.
+- Each lane returns provenance-bearing evidence plus relevant files, constraints, unknowns,
+  and conflicts. Failed or skipped optional lanes leave unresolved evidence, not failure.
+- `synthesize` returns `summary`, `relevantFiles`, `constraints`, `unknowns`, `evidence`,
+  and `conflicts`; graph outputs expose this compatible extended `GatheredContext`.
 
 ### `shared/review-loop`
 
@@ -144,11 +148,10 @@ legacy script runtime (design §2.8 deferral is superseded).
 
 ### `fuxi/ulw-plan`
 
-- One public planning flow composed of internal stages:
-  `context` (`graph: shared/context-gather`) → `intake` → optional
-  `clarify` (`human_gate`, reached only on `intake.clear == false`) →
-  `plan-author` → `gap-analysis` → `review` (`graph: shared/review-loop` over the
-  plan) → `plan`.
+- One public planning flow requires `{ request, tasks }`, forwards both to
+  `shared/context-gather`, then runs `intake` → optional `clarify` (`human_gate`, reached
+  only on `intake.clear == false`) → `plan-author` → `gap-analysis` → `review`
+  (`graph: shared/review-loop` over the plan) → `plan`.
 - `intake` emits `{ clear: boolean, requirements: string[] }`. The `clarify` gate
   is on the `clear == false` branch only, so a clear request skips it and plans
   automatically; `plan-author` joins the clear edge and the clarify edge.

@@ -13,6 +13,7 @@ The repo-committed reusable agent-graph portfolio: saved `AgentGraph`s the `agen
 - Each file is a plain-JSON `AgentGraph`, namespaced by directory (e.g. `shared/review-loop`).
 - Every graph MUST pass `validateGraph`; a prompt `${placeholder}` MUST be wired in the node's `input`.
 - `install.sh` symlinks this directory to `~/.pi/agent/agent-graphs` for global resolution; the runtime also resolves `<cwd>/agent-graphs` and `<cwd>/.pi/agent-graphs`, highest priority first.
+- `shared/context-gather` accepts caller-planned `{ request, tasks }`, routes only supplied source tasks through at most two conditional rounds, and preserves partial evidence; callers MUST check applicable Skills before creating tasks and MUST NOT add `practice` research by default.
 
 ## Work Guidance
 
