@@ -1,5 +1,7 @@
 import { getMarkdownTheme, keyHint, type Theme } from "@earendil-works/pi-coding-agent";
 import {
+  Box,
+  type Component,
   Markdown,
   type MarkdownTheme,
   Text,
@@ -11,6 +13,7 @@ import { homedir } from "node:os";
 import { sep } from "node:path";
 
 type ToolTheme = Pick<Theme, "bold" | "fg">;
+export type CustomMessageTheme = Pick<Theme, "bg" | "bold" | "fg">;
 
 type ToolTextResult = {
   content?: readonly unknown[];
@@ -72,6 +75,41 @@ class WidthSafeMarkdown extends Markdown {
   }
 }
 
+class ThemedCustomMessageContent implements Component {
+  constructor(
+    private readonly content: Component,
+    private readonly theme: CustomMessageTheme,
+  ) {}
+
+  render(width: number): string[] {
+    return this.content.render(width).map(line => this.theme.fg("customMessageText", line));
+  }
+
+  invalidate(): void {
+    this.content.invalidate();
+  }
+}
+
+class CustomMessageCard implements Component {
+  private readonly box: Box;
+
+  constructor(label: string, content: Component, theme: CustomMessageTheme) {
+    this.box = new Box(1, 1, line => theme.bg("customMessageBg", line));
+    this.box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold(`[${label}]`))}\n`, 0, 0));
+    this.box.addChild(new ThemedCustomMessageContent(content, theme));
+  }
+
+  render(width: number): string[] {
+    const safeWidth = normalizeWidth(width);
+    if (safeWidth === 0) return [];
+    return this.box.render(safeWidth).map(line => truncateToWidth(line, safeWidth, ""));
+  }
+
+  invalidate(): void {
+    this.box.invalidate();
+  }
+}
+
 export function extractToolText(result: ToolTextResult | null | undefined): string {
   if (!Array.isArray(result?.content)) return "";
 
@@ -128,6 +166,11 @@ export function renderToolSummary(
     .map((line) => theme.fg("muted", line))
     .join("\n");
   return new WidthSafeSummary(text);
+}
+
+/** Render passive custom-message content with Pi's themed message shell. */
+export function createCustomMessageCard(label: string, content: Component, theme: CustomMessageTheme): Component {
+  return new CustomMessageCard(label, content, theme);
 }
 
 export function renderToolExpanded(text: string, options: ToolExpandedOptions = {}): Text | Markdown {

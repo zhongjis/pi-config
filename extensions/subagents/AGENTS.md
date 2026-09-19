@@ -23,6 +23,7 @@ Run isolated Agent sessions with foreground results and background supervision.
 - Live graph inspectors may show optional graph descriptions, inputs, and complete retained node output; these are never copied into graph history.
 - Load history before UI managers; capture completed/failed/explicit user-stopped runs before notification. Disable capture before lifecycle aborts and flush writes before replacing the session store. Unknown versions remain untouched with writes disabled; I/O failures emit only one generic warning per session.
 - Rendering changes MUST preserve model-visible completion notifications and tool results. Collapsed completion notifications MUST flatten multiline previews and mark width clipping with an ellipsis; expanded previews retain their original content.
+- Completion notifications use lib's passive themed custom-message shell; it MUST NOT change their content or delivery path.
 - Foreground results and background follow-up notifications MUST retain distinct delivery paths.
 - Foreground capacity MUST remain independent of background capacity and unlimited by default; queued blocking callers MUST settle on completion, cancellation, startup failure, or shutdown. Detached spawns and resume bypass the foreground pool.
 - `reportUsage` MUST default off and report each collected delta once through final tool results, including cache reads; display-token totals stay unchanged. Disabled/session-ended pools MUST retain no pending deltas.

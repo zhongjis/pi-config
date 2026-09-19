@@ -2,6 +2,8 @@
 
 > Patterns and helpers for creating visually appealing interactive TUI components in Pi extensions.
 
+> This is an implementation reference. Use the [Panda Harness TUI rendering guide](../../../../docs/guides/tool-output-tui-rendering.md) as the canonical presentation standard.
+
 This guide covers techniques from:
 - [pi-interactive-shell](https://github.com/nicobailon/pi-interactive-shell) - Background widgets, overlay components
 - [pi-subagents](https://github.com/nicobailon/pi-subagents) - Live status, formatters

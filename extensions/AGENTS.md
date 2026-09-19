@@ -27,7 +27,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 
 - Extension implementation work MUST start with the installed [pi-extensions router](../.agents/skills/pi-extensions/SKILL.md).
 - Vendoring work SHOULD use [pi-extension-vendoring](../.agents/skills/pi-extension-vendoring/SKILL.md).
-- Presentation work SHOULD use [pi-tool-output-presentation](../.agents/skills/pi-tool-output-presentation/SKILL.md).
+- Presentation work SHOULD use [panda-harness-tui-standard](../.agents/skills/panda-harness-tui-standard/SKILL.md).
 
 ## Verification
 

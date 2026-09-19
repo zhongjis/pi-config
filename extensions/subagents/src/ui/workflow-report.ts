@@ -54,6 +54,22 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const first = running[0] ?? queued[0];
       const current = first ? [first.label, first.agentType, running.length > 1 ? `+${running.length - 1} active tasks` : ""].filter(Boolean).join(" · ") : counts;
       if (!input.expanded) {
+        if (!input.showToolTitle) {
+          const workflowStats = stats(input.progress, input.agentCount ?? agents.length);
+          const outcome =
+            task.outcome === undefined ? "not declared"
+            : task.outcome.status === "succeeded" ? "succeeded"
+            : `${task.outcome.status}: ${task.outcome.reason}`;
+          const execution = task.status === "killed" ? "stopped" : task.status;
+          const completed = `${workflowStats.done} agent${workflowStats.done === 1 ? "" : "s"} completed`;
+          const executionDetail = task.status === "completed" ? completed : task.status === "failed" && workflowStats.failedCount > 0 ? `${workflowStats.failedCount} agent${workflowStats.failedCount === 1 ? "" : "s"} failed` : active && agents.length === 0 && task.id ? `${counts} · id: ${task.id}` : counts;
+          const result = task.status === "completed" ? fields.length ? fields.join(", ") : summary : task.error ? firstMeaningfulLine(task.error) : active ? activity : counts;
+          return renderToolSummary(
+            [`outcome: ${outcome}`, `execution: ${execution} · ${executionDetail}`, `result: ${result}`],
+            theme,
+            { expandable: true, expandLabel: `${active ? "details" : "result and diagnostics"} · /agents › Workflows` },
+          ).render(width);
+        }
         const second = active ? (!first && task.id ? `id: ${task.id} · ${current}` : current) : [task.status === "completed" ? "Execution: completed" : "", counts, task.status === "completed" ? fields.length ? `${input.showToolTitle ? "returned" : "fields:"} ${fields.join(", ")}` : input.showToolTitle ? summary : "" : ""].filter(Boolean).join(" · ");
         const lines = [
           input.showToolTitle ? `${identity}${task.status === "failed" && task.error ? ` · ${firstMeaningfulLine(task.error)}` : ""}` : `${status} · ${summary}`,

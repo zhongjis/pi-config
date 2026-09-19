@@ -65,6 +65,13 @@ Collapsed output is a decision view. Usually show no more than three rendered ro
 
 The row budget applies **after wrapping**, not to logical newline count.
 
+Structured collapsed detail rows use tree connectors consistently:
+
+- Prefix every intermediate visible row with `├─`.
+- Prefix the final visible row with `└─`.
+- Recompute connectors after omitting conditional rows; the last rendered row always receives `└─`.
+- Align wrapped continuation text under the row content, not under its connector.
+
 ```text
 ▸ search "renderResult" in extensions/
 ├─ ✓ completed · 18 matches · 240ms
@@ -297,6 +304,22 @@ run report.
 ```
 
 If the message preview is truncated, expansion should reveal the complete instruction.
+
+### Notifications
+
+Render notifications as custom-message cards with the literal label, one blank line, then content:
+
+```text
+[notification]
+
+Workflow completed · 2/2 agents
+```
+
+Use the custom-message theme roles for the entire card: `customMessageBg` for the background, `customMessageLabel` for `[notification]`, and `customMessageText` for content. Never use tool pending, success, or error backgrounds for notifications.
+
+Collapsed notifications flatten multiline content into a compact preview. When width or row limits clip that preview, show a visible ellipsis. Expanded notifications preserve all retained multiline content and its line boundaries.
+
+Notification rendering is human-facing only. It must never rewrite model-visible content or change notification timing, channel, ownership, or delivery.
 
 ---
 
@@ -669,6 +692,7 @@ Before shipping a renderer, confirm:
 - [ ] Call header identifies operation and target without exposing noisy arguments.
 - [ ] Partial output shows meaningful current activity.
 - [ ] Collapsed result answers state, outcome, and next action within its rendered-row budget.
+- [ ] Collapsed detail rows use recomputed `├─` / `└─` connectors and aligned continuations.
 - [ ] Expanded result prioritizes result, activity, or error according to state.
 - [ ] Status text does not rely on color or icon alone.
 - [ ] Zero and unavailable metadata are omitted.
@@ -677,6 +701,7 @@ Before shipping a renderer, confirm:
 - [ ] Malformed details fall back to raw content.
 - [ ] Every line is width-safe with Unicode and ANSI styling.
 - [ ] Configured expand key hint is used.
+- [ ] Notifications use custom-message cards, theme roles, and disclosure behavior.
 - [ ] Model-facing content, errors, side effects, and persistence are unchanged.
 - [ ] Interactive components clamp scroll state and expose active navigation bindings.
 - [ ] Timers, subscriptions, listeners, widgets, and scheduled renders are cleaned up.

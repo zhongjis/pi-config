@@ -2,10 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { NotificationDetails } from "../src/types.js";
 
+vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 // Stub keyHint so workflow-card renders (used by G2 tests) do not need a real TUI theme.
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
@@ -28,11 +29,12 @@ type Renderable = {
 
 type Theme = {
   fg(color: string, text: string): string;
+  bg(color: string, text: string): string;
   bold(text: string): string;
 };
 
 type MessageRenderer = (
-  message: { details?: NotificationDetails },
+  message: { content?: unknown; details?: NotificationDetails },
   options: { expanded: boolean },
   theme: Theme,
 ) => Renderable | undefined;
@@ -57,9 +59,10 @@ type SentMessage = {
   details: NotificationDetails;
 };
 
-const theme: Theme = {
-  fg: (_color, text) => text,
-  bold: (text) => text,
+const theme = {
+  fg: vi.fn((_color: string, text: string) => text),
+  bg: vi.fn((_color: string, text: string) => text),
+  bold: vi.fn((text: string) => text),
 };
 
 const renderers = new Map<string, MessageRenderer>();
@@ -104,10 +107,18 @@ function requireRenderer(): MessageRenderer {
   return renderer as MessageRenderer;
 }
 
-function render(details: NotificationDetails, expanded = false, width = 120): string[] {
-  const component = requireRenderer()({ details }, { expanded }, theme);
+function renderCard(message: { content?: unknown; details?: NotificationDetails }, expanded = false, width = 120): string[] {
+  const component = requireRenderer()(message, { expanded }, theme);
   expect(component).toBeDefined();
   return component?.render(width) ?? [];
+}
+
+function notificationContent(lines: string[]): string[] {
+  return lines.slice(3, -1).map(line => (line.startsWith(" ") ? line.slice(1) : line).trimEnd());
+}
+
+function render(details: NotificationDetails, expanded = false, width = 120): string[] {
+  return notificationContent(renderCard({ details }, expanded, width));
 }
 
 function extensionContext(): ExtensionContext {
@@ -146,6 +157,9 @@ beforeAll(() => {
 afterEach(() => {
   vi.useRealTimers();
   sendMessage.mockClear();
+  theme.fg.mockClear();
+  theme.bg.mockClear();
+  theme.bold.mockClear();
 });
 
 afterAll(async () => {
@@ -166,6 +180,21 @@ describe("subagent notification rendering migration", () => {
     ]);
   });
 
+  it("uses the custom-message card shell and theme tokens", () => {
+    expect(renderCard({ details: notification() }).map(line => line.trim())).toEqual([
+      "",
+      "[notification]",
+      "",
+      "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
+      "└─ Found the gap. Additional detail.",
+      "transcript: /tmp/subagents/agent-1.output",
+      "",
+    ]);
+    expect(theme.fg).toHaveBeenCalledWith("customMessageLabel", "[notification]");
+    expect(theme.fg).toHaveBeenCalledWith("customMessageText", "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s");
+    expect(theme.bg).toHaveBeenCalledWith("customMessageBg", expect.any(String));
+  });
+
   it.each([
     ["pretty object", JSON.stringify({ status: "ok", count: 2 }, null, 2), '{ "status": "ok", "count": 2 }'],
     ["pretty array", JSON.stringify(["alpha", "beta"], null, 2), '[ "alpha", "beta" ]'],
@@ -177,11 +206,10 @@ describe("subagent notification rendering migration", () => {
       details: Object.freeze(notification({ resultPreview, outputFile: undefined })),
     });
     const before = JSON.stringify(message);
-    const renderer = requireRenderer();
-    const collapsed = renderer(message, { expanded: false }, theme)?.render(120) ?? [];
-    expect(collapsed.slice(1)).toEqual([`└─ ${expected}`]);
-    const expanded = renderer(message, { expanded: true }, theme)?.render(120) ?? [];
-    expect(expanded.slice(1)).toEqual(resultPreview.split("\n").map((line) => `  ${line}`));
+    const collapsed = notificationContent(renderCard(message, false)).slice(1).map(line => line.trim());
+    expect(collapsed).toEqual([`└─ ${expected}`]);
+    const expanded = notificationContent(renderCard(message, true)).slice(1);
+    expect(expanded).toEqual(resultPreview.split("\n").map((line) => `  ${line}`));
     expect(JSON.stringify(message)).toBe(before);
   });
 
@@ -193,9 +221,9 @@ describe("subagent notification rendering migration", () => {
   it("marks only clipped previews with an ellipsis and retains expanded text", () => {
     const resultPreview = `${"x".repeat(100)}\nretained ending`;
     const details = notification({ resultPreview, outputFile: undefined });
-    expect(render(details)[1]).toBe(`└─ ${"x".repeat(79)}…`);
+    expect(stripTerminalSequences(render(details)[1]).trim()).toMatch(/^└─ x+…$/);
     expect(render(details, true).slice(1)).toEqual([`  ${"x".repeat(100)}`, "  retained ending"]);
-    expect(render(notification({ resultPreview: "x".repeat(80) }))[1]).toBe(`└─ ${"x".repeat(80)}`);
+    expect(stripTerminalSequences(render(notification({ resultPreview: "x".repeat(80) }))[1]).trim()).toMatch(/^└─ x+$/);
   });
 
   it("renders grouped details in others order with one summary per agent", () => {
@@ -360,9 +388,13 @@ describe("subagent notification rendering migration", () => {
     task.value = "answer";
     task.workflowName = "notify-demo";
     const wf = workflowEntryData(task);
-    const output = render(notification({ workflow: wf }), false, 120).join("\n");
+    const card = renderCard({ details: notification({ workflow: wf }) }, false, 120).map(line => line.trim());
+    const output = card.join("\n");
+    expect(card[1]).toBe("[notification]");
     expect(output).toContain("notify-demo");
     expect(output).not.toContain("Renderer migration");
+    expect(theme.fg).toHaveBeenCalledWith("customMessageText", expect.any(String));
+    expect(theme.bg).toHaveBeenCalledWith("customMessageBg", expect.any(String));
   });
 
   it("falls back to raw content for invalid workflow entry in notification (G2 invalid)", () => {

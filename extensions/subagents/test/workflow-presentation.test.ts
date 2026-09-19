@@ -37,6 +37,20 @@ describe("workflow reports", () => {
     assert.ok(card);
     expect(plain(card.render(80))).toContain("raw-marker");
   });
+
+  it("renders completed graph tool details as a structured tree", () => {
+    vi.spyOn(codingAgent, "keyHint").mockImplementation((_key, label) => `Ctrl+O ${label}`);
+    const task = createWorkflowTask({ id: "wf_tree", script: "" });
+    task.status = "completed";
+    task.value = { summary: "done", relevantFiles: [], constraints: [], unknowns: [] };
+    task.workflowProgress = Array.from({ length: 5 }, (_, index) => ({ ...agent, index, state: "done" }));
+    expect(plain(renderWorkflowCard({ task, progress: task.workflowProgress }, theme).render(120)).split("\n")).toEqual([
+      "├─ outcome: not declared",
+      "├─ execution: completed · 5 agents completed",
+      "├─ result: summary, relevantFiles, constraints, unknowns",
+      "└─ Ctrl+O result and diagnostics · /agents › Workflows",
+    ]);
+  });
   it.each(["running", "paused", "completed", "failed", "killed"] as const)("keeps %s compact across terminal widths without modifying data", status => {
     const task = createWorkflowTask({ id: "wf_test", script: "", startTime: 100 });
     task.status = status;
@@ -47,7 +61,7 @@ describe("workflow reports", () => {
     for (const width of widths) {
       const rows = renderWorkflowCard({ task, progress: task.workflowProgress }, theme).render(width);
       fits(rows, width);
-      expect(rows.length).toBeLessThanOrEqual(3);
+      expect(rows.length).toBeLessThanOrEqual(4);
       const expanded = renderWorkflowCard({ task, progress: task.workflowProgress, expanded: true }, theme).render(width);
       fits(expanded, width);
     }
@@ -80,26 +94,28 @@ describe("workflow reports", () => {
     expect(resumeWorkflowTask(task, 1000)).toBe(true);
     expect(elapsedMs(task, 1100)).toBe(200);
   });
-  it("surfaces run id in second row when active but no agent has reported yet (M1)", () => {
+  it("keeps direct graph execution states truthful without a stale run id", () => {
     vi.spyOn(codingAgent, "keyHint").mockReturnValue("expand details");
     const task = createWorkflowTask({ id: "wf_ack", script: "" });
     task.status = "running";
 
-    // Active, no agents → id: prefix in collapsed row
     const collapsed = renderWorkflowCard({ task, progress: [] }, theme).render(80);
-    expect(plain(collapsed)).toContain("id: wf_ack");
-    expect(collapsed.length).toBeLessThanOrEqual(3);
+    expect(plain(collapsed)).toContain("execution: running · No agents observed · id: wf_ack");
+    expect(collapsed.length).toBeLessThanOrEqual(4);
 
-    // Regression: agent present → agent label leads, id not shown
-    const withAgent = renderWorkflowCard({ task, progress: [{ ...agent, state: "progress" }] }, theme).render(80);
-    expect(plain(withAgent)).toContain("child");
-    expect(plain(withAgent)).not.toContain("id: wf_ack");
+    task.workflowProgress = [agent];
+    const afterChild = plain(renderWorkflowCard({ task, progress: task.workflowProgress }, theme).render(80));
+    expect(afterChild).toContain("execution: running · 1 agent running");
+    expect(afterChild).not.toContain("id: wf_ack");
 
-    // Regression: settled → id not shown
-    task.status = "completed";
-    task.value = "done";
-    const settled = renderWorkflowCard({ task, progress: [] }, theme).render(80);
-    expect(plain(settled)).not.toContain("id: wf_ack");
+    task.status = "failed";
+    task.error = "failure";
+    expect(plain(renderWorkflowCard({ task, progress: [] }, theme).render(80))).toContain("execution: failed");
+    expect(plain(renderWorkflowCard({ task, progress: [] }, theme).render(80))).not.toContain("id: wf_ack");
+
+    task.status = "killed";
+    expect(plain(renderWorkflowCard({ task, progress: [] }, theme).render(80))).toContain("execution: stopped");
+    expect(plain(renderWorkflowCard({ task, progress: [] }, theme).render(80))).not.toContain("id: wf_ack");
   });
 });
 
@@ -112,15 +128,26 @@ it("hides owned children only from ordinary UI and allows a workflow-only fleet 
   const manager = new AgentManager();
   vi.spyOn(manager, "listAgents").mockReturnValue(records);
   const widget = new AgentWidget(manager, new Map());
-  expect(widget.widgetAgents().map(r => r.id)).toEqual(["ordinary"]);
+  const widgetSetWidget = vi.fn();
+  widget.setUICtx({ setWidget: widgetSetWidget, setStatus: vi.fn() });
+  widget.update();
+  expect(widgetSetWidget).toHaveBeenCalledWith("agents", expect.any(Function), { placement: "aboveEditor" });
   const fleet = new FleetList(manager, new Map());
-  expect(fleet.agentRecords().map(r => r.id)).toEqual(["ordinary"]);
+  const fleetSetWidget = vi.fn();
+  fleet.setUICtx({ setWidget: fleetSetWidget, getEditorText: () => "", onTerminalInput: () => () => {}, notify() {}, custom: vi.fn() });
+  fleet.setEnabled(true);
+  fleet.update();
+  expect(fleetSetWidget).toHaveBeenCalledWith("fleet", expect.any(Function), { placement: "belowEditor" });
   expect(manager.listAgents()).toHaveLength(2);
   records.splice(0, 1);
+  widget.update();
+  fleet.update();
+  expect(widgetSetWidget).toHaveBeenLastCalledWith("agents", undefined);
+  expect(fleetSetWidget).toHaveBeenLastCalledWith("fleet", undefined);
   const run: FleetWorkflow = { id: "wf_test", name: "run", status: "running", doneCount: 0, totalCount: 1, startedAt: 1, tokens: 0 };
   const open = vi.fn(async () => {});
   fleet.setWorkflowSource(() => [run], open);
-  fleet.setUICtx({ setWidget() {}, getEditorText: () => "", onTerminalInput: () => () => {}, notify() {}, custom: vi.fn() });
+  fleet.update();
   expect(fleet.handleKey("\x1b[B")).toEqual({ consume: true });
   fleet.handleKey("\x1b[B"); fleet.handleKey("\r");
   await Promise.resolve();
@@ -131,7 +158,7 @@ it("hides owned children only from ordinary UI and allows a workflow-only fleet 
 describe("workflow disclosure states", () => {
   it.each([
     [undefined, "no output"], [null, "null"], ["", "no output"], [[], "array · 0 items"],
-    [[1, 2], "array · 2 items"], [{ research: 1, review: 2 }, "structured result"],
+    [[1, 2], "array · 2 items"], [{ research: 1, review: 2 }, "research, review"],
   ])("summarizes returned %j without stale activity", (value, summary) => {
     const task = createWorkflowTask({ id: "wf_empty", script: "" });
     task.status = "completed"; task.value = value;

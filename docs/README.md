@@ -105,6 +105,7 @@ See [modes.md](specs/modes.md) for the shipped mode contract and [orchistration.
 ## Guides
 
 - [orchistration.md](guides/orchistration.md) — choosing and running the Kua Fu or Fu Xi → Hou Tu orchestration workflow
+- [tool-output-tui-rendering.md](guides/tool-output-tui-rendering.md) — canonical Panda Harness standard for Pi tool and notification presentation
 
 ## Event Conventions
 

@@ -3,6 +3,7 @@ import { Markdown, Text, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import {
   extractToolText,
+  createCustomMessageCard,
   firstMeaningfulLine,
   renderToolCall,
   renderToolExpanded,
@@ -96,6 +97,25 @@ describe("shared tool-output primitives", () => {
     const rendered = renderToolSummary(["status: complete"], plainTheme).render(80).join("\n");
 
     expect(rendered).not.toContain("app.tools.expand");
+  });
+
+  it("renders custom-message shells with theme tokens and safe widths", () => {
+    const theme = {
+      fg: vi.fn((_color: string, text: string) => text),
+      bg: vi.fn((_color: string, text: string) => text),
+      bold: vi.fn((text: string) => text),
+    };
+    const content = { render: (_width: number) => ["complete"], invalidate() {} };
+    const card = createCustomMessageCard("notification", content, theme);
+
+    expect(card.render(40).map(line => line.trim())).toEqual(["", "[notification]", "", "complete", ""]);
+    expect(theme.fg).toHaveBeenCalledWith("customMessageLabel", "[notification]");
+    expect(theme.fg).toHaveBeenCalledWith("customMessageText", "complete");
+    expect(theme.bg).toHaveBeenCalledWith("customMessageBg", expect.any(String));
+    for (const width of [0, 1, 2, 8, 20, 40, 80, 120, Number.NaN]) {
+      const safeWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
+      for (const line of card.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(safeWidth);
+    }
   });
 
   it("renders expanded plain text with Text and markdown with Markdown", () => {

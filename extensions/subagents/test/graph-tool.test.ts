@@ -96,4 +96,35 @@ describe("agent_graph tool", () => {
     expect(callRendered).toContain("agent_graph");
     expect(callRendered).toContain("demo");
   });
+
+  it("renders completed graph details with exact tree connectors", async () => {
+    const host = boot({ workflowsEnabled: true });
+    await host.lifecycle("session_start");
+    const tool = required(host.tools.get("agent_graph"));
+    const graph = {
+      name: "tree-demo",
+      nodes: {
+        summary: { type: "agent", agent: "fixture", prompt: "summary" },
+        relevantFiles: { type: "agent", agent: "fixture", prompt: "files" },
+        constraints: { type: "agent", agent: "fixture", prompt: "constraints" },
+        unknowns: { type: "agent", agent: "fixture", prompt: "unknowns" },
+        extra: { type: "agent", agent: "fixture", prompt: "extra" },
+      },
+      edges: [],
+      outputs: {
+        summary: { node: "summary", path: "$" },
+        relevantFiles: { node: "relevantFiles", path: "$" },
+        constraints: { node: "constraints", path: "$" },
+        unknowns: { node: "unknowns", path: "$" },
+      },
+    };
+    const result = await tool.execute("tree-call", { graph, input: {} }, undefined, undefined, host.ctx);
+    await host.notification(required(result.details?.taskId));
+    expect(flat(tool.renderResult(result, { expanded: false }, plainTheme, { isError: false })).split("\n")).toEqual([
+      "├─ outcome: not declared",
+      "├─ execution: completed · 5 agents completed",
+      "├─ result: summary, relevantFiles, constraints, unknowns",
+      "└─ result and diagnostics · /agents › Workflows",
+    ]);
+  });
 });

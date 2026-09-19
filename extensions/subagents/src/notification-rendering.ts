@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
+import { createCustomMessageCard, extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 import { SUBAGENT_RESULT_PREVIEW_LINES } from "./constants.js";
 import { isWorkflowEntryData } from "./graph/entry-validation.js";
 import type { NotificationDetails } from "./types.js";
@@ -111,11 +111,14 @@ export function registerSubagentNotificationRenderer(pi: ExtensionAPI): void {
       const detail = message.details;
       if (!isNotificationDetails(detail)) return undefined;
       if (detail.workflow !== undefined) {
-        if (isWorkflowEntryData(detail.workflow)) return renderWorkflowEntryCard(detail.workflow, theme, expanded);
+        if (isWorkflowEntryData(detail.workflow)) {
+          return createCustomMessageCard("notification", renderWorkflowEntryCard(detail.workflow, theme, expanded)!, theme);
+        }
         const raw = typeof message.content === "string" ? message.content : extractToolText({ content: message.content });
-        return expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw) || "No output"], theme, { expandable: true });
+        const fallback = expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw) || "No output"], theme, { expandable: true });
+        return createCustomMessageCard("notification", fallback, theme);
       }
-      return new NotificationSummaryComponent([detail, ...(detail.others ?? [])], expanded);
+      return createCustomMessageCard("notification", new NotificationSummaryComponent([detail, ...(detail.others ?? [])], expanded), theme);
     },
   );
 }
