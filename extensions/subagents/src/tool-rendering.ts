@@ -11,6 +11,7 @@ type AgentToolRenderArgs = {
   subagent_type?: string;
   description?: string;
   skills?: string[];
+  run_in_background?: boolean;
 };
 
 type GetSubagentResultArgs = {
@@ -91,7 +92,7 @@ function getRunMetadata(details: AgentDetails, expanded: boolean): string[] {
 }
 
 export function renderAgentToolCall(args: AgentToolRenderArgs, theme: ToolTheme) {
-  const displayName = args.subagent_type ? getDisplayName(args.subagent_type) : "Agent";
+  const displayName = `${args.subagent_type ? getDisplayName(args.subagent_type) : "Agent"}${args.run_in_background ? " [background]" : ""}`;
   const target = [args.description, formatSkillsSummary(args.skills)]
     .filter((value): value is string => Boolean(value))
     .join(" · ");

@@ -66,7 +66,7 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
     error: record.error,
     resultPreview: record.result
       ? record.result.length > resultMaxLen
-        ? record.result.slice(0, resultMaxLen) + "…"
+        ? `${record.result.slice(0, resultMaxLen)}\n… ${record.result.length - resultMaxLen} character${record.result.length - resultMaxLen === 1 ? "" : "s"} omitted · full output: ${record.outputFile ? "transcript below" : `get_subagent_result(agent_id: "${record.id}")`}`
         : record.result
       : "No output.",
   };

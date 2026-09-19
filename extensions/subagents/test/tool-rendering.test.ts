@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, initTheme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import subagentsExtension from "../src/index.js";
 import type { AgentDetails } from "../src/ui/agent-widget.js";
@@ -42,6 +42,10 @@ const lifecycle = new Map<string, (...args: unknown[]) => unknown>();
 
 function renderText(component: Renderable, width = 120): string {
   return component.render(width).join("\n");
+}
+
+function stripAnsi(text: string): string {
+  return typeof stripTerminalSequences === "function" ? stripTerminalSequences(text) : text;
 }
 
 function rawText(component: Renderable): string {
@@ -100,6 +104,25 @@ describe("subagent tool rendering migration", () => {
     }, theme);
     expect(rawText(call)).toBe("▸ Agent · Review 界面 boundary fix · skills: 4 · codebase-design, typescript-best-practices, react-best-practices, diagnosing-bugs");
     expectWidthSafe(call);
+  });
+
+  it("keeps Agent call headers identical across delivery modes except for the background tag", () => {
+    const tool = requireTool("Agent");
+    const args = {
+      subagent_type: "Explore",
+      description: "Audit tool rendering",
+      skills: ["codebase-design", "typescript-best-practices"],
+    };
+    const foreground = stripAnsi(renderText(tool.renderCall(args, theme)));
+    const explicitForeground = stripAnsi(renderText(tool.renderCall({ ...args, run_in_background: false }, theme)));
+    const background = stripAnsi(renderText(tool.renderCall({ ...args, run_in_background: true }, theme)));
+
+    expect(foreground).toBe("▸ Agent · Audit tool rendering · skills: 2 · codebase-design, typescript-best-practices");
+    expect(explicitForeground).toBe(foreground);
+    expect(background).toBe("▸ Agent [background] · Audit tool rendering · skills: 2 · codebase-design, typescript-best-practices");
+    expect(background).toBe(foreground.replace("▸ Agent ·", "▸ Agent [background] ·"));
+    expect(background.match(/\[background\]/g)).toHaveLength(1);
+    expectWidthSafe(tool.renderCall({ ...args, run_in_background: true }, theme));
   });
 
   it("preserves get_subagent_result ID and wait call preview and width safety", () => {
@@ -399,6 +422,27 @@ describe("subagent tool rendering migration", () => {
     expect(text.split("\n")).toHaveLength(2);
   });
 
+  it("replaces partial steering state with terminal delivery at narrow widths", () => {
+    const tool = requireTool("steer_subagent");
+    const result: ToolResult = Object.freeze({
+      content: Object.freeze([{ type: "text" as const, text: "Steering message sent to agent agent-123." }]),
+    });
+    const partial = tool.renderResult(result, { expanded: false, isPartial: true }, theme);
+    const terminal = tool.renderResult(result, { expanded: false }, theme);
+
+    expect(stripAnsi(renderText(partial, 120))).toContain("status: sending");
+    expect(stripAnsi(renderText(terminal, 120))).toContain("status: delivered");
+    expect(stripAnsi(renderText(terminal, 120))).not.toContain("status: sending");
+    for (const width of Array.from({ length: 12 }, (_, index) => index + 1)) {
+      for (const component of [partial, terminal]) {
+        for (const line of component.render(width)) {
+          expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
+        }
+      }
+    }
+    expect(result.content[0]?.text).toBe("Steering message sent to agent agent-123.");
+  });
+
   it("keeps steer_subagent call and results width-safe for ANSI, CJK, emoji, and combining text", () => {
     const tool = requireTool("steer_subagent");
     const message = "\u001b[31m界面🚀e\u0301 guidance\u001b[0m ".repeat(12);
@@ -413,7 +457,7 @@ describe("subagent tool rendering migration", () => {
       tool.renderResult(result, { expanded: true }, theme, { args }),
     ];
 
-    for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+    for (const width of [0, ...Array.from({ length: 12 }, (_, index) => index + 1), 20, 40, 80, 120]) {
       for (const component of components) {
         for (const line of component.render(width)) {
           expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);

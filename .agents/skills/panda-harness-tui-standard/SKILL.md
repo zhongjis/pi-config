@@ -16,7 +16,7 @@ Keep rendering guidance in that guide. Update this skill only when its invocatio
 ## Workflow
 
 1. Read the applicable `AGENTS.md` chain and the canonical guide.
-2. Inspect the real tool or notification registration, result shape, renderer, tests, and representative output. Identify model-visible fields and delivery behavior before proposing presentation changes.
+2. Inspect the real registration, result shape, renderer, tests, and representative output. Classify each surface as a tool call, tool result, standalone notification, or interactive viewer. Identify model-visible fields and delivery behavior before proposing presentation changes.
 3. Follow the guide branch matching the request:
    - **Plan:** apply its implementation sequence to observed output shapes.
    - **Implement or debug:** apply its rendering contract and verification contract.
@@ -25,4 +25,4 @@ Keep rendering guidance in that guide. Update this skill only when its invocatio
 
 ## Completion gate
 
-Finish only when every applicable guide requirement is accounted for. For implementation work, require focused tests plus real Pi TUI evidence; confirm model-visible content, delivery, execution semantics, errors, and side effects remain unchanged unless the user explicitly requested otherwise.
+Finish only when every applicable guide requirement is accounted for. Confirm tree connectors remain tool-result-only and delivery modes share one call shape. For implementation work, require focused tests plus real Pi TUI evidence; confirm model-visible content, delivery, execution semantics, errors, and side effects remain unchanged unless the user explicitly requested otherwise.

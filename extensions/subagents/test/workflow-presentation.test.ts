@@ -16,7 +16,7 @@ import { renderWorkflowCard, renderWorkflowEntryCard } from "../src/ui/workflow-
 
 const theme = { fg: (_: string, s: string) => `\x1b[36m${s}\x1b[39m`, bold: (s: string) => `\x1b[1m${s}\x1b[22m` };
 const agent: WorkflowAgentEntry = { type: "workflow_agent", index: 7, label: "child", state: "progress", recordId: "child-id", model: "actual-sdk-model", thinking: "off" };
-const widths = [0, 1, 2, 8, 20, 40, 80, 120];
+const widths = [0, ...Array.from({ length: 12 }, (_, index) => index + 1), 20, 40, 80, 120];
 const plain = (lines: string[]) => lines.map(stripTerminalSequences).join("\n");
 const fits = (lines: string[], width: number) => {
   for (const line of lines) {

@@ -55,6 +55,21 @@ A separate viewer may own interactive logs, transcripts, scrolling, or process c
 Do not recreate that viewer inside every expanded tool row. Expanded output is a report,
 not automatically a second application.
 
+### Keep one call shape across delivery modes
+
+A tool call keeps one identity and argument hierarchy across delivery modes. Foreground is the
+untagged default. Background adds a literal `[background]` tag beside the tool or Agent
+identity; it does not use a separate call layout.
+
+```text
+▸ Jintong 金童 · Audit tool rendering
+▸ Jintong 金童 [background] · Audit tool rendering
+```
+
+`[background]` describes delivery only. Lifecycle remains queued, running, completed, stopped,
+or failed. Keep call arguments, ordering, styling, width behavior, and result vocabulary otherwise
+identical between foreground and background calls.
+
 ### Collapsed mode
 
 Collapsed output is a decision view. Usually show no more than three rendered rows:
@@ -65,12 +80,14 @@ Collapsed output is a decision view. Usually show no more than three rendered ro
 
 The row budget applies **after wrapping**, not to logical newline count.
 
-Structured collapsed detail rows use tree connectors consistently:
+Structured collapsed **tool-result** detail rows use tree connectors consistently:
 
 - Prefix every intermediate visible row with `├─`.
 - Prefix the final visible row with `└─`.
 - Recompute connectors after omitting conditional rows; the last rendered row always receives `└─`.
 - Align wrapped continuation text under the row content, not under its connector.
+- Use connectors only beneath a tool call header. Standalone notifications and custom-message
+  cards use ordinary content rows without `├─` or `└─`.
 
 ```text
 ▸ search "renderResult" in extensions/
@@ -79,8 +96,8 @@ Structured collapsed detail rows use tree connectors consistently:
 ```
 
 ```text
-▸ Agent · Audit tool rendering
-├─ ● running in background · reading renderer tests · 24s
+▸ Jintong 金童 [background] · Audit tool rendering
+├─ ● running · reading renderer tests · 24s
 ├─ id: 7cb5b424 · next: check with get_subagent_result
 └─ Ctrl+O details
 ```
@@ -280,7 +297,7 @@ supervise it. Expanded output may include configuration and artifact paths, but 
 transcript navigation belongs in the dedicated viewer when one exists.
 
 ```text
-▸ Agent · Audit tool rendering
+▸ Agent [background] · Audit tool rendering
 ├─ ◦ queued · waiting for capacity
 ├─ id: 7cb5b424
 └─ Ctrl+O details
@@ -307,12 +324,16 @@ If the message preview is truncated, expansion should reveal the complete instru
 
 ### Notifications
 
-Render notifications as custom-message cards with the literal label, one blank line, then content:
+Render notifications as custom-message cards with the literal label, one blank line, then ordinary
+content rows. Notifications are standalone messages, not children of a tool call, so never prefix
+their content with `├─` or `└─`:
 
 ```text
 [notification]
 
-Workflow completed · 2/2 agents
+✓ Workflow completed · 2/2 agents
+Result: research and review available
+Full output: /tmp/workflow-result.json
 ```
 
 Use the custom-message theme roles for the entire card: `customMessageBg` for the background, `customMessageLabel` for `[notification]`, and `customMessageText` for content. Never use tool pending, success, or error backgrounds for notifications.
@@ -598,6 +619,8 @@ Avoid these patterns:
 - **Internal enum labels:** translate implementation names into user-facing outcomes.
 - **Background as status:** background describes delivery, not whether work is queued,
   running, or finished.
+- **Notification tree connectors:** `├─` and `└─` falsely imply that a standalone message is
+  nested under a tool call.
 - **Nested boxes:** Pi already owns the outer tool container.
 - **All-dim expanded output:** hierarchy disappears when everything is secondary.
 - **Hard-coded shortcut text:** keybindings are configurable.
@@ -642,6 +665,8 @@ width.
 - Queued, completed, stopped, aborted, failed, denied, and missing-target states that the
   tool can actually produce.
 - Foreground and background delivery when supported.
+- Foreground and background calls share one header shape; only background adds `[background]`.
+- Tool-result rows use connectors; standalone notification rows do not.
 - Empty result, malformed details, and raw fallback.
 - Long result with explicit omission and artifact recovery.
 - Expanded result retains all renderer-retained content and discloses source/display
@@ -690,9 +715,11 @@ Tests prove behavior; the TUI capture proves integration and visual usability.
 Before shipping a renderer, confirm:
 
 - [ ] Call header identifies operation and target without exposing noisy arguments.
+- [ ] Foreground and background calls share one shape; background alone adds `[background]`.
 - [ ] Partial output shows meaningful current activity.
 - [ ] Collapsed result answers state, outcome, and next action within its rendered-row budget.
-- [ ] Collapsed detail rows use recomputed `├─` / `└─` connectors and aligned continuations.
+- [ ] Collapsed tool-result rows use recomputed `├─` / `└─` connectors and aligned continuations.
+- [ ] Standalone notifications never use tool-result tree connectors.
 - [ ] Expanded result prioritizes result, activity, or error according to state.
 - [ ] Status text does not rely on color or icon alone.
 - [ ] Zero and unavailable metadata are omitted.

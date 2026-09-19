@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { createCustomMessageCard, extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
-import { SUBAGENT_RESULT_PREVIEW_LINES } from "./constants.js";
 import { isWorkflowEntryData } from "./graph/entry-validation.js";
 import type { NotificationDetails } from "./types.js";
 import {
@@ -28,6 +27,10 @@ function toSummaryStatus(status: string): SubagentSummaryStatus {
 
 function compactResultPreview(text: string, maxLength = 80): string | undefined {
   return truncateToWidth(text.replace(/\s+/g, " ").trim(), maxLength, "…") || undefined;
+}
+
+function stripNotificationTreeConnector(line: string): string {
+  return line.replace(/^((?:\u001B\[[0-?]*[ -/]*[@-~])*)[├└]─ /, "$1");
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -69,13 +72,9 @@ function renderNotificationSummary(detail: NotificationDetails, expanded: boolea
     turnCount: detail.turnCount,
     maxTurns: detail.maxTurns,
     error: detail.error,
-  });
+  }).map(stripNotificationTreeConnector);
 
-  if (expanded) {
-    for (const line of detail.resultPreview.split("\n").slice(0, SUBAGENT_RESULT_PREVIEW_LINES)) {
-      lines.push(`  ${line}`);
-    }
-  }
+  if (expanded) lines.push(...detail.resultPreview.split("\n").map(line => `  ${line}`));
 
   if (detail.outputFile) lines.push(`  transcript: ${detail.outputFile}`);
   return lines;
@@ -87,6 +86,18 @@ function fitLine(line: string, width: number): string[] {
   const wrapped = wrapTextWithAnsi(line, safeWidth);
   const lines = wrapped.length > 0 ? wrapped : [line];
   return lines.map((wrappedLine) => truncateToWidth(wrappedLine, safeWidth, ""));
+}
+
+class FlatNotificationContent implements Component {
+  constructor(private readonly content: Component) {}
+
+  render(width: number): string[] {
+    return this.content.render(width).map(stripNotificationTreeConnector);
+  }
+
+  invalidate(): void {
+    this.content.invalidate();
+  }
 }
 
 class NotificationSummaryComponent implements Component {
@@ -115,7 +126,9 @@ export function registerSubagentNotificationRenderer(pi: ExtensionAPI): void {
           return createCustomMessageCard("notification", renderWorkflowEntryCard(detail.workflow, theme, expanded)!, theme);
         }
         const raw = typeof message.content === "string" ? message.content : extractToolText({ content: message.content });
-        const fallback = expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw) || "No output"], theme, { expandable: true });
+        const fallback = expanded
+          ? renderToolExpanded(raw)
+          : new FlatNotificationContent(renderToolSummary([firstMeaningfulLine(raw) || "No output"], theme, { expandable: true }));
         return createCustomMessageCard("notification", fallback, theme);
       }
       return createCustomMessageCard("notification", new NotificationSummaryComponent([detail, ...(detail.others ?? [])], expanded), theme);

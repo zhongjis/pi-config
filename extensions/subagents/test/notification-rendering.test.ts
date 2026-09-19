@@ -4,7 +4,8 @@ import { join } from "node:path";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { NotificationDetails } from "../src/types.js";
+import { type AgentPresentation, createNotificationCoordinator } from "../src/notification-coordinator.js";
+import type { AgentRecord, NotificationDetails } from "../src/types.js";
 
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 // Stub keyHint so workflow-card renders (used by G2 tests) do not need a real TUI theme.
@@ -175,7 +176,7 @@ describe("subagent notification rendering migration", () => {
   it("renders a completed individual summary with stats, result, and transcript", () => {
     expect(render(notification())).toEqual([
       "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
-      "└─ Found the gap. Additional detail.",
+      "Found the gap. Additional detail.",
       "  transcript: /tmp/subagents/agent-1.output",
     ]);
   });
@@ -186,13 +187,33 @@ describe("subagent notification rendering migration", () => {
       "[notification]",
       "",
       "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
-      "└─ Found the gap. Additional detail.",
+      "Found the gap. Additional detail.",
       "transcript: /tmp/subagents/agent-1.output",
       "",
     ]);
     expect(theme.fg).toHaveBeenCalledWith("customMessageLabel", "[notification]");
     expect(theme.fg).toHaveBeenCalledWith("customMessageText", "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s");
     expect(theme.bg).toHaveBeenCalledWith("customMessageBg", expect.any(String));
+  });
+
+  it("renders standalone completion previews and expanded transcript rows without tree connectors", () => {
+    const details = notification({
+      resultPreview: "First finding.\nSecond finding.",
+      outputFile: "/tmp/subagents/complete-output.txt",
+    });
+    const collapsedCard = renderCard({ details }, false);
+    const collapsed = notificationContent(collapsedCard).map(stripTerminalSequences);
+    const expanded = notificationContent(renderCard({ details }, true)).map(stripTerminalSequences);
+
+    expect(collapsedCard.map(line => stripTerminalSequences(line).trim())).toContain("[notification]");
+    expect(collapsed).toContain("First finding. Second finding.");
+    expect(expanded).toEqual([
+      "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
+      "  First finding.",
+      "  Second finding.",
+      "  transcript: /tmp/subagents/complete-output.txt",
+    ]);
+    for (const line of [...collapsed, ...expanded]) expect(line.trimStart()).not.toMatch(/^[├└]─/);
   });
 
   it.each([
@@ -207,23 +228,23 @@ describe("subagent notification rendering migration", () => {
     });
     const before = JSON.stringify(message);
     const collapsed = notificationContent(renderCard(message, false)).slice(1).map(line => line.trim());
-    expect(collapsed).toEqual([`└─ ${expected}`]);
+    expect(collapsed).toEqual([expected]);
     const expanded = notificationContent(renderCard(message, true)).slice(1);
     expect(expanded).toEqual(resultPreview.split("\n").map((line) => `  ${line}`));
     expect(JSON.stringify(message)).toBe(before);
   });
 
   it("normalizes surrounding whitespace and CRLF without inventing blank output", () => {
-    expect(render(notification({ resultPreview: "\n  First.\r\n\tSecond.  " }))[1]).toBe("└─ First. Second.");
+    expect(render(notification({ resultPreview: "\n  First.\r\n\tSecond.  " }))[1]).toBe("First. Second.");
     expect(render(notification({ resultPreview: " \n\t\r\n ", outputFile: undefined }))).toHaveLength(1);
   });
 
   it("marks only clipped previews with an ellipsis and retains expanded text", () => {
     const resultPreview = `${"x".repeat(100)}\nretained ending`;
     const details = notification({ resultPreview, outputFile: undefined });
-    expect(stripTerminalSequences(render(details)[1]).trim()).toMatch(/^└─ x+…$/);
+    expect(stripTerminalSequences(render(details)[1]).trim()).toMatch(/^x+…$/);
     expect(render(details, true).slice(1)).toEqual([`  ${"x".repeat(100)}`, "  retained ending"]);
-    expect(stripTerminalSequences(render(notification({ resultPreview: "x".repeat(80) }))[1]).trim()).toMatch(/^└─ x+$/);
+    expect(stripTerminalSequences(render(notification({ resultPreview: "x".repeat(80) }))[1]).trim()).toMatch(/^x+$/);
   });
 
   it("renders grouped details in others order with one summary per agent", () => {
@@ -240,18 +261,24 @@ describe("subagent notification rendering migration", () => {
     expect(lines.filter((line) => /^[✓■✗] /.test(line))).toHaveLength(3);
     expect(lines.indexOf("✓ First · ↻4≤12 · 3 tools · 12.3k · 1m5s")).toBeLessThan(lines.indexOf("✓ Second · ↻4≤12 · 3 tools · 12.3k · 1m5s"));
     expect(lines.indexOf("✓ Second · ↻4≤12 · 3 tools · 12.3k · 1m5s")).toBeLessThan(lines.indexOf("✓ Third · ↻4≤12 · 3 tools · 12.3k · 1m5s"));
-    expect(lines).toContain("└─ one");
-    expect(lines).toContain("└─ two");
-    expect(lines).toContain("└─ three");
+    expect(lines).toContain("one");
+    expect(lines).toContain("two");
+    expect(lines).toContain("three");
+    expect(lines.join("\n")).not.toMatch(/^[├└]─/m);
   });
 
-  it("retains only the current expanded result preview line limit", () => {
-    const resultPreview = Array.from({ length: 31 }, (_, index) => `result line ${index + 1}`).join("\n");
-    const lines = render(notification({ resultPreview, outputFile: undefined }), true);
+  it("preserves complete expanded output beyond preview budgets", () => {
+    const resultPreview = Array.from(
+      { length: 31 },
+      (_, index) => `result line ${index + 1} ${"x".repeat(140)}`,
+    ).join("\n");
+    const details = Object.freeze(notification({ resultPreview, outputFile: undefined }));
+    const before = JSON.stringify(details);
+    const lines = render(details, true, 5_000);
 
-    expect(lines).toContain("  result line 1");
-    expect(lines).toContain("  result line 30");
-    expect(lines).not.toContain("  result line 31");
+    expect(resultPreview.length).toBeGreaterThan(4_000);
+    expect(lines.slice(1)).toEqual(resultPreview.split("\n").map(line => `  ${line}`));
+    expect(JSON.stringify(details)).toBe(before);
   });
 
   it.each([
@@ -310,11 +337,58 @@ describe("subagent notification rendering migration", () => {
       outputFile: "/tmp/" + "长".repeat(80),
     });
 
-    for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+    for (const width of [0, ...Array.from({ length: 12 }, (_, index) => index + 1), 20, 40, 80, 120]) {
       for (const line of render(details, true, width)) {
         expect(visibleWidth(line), `width ${width}: ${JSON.stringify(line)}`).toBeLessThanOrEqual(width);
       }
     }
+  });
+
+  it.each([
+    ["a transcript", "/tmp/subagents/full-output.txt", 501],
+    ["result retrieval", undefined, 502],
+  ])("discloses %s for omitted notification result characters", (_route, outputFile, resultLength) => {
+    vi.useFakeTimers();
+    const result = "界".repeat(resultLength);
+    const record: AgentRecord = {
+      id: "agent-full-output",
+      type: "general-purpose",
+      description: "Full output route",
+      status: "completed",
+      result,
+      toolUses: 0,
+      startedAt: 0,
+      completedAt: 1,
+      outputFile,
+      lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 },
+      compactionCount: 0,
+    };
+    const notificationPi = { sendMessage: vi.fn() };
+    const coordinator = createNotificationCoordinator(
+      notificationPi as unknown as ExtensionAPI,
+      () => record,
+      {
+        activity: new Map(),
+        widget: { markFinished: vi.fn(), update: vi.fn() },
+        fleet: { onAgentFinished: vi.fn() },
+      } as unknown as AgentPresentation,
+    );
+
+    coordinator.onComplete(record);
+    vi.advanceTimersByTime(200);
+
+    const message = notificationPi.sendMessage.mock.calls[0]?.[0] as SentMessage;
+    const omitted = result.length - 500;
+    const route = outputFile ? "transcript below" : `get_subagent_result(agent_id: "${record.id}")`;
+    const marker = `… ${omitted} character${omitted === 1 ? "" : "s"} omitted · full output: ${route}`;
+    expect(message.details.resultPreview).toBe(`${result.slice(0, 500)}\n${marker}`);
+    expect(message.content).toContain("...(truncated, use get_subagent_result for full output)");
+    expect(message.content).not.toContain(marker);
+
+    const expanded = notificationContent(renderCard({ details: message.details }, true, 5_000)).join("\n");
+    expect(expanded).toContain(marker);
+    if (outputFile) expect(expanded).toContain(`transcript: ${outputFile}`);
+    expect(notificationContent(renderCard({ details: message.details }, false, 5_000)).join("\n")).not.toContain("full output:");
   });
 
   it("keeps individual sendMessage payload, options, and 200ms hold unchanged", async () => {
@@ -405,5 +479,19 @@ describe("subagent notification rendering migration", () => {
       theme,
     );
     expect(result?.render(120).join("\n")).toContain("raw-graph-text");
+  });
+
+  it("keeps malformed workflow fallback previews and expand hints flat", () => {
+    const renderer = requireRenderer();
+    const result = renderer(
+      { details: notification({ workflow: { not: "valid" } as unknown as NotificationDetails["workflow"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],
+      { expanded: false },
+      theme,
+    );
+    const lines = notificationContent(result?.render(120) ?? []).map(stripTerminalSequences);
+
+    expect(lines).toContain("raw-graph-text");
+    expect(lines).toContain("to expand full result");
+    for (const line of lines) expect(line.trimStart()).not.toMatch(/^[├└]─/);
   });
 });
