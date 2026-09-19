@@ -209,3 +209,46 @@ it.each([new Error("registry unavailable"), "registry unavailable"])("retains ra
   expect(result.details).toMatchObject({ status: "completed", modelName: "test/chosen", requestedModel: "original" });
   expect(warn).toHaveBeenCalledOnce();
 });
+
+it("prepares configured direct model, thinking, and normalized max turns before spawning", async () => {
+  writeFileSync(
+    join(dir, ".pi", "agents", "fixture.md"),
+    "---\nname: fixture\ndescription: fixture\nmodel: test/chosen:high\nmax_turns: 0\n---\nTask",
+  );
+  const { execute } = activate();
+  vi.mocked(runAgent).mockClear();
+  await execute("Agent", { ...params, model: "test/missing", thinking: "low", max_turns: 3 } as typeof params);
+  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3]).toMatchObject({
+    selectedModel: { model, modelInput: "test/chosen:high" },
+    thinkingLevel: "high",
+    maxTurns: undefined,
+  });
+});
+
+it("rejects an explicitly out-of-scope direct model without spawning", async () => {
+  writeFileSync(join(dir, ".pi", "settings.json"), JSON.stringify({ enabledModels: ["test/allowed"] }));
+  const { execute, ctx } = activate({ scopeModels: true });
+  const allowed = { ...model, id: "allowed" };
+  (ctx.modelRegistry as { getAvailable: () => typeof model[] }).getAvailable = () => [model, allowed];
+  vi.mocked(runAgent).mockClear();
+  const result = await execute("Agent", { ...params, model: "test/chosen" } as typeof params);
+  expect(result.content[0]).toMatchObject({
+    text: 'Model not in scope: "test/chosen".\n\nAllowed models (from enabledModels):\n  test/allowed',
+  });
+  expect(runAgent).not.toHaveBeenCalled();
+});
+
+it("warns but runs when the configured direct model is out of scope", async () => {
+  writeFileSync(join(dir, ".pi", "settings.json"), JSON.stringify({ enabledModels: ["test/allowed"] }));
+  writeFileSync(
+    join(dir, ".pi", "agents", "fixture.md"),
+    "---\nname: fixture\ndescription: fixture\nmodel: test/chosen\n---\nTask",
+  );
+  const { execute, ctx } = activate({ scopeModels: true });
+  const allowed = { ...model, id: "allowed" };
+  (ctx.modelRegistry as { getAvailable: () => typeof model[] }).getAvailable = () => [model, allowed];
+  vi.mocked(runAgent).mockClear();
+  await execute();
+  expect(ctx.ui.notify).toHaveBeenCalledWith('Agent "fixture" using out-of-scope model "test/chosen"', "warning");
+  expect(runAgent).toHaveBeenCalledOnce();
+});

@@ -13,10 +13,8 @@
 
 import type { ExecResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentManager } from "../agent-manager.js";
-import { getAgentConfig, resolveType } from "../agent-types.js";
-import { isModelInScope, readEnabledModels, resolveEnabledModels } from "../enabled-models.js";
-import { resolveAgentInvocationConfig } from "../invocation-config.js";
-import { resolveAgentModel } from "../model-resolution.js";
+import { resolveType } from "../agent-types.js";
+import { prepareAgentInvocation } from "../invocation-config.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal } from "../usage.js";
@@ -75,20 +73,21 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
       try {
         combined.throwIfAborted();
         const type = resolveType(request.agentType) ?? "general-purpose";
-        const config = getAgentConfig(type);
         const params = { model: request.model, thinking: request.effort };
-        const initial = resolveAgentInvocationConfig(config, params);
-        const selected = resolveAgentModel(initial.modelInput, ctx.modelRegistry, ctx.model);
-        const invocation = resolveAgentInvocationConfig(config, params, selected.thinkingLevel);
-        if (deps.scopeModels?.() && selected.model) {
-          const allowed = resolveEnabledModels(readEnabledModels(ctx.cwd), ctx.modelRegistry, ctx.cwd);
-          if (allowed && !isModelInScope(selected.model, allowed)) {
-            const message = `Model not in scope: ${selected.model.provider}/${selected.model.id}`;
-            if (invocation.modelFromParams) throw new Error(message);
-            if (!warned.has(message)) {
-              warned.add(message);
-              ctx.ui.notify(message, "warning");
-            }
+        const { agentConfig: config, invocation, selectedModel, scope } = prepareAgentInvocation({
+          agentType: type,
+          params,
+          modelRegistry: ctx.modelRegistry,
+          parentModel: ctx.model,
+          cwd: ctx.cwd,
+          scopeModels: deps.scopeModels?.() ?? false,
+        });
+        if (scope) {
+          const message = `Model not in scope: ${scope.model.provider}/${scope.model.id}`;
+          if (invocation.modelFromParams) throw new Error(message);
+          if (!warned.has(message)) {
+            warned.add(message);
+            ctx.ui.notify(message, "warning");
           }
         }
         let spawned: AgentRecord | undefined;
@@ -100,8 +99,8 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
           {
             description: request.nodeId,
             workflowId: deps.workflowId,
-            selectedModel: { ...selected, modelInput: invocation.modelInput },
-            model: selected.model,
+            selectedModel,
+            model: selectedModel.model,
             thinkingLevel: invocation.thinking,
             maxTurns: invocation.maxTurns,
             isolated: invocation.isolated,

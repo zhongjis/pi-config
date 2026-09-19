@@ -8,9 +8,7 @@ import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, te
 import { getDefaultMaxTurns, normalizeMaxTurns, SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAvailableTypes, resolveType } from "./agent-types.js";
 import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ResolvedDelegationPolicy } from "./delegation-policy.js";
-import { isModelInScope, readEnabledModels, resolveEnabledModels } from "./enabled-models.js";
-import { resolveAgentInvocationConfig, resolveJoinMode } from "./invocation-config.js";
-import { resolveAgentModel } from "./model-resolution.js";
+import { prepareAgentInvocation, resolveJoinMode } from "./invocation-config.js";
 import type { AgentPresentation, createNotificationCoordinator } from "./notification-coordinator.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import type { SubagentsSettings } from "./settings.js";
@@ -334,29 +332,32 @@ Terse command-style prompts produce shallow, generic work.
         if (record.status === "error") return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
         return textResult(record.result?.trim() || "No output.", details);
       }
-      const customConfig = getAgentConfig(subagentType);
-      const resolvedConfig = resolveAgentInvocationConfig(customConfig, params);
-      const selected = resolveAgentModel(resolvedConfig.modelInput, ctx.modelRegistry, ctx.model);
+      const prepared = prepareAgentInvocation({
+        agentType: subagentType,
+        params,
+        modelRegistry: ctx.modelRegistry,
+        parentModel: ctx.model,
+        cwd: ctx.cwd,
+        scopeModels: settings.scopeModels,
+      });
+      const { agentConfig: customConfig, invocation: resolvedConfig, selectedModel: selected, scope } = prepared;
       const model = selected.model;
-      if (settings.scopeModels && model) {
-        const allowed = resolveEnabledModels(readEnabledModels(ctx.cwd), ctx.modelRegistry, ctx.cwd);
-        if (allowed && !isModelInScope(model, allowed)) {
-          if (resolvedConfig.modelFromParams) {
-            const list = [...allowed].sort().map(m => `  ${m}`).join("\n");
-            return textResult(
-              `Model not in scope: "${resolvedConfig.modelInput}".\n\n` +
-              `Allowed models (from enabledModels):\n${list}`,
-            );
-          }
-          const agentLabel = customConfig?.displayName ?? subagentType;
-          const modelLabel = resolvedConfig.modelInput ?? `${model.provider}/${model.id}`;
-          ctx.ui.notify(
-            `Agent "${agentLabel}" using out-of-scope model "${modelLabel}"`,
-            "warning",
+      if (scope) {
+        if (resolvedConfig.modelFromParams) {
+          const list = [...scope.allowed].sort().map(m => `  ${m}`).join("\n");
+          return textResult(
+            `Model not in scope: "${resolvedConfig.modelInput}".\n\n` +
+            `Allowed models (from enabledModels):\n${list}`,
           );
         }
+        const agentLabel = customConfig?.displayName ?? subagentType;
+        const modelLabel = resolvedConfig.modelInput ?? `${scope.model.provider}/${scope.model.id}`;
+        ctx.ui.notify(
+          `Agent "${agentLabel}" using out-of-scope model "${modelLabel}"`,
+          "warning",
+        );
       }
-      const thinking = resolveAgentInvocationConfig(customConfig, params, selected.thinkingLevel).thinking;
+      const thinking = resolvedConfig.thinking;
       const inheritContext = resolvedConfig.inheritContext;
       const runInBackground = resolvedConfig.runInBackground;
       const isolated = resolvedConfig.isolated;
@@ -412,7 +413,7 @@ Terse command-style prompts produce shallow, generic work.
           id = manager.spawn(pi, ctx, subagentType, params.prompt, {
             description: params.description,
             model,
-            selectedModel: { ...selected, modelInput: resolvedConfig.modelInput },
+            selectedModel: selected,
             maxTurns: effectiveMaxTurns,
             isolated,
             inheritContext,
@@ -512,7 +513,7 @@ Terse command-style prompts produce shallow, generic work.
         const fgResult = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
           description: params.description,
           model,
-          selectedModel: { ...selected, modelInput: resolvedConfig.modelInput },
+          selectedModel: selected,
           maxTurns: effectiveMaxTurns,
           isolated,
           inheritContext,
