@@ -55,3 +55,4 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - [multimodal-look](multimodal-look/AGENTS.md) — isolated vision inspection.
 - [init](init/AGENTS.md) — documentation initialization prompts.
 - [herdr-btw](herdr-btw/AGENTS.md) — vendored `/btw` Herdr side-thread launch and merge.
+- [recap](recap/AGENTS.md) — vendored session-recap lifecycle and model-chain fallback.

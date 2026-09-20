@@ -77,6 +77,7 @@ describe("tool model config", () => {
 				"boomerang.commit": { role: "commit" },
 				"smart-tool-guards.classifier": { role: "guard.tool" },
 				"multimodal-look.inspect": { role: "vision.inspect" },
+				"recap.generate": { role: "summary.session" },
 			},
 		});
 		expect(getToolModelSelection(config, "smart-sessions.summary")).toMatchObject({
@@ -97,6 +98,11 @@ describe("tool model config", () => {
 		expect(getToolModelSelection(config, "multimodal-look.inspect")).toMatchObject({
 			chain: VISION_CHAIN,
 			role: "vision.inspect",
+			source: "built-in",
+		});
+		expect(getToolModelSelection(config, "recap.generate")).toMatchObject({
+			chain: SUMMARY_CHAIN,
+			role: "summary.session",
 			source: "built-in",
 		});
 		expect(config.diagnostics).toEqual([]);
