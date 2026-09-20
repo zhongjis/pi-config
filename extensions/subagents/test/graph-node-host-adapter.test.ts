@@ -5,10 +5,10 @@ import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-wor
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import * as agentTypes from "../src/agent-types.js";
-import type { AgentConfig } from "../src/types.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import { createNodeHost } from "../src/graph/node-host-adapter.js";
 import { runGraph } from "../src/graph/run-graph.js";
+import type { AgentConfig } from "../src/types.js";
 
 vi.mock("../src/agent-runner.js", () => ({ runAgent: vi.fn(), resumeAgent: vi.fn() }));
 
@@ -188,4 +188,16 @@ describe("createNodeHost", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+});
+
+it("returns authoritative lifetime USD cost, independently of token counts", async () => {
+  const { host } = setup();
+  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
+    options.onAssistantUsage?.({ input: 7, output: 3, cacheRead: 0, cacheWrite: 0, cost: 0.125 });
+    return { session: session(), responseText: "done", aborted: false, steered: false };
+  });
+  const result = await host.spawnAgent({ nodeId: "paid", attempt: 1, agentType: "general-purpose", prompt: "task" }, new AbortController().signal);
+  expect(manager.listAgents()[0]?.lifetimeCost).toBe(0.125);
+  expect(result.costUsd).toBe(0.125);
+  await host.dispose();
 });

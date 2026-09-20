@@ -27,15 +27,22 @@
  */
 
 import { evaluateCondition } from "./condition.js";
-import type { AgentGraph, GraphEdge, GraphFragment, NodeId, ValueRef } from "./ir.js";
+import type { FanoutChild } from "./fanout.js";
+import type { GraphRuntimeState } from "./graph-instance-id.js";
+import type { AgentGraph, FanoutResult, GraphEdge, GraphFragment, NodeId, ValueRef } from "./ir.js";
 import { MISSING, type ResolutionContext, resolveValueRef } from "./value-ref.js";
 
 export type NodeStatus = "pending" | "running" | "completed" | "failed" | "skipped";
 
 export interface NodeRun {
+  /** Accumulated reported cost across executions of this instance. */
+  costUsd?: number;
+  costUnavailable?: boolean;
+  costAttempts?: number;
   status: NodeStatus;
   /** How many times this node has started (incremented on each (re)run). */
   attempt: number;
+  attemptReason?: "user-retry" | "loop";
   /** Parsed output of a completed node — the value ValueRefs read. */
   output?: unknown;
   error?: string;
@@ -43,6 +50,7 @@ export interface NodeRun {
 
 /** The disposition of one node run, fed back from the driver. */
 export interface SettleInput {
+  costUsd?: number;
   ok: boolean;
   output?: unknown;
   error?: string;
@@ -56,12 +64,16 @@ function isSettled(status: NodeStatus | undefined): boolean {
 
 /** A serializable snapshot of a run's progress, for durable pause/resume. */
 export interface SchedulerState {
-  nodes: Record<NodeId, { status: NodeStatus; output?: unknown; attempt: number }>;
+  runtime?: GraphRuntimeState;
+  nodes: Record<NodeId, NodeRun>;
   loopCounts: Record<string, number>;
+  /** Additive v1 metadata; absent in snapshots predating fanout. */
+  collections?: Record<NodeId, readonly FanoutChild[]>;
 }
 
 export class Scheduler {
   readonly nodes = new Map<NodeId, NodeRun>();
+  readonly collections = new Map<NodeId, readonly FanoutChild[]>();
   /** Mutable edge list so an expand node can splice a fragment's edges in at runtime. */
   private readonly edges: GraphEdge[];
   private readonly loopCounts = new Map<string, number>();
@@ -182,15 +194,17 @@ export class Scheduler {
   }
 
   /** Move a node into `running` and count the run against the global backstop. */
+  canMaterialize(count: number): boolean {
+    return this.totalRuns + [...this.nodes.values()].filter(run => run.status === "pending").length + count <= this.maxTotalRuns;
+  }
+
   markRunning(id: NodeId): void {
+    if (this.totalRuns >= this.maxTotalRuns) throw new TypeError(`Graph exceeded ${this.maxTotalRuns} total node runs — a loop is not converging.`);
     const run = this.nodes.get(id);
     if (run === undefined) throw new Error(`Unknown node "${id}"`);
     run.status = "running";
     run.attempt++;
     this.totalRuns++;
-    if (this.totalRuns > this.maxTotalRuns) {
-      throw new Error(`Graph exceeded ${this.maxTotalRuns} total node runs — a loop is not converging.`);
-    }
   }
 
   /** Reset a running node to pending so the driver re-runs it (user retry). */
@@ -200,20 +214,34 @@ export class Scheduler {
     run.status = "pending";
     run.output = undefined;
     run.error = undefined;
+    run.attemptReason = "user-retry";
     return true;
+  }
+
+  /** Record each returned agent execution before schema repair can dispatch another. */
+  recordCost(id: NodeId, costUsd: number | undefined, attempt: number): void {
+    const run = this.nodes.get(id);
+    if (!run) throw new TypeError(`Unknown cost owner ${id}`);
+    if ((run.costAttempts ?? 0) !== attempt - 1) run.costUnavailable = true;
+    run.costAttempts = attempt;
+    if (costUsd === undefined || !Number.isFinite(costUsd) || costUsd < 0 || !Number.isFinite((run.costUsd ?? 0) + costUsd)) run.costUnavailable = true;
+    else run.costUsd = (run.costUsd ?? 0) + costUsd;
   }
 
   /** Record a node's disposition and re-activate any bounded loop targets. */
   settle(id: NodeId, result: SettleInput): void {
     const run = this.nodes.get(id);
     if (run === undefined) throw new Error(`Unknown node "${id}"`);
+    if (result.costUsd !== undefined) run.costUsd = result.costUsd;
     if (result.skipped) {
       run.status = "skipped";
+      run.error = result.error;
       return;
     }
     if (!result.ok) {
       run.status = "failed";
       run.error = result.error;
+      if (result.output !== undefined) run.output = result.output;
       return;
     }
     run.status = "completed";
@@ -232,6 +260,7 @@ export class Scheduler {
       }
       target.status = "pending";
       target.output = undefined;
+      target.attemptReason = "loop";
     }
   }
 
@@ -255,9 +284,32 @@ export class Scheduler {
     return result;
   }
 
+  /** A barrier consumes no executor slot and completes only after its owned children. */
+  settleCollections(): NodeId[] {
+    const changed: NodeId[] = [];
+    for (const [id, children] of this.collections) {
+      if (this.nodes.get(id)?.status !== "running") continue;
+      const results: FanoutResult["results"][number][] = [];
+      for (const [index, child] of children.entries()) {
+        const run = this.nodes.get(child.nodeId);
+        if (run === undefined || run.status === "pending" || run.status === "running") break;
+        results.push({
+          ...child, index, status: run.status, attempt: run.attempt,
+          ...(run.output !== undefined ? { output: run.output } : {}),
+          ...(run.error !== undefined ? { error: run.error } : {}),
+        });
+      }
+      if (results.length !== children.length) continue;
+      this.settle(id, { ok: true, output: { results } satisfies FanoutResult });
+      changed.push(id);
+    }
+    return changed;
+  }
+
   /** Overall status: failed if any node failed, else completed. */
-  runStatus(): "completed" | "failed" {
-    for (const run of this.nodes.values()) if (run.status === "failed") return "failed";
+  runStatus(handled: ReadonlySet<string> = new Set()): "completed" | "failed" {
+    const collected = new Set([...this.collections.values()].flatMap(children => children.map(child => child.nodeId)));
+    for (const [id, run] of this.nodes) if (run.status === "failed" && !collected.has(id) && !handled.has(id)) return "failed";
     return "completed";
   }
 
@@ -265,9 +317,12 @@ export class Scheduler {
   snapshotState(): SchedulerState {
     const nodes: SchedulerState["nodes"] = {};
     for (const [id, run] of this.nodes) {
-      nodes[id] = { status: run.status, attempt: run.attempt, ...(run.output !== undefined ? { output: run.output } : {}) };
+      nodes[id] = { ...run };
     }
-    return { nodes, loopCounts: Object.fromEntries(this.loopCounts) };
+    return {
+      nodes, loopCounts: Object.fromEntries(this.loopCounts),
+      ...(this.collections.size > 0 ? { collections: Object.fromEntries(this.collections) } : {}),
+    };
   }
 
   /**
@@ -276,15 +331,51 @@ export class Scheduler {
    * and re-run; completed/skipped/failed nodes keep their disposition and output.
    */
   hydrate(state: SchedulerState): void {
+    // Reject broken ownership before mutating any state: an orphaned running
+    // barrier otherwise never settles and keeps the synchronous driver spinning.
+    if (state.collections !== undefined &&
+        (state.collections === null || typeof state.collections !== "object" || Array.isArray(state.collections))) {
+      throw new TypeError("Invalid collection metadata: expected an ownership map");
+    }
+    const owned = new Set<string>();
+    for (const [id, children] of Object.entries(state.collections ?? {})) {
+      const parent = state.nodes[id];
+      if (!Object.hasOwn(this.graph.nodes, id) || this.graph.nodes[id]?.type !== "fanout" ||
+          !Object.hasOwn(state.nodes, id) || !parent || !["running", "completed"].includes(parent.status) || !Array.isArray(children)) {
+        throw new TypeError(`Invalid collection "${id}": missing fanout parent, active state, or child list`);
+      }
+      for (const [index, child] of children.entries()) {
+        if (!child || typeof child.nodeId !== "string" || owned.has(child.nodeId) || child.nodeId !== `${id}:item:${index}` ||
+            !Object.hasOwn(this.graph.nodes, child.nodeId) || this.graph.nodes[child.nodeId]?.type !== "agent" ||
+            !Object.hasOwn(state.nodes, child.nodeId) || !state.nodes[child.nodeId] ||
+            !["pending", "running", "completed", "failed", "skipped"].includes(state.nodes[child.nodeId].status) ||
+            (parent.status === "completed" && !isSettled(state.nodes[child.nodeId].status))) {
+          throw new TypeError(`Invalid collection "${id}": missing, duplicate, or out-of-order child at ${index}`);
+        }
+        owned.add(child.nodeId);
+      }
+    }
     for (const [id, saved] of Object.entries(state.nodes)) {
       const run = this.nodes.get(id);
       if (run === undefined) continue;
       run.status = saved.status === "running" ? "pending" : saved.status;
       run.output = saved.output;
       run.attempt = saved.attempt;
+      run.error = saved.error;
+      run.attemptReason = saved.attemptReason;
+      run.costUsd = saved.costUsd;
+      run.costUnavailable = saved.costUnavailable;
+      run.costAttempts = saved.costAttempts;
     }
     this.loopCounts.clear();
     for (const [key, value] of Object.entries(state.loopCounts)) this.loopCounts.set(key, value);
+    this.totalRuns = [...this.nodes.values()].reduce((total, run) => total + run.attempt, 0);
+    this.collections.clear();
+    for (const [id, children] of Object.entries(state.collections ?? {})) {
+      this.collections.set(id, children);
+      const parent = this.nodes.get(id);
+      if (parent?.status === "pending" && state.nodes[id]?.status === "running") parent.status = "running";
+    }
   }
 }
 

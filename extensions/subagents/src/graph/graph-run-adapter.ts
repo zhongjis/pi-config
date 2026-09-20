@@ -13,7 +13,8 @@
  * graph, and the graph runtime stays unaware of the monitor.
  */
 
-import type { AgentGraph } from "./ir.js";
+import type { NodeInstance } from "./graph-instance-id.js";
+import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
 import type { WorkflowAgentEntry } from "./progress.js";
 import type { RunGraphResult } from "./run-graph.js";
@@ -39,23 +40,30 @@ function resultText(value: unknown): string {
 /**
  * Feeds a graph run's node updates into a workflow task's progress log.
  *
- * Node indices and dependency labels are computed once from the graph topology;
+ * Node indices stay stable while dynamic dependency stages are recomputed as nodes materialize;
  * `update` then re-emits one entry per node state change.
  */
 export class GraphRunReporter {
   private readonly index = new Map<string, number>();
+  private readonly identities = new Map<string, NodeInstance>();
+  private readonly labels = new Map<string, string>();
   private readonly deps = new Map<string, string[]>();
   private readonly dependents = new Map<string, string[]>();
   private readonly agentType = new Map<string, string>();
   private readonly prompt = new Map<string, string>();
   private readonly stage = new Map<string, number>();
+  private readonly explicitPhase = new Map<string, FanoutPhase>();
+  /** Nodes already registered through the dynamic/restored metadata path. */
+  private readonly registered = new Set<string>();
   private readonly resolved = new Map<string, { model?: string; modelId?: string; recordId?: string }>();
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
+  private readonly lastUpdateAt = new Map<string, number>();
   /** Last-emitted activity counts per node, so `refresh` only re-emits on a real change. */
   private readonly lastCounts = new Map<string, string>();
   /** Per-node running start, pinned per attempt so re-emits don't restamp elapsed. */
   private readonly runStart = new Map<string, { at: number; attempt: number }>();
   private readonly queuedAt: number;
+  private nextIndex = 0;
 
   constructor(
     private readonly task: WorkflowTask,
@@ -64,10 +72,11 @@ export class GraphRunReporter {
     private readonly getActivity?: (recordId: string) => { toolCalls?: number; tokens?: number } | undefined,
   ) {
     this.queuedAt = now;
-    const ids = Object.keys(graph.nodes);
+    const ids = graph.version === 2 ? [] : Object.keys(graph.nodes);
     ids.forEach((id, i) => {
       this.index.set(id, i);
     });
+    this.nextIndex = ids.length;
     for (const id of ids) {
       // Forward (non-loop) predecessors are the node's real dependencies.
       this.deps.set(
@@ -88,29 +97,69 @@ export class GraphRunReporter {
         this.dependents.set(dep, list);
       }
     }
-    // Topological layer of each node (longest forward-dependency chain), so the
-    // monitor groups nodes by DAG stage instead of a flat roster — a graph-shaped
-    // view. Back-edges are already excluded from deps, so the recursion is finite;
-    // the seen-set guards any stray forward cycle.
-    const depthOf = (id: string, seen: Set<string>): number => {
-      const cached = this.stage.get(id);
-      if (cached !== undefined) return cached;
-      if (seen.has(id)) return 0;
-      seen.add(id);
-      const d = (this.deps.get(id) ?? []).reduce((max, dep) => Math.max(max, depthOf(dep, seen) + 1), 0);
-      seen.delete(id);
-      this.stage.set(id, d);
-      return d;
-    };
-    for (const id of ids) depthOf(id, new Set());
+    this.recomputeStages();
 
     // The run's total is known up front — every declared node — so the header
     // reads N/total from the first frame rather than growing as nodes appear.
     this.task.agentCount = Math.max(this.task.agentCount, ids.length);
   }
 
+  /** Register or enrich a materialized node before its first state update. Repeated registration is harmless. */
+  registerNode(
+    nodeId: string,
+    node: GraphNode,
+    metadata: { dependencies: string[]; phase?: FanoutPhase; instance?: NodeInstance; ordinal?: number },
+  ): void {
+    if (this.registered.has(nodeId)) return;
+    this.registered.add(nodeId);
+
+    const preseeded = this.index.has(nodeId);
+    if (metadata.instance) {
+      const instance = metadata.instance;
+      this.identities.set(nodeId, instance);
+      // V2 rows are one persisted materialization roster, not regrouped topology stages.
+      this.explicitPhase.set(nodeId, { index: 0, title: "Graph" });
+      this.index.set(nodeId, instance.ordinal);
+      this.nextIndex = Math.max(this.nextIndex, instance.ordinal + 1);
+      this.labels.set(nodeId, [(node.name || (node.type === "agent" ? node.agent : node.type.replaceAll("_", " "))).replace(/[\r\n]/g, " "),
+        ...(instance.iteration !== undefined ? [`iteration ${instance.iteration}`] : []),
+        ...(instance.itemIndex !== undefined ? [`item ${instance.itemIndex + 1}`] : []),
+      ].join(" · "));
+    } else if (metadata.ordinal !== undefined) {
+      this.index.set(nodeId, metadata.ordinal);
+      this.nextIndex = Math.max(this.nextIndex, metadata.ordinal + 1);
+    } else if (!preseeded) this.index.set(nodeId, this.nextIndex++);
+    const dependencies = [...new Set([...(preseeded ? this.deps.get(nodeId) ?? [] : []), ...metadata.dependencies])];
+    this.deps.set(nodeId, dependencies);
+    const previousStage = this.stage.get(nodeId);
+    const previousTitle = this.explicitPhase.get(nodeId)?.title ?? (previousStage !== undefined ? `Stage ${previousStage + 1}` : undefined);
+    this.agentType.set(nodeId, node.type === "agent" ? node.agent : node.type);
+    if (node.type === "agent" || node.type === "human_gate" || node.type === "fanout") {
+      this.prompt.set(nodeId, node.prompt);
+    }
+    if (metadata.phase !== undefined && metadata.instance === undefined) this.explicitPhase.set(nodeId, metadata.phase);
+
+    const changedNodeIds = new Set(this.recomputeStages());
+    const stage = this.stage.get(nodeId) ?? 0;
+    const title = this.explicitPhase.get(nodeId)?.title ?? `Stage ${stage + 1}`;
+    if (previousStage !== undefined && (previousStage !== stage || previousTitle !== title)) changedNodeIds.add(nodeId);
+    for (const dependency of dependencies) {
+      const downstream = this.dependents.get(dependency) ?? [];
+      if (!downstream.includes(nodeId)) downstream.push(nodeId);
+      this.dependents.set(dependency, downstream);
+      changedNodeIds.add(dependency);
+    }
+    const changed = [...changedNodeIds].flatMap(id => {
+      const run = this.lastRun.get(id);
+      return run === undefined ? [] : [this.entry(id, run, this.lastUpdateAt.get(id) ?? this.queuedAt)];
+    });
+    if (changed.length > 0) updateWorkflowProgressBatch(this.task, changed);
+    this.task.agentCount = Math.max(this.task.agentCount, this.index.size);
+  }
+
   update(nodeId: string, run: Readonly<NodeRun>, now: number = Date.now()): void {
     this.lastRun.set(nodeId, run);
+    this.lastUpdateAt.set(nodeId, now);
     updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
   }
 
@@ -132,6 +181,7 @@ export class GraphRunReporter {
       if (this.lastCounts.get(nodeId) === key) continue;
       this.lastCounts.set(nodeId, key);
       changed.push(this.entry(nodeId, run, now));
+      this.lastUpdateAt.set(nodeId, now);
     }
     if (changed.length > 0) updateWorkflowProgressBatch(this.task, changed);
   }
@@ -146,7 +196,45 @@ export class GraphRunReporter {
       recordId: info.recordId ?? prev.recordId,
     });
     const run = this.lastRun.get(nodeId);
-    if (run !== undefined) updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
+    if (run !== undefined) {
+      this.lastUpdateAt.set(nodeId, now);
+      updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
+    }
+  }
+
+  /** Recompute non-explicit topological stages after every dynamic registration. */
+  private recomputeStages(): string[] {
+    const previous = new Map([...this.index.keys()].map(id => [id, {
+      stage: this.stage.get(id),
+      title: this.explicitPhase.get(id)?.title ?? (this.stage.has(id) ? `Stage ${(this.stage.get(id) ?? 0) + 1}` : undefined),
+    }]));
+    this.stage.clear();
+    const depthOf = (id: string, seen: Set<string>): number => {
+      const explicit = this.explicitPhase.get(id);
+      if (explicit !== undefined) {
+        this.stage.set(id, explicit.index);
+        return explicit.index;
+      }
+      const cached = this.stage.get(id);
+      if (cached !== undefined) return cached;
+      if (seen.has(id)) return 0;
+      seen.add(id);
+      const stage = (this.deps.get(id) ?? []).reduce(
+        (max, dependency) => this.index.has(dependency) ? Math.max(max, depthOf(dependency, seen) + 1) : max,
+        0,
+      );
+      seen.delete(id);
+      this.stage.set(id, stage);
+      return stage;
+    };
+    for (const id of this.index.keys()) depthOf(id, new Set());
+
+    return [...this.index.keys()].filter(id => {
+      const before = previous.get(id);
+      const stage = this.stage.get(id) ?? 0;
+      const title = this.explicitPhase.get(id)?.title ?? `Stage ${stage + 1}`;
+      return before !== undefined && (before.stage !== stage || before.title !== title);
+    });
   }
 
   private entry(nodeId: string, run: Readonly<NodeRun>, now: number): WorkflowAgentEntry {
@@ -160,10 +248,16 @@ export class GraphRunReporter {
     const base: WorkflowAgentEntry = {
       type: "workflow_agent",
       index: this.index.get(nodeId) ?? 0,
-      label: nodeId,
+      label: this.labels.get(nodeId) ?? nodeId,
+      ...(this.identities.has(nodeId) ? {
+        nodeBinding: nodeId,
+        nodeKey: this.identities.get(nodeId)?.nodeKey,
+        instanceId: this.identities.get(nodeId)?.instanceId,
+        materializationOrdinal: this.identities.get(nodeId)?.ordinal,
+      } : {}),
       state: "start",
       phaseIndex: stage,
-      phaseTitle: `Stage ${stage + 1}`,
+      phaseTitle: this.explicitPhase.get(nodeId)?.title ?? `Stage ${stage + 1}`,
       agentType: this.agentType.get(nodeId),
       // ponytail: the pre-interpolation template (`${ref}` unresolved — P2 per ir.ts); good enough, upgrade = capture the resolved NodeSpawnRequest.prompt via onResolved.
       ...(prompt ? { promptPreview: promptPreview(prompt) } : {}),
@@ -171,6 +265,7 @@ export class GraphRunReporter {
       dependents: this.dependents.get(nodeId) ?? [],
       queuedAt: this.queuedAt,
       ...(run.attempt > 0 ? { attempt: run.attempt } : {}),
+      ...(run.attemptReason !== undefined ? { lastAttemptReason: run.attemptReason } : {}),
       ...(res?.model !== undefined ? { model: res.model } : {}),
       ...(res?.modelId !== undefined ? { modelId: res.modelId } : {}),
       ...(res?.recordId !== undefined ? { recordId: res.recordId } : {}),
@@ -204,7 +299,9 @@ export class GraphRunReporter {
 export function completeGraphTask(task: WorkflowTask, result: RunGraphResult, now: number = Date.now()): void {
   task.control = undefined;
   task.status = result.status === "aborted" ? "killed" : result.status;
-  task.value = result.outputs;
+  task.value = result.feedback && Object.keys(result.feedback).length > 0
+    ? { outputs: result.outputs, feedback: result.feedback }
+    : result.outputs;
   task.endTime = now;
   if (result.status === "failed") {
     const failed = Object.entries(result.nodes)

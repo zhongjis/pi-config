@@ -206,6 +206,116 @@ describe("GraphRunReporter", () => {
     reporter.update("a", { status: "completed", attempt: 2, output: "x" }, 25_000);
     expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(20_000);
   });
+
+  it("registers dynamic nodes with stable metadata before their updates", () => {
+    const t = task();
+    const reporter = new GraphRunReporter(t, graph, 1_000);
+    reporter.update("a", { status: "completed", attempt: 1, output: "done" }, 2_000);
+
+    reporter.registerNode(
+      "round-1:item:0",
+      { type: "agent", agent: "chengfeng", prompt: "research item" },
+      { dependencies: ["a"], phase: { index: 0, title: "Round 1/2" } },
+    );
+    reporter.update("round-1:item:0", { status: "running", attempt: 2, attemptReason: "loop" }, 3_000);
+    reporter.setResolved("round-1:item:0", { recordId: "record-1", modelId: "provider/model" }, 4_000);
+
+    const first = collapse(t.workflowProgress);
+    const child = first.agents.find(entry => entry.label === "round-1:item:0");
+    expect(child).toMatchObject({
+      index: 2, agentType: "chengfeng", promptPreview: "research item",
+      deps: ["a"], phaseIndex: 0, phaseTitle: "Round 1/2",
+      attempt: 2, lastAttemptReason: "loop", recordId: "record-1", modelId: "provider/model",
+    });
+    expect(first.agents.find(entry => entry.label === "a")?.dependents).toContain("round-1:item:0");
+    expect(t.agentCount).toBe(3);
+
+    reporter.registerNode(
+      "round-1:item:0",
+      { type: "agent", agent: "chengfeng", prompt: "ignored" },
+      { dependencies: [], phase: { index: 9, title: "Ignored" } },
+    );
+    reporter.registerNode(
+      "round-2:item:0",
+      { type: "agent", agent: "wenchang", prompt: "follow up" },
+      { dependencies: ["round-1:item:0"], phase: { index: 1, title: "Round 2/2" } },
+    );
+    reporter.update("round-2:item:0", { status: "pending", attempt: 0 });
+    const second = collapse(t.workflowProgress).agents.find(entry => entry.label === "round-2:item:0");
+    expect(second).toMatchObject({ index: 3, phaseIndex: 1, phaseTitle: "Round 2/2" });
+    expect(t.agentCount).toBe(4);
+  });
+
+  it("enriches pre-seeded restored fanout children without changing their indices", () => {
+    const restored: AgentGraph = {
+      nodes: {
+        research: {
+          type: "fanout", items: { path: "$.items" }, itemSchema: {},
+          dispatch: { path: "$.kind", cases: { code: "chengfeng" } },
+          prompt: `research \${item}`, phase: { index: 0, title: "Round 1/2" },
+        },
+        "research:item:0": { type: "agent", agent: "chengfeng", prompt: "research item" },
+      },
+      edges: [],
+    };
+    const t = task();
+    const reporter = new GraphRunReporter(t, restored, 1_000);
+    reporter.update("research", { status: "running", attempt: 1 }, 1_500);
+    reporter.update("research:item:0", { status: "pending", attempt: 0 }, 2_000);
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
+      index: 1, deps: [], phaseIndex: 0, phaseTitle: "Stage 1",
+    });
+
+    reporter.registerNode(
+      "research:item:0",
+      restored.nodes["research:item:0"],
+      { dependencies: [], phase: { index: 0, title: "Round 1/2" } },
+    );
+    const child = collapse(t.workflowProgress).agents.find(entry => entry.label === "research:item:0");
+    expect(child).toMatchObject({ index: 1, deps: [], phaseIndex: 0, phaseTitle: "Round 1/2" });
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "research")?.dependents).toEqual([]);
+    expect(t.agentCount).toBe(2);
+
+    reporter.registerNode(
+      "research:item:0",
+      restored.nodes["research:item:0"],
+      { dependencies: [], phase: { index: 9, title: "Ignored" } },
+    );
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
+      index: 1, deps: [], phaseIndex: 0, phaseTitle: "Round 1/2",
+    });
+  });
+
+  it("recomputes legacy dynamic stages when dependencies register in reverse order", () => {
+    const t = task();
+    const reporter = new GraphRunReporter(t, graph, 1_000);
+    reporter.registerNode(
+      "late-child",
+      { type: "agent", agent: "chengfeng", prompt: "child" },
+      { dependencies: ["late-parent"] },
+    );
+    reporter.update("late-child", { status: "pending", attempt: 0 }, 2_000);
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "late-child")).toMatchObject({
+      index: 2, phaseIndex: 0, phaseTitle: "Stage 1",
+    });
+    const childEmits = t.workflowProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child").length;
+
+    reporter.registerNode(
+      "late-parent",
+      { type: "agent", agent: "wenchang", prompt: "parent" },
+      { dependencies: ["b"] },
+    );
+    reporter.update("late-parent", { status: "pending", attempt: 0 }, 3_000);
+
+    const agents = collapse(t.workflowProgress).agents;
+    expect(agents.find(entry => entry.label === "late-parent")).toMatchObject({
+      index: 3, phaseIndex: 2, phaseTitle: "Stage 3",
+    });
+    expect(agents.find(entry => entry.label === "late-child")).toMatchObject({
+      index: 2, phaseIndex: 3, phaseTitle: "Stage 4",
+    });
+    expect(t.workflowProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child")).toHaveLength(childEmits + 1);
+  });
 });
 
 describe("GraphRunReporter — static graph progress", () => {
@@ -263,4 +373,61 @@ describe("GraphRunReporter — static graph progress", () => {
     controller.abort();
     await expect(run).resolves.toMatchObject({ status: "aborted" });
   });
+});
+
+it("v2 publishes only materialized rows with name-first labels and persisted ordering", async () => {
+  const { GraphInstances } = await import("../src/graph/graph-instance-id.js");
+  const identities = new GraphInstances("run");
+  const first = identities.add("first", { nodeKey: "research", iteration: 1 });
+  const second = identities.add("second", { nodeKey: "research", parentInstanceId: first.instanceId, iteration: 1, itemIndex: 0 });
+  const t = task();
+  const reporter = new GraphRunReporter(t, { ...graph, version: 2 });
+  expect(t.agentCount).toBe(0);
+  reporter.registerNode("second", { type: "agent", agent: "worker", name: "Research", prompt: "x" }, { dependencies: ["first"], instance: second });
+  reporter.update("second", { status: "running", attempt: 1 });
+  reporter.registerNode("first", { type: "fanout", name: "Research", items: { path: "$" }, itemSchema: {}, dispatch: { path: "$.x", cases: { x: "worker" } }, prompt: `\${item}` }, { dependencies: [], instance: first });
+  reporter.update("first", { status: "running", attempt: 1 });
+  const rows = collapse(t.workflowProgress).agents;
+  expect(rows.map(row => row.index)).toEqual([0, 1]);
+  expect(rows.map(row => row.phaseIndex)).toEqual([0, 0]);
+  expect(rows.map(row => row.label)).toEqual(["Research · iteration 1", "Research · iteration 1 · item 1"]);
+  expect(rows[1]).toMatchObject({ nodeKey: "research", instanceId: second.instanceId, materializationOrdinal: 1 });
+  expect(rows.some(row => row.label.includes("iteration 2"))).toBe(false);
+});
+
+it("keeps duplicate v2 labels navigable and identity details width-safe", async () => {
+  const { GraphInstances } = await import("../src/graph/graph-instance-id.js");
+  const { renderObservabilityPaneLines, toPaneSource } = await import("../src/graph/pane/render.js");
+  const { visibleWidth } = await import("@earendil-works/pi-tui");
+  const t = task();
+  const reporter = new GraphRunReporter(t, { version: 2, nodes: {}, edges: [] });
+  const identities = new GraphInstances("run");
+  const left = identities.add("left", { nodeKey: "left" });
+  const right = identities.add("right", { nodeKey: "right" });
+  for (const instance of [left, right]) reporter.registerNode(instance.binding, { type: "agent", agent: "worker", name: "Same 漢字", prompt: "x" }, { dependencies: [], instance });
+  reporter.update("left", { status: "completed", attempt: 1, output: "left outcome" });
+  reporter.update("right", { status: "failed", attempt: 1, error: "right error" });
+  const runs = [{ id: t.id, name: "demo", status: t.status, source: toPaneSource(t) }];
+  const state = { ...initialPanelState(), cursor: { kind: "node", id: "right" } as const, expandedSections: ["identity"] };
+  const wide = renderObservabilityPaneLines(runs, state, { width: 120, rows: 60 }).join("\n");
+  expect(wide).toContain("right error");
+  expect(wide).toContain(right.instanceId);
+  expect(wide).not.toContain(left.instanceId);
+  // The interactive panel uses width=0 as its existing default-width sentinel.
+  for (const width of [1, 2, 8, 20, 40, 80, 120]) {
+    for (const line of renderObservabilityPaneLines(runs, state, { width, rows: 60 })) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+  }
+});
+
+it("retains typed v2 terminal metadata in the workflow result on materialization failure", () => {
+  const t = task();
+  const feedback = { reason: "materialization failure", partial: true, iterations: [], gaps: [], counters: { iterations: 0, totalItems: 0 }, exhaustedBounds: ["node limit"] } as const;
+  completeGraphTask(t, { status: "failed", nodes: {}, outputs: {}, feedback: { research: feedback } });
+  expect(t.value).toEqual({ outputs: {}, feedback: { research: feedback } });
+});
+
+it("validates provenance fields at the notification boundary", async () => {
+  const { isWorkflowEntryData } = await import("../src/graph/entry-validation.js");
+  const entry = { name: "demo", status: "running", startTime: 0, agentCount: 1, totalTokens: 0, progress: [{ type: "workflow_agent", index: 0, label: "Same", state: "progress", nodeBinding: 42 }] };
+  expect(isWorkflowEntryData(entry)).toBe(false);
 });

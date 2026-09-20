@@ -91,6 +91,9 @@ describe("Scheduler — bounded loops", () => {
     });
     expect(sched.nodes.get("review")?.attempt).toBe(3);
     expect(sched.nodes.get("fix")?.attempt).toBe(2);
+    expect(sched.nodes.get("review")?.attemptReason).toBe("loop");
+    expect(sched.nodes.get("fix")?.attemptReason).toBe("loop");
+    expect(sched.nodes.get("implement")?.attemptReason).toBeUndefined();
     expect(sched.nodes.get("done")?.status).toBe("completed");
     expect(sched.runStatus()).toBe("completed");
   });
@@ -141,4 +144,16 @@ describe("Scheduler — reported automatic skips", () => {
     };
     expect(new Scheduler(stuck, {}).forceSkipStuck()).toEqual(["first", "second"]);
   });
+});
+
+it("retains total-run accounting and retry reasons through hydration", () => {
+  const graph: AgentGraph = { nodes: { a: agent() }, edges: [] };
+  const original = new Scheduler(graph, {}, 2);
+  original.markRunning("a");
+  original.retry("a");
+  original.markRunning("a");
+  const restored = new Scheduler(graph, {}, 2);
+  restored.hydrate(original.snapshotState());
+  expect(restored.nodes.get("a")?.attemptReason).toBe("user-retry");
+  expect(() => restored.markRunning("a")).toThrow("exceeded 2 total node runs");
 });

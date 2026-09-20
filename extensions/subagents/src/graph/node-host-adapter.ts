@@ -50,6 +50,7 @@ function toNodeResult(record: AgentRecord): NodeSpawnResult {
     output: record.structuredJson ?? record.result ?? "",
     error: record.error,
     skipped: record.status === "stopped",
+    ...(record.lifetimeCost !== undefined ? { costUsd: record.lifetimeCost } : {}),
     tokens: getLifetimeTotal(record.lifetimeUsage),
     outputTokens: record.lifetimeUsage.output,
     toolCalls: record.toolUses,

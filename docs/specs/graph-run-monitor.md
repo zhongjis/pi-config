@@ -4,7 +4,7 @@ Status: draft
 
 Owner: docs/AGENTS.md (specs bucket)
 
-Related: [agent-graph-reusable-workflows.md](agent-graph-reusable-workflows.md) · [../guides/agent-graph-implementation.md](../guides/agent-graph-implementation.md) · reference: [jc01rho/omo-herdr-dag](https://github.com/jc01rho/omo-herdr-dag)
+Related: [agent-graph-reusable-workflows.md](agent-graph-reusable-workflows.md) · [dynamic-agent-graph-expansion.md](dynamic-agent-graph-expansion.md) · [../guides/agent-graph-implementation.md](../guides/agent-graph-implementation.md) · reference: [jc01rho/omo-herdr-dag](https://github.com/jc01rho/omo-herdr-dag)
 
 ## Problem Statement
 
@@ -107,6 +107,12 @@ Scope is split into two milestones:
     input rendered near its header, so I retain execution context without exposing it in history.
 24. As an operator, I want complete retained node output to scroll when expanded, so a
     long result is inspectable rather than tail-clipped.
+25. As an operator, I want fanout children to appear as soon as they are materialized, so
+    the roster reflects the effective graph rather than only its static definition.
+26. As an operator, I want generated evidence tasks grouped under `Round 1/2` or
+    `Round 2/2`, so evidence rounds remain distinct from execution attempts.
+27. As an operator, I want later attempts labelled `user retry` or `loop`, so I can tell
+    manual intervention from graph control flow.
 
 ## Implementation Decisions
 
@@ -153,6 +159,20 @@ Scope is split into two milestones:
   `promptPreview: "depends on: …"` string stays for compatibility.
 - Upstream state is looked up by joining `deps` against `collapse(progress)`
   (each dep's `displayState`). Downstream/blast-radius joins `dependents`.
+
+### Dynamic rows, rounds, and attempts
+
+- `GraphRunReporter` registers each generated node before its first update and assigns a
+  monotonic, collision-free index. Registration updates task totals, selector/prompt data,
+  dependencies, dependents, and inherited phase metadata.
+- Only materialized fanout children appear. Each child inherits its fanout phase index and
+  title, so evidence children group under `Round 1/2` or `Round 2/2` rather than a computed
+  static stage.
+- Evidence rounds are phase metadata, not attempts. The first graph-level start has no
+  attempt reason; later starts render `attempt N · user retry` or `attempt N · loop`.
+  Internal schema or validation-gate retries remain within one graph attempt.
+- Generated rows retain the same model, record, dependency, controls, privacy, and
+  live/history inspection behavior as ordinary agent rows.
 
 ### Panel state (pane-local)
 

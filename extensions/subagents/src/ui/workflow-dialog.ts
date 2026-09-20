@@ -214,8 +214,8 @@ export function subStatusAnnotations(
 ): string[] {
   const parts: string[] = [];
   if (entry.cached) parts.push(REPLAYED_ANNOTATION);
-  if (entry.lastAttemptReason) parts.push(entry.lastAttemptReason === "user-retry" ? "user retry" : entry.lastAttemptReason);
   if ((entry.attempt ?? 0) > 1) parts.push(`attempt ${entry.attempt}`);
+  if (entry.lastAttemptReason) parts.push(entry.lastAttemptReason === "user-retry" ? "user retry" : entry.lastAttemptReason);
   if (state === "queued" && entry.queuedAt != null) {
     parts.push(`waiting ${formatDuration(Math.max(0, now - entry.queuedAt))}`);
   }
@@ -489,6 +489,7 @@ function detailRows(entry: WorkflowAgentEntry | undefined, view: ResolvedWorkflo
   if (entry.toolCalls) runtime.push(`${entry.toolCalls} tool call${entry.toolCalls === 1 ? "" : "s"}`);
   if (entry.durationMs != null) runtime.push(formatDuration(entry.durationMs));
   section(rows, "Runtime", runtime.filter(Boolean).join(" · "), width);
+  if (entry.instanceId) section(rows, "Identity", `Key: ${entry.nodeKey}\nInstance: ${entry.instanceId}`, width);
   return rows;
 }
 

@@ -14,7 +14,11 @@
  * See docs/ideas/agent-graph-design-v2.md §1.2–§1.8.
  */
 
-export type NodeId = string;
+import type { NodeInstance } from "./graph-instance-id.js";
+
+export type NodeKey = string;
+/** Compatibility alias: authored wiring remains string-keyed. */
+export type NodeId = NodeKey;
 
 /** A JSON Schema document, kept opaque here and compiled by json-schema.ts. */
 export type JsonSchema = Record<string, unknown>;
@@ -83,6 +87,7 @@ export interface LoopPolicy {
 
 /** Runs a Pi subagent and returns a typed result. */
 export interface AgentNode {
+  readonly name?: string;
   type: "agent";
   agent: string;
   prompt: Template;
@@ -116,7 +121,56 @@ export interface ExpandNode {
   namespace?: string;
 }
 
-export type GraphNode = AgentNode | HumanGateNode | SubgraphNode | ExpandNode;
+export interface FanoutPhase {
+  readonly index: number;
+  readonly title: string;
+}
+
+export interface FanoutDispatch {
+  readonly path: string;
+  readonly cases: Readonly<Record<string, string>>;
+}
+
+/** An awaited, all-settled collection of fresh agent children. */
+export interface FanoutNode {
+  readonly name?: string;
+  readonly type: "fanout";
+  readonly items: ValueRef;
+  readonly itemSchema: JsonSchema;
+  readonly dispatch: FanoutDispatch;
+  readonly prompt: Template;
+  readonly input?: Record<string, ValueRef>;
+  readonly outputSchema?: JsonSchema;
+  readonly phase?: FanoutPhase;
+}
+
+export interface FanoutResult {
+  readonly results: readonly ({
+    readonly nodeId: NodeId;
+    readonly index: number;
+    readonly item: JsonValue;
+    readonly status: "completed" | "failed" | "skipped";
+    readonly attempt: number;
+    readonly output?: unknown;
+    readonly error?: string;
+  } & Partial<NodeInstance>)[];
+}
+
+export interface BoundedFeedbackNode {
+  readonly type: "bounded_feedback";
+  readonly name?: string;
+  readonly work: FanoutNode;
+  readonly evaluator: AgentNode;
+  readonly maxIterations: number;
+  readonly maxItemsPerIteration: number;
+  readonly maxTotalItems: number;
+  /** Milliseconds since the persisted run start. */
+  readonly deadline?: number;
+  /** Authoritative child execution cost in USD. */
+  readonly spendLimit?: number;
+}
+
+export type GraphNode = (AgentNode | HumanGateNode | SubgraphNode | ExpandNode | FanoutNode | BoundedFeedbackNode) & { readonly name?: string };
 
 /** A dependency/dataflow edge, optionally guarded and optionally a bounded loop. */
 export interface GraphEdge {
@@ -154,5 +208,5 @@ export interface GraphFragment {
   outputs?: Record<string, ValueRef>;
 }
 
-export const NODE_TYPES = ["agent", "human_gate", "graph", "expand"] as const;
+export const NODE_TYPES = ["agent", "human_gate", "graph", "expand", "fanout", "bounded_feedback"] as const;
 export type NodeType = (typeof NODE_TYPES)[number];

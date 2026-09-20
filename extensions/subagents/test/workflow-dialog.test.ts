@@ -14,6 +14,7 @@ import {
   layoutWorkflowDialog,
   plainWorkflowDialogLines,
   resolveWorkflowDialog,
+  subStatusAnnotations,
   WorkflowDialog,
   workflowAgentModel,
 } from "../src/ui/workflow-dialog.js";
@@ -65,6 +66,27 @@ describe("workflow inspector model", () => {
     for (const marker of ["Research", "Verify", "Report", "Running", "Queued", "Completed", "Waiting for the graph to schedule"]) {
       expect(rendered).toContain(marker);
     }
+  });
+
+  it("shows dynamic round titles and orders attempt before its reason", () => {
+    const progress: WorkflowAgentEntry[] = [
+      { ...agent, index: 8, label: "r1", phaseIndex: 0, phaseTitle: "Round 1/2", attempt: 2, lastAttemptReason: "user-retry" },
+      { ...agent, index: 9, label: "r2", phaseIndex: 1, phaseTitle: "Round 2/2", attempt: 3, lastAttemptReason: "loop" },
+    ];
+    const rendered = text({
+      task: { status: "running", startTime: 100 }, progress,
+      state: initialWorkflowDialogState(), width: 120,
+    });
+    expect(rendered).toContain("Round 1/2");
+    expect(rendered).toContain("Round 2/2");
+    expect(subStatusAnnotations(progress[0], "running", 100)).toEqual(["attempt 2", "user retry"]);
+    expect(subStatusAnnotations(progress[1], "running", 100)).toEqual(["attempt 3", "loop"]);
+    const userRetryRow = rendered.split("\n").find(line => line.includes("r1") && line.includes("gpt-5.6-luna"));
+    const loopRow = rendered.split("\n").find(line => line.includes("r2") && line.includes("gpt-5.6-luna"));
+    expect(userRetryRow).toContain("r1 · attempt");
+    expect(userRetryRow).toContain("gpt-5.6-luna");
+    expect(loopRow).toContain("r2 · attempt");
+    expect(loopRow).toContain("gpt-5.6-luna");
   });
 
   it("renders every terminal distinction and paused scheduling semantics explicitly", () => {

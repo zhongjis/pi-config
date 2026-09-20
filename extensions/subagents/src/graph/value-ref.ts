@@ -65,6 +65,11 @@ export function evalPath(path: string, root: unknown): unknown | Missing {
   return current;
 }
 
+/** Whether a path uses the member/index subset understood by this resolver. */
+export function isJsonPath(path: string): boolean {
+  return path.startsWith("$") && tokenize(path.slice(1)) !== undefined;
+}
+
 const STEP = /^(?:\.([A-Za-z_$][\w$]*)|\[(\d+)\]|\["([^"]*)"\])/;
 
 /** Split `.a.b[0]["k"]` into `["a","b",0,"k"]`, or undefined if malformed. */

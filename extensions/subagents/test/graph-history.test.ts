@@ -14,7 +14,7 @@ function required<T>(value: T | null | undefined): T {
 function task(id = "run", startTime = 1) {
   const value = createWorkflowTask({ id, script: "SECRET_SCRIPT", meta: { name: "test", description: "SECRET_DESCRIPTION" } });
   Object.assign(value, { status: "completed", startTime, endTime: startTime + 1, args: "SECRET_INPUT", value: "SECRET_OUTPUT", error: "SECRET_ERROR", scriptPath: "SECRET_PATH", resultPath: "SECRET_PATH", journalPath: "SECRET_PATH", logs: ["SECRET_LOG"], outcome: { status: "partial", reason: "SECRET_REASON" } });
-  value.workflowProgress = [{ type: "workflow_agent", index: 0, label: "node\n\u001b[31mname\u001b[0m", state: "error", promptPreview: "SECRET_PROMPT", resultPreview: "SECRET_RESULT", error: "SECRET_ERROR", recordId: "SECRET_RECORD", modelId: "provider/model", deps: ["upstream"] }];
+  value.workflowProgress = [{ type: "workflow_agent", index: 0, label: "node\n\u001b[31mname\u001b[0m", state: "error", promptPreview: "SECRET_PROMPT", resultPreview: "SECRET_RESULT", error: "SECRET_ERROR", recordId: "SECRET_RECORD", modelId: "provider/model", attempt: 2, lastAttemptReason: "loop", deps: ["upstream"] }];
   return value;
 }
 
@@ -27,6 +27,7 @@ describe("graph metadata history", () => {
     expect(encoded).not.toContain("abortController");
     expect(snapshot?.nodes[0].label).toBe("node name");
     expect(snapshot?.outcome).toBe("partial");
+    expect(snapshot?.nodes[0].lastAttemptReason).toBe("loop");
     expect(decodeHistory(JSON.stringify({ version: 1, runs: [snapshot] })).runs).toEqual([snapshot]);
     const injected = { ...snapshot, input: "SECRET_INPUT", error: "SECRET_ERROR", nodes: required(snapshot).nodes.map(node => ({ ...node, recordId: "SECRET_RECORD", prompt: "SECRET_PROMPT" })) };
     expect(JSON.stringify(decodeHistory(JSON.stringify({ version: 1, runs: [injected] })))).not.toContain("SECRET_");

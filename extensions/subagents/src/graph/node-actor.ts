@@ -63,6 +63,10 @@ export interface NodeExecInput {
   gate?: string;
   /** Total attempts including the first; >1 retries on validation failure. */
   maxAttempts?: number;
+  attemptOffset?: number;
+  onAttempt?(attempt: number): void;
+  onCost?(costUsd: number | undefined, attempt: number): void;
+  onFailure?(error: string): void;
 }
 
 /**
@@ -80,10 +84,12 @@ export const nodeLogic = fromPromise<NodeSpawnResult, NodeExecInput>(async ({ in
   let last: NodeSpawnResult = { ok: false, error: "node did not run" };
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (signal.aborted) return { ok: false, skipped: true, error: "Aborted." };
-    const request: NodeSpawnRequest = { nodeId: input.nodeId, attempt, agentType: input.agentType, prompt: input.prompt };
+    const request: NodeSpawnRequest = { nodeId: input.nodeId, attempt: (input.attemptOffset ?? 0) + attempt, agentType: input.agentType, prompt: input.prompt };
     if (input.onResolved !== undefined) request.onResolved = input.onResolved;
     if (input.schema !== undefined) request.schema = input.schema;
+    input.onAttempt?.(attempt);
     let result = await input.host.spawnAgent(request, signal);
+    if (!signal.aborted) input.onCost?.(result.costUsd, request.attempt);
     if (result.ok && input.schema !== undefined) result = checkNodeSchema(result, input.schema);
     if (result.ok && input.gate !== undefined) {
       if (input.host.runGate === undefined) {
@@ -95,6 +101,7 @@ export const nodeLogic = fromPromise<NodeSpawnResult, NodeExecInput>(async ({ in
     if (result.ok) return result;
     last = result;
     if (result.skipped) return result; // user skip: do not retry
+    input.onFailure?.(result.error ?? "Node validation failed");
   }
   return last;
 });

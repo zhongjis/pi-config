@@ -8,8 +8,8 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { renderObservabilityPaneLines } from "../src/graph/pane/render.js";
-import { coerceGraphInput } from "../src/graph/run-graph.js";
 import type { WorkflowAgentEntry, WorkflowEntry, WorkflowRunStatus } from "../src/graph/progress.js";
+import { coerceGraphInput } from "../src/graph/run-graph.js";
 import {
   applyPanelKey,
   initialPanelState,
@@ -85,6 +85,25 @@ describe("observability panel — rendering", () => {
     expect(running).toContain("sonnet");
     expect(running).toContain("3 tools");
     expect(rendered).toContain("+ a  done");
+  });
+
+  it("shows inherited round titles and distinct retry reasons", () => {
+    const progress: WorkflowAgentEntry[] = [
+      agent({ index: 4, label: "round-1:item:0", phaseIndex: 0, phaseTitle: "Round 1/2", state: "progress", attempt: 2, lastAttemptReason: "user-retry", startedAt: NOW - 2_000 }),
+      agent({ index: 5, label: "round-2:item:0", phaseIndex: 1, phaseTitle: "Round 2/2", state: "progress", attempt: 3, lastAttemptReason: "loop", startedAt: NOW - 1_000 }),
+    ];
+    const run: PanelRun = {
+      id: "wf_rounds", name: "rounds", status: "running",
+      source: { progress, task: { status: "running", startTime: NOW - 5_000 }, agentCount: 2 },
+    };
+    const rendered = text([run], initialPanelState(), { width: 120, now: NOW });
+    expect(rendered).toContain("Round 1/2");
+    expect(rendered).toContain("Round 2/2");
+    expect(rendered).toContain("attempt 2 · user retry");
+    expect(rendered).toContain("attempt 3 · loop");
+    for (const line of plain(renderPanelLines([run], initialPanelState(), { width: 20, now: NOW }))) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+    }
   });
 
   it("shows live graph context below the run header and expands full inputs with e", () => {

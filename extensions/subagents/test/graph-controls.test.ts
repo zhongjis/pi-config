@@ -83,5 +83,7 @@ describe("runGraph live controls", () => {
     const result = await run;
     expect(result.status).toBe("completed");
     expect(result.nodes.a.attempt).toBe(2);
+    expect(result.nodes.a.attemptReason).toBe("user-retry");
+    expect(result.nodes.b.attemptReason).toBeUndefined();
   });
 });

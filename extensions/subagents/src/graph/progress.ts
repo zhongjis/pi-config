@@ -36,7 +36,7 @@ export type WorkflowDisplayState =
   | "interrupted";
 
 /** Why an agent is on a later attempt, shown next to its row. */
-export type AttemptReason = "throttled" | "user-retry" | "stalled";
+export type AttemptReason = "throttled" | "user-retry" | "stalled" | "loop";
 
 export interface WorkflowPhaseEntry {
   type: "workflow_phase";
@@ -54,6 +54,11 @@ export interface WorkflowAgentEntry {
   /** Stable identity. Re-emitting this index replaces the previous entry. */
   index: number;
   label: string;
+  /** Runtime provenance: detail/debug only; label is never a wiring identity. */
+  nodeBinding?: string;
+  nodeKey?: string;
+  instanceId?: string;
+  materializationOrdinal?: number;
   /**
    * Absent when the agent ran before any `phase()` call. That is the signal —
    * not a default of 0 — that turns the whole run into one "Agents" group.
@@ -160,8 +165,15 @@ export function collapse(progress: readonly WorkflowEntry[]): CollapsedProgress 
   const phaseTitles = new Map<number, string>();
 
   for (const entry of progress) {
-    if (entry.type === "workflow_agent") agents.set(entry.index, entry);
-    else if (entry.type === "workflow_log") logs.push(entry.message);
+    if (entry.type === "workflow_agent") {
+      agents.set(entry.index, entry);
+      if (entry.phaseIndex !== undefined && entry.phaseTitle !== undefined) {
+        const current = phaseTitles.get(entry.phaseIndex);
+        if (current === undefined || (current === `Stage ${entry.phaseIndex + 1}` && entry.phaseTitle !== current)) {
+          phaseTitles.set(entry.phaseIndex, entry.phaseTitle);
+        }
+      }
+    } else if (entry.type === "workflow_log") logs.push(entry.message);
     else phaseTitles.set(entry.index, entry.title);
   }
 

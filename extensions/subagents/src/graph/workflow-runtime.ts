@@ -8,7 +8,8 @@ import { renderWorkflowCard } from "../ui/workflow-report.js";
 import { getLifetimeTotal } from "../usage.js";
 import { checkGraphDelegation } from "./delegation-preflight.js";
 import { workflowEntryData } from "./entry.js";
-import { deleteGraphSnapshot, readGraphSnapshots, writeGraphSnapshot } from "./graph-persist.js";
+import { deleteGraphSnapshot, ownGraphRun, readGraphSnapshots, writeGraphSnapshot } from "./graph-persist.js";
+import { authorizeGraphResume } from "./graph-resume-preflight.js";
 import { completeGraphTask, GraphRunReporter } from "./graph-run-adapter.js";
 import { GraphHistoryStore } from "./history.js";
 import { mergeWorkflowRuns } from "./history-view.js";
@@ -81,9 +82,19 @@ export function createWorkflowRuntime(
       refresh("pane");
     }, 1000);
     activityTick.unref?.();
+    let releaseCheckpoint: (() => void) | undefined;
     try {
+      releaseCheckpoint = ownGraphRun(ctx.cwd, task.id);
       const result = await runGraph(graph, input, {
         host,
+        runId: task.id,
+        onCheckpoint: (state, effectiveGraph) => {
+          writeGraphSnapshot(ctx.cwd, {
+            version: 2, runId: task.id, graph: effectiveGraph, input, waitingGate: "",
+            ...(task.meta?.name !== undefined ? { name: task.meta.name } : {}),
+            state, savedAt: Date.now(),
+          });
+        },
         signal: task.abortController.signal,
         ...(restore !== undefined ? { restore } : {}),
         loadGraph: name => {
@@ -93,17 +104,9 @@ export function createWorkflowRuntime(
         onControl: control => {
           task.control = control;
         },
-        onGateWaiting: (nodeId, state) => {
-          writeGraphSnapshot(ctx.cwd, {
-            version: 1,
-            runId: task.id,
-            ...(task.meta?.name !== undefined ? { name: task.meta.name } : {}),
-            graph,
-            input,
-            waitingGate: nodeId,
-            state,
-            savedAt: Date.now(),
-          });
+        onNodeAdded: (nodeId, node, metadata) => {
+          reporter.registerNode(nodeId, node, metadata);
+          refresh("pane");
         },
         onNodeUpdate: (nodeId, run) => {
           reporter.update(nodeId, run);
@@ -111,19 +114,21 @@ export function createWorkflowRuntime(
         },
         onNodeResolved: (nodeId, info) => {
           reporter.setResolved(nodeId, info);
+          refresh("pane");
         },
       });
       completeGraphTask(task, result);
       refresh("pane");
-      // Lifecycle aborts retain a gate snapshot; genuinely settled runs clear it.
-      if (result.status !== "aborted") deleteGraphSnapshot(ctx.cwd, task.id);
+      // Lifecycle aborts retain the latest checkpoint; genuinely settled runs clear it.
+      if (result.status !== "aborted" || !["reload", "switch", "shutdown"].includes(task.abortController.signal.reason)) deleteGraphSnapshot(ctx.cwd, task.id);
     } catch (err) {
       failWorkflowTask(task, err instanceof Error ? err.message : String(err));
-      deleteGraphSnapshot(ctx.cwd, task.id);
+      // Keep the last valid checkpoint when materialization or dispatch fails.
       refresh("pane");
     } finally {
       clearInterval(activityTick);
-      await host.dispose();
+      try { await host.dispose(); }
+      finally { releaseCheckpoint?.(); }
     }
   }
 
@@ -143,10 +148,24 @@ export function createWorkflowRuntime(
     void run.finally(() => runs.delete(run));
   }
 
-  /** Restore completed nodes and re-surface the persisted human gate. */
+  /** Resume the last complete checkpoint, including gates and feedback transitions. */
   function resume(ctx: ExtensionContext): void {
-    for (const snap of readGraphSnapshots(ctx.cwd)) {
+    for (const snap of readGraphSnapshots(ctx.cwd, message => ctx.ui.notify(message, "error"))) {
       if (tasks.has(snap.runId)) continue;
+      try {
+        authorizeGraphResume(snap, {
+          deny: type => execution.delegationDenial(ctx, type),
+          load: name => { const resolved = resolveSavedGraph(name, ctx.cwd); return resolved.ok ? resolved.graph as AgentGraph : undefined; },
+        });
+        if (snap.state.runtime?.cancelled) {
+          const release = ownGraphRun(ctx.cwd, snap.runId);
+          try { deleteGraphSnapshot(ctx.cwd, snap.runId); } finally { release(); }
+          continue;
+        }
+      } catch (error) {
+        ctx.ui.notify(`Cannot resume graph ${snap.runId}: ${error instanceof Error ? error.message : String(error)}`, "error");
+        continue;
+      }
       const name = snap.name ?? snap.runId;
       const task = createWorkflowTask({
         id: snap.runId,
@@ -159,7 +178,6 @@ export function createWorkflowRuntime(
         },
       });
       tasks.set(snap.runId, task);
-      deleteGraphSnapshot(ctx.cwd, snap.runId);
       launchGraph(ctx, task, { graph: snap.graph, input: snap.input, restore: snap.state });
     }
     refresh("all");

@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "name": "Bounded evidence gathering",
+  "nodes": {
+    "research": {
+      "type": "bounded_feedback",
+      "name": "Research",
+      "maxIterations": 2,
+      "maxItemsPerIteration": 200,
+      "maxTotalItems": 400,
+      "work": {
+        "type": "fanout",
+        "name": "Gather evidence",
+        "items": { "path": "$.tasks" },
+        "itemSchema": {
+          "type": "object",
+          "properties": {
+            "source": { "enum": ["local", "web"] },
+            "task": { "type": "string" }
+          },
+          "required": ["source", "task"],
+          "additionalProperties": false
+        },
+        "dispatch": { "path": "$.source", "cases": { "local": "chengfeng", "web": "wangshu" } },
+        "prompt": "Gather evidence for ${item}",
+        "outputSchema": {
+          "type": "object",
+          "properties": { "findings": { "type": "array", "items": { "type": "string" } } },
+          "required": ["findings"]
+        }
+      },
+      "evaluator": {
+        "type": "agent",
+        "name": "Evaluate evidence",
+        "agent": "luban",
+        "prompt": "Evaluate all accumulated evidence and unresolved gaps: ${feedback}",
+        "retry": { "maxAttempts": 2 }
+      }
+    }
+  },
+  "edges": [],
+  "outputs": { "evidence": { "node": "research", "path": "$" } }
+}

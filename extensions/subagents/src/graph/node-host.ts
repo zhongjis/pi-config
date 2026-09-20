@@ -51,6 +51,8 @@ export interface NodeSpawnResult {
   error?: string;
   /** The user dismissed it rather than it failing; renders as skipped. */
   skipped?: boolean;
+  /** Authoritative lifetime cost of this child execution in USD; absent means unavailable. */
+  costUsd?: number;
   tokens?: number;
   outputTokens?: number;
   toolCalls?: number;

@@ -29,10 +29,14 @@ export function checkGraphDelegation(
 
   const walk = (current: AgentGraph): void => {
     for (const [id, node] of Object.entries(current.nodes)) {
-      if (node.type === "agent") {
-        const ids = usage.get(node.agent);
-        if (ids === undefined) usage.set(node.agent, [id]);
-        else ids.push(id);
+      if (node.type === "agent" || node.type === "fanout" || node.type === "bounded_feedback") {
+        const selectors = node.type === "agent" ? [node.agent] : node.type === "fanout"
+          ? new Set(Object.values(node.dispatch.cases)) : new Set([node.evaluator.agent, ...Object.values(node.work.dispatch.cases)]);
+        for (const selector of selectors) {
+          const ids = usage.get(selector);
+          if (ids === undefined) usage.set(selector, [id]);
+          else ids.push(id);
+        }
         continue;
       }
       if (node.type === "graph") {

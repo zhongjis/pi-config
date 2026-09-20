@@ -37,7 +37,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 
 The base upstream provenance and existing Agent RPC/events remain unchanged. Graph-run supervision extends FleetView; Thinking Steps remains unchanged.
 
-The bundled [graph authoring skill](skills/agent-graphs/SKILL.md) covers the typed `agent_graph` API: saved and inline graphs, node types (`agent`, `human_gate`, `graph`, `expand`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled workflows discover no skill.
+The bundled [graph authoring skill](skills/agent-graphs/SKILL.md) covers the typed `agent_graph` API: saved and inline graphs, node types (`agent`, `human_gate`, `graph`, `expand`, `fanout`, v2 `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled workflows discover no skill.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
@@ -370,8 +370,14 @@ Source precedence is `graph` → `name`. The tool validates the graph structure 
 | `human_gate` | Pauses the run for approve/reject from a human |
 | `graph` | Runs a saved subgraph as a nested execution |
 | `expand` | Splices a runtime-generated `GraphFragment` into the run |
+| `fanout` | Awaits one typed, input-ordered all-settled agent collection |
+| `bounded_feedback` | Version 2: repeats fixed fanout/evaluator templates under explicit bounds, retaining every iteration |
 
 Typed node `outputSchema` drives declarative edge conditions and bounded loops. A node may carry a `validation.gate` shell command and `retry` configuration.
+
+Version 2 separates authored keys, optional display names and durable UUID-v4 runtime instances. Its checkpointed feedback decisions, bounds, terminal results and public fixture are documented in [Bounded Feedback](skills/agent-graphs/references/bounded-feedback.md). V2 monitor rows follow materialization order; future iterations are absent. Optional `deadline` bounds elapsed milliseconds from the persisted run start; `spendLimit` bounds reported work/evaluator USD cost, including repairs. Limits stop growth before materialization/continuation with preserved partial evidence; missing execution-cost accounting fails closed rather than estimating tokens. Restore preserves start/costs, while fresh replay starts anew. Already-admitted work may finish beyond a limit.
+
+Graph checkpoints in `.pi/graph-runs/` use atomic replacement, exclusive run ownership and append-only versioned manifests before dispatch. Restore validates filename containment, scheduler state, executable children and recursive delegation policy before creating tasks or writing. Existing v1 snapshots upgrade before execution; unknown/corrupt snapshots fail visibly. Retry/restore retain IDs and attempt budgets, while fresh runs allocate new identities. Explicit cancellation is terminal; lifecycle interruptions remain resumable. Crash recovery can repeat external actions; it is not an exactly-once guarantee.
 
 Saved graphs live at `agent-graphs/<name>.graph.json`. A reusable portfolio ships with this config: `shared/context-gather`, `shared/review-loop`, `shared/work-verify`, `fuxi/ulw-plan`, `houtu/execute-plan`, `kuafu/ulw`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
 

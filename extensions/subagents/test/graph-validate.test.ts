@@ -230,3 +230,50 @@ describe("validateFragment — expansion against existing ids", () => {
     expect(validateFragment(42, []).ok).toBe(false);
   });
 });
+
+describe("fanout validation", () => {
+  const node = {
+    type: "fanout", items: { path: "$.tasks" }, itemSchema: { type: "object" },
+    dispatch: { path: "$.source", cases: { project: "local" } },
+    prompt: `\${item} \${context}`, input: { context: { path: "$.context" } },
+    phase: { index: 0, title: "Round 1/2" },
+  };
+  it("accepts typed items and reserved item interpolation", () => {
+    expect(validateGraph({ nodes: { work: node }, edges: [] })).toEqual({ ok: true, errors: [] });
+  });
+  it.each([
+    ["items", { path: "tasks" }, "items.path"],
+    ["items", { node: "unknown", path: "$" }, "items.node"],
+    ["itemSchema", { type: "array" }, "itemSchema"],
+    ["outputSchema", { type: "string" }, "outputSchema"],
+    ["dispatch", { path: "source", cases: { project: "x" } }, "dispatch.path"],
+    ["dispatch", { path: "$.source[", cases: { project: "x" } }, "dispatch.path"],
+    ["dispatch", { path: "$.source", cases: {} }, "dispatch.cases"],
+    ["dispatch", { path: "$.source", cases: { project: " " } }, "dispatch.cases.project"],
+    ["prompt", `\${unknown}`, "prompt"],
+    ["input", { item: { path: "$" } }, "input.item"],
+    ["phase", { index: -1, title: "x" }, "phase.index"],
+    ["phase", { index: 0.5, title: "x" }, "phase.index"],
+    ["phase", { index: 0, title: " " }, "phase.title"],
+  ])("locates malformed %s", (key, value, location) => {
+    const result = validateGraph({ nodes: { work: { ...node, [key]: value } }, edges: [] });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some(error => error.startsWith(`nodes.work.${location}:`))).toBe(true);
+  });
+  it("rejects a loop targeting a fanout", () => {
+    const result = validateGraph({ nodes: { work: node }, edges: [{ from: "work", to: "work", loop: { maxIterations: 2 } }] });
+    expect(result.errors).toContain("edges[0].to: a fanout cannot be a loop target");
+  });
+  it("counts existing nodes toward the expansion ceiling", () => {
+    const result = validateFragment({ nodes: { work: node }, edges: [] }, Array.from({ length: 500 }, (_, i) => `n${i}`));
+    expect(result.errors).toContain("nodes: 501 nodes exceeds the limit of 500");
+  });
+});
+
+describe("graph versions", () => {
+  it("accepts v1 defaults and v2, rejects unknown versions", () => {
+    const base = { nodes: { a: { type: "agent", agent: "x", prompt: "x" } }, edges: [] };
+    for (const version of [undefined, 1, 2]) expect(validateGraph({ ...base, version }).ok).toBe(true);
+    for (const version of [0, 3, -1, 1.5, "2", null]) expect(validateGraph({ ...base, version }).ok).toBe(false);
+  });
+});

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentGraph, GraphNode } from "../src/graph/ir.js";
+import { runGraph } from "../src/graph/run-graph.js";
 import { resolveSavedGraph } from "../src/graph/saved-graph.js";
 import { validateGraph } from "../src/graph/validate.js";
 
@@ -21,6 +22,47 @@ const PORTFOLIO = [
   "houtu/execute-plan",
   "kuafu/ulw",
 ] as const;
+
+const INITIAL_TASK_SCHEMA = {
+  type: "object",
+  properties: {
+    source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
+    question: { type: "string" },
+    reason: { type: "string" },
+  },
+  required: ["source", "question"],
+} as const;
+
+const EVIDENCE_SCHEMA = {
+  type: "object",
+  properties: {
+    source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
+    evidence: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          claim: { type: "string" },
+          provenance: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { reference: { type: "string" }, detail: { type: "string" } },
+              required: ["reference", "detail"],
+            },
+          },
+        },
+        required: ["claim", "provenance"],
+      },
+    },
+    relevantFiles: { type: "array", items: { type: "string" } },
+    constraints: { type: "array", items: { type: "string" } },
+    unknowns: { type: "array", items: { type: "string" } },
+    conflicts: { type: "array", items: { type: "string" } },
+  },
+  required: ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"],
+} as const;
+
 
 describe("agent-graph reusable-workflow portfolio", () => {
   for (const name of PORTFOLIO) {
@@ -81,74 +123,133 @@ function requiresInput(graph: AgentGraph, field: string): void {
   expect(schema?.required).toContain(field);
 }
 
-function hasBooleanGuard(graph: AgentGraph, from: string, to: string, path: string): boolean {
-  return graph.edges.some(edge => {
-    if (edge.from !== from || edge.to !== to || edge.when === undefined || !("eq" in edge.when)) return false;
-    const [ref, value] = edge.when.eq;
-    return ref.node === from && ref.path === path && value === true;
-  });
+function agentNode(graph: AgentGraph, id: string): Extract<GraphNode, { type: "agent" }> {
+  const node = graph.nodes[id];
+  expect(node?.type, id).toBe("agent");
+  if (node?.type !== "agent") throw new Error(`Expected ${id} to be an agent`);
+  return node;
+}
+
+function boundedFeedbackNode(graph: AgentGraph, id: string): Extract<GraphNode, { type: "bounded_feedback" }> {
+  const node = graph.nodes[id];
+  expect(node?.type, id).toBe("bounded_feedback");
+  if (node?.type !== "bounded_feedback") throw new Error(`Expected ${id} to be bounded feedback`);
+  return node;
 }
 
 describe("adaptive context-gather contract", () => {
-  const sources = {
-    project: { first: "project-round-one", second: "project-round-two", agent: "chengfeng", firstFlag: "$.hasProject", secondFlag: "$.needsProject" },
-    platform: { first: "platform-round-one", second: "platform-round-two", agent: "wenchang", firstFlag: "$.hasPlatform", secondFlag: "$.needsPlatform" },
-    upstream: { first: "upstream-round-one", second: "upstream-round-two", agent: "wenchang", firstFlag: "$.hasUpstream", secondFlag: "$.needsUpstream" },
-    "work-records": { first: "work-records-round-one", second: "work-records-round-two", agent: "wenchang", firstFlag: "$.hasWorkRecords", secondFlag: "$.needsWorkRecords" },
-    practice: { first: "practice-round-one", second: "practice-round-two", agent: "wenchang", firstFlag: "$.hasPractice", secondFlag: "$.needsPractice" },
-  } as const;
-
-  it("routes five on-demand lanes through at most two conditional rounds", () => {
+  it("uses one bounded-feedback research region with exact bounds", () => {
     const graph = savedGraph("shared/context-gather");
     requiresInput(graph, "request");
     requiresInput(graph, "tasks");
-    expect(graph.nodes["route-round-one"]?.type).toBe("agent");
-    expect(graph.nodes["evaluate-round-one"]?.type).toBe("agent");
-    expect(graph.nodes.synthesize?.type).toBe("agent");
-    expect(Object.values(graph.nodes).some(node => node.type === "expand")).toBe(false);
+    expect(graph.version).toBe(2);
+    expect(Object.keys(graph.nodes)).toEqual(["research", "synthesize"]);
+    expect(Object.values(graph.nodes).filter(node => node.type === "bounded_feedback")).toHaveLength(1);
+    expect(Object.values(graph.nodes).some(node => node.type === "fanout" || node.type === "expand")).toBe(false);
+    expect(graph.edges).toEqual([{ from: "research", to: "synthesize" }]);
 
-    for (const [source, lane] of Object.entries(sources)) {
-      const first = graph.nodes[lane.first];
-      const second = graph.nodes[lane.second];
-      expect(first?.type, `${source} round one`).toBe("agent");
-      expect(second?.type, `${source} round two`).toBe("agent");
-      if (first?.type === "agent") expect(first.agent).toBe(lane.agent);
-      if (second?.type === "agent") expect(second.agent).toBe(lane.agent);
-      expect(hasBooleanGuard(graph, "route-round-one", lane.first, lane.firstFlag)).toBe(true);
-      expect(hasBooleanGuard(graph, "evaluate-round-one", lane.second, lane.secondFlag)).toBe(true);
-    }
-    expect(graph.edges).toContainEqual({ from: "route-round-one", to: "evaluate-round-one" });
-    expect(graph.edges).toContainEqual({ from: "evaluate-round-one", to: "synthesize" });
+    const research = boundedFeedbackNode(graph, "research");
+    expect(research.name).toBe("Research");
+    expect(research.maxIterations).toBe(2);
+    expect(research.maxItemsPerIteration).toBe(200);
+    expect(research.maxTotalItems).toBe(400);
+    expect(research.work).toMatchObject({
+      type: "fanout",
+      name: "Gather evidence",
+      items: { path: "$.tasks" },
+      itemSchema: INITIAL_TASK_SCHEMA,
+      dispatch: {
+        path: "$.source",
+        cases: {
+          project: "chengfeng",
+          platform: "wenchang",
+          upstream: "wenchang",
+          "work-records": "wenchang",
+          practice: "wenchang",
+        },
+      },
+      input: { request: { path: "$.request" } },
+      outputSchema: EVIDENCE_SCHEMA,
+    });
   });
 
-  it("preserves GatheredContext outputs and adds evidence provenance and conflicts", () => {
+  it("uses the reserved accumulated feedback evaluator contract", () => {
+    const research = boundedFeedbackNode(savedGraph("shared/context-gather"), "research");
+    expect(research.evaluator).toMatchObject({
+      type: "agent",
+      name: "Evaluate evidence",
+      agent: "direnjie",
+      input: { request: { path: "$.request" }, tasks: { path: "$.tasks" } },
+      retry: { maxAttempts: 2 },
+    });
+    expect(research.evaluator.input).not.toHaveProperty("feedback");
+    expect(research.evaluator.outputSchema).toBeUndefined();
+    for (const placeholder of [`\${request}`, `\${tasks}`, `\${feedback}`]) expect(research.evaluator.prompt).toContain(placeholder);
+    expect(research.evaluator.prompt).toContain("gapId");
+    expect(research.evaluator.prompt.toLowerCase()).toContain("do not add practice research by default");
+  });
+
+  it("runs sufficient and one-continuation evidence fixtures without materializing future work", async () => {
+    const sufficient = { decision: "sufficient", gaps: [], tasks: [] };
+    const continueOnce = {
+      decision: "continue",
+      gaps: [{ id: "platform-gap", description: "Platform behavior is unverified" }],
+      tasks: [{ gapId: "platform-gap", item: { source: "platform", question: "Verify the platform behavior", reason: "Close platform-gap" } }],
+    };
+    const gatheredContext = {
+      summary: "Evidence gathered.", relevantFiles: [], constraints: [], unknowns: [],
+      evidence: [{ claim: "Observed evidence", provenance: [{ reference: "fixture", detail: "stub" }] }], conflicts: [],
+    };
+    for (const [fixture, expectedAgents] of [
+      [[sufficient], ["chengfeng", "direnjie", "jintong"]],
+      [[continueOnce, sufficient], ["chengfeng", "direnjie", "wenchang", "direnjie", "jintong"]],
+    ] as const) {
+      const decisions = [...fixture];
+      const agents: string[] = [];
+      let bindings: string[] = [];
+      const result = await runGraph(savedGraph("shared/context-gather"), {
+        request: "Gather context",
+        tasks: [{ source: "project", question: "Find the implementation" }],
+      }, {
+        onCheckpoint: (_state, effective) => { bindings = Object.keys(effective.nodes); },
+        host: { spawnAgent: async request => {
+          agents.push(request.agentType);
+          if (request.agentType === "direnjie") return { ok: true, output: JSON.stringify(decisions.shift()) };
+          if (request.agentType === "jintong") return { ok: true, output: JSON.stringify(gatheredContext) };
+          return { ok: true, output: JSON.stringify({ source: "project", evidence: [], relevantFiles: [], constraints: [], unknowns: [], conflicts: [] }) };
+        } },
+      });
+      expect(result.status).toBe("completed");
+      expect(result.outputs).toEqual(gatheredContext);
+      expect(agents).toEqual(expectedAgents);
+      if (expectedAgents.length === 3) expect(bindings.some(id => id.includes(":iteration:2:"))).toBe(false);
+      else expect(bindings.filter(id => id.includes(":iteration:2:")).length).toBe(3);
+    }
+  });
+
+  it("preserves GatheredContext outputs and synthesis input", () => {
     const graph = savedGraph("shared/context-gather");
-    for (const output of ["summary", "relevantFiles", "constraints", "unknowns", "evidence", "conflicts"]) {
-      expect(graph.outputs).toHaveProperty(output);
-    }
-    const synthesize = graph.nodes.synthesize;
-    expect(synthesize?.type).toBe("agent");
-    if (synthesize?.type === "agent") {
-      const properties = synthesize.outputSchema?.properties as Record<string, unknown> | undefined;
-      const evidence = properties?.evidence as { items?: { properties?: Record<string, unknown>; required?: unknown } } | undefined;
-      expect(evidence?.items?.properties).toHaveProperty("claim");
-      expect(evidence?.items?.properties).toHaveProperty("provenance");
-      expect(evidence?.items?.required).toEqual(["claim", "provenance"]);
-    }
-    for (const lane of Object.values(sources)) {
-      for (const nodeId of [lane.first, lane.second]) {
-        const node = graph.nodes[nodeId];
-        expect(node?.type).toBe("agent");
-        if (node?.type !== "agent") continue;
-        const properties = node.outputSchema?.properties as Record<string, unknown> | undefined;
-        for (const field of ["evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]) {
-          expect(properties).toHaveProperty(field);
-        }
-        const evidence = properties?.evidence as { items?: { properties?: Record<string, unknown> } } | undefined;
-        expect(evidence?.items?.properties).toHaveProperty("claim");
-        expect(evidence?.items?.properties).toHaveProperty("provenance");
-      }
-    }
+    expect(graph.outputs).toEqual({
+      summary: { node: "synthesize", path: "$.summary" },
+      relevantFiles: { node: "synthesize", path: "$.relevantFiles" },
+      constraints: { node: "synthesize", path: "$.constraints" },
+      unknowns: { node: "synthesize", path: "$.unknowns" },
+      evidence: { node: "synthesize", path: "$.evidence" },
+      conflicts: { node: "synthesize", path: "$.conflicts" },
+    });
+    const synthesize = agentNode(graph, "synthesize");
+    expect(synthesize.agent).toBe("jintong");
+    expect(synthesize.name).toBe("Synthesize context");
+    expect(synthesize.input).toEqual({
+      request: { path: "$.request" },
+      tasks: { path: "$.tasks" },
+      research: { node: "research", path: "$" },
+    });
+    expect(synthesize.outputSchema).toMatchObject({
+      type: "object",
+      properties: { evidence: EVIDENCE_SCHEMA.properties.evidence },
+      required: ["summary", "relevantFiles", "constraints", "unknowns", "evidence", "conflicts"],
+    });
   });
 });
 

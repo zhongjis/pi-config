@@ -61,6 +61,14 @@ settled but none activated, the node is **skipped**.
   ```jsonc
   { "type": "graph", "graph": "shared/context-gather", "input": { "task": { "path": "$.task" } } }
   ```
+- **fanout** — materializes a typed runtime item array as ordinary agent children,
+  awaits every child, and returns input-ordered all-settled results.
+  ```jsonc
+  { "type": "fanout", "items": { "path": "$.tasks" },
+    "itemSchema": { "type": "object", "properties": { "kind": { "type": "string" } }, "required": ["kind"] },
+    "dispatch": { "path": "$.kind", "cases": { "project": "chengfeng" } },
+    "prompt": "Task: ${item}", "phase": { "index": 0, "title": "Round 1/2" } }
+  ```
 - **expand** — splices a `GraphFragment` produced at runtime into the live graph
   (dynamic topology). `source` must resolve to `{ nodes, edges, outputs? }`; use
   `namespace` to isolate the inserted ids.
@@ -101,6 +109,19 @@ declare `loop`; the cap bounds it.
   { "from": "fix", "to": "review", "loop": { "maxIterations": 3 } }
 ]
 ```
+
+## Dynamic expansion
+
+Use `fanout` for a runtime list of same-contract tasks; use `expand` when a node
+produces a complete `GraphFragment`. A fanout validates and inserts all children
+atomically, remains running until they all settle, and exposes ordered successes and
+failures. In version 1, model bounded evaluation with explicit fanout nodes per round,
+not a loop back into one fanout. Version 2 offers `bounded_feedback` with fixed work
+and evaluator templates; read [Bounded Feedback](references/bounded-feedback.md)
+for its required bounds, typed decisions, accumulation and durable identity contract.
+
+Read [Dynamic Expansion](references/dynamic-expansion.md) for typed task schemas,
+dispatch, awaited collection, round namespaces, bounded evaluators, and failure handling.
 
 ## Resources
 

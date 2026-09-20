@@ -54,6 +54,7 @@ import {
 import {
   ASCII_DIALOG_GLYPHS,
   dialogRowGlyph,
+  subStatusAnnotations,
   UNICODE_DIALOG_GLYPHS,
   type WorkflowDialogGlyphs,
   type WorkflowDialogSource,
@@ -179,6 +180,7 @@ function runStatusDot(status: WorkflowRunStatus, glyphs: WorkflowDialogGlyphs, _
 
 interface StageGroup {
   stage: number;
+  title: string;
   agents: WorkflowAgentEntry[];
   done: number;
   total: number;
@@ -195,12 +197,19 @@ function stageGroups(agents: readonly WorkflowAgentEntry[]): StageGroup[] {
   }
   return [...byStage.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([stage, list]) => ({
-      stage,
-      agents: list,
-      done: list.filter(agent => agent.state === "done").length,
-      total: list.length,
-    }));
+    .map(([stage, list]) => {
+      const defaultTitle = `Stage ${stage + 1}`;
+      const title = list.find(agent => agent.phaseTitle !== undefined && agent.phaseTitle !== defaultTitle)?.phaseTitle
+        ?? list.find(agent => agent.phaseTitle !== undefined)?.phaseTitle
+        ?? defaultTitle;
+      return {
+        stage,
+        title,
+        agents: list,
+        done: list.filter(agent => agent.state === "done").length,
+        total: list.length,
+      };
+    });
 }
 
 /** The roster filter mode. (v1.5) */
@@ -250,7 +259,7 @@ function visibleTargets(shown: readonly ShownStage[], isExpanded: (stage: number
   for (const stage of shown) {
     targets.push({ kind: "stage", stage: stage.group.stage });
     if (isExpanded(stage.group.stage)) {
-      for (const agent of stage.shown) targets.push({ kind: "node", id: agent.label });
+      for (const agent of stage.shown) targets.push({ kind: "node", id: agent.nodeBinding ?? agent.label });
     }
   }
   return targets;
@@ -289,7 +298,7 @@ function resolveCursor(
   if (shown.length === 0) return undefined;
   if (cursor?.kind === "stage" && shown.some(s => s.group.stage === cursor.stage)) return cursor;
   if (cursor?.kind === "node") {
-    const node = agents.find(agent => agent.label === cursor.id);
+    const node = agents.find(agent => (agent.nodeBinding ?? agent.label) === cursor.id);
     if (node && matchesFilter(displayState(node, active), filter)) {
       const stage = node.phaseIndex ?? 0;
       if (!collapsed.has(stage) && shown.some(s => s.group.stage === stage)) return cursor;
@@ -478,6 +487,9 @@ function agentRow(
   ];
   const activity = rowActivity(entry, state, now);
   if (activity) line.push({ text: `  ${activity}`, color: "muted" });
+  for (const annotation of subStatusAnnotations(entry, state, now)) {
+    line.push({ text: ` · ${annotation}`, color: "muted" });
+  }
   if (entry.agentType) line.push({ text: ` · ${entry.agentType}`, color: "muted" });
   if (model) line.push({ text: ` · ${model}`, color: "muted" });
   return clampLine(line, width);
@@ -511,7 +523,7 @@ function rosterLines(
     const allDone = group.total > 0 && group.done === group.total;
     const headColor: WorkflowCardColor = allDone ? "success" : anyFailed ? "error" : "muted";
     // The `done/total` rollup stays the TRUE totals even when the filter hides rows.
-    const label = ` ${marker}Stage ${group.stage + 1} `;
+    const label = ` ${marker}${group.title} `;
     const count = `${group.done}/${group.total}`;
     const ruleLen = Math.max(1, width - visibleWidth(label) - visibleWidth(count) - 2);
     const headerLine = clampLine([
@@ -528,7 +540,7 @@ function rosterLines(
     // (only in the fits-everything case) render whole.
     let nodesToShow = shownAgents;
     if (rosterBudget != null && group.stage === focusedStage && shownAgents.length > nodeBudget) {
-      const selIdx = cursor?.kind === "node" ? shownAgents.findIndex(agent => agent.label === cursor.id) : -1;
+      const selIdx = cursor?.kind === "node" ? shownAgents.findIndex(agent => (agent.nodeBinding ?? agent.label) === cursor.id) : -1;
       const maxStart = Math.max(0, shownAgents.length - nodeBudget);
       let start = clamp(scroll, 0, maxStart);
       if (selIdx >= 0) {
@@ -539,7 +551,7 @@ function rosterLines(
       nodesToShow = shownAgents.slice(start, start + nodeBudget);
     }
     for (const agent of nodesToShow) {
-      const nodeSelected = cursor?.kind === "node" && cursor.id === agent.label;
+      const nodeSelected = cursor?.kind === "node" && cursor.id === (agent.nodeBinding ?? agent.label);
       const row = agentRow(agent, active, glyphs, width, now);
       if (nodeSelected) selectedRow = lines.length;
       lines.push(nodeSelected && highlightCursor ? highlightRow(row, width) : row);
@@ -560,10 +572,10 @@ function stageAggregateLines(
   const lines: WorkflowCardLine[] = [];
   const sep = ascii ? "--" : "──";
   const dot = "*";
-  lines.push(clampLine([
-    { text: " Stage ", color: "muted", bold: true },
-    { text: `${sep} ${group.stage + 1}`, color: "dim" },
-  ], width));
+  const defaultTitle = `Stage ${group.stage + 1}`;
+  lines.push(clampLine(group.title === defaultTitle
+    ? [{ text: " Stage ", color: "muted", bold: true }, { text: `${sep} ${group.stage + 1}`, color: "dim" }]
+    : [{ text: ` ${group.title}`, color: "muted", bold: true }], width));
   // Live counts across the stage, coloured like the summary strip.
   const counts = countStates(group.agents, active);
   const countSep: WorkflowCardSegment = { text: "  ·  ", color: "dim" };
@@ -634,7 +646,7 @@ function blastRadius(
   entry: WorkflowAgentEntry, byId: Map<string, WorkflowAgentEntry>, active: boolean,
 ): string[] {
   const skipped: string[] = [];
-  const seen = new Set<string>([entry.label]);
+  const seen = new Set<string>([entry.nodeBinding ?? entry.label]);
   const queue = [...(entry.dependents ?? [])];
   while (queue.length > 0) {
     const id = queue.shift();
@@ -716,20 +728,23 @@ function nodeDetailSections(
   ] });
 
   // Live per-node tool/token counts arrive on the entry (GraphRunReporter reads the record); the
-  // status line keeps stage + elapsed, and `runtimeFacts` below surfaces the counts.
+  // status line keeps phase + elapsed, and `runtimeFacts` below surfaces the counts.
+  const phase = entry.phaseTitle ?? `Stage ${(entry.phaseIndex ?? 0) + 1}`;
+  const annotations = subStatusAnnotations(entry, state, now);
   const liveFacts = state === "running"
-    ? ` · Stage ${(entry.phaseIndex ?? 0) + 1}${entry.startedAt != null ? ` · ${formatDuration(Math.max(0, now - entry.startedAt))}` : ""}`
+    ? ` · ${phase}${entry.startedAt != null ? ` · ${formatDuration(Math.max(0, now - entry.startedAt))}` : ""}`
     : "";
+  const attemptFacts = annotations.length > 0 ? ` · ${annotations.join(" · ")}` : "";
   sections.push({ key: "", navigable: false, lines: [
     clampLine([
       { text: "  " },
       { text: statusWord(state), color: stateColor(state), bold: true },
-      { text: ` · ${entry.agentType ?? "node"} · ${model}${liveFacts}`, color: "muted" },
+      { text: ` · ${entry.agentType ?? "node"} · ${model}${liveFacts}${attemptFacts}`, color: "muted" },
     ], width),
   ] });
 
   // Waits on (upstream): each dependency joined against the collapsed roster for its live state.
-  const byId = new Map(agents.map(agent => [agent.label, agent] as const));
+  const byId = new Map(agents.map(agent => [agent.nodeBinding ?? agent.label, agent] as const));
   const deps = entry.deps ?? [];
   const waits: WorkflowCardLine[] = [
     clampLine([
@@ -777,6 +792,9 @@ function nodeDetailSections(
     });
   }
 
+  if (entry.instanceId) sections.push({ key: "identity", navigable: true, lines:
+    collapsibleSection("Identity", `Key: ${entry.nodeKey}\nInstance: ${entry.instanceId}`, undefined, expandedSections.includes("identity"), enterGlyph, width),
+  });
   const facts = runtimeFacts(entry);
   if (facts) {
     sections.push({ key: "", navigable: false, lines: [
@@ -807,7 +825,7 @@ function buildDetailSections(
   expandedSections: readonly string[],
 ): DetailSection[] {
   if (cursor?.kind === "node") {
-    const entry = agents.find(agent => agent.label === cursor.id);
+    const entry = agents.find(agent => (agent.nodeBinding ?? agent.label) === cursor.id);
     return entry ? nodeDetailSections(entry, agents, active, glyphs, ascii, width, now, expandedSections) : [];
   }
   if (cursor?.kind === "stage") {
@@ -820,7 +838,7 @@ function buildDetailSections(
 /** The recordId of the resolved cursor's node when it is a node that has one — the `c` (open) target. */
 function openableRecordId(cursor: Target | undefined, agents: readonly WorkflowAgentEntry[]): string | undefined {
   if (cursor?.kind !== "node") return undefined;
-  return agents.find(agent => agent.label === cursor.id)?.recordId;
+  return agents.find(agent => (agent.nodeBinding ?? agent.label) === cursor.id)?.recordId;
 }
 
 function footerLine(
@@ -931,7 +949,7 @@ function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOpti
   const focusedStage = resolvedCursor?.kind === "stage"
     ? resolvedCursor.stage
     : resolvedCursor?.kind === "node"
-      ? (agents.find(agent => agent.label === resolvedCursor.id)?.phaseIndex ?? 0)
+      ? (agents.find(agent => (agent.nodeBinding ?? agent.label) === resolvedCursor.id)?.phaseIndex ?? 0)
       : undefined;
 
   const detailSections = buildDetailSections(resolvedCursor, agents, groups, active, glyphs, ascii, width, now, state.expandedSections);
@@ -1143,7 +1161,7 @@ export function applyPanelKey(
     if (!resolvedCursor) return render({ ...state, runIndex: index });
     const stage = resolvedCursor.kind === "stage"
       ? resolvedCursor.stage
-      : (agents.find(agent => agent.label === resolvedCursor.id)?.phaseIndex ?? 0);
+      : (agents.find(agent => (agent.nodeBinding ?? agent.label) === resolvedCursor.id)?.phaseIndex ?? 0);
     const collapsed = new Set(state.collapsedStages);
     let nextCursor: Target = resolvedCursor;
     if (collapsed.has(stage)) {

@@ -1,6 +1,7 @@
 {
+  "version": 2,
   "name": "context-gather",
-  "description": "Adaptively gather caller-planned evidence in at most two on-demand source rounds.",
+  "description": "Adaptively gather caller-planned evidence with at most one gap-closing iteration.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -22,206 +23,91 @@
     "required": ["request", "tasks"]
   },
   "nodes": {
-    "route-round-one": {
-      "type": "agent",
-      "agent": "jintong",
-      "prompt": "Route only the supplied context tasks for request: ${request}\n\nTasks: ${tasks}\n\nGroup every supplied task by its source into the five task arrays and set each has* boolean exactly when that array is non-empty. Do not invent, remove, rewrite, or add tasks. Callers check applicable Skills before creating tasks; do not add practice research by default. Return validated JSON only.",
-      "input": {
-        "request": { "path": "$.request" },
-        "tasks": { "path": "$.tasks" }
+    "research": {
+      "type": "bounded_feedback",
+      "name": "Research",
+      "maxIterations": 2,
+      "maxItemsPerIteration": 200,
+      "maxTotalItems": 400,
+      "work": {
+        "type": "fanout",
+        "name": "Gather evidence",
+        "items": { "path": "$.tasks" },
+        "itemSchema": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
+            "question": { "type": "string" },
+            "reason": { "type": "string" }
+          },
+          "required": ["source", "question"]
+        },
+        "dispatch": {
+          "path": "$.source",
+          "cases": {
+            "project": "chengfeng",
+            "platform": "wenchang",
+            "upstream": "wenchang",
+            "work-records": "wenchang",
+            "practice": "wenchang"
+          }
+        },
+        "prompt": "Request: ${request}\nTask: ${item}\n\nReturn validated JSON only: source, evidence (claim plus provenance), relevantFiles, constraints, unknowns, and conflicts. Use empty arrays when none apply.",
+        "input": { "request": { "path": "$.request" } },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "claim": { "type": "string" },
+                  "provenance": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "reference": { "type": "string" },
+                        "detail": { "type": "string" }
+                      },
+                      "required": ["reference", "detail"]
+                    }
+                  }
+                },
+                "required": ["claim", "provenance"]
+              }
+            },
+            "relevantFiles": { "type": "array", "items": { "type": "string" } },
+            "constraints": { "type": "array", "items": { "type": "string" } },
+            "unknowns": { "type": "array", "items": { "type": "string" } },
+            "conflicts": { "type": "array", "items": { "type": "string" } }
+          },
+          "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]
+        }
       },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "projectTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["project"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question"] } },
-          "platformTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["platform"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question"] } },
-          "upstreamTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["upstream"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question"] } },
-          "workRecordsTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["work-records"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question"] } },
-          "practiceTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["practice"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question"] } },
-          "hasProject": { "type": "boolean" },
-          "hasPlatform": { "type": "boolean" },
-          "hasUpstream": { "type": "boolean" },
-          "hasWorkRecords": { "type": "boolean" },
-          "hasPractice": { "type": "boolean" }
-        },
-        "required": ["projectTasks", "platformTasks", "upstreamTasks", "workRecordsTasks", "practiceTasks", "hasProject", "hasPlatform", "hasUpstream", "hasWorkRecords", "hasPractice"]
+      "evaluator": {
+        "type": "agent",
+        "name": "Evaluate evidence",
+        "agent": "direnjie",
+        "prompt": "Evaluate the collected evidence against the request.\n\nRequest: ${request}\nOriginal tasks: ${tasks}\nAll accumulated iterations, all-settled results, and unresolved gaps: ${feedback}\n\nFailed or skipped evidence results are unresolved unknowns. Return only { decision: \"sufficient\" | \"continue\", gaps: [{ id, description }], tasks: [{ gapId, item: { source, question, reason } }] }. For sufficient, tasks must be empty. For continue, every task must link to a declared gap. Do not add practice research by default.",
+        "retry": { "maxAttempts": 2 },
+        "input": {
+          "request": { "path": "$.request" },
+          "tasks": { "path": "$.tasks" }
+        }
       }
-    },
-    "project-round-one": {
-      "type": "agent",
-      "agent": "chengfeng",
-      "prompt": "Answer all project-source tasks for this request in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only. Give evidence items with claim plus provenance, and include relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "route-round-one", "path": "$.projectTasks" } },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "source": { "type": "string", "enum": ["project"] },
-          "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } },
-          "relevantFiles": { "type": "array", "items": { "type": "string" } },
-          "constraints": { "type": "array", "items": { "type": "string" } },
-          "unknowns": { "type": "array", "items": { "type": "string" } },
-          "conflicts": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]
-      }
-    },
-    "platform-round-one": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Answer all platform-source tasks for this request in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only. Give evidence items with claim plus provenance, and include relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "route-round-one", "path": "$.platformTasks" } },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "source": { "type": "string", "enum": ["platform"] },
-          "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } },
-          "relevantFiles": { "type": "array", "items": { "type": "string" } },
-          "constraints": { "type": "array", "items": { "type": "string" } },
-          "unknowns": { "type": "array", "items": { "type": "string" } },
-          "conflicts": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]
-      }
-    },
-    "upstream-round-one": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Answer all upstream-source tasks for this request in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only. Give evidence items with claim plus provenance, and include relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "route-round-one", "path": "$.upstreamTasks" } },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "source": { "type": "string", "enum": ["upstream"] },
-          "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } },
-          "relevantFiles": { "type": "array", "items": { "type": "string" } },
-          "constraints": { "type": "array", "items": { "type": "string" } },
-          "unknowns": { "type": "array", "items": { "type": "string" } },
-          "conflicts": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]
-      }
-    },
-    "work-records-round-one": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Answer all work-records-source tasks for this request in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only. Give evidence items with claim plus provenance, and include relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "route-round-one", "path": "$.workRecordsTasks" } },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "source": { "type": "string", "enum": ["work-records"] },
-          "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } },
-          "relevantFiles": { "type": "array", "items": { "type": "string" } },
-          "constraints": { "type": "array", "items": { "type": "string" } },
-          "unknowns": { "type": "array", "items": { "type": "string" } },
-          "conflicts": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]
-      }
-    },
-    "practice-round-one": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Answer all practice-source tasks for this request in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only. Give evidence items with claim plus provenance, and include relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "route-round-one", "path": "$.practiceTasks" } },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "source": { "type": "string", "enum": ["practice"] },
-          "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } },
-          "relevantFiles": { "type": "array", "items": { "type": "string" } },
-          "constraints": { "type": "array", "items": { "type": "string" } },
-          "unknowns": { "type": "array", "items": { "type": "string" } },
-          "conflicts": { "type": "array", "items": { "type": "string" } }
-        },
-        "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]
-      }
-    },
-    "evaluate-round-one": {
-      "type": "agent",
-      "agent": "jintong",
-      "prompt": "Evaluate evidence against the original request and supplied tasks.\n\nRequest: ${request}\nSupplied tasks: ${tasks}\nProject: ${project}\nPlatform: ${platform}\nUpstream: ${upstream}\nWork records: ${workRecords}\nPractice: ${practice}\n\nAn unresolved placeholder in an optional lane means that lane was skipped or failed. Ignore the placeholder as evidence and record its unresolved gap when relevant. Return sufficient, coveredQuestions, and gaps. If evidence is insufficient, create only second-round tasks that close a named gap from the original request; every such task must carry that exact gap as reason. Group them by source and set needs* booleans. Do not create practice research by default; use it only when needed to close a named gap. Return validated JSON only.",
-      "input": {
-        "request": { "path": "$.request" },
-        "tasks": { "path": "$.tasks" },
-        "project": { "node": "project-round-one", "path": "$" },
-        "platform": { "node": "platform-round-one", "path": "$" },
-        "upstream": { "node": "upstream-round-one", "path": "$" },
-        "workRecords": { "node": "work-records-round-one", "path": "$" },
-        "practice": { "node": "practice-round-one", "path": "$" }
-      },
-      "outputSchema": {
-        "type": "object",
-        "properties": {
-          "sufficient": { "type": "boolean" },
-          "coveredQuestions": { "type": "array", "items": { "type": "string" } },
-          "gaps": { "type": "array", "items": { "type": "string" } },
-          "projectTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["project"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question", "reason"] } },
-          "platformTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["platform"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question", "reason"] } },
-          "upstreamTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["upstream"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question", "reason"] } },
-          "workRecordsTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["work-records"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question", "reason"] } },
-          "practiceTasks": { "type": "array", "items": { "type": "object", "properties": { "source": { "type": "string", "enum": ["practice"] }, "question": { "type": "string" }, "reason": { "type": "string" } }, "required": ["source", "question", "reason"] } },
-          "needsProject": { "type": "boolean" },
-          "needsPlatform": { "type": "boolean" },
-          "needsUpstream": { "type": "boolean" },
-          "needsWorkRecords": { "type": "boolean" },
-          "needsPractice": { "type": "boolean" }
-        },
-        "required": ["sufficient", "coveredQuestions", "gaps", "projectTasks", "platformTasks", "upstreamTasks", "workRecordsTasks", "practiceTasks", "needsProject", "needsPlatform", "needsUpstream", "needsWorkRecords", "needsPractice"]
-      }
-    },
-    "project-round-two": {
-      "type": "agent",
-      "agent": "chengfeng",
-      "prompt": "Close all named evidence gaps with these project-source tasks in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only: evidence with provenance, relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "evaluate-round-one", "path": "$.projectTasks" } },
-      "outputSchema": { "type": "object", "properties": { "source": { "type": "string", "enum": ["project"] }, "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } }, "relevantFiles": { "type": "array", "items": { "type": "string" } }, "constraints": { "type": "array", "items": { "type": "string" } }, "unknowns": { "type": "array", "items": { "type": "string" } }, "conflicts": { "type": "array", "items": { "type": "string" } } }, "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"] }
-    },
-    "platform-round-two": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Close all named evidence gaps with these platform-source tasks in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only: evidence with provenance, relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "evaluate-round-one", "path": "$.platformTasks" } },
-      "outputSchema": { "type": "object", "properties": { "source": { "type": "string", "enum": ["platform"] }, "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } }, "relevantFiles": { "type": "array", "items": { "type": "string" } }, "constraints": { "type": "array", "items": { "type": "string" } }, "unknowns": { "type": "array", "items": { "type": "string" } }, "conflicts": { "type": "array", "items": { "type": "string" } } }, "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"] }
-    },
-    "upstream-round-two": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Close all named evidence gaps with these upstream-source tasks in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only: evidence with provenance, relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "evaluate-round-one", "path": "$.upstreamTasks" } },
-      "outputSchema": { "type": "object", "properties": { "source": { "type": "string", "enum": ["upstream"] }, "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } }, "relevantFiles": { "type": "array", "items": { "type": "string" } }, "constraints": { "type": "array", "items": { "type": "string" } }, "unknowns": { "type": "array", "items": { "type": "string" } }, "conflicts": { "type": "array", "items": { "type": "string" } } }, "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"] }
-    },
-    "work-records-round-two": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Close all named evidence gaps with these work-records-source tasks in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only: evidence with provenance, relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "evaluate-round-one", "path": "$.workRecordsTasks" } },
-      "outputSchema": { "type": "object", "properties": { "source": { "type": "string", "enum": ["work-records"] }, "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } }, "relevantFiles": { "type": "array", "items": { "type": "string" } }, "constraints": { "type": "array", "items": { "type": "string" } }, "unknowns": { "type": "array", "items": { "type": "string" } }, "conflicts": { "type": "array", "items": { "type": "string" } } }, "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"] }
-    },
-    "practice-round-two": {
-      "type": "agent",
-      "agent": "wenchang",
-      "prompt": "Close all named evidence gaps with these practice-source tasks in one bounded pass.\n\nRequest: ${request}\nTasks: ${tasks}\n\nReturn validated JSON only: evidence with provenance, relevantFiles, constraints, unknowns, and conflicts; use empty arrays when none apply.",
-      "input": { "request": { "path": "$.request" }, "tasks": { "node": "evaluate-round-one", "path": "$.practiceTasks" } },
-      "outputSchema": { "type": "object", "properties": { "source": { "type": "string", "enum": ["practice"] }, "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } }, "relevantFiles": { "type": "array", "items": { "type": "string" } }, "constraints": { "type": "array", "items": { "type": "string" } }, "unknowns": { "type": "array", "items": { "type": "string" } }, "conflicts": { "type": "array", "items": { "type": "string" } } }, "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"] }
     },
     "synthesize": {
       "type": "agent",
+      "name": "Synthesize context",
       "agent": "jintong",
-      "prompt": "Synthesize a GatheredContext from the original request and two bounded evidence rounds.\n\nRequest: ${request}\nEvaluation: ${evaluation}\nRound-one project: ${projectRoundOne}\nRound-one platform: ${platformRoundOne}\nRound-one upstream: ${upstreamRoundOne}\nRound-one work records: ${workRecordsRoundOne}\nRound-one practice: ${practiceRoundOne}\nRound-two project: ${projectRoundTwo}\nRound-two platform: ${platformRoundTwo}\nRound-two upstream: ${upstreamRoundTwo}\nRound-two work records: ${workRecordsRoundTwo}\nRound-two practice: ${practiceRoundTwo}\n\nAn unresolved placeholder means optional lane output is absent. Ignore it as evidence and retain the associated unresolved gap or unknown. Partial lane failure is not fatal. Return summary, relevantFiles, constraints, unknowns, evidence with provenance, and conflicts as validated JSON only.",
+      "prompt": "Synthesize GatheredContext.\n\nRequest: ${request}\nOriginal tasks: ${tasks}\nComplete terminal bounded-feedback result: ${research}\n\nTreat every failed or skipped collected result and its error as an unknown; preserve partial successful evidence. Return summary, relevantFiles, constraints, unknowns, evidence with provenance, and conflicts as validated JSON only.",
       "input": {
         "request": { "path": "$.request" },
-        "evaluation": { "node": "evaluate-round-one", "path": "$" },
-        "projectRoundOne": { "node": "project-round-one", "path": "$" },
-        "platformRoundOne": { "node": "platform-round-one", "path": "$" },
-        "upstreamRoundOne": { "node": "upstream-round-one", "path": "$" },
-        "workRecordsRoundOne": { "node": "work-records-round-one", "path": "$" },
-        "practiceRoundOne": { "node": "practice-round-one", "path": "$" },
-        "projectRoundTwo": { "node": "project-round-two", "path": "$" },
-        "platformRoundTwo": { "node": "platform-round-two", "path": "$" },
-        "upstreamRoundTwo": { "node": "upstream-round-two", "path": "$" },
-        "workRecordsRoundTwo": { "node": "work-records-round-two", "path": "$" },
-        "practiceRoundTwo": { "node": "practice-round-two", "path": "$" }
+        "tasks": { "path": "$.tasks" },
+        "research": { "node": "research", "path": "$" }
       },
       "outputSchema": {
         "type": "object",
@@ -230,7 +116,27 @@
           "relevantFiles": { "type": "array", "items": { "type": "string" } },
           "constraints": { "type": "array", "items": { "type": "string" } },
           "unknowns": { "type": "array", "items": { "type": "string" } },
-          "evidence": { "type": "array", "items": { "type": "object", "properties": { "claim": { "type": "string" }, "provenance": { "type": "array", "items": { "type": "object", "properties": { "reference": { "type": "string" }, "detail": { "type": "string" } }, "required": ["reference", "detail"] } } }, "required": ["claim", "provenance"] } },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "claim": { "type": "string" },
+                "provenance": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "reference": { "type": "string" },
+                      "detail": { "type": "string" }
+                    },
+                    "required": ["reference", "detail"]
+                  }
+                }
+              },
+              "required": ["claim", "provenance"]
+            }
+          },
           "conflicts": { "type": "array", "items": { "type": "string" } }
         },
         "required": ["summary", "relevantFiles", "constraints", "unknowns", "evidence", "conflicts"]
@@ -238,28 +144,7 @@
     }
   },
   "edges": [
-    { "from": "route-round-one", "to": "project-round-one", "when": { "eq": [{ "node": "route-round-one", "path": "$.hasProject" }, true] } },
-    { "from": "route-round-one", "to": "platform-round-one", "when": { "eq": [{ "node": "route-round-one", "path": "$.hasPlatform" }, true] } },
-    { "from": "route-round-one", "to": "upstream-round-one", "when": { "eq": [{ "node": "route-round-one", "path": "$.hasUpstream" }, true] } },
-    { "from": "route-round-one", "to": "work-records-round-one", "when": { "eq": [{ "node": "route-round-one", "path": "$.hasWorkRecords" }, true] } },
-    { "from": "route-round-one", "to": "practice-round-one", "when": { "eq": [{ "node": "route-round-one", "path": "$.hasPractice" }, true] } },
-    { "from": "route-round-one", "to": "evaluate-round-one" },
-    { "from": "project-round-one", "to": "evaluate-round-one" },
-    { "from": "platform-round-one", "to": "evaluate-round-one" },
-    { "from": "upstream-round-one", "to": "evaluate-round-one" },
-    { "from": "work-records-round-one", "to": "evaluate-round-one" },
-    { "from": "practice-round-one", "to": "evaluate-round-one" },
-    { "from": "evaluate-round-one", "to": "project-round-two", "when": { "eq": [{ "node": "evaluate-round-one", "path": "$.needsProject" }, true] } },
-    { "from": "evaluate-round-one", "to": "platform-round-two", "when": { "eq": [{ "node": "evaluate-round-one", "path": "$.needsPlatform" }, true] } },
-    { "from": "evaluate-round-one", "to": "upstream-round-two", "when": { "eq": [{ "node": "evaluate-round-one", "path": "$.needsUpstream" }, true] } },
-    { "from": "evaluate-round-one", "to": "work-records-round-two", "when": { "eq": [{ "node": "evaluate-round-one", "path": "$.needsWorkRecords" }, true] } },
-    { "from": "evaluate-round-one", "to": "practice-round-two", "when": { "eq": [{ "node": "evaluate-round-one", "path": "$.needsPractice" }, true] } },
-    { "from": "evaluate-round-one", "to": "synthesize" },
-    { "from": "project-round-two", "to": "synthesize" },
-    { "from": "platform-round-two", "to": "synthesize" },
-    { "from": "upstream-round-two", "to": "synthesize" },
-    { "from": "work-records-round-two", "to": "synthesize" },
-    { "from": "practice-round-two", "to": "synthesize" }
+    { "from": "research", "to": "synthesize" }
   ],
   "outputs": {
     "summary": { "node": "synthesize", "path": "$.summary" },

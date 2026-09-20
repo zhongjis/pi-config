@@ -14,6 +14,7 @@
 
 import { type GraphNode, NODE_TYPES, type NodeId } from "./ir.js";
 import { compileInputSchema, compileJsonSchema } from "./json-schema.js";
+import { isJsonPath } from "./value-ref.js";
 
 export interface ValidationResult {
   ok: boolean;
@@ -44,6 +45,7 @@ function isPositiveInt(value: unknown): value is number {
  * `known` is the set of node ids a reference may point at — for a fragment this
  * includes ids already present in the run graph.
  */
+// allow: SIZE_OK — IR validation shares one locating error accumulator and known-node set.
 class Validator {
   readonly errors: string[] = [];
 
@@ -149,6 +151,7 @@ class Validator {
       this.err(path, "must be an object");
       return;
     }
+    if (node.name !== undefined && typeof node.name !== "string") this.err(`${path}.name`, "must be a string");
     const type = node.type;
     if (typeof type !== "string" || !NODE_TYPE_SET.has(type)) {
       this.err(`${path}.type`, `must be one of ${NODE_TYPES.join(" | ")}`);
@@ -175,6 +178,58 @@ class Validator {
         if (node.resources !== undefined) {
           if (!Array.isArray(node.resources) || !node.resources.every(isNonEmptyString)) {
             this.err(`${path}.resources`, "must be an array of non-empty resource strings");
+          }
+        }
+        break;
+      case "bounded_feedback":
+        for (const bound of ["maxIterations", "maxItemsPerIteration", "maxTotalItems"]) {
+          if (!isPositiveInt(node[bound]) || !Number.isSafeInteger(node[bound])) this.err(`${path}.${bound}`, "must be a positive safe integer");
+        }
+        if (node.deadline !== undefined && (!isPositiveInt(node.deadline) || !Number.isSafeInteger(node.deadline))) this.err(`${path}.deadline`, "must be positive safe integer milliseconds");
+        if (node.spendLimit !== undefined && (typeof node.spendLimit !== "number" || !Number.isFinite(node.spendLimit) || node.spendLimit <= 0)) this.err(`${path}.spendLimit`, "must be positive finite USD");
+        for (const key of Object.keys(node)) if (!["type", "name", "work", "evaluator", "maxIterations", "maxItemsPerIteration", "maxTotalItems", "deadline", "spendLimit"].includes(key)) this.err(`${path}.${key}`, "unknown bounded-feedback field");
+        if (!isPlainObject(node.work) || node.work.type !== "fanout") this.err(`${path}.work`, "must be a fixed fanout template");
+        else {
+          this.node(`${id}.work`, node.work);
+          if (node.work.outputSchema === undefined) this.err(`${path}.work.outputSchema`, "is required for validated evidence");
+        }
+        if (!isPlainObject(node.evaluator) || node.evaluator.type !== "agent") this.err(`${path}.evaluator`, "must be a fixed agent template");
+        else {
+          this.node(`${id}.evaluator`, { ...node.evaluator, input: { ...(isPlainObject(node.evaluator.input) ? node.evaluator.input : {}), feedback: { path: "$" } } });
+          if (isPlainObject(node.evaluator.input) && Object.hasOwn(node.evaluator.input, "feedback")) this.err(path, "evaluator.input.feedback is reserved");
+          if (node.evaluator.outputSchema !== undefined) this.err(path, "evaluator outputSchema is runtime-owned");
+        }
+        break;
+      case "fanout":
+        this.valueRef(`${path}.items`, node.items);
+        this.schema(`${path}.itemSchema`, node.itemSchema, true);
+        if (node.outputSchema !== undefined) this.schema(`${path}.outputSchema`, node.outputSchema, true);
+        if (!isNonEmptyString(node.prompt)) this.err(`${path}.prompt`, "must be a non-empty prompt");
+        this.inputMap(`${path}.input`, node.input);
+        if (isPlainObject(node.input) && Object.hasOwn(node.input, "item")) {
+          this.err(`${path}.input.item`, "is reserved for the fanout item");
+        }
+        this.promptPlaceholders(path, node.prompt, { ...(isPlainObject(node.input) ? node.input : {}), item: true });
+        if (!isPlainObject(node.dispatch)) this.err(`${path}.dispatch`, "must be an object { path, cases }");
+        else {
+          if (typeof node.dispatch.path !== "string" || !isJsonPath(node.dispatch.path)) {
+            this.err(`${path}.dispatch.path`, "must be a supported JSONPath string");
+          }
+          if (!isPlainObject(node.dispatch.cases) || Object.keys(node.dispatch.cases).length === 0) {
+            this.err(`${path}.dispatch.cases`, "must be a non-empty dispatch table");
+          } else {
+            for (const [key, selector] of Object.entries(node.dispatch.cases)) {
+              if (!isNonEmptyString(selector)) this.err(`${path}.dispatch.cases.${key}`, "must be a non-empty agent selector");
+            }
+          }
+        }
+        if (node.phase !== undefined) {
+          if (!isPlainObject(node.phase)) this.err(`${path}.phase`, "must be an object { index, title }");
+          else {
+            if (typeof node.phase.index !== "number" || !Number.isInteger(node.phase.index) || node.phase.index < 0) {
+              this.err(`${path}.phase.index`, "must be a non-negative integer");
+            }
+            if (!isNonEmptyString(node.phase.title)) this.err(`${path}.phase.title`, "must be a non-empty title");
           }
         }
         break;
@@ -247,7 +302,8 @@ function validateCore(
   }
   const ids = Object.keys(nodes);
   if (ids.length === 0) errors.push("nodes: must declare at least one node");
-  if (ids.length > MAX_NODES) errors.push(`nodes: ${ids.length} nodes exceeds the limit of ${MAX_NODES}`);
+  const effectiveCount = existingIds.size + ids.length;
+  if (effectiveCount > MAX_NODES) errors.push(`nodes: ${effectiveCount} nodes exceeds the limit of ${MAX_NODES}`);
   for (const id of ids) {
     if (!isNonEmptyString(id)) errors.push(`nodes: node id "${id}" must be a non-empty string`);
     if (existingIds.has(id)) errors.push(`nodes.${id}: collides with an id already in the run graph`);
@@ -262,6 +318,10 @@ function validateCore(
     else {
       edges.forEach((edge, i) => {
         validator.edge(i, edge);
+        if (isPlainObject(edge) && edge.loop !== undefined && typeof edge.to === "string") {
+          const target = nodes[edge.to];
+          if (isPlainObject(target) && (target.type === "fanout" || target.type === "bounded_feedback")) errors.push(`edges[${i}].to: a fanout cannot be a loop target`);
+        }
       });
     }
   }
@@ -280,7 +340,7 @@ export function validateGraph(graph: unknown): ValidationResult {
   const errors: string[] = [];
   if (graph.id !== undefined && !isNonEmptyString(graph.id)) errors.push("id: must be a non-empty string when present");
   if (graph.name !== undefined && typeof graph.name !== "string") errors.push("name: must be a string when present");
-  if (graph.version !== undefined && typeof graph.version !== "number") errors.push("version: must be a number when present");
+  if (graph.version !== undefined && graph.version !== 1 && graph.version !== 2) errors.push("version: supported versions are 1 and 2");
   if (graph.description !== undefined && typeof graph.description !== "string") errors.push("description: must be a string when present");
   if (graph.inputSchema !== undefined) {
     const compiled = compileInputSchema(graph.inputSchema);
@@ -291,6 +351,9 @@ export function validateGraph(graph: unknown): ValidationResult {
     if (compiled.ok === false) errors.push(`outputSchema: ${compiled.message}`);
   }
 
+  if (graph.version !== 2 && isPlainObject(graph.nodes)) {
+    for (const [id, node] of Object.entries(graph.nodes)) if (isPlainObject(node) && node.type === "bounded_feedback") errors.push(`nodes.${id}: bounded feedback requires version 2`);
+  }
   const core = validateCore(graph.nodes, graph.edges, graph.outputs, new Set());
   errors.push(...core.errors);
   return { ok: errors.length === 0, errors };
@@ -301,5 +364,13 @@ export function validateFragment(fragment: unknown, existingIds: Iterable<NodeId
   if (!isPlainObject(fragment)) {
     return { ok: false, errors: ["fragment: must be an object { nodes, edges }"] };
   }
-  return validateCore(fragment.nodes, fragment.edges, fragment.outputs, new Set(existingIds));
+  const result = validateCore(fragment.nodes, fragment.edges, fragment.outputs, new Set(existingIds));
+  if (isPlainObject(fragment.nodes)) {
+    for (const [id, node] of Object.entries(fragment.nodes)) {
+      if (isPlainObject(node) && (node.type === "fanout" || node.type === "bounded_feedback")) {
+        result.errors.push(`nodes.${id}: fanout is not allowed in runtime fragments; selectors require static delegation preflight`);
+      }
+    }
+  }
+  return { ok: result.errors.length === 0, errors: result.errors };
 }

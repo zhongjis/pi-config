@@ -19,6 +19,7 @@ export interface HistoryNode {
   startedAt?: number;
   lastProgressAt?: number;
   attempt?: number;
+  lastAttemptReason?: "throttled" | "user-retry" | "stalled" | "loop";
   tokens?: number;
   toolCalls?: number;
   durationMs?: number;
@@ -72,6 +73,10 @@ function decodeNode(value: unknown): HistoryNode | undefined {
     if (value[key] === undefined) continue;
     if (typeof value[key] !== "boolean") return;
     node[key] = value[key];
+  }
+  if (value.lastAttemptReason !== undefined) {
+    if (value.lastAttemptReason !== "throttled" && value.lastAttemptReason !== "user-retry" && value.lastAttemptReason !== "stalled" && value.lastAttemptReason !== "loop") return;
+    node.lastAttemptReason = value.lastAttemptReason;
   }
   return node;
 }

@@ -116,3 +116,35 @@ describe("runGraph — expand nodes", () => {
     expect(result.nodes["sub:b"].status).toBe("completed");
   });
 });
+
+it("rejects expand insertion atomically when the effective graph would exceed 500 nodes", async () => {
+  const nodes: GraphFragment["nodes"] = {};
+  for (let index = 0; index < 499; index++) nodes[`child${index}`] = { type: "agent", agent: "x", prompt: "fixture" };
+  const spawned: string[] = [];
+  const result = await runGraph(expandGraph("batch"), {}, { host: {
+    spawnAgent: async request => {
+      spawned.push(request.nodeId);
+      return { ok: true, output: JSON.stringify({ nodes, edges: [] }) };
+    },
+  } });
+  expect(spawned).toEqual(["gen"]);
+  expect(Object.keys(result.nodes)).toEqual(["gen", "exp"]);
+  expect(result.nodes.exp.error).toContain("501 nodes exceeds the limit of 500");
+});
+
+it("rewrites fanout item and input references when namespacing a fragment", () => {
+  const placed = namespaceFragment({
+    nodes: {
+      source: { type: "agent", agent: "x", prompt: "fixture" },
+      work: {
+        type: "fanout", items: { node: "source", path: "$.tasks" }, itemSchema: { type: "object" },
+        dispatch: { path: "$.source", cases: { project: "x" } }, prompt: `\${item} \${context}`,
+        input: { context: { node: "source", path: "$.context" } },
+      },
+    }, edges: [],
+  }, "round");
+  expect(placed.nodes["round:work"]).toMatchObject({
+    items: { node: "round:source", path: "$.tasks" },
+    input: { context: { node: "round:source", path: "$.context" } },
+  });
+});

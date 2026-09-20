@@ -54,3 +54,34 @@ describe("agent_graph durable human_gate resume", () => {
     expect(readGraphSnapshots(s2.ctx.cwd).some(s => s.runId === runId)).toBe(false);
   });
 });
+
+it("persists effective fanout topology through the workflow runtime and resumes it once", async () => {
+  const s1 = boot({ workflowsEnabled: true });
+  await s1.lifecycle("session_start");
+  s1.ui.select.mockReturnValue(new Promise(() => {}));
+  const graph = {
+    nodes: {
+      research: {
+        type: "fanout", items: { path: "$.tasks" }, itemSchema: { type: "object" },
+        dispatch: { path: "$.source", cases: { project: "fixture" } }, prompt: `\${item}`,
+      },
+      gate: gateGraph.nodes.gate,
+    },
+    edges: [],
+  };
+  const result = await required(s1.tools.get("agent_graph")).execute(
+    "call", { graph, input: { tasks: [{ source: "project" }] } }, undefined, undefined, s1.ctx,
+  );
+  const runId = required(result.details?.taskId);
+  await vi.waitFor(() => expect(readGraphSnapshots(s1.ctx.cwd).some(s => s.runId === runId)).toBe(true));
+  const saved = required(readGraphSnapshots(s1.ctx.cwd).find(s => s.runId === runId));
+  expect(saved.graph.nodes["research:item:0"]).toMatchObject({ type: "agent", agent: "fixture" });
+  expect(saved.state.collections?.research).toEqual([{ nodeId: "research:item:0", item: { source: "project" } }]);
+  await s1.lifecycle("session_shutdown");
+  const s2 = boot({ workflowsEnabled: true });
+  s2.ui.select.mockResolvedValue("Approve");
+  await s2.lifecycle("session_start");
+  const message = await s2.notification(runId);
+  expect(message.content).toContain("Execution: completed");
+  expect(readGraphSnapshots(s2.ctx.cwd).some(s => s.runId === runId)).toBe(false);
+});

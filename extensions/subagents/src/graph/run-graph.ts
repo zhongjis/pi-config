@@ -14,12 +14,21 @@
  * one now fails that node loudly rather than being silently skipped.
  */
 
+import { randomUUID } from "node:crypto";
 import { createActor } from "xstate";
+import { BoundedFeedback, decision, type FeedbackResult } from "./bounded-feedback.js";
+import { prepareFanout } from "./fanout.js";
+import { GraphInstances, type NodeInstance } from "./graph-instance-id.js";
+import { nestedMaterializations, nestedScope, restoredNestedRows } from "./graph-nested-checkpoint.js";
+import { validateGraphRestore } from "./graph-restore-validation.js";
+import { validateSchedulerState } from "./graph-state-validation.js";
 import type {
   AgentGraph,
   AgentNode,
   Condition,
   ExpandNode,
+  FanoutNode,
+  FanoutPhase,
   GraphEdge,
   GraphFragment,
   GraphNode,
@@ -33,7 +42,7 @@ import { checkNodeSchema, type NodeExecInput, nodeLogic } from "./node-actor.js"
 import type { NodeHost, NodeResolvedInfo, NodeSpawnResult } from "./node-host.js";
 import type { NodeRun, SchedulerState, SettleInput } from "./scheduler.js";
 import { Scheduler } from "./scheduler.js";
-import { validateFragment, validateGraph } from "./validate.js";
+import { MAX_NODES, validateFragment, validateGraph } from "./validate.js";
 import { MISSING, type ResolutionContext, resolveValueRef } from "./value-ref.js";
 
 export const DEFAULT_CONCURRENCY = 8;
@@ -54,6 +63,12 @@ export interface GraphControl {
 
 export interface RunGraphOptions {
   host: NodeHost;
+  runId?: string;
+  allocateInstanceId?: () => string;
+  /** Injectable epoch-millisecond clock for durable feedback deadlines. */
+  now?: () => number;
+  /** Synchronous durable commit; throwing prevents further dispatch. Required for v2. */
+  onCheckpoint?(state: SchedulerState, graph: AgentGraph): void;
   concurrency?: number;
   signal?: AbortSignal;
   /**
@@ -72,6 +87,8 @@ export interface RunGraphOptions {
    * running, settled, retried, and automatic-skip updates.
    */
   onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>): void;
+  /** Register dynamic rows before their first update; dependencies are display-only. */
+  onNodeAdded?(nodeId: string, node: GraphNode, metadata: { dependencies: string[]; phase?: FanoutPhase; instance?: NodeInstance; ordinal?: number; materializationKey?: string }): void;
   /** Fired once the child agent's effective model is known. */
   onNodeResolved?(nodeId: string, info: NodeResolvedInfo): void;
   /** Hands the caller the run's control surface, once, before the first node. */
@@ -79,13 +96,14 @@ export interface RunGraphOptions {
   /** Restore progress from a prior run's snapshot (durable resume). */
   restore?: SchedulerState;
   /** Fired when a human_gate begins awaiting, carrying the run state to persist. */
-  onGateWaiting?(nodeId: string, state: SchedulerState): void;
+  onGateWaiting?(nodeId: string, state: SchedulerState, effectiveGraph: AgentGraph): void;
 }
 
 export interface RunGraphResult {
+  readonly feedback?: Readonly<Record<string, FeedbackResult>>;
   status: "completed" | "failed" | "aborted";
   outputs: Record<string, unknown>;
-  nodes: Record<string, { status: NodeRun["status"]; attempt: number; output?: unknown; error?: string }>;
+  nodes: Record<string, NodeRun>;
 }
 
 /** One unit of in-flight async work — an agent actor or a recursing subgraph. */
@@ -175,7 +193,7 @@ function resolveInputMap(input: Record<string, ValueRef> | undefined, ctx: Resol
 
 /** The options a subgraph node passes down to its child run (loader/resources/signal shared). */
 function childOptions(options: RunGraphOptions): RunGraphOptions {
-  const child: RunGraphOptions = { host: options.host };
+  const child: RunGraphOptions = { host: options.host, now: options.now };
   if (options.concurrency !== undefined) child.concurrency = options.concurrency;
   if (options.signal !== undefined) child.signal = options.signal;
   if (options.loadGraph !== undefined) child.loadGraph = options.loadGraph;
@@ -204,7 +222,9 @@ function rewriteCondition(cond: Condition, rename: (id: NodeId) => NodeId): Cond
 
 /** Rewrite a node's own ValueRefs (input map, or an expand node's source). */
 function rewriteNode(node: GraphNode, rename: (id: NodeId) => NodeId): GraphNode {
+  if (node.type === "bounded_feedback") return node; // Forbidden in runtime fragments.
   if (node.type === "expand") return { ...node, source: rewriteRef(node.source, rename) };
+  if (node.type === "fanout") node = { ...node, items: rewriteRef(node.items, rename) };
   if (node.input === undefined) return node;
   const input: Record<string, ValueRef> = {};
   for (const [name, ref] of Object.entries(node.input)) input[name] = rewriteRef(ref, rename);
@@ -257,14 +277,54 @@ export function coerceGraphInput(input: unknown): unknown {
   }
 }
 
+// allow: SIZE_OK — admission, controls, and settlement share the same live scheduler/actor closure.
 export async function runGraph(graph: AgentGraph, input: unknown, options: RunGraphOptions): Promise<RunGraphResult> {
+  if (graph.version !== undefined && graph.version !== 1 && graph.version !== 2) throw new TypeError("Unsupported graph version");
+  if (graph.version !== 2 && Object.values(graph.nodes).some(node => node.type === "bounded_feedback")) throw new TypeError("Bounded feedback requires version 2");
+  if ((graph.version === 2 || options.restore?.runtime !== undefined) && !options.onCheckpoint) throw new TypeError("Version 2 requires a durable checkpoint writer");
+  if (graph.version === 2) {
+    const validation = validateGraph(graph);
+    if (!validation.ok) throw new TypeError(validation.errors.join("; "));
+  }
+  if (graph.version === 2 && options.restore && !options.restore.runtime) throw new TypeError("Missing v2 restore manifest");
   input = coerceGraphInput(input);
+  if (options.restore) {
+    validateSchedulerState(options.restore, graph);
+    if (options.restore.runtime) validateGraphRestore(options.restore, graph, input);
+  }
   const scheduler = new Scheduler(graph, input);
   if (options.restore !== undefined) scheduler.hydrate(options.restore);
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
   const inflight = new Map<string, Inflight>();
   // Node definitions grow at runtime when an expand node splices a fragment in.
   const nodeDefs = new Map<NodeId, GraphNode>(Object.entries(graph.nodes));
+  const effectiveEdges = [...graph.edges];
+  const effectiveGraph = (): AgentGraph => ({ ...graph, nodes: Object.fromEntries(nodeDefs), edges: [...effectiveEdges] });
+  const restoredRuntime = options.restore?.runtime;
+  const restoringNested = new Set(Object.keys(restoredRuntime?.nested ?? {}).filter(id => options.restore?.nodes[id]?.status === "running"));
+  const instances = graph.version === 2 || restoredRuntime !== undefined || options.onCheckpoint !== undefined
+    ? new GraphInstances(options.runId ?? restoredRuntime?.runId ?? randomUUID(), options.allocateInstanceId, restoredRuntime, options.now)
+    : undefined;
+  if (instances && !restoredRuntime) {
+    const collections = options.restore?.collections ?? {};
+    const children = new Set(Object.values(collections).flatMap(batch => batch.map(child => child.nodeId)));
+    for (const id of Object.keys(graph.nodes)) if (!children.has(id)) instances.add(id, { nodeKey: id });
+    for (const [parent, batch] of Object.entries(collections)) batch.forEach((child, itemIndex) => { instances.add(child.nodeId, { nodeKey: parent, parentInstanceId: instances.get(parent).instanceId, itemIndex }); });
+  }
+  let failedCheckpoint: { error: unknown } | undefined;
+  const checkpoint = (): void => {
+    if (failedCheckpoint) throw failedCheckpoint.error;
+    if (!instances) return;
+    instances.state.revision++;
+    try {
+      const committed: unknown = options.onCheckpoint?.(structuredClone({ ...scheduler.snapshotState(), runtime: instances.state }), effectiveGraph());
+      if (committed !== null && typeof committed === "object" && "then" in committed) throw new TypeError("Checkpoint writer must be synchronous");
+    } catch (error) {
+      failedCheckpoint = { error };
+      throw error;
+    }
+  };
+  checkpoint();
   // Live count of each named resource in use by inflight nodes.
   const inUse = new Map<string, number>();
 
@@ -292,16 +352,72 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     inflight.clear();
   };
 
+  // Display identities are separate from scheduler identities. Reserve static IDs,
+  // then disambiguate nested and later dynamic rows without changing graph wiring.
+  const displayIds = new Map(Object.keys(graph.nodes).map(id => [id, id]));
+  const usedDisplayIds = new Set(displayIds.values());
+  const allocateDisplayId = (candidate: string): string => {
+    let id = candidate;
+    for (let suffix = 2; usedDisplayIds.has(id); suffix++) id = `${candidate}#${suffix}`;
+    usedDisplayIds.add(id);
+    return id;
+  };
+  const displayId = (id: string): string => {
+    let mapped = displayIds.get(id);
+    if (mapped === undefined) {
+      mapped = allocateDisplayId(id);
+      displayIds.set(id, mapped);
+    }
+    return mapped;
+  };
+  const nestedIds = new Map<string, Map<string, string>>();
+  const registeredNested = new Set<string>();
+  const registerNode: NonNullable<RunGraphOptions["onNodeAdded"]> = (id, node, metadata) => {
+    if (instances) orderedIds[instances.get(id).ordinal] = id;
+    else orderedIds.push(id);
+    options.onNodeAdded?.(displayId(id), node, { ...metadata,
+      ...(instances ? { ordinal: instances.get(id).ordinal, materializationKey: `${instances.state.runId}/${instances.get(id).instanceId}` } : {}),
+      ...(graph.version === 2 && instances ? { instance: instances.get(id) } : {}),
+      dependencies: metadata.dependencies.map(displayId) });
+  };
   const report = (id: string): void => {
+    checkpoint();
     const run = scheduler.nodes.get(id);
-    if (run !== undefined) options.onNodeUpdate?.(id, run);
+    if (run !== undefined) options.onNodeUpdate?.(displayId(id), run);
   };
 
   const launchAgent = (id: string, node: AgentNode, resources: string[]): void => {
+    const evaluation = feedback?.evaluator(id);
+    if (evaluation && evaluation.remainingAttempts <= 0) {
+      scheduler.settle(id, { ok: false, error: evaluation.error ?? "Evaluator retry budget exhausted" });
+      report(id);
+      return;
+    }
     scheduler.markRunning(id);
     report(id);
     acquire(resources);
-    const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input), options);
+    const exec = buildExecInput(id, node, options.host, contextOf(scheduler, input), {
+      ...options, onNodeResolved: (nodeId, info) => options.onNodeResolved?.(displayId(nodeId), info),
+    });
+    if (graph.version === 2 && instances) {
+      exec.nodeId = instances.get(id).instanceId;
+      exec.attemptOffset = (scheduler.nodes.get(id)?.attempt ?? 1) - 1;
+      exec.onAttempt = attempt => { if (attempt > 1) scheduler.markRunning(id); report(id); };
+      exec.onCost = (costUsd, attempt) => { scheduler.recordCost(id, costUsd, attempt); checkpoint(); };
+    }
+    if (evaluation && exec.schema) {
+      exec.maxAttempts = evaluation.remainingAttempts;
+      exec.onFailure = evaluation.failed;
+      const context = contextOf(scheduler, input);
+      exec.prompt = interpolate(evaluation.node.evaluator.prompt, { ...evaluation.node.evaluator.input, feedback: { node: id, path: "$" } }, { ...context, outputs: new Map([...context.outputs, [id, evaluation.input]]) });
+      const schema = exec.schema;
+      exec.schema = { ...schema, check: value => {
+        const valid = schema.check(value);
+        if (valid !== true) return valid;
+        try { decision(value, evaluation.node); return true; }
+        catch (error) { if (error instanceof Error) return error.message; throw error; }
+      } };
+    }
     const actor = createActor(nodeLogic, { input: exec });
     let failure: string | undefined;
     const done = new Promise<string>(resolve => {
@@ -326,24 +442,28 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       result: () => {
         if (failure !== undefined) return { ok: false, error: failure };
         const out = (actor.getSnapshot().output ?? { ok: false, error: "node produced no result" }) as NodeSpawnResult;
-        return { ok: out.ok, output: parseOutput(node, out), error: out.error, skipped: out.skipped };
+        const previousCost = scheduler.nodes.get(id)?.costUsd;
+        const costUsd = graph.version === 2 ? previousCost : out.costUsd === undefined ? undefined : (previousCost ?? 0) + out.costUsd;
+        return { ok: out.ok, output: parseOutput(node, out), error: out.error, skipped: out.skipped, costUsd };
       },
     });
   };
 
   const launchSubgraph = (id: string, node: SubgraphNode): void => {
+    const controller = new AbortController();
+    const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
     scheduler.markRunning(id);
     report(id);
-    // Resolve the child input now, against the context at launch time.
-    const childInput = resolveInputMap(node.input, contextOf(scheduler, input));
     let settle: SettleInput = { ok: false, error: `subgraph node "${id}" did not run` };
     const done = (async (): Promise<string> => {
+      const savedChild = restoringNested.delete(id) ? instances?.state.nested?.[id] : undefined;
+      const childInput = savedChild?.input ?? resolveInputMap(node.input, contextOf(scheduler, input));
       const loader = options.loadGraph;
-      if (loader === undefined) {
+      if (loader === undefined && savedChild === undefined) {
         settle = { ok: false, error: `subgraph node "${id}" needs a loadGraph loader, but none was provided` };
         return id;
       }
-      const childGraph = loader(node.graph);
+      const childGraph = savedChild?.graph ?? loader?.(node.graph);
       if (childGraph === undefined) {
         settle = { ok: false, error: `subgraph "${node.graph}" could not be resolved` };
         return id;
@@ -353,14 +473,77 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
         settle = { ok: false, error: `subgraph "${node.graph}" is invalid: ${validation.errors.join("; ")}` };
         return id;
       }
-      const childResult = await runGraph(childGraph, childInput, childOptions(options));
+      const scope = nestedScope(displayId(id), savedChild ? Number(savedChild.state.runtime?.runId.split("/").at(-1)) : scheduler.nodes.get(id)?.attempt ?? 1);
+      const ids = nestedIds.get(scope) ?? new Map<string, string>();
+      nestedIds.set(scope, ids);
+      const nestedId = (childId: string): string => {
+        let mapped = ids.get(childId);
+        if (mapped === undefined) {
+          mapped = allocateDisplayId(`${scope}/${childId}`);
+          ids.set(childId, mapped);
+        }
+        return mapped;
+      };
+      const ordinals: Record<string, number> = savedChild?.ordinals ?? Object.create(null);
+      const added: NonNullable<RunGraphOptions["onNodeAdded"]> = (childId, child, metadata) => {
+        const mapped = nestedId(childId);
+        if (!registeredNested.has(mapped)) {
+          registeredNested.add(mapped);
+          // ponytail: nested rows are observable, not controllable. Reserve their
+          // monitor indices; control federation needs a shared scheduler contract.
+          if (!instances) orderedIds.push(undefined);
+        }
+        if (instances) {
+          const key = metadata.materializationKey;
+          if (!key) throw new TypeError("Missing nested materialization key");
+          ordinals[key] ??= instances.reserveOrdinal();
+          const ordinal = ordinals[key];
+          orderedIds[ordinal] = undefined;
+          checkpoint();
+          options.onNodeAdded?.(mapped, child, { ...metadata, ordinal,
+            ...(metadata.instance ? { instance: { ...metadata.instance, ordinal } } : {}),
+            dependencies: metadata.dependencies.map(nestedId),
+          });
+        } else options.onNodeAdded?.(mapped, child, { ...metadata, dependencies: metadata.dependencies.map(nestedId) });
+      };
+      if (!instances) for (const [childId, child] of Object.entries(childGraph.nodes)) {
+        added(childId, child, {
+          dependencies: childGraph.edges.filter(edge => edge.to === childId).map(edge => edge.from),
+          ...(child.type === "fanout" && child.phase ? { phase: child.phase } : {}),
+        });
+      }
+      const childResult = await runGraph(childGraph, childInput, {
+        ...childOptions(options), signal,
+        ...(instances ? {
+          runId: savedChild?.state.runtime?.runId ?? `${instances.state.runId}/${instances.get(id).instanceId}/${scheduler.nodes.get(id)?.attempt}`,
+          ...(options.allocateInstanceId ? { allocateInstanceId: options.allocateInstanceId } : {}),
+          ...(savedChild ? { restore: savedChild.state } : {}),
+          onCheckpoint: (state: SchedulerState, definition: AgentGraph) => {
+            instances.state.nested ??= Object.create(null);
+            const nested = instances.state.nested;
+            if (!nested) throw new TypeError("Missing nested checkpoint owner");
+            for (const row of nestedMaterializations(definition, state)) ordinals[row.key] ??= instances.reserveOrdinal();
+            const prior = nested[id];
+            let previous = prior?.previous ?? [];
+            if (prior && prior.state.runtime?.runId !== state.runtime?.runId) {
+              const { previous: _previous, ...completed } = prior;
+              previous = [...previous, structuredClone(completed)];
+            }
+            nested[id] = { graph: definition, state, ordinals, input: childInput, ...(previous.length ? { previous } : {}) };
+            checkpoint();
+          },
+        } : {}),
+        onNodeAdded: added,
+        onNodeUpdate: (childId, run) => options.onNodeUpdate?.(nestedId(childId), run),
+        onNodeResolved: (childId, info) => options.onNodeResolved?.(nestedId(childId), info),
+      });
       settle =
         childResult.status === "completed"
           ? { ok: true, output: childResult.outputs }
           : { ok: false, error: `subgraph "${node.graph}" ${childResult.status}` };
       return id;
     })();
-    inflight.set(id, { done, resources: [], stop: () => {}, result: () => settle });
+    inflight.set(id, { done, resources: [], stop: () => controller.abort(), result: () => settle });
   };
 
   /** Await a human decision for a human_gate node. Abortable via its own controller. */
@@ -381,7 +564,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       }
       const request = schema !== undefined ? { nodeId: id, prompt, schema } : { nodeId: id, prompt };
       // Persist the waiting state so a restart can resume this gate.
-      options.onGateWaiting?.(id, scheduler.snapshotState());
+      options.onGateWaiting?.(id, scheduler.snapshotState(), effectiveGraph());
       try {
         let result = await awaitGate(request, signal);
         if (result.ok && schema !== undefined) result = checkNodeSchema(result, schema);
@@ -407,22 +590,84 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       return;
     }
     const fragment = source as unknown as GraphFragment;
-    const validation = validateFragment(fragment, scheduler.nodeIds());
+    let placed: GraphFragment;
+    try {
+      // Placement precedes effective-ID validation. Malformed fragment structure
+      // can fail rewriting, and must fail this node rather than reject the run.
+      placed = namespaceFragment(fragment, node.namespace);
+    } catch (error) {
+      scheduler.settle(id, { ok: false, error: `expand node "${id}" fragment is invalid: ${error instanceof Error ? error.message : String(error)}` });
+      report(id);
+      return;
+    }
+    const validation = validateFragment(placed, scheduler.nodeIds());
     if (!validation.ok) {
       scheduler.settle(id, { ok: false, error: `expand node "${id}" fragment is invalid: ${validation.errors.join("; ")}` });
       report(id);
       return;
     }
-    // Namespacing relocates the (already valid) fragment so its ids and internal
-    // references are isolated from the run graph.
-    const placed = namespaceFragment(fragment, node.namespace);
-    for (const [fid, fnode] of Object.entries(placed.nodes)) nodeDefs.set(fid, fnode);
+    for (const [fid, fnode] of Object.entries(placed.nodes)) {
+      nodeDefs.set(fid, fnode);
+      instances?.add(fid, { nodeKey: fid, parentInstanceId: instances.get(id).instanceId });
+    }
     scheduler.insertFragment(placed);
+    effectiveEdges.push(...placed.edges);
+    for (const [fid, fnode] of Object.entries(placed.nodes)) {
+      registerNode(fid, fnode, { dependencies: placed.edges.filter(edge => edge.to === fid).map(edge => edge.from) });
+    }
     scheduler.settle(id, { ok: true, output: {} });
     report(id);
   };
 
-  const orderedIds = Object.keys(graph.nodes);
+  const launchFanout = (id: string, node: FanoutNode): void => {
+    scheduler.markRunning(id);
+    report(id);
+    // Restored barriers retain ownership; never materialize the same IDs twice.
+    if (scheduler.collections.has(id)) return;
+    const prepared = prepareFanout(node, contextOf(scheduler, input));
+    const fail = (error: string): void => {
+      scheduler.settle(id, { ok: false, error: `fanout node "${id}": ${error}` });
+      report(id);
+    };
+    if (!prepared.ok) { fail(prepared.error); return; }
+    if (graph.version === 2 && !scheduler.canMaterialize(prepared.items.length)) { fail("total node run limit"); return; }
+    if (nodeDefs.size + prepared.items.length > MAX_NODES) {
+      fail(`effective graph exceeds the limit of ${MAX_NODES} nodes`);
+      return;
+    }
+    const children = prepared.items.map(({ item }, index) => ({ nodeId: `${id}:item:${index}`, item }));
+    for (const child of children) {
+      if (nodeDefs.has(child.nodeId)) { fail(`generated id "${child.nodeId}" collides with an existing node`); return; }
+    }
+    const nodes = Object.fromEntries(prepared.items.map(({ node: child }, index) => [`${id}:item:${index}`, { ...child, ...(node.name !== undefined ? { name: node.name } : {}) }]));
+    // Commit ownership and all definitions before callbacks can observe a child.
+    scheduler.insertFragment({ nodes, edges: [] });
+    scheduler.collections.set(id, children);
+    for (const [itemIndex, [childId, child]] of Object.entries(nodes).entries()) {
+      nodeDefs.set(childId, child);
+      instances?.add(childId, { nodeKey: id, parentInstanceId: instances.get(id).instanceId, itemIndex });
+    }
+    if (graph.version === 2 && instances) scheduler.collections.set(id, children.map(child => ({ ...child, ...instances.get(child.nodeId) })));
+    checkpoint();
+    for (const [childId, child] of Object.entries(nodes)) {
+      registerNode(childId, child, { dependencies: [], ...(node.phase ? { phase: node.phase } : {}) });
+      report(childId);
+    }
+  };
+
+  const feedback = instances ? new BoundedFeedback({ scheduler, instances, definitions: nodeDefs, edges: effectiveEdges,
+    context: () => contextOf(scheduler, input), checkpoint, now: options.now ?? Date.now,
+    added: (id, node, dependencies) => { registerNode(id, node, { dependencies }); report(id); },
+  }) : undefined;
+  for (const [id, state] of Object.entries(feedback?.states ?? {})) {
+    if (!state.terminal) {
+      const run = scheduler.nodes.get(id);
+      if (run) run.status = "running";
+    }
+  }
+  // Undefined slots are nested monitor rows; controls remain direct-graph only.
+  const orderedIds: (string | undefined)[] = instances ? [] : Object.keys(graph.nodes);
+  if (instances) for (const row of instances.state.manifest) orderedIds[row.ordinal] = row.binding;
   const intents = new Map<string, "skip" | "retry">();
   let paused = false;
   let wakePause: (() => void) | undefined;
@@ -448,6 +693,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       if (scheduler.nodes.get(id)?.status === "pending") {
         scheduler.settle(id, { ok: false, skipped: true });
         report(id);
+        wakePause?.();
         return true;
       }
       return false;
@@ -462,9 +708,51 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       return true;
     },
   });
+  if (instances) {
+    for (const instance of instances.state.manifest) {
+      const node = nodeDefs.get(instance.binding);
+      if (node) options.onNodeAdded?.(displayId(instance.binding), node, {
+        ordinal: instance.ordinal, materializationKey: `${instances.state.runId}/${instance.instanceId}`, ...(graph.version === 2 ? { instance } : {}), dependencies: effectiveEdges.filter(edge => edge.to === instance.binding).map(edge => displayId(edge.from)),
+      });
+    }
+  }
+  for (const [id, saved] of Object.entries(instances?.state.nested ?? {})) {
+    const status = scheduler.nodes.get(id)?.status;
+    const settled = instances?.state.cancelled || status === "completed" || status === "failed" || status === "skipped";
+    const rows = settled ? restoredNestedRows(saved, displayId(id)) : (saved.previous ?? []).flatMap(previous => restoredNestedRows(previous, displayId(id)));
+    const names = new Map(rows.map(row => [row.id, allocateDisplayId(row.id)]));
+    for (const row of rows) {
+      const mapped = names.get(row.id);
+      if (!mapped) throw new TypeError("Missing nested display binding");
+      orderedIds[row.ordinal] = undefined;
+      options.onNodeAdded?.(mapped, row.node, { ordinal: row.ordinal, materializationKey: row.key, ...(row.instance ? { instance: row.instance } : {}), dependencies: row.dependencies.map(key => names.get(key) ?? key) });
+      options.onNodeUpdate?.(mapped, row.run);
+    }
+  }
+  // Hydration has validated ownership before any restored metadata is exposed.
+  if (!instances) for (const [parentId, children] of scheduler.collections) {
+    const parent = nodeDefs.get(parentId);
+    for (const { nodeId } of children) {
+      const child = nodeDefs.get(nodeId);
+      if (parent?.type === "fanout" && child !== undefined) {
+        options.onNodeAdded?.(displayId(nodeId), child, { dependencies: [], ...(parent.phase ? { phase: parent.phase } : {}) });
+      }
+    }
+  }
   // Seed the monitor from authoritative hydrated state before scheduling. Dynamic
   // expand nodes remain reported only through their runtime transitions.
-  for (const id of orderedIds) report(id);
+  for (const id of Object.keys(graph.nodes)) report(id);
+
+  const abortRun = (): RunGraphResult => {
+    stopAll();
+    const lifecycle = ["reload", "switch", "shutdown"].includes(options.signal?.reason);
+    if (!lifecycle) {
+      if (instances) instances.state.cancelled = true;
+      feedback?.cancel();
+    }
+    checkpoint();
+    return { status: "aborted", outputs: feedback ? scheduler.resolveOutputs() : {}, nodes: snapshotNodes(scheduler), ...(graph.version === 2 && feedback ? { feedback: feedback.terminalResults() } : {}) };
+  };
 
   // Resolves the moment the run is aborted, so the loop unblocks even when an
   // inflight node (e.g. a human_gate whose resolver ignores the signal) never
@@ -475,10 +763,13 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     else options.signal?.addEventListener("abort", () => resolve(ABORTED), { once: true });
   });
 
+  try {
   while (true) {
-    if (options.signal?.aborted) {
-      stopAll();
-      return { status: "aborted", outputs: {}, nodes: snapshotNodes(scheduler) };
+    if (options.signal?.aborted || instances?.state.cancelled) return abortRun();
+    for (const id of scheduler.settleCollections()) report(id);
+    if (feedback?.tick()) {
+      for (const id of Object.keys(feedback.states)) report(id);
+      continue;
     }
 
     // Did this pass settle or splice anything synchronously? If so we must
@@ -505,6 +796,18 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
       }
       if (node.type === "graph") {
         launchSubgraph(id, node);
+        continue;
+      }
+      if (node.type === "bounded_feedback" && feedback) {
+        scheduler.markRunning(id);
+        feedback.start(id, node);
+        report(id);
+        progressed = true;
+        continue;
+      }
+      if (node.type === "fanout") {
+        launchFanout(id, node);
+        progressed = true;
         continue;
       }
       if (node.type === "expand") {
@@ -549,10 +852,7 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
     }
 
     const settled = await Promise.race<string | typeof ABORTED>([abortRace, ...[...inflight.values()].map(entry => entry.done)]);
-    if (settled === ABORTED) {
-      stopAll();
-      return { status: "aborted", outputs: {}, nodes: snapshotNodes(scheduler) };
-    }
+    if (settled === ABORTED) return abortRun();
     const settledId = settled;
     const entry = inflight.get(settledId);
     inflight.delete(settledId);
@@ -571,16 +871,20 @@ export async function runGraph(graph: AgentGraph, input: unknown, options: RunGr
   }
 
   return {
-    status: scheduler.runStatus() === "failed" ? "failed" : "completed",
+    status: scheduler.runStatus(feedback?.handledNodes) === "failed" ? "failed" : "completed",
     outputs: scheduler.resolveOutputs(),
     nodes: snapshotNodes(scheduler),
+    ...(graph.version === 2 && feedback ? { feedback: feedback.terminalResults() } : {}),
   };
+  } finally {
+    stopAll();
+  }
 }
 
 function snapshotNodes(scheduler: Scheduler): RunGraphResult["nodes"] {
   const nodes: RunGraphResult["nodes"] = {};
   for (const [id, run] of scheduler.nodes) {
-    nodes[id] = { status: run.status, attempt: run.attempt, output: run.output, error: run.error };
+    nodes[id] = { ...run };
   }
   return nodes;
 }

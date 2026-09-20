@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
@@ -85,4 +85,69 @@ describe("runGraph durable resume", () => {
     expect(spawned).toEqual(["done"]); // "a" was restored, not re-run
     expect(result.outputs).toEqual({ decision: true });
   });
+});
+
+it("restores an active collection with settled failures and reruns only interrupted children", async () => {
+  const graph: AgentGraph = {
+    nodes: {
+      research: {
+        type: "fanout", items: { path: "$.tasks" }, itemSchema: { type: "object" },
+        dispatch: { path: "$.source", cases: { project: "x" } }, prompt: `\${item}`,
+      },
+      trigger: agent(),
+      gate: { type: "human_gate", prompt: "fixture", outputSchema: { type: "object" } },
+    },
+    edges: [{ from: "trigger", to: "gate" }],
+    outputs: { evidence: { node: "research", path: "$.results" } },
+  };
+  const input = { tasks: [{ source: "project" }, { source: "project" }, { source: "project" }] };
+  const gates = new Map<string, (value: NodeSpawnResult) => void>();
+  const captures: { state: SchedulerState; graph: AgentGraph }[] = [];
+  const controller = new AbortController();
+  const run = runGraph(graph, input, {
+    signal: controller.signal, concurrency: 4,
+    host: {
+      spawnAgent: request => new Promise(resolve => { gates.set(request.nodeId, resolve); }),
+      awaitHumanGate: () => new Promise(() => {}),
+    },
+    onGateWaiting: (_id, state, effective) => captures.push({ state, graph: effective }),
+  });
+  await vi.waitFor(() => expect(gates.size).toBe(4));
+  gates.get("research:item:0")?.({ ok: true, output: "retained" });
+  gates.get("research:item:1")?.({ ok: false, error: "retained failure" });
+  // Let child settlements reach the scheduler before opening the independent gate.
+  await new Promise(resolve => setTimeout(resolve, 0));
+  gates.get("trigger")?.({ ok: true, output: "ready" });
+  await vi.waitFor(() => expect(captures).toHaveLength(1));
+  const saved = captures[0];
+  expect(saved.state.nodes.research).toMatchObject({ status: "running", attempt: 1 });
+  expect(saved.state.nodes["research:item:0"].status).toBe("completed");
+  expect(saved.state.nodes["research:item:1"].error).toBe("retained failure");
+  expect(saved.state.nodes["research:item:2"].status).toBe("running");
+  expect(Object.keys(saved.graph.nodes)).toHaveLength(6);
+  controller.abort();
+  expect((await run).status).toBe("aborted");
+  const spawned: string[] = [];
+  const added: string[] = [];
+  const restored = await runGraph(saved.graph, input, {
+    restore: saved.state,
+    host: {
+      spawnAgent: async request => { spawned.push(request.nodeId); return { ok: true, output: "fresh" }; },
+      awaitHumanGate: async () => ({ ok: true, output: "{}" }),
+    },
+    onNodeAdded: (id, _node, metadata) => {
+      added.push(id);
+      expect(metadata.dependencies).toEqual([]);
+    },
+  });
+  expect(spawned).toEqual(["research:item:2"]);
+  expect(added).toEqual(["research:item:0", "research:item:1", "research:item:2"]);
+  expect(restored.status).toBe("completed");
+  expect(restored.nodes.research.attempt).toBe(1);
+  expect(restored.nodes["research:item:2"].attempt).toBe(2);
+  expect(restored.outputs.evidence).toMatchObject([
+    { status: "completed", output: "retained", attempt: 1 },
+    { status: "failed", error: "retained failure", attempt: 1 },
+    { status: "completed", output: "fresh", attempt: 2 },
+  ]);
 });

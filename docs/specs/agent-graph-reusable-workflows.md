@@ -4,7 +4,7 @@ Status: draft
 
 Owner: docs/AGENTS.md (specs bucket)
 
-Related: [../ideas/agent-graph-design-v2.md](../ideas/agent-graph-design-v2.md) §2 · [../guides/agent-graph-implementation.md](../guides/agent-graph-implementation.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
+Related: [../ideas/agent-graph-design-v2.md](../ideas/agent-graph-design-v2.md) §2 · [../guides/agent-graph-implementation.md](../guides/agent-graph-implementation.md) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
 
 ## Problem Statement
 
@@ -55,9 +55,9 @@ legacy script runtime (design §2.8 deferral is superseded).
 1. As a graph author, I want three shared subgraphs (`shared/context-gather`,
    `shared/review-loop`, `shared/work-verify`), so that I can compose flows instead
    of re-authoring the same shapes.
-2. As a graph author, I want `shared/context-gather` to route caller-planned
-   source tasks on demand and synthesize one typed `GatheredContext`, so that
-   planning and implementation flows share an evidence format without static lanes.
+2. As a graph author, I want `shared/context-gather` to fan out caller-planned typed
+   tasks, evaluate all-settled evidence, and create typed gap-closing tasks only when
+   needed, so planning and implementation share one evidence format without idle nodes.
 3. As a graph author, I want `shared/review-loop` to review an artifact and iterate
    revise→review until approved or a bounded cap, so that I get bounded critique
    without an unbounded loop.
@@ -118,16 +118,22 @@ legacy script runtime (design §2.8 deferral is superseded).
 
 ### `shared/context-gather`
 
-- Requires `{ request, tasks }`; each caller task names one of `project`, `platform`,
-  `upstream`, `work-records`, or `practice` plus a question. Callers check applicable
-  Skills before creating tasks; this graph never adds practice research by default.
-- A router groups supplied tasks into five conditional, batched source lanes: `project`
-  uses `chengfeng`; the other sources use `wenchang`. A loose evaluator compares
-  request, tasks, and evidence, then may route one gap-closing second round only.
-- Each lane returns provenance-bearing evidence plus relevant files, constraints, unknowns,
-  and conflicts. Failed or skipped optional lanes leave unresolved evidence, not failure.
-- `synthesize` returns `summary`, `relevantFiles`, `constraints`, `unknowns`, `evidence`,
-  and `conflicts`; graph outputs expose this compatible extended `GatheredContext`.
+- Requires `{ request, tasks }`; each caller task contains `source`, `question`, and an
+  optional `reason`. Supported sources are `project`, `platform`, `upstream`,
+  `work-records`, and `practice`. Callers check applicable Skills before creating tasks;
+  the graph never adds `practice` research by default.
+- Version-2 `research` is one `bounded_feedback` region. Its `Gather evidence` work
+  template fans out the caller tasks, dispatching `project` to `chengfeng` and every
+  external source to `wenchang`; it awaits input-ordered completed, failed, and skipped
+  child results.
+- `Evaluate evidence` (`direnjie`) receives the original inputs plus accumulated
+  all-settled feedback. It returns typed `sufficient` or gap-linked `continue` tasks;
+  `maxIterations: 2` permits at most one gap-closing successor iteration. Future work is
+  not materialized after a sufficient decision.
+- `Synthesize context` (`jintong`) receives the complete terminal bounded-feedback
+  result and treats failed or skipped evidence as unknowns while preserving successful
+  evidence. It exposes `summary`, `relevantFiles`, `constraints`, `unknowns`, `evidence`,
+  and `conflicts` as the compatible extended `GatheredContext`.
 
 ### `shared/review-loop`
 
@@ -201,31 +207,30 @@ legacy script runtime (design §2.8 deferral is superseded).
   good shape and reject the bad shape with a locating message," and the integration
   test is "does the tool run the graph to a settled outcome."
 - **Primary seam (preferred, highest):** `validateGraph` / `validateFragment` in
-  `extensions/subagents/src/graph/validate.ts`. The unmapped-placeholder rule and
-  all portfolio graphs are checked here. One seam covers authoring correctness.
+  `extensions/subagents/src/graph/validate.ts`. Placeholder rules, fanout item/dispatch
+  contracts, and every portfolio graph are checked here.
 - **Integration seam:** the `agent_graph` tool `execute` (registered in
-  `extensions/subagents/src/index.ts`), exercised with a stub or real `NodeHost` to
-  a settled `WorkflowTask` outcome.
-- **Modules tested:** `validate.ts` (placeholder rule + portfolio graphs parse and
-  validate), and the tool path end-to-end for at least one composite graph.
-- **Prior art:** `extensions/subagents/test/graph-validate.test.ts` (validator
-  cases), `graph-tool.test.ts` (tool registration + run to notification),
-  `graph-run.test.ts` / `graph-subgraph.test.ts` / `graph-expand.test.ts` (runner,
-  subgraph, expansion), `graph-scheduler.test.ts` (readiness/loops).
-- **Real-run evidence:** at least one composite graph is run for real via
-  `agent_graph` and observed to completion in `/agents → Workflows`, with the
-  settled outcome captured. Real runs use small inputs so the graph mechanics — not
-  agent depth — are what is exercised.
-- **Baseline:** the extension suite has a documented 9 pre-existing failures
-  unrelated to graph work (Herdr-pane WIP + macOS `/tmp` symlink artifacts). Green
-  means "no new failures beyond that baseline."
+  `extensions/subagents/src/index.ts`), exercised with a stub or real `NodeHost` to a
+  settled `WorkflowTask` outcome.
+- **Modules tested:** `validate.ts` covers authoring errors; `graph-fanout.test.ts` covers
+  atomic materialization, awaited all-settled ordering, empty inputs, mixed failures, and
+  second-source tasks; `graph-portfolio.test.ts` proves one bounded-feedback region, typed
+  evaluator decisions, the two-iteration bound, absence of dormant future work, and unchanged
+  caller/output wiring.
+- **Prior art:** `graph-tool.test.ts`, `graph-run.test.ts`, `graph-subgraph.test.ts`,
+  `graph-expand.test.ts`, and `graph-scheduler.test.ts` cover the surrounding tool, runner,
+  subgraph, legacy expansion, and scheduling behavior.
+- **Dynamic monitor evidence:** reporter and UI tests assert one registered row per
+  materialized child, monotonic indices, inherited round titles, and distinct loop versus
+  user-retry attempt reasons.
+- **Real-run evidence:** run `shared/context-gather` through `agent_graph` with a round-one
+  task that leaves a gap. Confirm only requested children appear, the evaluator creates the
+  needed round-two task, both round titles render, and the settled output retains all
+  `GatheredContext` fields.
+- **Baseline:** the full `extensions/subagents/test` unit project must pass.
 
 ## Out of Scope
 
-- The P8 legacy-runtime removal itself (relocating shared monitor types, deleting
-  `runtime.ts` / `worker-source.ts` / `meta.ts`, the `SubagentWorkflow` tool, and
-  the two out-of-scope scripts). This spec establishes the parity that unblocks it;
-  the removal is executed and recorded separately.
 - Worktree-isolated workspace resources for Hou Tu (design §2.3). The portfolio
   uses a single `workspace:main` resource; per-worktree resources are future work.
 - Richer `human_gate` forms beyond approve/reject (design §1.3 ceiling).

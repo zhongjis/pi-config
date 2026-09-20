@@ -110,3 +110,22 @@ describe("checkGraphDelegation", () => {
     expect(checkGraphDelegation(graph, () => undefined)).toEqual({ ok: true });
   });
 });
+
+it("preflights every distinct fanout selector including nested unused cases", () => {
+  const child: AgentGraph = {
+    nodes: { research: {
+      type: "fanout", items: { path: "$.tasks" }, itemSchema: { type: "object" },
+      dispatch: { path: "$.source", cases: { project: "local", platform: "remote", practice: "remote" } },
+      prompt: `\${item}`,
+    } }, edges: [],
+  };
+  const parent: AgentGraph = { nodes: { nested: { type: "graph", graph: "child" } }, edges: [] };
+  const checked: string[] = [];
+  const result = checkGraphDelegation(parent, selector => {
+    checked.push(selector);
+    return selector === "remote" ? "denied" : undefined;
+  }, () => child);
+  expect(checked).toEqual(["local", "remote"]);
+  expect(result.ok).toBe(false);
+  if (!result.ok) expect(result.error).toContain("research");
+});
