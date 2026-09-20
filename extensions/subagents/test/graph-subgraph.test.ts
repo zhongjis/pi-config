@@ -54,3 +54,30 @@ describe("runGraph — subgraph (graph) nodes", () => {
     expect(result.nodes.sub.error).toContain("loadGraph");
   });
 });
+
+function savedChain(depth: number): { root: AgentGraph; loadGraph: (name: string) => AgentGraph | undefined } {
+  const saved = new Map<string, AgentGraph>();
+  saved.set(`saved-${depth}`, { nodes: { leaf: { type: "agent", agent: `worker-${depth}`, prompt: "leaf" } }, edges: [] });
+  for (let level = depth - 1; level >= 0; level--) {
+    saved.set(`saved-${level}`, { nodes: { child: { type: "graph", graph: `saved-${level + 1}`, input: {} } }, edges: [] });
+  }
+  const root = saved.get("saved-0");
+  if (!root) throw new Error("Missing saved-chain root");
+  return { root, loadGraph: name => saved.get(name) };
+}
+
+it.each([32, 33])("enforces the shared graph depth limit at %i", async depth => {
+  const chain = savedChain(depth);
+  const created: string[] = [];
+  const selectors: string[] = [];
+  const run = runGraph(chain.root, {}, {
+    loadGraph: chain.loadGraph,
+    host: { spawnAgent: async request => { selectors.push(request.agentType); return { ok: true, output: "leaf" }; } },
+    onNodeAdded: id => created.push(id),
+  });
+  if (depth > 32) { await expect(run).rejects.toThrow(/depth 32/); expect(selectors).toEqual([]); return; }
+  const result = await run;
+  expect(result.status).toBe("completed");
+  expect(selectors).toEqual([`worker-${depth}`]);
+  expect(created.some(id => id.endsWith("/leaf"))).toBe(true);
+}, 20_000);

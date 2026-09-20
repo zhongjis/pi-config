@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { canonical, DECISION_SCHEMA, decision, type FeedbackIteration, type FeedbackState, feedbackBudgetBounds, feedbackContinuation } from "./bounded-feedback.js";
 import { prepareFanout } from "./fanout.js";
+import { consumedExecutions } from "./graph-execution.js";
 import { type NestedCheckpoint, validateManifest } from "./graph-instance-id.js";
 import { nestedMaterializations } from "./graph-nested-checkpoint.js";
 import { validateSchedulerState } from "./graph-state-validation.js";
@@ -11,7 +12,13 @@ import type { ResolutionContext } from "./value-ref.js";
 
 /** Persisted input is untrusted: all checks precede hydration, replacement and dispatch. */
 export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, input: unknown = {}): void {
-  validateSchedulerState(state, graph);
+  // Only collection candidates defer authored-template checks. The checks below
+  // must regenerate every candidate and verify its manifest before restore returns.
+  const materializedPrompts = new Set<string>();
+  for (const children of Object.values(state?.collections ?? {})) {
+    if (Array.isArray(children)) for (const child of children) if (child && typeof child.nodeId === "string") materializedPrompts.add(child.nodeId);
+  }
+  validateSchedulerState(state, graph, materializedPrompts);
   const runtime = state.runtime;
   if (!runtime) throw new TypeError("Missing v2 runtime state");
   validateManifest(runtime, graph);
@@ -27,8 +34,9 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
   for (const [key, children] of Object.entries(state.collections ?? {})) {
     const node = graph.nodes[key]; const parent = instances.get(key);
     if (node.type !== "fanout" || !parent) throw new TypeError("Invalid collection manifest");
-    const prepared = prepare(node, children.map(child => child.item));
+    const prepared = parent.iteration === undefined ? prepareFanout(node, context) : prepare(node, children.map(child => child.item));
     if (!prepared.ok) throw new TypeError(`Invalid restored fanout: ${prepared.error}`);
+    if (prepared.items.length !== children.length || prepared.items.some((item, index) => !isDeepStrictEqual(item.item, children[index].item))) throw new TypeError("Invalid restored fanout items");
     children.forEach((child, index) => {
       const instance = instances.get(child.nodeId);
       if (!instance || instance.parentInstanceId !== parent.instanceId || instance.nodeKey !== parent.nodeKey || instance.itemIndex !== index || instance.iteration !== parent.iteration || executionTemplate(graph.nodes[child.nodeId]) !== executionTemplate(prepared.items[index].node)) throw new TypeError("Invalid child definition or provenance");
@@ -62,16 +70,32 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
   if ((Object.keys(runtime.nested ?? {}).length > 0 && runtime.nextOrdinal === undefined) || (runtime.nextOrdinal !== undefined && (!Number.isSafeInteger(runtime.nextOrdinal) || runtime.nextOrdinal <= Math.max(-1, ...ordinals)))) throw new TypeError("Invalid materialization counter");
   if (runtime.feedback !== undefined && (!runtime.feedback || typeof runtime.feedback !== "object" || Array.isArray(runtime.feedback))) throw new TypeError("Invalid feedback checkpoint");
   for (const [key, node] of Object.entries(graph.nodes)) {
-    if (node.type === "bounded_feedback" && state.nodes[key].status !== "pending" && !Object.hasOwn(runtime.feedback ?? {}, key)) throw new TypeError("Missing active feedback state");
+    if (node.type === "bounded_feedback" && state.nodes[key].status !== "pending" && !Object.hasOwn(runtime.feedback ?? {}, key)) {
+      const run = state.nodes[key]; const owner = instances.get(key);
+      if (run.status !== "running" || run.attempt < 1 || runtime.cancelled || runtime.manifest.some(row => row.parentInstanceId === owner?.instanceId)) throw new TypeError("Missing active feedback state");
+    }
   }
   for (const [key, feedback] of Object.entries(runtime.feedback ?? {})) {
     const node = graph.nodes[key];
     if (node?.type !== "bounded_feedback" || !feedback || !Array.isArray(feedback.iterations) || !Array.isArray(feedback.gaps) || (feedback.active && feedback.intent)) throw new TypeError("Invalid feedback checkpoint");
-    if (feedback.retryFailures !== undefined && (!Number.isSafeInteger(feedback.retryFailures) || feedback.retryFailures < 0 || feedback.retryFailures > (node.evaluator.retry?.maxAttempts ?? 1))) throw new TypeError("Invalid evaluator retry budget");
+    if (feedback.retryFailures !== undefined && (!Number.isSafeInteger(feedback.retryFailures) || feedback.retryFailures < 0 || runtime.executionProtocolVersion !== 1 && feedback.retryFailures > (node.evaluator.retry?.maxAttempts ?? 1))) throw new TypeError("Invalid evaluator retry budget");
     if (!feedback.terminal && (state.nodes[key].status !== "running" || runtime.cancelled)) throw new TypeError("Invalid active feedback ownership");
-    if (feedback.retryError !== undefined && typeof feedback.retryError !== "string") throw new TypeError("Invalid evaluator retry error");
+    if ((feedback.retryError !== undefined) !== ((feedback.retryFailures ?? 0) > 0) || (feedback.retryError !== undefined && typeof feedback.retryError !== "string")) throw new TypeError("Invalid evaluator retry error");
     const evaluation = feedback.active?.evaluator ?? feedback.iterations.at(-1)?.evaluator;
-    if ((feedback.retryFailures ?? 0) > (evaluation ? state.nodes[evaluation]?.attempt ?? 0 : 0)) throw new TypeError("Evaluator repair count exceeds attempts");
+    if ((feedback.retryFailures ?? 0) > (evaluation ? runtime.executionProtocolVersion === 1 ? consumedExecutions(runtime, evaluation) : state.nodes[evaluation]?.attempt ?? 0 : 0)) throw new TypeError("Evaluator repair count exceeds attempts");
+    if (evaluation && runtime.executionProtocolVersion === 1) {
+      const instance = instances.get(evaluation);
+      if (!instance || !runtime.executionLedger) throw new TypeError("Missing evaluator execution evidence");
+      let outcomes = 0; let historical = 0;
+      for (const row of runtime.executionLedger) {
+        if (row.instanceId !== instance.instanceId) continue;
+        if ("kind" in row) historical = row.consumedExecutions;
+        else if (row.payload.kind === "outcome" && row.payload.status === "failure") outcomes++;
+      }
+      // A deterministic legacy baseline records admissions, not historical failure detail.
+      const failures = feedback.retryFailures ?? 0;
+      if (failures < outcomes || failures > outcomes + historical) throw new TypeError("Evaluator retry failures disagree with execution outcomes");
+    }
     const binding = (row: Omit<FeedbackIteration, "results">, iteration: number): void => {
       if (!row || row.iteration !== iteration || !Array.isArray(row.tasks) || row.work !== `${key}:iteration:${iteration}:work` || row.evaluator !== `${key}:iteration:${iteration}:evaluator`) throw new TypeError("Invalid feedback topology binding");
       const work = instances.get(row.work); const evaluator = instances.get(row.evaluator); const parent = instances.get(key);
@@ -83,7 +107,7 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
       binding(row, index + 1);
       if (index > 0) {
         const history = feedback.iterations.slice(0, index);
-        if (feedbackBudgetBounds({ iterations: history, gaps: [] }, node, runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), runtime.startedAt ?? 0).length > 0) throw new TypeError("Iteration exceeds prior spend budget");
+        if (feedbackBudgetBounds({ iterations: history, gaps: [] }, node, runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), runtime.startedAt ?? 0, runtime).length > 0) throw new TypeError("Iteration exceeds prior spend budget");
         const previous = feedbackContinuation(history, node);
         if (!("tasks" in previous) || !isDeepStrictEqual(previous.tasks, row.tasks)) throw new TypeError("Iteration does not follow its evaluator decision");
       }
@@ -104,7 +128,7 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
     if (total > node.maxTotalItems) throw new TypeError("Feedback item limit exceeded");
     if ((node.deadline !== undefined || node.spendLimit !== undefined) && feedback.iterations.length > 0 && feedback.budgetCheckedAt === undefined && feedback.terminal?.reason !== "cancellation") throw new TypeError("Missing feedback terminal/continuation budget check");
     if (feedback.budgetCheckedAt !== undefined && (!Number.isSafeInteger(feedback.budgetCheckedAt) || feedback.budgetCheckedAt < (runtime.startedAt ?? 0) || (node.deadline === undefined && node.spendLimit === undefined))) throw new TypeError("Invalid feedback budget clock");
-    if (feedback.active && (node.deadline !== undefined || node.spendLimit !== undefined) && (feedback.budgetCheckedAt === undefined || feedbackBudgetBounds({ iterations: feedback.iterations, gaps: feedback.gaps }, node, runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), feedback.budgetCheckedAt).length > 0)) throw new TypeError("Materialization exceeds feedback budget");
+    if (feedback.active && (node.deadline !== undefined || node.spendLimit !== undefined) && (feedback.budgetCheckedAt === undefined || feedbackBudgetBounds({ iterations: feedback.iterations, gaps: feedback.gaps }, node, runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), feedback.budgetCheckedAt, runtime).length > 0)) throw new TypeError("Materialization exceeds feedback budget");
     const expectedGaps = [...feedback.iterations].reverse().find(row => row.decision)?.decision?.gaps ?? [];
     if (!isDeepStrictEqual(feedback.gaps, expectedGaps)) throw new TypeError("Forged accumulated gaps");
     const next = feedback.iterations.length ? feedbackContinuation(feedback.iterations, node) : undefined;
@@ -124,12 +148,17 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
 function validateTerminal({ state, graph, key, feedback, node, next, context }: { state: SchedulerState; graph: AgentGraph; key: string; feedback: FeedbackState; node: BoundedFeedbackNode; next: ReturnType<typeof feedbackContinuation> | undefined; context: ResolutionContext }): void {
   const terminal = feedback.terminal;
   if (!terminal) return;
+  const skipped = terminal.reason === "skipped before admission" || (terminal.reason === "cancellation" && state.nodes[key].attempt === 0);
+  if (skipped) {
+    const owner = state.runtime?.manifest.find(row => row.binding === key);
+    if (state.nodes[key].attempt !== 0 || feedback.iterations.length || feedback.stoppedIntent || feedback.retryFailures !== undefined || feedback.retryError !== undefined || feedback.budgetCheckedAt !== undefined || state.runtime?.manifest.some(row => row.parentInstanceId === owner?.instanceId)) throw new TypeError("Invalid never-admitted feedback skip");
+  }
   let expected: { reason: string; exhaustedBounds: readonly string[] } | undefined = next && "reason" in next ? next : undefined;
-  const exhausted = state.runtime && feedback.budgetCheckedAt !== undefined ? feedbackBudgetBounds(feedback, node, state.runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), feedback.budgetCheckedAt) : [];
+  const exhausted = state.runtime && feedback.budgetCheckedAt !== undefined ? feedbackBudgetBounds(feedback, node, state.runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), feedback.budgetCheckedAt, state.runtime) : [];
   if (exhausted.length > 0) expected = { reason: "deadline/spend limit", exhaustedBounds: exhausted };
   if (terminal.reason === "deadline/spend limit") {
     if (feedback.budgetCheckedAt === undefined || !state.runtime) throw new TypeError("Missing terminal budget check");
-    const bounds = feedbackBudgetBounds(feedback, node, state.runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), feedback.budgetCheckedAt);
+    const bounds = feedbackBudgetBounds(feedback, node, state.runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), feedback.budgetCheckedAt, state.runtime);
     if (bounds.length === 0) throw new TypeError("Forged budget termination");
     expected = { reason: terminal.reason, exhaustedBounds: bounds };
     if (feedback.stoppedIntent) {
@@ -137,6 +166,8 @@ function validateTerminal({ state, graph, key, feedback, node, next, context }: 
       const tasks = next && "tasks" in next ? next.tasks : initial?.ok ? initial.items.map(item => item.item) : undefined;
       if (!tasks || feedback.stoppedIntent.iteration !== feedback.iterations.length + 1 || !isDeepStrictEqual(feedback.stoppedIntent.tasks, tasks)) throw new TypeError("Invalid stopped budget intent");
     }
+  } else if (terminal.reason === "skipped before admission") {
+    expected = { reason: "skipped before admission", exhaustedBounds: [] };
   } else if (terminal.reason === "cancellation") {
     if (!state.runtime?.cancelled) throw new TypeError("Forged cancellation");
     expected = { reason: "cancellation", exhaustedBounds: [] };
@@ -157,7 +188,7 @@ function validateTerminal({ state, graph, key, feedback, node, next, context }: 
   }
   const partial = terminal.reason !== "sufficient" || feedback.gaps.length > 0 || feedback.iterations.some(row => row.results.some(result => result.status !== "completed"));
   const counters = { iterations: feedback.iterations.length, totalItems: feedback.iterations.reduce((sum, row) => sum + row.tasks.length, 0) };
-  if (!expected || feedback.active || feedback.intent || terminal.reason !== expected.reason || terminal.partial !== partial || !isDeepStrictEqual(terminal.exhaustedBounds, expected.exhaustedBounds) || !isDeepStrictEqual(terminal.counters, counters) || !isDeepStrictEqual(terminal.gaps, feedback.gaps) || !isDeepStrictEqual(terminal.iterations, feedback.iterations) || !isDeepStrictEqual(state.nodes[key].output, terminal) || state.nodes[key].status !== (terminal.reason === "materialization failure" ? "failed" : "completed")) throw new TypeError("Invalid terminal accumulator");
+  if (!expected || feedback.active || feedback.intent || terminal.reason !== expected.reason || terminal.partial !== partial || !isDeepStrictEqual(terminal.exhaustedBounds, expected.exhaustedBounds) || !isDeepStrictEqual(terminal.counters, counters) || !isDeepStrictEqual(terminal.gaps, feedback.gaps) || !isDeepStrictEqual(terminal.iterations, feedback.iterations) || !isDeepStrictEqual(state.nodes[key].output, skipped ? undefined : terminal) || state.nodes[key].status !== (skipped ? "skipped" : terminal.reason === "materialization failure" ? "failed" : "completed")) throw new TypeError("Invalid terminal accumulator");
 }
 function executionTemplate(node: GraphNode): string {
   return canonical(Object.fromEntries(Object.entries(node).filter(([key]) => key !== "name" && key !== "phase")));

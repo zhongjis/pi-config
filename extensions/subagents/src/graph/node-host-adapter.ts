@@ -68,6 +68,8 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
   let disposed = false;
 
   return {
+    // Sessions and UI prompts are process-owned; shell descendants are not.
+    async reconcileDrain(_correlation, target) { return !disposed && (target === "agent" || target === "human-gate"); },
     async spawnAgent(request: NodeSpawnRequest, signal: AbortSignal): Promise<NodeSpawnResult> {
       if (disposed) throw new Error("Node host is disposed.");
       const combined = deps.signal ? AbortSignal.any([deps.signal, signal]) : signal;

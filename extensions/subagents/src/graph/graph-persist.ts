@@ -11,7 +11,7 @@
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { ownCheckpoint, writeOwnedCheckpoint } from "./graph-checkpoint-owner.js";
+import { type CheckpointLease, ownCheckpoint, writeOwnedCheckpoint } from "./graph-checkpoint-owner.js";
 import { validateCheckpointTransition } from "./graph-checkpoint-transition.js";
 import { validateGraphRestore } from "./graph-restore-validation.js";
 import { isWorkflowRunId, snapshotDirectory, snapshotPath } from "./graph-snapshot-path.js";
@@ -38,7 +38,7 @@ export function graphRunsDir(cwd: string): string {
 
 export function writeGraphSnapshot(cwd: string, snapshot: GraphRunSnapshot): void {
   if (snapshot.version !== 1 && snapshot.version !== 2) throw new TypeError("Unsupported checkpoint version");
-  validateSchedulerState(snapshot.state, snapshot.graph);
+  if (snapshot.version === 1) validateSchedulerState(snapshot.state, snapshot.graph);
   if (snapshot.version === 2) {
     validateGraphRestore(snapshot.state, snapshot.graph, snapshot.input);
     if (snapshot.state.runtime?.runId !== snapshot.runId) throw new TypeError("Checkpoint run identity mismatch");
@@ -49,7 +49,7 @@ export function writeGraphSnapshot(cwd: string, snapshot: GraphRunSnapshot): voi
   if (!isSnapshot(persisted)) throw new TypeError("Invalid serialized checkpoint");
   const replacement = (prior: unknown): void => {
     if (!isSnapshot(prior)) throw new TypeError("Invalid previous checkpoint");
-    validateSchedulerState(prior.state, prior.graph);
+    if (prior.version === 1) validateSchedulerState(prior.state, prior.graph);
     if (prior.version === 2) validateGraphRestore(prior.state, prior.graph, prior.input);
     validateCheckpointTransition(prior, persisted);
   };
@@ -63,7 +63,7 @@ export function deleteGraphSnapshot(cwd: string, runId: string): void {
   const path = snapshotPath(cwd, runId);
   try {
     rmSync(path, { force: true });
-  } catch {
+  } catch { // no-excuse-ok: catch — stale cleanup is best effort; reload revalidates it.
     // A snapshot that cannot be deleted is stale, not fatal — it is re-validated
     // and re-deleted on the next reload.
   }
@@ -82,7 +82,7 @@ export function readGraphSnapshots(cwd: string, onInvalid: (message: string) => 
       const stem = entry.slice(0, -5);
       const parsed: unknown = JSON.parse(readFileSync(snapshotPath(cwd, stem), "utf-8"));
       if (isSnapshot(parsed) && parsed.runId === stem) {
-        validateSchedulerState(parsed.state, parsed.graph);
+        if (parsed.version === 1) validateSchedulerState(parsed.state, parsed.graph);
         if (parsed.version === 2) {
           if (!parsed.state.runtime) throw new TypeError("Missing v2 manifest");
           validateGraphRestore(parsed.state, parsed.graph, parsed.input);
@@ -112,6 +112,6 @@ function isSnapshot(value: unknown): value is GraphRunSnapshot {
   );
 }
 
-export function ownGraphRun(cwd: string, runId: string): () => void {
+export function ownGraphRun(cwd: string, runId: string): CheckpointLease {
   return ownCheckpoint(snapshotPath(cwd, runId, true));
 }

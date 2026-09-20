@@ -22,6 +22,8 @@ vi.mock("../src/agent-runner.js", async () => {
 import { runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 
+const MANAGER_KEY = Symbol.for("pi-subagents:manager");
+
 function makePi() {
   const tools = new Map<string, any>();
   const lifecycle = new Map<string, any>();
@@ -73,6 +75,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
   let prevCwd: string;
   let prevAgentDir: string | undefined;
   let prevHome: string | undefined;
+  let priorManager: unknown;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "pi-fleet-"));
@@ -87,6 +90,8 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     // debounce), so fleet.onAgentFinished fires synchronously on the result.
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false, defaultJoinMode: "async" }));
     process.chdir(tmpDir);
+    priorManager = Reflect.get(globalThis, MANAGER_KEY);
+    Reflect.deleteProperty(globalThis, MANAGER_KEY);
   });
 
   afterEach(() => {
@@ -97,6 +102,8 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     else process.env.HOME = prevHome;
     rmSync(tmpDir, { recursive: true, force: true });
     rmSync(agentDir, { recursive: true, force: true });
+    if (priorManager === undefined) Reflect.deleteProperty(globalThis, MANAGER_KEY);
+    else Reflect.set(globalThis, MANAGER_KEY, priorManager);
     vi.restoreAllMocks();
   });
 

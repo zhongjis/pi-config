@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
-import { Scheduler, type SettleInput } from "../src/graph/scheduler.js";
+import type { SettleInput } from "../src/graph/scheduler.js";
+import { ProjectionDriver as Scheduler } from "./graph-projection.fixture.js";
 
 const agent = (): { type: "agent"; agent: string; prompt: string } => ({ type: "agent", agent: "x", prompt: "p" });
 

@@ -262,7 +262,49 @@ describe("fanout validation", () => {
   });
   it("rejects a loop targeting a fanout", () => {
     const result = validateGraph({ nodes: { work: node }, edges: [{ from: "work", to: "work", loop: { maxIterations: 2 } }] });
-    expect(result.errors).toContain("edges[0].to: a fanout cannot be a loop target");
+    expect(result.errors.join("; ")).toContain('edges[0].to: loop target "work" can reach barrier "work"');
+  });
+
+  it("rejects transitive fanout loop barriers while preserving unrelated loops", () => {
+    const ordinary = { type: "agent" as const, agent: "worker", prompt: "fixture" };
+    const transitive = validateGraph({
+      nodes: { review: ordinary, work: node },
+      edges: [{ from: "review", to: "work" }, { from: "work", to: "review", loop: { maxIterations: 2 } }],
+    });
+    expect(transitive.ok).toBe(false);
+    expect(transitive.errors.join("; ")).toContain("edges[1].to: loop target");
+    const direct = validateGraph({ nodes: { review: ordinary, work: node }, edges: [{ from: "review", to: "work", loop: { maxIterations: 2 } }] });
+    expect(direct.errors.join("; ")).toContain("edges[0].to: loop target");
+    const safe = validateGraph({
+      nodes: { review: ordinary, fix: ordinary, unrelated: node },
+      edges: [{ from: "review", to: "fix" }, { from: "fix", to: "review", loop: { maxIterations: 2 } }],
+    });
+    expect(safe).toEqual({ ok: true, errors: [] });
+  });
+
+  it("rejects transitive and direct bounded-feedback loop barriers", () => {
+    const ordinary = { type: "agent" as const, agent: "worker", prompt: "fixture" };
+    const barrier = {
+      type: "bounded_feedback" as const,
+      work: { ...node, outputSchema: { type: "object" } },
+      evaluator: ordinary,
+      maxIterations: 2,
+      maxItemsPerIteration: 2,
+      maxTotalItems: 4,
+    };
+    const transitive = validateGraph({
+      version: 2,
+      nodes: { review: ordinary, barrier },
+      edges: [{ from: "review", to: "barrier" }, { from: "barrier", to: "review", loop: { maxIterations: 2 } }],
+    });
+    expect(transitive.ok).toBe(false);
+    expect(transitive.errors.join("; ")).toContain("edges[1].to: loop target");
+    const direct = validateGraph({
+      version: 2,
+      nodes: { review: ordinary, barrier },
+      edges: [{ from: "review", to: "barrier", loop: { maxIterations: 2 } }],
+    });
+    expect(direct.errors.join("; ")).toContain("edges[0].to: loop target");
   });
   it("counts existing nodes toward the expansion ceiling", () => {
     const result = validateFragment({ nodes: { work: node }, edges: [] }, Array.from({ length: 500 }, (_, i) => `n${i}`));
@@ -276,4 +318,25 @@ describe("graph versions", () => {
     for (const version of [undefined, 1, 2]) expect(validateGraph({ ...base, version }).ok).toBe(true);
     for (const version of [0, 3, -1, 1.5, "2", null]) expect(validateGraph({ ...base, version }).ok).toBe(false);
   });
+});
+
+it("checks guarded cyclic paths and prototype-name IDs without traversing loop edges", () => {
+  const agent = { type: "agent", agent: "worker", prompt: "fixture" };
+  const fanout = { type: "fanout", items: { path: "$" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: "${item}" };
+  const nodes = Object.fromEntries([["__proto__", agent], ["constructor", agent], ["barrier", fanout]]);
+  const edges = [
+    { from: "__proto__", to: "constructor" },
+    { from: "constructor", to: "__proto__" },
+    { from: "constructor", to: "barrier", when: { exists: { path: "$.enabled" } } },
+    { from: "barrier", to: "__proto__", loop: { maxIterations: 2 } },
+  ];
+  expect(validateGraph({ nodes, edges }).errors).toEqual(['edges[3].to: loop target "__proto__" can reach barrier "barrier" (fanout or bounded_feedback); barrier reactivation is unsupported']);
+  const safe = { nodes, edges: [{ from: "barrier", to: "__proto__", loop: { maxIterations: 2 } }] };
+  expect(validateGraph(safe).ok).toBe(true);
+});
+
+it("does not accept literal placeholders as authored agents or arbitrary expansion fragments", () => {
+  const nodes = { child: { type: "agent", agent: "worker", prompt: "${context}" } };
+  expect(validateGraph({ nodes, edges: [] }).ok).toBe(false);
+  expect(validateFragment({ nodes, edges: [] }, []).ok).toBe(false);
 });

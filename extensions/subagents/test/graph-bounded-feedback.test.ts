@@ -1,10 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { checkGraphDelegation } from "../src/graph/delegation-preflight.js";
+import { validateCheckpointTransition } from "../src/graph/graph-checkpoint-transition.js";
+import type { GraphRunSnapshot } from "../src/graph/graph-persist.js";
+import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
 import type { AgentGraph, BoundedFeedbackNode } from "../src/graph/ir.js";
-import { runGraph } from "../src/graph/run-graph.js";
+import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 import { validateGraph } from "../src/graph/validate.js";
+import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
 
 const feedback: BoundedFeedbackNode = {
   type: "bounded_feedback", name: "Research", maxIterations: 2, maxItemsPerIteration: 2, maxTotalItems: 4,
@@ -76,10 +80,11 @@ describe("bounded feedback", () => {
     for (const saved of checkpoints) {
       const allocated: string[] = [];
       const result = await runGraph(saved.graph, { tasks: [initial] }, {
-        restore: saved.state, onCheckpoint: state => {
+        restore: saved.state, reclaimedDeadWriter: true, onCheckpoint: (state, effectiveGraph) => {
+          validateGraphRestore(state, effectiveGraph, { tasks: [initial] });
           for (const row of saved.state.runtime?.manifest ?? []) expect(state.runtime?.manifest).toContainEqual(row);
         },
-        host: { spawnAgent: async request => {
+        host: { reconcileDrain: async () => true, spawnAgent: async request => {
           allocated.push(request.nodeId);
           return { ok: true, output: JSON.stringify(request.agentType === "judge" ? (saved.state.runtime?.manifest.length === 4 ? more : enough) : { evidence: request.nodeId }) };
         } },
@@ -91,7 +96,10 @@ describe("bounded feedback", () => {
   });
   it("cancels with explicit partial accumulation", async () => {
     const controller = new AbortController();
-    const result = await runGraph(graph(), { tasks: [initial] }, { signal: controller.signal, onCheckpoint: () => {}, host: { spawnAgent: async () => { controller.abort(); return new Promise(() => {}); } } });
+    const execution = deferred<{ ok: boolean }>();
+    const pending = runGraph(graph(), { tasks: [initial] }, { signal: controller.signal, onCheckpoint: () => {}, host: { spawnAgent: async () => { controller.abort(); return execution.promise; } } });
+    await releaseAfterPending(pending, () => execution.resolve({ ok: true }));
+    const result = await pending;
     expect(result.status).toBe("aborted");
     expect(result.outputs.evidence).toMatchObject({ reason: "cancellation", partial: true });
   });
@@ -130,10 +138,14 @@ it("fails closed on corrupt restored feedback before dispatch or checkpoint repl
 it("blocks node and item ceilings before materializing iteration rows", async () => {
   const many: AgentGraph = { ...graph(), nodes: { ...graph().nodes } };
   for (let index = 0; index < 497; index++) many.nodes[`static${index}`] = { type: "agent", agent: "worker", prompt: "static" };
-  let count = 0;
-  const result = await runGraph(many, { tasks: [initial] }, { onCheckpoint: state => { count = state.runtime?.manifest.length ?? 0; }, host: { spawnAgent: async () => ({ ok: true, output: "ok" }) } });
+  let count = 0; let checkpoints = 0;
+  const clone = vi.spyOn(globalThis, "structuredClone");
+  const result = await runGraph(many, { tasks: [initial] }, { onCheckpoint: state => { count = state.runtime?.manifest.length ?? 0; checkpoints++; }, host: { spawnAgent: async () => ({ ok: true, output: "ok" }) } });
   expect(result.nodes.research.output).toMatchObject({ reason: "materialization failure", exhaustedBounds: ["node limit"] });
   expect(count).toBe(498);
+  expect(checkpoints).toBeLessThan(135);
+  expect(clone.mock.calls.length).toBeLessThan(140);
+  clone.mockRestore();
   expect(validateGraph(graph({ ...feedback, deadline: 100 })).ok).toBe(true);
   expect(validateGraph(graph({ ...feedback, spendLimit: 1 })).ok).toBe(true);
 });
@@ -166,7 +178,7 @@ it("uses restored authoritative run counts before materializing feedback", async
   const initialCheckpoint = checkpoints[0];
   if (!initialCheckpoint) throw new Error("missing initial checkpoint");
   const state = structuredClone(initialCheckpoint.state);
-  state.nodes.research.attempt = 997;
+  state.nodes.research.attempt = 998;
   const spawnAgent = vi.fn();
   const result = await runGraph(graph(), { tasks: [initial] }, { restore: state, onCheckpoint: () => {}, host: { spawnAgent } });
   expect(result.feedback?.research).toMatchObject({ reason: "materialization failure", exhaustedBounds: ["run limit"] });
@@ -192,7 +204,10 @@ it("validates the public v2 authoring fixture", () => {
 it("suspends on lifecycle reload without converting durable work into cancellation", async () => {
   const controller = new AbortController();
   let saved: { state: SchedulerState; graph: AgentGraph } | undefined;
-  await runGraph(graph(), { tasks: [initial] }, { signal: controller.signal, onCheckpoint: (state, effective) => { saved = { state, graph: effective }; }, host: { spawnAgent: async () => { controller.abort("reload"); return new Promise(() => {}); } } });
+  const execution = deferred<{ ok: boolean }>();
+  const pending = runGraph(graph(), { tasks: [initial] }, { signal: controller.signal, onCheckpoint: (state, effective) => { saved = { state, graph: effective }; }, host: { spawnAgent: async () => { controller.abort("reload"); return execution.promise; } } });
+  await releaseAfterPending(pending, () => execution.resolve({ ok: true }));
+  await pending;
   if (!saved) throw new Error("missing lifecycle checkpoint");
   expect(saved.state.runtime?.cancelled).not.toBe(true);
   const result = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, allocateInstanceId: () => { throw new Error("replacement identity"); }, onCheckpoint: () => {}, host: { spawnAgent: async request => ({ ok: true, output: JSON.stringify(request.agentType === "judge" ? enough : { evidence: 1 }) }) } });
@@ -201,12 +216,12 @@ it("suspends on lifecycle reload without converting durable work into cancellati
 
 it("preserves the evaluator repair budget across a restart", async () => {
   const { checkpoints } = await execute([{}, enough]);
-  const saved = checkpoints.find(row => Object.entries(row.state.nodes).some(([key, node]) => key.endsWith(":evaluator") && node.status === "running" && node.attempt === 2));
+  const saved = checkpoints.find(row => row.state.runtime?.feedback?.research?.retryFailures === 1);
   if (!saved) throw new Error("missing repair checkpoint");
   const spawnAgent = vi.fn(async () => ({ ok: true, output: "{}" }));
-  const result = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, onCheckpoint: () => {}, host: { spawnAgent } });
+  const result = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, reclaimedDeadWriter: true, onCheckpoint: () => {}, host: { spawnAgent, reconcileDrain: async () => true } });
   expect(result.outputs.evidence).toMatchObject({ reason: "evaluator failure", partial: true });
-  expect(spawnAgent).toHaveBeenCalledTimes(1);
+  expect(spawnAgent).toHaveBeenCalledTimes(0);
 });
 
 it.each(["child agent", "child prompt", "child schema", "child parent", "child iteration", "child item", "result status", "result attempt", "result output", "result error", "false sufficient", "false partial", "bounds"])("rejects forged v2 %s before replacement or dispatch", async mutation => {
@@ -249,11 +264,11 @@ it("rejects a continuation intent beyond maxIterations before any allocation", a
 });
 
 it("continues host evaluator attempt provenance after restore", async () => {
-  const { checkpoints } = await execute([{}, enough]);
-  const saved = checkpoints.find(row => Object.entries(row.state.nodes).some(([key, node]) => key.endsWith(":evaluator") && node.status === "running" && node.attempt === 2));
+  const { checkpoints } = await execute([{}, enough], { ...feedback, evaluator: { ...feedback.evaluator, retry: { maxAttempts: 3 } } });
+  const saved = checkpoints.find(row => row.state.runtime?.feedback?.research?.retryFailures === 1);
   if (!saved) throw new Error("missing repair checkpoint");
   const requests: number[] = [];
-  await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, onCheckpoint: () => {}, host: { spawnAgent: async request => { requests.push(request.attempt); return { ok: true, output: JSON.stringify(enough) }; } } });
+  await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, reclaimedDeadWriter: true, onCheckpoint: () => {}, host: { reconcileDrain: async () => true, spawnAgent: async request => { requests.push(request.attempt); return { ok: true, output: JSON.stringify(enough) }; } } });
   expect(requests).toEqual([3]);
 });
 
@@ -310,14 +325,14 @@ describe("configured deadline and USD spend", () => {
 
 it("retains evaluator repair spend on the same UUID after interruption", async () => {
   let repair: { state: SchedulerState; graph: AgentGraph } | undefined; let judge = 0;
-  const definition = graph({ ...feedback, spendLimit: 0.6 });
-  await runGraph(definition, { tasks: [initial] }, { now: () => 1000, onCheckpoint: (state, graph) => { if (state.runtime?.feedback?.research?.retryFailures === 1 && state.nodes["research:iteration:1:evaluator"].attempt === 1) repair = { state, graph }; }, host: { spawnAgent: async request => ({ ok: true, costUsd: 0.2, output: JSON.stringify(request.agentType === "judge" ? (++judge === 1 ? {} : enough) : { evidence: 1 }) }) } });
+  const definition = graph({ ...feedback, evaluator: { ...feedback.evaluator, retry: { maxAttempts: 3 } }, spendLimit: 0.6 });
+  await runGraph(definition, { tasks: [initial] }, { now: () => 1000, onCheckpoint: (state, graph) => { if (!repair && state.runtime?.feedback?.research?.retryFailures === 1 && state.nodes["research:iteration:1:evaluator"].attempt === 1) repair = { state, graph }; }, host: { spawnAgent: async request => ({ ok: true, costUsd: 0.2, output: JSON.stringify(request.agentType === "judge" ? (++judge === 1 ? {} : enough) : { evidence: 1 }) }) } });
   if (!repair) throw new Error("missing repair checkpoint");
   const saved = repair; const evaluator = saved.state.runtime?.manifest.find(row => row.binding.endsWith(":evaluator"));
   const spawnAgent = vi.fn(async () => ({ ok: true, costUsd: 0.2, output: JSON.stringify(enough) }));
-  const result = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, now: () => 2000, host: { spawnAgent }, onCheckpoint: () => {} });
-  expect(spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ nodeId: evaluator?.instanceId, attempt: 2 }), expect.any(AbortSignal));
-  expect(result.feedback?.research).toMatchObject({ reason: "deadline/spend limit", exhaustedBounds: ["spendLimit"], counters: { iterations: 1 } });
+  const result = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, reclaimedDeadWriter: true, now: () => 2000, host: { spawnAgent, reconcileDrain: async () => true }, onCheckpoint: () => {} });
+  expect(spawnAgent).toHaveBeenCalledWith(expect.objectContaining({ nodeId: evaluator?.instanceId, attempt: 3 }), expect.any(AbortSignal));
+  expect(result.feedback?.research).toMatchObject({ reason: "deadline/spend limit", exhaustedBounds: ["spend accounting unavailable", "spendLimit"], counters: { iterations: 1 } });
 });
 
 it("fails spend accounting closed when a later evaluator execution throws without a cost", async () => {
@@ -349,4 +364,198 @@ it.each([false, true])("rejects a sufficient terminal that conceals an exhausted
   const onCheckpoint = vi.fn(); const spawnAgent = vi.fn();
   await expect(runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, onCheckpoint, host: { spawnAgent } })).rejects.toThrow(/terminal/);
   expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
+});
+
+function durableFeedbackCheckpoints() {
+  const checkpoints: GraphRunSnapshot[] = [];
+  const onCheckpoint = (state: SchedulerState, graph: AgentGraph) => {
+    const input = { tasks: [initial] };
+    validateGraphRestore(state, graph, input);
+    // Replacement validation compares serialized snapshots, as the durable writer does.
+    const snapshot: GraphRunSnapshot = JSON.parse(JSON.stringify({ version: 2, runId: state.runtime?.runId ?? "", state, graph, input, waitingGate: "", savedAt: 0 } satisfies GraphRunSnapshot));
+    const previous = checkpoints.at(-1);
+    if (previous) validateCheckpointTransition(previous, snapshot);
+    checkpoints.push(snapshot);
+  };
+  return { checkpoints, onCheckpoint };
+}
+
+describe("feedback skip and cancellation durability", () => {
+  it.each(["conditional", "operator", "stuck cycle"])("restores a never-admitted %s skip without dispatch", async mode => {
+    const definition = graph();
+    definition.nodes.other = feedback;
+    if (mode === "conditional") {
+      definition.nodes.source = { type: "agent", agent: "source", prompt: "source" };
+      definition.edges = ["research", "other"].map(to => ({ from: "source", to, when: { eq: [{ path: "$.enabled" }, true] } }));
+    } else if (mode === "stuck cycle") {
+      definition.edges = [{ from: "research", to: "other" }, { from: "other", to: "research" }];
+    }
+    const { checkpoints, onCheckpoint } = durableFeedbackCheckpoints();
+    const spawnAgent = vi.fn(async () => ({ ok: true, output: "source" }));
+    const result = await runGraph(definition, { tasks: [initial] }, { host: { spawnAgent }, onCheckpoint,
+      onControl: control => { if (mode === "operator") { expect(control.skip(0)).toBe(true); expect(control.skip(1)).toBe(true); } },
+    });
+    for (const id of ["research", "other"]) {
+      expect(result.nodes[id]).toMatchObject({ status: "skipped", attempt: 0 });
+      expect(result.feedback?.[id]).toMatchObject({ reason: "skipped before admission", counters: { iterations: 0, totalItems: 0 } });
+    }
+    expect(spawnAgent).toHaveBeenCalledTimes(mode === "conditional" ? 1 : 0);
+    const saved = checkpoints.at(-1);
+    if (!saved) throw new Error("missing terminal skip");
+    for (const mutation of ["attempt", "output", "intent"]) {
+      const forged = structuredClone(saved.state);
+      const terminal = forged.runtime?.feedback?.research;
+      if (!terminal) throw new Error("missing skipped state");
+      if (mutation === "attempt") forged.nodes.research.attempt = 1;
+      if (mutation === "output") forged.nodes.research.output = terminal.terminal;
+      if (mutation === "intent") terminal.stoppedIntent = { iteration: 1, tasks: [initial] };
+      expect(() => validateGraphRestore(forged, saved.graph, saved.input)).toThrow();
+    }
+    spawnAgent.mockClear();
+    const restored = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, host: { spawnAgent }, onCheckpoint });
+    expect(restored.nodes).toEqual(result.nodes);
+    expect(restored.feedback).toEqual(result.feedback);
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+
+  it.each(["before admission", "active"])("durably cancels %s without redispatch on restore", async mode => {
+    const definition = graph();
+    definition.nodes.other = feedback;
+    const controller = new AbortController();
+    const { checkpoints, onCheckpoint } = durableFeedbackCheckpoints();
+    if (mode === "before admission") controller.abort();
+    const spawnAgent = vi.fn(async () => { controller.abort(); return { ok: true, output: "{}" }; });
+    const result = await runGraph(definition, { tasks: [initial] }, { signal: controller.signal, host: { spawnAgent }, onCheckpoint });
+    expect(result.status).toBe("aborted");
+    for (const id of ["research", "other"]) {
+      expect(result.feedback?.[id]?.reason).toBe("cancellation");
+      expect(result.nodes[id].status).toBe(mode === "before admission" ? "skipped" : "completed");
+      expect(result.nodes[id].attempt).toBe(mode === "before admission" ? 0 : 1);
+    }
+    const saved = checkpoints.at(-1);
+    if (!saved) throw new Error("missing terminal cancellation");
+    const forged = structuredClone(saved.state);
+    if (!forged.runtime) throw new Error("missing runtime");
+    delete forged.runtime.cancelled;
+    expect(() => validateGraphRestore(forged, saved.graph, saved.input)).toThrow("Forged cancellation");
+    spawnAgent.mockClear();
+    const restored = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, host: { spawnAgent }, onCheckpoint });
+    expect(restored.status).toBe("aborted");
+    expect(restored.feedback).toEqual(result.feedback);
+    expect(restored.nodes).toEqual(result.nodes);
+    expect(spawnAgent).not.toHaveBeenCalled();
+  });
+});
+
+it("counts only evaluator failures after an operator retry, not cancelled admissions", async () => {
+  const { checkpoints, onCheckpoint } = durableFeedbackCheckpoints();
+  let control: GraphControl | undefined; let judges = 0;
+  const started = deferred<void>(); const interrupted = deferred<{ ok: boolean; output: string }>();
+  const pending = runGraph(graph(), { tasks: [initial] }, { onCheckpoint, onControl: value => { control = value; }, host: { spawnAgent: async request => {
+    if (request.agentType !== "judge") return { ok: true, output: '{"evidence":1}' };
+    if (++judges === 1) { started.resolve(); return interrupted.promise; }
+    return { ok: true, output: JSON.stringify(judges === 2 ? {} : enough) };
+  } } });
+  try {
+    await started.promise; expect(control?.retry(2)).toBe(true);
+  } finally { interrupted.resolve({ ok: true, output: JSON.stringify(enough) }); }
+  const result = await pending;
+  expect(judges).toBe(3); expect(result.feedback?.research.reason).toBe("sufficient");
+  expect(result.nodes["research:iteration:1:evaluator"].attempt).toBe(2);
+  const states = checkpoints.flatMap(row => row.state.runtime?.feedback?.research ?? []);
+  expect(Math.max(...states.map(state => state.retryFailures ?? 0))).toBe(1);
+  expect(states.at(-1)).toMatchObject({ retryFailures: 1, retryError: expect.any(String) });
+});
+
+it("rejects forged evaluator failure counts and error rewrites at durable replacement/restore", async () => {
+  const { checkpoints } = await execute([{}, "invalid", enough], { ...feedback, evaluator: { ...feedback.evaluator, retry: { maxAttempts: 3 } } });
+  const snapshots: GraphRunSnapshot[] = checkpoints.map(row => JSON.parse(JSON.stringify({ ...row, version: 2, runId: row.state.runtime?.runId, input: { tasks: [initial] }, waitingGate: "", savedAt: 0 })));
+  for (const [index, saved] of snapshots.entries()) {
+    validateGraphRestore(saved.state, saved.graph, saved.input);
+    if (index) validateCheckpointTransition(snapshots[index - 1], saved);
+  }
+  const first = snapshots.find(row => row.state.runtime?.feedback?.research?.retryFailures === 1);
+  if (!first) throw new Error("missing evaluator failure fixture");
+  for (const mutation of ["single increment", "jump", "decrease", "count removal", "error replacement", "error removal", "both removal"]) {
+    const forged = structuredClone(first); const state = forged.state.runtime?.feedback?.research;
+    if (!state) throw new Error("missing feedback state");
+    if (mutation === "single increment") state.retryFailures = 2;
+    if (mutation === "jump") state.retryFailures = 3;
+    if (mutation === "decrease") state.retryFailures = 0;
+    if (mutation === "count removal" || mutation === "both removal") delete state.retryFailures;
+    if (mutation === "error replacement") state.retryError = "forged replacement";
+    if (mutation === "error removal" || mutation === "both removal") delete state.retryError;
+    expect(() => validateCheckpointTransition(first, forged)).toThrow(/evaluator/);
+    // Outcome rows do not retain the original error string.
+    if (mutation !== "error replacement") expect(() => validateGraphRestore(forged.state, forged.graph, forged.input)).toThrow(/retry|repair/);
+  }
+  const omitted = structuredClone(first);
+  if (!omitted.state.runtime?.feedback) throw new Error("missing feedback");
+  delete omitted.state.runtime.feedback.research.retryFailures; delete omitted.state.runtime.feedback.research.retryError;
+  expect(() => validateCheckpointTransition(snapshots[snapshots.indexOf(first) - 1], omitted)).toThrow(/execution outcomes/);
+  const legacy = structuredClone(first);
+  if (!legacy.state.runtime) throw new Error("missing runtime");
+  Reflect.deleteProperty(legacy.state.runtime, "executionProtocolVersion");
+  Reflect.deleteProperty(legacy.state.runtime, "executionLedger");
+  for (const run of Object.values(legacy.state.nodes)) { delete run.currentExecutionAttemptId; delete run.activation; delete run.graphAttempt; }
+  expect(() => validateGraphRestore(legacy.state, legacy.graph, legacy.input)).not.toThrow();
+});
+
+it("initializes failure evidence at zero and resets it only for successor materialization", async () => {
+  const { checkpoints } = await execute([{}, more, enough]);
+  const snapshots: GraphRunSnapshot[] = checkpoints.map(row => JSON.parse(JSON.stringify({ ...row, version: 2, runId: row.state.runtime?.runId, input: { tasks: [initial] }, waitingGate: "", savedAt: 0 })));
+  let resets = 0; let initializations = 0;
+  for (let index = 1; index < snapshots.length; index++) {
+    const previous = snapshots[index - 1]; const next = snapshots[index];
+    validateCheckpointTransition(previous, next); validateGraphRestore(next.state, next.graph, next.input);
+    const before = previous.state.runtime?.feedback?.research; const after = next.state.runtime?.feedback?.research;
+    if (!after) continue;
+    if (after.intent?.iteration === 2) expect(after.retryFailures).toBe(1);
+    if (!before || after.active && after.active.evaluator !== before.active?.evaluator) {
+      initializations++; if (after.active?.iteration === 2) resets++;
+      const forged = structuredClone(next); const state = forged.state.runtime?.feedback?.research;
+      if (!state) throw new Error("missing feedback state");
+      state.retryFailures = 1; state.retryError = "premature failure";
+      expect(() => validateCheckpointTransition(previous, forged)).toThrow(/initializes evaluator/);
+      expect(() => validateGraphRestore(forged.state, forged.graph, forged.input)).toThrow(/repair count/);
+    } else if (before.retryFailures === 1 && after.retryFailures === 1 && !after.active) {
+      const forged = structuredClone(next); const state = forged.state.runtime?.feedback?.research;
+      if (!state) throw new Error("missing feedback state");
+      state.retryFailures = 0; delete state.retryError;
+      expect(() => validateCheckpointTransition(previous, forged)).toThrow(/evaluator failure evidence/);
+    }
+  }
+  expect(initializations).toBe(3); expect(resets).toBe(1);
+  const materialized = snapshots.find(row => row.state.runtime?.feedback?.research?.active?.iteration === 1);
+  if (!materialized?.state.runtime?.feedback?.research) throw new Error("missing initial manifest");
+  delete materialized.state.runtime.feedback.research.retryFailures;
+  expect(() => validateGraphRestore(materialized.state, materialized.graph, materialized.input)).not.toThrow();
+});
+
+it.each([0, 1])("reconciles post-baseline failures while retaining %i historical legacy failures", async historical => {
+  const { checkpoints: original } = await execute([{}, enough], { ...feedback, evaluator: { ...feedback.evaluator, retry: { maxAttempts: 3 } } });
+  const saved = structuredClone(original.find(row => row.state.runtime?.feedback?.research?.retryFailures === 1));
+  if (!saved?.state.runtime?.feedback) throw new Error("missing repair checkpoint");
+  Reflect.deleteProperty(saved.state.runtime, "executionProtocolVersion"); Reflect.deleteProperty(saved.state.runtime, "executionLedger");
+  for (const run of Object.values(saved.state.nodes)) { delete run.currentExecutionAttemptId; delete run.activation; delete run.graphAttempt; }
+  saved.state.runtime.feedback.research.retryFailures = historical;
+  if (!historical) delete saved.state.runtime.feedback.research.retryError;
+  const { checkpoints, onCheckpoint } = durableFeedbackCheckpoints();
+  onCheckpoint(saved.state, saved.graph);
+  let judges = 0;
+  const result = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, onCheckpoint, host: { spawnAgent: async () => ({ ok: true, output: JSON.stringify(++judges === 1 ? {} : enough) }) } });
+  expect(result.feedback?.research.reason).toBe("sufficient"); expect(judges).toBe(2);
+  const repaired = checkpoints.find(row => row.state.runtime?.feedback?.research?.retryFailures === historical + 1);
+  if (!repaired?.state.runtime?.feedback) throw new Error("missing post-baseline repair");
+  expect(repaired.state.runtime.executionLedger?.some(row => "kind" in row && row.kind === "legacy-baseline")).toBe(true);
+  const forged = structuredClone(repaired);
+  if (!forged.state.runtime?.feedback) throw new Error("missing feedback");
+  delete forged.state.runtime.feedback.research.retryFailures; delete forged.state.runtime.feedback.research.retryError;
+  expect(() => validateGraphRestore(forged.state, forged.graph, forged.input)).toThrow(/execution outcomes/);
+  for (const field of ["executionProtocolVersion", "executionLedger"]) {
+    const partial = structuredClone(repaired); Reflect.deleteProperty(partial.state.runtime ?? {}, field);
+    expect(() => validateGraphRestore(partial.state, partial.graph, partial.input)).toThrow(TypeError);
+  }
+  const unknown = structuredClone(repaired); Reflect.set(unknown.state.runtime ?? {}, "executionProtocolVersion", 2);
+  expect(() => validateGraphRestore(unknown.state, unknown.graph, unknown.input)).toThrow(TypeError);
 });

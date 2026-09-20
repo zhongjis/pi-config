@@ -265,6 +265,7 @@ export default function (pi: ExtensionAPI) {
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
   pi.on("session_start", async (_event, ctx) => {
+    if (!ownsManagerRegistry) return;
     await stopWorkflows("reload");
     await workflowRuntime.loadHistory(ctx);
     currentCtx = ctx;
@@ -315,6 +316,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_before_switch", async () => {
+    if (!ownsManagerRegistry) return;
     await stopWorkflows("switch");
     manager.clearCompleted(true);
     supervisionStop?.();
@@ -326,6 +328,15 @@ export default function (pi: ExtensionAPI) {
   // On shutdown, abort all agents immediately and clean up.
   // If the session is going down, there's nothing left to consume agent results.
   pi.on("session_shutdown", async (event) => {
+    if (!ownsManagerRegistry) {
+      manager.setUsageListener(undefined);
+      pendingUsage = new PendingUsagePool();
+      notifications.clearPending();
+      fleet.dispose();
+      widget.dispose();
+      manager.dispose();
+      return;
+    }
     await stopWorkflows(event?.reason === "reload" ? "reload" : "shutdown");
     await workflowPane?.dispose();
     workflowPane = undefined;

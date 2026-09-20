@@ -6,7 +6,7 @@ Use `fanout` to turn a validated task array into visible agent nodes while keepi
 
 Use `fanout` when the number of independent tasks is known only at runtime and every task has the same item/output contract. It creates only requested children, dispatches each item through an author-declared agent table, and collects all outcomes.
 
-Keep static `agent` nodes when the work set is fixed. Use separate fanouts for separate evaluation rounds. A fanout cannot be the target of a loop edge, and any insertion that would exceed the 500-node effective-run ceiling fails before insertion.
+Keep static `agent` nodes when the work set is fixed. Use separate fanouts for separate evaluation rounds. A loop target cannot reach a fanout or bounded-feedback barrier through normal edges (directly or transitively, including after expansion), and any insertion that would exceed the 500-node effective-run ceiling fails before insertion.
 
 ## Typed task input
 

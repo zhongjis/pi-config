@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentGraph, FanoutNode } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
+import { releaseAfterPending } from "./graph-drain.fixture.js";
 
 const fanout: FanoutNode = {
   type: "fanout", items: { path: "$.tasks" },
@@ -139,6 +140,10 @@ describe("awaited fanout", () => {
     expect(required(control).retry(1)).toBe(true);
     expect(required(control).skip(2)).toBe(true);
     required(control).resume();
+    await releaseAfterPending(run, () => {
+      expect(parked.started).toEqual(["research:item:0"]);
+      required(parked.finish.get("research:item:0"))({ ok: true });
+    });
     await vi.waitFor(() => expect(parked.started).toEqual(["research:item:0", "research:item:0"]));
     required(parked.finish.get("research:item:0"))({ ok: true, output: "retry-output" });
     const result = await run;
@@ -158,6 +163,10 @@ describe("awaited fanout", () => {
     await vi.waitFor(() => expect(parked.started).toHaveLength(1));
     required(control).pause();
     expect(required(control).skip(1)).toBe(true);
+    await releaseAfterPending(run, () => {
+      expect(updates).not.toContain("research:completed");
+      required(parked.finish.get("research:item:0"))({ ok: true });
+    });
     await vi.waitFor(() => expect(updates).toContain("research:completed"));
     required(control).resume();
     expect((await run).status).toBe("completed");
@@ -198,4 +207,62 @@ it("allows exactly 500 effective nodes and rejects overflow across fanouts", asy
   expect(Object.keys(overflow.nodes)).toHaveLength(252);
   expect(overflow.nodes.second.error).toContain("500");
   expect(overflow.nodes["second:item:0"]).toBeUndefined();
+});
+
+it("restores literal fanout item placeholders without duplicate dispatch or identity", async () => {
+  const input = { tasks: [{ source: "project", value: `\${context}` }], context: { bound: true } };
+  const checkpoints: { state: import("../src/graph/scheduler.js").SchedulerState; graph: AgentGraph }[] = [];
+  let initialPrompt: string | undefined;
+  await runGraph({
+    version: 2,
+    nodes: { research: {
+      ...fanout,
+      prompt: `{"task":\${item},"context":\${context}}`,
+      input: { context: { path: "$.context" } },
+    } },
+    edges: [],
+  }, input, {
+    onCheckpoint: (state, effective) => checkpoints.push({ state, graph: effective }),
+    host: { spawnAgent: async request => { initialPrompt = request.prompt; return { ok: true, output: "evidence" }; } },
+  });
+  expect(initialPrompt).toBe(`{"task":{"source":"project","value":"\${context}"},"context":{"bound":true}}`);
+  const saved = checkpoints.find(checkpoint => Object.hasOwn(checkpoint.graph.nodes, "research:item:0"));
+  if (!saved) throw new Error("Fanout materialization checkpoint was not captured");
+  const restoredPrompts: string[] = [];
+  const restoredFrames: typeof checkpoints = [];
+  const result = await runGraph(saved.graph, input, {
+    restore: saved.state,
+    onCheckpoint: (state, effective) => restoredFrames.push({ state, graph: effective }),
+    host: { spawnAgent: async request => { restoredPrompts.push(request.prompt); return { ok: true, output: "evidence" }; } },
+  });
+  expect(result.status).toBe("completed");
+  expect(restoredPrompts).toEqual([initialPrompt]);
+  expect(restoredFrames.at(-1)?.state.runtime?.manifest).toEqual(saved.state.runtime?.manifest);
+  expect(restoredFrames.at(-1)?.graph.nodes["research:item:0"]).toEqual(saved.graph.nodes["research:item:0"]);
+  const settled = restoredFrames.at(-1);
+  if (!settled) throw new Error("Missing settled checkpoint");
+  const spawn = vi.fn(async () => ({ ok: true }));
+  await runGraph(settled.graph, input, { restore: settled.state, onCheckpoint: () => {}, host: { spawnAgent: spawn } });
+  expect(spawn).not.toHaveBeenCalled();
+
+  for (const mutation of ["prompt", "item", "dispatch", "ownership", "index", "uuid", "static", "expanded"] as const) {
+    const forged = structuredClone(saved);
+    const child = forged.graph.nodes["research:item:0"];
+    const collection = forged.state.collections?.research;
+    const manifest = forged.state.runtime?.manifest;
+    if (child.type !== "agent" || !collection || !manifest) throw new Error("Missing collection fixture");
+    if (mutation === "prompt") child.prompt += " forged";
+    if (mutation === "item") Object.assign(collection[0], { item: { source: "project", value: "forged" } });
+    if (mutation === "dispatch") child.agent = "forged";
+    if (mutation === "ownership") delete forged.state.collections;
+    if (mutation === "index") Object.assign(manifest[1], { itemIndex: 1 });
+    if (mutation === "uuid") Object.assign(manifest[1], { instanceId: manifest[0].instanceId });
+    if (mutation === "static" || mutation === "expanded") {
+      forged.graph.nodes.research = mutation === "static" ? { type: "agent", agent: "worker", prompt: "fixture" } : { type: "expand", source: { path: "$" } };
+    }
+    const onCheckpoint = vi.fn();
+    await expect(runGraph(forged.graph, input, { restore: forged.state, onCheckpoint, host: { spawnAgent: spawn } })).rejects.toThrow();
+    expect(onCheckpoint).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  }
 });

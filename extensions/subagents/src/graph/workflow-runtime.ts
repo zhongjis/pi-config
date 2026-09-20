@@ -8,6 +8,7 @@ import { renderWorkflowCard } from "../ui/workflow-report.js";
 import { getLifetimeTotal } from "../usage.js";
 import { checkGraphDelegation } from "./delegation-preflight.js";
 import { workflowEntryData } from "./entry.js";
+import type { CheckpointLease } from "./graph-checkpoint-owner.js";
 import { deleteGraphSnapshot, ownGraphRun, readGraphSnapshots, writeGraphSnapshot } from "./graph-persist.js";
 import { authorizeGraphResume } from "./graph-resume-preflight.js";
 import { completeGraphTask, GraphRunReporter } from "./graph-run-adapter.js";
@@ -17,7 +18,7 @@ import type { AgentGraph } from "./ir.js";
 import { createNodeHost, type NodeHostOptions } from "./node-host-adapter.js";
 import { workflowCompletionText } from "./notification.js";
 import { elapsedMs } from "./progress.js";
-import { coerceGraphInput, runGraph } from "./run-graph.js";
+import { coerceGraphInput, type RunGraphResult, runGraph } from "./run-graph.js";
 import { resolveSavedGraph } from "./saved-graph.js";
 import type { SchedulerState } from "./scheduler.js";
 import { createWorkflowTask, failWorkflowTask, type WorkflowTask, workflowResultText, workflowRunId } from "./task.js";
@@ -82,12 +83,16 @@ export function createWorkflowRuntime(
       refresh("pane");
     }, 1000);
     activityTick.unref?.();
-    let releaseCheckpoint: (() => void) | undefined;
+    let releaseCheckpoint: CheckpointLease | undefined;
+    let result: RunGraphResult | undefined;
+    let failure: { error: unknown } | undefined;
     try {
       releaseCheckpoint = ownGraphRun(ctx.cwd, task.id);
-      const result = await runGraph(graph, input, {
+      result = await runGraph(graph, input, {
         host,
         runId: task.id,
+        reclaimedDeadWriter: releaseCheckpoint.reclaimedDeadWriter,
+        authorizeAgent: agent => execution.delegationDenial(ctx, agent),
         onCheckpoint: (state, effectiveGraph) => {
           writeGraphSnapshot(ctx.cwd, {
             version: 2, runId: task.id, graph: effectiveGraph, input, waitingGate: "",
@@ -108,28 +113,36 @@ export function createWorkflowRuntime(
           reporter.registerNode(nodeId, node, metadata);
           refresh("pane");
         },
-        onNodeUpdate: (nodeId, run) => {
-          reporter.update(nodeId, run);
+        onNodeUpdate: (nodeId, run, correlation) => {
+          reporter.update(nodeId, run, correlation);
           refresh("pane");
         },
-        onNodeResolved: (nodeId, info) => {
-          reporter.setResolved(nodeId, info);
+        onNodeResolved: (nodeId, info, correlation) => {
+          reporter.setResolved(nodeId, info, correlation);
           refresh("pane");
         },
       });
-      completeGraphTask(task, result);
-      refresh("pane");
-      // Lifecycle aborts retain the latest checkpoint; genuinely settled runs clear it.
-      if (result.status !== "aborted" || !["reload", "switch", "shutdown"].includes(task.abortController.signal.reason)) deleteGraphSnapshot(ctx.cwd, task.id);
+    } catch (error) {
+      failure = { error: error instanceof Error ? error : new Error(String(error)) };
+    }
+    clearInterval(activityTick);
+    try {
+      await host.dispose();
+    } catch (error) {
+      failure ??= { error: error instanceof Error ? error : new Error(String(error)) };
+    }
+    try {
+      if (failure) throw failure.error;
+      if (result) {
+        completeGraphTask(task, result);
+        // Lifecycle aborts retain the checkpoint; genuinely settled runs clear it.
+        if (result.status !== "aborted" || !["reload", "switch", "shutdown"].includes(task.abortController.signal.reason)) deleteGraphSnapshot(ctx.cwd, task.id);
+      }
     } catch (err) {
       failWorkflowTask(task, err instanceof Error ? err.message : String(err));
-      // Keep the last valid checkpoint when materialization or dispatch fails.
-      refresh("pane");
-    } finally {
-      clearInterval(activityTick);
-      try { await host.dispose(); }
-      finally { releaseCheckpoint?.(); }
-    }
+      // Keep the last valid checkpoint when execution or disposal fails.
+    } finally { releaseCheckpoint?.(); }
+    refresh("pane");
   }
 
   /** Detached runs remain owned until shutdown has awaited them. */
@@ -157,11 +170,6 @@ export function createWorkflowRuntime(
           deny: type => execution.delegationDenial(ctx, type),
           load: name => { const resolved = resolveSavedGraph(name, ctx.cwd); return resolved.ok ? resolved.graph as AgentGraph : undefined; },
         });
-        if (snap.state.runtime?.cancelled) {
-          const release = ownGraphRun(ctx.cwd, snap.runId);
-          try { deleteGraphSnapshot(ctx.cwd, snap.runId); } finally { release(); }
-          continue;
-        }
       } catch (error) {
         ctx.ui.notify(`Cannot resume graph ${snap.runId}: ${error instanceof Error ? error.message : String(error)}`, "error");
         continue;
@@ -253,7 +261,7 @@ export function createWorkflowRuntime(
       input: Type.Optional(Type.Any({ description: "Graph input, readable via ValueRefs that omit `node`." })),
     }),
     renderCall(args, theme) {
-      const graph = args.graph as unknown;
+      const graph: unknown = args.graph;
       const name = typeof graph === "string" ? graph : ((graph as { name?: string } | null)?.name ?? "inline graph");
       return renderToolCall("agent_graph", String(name), theme);
     },

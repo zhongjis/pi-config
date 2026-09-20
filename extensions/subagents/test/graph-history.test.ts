@@ -19,15 +19,16 @@ function task(id = "run", startTime = 1) {
 }
 
 describe("graph metadata history", () => {
-  it("allowlists metadata, sanitizes display strings and never hydrates runtime/content", () => {
-    const snapshot = snapshotHistory(task());
+  it.each(["loop", "restore"] as const)("allowlists %s metadata, sanitizes display strings and never hydrates runtime/content", reason => {
+    const value = task(); Object.assign(value.workflowProgress[0], { lastAttemptReason: reason });
+    const snapshot = snapshotHistory(value);
     expect(snapshot).toBeDefined();
     const encoded = JSON.stringify(snapshot);
     expect(encoded).not.toContain("SECRET_");
     expect(encoded).not.toContain("abortController");
     expect(snapshot?.nodes[0].label).toBe("node name");
     expect(snapshot?.outcome).toBe("partial");
-    expect(snapshot?.nodes[0].lastAttemptReason).toBe("loop");
+    expect(snapshot?.nodes[0].lastAttemptReason).toBe(reason);
     expect(decodeHistory(JSON.stringify({ version: 1, runs: [snapshot] })).runs).toEqual([snapshot]);
     const injected = { ...snapshot, input: "SECRET_INPUT", error: "SECRET_ERROR", nodes: required(snapshot).nodes.map(node => ({ ...node, recordId: "SECRET_RECORD", prompt: "SECRET_PROMPT" })) };
     expect(JSON.stringify(decodeHistory(JSON.stringify({ version: 1, runs: [injected] })))).not.toContain("SECRET_");

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { FeedbackState } from "./bounded-feedback.js";
+import type { ExecutionLedgerEntry } from "./graph-execution.js";
 import type { AgentGraph, NodeKey } from "./ir.js";
 import type { SchedulerState } from "./scheduler.js";
+import type { SubgraphDisposition } from "./subgraph-disposition.js";
 
 export type NodeInstanceId = string & { readonly __nodeInstanceId: unique symbol };
 export interface NodeInstance {
@@ -23,11 +25,14 @@ export interface NestedCheckpoint {
 }
 export interface GraphRuntimeState {
   readonly version: 2;
+  readonly executionProtocolVersion?: 1;
+  readonly executionLedger?: readonly ExecutionLedgerEntry[];
   readonly runId: string;
   /** Durable run start; absent only in older snapshots without deadline accounting. */
   readonly startedAt?: number;
   revision: number;
   cancelled?: boolean;
+  subgraphDispositions?: readonly SubgraphDisposition[];
   nextOrdinal?: number;
   nested?: Record<string, NestedCheckpoint>;
   feedback?: Record<string, FeedbackState>;

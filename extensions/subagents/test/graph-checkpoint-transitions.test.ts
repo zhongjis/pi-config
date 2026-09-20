@@ -61,7 +61,7 @@ it.each(["completed evidence", "admitted node"])("rejects correct-revision repla
     };
     rewrite(altered.state);
   }
-  expect(() => writeGraphSnapshot(cwd, altered)).toThrow(/rewrites/);
+  expect(() => writeGraphSnapshot(cwd, altered)).toThrow(/rewrites|execution ledger/);
   expect(readFileSync(path, "utf8")).toBe(prior);
 });
 
@@ -98,7 +98,7 @@ it("persists budget termination and real costs through every on-disk revision", 
 it.each(["start", "cost rollback", "cost removal", "cost rewrite", "cost invalid", "budget clock"])("rejects forged %s before replacement or dispatch", async mutation => {
   const cwd = mkdtempSync(join(tmpdir(), "graph-budget-")); directories.push(cwd);
   const checkpoints = await frames({ spendLimit: 10, deadline: 1000 });
-  const end = checkpoints.findIndex(row => row.state.nodes["feedback:iteration:1:evaluator"]?.costUsd === 0.2 && row.state.nodes["feedback:iteration:1:evaluator"]?.status === "running");
+  const end = checkpoints.findIndex(row => row.state.nodes["feedback:iteration:1:evaluator"]?.costUsd === 0.2 && row.state.nodes["feedback:iteration:1:evaluator"]?.status === "completed");
   expect(end).toBeGreaterThan(0);
   for (const snapshot of checkpoints.slice(0, end + 1)) writeGraphSnapshot(cwd, snapshot);
   const [saved] = readGraphSnapshots(cwd); const altered = structuredClone(saved);
@@ -130,4 +130,39 @@ it("keeps unbudgeted v1 loops resumable when later child executions cost less", 
   } } });
   expect(result.status).toBe("completed");
   expect(readGraphSnapshots(cwd)[0].state.nodes.review.costUsd).toBeCloseTo(0.7);
+});
+
+it.each([1, 2] as const)("retains envelope v%s while upgrading and enforcing immutable execution prefixes", async version => {
+  const { upgradeLegacyExecution } = await import("../src/graph/graph-execution.js");
+  const cwd = mkdtempSync(join(tmpdir(), "graph-execution-")); directories.push(cwd);
+  const saved = (await frames())[0];
+  if (!saved?.state.runtime) throw new Error("missing runtime");
+  saved.version = version;
+  Reflect.deleteProperty(saved.state.runtime, "executionProtocolVersion");
+  Reflect.deleteProperty(saved.state.runtime, "executionLedger");
+  writeGraphSnapshot(cwd, saved);
+  const upgraded = { ...saved, state: upgradeLegacyExecution(saved.state) };
+  const upgradedRuntime = upgraded.state.runtime;
+  if (!upgradedRuntime) throw new Error("missing upgraded runtime");
+  upgradedRuntime.revision++;
+  writeGraphSnapshot(cwd, upgraded);
+  expect(readGraphSnapshots(cwd)[0].version).toBe(version);
+  const path = join(graphRunsDir(cwd), `${saved.runId}.json`); const bytes = readFileSync(path, "utf8");
+  for (const change of ["remove", "partial", "downgrade", "rewrite", "truncate"] as const) {
+    const next = structuredClone(upgraded); const runtime = next.state.runtime;
+    if (!runtime) throw new Error("missing cloned runtime");
+    runtime.revision++;
+    if (change === "remove") { Reflect.deleteProperty(runtime, "executionProtocolVersion"); Reflect.deleteProperty(runtime, "executionLedger"); }
+    if (change === "partial") Reflect.deleteProperty(runtime, "executionLedger");
+    if (change === "downgrade") Reflect.set(runtime, "executionProtocolVersion", 0);
+    if (change === "rewrite") {
+      const ledger = runtime.executionLedger;
+      const [entry] = ledger ?? [];
+      if (!entry) throw new Error("missing execution ledger entry");
+      Reflect.set(entry, "costUsd", 1);
+    }
+    if (change === "truncate") Reflect.set(runtime, "executionLedger", []);
+    expect(() => writeGraphSnapshot(cwd, next)).toThrow();
+    expect(readFileSync(path, "utf8")).toBe(bytes);
+  }
 });

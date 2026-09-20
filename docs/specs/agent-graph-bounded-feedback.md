@@ -50,9 +50,9 @@ The feature preserves `fanout` as the single-collection primitive. Existing vers
 ### Capability and ownership
 
 - The graph schema and validator own version selection, template shape, typed evaluator decisions, `ValueRef` validation, and static budget validation.
-- The bounded-feedback coordinator owns iteration sequencing and accumulation. It instantiates the work and evaluator templates but delegates each work collection to the unchanged fanout executor.
-- The evaluator proposes gaps and next tasks. The runtime validates the decision, allocates identities, enforces template topology and all budgets, persists state, and chooses the terminal reason.
-- The scheduler owns dispatch and attempts. The persistence layer owns the materialization manifest and atomic checkpoints. The monitor adapter renders persisted runtime state; it does not infer identity or future topology.
+- FeedbackActor owns volatile iteration sequencing through bounded committed owner views. FeedbackActor, every work FanoutActor, evaluator and item actor are direct root-owned siblings; the feedback coordinator never spawns or stops them.
+- The evaluator proposes gaps and next tasks. Root transactions validate the decision, allocate identities, enforce template topology and all budgets, persist state, and choose the terminal reason.
+- Root GraphActor owns planning, dispatch, attempts, controls, capacity, checkpoint and terminal authority. Coordinators consume no executor slots but block done/drain until release. The monitor adapter renders persisted runtime state; it does not infer identity or future topology.
 
 ### Identity and provenance
 
@@ -89,7 +89,7 @@ Lifecycle rules are:
 - Bounds govern admission/continuation, not in-flight preemption: already-admitted work and evaluator repairs may finish beyond a limit. Omitting both limits preserves unbudgeted execution behavior.
 - The runtime validates a proposed continuation against every bound before materialization. No evaluator decision can override a hard bound.
 - An exact repeat of prior tasks or an iteration that produces no new usable result stops as `no progress`; hard bounds still apply and remain the authoritative ceilings.
-- Terminal reasons are `sufficient`, `iteration limit`, `item limit`, `deadline/spend limit`, `no progress`, `evaluator failure`, `materialization failure`, and `cancellation`.
+- Terminal reasons are `sufficient`, `iteration limit`, `item limit`, `deadline/spend limit`, `no progress`, `evaluator failure`, `materialization failure`, `cancellation`, and `skipped before admission`. `skipped before admission` applies only to a scheduler skip that was never admitted, with zero attempts and no output.
 - Exhausted child failures remain all-settled evidence. An exhausted evaluator failure stops growth but permits partial synthesis from valid accumulated state. Both preserve unresolved gaps and identify incompleteness in terminal output.
 - Corrupt persisted state or failed materialization fails visibly as `materialization failure`; the runtime must not synthesize as though the state were complete.
 - Cancellation preserves the last valid checkpoint and returns a cancelled partial result when that checkpoint is readable.
@@ -99,6 +99,9 @@ Lifecycle rules are:
 - Before any new runtime node is dispatched, persistence writes a crash-consistent materialization manifest containing its UUID and topology binding.
 - One atomic checkpoint covers UUIDs, topology bindings, immutable iteration records, counters, evaluator decisions, continuation intent, and materialization state. The decision and continuation intent are durable before successor materialization; the successor manifest is durable before dispatch.
 - Restore resumes from the checkpointed transition. It must not mint replacement IDs for existing instances or append a duplicate successor iteration, including after crashes before or after intent, materialization, or dispatch.
+- Root checkpoints the coordinator's running identity before actor creation. A running admission without feedback state is valid only before any descendants exist; initial intent is a separate committed transaction. Active restore attaches sibling work/evaluator actors using their existing IDs; terminal feedback owners create no actor.
+- Iteration materialization is one atomic checkpoint containing work, evaluator, every item, collection ownership, graph definitions, UUIDs, provenance/ordinals and active feedback state. Work FanoutActor attaches to that collection without allocating again. Decision/history/continuation intent commit before any successor UUID allocation.
+- Evaluator NODE repair/settlement commits failure evidence and accounting atomically. Feedback processes a terminal evaluator decision once from durable active state. Explicit whole-run cancellation commits coherent partial accumulation and leaf dispositions before cancellation signals and waits all sibling drains/releases; lifecycle shutdown retains nonterminal recovery state. Active feedback owner skip/retry is unsupported; ordinary generated leaf controls remain available.
 - Retry may repeat an internal or external action; this contract does not promise exactly-once external effects. Attempt metadata makes repeated execution visible.
 - Fresh replay creates a new run identity, start timestamp and zero accumulated execution spend, and rematerializes all runtime nodes with new UUIDs. Optional lineage may identify the source run but cannot reuse its instance IDs.
 - Restore retains the durable start, cost totals and accounting gaps; suspension does not replenish budgets. Checkpoint validation rejects invalid budget metadata and replacement cannot rewrite the start, roll back budget-check time/costs, erase missing-accounting evidence or rewrite settled costs. Older unbudgeted v2 snapshots without a start remain usable; a deadline-configured snapshot missing its start fails closed rather than restarting its clock.

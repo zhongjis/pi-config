@@ -20,7 +20,7 @@ const progress = Type.Union([
     requestedModel: text, fallbackModel: text, error: text,
     skipped: flag, blocked: flag, cached: flag, queuedAt: number, startedAt: number,
     lastProgressAt: number, attempt: number,
-    lastAttemptReason: Type.Optional(Type.Union([Type.Literal("throttled"), Type.Literal("user-retry"), Type.Literal("stalled"), Type.Literal("loop")])),
+    lastAttemptReason: Type.Optional(Type.Union([Type.Literal("throttled"), Type.Literal("user-retry"), Type.Literal("stalled"), Type.Literal("loop"), Type.Literal("restore")])),
     promptPreview: text, resultPreview: text, tokens: number, toolCalls: number, durationMs: number,
   }),
 ]);

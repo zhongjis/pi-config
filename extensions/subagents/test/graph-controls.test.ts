@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
+import { releaseAfterPending } from "./graph-drain.fixture.js";
 
 const agent = () => ({ type: "agent" as const, agent: "x", prompt: "p" });
 const tick = () => new Promise(resolve => setTimeout(resolve, 10));
@@ -64,6 +65,7 @@ describe("runGraph live controls", () => {
     const run = runGraph(chain, {}, { host: g.host, onControl: c => (control = c) });
     await tick();
     expect(control.skip(0)).toBe(true); // a is running
+    await releaseAfterPending(run, () => g.finish("a", { ok: true }));
     const result = await run;
     expect(result.nodes.a.status).toBe("skipped");
     expect(result.nodes.b.status).toBe("skipped");
@@ -75,6 +77,10 @@ describe("runGraph live controls", () => {
     const run = runGraph(chain, {}, { host: g.host, onControl: c => (control = c) });
     await tick();
     expect(control.retry(0)).toBe(true); // stop + re-run a
+    await releaseAfterPending(run, () => {
+      expect(g.started).toEqual(["a"]);
+      g.finish("a", { ok: true });
+    });
     await tick();
     expect(g.started.filter(id => id === "a").length).toBe(2);
     g.finish("a", { ok: true, output: "x" });

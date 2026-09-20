@@ -13,6 +13,7 @@
  * graph, and the graph runtime stays unaware of the monitor.
  */
 
+import { type ExecutionCorrelation, matchesExecution } from "./graph-execution.js";
 import type { NodeInstance } from "./graph-instance-id.js";
 import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
@@ -55,6 +56,7 @@ export class GraphRunReporter {
   private readonly explicitPhase = new Map<string, FanoutPhase>();
   /** Nodes already registered through the dynamic/restored metadata path. */
   private readonly registered = new Set<string>();
+  private readonly current = new Map<string, ExecutionCorrelation>();
   private readonly resolved = new Map<string, { model?: string; modelId?: string; recordId?: string }>();
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
   private readonly lastUpdateAt = new Map<string, number>();
@@ -157,10 +159,21 @@ export class GraphRunReporter {
     this.task.agentCount = Math.max(this.task.agentCount, this.index.size);
   }
 
-  update(nodeId: string, run: Readonly<NodeRun>, now: number = Date.now()): void {
+  update(nodeId: string, run: Readonly<NodeRun>, correlationOrNow?: ExecutionCorrelation | number, now?: number): void {
+    const correlation = typeof correlationOrNow === "number" ? undefined : correlationOrNow;
+    const updatedAt = typeof correlationOrNow === "number" ? correlationOrNow : now ?? Date.now();
+    if (correlation !== undefined) {
+      if (run.activation !== correlation.activation || run.graphAttempt !== correlation.graphAttempt || run.currentExecutionAttemptId !== correlation.executionAttemptId) return;
+      const current = this.current.get(nodeId);
+      if (current === undefined || !matchesExecution(current, correlation)) {
+        this.current.set(nodeId, correlation);
+        this.resolved.delete(nodeId);
+        this.lastCounts.delete(nodeId);
+      }
+    }
     this.lastRun.set(nodeId, run);
-    this.lastUpdateAt.set(nodeId, now);
-    updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
+    this.lastUpdateAt.set(nodeId, updatedAt);
+    updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, updatedAt)]);
   }
 
   /**
@@ -186,9 +199,11 @@ export class GraphRunReporter {
     if (changed.length > 0) updateWorkflowProgressBatch(this.task, changed);
   }
 
-  setResolved(nodeId: string, info: NodeResolvedInfo, now: number = Date.now()): void {
+  setResolved(nodeId: string, info: NodeResolvedInfo, correlation: ExecutionCorrelation, now: number = Date.now()): void {
+    const current = this.current.get(nodeId);
+    if (current === undefined || !matchesExecution(current, correlation)) return;
     // Merge: recordId and model/modelId arrive on separate `onResolved` calls, so a later
-    // one must not clobber an earlier one's fields.
+    // one must not clobber an earlier field from this execution.
     const prev = this.resolved.get(nodeId) ?? {};
     this.resolved.set(nodeId, {
       model: info.modelName ?? prev.model,

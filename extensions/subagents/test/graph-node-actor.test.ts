@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createActor } from "xstate";
 import type { CompiledSchema } from "../src/graph/json-schema.js";
 import { compileJsonSchema } from "../src/graph/json-schema.js";
-import { agentNodeLogic } from "../src/graph/node-actor.js";
 import type { NodeHost, NodeSpawnRequest, NodeSpawnResult } from "../src/graph/node-host.js";
+import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
+import { agentInput, machine, terminal } from "./graph-node-machine.fixture.js";
 
 function compile(schema: unknown): CompiledSchema {
   const c = compileJsonSchema(schema);
@@ -17,16 +17,7 @@ function req(over?: Partial<NodeSpawnRequest>): NodeSpawnRequest {
 
 /** Start a node actor and resolve with its settled output. */
 function runToDone(host: NodeHost, request: NodeSpawnRequest): Promise<NodeSpawnResult> {
-  const actor = createActor(agentNodeLogic, { input: { host, request } });
-  return new Promise<NodeSpawnResult>((resolve, reject) => {
-    actor.subscribe({
-      next: snapshot => {
-        if (snapshot.status === "done") resolve(snapshot.output as NodeSpawnResult);
-      },
-      error: reject,
-    });
-    actor.start();
-  });
+  return terminal(agentInput({ host, node: { ...request, kind: "agent" } })).then(({ result }) => result);
 }
 
 /** A host that always returns the same result. */
@@ -73,18 +64,17 @@ describe("agentNodeLogic — spawn + schema re-check", () => {
 describe("agentNodeLogic — cancellation", () => {
   it("aborts the child's signal when the actor is stopped", async () => {
     let captured: AbortSignal | undefined;
+    const execution = deferred<NodeSpawnResult>();
     const host: NodeHost = {
-      spawnAgent: (_request, signal) =>
-        new Promise<NodeSpawnResult>(() => {
-          captured = signal;
-        }),
+      spawnAgent: (_request, signal) => { captured = signal; return execution.promise; },
     };
-    const actor = createActor(agentNodeLogic, { input: { host, request: req() } });
-    actor.start();
+    const actor = machine(agentInput({ host }));
+    actor.admit();
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(captured).toBeDefined();
     expect(captured?.aborted).toBe(false);
-    actor.stop();
+    actor.parent.stop();
     expect(captured?.aborted).toBe(true);
+    await releaseAfterPending(execution.promise, () => execution.resolve({ ok: true }));
   });
 });

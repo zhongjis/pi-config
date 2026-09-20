@@ -1,4 +1,6 @@
 import { expect, it } from "vitest";
+import { type ExecutionCorrelation, executionAttemptId } from "../src/graph/graph-execution.js";
+import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
 import { completeGraphTask, GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import { collapse } from "../src/graph/progress.js";
@@ -52,15 +54,15 @@ it("forwards nested static and fanout rows without federating direct-graph contr
       events.push(`added:${id}`);
       reporter.registerNode(id, node, metadata);
     },
-    onNodeUpdate: (id, state) => {
+    onNodeUpdate: (id, state, correlation) => {
       events.push(`update:${id}`);
-      reporter.update(id, state);
+      reporter.update(id, state, correlation);
       if (id === "later:item:0" && state.status === "pending") {
         const row = collapse(task.workflowProgress).agents.find(agent => agent.label === id);
         expect(control?.skip(row?.index ?? -1)).toBe(true);
       }
     },
-    onNodeResolved: (id, info) => reporter.setResolved(id, info),
+    onNodeResolved: (id, info, correlation) => reporter.setResolved(id, info, correlation),
   });
   completeGraphTask(task, result);
   expect(result.status).toBe("completed");
@@ -95,8 +97,8 @@ it("keeps deeper descendants distinct from later direct expansion IDs", async ()
       return { ok: true, output: request.agentType };
     } },
     onNodeAdded: (id, node, metadata) => reporter.registerNode(id, node, metadata),
-    onNodeUpdate: (id, run) => reporter.update(id, run),
-    onNodeResolved: (id, info) => reporter.setResolved(id, info),
+    onNodeUpdate: (id, run, correlation) => reporter.update(id, run, correlation),
+    onNodeResolved: (id, info, correlation) => reporter.setResolved(id, info, correlation),
   });
   expect(result.status).toBe("completed");
   const rows = collapse(task.workflowProgress).agents;
@@ -104,4 +106,28 @@ it("keeps deeper descendants distinct from later direct expansion IDs", async ()
   expect(rows.find(row => row.agentType === "leaf")).toMatchObject({ label: "g/inner/a", recordId: "leaf", state: "done" });
   expect(rows.find(row => row.agentType === "direct")).toMatchObject({ recordId: "direct", state: "done" });
   expect(new Set(rows.map(row => row.label)).size).toBe(5);
+});
+
+it("keeps a nested display binding scoped to its current run correlation", () => {
+  const graph: AgentGraph = { nodes: { "nested/worker": { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
+  const task = createWorkflowTask({ id: "nested-correlation", script: "" });
+  const reporter = new GraphRunReporter(task, graph);
+  const identity = (runId: string, id: string): ExecutionCorrelation => ({
+    runId,
+    instanceId: "11111111-1111-4111-8111-111111111111" as NodeInstanceId,
+    activation: 1,
+    graphAttempt: 1,
+    executionAttemptId: executionAttemptId(id),
+  });
+  const first = identity("parent/first", "11111111-1111-4111-8111-111111111111");
+  const second = identity("parent/second", "22222222-2222-4222-8222-222222222222");
+  const running = (current: ExecutionCorrelation) => ({
+    status: "running" as const, attempt: 1, activation: current.activation, graphAttempt: current.graphAttempt, currentExecutionAttemptId: current.executionAttemptId,
+  });
+  reporter.update("nested/worker", running(first), first);
+  reporter.setResolved("nested/worker", { recordId: "first", modelName: "first-model" }, first);
+  reporter.update("nested/worker", running(second), second);
+  reporter.setResolved("nested/worker", { recordId: "second", modelName: "second-model" }, second);
+  reporter.setResolved("nested/worker", { recordId: "first", modelName: "first-model" }, first);
+  expect(collapse(task.workflowProgress).agents.find(row => row.label === "nested/worker")).toMatchObject({ recordId: "second", model: "second-model" });
 });

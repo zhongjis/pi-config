@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { type ExecutionCorrelation, executionAttemptId } from "../src/graph/graph-execution.js";
+import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
 import { completeGraphTask, GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
@@ -7,6 +9,31 @@ import { type RunGraphResult, runGraph } from "../src/graph/run-graph.js";
 import type { NodeRun } from "../src/graph/scheduler.js";
 import { createWorkflowTask } from "../src/graph/task.js";
 import { initialPanelState } from "../src/ui/observability-panel.js";
+import { releaseAfterPending } from "./graph-drain.fixture.js";
+
+function correlation(
+  id: string,
+  overrides: Partial<Omit<ExecutionCorrelation, "executionAttemptId">> = {},
+): ExecutionCorrelation {
+  return {
+    runId: "run",
+    instanceId: "11111111-1111-4111-8111-111111111111" as NodeInstanceId,
+    activation: 1,
+    graphAttempt: 1,
+    ...overrides,
+    executionAttemptId: executionAttemptId(id),
+  };
+}
+
+function running(identity: ExecutionCorrelation, attempt = 1): NodeRun {
+  return {
+    status: "running",
+    attempt,
+    activation: identity.activation,
+    graphAttempt: identity.graphAttempt,
+    currentExecutionAttemptId: identity.executionAttemptId,
+  };
+}
 
 // The pane needs the installed TUI helpers; the default unit stub intentionally omits them.
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
@@ -129,8 +156,9 @@ describe("GraphRunReporter", () => {
   it("setResolved plumbs model and modelId into the node's progress entry", () => {
     const t = task();
     const reporter = new GraphRunReporter(t, graph);
-    reporter.update("a", { status: "running", attempt: 1 });
-    reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" });
+    const identity = correlation("11111111-1111-4111-8111-111111111111");
+    reporter.update("a", running(identity), identity);
+    reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" }, identity);
     const { agents } = collapse(t.workflowProgress);
     const a = agents.find(e => e.label === "a");
     expect(a?.model).toBe("haiku 4.5");
@@ -140,9 +168,10 @@ describe("GraphRunReporter", () => {
   it("setResolved merges recordId and model across calls without clobbering, in either order", () => {
     const t = task();
     const reporter = new GraphRunReporter(t, graph);
-    reporter.update("a", { status: "running", attempt: 1 });
-    reporter.setResolved("a", { recordId: "r1" });
-    reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" });
+    const identity = correlation("22222222-2222-4222-8222-222222222222");
+    reporter.update("a", running(identity), identity);
+    reporter.setResolved("a", { recordId: "r1" }, identity);
+    reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" }, identity);
     const a = collapse(t.workflowProgress).agents.find(e => e.label === "a");
     expect(a?.recordId).toBe("r1");
     expect(a?.model).toBe("haiku 4.5");
@@ -151,21 +180,88 @@ describe("GraphRunReporter", () => {
     // Reverse order clobbers nothing either.
     const t2 = task();
     const r2 = new GraphRunReporter(t2, graph);
-    r2.update("a", { status: "running", attempt: 1 });
-    r2.setResolved("a", { modelName: "sonnet", modelId: "mid" });
-    r2.setResolved("a", { recordId: "r2" });
+    const secondIdentity = correlation("33333333-3333-4333-8333-333333333333");
+    r2.update("a", running(secondIdentity), secondIdentity);
+    r2.setResolved("a", { modelName: "sonnet", modelId: "mid" }, secondIdentity);
+    r2.setResolved("a", { recordId: "r2" }, secondIdentity);
     const a2 = collapse(t2.workflowProgress).agents.find(e => e.label === "a");
     expect(a2?.recordId).toBe("r2");
     expect(a2?.model).toBe("sonnet");
     expect(a2?.modelId).toBe("mid");
   });
 
+  it("runtime filters late pre-retry resolution before reporter delivery", async () => {
+    const t = task();
+    const activity = new Map([["old", { toolCalls: 1, tokens: 10 }], ["current", { toolCalls: 9, tokens: 90 }]]);
+    const reporter = new GraphRunReporter(t, graph, 1_000, recordId => activity.get(recordId));
+    let control: import("../src/graph/run-graph.js").GraphControl | undefined;
+    let stale: ((info: { recordId?: string; modelName?: string }) => void) | undefined;
+    let releaseFirst: ((result: NodeSpawnResult) => void) | undefined;
+    let starts = 0;
+    const run = runGraph({ nodes: { a: graph.nodes.a }, edges: [] }, {}, {
+      host: {
+        spawnAgent: request => {
+          starts++;
+          if (starts === 1) {
+            stale = request.onResolved;
+            return new Promise<NodeSpawnResult>(resolve => { releaseFirst = resolve; });
+          }
+          request.onResolved?.({ recordId: "current", modelName: "current-model" });
+          return Promise.resolve({ ok: true, output: "current" });
+        },
+      },
+      onControl: value => { control = value; },
+      onNodeUpdate: (id, node, identity) => reporter.update(id, node, identity),
+      onNodeResolved: (id, info, identity) => reporter.setResolved(id, info, identity),
+    });
+    await vi.waitFor(() => expect(control).toBeDefined());
+    expect(control?.retry(0)).toBe(true);
+    const release = releaseFirst;
+    if (!release) throw new Error("Initial execution did not start");
+    release({ ok: true, output: "old" });
+    await vi.waitFor(() => expect(starts).toBe(2));
+    const late = stale;
+    if (!late) throw new Error("Initial resolution callback was not captured");
+    late({ recordId: "old", modelName: "old-model" });
+    expect((await run).status).toBe("completed");
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")).toMatchObject({
+      attempt: 2, recordId: "current", model: "current-model", toolCalls: 9, tokens: 90,
+    });
+  });
+
+  it("keeps only the current full execution correlation in the collapsed row", () => {
+    const t = task();
+    const activity = new Map([["old", { toolCalls: 1, tokens: 10 }], ["current", { toolCalls: 9, tokens: 90 }]]);
+    const reporter = new GraphRunReporter(t, graph, 1_000, recordId => activity.get(recordId));
+    const current = correlation("44444444-4444-4444-8444-444444444444");
+    reporter.update("a", { ...running(current, 2), attemptReason: "user-retry" }, current, 1_000);
+    reporter.setResolved("a", { recordId: "old", modelName: "old-model" }, current, 2_000);
+    for (const stale of [
+      correlation("55555555-5555-4555-8555-555555555555", { runId: "other-run" }),
+      correlation("66666666-6666-4666-8666-666666666666", { instanceId: "77777777-7777-4777-8777-777777777777" as NodeInstanceId }),
+      correlation("88888888-8888-4888-8888-888888888888", { activation: 2 }),
+      correlation("99999999-9999-4999-8999-999999999999", { graphAttempt: 2 }),
+      correlation("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+    ]) reporter.setResolved("a", { recordId: "current", modelName: "current-model" }, stale, 3_000);
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")).toMatchObject({
+      attempt: 2, recordId: "old", model: "old-model", toolCalls: 1, tokens: 10, lastProgressAt: 2_000,
+    });
+    const replacement = correlation("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    reporter.update("a", { ...running(replacement, 2), attemptReason: "user-retry" }, replacement, 4_000);
+    reporter.setResolved("a", { recordId: "current" }, replacement, 5_000);
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")).toMatchObject({
+      attempt: 2, recordId: "current", toolCalls: 9, tokens: 90, lastProgressAt: 5_000,
+    });
+    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")?.model).toBeUndefined();
+  });
+
   it("plumbs live tool-call and token counts from getActivity, re-emitting only on change", () => {
     const t = task();
     let activity: { toolCalls?: number; tokens?: number } | undefined = { toolCalls: 2, tokens: 100 };
     const reporter = new GraphRunReporter(t, graph, Date.now(), () => activity);
-    reporter.update("a", { status: "running", attempt: 1 });
-    reporter.setResolved("a", { recordId: "r1" });
+    const identity = correlation("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+    reporter.update("a", running(identity), identity);
+    reporter.setResolved("a", { recordId: "r1" }, identity);
 
     const first = collapse(t.workflowProgress).agents.find(e => e.label === "a");
     expect(first?.toolCalls).toBe(2);
@@ -192,8 +288,9 @@ describe("GraphRunReporter", () => {
     const reporter = new GraphRunReporter(t, graph, 1_000, () => activity);
 
     // First running emit stamps startedAt; re-emits from setResolved/refresh must not restamp it.
-    reporter.update("a", { status: "running", attempt: 1 }, 1_000);
-    reporter.setResolved("a", { recordId: "r1" }, 5_000);
+    const identity = correlation("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    reporter.update("a", running(identity), identity, 1_000);
+    reporter.setResolved("a", { recordId: "r1" }, identity, 5_000);
     activity = { toolCalls: 9 };
     reporter.refresh(9_000);
     expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(1_000);
@@ -217,8 +314,9 @@ describe("GraphRunReporter", () => {
       { type: "agent", agent: "chengfeng", prompt: "research item" },
       { dependencies: ["a"], phase: { index: 0, title: "Round 1/2" } },
     );
-    reporter.update("round-1:item:0", { status: "running", attempt: 2, attemptReason: "loop" }, 3_000);
-    reporter.setResolved("round-1:item:0", { recordId: "record-1", modelId: "provider/model" }, 4_000);
+    const identity = correlation("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    reporter.update("round-1:item:0", { ...running(identity, 2), attemptReason: "loop" }, identity, 3_000);
+    reporter.setResolved("round-1:item:0", { recordId: "record-1", modelId: "provider/model" }, identity, 4_000);
 
     const first = collapse(t.workflowProgress);
     const child = first.agents.find(entry => entry.label === "round-1:item:0");
@@ -349,7 +447,7 @@ describe("GraphRunReporter — static graph progress", () => {
     const run = runGraph(staged, {}, {
       host: graphHost,
       signal: controller.signal,
-      onNodeUpdate: (id, node) => reporter.update(id, { ...node } satisfies NodeRun, 1_700_000_000_000),
+      onNodeUpdate: (id, node, identity) => reporter.update(id, { ...node } satisfies NodeRun, identity, 1_700_000_000_000),
     });
     await vi.waitFor(() => expect(roots.size).toBe(4));
     roots.get("research")?.({ ok: true, output: "research complete" });
@@ -371,6 +469,7 @@ describe("GraphRunReporter — static graph progress", () => {
     expect(rendered).toContain("synthesize");
 
     controller.abort();
+    await releaseAfterPending(run, () => { for (const finish of roots.values()) finish({ ok: true }); });
     await expect(run).resolves.toMatchObject({ status: "aborted" });
   });
 });

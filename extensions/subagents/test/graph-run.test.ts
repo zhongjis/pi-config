@@ -82,8 +82,8 @@ describe("runGraph — end to end via XState actors", () => {
       }),
     });
     expect(result.status).toBe("completed");
-    expect(result.nodes.review.attempt).toBe(3);
-    expect(result.nodes.fix.attempt).toBe(2);
+    expect(result.nodes.review).toMatchObject({ attempt: 3, activation: 3, graphAttempt: 1 });
+    expect(result.nodes.fix).toMatchObject({ attempt: 2, activation: 2, graphAttempt: 1 });
     expect(result.nodes.done.status).toBe("completed");
     expect(result.outputs).toEqual({ approved: true });
   });

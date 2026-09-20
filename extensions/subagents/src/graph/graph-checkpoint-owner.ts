@@ -42,7 +42,8 @@ function unchanged(path: string, observed: ReturnType<typeof owner>): boolean {
 }
 
 /** Fully initialized metadata is published atomically, including for recovery guards. */
-function acquire(path: string): () => void {
+export type CheckpointLease = (() => void) & { readonly reclaimedDeadWriter: boolean };
+function acquire(path: string): CheckpointLease {
   const metadata = { pid: process.pid, start: processStart(process.pid), nonce: randomUUID() };
   const temporary = `${path}.${metadata.nonce}.owner`;
   try {
@@ -57,14 +58,14 @@ function acquire(path: string): () => void {
     try {
       if (!unchanged(path, observed) || live(observed)) throw new TypeError("Checkpoint owner changed during recovery");
       rmSync(path);
-      return acquire(path);
+      return Object.assign(acquire(path), { reclaimedDeadWriter: true });
     } finally { releaseGuard(); }
   } finally { rmSync(temporary, { force: true }); }
   const observed = owner(path);
-  return () => {
+  return Object.assign(() => {
     if (!unchanged(path, observed)) throw new TypeError("Checkpoint owner changed before release");
     rmSync(path);
-  };
+  }, { reclaimedDeadWriter: false });
 }
 
 /** Revision and append-only transition checks run under the same exclusive write lock. */
@@ -84,4 +85,4 @@ export function writeOwnedCheckpoint(path: string, revision: number | undefined,
 }
 
 /** A run lease outlives individual writes, preventing live restore owners from dispatching together. */
-export function ownCheckpoint(path: string): () => void { return acquire(`${path}.run.lock`); }
+export function ownCheckpoint(path: string): CheckpointLease { return acquire(`${path}.run.lock`); }

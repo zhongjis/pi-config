@@ -1,11 +1,12 @@
+import type { ExecutionCorrelation } from "./graph-execution.js";
 /**
  * node-host.ts — the seam between a graph node and the subagent execution core.
  *
  * A graph-native replacement for the script runtime's `WorkflowHost`. The node
- * actor (node-actor.ts) knows only this interface, so the same actor runs against
- * a test stub or the real `AgentManager` adapter. Deliberately free of any XState
- * or IR type: it speaks in a single spawn request and a single result, and takes
- * an `AbortSignal` directly so cancellation is the caller's `actor.stop()`.
+ * effects (node-effects.ts) know only this interface, so typed lifecycle actors
+ * run against a test stub or the real `AgentManager` adapter. Deliberately free
+ * of XState or IR types: each effect takes a request and AbortSignal, and must
+ * physically settle even after the lifecycle actor acknowledges cancellation.
  *
  * The real adapter (host.ts, reworked in a later phase) implements this by
  * resolving the agent type/model, spawning through `AgentManager`, and mapping
@@ -26,9 +27,10 @@ export interface NodeResolvedInfo {
 
 /** One agent spawn for a single node attempt. */
 export interface NodeSpawnRequest {
+  correlation?: ExecutionCorrelation;
   /** Stable node identity in the run graph. */
   nodeId: string;
-  /** 1-based attempt counter for retries. */
+  /** 1-based execution count within the current graph attempt. */
   attempt: number;
   agentType: string;
   prompt: string;
@@ -68,6 +70,7 @@ export interface NodeGateResult {
 
 /** A pause point awaiting a human decision (approve / reject / supply data). */
 export interface HumanGateRequest {
+  correlation?: ExecutionCorrelation;
   nodeId: string;
   prompt: string;
   /** The shape the human's response must satisfy. */
@@ -79,11 +82,13 @@ export interface HumanGateRequest {
  *
  * `runGate` is optional for the same reason it was in the script runtime: a host
  * that cannot run a command must fail a gated node loudly rather than pass it
- * unverified — the node actor checks for the capability before spawning.
+ * unverified — the node actor rechecks capability immediately before the effect.
  */
 export interface NodeHost {
+  /** Invoked only after the previous checkpoint writer has been proven dead. */
+  reconcileDrain?(correlation: ExecutionCorrelation, target: "agent" | "human-gate" | "validation-gate"): Promise<boolean>;
   spawnAgent(request: NodeSpawnRequest, signal: AbortSignal): Promise<NodeSpawnResult>;
-  runGate?(command: string, options: { cwd?: string; signal: AbortSignal }): Promise<NodeGateResult>;
+  runGate?(command: string, options: { cwd?: string; signal: AbortSignal; correlation?: ExecutionCorrelation }): Promise<NodeGateResult>;
   /**
    * Await a human decision for a `human_gate` node. The result's `output` is the
    * human-supplied value (JSON when a schema is set). A host without this fails a

@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { isWorkflowEntryData } from "../src/graph/entry-validation.js";
 import type { AgentGraph, FanoutNode, GraphFragment } from "../src/graph/ir.js";
 import { runGraph } from "../src/graph/run-graph.js";
-import { Scheduler, type SchedulerState } from "../src/graph/scheduler.js";
+import type { SchedulerState } from "../src/graph/scheduler.js";
 import { validateFragment } from "../src/graph/validate.js";
+import { ProjectionDriver as Scheduler } from "./graph-projection.fixture.js";
 
 const agent = { type: "agent", agent: "worker", prompt: "fixture" } as const;
 const fanout: FanoutNode = {

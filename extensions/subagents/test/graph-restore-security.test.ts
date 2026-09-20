@@ -81,3 +81,50 @@ it("rejects identity replacement even with the correct next revision", async () 
   expect(() => writeGraphSnapshot(cwd, next)).toThrow();
   expect(readFileSync(join(graphRunsDir(cwd), `${saved.runId}.json`), "utf8")).toBe(before);
 });
+
+it.each(["partial", "owner", "cost", "budget", "resources"])("rejects forged execution %s before writes or dispatch", async mutation => {
+  const { GraphInstances } = await import("../src/graph/graph-instance-id.js");
+  const { executionAttemptId } = await import("../src/graph/graph-execution.js");
+  const instances = new GraphInstances("wf_abcdef123456"); instances.add("a", { nodeKey: "a" });
+  const runtime = instances.state; const instanceId = runtime.manifest[0].instanceId;
+  const state: SchedulerState = { nodes: { a: { status: "pending", attempt: 0 } }, loopCounts: {}, runtime: { ...runtime, executionProtocolVersion: 1, executionLedger: [{ runId: runtime.runId, instanceId, activation: 1, graphAttempt: 1, executionAttemptId: executionAttemptId("00000000-0000-4000-8000-000000000001"), payload: { kind: "admitted", resources: [], budget: { maxExecutions: 1 } } }] } };
+  const restoredRuntime = state.runtime;
+  if (!restoredRuntime?.executionLedger) throw new Error("missing execution ledger");
+  const ledger = restoredRuntime.executionLedger;
+  if (mutation === "partial") Reflect.deleteProperty(restoredRuntime, "executionProtocolVersion");
+  if (mutation === "owner") Reflect.set(ledger[0], "runId", "other");
+  if (mutation === "budget" || mutation === "resources") Reflect.set(ledger[0], "payload", { kind: "admitted", resources: mutation === "resources" ? ["forged"] : [], budget: { maxExecutions: mutation === "budget" ? 100 : 1 } });
+  if (mutation === "cost") Reflect.set(restoredRuntime, "executionLedger", [...ledger, { ...ledger[0], payload: { kind: "dispatched", target: "agent" } }, { ...ledger[0], payload: { kind: "cost", costUsd: 100 } }]);
+  const onCheckpoint = vi.fn(); const spawnAgent = vi.fn();
+  await expect(runGraph(graph, {}, { restore: state, onCheckpoint, host: { spawnAgent } })).rejects.toThrow();
+  expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
+});
+
+it("isolates nested protocol ledgers and rejects partial recursive checkpoints", async () => {
+  const { upgradeLegacyExecution } = await import("../src/graph/graph-execution.js");
+  const { validateGraphRestore } = await import("../src/graph/graph-restore-validation.js");
+  const { validateCheckpointTransition } = await import("../src/graph/graph-checkpoint-transition.js");
+  const parent: AgentGraph = { version: 2, nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
+  let saved: SchedulerState | undefined;
+  await runGraph(parent, {}, { runId: "wf_abcdef123456", loadGraph: () => graph, host: { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }) }, onCheckpoint: state => { saved = structuredClone(state); } });
+  const savedState = saved;
+  const nested = savedState?.runtime?.nested?.sub;
+  if (!savedState || !nested) throw new Error("missing nested runtime");
+  nested.state = upgradeLegacyExecution(nested.state);
+  validateGraphRestore(savedState, parent);
+  const snapshot: GraphRunSnapshot = { version: 2, runId: "wf_abcdef123456", graph: parent, state: savedState, input: {}, waitingGate: "", savedAt: 0 };
+  for (const mutation of ["partial", "owner", "remove"] as const) {
+    const next = structuredClone(snapshot); const runtime = next.state.runtime?.nested?.sub.state.runtime;
+    if (!runtime) throw new Error("missing cloned nested runtime");
+    if (mutation === "partial") Reflect.deleteProperty(runtime, "executionProtocolVersion");
+    if (mutation === "owner") {
+      const [entry] = runtime.executionLedger ?? [];
+      const [instance] = next.state.runtime?.manifest ?? [];
+      if (!entry || !instance) throw new Error("missing execution identity");
+      Reflect.set(entry, "instanceId", instance.instanceId);
+    }
+    if (mutation === "remove") { Reflect.deleteProperty(runtime, "executionProtocolVersion"); Reflect.deleteProperty(runtime, "executionLedger"); }
+    if (mutation !== "remove") expect(() => validateGraphRestore(next.state, parent)).toThrow();
+    expect(() => validateCheckpointTransition(snapshot, next)).toThrow();
+  }
+});

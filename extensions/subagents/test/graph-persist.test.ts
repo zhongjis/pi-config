@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
-import { Scheduler, type SchedulerState } from "../src/graph/scheduler.js";
+import type { SchedulerState } from "../src/graph/scheduler.js";
+import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
+import { ProjectionDriver as Scheduler } from "./graph-projection.fixture.js";
 
 const agent = () => ({ type: "agent" as const, agent: "x", prompt: "p" });
 
@@ -87,7 +89,7 @@ describe("runGraph durable resume", () => {
   });
 });
 
-it("restores an active collection with settled failures and reruns only interrupted children", async () => {
+it("restores an active collection without replenishing interrupted legacy executions", async () => {
   const graph: AgentGraph = {
     nodes: {
       research: {
@@ -104,11 +106,12 @@ it("restores an active collection with settled failures and reruns only interrup
   const gates = new Map<string, (value: NodeSpawnResult) => void>();
   const captures: { state: SchedulerState; graph: AgentGraph }[] = [];
   const controller = new AbortController();
+  const human = deferred<NodeSpawnResult>();
   const run = runGraph(graph, input, {
     signal: controller.signal, concurrency: 4,
     host: {
       spawnAgent: request => new Promise(resolve => { gates.set(request.nodeId, resolve); }),
-      awaitHumanGate: () => new Promise(() => {}),
+      awaitHumanGate: () => human.promise,
     },
     onGateWaiting: (_id, state, effective) => captures.push({ state, graph: effective }),
   });
@@ -126,6 +129,10 @@ it("restores an active collection with settled failures and reruns only interrup
   expect(saved.state.nodes["research:item:2"].status).toBe("running");
   expect(Object.keys(saved.graph.nodes)).toHaveLength(6);
   controller.abort();
+  await releaseAfterPending(run, () => {
+    gates.get("research:item:2")?.({ ok: true });
+    human.resolve({ ok: true });
+  });
   expect((await run).status).toBe("aborted");
   const spawned: string[] = [];
   const added: string[] = [];
@@ -140,14 +147,14 @@ it("restores an active collection with settled failures and reruns only interrup
       expect(metadata.dependencies).toEqual([]);
     },
   });
-  expect(spawned).toEqual(["research:item:2"]);
+  expect(spawned).toEqual([]);
   expect(added).toEqual(["research:item:0", "research:item:1", "research:item:2"]);
-  expect(restored.status).toBe("completed");
+  expect(restored.status).toBe("failed");
   expect(restored.nodes.research.attempt).toBe(1);
-  expect(restored.nodes["research:item:2"].attempt).toBe(2);
+  expect(restored.nodes["research:item:2"].attempt).toBe(1);
   expect(restored.outputs.evidence).toMatchObject([
     { status: "completed", output: "retained", attempt: 1 },
     { status: "failed", error: "retained failure", attempt: 1 },
-    { status: "completed", output: "fresh", attempt: 2 },
+    { status: "failed", error: "Execution budget exhausted", attempt: 1 },
   ]);
 });

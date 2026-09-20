@@ -4,7 +4,7 @@
  * a string. Drives the registered `Agent` / `get_subagent_result` tools and
  * inspects the text delivered back, for a turn-limit abort and a user stop.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/agent-runner.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
@@ -13,6 +13,8 @@ vi.mock("../src/agent-runner.js", async () => {
 
 import { runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+
+const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -60,7 +62,18 @@ function ctx() {
 const textOf = (r: any): string => r.content[0].text;
 
 describe("status note reaches the parent through the real handlers", () => {
-  afterEach(() => vi.restoreAllMocks());
+  let priorManager: unknown;
+
+  beforeEach(() => {
+    priorManager = Reflect.get(globalThis, MANAGER_KEY);
+    Reflect.deleteProperty(globalThis, MANAGER_KEY);
+  });
+
+  afterEach(() => {
+    if (priorManager === undefined) Reflect.deleteProperty(globalThis, MANAGER_KEY);
+    else Reflect.set(globalThis, MANAGER_KEY, priorManager);
+    vi.restoreAllMocks();
+  });
 
   it("foreground turn-limit abort → the Agent result flags an incomplete outcome", async () => {
     vi.mocked(runAgent).mockResolvedValue({

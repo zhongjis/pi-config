@@ -29,6 +29,7 @@ import { runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 
 const RPC_CHANNELS = ["subagents:rpc:ping", "subagents:rpc:spawn", "subagents:rpc:stop"] as const;
+const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -75,6 +76,7 @@ describe("issue #142: RPC handlers + subagents:ready are gated on session_start"
   let prevCwd: string;
   let prevAgentDir: string | undefined;
   let prevHome: string | undefined;
+  let priorManager: unknown;
 
   beforeEach(() => {
     // Hermetic cwd + global dir with scheduling off, so session_start doesn't
@@ -89,6 +91,8 @@ describe("issue #142: RPC handlers + subagents:ready are gated on session_start"
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false }));
     process.chdir(tmpDir);
+    priorManager = Reflect.get(globalThis, MANAGER_KEY);
+    Reflect.deleteProperty(globalThis, MANAGER_KEY);
   });
 
   afterEach(() => {
@@ -99,6 +103,8 @@ describe("issue #142: RPC handlers + subagents:ready are gated on session_start"
     else process.env.HOME = prevHome;
     rmSync(tmpDir, { recursive: true, force: true });
     rmSync(agentDir, { recursive: true, force: true });
+    if (priorManager === undefined) Reflect.deleteProperty(globalThis, MANAGER_KEY);
+    else Reflect.set(globalThis, MANAGER_KEY, priorManager);
     vi.restoreAllMocks();
   });
 

@@ -1,21 +1,23 @@
 import { isDeepStrictEqual } from "node:util";
+import { validateExecutionState } from "./graph-execution.js";
 import type { AgentGraph, FanoutResult } from "./ir.js";
 import { compileJsonSchema } from "./json-schema.js";
 import type { SchedulerState } from "./scheduler.js";
+import { validateSubgraphDispositions } from "./subgraph-disposition.js";
 import { validateGraph } from "./validate.js";
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 /** Shared v1/v2 restore boundary, before hydration, upgrade, writes or dispatch. */
-export function validateSchedulerState(state: SchedulerState, graph: AgentGraph): void {
-  const verdict = validateGraph(graph);
+export function validateSchedulerState(state: SchedulerState, graph: AgentGraph, materializedPrompts: ReadonlySet<string> = new Set()): void {
+  const verdict = validateGraph(graph, materializedPrompts);
   if (!verdict.ok) throw new TypeError(`Invalid restored graph: ${verdict.errors.join("; ")}`);
   if (!state || !record(state.nodes) || !record(state.loopCounts)) throw new TypeError("Incomplete scheduler checkpoint");
   let attempts = 0;
   for (const [key, run] of Object.entries(state.nodes)) {
-    if (!Object.hasOwn(graph.nodes, key) || !record(run) || !["pending", "running", "completed", "failed", "skipped"].includes(run.status) || !Number.isSafeInteger(run.attempt) || run.attempt < 0 || ((run.status === "running" || run.status === "completed") && run.attempt === 0) || (run.error !== undefined && typeof run.error !== "string") || (run.attemptReason !== undefined && !["loop", "user-retry"].includes(run.attemptReason))) throw new TypeError("Invalid restored node state");
-    if ((run.costUsd !== undefined && (typeof run.costUsd !== "number" || !Number.isFinite(run.costUsd) || run.costUsd < 0)) || (run.costUnavailable !== undefined && run.costUnavailable !== true) || (run.costAttempts !== undefined && (!Number.isSafeInteger(run.costAttempts) || run.costAttempts < 1 || run.costAttempts > run.attempt)) || (graph.nodes[key].type !== "agent" && (run.costUsd !== undefined || run.costUnavailable !== undefined || run.costAttempts !== undefined))) throw new TypeError("Invalid restored cost accounting");
+    if (!Object.hasOwn(graph.nodes, key) || !record(run) || !["pending", "running", "completed", "failed", "skipped"].includes(run.status) || !Number.isSafeInteger(run.attempt) || run.attempt < 0 || ((run.status === "running" || run.status === "completed") && run.attempt === 0) || (run.error !== undefined && typeof run.error !== "string") || (run.attemptReason !== undefined && !["loop", "user-retry", "restore"].includes(run.attemptReason))) throw new TypeError("Invalid restored node state");
+    if ((run.costUsd !== undefined && (typeof run.costUsd !== "number" || !Number.isFinite(run.costUsd) || run.costUsd < 0)) || (run.costUnavailable !== undefined && run.costUnavailable !== true) || (run.costAttempts !== undefined && (!Number.isSafeInteger(run.costAttempts) || run.costAttempts < 1 || (state.runtime?.executionProtocolVersion !== 1 && run.costAttempts > run.attempt))) || (graph.nodes[key].type !== "agent" && (run.costUsd !== undefined || run.costUnavailable !== undefined || run.costAttempts !== undefined))) throw new TypeError("Invalid restored cost accounting");
     attempts += run.attempt;
     const node = graph.nodes[key];
     if (run.status === "completed" && (node.type === "agent" || node.type === "human_gate") && node.outputSchema !== undefined) {
@@ -24,6 +26,8 @@ export function validateSchedulerState(state: SchedulerState, graph: AgentGraph)
     }
   }
   if (attempts > 1000) throw new TypeError("Restored run count exceeds limit");
+  validateExecutionState(state, graph);
+  validateSubgraphDispositions(state, graph);
   for (const [key, count] of Object.entries(state.loopCounts)) {
     const edge = graph.edges.find(edge => edge.loop && `${edge.from}->${edge.to}` === key);
     if (!edge?.loop || !Number.isSafeInteger(count) || count < 0 || count > edge.loop.maxIterations) throw new TypeError("Invalid restored loop counter");
@@ -32,7 +36,7 @@ export function validateSchedulerState(state: SchedulerState, graph: AgentGraph)
   const owned = new Set<string>();
   for (const [key, children] of Object.entries(state.collections ?? {})) {
     const parent = state.nodes[key];
-    if (graph.nodes[key]?.type !== "fanout" || !parent || !["running", "completed"].includes(parent.status) || !Array.isArray(children)) throw new TypeError("Invalid collection parent");
+    if (graph.nodes[key]?.type !== "fanout" || !parent || (!["running", "completed"].includes(parent.status) && !(parent.status === "skipped" && state.runtime?.cancelled === true)) || !Array.isArray(children)) throw new TypeError("Invalid collection parent");
     const results: FanoutResult["results"][number][] = [];
     for (const [index, child] of children.entries()) {
       if (!child || child.nodeId !== `${key}:item:${index}` || owned.has(child.nodeId) || graph.nodes[child.nodeId]?.type !== "agent" || !Object.hasOwn(state.nodes, child.nodeId)) throw new TypeError("Invalid collection child ownership/order");

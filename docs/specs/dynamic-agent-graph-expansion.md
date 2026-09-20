@@ -69,7 +69,7 @@ Results preserve input order, regardless of completion order.
 
 The driver resolves and validates the complete item list before insertion. It rejects a non-array, an invalid item, a dispatch miss, an ID collision, or an expansion that would exceed the existing 500-node run ceiling without inserting any child.
 
-Generated IDs are deterministic and namespaced by the fanout node ID: `<fanout-id>:item:<index>`. Separate round nodes therefore provide separate namespaces. A fanout node cannot be the target of a loop edge in this version; bounded repeated work uses explicit fanout nodes per round.
+Generated IDs are deterministic and namespaced by the fanout node ID: `<fanout-id>:item:<index>`. Separate round nodes therefore provide separate namespaces. A loop target must not reach a `fanout` or `bounded_feedback` barrier through normal edges (including guarded edges), directly or transitively. Expansion checks the combined effective topology before insertion; bounded repeated work uses explicit fanout nodes per round or `bounded_feedback`.
 
 ### Awaited children
 
@@ -98,7 +98,7 @@ Snapshots retain the effective graph, including generated agent definitions, plu
 - child states, attempts, outputs, and failures;
 - the parent barrier state.
 
-On restore, completed children stay settled. In-flight children become pending and start fresh through the normal host. The parent reattaches to its existing collection instead of creating duplicate children. Older snapshots without collection metadata remain valid.
+On restore, completed children stay settled. In-flight children become pending and start fresh through the normal host. The parent reattaches to its existing collection instead of creating duplicate children. Older snapshots without collection metadata remain valid. Materialized child prompts retain literal placeholder-looking item data on restore; only provenance-verified collection children bypass authored-template placeholder validation, and their generated definitions are still regenerated and checked.
 
 The gate-waiting callback receives the effective graph and scheduler state so the existing version-1 snapshot envelope can store the materialized topology.
 
@@ -111,7 +111,7 @@ Graph validation checks:
 - dispatch JSONPath, non-empty cases, and non-empty agent selectors;
 - prompt placeholders, with `${item}` reserved and all others backed by `input`;
 - non-negative phase index and non-empty phase title;
-- no loop edge targeting a fanout node.
+- no loop target reaching a fanout or bounded-feedback barrier over normal edges, including after expansion.
 
 Delegation preflight checks every distinct selector in `dispatch.cases`, including fanouts inside resolvable subgraphs. Generated children do not introduce selectors that were absent from the validated graph.
 

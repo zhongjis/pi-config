@@ -1,13 +1,26 @@
 import { isDeepStrictEqual } from "node:util";
+import { upgradeLegacyExecution, validateExecutionState } from "./graph-execution.js";
 import type { GraphRunSnapshot } from "./graph-persist.js";
 import type { AgentGraph } from "./ir.js";
 import type { SchedulerState } from "./scheduler.js";
+import { validateSubgraphDispositions, validateSubgraphDispositionTransition } from "./subgraph-disposition.js";
 
 function prefix(previous: readonly unknown[], next: readonly unknown[], label: string): void {
   if (next.length < previous.length || previous.some((value, index) => !isDeepStrictEqual(value, next[index]))) throw new TypeError(`Checkpoint rewrites ${label}`);
 }
 function transition(previous: SchedulerState, next: SchedulerState, graph: AgentGraph): void {
   const before = previous.runtime; const after = next.runtime;
+  validateExecutionState(next, graph);
+  validateSubgraphDispositions(next, graph);
+  validateSubgraphDispositionTransition(previous, next);
+  if (before?.executionProtocolVersion === 1) {
+    if (!after || after.executionProtocolVersion !== 1 || !before.executionLedger || !after.executionLedger) throw new TypeError("Checkpoint removes execution protocol");
+    prefix(before.executionLedger, after.executionLedger, "execution ledger");
+  } else if (before && after?.executionProtocolVersion === 1) {
+    const upgraded = upgradeLegacyExecution(previous).runtime;
+    if (!upgraded?.executionLedger || !after.executionLedger) throw new TypeError("Checkpoint has incomplete execution protocol");
+    prefix(upgraded.executionLedger, after.executionLedger, "legacy execution baseline");
+  }
   if (before) {
     if (!after || before.runId !== after.runId || before.startedAt !== after.startedAt || (before.cancelled && !after.cancelled)) throw new TypeError("Checkpoint changes run identity/cancellation");
     prefix(before.manifest, after.manifest, "materialization history");
@@ -25,7 +38,26 @@ function transition(previous: SchedulerState, next: SchedulerState, graph: Agent
       if (feedback.active) {
         const active = successor.active?.iteration === feedback.active.iteration ? successor.active : successor.iterations[feedback.active.iteration - 1];
         if (!active || Object.entries(feedback.active).some(([field, value]) => !isDeepStrictEqual(Reflect.get(active, field), value))) throw new TypeError("Checkpoint rewrites active work");
-        if (successor.active?.iteration === feedback.active.iteration && (successor.retryFailures ?? 0) < (feedback.retryFailures ?? 0)) throw new TypeError("Checkpoint resets evaluator repair budget");
+      }
+    }
+    for (const [key, successor] of Object.entries(after.feedback ?? {})) {
+      const feedback = before.feedback?.[key];
+      const failures = successor.retryFailures ?? 0;
+      if (!Number.isSafeInteger(failures) || failures < 0 || (successor.retryError !== undefined) !== (failures > 0) || (failures > 0 && typeof successor.retryError !== "string")) throw new TypeError("Invalid evaluator failure evidence");
+      // Evidence resets only when a new evaluator is materialized, never at decision/intent.
+      if (!feedback || successor.active && successor.active.evaluator !== feedback.active?.evaluator) {
+        if (failures !== 0) throw new TypeError("Checkpoint initializes evaluator failure evidence");
+      } else {
+        const delta = failures - (feedback.retryFailures ?? 0);
+        const sameActive = feedback.active !== undefined && successor.active?.evaluator === feedback.active.evaluator;
+        if (delta < 0 || delta > (sameActive ? 1 : 0) || (delta === 0 && successor.retryError !== feedback.retryError)) throw new TypeError("Checkpoint rewrites evaluator failure evidence");
+        if (sameActive && after.executionProtocolVersion === 1) {
+          const instance = before.manifest.find(row => row.binding === feedback.active?.evaluator);
+          if (!instance || !after.executionLedger) throw new TypeError("Missing evaluator execution evidence");
+          const appended = after.executionLedger.slice(before.executionProtocolVersion === 1 ? before.executionLedger?.length : 0);
+          const failures = appended.filter(row => row.instanceId === instance.instanceId && !("kind" in row) && row.payload.kind === "outcome" && row.payload.status === "failure").length;
+          if (delta !== failures) throw new TypeError("Checkpoint evaluator failures disagree with execution outcomes");
+        }
       }
     }
     for (const [key, child] of Object.entries(before.nested ?? {})) {

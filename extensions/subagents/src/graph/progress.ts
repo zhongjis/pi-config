@@ -36,7 +36,7 @@ export type WorkflowDisplayState =
   | "interrupted";
 
 /** Why an agent is on a later attempt, shown next to its row. */
-export type AttemptReason = "throttled" | "user-retry" | "stalled" | "loop";
+export type AttemptReason = "throttled" | "user-retry" | "stalled" | "loop" | "restore";
 
 export interface WorkflowPhaseEntry {
   type: "workflow_phase";

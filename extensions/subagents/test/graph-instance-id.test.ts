@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
+import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
 
 const graph: AgentGraph = { version: 2, nodes: {
   left: { type: "agent", name: "Same", agent: "worker", prompt: "a" },
@@ -54,6 +55,7 @@ it("checkpoints fanout children before dispatch and restores the same IDs after 
   let dispatched: { state: SchedulerState; graph: AgentGraph } | undefined;
   const controller = new AbortController();
   const ids: string[] = [];
+  const execution = deferred<{ ok: boolean }>();
   const pending = runGraph(fanout, [{ kind: "x" }], {
     signal: controller.signal,
     onCheckpoint: (state, graph) => { saved = state; effective = graph; },
@@ -62,16 +64,16 @@ it("checkpoints fanout children before dispatch and restores the same IDs after 
       expect(saved?.runtime?.manifest.some(row => row.instanceId === request.nodeId)).toBe(true);
       if (saved) dispatched = { state: saved, graph: effective }; // crash checkpoint, before graceful cancellation
       controller.abort();
-      return new Promise(() => {});
+      return execution.promise;
     } },
   });
+  await releaseAfterPending(pending, () => execution.resolve({ ok: true }));
   await pending;
   if (!dispatched) throw new Error("missing dispatch checkpoint");
   const allocate = vi.fn(() => "bad");
-  await runGraph(dispatched.graph, [{ kind: "x" }], { restore: dispatched.state, allocateInstanceId: allocate, onCheckpoint: () => {}, host: { spawnAgent: async request => { ids.push(request.nodeId); return { ok: true, output: "ok" }; } } });
+  await runGraph(dispatched.graph, [{ kind: "x" }], { restore: dispatched.state, reclaimedDeadWriter: true, allocateInstanceId: allocate, onCheckpoint: () => {}, host: { reconcileDrain: async () => true, spawnAgent: async request => { ids.push(request.nodeId); return { ok: true, output: "ok" }; } } });
   expect(allocate).not.toHaveBeenCalled();
-  expect(ids).toHaveLength(2);
-  expect(ids[1]).toBe(ids[0]);
+  expect(ids).toHaveLength(1); // The interrupted admission consumed its sole execution.
 });
 
 it("rejects asynchronous checkpoint writers before dispatch", async () => {

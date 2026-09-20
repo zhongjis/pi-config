@@ -12,6 +12,7 @@ afterEach(() => { vi.restoreAllMocks(); if (cwd) fs.rmSync(cwd, { recursive: tru
 function fixture() {
   cwd = fs.mkdtempSync(join(tmpdir(), "graph-lock-"));
   const release = ownGraphRun(cwd, "wf_abcdef123456");
+  expect(release.reclaimedDeadWriter).toBe(false);
   const path = join(graphRunsDir(cwd), "wf_abcdef123456.json.run.lock");
   const metadata: Record<string, unknown> = JSON.parse(fs.readFileSync(path, "utf8"));
   release();
@@ -23,7 +24,9 @@ it("recovers an orphaned recovery guard as well as the dead run owner", () => {
   const { cwd, path, metadata, dead } = fixture();
   fs.writeFileSync(path, JSON.stringify({ ...metadata, pid: dead }));
   fs.writeFileSync(`${path}.recovery`, JSON.stringify({ ...metadata, pid: dead, nonce: randomUUID() }));
-  const release = ownGraphRun(cwd, "wf_abcdef123456"); release();
+  const release = ownGraphRun(cwd, "wf_abcdef123456");
+  expect(release.reclaimedDeadWriter).toBe(true);
+  release();
   expect(fs.readdirSync(graphRunsDir(cwd))).toEqual([]);
 });
 it.skipIf(process.platform !== "linux")("distinguishes a reused PID by process-start identity", () => {

@@ -49,7 +49,7 @@ function isPositiveInt(value: unknown): value is number {
 class Validator {
   readonly errors: string[] = [];
 
-  constructor(private readonly known: Set<NodeId>) {}
+  constructor(private readonly known: Set<NodeId>, private readonly materializedPrompts: ReadonlySet<NodeId>) {}
 
   private err(path: string, message: string): void {
     this.errors.push(`${path}: ${message}`);
@@ -162,7 +162,7 @@ class Validator {
         if (!isNonEmptyString(node.agent)) this.err(`${path}.agent`, "must be a non-empty agent selector");
         if (!isNonEmptyString(node.prompt)) this.err(`${path}.prompt`, "must be a non-empty prompt");
         this.inputMap(`${path}.input`, node.input);
-        this.promptPlaceholders(path, node.prompt, node.input);
+        if (!this.materializedPrompts.has(id)) this.promptPlaceholders(path, node.prompt, node.input);
         if (node.outputSchema !== undefined) this.schema(`${path}.outputSchema`, node.outputSchema, true);
         if (node.validation !== undefined) {
           if (!isPlainObject(node.validation)) this.err(`${path}.validation`, "must be an object");
@@ -294,6 +294,7 @@ function validateCore(
   edges: unknown,
   outputs: unknown,
   existingIds: Set<NodeId>,
+  materializedPrompts: ReadonlySet<NodeId> = new Set(),
 ): ValidationResult {
   const errors: string[] = [];
 
@@ -310,19 +311,14 @@ function validateCore(
   }
 
   const known = new Set<NodeId>([...existingIds, ...ids]);
-  const validator = new Validator(known);
+  const validator = new Validator(known, materializedPrompts);
   for (const id of ids) validator.node(id, (nodes as Record<string, unknown>)[id]);
 
   if (edges !== undefined) {
     if (!Array.isArray(edges)) errors.push("edges: must be an array");
     else {
-      edges.forEach((edge, i) => {
-        validator.edge(i, edge);
-        if (isPlainObject(edge) && edge.loop !== undefined && typeof edge.to === "string") {
-          const target = nodes[edge.to];
-          if (isPlainObject(target) && (target.type === "fanout" || target.type === "bounded_feedback")) errors.push(`edges[${i}].to: a fanout cannot be a loop target`);
-        }
-      });
+      edges.forEach((edge, i) => { validator.edge(i, edge); });
+      errors.push(...validateLoopBarriers(nodes, edges));
     }
   }
 
@@ -332,8 +328,33 @@ function validateCore(
   return { ok: errors.length === 0, errors };
 }
 
-/** Validate a complete graph (saved or inline). */
-export function validateGraph(graph: unknown): ValidationResult {
+/** Normal edges alone define reactivation reachability, including guarded edges. */
+export function validateLoopBarriers(nodes: Record<string, unknown>, edges: readonly unknown[]): string[] {
+  const predecessors = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (!isPlainObject(edge) || edge.loop !== undefined || typeof edge.from !== "string" || typeof edge.to !== "string") continue;
+    const incoming = predecessors.get(edge.to) ?? [];
+    incoming.push(edge.from); predecessors.set(edge.to, incoming);
+  }
+  const reaches = new Map<string, string>();
+  const queue = Object.entries(nodes).filter(([, node]) => isPlainObject(node) && (node.type === "fanout" || node.type === "bounded_feedback")).map(([id]) => id);
+  for (const id of queue) reaches.set(id, id);
+  for (let i = 0; i < queue.length; i++) {
+    const id = queue[i];
+    const barrier = reaches.get(id);
+    if (barrier === undefined) continue;
+    for (const from of predecessors.get(id) ?? []) {
+      if (!reaches.has(from)) { reaches.set(from, barrier); queue.push(from); }
+    }
+  }
+  return edges.flatMap((edge, i) => {
+    if (!isPlainObject(edge) || edge.loop === undefined || typeof edge.to !== "string" || !reaches.has(edge.to)) return [];
+    return [`edges[${i}].to: loop target "${edge.to}" can reach barrier "${reaches.get(edge.to)}" (fanout or bounded_feedback); barrier reactivation is unsupported`];
+  });
+}
+
+/** Validate authored graphs; restore alone may defer proven collection prompts to regeneration. */
+export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<NodeId> = new Set()): ValidationResult {
   if (!isPlainObject(graph)) {
     return { ok: false, errors: ["graph: must be an object"] };
   }
@@ -354,7 +375,7 @@ export function validateGraph(graph: unknown): ValidationResult {
   if (graph.version !== 2 && isPlainObject(graph.nodes)) {
     for (const [id, node] of Object.entries(graph.nodes)) if (isPlainObject(node) && node.type === "bounded_feedback") errors.push(`nodes.${id}: bounded feedback requires version 2`);
   }
-  const core = validateCore(graph.nodes, graph.edges, graph.outputs, new Set());
+  const core = validateCore(graph.nodes, graph.edges, graph.outputs, new Set(), materializedPrompts);
   errors.push(...core.errors);
   return { ok: errors.length === 0, errors };
 }
