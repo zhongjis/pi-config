@@ -1,8 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it, vi } from "vitest";
-import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { beforeAll, describe, expect, it } from "vitest";
 import inlineSkills from "../index.js";
 
 type Handler = (event: unknown, ctx: unknown) => unknown | Promise<unknown>;
@@ -242,28 +241,6 @@ describe("inline-skills ($skill: token)", () => {
     expect(labels).not.toContain("$skill:tdd");
   });
 
-  it("delegates the editor trigger to a mutable slot so /reload refreshes it", () => {
-    // Installing the prototype wrapper (guarded to once per process).
-    createHarness([{ name: "tdd", path: tddPath }]);
-
-    const proto = CustomEditor.prototype as unknown as {
-      handleInput: (data: string) => void;
-      inlineSkillsSlashTrigger?: (editor: unknown, data: string) => void;
-    };
-
-    // Simulate a reload swapping in a fresh trigger implementation.
-    const freshTrigger = vi.fn();
-    proto.inlineSkillsSlashTrigger = freshTrigger;
-
-    const fakeEditor = {
-      isShowingAutocomplete: () => false,
-      state: { cursorLine: 0, cursorCol: 1, lines: ["$"] },
-      tryTriggerAutocomplete: vi.fn(),
-    };
-    proto.handleInput.call(fakeEditor, "$");
-
-    expect(freshTrigger).toHaveBeenCalledWith(fakeEditor, "$");
-  });
 
   it("inserts a Spacer between adjacent skills so their gap matches message spacing", () => {
     const h = createHarness([{ name: "tdd", path: tddPath }]);

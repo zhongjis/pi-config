@@ -104,25 +104,14 @@ async function runSummary(models: ModelEntry[]) {
 }
 
 describe("smart-sessions model selection", () => {
-	it("auto-detects the current Anthropic Haiku model id", async () => {
-		await runSummary([
-			{ id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" },
-		]);
+	it.each([
+		["Anthropic Haiku", { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" }],
+		["local Qwen", { id: "qwen2.5-coder:14b", name: "Qwen2.5 Coder 14B", provider: "llama-swap" }],
+	])("auto-detects the %s summary model", async (_label, model) => {
+		await runSummary([model]);
 
 		expect(mockedComplete).toHaveBeenCalledWith(
-			expect.objectContaining({ id: "claude-haiku-4-5", provider: "anthropic" }),
-			expect.any(Object),
-			expect.any(Object),
-		);
-	});
-
-	it("auto-detects the local qwen2.5-coder 14b profile model", async () => {
-		await runSummary([
-			{ id: "qwen2.5-coder:14b", name: "Qwen2.5 Coder 14B", provider: "llama-swap" },
-		]);
-
-		expect(mockedComplete).toHaveBeenCalledWith(
-			expect.objectContaining({ id: "qwen2.5-coder:14b", provider: "llama-swap" }),
+			expect.objectContaining({ id: model.id, provider: model.provider }),
 			expect.any(Object),
 			expect.any(Object),
 		);

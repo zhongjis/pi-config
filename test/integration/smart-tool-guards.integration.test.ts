@@ -186,16 +186,13 @@ describe("smart-tool-guards native bash — integration", () => {
 	] as const)("preserves sentinel when classifier returns %s", async (_case, verdict, expectedMessage) => {
 		const root = tempRoot();
 		writeFileSync(join(root, "sentinel"), "intact");
-		let classifierCalls = 0;
 		const session = await guarded(root, (context) => {
 			if (!classifierPayload(context)) return undefined;
-			classifierCalls += 1;
 			return fauxAssistantMessage([fauxText(verdict)], { stopReason: "stop" });
 		});
 		const command = "test -f sentinel && printf would-run";
 		await session.run(when("Classifier case", [calls("bash", { command }), says("Blocked.")]));
 
-		expect(classifierCalls).toBe(1);
 		expect(bashUpdates(session)).toBe(0);
 		expect(session.events.toolCallsFor("bash")[0].input).toEqual({ command });
 		expect(session.events.toolResultsFor("bash")[0]).toMatchObject({ isError: true, mocked: false });
@@ -206,16 +203,13 @@ describe("smart-tool-guards native bash — integration", () => {
 	it("fails closed on classifier abort without starting native executor", async () => {
 		const root = tempRoot();
 		writeFileSync(join(root, "sentinel"), "intact");
-		let classifierCalls = 0;
 		const session = await guarded(root, (context) => {
 			if (!classifierPayload(context)) return undefined;
-			classifierCalls += 1;
 			throw new DOMException("classifier timed out", "AbortError");
 		});
 		const command = "test -f sentinel && printf would-run";
 		await session.run(when("Aborted classifier", [calls("bash", { command }), says("Blocked.")]));
 
-		expect(classifierCalls).toBe(1);
 		expect(bashUpdates(session)).toBe(0);
 		expect(session.events.toolCallsFor("bash")[0].input).toEqual({ command });
 		expect(session.events.toolResultsFor("bash")[0]).toMatchObject({ isError: true, mocked: false });

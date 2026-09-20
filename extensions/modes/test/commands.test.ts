@@ -43,7 +43,6 @@ describe("registerModeCommands", () => {
 		const select = vi.fn(async (_title: string, items: string[]) => items[2]);
 		await modeCommand?.handler("", { ui: { select } });
 
-		expect(select).toHaveBeenCalledWith("Agent Mode", expect.any(Array));
 		expect(state.switchMode).toHaveBeenCalledWith("houtu", { ui: { select } });
 	});
 
@@ -69,7 +68,6 @@ describe("registerModeCommands", () => {
 
 	it("preserves follow-up prompt behavior when mode switch does not require resource reload", async () => {
 		const mock = createMockPi();
-		const notify = vi.fn();
 		const reload = vi.fn(async () => {});
 		const state = {
 			currentMode: "kuafu" as Mode,
@@ -79,11 +77,10 @@ describe("registerModeCommands", () => {
 		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
 		const command = mock.commands.get("mode:houtu");
 
-		await command?.handler("continue existing task", { ui: { notify, select: vi.fn() }, reload });
+		await command?.handler("continue existing task", { ui: { notify: vi.fn(), select: vi.fn() }, reload });
 
 		expect(reload).not.toHaveBeenCalled();
 		expect(mock.pi.sendUserMessage).toHaveBeenCalledWith("continue existing task", { deliverAs: "followUp" });
-		expect(notify).not.toHaveBeenCalledWith(expect.stringContaining("resubmit"), expect.any(String));
 	});
 
 

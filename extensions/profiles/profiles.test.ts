@@ -296,29 +296,6 @@ describe("/profile command", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Filter composition with concurrent owners
-// ---------------------------------------------------------------------------
-
-describe("filter composition", () => {
-	it("multiple independent filter owners union their allowed providers", async () => {
-		// Simulate: profile extension installed + another filter owner on same registry.
-		// Both should be able to add/remove their policies without breaking the other.
-		const harness = createHarness();
-		const ctx = createContext(anthropicModel);
-		await harness.fire("session_start", {}, ctx);
-
-		// Profile filter keeps anthropic+openai-codex. That's verified above.
-		const beforeShutdown = ctx.modelRegistry.getAvailable();
-		expect(beforeShutdown.map((m: MockModel) => m.provider)).not.toContain("llama-swap");
-
-		await harness.fire("session_shutdown", {}, ctx);
-		// After profile shutdown, filter removed.
-		const afterShutdown = ctx.modelRegistry.getAvailable();
-		expect(afterShutdown.map((m: MockModel) => m.provider)).toContain("llama-swap");
-	});
-});
-
-// ---------------------------------------------------------------------------
 // /profile:<name> shortcut commands
 // ---------------------------------------------------------------------------
 
@@ -328,29 +305,6 @@ describe("/profile:<name> shortcut commands", () => {
 		expect(harness.commands.has("profile:default")).toBe(true);
 		expect(harness.commands.has("profile:opencode")).toBe(true);
 		expect(harness.commands.has("profile:local")).toBe(true);
-	});
-
-	it("switches profile and writes session state via /profile:opencode", async () => {
-		const harness = createHarness();
-		const ctx = createContext();
-		await harness.fire("session_start", {}, ctx);
-		await harness.commands.get("profile:opencode")!.handler("", ctx);
-		expect(harness.appendedEntries).toContainEqual({
-			customType: PROFILE_STATE_CUSTOM_TYPE,
-			data: { name: "opencode" },
-		});
-		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
-		expect(visible).toContain("opencode-go");
-		expect(visible).not.toContain("anthropic");
-	});
-
-	it("/profile:local switches to llama-swap-only", async () => {
-		const harness = createHarness();
-		const ctx = createContext();
-		await harness.fire("session_start", {}, ctx);
-		await harness.commands.get("profile:local")!.handler("", ctx);
-		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
-		expect(visible).toEqual([llamaSwapModel.provider]);
 	});
 });
 

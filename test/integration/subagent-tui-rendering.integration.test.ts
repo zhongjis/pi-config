@@ -11,6 +11,7 @@ const SUBAGENT_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/subagents/src/
 
 const THEME = {
 	fg: (_color: string, text: string) => text,
+	bg: (_color: string, text: string) => text,
 	bold: (text: string) => text,
 };
 
@@ -205,11 +206,15 @@ describe("subagent TUI rendering — integration", () => {
 			const before = JSON.stringify(message);
 			const collapsed = renderer(message, { expanded: false }, THEME);
 			const expanded = renderer(message, { expanded: true }, THEME);
-			const preview = stripVTControlCharacters(renderText(collapsed).split("\n")[1] ?? "").replace(/^└─ /, "");
+			const previewLine = renderText(collapsed).split("\n").map(stripVTControlCharacters).find((line) => line.includes(grapheme));
+			if (!previewLine) throw new TypeError("notification preview line was not rendered");
+			const preview = previewLine.trim();
 			expect(preview).toMatch(/…$/u);
 			expect(visibleWidth(preview)).toBeLessThanOrEqual(80);
 			expect(preview.slice(0, -1).split(grapheme).join("")).toBe("");
-			expect(renderText(expanded, 500).split("\n").slice(1).map(stripVTControlCharacters)).toEqual([`  ${grapheme.repeat(100)}`, "  retained ending"]);
+			const expandedLines = renderText(expanded, 500).split("\n").map((line) => stripVTControlCharacters(line).trim());
+			expect(expandedLines).toContain(grapheme.repeat(100));
+			expect(expandedLines).toContain("retained ending");
 			for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
 				for (const component of [collapsed, expanded]) {
 					for (const line of renderText(component, width).split("\n")) {

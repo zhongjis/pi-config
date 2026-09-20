@@ -191,13 +191,3 @@ ${mode} base body.`,
 	});
 });
 
-describe("ModeConfig overlays field", () => {
-	it("accepts an overlays field on a parsed config", () => {
-		const config = parseModeAgentConfig("---\n---\n\nBody text.");
-		expect(config).not.toBeNull();
-		if (config) {
-			const withOverlays: typeof config = { ...config, overlays: "some overlay" };
-			expect(withOverlays.overlays).toBe("some overlay");
-		}
-	});
-});

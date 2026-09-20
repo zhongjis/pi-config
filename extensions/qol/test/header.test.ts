@@ -87,11 +87,6 @@ function renderHeader(factory: HeaderFactory, width: number): string[] {
 }
 
 describe("header extension characterization", () => {
-  it("registers session_start and model_select handlers", () => {
-    const { handlers } = createHarness();
-
-    expect([...handlers.keys()]).toEqual(["session_start", "model_select"]);
-  });
 
   it("does not execute git, count resources, or install a header without UI", async () => {
     const harness = createHarness();

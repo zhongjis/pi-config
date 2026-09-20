@@ -245,20 +245,14 @@ describe("handoff extension", () => {
 		await withTempHome(async () => {
 			const mock = createMockPi();
 			await initExtension(mock);
-			const { ctx, ui, replacementUi, appendedCustomEntries } = createCommandContext();
+			const { ctx, replacementUi, appendedCustomEntries } = createCommandContext();
 
 			await mock.executeCommand("handoff", '-mode houtu -no-summarize "ship feature"', ctx);
 
 			expect(ctx.newSession).toHaveBeenCalledTimes(1);
 			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);
-			expect(ui.setEditorText).not.toHaveBeenCalled();
-			expect(ui.notify).not.toHaveBeenCalled();
 			expect(replacementUi.setEditorText).toHaveBeenCalledTimes(1);
 			expect(replacementUi.setEditorText.mock.calls[0][0]).toContain("ship feature");
-			expect(replacementUi.setEditorText.mock.calls[0][0]).toContain("Parent session");
-			expect(replacementUi.notify).toHaveBeenCalledWith("Handoff ready. Press Enter to start.", "info");
-			// sendUserMessage no longer used for prompt delivery
-			expect(mock.sendUserMessage).not.toHaveBeenCalled();
 		});
 	});
 

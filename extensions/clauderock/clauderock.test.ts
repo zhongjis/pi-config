@@ -293,8 +293,6 @@ function writeAwsCredentialsFile(content: string): void {
 
 // Known model with a Bedrock mapping
 const SONNET_MODEL = { id: "claude-sonnet-4-6", provider: "anthropic" };
-// Haiku model (also has a Bedrock mapping)
-const HAIKU_MODEL = { id: "claude-haiku-4-5", provider: "anthropic" };
 // Model without any Bedrock mapping
 const UNMAPPED_MODEL = { id: "claude-unknown-99", provider: "anthropic" };
 const CTX = {};
@@ -303,39 +301,19 @@ const CTX = {};
 // Model ID mapping
 // ---------------------------------------------------------------------------
 describe("model ID mapping", () => {
-  it("routes known Anthropic model to correct Bedrock ID when fallback triggers", async () => {
-    piAiConfig.anthropicEvents = [errorEvent("billing limit exceeded")];
-    piAiConfig.bedrockEvents = [doneEvent()];
-
-    const { streamFn } = await setup();
-    await collectStream(streamFn(SONNET_MODEL, CTX));
-
-    expect(piAiConfig.bedrockCallArgs.length).toBe(1);
-    expect(piAiConfig.bedrockCallArgs[0][0].id).toBe("us.anthropic.claude-sonnet-4-6");
-  });
-
-  it("routes claude-haiku-4-5 to its Bedrock ID", async () => {
+  it.each([
+    ["claude-sonnet-4-6", "us.anthropic.claude-sonnet-4-6"],
+    ["claude-haiku-4-5", "us.anthropic.claude-haiku-4-5-20251001-v1:0"],
+    ["claude-haiku-4-5-20251001", "us.anthropic.claude-haiku-4-5-20251001-v1:0"],
+  ])("routes %s to Bedrock model %s", async (anthropicId, bedrockId) => {
     piAiConfig.anthropicEvents = [errorEvent("quota exceeded")];
     piAiConfig.bedrockEvents = [doneEvent()];
 
     const { streamFn } = await setup();
-    await collectStream(streamFn(HAIKU_MODEL, CTX));
+    await collectStream(streamFn({ id: anthropicId, provider: "anthropic" }, CTX));
 
-    expect(piAiConfig.bedrockCallArgs[0][0].id).toBe(
-      "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    );
-  });
-
-  it("routes claude-haiku-4-5-20251001 to same Bedrock ID as claude-haiku-4-5", async () => {
-    piAiConfig.anthropicEvents = [errorEvent("quota exceeded")];
-    piAiConfig.bedrockEvents = [doneEvent()];
-
-    const { streamFn } = await setup();
-    await collectStream(streamFn({ id: "claude-haiku-4-5-20251001", provider: "anthropic" }, CTX));
-
-    expect(piAiConfig.bedrockCallArgs[0][0].id).toBe(
-      "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    );
+    expect(piAiConfig.bedrockCallArgs).toHaveLength(1);
+    expect(piAiConfig.bedrockCallArgs[0][0].id).toBe(bedrockId);
   });
 
   it("clears Anthropic baseUrl when constructing the Bedrock model", async () => {

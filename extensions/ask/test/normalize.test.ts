@@ -32,21 +32,14 @@ describe("validateInput", () => {
 });
 
 describe("truncateTabLabel", () => {
-	it("returns unchanged when ≤ 12 chars", () => {
-		expect(truncateTabLabel("hello")).toBe("hello");
-	});
-
-	it("returns unchanged at exactly 12 chars", () => {
-		expect(truncateTabLabel("123456789012")).toBe("123456789012");
+	it.each(["", "hello", "123456789012"])("returns short label %j unchanged", (label) => {
+		expect(truncateTabLabel(label)).toBe(label);
 	});
 
 	it("truncates at 13 chars to first 12 + …", () => {
 		expect(truncateTabLabel("1234567890123")).toBe("123456789012…");
 	});
 
-	it("returns empty unchanged", () => {
-		expect(truncateTabLabel("")).toBe("");
-	});
 });
 
 describe("normalizeQuestions", () => {

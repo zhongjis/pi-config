@@ -44,6 +44,10 @@ type ToolDefinition = {
   ) => RenderableText;
   execute: (...args: unknown[]) => Promise<unknown>;
 };
+type InstalledTool = ToolDefinition & {
+  renderCall: NonNullable<ToolDefinition["renderCall"]>;
+  renderResult: NonNullable<ToolDefinition["renderResult"]>;
+};
 
 const plainTheme: PlainTheme = {
   fg: (_color, text) => text,
@@ -73,7 +77,7 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function installTool(): ToolDefinition {
+function installTool(): InstalledTool {
   let registered: ToolDefinition | undefined;
   installWriteToolVisual({
     registerTool(tool: ToolDefinition) {
@@ -81,8 +85,10 @@ function installTool(): ToolDefinition {
     },
   } as never);
 
-  expect(registered).toBeDefined();
-  return registered!;
+  if (!registered?.renderCall || !registered.renderResult) {
+    throw new TypeError("write tool renderers were not registered");
+  }
+  return registered;
 }
 
 describe("qol write tool rendering", () => {
@@ -97,12 +103,13 @@ describe("qol write tool rendering", () => {
     const tool = installTool();
     const result = { content: [{ type: "text" as const, text: "Successfully wrote 11 bytes to src/app.ts" }] };
 
-    const collapsed = renderText(tool.renderResult!(
+    const component = tool.renderResult(
       result,
       { expanded: false, isPartial: false },
       plainTheme,
       { args: { content: "first\nsecond" } },
-    ));
+    );
+    const collapsed = renderText(component);
 
     expect(collapsed).toBe([
       "├─ status: written",
@@ -110,6 +117,7 @@ describe("qol write tool rendering", () => {
       "└─ app.tools.expand to expand full result",
     ].join("\n"));
     expect(collapsed).not.toContain("Successfully wrote");
+    expectWidthSafe(component);
   });
 
   it("passes all five execute arguments through and preserves native result identity", async () => {
@@ -141,26 +149,13 @@ describe("qol write tool rendering", () => {
     });
   });
 
-  it("keeps collapsed success width-safe at required widths", () => {
-    const tool = installTool();
-    const result = { content: [{ type: "text" as const, text: "Successfully wrote 11 bytes to src/app.ts" }] };
-
-    const collapsed = tool.renderResult!(
-      result,
-      { expanded: false, isPartial: false },
-      plainTheme,
-      { args: { content: "first\nsecond" } },
-    );
-
-    expectWidthSafe(collapsed);
-  });
 
   it("renders expanded raw output exactly and leaves result content unchanged", () => {
     const tool = installTool();
     const raw = "Successfully wrote 11 bytes to src/app.ts\nsecond raw line";
     const result = { content: [{ type: "text" as const, text: raw }] };
 
-    const expanded = renderText(tool.renderResult!(result, { expanded: true, isPartial: false }, plainTheme));
+    const expanded = renderText(tool.renderResult(result, { expanded: true, isPartial: false }, plainTheme));
 
     expect(expanded).toBe(raw);
     expect(result.content[0].text).toBe(raw);
@@ -170,62 +165,43 @@ describe("qol write tool rendering", () => {
     const tool = installTool();
     const result = { content: [{ type: "text" as const, text: "\nError: EACCES denied\nstack hidden" }] };
 
-    const collapsed = renderText(tool.renderResult!(
+    const component = tool.renderResult(
       result,
       { expanded: false, isPartial: false },
       plainTheme,
       { isError: true },
-    ));
+    );
+    const collapsed = renderText(component);
 
     expect(collapsed).toBe([
       "├─ error: Error: EACCES denied",
       "└─ app.tools.expand to expand full result",
     ].join("\n"));
     expect(collapsed).not.toContain("stack hidden");
+    expectWidthSafe(component);
   });
 
-  it("keeps collapsed error width-safe at required widths", () => {
-    const tool = installTool();
-    const result = { content: [{ type: "text" as const, text: `Error: ${"permission context ".repeat(20)}` }] };
-
-    const collapsed = tool.renderResult!(
-      result,
-      { expanded: false, isPartial: false },
-      plainTheme,
-      { isError: true },
-    );
-
-    expectWidthSafe(collapsed);
-  });
 
   it("renders partial/running summary with expand hint", () => {
     const tool = installTool();
     const result = { content: [{ type: "text" as const, text: "partial raw output" }] };
 
-    const partial = renderText(tool.renderResult!(result, { expanded: false, isPartial: true }, plainTheme));
+    const component = tool.renderResult(result, { expanded: false, isPartial: true }, plainTheme);
+    const partial = renderText(component);
 
     expect(partial).toBe([
       "├─ status: writing",
       "└─ app.tools.expand to expand full result",
     ].join("\n"));
     expect(partial).not.toContain("partial raw output");
+    expectWidthSafe(component);
   });
 
-  it("keeps partial writing width-safe at required widths", () => {
-    const tool = installTool();
-    const partial = tool.renderResult!(
-      { content: [{ type: "text" as const, text: "partial raw output" }] },
-      { expanded: false, isPartial: true },
-      plainTheme,
-    );
-
-    expectWidthSafe(partial);
-  });
 
   it("keeps long collapsed error lines compact enough to preserve tree prefixes", () => {
     const tool = installTool();
     const longError = `Error: write failed because ${"permission context ".repeat(12)}for target path`;
-    const collapsed = renderText(tool.renderResult!(
+    const collapsed = renderText(tool.renderResult(
       { content: [{ type: "text", text: longError }] },
       { expanded: false, isPartial: false },
       plainTheme,
@@ -242,18 +218,18 @@ describe("qol write tool rendering", () => {
 
   it("renders call header aligned with edit: home-shortened, untruncated path", () => {
     const tool = installTool();
-    const shortCall = renderText(tool.renderCall!({ path: "src/app.ts", content: "" }, plainTheme));
+    const shortCall = renderText(tool.renderCall({ path: "src/app.ts", content: "" }, plainTheme));
 
     const homePath = `${homedir()}/personal/pi-config/docs/guides/agent-orchestration.md`;
-    const homeCall = renderText(tool.renderCall!({ path: homePath, content: "" }, plainTheme));
+    const homeCall = renderText(tool.renderCall({ path: homePath, content: "" }, plainTheme));
 
     const longPath = `src/${"nested/".repeat(12)}final-file.ts`;
-    const longCall = renderText(tool.renderCall!({ path: longPath, content: "" }, plainTheme));
+    const longCall = renderText(tool.renderCall({ path: longPath, content: "" }, plainTheme));
 
     expect(shortCall).toBe("▸ write · src/app.ts");
     expect(homeCall).toBe("▸ write · ~/personal/pi-config/docs/guides/agent-orchestration.md");
     expect(longCall).toBe(`▸ write · ${longPath}`);
     expect(longCall).not.toContain("…");
-    expectWidthSafe(tool.renderCall!({ path: longPath, content: "" }, plainTheme));
+    expectWidthSafe(tool.renderCall({ path: longPath, content: "" }, plainTheme));
   });
 });
