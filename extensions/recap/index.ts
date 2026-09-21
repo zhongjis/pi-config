@@ -16,7 +16,6 @@ import { getRecapConfig } from "./settings.js";
 
 const STATE_KEY = "pi-recap";
 const WIDGET_KEY = "pi-recap";
-const RECAP_PREFIX = "※ recap:";
 const MAX_ROUNDS = 3;
 
 type SessionState = { recap?: string; goal?: string; inputKey?: string };
@@ -182,11 +181,15 @@ function renderWidget(ctx: ExtensionContext, placement = getRecapConfig(ctx.cwd)
 			invalidate() {},
 			render(width: number): string[] {
 				if (!currentRecap) return [];
-				return wrapText(`${RECAP_PREFIX} ${currentRecap}`, Math.max(12, width - 1)).map((line, index) => {
-					if (index > 0) return theme.fg("muted", theme.italic(line));
-					const prefixLength = RECAP_PREFIX.length;
-					return theme.fg("dim", line.slice(0, 2)) + theme.fg("accent", theme.bold(line.slice(2, prefixLength))) + theme.fg("muted", theme.italic(line.slice(prefixLength)));
-				});
+				const head = "▍ recap  ";
+				const indent = " ".repeat(head.length);
+				const body = wrapText(currentRecap, Math.max(12, width - head.length - 1));
+				return body.map((line, index) =>
+					(index === 0
+						? theme.fg("accent", "▍ ") + theme.fg("dim", "recap  ")
+						: theme.fg("accent", "▍") + indent.slice(1)) +
+					theme.fg("muted", theme.italic(line)),
+				);
 			},
 		};
 	}, { placement });

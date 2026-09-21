@@ -44,7 +44,7 @@ export function getRecapConfig(cwd: string): RecapConfig {
 		cooldownTurns: positiveInt(recap?.cooldownTurns, AUTO_UPDATE_COOLDOWN_TURNS),
 		similarityThreshold: unitRatio(recap?.similarityThreshold, SIMILARITY_THRESHOLD),
 		prompt,
-		placement: recap?.placement === "above" ? "aboveEditor" : "belowEditor",
+		placement: recap?.placement === "below" ? "belowEditor" : "aboveEditor",
 	};
 }
 
