@@ -26,6 +26,8 @@ Run isolated Agent sessions with foreground results and background supervision.
 - `src/agent-tool.ts` and `src/result-tools.ts` own complete tool definitions; `src/agent-result.ts` shares foreground/retrieval/resume report semantics.
 - `src/invocation-config.ts` owns shared Agent config/model/thinking/scope preparation; direct and graph callers retain their own max-turn policy, warnings, delivery, and orchestration.
 - `src/ui/agents-menu.ts` owns agent navigation, conversations, CRUD, and authoring wizards. `src/ui/settings-menu.ts` owns presentation/input only; setting mutation and persistence remain in activation.
+- `src/agent-tool-scope.ts` owns subagent tool-scope narrowing (the live re-narrow on `turn_end` and `beforeToolCall` veto).
+- `src/structured-output.ts` owns session-keyed capture storage (`rememberStructuredCapture`/`takeStructuredCapture`), retry/repair (`repairStructuredOutput`), and failure formatting (`structuredFailure`); previously these were partly in `agent-runner.ts`.
 
 ## Local Contracts
 

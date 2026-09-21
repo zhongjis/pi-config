@@ -64,7 +64,7 @@ vi.mock("../src/skill-loader.js", () => ({ preloadSkills: vi.fn(() => []) }));
 // ---------------------------------------------------------------------------
 // Import the real function under test — AFTER mocks are declared.
 // ---------------------------------------------------------------------------
-import { installExtensionToolScope } from "../src/agent-runner.js";
+import { installExtensionToolScope } from "../src/agent-tool-scope.js";
 
 type InstallCtx = Parameters<typeof installExtensionToolScope>[1];
 

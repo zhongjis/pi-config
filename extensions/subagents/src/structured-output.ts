@@ -25,7 +25,7 @@
  * `StructuredOutput` is still telling the truth.
  */
 
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { CompiledSchema } from "./graph/json-schema.js";
 
 /**
@@ -118,4 +118,27 @@ export function structuredRetryPrompt(capture: StructuredCapture): string {
     ? `Your last ${STRUCTURED_OUTPUT_TOOL_NAME} call did not match the required schema: ${capture.lastError}`
     : `You did not call ${STRUCTURED_OUTPUT_TOOL_NAME}, so your answer was not recorded.`;
   return `${reason}\n\nCall ${STRUCTURED_OUTPUT_TOOL_NAME} now with your complete final answer. Do not reply with prose.`;
+}
+
+const structuredSessions = new WeakMap<AgentSession, StructuredCapture>();
+
+export function rememberStructuredCapture(session: AgentSession, capture: StructuredCapture): void {
+  structuredSessions.set(session, capture);
+}
+
+export function takeStructuredCapture(session: AgentSession): StructuredCapture | undefined {
+  return structuredSessions.get(session);
+}
+
+export function structuredFailure(capture?: StructuredCapture): string | undefined {
+  return capture && capture.json === undefined
+    ? `StructuredOutput was not produced: ${capture.lastError ?? "the tool was not called with a valid payload"}.`
+    : undefined;
+}
+
+export async function repairStructuredOutput(session: AgentSession, capture: StructuredCapture): Promise<boolean> {
+  if (capture.json !== undefined) return false;
+  await session.prompt(structuredRetryPrompt(capture));
+  await session.waitForIdle();
+  return true;
 }
