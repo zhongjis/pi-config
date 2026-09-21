@@ -77,9 +77,10 @@ function createMockPi() {
 			getAllTools: () => [{ name: "read" }, { name: "write" }, { name: "edit" }, { name: "bash" }, { name: "Agent" }],
 			getActiveTools: () => ["read", "write", "edit", "bash", "Agent"],
 			setActiveTools: vi.fn(),
-			setModel: vi.fn(),
+			setModel: vi.fn(async () => true),
 			appendEntry: vi.fn(),
 			getFlag: vi.fn(() => undefined),
+			sendMessage: vi.fn(),
 			sendUserMessage: vi.fn(),
 			getThinkingLevel: vi.fn(() => "off"),
 			setThinkingLevel: vi.fn(),
@@ -132,7 +133,7 @@ async function renderInjectedPrompt({
 
 describe("mode hooks", () => {
 	it.each(["luban", "shennong", "zhurong", "unknown", "", null, undefined, 42, {}, []])(
-		"discards invalid saved mode %j and its associated state", async (mode) => {
+		"discards invalid saved mode %j and its associated state", async (mode: unknown) => {
 			const mock = createMockPi();
 			const state = new ModeStateManager(mock.pi as never);
 			registerModeHooks(mock.pi as never, state);
@@ -155,7 +156,7 @@ describe("mode hooks", () => {
 	);
 
 	it.each([undefined, "kuafu", "houtu", "execute", "invalid"] )(
-		"preserves CLI precedence and valid saved state with flag %j", async (flag) => {
+		"preserves CLI precedence and valid saved state with flag %j", async (flag: string | undefined) => {
 			const mock = createMockPi();
 			vi.spyOn(mock.pi, "getFlag").mockImplementation(() => flag as never);
 			const state = new ModeStateManager(mock.pi as never);
@@ -532,5 +533,93 @@ describe("mode hooks", () => {
 
 		expect(prompt.indexOf(overlay)).toBeGreaterThan(prompt.indexOf("Plain body"));
 		expect(prompt).toContain(`${overlay}\n<!-- /mode:kuafu -->`);
+	});
+});
+
+describe("mode runtime model fallback", () => {
+	it("uses the active override chain and applies its candidate defaults once", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = {
+			body: "build",
+			model: "anthropic/configured-primary,anthropic/configured-fallback",
+		};
+		state.modelOverride = "anthropic/active-primary,openai-codex/gpt-5.4:high:fast";
+		const current = { provider: "anthropic", id: "active-primary", api: "anthropic-messages" };
+		const fallback = { provider: "openai-codex", id: "gpt-5.4", api: "openai-codex-responses" };
+		const ctx = {
+			model: current,
+			modelRegistry: {
+				getAll: () => [current, fallback],
+				getAvailable: () => [current, fallback],
+				find: (provider: string, id: string) => [current, fallback].find((model) => model.provider === provider && model.id === id),
+				isUsingOAuth: () => true,
+			},
+			sessionManager: { getBranch: () => [], getSessionId: () => "main-mode-session" },
+		};
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("message_end", { message: { role: "assistant", stopReason: "error", status: 429 } }, ctx);
+		await mock.fire("agent_settled", {}, ctx);
+
+		expect(mock.pi.setModel).toHaveBeenCalledWith(fallback);
+		expect(mock.pi.setThinkingLevel).toHaveBeenCalledTimes(1);
+		expect(mock.pi.setThinkingLevel).toHaveBeenCalledWith("high");
+		expect(mock.pi.appendEntry).toHaveBeenCalledWith("fast-policy", { version: 1, mode: "kuafu", source: "mode", enabled: true });
+		expect(mock.pi.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ customType: "runtime-model-fallback", display: false }), { triggerTurn: true });
+	});
+
+	it.each([
+		["without a configured chain", undefined, undefined],
+		["for a subagent session", "anthropic/active-primary,openai-codex/gpt-5.4", "/tmp/subagent-sessions/child.jsonl"],
+	])("does not recover %s", async (_reason: string, chain: string | undefined, sessionFile: string | undefined) => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "build", model: chain };
+		const current = { provider: "anthropic", id: "active-primary", api: "anthropic-messages" };
+		const fallback = { provider: "openai-codex", id: "gpt-5.4", api: "openai-codex-responses" };
+		const ctx = {
+			model: current,
+			modelRegistry: {
+				getAll: () => [current, fallback],
+				getAvailable: () => [current, fallback],
+				find: (provider: string, id: string) => [current, fallback].find((model) => model.provider === provider && model.id === id),
+				isUsingOAuth: () => true,
+			},
+			sessionManager: { getBranch: () => [], getSessionId: () => "mode-session", getSessionFile: () => sessionFile },
+		};
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("message_end", { message: { role: "assistant", stopReason: "error", status: 429 } }, ctx);
+		await mock.fire("agent_settled", {}, ctx);
+
+		expect(mock.pi.setModel).not.toHaveBeenCalled();
+		expect(mock.pi.sendMessage).not.toHaveBeenCalled();
+	});
+
+	it("rejects unsupported Fast before switching or persisting policy", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "build", model: "anthropic/active-primary,openai-codex/gpt-5.4:fast" };
+		const current = { provider: "anthropic", id: "active-primary", api: "anthropic-messages" };
+		const fallback = { provider: "openai-codex", id: "gpt-5.4", api: "openai-codex-responses" };
+		const ctx = {
+			model: current,
+			modelRegistry: {
+				getAll: () => [current, fallback],
+				getAvailable: () => [current, fallback],
+				find: (provider: string, id: string) => [current, fallback].find((model) => model.provider === provider && model.id === id),
+				isUsingOAuth: () => false,
+			},
+			sessionManager: { getBranch: () => [], getSessionId: () => "mode-session" },
+		};
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("message_end", { message: { role: "assistant", stopReason: "error", status: 429 } }, ctx);
+		await expect(mock.fire("agent_settled", {}, ctx)).rejects.toThrow(/Explicit :fast is unsupported/);
+
+		expect(mock.pi.setModel).not.toHaveBeenCalled();
+		expect(mock.pi.appendEntry).not.toHaveBeenCalledWith("fast-policy", expect.anything());
+		expect(mock.pi.sendMessage).not.toHaveBeenCalled();
 	});
 });

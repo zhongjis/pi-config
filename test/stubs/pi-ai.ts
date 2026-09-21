@@ -44,3 +44,7 @@ export async function streamSimpleAnthropic() {
     text: ""
   };
 }
+
+export function isContextOverflow(message: { stopReason?: string; errorMessage?: string }): boolean {
+  return message.stopReason === "error" && /prompt is too long|context window/i.test(message.errorMessage ?? "");
+}

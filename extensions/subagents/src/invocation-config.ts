@@ -68,7 +68,7 @@ export function prepareAgentInvocation({
   const initial = resolveAgentInvocationConfig(agentConfig, params);
   const selected = resolveAgentModel(initial.modelInput, modelRegistry, parentModel);
   const invocation = resolveAgentInvocationConfig(agentConfig, params, selected.thinkingLevel);
-  const selectedModel = { ...selected, modelInput: invocation.modelInput };
+  const selectedModel = { ...selected, modelInput: invocation.modelInput, invocationThinkingLevel: normalizeThinkingLevel(params.thinking) };
   const allowed = scopeModels && selectedModel.model
     ? resolveEnabledModels(readEnabledModels(cwd), modelRegistry, cwd)
     : undefined;

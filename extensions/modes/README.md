@@ -34,6 +34,10 @@ Mode prompts live in `modes/<mode>/mode.md` and use the shared agent frontmatter
 - `prompt_mode`, `model`, `allow_delegation_to`, `disallow_delegation_to` — same schema as custom subagents. Modes only honor `replace` (default; strips prior mode bodies before appending) and `append` (stacks); `system_instructions` is parsed but coerced to `replace` for modes.
 
 Obsolete `tools`, `disallowed_tools`, and `disallow_tools` frontmatter is rejected.
+
+Configured model chains (or the active `/mode-model` override) use the shared
+[post-native-retry continuation contract](../../docs/specs/model-selection-and-fallback.md#post-native-retry-chain-continuation).
+
 ## Tools
 
 ### `plan_approve`

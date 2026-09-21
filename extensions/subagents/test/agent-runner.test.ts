@@ -149,6 +149,7 @@ function createSession(finalText: string) {
   let activeToolNames: string[] = ["read", "bash", "edit", "write"];
   const session = {
     messages: [] as any[],
+    waitForIdle: vi.fn(async () => {}),
     subscribe: vi.fn((listener: (event: any) => void) => {
       listeners.push(listener);
       return () => {};
@@ -1061,6 +1062,7 @@ describe("agent-runner trusted session-local binding", () => {
 
     const inline = trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
@@ -1084,6 +1086,7 @@ describe("agent-runner trusted session-local binding", () => {
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
+      "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
@@ -1110,6 +1113,7 @@ describe("agent-runner trusted session-local binding", () => {
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
       "/ext/mcp.ts",
+      "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
@@ -1140,6 +1144,7 @@ describe("agent-runner trusted session-local binding", () => {
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
       "/ext/mcp.ts",
+      "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
     ]);
@@ -1169,6 +1174,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
         expect.objectContaining({ name: "smart-tool-guards", hidden: true }),
       ]));
       expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
+        "<inline:subagent-model-fallback>",
         "<inline:subagent-fast>",
         "<inline:session-local>",
         "<inline:smart-tool-guards>",
@@ -1184,7 +1190,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 
     await runAgent(ctx, canonicalType, "go", { pi });
 
-    expect(factories().map(({ name }) => name)).toEqual(["subagent-fast", "session-local"]);
+    expect(factories().map(({ name }) => name)).toEqual(["subagent-model-fallback", "subagent-fast", "session-local"]);
   });
 
   it("survives isolation without widening tools", async () => {
@@ -1198,8 +1204,9 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 
     await runAgent(ctx, "chengfeng", "go", { pi, isolated: true });
 
-    expect(factories().map(({ name }) => name)).toEqual(["subagent-fast", "session-local", "smart-tool-guards"]);
+    expect(factories().map(({ name }) => name)).toEqual(["subagent-model-fallback", "subagent-fast", "session-local", "smart-tool-guards"]);
     expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
+      "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
       "<inline:smart-tool-guards>",
@@ -1228,6 +1235,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 
     expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
       "/ext/mcp.ts",
+      "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
       "<inline:smart-tool-guards>",

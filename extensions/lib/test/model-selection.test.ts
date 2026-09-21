@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseModelChain, resolveFirstAvailable, resolveModel, type ModelRegistry } from "../model-selection.js";
+import { parseModelChain, resolveAllAvailable, resolveFirstAvailable, resolveModel, type ModelRegistry } from "../model-selection.js";
 
 const MODELS = [
   { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: "anthropic" },
@@ -159,4 +159,18 @@ describe("fast candidate metadata", () => {
 
 it("rejects suffix-only candidates rather than fuzzy resolving an empty model ID", () => {
   for (const spec of [":fast", ":low:fast"]) expect(resolveFirstAvailable(parseModelChain(spec), makeRegistry())).toBeUndefined();
+});
+
+describe("resolveAllAvailable", () => {
+  it("preserves chain order and first-identity metadata while deduplicating aliases", () => {
+    expect(resolveAllAvailable(parseModelChain("missing,gemini-flash:low:fast,google/gemini-2.5-flash:high,haiku:off"), makeRegistry())).toEqual([
+      { model: MODELS[1], thinkingLevel: "low", fast: true },
+      { model: MODELS[0], thinkingLevel: "off" },
+    ]);
+  });
+  it("excludes unavailable identities and returns an empty exhausted chain", () => {
+    const chain = parseModelChain("haiku,gemini-flash");
+    expect(resolveAllAvailable(chain, makeRegistry([MODELS[1]]))).toEqual([{ model: MODELS[1], thinkingLevel: undefined }]);
+    expect(resolveAllAvailable(chain, makeRegistry([]))).toEqual([]);
+  });
 });

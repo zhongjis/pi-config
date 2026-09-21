@@ -1,3 +1,5 @@
+import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.js";
+import { assertFastSupported } from "../../lib/fast.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
@@ -31,10 +33,10 @@ function getString(value: unknown): string | undefined {
 // ─── Subagent detection ────────────────────────────────────────────────────
 
 function isSubagentSession(ctx: ExtensionContext): boolean {
-  const sm = ctx.sessionManager as any;
-  if (!sm || typeof sm.getSessionFile !== "function") return false;
-  const sessionFile = sm.getSessionFile();
-  return typeof sessionFile === "string" && sessionFile.includes("subagent-sessions");
+	const sessionManager: { getSessionFile?: unknown } | undefined = ctx.sessionManager;
+	if (!sessionManager || typeof sessionManager.getSessionFile !== "function") return false;
+	const sessionFile = sessionManager.getSessionFile();
+	return typeof sessionFile === "string" && sessionFile.includes("subagent-sessions");
 }
 function isSuccessfulPlanMutationResult(event: {
 	toolName: string;
@@ -313,6 +315,12 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 
 	pi.on("session_tree" as any, async (_event: any, ctx: ExtensionContext) => {
 		bindActiveSessionContext(ctx);
+	});
+
+	registerRuntimeModelFallback(pi, {
+		chain: (ctx) => isSubagentSession(ctx) ? undefined : state.modelOverride ?? state.loadConfig(state.currentMode).model,
+		validate: (candidate, ctx) => { if (candidate.fast) assertFastSupported(candidate.model, ctx.modelRegistry.isUsingOAuth(candidate.model)); },
+		apply: (candidate, ctx) => state.applyRuntimeModel(candidate, ctx),
 	});
 
 	pi.on("session_shutdown", async () => {

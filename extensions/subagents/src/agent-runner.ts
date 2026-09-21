@@ -1,3 +1,4 @@
+import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.js";
 /**
  * agent-runner.ts — Core execution engine: creates sessions, runs agents, collects results.
  */
@@ -50,9 +51,11 @@ function structuredFailure(capture?: StructuredCapture): string | undefined {
 async function repairStructuredOutput(session: AgentSession, capture: StructuredCapture): Promise<boolean> {
   if (capture.json !== undefined) return false;
   await session.prompt(structuredRetryPrompt(capture));
+  await session.waitForIdle();
   return true;
 }
 
+const TRUSTED_FALLBACK_EXTENSION_PATH = "<inline:subagent-model-fallback>";
 const TRUSTED_FAST_EXTENSION_PATH = "<inline:subagent-fast>";
 const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
 const TRUSTED_SESSION_LOCAL_EXTENSION_PATH = `<inline:${TRUSTED_SESSION_LOCAL_EXTENSION_NAME}>`;
@@ -612,7 +615,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
       (extension) =>
         extension.path !== TRUSTED_SESSION_LOCAL_EXTENSION_PATH &&
         extension.path !== TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH &&
-        extension.path !== TRUSTED_FAST_EXTENSION_PATH,
+        extension.path !== TRUSTED_FAST_EXTENSION_PATH &&
+        extension.path !== TRUSTED_FALLBACK_EXTENSION_PATH,
     );
     if (shouldFilterDiscovered) {
       discoveredNames = new Set(discoveredExtensions.flatMap((e) => extensionCanonicalNames(e.path)));
@@ -624,7 +628,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
         if (
           extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH ||
           extension.path === TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH ||
-          extension.path === TRUSTED_FAST_EXTENSION_PATH
+          extension.path === TRUSTED_FAST_EXTENSION_PATH ||
+          extension.path === TRUSTED_FALLBACK_EXTENSION_PATH
         ) return true;
 
         const canons = extensionCanonicalNames(extension.path);
@@ -644,6 +649,21 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     additionalExtensionPaths,
     extensionsOverride,
     extensionFactories: [
+      {
+        name: "subagent-model-fallback",
+        hidden: true,
+        factory: (extensionPi: ExtensionAPI) => registerRuntimeModelFallback(extensionPi, {
+          chain: () => selected.modelInput ?? agentConfig?.model,
+          validate: (candidate, childCtx) => { if (candidate.fast) assertFastSupported(candidate.model, childCtx.modelRegistry.isUsingOAuth(candidate.model)); },
+          apply: (candidate, childCtx) => {
+            fastPolicy.enabled = candidate.fast === true;
+            fastPolicy.usingOAuth = childCtx.modelRegistry.isUsingOAuth(candidate.model);
+            const level = agentConfig?.thinking ?? candidate.thinkingLevel ?? selected.invocationThinkingLevel
+              ?? (selected.thinkingLevel === undefined ? options.thinkingLevel : undefined);
+            if (level) extensionPi.setThinkingLevel(level);
+          },
+        }),
+      },
       {
         name: "subagent-fast",
         hidden: true,
@@ -951,6 +971,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     if (options.signal?.aborted) aborted = true;
     else {
       await session.prompt(effectivePrompt);
+      await session.waitForIdle();
       if (structuredCapture && !aborted && !options.signal?.aborted && !finalTurnError(session, startLen)) {
         structuredRetried = await repairStructuredOutput(session, structuredCapture);
       }
@@ -1017,6 +1038,7 @@ export async function resumeAgent(
   try {
     if (!options.signal?.aborted) {
       await session.prompt(prompt);
+      await session.waitForIdle();
       if (capture && !options.signal?.aborted && !finalTurnError(session, startLen)) {
         structuredRetried = await repairStructuredOutput(session, capture);
       }

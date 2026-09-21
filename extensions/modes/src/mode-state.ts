@@ -1,3 +1,4 @@
+import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
 import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
@@ -179,6 +180,11 @@ export class ModeStateManager {
 		if (resolved.thinkingLevel && resolved.thinkingLevel !== this.pi.getThinkingLevel()) {
 			this.pi.setThinkingLevel(resolved.thinkingLevel);
 		}
+	}
+
+	applyRuntimeModel(candidate: RuntimeModelCandidate, ctx: ExtensionContext): void {
+		this.resolvedFamily = getModePromptSource(candidate.model);
+		this.persistFastDefault(ctx, candidate.fast === true);
 	}
 
 	private persistFastDefault(ctx: ExtensionContext, enabled: boolean): void {

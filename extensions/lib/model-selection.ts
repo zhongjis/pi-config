@@ -187,3 +187,21 @@ export function resolveFirstAvailable(
 	}
 	return undefined;
 }
+
+/** Resolve authenticated candidates in chain order, keeping the first metadata per identity. */
+export function resolveAllAvailable(
+	candidates: ModelCandidate[],
+	registry: ModelRegistry,
+): NonNullable<ReturnType<typeof resolveFirstAvailable>>[] {
+	const resolved: NonNullable<ReturnType<typeof resolveFirstAvailable>>[] = [];
+	const seen = new Set<string>();
+	for (const candidate of candidates) {
+		const result = resolveFirstAvailable([candidate], registry);
+		if (!result) continue;
+		const identity = `${result.model.provider}/${result.model.id}`;
+		if (seen.has(identity)) continue;
+		seen.add(identity);
+		resolved.push(result);
+	}
+	return resolved;
+}
