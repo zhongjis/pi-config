@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { WORKFLOW_RESULT_PREVIEW_CHARS } from "../constants.js";
 import { outcomeLabel, type WorkflowOutcome } from "./outcome.js";
 import { collapse, elapsedMs, stats, type WorkflowEntry, type WorkflowRunStatus } from "./progress.js";
 import type { WorkflowControl, WorkflowMeta, WorkflowRunResult } from "./workflow-types.js";
@@ -221,12 +222,34 @@ export function failWorkflowTask(task: WorkflowTask, error: string): void {
   task.endTime = Date.now();
 }
 
-/** The run's outcome as text, for the notification and the LLM-facing result. */
-export function workflowResultText(task: WorkflowTask): string {
+/** The run's result body; `space` controls object indentation (pretty for the artifact, compact for previews). */
+function workflowResultBody(task: WorkflowTask, space?: number): string {
   if (task.error !== undefined) return task.error;
   if (task.value === undefined) return "No output.";
   if (typeof task.value === "string") return task.value;
-  return JSON.stringify(task.value, null, 2);
+  return JSON.stringify(task.value, null, space);
+}
+
+/** The COMPLETE run result as text, for the artifact file and the expanded report. */
+export function workflowResultText(task: WorkflowTask): string {
+  return workflowResultBody(task, 2);
+}
+
+/**
+ * A bounded, model-facing preview of the run result.
+ *
+ * Prefers a top-level string `summary` field when the value is a plain object, otherwise a
+ * compact encoding of the result body. Hard-capped to `cap` characters with a trailing ellipsis
+ * when cut, so the completion notification never embeds an unbounded payload — the complete
+ * result is written to an artifact and linked instead (see {@link formatWorkflowNotification}).
+ */
+export function workflowResultPreview(task: WorkflowTask, cap = WORKFLOW_RESULT_PREVIEW_CHARS): string {
+  const summary =
+    task.value !== null && typeof task.value === "object" && !Array.isArray(task.value)
+      ? (task.value as Record<string, unknown>).summary
+      : undefined;
+  const base = typeof summary === "string" ? summary : workflowResultBody(task);
+  return base.length > cap ? `${base.slice(0, cap - 1)}…` : base;
 }
 
 /**
@@ -289,7 +312,12 @@ export function formatWorkflowNotification(task: WorkflowTask, now = Date.now())
     task.status === "completed" ? outcomeLabel(task.outcome)
     : task.status === "killed" ? "Stopped"
     : `Error: ${task.error ?? "unknown"}`;
-  const result = workflowResultText(task);
+  // Bounded, model-facing preview. When the full result was written to an artifact, `resultPath`
+  // is already set (see workflowCompletionText) and drives the truncation marker + `<result-file>`.
+  const resultPath = task.resultPath;
+  const preview = workflowResultPreview(task);
+  const resultBody =
+    resultPath !== undefined ? `${preview}\n...(truncated; the complete result is in the linked result file)` : preview;
   return [
     `<task-notification>`,
     `<task-id>${task.id}</task-id>`,
@@ -299,7 +327,8 @@ export function formatWorkflowNotification(task: WorkflowTask, now = Date.now())
     `<summary>Workflow "${escapeXml(task.workflowName ?? task.id)}" — Execution: ${task.status} — ${totals.done}/${totals.total} agents completed, ${failed} failed, ${skipped} skipped${
       task.replayedCount > 0 ? `, ${task.replayedCount} replayed from ${escapeXml(task.resumedFrom ?? "an earlier run")}` : ""
     }</summary>`,
-    `<result>${escapeXml(result.length > 4000 ? `${result.slice(0, 4000)}\n...(truncated)` : result)}</result>`,
+    `<result>${escapeXml(resultBody)}</result>`,
+    resultPath !== undefined ? `<result-file>${escapeXml(resultPath)}</result-file>` : null,
     `<usage><total_tokens>${task.totalTokens}</total_tokens><tool_uses>${task.totalToolCalls}</tool_uses><duration_ms>${elapsedMs(task, now)}</duration_ms></usage>`,
     `</task-notification>`,
   ].filter(Boolean).join("\n");

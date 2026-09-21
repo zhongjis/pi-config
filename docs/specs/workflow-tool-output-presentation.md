@@ -19,15 +19,16 @@ These mockups describe the current shipped contract, including the 2026-09-16 fa
 - Execution lifecycle and declared objective outcome are independent. A normal script return completes execution, not necessarily the user's objective. Execution failure takes presentation precedence.
 - Required `agent()` calls reject on terminal provider, schema-result, or gate failure. `{optional:true}` returns null only for ordinary terminal failures; policy, configuration, programming, and fatal errors still reject. User skips remain null, including required calls.
 - Thrown `parallel` thunks and `pipeline` stages reject orchestration. A null stage result short-circuits that item's remaining pipeline stages; false, 0, and empty strings remain valid. Direct dependent calls MUST handle user-skip null explicitly.
-- `outcome.succeed(value?)`, `outcome.partial(reason, value?)`, and `outcome.fail(reason, value?)` declare objective outcome explicitly. Partial/failed reasons MUST be nonblank. Arbitrary payload fields such as `accepted:false` are NEVER inferred; plain legacy returns show `Outcome not declared`.
+- `outcome.succeed(value?)`, `outcome.partial(reason, value?)`, and `outcome.fail(reason, value?)` declare objective outcome explicitly. Partial/failed reasons MUST be nonblank. Arbitrary payload fields such as `accepted:false` are NEVER inferred; plain legacy returns default to `Completed`.
 - Helpers shallow-freeze the reserved `$subagentWorkflowOutcome` envelope and metadata, not user values. Root returns normalize outcome separately from payload; nested calls retain envelopes for explicit propagation. Malformed envelopes fail execution. Optional persisted outcome keeps legacy snapshots valid; malformed snapshots retain raw fallback.
-- Model-facing completion notifications intentionally disclose outcome, `Execution: ...`, and completed/failed/skipped child counts. Delivery timing/channel, one-owner follow-up, usage, replay/resume, permissions, and artifact behavior remain preserved.
+- A **typed graph** declares its objective outcome by emitting a graph output named `$subagentWorkflowOutcome` whose value is a `WorkflowOutcome`. The runtime consumes that reserved output, strips it from the returned value so it never leaks into the payload, and records it as the run's outcome. A missing or malformed envelope yields the default `Completed` and NEVER fails the run — a deliberate divergence from the script path's malformed-envelopes-fail rule, because in a typed graph the envelope is a resolved output produced only after every node has already settled, so it is a presentation verdict rather than an execution precondition.
+- Model-facing completion notifications intentionally disclose outcome, `Execution: ...`, and completed/failed/skipped child counts. The `<result>` element carries a bounded (~500-character) preview — a top-level string `summary` when present, otherwise a compact result encoding. When the complete result exceeds that cap it is written to an artifact and linked with a `<result-file>` element (mirroring an Agent notification's `<output-file>`) under an explicit truncation marker; a short result inlines in full with no `<result-file>`. The complete result still reaches the artifact and the expanded display report. Delivery timing/channel, one-owner follow-up, usage, replay/resume, permissions, and artifact behavior remain preserved.
 
 ### Tool — collapsed, completed
 
 ```text
 ▸ SubagentWorkflow · graph-engineering-research
-  Outcome not declared · structured result
+  Completed · structured result
   Execution: completed · 4 agents completed · fields: research, review
   [expand] result and diagnostics · /agents › Workflows
 ```
@@ -47,7 +48,7 @@ Show the first active task label and configured Subagent type, plus the other ac
 
 ```text
 ▸ SubagentWorkflow · graph-engineering-research
-  Outcome not declared · 4 agents completed
+  Completed · 4 agents completed
   Execution: completed
 
   Result
@@ -78,7 +79,7 @@ The roster remains visible after completion. Do not repeat the workflow heading 
 ### Notification — collapsed
 
 ```text
-Workflow outcome not declared · graph-engineering-research
+Workflow completed · graph-engineering-research
   Execution: completed · 4 agents completed · returned research, review
   [expand] result and diagnostics · /agents › Workflows
 ```
@@ -93,12 +94,12 @@ Workflow outcome partial: optional evidence missing · <name>
   [expand] result and diagnostics · /agents › Workflows
 ```
 
-An explicit `outcome.fail('verification_failed', value)` instead displays `Workflow outcome failed: verification_failed · <name>` even when every child completed. Uncaught required child/script failure displays `Workflow execution failed · <name> · <error>`; it does not become a completed workflow with a missing result. Optional failures and user skips remain independently visible in child counts. A normal plain return with child errors still has `Outcome not declared`, not inferred objective success.
+An explicit `outcome.fail('verification_failed', value)` instead displays `Workflow outcome failed: verification_failed · <name>` even when every child completed. Uncaught required child/script failure displays `Workflow execution failed · <name> · <error>`; it does not become a completed workflow with a missing result. Optional failures and user skips remain independently visible in child counts. A normal plain return with child errors still defaults to `Completed`, not inferred objective success.
 
 ### Notification — expanded
 
 ```text
-Workflow outcome not declared · graph-engineering-research · 4 agents completed
+Workflow completed · graph-engineering-research · 4 agents completed
 Execution: completed
 
   Result
@@ -180,7 +181,7 @@ If display remains bounded, disclose the exact omission and working full-output 
 - History stores only sanitized run/node identity, lifecycle/outcome enums, phase titles, dependencies, timings, counts, and usage. Never retain prompts, inputs, outputs, errors, outcome reasons, scripts, artifact paths, logs, or conversation handles. Bound each session to 20 newest unique runs and 8 MiB, each run to 200 nodes/64 phases, and each node to 32 dependencies; display strings strip terminal/control sequences, flatten, and cap at 160 characters. Evict oldest runs first, then truncate the newest node tail with an omitted-node count if needed.
 - Historical inspectors say `History snapshot · read-only · content not retained`, disclose omitted nodes, and use `Details were not retained in history.` for failed details. They provide navigation only, never pause/skip/retry/stop/conversation actions. Live runs always supersede same-ID history.
 - Capture completed, failed, and explicit user-stopped runs in memory before completion notification, then queue whole-file replacement. Load before creating UI managers; disable capture before reload/switch/shutdown aborts and flush before replacing the store. Missing/malformed JSON recovers empty; malformed v1 rows may be discarded. Unknown versions preserve the file, expose empty history, and disable writes. I/O failures do not fail execution and emit one generic warning without paths or raw errors.
-- Extend model-facing completion text intentionally with outcome, execution, and child settlement. Preserve payload content, existing tool error flags, notification timing/follow-up, usage accounting, public lifecycle events, permissions, and replay/resume mechanics. Required/optional failure handling changes only as specified above; no new model calls, inferred summaries, dependencies, or execution controls.
+- Extend model-facing completion text intentionally with outcome, execution, and child settlement, and bound its inlined `<result>` to a ~500-character preview plus a `<result-file>` link to the complete artifact rather than an unbounded inline body. Preserve payload content, existing tool error flags, notification timing/follow-up, usage accounting, public lifecycle events, permissions, and replay/resume mechanics. Required/optional failure handling changes only as specified above; no new model calls, inferred summaries, dependencies, or execution controls.
 - The live inspector uses one phase-grouped roster with selection keyed by stable workflow entry index. Wide terminals keep roster and state-first detail side by side; narrow terminals drill into detail and use explicit back navigation. Resizing preserves selection.
 - Inspector rows show explicit lifecycle text and only effective session `modelId`; queued or started-but-unresolved work says `model pending`, replayed work says `model not run`, and terminal work without session metadata says `model unavailable`. Requested chains and requested/effective discrepancies remain in expanded diagnostics, not the supervision roster.
 - Declared empty phases remain visible as scheduling placeholders, but agents not yet emitted by the runtime are never invented. Detail uses retained aggregate facts and previews only. Default help stays concise; valid pause/resume, skip, retry, stop, conversation, and paging controls are contextual.
@@ -196,7 +197,7 @@ Required cases:
 - The reported object result with `research` and `review`: no brace-only collapsed preview; all four task labels and Subagent types survive expanded completion.
 - Running-to-terminal transitions; execution failure versus declared failed/partial/succeeded outcome; undeclared legacy returns; required rejection and downstream suppression; optional null, skips, falsy pipeline results, thrown orchestration, nested outcomes, and malformed envelopes. Retain queued/paused/stopped, blocked/interrupted, and replayed-child coverage.
 - Strings, arbitrary objects, arrays, null/absent/empty results, no agents, long field names, and stale logs after successful empty completion.
-- Notification results over 500 characters and over the existing model-facing truncation threshold; late/tail content remains available expanded; successful artifact creation and write failure both have truthful routes/diagnostics.
+- Notification results over the ~500-character preview cap are written to an artifact and linked with a `<result-file>` path rather than inlined; the bounded preview marks truncation, late/tail content remains available in the expanded display, and successful artifact creation and write failure both have truthful routes/diagnostics.
 - Complete retained per-child previews, effective model/thinking metadata, and logs remain in the expanded appendix after serialization. Missing live task, legacy entries, malformed workflow payload, generic Agent notifications, and raw/empty fallback remain safe.
 - Configured expansion hints, useful disclosure, no duplicated identity, and no collapsed tools/tokens/duration telemetry.
 - Widths 0, 1, 2, 8, 20, 40, 80, and 120 with CJK, emoji, combining characters, ANSI, CR/LF, unbroken paths, JSON, and Markdown. Every line fits terminal-cell width; collapsed limits apply after rendering.

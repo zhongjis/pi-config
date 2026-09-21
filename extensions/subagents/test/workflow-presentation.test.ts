@@ -179,7 +179,7 @@ describe("workflow disclosure states", () => {
     expect(plain(renderWorkflowCard({ task, progress: entries }, theme).render(120))).toContain("1 queued");
     task.status = "completed"; task.value = { result: "answer" };
     const report = plain(renderWorkflowCard({ task, progress: entries, expanded: true }, theme).render(120));
-    for (const marker of ["Outcome not declared", "Execution: completed", "Interrupted", "Failed", "Skipped", "Blocked", "Replayed"]) expect(report).toContain(marker);
+    for (const marker of ["Completed", "Execution: completed", "Interrupted", "Failed", "Skipped", "Blocked", "Replayed"]) expect(report).toContain(marker);
     expect(report).not.toContain("5 agents completed");
   });
 });

@@ -16,6 +16,6 @@ export function isWorkflowOutcome(value: unknown): value is WorkflowOutcome {
 }
 
 export function outcomeLabel(outcome: WorkflowOutcome | undefined): string {
-  if (outcome === undefined) return "Outcome not declared";
+  if (outcome === undefined) return "Completed";
   return outcome.status === "succeeded" ? "Outcome succeeded" : `Outcome ${outcome.status}: ${outcome.reason}`;
 }

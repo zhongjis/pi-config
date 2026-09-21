@@ -31,6 +31,8 @@ describe("agent_graph tool", () => {
     const message = await host.notification(taskId);
     expect(message.content).toContain(`<task-id>${taskId}</task-id>`);
     expect(message.content).toContain("Execution: completed");
+    // A completed graph with no declared outcome defaults its objective outcome to "Completed".
+    expect(message.content).toContain("<status>Completed</status>");
   });
 
   it("rejects an invalid inline graph before starting a run", async () => {

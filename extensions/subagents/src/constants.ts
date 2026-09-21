@@ -30,3 +30,10 @@ export const DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS = 30 * 60_000;
 
 /** Maximum retained result lines shown in expanded completion notifications. */
 export const SUBAGENT_RESULT_PREVIEW_LINES = 30;
+
+/**
+ * Maximum characters of the run result inlined into a model-facing workflow completion
+ * notification. Anything longer is written to an artifact and linked via `<result-file>`,
+ * so the notification never carries an unbounded payload.
+ */
+export const WORKFLOW_RESULT_PREVIEW_CHARS = 500;
