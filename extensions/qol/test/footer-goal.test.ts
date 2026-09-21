@@ -12,6 +12,7 @@ type FooterFactory = (
     onBranchChange(callback: () => void): () => void;
     getGitBranch(): string | null;
     getExtensionStatuses(): ReadonlyMap<string, string>;
+    getAvailableProviderCount(): number;
   },
 ) => FooterComponent;
 type EventHandler = (event: unknown, ctx: unknown) => Promise<void> | void;
@@ -82,6 +83,7 @@ describe("qol goal footer integration", () => {
         onBranchChange: () => () => {},
         getGitBranch: () => null,
         getExtensionStatuses: () => new Map([["lsp", "LSP 1/2 running"]]),
+        getAvailableProviderCount: () => 1,
       },
     );
 
@@ -153,6 +155,7 @@ describe("qol goal footer integration", () => {
         onBranchChange: () => () => {},
         getGitBranch: () => null,
         getExtensionStatuses: () => new Map([["lsp", "LSP 1/2 running"]]),
+        getAvailableProviderCount: () => 1,
       },
     );
 

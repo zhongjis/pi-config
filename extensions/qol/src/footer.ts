@@ -227,10 +227,15 @@ function getPathLine(
   return parts.join(sep);
 }
 
-function getModelSegment(ctx: Pick<ExtensionContext, "model">, thinkingLevel: string): string {
+function getModelSegment(
+  ctx: Pick<ExtensionContext, "model">,
+  thinkingLevel: string,
+  multiProvider: boolean,
+): string {
   const modelName = ctx.model?.id ?? "no-model";
-  if (!ctx.model?.reasoning) return modelName;
-  return `${modelName} · ${thinkingLevel}`;
+  const name = multiProvider && ctx.model ? `(${ctx.model.provider}) ${modelName}` : modelName;
+  if (!ctx.model?.reasoning) return name;
+  return `${name} · ${thinkingLevel}`;
 }
 
 // Labeled token row: "in 10 · out 2.7k · cache 166k/87k"
@@ -338,7 +343,9 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
 
           const totals = getUsageTotals(ctx);
           const subagentCost = getSubagentCost();
-          const usingSubscription = ctx.model ? ctx.modelRegistry.isUsingOAuth(ctx.model) : false;
+          const usingSubscription = ctx.model
+            ? ctx.model.provider === "kimi-coding" || ctx.modelRegistry.isUsingOAuth(ctx.model)
+            : false;
 
           // Stats segments with priority (higher = keep longer).
           // ctx(4) > model(3) > tps(2) > cost(1)
@@ -348,7 +355,8 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           statsSegments.push(getContextSegment(ctx, theme));
           priorities.push(4);
 
-          statsSegments.push(theme.fg("muted", getModelSegment(ctx, pi.getThinkingLevel())));
+          const multiProvider = footerData.getAvailableProviderCount() > 1;
+          statsSegments.push(theme.fg("muted", getModelSegment(ctx, pi.getThinkingLevel(), multiProvider)));
           priorities.push(3);
 
           const tps = getLastMessageTps(ctx);

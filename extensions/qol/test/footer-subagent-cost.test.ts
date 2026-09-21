@@ -10,6 +10,7 @@ type FooterFactory = (
     onBranchChange(callback: () => void): () => void;
     getGitBranch(): string | null;
     getExtensionStatuses(): ReadonlyMap<string, string>;
+    getAvailableProviderCount(): number;
   },
 ) => FooterComponent;
 type EventHandler = (event: unknown, ctx: unknown) => Promise<void> | void;
@@ -73,6 +74,7 @@ it.each(["native", "off"])("counts child costs once with reportUsage=%s", async 
         onBranchChange: () => () => {},
         getGitBranch: () => null,
         getExtensionStatuses: () => new Map(),
+        getAvailableProviderCount: () => 1,
       },
     );
     const footer = component?.render(200).join("\n") ?? "";
