@@ -129,6 +129,24 @@ A node's `resources: ["workspace:main"]` are admitted only while under the
 capacity passed to the run. Two nodes sharing a capacity-1 resource serialize
 even when their dependencies would allow parallelism.
 
+## Declaring the run outcome
+
+A graph declares its objective outcome — independent of execution success — by emitting a
+reserved output named `$subagentWorkflowOutcome`:
+
+```jsonc
+"outputs": {
+  "$subagentWorkflowOutcome": { "node": "synthesize", "path": "$.outcome" }
+}
+```
+
+where the `synthesize` node returns `{ "status": "succeeded" }` or
+`{ "status": "partial" | "failed", "reason": "<why>" }`. The runtime consumes this
+envelope, strips it from the returned value, and surfaces it as the completion status
+(`Outcome succeeded` / `Outcome partial: <reason>` / `Outcome failed: <reason>`, shown as
+`Workflow outcome … · <name>` on the collapsed card). Omit it and the run defaults to
+`Completed`; a malformed envelope is ignored and never fails an already-completed run.
+
 ## Authoring workflow
 
 1. Write the graph (inline or `.graph.json`), keeping ids and dependencies explicit.

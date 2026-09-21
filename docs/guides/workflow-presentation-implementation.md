@@ -11,9 +11,9 @@ Use `extensions/subagents/test/workflow-registration.test.ts` to exercise the re
 Write red tests before production changes:
 
 - A returned `{ research, review }` never collapses to `{`; the first active task label and `agentType` appear together, other running tasks are counted, and all child identities survive terminal expansion.
-- Full notification results survive beyond 500 characters and the 4000-character model-content threshold, including result-tail markers, artifact path and artifact-write error.
+- Full notification results survive beyond the ~500-character model-facing preview cap through a linked `<result-file>` artifact, including truncation markers, artifact path and artifact-write error.
 - Terminal empty output never becomes stale progress text; object/array/null/string shapes render honestly.
-- State/count fixtures distinguish execution lifecycle, explicit succeeded/partial/failed outcomes, legacy `Outcome not declared`, and failed/skipped/blocked/interrupted/replayed children.
+- State/count fixtures distinguish execution lifecycle, explicit succeeded/partial/failed outcomes, the default `Completed` for undeclared outcomes, and failed/skipped/blocked/interrupted/replayed children.
 - Collapsed tool results and standalone notifications have at most three physical rows across the width matrix; full retained output and appendix survive expansion/serialization.
 - Completion model content intentionally gains outcome/execution/settlement disclosure. Preserve payloads, `isError`, notification timing/channel/one-owner delivery, usage, permissions, replay/resume, and generic Agent notification behavior.
 - Required `agent()` failure rejects; `{optional:true}` permits null only for ordinary terminal failures. Policy/configuration/programming/fatal errors reject. User skips remain null. Thrown orchestration rejects; pipeline null short-circuits later item stages, unlike false/0/empty strings.
@@ -46,7 +46,7 @@ Presentation decisions:
 - Strings use readable Markdown, JSON uses safely fenced/formatted text. Expanded values/paths wrap without semantic clipping. No display cap is needed for the retained workflow return; do not create new files to impose one.
 - Keep effective model/thinking and existing prompt/result/error previews and logs in a separated appendix; preserve old retention tests. Cached work is visibly replayed. Unknown Subagent type stays absent.
 - All user-controlled single-row fields flatten CR/LF, fit terminal-cell width, and obey the three-row budget. Extremely narrow views preserve status/error ahead of metadata. Use semantic theme roles and the configured expand binding.
-- Valid legacy plain returns show `Outcome not declared`; malformed snapshots use raw fallback. Notifications retain complete snapshots after live tasks disappear; tool rows without live tasks retain the acknowledgement fallback rather than inventing durable recovery.
+- Valid legacy plain returns default to `Completed`; malformed snapshots use raw fallback. Notifications retain complete snapshots after live tasks disappear; tool rows without live tasks retain the acknowledgement fallback rather than inventing durable recovery.
 - Inspector: replace phase drill-down/filtering with one stable phase-grouped roster keyed by workflow entry index. Show effective `modelId` only; unresolved sessions say `model pending`. Wide layouts pair roster with state-first detail, narrow layouts use explicit detail/back navigation, and controls appear only when valid.
 
 ## 4. Check implementation and docs
@@ -129,7 +129,7 @@ The following evidence records the original presentation-only implementation. It
 | Accepted scope | Evidence |
 |---|---|
 | Structural summaries, four-child identity regression, active label/type and concurrent count | Registered report tests; real structured and running captures |
-| Complete notification strings beyond 500/4000 characters, actual result path and write failure | Registered long-tail and artifact-failure tests; serialized real notification and result artifact |
+| Complete notification strings beyond the ~500-character preview cap, actual result path and write failure | Registered long-tail and artifact-failure tests; serialized real notification and result artifact |
 | Running/queued/paused/stopped/failed/completed, child errors, skipped/blocked/interrupted/replayed | Native presentation state tests; real running, child-error and script-failure captures |
 | Result-first reports, phase rosters, retained prompts/results/model/thinking/logs | Registered ordering assertions and serialized native report tests; expanded captures and inspector/conversation |
 | Widths 0/1/2/8/20/40/80/120, Unicode/ANSI/Markdown/JSON/paths and configured hint | Native width matrix, including serialized standalone reports; actual Ctrl+O captures |

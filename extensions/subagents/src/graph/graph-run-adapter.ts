@@ -17,6 +17,7 @@ import { type ExecutionCorrelation, matchesExecution } from "./graph-execution.j
 import type { NodeInstance } from "./graph-instance-id.js";
 import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
+import { isWorkflowOutcome, WORKFLOW_OUTCOME_KEY } from "./outcome.js";
 import type { WorkflowAgentEntry } from "./progress.js";
 import type { RunGraphResult } from "./run-graph.js";
 import type { NodeRun } from "./scheduler.js";
@@ -314,9 +315,24 @@ export class GraphRunReporter {
 export function completeGraphTask(task: WorkflowTask, result: RunGraphResult, now: number = Date.now()): void {
   task.control = undefined;
   task.status = result.status === "aborted" ? "killed" : result.status;
+<<<<<<< Updated upstream
   task.value = result.feedback && Object.keys(result.feedback).length > 0
     ? { outputs: result.outputs, feedback: result.feedback }
     : result.outputs;
+||||||| Stash base
+  task.value = result.outputs;
+=======
+  // A typed graph declares its objective outcome by emitting a reserved graph output.
+  // Unlike the script path (where a malformed envelope fails execution), the graph run has
+  // already completed by the time outputs resolve, so a missing/malformed envelope is only a
+  // presentation verdict: leave `task.outcome` undefined (defaulting to "Completed") and never
+  // fail the run. Always strip the reserved key so it never leaks into the user-facing value.
+  const outputs = { ...result.outputs };
+  const declared = outputs[WORKFLOW_OUTCOME_KEY];
+  if (isWorkflowOutcome(declared)) task.outcome = declared;
+  delete outputs[WORKFLOW_OUTCOME_KEY];
+  task.value = outputs;
+>>>>>>> Stashed changes
   task.endTime = now;
   if (result.status === "failed") {
     const failed = Object.entries(result.nodes)

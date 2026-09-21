@@ -4,6 +4,7 @@ import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
 import { completeGraphTask, GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
+import { outcomeLabel, WORKFLOW_OUTCOME_KEY } from "../src/graph/outcome.js";
 import { collapse } from "../src/graph/progress.js";
 import { type RunGraphResult, runGraph } from "../src/graph/run-graph.js";
 import type { NodeRun } from "../src/graph/scheduler.js";
@@ -133,6 +134,43 @@ describe("GraphRunReporter", () => {
     expect(t.status).toBe("completed");
     expect(t.value).toEqual({ r: 1 });
     expect(t.endTime).toBeDefined();
+  });
+
+  it("completeGraphTask consumes a declared outcome envelope and strips it from the value", () => {
+    const t = task();
+    const result: RunGraphResult = {
+      status: "completed",
+      outputs: { r: 1, [WORKFLOW_OUTCOME_KEY]: { status: "partial", reason: "x" } },
+      nodes: { a: { status: "completed", attempt: 1 }, b: { status: "completed", attempt: 1 } },
+    };
+    completeGraphTask(t, result);
+    expect(t.outcome).toEqual({ status: "partial", reason: "x" });
+    expect(t.value).toEqual({ r: 1 });
+    expect((t.value as Record<string, unknown>)[WORKFLOW_OUTCOME_KEY]).toBeUndefined();
+  });
+
+  it("completeGraphTask leaves outcome undefined and returns outputs verbatim without a declared envelope", () => {
+    const t = task();
+    completeGraphTask(t, {
+      status: "completed",
+      outputs: { r: 1 },
+      nodes: { a: { status: "completed", attempt: 1 }, b: { status: "completed", attempt: 1 } },
+    });
+    expect(t.outcome).toBeUndefined();
+    expect(t.value).toEqual({ r: 1 });
+  });
+
+  it("completeGraphTask strips a malformed outcome envelope without failing the completed run", () => {
+    const t = task();
+    completeGraphTask(t, {
+      status: "completed",
+      outputs: { r: 1, [WORKFLOW_OUTCOME_KEY]: { status: "bogus" } },
+      nodes: { a: { status: "completed", attempt: 1 }, b: { status: "completed", attempt: 1 } },
+    });
+    expect(t.status).toBe("completed");
+    expect(t.outcome).toBeUndefined();
+    expect(t.value).toEqual({ r: 1 });
+    expect((t.value as Record<string, unknown>)[WORKFLOW_OUTCOME_KEY]).toBeUndefined();
   });
 
   it("completeGraphTask surfaces failed node errors", () => {
@@ -474,6 +512,7 @@ describe("GraphRunReporter — static graph progress", () => {
   });
 });
 
+<<<<<<< Updated upstream
 it("v2 publishes only materialized rows with name-first labels and persisted ordering", async () => {
   const { GraphInstances } = await import("../src/graph/graph-instance-id.js");
   const identities = new GraphInstances("run");
@@ -529,4 +568,17 @@ it("validates provenance fields at the notification boundary", async () => {
   const { isWorkflowEntryData } = await import("../src/graph/entry-validation.js");
   const entry = { name: "demo", status: "running", startTime: 0, agentCount: 1, totalTokens: 0, progress: [{ type: "workflow_agent", index: 0, label: "Same", state: "progress", nodeBinding: 42 }] };
   expect(isWorkflowEntryData(entry)).toBe(false);
+||||||| Stash base
+=======
+describe("outcomeLabel", () => {
+  it("defaults an undeclared outcome to Completed", () => {
+    expect(outcomeLabel(undefined)).toBe("Completed");
+  });
+
+  it("labels declared outcomes explicitly", () => {
+    expect(outcomeLabel({ status: "succeeded" })).toBe("Outcome succeeded");
+    expect(outcomeLabel({ status: "partial", reason: "x" })).toBe("Outcome partial: x");
+    expect(outcomeLabel({ status: "failed", reason: "y" })).toBe("Outcome failed: y");
+  });
+>>>>>>> Stashed changes
 });
