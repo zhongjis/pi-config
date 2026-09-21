@@ -73,7 +73,7 @@ export default function betterBashTool(pi: ExtensionAPI): void {
       // cwd (+ timeout) on the header line; the command on its own indented line
       // below, so a long worktree cwd never runs into the command after wrapping.
       const meta = [cwd, timeout].filter((part): part is string => Boolean(part)).join(" · ");
-      const commandLine = command ? `$ ${command}` : "";
+      const commandLine = command ? theme.bold(`$ ${command}`) : "";
       const target =
         meta && commandLine ? `${meta}\n  ${commandLine}` : meta || commandLine || undefined;
       return renderToolCall("bash", target, theme);
