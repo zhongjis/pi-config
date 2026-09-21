@@ -1,5 +1,6 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
+import { type Component, Container, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { resolve } from "node:path";
 import { renderToolCall, shortenHomePath } from "../../lib/index.js";
@@ -39,6 +40,43 @@ function markNativeBashTiming(context: unknown): void {
   renderContext.state.endedAt = undefined;
 }
 
+// ─── Command block ───────────────────────────────────────────────────────────
+
+const COMMAND_PROMPT = "  $ ";
+const COMMAND_HANG = " ".repeat(COMMAND_PROMPT.length);
+
+/**
+ * Presentation only — never affects the command string sent to the model.
+ * The first line carries the "$ " prompt; wrapped and newline lines hang-indent
+ * to the same column so a multi-line command reads as one unit.
+ */
+class CommandBlock implements Component {
+  constructor(
+    private readonly command: string,
+    private readonly theme: Pick<Theme, "bold" | "fg">,
+  ) {}
+
+  render(width: number): string[] {
+    const safeWidth = Number.isFinite(width) ? Math.max(1, Math.floor(width)) : 0;
+    if (safeWidth === 0) return [];
+    const contentWidth = Math.max(1, safeWidth - COMMAND_PROMPT.length);
+    const lines: string[] = [];
+    let promptEmitted = false;
+    for (const logicalLine of this.command.split("\n")) {
+      for (const segment of wrapTextWithAnsi(logicalLine, contentWidth)) {
+        if (segment === "") {
+          lines.push("");
+          continue;
+        }
+        const prefix = promptEmitted ? COMMAND_HANG : COMMAND_PROMPT;
+        promptEmitted = true;
+        lines.push(this.theme.fg("accent", this.theme.bold(`${prefix}${segment}`)));
+      }
+    }
+    return lines;
+  }
+}
+
 // ─── Extension ───────────────────────────────────────────────────────────────
 
 export default function betterBashTool(pi: ExtensionAPI): void {
@@ -70,12 +108,20 @@ export default function betterBashTool(pi: ExtensionAPI): void {
       const command = typeof args.command === "string" ? args.command : "";
       const cwd = typeof args.cwd === "string" ? shortenHomePath(args.cwd) : undefined;
       const timeout = typeof args.timeout === "number" ? `timeout ${args.timeout}s` : undefined;
-      // cwd (+ timeout) on the header line; the command on its own indented line
-      // below, so a long worktree cwd never runs into the command after wrapping.
       const meta = [cwd, timeout].filter((part): part is string => Boolean(part)).join(" · ");
-      const commandLine = command ? theme.bold(`$ ${command}`) : "";
-      const target =
-        meta && commandLine ? `${meta}\n  ${commandLine}` : meta || commandLine || undefined;
+
+      // Header carries cwd (+ timeout); the command renders as its own
+      // hanging-indent block so wrapped and multi-line commands line up under
+      // the command text instead of dangling at the gutter. A metadata-free
+      // single-line command stays inline on the header row.
+      if (command && (meta !== "" || command.includes("\n"))) {
+        const block = new Container();
+        block.addChild(renderToolCall("bash", meta || undefined, theme));
+        block.addChild(new CommandBlock(command, theme));
+        return block;
+      }
+
+      const target = command ? theme.bold(`$ ${command}`) : meta || undefined;
       return renderToolCall("bash", target, theme);
     },
 

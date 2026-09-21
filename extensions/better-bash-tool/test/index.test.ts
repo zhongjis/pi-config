@@ -212,4 +212,35 @@ describe("better-bash-tool", () => {
     expect(header).not.toMatch(/·\s*$/);
     expectWidthSafe(rendered);
   });
+
+  it("hang-indents multi-line command lines under the command text", async () => {
+    const { default: initBetterBashTool } = await import("../index.js");
+    const mock = createMockPi();
+    initBetterBashTool(mock.pi as never);
+
+    const tool = mock.tools.get("bash") as {
+      renderCall: (...args: unknown[]) => Renderable;
+    };
+    const ctx = { ...createMockContext(), cwd: process.cwd() };
+    const args = deepFreeze({
+      command: 'git commit -m "line one\nline two"',
+      cwd: `${homedir()}/personal/pi-config`,
+    });
+
+    const rendered = tool.renderCall(args, ctx.ui.theme, {
+      cwd: ctx.cwd,
+      state: {},
+      executionStarted: false,
+    });
+    const lines = renderLines(rendered, 120);
+
+    const cmdLine = lines.find((line) => line.includes('$ git commit -m "line one'));
+    const contLine = lines.find((line) => line.trimStart().startsWith('line two"'));
+    expect(cmdLine).toBeDefined();
+    expect(contLine).toBeDefined();
+
+    // Continuation aligns under the command text (the char after "$ ").
+    expect((contLine as string).indexOf("line two")).toBe((cmdLine as string).indexOf("git"));
+    expectWidthSafe(rendered);
+  });
 });
