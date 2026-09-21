@@ -512,7 +512,6 @@ describe("GraphRunReporter — static graph progress", () => {
   });
 });
 
-<<<<<<< Updated upstream
 it("v2 publishes only materialized rows with name-first labels and persisted ordering", async () => {
   const { GraphInstances } = await import("../src/graph/graph-instance-id.js");
   const identities = new GraphInstances("run");
@@ -568,8 +567,8 @@ it("validates provenance fields at the notification boundary", async () => {
   const { isWorkflowEntryData } = await import("../src/graph/entry-validation.js");
   const entry = { name: "demo", status: "running", startTime: 0, agentCount: 1, totalTokens: 0, progress: [{ type: "workflow_agent", index: 0, label: "Same", state: "progress", nodeBinding: 42 }] };
   expect(isWorkflowEntryData(entry)).toBe(false);
-||||||| Stash base
-=======
+});
+
 describe("outcomeLabel", () => {
   it("defaults an undeclared outcome to Completed", () => {
     expect(outcomeLabel(undefined)).toBe("Completed");
@@ -580,5 +579,4 @@ describe("outcomeLabel", () => {
     expect(outcomeLabel({ status: "partial", reason: "x" })).toBe("Outcome partial: x");
     expect(outcomeLabel({ status: "failed", reason: "y" })).toBe("Outcome failed: y");
   });
->>>>>>> Stashed changes
 });

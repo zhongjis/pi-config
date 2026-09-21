@@ -315,13 +315,6 @@ export class GraphRunReporter {
 export function completeGraphTask(task: WorkflowTask, result: RunGraphResult, now: number = Date.now()): void {
   task.control = undefined;
   task.status = result.status === "aborted" ? "killed" : result.status;
-<<<<<<< Updated upstream
-  task.value = result.feedback && Object.keys(result.feedback).length > 0
-    ? { outputs: result.outputs, feedback: result.feedback }
-    : result.outputs;
-||||||| Stash base
-  task.value = result.outputs;
-=======
   // A typed graph declares its objective outcome by emitting a reserved graph output.
   // Unlike the script path (where a malformed envelope fails execution), the graph run has
   // already completed by the time outputs resolve, so a missing/malformed envelope is only a
@@ -331,8 +324,9 @@ export function completeGraphTask(task: WorkflowTask, result: RunGraphResult, no
   const declared = outputs[WORKFLOW_OUTCOME_KEY];
   if (isWorkflowOutcome(declared)) task.outcome = declared;
   delete outputs[WORKFLOW_OUTCOME_KEY];
-  task.value = outputs;
->>>>>>> Stashed changes
+  task.value = result.feedback && Object.keys(result.feedback).length > 0
+    ? { outputs, feedback: result.feedback }
+    : outputs;
   task.endTime = now;
   if (result.status === "failed") {
     const failed = Object.entries(result.nodes)
