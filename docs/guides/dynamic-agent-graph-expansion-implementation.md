@@ -6,7 +6,7 @@ Contract: [../specs/dynamic-agent-graph-expansion.md](../specs/dynamic-agent-gra
 
 ## Goal
 
-Ship the `fanout` node, dynamic monitor registration, and a two-round `shared/context-gather` that creates only requested research children. Preserve `expand`, existing graph callers, partial evidence, and fresh Subagent execution.
+Ship the `fanout` node, dynamic monitor registration, and a two-round `context-gather` that creates only requested research children. Preserve `expand`, existing graph callers, partial evidence, and fresh Subagent execution.
 
 ## 1. Lock the Runtime Contract
 
@@ -97,10 +97,8 @@ Completion: dynamic rows appear once, in the correct round, with unique indices,
 
 Files:
 
-- `agent-graphs/shared/context-gather.graph.json`
+- `agent-graphs/context-gather.graph.json`
 - `extensions/subagents/test/graph-portfolio.test.ts`
-- `agent-graphs/fuxi/ulw-plan.graph.json` (verify only unless contract drift is found)
-- `agent-graphs/kuafu/ulw.graph.json` (verify only unless contract drift is found)
 
 Changes:
 
@@ -155,7 +153,7 @@ pnpm lint:typecheck
 git diff --check
 ```
 
-Then start a fresh Pi session through `interactive_shell` and run `shared/context-gather` with one round-one project task designed to leave an external gap. Confirm:
+Then start a fresh Pi session through `interactive_shell` and run `context-gather` with one round-one project task designed to leave an external gap. Confirm:
 
 - round one creates only that project child;
 - the evaluator adds only gap-closing round-two children;

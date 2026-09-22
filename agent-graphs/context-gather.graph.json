@@ -103,7 +103,7 @@
       "type": "agent",
       "name": "Synthesize context",
       "agent": "jintong",
-      "prompt": "Synthesize GatheredContext.\n\nRequest: ${request}\nOriginal tasks: ${tasks}\nComplete terminal bounded-feedback result: ${research}\n\nTreat every failed or skipped collected result and its error as an unknown; preserve partial successful evidence. Return summary, relevantFiles, constraints, unknowns, evidence with provenance, and conflicts as validated JSON only.",
+      "prompt": "Synthesize GatheredContext.\n\nRequest: ${request}\nOriginal tasks: ${tasks}\nComplete terminal bounded-feedback result: ${research}\n\nTreat every failed or skipped collected result and its error as an unknown; preserve partial successful evidence. Return summary, relevantFiles, constraints, unknowns, evidence with provenance, and conflicts as validated JSON only.\n\nAlso return outcome: set status to \"succeeded\" when every requested task produced usable evidence; \"partial\" when any collected result failed or was skipped or unknowns remain (reason must name the missing coverage); \"failed\" when no task produced usable evidence (reason must say why).",
       "input": {
         "request": { "path": "$.request" },
         "tasks": { "path": "$.tasks" },
@@ -137,7 +137,8 @@
               "required": ["claim", "provenance"]
             }
           },
-          "conflicts": { "type": "array", "items": { "type": "string" } }
+          "conflicts": { "type": "array", "items": { "type": "string" } },
+          "outcome": { "type": "object", "properties": { "status": { "type": "string", "enum": ["succeeded", "partial", "failed"] }, "reason": { "type": "string" } }, "required": ["status"] }
         },
         "required": ["summary", "relevantFiles", "constraints", "unknowns", "evidence", "conflicts"]
       }
@@ -152,6 +153,7 @@
     "constraints": { "node": "synthesize", "path": "$.constraints" },
     "unknowns": { "node": "synthesize", "path": "$.unknowns" },
     "evidence": { "node": "synthesize", "path": "$.evidence" },
-    "conflicts": { "node": "synthesize", "path": "$.conflicts" }
+    "conflicts": { "node": "synthesize", "path": "$.conflicts" },
+    "$subagentWorkflowOutcome": { "node": "synthesize", "path": "$.outcome" }
   }
 }

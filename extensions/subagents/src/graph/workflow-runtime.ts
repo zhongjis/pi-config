@@ -253,7 +253,7 @@ export function createWorkflowRuntime(
     parameters: Type.Object({
       graph: Type.Union(
         [
-          Type.String({ description: "Saved graph name, e.g. `shared/review-loop`." }),
+          Type.String({ description: "Saved graph name, e.g. `context-gather`." }),
           Type.Object({}, { additionalProperties: true, description: "Inline AgentGraph { nodes, edges, outputs? }." }),
         ],
         { description: "A saved-graph name or an inline AgentGraph." },

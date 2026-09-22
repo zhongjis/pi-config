@@ -2,8 +2,8 @@
  * saved-graph.ts — resolve `agent_graph({ graph: "<name>" })` to a `.graph.json`.
  *
  * A saved graph is a plain JSON file holding an {@link AgentGraph}. Names are
- * namespaced with `/` (e.g. `shared/review-loop`), mapping to
- * `<root>/shared/review-loop.graph.json`. Roots search, highest priority first:
+ * namespaced with `/` (e.g. `team/my-graph`), mapping to
+ * `<root>/team/my-graph.graph.json`. Roots search, highest priority first:
  * project `.pi/agent-graphs`, the repo-committed `agent-graphs`, the shared
  * `.agents` workspace, then the user's agent dir (`~/.pi/agent/agent-graphs`,
  * where install.sh links a repo's committed graphs for global use).

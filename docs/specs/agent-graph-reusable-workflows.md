@@ -6,6 +6,8 @@ Owner: docs/AGENTS.md (specs bucket)
 
 Related: [../ideas/agent-graph-design-v2.md](../ideas/agent-graph-design-v2.md) §2 · [../guides/agent-graph-implementation.md](../guides/agent-graph-implementation.md) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
 
+> **Superseded (2026):** The shipped portfolio was reduced to a single graph, `context-gather`. The five composite/flow graphs — `review-loop`, `work-verify`, `ulw-plan`, `execute-plan`, `ulw` — were removed: `review-loop`/`work-verify` had correctness gaps and the mode-flow graphs were unproven topology demos never wired into the Mode Agents. The design record below is retained as history and does not describe the current shipped state.
+
 ## Problem Statement
 
 The typed `agent_graph` runtime shipped (design §1), but nothing durable exercises it.

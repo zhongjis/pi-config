@@ -15,12 +15,7 @@ import { validateGraph } from "../src/graph/validate.js";
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 const PORTFOLIO = [
-  "shared/context-gather",
-  "shared/review-loop",
-  "shared/work-verify",
-  "fuxi/ulw-plan",
-  "houtu/execute-plan",
-  "kuafu/ulw",
+  "context-gather",
 ] as const;
 
 const INITIAL_TASK_SCHEMA = {
@@ -77,7 +72,7 @@ describe("agent-graph reusable-workflow portfolio", () => {
 });
 
 it("describes the context-gather graph", () => {
-  const resolved = resolveSavedGraph("shared/context-gather", REPO_ROOT);
+  const resolved = resolveSavedGraph("context-gather", REPO_ROOT);
   expect(resolved.ok, resolved.ok ? "" : resolved.message).toBe(true);
   if (!resolved.ok) return;
   const description = (resolved.graph as { description?: unknown }).description;
@@ -86,29 +81,6 @@ it("describes the context-gather graph", () => {
   expect(description.trim()).not.toBe("");
 });
 
-/**
- * The two review-bearing shared graphs were reconciled off `yanluo` (which the
- * kuafu mode may not delegate to) and onto permitted targets. Guard the property
- * that keeps them runnable under that mode: no denied agent, all within the set.
- */
-describe("reconciled shared graphs stay within permitted delegation targets", () => {
-  const ALLOWED = new Set(["jintong", "taishang", "direnjie", "cangjie"]);
-  for (const name of ["shared/work-verify", "shared/review-loop"] as const) {
-    it(`${name} has no denied agent and stays within the allowed set`, () => {
-      const resolved = resolveSavedGraph(name, REPO_ROOT);
-      expect(resolved.ok, resolved.ok ? "" : resolved.message).toBe(true);
-      if (!resolved.ok) return;
-      const verdict = validateGraph(resolved.graph);
-      expect(verdict.ok, verdict.errors.join("\n")).toBe(true);
-      const graph = resolved.graph as AgentGraph;
-      const agents = Object.values(graph.nodes)
-        .filter((node): node is Extract<GraphNode, { type: "agent" }> => node.type === "agent")
-        .map(node => node.agent);
-      expect(agents).not.toContain("yanluo");
-      for (const agent of agents) expect(ALLOWED.has(agent), `unexpected agent ${agent}`).toBe(true);
-    });
-  }
-});
 
 function savedGraph(name: string): AgentGraph {
   const resolved = resolveSavedGraph(name, REPO_ROOT);
@@ -139,7 +111,7 @@ function boundedFeedbackNode(graph: AgentGraph, id: string): Extract<GraphNode, 
 
 describe("adaptive context-gather contract", () => {
   it("uses one bounded-feedback research region with exact bounds", () => {
-    const graph = savedGraph("shared/context-gather");
+    const graph = savedGraph("context-gather");
     requiresInput(graph, "request");
     requiresInput(graph, "tasks");
     expect(graph.version).toBe(2);
@@ -174,7 +146,7 @@ describe("adaptive context-gather contract", () => {
   });
 
   it("uses the reserved accumulated feedback evaluator contract", () => {
-    const research = boundedFeedbackNode(savedGraph("shared/context-gather"), "research");
+    const research = boundedFeedbackNode(savedGraph("context-gather"), "research");
     expect(research.evaluator).toMatchObject({
       type: "agent",
       name: "Evaluate evidence",
@@ -207,7 +179,7 @@ describe("adaptive context-gather contract", () => {
       const decisions = [...fixture];
       const agents: string[] = [];
       let bindings: string[] = [];
-      const result = await runGraph(savedGraph("shared/context-gather"), {
+      const result = await runGraph(savedGraph("context-gather"), {
         request: "Gather context",
         tasks: [{ source: "project", question: "Find the implementation" }],
       }, {
@@ -228,7 +200,7 @@ describe("adaptive context-gather contract", () => {
   });
 
   it("preserves GatheredContext outputs and synthesis input", () => {
-    const graph = savedGraph("shared/context-gather");
+    const graph = savedGraph("context-gather");
     expect(graph.outputs).toEqual({
       summary: { node: "synthesize", path: "$.summary" },
       relevantFiles: { node: "synthesize", path: "$.relevantFiles" },
@@ -236,6 +208,7 @@ describe("adaptive context-gather contract", () => {
       unknowns: { node: "synthesize", path: "$.unknowns" },
       evidence: { node: "synthesize", path: "$.evidence" },
       conflicts: { node: "synthesize", path: "$.conflicts" },
+      $subagentWorkflowOutcome: { node: "synthesize", path: "$.outcome" },
     });
     const synthesize = agentNode(graph, "synthesize");
     expect(synthesize.agent).toBe("jintong");
@@ -253,18 +226,3 @@ describe("adaptive context-gather contract", () => {
   });
 });
 
-describe("context-gather callers", () => {
-  for (const name of ["fuxi/ulw-plan", "kuafu/ulw"] as const) {
-    it(`${name} requires and forwards caller-planned context tasks`, () => {
-      const graph = savedGraph(name);
-      requiresInput(graph, "request");
-      requiresInput(graph, "tasks");
-      const context = graph.nodes.context;
-      expect(context?.type).toBe("graph");
-      if (context?.type !== "graph") return;
-      expect(context.graph).toBe("shared/context-gather");
-      expect(context.input?.request).toEqual({ path: "$.request" });
-      expect(context.input?.tasks).toEqual({ path: "$.tasks" });
-    });
-  }
-});

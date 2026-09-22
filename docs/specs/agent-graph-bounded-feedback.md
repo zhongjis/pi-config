@@ -8,7 +8,7 @@ Related: [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.m
 
 ## Problem Statement
 
-The shipped `fanout` node creates and awaits one dynamic task collection. Before bounded feedback, `shared/context-gather` predeclared two fanout/evaluator rounds, so the monitor showed a dormant round 2 when round 1 was sufficient. Supporting another round required another authored copy.
+The shipped `fanout` node creates and awaits one dynamic task collection. Before bounded feedback, `context-gather` predeclared two fanout/evaluator rounds, so the monitor showed a dormant round 2 when round 1 was sufficient. Supporting another round required another authored copy.
 
 Panda Harness needed feedback-driven repetition without model-authored topology. Runtime identity also had to survive retry and restore without replacing readable graph references. Gate-only direct-file persistence could not materialize successor iterations safely, so crash-consistent checkpointing was a release prerequisite.
 
@@ -164,5 +164,5 @@ Acceptance coverage must include:
 ## Further Notes
 
 - Bounded feedback generalizes repeated evidence gathering, not the whole graph topology. The initially supported work template is fanout; adding another template requires a separate versioned contract.
-- `shared/context-gather` uses one bounded-feedback region with at most one gap-closing successor iteration while preserving its six-field `GatheredContext` output.
+- `context-gather` uses one bounded-feedback region with at most one gap-closing successor iteration while preserving its six-field `GatheredContext` output.
 - Durable materialization uses validated append-only state, synchronized atomic replacement, and checkpoint ownership before dispatch.

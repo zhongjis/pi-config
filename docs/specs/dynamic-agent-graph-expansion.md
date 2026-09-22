@@ -8,7 +8,7 @@ Related: [Reusable Agent-Graph Workflow Portfolio](agent-graph-reusable-workflow
 
 ## Problem
 
-The graph runtime can splice a model-authored `GraphFragment` with `expand`, but it cannot express a typed list of work items as visible child nodes and await their combined results. `shared/context-gather` therefore declares ten possible source lanes up front even when a request needs one. Herdr shows unused lanes, and a second evidence round depends on another fixed set of nodes.
+The graph runtime can splice a model-authored `GraphFragment` with `expand`, but it cannot express a typed list of work items as visible child nodes and await their combined results. `context-gather` therefore declares ten possible source lanes up front even when a request needs one. Herdr shows unused lanes, and a second evidence round depends on another fixed set of nodes.
 
 The runtime needs one small, reusable primitive that materializes only requested tasks, runs each task in a fresh Subagent, waits for every task to settle, and returns successes and failures as typed data.
 
@@ -133,7 +133,7 @@ Herdr must show:
 
 Fanout children are never labelled resumed because this change adds no Subagent continuation.
 
-## `shared/context-gather`
+## `context-gather`
 
 The saved graph has two explicit evidence rounds:
 
@@ -163,7 +163,7 @@ Each evaluator sees the original request, requested tasks, prior evidence, and a
 6. A restored active fanout reuses generated IDs, retains settled children, and reruns only interrupted children.
 7. Dynamic reporter registration gives each child a unique index, selector, dependencies, round, model, and conversation record.
 8. Herdr distinguishes evidence round, loop rerun, and user retry.
-9. `shared/context-gather` creates no node for an unrequested source and never exceeds two evidence rounds.
+9. `context-gather` creates no node for an unrequested source and never exceeds two evidence rounds.
 10. A source absent from round one can appear in round two.
 11. Focused unit tests, the portfolio test, typecheck, and a fresh Pi live run pass.
 

@@ -358,7 +358,7 @@ Set `workflowsEnabled: true` in `subagents.json` or enable workflows in `/agents
 | Parameter | Purpose |
 |-----------|---------|
 | `graph` | Inline `AgentGraph` object (nodes + edges) to execute immediately |
-| `name` | Select a saved graph by name (resolved from `agent-graphs/<name>.graph.json`; namespaced with `/`, e.g. `shared/review-loop`) |
+| `name` | Select a saved graph by name (resolved from `agent-graphs/<name>.graph.json`; a `/` in the name maps to a subdirectory, e.g. `context-gather`) |
 | `input` | Input values passed to the graph |
 
 Source precedence is `graph` → `name`. The tool validates the graph structure before allocating a run; invalid graphs are rejected in the initiating tool call. Valid calls return a background run ID immediately; graph/agent/gate/condition failures are reported asynchronously.
@@ -380,7 +380,7 @@ Version 2 separates authored keys, optional display names and durable UUID-v4 ru
 
 Graph checkpoints in `.pi/graph-runs/` use atomic replacement, exclusive run ownership and append-only versioned manifests before dispatch. Restore validates filename containment, scheduler state, executable children and recursive delegation policy before creating tasks or writing. Existing v1 snapshots upgrade before execution; unknown/corrupt snapshots fail visibly. Retry/restore retain IDs and attempt budgets, while fresh runs allocate new identities. Explicit cancellation is terminal; lifecycle interruptions remain resumable. Crash recovery can repeat external actions; it is not an exactly-once guarantee.
 
-Saved graphs live at `agent-graphs/<name>.graph.json`. A reusable portfolio ships with this config: `shared/context-gather`, `shared/review-loop`, `shared/work-verify`, `fuxi/ulw-plan`, `houtu/execute-plan`, `kuafu/ulw`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
+Saved graphs live at `agent-graphs/<name>.graph.json`. One saved graph ships with this config: `context-gather`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
 
 Graph effort follows local thinking authority: agent frontmatter → model-chain suffix → invocation override → SDK default, never implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 

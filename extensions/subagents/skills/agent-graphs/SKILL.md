@@ -15,16 +15,37 @@ human approval gate, or a reusable sub-workflow.
 ## Running a graph
 
 ```ts
-agent_graph({ graph: "shared/review-loop", input: { task: "..." } })   // saved
+agent_graph({ graph: "context-gather", input: { request: "...", tasks: [ ... ] } })   // saved
 agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...} })  // inline
 ```
 
-- **Saved graphs** live at `agent-graphs/<name>.graph.json` (namespaced with
-  `/`, e.g. `shared/review-loop`). Author with normal file tools; no CRUD tool.
+- **Saved graphs** live at `agent-graphs/<name>.graph.json`; a `/` in the name maps to a
+  subdirectory (e.g. `team/my-graph` → `agent-graphs/team/my-graph.graph.json`). Author with normal file tools; no CRUD tool.
 - The call returns a **task id immediately** and runs in the background; you are
   notified on completion. Do not poll. Watch it in `/agents → Workflows` (nodes
   grouped by stage, with pause / skip / retry).
 - Invalid graphs are rejected **before** any node runs, with per-error messages.
+
+## Consuming a run result
+
+The call returns a task id immediately and runs in the background; you are notified on
+completion with a `<task-notification>`. Read it in this order:
+
+1. `<status>` — the declared outcome. `Completed` means the graph did not flag a
+   problem; `Workflow outcome partial: <reason>` or `Workflow outcome failed: <reason>`
+   means it did. Trust this over the raw agent counts.
+2. `<summary>` — `Execution: <state> — N/M agents completed, X failed, Y skipped`
+   (`X failed` already excludes intentional skips).
+3. `<result>` — a bounded (~500-char) preview, a top-level `summary` field when present.
+4. `<result-file>` — present only when the full result overflowed the preview; read it
+   for the complete structured output.
+
+Triage rule: on a `partial`/`failed` status, or any `X failed` > 0, open `<result-file>`
+and inspect the failed children plus the output's `unknowns`. Whether a failure matters
+is graph-specific — `context-gather` folds failed or skipped evidence into `unknowns` and
+keeps the partial evidence, so a failure there is usually expected degraded coverage,
+whereas a graph whose children are deterministic gates would signal a real problem.
+Depend only on the validated structured outputs, never on an agent's prose.
 
 ## Graph shape (`AgentGraph`)
 
@@ -59,7 +80,7 @@ settled but none activated, the node is **skipped**.
   approve/reject, producing `{ "approved": boolean }`).
 - **graph** — runs a saved subgraph and uses its `outputs` as this node's output.
   ```jsonc
-  { "type": "graph", "graph": "shared/context-gather", "input": { "task": { "path": "$.task" } } }
+  { "type": "graph", "graph": "context-gather", "input": { "task": { "path": "$.task" } } }
   ```
 - **fanout** — materializes a typed runtime item array as ordinary agent children,
   awaits every child, and returns input-ordered all-settled results.
@@ -155,4 +176,4 @@ envelope, strips it from the returned value, and surfaces it as the completion s
    conditional edges show which branch fired; expanded nodes appear as they insert.
 4. Depend only on validated structured output (`outputSchema` + `ValueRef`), never
    on an agent's prose.
-5. Promote a proven inline graph to `agent-graphs/shared/<name>.graph.json`.
+5. Promote a proven inline graph to `agent-graphs/<name>.graph.json`.

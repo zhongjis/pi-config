@@ -4,16 +4,16 @@ The repo-committed reusable agent-graph portfolio: saved `AgentGraph`s the `agen
 
 ## Ownership
 
-- Owns the saved `.graph.json` graphs under `shared/`, `fuxi/`, `houtu/`, `kuafu/`.
+- Owns `context-gather.graph.json` at the directory root.
 - The `agent_graph` runtime and its contracts live in [../extensions/subagents](../extensions/subagents/AGENTS.md).
 - The portfolio spec is [../docs/specs/agent-graph-reusable-workflows.md](../docs/specs/agent-graph-reusable-workflows.md).
 
 ## Local Contracts
 
-- Each file is a plain-JSON `AgentGraph`, namespaced by directory (e.g. `shared/review-loop`).
+- The saved graph is a plain-JSON `AgentGraph` resolved by filename (`context-gather`); a `/` in a graph name maps to a subdirectory.
 - Every graph MUST pass `validateGraph`; a prompt `${placeholder}` MUST be wired in the node's `input`, except a bounded-feedback evaluator's runtime-reserved `${feedback}`.
 - `install.sh` symlinks this directory to `~/.pi/agent/agent-graphs` for global resolution; the runtime also resolves `<cwd>/agent-graphs` and `<cwd>/.pi/agent-graphs`, highest priority first.
-- `shared/context-gather` accepts caller-planned `{ request, tasks }` through one bounded-feedback region, which may run one evaluator-authored gap-closing iteration before synthesis. Both bounded iterations collect partial failures as evidence; callers MUST check applicable Skills before creating tasks and MUST NOT add `practice` research by default.
+- `context-gather` accepts caller-planned `{ request, tasks }` through one bounded-feedback region, which may run one evaluator-authored gap-closing iteration before synthesis. Both bounded iterations collect partial failures as evidence; callers MUST check applicable Skills before creating tasks and MUST NOT add `practice` research by default.
 
 ## Work Guidance
 
