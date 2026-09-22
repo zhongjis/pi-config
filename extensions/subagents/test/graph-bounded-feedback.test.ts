@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { checkGraphDelegation } from "../src/graph/delegation-preflight.js";
+import { decisionSchema } from "../src/graph/bounded-feedback.js";
 import { validateCheckpointTransition } from "../src/graph/graph-checkpoint-transition.js";
 import type { GraphRunSnapshot } from "../src/graph/graph-persist.js";
 import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
@@ -558,4 +559,14 @@ it.each([0, 1])("reconciles post-baseline failures while retaining %i historical
   }
   const unknown = structuredClone(repaired); Reflect.set(unknown.state.runtime ?? {}, "executionProtocolVersion", 2);
   expect(() => validateGraphRestore(unknown.state, unknown.graph, unknown.input)).toThrow(TypeError);
+});
+
+it("types tasks[].item to the work item schema in the injected decision schema", () => {
+  const itemSchema = { type: "object", properties: { source: { type: "string" }, question: { type: "string" } }, required: ["source", "question"] };
+  const schema = decisionSchema(itemSchema) as { required: readonly string[]; properties: { tasks: { items: { required: readonly string[]; additionalProperties: boolean; properties: { item: unknown } } } } };
+  expect(schema.properties.tasks.items.properties.item).toEqual(itemSchema);
+  expect(schema.properties.tasks.items.properties.item).not.toEqual({ type: "object" });
+  expect(schema.properties.tasks.items.required).toEqual(["gapId", "item"]);
+  expect(schema.properties.tasks.items.additionalProperties).toBe(false);
+  expect(schema.required).toEqual(["decision", "gaps", "tasks"]);
 });

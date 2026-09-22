@@ -1,7 +1,7 @@
 import { prepareFanout } from "./fanout.js";
 import { consumedExecutions } from "./graph-execution.js";
 import type { GraphRuntimeState, NodeInstanceId } from "./graph-instance-id.js";
-import type { BoundedFeedbackNode, FanoutResult, JsonValue } from "./ir.js";
+import type { BoundedFeedbackNode, FanoutResult, JsonSchema, JsonValue } from "./ir.js";
 import type { NodeRun } from "./scheduler.js";
 
 export interface FeedbackGap { readonly id: string; readonly description: string }
@@ -42,14 +42,16 @@ export interface FeedbackState {
   /** Last admission check, retained for deterministic terminal validation. */
   budgetCheckedAt?: number;
 }
-export const DECISION_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["decision", "gaps", "tasks"],
-  properties: {
-    decision: { enum: ["sufficient", "continue"] },
-    gaps: { type: "array", items: { type: "object", required: ["id", "description"], additionalProperties: false, properties: { id: { type: "string", minLength: 1 }, description: { type: "string", minLength: 1 } } } },
-    tasks: { type: "array", items: { type: "object", required: ["gapId", "item"], additionalProperties: false, properties: { gapId: { type: "string" }, item: { type: "object" } } } },
-  },
-} as const;
+export function decisionSchema(itemSchema: BoundedFeedbackNode["work"]["itemSchema"]): JsonSchema {
+  return {
+    type: "object", additionalProperties: false, required: ["decision", "gaps", "tasks"],
+    properties: {
+      decision: { enum: ["sufficient", "continue"] },
+      gaps: { type: "array", items: { type: "object", required: ["id", "description"], additionalProperties: false, properties: { id: { type: "string", minLength: 1 }, description: { type: "string", minLength: 1 } } } },
+      tasks: { type: "array", items: { type: "object", required: ["gapId", "item"], additionalProperties: false, properties: { gapId: { type: "string" }, item: itemSchema } } },
+    },
+  };
+}
 function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;

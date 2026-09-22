@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { DECISION_SCHEMA, decision, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal } from "./bounded-feedback.js";
+import { decision, decisionSchema, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal } from "./bounded-feedback.js";
 import { type CoordinatorReceipt, type CoordinatorRequest, coordinatorReceipt, type FeedbackOwnerView } from "./coordinator-protocol.js";
 import { prepareFanout } from "./fanout.js";
 import { validateCheckpointTransition } from "./graph-checkpoint-transition.js";
@@ -384,7 +384,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const context = contextOf(projection, input);
     const prepared = prepareFanout({ ...node.work, items: { node: work, path: "$" } }, { ...context, outputs: new Map([...context.outputs, [work, intent.tasks]]) });
     if (!prepared.ok) { finishFeedback(id, "materialization failure", [prepared.error]); return; }
-    const nodes: Record<string, GraphNode> = { [work]: node.work, [evaluator]: { ...node.evaluator, input: { ...node.evaluator.input, feedback: { path: "$" } }, outputSchema: DECISION_SCHEMA } };
+    const nodes: Record<string, GraphNode> = { [work]: node.work, [evaluator]: { ...node.evaluator, input: { ...node.evaluator.input, feedback: { path: "$" } }, outputSchema: decisionSchema(node.work.itemSchema) } };
     prepared.items.forEach(({ node: child }, index) => { nodes[`${work}:item:${index}`] = { ...child, ...(node.work.name !== undefined ? { name: node.work.name } : {}) }; });
     if (Object.keys(nodes).some(key => nodeDefs.has(key))) { finishFeedback(id, "materialization failure", ["Generated binding collision"]); return; }
     const parentInstanceId = instances.get(id).instanceId;

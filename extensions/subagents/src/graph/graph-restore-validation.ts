@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { canonical, DECISION_SCHEMA, decision, type FeedbackIteration, type FeedbackState, feedbackBudgetBounds, feedbackContinuation } from "./bounded-feedback.js";
+import { canonical, decision, decisionSchema, type FeedbackIteration, type FeedbackState, feedbackBudgetBounds, feedbackContinuation } from "./bounded-feedback.js";
 import { prepareFanout } from "./fanout.js";
 import { consumedExecutions } from "./graph-execution.js";
 import { type NestedCheckpoint, validateManifest } from "./graph-instance-id.js";
@@ -99,7 +99,7 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
     const binding = (row: Omit<FeedbackIteration, "results">, iteration: number): void => {
       if (!row || row.iteration !== iteration || !Array.isArray(row.tasks) || row.work !== `${key}:iteration:${iteration}:work` || row.evaluator !== `${key}:iteration:${iteration}:evaluator`) throw new TypeError("Invalid feedback topology binding");
       const work = instances.get(row.work); const evaluator = instances.get(row.evaluator); const parent = instances.get(key);
-      if (!work || !evaluator || !parent || work.instanceId !== row.workInstanceId || evaluator.instanceId !== row.evaluatorInstanceId || [work, evaluator].some(instance => instance.parentInstanceId !== parent.instanceId || instance.nodeKey !== key || instance.iteration !== iteration || instance.itemIndex !== undefined) || executionTemplate(graph.nodes[row.work]) !== executionTemplate(node.work) || executionTemplate(graph.nodes[row.evaluator]) !== executionTemplate({ ...node.evaluator, input: { ...node.evaluator.input, feedback: { path: "$" } }, outputSchema: DECISION_SCHEMA })) throw new TypeError("Invalid feedback manifest binding");
+      if (!work || !evaluator || !parent || work.instanceId !== row.workInstanceId || evaluator.instanceId !== row.evaluatorInstanceId || [work, evaluator].some(instance => instance.parentInstanceId !== parent.instanceId || instance.nodeKey !== key || instance.iteration !== iteration || instance.itemIndex !== undefined) || executionTemplate(graph.nodes[row.work]) !== executionTemplate(node.work) || executionTemplate(graph.nodes[row.evaluator]) !== executionTemplate({ ...node.evaluator, input: { ...node.evaluator.input, feedback: { path: "$" } }, outputSchema: decisionSchema(node.work.itemSchema) })) throw new TypeError("Invalid feedback manifest binding");
       const children = state.collections?.[row.work];
       if (!children || children.length !== row.tasks.length || children.some((child, index) => !isDeepStrictEqual(child.item, row.tasks[index])) || row.tasks.length > node.maxItemsPerIteration) throw new TypeError("Invalid feedback child collection");
     };
