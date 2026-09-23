@@ -20,6 +20,7 @@
  * unit-testable without a terminal.
  */
 
+import type { GraphNode } from "./ir.js";
 import type { WorkflowMeta, WorkflowPhaseMeta } from "./workflow-types.js";
 
 /** Raw entry lifecycle, as written by the runtime. */
@@ -49,6 +50,21 @@ export interface WorkflowLogEntry {
   message: string;
 }
 
+/** Herdr projection; history references are explicitly separate from runtime identity. */
+export interface GraphNodePresentation {
+  kind: GraphNode["type"];
+  name: string;
+  parentInstanceId?: string;
+  /** History-local entry index, never a runtime instance ID. */
+  parentIndex?: number;
+  historyConnections?: readonly { index: number; direction: "upstream" | "downstream"; kind: "conditional" | "loop" }[];
+  iteration?: number;
+  itemIndex?: number;
+  role?: "work" | "evaluator" | "item";
+  connections?: readonly { binding: string; direction: "upstream" | "downstream"; kind: "conditional" | "loop" }[];
+  iterations?: readonly { iteration: number; decision?: "continue" | "sufficient" }[];
+}
+
 export interface WorkflowAgentEntry {
   type: "workflow_agent";
   /** Stable identity. Re-emitting this index replaces the previous entry. */
@@ -59,6 +75,11 @@ export interface WorkflowAgentEntry {
   nodeKey?: string;
   instanceId?: string;
   materializationOrdinal?: number;
+  presentation?: GraphNodePresentation;
+  /** History-local identity and flow references; no runtime bindings. */
+  historyIndex?: number;
+  depIndices?: number[];
+  dependentIndices?: number[];
   /**
    * Absent when the agent ran before any `phase()` call. That is the signal —
    * not a default of 0 — that turns the whole run into one "Agents" group.

@@ -502,8 +502,8 @@ describe("GraphRunReporter — static graph progress", () => {
       initialPanelState(),
       { width: 100, rows: 40, now: 1_700_000_000_000 },
     ).join("\n");
-    expect(rendered).toContain("1/5 agents");
-    expect(rendered).toContain("Stage 2");
+    expect(rendered).toContain("1/5 nodes");
+    expect(rendered).toContain("5 agents");
     expect(rendered).toContain("synthesize");
 
     controller.abort();
@@ -550,8 +550,7 @@ it("keeps duplicate v2 labels navigable and identity details width-safe", async 
   expect(wide).toContain("right error");
   expect(wide).toContain(right.instanceId);
   expect(wide).not.toContain(left.instanceId);
-  // The interactive panel uses width=0 as its existing default-width sentinel.
-  for (const width of [1, 2, 8, 20, 40, 80, 120]) {
+  for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
     for (const line of renderObservabilityPaneLines(runs, state, { width, rows: 60 })) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
   }
 });
@@ -579,4 +578,41 @@ describe("outcomeLabel", () => {
     expect(outcomeLabel({ status: "partial", reason: "x" })).toBe("Outcome partial: x");
     expect(outcomeLabel({ status: "failed", reason: "y" })).toBe("Outcome failed: y");
   });
+});
+
+it("projects committed feedback ownership and decisions through real dynamic materialization", async () => {
+  const dynamic: AgentGraph = { version: 2, nodes: { research: {
+    type: "bounded_feedback", name: "Names are not structure", maxIterations: 2, maxItemsPerIteration: 1, maxTotalItems: 2,
+    work: { type: "fanout", name: "Work", items: { path: "$.tasks" }, itemSchema: { type: "object", properties: { kind: { type: "string" }, query: { type: "string" } }, required: ["kind", "query"], additionalProperties: false }, dispatch: { path: "$.kind", cases: { local: "worker" } }, prompt: "${item}", outputSchema: { type: "object" } },
+    evaluator: { type: "agent", name: "Judge", agent: "judge", prompt: "${feedback}" },
+  } }, edges: [] };
+  const t = task(); const reporter = new GraphRunReporter(t, dynamic);
+  const input = { tasks: [{ kind: "local", query: "first" }] };
+  let evaluations = 0; let work = 0;
+  const result = await runGraph(dynamic, input, {
+    onCheckpoint: state => { expect(JSON.stringify(state)).not.toContain('"presentation"'); },
+    onNodeAdded: (id, node, metadata) => reporter.registerNode(id, node, metadata),
+    onNodeUpdate: (id, run, correlation, presentation) => reporter.update(id, run, correlation, undefined, presentation),
+    host: { spawnAgent: async request => ({ ok: true, output: JSON.stringify(request.agentType !== "judge" ? { evidence: ++work } : ++evaluations === 1
+      ? { decision: "continue", gaps: [{ id: "gap", description: "missing" }], tasks: [{ gapId: "gap", item: { kind: "local", query: "second" } }] }
+      : { decision: "sufficient", gaps: [], tasks: [] }) }) },
+  });
+  expect(result.status).toBe("completed"); expect(work).toBe(2); expect(evaluations).toBe(2);
+  const rows = collapse(t.workflowProgress).agents;
+  expect(rows).toHaveLength(7);
+  const owner = rows.find(row => row.presentation?.kind === "bounded_feedback");
+  expect(owner?.presentation?.iterations).toEqual([{ iteration: 1, decision: "continue" }, { iteration: 2, decision: "sufficient" }]);
+  for (const iteration of [1, 2]) {
+    const fanout = rows.find(row => row.presentation?.kind === "fanout" && row.presentation.iteration === iteration);
+    const evaluator = rows.find(row => row.presentation?.role === "evaluator" && row.presentation.iteration === iteration);
+    const item = rows.find(row => row.presentation?.role === "item" && row.presentation.iteration === iteration);
+    expect(fanout?.presentation).toMatchObject({ role: "work", parentInstanceId: owner?.instanceId });
+    expect(evaluator?.presentation?.parentInstanceId).toBe(owner?.instanceId);
+    expect(item?.presentation).toMatchObject({ itemIndex: 0, parentInstanceId: fanout?.instanceId });
+  }
+  expect(JSON.parse(JSON.stringify(rows))).toEqual(rows);
+  const { renderObservabilityPaneLines, toPaneSource } = await import("../src/graph/pane/render.js");
+  const output = renderObservabilityPaneLines([{ id: t.id, name: "dynamic", status: "completed", source: toPaneSource(t) }], initialPanelState(), { width: 120 }).join("\n");
+  expect(output).toContain("4 agents · 3 coordination nodes · 2 iterations");
+  expect(output).toContain("continue"); expect(output).toContain("sufficient");
 });

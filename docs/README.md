@@ -97,7 +97,7 @@ See [modes.md](specs/modes.md) for the shipped mode contract and [orchistration.
 | [omp-harness-migration.md](specs/omp-harness-migration.md) | Draft feature inventory and migration design for replacing Pi with OMP |
 | [agent-graph-implementation.md](guides/agent-graph-implementation.md) | Draft Section 1 implementation plan for the XState-based `agent_graph` runtime |
 | [agent-graph-reusable-workflows.md](specs/agent-graph-reusable-workflows.md) | Draft reusable agent-graph workflow portfolio (shared subgraphs + fuxi/houtu/kuafu flows) and its runtime hardening + test strategy |
-| [graph-run-monitor.md](specs/graph-run-monitor.md) | Draft observability panel for the `/graph-runs` Herdr pane — run switcher, stage-ordered roster, upstream/downstream node detail; filter/collapse/blast-radius (v1.5) |
+| [herdr-agent-graph-presentation.md](specs/herdr-agent-graph-presentation.md) | Shipped durable hierarchy-first presentation contract for the Herdr agent-graph side panel |
 | [dynamic-agent-graph-expansion.md](specs/dynamic-agent-graph-expansion.md) | Shipped awaited typed fanout, all-settled collection, persistence, and dynamic monitor contract |
 | [agent-graph-bounded-feedback.md](specs/agent-graph-bounded-feedback.md) | Shipped bounded feedback over fanout with durable runtime identity, crash-safe iteration materialization, and partial synthesis |
 | [dynamic-agent-graph-expansion-implementation.md](guides/dynamic-agent-graph-expansion-implementation.md) | Implementation plan and verification path for awaited dynamic fanout and two-round context gathering |

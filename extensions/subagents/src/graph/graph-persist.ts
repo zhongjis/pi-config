@@ -22,6 +22,8 @@ import type { SchedulerState } from "./scheduler.js";
 export interface GraphRunSnapshot {
   version: 1 | 2;
   runId: string;
+  /** Exact originating Pi session; absent legacy owners are never auto-resumed. */
+  ownerSessionId?: string;
   name?: string;
   graph: AgentGraph;
   input: unknown;
@@ -49,6 +51,7 @@ export function writeGraphSnapshot(cwd: string, snapshot: GraphRunSnapshot): voi
   if (!isSnapshot(persisted)) throw new TypeError("Invalid serialized checkpoint");
   const replacement = (prior: unknown): void => {
     if (!isSnapshot(prior)) throw new TypeError("Invalid previous checkpoint");
+    if (prior.ownerSessionId !== persisted.ownerSessionId) throw new TypeError("Checkpoint changes session ownership");
     if (prior.version === 1) validateSchedulerState(prior.state, prior.graph);
     if (prior.version === 2) validateGraphRestore(prior.state, prior.graph, prior.input);
     validateCheckpointTransition(prior, persisted);
@@ -104,6 +107,7 @@ function isSnapshot(value: unknown): value is GraphRunSnapshot {
   return (
     (s.version === 1 || s.version === 2) &&
     isWorkflowRunId(s.runId) &&
+    (s.ownerSessionId === undefined || (typeof s.ownerSessionId === "string" && s.ownerSessionId.length > 0)) &&
     typeof s.waitingGate === "string" &&
     typeof s.graph === "object" &&
     s.graph !== null &&

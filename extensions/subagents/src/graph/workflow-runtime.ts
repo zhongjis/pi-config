@@ -1,3 +1,4 @@
+import { readWorkflowNodeDetail } from "./history-artifact.js";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
@@ -52,18 +53,29 @@ export function createWorkflowRuntime(
   const { pi, manager } = execution;
   let history: GraphHistoryStore | undefined;
   const tasks = new Map<string, WorkflowTask>();
-  const getRuns = () => mergeWorkflowRuns(tasks.values(), history?.runs ?? []);
+  let artifactScope: { cwd: string; sessionId: string } | undefined;
+  const getRuns = () => {
+    const scope = artifactScope;
+    return mergeWorkflowRuns(tasks.values(), history?.runs ?? [], scope ? (runId, index) => readWorkflowNodeDetail(scope, runId, index) : undefined);
+  };
   const runs = new Set<Promise<void>>();
   let sessionActive = true;
 
   async function loadHistory(ctx: ExtensionContext): Promise<void> {
-    history = await GraphHistoryStore.load(ctx.sessionManager.getSessionId(), message => ctx.ui.notify(message, "warning"));
+    const sessionId = ctx.sessionManager.getSessionId();
+    history = await GraphHistoryStore.load(sessionId, message => ctx.ui.notify(message, "warning"));
+    artifactScope = { cwd: ctx.cwd, sessionId };
     sessionActive = true;
   }
 
   /** Settle the task and map node updates onto its progress log. */
   async function runTask(ctx: ExtensionContext, task: WorkflowTask, launch: GraphLaunch): Promise<void> {
     const { graph, input, restore } = launch;
+    const ownerSessionId = ctx.sessionManager.getSessionId();
+    const reporter = new GraphRunReporter(task, graph, Date.now(), recordId => {
+      const r = manager.getRecord(recordId);
+      return r ? { toolCalls: r.toolUses, tokens: getLifetimeTotal(r.lifetimeUsage) } : undefined;
+    });
     const host = createNodeHost({
       pi,
       ctx,
@@ -72,10 +84,7 @@ export function createWorkflowRuntime(
       scopeModels: execution.scopeModels,
       outputTranscript: execution.outputTranscript,
       workflowId: task.id,
-    });
-    const reporter = new GraphRunReporter(task, graph, Date.now(), recordId => {
-      const r = manager.getRecord(recordId);
-      return r ? { toolCalls: r.toolUses, tokens: getLifetimeTotal(r.lifetimeUsage) } : undefined;
+      nodeIndex: nodeId => reporter.nodeIndex(nodeId),
     });
     // Node entries otherwise re-emit only on status transitions; refresh live counters too.
     const activityTick = setInterval(() => {
@@ -95,7 +104,7 @@ export function createWorkflowRuntime(
         authorizeAgent: agent => execution.delegationDenial(ctx, agent),
         onCheckpoint: (state, effectiveGraph) => {
           writeGraphSnapshot(ctx.cwd, {
-            version: 2, runId: task.id, graph: effectiveGraph, input, waitingGate: "",
+            version: 2, runId: task.id, ownerSessionId, graph: effectiveGraph, input, waitingGate: "",
             ...(task.meta?.name !== undefined ? { name: task.meta.name } : {}),
             state, savedAt: Date.now(),
           });
@@ -113,8 +122,8 @@ export function createWorkflowRuntime(
           reporter.registerNode(nodeId, node, metadata);
           refresh("pane");
         },
-        onNodeUpdate: (nodeId, run, correlation) => {
-          reporter.update(nodeId, run, correlation);
+        onNodeUpdate: (nodeId, run, correlation, presentation) => {
+          reporter.update(nodeId, run, correlation, undefined, presentation);
           refresh("pane");
         },
         onNodeResolved: (nodeId, info, correlation) => {
@@ -164,7 +173,7 @@ export function createWorkflowRuntime(
   /** Resume the last complete checkpoint, including gates and feedback transitions. */
   function resume(ctx: ExtensionContext): void {
     for (const snap of readGraphSnapshots(ctx.cwd, message => ctx.ui.notify(message, "error"))) {
-      if (tasks.has(snap.runId)) continue;
+      if (!snap.ownerSessionId || snap.ownerSessionId !== ctx.sessionManager.getSessionId() || tasks.has(snap.runId)) continue;
       try {
         authorizeGraphResume(snap, {
           deny: type => execution.delegationDenial(ctx, type),

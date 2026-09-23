@@ -88,7 +88,9 @@ describe("input restart", () => {
       // No timer advancement, repeated input, or focus change is needed.
       expect(readInput(dir)).toEqual({ seq, data: b64(key) });
       await processInput(mgr);
-      expect(panelState(mgr).cursor).toEqual({ kind: "stage", stage: key === "j" || key === "\x1b[B" ? 1 : 0 });
+      expect(panelState(mgr).cursor).toEqual(key === "j" || key === "\x1b[B"
+        ? { kind: "node", id: "a1" }
+        : { kind: "stage", stage: 0 });
     }
   });
 

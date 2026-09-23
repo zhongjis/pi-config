@@ -7,7 +7,7 @@
 
 import { appendFileSync, chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 /**
@@ -23,10 +23,15 @@ export function encodeCwd(cwd: string): string {
     .replace(/^-+/, "");           // strip leading dashes (POSIX root, UNC)
 }
 
+/** Compute the existing task artifact address without creating directories. */
+export function outputFilePath(cwd: string, agentId: string, sessionId: string): string {
+  return join(tmpdir(), `pi-subagents-${process.getuid?.() ?? 0}`, encodeCwd(cwd), sessionId, "tasks", `${agentId}.output`);
+}
+
 /** Create the output file path, ensuring the directory exists.
  *  Mirrors Claude Code's layout: /tmp/{prefix}-{uid}/{encoded-cwd}/{sessionId}/tasks/{agentId}.output */
 export function createOutputFilePath(cwd: string, agentId: string, sessionId: string): string {
-  const encoded = encodeCwd(cwd);
+  const path = outputFilePath(cwd, agentId, sessionId);
   const root = join(tmpdir(), `pi-subagents-${process.getuid?.() ?? 0}`);
   mkdirSync(root, { recursive: true, mode: 0o700 });
   // chmod is a no-op on Windows and throws on some Windows filesystems.
@@ -36,9 +41,8 @@ export function createOutputFilePath(cwd: string, agentId: string, sessionId: st
   } catch (err) {
     if (process.platform !== "win32") throw err;
   }
-  const dir = join(root, encoded, sessionId, "tasks");
-  mkdirSync(dir, { recursive: true });
-  return join(dir, `${agentId}.output`);
+  mkdirSync(dirname(path), { recursive: true });
+  return path;
 }
 
 /** Write the initial user prompt entry. */
@@ -52,6 +56,19 @@ export function writeInitialEntry(path: string, agentId: string, prompt: string,
     cwd,
   };
   writeFileSync(path, JSON.stringify(entry) + "\n", "utf-8");
+}
+
+/** Append a graph agent's resolved result without exposing it to graph history. */
+export function writeResultEntry(path: string, agentId: string, result: string, cwd: string): void {
+  if (!result) return;
+  appendFileSync(path, JSON.stringify({
+    isSidechain: true,
+    agentId,
+    type: "assistant",
+    message: { role: "assistant", content: result },
+    timestamp: new Date().toISOString(),
+    cwd,
+  }) + "\n", "utf-8");
 }
 
 /**

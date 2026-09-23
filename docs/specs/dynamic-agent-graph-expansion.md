@@ -4,7 +4,7 @@ Status: shipped
 
 Owner: `extensions/subagents` graph runtime
 
-Related: [Reusable Agent-Graph Workflow Portfolio](agent-graph-reusable-workflows.md) · [Graph Run Monitor](graph-run-monitor.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
+Related: [Reusable Agent-Graph Workflow Portfolio](agent-graph-reusable-workflows.md) · [Herdr Agent-Graph Panel Presentation](herdr-agent-graph-presentation.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
 
 ## Problem
 

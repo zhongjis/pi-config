@@ -18,7 +18,7 @@ import type { NodeInstance } from "./graph-instance-id.js";
 import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
 import { isWorkflowOutcome, WORKFLOW_OUTCOME_KEY } from "./outcome.js";
-import type { WorkflowAgentEntry } from "./progress.js";
+import type { GraphNodePresentation, WorkflowAgentEntry } from "./progress.js";
 import type { RunGraphResult } from "./run-graph.js";
 import type { NodeRun } from "./scheduler.js";
 import { updateWorkflowProgressBatch, type WorkflowTask } from "./task.js";
@@ -48,6 +48,7 @@ function resultText(value: unknown): string {
 export class GraphRunReporter {
   private readonly index = new Map<string, number>();
   private readonly identities = new Map<string, NodeInstance>();
+  private readonly presentation = new Map<string, GraphNodePresentation>();
   private readonly labels = new Map<string, string>();
   private readonly deps = new Map<string, string[]>();
   private readonly dependents = new Map<string, string[]>();
@@ -58,6 +59,8 @@ export class GraphRunReporter {
   /** Nodes already registered through the dynamic/restored metadata path. */
   private readonly registered = new Set<string>();
   private readonly current = new Map<string, ExecutionCorrelation>();
+  /** Transient v2 execution identity lookup; never emitted or persisted. */
+  private readonly executionIndex = new Map<string, number>();
   private readonly resolved = new Map<string, { model?: string; modelId?: string; recordId?: string }>();
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
   private readonly lastUpdateAt = new Map<string, number>();
@@ -87,6 +90,10 @@ export class GraphRunReporter {
         graph.edges.filter(edge => edge.to === id && edge.loop === undefined).map(edge => edge.from),
       );
       const node = graph.nodes[id];
+      this.presentation.set(id, { kind: node.type, name: node.name || id,
+        connections: graph.edges.flatMap(edge => (edge.from === id || edge.to === id) && (edge.loop || edge.when)
+          ? [{ binding: edge.from === id ? edge.to : edge.from, direction: edge.from === id ? "downstream" as const : "upstream" as const, kind: edge.loop ? "loop" as const : "conditional" as const }] : []),
+      });
       this.agentType.set(id, node.type === "agent" ? node.agent : node.type);
       // Only agent / human_gate nodes carry a prompt; subgraph and expand nodes have none.
       if (node.type === "agent" || node.type === "human_gate") this.prompt.set(id, node.prompt);
@@ -107,16 +114,30 @@ export class GraphRunReporter {
     this.task.agentCount = Math.max(this.task.agentCount, ids.length);
   }
 
+  /** Already-assigned progress/history identity; never allocate during artifact lookup. */
+  nodeIndex(nodeId: string): number | undefined {
+    return this.index.get(nodeId) ?? this.executionIndex.get(nodeId);
+  }
+
   /** Register or enrich a materialized node before its first state update. Repeated registration is harmless. */
   registerNode(
     nodeId: string,
     node: GraphNode,
-    metadata: { dependencies: string[]; phase?: FanoutPhase; instance?: NodeInstance; ordinal?: number },
+    metadata: { dependencies: string[]; phase?: FanoutPhase; instance?: NodeInstance; ordinal?: number; presentation?: GraphNodePresentation },
   ): void {
     if (this.registered.has(nodeId)) return;
     this.registered.add(nodeId);
 
     const preseeded = this.index.has(nodeId);
+    const instance = metadata.instance;
+    if (preseeded || instance || metadata.presentation) this.presentation.set(nodeId, metadata.presentation ?? {
+      ...this.presentation.get(nodeId),
+      kind: node.type,
+      name: node.name || (node.type === "agent" ? node.agent : node.type.replaceAll("_", " ")),
+      ...(instance?.parentInstanceId ? { parentInstanceId: instance.parentInstanceId } : {}),
+      ...(instance?.iteration !== undefined ? { iteration: instance.iteration } : {}),
+      ...(instance?.itemIndex !== undefined ? { itemIndex: instance.itemIndex, role: "item" } : {}),
+    });
     if (metadata.instance) {
       const instance = metadata.instance;
       this.identities.set(nodeId, instance);
@@ -124,6 +145,7 @@ export class GraphRunReporter {
       this.explicitPhase.set(nodeId, { index: 0, title: "Graph" });
       this.index.set(nodeId, instance.ordinal);
       this.nextIndex = Math.max(this.nextIndex, instance.ordinal + 1);
+      this.executionIndex.set(instance.instanceId, instance.ordinal);
       this.labels.set(nodeId, [(node.name || (node.type === "agent" ? node.agent : node.type.replaceAll("_", " "))).replace(/[\r\n]/g, " "),
         ...(instance.iteration !== undefined ? [`iteration ${instance.iteration}`] : []),
         ...(instance.itemIndex !== undefined ? [`item ${instance.itemIndex + 1}`] : []),
@@ -160,7 +182,7 @@ export class GraphRunReporter {
     this.task.agentCount = Math.max(this.task.agentCount, this.index.size);
   }
 
-  update(nodeId: string, run: Readonly<NodeRun>, correlationOrNow?: ExecutionCorrelation | number, now?: number): void {
+  update(nodeId: string, run: Readonly<NodeRun>, correlationOrNow?: ExecutionCorrelation | number, now?: number, presentation?: GraphNodePresentation): void {
     const correlation = typeof correlationOrNow === "number" ? undefined : correlationOrNow;
     const updatedAt = typeof correlationOrNow === "number" ? correlationOrNow : now ?? Date.now();
     if (correlation !== undefined) {
@@ -172,6 +194,7 @@ export class GraphRunReporter {
         this.lastCounts.delete(nodeId);
       }
     }
+    if (presentation) this.presentation.set(nodeId, presentation);
     this.lastRun.set(nodeId, run);
     this.lastUpdateAt.set(nodeId, updatedAt);
     updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, updatedAt)]);
@@ -265,8 +288,9 @@ export class GraphRunReporter {
       type: "workflow_agent",
       index: this.index.get(nodeId) ?? 0,
       label: this.labels.get(nodeId) ?? nodeId,
+      nodeBinding: nodeId,
+      presentation: this.presentation.get(nodeId),
       ...(this.identities.has(nodeId) ? {
-        nodeBinding: nodeId,
         nodeKey: this.identities.get(nodeId)?.nodeKey,
         instanceId: this.identities.get(nodeId)?.instanceId,
         materializationOrdinal: this.identities.get(nodeId)?.ordinal,

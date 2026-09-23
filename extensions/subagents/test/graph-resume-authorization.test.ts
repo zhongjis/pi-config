@@ -16,7 +16,7 @@ it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s 
   const graph: AgentGraph = kind === "denied nested graph" ? { nodes: { sub: { type: "graph", graph: "saved-child" } }, edges: [] } : child;
   const runId = "wf_abcdef123456";
   let saved: persistence.GraphRunSnapshot | undefined;
-  await runGraph(graph, {}, { runId, loadGraph: () => child, onCheckpoint: (state, effective) => { saved = { version: 2, runId, graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }; }, host: { spawnAgent: async () => ({ ok: true, output: "ok" }) } });
+  await runGraph(graph, {}, { runId, loadGraph: () => child, onCheckpoint: (state, effective) => { saved = { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }; }, host: { spawnAgent: async () => ({ ok: true, output: "ok" }) } });
   if (!saved) throw new Error("missing fixture");
   if (kind === "invalid graph") saved.graph.edges.push({ from: "missing", to: "a" });
   mkdirSync(persistence.graphRunsDir(session.ctx.cwd), { recursive: true });
@@ -34,7 +34,7 @@ it("removes explicit terminal cancellation rather than resuming it each restart"
   const { runAgent } = await import("../src/agent-runner.js");
   const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
   const runId = "wf_abcdef123456"; const controller = new AbortController(); controller.abort();
-  await runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => persistence.writeGraphSnapshot(session.ctx.cwd, { version: 2, runId, graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: vi.fn() } });
+  await runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => persistence.writeGraphSnapshot(session.ctx.cwd, { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: vi.fn() } });
   const create = vi.spyOn(tasks, "createWorkflowTask");
   await session.lifecycle("session_start");
   await vi.waitFor(() => expect(required(create.mock.results[0]?.value).status).toBe("killed"));
@@ -66,7 +66,7 @@ it("preserves a cancelled validation-gate checkpoint when resume cannot reconcil
   const runId = "wf_abcdef123456"; const controller = new AbortController(); const gate = deferred<{ ok: boolean; output: string }>();
   let saved: persistence.GraphRunSnapshot | undefined; let entered = false;
   const running = runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => {
-    if (state.runtime?.cancelled && !saved) saved = { version: 2, runId, graph: effective, state, input: {}, waitingGate: "", savedAt: 0 };
+    if (state.runtime?.cancelled && !saved) saved = { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 };
   }, host: { spawnAgent: async () => ({ ok: true, output: "ok" }), runGate: async () => { entered = true; return gate.promise; } } });
   await vi.waitFor(() => expect(entered).toBe(true)); controller.abort(); gate.resolve({ ok: true, output: "" }); await running;
   const checkpoint = required(saved);

@@ -1,5 +1,7 @@
 import type { NestedCheckpoint, NodeInstance } from "./graph-instance-id.js";
+import { graphConnections, nodePresentation } from "./graph-node-presentation.js";
 import type { AgentGraph, GraphNode } from "./ir.js";
+import type { GraphNodePresentation } from "./progress.js";
 import type { NodeRun, SchedulerState } from "./scheduler.js";
 
 interface RestoredRow {
@@ -10,6 +12,7 @@ interface RestoredRow {
   readonly dependencies: string[];
   readonly ordinal: number;
   readonly instance?: NodeInstance;
+  readonly presentation?: GraphNodePresentation;
 }
 export function nestedScope(binding: string, invocation: number): string { return invocation > 1 ? `${binding}#${invocation}` : binding; }
 
@@ -19,7 +22,7 @@ export function nestedMaterializations(graph: AgentGraph, state: SchedulerState)
     id: instance.binding, key: `${state.runtime?.runId}/${instance.instanceId}`,
     node: graph.nodes[instance.binding], run: state.nodes[instance.binding], ordinal: instance.ordinal,
     dependencies: graph.edges.filter(edge => edge.to === instance.binding).map(edge => edge.from),
-    ...(graph.version === 2 ? { instance } : {}),
+    ...(graph.version === 2 && state.runtime ? { instance, presentation: { ...nodePresentation(graph.nodes[instance.binding], instance, state.runtime), connections: graphConnections(graph.edges, instance.binding) } } : {}),
   }));
   for (const [binding, child] of Object.entries(state.runtime?.nested ?? {})) rows.push(...restoredNestedRows(child, binding));
   return rows.sort((left, right) => left.ordinal - right.ordinal);
@@ -32,7 +35,7 @@ export function restoredNestedRows(saved: NestedCheckpoint, binding: string): re
     return nestedMaterializations(checkpoint.graph, checkpoint.state).map(row => {
       const ordinal = checkpoint.ordinals[row.key];
       if (!Number.isSafeInteger(ordinal)) throw new TypeError("Missing nested materialization ordinal");
-      return { ...row, ordinal, id: `${prefix}/${row.id}`, dependencies: row.dependencies.map(key => `${prefix}/${key}`), ...(row.instance ? { instance: { ...row.instance, ordinal } } : {}) };
+      return { ...row, ordinal, id: `${prefix}/${row.id}`, ...(row.presentation ? { presentation: { ...row.presentation, connections: row.presentation.connections?.map(edge => ({ ...edge, binding: `${prefix}/${edge.binding}` })) } } : {}), dependencies: row.dependencies.map(key => `${prefix}/${key}`), ...(row.instance ? { instance: { ...row.instance, ordinal } } : {}) };
     });
   }).sort((left, right) => left.ordinal - right.ordinal);
 }

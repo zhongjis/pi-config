@@ -1,7 +1,8 @@
 import { open, rename, rm } from "node:fs/promises";
-import { stripVTControlCharacters } from "node:util";
+import { captureTopology, decodeTopology, historyIndices, historyInteger, historyString, historyText, pruneHistoryReferences, validHistoryReferences, type HistoryTopology } from "./history-topology.js";
+export { historyText } from "./history-topology.js";
 import { ensureSessionLocalRootDirectory, resolveSessionLocalRelativePath } from "../../../session-local/storage.js";
-import { collapse } from "./progress.js";
+import { collapse, type WorkflowAgentEntry } from "./progress.js";
 import type { WorkflowTask } from "./task.js";
 
 /** Metadata only. Never an execution checkpoint or a serialized WorkflowTask. */
@@ -24,8 +25,14 @@ export interface HistoryNode {
   toolCalls?: number;
   durationMs?: number;
   deps: string[];
+  topology?: HistoryTopology;
+  depIndices?: number[];
+  dependentIndices?: number[];
 }
 export interface GraphHistoryRun {
+  /** Absent for legacy runs, including when carried forward in a v2 file. */
+  topologyVersion?: 2;
+  description?: string;
   id: string;
   name: string;
   status: "completed" | "failed" | "killed";
@@ -52,21 +59,31 @@ const nodeStrings = ["agentType", "modelId"] as const;
 const nodeBooleans = ["skipped", "blocked", "cached"] as const;
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const number = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
-export const historyText = (value: string): string => stripVTControlCharacters(value).replace(/[\s\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]+/gu, " ").trim().slice(0, 160);
 
-function decodeNode(value: unknown): HistoryNode | undefined {
+function decodeNode(value: unknown, topology = false): HistoryNode | undefined {
   if (!record(value) || !number(value.index) || !Number.isSafeInteger(value.index) || typeof value.label !== "string" ||
     (value.state !== "start" && value.state !== "progress" && value.state !== "done" && value.state !== "error") ||
     !Array.isArray(value.deps) || !value.deps.every(dep => typeof dep === "string")) return;
+  if (topology && (!historyString(value.label) || value.deps.length !== 0)) return;
   const node: HistoryNode = { index: value.index, label: historyText(value.label), state: value.state, deps: value.deps.slice(0, 32).map(historyText) };
+  if (topology) {
+    for (const key of ["depIndices", "dependentIndices"] as const) {
+      if (!historyIndices(value[key])) return;
+      node[key] = [...value[key]];
+    }
+    if (value.topology !== undefined) {
+      node.topology = decodeTopology(value.topology);
+      if (!node.topology) return;
+    }
+  }
   for (const key of nodeNumbers) {
     if (value[key] === undefined) continue;
-    if (!number(value[key])) return;
+    if (!number(value[key]) || topology && !historyInteger(value[key])) return;
     node[key] = value[key];
   }
   for (const key of nodeStrings) {
     if (value[key] === undefined) continue;
-    if (typeof value[key] !== "string") return;
+    if (typeof value[key] !== "string" || topology && !historyString(value[key])) return;
     node[key] = historyText(value[key]);
   }
   for (const key of nodeBooleans) {
@@ -81,26 +98,33 @@ function decodeNode(value: unknown): HistoryNode | undefined {
   return node;
 }
 
-function decodeRun(value: unknown): GraphHistoryRun | undefined {
+function decodeRun(value: unknown, version = 1): GraphHistoryRun | undefined {
   if (!record(value) || typeof value.id !== "string" || !historyText(value.id) || typeof value.name !== "string" ||
     (value.status !== "completed" && value.status !== "failed" && value.status !== "killed") ||
     !numbers.every(key => number(value[key])) || !Array.isArray(value.nodes) || !Array.isArray(value.phases)) return;
   if (value.outcome !== undefined && value.outcome !== "succeeded" && value.outcome !== "partial" && value.outcome !== "failed") return;
+  const topology = version === 2 && value.topologyVersion === 2;
+  if (version === 2 && value.topologyVersion !== undefined && value.topologyVersion !== 2) return;
+  if (topology && (!historyString(value.description) || !historyString(value.name) || !historyString(value.id) || !numbers.every(key => historyInteger(value[key])) || value.nodes.length > 200 || value.phases.length > 64)) return;
+  if (version === 2 && !topology && (value.description !== undefined || value.nodes.some(node => record(node) && (node.topology !== undefined || node.depIndices !== undefined || node.dependentIndices !== undefined)))) return;
   const nodes: HistoryNode[] = [];
   const indices = new Set<number>();
   for (const item of value.nodes) {
-    const node = decodeNode(item);
+    const node = decodeNode(item, topology);
     if (!node || indices.has(node.index)) return;
     indices.add(node.index);
     if (nodes.length < 200) nodes.push(node);
   }
+  if (topology && !validHistoryReferences(nodes)) return;
   const phases: GraphHistoryRun["phases"] = [];
   for (const item of value.phases) {
     if (!record(item) || !number(item.index) || !Number.isSafeInteger(item.index) || typeof item.title !== "string") return;
+    if (topology && (!historyString(item.title) || phases.some(phase => phase.index === item.index))) return;
     if (phases.length < 64 && !phases.some(phase => phase.index === item.index)) phases.push({ index: item.index, title: historyText(item.title) });
   }
   // This is an explicit allowlist, including when decoding externally modified files.
   return {
+    ...(topology ? { topologyVersion: 2 as const, description: historyText(String(value.description)) } : {}),
     id: historyText(value.id), name: historyText(value.name), status: value.status,
     ...(value.outcome === undefined ? {} : { outcome: value.outcome }),
     startTime: Number(value.startTime), endTime: Number(value.endTime), totalPausedMs: Number(value.totalPausedMs),
@@ -118,16 +142,39 @@ export function snapshotHistory(task: WorkflowTask): GraphHistoryRun | undefined
   for (const [index, phase] of (task.meta?.phases ?? []).entries()) {
     if (!phaseTitles.has(index)) phaseTitles.set(index, phase.title);
   }
+  const retained = agents.slice(0, 200);
+  const indices = (bindings: readonly string[] = []) => bindings.flatMap(binding => {
+    const node = retained.find(candidate => candidate.nodeBinding === binding);
+    return node ? [node.index] : [];
+  }).slice(0, 32);
+  const label = (node: WorkflowAgentEntry) => {
+    if (node.nodeBinding === undefined || node.instanceId !== undefined) return node.label;
+    return node.presentation?.name && node.presentation.name !== node.nodeBinding
+      ? node.presentation.name
+      : node.agentType ?? `Node ${node.index + 1}`;
+  };
+  const topology = (node: WorkflowAgentEntry): HistoryTopology | undefined => {
+    const captured = captureTopology(node, retained);
+    return captured && node.nodeBinding !== undefined && captured.name === node.nodeBinding
+      ? { ...captured, name: historyText(label(node)) }
+      : captured;
+  };
   return decodeRun({
-    id: task.id, name: task.meta?.name ?? task.workflowName ?? task.id, status: task.status, outcome: task.outcome?.status,
+    topologyVersion: 2, description: historyText(task.meta?.description ?? ""),
+    id: historyText(task.id), name: historyText(task.meta?.name ?? task.workflowName ?? task.id), status: task.status, outcome: task.outcome?.status,
     startTime: task.startTime, endTime: task.endTime, totalPausedMs: task.totalPausedMs,
     agentCount: task.agentCount, doneCount: task.doneCount, totalTokens: task.totalTokens,
-    totalToolCalls: task.totalToolCalls, replayedCount: task.replayedCount, omittedNodeCount: 0,
-    phases: [...phaseTitles].map(([index, title]) => ({ index, title })), nodes: agents.map(node => ({ ...node, deps: node.deps ?? [] })),
-  });
+    totalToolCalls: task.totalToolCalls, replayedCount: task.replayedCount, omittedNodeCount: agents.length - retained.length,
+    phases: [...phaseTitles].slice(0, 64).map(([index, title]) => ({ index, title: historyText(title) })),
+    nodes: retained.map(node => ({ ...node, label: historyText(label(node)),
+      agentType: node.agentType === undefined ? undefined : historyText(node.agentType),
+      modelId: node.modelId === undefined ? undefined : historyText(node.modelId),
+      deps: [], depIndices: indices(node.deps), dependentIndices: indices(node.dependents), topology: topology(node),
+    })),
+  }, 2);
 }
 
-const encode = (runs: readonly GraphHistoryRun[]) => JSON.stringify({ version: 1, runs });
+const encode = (runs: readonly GraphHistoryRun[]) => JSON.stringify({ version: 2, runs });
 export function boundHistory(input: readonly GraphHistoryRun[], maxBytes = HISTORY_FILE_BYTES): GraphHistoryRun[] {
   const seen = new Set<string>();
   const runs = [...input].sort((a, b) => b.startTime - a.startTime).filter(run => {
@@ -140,6 +187,7 @@ export function boundHistory(input: readonly GraphHistoryRun[], maxBytes = HISTO
     const newest = runs[0];
     if (!newest.nodes.length) { runs.pop(); break; }
     newest.nodes.pop();
+    newest.nodes = pruneHistoryReferences(newest.nodes);
     newest.omittedNodeCount++;
   }
   return runs;
@@ -149,9 +197,10 @@ export function decodeHistory(text: string): { runs: GraphHistoryRun[]; writable
   let value: unknown;
   try { value = JSON.parse(text); } catch { return { runs: [], writable: true }; }
   if (!record(value)) return { runs: [], writable: true };
-  if (value.version !== undefined && value.version !== 1) return { runs: [], writable: false };
-  if (value.version !== 1 || !Array.isArray(value.runs)) return { runs: [], writable: true };
-  return { runs: boundHistory(value.runs.map(decodeRun).filter((run): run is GraphHistoryRun => run !== undefined)), writable: true };
+  if (value.version !== undefined && value.version !== 1 && value.version !== 2) return { runs: [], writable: false };
+  if ((value.version !== 1 && value.version !== 2) || !Array.isArray(value.runs)) return { runs: [], writable: true };
+  const version = value.version;
+  return { runs: boundHistory(value.runs.map(run => decodeRun(run, version)).filter((run): run is GraphHistoryRun => run !== undefined)), writable: true };
 }
 
 export class GraphHistoryStore {

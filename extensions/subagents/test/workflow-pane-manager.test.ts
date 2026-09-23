@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorkflowPaneManager, type WorkflowPaneManager } from "../src/graph/pane/manager.js";
+import * as paneRenderer from "../src/graph/pane/render.js";
 import { readRecord, STATE_FILE, writeInputAtomic, writeRecord } from "../src/graph/pane/store.js";
 import { createWorkflowTask, type WorkflowTask } from "../src/graph/task.js";
 
@@ -71,7 +72,7 @@ describe("input channel", () => {
     const task = twoPhaseTask("wf_a", 1000);
     const mgr = manager(() => [task]);
 
-    // `j` walks the stage-ordered targets (stage 0, a0, stage 1, a1); four downs reach a1.
+    // Workflow, a0, a1; selection clamps at the last real node.
     for (const seq of [1, 2, 3, 4]) {
       writeInputAtomic(dir, { seq, data: b64("j") });
       processInput(mgr);
@@ -157,10 +158,10 @@ describe("external stage folding", () => {
     await processInput(mgr);
     writeInputAtomic(dir, { seq: 2, data: b64(" ") });
     await processInput(mgr);
-    expect((panelState(mgr) as { collapsedStages?: number[] }).collapsedStages).toContain(0);
+    expect((panelState(mgr) as { collapsedTargets?: unknown[] }).collapsedTargets).toContainEqual({ kind: "stage", stage: 0 });
     writeInputAtomic(dir, { seq: 3, data: b64(" ") });
     await processInput(mgr);
-    expect((panelState(mgr) as { collapsedStages?: number[] }).collapsedStages).not.toContain(0);
+    expect((panelState(mgr) as { collapsedTargets?: unknown[] }).collapsedTargets).not.toContainEqual({ kind: "stage", stage: 0 });
   });
 });
 
@@ -261,4 +262,17 @@ describe("disabled manager", () => {
     // Processing is a no-op and touches nothing.
     expect(() => (mgr as unknown as { processInputFile: () => void }).processInputFile()).not.toThrow();
   });
+});
+
+it("keeps the safe centered-inspector fallback when panel rendering or key handling throws", async () => {
+  const mgr = manager(() => [twoPhaseTask("fallback", 1000)]);
+  const render = vi.spyOn(paneRenderer, "renderObservabilityPaneLines").mockImplementation(() => { throw new Error("render failure"); });
+  const key = vi.spyOn(paneRenderer, "applyObservabilityPaneKey").mockImplementation(() => { throw new Error("key failure"); });
+  try {
+    await (mgr as unknown as { syncNow: (force: boolean) => Promise<void> }).syncNow(false);
+    expect(readFileSync(join(dir, STATE_FILE), "utf8")).toContain("Discover");
+    writeInputAtomic(dir, { seq: 1, data: b64("j") });
+    await processInput(mgr);
+    expect(readFileSync(join(dir, STATE_FILE), "utf8")).toContain("Review");
+  } finally { render.mockRestore(); key.mockRestore(); }
 });

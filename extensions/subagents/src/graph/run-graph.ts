@@ -5,6 +5,7 @@ import type { ExecutionCorrelation } from "./graph-execution.js";
 import type { NodeInstance } from "./graph-instance-id.js";
 import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeHost, NodeResolvedInfo } from "./node-host.js";
+import type { GraphNodePresentation } from "./progress.js";
 import type { NodeRun, SchedulerState } from "./scheduler.js";
 
 export { type GraphActor, graphLogic } from "./graph-actor.js";
@@ -53,9 +54,9 @@ export interface RunGraphOptions {
    * Reports the initial post-hydration snapshot for each static node, then
    * running, settled, retried, and automatic-skip updates.
    */
-  onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>, correlation?: ExecutionCorrelation): void;
+  onNodeUpdate?(nodeId: string, run: Readonly<NodeRun>, correlation?: ExecutionCorrelation, presentation?: GraphNodePresentation): void;
   /** Register dynamic rows before their first update; dependencies are display-only. */
-  onNodeAdded?(nodeId: string, node: GraphNode, metadata: { dependencies: string[]; phase?: FanoutPhase; instance?: NodeInstance; ordinal?: number; materializationKey?: string }): void;
+  onNodeAdded?(nodeId: string, node: GraphNode, metadata: { dependencies: string[]; phase?: FanoutPhase; instance?: NodeInstance; ordinal?: number; materializationKey?: string; presentation?: GraphNodePresentation }): void;
   /** Fired once the child agent's effective model is known. */
   onNodeResolved?(nodeId: string, info: NodeResolvedInfo, correlation: ExecutionCorrelation): void;
   /** Hands the caller the run's control surface, once, before the first node. */

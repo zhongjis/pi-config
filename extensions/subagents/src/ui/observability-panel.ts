@@ -1,31 +1,5 @@
-import { historyDisclosure } from "../graph/history-view.js";
-/**
- * observability-panel.ts — the `/graph-runs` pane's default view.
- *
- * A run observability panel with a fixed header zone (run switcher, stats, summary
- * strip) over a body that is ALWAYS two stacked zones: an auto-fit stage-complete
- * node roster on top and an always-on, capped node/stage detail below, split by a
- * one-line blank divider. Focus moves between the two zones (`focus: "roster" |
- * "detail"`): the roster owns the cursor and folds, the detail owns a per-section
- * cursor that expands the Prompt / Outcome sections. Built for triage in a narrow
- * terminal column. Pure and terminal-free (it emits {@link WorkflowCardLine}[] and
- * is driven by keystrokes), so it is the single test seam for the pane the same way
- * `layoutWorkflowDialog` is for the roster overlay.
- *
- * Two problems the v3 layout fixes:
- *  1. A node's Outcome is often a huge blob. The detail is now ALWAYS visible but
- *     CAPPED; Prompt and Outcome collapse to two lines with a `⏎ expand` affordance,
- *     and `enter` moves the cursor INTO the detail to expand a section.
- *  2. Later stages used to hide until scrolled to. The roster now auto-fits: it
- *     shows every stage header always, expanding all node rows when they fit and
- *     otherwise only the focused stage's nodes, so no stage header is ever clipped.
- *
- * It reuses the roster's own vocabulary: the progress-model helpers (`collapse`,
- * `displayState`, `header`, `buildPhaseGroups`, `formatDuration`), the dialog glyph
- * set (`dialogRowGlyph` + the unicode/ascii tiers), and the pane's width pipeline
- * (`clampLine` over pi-tui `visibleWidth`/`truncateToWidth`). The only new data it
- * needs is each node's `deps`/`dependents`, which the graph adapter already emits.
- */
+import type { HistoricalNodeDetail } from "../graph/history-artifact.js";
+/** Pure, read-only Herdr graph inspector. The centered workflow dialog is separate. */
 
 import {
   matchesKey,
@@ -34,12 +8,11 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { HISTORY_ARTIFACT_DETAIL, historyDisclosure } from "../graph/history-view.js";
 import {
-  buildPhaseGroups,
   collapse,
   displayState,
   formatDuration,
-  header,
   type WorkflowAgentEntry,
   type WorkflowDisplayState,
   type WorkflowRunStatus,
@@ -52,41 +25,29 @@ import {
   type WorkflowCardSegment,
 } from "./workflow-card.js";
 import {
-  ASCII_DIALOG_GLYPHS,
-  dialogRowGlyph,
   subStatusAnnotations,
-  UNICODE_DIALOG_GLYPHS,
-  type WorkflowDialogGlyphs,
   type WorkflowDialogSource,
 } from "./workflow-dialog.js";
 
-const DEFAULT_WIDTH = 80;
-
-/** Minimum rows the detail zone asks for when the pane has room to give them. */
-const MIN_DETAIL_ROWS = 5;
-
-/**
- * A navigation target in the stage-ordered roster: a stage header or one of its
- * nodes. The cursor and `↑↓` move over the same {@link visibleTargets} order the
- * roster renders, so a collapsed stage's header stays selectable (re-expandable).
- */
 export type Target =
   | { kind: "stage"; stage: number }
-  | { kind: "node"; id: string };
+  | { kind: "node"; id: string | number }
+  | { kind: "iteration"; owner: string | number; iteration: number };
 
 export interface PanelState {
-  /** The selected roster target (stage header or node); resolves to the first target when unset or stale. */
+  /** The selected workflow, iteration or node target; resolves to the first target when unset or stale. */
   cursor?: Target;
   /** Which run the switcher points at (index into the run list). */
   runIndex: number;
-  /** Roster scroll offset, in rendered lines (pages the focused stage's node window). */
+  /** Roster scroll offset, in physical lines. */
   scroll: number;
   /** The detail zone's own scroll offset. */
   detailScroll: number;
   /** Roster filter: show all nodes, only running, or only failed. (v1.5) */
   filter: "all" | "running" | "failed";
-  /** Manually force-collapsed stage numbers (the adapter's `phaseIndex`); overrides auto-fit expansion. (v1.5) */
+  /** Compatibility with existing panel state: stage 0 is the workflow root. */
   collapsedStages: number[];
+  collapsedTargets?: Target[];
   /** Which zone owns the cursor: the roster overview (default) or the drilled-in detail. (v3) */
   focus: "roster" | "detail";
   /** Index into the detail's navigable (expandable) sections. (v3) */
@@ -114,6 +75,7 @@ export interface PanelRun {
   name: string;
   status: WorkflowRunStatus;
   source: WorkflowDialogSource;
+  readHistoricalDetail?: (index: number) => HistoricalNodeDetail | undefined;
 }
 
 export interface PanelOptions {
@@ -129,7 +91,7 @@ const clamp = (value: number, lo: number, hi: number): number =>
 const isActive = (status: WorkflowRunStatus): boolean => status === "running" || status === "paused";
 
 /* ------------------------------------------------------------------------- *
- * State → glyph / colour vocabulary (shared with the roster)
+ * Lifecycle vocabulary
  * ------------------------------------------------------------------------- */
 
 function stateColor(state: WorkflowDisplayState): WorkflowCardColor {
@@ -164,200 +126,144 @@ function runStateColor(status: WorkflowRunStatus): WorkflowCardColor {
   }
 }
 
-function runStatusDot(status: WorkflowRunStatus, glyphs: WorkflowDialogGlyphs, _ascii: boolean): WorkflowCardSegment {
-  switch (status) {
-    case "running": return { text: "*", color: "accent" };
-    case "paused": return { text: glyphs.queued, color: "warning" };
-    case "completed": return { text: "+", color: "success" };
-    case "failed": return { text: glyphs.cross, color: "error" };
-    case "killed": return { text: glyphs.cross, color: "warning" };
-  }
+
+interface TreeNode {
+  target: Target;
+  label: string;
+  entry?: WorkflowAgentEntry;
+  decision?: string;
+  children: TreeNode[];
 }
-
-/* ------------------------------------------------------------------------- *
- * Topology-shaped grouping
- * ------------------------------------------------------------------------- */
-
-interface StageGroup {
-  stage: number;
-  title: string;
-  agents: WorkflowAgentEntry[];
-  done: number;
-  total: number;
-}
-
-/** Group nodes by topological stage (the adapter's `phaseIndex`), in dependency order. */
-function stageGroups(agents: readonly WorkflowAgentEntry[]): StageGroup[] {
-  const byStage = new Map<number, WorkflowAgentEntry[]>();
-  for (const agent of agents) {
-    const stage = agent.phaseIndex ?? 0;
-    const list = byStage.get(stage) ?? [];
-    list.push(agent);
-    byStage.set(stage, list);
-  }
-  return [...byStage.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([stage, list]) => {
-      const defaultTitle = `Stage ${stage + 1}`;
-      const title = list.find(agent => agent.phaseTitle !== undefined && agent.phaseTitle !== defaultTitle)?.phaseTitle
-        ?? list.find(agent => agent.phaseTitle !== undefined)?.phaseTitle
-        ?? defaultTitle;
-      return {
-        stage,
-        title,
-        agents: list,
-        done: list.filter(agent => agent.state === "done").length,
-        total: list.length,
-      };
-    });
-}
-
-/** The roster filter mode. (v1.5) */
-type PanelFilter = PanelState["filter"];
-
-/** Whether a node's display state passes the active filter. (v1.5) */
-function matchesFilter(state: WorkflowDisplayState, filter: PanelFilter): boolean {
-  return filter === "all" || state === filter;
-}
-
-/** A stage the filter leaves at least one node in, paired with the nodes it keeps. */
-interface ShownStage {
-  group: StageGroup;
-  shown: WorkflowAgentEntry[];
-}
-
-/** Stages with any node passing the filter, in dependency order. Empty stages drop out. */
-function shownStages(groups: readonly StageGroup[], active: boolean, filter: PanelFilter): ShownStage[] {
-  const out: ShownStage[] = [];
-  for (const group of groups) {
-    const shown = group.agents.filter(agent => matchesFilter(displayState(agent, active), filter));
-    if (shown.length > 0) out.push({ group, shown });
-  }
-  return out;
-}
-
-/** Total rendered roster height when the given stages show their node rows. */
-function rosterHeight(shown: readonly ShownStage[], isExpanded: (stage: number) => boolean): number {
-  let height = 0;
-  for (const stage of shown) {
-    height += 1;
-    if (isExpanded(stage.group.stage)) height += stage.shown.length;
-  }
-  return height;
-}
-
-/**
- * Roster order for `↑↓` selection: a header target for each shown stage, then — when
- * that stage is expanded (per the shared auto-fit predicate) — each of its shown
- * nodes. This mirrors {@link rosterLines} exactly (both consume the same `isExpanded`
- * decision), so navigation and rendering never disagree and a collapsed stage keeps
- * a selectable header to re-expand from. A node target may be scrolled off-screen
- * (large focused stage); navigating to it re-windows the roster.
- */
-function visibleTargets(shown: readonly ShownStage[], isExpanded: (stage: number) => boolean): Target[] {
-  const targets: Target[] = [];
-  for (const stage of shown) {
-    targets.push({ kind: "stage", stage: stage.group.stage });
-    if (isExpanded(stage.group.stage)) {
-      for (const agent of stage.shown) targets.push({ kind: "node", id: agent.nodeBinding ?? agent.label });
-    }
-  }
-  return targets;
-}
-
-/** Whether two targets point at the same stage header or node. */
+interface TreeRow { node: TreeNode; rails: string; last: boolean; parent?: Target }
+const bindingId = (entry: WorkflowAgentEntry): string => entry.nodeBinding ?? entry.label;
+const nodeId = (entry: WorkflowAgentEntry, agents?: readonly WorkflowAgentEntry[]): string | number => {
+  if (entry.historyIndex !== undefined) return entry.historyIndex;
+  const binding = bindingId(entry);
+  return !entry.nodeBinding && agents?.some(other => other !== entry && bindingId(other) === binding) ? `\u0000${entry.index}` : binding;
+};
+const parentReference = (entry: WorkflowAgentEntry): string | number | undefined => entry.presentation?.parentIndex ?? entry.presentation?.parentInstanceId;
+const upstreamIds = (entry: WorkflowAgentEntry): readonly (string | number)[] => entry.depIndices ?? entry.deps ?? [];
+const downstreamIds = (entry: WorkflowAgentEntry): readonly (string | number)[] => entry.dependentIndices ?? entry.dependents ?? [];
 function sameTarget(a: Target, b: Target): boolean {
-  return a.kind === "stage" && b.kind === "stage"
-    ? a.stage === b.stage
-    : a.kind === "node" && b.kind === "node"
-      ? a.id === b.id
-      : false;
+  if (a.kind === "stage" && b.kind === "stage") return a.stage === b.stage;
+  if (a.kind === "iteration" && b.kind === "iteration") return a.owner === b.owner && a.iteration === b.iteration;
+  return a.kind === "node" && b.kind === "node" && a.id === b.id;
 }
-
-/** Index of `cursor` within `targets`, or -1 when unset or no longer present. */
 function targetIndex(targets: readonly Target[], cursor: Target | undefined): number {
   return cursor ? targets.findIndex(target => sameTarget(target, cursor)) : -1;
 }
-
-/**
- * Resolve the raw cursor to a stable target WITHOUT the auto-fit expansion decision,
- * so it can drive the focused-stage choice that feeds that decision. A stage cursor
- * for a shown stage stays; a node cursor stays iff its node exists, passes the filter,
- * and its stage is not manually collapsed (its own stage is always the focused stage,
- * hence always expanded); otherwise it falls to the first shown stage header. Kept in
- * agreement with {@link visibleTargets}: whatever this returns is a valid target.
- */
-function resolveCursor(
-  cursor: Target | undefined,
-  agents: readonly WorkflowAgentEntry[],
-  active: boolean,
-  filter: PanelFilter,
-  collapsed: ReadonlySet<number>,
-  shown: readonly ShownStage[],
-): Target | undefined {
-  if (shown.length === 0) return undefined;
-  if (cursor?.kind === "stage" && shown.some(s => s.group.stage === cursor.stage)) return cursor;
-  if (cursor?.kind === "node") {
-    const node = agents.find(agent => (agent.nodeBinding ?? agent.label) === cursor.id);
-    if (node && matchesFilter(displayState(node, active), filter)) {
-      const stage = node.phaseIndex ?? 0;
-      if (!collapsed.has(stage) && shown.some(s => s.group.stage === stage)) return cursor;
+/** Only authoritative containment is admitted. Unknown/legacy rows remain workflow children. */
+function presentationTree(agents: readonly WorkflowAgentEntry[]): TreeNode {
+  const root: TreeNode = { target: { kind: "stage", stage: 0 }, label: "Workflow", children: [] };
+  const nodes: TreeNode[] = agents.map(entry => ({ target: { kind: "node" as const, id: nodeId(entry, agents) }, label: entry.presentation?.name ?? entry.label, entry, children: [] }));
+  const byInstance = new Map<string | number, TreeNode>(nodes.flatMap(node => {
+    const id = node.entry?.historyIndex ?? node.entry?.instanceId;
+    return id === undefined ? [] : [[id, node] as const];
+  }));
+  const iterations = new Map<TreeNode, Map<number, TreeNode>>();
+  const iteration = (owner: TreeNode, n: number, decision?: string): TreeNode => {
+    let groups = iterations.get(owner);
+    if (!groups) { groups = new Map(); iterations.set(owner, groups); }
+    let group = groups.get(n);
+    if (!group) {
+      group = { target: { kind: "iteration", owner: owner.target.kind === "node" ? owner.target.id : bindingId(owner.entry!), iteration: n }, label: `Iteration ${n}`, decision, children: [] };
+      groups.set(n, group); owner.children.push(group);
     }
+    return group;
+  };
+  for (const node of nodes) if (node.entry?.presentation?.kind === "bounded_feedback") {
+    for (const round of node.entry.presentation.iterations ?? []) iteration(node, round.iteration, round.decision);
   }
-  return { kind: "stage", stage: shown[0].group.stage };
+  for (const node of nodes) {
+    const meta = node.entry?.presentation;
+    const ref = node.entry ? parentReference(node.entry) : undefined;
+    const parent = ref === undefined ? undefined : byInstance.get(ref);
+    if (parent !== node && parent?.entry?.presentation?.kind === "fanout" && meta?.kind === "agent" && meta.itemIndex !== undefined) {
+      node.label = `item ${meta.itemIndex + 1}`;
+      parent.children.push(node);
+    } else if (parent !== node && parent?.entry?.presentation?.kind === "bounded_feedback" && meta?.iteration !== undefined && (meta.kind === "fanout" || meta.kind === "agent")) {
+      iteration(parent, meta.iteration).children.push(node);
+    } else root.children.push(node);
+  }
+  for (const owner of iterations.keys()) owner.children.sort((a, b) => a.target.kind === "iteration" && b.target.kind === "iteration" ? a.target.iteration - b.target.iteration : 0);
+  return root;
 }
-
-interface Counts {
-  running: number;
-  queued: number;
-  done: number;
-  failed: number;
+function visibleTree(root: TreeNode, state: PanelState, active: boolean, ascii: boolean): TreeRow[] {
+  const matches = (node: TreeNode): boolean => state.filter === "all" || (node.entry && displayState(node.entry, active) === state.filter) || node.children.some(matches);
+  const rows: TreeRow[] = [];
+  const visit = (node: TreeNode, rails: string, last: boolean, parent?: Target): void => {
+    rows.push({ node, rails, last, parent });
+    if ((state.collapsedTargets ?? []).some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0)) return;
+    const children = node.children.filter(matches);
+    children.forEach((child, i) => { visit(child, parent ? rails + (last ? "   " : ascii ? "|  " : "│  ") : "", i === children.length - 1, node.target); });
+  };
+  visit(root, "", true);
+  return rows;
 }
-
-function countStates(agents: readonly WorkflowAgentEntry[], active: boolean): Counts {
-  const counts: Counts = { running: 0, queued: 0, done: 0, failed: 0 };
-  for (const agent of agents) {
-    switch (displayState(agent, active)) {
-      case "running": counts.running++; break;
-      case "queued": counts.queued++; break;
-      case "done": counts.done++; break;
-      case "failed": counts.failed++; break;
+function lifecycle(entry: WorkflowAgentEntry, run: PanelRun, ascii: boolean): { word: string; glyph: string; color: WorkflowCardColor } {
+  const state = displayState(entry, isActive(run.status));
+  if (run.status === "paused" && state === "running") return { word: "paused", glyph: ascii ? "||" : "Ⅱ", color: "warning" };
+  const glyphs: Record<WorkflowDisplayState, string> = ascii
+    ? { done: "+", running: "*", queued: "o", blocked: "!", failed: "x", skipped: "-", interrupted: "#" }
+    : { done: "✓", running: "●", queued: "○", blocked: "!", failed: "×", skipped: "–", interrupted: "■" };
+  return { word: statusWord(state), glyph: glyphs[state], color: stateColor(state) };
+}
+function aggregate(agents: readonly WorkflowAgentEntry[], root: TreeNode, run: PanelRun, now: number): string {
+  const known = agents.filter(entry => entry.presentation);
+  const counts: string[] = [];
+  const count = (n: number, singular: string, plural = `${singular}s`) => { if (n) counts.push(`${n} ${n === 1 ? singular : plural}`); };
+  count(known.filter(entry => entry.presentation?.kind === "agent").length, "agent");
+  count(known.filter(entry => entry.presentation?.kind !== "agent").length, "coordination node");
+  count(agents.length - known.length, "unclassified node");
+  const rounds = (node: TreeNode): number => (node.target.kind === "iteration" ? 1 : 0) + node.children.reduce((sum, child) => sum + rounds(child), 0);
+  count(rounds(root), "iteration");
+  const task = run.source.task;
+  if (task.startTime !== undefined) counts.push(formatDuration(Math.max(0, (task.endTime ?? task.pausedAt ?? now) - task.startTime - (task.totalPausedMs ?? 0))));
+  return counts.join(" · ");
+}
+function withTrailing(line: WorkflowCardLine, metadata: string, width: number): WorkflowCardLine {
+  const used = line.reduce((sum, segment) => sum + visibleWidth(segment.text), 0);
+  if (metadata && used + visibleWidth(metadata) + 2 <= width) line.push({ text: " ".repeat(width - used - visibleWidth(metadata)) + metadata, color: "dim" });
+  return clampLine(line, width);
+}
+function rosterLines(plan: PanelPlan, state: PanelState): { lines: WorkflowCardLine[]; selectedRow?: number } {
+  const { width, ascii, visible, resolvedCursor, run } = plan;
+  const lines: WorkflowCardLine[] = [];
+  let selectedRow: number | undefined;
+  const statusWidth = Math.max(0, ...visible.flatMap(row => row.node.entry ? [visibleWidth(`${lifecycle(row.node.entry, run, ascii).glyph} ${lifecycle(row.node.entry, run, ascii).word}`)] : [])) + 2;
+  for (const [index, row] of visible.entries()) {
+    const { node, rails, last } = row;
+    const selected = resolvedCursor && sameTarget(node.target, resolvedCursor);
+    const folded = (state.collapsedTargets ?? []).some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0);
+    let line: WorkflowCardLine;
+    if (node.target.kind === "stage") {
+      const title = ` ${ascii ? folded ? ">" : "v" : folded ? "▸" : "▾"} Workflow `;
+      const count = `${plan.agents.filter(entry => entry.state === "done").length}/${plan.agents.length} nodes`;
+      line = clampLine([{ text: title }, { text: (ascii ? "-" : "─").repeat(Math.max(1, width - visibleWidth(title) - count.length - 1)) + " " + count, color: "dim" }], width);
+    } else {
+      const compact = width < 40;
+      const gutter = selected ? ascii ? "> " : "› " : "  ";
+      const tree = compact ? rails.replaceAll("  ", "") : rails;
+      const branch = ascii ? last ? "`" : "+" : last ? "└" : "├";
+      const prefix = [{ text: (compact ? "" : "   ") + gutter }, { text: tree + branch + (compact ? " " : ascii ? "- " : "─ "), color: "dim" as const }];
+      if (node.entry) {
+        const status = lifecycle(node.entry, run, ascii);
+        const field = `${status.glyph} ${status.word}`;
+        const metadata = node.entry.presentation;
+        let trailing = metadata?.kind === "bounded_feedback" ? `bounded feedback${node.children.length ? ` · ${node.children.length} iteration${node.children.length === 1 ? "" : "s"}` : ""}`
+          : metadata?.kind === "fanout" ? `fanout${node.children.length ? ` · ${node.children.length} agent${node.children.length === 1 ? "" : "s"}` : ""}`
+          : [node.entry.agentType, node.entry.model ?? node.entry.modelId].filter(Boolean).join(" · ");
+        const annotations = subStatusAnnotations(node.entry, displayState(node.entry, plan.active), plan.now).filter(value => value !== "replayed" && value !== "cached" && value !== "from resume journal");
+        if (annotations.length) trailing += `${trailing ? " · " : ""}${annotations.join(" · ")}`;
+        line = withTrailing([...prefix, { text: field, color: status.color }, { text: " ".repeat(compact ? 1 : Math.max(2, statusWidth - visibleWidth(field))) + node.label }, ...(node.entry.cached ? [{ text: " · replayed", color: "dim" as const }] : []), ...(folded ? [{ text: ascii ? " [+]" : " ▸", color: "dim" as const }] : [])], trailing, width);
+      } else line = withTrailing([...prefix, { text: `${ascii ? "" : "↻ "}${node.label}` }, ...(folded ? [{ text: ascii ? " [+]" : " ▸", color: "dim" as const }] : [])], node.decision ?? "", width);
     }
+    if (resolvedCursor && sameTarget(node.target, resolvedCursor)) selectedRow = lines.length;
+    lines.push(selected && state.focus === "roster" ? highlightRow(line, width) : line);
+    if (node.target.kind === "stage" && visible[index + 1]) lines.push([]);
   }
-  return counts;
+  return { lines, selectedRow };
 }
-
-/* ------------------------------------------------------------------------- *
- * Zone builders
- * ------------------------------------------------------------------------- */
-
-function switcherLines(
-  runs: readonly PanelRun[], index: number, glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number,
- ): WorkflowCardLine[] {
-  const current = runs[index];
-  const open = ascii ? "<" : "‹";
-  const close = ascii ? ">" : "›";
-  const name = truncateToWidth(current.name, Math.max(4, Math.floor(width * 0.5)), glyphs.ellipsis);
-  const lineA: WorkflowCardLine = [
-    { text: `${open} `, color: "dim" },
-    { text: name, color: "toolTitle", bold: true },
-    { text: ` ${close}  `, color: "dim" },
-    runStatusDot(current.status, glyphs, ascii),
-    { text: ` ${current.status}`, color: runStateColor(current.status) },
-    { text: `  ${index + 1}/${runs.length}`, color: "dim" },
-  ];
-
-  const chips: WorkflowCardSegment[] = [];
-  runs.forEach((run, i) => {
-    if (i === index) return;
-    if (chips.length > 0) chips.push({ text: " · ", color: "dim" });
-    chips.push(runStatusDot(run.status, glyphs, ascii), { text: ` ${run.name}`, color: "dim" });
-  });
-  return chips.length > 0
-    ? [clampLine(lineA, width), clampLine([{ text: " " }, ...chips], width)]
-    : [clampLine(lineA, width)];
-}
-
 function safeInputJson(input: unknown): string {
   try {
     return JSON.stringify(input, null, 2) ?? String(input);
@@ -373,13 +279,12 @@ function formatInputValue(input: unknown): string {
 function graphContextLines(
   source: WorkflowDialogSource, width: number, expandedSections: readonly string[], maxRows?: number,
  ): WorkflowCardLine[] {
-  if (source.history) return [];
   const lines: WorkflowCardLine[] = [];
   const description = source.meta?.description?.trim();
   if (description) {
-    lines.push(...wrapTextWithAnsi(` Description: ${description}`, width).map(text => clampLine([{ text, color: "muted" }], width)));
+    lines.push(...wrapTextWithAnsi(` ${description}`, Math.max(1, width)).map(text => clampLine([{ text }], width)));
   }
-  if (source.input === undefined) return lines;
+  if (source.history || source.input === undefined || !expandedSections.includes("full-inputs")) return lines;
   const input = source.input;
   const expanded = expandedSections.includes("full-inputs");
 
@@ -408,9 +313,9 @@ function graphContextLines(
   for (const { label, value } of pairs) {
     const text = ` ${label}: ${value}`;
     if (expanded) {
-      valueLines.push(...wrapTextWithAnsi(text, width).map(t => clampLine([{ text: t, color: "muted" }], width)));
+      valueLines.push(...wrapTextWithAnsi(text, Math.max(1, width)).map(t => clampLine([{ text: t, color: "dim" }], width)));
     } else {
-      valueLines.push(clampLine([{ text, color: "muted" }], width));
+      valueLines.push(clampLine([{ text, color: "dim" }], width));
     }
   }
 
@@ -434,190 +339,6 @@ function graphContextLines(
   return lines;
 }
 
-function summaryStrip(
-  agents: readonly WorkflowAgentEntry[], active: boolean, filter: PanelFilter,
-  glyphs: WorkflowDialogGlyphs, _ascii: boolean, width: number,
-): WorkflowCardLine {
-  const counts = countStates(agents, active);
-  const dot = "*";
-  const sep: WorkflowCardSegment = { text: "  ·  ", color: "dim" };
-  const line: WorkflowCardLine = [
-    { text: ` ${dot} running ${counts.running}`, color: "accent" },
-    sep,
-    { text: `${glyphs.queued} queued ${counts.queued}`, color: "dim" },
-    sep,
-    { text: `+ done ${counts.done}`, color: "success" },
-    sep,
-    { text: `${glyphs.cross} failed ${counts.failed}`, color: "error" },
-  ];
-  // The counts are the true observability read; the filter is only a roster lens.
-  if (filter !== "all") line.push({ text: ` · filter: ${filter}`, color: "warning" });
-  return clampLine(line, width);
-}
-
-function rowActivity(entry: WorkflowAgentEntry, state: WorkflowDisplayState, now: number): string {
-  if (state === "blocked" || state === "queued") {
-    const waits = (entry.deps ?? []).join(", ");
-    return waits ? `waits: ${waits}` : "";
-  }
-  if (state === "running" && entry.startedAt != null) {
-    const elapsed = formatDuration(Math.max(0, now - entry.startedAt));
-    return entry.toolCalls != null ? `${elapsed} · ${entry.toolCalls} tools` : elapsed;
-  }
-  if (entry.durationMs != null) return formatDuration(entry.durationMs);
-  return "";
-}
-
-function graphRowGlyph(state: WorkflowDisplayState, glyphs: WorkflowDialogGlyphs): WorkflowCardSegment {
-  if (state === "running") return { text: "*", color: "accent" };
-  if (state === "done") return { text: "+", color: "success" };
-  return dialogRowGlyph(state, glyphs);
-}
-
-function agentRow(
-  entry: WorkflowAgentEntry, active: boolean, glyphs: WorkflowDialogGlyphs, width: number, now: number,
- ): WorkflowCardLine {
-  const state = displayState(entry, active);
-  const model = entry.model ?? entry.modelId ?? "";
-  const line: WorkflowCardLine = [
-    { text: "   " },
-    graphRowGlyph(state, glyphs),
-    { text: ` ${entry.label}` },
-    { text: `  ${statusWord(state)}`, color: stateColor(state) },
-  ];
-  const activity = rowActivity(entry, state, now);
-  if (activity) line.push({ text: `  ${activity}`, color: "muted" });
-  for (const annotation of subStatusAnnotations(entry, state, now)) {
-    line.push({ text: ` · ${annotation}`, color: "muted" });
-  }
-  if (entry.agentType) line.push({ text: ` · ${entry.agentType}`, color: "muted" });
-  if (model) line.push({ text: ` · ${model}`, color: "muted" });
-  return clampLine(line, width);
-}
-
-/**
- * Build the stage-ordered roster and the rendered row of the cursor (for follow /
- * highlight). Every shown stage always emits a header; an expanded stage (per the
- * shared {@link visibleTargets} `isExpanded` predicate) emits its node rows too. In
- * compact mode only the focused stage expands, and — so no stage header is ever
- * clipped — its node rows are windowed to the budget left after every header, around
- * the cursor / `scroll`. With `rosterBudget == null` (no fixed height) nothing is
- * windowed. `highlightCursor` is false while the DETAIL zone owns focus, so the
- * roster keeps tracking the cursor for follow without drawing the reverse bar.
- */
-function rosterLines(
-  shown: readonly ShownStage[], cursor: Target | undefined, active: boolean,
-  isExpanded: (stage: number) => boolean, highlightCursor: boolean, focusedStage: number | undefined,
-  rosterBudget: number | null, scroll: number,
-  glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number, now: number,
-): { lines: WorkflowCardLine[]; selectedRow: number | undefined } {
-  const lines: WorkflowCardLine[] = [];
-  let selectedRow: number | undefined;
-  const ruleChar = ascii ? "-" : "─";
-  const headerCount = shown.length;
-  const nodeBudget = rosterBudget == null ? Number.POSITIVE_INFINITY : Math.max(0, rosterBudget - headerCount);
-  for (const { group, shown: shownAgents } of shown) {
-    const expanded = isExpanded(group.stage);
-    const marker = ascii ? (expanded ? "v " : "> ") : expanded ? "▾ " : "▸ ";
-    const anyFailed = group.agents.some(agent => agent.state === "error" && !agent.skipped);
-    const allDone = group.total > 0 && group.done === group.total;
-    const headColor: WorkflowCardColor = allDone ? "success" : anyFailed ? "error" : "muted";
-    // The `done/total` rollup stays the TRUE totals even when the filter hides rows.
-    const label = ` ${marker}${group.title} `;
-    const count = `${group.done}/${group.total}`;
-    const ruleLen = Math.max(1, width - visibleWidth(label) - visibleWidth(count) - 2);
-    const headerLine = clampLine([
-      { text: label, color: headColor, bold: true },
-      { text: `${ruleChar.repeat(ruleLen)} `, color: "dim" },
-      { text: count, color: "dim" },
-    ], width);
-    const headerSelected = cursor?.kind === "stage" && cursor.stage === group.stage;
-    if (headerSelected) selectedRow = lines.length;
-    lines.push(headerSelected && highlightCursor ? highlightRow(headerLine, width) : headerLine);
-    if (!expanded) continue;
-
-    // Window the focused stage's nodes so all headers survive; other expanded stages
-    // (only in the fits-everything case) render whole.
-    let nodesToShow = shownAgents;
-    if (rosterBudget != null && group.stage === focusedStage && shownAgents.length > nodeBudget) {
-      const selIdx = cursor?.kind === "node" ? shownAgents.findIndex(agent => (agent.nodeBinding ?? agent.label) === cursor.id) : -1;
-      const maxStart = Math.max(0, shownAgents.length - nodeBudget);
-      let start = clamp(scroll, 0, maxStart);
-      if (selIdx >= 0) {
-        if (selIdx < start) start = selIdx;
-        else if (selIdx >= start + nodeBudget) start = selIdx - nodeBudget + 1;
-        start = clamp(start, 0, maxStart);
-      }
-      nodesToShow = shownAgents.slice(start, start + nodeBudget);
-    }
-    for (const agent of nodesToShow) {
-      const nodeSelected = cursor?.kind === "node" && cursor.id === (agent.nodeBinding ?? agent.label);
-      const row = agentRow(agent, active, glyphs, width, now);
-      if (nodeSelected) selectedRow = lines.length;
-      lines.push(nodeSelected && highlightCursor ? highlightRow(row, width) : row);
-    }
-  }
-  return { lines, selectedRow };
-}
-
-/**
- * The detail zone for a stage cursor: a `Stage <n>` header, a summary-strip count line, a
- * rolled-up facts line (Σ tokens · Σ tool calls · wall-clock), and — when the stage took any
- * damage — a failure rollup. Unlike the roster it never repeats the per-node rows. The node
- * counterpart is {@link nodeDetailSections}.
- */
-function stageAggregateLines(
-  group: StageGroup, active: boolean, glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number,
-): WorkflowCardLine[] {
-  const lines: WorkflowCardLine[] = [];
-  const sep = ascii ? "--" : "──";
-  const dot = "*";
-  const defaultTitle = `Stage ${group.stage + 1}`;
-  lines.push(clampLine(group.title === defaultTitle
-    ? [{ text: " Stage ", color: "muted", bold: true }, { text: `${sep} ${group.stage + 1}`, color: "dim" }]
-    : [{ text: ` ${group.title}`, color: "muted", bold: true }], width));
-  // Live counts across the stage, coloured like the summary strip.
-  const counts = countStates(group.agents, active);
-  const countSep: WorkflowCardSegment = { text: "  ·  ", color: "dim" };
-  lines.push(clampLine([
-    { text: `  ${dot} running ${counts.running}`, color: "accent" },
-    countSep,
-    { text: `${glyphs.queued} queued ${counts.queued}`, color: "dim" },
-    countSep,
-    { text: `+ done ${counts.done}`, color: "success" },
-    countSep,
-    { text: `${glyphs.cross} failed ${counts.failed}`, color: "error" },
-  ], width));
-  // Rolled-up facts: Σ tokens, Σ tool calls, and wall-clock across the stage. Agents overlap, so
-  // the span is earliest start → latest progress, mirroring `summarize()` (not exported here).
-  let tokens = 0;
-  let tools = 0;
-  let minStart = Number.POSITIVE_INFINITY;
-  let maxProgress = 0;
-  for (const agent of group.agents) {
-    if (agent.tokens) tokens += agent.tokens;
-    if (agent.toolCalls) tools += agent.toolCalls;
-    if (agent.startedAt != null) {
-      if (agent.startedAt < minStart) minStart = agent.startedAt;
-      const last = agent.lastProgressAt ?? agent.startedAt;
-      if (last > maxProgress) maxProgress = last;
-    }
-  }
-  const wall = minStart < Number.POSITIVE_INFINITY ? maxProgress - minStart : 0;
-  lines.push(clampLine([
-    { text: `  Tokens: ${tokens} · Tools: ${tools} · ${formatDuration(wall)}`, color: "muted" },
-  ], width));
-  // Failure rollup, so a stage that took damage names its failures.
-  const failed = group.agents.filter(agent => displayState(agent, active) === "failed").map(agent => agent.label);
-  if (failed.length > 0) {
-    lines.push(clampLine([
-      { text: "  Failed: ", color: "muted" },
-      { text: failed.join(", "), color: "error" },
-    ], width));
-  }
-  return lines;
-}
-
 function outcomeText(entry: WorkflowAgentEntry, state: WorkflowDisplayState): string {
   switch (state) {
     case "failed":
@@ -630,9 +351,8 @@ function outcomeText(entry: WorkflowAgentEntry, state: WorkflowDisplayState): st
 
 function runtimeFacts(entry: WorkflowAgentEntry): string {
   const parts: string[] = [];
-  if (entry.tokens) parts.push(`${entry.tokens} tok`);
+  if (entry.tokens) parts.push(`${entry.tokens.toLocaleString("en-US")} tokens`);
   if (entry.toolCalls) parts.push(`${entry.toolCalls} tool${entry.toolCalls === 1 ? "" : "s"}`);
-  if (entry.durationMs != null) parts.push(formatDuration(entry.durationMs));
   return parts.join(" · ");
 }
 
@@ -643,19 +363,19 @@ function runtimeFacts(entry: WorkflowAgentEntry): string {
  * a visited-set that both bounds it and guards against cycles.
  */
 function blastRadius(
-  entry: WorkflowAgentEntry, byId: Map<string, WorkflowAgentEntry>, active: boolean,
+  entry: WorkflowAgentEntry, byId: Map<string | number, WorkflowAgentEntry>, active: boolean,
 ): string[] {
   const skipped: string[] = [];
-  const seen = new Set<string>([entry.nodeBinding ?? entry.label]);
-  const queue = [...(entry.dependents ?? [])];
+  const seen = new Set<string | number>([nodeId(entry)]);
+  const queue = [...downstreamIds(entry)];
   while (queue.length > 0) {
     const id = queue.shift();
     if (id === undefined || seen.has(id)) continue;
     seen.add(id);
     const node = byId.get(id);
     if (!node) continue;
-    if (displayState(node, active) === "skipped") skipped.push(id);
-    for (const next of node.dependents ?? []) {
+    if (displayState(node, active) === "skipped") skipped.push(typeof id === "number" ? node.label : id);
+    for (const next of downstreamIds(node)) {
       if (!seen.has(next)) queue.push(next);
     }
   }
@@ -679,7 +399,7 @@ interface DetailSection {
 
 /**
  * A collapsible detail section: a `muted` label line, then `wrapTextWithAnsi` body lines
- * indented 4 and clamped to width. Collapsed (default) it caps the body at two lines and,
+ * indented 3 and clamped to width. Collapsed (default) it caps the body at two lines and,
  * when it hid any, ends the second line with a `dim` `⏎ expand (+N)` affordance (room for
  * which is reserved so it survives the width clamp). Expanded, it shows the full wrap. An
  * undefined `bodyColor` leaves the body at the terminal default fg. Shared by Prompt/Outcome.
@@ -688,181 +408,79 @@ function collapsibleSection(
   label: string, body: string, bodyColor: WorkflowCardColor | undefined,
   expanded: boolean, enterGlyph: string, width: number,
 ): WorkflowCardLine[] {
-  const inner = Math.max(1, width - 4);
+  const inner = Math.max(1, width - 3);
   const wrapped = wrapTextWithAnsi(body, inner);
-  const lines: WorkflowCardLine[] = [clampLine([{ text: `  ${label}`, color: "muted" }], width)];
-  const bodySeg = (text: string): WorkflowCardSegment => ({ text: `    ${text}`, ...(bodyColor ? { color: bodyColor } : {}) });
+  const lines: WorkflowCardLine[] = [[], clampLine([{ text: ` ${label}` }], width)];
+  const bodySeg = (text: string): WorkflowCardSegment => ({ text: `   ${text}`, ...(bodyColor ? { color: bodyColor } : {}) });
   if (expanded || wrapped.length <= 2) {
     for (const text of wrapped) lines.push(clampLine([bodySeg(text)], width));
     return lines;
   }
   lines.push(clampLine([bodySeg(wrapped[0])], width));
   const hidden = wrapped.length - 2;
-  const affordance = `  ${enterGlyph} expand (+${hidden})`;
+  const affordance = `  ${enterGlyph} expand (+${hidden} lines)`;
   const room = Math.max(1, inner - visibleWidth(affordance));
   const line2 = stripTerminalSequences(truncateToWidth(wrapped[1], room, "…"));
   lines.push(clampLine([bodySeg(line2), { text: affordance, color: "dim" }], width));
   return lines;
 }
 
-/**
- * The node cursor's detail as ordered {@link DetailSection}s so the caller can render
- * collapsed/expanded per `expandedSections` and highlight the focused navigable section.
- * Order: header, status, upstream, downstream, blast radius (failed only), Prompt, runtime
- * facts, Outcome/Error. The stage counterpart is {@link stageAggregateLines}.
- */
-function nodeDetailSections(
-  entry: WorkflowAgentEntry, agents: readonly WorkflowAgentEntry[], active: boolean,
-  glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number, now: number,
-  expandedSections: readonly string[],
-): DetailSection[] {
-  const sections: DetailSection[] = [];
-  const sep = ascii ? "--" : "──";
-  const arrow = ascii ? "->" : "→";
-  const enterGlyph = ascii ? "enter" : "⏎";
-  const state = displayState(entry, active);
-  const model = entry.model ?? entry.modelId ?? "model pending";
 
-  sections.push({ key: "", navigable: false, lines: [
-    clampLine([{ text: " Node ", color: "muted", bold: true }, { text: `${sep} ${entry.label}`, color: "dim" }], width),
-  ] });
-
-  // Live per-node tool/token counts arrive on the entry (GraphRunReporter reads the record); the
-  // status line keeps phase + elapsed, and `runtimeFacts` below surfaces the counts.
-  const phase = entry.phaseTitle ?? `Stage ${(entry.phaseIndex ?? 0) + 1}`;
-  const annotations = subStatusAnnotations(entry, state, now);
-  const liveFacts = state === "running"
-    ? ` · ${phase}${entry.startedAt != null ? ` · ${formatDuration(Math.max(0, now - entry.startedAt))}` : ""}`
-    : "";
-  const attemptFacts = annotations.length > 0 ? ` · ${annotations.join(" · ")}` : "";
-  sections.push({ key: "", navigable: false, lines: [
-    clampLine([
-      { text: "  " },
-      { text: statusWord(state), color: stateColor(state), bold: true },
-      { text: ` · ${entry.agentType ?? "node"} · ${model}${liveFacts}${attemptFacts}`, color: "muted" },
-    ], width),
-  ] });
-
-  // Waits on (upstream): each dependency joined against the collapsed roster for its live state.
-  const byId = new Map(agents.map(agent => [agent.nodeBinding ?? agent.label, agent] as const));
-  const deps = entry.deps ?? [];
-  const waits: WorkflowCardLine[] = [
-    clampLine([
-      { text: "  Waits on (upstream):", color: "muted" },
-      ...(deps.length === 0 ? [{ text: " entry node", color: "muted" as const }] : []),
-    ], width),
-  ];
-  for (const depId of deps) {
-    const dep = byId.get(depId);
-    const depState = dep ? displayState(dep, active) : "queued";
-    waits.push(clampLine([
-      { text: "    " },
-      graphRowGlyph(depState, glyphs),
-      { text: ` ${depId}  ${statusWord(depState)}`, color: dep ? stateColor(depState) : "dim" },
-    ], width));
-  }
-  sections.push({ key: "", navigable: false, lines: waits });
-
-  // Unblocks (downstream): what this node gates.
-  const dependents = entry.dependents ?? [];
-  const chain = dependents.length > 0 ? dependents.map(id => `${arrow} ${id}`).join(" ") : "—";
-  sections.push({ key: "", navigable: false, lines: [
-    clampLine([{ text: "  Unblocks (downstream): ", color: "muted" }, { text: chain, color: "muted" }], width),
-  ] });
-
-  // Blast radius: the downstream nodes a failure skipped, walked transitively through the DAG.
-  if (state === "failed") {
-    const skipped = blastRadius(entry, byId, active);
-    sections.push({ key: "", navigable: false, lines: [
-      clampLine(
-        skipped.length > 0
-          ? [{ text: "  Blast radius: ", color: "muted" }, { text: skipped.join(", "), color: "warning" }]
-          : [{ text: "  Blast radius: ", color: "muted" }, { text: "none yet", color: "dim" }],
-        width,
-      ),
-    ] });
-  }
-
-  // Prompt: the node's real prompt template, left at the terminal default fg so it reads as content.
-  const prompt = entry.promptPreview?.trim();
-  if (prompt) {
-    sections.push({
-      key: "prompt", navigable: true,
-      lines: collapsibleSection("Prompt", prompt, undefined, expandedSections.includes("prompt"), enterGlyph, width),
-    });
-  }
-
-  if (entry.instanceId) sections.push({ key: "identity", navigable: true, lines:
-    collapsibleSection("Identity", `Key: ${entry.nodeKey}\nInstance: ${entry.instanceId}`, undefined, expandedSections.includes("identity"), enterGlyph, width),
+function nodeDetailSections(entry: WorkflowAgentEntry, plan: Pick<PanelPlan, "agents" | "active" | "run" | "ascii" | "width" | "now">, expanded: readonly string[]): DetailSection[] {
+  const { agents, active, run, ascii, width, now } = plan;
+  const status = lifecycle(entry, run, ascii);
+  const line = (text: string, color?: WorkflowCardColor): WorkflowCardLine => clampLine([{ text, ...(color ? { color } : {}) }], width);
+  const sections: DetailSection[] = [{ key: "", navigable: false, lines: [
+    line(` ${ascii ? "-" : "─"} Selected node ${(ascii ? "-" : "─").repeat(Math.max(1, width - 18))}`), [], line(` ${entry.label}`),
+    withTrailing([{ text: ` ${status.word === "done" ? "Completed" : status.word[0].toUpperCase() + status.word.slice(1)}`, color: status.color }, { text: ` · ${[entry.presentation?.kind.replaceAll("_", " "), entry.agentType, entry.model ?? entry.modelId, entry.durationMs !== undefined ? formatDuration(entry.durationMs) : entry.startedAt !== undefined ? formatDuration(Math.max(0, (active ? run.source.task.pausedAt ?? now : entry.lastProgressAt ?? run.source.task.endTime ?? now) - entry.startedAt)) : undefined, entry.cached ? "replayed" : undefined].filter(Boolean).join(" · ")}`, color: "dim" }], "", width),
+  ] }];
+  const byId = new Map<string | number, WorkflowAgentEntry>(agents.flatMap(agent => [[bindingId(agent), agent] as const, [nodeId(agent, agents), agent] as const]));
+  const parent = entry.presentation?.itemIndex !== undefined && parentReference(entry) !== undefined
+    ? agents.find(node => (node.historyIndex ?? node.instanceId) === parentReference(entry) && node.presentation?.kind === "fanout") : undefined;
+  const deps = upstreamIds(entry).length ? upstreamIds(entry) : parent ? [nodeId(parent)] : [];
+  const downstream = downstreamIds(entry).length ? downstreamIds(entry) : parent ? downstreamIds(parent) : [];
+  const special = entry.presentation?.historyConnections?.map(edge => ({ ...edge, reference: edge.index }))
+    ?? entry.presentation?.connections?.map(edge => ({ ...edge, reference: edge.binding })) ?? [];
+  const crossGroup = [...deps, ...downstream].some(id => {
+    const other = byId.get(id);
+    return other !== undefined && parentReference(other) !== undefined && parentReference(entry) !== undefined
+      && parentReference(other) !== parentReference(entry)
+      && other !== parent && !(parent && downstreamIds(parent).includes(id));
   });
+  const name = (id: string | number) => byId.get(id)?.label ?? String(id);
+  const flow = [[], line(" Flow")];
+  if (deps.length <= 1 && downstream.length <= 1 && !special.length && !crossGroup) {
+    if (deps.length) flow.push(line(`   ${name(deps[0])}`));
+    flow.push(line(`      ${ascii ? "`-" : "└─"} this ${entry.presentation?.kind === "agent" ? "agent" : "node"}`));
+    if (downstream.length) flow.push(line(`           ${ascii ? "`-" : "└─"} ${name(downstream[0])}`));
+  } else {
+    for (const text of [
+      `    Upstream: ${deps.map(name).join(", ") || "none"}`,
+      `    Selected: ${entry.label}`,
+      `    Downstream: ${downstream.map(name).join(", ") || "none"}`,
+      ...special.map(edge => `    ${edge.direction}: ${name(edge.reference)} (${edge.kind})`),
+    ]) flow.push(...wrapTextWithAnsi(text, Math.max(1, width)).map(text => line(text)));
+  }
+  sections.push({ key: "", navigable: false, lines: flow });
+  if (displayState(entry, active) === "failed") sections.push({ key: "", navigable: false, lines: [line(`  Blast radius: ${blastRadius(entry, byId, active).join(", ") || "none yet"}`, "warning")] });
+  const detail = run.source.history ? run.readHistoricalDetail?.(entry.index) : undefined;
+  const historicalFallback = run.source.history && run.readHistoricalDetail ? HISTORY_ARTIFACT_DETAIL : undefined;
+  const prompt = detail?.prompt ?? historicalFallback ?? entry.promptPreview;
+  if (prompt?.trim()) sections.push({ key: "prompt", navigable: true, lines: collapsibleSection("Prompt", prompt.trim(), undefined, expanded.includes("prompt"), "Enter", width) });
+  const outcome = run.source.history ? detail?.outcome || historicalFallback || entry.resultPreview : outcomeText(entry, displayState(entry, active));
+  if (outcome) sections.push({ key: "outcome", navigable: true, lines: collapsibleSection(status.word === "done" ? "Outcome" : "Error", outcome, status.word === "failed" || status.word === "blocked" ? "error" : undefined, expanded.includes("outcome"), "Enter", width) });
   const facts = runtimeFacts(entry);
-  if (facts) {
-    sections.push({ key: "", navigable: false, lines: [
-      clampLine([{ text: "  Runtime: ", color: "muted" }, { text: facts, color: "muted" }], width),
-    ] });
-  }
-
-  // Outcome is last so expanded retained output scrolls as a single detail body.
-  const outcome = outcomeText(entry, state);
-  if (outcome) {
-    const isError = state === "failed" || state === "blocked";
-    sections.push({
-      key: "outcome", navigable: true,
-      lines: collapsibleSection(
-        state === "done" ? "Outcome" : "Error", outcome, isError ? "error" : "muted",
-        expandedSections.includes("outcome"), enterGlyph, width,
-      ),
-    });
-  }
-
+  const metadata = [[], line(" Metadata"), ...(facts ? [line(`   ${facts}`, "dim")] : [])];
+  if (entry.nodeKey) metadata.push(line(`   Key: ${entry.nodeKey}`, "dim"));
+  if (entry.instanceId) metadata.push(...(expanded.includes("identity")
+    ? wrapTextWithAnsi(`   Instance: ${entry.instanceId}\n   Binding: ${bindingId(entry)}`, Math.max(1, width)).map(text => line(text, "dim"))
+    : [withTrailing([{ text: `   Instance: ${entry.instanceId.slice(0, 8)}${ascii ? "..." : "…"}`, color: "dim" }], "Space identity", width)]));
+  if (facts || entry.instanceId || entry.nodeKey) sections.push({ key: "identity", navigable: !!entry.instanceId, lines: metadata });
   return sections;
 }
-
-/** Detail sections for the resolved cursor: node → {@link nodeDetailSections}; stage → one aggregate block. */
-function buildDetailSections(
-  cursor: Target | undefined, agents: readonly WorkflowAgentEntry[], groups: readonly StageGroup[],
-  active: boolean, glyphs: WorkflowDialogGlyphs, ascii: boolean, width: number, now: number,
-  expandedSections: readonly string[],
-): DetailSection[] {
-  if (cursor?.kind === "node") {
-    const entry = agents.find(agent => (agent.nodeBinding ?? agent.label) === cursor.id);
-    return entry ? nodeDetailSections(entry, agents, active, glyphs, ascii, width, now, expandedSections) : [];
-  }
-  if (cursor?.kind === "stage") {
-    const group = groups.find(candidate => candidate.stage === cursor.stage);
-    if (group) return [{ key: "", navigable: false, lines: stageAggregateLines(group, active, glyphs, ascii, width) }];
-  }
-  return [];
-}
-
-/** The recordId of the resolved cursor's node when it is a node that has one — the `c` (open) target. */
 function openableRecordId(cursor: Target | undefined, agents: readonly WorkflowAgentEntry[]): string | undefined {
-  if (cursor?.kind !== "node") return undefined;
-  return agents.find(agent => (agent.nodeBinding ?? agent.label) === cursor.id)?.recordId;
+  return cursor?.kind === "node" ? agents.find(agent => nodeId(agent, agents) === cursor.id)?.recordId : undefined;
 }
-
-function footerLine(
-  run: PanelRun, focus: PanelState["focus"], scroll: number, bodyLength: number, capacity: number,
-  ascii: boolean, width: number, canOpen: boolean,
-): WorkflowCardLine {
-  const live = isActive(run.status);
-  const dot = live ? "*" : "+";
-  const end = Math.min(bodyLength, scroll + capacity);
-  const range = bodyLength > 0 ? `${scroll + 1}-${end}/${bodyLength}` : "0/0";
-  const upDown = ascii ? "up/down" : "↑↓";
-  const arrow = ascii ? "left/right" : "←→";
-  const enter = ascii ? "enter" : "⏎";
-  const convo = canOpen && !run.source.history ? " · c convo" : "";
-  const hints = focus === "detail"
-    ? `${upDown} section · ${enter} expand · f filter${convo} · esc back`
-    : `${upDown} move · ${enter} detail · space fold · f filter · ${arrow} run${convo} · esc close`;
-  return clampLine([
-    { text: ` ${dot} ${live ? "live" : "done"}`, color: live ? "accent" : "dim" },
-    { text: `  ${range}`, color: "dim" },
-    { text: `  ${hints}`, color: "dim" },
-  ], width);
-}
-
 /** Scroll offset that keeps `selectedRow` inside a `cap`-tall window over `length` lines (auto-follow). */
 function follow(length: number, selectedRow: number | undefined, scroll: number, cap: number): number {
   const maxScroll = Math.max(0, length - cap);
@@ -882,210 +500,96 @@ function padTo(lines: WorkflowCardLine[], rows: number): WorkflowCardLine[] {
   return out;
 }
 
-/* ------------------------------------------------------------------------- *
- * Plan — the one shared computation behind render and keys
- * ------------------------------------------------------------------------- */
 
-/**
- * Everything both {@link renderPanelLines} and {@link applyPanelKey} need for one
- * snapshot, computed once so navigation and rendering can never disagree. The pivotal
- * shared decision is `isExpanded`: which stages show their node rows. It depends on the
- * resolved cursor (its stage is the focused stage) and on whether the fully-expanded
- * roster fits the roster budget — never on anything render-only — so `targets` (nav) and
- * the rendered roster expand exactly the same stages.
- */
 interface PanelPlan {
-  index: number;
-  run: PanelRun;
-  active: boolean;
-  agents: WorkflowAgentEntry[];
-  glyphs: WorkflowDialogGlyphs;
-  ascii: boolean;
-  width: number;
-  now: number;
-  headerLines: WorkflowCardLine[];
-  shown: ShownStage[];
-  resolvedCursor: Target | undefined;
-  focusedStage: number | undefined;
-  isExpanded: (stage: number) => boolean;
-  targets: Target[];
-  detailSections: DetailSection[];
-  navigable: DetailSection[];
-  detailContentLen: number;
-  capacity: number | null;
-  rosterBudget: number | null;
-  detailCap: number | null;
+  index: number; run: PanelRun; active: boolean; agents: WorkflowAgentEntry[];
+  ascii: boolean; width: number; now: number; headerLines: WorkflowCardLine[];
+  visible: TreeRow[]; resolvedCursor?: Target; targets: Target[];
+  detailSections: DetailSection[]; navigable: DetailSection[];
 }
-
 function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOptions): PanelPlan | null {
-  if (runs.length === 0) return null;
+  if (!runs.length) return null;
+  const width = Number.isFinite(opts.width) ? Math.max(0, Math.floor(opts.width)) : 80;
   const ascii = opts.ascii ?? false;
-  const glyphs = ascii ? ASCII_DIALOG_GLYPHS : UNICODE_DIALOG_GLYPHS;
-  const width = Math.max(1, opts.width || DEFAULT_WIDTH);
   const now = opts.now ?? Date.now();
-  const rows = opts.rows;
-
   const index = clamp(state.runIndex, 0, runs.length - 1);
   const run = runs[index];
-  const source = run.source;
   const active = isActive(run.status);
-  const agents = collapse(source.progress).agents;
-  const groups = stageGroups(agents);
-
-  const switcher = switcherLines(runs, index, glyphs, ascii, width);
-  const maxContextRows = rows == null ? undefined : Math.max(2, rows - switcher.length - 4);
-  const head = header(source.task, source.meta, buildPhaseGroups(source.progress, source.meta?.phases), source.agentCount ?? 0, now);
-  const headerLines: WorkflowCardLine[] = [
-    ...switcher,
-    ...graphContextLines(source, width, state.expandedSections, maxContextRows),
-    clampLine([{ text: " " }, { text: head.stats, color: "muted" }], width),
-    summaryStrip(agents, active, state.filter, glyphs, ascii, width),
-    ...(source.history ? wrapTextWithAnsi(historyDisclosure(source.history), width).map(text => clampLine([{ text, color: "dim" }], width)) : []),
-  ];
-
-  const shown = shownStages(groups, active, state.filter);
-  const collapsedSet = new Set(state.collapsedStages);
-  const resolvedCursor = resolveCursor(state.cursor, agents, active, state.filter, collapsedSet, shown);
-  const focusedStage = resolvedCursor?.kind === "stage"
-    ? resolvedCursor.stage
-    : resolvedCursor?.kind === "node"
-      ? (agents.find(agent => (agent.nodeBinding ?? agent.label) === resolvedCursor.id)?.phaseIndex ?? 0)
-      : undefined;
-
-  const detailSections = buildDetailSections(resolvedCursor, agents, groups, active, glyphs, ascii, width, now, state.expandedSections);
-  const detailContentLen = detailSections.reduce((sum, section) => sum + section.lines.length, 0);
-  const navigable = detailSections.filter(section => section.navigable);
-
-  // Budget split: the header is fixed, then a 1-line divider separates the roster and detail
-  // zones. Headers win first (every stage stays visible when there is room), the detail asks
-  // for up to 40% (>= MIN_DETAIL_ROWS when the pane allows), and the roster keeps the rest.
-  const capacity = rows != null ? Math.max(1, rows - headerLines.length - 1) : null;
-  let rosterBudget: number | null = null;
-  let detailCap: number | null = null;
-  let fullFits = true;
-  if (capacity != null) {
-    const available = Math.max(1, capacity - 1);
-    const rosterFloor = clamp(Math.min(Math.max(1, shown.length), available - 1), 1, available);
-    detailCap = clamp(
-      Math.min(detailContentLen, Math.floor(available * 0.4)),
-      Math.min(MIN_DETAIL_ROWS, available - rosterFloor),
-      available - rosterFloor,
-    );
-    rosterBudget = Math.max(rosterFloor, available - detailCap);
-    const fullHeight = rosterHeight(shown, stage => !collapsedSet.has(stage));
-    fullFits = fullHeight <= rosterBudget;
-  }
-
-  const isExpanded = (stage: number): boolean =>
-    !collapsedSet.has(stage) && (fullFits || stage === focusedStage);
-
-  const targets = visibleTargets(shown, isExpanded);
-
-  return {
-    index, run, active, agents, glyphs, ascii, width, now, headerLines, shown,
-    resolvedCursor, focusedStage, isExpanded, targets, detailSections, navigable,
-    detailContentLen, capacity, rosterBudget, detailCap,
-  };
+  const agents = collapse(run.source.progress).agents;
+  const tree = presentationTree(agents);
+  const visible = visibleTree(tree, state, active, ascii);
+  const targets = visible.map(row => row.node.target);
+  const resolvedCursor = targets[targetIndex(targets, state.cursor)] ?? targets[0];
+  const headerLines = [withTrailing([{ text: ` ${run.name}`, color: "toolTitle" as const, bold: true }], run.status === "killed" ? "STOPPED" : run.status.toUpperCase(), width)];
+  // The lifecycle is semantic color, never a duplicate glyph.
+  const statusSegment = headerLines[0].at(-1);
+  if (statusSegment && headerLines[0].length > 1) statusSegment.color = runStateColor(run.status);
+  else headerLines.push(clampLine([{ text: ` ${run.status === "killed" ? "STOPPED" : run.status.toUpperCase()}`, color: runStateColor(run.status) }], width));
+  if (runs.length > 1) headerLines.push(clampLine([{ text: ` ${index + 1}/${runs.length} · ${runs.filter((_, i) => i !== index).map(other => other.name).join(" · ")}`, color: "dim" }], width));
+  headerLines.push(...graphContextLines(run.source, width, state.expandedSections, opts.rows == null ? undefined : Math.max(2, opts.rows - 8)));
+  headerLines.push(clampLine([{ text: ` ${aggregate(agents, tree, run, now)}`, color: "dim" }], width));
+  if (state.filter !== "all") headerLines.push(clampLine([{ text: ` Filter: ${state.filter}`, color: "warning" }], width));
+  if (agents.some(entry => !entry.presentation)) headerLines.push(clampLine([{ text: " Flat fallback: ownership unavailable for unclassified nodes", color: "dim" }], width));
+  if (run.source.history) headerLines.push(...wrapTextWithAnsi(historyDisclosure(run.source.history, !!run.readHistoricalDetail), Math.max(1, width)).map(text => clampLine([{ text, color: "dim" }], width)));
+  headerLines.push([]);
+  const selected = resolvedCursor?.kind === "node" ? agents.find(entry => nodeId(entry, agents) === resolvedCursor.id) : undefined;
+  const detailSections = selected ? nodeDetailSections(selected, { agents, active, run, ascii, width, now }, state.expandedSections) : [];
+  return { index, run, active, agents, ascii, width, now, headerLines, visible, resolvedCursor, targets, detailSections, navigable: detailSections.filter(section => section.navigable) };
 }
-
-/* ------------------------------------------------------------------------- *
- * Render
- * ------------------------------------------------------------------------- */
-
+function footerLine(plan: PanelPlan, state: PanelState, runCount: number, range?: string): WorkflowCardLine {
+  const { run, ascii, width, resolvedCursor, agents, navigable } = plan;
+  const hints = [...(range ? [range] : []), `${ascii ? "up/down" : "↑↓"} ${state.focus === "detail" ? "section" : "select"}`];
+  if (navigable.length) hints.push("Enter expand");
+  else if (resolvedCursor && resolvedCursor.kind !== "node") hints.push("Enter fold");
+  if (state.focus === "roster") hints.push("Space fold");
+  else if (navigable.length) hints.push(navigable[clamp(state.detailCursor, 0, navigable.length - 1)].key === "identity" ? "Space identity" : "Space expand");
+  hints.push("f filter");
+  if (run.source.input !== undefined && !run.source.history) hints.push("e inputs");
+  if (runCount > 1) hints.push(`${ascii ? "left/right" : "←→"} run`);
+  if (!run.source.history && openableRecordId(resolvedCursor, agents)) hints.push("c convo");
+  hints.push(state.focus === "detail" ? "Esc back" : "Esc close");
+  return clampLine([{ text: " " + hints.join(" · "), color: "dim" }], width);
+}
 export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, opts: PanelOptions): WorkflowCardLine[] {
-  const width = Math.max(1, opts.width || DEFAULT_WIDTH);
-  const rows = opts.rows;
+  const width = Number.isFinite(opts.width) ? Math.max(0, Math.floor(opts.width)) : 80;
   const plan = planPanel(runs, state, opts);
-
-  if (plan == null) {
-    const lines: WorkflowCardLine[] = [[], clampLine([{ text: "  No graph runs in this session yet.", color: "dim" }], width)];
-    return rows != null ? padTo(lines, rows) : lines;
+  if (!plan) {
+    const lines = [[], clampLine([{ text: "  No graph runs in this session yet.", color: "dim" }], width)];
+    return opts.rows == null ? lines : padTo(lines, Math.max(0, opts.rows));
   }
-
-  const { ascii, glyphs, now, active, agents, headerLines, shown, resolvedCursor, focusedStage, isExpanded, detailSections, navigable, capacity, rosterBudget, detailCap } = plan;
-
-  // Roster zone: auto-fit, always tracking the cursor. The reverse bar stays off while the
-  // detail owns focus, so it moves to the focused detail section instead.
-  const highlightCursor = state.focus === "roster";
-  const { lines: rosterAll } = rosterLines(
-    shown, resolvedCursor, active, isExpanded, highlightCursor, focusedStage,
-    rosterBudget, state.scroll, glyphs, ascii, width, now,
-  );
-  const rosterBody: WorkflowCardLine[] = rosterAll.length > 0
-    ? rosterAll
-    : [clampLine([{ text: "  No nodes scheduled yet.", color: "dim" }], width)];
-
-  // Detail zone: flatten all sections into one scrollable body, moving the reverse bar onto
-  // the focused navigable section's label line when the detail owns focus.
-  const highlightSection = state.focus === "detail" && navigable.length > 0
-    ? navigable[clamp(state.detailCursor, 0, navigable.length - 1)]
-    : undefined;
-  const detailBody: WorkflowCardLine[] = [];
-  let focusedBodyLine: number | undefined;
-  for (const section of detailSections) {
-    const sectionLines = section === highlightSection
-      ? section.lines.map((line, i) => (i === 0 ? highlightRow(line, width) : line))
-      : section.lines;
-    if (section === highlightSection) focusedBodyLine = detailBody.length;
-    detailBody.push(...sectionLines);
+  const { lines: roster, selectedRow } = rosterLines(plan, state);
+  const detail: WorkflowCardLine[] = [];
+  const section = state.focus === "detail" ? plan.navigable[clamp(state.detailCursor, 0, plan.navigable.length - 1)] : undefined;
+  let selectedDetail: number | undefined;
+  for (const block of plan.detailSections) {
+    const title = block.lines.findIndex(line => line.length > 0);
+    if (block === section) selectedDetail = detail.length + Math.max(0, title);
+    detail.push(...block.lines.map((line, i) => block === section && i === title ? highlightRow(line, width) : line));
   }
-
-  let bodyOut: WorkflowCardLine[];
-  let footScroll: number;
-  let footBodyLength: number;
-  let footCapacity: number;
-
-  if (capacity == null) {
-    bodyOut = [...rosterBody, [], ...detailBody];
-    footScroll = 0;
-    footBodyLength = state.focus === "detail" ? detailBody.length : rosterBody.length;
-    footCapacity = footBodyLength;
-  } else {
-    const bodyCap = Math.max(1, detailCap as number);
-    const detailScroll = follow(detailBody.length, state.detailScroll === 0 ? focusedBodyLine : undefined, state.detailScroll, bodyCap);
-    bodyOut = [...rosterBody, [], ...detailBody.slice(detailScroll, detailScroll + bodyCap)];
-    if (bodyOut.length > capacity) bodyOut = bodyOut.slice(0, capacity);
-    if (state.focus === "detail") {
-      footScroll = detailScroll;
-      footBodyLength = detailBody.length;
-      footCapacity = detailCap as number;
-    } else {
-      footScroll = 0;
-      footBodyLength = rosterBody.length;
-      footCapacity = rosterBody.length;
-    }
+  let header = plan.headerLines;
+  let body = [...roster, [], [], ...detail];
+  let range: string | undefined;
+  if (opts.rows !== undefined) {
+    const rosterFloor = Math.min(roster.length, 3, Math.max(0, opts.rows - 1));
+    header = header.slice(0, Math.max(0, opts.rows - 1 - rosterFloor));
+    const capacity = Math.max(0, opts.rows - header.length - 1);
+    const detailCap = detail.length ? Math.min(detail.length, Math.max(0, Math.min(capacity - rosterFloor - 2, Math.max(5, Math.floor(capacity * .4))))) : 0;
+    const rosterCap = Math.max(0, capacity - detailCap - (detailCap ? 2 : 0));
+    const selection = state.scroll === 0 ? selectedRow : undefined;
+    const scroll = follow(roster.length, selection, state.scroll, rosterCap);
+    const detailScroll = follow(detail.length, state.detailScroll === 0 ? selectedDetail : undefined, state.detailScroll, detailCap);
+    const [offset, cap, total] = state.focus === "detail" ? [detailScroll, detailCap, detail.length] : [scroll, rosterCap, roster.length];
+    if (total > cap) range = `${Math.min(total, offset + 1)}-${Math.min(total, offset + cap)}/${total}`;
+    body = [...roster.slice(scroll, scroll + rosterCap), ...(detailCap ? [[], []] : []), ...detail.slice(detailScroll, detailScroll + detailCap)];
   }
-
-  const out: WorkflowCardLine[] = [...headerLines, ...bodyOut];
-  if (rows != null) {
-    const contentRows = Math.max(0, rows - 1);
-    if (out.length > contentRows) out.length = contentRows;
-    while (out.length < contentRows) out.push([]);
-  }
-  out.push(footerLine(plan.run, state.focus, footScroll, footBodyLength, footCapacity, ascii, width, openableRecordId(resolvedCursor, agents) !== undefined));
-  return out.map(line => clampLine(line, width));
+  const content = [...header, ...body];
+  const output = opts.rows === undefined ? content : padTo(content, Math.max(0, opts.rows - 1));
+  if (opts.rows !== 0) output.push(footerLine(plan, state, runs.length, range));
+  return output.map(line => clampLine(line, width));
 }
-
-/* ------------------------------------------------------------------------- *
- * Keys
- * ------------------------------------------------------------------------- */
-
 const toggleSection = (keys: readonly string[], key: string): string[] =>
   keys.includes(key) ? keys.filter(k => k !== key) : [...keys, key];
 
-/**
- * Apply one forwarded keystroke to the panel's read-only view state and re-render.
- *
- * Two-level focus mirrors the always-on two-zone body. In `focus:"roster"`, `↑↓`/`j`/`k`
- * move the roster cursor (the detail below mirrors it), `enter` folds a selected stage or drills
- * a node with an expandable section INTO detail, `space` folds the cursor's stage (landing it on
- * the header so it stays re-expandable — the un-trap), and `esc`/`q` closes. In
- * `focus:"detail"`, `↑↓` move over the Prompt/Outcome sections, `enter`/`space` expand or
- * collapse the focused one, and `esc`/`q` backs out to the roster. `←/→` switches run
- * (resetting to the roster overview, keeping the filter), `f` cycles the filter, `pageUp`/
- * `pageDown` page the focused zone, and `c` opens the selected node's conversation when it
- * has a `recordId`. A key the panel does not own leaves the state as-is and re-renders.
- */
 export function applyPanelKey(
   runs: readonly PanelRun[], state: PanelState, data: string, opts: PanelOptions,
 ): { state: PanelState; lines: WorkflowCardLine[]; close: boolean; action?: { kind: "open"; recordId: string } } {
@@ -1108,7 +612,7 @@ export function applyPanelKey(
     // Persist the filter across a run switch; stages differ per graph, so reset to the overview.
     return render({
       runIndex: nextIndex, scroll: 0, detailScroll: 0, filter: state.filter,
-      collapsedStages: [], focus: "roster", detailCursor: 0, expandedSections: [],
+      collapsedStages: [], collapsedTargets: [], focus: "roster", detailCursor: 0, expandedSections: [],
     });
   }
 
@@ -1120,7 +624,7 @@ export function applyPanelKey(
   }
 
   if (matchesKey(data, "f")) {
-    const nextFilter: PanelFilter =
+    const nextFilter: PanelState["filter"] =
       state.filter === "all" ? "running" : state.filter === "running" ? "failed" : "all";
     // If the cursor's target no longer exists under the new filter, snap it to the first target.
     const nextTargets = planPanel(runs, { ...state, filter: nextFilter }, opts)?.targets ?? [];
@@ -1129,6 +633,8 @@ export function applyPanelKey(
       ...state,
       runIndex: index,
       filter: nextFilter,
+      scroll: 0,
+      detailScroll: 0,
       cursor: stillVisible ? state.cursor : nextTargets[0],
     });
   }
@@ -1143,7 +649,7 @@ export function applyPanelKey(
       const key = navigable[clamp(state.detailCursor, 0, navigable.length - 1)].key;
       return render({ ...state, runIndex: index, expandedSections: toggleSection(state.expandedSections, key) });
     }
-    if (resolvedCursor?.kind === "stage") return applyPanelKey(runs, state, " ", opts);
+    if (resolvedCursor && resolvedCursor.kind !== "node") return applyPanelKey(runs, state, " ", opts);
     // Roster focus: drill a node with an expandable section into the detail; else stay put.
     if (resolvedCursor?.kind === "node" && navigable.length > 0) {
       return render({ ...state, runIndex: index, focus: "detail", detailCursor: 0, detailScroll: 0, cursor: resolvedCursor });
@@ -1157,21 +663,14 @@ export function applyPanelKey(
       const key = navigable[clamp(state.detailCursor, 0, navigable.length - 1)].key;
       return render({ ...state, runIndex: index, expandedSections: toggleSection(state.expandedSections, key) });
     }
-    // Roster focus: space folds the cursor's stage (the manual override over auto-fit).
-    if (!resolvedCursor) return render({ ...state, runIndex: index });
-    const stage = resolvedCursor.kind === "stage"
-      ? resolvedCursor.stage
-      : (agents.find(agent => (agent.nodeBinding ?? agent.label) === resolvedCursor.id)?.phaseIndex ?? 0);
-    const collapsed = new Set(state.collapsedStages);
-    let nextCursor: Target = resolvedCursor;
-    if (collapsed.has(stage)) {
-      collapsed.delete(stage);
-    } else {
-      collapsed.add(stage);
-      // Collapsing hides the node rows; land the cursor on the header it re-expands from.
-      nextCursor = { kind: "stage", stage };
-    }
-    return render({ ...state, runIndex: index, collapsedStages: [...collapsed].sort((a, b) => a - b), cursor: nextCursor });
+    if (!resolvedCursor) return render(state);
+    const row = plan.visible.find(row => sameTarget(row.node.target, resolvedCursor));
+    if (!row) return render(state);
+    const target = row.node.children.length ? row.node.target : row.parent ?? { kind: "stage", stage: 0 };
+    const collapsed = state.collapsedTargets ?? [];
+    const next = collapsed.some(item => sameTarget(item, target))
+      ? collapsed.filter(item => !sameTarget(item, target)) : [...collapsed, target];
+    return render({ ...state, collapsedStages: [], collapsedTargets: next, cursor: target, scroll: 0 });
   }
 
   const down = matchesKey(data, "down") || matchesKey(data, "j");
@@ -1187,7 +686,7 @@ export function applyPanelKey(
     // Unset or stale cursor: down starts at the first target, up stays at the first.
     const nextPos = current < 0 ? 0 : clamp(current + (down ? 1 : -1), 0, targets.length - 1);
     // A fresh node starts its detail from the top of the (collapsed) sections.
-    return render({ ...state, runIndex: index, cursor: targets[nextPos], detailCursor: 0, detailScroll: 0 });
+    return render({ ...state, runIndex: index, cursor: targets[nextPos], detailCursor: 0, detailScroll: 0, scroll: 0 });
   }
 
   if (matchesKey(data, "c") && !plan.run.source.history) {

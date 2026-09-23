@@ -2,17 +2,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import * as agentTypes from "../src/agent-types.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import { createNodeHost } from "../src/graph/node-host-adapter.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { AgentConfig } from "../src/types.js";
-
 vi.mock("../src/agent-runner.js", () => ({ runAgent: vi.fn(), resumeAgent: vi.fn() }));
 
 import { runAgent } from "../src/agent-runner.js";
+import * as outputFiles from "../src/output-file.js";
+import { workflowNodeArtifactId } from "../src/graph/history-artifact.js";
 
 const ui: Pick<ExtensionContext["ui"], "notify"> = { notify: vi.fn() };
 const ctx = {
@@ -57,9 +58,13 @@ function configureAgent(config: AgentConfig | undefined): void {
   vi.spyOn(agentTypes, "getAgentConfig").mockReturnValue(config);
 }
 
-const session = () => ({ dispose: vi.fn() }) as unknown as AgentSession;
+const session = () => ({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }) as unknown as AgentSession;
 
 let manager: AgentManager;
+beforeEach(() => {
+  vi.restoreAllMocks();
+  agentTypes.registerAgents(new Map());
+});
 afterEach(() => {
   manager?.dispose();
   vi.resetAllMocks();
@@ -153,7 +158,7 @@ describe("createNodeHost", () => {
     try {
       mkdirSync(join(cwd, ".pi"));
       writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({ enabledModels: ["test/allowed"] }));
-      configureAgent(undefined);
+      configureAgent(agentConfig());
       const allowed = { ...model, id: "allowed" };
       const { host } = setup("out", { context: modelContext(cwd, [model, allowed]), scopeModels: () => true });
       vi.mocked(runAgent).mockClear();
@@ -199,5 +204,54 @@ it("returns authoritative lifetime USD cost, independently of token counts", asy
   const result = await host.spawnAgent({ nodeId: "paid", attempt: 1, agentType: "general-purpose", prompt: "task" }, new AbortController().signal);
   expect(manager.listAgents()[0]?.lifetimeCost).toBe(0.125);
   expect(result.costUsd).toBe(0.125);
+  await host.dispose();
+});
+
+it("uses the registered history index alias for graph transcript paths and entries", async () => {
+  setup();
+  const path = vi.spyOn(outputFiles, "createOutputFilePath").mockReturnValue("/fixture.output");
+  const initial = vi.spyOn(outputFiles, "writeInitialEntry").mockImplementation(() => {});
+  const stream = vi.spyOn(outputFiles, "streamToOutputFile").mockReturnValue(() => {});
+  const result = vi.spyOn(outputFiles, "writeResultEntry").mockImplementation(() => {});
+  const nodeIndex = vi.fn(() => 17);
+  const pi: Pick<ExtensionAPI, "exec"> = { exec: vi.fn() };
+  const host = createNodeHost({ pi: pi as ExtensionAPI, ctx, manager, workflowId: "run-id", nodeIndex });
+  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
+    const child = session();
+    options.onSessionCreated?.(child);
+    return { session: child, responseText: "done", aborted: false, steered: false };
+  });
+  await host.spawnAgent({ nodeId: "private-binding", attempt: 1, agentType: "general-purpose", prompt: "FIXTURE" }, new AbortController().signal);
+  const alias = workflowNodeArtifactId("run-id", 17);
+  expect(nodeIndex).toHaveBeenCalledWith("private-binding");
+  expect(path).toHaveBeenCalledWith(ctx.cwd, alias, "parent");
+  expect(initial).toHaveBeenCalledWith("/fixture.output", alias, "FIXTURE", ctx.cwd);
+  expect(stream).toHaveBeenCalledWith(expect.anything(), "/fixture.output", alias, ctx.cwd);
+  expect(result).toHaveBeenCalledWith("/fixture.output", alias, "done", ctx.cwd);
+  expect(manager.listAgents()[0]?.outputFile).toBe("/fixture.output");
+  expect(manager.listAgents()[0]?.id).not.toBe(alias);
+  await host.dispose();
+  vi.restoreAllMocks();
+});
+
+it.each(["unknown", "removed-config", "disabled"])('fails closed for %s graph agents before dispatch', async kind => {
+  const { host } = setup();
+  vi.spyOn(agentTypes, "resolveType").mockReturnValue(kind === "unknown" ? undefined : "fixture");
+  vi.spyOn(agentTypes, "getAgentConfig").mockReturnValue(kind === "disabled" ? agentConfig({ enabled: false }) : undefined);
+  const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task" }, new AbortController().signal);
+  expect(result.ok).toBe(false);
+  expect(result.error).toMatch(/agent.*fixture.*unavailable/i);
+  expect(runAgent).not.toHaveBeenCalled();
+  expect(manager.listAgents()).toHaveLength(0);
+  await host.dispose();
+});
+
+it("preserves case-insensitive valid names and explicit model overrides", async () => {
+  agentTypes.registerAgents(new Map([["fixture", agentConfig()]]));
+  const { host } = setup("done", { context: modelContext() });
+  const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "FiXtUrE", model: "test/chosen", prompt: "task" }, new AbortController().signal);
+  expect(result.ok).toBe(true);
+  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[1]).toBe("fixture");
+  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].selectedModel?.model).toEqual(model);
   await host.dispose();
 });

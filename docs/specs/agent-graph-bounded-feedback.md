@@ -4,7 +4,7 @@ Status: shipped
 
 Owner: `extensions/subagents` graph runtime
 
-Related: [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Reusable Agent-Graph Workflow Portfolio](agent-graph-reusable-workflows.md) · [Graph Run Monitor](graph-run-monitor.md)
+Related: [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Reusable Agent-Graph Workflow Portfolio](agent-graph-reusable-workflows.md) · [Herdr Agent-Graph Panel Presentation](herdr-agent-graph-presentation.md)
 
 ## Problem Statement
 

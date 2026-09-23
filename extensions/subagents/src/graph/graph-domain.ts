@@ -9,6 +9,7 @@ import { GraphExecutions } from "./graph-execution-runtime.js";
 import { parseFragment } from "./graph-fragment.js";
 import { GraphInstances, type GraphRuntimeState } from "./graph-instance-id.js";
 import { nestedMaterializations, nestedScope, restoredNestedRows } from "./graph-nested-checkpoint.js";
+import { graphConnections, nodePresentation } from "./graph-node-presentation.js";
 import { collectionProposal, hasCapacity, type NodeTransition, restoreProposal, skipProposal, transitionProposal } from "./graph-planner.js";
 import { GraphProjection } from "./graph-planning-view.js";
 import { applyRecovery } from "./graph-projection.js";
@@ -33,6 +34,7 @@ import { compileJsonSchema } from "./json-schema.js";
 import type { NodeSpawnResult } from "./node-host.js";
 import type { AgentLifecycleInput } from "./node-lifecycle-session.js";
 import { admissionReceipt, type NodeAdmissionReceipt, type NodeParentEvent, type NodeRequest } from "./node-protocol.js";
+import type { GraphNodePresentation } from "./progress.js";
 import { coerceGraphInput, DEFAULT_CONCURRENCY, type RunGraphOptions, type RunGraphResult } from "./run-graph.js";
 import type { SchedulerState, SettleInput } from "./scheduler.js";
 import { requestSubgraphDisposition } from "./subgraph-disposition.js";
@@ -182,17 +184,28 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
   };
   const nestedIds = new Map<string, Map<string, string>>();
   const registeredNested = new Set<string>();
+  const presentationOf = (id: string): GraphNodePresentation => {
+    const node = nodeDefs.get(id);
+    if (!node) throw new TypeError("Missing presentation node");
+    return { ...nodePresentation(node, instances.get(id), instances.state),
+      connections: graphConnections(effectiveEdges, id).map(edge => ({ ...edge, binding: displayId(edge.binding) })),
+    };
+  };
   const registerNode: NonNullable<RunGraphOptions["onNodeAdded"]> = (id, node, metadata) => {
     if (durable) orderedIds[instances.get(id).ordinal] = id;
     else orderedIds.push(id);
     publish(() => options.onNodeAdded?.(displayId(id), node, { ...metadata,
       ...(durable ? { ordinal: instances.get(id).ordinal, materializationKey: `${instances.state.runId}/${instances.get(id).instanceId}` } : {}),
-      ...(graph.version === 2 && instances ? { instance: instances.get(id) } : {}),
+      ...(graph.version === 2 && instances ? { instance: instances.get(id), presentation: presentationOf(id) } : {}),
       dependencies: metadata.dependencies.map(displayId) }));
   };
   const report = (id: string): void => {
     const run = projection.nodes.get(id);
-    if (run !== undefined) { const copy = { ...run }; const identity = executions.current(id); publish(() => options.onNodeUpdate?.(displayId(id), copy, identity)); }
+    if (run !== undefined) {
+      const copy = { ...run }; const identity = executions.current(id);
+      const presentation = graph.version === 2 ? presentationOf(id) : undefined;
+      publish(() => options.onNodeUpdate?.(displayId(id), copy, identity, presentation));
+    }
   };
 
   let coordinatorCancellation: "cancel" | "lifecycle" | undefined;
@@ -453,7 +466,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     for (const instance of instances.state.manifest) {
       const node = nodeDefs.get(instance.binding);
       if (node) publish(() => options.onNodeAdded?.(displayId(instance.binding), node, {
-        ordinal: instance.ordinal, materializationKey: `${instances.state.runId}/${instance.instanceId}`, ...(graph.version === 2 ? { instance } : {}), dependencies: effectiveEdges.filter(edge => edge.to === instance.binding).map(edge => displayId(edge.from)),
+        ordinal: instance.ordinal, materializationKey: `${instances.state.runId}/${instance.instanceId}`, ...(graph.version === 2 ? { instance, presentation: presentationOf(instance.binding) } : {}), dependencies: effectiveEdges.filter(edge => edge.to === instance.binding).map(edge => displayId(edge.from)),
       }));
     }
   }
@@ -466,8 +479,9 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       const mapped = names.get(row.id);
       if (!mapped) throw new TypeError("Missing nested display binding");
       orderedIds[row.ordinal] = undefined;
-      publish(() => options.onNodeAdded?.(mapped, row.node, { ordinal: row.ordinal, materializationKey: row.key, ...(row.instance ? { instance: row.instance } : {}), dependencies: row.dependencies.map(key => names.get(key) ?? key) }));
-      publish(() => options.onNodeUpdate?.(mapped, row.run));
+      const presentation = row.presentation ? { ...row.presentation, connections: row.presentation.connections?.map(edge => ({ ...edge, binding: names.get(edge.binding) ?? edge.binding })) } : undefined;
+      publish(() => options.onNodeAdded?.(mapped, row.node, { ordinal: row.ordinal, materializationKey: row.key, ...(row.instance ? { instance: row.instance } : {}), ...(presentation ? { presentation } : {}), dependencies: row.dependencies.map(key => names.get(key) ?? key) }));
+      publish(() => options.onNodeUpdate?.(mapped, row.run, undefined, presentation));
     }
   }
   // Hydration has validated ownership before any restored metadata is exposed.
@@ -519,13 +533,13 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       const ordinal = metadata.materializationKey ? ordinals?.[metadata.materializationKey] : undefined;
       if (durable && ordinal === undefined) throw new TypeError("Missing committed nested ordinal");
       if (ordinal !== undefined) orderedIds[ordinal] = undefined;
-      options.onNodeAdded?.(mapped, child, { ...metadata, ...(ordinal !== undefined ? { ordinal, ...(metadata.instance ? { instance: { ...metadata.instance, ordinal } } : {}) } : {}), dependencies: metadata.dependencies.map(nestedId) });
+      options.onNodeAdded?.(mapped, child, { ...metadata, ...(metadata.presentation ? { presentation: { ...metadata.presentation, connections: metadata.presentation.connections?.map(edge => ({ ...edge, binding: nestedId(edge.binding) })) } } : {}), ...(ordinal !== undefined ? { ordinal, ...(metadata.instance ? { instance: { ...metadata.instance, ordinal } } : {}) } : {}), dependencies: metadata.dependencies.map(nestedId) });
     };
     return { kind: "graph", id, input: { receipt: coordinatorIdentity(id, randomUUID()), child: { graph: childGraph, input: childInput, depth: depth + 1,
       parent: { id, invocation: childInvocation(id) }, options: { ...childOptions(options), signal: undefined,
         runId: childInvocation(id), ...(options.allocateInstanceId ? { allocateInstanceId: options.allocateInstanceId } : {}),
         ...(saved ? { restore: saved.state } : {}), onCheckpoint: () => {},
-        onNodeAdded: added, onNodeUpdate: (childId, run, identity) => options.onNodeUpdate?.(nestedId(childId), run, identity),
+        onNodeAdded: added, onNodeUpdate: (childId, run, identity, presentation) => options.onNodeUpdate?.(nestedId(childId), run, identity, presentation ? { ...presentation, connections: presentation.connections?.map(edge => ({ ...edge, binding: nestedId(edge.binding) })) } : undefined),
         onNodeResolved: (childId, info, identity) => options.onNodeResolved?.(nestedId(childId), info, identity),
       } } } };
   };

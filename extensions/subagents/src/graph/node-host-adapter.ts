@@ -11,13 +11,14 @@
  * node actor's `stop()` already carries the signal here.
  */
 
-import type { ExecResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentSession, ExecResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentManager } from "../agent-manager.js";
-import { resolveType } from "../agent-types.js";
+import { getAgentConfig, resolveType } from "../agent-types.js";
 import { prepareAgentInvocation } from "../invocation-config.js";
-import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../output-file.js";
+import { createOutputFilePath, streamToOutputFile, writeInitialEntry, writeResultEntry } from "../output-file.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal } from "../usage.js";
+import { workflowNodeArtifactId } from "./history-artifact.js";
 import type { NodeHost, NodeSpawnRequest, NodeSpawnResult } from "./node-host.js";
 
 export const DEFAULT_GATE_TIMEOUT_MS = 10 * 60_000;
@@ -32,16 +33,7 @@ export interface NodeHostOptions {
   gateTimeoutMs?: number;
   scopeModels?: () => boolean;
   outputTranscript?: () => boolean;
-}
-
-function reportResolved(record: AgentRecord, report: NodeSpawnRequest["onResolved"]): void {
-  report?.({
-    recordId: record.id,
-    ...record.invocation,
-    ...(record.session?.model
-      ? { modelName: record.session.model.name ?? record.session.model.id, modelId: record.session.model.id }
-      : {}),
-  });
+  nodeIndex?: (nodeId: string) => number | undefined;
 }
 
 function toNodeResult(record: AgentRecord): NodeSpawnResult {
@@ -73,9 +65,14 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
     async spawnAgent(request: NodeSpawnRequest, signal: AbortSignal): Promise<NodeSpawnResult> {
       if (disposed) throw new Error("Node host is disposed.");
       const combined = deps.signal ? AbortSignal.any([deps.signal, signal]) : signal;
+      let unsubscribeModel: (() => void) | undefined;
       try {
         combined.throwIfAborted();
-        const type = resolveType(request.agentType) ?? "general-purpose";
+        const type = resolveType(request.agentType);
+        const currentConfig = type === undefined ? undefined : getAgentConfig(type);
+        if (type === undefined || !currentConfig || currentConfig.enabled === false) {
+          throw new Error(`Graph agent "${request.agentType}" is unavailable in the current configuration.`);
+        }
         const params = { model: request.model, thinking: request.effort };
         const { agentConfig: config, invocation, selectedModel, scope } = prepareAgentInvocation({
           agentType: type,
@@ -94,6 +91,14 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
           }
         }
         let spawned: AgentRecord | undefined;
+        const index = deps.nodeIndex?.(request.nodeId);
+        const artifactId = index === undefined ? undefined : workflowNodeArtifactId(deps.workflowId, index);
+        let childSession: AgentSession | undefined;
+        const streamTranscript = () => {
+          if (childSession && spawned?.outputFile && artifactId && !spawned.outputCleanup) {
+            spawned.outputCleanup = streamToOutputFile(childSession, spawned.outputFile, artifactId, ctx.cwd);
+          }
+        };
         const { record } = await manager.spawnAndWait(
           pi,
           ctx,
@@ -116,28 +121,40 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
               thinkingDefault: invocation.thinking === undefined,
             },
             onSessionCreated: session => {
-              if (!spawned) return;
-              reportResolved(spawned, request.onResolved);
-              if (spawned.outputFile) {
-                spawned.outputCleanup = streamToOutputFile(session, spawned.outputFile, spawned.id, ctx.cwd);
-              }
+              childSession = session;
+              // Only events from this spawn are execution evidence; inherited messages
+              // and the selected session model do not prove an assistant used it.
+              unsubscribeModel = session.subscribe(event => {
+                if ((event.type !== "message_start" && event.type !== "message_end") || event.message.role !== "assistant") return;
+                const { model, provider } = event.message;
+                if (!model) return;
+                request.onResolved?.({ modelId: model, modelName: provider ? `${provider}/${model}` : model, thinking: session.thinkingLevel });
+              });
+              streamTranscript();
             },
           },
           id => {
             owned.add(id);
             spawned = manager.getRecord(id);
             request.onResolved?.({ recordId: id });
-            if (spawned && (config?.outputTranscript ?? deps.outputTranscript?.() ?? true)) {
-              spawned.outputFile = createOutputFilePath(ctx.cwd, id, ctx.sessionManager.getSessionId());
-              writeInitialEntry(spawned.outputFile, id, request.prompt, ctx.cwd);
+            if (spawned && artifactId && (config?.outputTranscript ?? deps.outputTranscript?.() ?? true)) {
+              spawned.outputFile = createOutputFilePath(ctx.cwd, artifactId, ctx.sessionManager.getSessionId());
+              writeInitialEntry(spawned.outputFile, artifactId, request.prompt, ctx.cwd);
             }
+            streamTranscript();
           },
         );
-        return toNodeResult(record);
+        const result = toNodeResult(record);
+        if (record.outputFile && artifactId && result.output) {
+          try { writeResultEntry(record.outputFile, artifactId, result.output, ctx.cwd); } catch { /* Transcript failure cannot change graph outcome. */ }
+        }
+        return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (combined.aborted) return { ok: false, skipped: true, error: message };
         return { ok: false, error: message };
+      } finally {
+        unsubscribeModel?.();
       }
     },
 

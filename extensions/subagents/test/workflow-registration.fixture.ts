@@ -47,7 +47,7 @@ beforeEach(() => {
   mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
   writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\ndescription: test\n---\nTask");
   const sessionFixture: Partial<AgentSession> = {
-    model: model as AgentSession["model"], thinkingLevel: "low", dispose: vi.fn(),
+    model: model as AgentSession["model"], thinkingLevel: "low", dispose: vi.fn(), subscribe: vi.fn(() => vi.fn()),
     getSessionStats: () => ({ tokens: { input: 0, output: 0, cacheWrite: 0 } }) as ReturnType<AgentSession["getSessionStats"]>,
   };
   session = sessionFixture as AgentSession;
@@ -66,7 +66,7 @@ afterEach(async () => {
   artifactDirs.clear();
 });
 
-function boot(settings: Record<string, unknown> = {}) {
+function boot(settings: Record<string, unknown> = {}, sessionId = "parent") {
   writeFileSync(join(dir, ".pi", "subagents.json"), JSON.stringify({ outputTranscript: false, ...settings }));
   const tools = new Map<string, Tool>();
   const hooks = new Map<string, Hook[]>();
@@ -88,7 +88,7 @@ function boot(settings: Record<string, unknown> = {}) {
     getAvailable: () => [model as NonNullable<ExtensionContext["model"]>], find: () => model as NonNullable<ExtensionContext["model"]>,
   };
   const sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionId" | "getEntries" | "getBranch"> = {
-    getSessionId: () => "parent", getEntries: () => [], getBranch: () => [],
+    getSessionId: () => sessionId, getEntries: () => [], getBranch: () => [],
   };
   const ctxFixture: Partial<ExtensionContext> = { cwd: dir, hasUI: false, ui: uiFixture as ExtensionContext["ui"], model: model as ExtensionContext["model"],
     modelRegistry: modelRegistry as ExtensionContext["modelRegistry"],

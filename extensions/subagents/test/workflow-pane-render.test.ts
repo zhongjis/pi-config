@@ -166,3 +166,13 @@ describe("applyPaneKey — read-only in-pane navigation", () => {
     expect(close).toBe(false);
   });
 });
+
+it("keeps the centered/fallback inspector unchanged when Herdr presentation metadata is added", () => {
+  const input = source();
+  const before = renderWorkflowPaneLines(input, { width: 120, now: NOW });
+  input.progress = input.progress.map(entry => entry.type === "workflow_agent" ? { ...entry, presentation: { kind: "agent" as const, name: "Herdr-only name", iteration: 9 } } : entry);
+  expect(renderWorkflowPaneLines(input, { width: 120, now: NOW })).toEqual(before);
+  const nav = applyPaneKey(input, initialWorkflowDialogState(), "\r", { width: 120, now: NOW });
+  expect(nav).toEqual(applyPaneKey(source(), initialWorkflowDialogState(), "\r", { width: 120, now: NOW }));
+  expect(nav.lines.join("\n")).not.toContain("Herdr-only name");
+});

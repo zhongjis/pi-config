@@ -230,6 +230,7 @@ export class WorkflowPaneManager {
       name: task.workflowName ?? task.meta?.name ?? task.id,
       status: task.status,
       source: toPaneSource(task),
+      ...(task.type === "history" ? { readHistoricalDetail: task.readNodeDetail } : {}),
     }));
   }
 
@@ -257,6 +258,7 @@ export class WorkflowPaneManager {
       this.panelState.scroll = 0;
       // Stages differ per graph; keep the user's filter intent across the switch.
       this.panelState.collapsedStages = [];
+      this.panelState.collapsedTargets = [];
       this.lastPanelRunId = shownId;
     }
     return index;

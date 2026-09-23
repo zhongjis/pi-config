@@ -117,7 +117,7 @@ Files:
 - `extensions/subagents/skills/agent-graphs/SKILL.md`
 - `extensions/subagents/skills/agent-graphs/references/dynamic-expansion.md`
 - `docs/specs/agent-graph-reusable-workflows.md`
-- `docs/specs/graph-run-monitor.md`
+- `docs/specs/herdr-agent-graph-presentation.md`
 - `docs/README.md`
 - `extensions/subagents/AGENTS.md`
 - `agent-graphs/AGENTS.md`
