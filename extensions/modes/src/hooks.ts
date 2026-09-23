@@ -151,7 +151,7 @@ function setupModeEditor(ctx: ExtensionContext, state: ModeStateManager): void {
 				super.handleInput(data);
 			}
 		}
-		return new ModeEditor(tui, theme, keybindings, { embedWorkingStatus: true }) as any;
+		return new ModeEditor(tui, theme, keybindings) as any;
 	});
 }
 
