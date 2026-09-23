@@ -73,7 +73,7 @@ export function decision(value: unknown, node: BoundedFeedbackNode): FeedbackDec
   });
   if (value.decision === "sufficient" ? items.length !== 0 : items.length === 0) throw new TypeError("Invalid feedback task count");
   const prepared = prepareFanout({ ...node.work, items: { path: "$" } }, { input: items, outputs: new Map() });
-  if (!prepared.ok) throw new TypeError(prepared.error);
+  if (prepared.ok === false) throw new TypeError(prepared.error);
   return { decision: value.decision === "sufficient" ? "sufficient" : "continue", gaps, tasks: prepared.items.map(({ item }, index) => ({ gapId: gapIds[index], item })) };
 }
 

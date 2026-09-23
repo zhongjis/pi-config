@@ -30,7 +30,7 @@ export function prepareFanout(node: FanoutNode, context: ResolutionContext):
   const items: unknown = resolveValueRef(node.items, context);
   if (!Array.isArray(items)) return { ok: false, error: "items must resolve to an array" };
   const schema = compileJsonSchema(node.itemSchema);
-  if (!schema.ok) return { ok: false, error: schema.message };
+  if (schema.ok === false) return { ok: false, error: schema.message };
   const prepared: PreparedFanoutItem[] = [];
   for (const [index, item] of items.entries()) {
     if (!isJsonValue(item)) return { ok: false, error: `items[${index}] must be JSON-serializable` };
