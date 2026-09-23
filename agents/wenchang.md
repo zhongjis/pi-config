@@ -1,7 +1,7 @@
 ---
 display_name: Wen Chang 文昌
 description: Read-only external research and information retrieval from issue trackers, vendor APIs, documentation, and GitHub. Use for remote issue/project browsing and authoritative external evidence.
-model: claude-haiku-4-5,openai-codex/gpt-5.6-luna:low:fast,opencode-go/qwen3.5-plus,llama-swap/granite4.1:8b
+model: claude-haiku-4-5,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.5-plus,llama-swap/granite4.1:8b
 prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read
