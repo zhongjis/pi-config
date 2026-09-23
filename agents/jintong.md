@@ -1,7 +1,7 @@
 ---
 display_name: Jintong 金童
 description: Default low-to-moderate non-UI implementation worker for clear, standard-risk tasks, including cohesive multi-file work; substantial cross-module work or elevated architecture/security/concurrency/invariant reasoning routes to Juling.
-model: claude-sonnet-4-6,cliproxyapi/gpt-6-sol:high,openai-codex/gpt-6-sol:high,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high
+model: github-copilot/grok-4.7:xhigh,anthropic/claude-sonnet-5,cliproxyapi/gpt-5.6-terra:high,openai-codex/gpt-5.6-terra:high,opencode-go/grok-4.7:xhigh,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read,bash,edit,write

@@ -1,10 +1,10 @@
 {
   "version": 1,
   "roles": {
-    "summary.session": "openai-codex/gpt-5.6-luna:medium:fast,anthropic/claude-haiku-4-5,gemini-3-flash,qwen3.5-plus",
-    "commit": "openai-codex/gpt-5.6-luna:medium:fast,anthropic/claude-haiku-4-5,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
-    "guard.tool": "openai-codex/gpt-5.6-luna:low:fast,anthropic/claude-haiku-4-5",
-    "vision.inspect": "openai-codex/gpt-5.6-sol:low,anthropic/claude-sonnet-4-6:medium,kimi-k3,glm-4.6v"
+    "summary.session": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
+    "commit": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
+    "guard.tool": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
+    "vision.inspect": "github-copilot/gpt-6-sol:low,anthropic/claude-sonnet-5:medium,cliproxyapi/gpt-6-sol:low,openai-codex/gpt-6-sol:low"
   },
   "tools": {
     "smart-sessions.summary": { "role": "summary.session" },

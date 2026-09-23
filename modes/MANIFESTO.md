@@ -41,7 +41,7 @@ Short, forceful overlays maintain context while mitigating these known weaknesse
 |------|------|--------------|-------------|----------------|
 | **kuafu** | Build orchestrator | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **fuxi** | Strategic planner | `anthropic/claude-opus-4-8:xhigh` | Default body (no `gpt.md`) | Yes (`gemini.md`) |
-| **houtu** | Plan executor | `anthropic/claude-sonnet-4-6` | Yes (`gpt.md`) | Yes (`gemini.md`) |
+| **houtu** | Plan executor | `github-copilot/claude-sonnet-5` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **luban** | Superpowers discipline | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **shennong** | Product judgment | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
 | **zhurong** | Deep-worker autonomy | `openai-codex/gpt-5.6-sol:high` (GPT-only) | No (GPT-only, `mode.md` body) | No (GPT-only) |

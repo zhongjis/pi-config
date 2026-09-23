@@ -1,7 +1,7 @@
 ---
 display_name: Kua Fu 夸父
 description: Default build mode. A senior engineer who ships by orchestrating specialists, executing only the trivial local work that is cheaper to do directly.
-model: anthropic/claude-opus-4-8:xhigh,cliproxyapi/gpt-6-sol:high,openai-codex/gpt-6-sol:high,opencode-go/kimi-k2.6,llama-swap/qwen2.5-coder:14b:high
+model: anthropic/claude-opus-4-8:xhigh,github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-sol:high,openai-codex/gpt-6-sol:high,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,Agent,agent_graph,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal,interactive_shell,intercom
 allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
