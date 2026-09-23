@@ -11,7 +11,7 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 | `model-selection.ts` | Parse and resolve model spec strings (`provider/model:level:fast,fallback`); selected candidate alone carries optional `fast` metadata |
 | `runtime-model-fallback.ts` | Shared post-native-retry quota/rate-limit coordinator; hidden same-transcript continuation, ordered authenticated identities, no cycling |
 | `tool-model-defaults.ts` | Built-in shared tool-model roles and tool mappings |
-| `fast.ts` | `getFastProfile`, `getFastEligibility`, `transformFastPayload`, `transformFastHeaders` — stateless Codex/Anthropic request recipes |
+| `fast.ts` | `getFastProfile`, `getFastEligibility`, `transformFastPayload`, `transformFastHeaders` — stateless Codex/CLIProxyAPI/Anthropic request recipes |
 | `thinking-level.ts` | `ThinkingLevel` type, validation, normalization |
 | `clipboard.ts` | System clipboard read/write |
 | `logger.ts` | Debug logging with `--debug` flag support |
@@ -57,10 +57,13 @@ export default function myExtension(pi: ExtensionAPI) {
 - Both transforms take `(input, model, policy)` with `FastPolicy` `{ enabled, usingOAuth, strict? }`. Payload input is unknown; header input is a native string/null record or undefined.
 - `transformFastPayload` returns a replacement or undefined for no change. Default interactive policy preserves existing fields; strict on overwrites conflicts, strict off removes only the provider's exact fast value (including unsupported IDs on the matching API). Payload model identity must match.
 - `transformFastHeaders` merges model and request headers into a fresh record, unions Anthropic beta tokens, adds OAuth base betas when active, and removes only the fast beta when inactive. Every observed casing is masked with the resulting value (including empty strings); assign the result to native `event.headers`, never to shared `model.headers`.
-- Profiles exactly cover OAuth Codex `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra` [1] and Anthropic `claude-opus-4-8`, `claude-opus-5` [2]. No aliases, wildcards, internal `codex-auto-review`, or other provider expansion. Runtime policy belongs to [modes](../modes/AGENTS.md) and [subagents](../subagents/AGENTS.md).
+- Profiles exactly cover OAuth Codex and local-API-key CLIProxyAPI (`cliproxyapi` / `openai-responses`) `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna` [1] [2], and Anthropic `claude-opus-4-8`, `claude-opus-5` [4]. No aliases, wildcards, internal `codex-auto-review`, or other provider expansion. Runtime policy belongs to [modes](../modes/AGENTS.md) and [subagents](../subagents/AGENTS.md).
+- CLIProxyAPI's core translator preserves `service_tier: "priority"` (and normalizes `"fast"` to `"priority"`); proxy forwarding does not guarantee upstream scheduling. [2] [3]
 - `assertFastSupported` validates the selected explicit-on candidate before application. Strict transforms assume that validation and bypass later OAuth eligibility drift; they never silently downgrade. Provider/API/model recipes remain unchanged.
 - `readFastPolicy` reads typed `fast-policy` custom entries from a supplied session branch: `{ version: 1, mode, source: "mode" | "user", enabled }`. It stores no state. Empty mode names denote standalone interactive `/fast`.
 
 Sources:
 - [1] [Official Codex model catalog](https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json)
-- [2] [Anthropic Fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)
+- [2] [CLIProxyAPI Codex Responses translator](https://github.com/router-for-me/CLIProxyAPI/blob/673131f57484517c3a1eae7e36c4cfa7b9bb4efc/internal/translator/codex/openai/responses/codex_openai-responses_request.go)
+- [3] [CLIProxyAPI translator tests](https://github.com/router-for-me/CLIProxyAPI/blob/673131f57484517c3a1eae7e36c4cfa7b9bb4efc/internal/translator/codex/openai/responses/codex_openai-responses_request_test.go)
+- [4] [Anthropic Fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)

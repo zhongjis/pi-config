@@ -2,14 +2,17 @@
 
 Enables provider Fast mode for the active model with a single `/fast` toggle. Detects the current model's provider and applies the matching mechanism:
 
-- **OpenAI Codex** (`gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`): injects `service_tier: "priority"`. [1]
-- **Anthropic Claude Opus** (`claude-opus-4-8`, `claude-opus-5`): injects `speed: "fast"` and the required `anthropic-beta` header. [2]
+- **OpenAI Codex** (`gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`): injects `service_tier: "priority"` with OAuth/subscription auth. [1]
+- **CLIProxyAPI** (the same exact GPT IDs, provider `cliproxyapi`, API `openai-responses`): injects `service_tier: "priority"` with Pi local API-key auth; CLIProxyAPI handles downstream Codex auth. [2] [3]
+- **Anthropic Claude Opus** (`claude-opus-4-8`, `claude-opus-5`): injects `speed: "fast"` and the required `anthropic-beta` header. [4]
 
 Exact IDs only; no aliases or wildcard matching. The internal `codex-auto-review` model is excluded.
 
 Sources:
 - [1] [Official Codex model catalog](https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json)
-- [2] [Anthropic Fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)
+- [2] [CLIProxyAPI Codex Responses translator](https://github.com/router-for-me/CLIProxyAPI/blob/673131f57484517c3a1eae7e36c4cfa7b9bb4efc/internal/translator/codex/openai/responses/codex_openai-responses_request.go)
+- [3] [CLIProxyAPI translator tests](https://github.com/router-for-me/CLIProxyAPI/blob/673131f57484517c3a1eae7e36c4cfa7b9bb4efc/internal/translator/codex/openai/responses/codex_openai-responses_request_test.go)
+- [4] [Anthropic Fast mode](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)
 
 ## Upstream
 
@@ -40,12 +43,14 @@ No config files. `fast-policy` custom entries persist the session's mode default
 
 Interactive `/fast` activation requires all conditions below (unsupported models remain enabled-but-inactive):
 
-- The active model's provider has a Fast profile (`openai-codex` or `anthropic`).
-- The model's API matches the profile (`openai-codex-responses` / `anthropic-messages`).
+- The active model's provider has a Fast profile (`openai-codex`, `cliproxyapi`, or `anthropic`).
+- The model's API matches the profile (`openai-codex-responses`, `openai-responses`, or `anthropic-messages`).
 - The model is one of the supported models listed above.
-- For OpenAI Codex, the provider uses OAuth/subscription auth (not API-key auth).
+- OpenAI Codex requires OAuth/subscription auth; CLIProxyAPI accepts Pi local API-key auth because the proxy handles downstream Codex auth.
 - The request payload does not already include the injected field.
 
 When enabled and eligible, the footer shows `fast` and outbound payloads receive the provider-specific field. When enabled but the active model is ineligible, no footer is shown and `/fast` reports why. For Anthropic OAuth models, the `anthropic-beta` header retains the required Claude Code OAuth beta values alongside `fast-mode-2026-02-01`.
+
+CLIProxyAPI's verified core translator preserves `service_tier: "priority"` (and normalizes `"fast"` to `"priority"`), but it may only forward that tier: upstream scheduling is not guaranteed. [2] [3]
 
 [Shared helpers](../lib/README.md#fast-request-helpers) define strict request mechanics; [subagents](../subagents/AGENTS.md) own fixed child policy.

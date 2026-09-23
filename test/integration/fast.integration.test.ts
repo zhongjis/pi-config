@@ -101,3 +101,31 @@ it("real Codex transport receives strict priority after OAuth drift and strict o
 		expect(t.session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "stop" });
 	} finally { closeOpenAICodexWebSocketSessions(); t.dispose(); }
 });
+
+it("real CLIProxyAPI openai-responses transport sends priority only after /fast with local API-key auth", async () => {
+	const t = await createFastSession([fastExtension]);
+	t.fetchMock.mockImplementation(async (_input, init) => {
+		t.requests.push({ payload: JSON.parse(String(init?.body)), headers: new Headers(init?.headers) });
+		return new Response(`event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: { id: `resp_${t.requests.length}`, status: "completed", output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } })}\n\n`, { headers: { "content-type": "text/event-stream" } });
+	});
+	try {
+		t.runtime.registerProvider("cliproxyapi", {
+			apiKey: "test-proxy-key",
+			baseUrl: "http://127.0.0.1:1/v1",
+			api: "openai-responses",
+			models: [{ id: "gpt-6-astra", name: "GPT-6 Astra (test proxy)", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 16384 }],
+		});
+		await t.runtime.refresh({ allowNetwork: false });
+		const model = t.runtime.getModel("cliproxyapi", "gpt-6-astra");
+		if (!model) throw new Error("Missing CLIProxyAPI model");
+		await t.session.setModel(model);
+		expect(t.runtime.isUsingOAuth("cliproxyapi")).toBe(false);
+		await t.session.prompt("off");
+		expect(t.requests.at(-1)?.payload.service_tier).toBeUndefined();
+		await t.session.prompt("/fast");
+		await t.session.prompt("on");
+		expect(t.requests).toHaveLength(2);
+		expect(t.requests.at(-1)?.payload.service_tier).toBe("priority");
+		expect(t.session.messages.at(-1)).toMatchObject({ role: "assistant", api: "openai-responses", provider: "cliproxyapi", stopReason: "stop" });
+	} finally { t.dispose(); }
+});

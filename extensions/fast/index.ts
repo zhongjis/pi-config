@@ -73,7 +73,7 @@ export default function fastExtension(pi: ExtensionAPI) {
 		return next;
 	});
 	pi.registerCommand("fast", {
-		description: "Toggle Fast mode for the active model (OAuth Codex GPT-5.4/5.5/5.6-sol/5.6-terra/5.6-luna/6-astra or Claude Opus 4.8/5)",
+		description: "Toggle Fast mode for the active model (OAuth Codex or API-key CLIProxyAPI GPT-5.4/5.5/5.6-sol/5.6-terra/5.6-luna/6-astra/6-sol/6-luna, or Claude Opus 4.8/5)",
 		getArgumentCompletions: () => null,
 		handler: async (args, ctx) => {
 			if (args.trim()) { ctx.ui.notify("Usage: /fast", "warning"); return; }

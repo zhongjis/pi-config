@@ -18,6 +18,7 @@ Provide shared extension utilities and integration primitives.
 - Model chains parse terminal `:fast` after an optional thinking suffix; absent fast metadata retains the legacy object shape and means off to consumers.
 - `fast.ts` owns stateless eligibility, transforms, and branch-policy reading; preserve [helper contracts](README.md#fast-request-helpers). Callers MUST validate explicit on before strict application; NEVER mutate shared models.
 - Fast allowlist changes require official provider evidence for exact public model IDs, matching regression tests, and updated [support documentation and sources](README.md#fast-request-helpers); no inferred aliases, wildcards, or internal models.
+- The CLIProxyAPI Fast profile is only `cliproxyapi` / `openai-responses` and accepts Pi local API-key auth; preserve the separate OpenAI Codex OAuth requirement.
 - `tool-output.ts` owns shared passive TUI helpers, including custom-message Box shells; callers retain content construction and delivery.
 
 ## Work Guidance
