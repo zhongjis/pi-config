@@ -16,6 +16,7 @@ const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 const PORTFOLIO = [
   "context-gather",
+  "deep-research",
 ] as const;
 
 const INITIAL_TASK_SCHEMA = {
@@ -225,4 +226,3 @@ describe("adaptive context-gather contract", () => {
     });
   });
 });
-

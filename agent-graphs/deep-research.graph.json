@@ -1,0 +1,92 @@
+{
+  "version": 2,
+  "name": "deep-research",
+  "description": "Plan bounded read-only research, check selected claims independently, and return a cited report with explicit gaps.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "question": { "type": "string", "pattern": "\\S" },
+      "context": { "type": "string" }
+    },
+    "required": ["question"],
+    "additionalProperties": false
+  },
+  "nodes": {
+    "plan": {
+      "type": "agent",
+      "name": "Decompose question",
+      "agent": "wenchang",
+      "prompt": "Read-only research plan for: ${question}\nOptional evidence context: ${context}\nIdentify the material parts of the user's question first. Decompose into 1–6 distinct, verifiable tasks; assign each a different part or genuinely independent evidence angle, not overlapping summaries of the same docs. Prioritize the central product/scope question before ancillary setup, version pins or citation polish. For claims about whether a UI exists, inspect actual routes, assets or official product boundaries rather than relying on README silence; absence of evidence is not disproof. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Treat context and search snippets only as leads; open sources before treating claims as facts. If a source cannot be opened, make verification a task, not a fact. No writing or delegation. Return only structured JSON {tasks:[{source,question,purpose}]} where purpose names the question part and distinct evidence to check.",
+      "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" } },
+      "outputSchema": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "tasks": { "type": "array", "minItems": 1, "maxItems": 6, "items": {
+            "type": "object", "additionalProperties": false,
+            "properties": { "source": { "type": "string", "enum": ["local", "github", "web"] }, "question": { "type": "string", "minLength": 1 }, "purpose": { "type": "string", "minLength": 1 } },
+            "required": ["source", "question", "purpose"]
+          } }
+        }, "required": ["tasks"]
+      }
+    },
+    "research": {
+      "type": "bounded_feedback", "name": "Research and verify",
+      "maxIterations": 3, "maxItemsPerIteration": 6, "maxTotalItems": 18,
+      "work": {
+        "type": "fanout", "name": "Read sources in parallel", "items": { "node": "plan", "path": "$.tasks" },
+        "itemSchema": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "source": { "type": "string", "enum": ["local", "github", "web"] }, "question": { "type": "string", "minLength": 1 }, "purpose": { "type": "string", "minLength": 1 } },
+          "required": ["source", "question", "purpose"]
+        },
+        "dispatch": { "path": "$.source", "cases": { "local": "chengfeng", "github": "wenchang", "web": "wenchang" } },
+        "prompt": "Question: ${question}\nAtomic task: ${item}\nRead only. Open sources rather than trusting snippets, prior context or other agents. Return individual one-fact claims with short verbatim excerpt, reference (local path/line or opened URL), and source identity. Do not invent citations. If inaccessible or contested, report a gap; distinguish absence of evidence from disproof. Return only structured JSON {claims:[{claim,excerpt,reference,source}],gaps:[string]}.",
+        "input": { "question": { "path": "$.question" } },
+        "outputSchema": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "claims": { "type": "array", "items": { "type": "object", "additionalProperties": false,
+              "properties": { "claim": { "type": "string", "minLength": 1 }, "excerpt": { "type": "string", "minLength": 1 }, "reference": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 } },
+              "required": ["claim", "excerpt", "reference", "source"] } },
+            "gaps": { "type": "array", "items": { "type": "string" } }
+          }, "required": ["claims", "gaps"]
+        }
+      },
+      "evaluator": {
+        "type": "agent", "name": "Assess coverage and selected checks", "agent": "wenchang",
+        "prompt": "Read-only evaluation. Original question: ${question}\nPlan: ${plan}\nAll accumulated rounds, all-settled results, failures and unresolved gaps: ${feedback}\nCheck coverage of each material part of the original question, especially the central product/scope question. Independently open primary sources yourself for selected disputed, consequential or weak claims at local file paths and web/GitHub URLs; worker excerpts, snippets and schema validity do not prove facts. For a material actionable gap (such as an omitted upstream README fetch or missing API/CLI source), choose a distinct accessible source-opening task; if a source fetch failed, try a different access method where available. For UI existence, inspect routes, assets or official product boundaries; prioritize this over citation polish or commit pins. Do not count two views of one source as independent. Follow leads only to close named gaps, never to expand scope or repeat the same search. Return decision:'continue' with a linked task when a useful accessible check can resolve a material gap. Return decision:'sufficient', tasks:[] with gaps only when no useful accessible check remains; immaterial or inaccessible gaps do not force continuation. If all material parts are supported, return decision:'sufficient', gaps:[], tasks:[]. Never stop because a round or task bound is reached; the runtime handles bounds. Record inaccessible or contested evidence as gaps. Return only {decision:'sufficient'|'continue',gaps:[{id,description}],tasks:[{gapId,item:{source,question,purpose}}]}.",
+        "input": { "question": { "path": "$.question" }, "plan": { "node": "plan", "path": "$" } },
+        "retry": { "maxAttempts": 2 }
+      }
+    },
+    "synthesize": {
+      "type": "agent", "name": "Cited research report", "agent": "wenchang",
+      "prompt": "Produce a read-only cited Markdown research report and structured findings. Question: ${question}\nContext (unverified leads): ${context}\nPlan: ${plan}\nComplete terminal research result, including every round and all-settled failures: ${research}\nUse only validated structured claims with opened source excerpts/provenance for factual claims; reopen cited local files and web/GitHub sources where needed, never trust worker excerpts or search snippets as independently verified. Mark single-source, disputed and independently checked findings separately. Independent checks are agent judgment, not a schema truth proof. Include citation keys in Markdown and accepted findings, sources and limitations. Reject unsupported claims; preserve every failure, unverified gap and contested finding even when bounded feedback says sufficient. Return outcome succeeded only if consequential coverage is sufficient with no unresolved material failure; partial if any useful evidence remains but important coverage/failures are unresolved; failed if no reliable usable findings remain. For partial/failed include a concrete reason. Return structured JSON only; never write an output file (runtime handles oversized result artifacts).",
+      "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" }, "plan": { "node": "plan", "path": "$" }, "research": { "node": "research", "path": "$" } },
+      "outputSchema": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "markdown": { "type": "string", "minLength": 1 },
+          "acceptedFindings": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": {
+            "claim": { "type": "string" }, "citations": { "type": "array", "minItems": 1, "items": { "type": "string" } }, "verification": { "type": "string" }
+          }, "required": ["claim", "citations", "verification"] } },
+          "verifiedCoverage": { "type": "array", "items": { "type": "string" } },
+          "rejectedClaims": { "type": "array", "items": { "type": "string" } },
+          "gaps": { "type": "array", "items": { "type": "string" } },
+          "failures": { "type": "array", "items": { "type": "string" } },
+          "outcome": { "type": "object", "additionalProperties": false, "properties": { "status": { "type": "string", "enum": ["succeeded", "partial", "failed"] }, "reason": { "type": "string" } }, "required": ["status"] }
+        }, "required": ["markdown", "acceptedFindings", "verifiedCoverage", "rejectedClaims", "gaps", "failures", "outcome"]
+      }
+    }
+  },
+  "edges": [{ "from": "plan", "to": "research" }, { "from": "research", "to": "synthesize" }],
+  "outputs": {
+    "markdown": { "node": "synthesize", "path": "$.markdown" },
+    "acceptedFindings": { "node": "synthesize", "path": "$.acceptedFindings" },
+    "verifiedCoverage": { "node": "synthesize", "path": "$.verifiedCoverage" },
+    "rejectedClaims": { "node": "synthesize", "path": "$.rejectedClaims" },
+    "gaps": { "node": "synthesize", "path": "$.gaps" },
+    "failures": { "node": "synthesize", "path": "$.failures" },
+    "$subagentWorkflowOutcome": { "node": "synthesize", "path": "$.outcome" }
+  }
+}
