@@ -1,6 +1,6 @@
 ## Purpose
 
-Run isolated Agent sessions with foreground results and background supervision.
+Run isolated Agent sessions with foreground results and background supervision. See [CONTEXT.md](CONTEXT.md) for agent-graph terminology.
 
 ## Ownership
 
