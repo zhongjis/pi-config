@@ -15,6 +15,7 @@ const opencodeGoModel: MockModel = { id: "qwen3.5-plus", name: "Qwen3.5 Plus", p
 const opencodeGoKimi: MockModel = { id: "kimi-k2.6", name: "Kimi K2.6", provider: "opencode-go" };
 const opencodeZenModel: MockModel = { id: "kimi-k2.6", name: "Kimi K2.6 (Zen)", provider: "opencode" };
 const llamaSwapModel: MockModel = { id: "qwen2.5-coder:14b", name: "Qwen 2.5 Coder 14B", provider: "llama-swap" };
+const cliproxyapiModel: MockModel = { id: "gpt-6-astra", name: "GPT-6 Astra (CLIProxyAPI)", provider: "cliproxyapi" };
 const unrelatedModel: MockModel = { id: "mistral-large", name: "Mistral Large", provider: "mistral" };
 
 function createMockRegistry(models: MockModel[]) {
@@ -77,6 +78,7 @@ function createContext(
 		opencodeGoKimi,
 		opencodeZenModel,
 		llamaSwapModel,
+		cliproxyapiModel,
 		unrelatedModel,
 	]),
 ) {
@@ -127,6 +129,7 @@ describe("registry filter", () => {
 			opencodeGoKimi,
 			opencodeZenModel,
 			llamaSwapModel,
+			cliproxyapiModel,
 			unrelatedModel,
 		]);
 	});
@@ -138,6 +141,7 @@ describe("registry filter", () => {
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toContain("anthropic");
 		expect(visible).toContain("openai-codex");
+		expect(visible).toContain("cliproxyapi");
 		expect(visible).not.toContain("opencode-go");
 		expect(visible).not.toContain("llama-swap");
 	});
@@ -152,6 +156,7 @@ describe("registry filter", () => {
 		expect(visible).not.toContain("opencode");
 		expect(visible).not.toContain("anthropic");
 		expect(visible).not.toContain("llama-swap");
+		expect(visible).not.toContain("cliproxyapi");
 	});
 
 	it("filters to llama-swap when profile=local", async () => {
@@ -227,6 +232,14 @@ describe("model forcing", () => {
 		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
 		expect(harness.pi.setModel).not.toHaveBeenCalled();
+	});
+
+	it("retains a selected cliproxyapi model in the default profile", async () => {
+		const harness = createHarness();
+		const ctx = createContext(cliproxyapiModel);
+		await harness.fire("session_start", {}, ctx);
+		expect(harness.pi.setModel).not.toHaveBeenCalled();
+		expect(ctx.modelRegistry.getAvailable()).toContain(cliproxyapiModel);
 	});
 
 	it("switches to profile's defaultModel when current model is out-of-profile", async () => {

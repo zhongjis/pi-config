@@ -72,6 +72,7 @@ export const DEFAULT_PROFILES_CONFIG: ProfilesConfig = {
       providers: [
         "anthropic",
         "openai-codex",
+        "cliproxyapi",
         "openai",
         "amazon-bedrock",
         "google",
