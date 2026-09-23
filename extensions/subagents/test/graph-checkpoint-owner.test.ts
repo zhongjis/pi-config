@@ -4,7 +4,8 @@ import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { graphRunsDir, ownGraphRun } from "../src/graph/graph-persist.js";
+import { checkpointHasLiveWriter, LiveWriterError } from "../src/graph/graph-checkpoint-owner.js";
+import { graphRunHasLiveWriter, graphRunsDir, ownGraphRun } from "../src/graph/graph-persist.js";
 
 vi.mock("node:fs", async original => ({ ...await original<typeof import("node:fs")>() }));
 let cwd: string | undefined;
@@ -46,4 +47,25 @@ it("rechecks ownership under the recovery guard before unlinking", () => {
   });
   expect(() => ownGraphRun(cwd, "wf_abcdef123456")).toThrow();
   expect(fs.readFileSync(path, "utf8")).toBe(replacement);
+});
+it("refuses a second live writer with a typed LiveWriterError", () => {
+  const { cwd } = fixture();
+  const release = ownGraphRun(cwd, "wf_abcdef123456");
+  try {
+    expect(() => ownGraphRun(cwd, "wf_abcdef123456")).toThrow(LiveWriterError);
+  } finally { release(); }
+});
+it("peeks a self-held live run lock and clears once released or absent", () => {
+  const { cwd } = fixture();
+  const release = ownGraphRun(cwd, "wf_abcdef123456");
+  expect(graphRunHasLiveWriter(cwd, "wf_abcdef123456")).toBe(true);
+  release();
+  expect(graphRunHasLiveWriter(cwd, "wf_abcdef123456")).toBe(false);
+  expect(graphRunHasLiveWriter(cwd, "wf_000000000000")).toBe(false);
+});
+it("peeks false for a dead-PID run lock", () => {
+  const { cwd, path, metadata, dead } = fixture();
+  fs.writeFileSync(path, JSON.stringify({ ...metadata, pid: dead }));
+  expect(graphRunHasLiveWriter(cwd, "wf_abcdef123456")).toBe(false);
+  expect(checkpointHasLiveWriter(path.slice(0, -".run.lock".length))).toBe(false);
 });

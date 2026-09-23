@@ -9,8 +9,8 @@ import { renderWorkflowCard } from "../ui/workflow-report.js";
 import { getLifetimeTotal } from "../usage.js";
 import { checkGraphDelegation } from "./delegation-preflight.js";
 import { workflowEntryData } from "./entry.js";
-import type { CheckpointLease } from "./graph-checkpoint-owner.js";
-import { deleteGraphSnapshot, ownGraphRun, readGraphSnapshots, writeGraphSnapshot } from "./graph-persist.js";
+import { type CheckpointLease, LiveWriterError } from "./graph-checkpoint-owner.js";
+import { deleteGraphSnapshot, graphRunHasLiveWriter, ownGraphRun, readGraphSnapshots, writeGraphSnapshot } from "./graph-persist.js";
 import { authorizeGraphResume } from "./graph-resume-preflight.js";
 import { completeGraphTask, GraphRunReporter } from "./graph-run-adapter.js";
 import { GraphHistoryStore } from "./history.js";
@@ -148,8 +148,10 @@ export function createWorkflowRuntime(
         if (result.status !== "aborted" || !["reload", "switch", "shutdown"].includes(task.abortController.signal.reason)) deleteGraphSnapshot(ctx.cwd, task.id);
       }
     } catch (err) {
-      failWorkflowTask(task, err instanceof Error ? err.message : String(err));
-      // Keep the last valid checkpoint when execution or disposal fails.
+      // A live owner refused the lease during the resume race: decline rather than
+      // fabricate a failure. Snapshot + live owner are left untouched.
+      if (err instanceof LiveWriterError) tasks.delete(task.id);
+      else failWorkflowTask(task, err instanceof Error ? err.message : String(err));
     } finally { releaseCheckpoint?.(); }
     refresh("pane");
   }
@@ -174,6 +176,7 @@ export function createWorkflowRuntime(
   function resume(ctx: ExtensionContext): void {
     for (const snap of readGraphSnapshots(ctx.cwd, message => ctx.ui.notify(message, "error"))) {
       if (!snap.ownerSessionId || snap.ownerSessionId !== ctx.sessionManager.getSessionId() || tasks.has(snap.runId)) continue;
+      if (graphRunHasLiveWriter(ctx.cwd, snap.runId)) continue; // another live process still owns this run
       try {
         authorizeGraphResume(snap, {
           deny: type => execution.delegationDenial(ctx, type),

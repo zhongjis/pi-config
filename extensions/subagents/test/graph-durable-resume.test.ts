@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import * as persistence from "../src/graph/graph-persist.js";
+import { LiveWriterError } from "../src/graph/graph-checkpoint-owner.js";
 import * as tasks from "../src/graph/task.js";
 import { readGraphSnapshots } from "../src/graph/graph-persist.js";
 import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
@@ -149,17 +150,11 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
     vi.mocked(runAgent).mockClear();
     try {
       await next.lifecycle("session_start");
-      if (kind === "same-session live") {
-        const message = await next.notification(runId);
-        expect(message.content).toContain("Checkpoint has a live writer");
-        expect(lease).toHaveBeenCalledOnce();
-      } else {
-        expect(create).not.toHaveBeenCalled();
-        expect(lease).not.toHaveBeenCalled();
-        expect(next.api.sendMessage).not.toHaveBeenCalled();
-        if (kind === "corrupt") expect(next.ui.notify).toHaveBeenCalled();
-        else expect(next.ui.notify).not.toHaveBeenCalled();
-      }
+      expect(create).not.toHaveBeenCalled();
+      expect(lease).not.toHaveBeenCalled();
+      expect(next.api.sendMessage).not.toHaveBeenCalled();
+      if (kind === "corrupt") expect(next.ui.notify).toHaveBeenCalled();
+      else expect(next.ui.notify).not.toHaveBeenCalled();
       expect(runAgent).not.toHaveBeenCalled();
       expect(next.ui.select).not.toHaveBeenCalled();
       expect(write).not.toHaveBeenCalled();
@@ -172,6 +167,47 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
     }
   },
 );
+
+it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async () => {
+  const origin = boot({ workflowsEnabled: true }, "origin");
+  await origin.lifecycle("session_start");
+  const human = deferred<string>();
+  origin.ui.select.mockReturnValue(human.promise);
+  const result = await required(origin.tools.get("agent_graph")).execute(
+    "call", { graph: gateGraph, input: {} }, undefined, undefined, origin.ctx,
+  );
+  const runId = required(result.details?.taskId);
+  await vi.waitFor(() => expect(origin.ui.select.mock.calls.length, JSON.stringify(origin.api.sendMessage.mock.calls)).toBe(1));
+  const path = join(persistence.graphRunsDir(origin.ctx.cwd), `${runId}.json`);
+  {
+    const shutdown = origin.lifecycle("session_shutdown");
+    await releaseAfterPending(shutdown, () => human.resolve("Approve"));
+    await shutdown;
+  }
+  // A live process still holds this run's lock across the resume.
+  const release = persistence.ownGraphRun(origin.ctx.cwd, runId);
+  const original = readFileSync(path, "utf8");
+  const next = boot({ workflowsEnabled: true }, "origin");
+  const create = vi.spyOn(tasks, "createWorkflowTask");
+  const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
+  // Force the peek to LOSE the race, then the lease to refuse the live owner.
+  vi.spyOn(persistence, "graphRunHasLiveWriter").mockReturnValue(false);
+  vi.spyOn(persistence, "ownGraphRun").mockImplementation(() => { throw new LiveWriterError(); });
+  try {
+    await next.lifecycle("session_start");
+    // resume() must create the task (the peek reported no live writer) ...
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    // ... then the refused lease must settle silently: allow the background run and
+    // the 200ms completion-nudge window to elapse, so any fabricated failure would fire.
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(next.api.sendMessage).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(readFileSync(path, "utf8")).toBe(original);
+  } finally {
+    await next.lifecycle("session_shutdown");
+    release();
+  }
+});
 
 it("keeps checkpoint session ownership immutable under replacement", async () => {
   const session = boot({ workflowsEnabled: true });

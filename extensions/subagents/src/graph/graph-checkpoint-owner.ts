@@ -43,6 +43,10 @@ function unchanged(path: string, observed: ReturnType<typeof owner>): boolean {
 
 /** Fully initialized metadata is published atomically, including for recovery guards. */
 export type CheckpointLease = (() => void) & { readonly reclaimedDeadWriter: boolean };
+/** A live process already owns the lock we tried to acquire. Distinct from corrupt/stale-lock errors. */
+export class LiveWriterError extends TypeError {
+  constructor() { super("Checkpoint has a live writer"); this.name = "LiveWriterError"; }
+}
 function acquire(path: string): CheckpointLease {
   const metadata = { pid: process.pid, start: processStart(process.pid), nonce: randomUUID() };
   const temporary = `${path}.${metadata.nonce}.owner`;
@@ -52,7 +56,7 @@ function acquire(path: string): CheckpointLease {
   } catch (error) {
     if (!code(error, "EEXIST")) throw error;
     const observed = owner(path);
-    if (live(observed)) throw new TypeError("Checkpoint has a live writer");
+    if (live(observed)) throw new LiveWriterError();
     // The same recovery protocol reclaims orphan guards, rather than leaving a permanent deadlock.
     const releaseGuard = acquire(`${path}.recovery`);
     try {
@@ -86,3 +90,9 @@ export function writeOwnedCheckpoint(path: string, revision: number | undefined,
 
 /** A run lease outlives individual writes, preventing live restore owners from dispatching together. */
 export function ownCheckpoint(path: string): CheckpointLease { return acquire(`${path}.run.lock`); }
+
+/** Non-destructive: is a live process holding this run's lock right now? Total — ambiguity ⇒ false, acquire stays authoritative. */
+export function checkpointHasLiveWriter(path: string): boolean {
+  try { return live(owner(path + ".run.lock")); }
+  catch { return false; }
+}

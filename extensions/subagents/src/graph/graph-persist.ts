@@ -11,7 +11,7 @@
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { type CheckpointLease, ownCheckpoint, writeOwnedCheckpoint } from "./graph-checkpoint-owner.js";
+import { type CheckpointLease, checkpointHasLiveWriter, ownCheckpoint, writeOwnedCheckpoint } from "./graph-checkpoint-owner.js";
 import { validateCheckpointTransition } from "./graph-checkpoint-transition.js";
 import { validateGraphRestore } from "./graph-restore-validation.js";
 import { isWorkflowRunId, snapshotDirectory, snapshotPath } from "./graph-snapshot-path.js";
@@ -118,4 +118,8 @@ function isSnapshot(value: unknown): value is GraphRunSnapshot {
 
 export function ownGraphRun(cwd: string, runId: string): CheckpointLease {
   return ownCheckpoint(snapshotPath(cwd, runId, true));
+}
+
+export function graphRunHasLiveWriter(cwd: string, runId: string): boolean {
+  return checkpointHasLiveWriter(snapshotPath(cwd, runId, true));
 }
