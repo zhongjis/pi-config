@@ -18,12 +18,12 @@ export function workflowCompletionText(ctx: ExtensionContext, task: WorkflowTask
     // `task.resultPath` now drives the truncation marker and `<result-file>` element inside the XML.
     return formatWorkflowNotification(task);
   } catch (error) {
-    const warning = `Full workflow result could not be saved: ${error instanceof Error ? error.message : String(error)}`;
+    const warning = `Full graph run result could not be saved: ${error instanceof Error ? error.message : String(error)}`;
     task.resultArtifactError = warning;
     if (ctx.hasUI) ctx.ui.notify(warning, "warning");
     else console.warn(`[pi-subagents] ${warning}`);
     // Write failed, so there is no `<result-file>`: keep the (still-capped) inline preview and
     // point at the expanded report, which retains the complete result.
-    return `${formatWorkflowNotification(task)}\nWarning: ${warning}. Full output remains in the expanded workflow report.`;
+    return `${formatWorkflowNotification(task)}\nWarning: ${warning}. Full output remains in the expanded graph run report.`;
   }
 }

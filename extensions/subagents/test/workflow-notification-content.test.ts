@@ -102,7 +102,7 @@ describe("workflowCompletionText", () => {
     expect(t.resultArtifactError).toBeDefined();
     expect(warnings).toHaveLength(1);
     expect(text).toContain("Warning:");
-    expect(text).toContain("Full output remains in the expanded workflow report");
+    expect(text).toContain("Full output remains in the expanded graph run report");
     expect(text).not.toContain("<result-file>");
   });
 });

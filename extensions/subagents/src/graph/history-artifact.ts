@@ -10,7 +10,7 @@ export interface HistoricalNodeDetail {
 
 /** Stable, bounded filename component; no runtime identity or binding participates. */
 export function workflowNodeArtifactId(runId: string, index: number): string {
-  if (typeof runId !== "string" || !Number.isSafeInteger(index) || index < 0) throw new RangeError("Invalid workflow artifact key");
+  if (typeof runId !== "string" || !Number.isSafeInteger(index) || index < 0) throw new RangeError("Invalid graph run artifact key");
   return `graph-${createHash("sha256").update(runId, "utf16le").digest("hex")}-${index}`;
 }
 

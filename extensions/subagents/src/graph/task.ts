@@ -277,7 +277,7 @@ export function resolveResumeTarget(
     return {
       ok: false,
       message:
-        `No workflow run "${id}" in this session. ` +
+        `No graph run "${id}" in this session. ` +
         (known.length > 0
           ? `Runs this session: ${known.join(", ")}.`
           : "Nothing has run yet — call this without `resumeFromRunId`."),
@@ -286,11 +286,11 @@ export function resolveResumeTarget(
   if (prior.status === "running" || prior.status === "paused") {
     return {
       ok: false,
-      message: `Workflow "${id}" is ${prior.status}. Stop it from /agents → Workflows before resuming it.`,
+      message: `Graph run "${id}" is ${prior.status}. Stop it from /agents → Graph runs before resuming it.`,
     };
   }
   if (prior.journalPath === undefined) {
-    return { ok: false, message: `Workflow "${id}" has no journal to resume from.` };
+    return { ok: false, message: `Graph run "${id}" has no journal to resume from.` };
   }
   return {
     ok: true,
@@ -324,7 +324,7 @@ export function formatWorkflowNotification(task: WorkflowTask, now = Date.now())
     task.toolCallId ? `<tool-use-id>${escapeXml(task.toolCallId)}</tool-use-id>` : null,
     task.scriptPath ? `<script>${escapeXml(task.scriptPath)}</script>` : null,
     `<status>${escapeXml(status)}</status>`,
-    `<summary>Workflow "${escapeXml(task.workflowName ?? task.id)}" — Execution: ${task.status} — ${totals.done}/${totals.total} agents completed, ${failed} failed, ${skipped} skipped${
+    `<summary>Graph run "${escapeXml(task.workflowName ?? task.id)}" — Execution: ${task.status} — ${totals.done}/${totals.total} agents completed, ${failed} failed, ${skipped} skipped${
       task.replayedCount > 0 ? `, ${task.replayedCount} replayed from ${escapeXml(task.resumedFrom ?? "an earlier run")}` : ""
     }</summary>`,
     `<result>${escapeXml(resultBody)}</result>`,

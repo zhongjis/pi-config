@@ -126,7 +126,7 @@ describe("agent_graph tool", () => {
       "├─ outcome: not declared",
       "├─ execution: completed · 5 agents completed",
       "├─ result: summary, relevantFiles, constraints, unknowns",
-      "└─ result and diagnostics · /agents › Workflows",
+      "└─ result and diagnostics · /agents › Graph runs",
     ]);
   });
 });

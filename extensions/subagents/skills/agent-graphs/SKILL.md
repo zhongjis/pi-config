@@ -32,7 +32,7 @@ The call returns a task id immediately and runs in the background; you are notif
 completion with a `<task-notification>`. Read it in this order:
 
 1. `<status>` — the declared outcome. `Completed` means the graph did not flag a
-   problem; `Workflow outcome partial: <reason>` or `Workflow outcome failed: <reason>`
+   problem; `Outcome partial: <reason>` or `Outcome failed: <reason>`
    means it did. Trust this over the raw agent counts.
 2. `<summary>` — `Execution: <state> — N/M agents completed, X failed, Y skipped`
    (`X failed` already excludes intentional skips).

@@ -357,11 +357,10 @@ Set `workflowsEnabled: true` in `subagents.json` or enable workflows in `/agents
 
 | Parameter | Purpose |
 |-----------|---------|
-| `graph` | Inline `AgentGraph` object (nodes + edges) to execute immediately |
-| `name` | Select a saved graph by name (resolved from `agent-graphs/<name>.graph.json`; a `/` in the name maps to a subdirectory, e.g. `context-gather`) |
+| `graph` | Saved graph name (string) or an inline `AgentGraph` object (nodes + edges) |
 | `input` | Input values passed to the graph |
 
-Source precedence is `graph` → `name`. The tool validates the graph structure before allocating a run; invalid graphs are rejected in the initiating tool call. Valid calls return a background run ID immediately; graph/agent/gate/condition failures are reported asynchronously.
+The tool validates the graph structure before allocating a run; invalid graphs are rejected in the initiating tool call. Valid calls return a background run ID immediately; graph/agent/gate/condition failures are reported asynchronously.
 
 **Node types:**
 

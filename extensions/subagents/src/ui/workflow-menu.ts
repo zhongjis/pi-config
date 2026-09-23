@@ -87,7 +87,7 @@ export async function showWorkflowDialog(
           onKill: () => {
             if (task.abortController.signal.aborted) return;
             task.abortController.abort("user");
-            ctx.ui.notify(`Stopped workflow "${task.meta?.name ?? task.id}".`, "info");
+            ctx.ui.notify(`Stopped graph run "${task.meta?.name ?? task.id}".`, "info");
           },
           onPause: () => {
             if (pauseWorkflowTask(task)) {
@@ -162,7 +162,7 @@ export async function showWorkflowsMenu(
 ): Promise<void> {
   const tasks = [...deps.tasks.values()].sort((a, b) => b.startTime - a.startTime);
   if (tasks.length === 0) {
-    ctx.ui.notify("No workflows in this session.", "info");
+    ctx.ui.notify("No graph runs in this session.", "info");
     return;
   }
   if (tasks.length === 1) {
@@ -179,7 +179,7 @@ export async function showWorkflowsMenu(
         task.agentCount === 1 ? "" : "s"
       } · ${task.id}`,
   );
-  const picked = await ctx.ui.select("Workflows", labels);
+  const picked = await ctx.ui.select("Graph runs", labels);
   const index = picked !== undefined ? labels.indexOf(picked) : -1;
   if (index >= 0) await showWorkflowDialog(ctx, tasks[index], deps);
 }

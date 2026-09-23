@@ -46,9 +46,9 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const childErrors = agents.some(entry => entry.state === "error");
       const status = { running: "Running", paused: "Paused", completed: outcomeLabel(task.outcome), failed: "Execution failed", killed: "Stopped" }[task.status];
       const counts = observedCounts(agents, active);
-      const activity = [running.length ? `${running.length} active` : "", queued.length ? `${queued.length} queued` : ""].filter(Boolean).join(" · ") || "waiting for workflow progress";
-      const name = task.workflowName ?? input.meta?.name ?? "Workflow";
-      const identity = input.showToolTitle ? `Workflow ${status.toLowerCase()} · ${name}` : status;
+      const activity = [running.length ? `${running.length} active` : "", queued.length ? `${queued.length} queued` : ""].filter(Boolean).join(" · ") || "waiting for graph run progress";
+      const name = task.workflowName ?? input.meta?.name ?? "Graph run";
+      const identity = input.showToolTitle ? `Graph run ${status.toLowerCase()} · ${name}` : status;
       const summary = task.status === "completed" ? resultSummary(task.value) : task.error ? firstMeaningfulLine(task.error) : active ? activity : counts;
       const fields = task.value !== null && typeof task.value === "object" && !Array.isArray(task.value) ? Object.keys(task.value) : [];
       const first = running[0] ?? queued[0];
@@ -67,14 +67,14 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
           return renderToolSummary(
             [`outcome: ${outcome}`, `execution: ${execution} · ${executionDetail}`, `result: ${result}`],
             theme,
-            { expandable: true, expandLabel: `${active ? "details" : "result and diagnostics"} · /agents › Workflows` },
+            { expandable: true, expandLabel: `${active ? "details" : "result and diagnostics"} · /agents › Graph runs` },
           ).render(width);
         }
         const second = active ? (!first && task.id ? `id: ${task.id} · ${current}` : current) : [task.status === "completed" ? "Execution: completed" : "", counts, task.status === "completed" ? fields.length ? `${input.showToolTitle ? "returned" : "fields:"} ${fields.join(", ")}` : input.showToolTitle ? summary : "" : ""].filter(Boolean).join(" · ");
         const lines = [
           input.showToolTitle ? `${identity}${task.status === "failed" && task.error ? ` · ${firstMeaningfulLine(task.error)}` : ""}` : `${status} · ${summary}`,
           second,
-          `${keyHint("app.tools.expand", active ? "details" : "result and diagnostics")} · /agents › Workflows`,
+          `${keyHint("app.tools.expand", active ? "details" : "result and diagnostics")} · /agents › Graph runs`,
         ];
         const color = task.status === "failed" || (task.status === "completed" && task.outcome?.status === "failed") ? "error" : childErrors || task.status === "killed" || task.status === "paused" || task.outcome?.status === "partial" ? "warning" : task.status === "completed" && task.outcome?.status === "succeeded" ? "success" : "accent";
         return lines.map((line, index) => truncateToWidth(theme.fg(index === 0 ? color : "muted", line.replace(/\r\n?|\n/g, " ")), Math.floor(width), "…"));
@@ -86,7 +86,7 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       if (active) {
         text(`Activity\n${activity}\n${current}${logs.length ? `\n${logs.at(-1)}` : ""}`);
       } else if (task.status === "failed" || task.status === "killed") {
-        text(`Error\n${task.error || (task.status === "killed" ? "Workflow stopped." : "Workflow failed.")}\n/agents › Workflows — inspect diagnostics before editing and rerunning the script`);
+        text(`Error\n${task.error || (task.status === "killed" ? "Graph run stopped." : "Graph run failed.")}\n/agents › Graph runs — inspect diagnostics before retrying the run`);
       } else {
         text("Result");
         if (typeof task.value === "string" && task.value.trim()) {
@@ -105,11 +105,11 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const tools = task.totalToolCalls ?? agents.reduce((sum, entry) => sum + (entry.toolCalls ?? 0), 0);
       const tokens = input.totalTokens ?? agents.reduce((sum, entry) => sum + (entry.tokens ?? 0), 0);
       text(`\nRun${task.id ? `\nID ${task.id}` : ""}\nDuration ${formatDuration(elapsedMs(task, input.now ?? Date.now()))}\nUsage ${tools} tools · ${tokens.toLocaleString("en-US")} tokens${task.resumedFrom ? `\nResumed from ${task.resumedFrom}` : ""}`);
-      if (sizeWarning({ scheduledAgents: Math.max(input.agentCount ?? 0, agents.length), startedAgents: stats(input.progress).started, totalTokens: tokens, agentCap: input.agentCap, tokenCap: input.tokenCap })) text("Large workflow · /agents › Workflows to inspect");
+      if (sizeWarning({ scheduledAgents: Math.max(input.agentCount ?? 0, agents.length), startedAgents: stats(input.progress).started, totalTokens: tokens, agentCap: input.agentCap, tokenCap: input.tokenCap })) text("Large graph run · /agents › Graph runs to inspect");
       const artifacts = [["Script", task.scriptPath], ["Full result", task.resultPath]].filter(([, path]) => path);
       if (artifacts.length) text(`\nArtifacts\n${artifacts.map(([label, path]) => `${label}\n${path}`).join("\n")}`);
       if (task.resultArtifactError) text(`\n${task.resultArtifactError}\nComplete returned content remains in this report.`);
-      text("\n/agents › Workflows — inspect agents and conversations while retained in this session");
+      text("\n/agents › Graph runs — inspect agents and conversations while retained in this session");
 
       if (agents.length || logs.length) text("\nRetained details");
       for (const entry of agents) {
@@ -135,7 +135,7 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
 export function renderWorkflowEntryCard(data: unknown, theme: Theme, expanded = false): Component | undefined {
   if (data === undefined) return undefined;
   if (!isWorkflowEntryData(data)) {
-    const raw = JSON.stringify(data, null, 2) ?? "No workflow data.";
+    const raw = JSON.stringify(data, null, 2) ?? "No graph run data.";
     return expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw)], theme, { expandable: true });
   }
   return renderWorkflowCard({

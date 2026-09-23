@@ -217,5 +217,5 @@ it("passes live outcome through the inspector and labels menu lifecycle as execu
   const deps = { tasks: new Map([[task.id, task], ["other", createWorkflowTask({ id: "other", script: "" })]]), getRecord: () => undefined, getCtx: () => ctx, viewAgentConversation: async () => {} };
   await showWorkflowDialog(ctx, task, deps);
   await showWorkflowsMenu(ctx, deps);
-  expect(select).toHaveBeenCalledWith("Workflows", expect.arrayContaining([expect.stringContaining("wf_outcome — Execution: completed")]));
+  expect(select).toHaveBeenCalledWith("Graph runs", expect.arrayContaining([expect.stringContaining("wf_outcome — Execution: completed")]));
 });

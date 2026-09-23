@@ -48,7 +48,7 @@ describe("workflow reports", () => {
       "├─ outcome: not declared",
       "├─ execution: completed · 5 agents completed",
       "├─ result: summary, relevantFiles, constraints, unknowns",
-      "└─ Ctrl+O result and diagnostics · /agents › Workflows",
+      "└─ Ctrl+O result and diagnostics · /agents › Graph runs",
     ]);
   });
   it.each(["running", "paused", "completed", "failed", "killed"] as const)("keeps %s compact across terminal widths without modifying data", status => {

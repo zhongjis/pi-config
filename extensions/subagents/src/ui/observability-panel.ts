@@ -154,7 +154,7 @@ function targetIndex(targets: readonly Target[], cursor: Target | undefined): nu
 }
 /** Only authoritative containment is admitted. Unknown/legacy rows remain workflow children. */
 function presentationTree(agents: readonly WorkflowAgentEntry[]): TreeNode {
-  const root: TreeNode = { target: { kind: "stage", stage: 0 }, label: "Workflow", children: [] };
+  const root: TreeNode = { target: { kind: "stage", stage: 0 }, label: "Graph run", children: [] };
   const nodes: TreeNode[] = agents.map(entry => ({ target: { kind: "node" as const, id: nodeId(entry, agents) }, label: entry.presentation?.name ?? entry.label, entry, children: [] }));
   const byInstance = new Map<string | number, TreeNode>(nodes.flatMap(node => {
     const id = node.entry?.historyIndex ?? node.entry?.instanceId;
@@ -237,7 +237,7 @@ function rosterLines(plan: PanelPlan, state: PanelState): { lines: WorkflowCardL
     const folded = (state.collapsedTargets ?? []).some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0);
     let line: WorkflowCardLine;
     if (node.target.kind === "stage") {
-      const title = ` ${ascii ? folded ? ">" : "v" : folded ? "▸" : "▾"} Workflow `;
+      const title = ` ${ascii ? folded ? ">" : "v" : folded ? "▸" : "▾"} Graph run `;
       const count = `${plan.agents.filter(entry => entry.state === "done").length}/${plan.agents.length} nodes`;
       line = clampLine([{ text: title }, { text: (ascii ? "-" : "─").repeat(Math.max(1, width - visibleWidth(title) - count.length - 1)) + " " + count, color: "dim" }], width);
     } else {

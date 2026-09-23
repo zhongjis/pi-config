@@ -16,8 +16,8 @@ export function createSettingsMenu(
     const gt = settings.graceTurns;
     return [
       {
-        id: "workflowsEnabled", label: "Workflows",
-        description: "Opt-in scripted subagent orchestration. Changes apply on next reload.",
+        id: "workflowsEnabled", label: "Agent graphs",
+        description: "Opt-in agent graph orchestration. Changes apply on next reload.",
         currentValue: settings.workflowsEnabled ? "on" : "off", values: ["on", "off"],
       },
       {
@@ -37,7 +37,7 @@ export function createSettingsMenu(
       {
         id: "reportUsage",
         label: "Report usage",
-        description: "Report subagent usage on the next final Agent, workflow, retrieval, or steer result",
+        description: "Report subagent usage on the next final Agent, graph run, retrieval, or steer result",
         currentValue: settings.reportUsage ? "on" : "off",
         values: ["on", "off"],
       },

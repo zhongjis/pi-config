@@ -450,7 +450,7 @@ export async function runAgent(
     systemPrompt += `
 
 <workflow_child>
-Your final message IS the return value of this task. A workflow script captures it and passes it to the next stage.
+Your final message IS the return value of this task. An agent graph run captures it and passes it to the next stage.
 Return only the answer, in exactly the shape the prompt asks for — no preamble, no summary of what you did, no offer to continue.
 </workflow_child>`;
   }

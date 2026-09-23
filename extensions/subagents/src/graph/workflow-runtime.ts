@@ -242,7 +242,7 @@ export function createWorkflowRuntime(
         display: true,
         details: {
           id: task.id,
-          description: `Workflow ${task.workflowName ?? task.id}`,
+          description: `Graph run ${task.workflowName ?? task.id}`,
           status: task.status === "completed" ? "completed" : task.status === "killed" ? "stopped" : "error",
           toolUses: task.totalToolCalls,
           // A workflow has agents, not turns; rendering "↻0" would be noise.
@@ -284,7 +284,7 @@ export function createWorkflowRuntime(
       if (renderContext.isError || !task) {
         const status = renderContext.isError
           ? "Failed"
-          : "Live graph state unavailable in this session — see /agents › Workflows or the completion notification";
+          : "Live graph state unavailable in this session — see /agents › Graph runs or the completion notification";
         const expandLabel = renderContext.isError ? "diagnostics" : "details";
         return options.expanded
           ? renderToolExpanded(`${status}\n${text || "No output."}`)
