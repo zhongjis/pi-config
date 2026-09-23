@@ -71,6 +71,7 @@ export const DEFAULT_PROFILES_CONFIG: ProfilesConfig = {
     default: {
       providers: [
         "anthropic",
+        "github-copilot",
         "openai-codex",
         "cliproxyapi",
         "openai",

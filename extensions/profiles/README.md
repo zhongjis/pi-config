@@ -15,7 +15,7 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 
 | Profile | Providers kept | Intended use |
 |---|---|---|
-| `default` | `anthropic`, `openai-codex`, `cliproxyapi`, `openai`, `amazon-bedrock`, `google` | US default — paid frontier models. |
+| `default` | `anthropic`, `github-copilot`, `openai-codex`, `cliproxyapi`, `openai`, `amazon-bedrock`, `google` | US default — paid frontier models. |
 | `opencode` | `opencode-go` | China — OpenCode Go subscription, Zen overflow. |
 | `local` | `llama-swap` | Offline-first or no-network environments. Blocks external research tools and wenchang. |
 
