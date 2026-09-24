@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const workflow = vi.hoisted(() => ({
+const graphRun = vi.hoisted(() => ({
   active: false,
   parentNotifications: 0,
   stop: vi.fn(),
@@ -18,8 +18,8 @@ vi.mock("../src/graph/graph-runtime.js", () => ({
     tool: {},
     loadHistory: vi.fn(),
     getRuns: () => [],
-    resume: workflow.resume,
-    stop: workflow.stop,
+    resume: graphRun.resume,
+    stop: graphRun.stop,
     fleetGraphRuns: () => [],
   })),
 }));
@@ -91,13 +91,13 @@ describe("manager registry lifecycle ownership", () => {
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false, agentGraphEnabled: false }));
     process.chdir(tmpDir);
     Reflect.deleteProperty(globalThis, MANAGER_KEY);
-    workflow.active = false;
-    workflow.parentNotifications = 0;
-    workflow.stop.mockImplementation(async () => {
-      if (workflow.active) workflow.parentNotifications++;
+    graphRun.active = false;
+    graphRun.parentNotifications = 0;
+    graphRun.stop.mockImplementation(async () => {
+      if (graphRun.active) graphRun.parentNotifications++;
     });
-    workflow.stop.mockClear();
-    workflow.resume.mockClear();
+    graphRun.stop.mockClear();
+    graphRun.resume.mockClear();
   });
 
   afterEach(() => {
@@ -113,7 +113,7 @@ describe("manager registry lifecycle ownership", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps an active parent workflow and manager untouched by child lifecycle events while the owner still cleans up", async () => {
+  it("keeps an active parent graph run and manager untouched by child lifecycle events while the owner still cleans up", async () => {
     const clearCompleted = vi.spyOn(AgentManager.prototype, "clearCompleted");
     const abortAll = vi.spyOn(AgentManager.prototype, "abortAll");
     const dispose = vi.spyOn(AgentManager.prototype, "dispose");
@@ -122,11 +122,11 @@ describe("manager registry lifecycle ownership", () => {
     Reflect.apply(subagentsExtension, undefined, [parent.pi]);
     await fire(parent, "session_start", {}, context());
 
-    workflow.stop.mockClear();
+    graphRun.stop.mockClear();
     clearCompleted.mockClear();
     abortAll.mockClear();
     dispose.mockClear();
-    workflow.active = true;
+    graphRun.active = true;
 
     const child = makePi();
     Reflect.apply(subagentsExtension, undefined, [child.pi]);
@@ -136,8 +136,8 @@ describe("manager registry lifecycle ownership", () => {
     await fire(child, "session_before_switch");
     await fire(child, "session_shutdown", {}, context());
 
-    expect(workflow.stop, "child cannot stop the active parent workflow").not.toHaveBeenCalled();
-    expect(workflow.parentNotifications, "child cannot emit the parent workflow notification").toBe(0);
+    expect(graphRun.stop, "child cannot stop the active parent graph run").not.toHaveBeenCalled();
+    expect(graphRun.parentNotifications, "child cannot emit the parent graph run notification").toBe(0);
     expect(clearCompleted, "child cannot clear the parent manager").not.toHaveBeenCalled();
     expect(dispose, "child disposes its local manager").toHaveBeenCalledOnce();
     expect(widgetDispose, "child disposes its local widget").toHaveBeenCalledOnce();
@@ -150,11 +150,11 @@ describe("manager registry lifecycle ownership", () => {
     ).toHaveLength(0);
 
     await fire(parent, "session_before_switch");
-    expect(workflow.stop).toHaveBeenCalledWith("switch");
+    expect(graphRun.stop).toHaveBeenCalledWith("switch");
     expect(clearCompleted).toHaveBeenCalledWith(true);
 
     await fire(parent, "session_shutdown", { reason: "shutdown" }, context());
-    expect(workflow.stop).toHaveBeenCalledWith("shutdown");
+    expect(graphRun.stop).toHaveBeenCalledWith("shutdown");
     expect(dispose).toHaveBeenCalledTimes(2);
     const parentManager = dispose.mock.contexts[1];
     expect(parentManager).not.toBe(childManager);

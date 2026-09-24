@@ -58,7 +58,7 @@ function source(): GraphRunDialogSource {
 }
 
 describe("renderGraphRunPaneLines", () => {
-  it("renders the overview with the workflow name, a phase title, and an agent label", () => {
+  it("renders the overview with the graph run name, a phase title, and an agent label", () => {
     const lines = renderGraphRunPaneLines(source(), { width: 60, now: NOW });
     expect(lines.length).toBeGreaterThan(0);
     const joined = lines.join("\n");

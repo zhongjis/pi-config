@@ -73,7 +73,7 @@ describe("agent_graph durable human_gate resume", () => {
   });
 });
 
-it("persists effective fanout topology through the workflow runtime and resumes it once", async () => {
+it("persists effective fanout topology through the graph runtime and resumes it once", async () => {
   const s1 = boot({ agentGraphEnabled: true });
   await s1.lifecycle("session_start");
   const human = deferred<string>();

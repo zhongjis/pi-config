@@ -1,4 +1,4 @@
-/** State-specific transcript reports for live workflows and retained notifications. */
+/** State-specific transcript reports for live graph runs and retained notifications. */
 import { keyHint } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import { firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";

@@ -47,11 +47,11 @@ describe("Herdr compact roster", () => {
   it("renders bounded feedback tree rows contiguously while preserving section gaps and short-pane selection", () => {
     const state = { ...initialPanelState(), cursor: { kind: "node" as const, id: "work-1-2" } };
     const full = text(renderPanelLines([fixture()], state, { width: 120 }));
-    const workflow = full.findIndex(line => line.includes("Graph run"));
+    const graphRun = full.findIndex(line => line.includes("Graph run"));
     const selectedNode = full.findIndex(line => line.includes("Selected node"));
-    const roster = full.slice(workflow + 2, selectedNode);
+    const roster = full.slice(graphRun + 2, selectedNode);
 
-    expect(full[workflow + 1]).toBe("");
+    expect(full[graphRun + 1]).toBe("");
     expect(full.slice(selectedNode - 2, selectedNode)).toEqual(["", ""]);
     expect(roster.filter(line => /^[\s│]+$/.test(line))).toEqual([]);
 

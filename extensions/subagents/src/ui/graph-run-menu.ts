@@ -4,14 +4,14 @@
  * The same shape `schedule-menu.ts` has for `/agents → Scheduled jobs`: the
  * submenu and the overlay it opens live here, and everything they need arrives
  * as {@link GraphRunMenuDeps} rather than through a closure. The inspector is
- * reached from two places — this menu and a `workflow` row in the fleet list —
+ * reached from two places — this menu and a graph run row in the fleet list —
  * and both go through `showGraphRunDialog`, so the two entry points cannot
  * drift apart on what the keys do.
  *
- * Lives in the agents menu rather than as a top-level `/workflows` command: it
+ * Lives in the agents menu rather than as its own top-level command: it
  * is one more view of the same fleet, and a second command name would only add
- * a collision surface (pi renames duplicate commands to `/workflows:1` and
- * `/workflows:2`, which breaks the bare name for both).
+ * a collision surface (pi renames duplicate commands to `/graph-runs:1` and
+ * `/graph-runs:2`, which breaks the bare name for both).
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -44,7 +44,7 @@ export interface GraphRunMenuDeps {
 }
 
 /**
- * Open the inspector for a workflow run.
+ * Open the inspector for a graph run.
  *
  * All six controls are wired: `onKill` aborts the run's controller, while
  * pause/resume and per-agent skip/retry go through `task.control`, the handle
@@ -172,7 +172,7 @@ export async function showGraphRunsMenu(
   // More than one: pick first. Newest at the top, since that is almost
   // always the one being asked about. `select` deals in plain strings and
   // hands back the string, so the label has to be unique or `indexOf` maps
-  // the second run of a workflow onto the first — the run id makes it so.
+  // the second run of a graph onto the first — the run id makes it so.
   const labels = tasks.map(
     task =>
       `${task.meta?.name ?? task.id}${task.type === "history" ? " · History (read-only)" : ""} — Execution: ${task.status}, ${task.agentCount} agent${

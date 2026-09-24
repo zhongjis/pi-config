@@ -6,7 +6,7 @@ import { resolveSavedGraph } from "../src/graph/saved-graph.js";
 import { validateGraph } from "../src/graph/validate.js";
 
 /**
- * The shipped reusable-workflow portfolio (docs/specs/agent-graph-reusable-workflows.md)
+ * The shipped reusable agent-graph portfolio (docs/specs/agent-graph-reusable-workflows.md)
  * must always resolve and validate. These saved graphs are Pi's known-good
  * starting points, so a shape regression in one of them should fail here rather
  * than at a live tool call. `cwd` is the repo root, mirroring how the runtime
@@ -60,7 +60,7 @@ const EVIDENCE_SCHEMA = {
 } as const;
 
 
-describe("agent-graph reusable-workflow portfolio", () => {
+describe("agent-graph reusable portfolio", () => {
   for (const name of PORTFOLIO) {
     it(`resolves and validates ${name}`, () => {
       const resolved = resolveSavedGraph(name, REPO_ROOT);

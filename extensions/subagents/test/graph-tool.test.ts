@@ -44,7 +44,7 @@ describe("agent_graph tool", () => {
     ).rejects.toThrow(/Invalid agent graph/);
   });
 
-  it("is not registered when workflows are disabled", () => {
+  it("is not registered when agent graphs are disabled", () => {
     const host = boot();
     expect(host.tools.has("agent_graph")).toBe(false);
   });
@@ -74,7 +74,7 @@ describe("agent_graph tool", () => {
     expect(expanded).toContain("Task ID: ghost123");
   });
 
-  it("renders via workflow card for a live task, not the fallback (G1)", async () => {
+  it("renders via graph run card for a live task, not the fallback (G1)", async () => {
     const host = boot({ agentGraphEnabled: true });
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));

@@ -555,7 +555,7 @@ it("keeps duplicate v2 labels navigable and identity details width-safe", async 
   }
 });
 
-it("retains typed v2 terminal metadata in the workflow result on materialization failure", () => {
+it("retains typed v2 terminal metadata in the graph run result on materialization failure", () => {
   const t = task();
   const feedback = { reason: "materialization failure", partial: true, iterations: [], gaps: [], counters: { iterations: 0, totalItems: 0 }, exhaustedBounds: ["node limit"] } as const;
   completeGraphTask(t, { status: "failed", nodes: {}, outputs: {}, feedback: { research: feedback } });

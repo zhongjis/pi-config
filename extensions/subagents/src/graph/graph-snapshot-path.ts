@@ -26,7 +26,7 @@ export function snapshotDirectory(cwd: string, create = false): string {
 }
 
 export function snapshotPath(cwd: string, runId: string, create = false): string {
-  if (!isGraphRunId(runId)) throw new TypeError("Invalid workflow run ID");
+  if (!isGraphRunId(runId)) throw new TypeError("Invalid graph run ID");
   const directory = snapshotDirectory(cwd, create);
   const path = join(directory, `${runId}.json`);
   if (dirname(path) !== directory) throw new TypeError("Checkpoint path escapes run directory");

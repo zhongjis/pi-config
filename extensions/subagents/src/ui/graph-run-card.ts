@@ -1,6 +1,6 @@
 import type { GraphRunOutcome } from "../graph/outcome.js";
 
-/** Workflow transcript reports and formatting shared with the inspector. */
+/** Graph run transcript reports and formatting shared with the inspector. */
 
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GraphRunMeta } from "../graph/graph-run-types.js";
@@ -79,7 +79,7 @@ export const ASCII_GLYPHS: GraphRunGlyphs = {
  * an undefined colour means "leave it at the terminal default", which is what
  * the recovered inline mapping asks for on a running row.
  *
- * `accent` is unused by the card and exists for the workflows dialog, which
+ * `accent` is unused by the card and exists for the graph runs dialog, which
  * shares these segment types.
  */
 export type GraphRunCardColor = "success" | "error" | "warning" | "dim" | "muted" | "toolTitle" | "accent";
@@ -126,7 +126,7 @@ export interface GraphRunCardInput {
   agentCap?: number;
   tokenCap?: number;
   now?: number;
-  /** Include workflow identity for standalone entries and notifications. */
+  /** Include graph run identity for standalone entries and notifications. */
   showToolTitle?: boolean;
   /** Compact by default; expansion preserves the entire retained report. */
   expanded?: boolean;

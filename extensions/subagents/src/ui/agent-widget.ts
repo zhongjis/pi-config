@@ -271,7 +271,7 @@ export class AgentWidget {
    *     record flag rather than the UI-only `invocation` snapshot (which only the
    *     Agent-tool path sets), and excluding rather than allow-listing, means
    *     only proven-foreground runs drop out — nothing else silently vanishes.
-   *   - `all`: every agent not owned by a workflow.
+   *   - `all`: every agent not owned by a graph run.
    */
   private widgetAgents() {
     const all = this.manager.listAgents().filter(a => !a.graphRunId);

@@ -69,7 +69,7 @@ interface SpawnArgs {
 }
 
 export interface SpawnOptions {
-  /** Internal ownership: the workflow runtime owns its independent concurrency pool. */
+  /** Internal ownership: the graph runtime owns its independent concurrency pool. */
   graphRunId?: string;
   structuredOutput?: CompiledSchema;
   description: string;

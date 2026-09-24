@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { WORKFLOW_RESULT_PREVIEW_CHARS } from "../constants.js";
+import { GRAPH_RUN_RESULT_PREVIEW_CHARS } from "../constants.js";
 import { createOutputFilePath } from "../output-file.js";
 import { formatGraphRunNotification, type GraphRunTask, graphRunResultText } from "./task.js";
 
@@ -10,7 +10,7 @@ export function graphRunCompletionText(ctx: ExtensionContext, task: GraphRunTask
   const result = graphRunResultText(task);
   // Short results inline in full; anything past the preview cap is written to an artifact and
   // linked from the notification via `<result-file>`, so the model never carries an unbounded body.
-  if (result.length <= WORKFLOW_RESULT_PREVIEW_CHARS) return formatGraphRunNotification(task);
+  if (result.length <= GRAPH_RUN_RESULT_PREVIEW_CHARS) return formatGraphRunNotification(task);
   try {
     const path = join(dirname(createOutputFilePath(ctx.cwd, task.id, ctx.sessionManager.getSessionId())), `${task.id}.graph-result.txt`);
     writeFileSync(path, result, "utf-8");

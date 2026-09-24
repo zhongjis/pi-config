@@ -456,7 +456,7 @@ describe("subagent notification rendering migration", () => {
     expect(options).toEqual({ deliverAs: "followUp", triggerTurn: true });
   });
 
-  it("renders workflow card for valid workflow entry in notification (G2 valid)", () => {
+  it("renders graph run card for valid graph run entry in notification (G2 valid)", () => {
     const task = createGraphRunTask({ id: "agr_note", script: "" });
     task.status = "completed";
     task.value = "answer";
@@ -471,7 +471,7 @@ describe("subagent notification rendering migration", () => {
     expect(theme.bg).toHaveBeenCalledWith("customMessageBg", expect.any(String));
   });
 
-  it("falls back to raw content for invalid workflow entry in notification (G2 invalid)", () => {
+  it("falls back to raw content for invalid graph run entry in notification (G2 invalid)", () => {
     const renderer = requireRenderer();
     const result = renderer(
       { details: notification({ graphRun: { not: "valid" } as unknown as NotificationDetails["graphRun"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],
@@ -481,7 +481,7 @@ describe("subagent notification rendering migration", () => {
     expect(result?.render(120).join("\n")).toContain("raw-graph-text");
   });
 
-  it("keeps malformed workflow fallback previews and expand hints flat", () => {
+  it("keeps malformed graph run fallback previews and expand hints flat", () => {
     const renderer = requireRenderer();
     const result = renderer(
       { details: notification({ graphRun: { not: "valid" } as unknown as NotificationDetails["graphRun"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],

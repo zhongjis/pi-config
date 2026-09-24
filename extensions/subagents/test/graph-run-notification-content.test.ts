@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
-import { WORKFLOW_RESULT_PREVIEW_CHARS } from "../src/constants.js";
+import { GRAPH_RUN_RESULT_PREVIEW_CHARS } from "../src/constants.js";
 import { graphRunCompletionText } from "../src/graph/notification.js";
 import { createGraphRunTask, formatGraphRunNotification, type GraphRunTask, graphRunResultPreview } from "../src/graph/task.js";
 import { createOutputFilePath } from "../src/output-file.js";
@@ -39,7 +39,7 @@ describe("graphRunResultPreview", () => {
   it("caps at the preview length with a trailing ellipsis", () => {
     const t = completed("y".repeat(2000));
     const preview = graphRunResultPreview(t);
-    expect(preview.length).toBe(WORKFLOW_RESULT_PREVIEW_CHARS);
+    expect(preview.length).toBe(GRAPH_RUN_RESULT_PREVIEW_CHARS);
     expect(preview.endsWith("\u2026")).toBe(true);
   });
 
@@ -63,7 +63,7 @@ describe("formatGraphRunNotification", () => {
     expect(xml).toContain("<result-file>/tmp/agr_note.graph-result.txt</result-file>");
     expect(xml).toContain("truncated");
     // The full >500-char body is never inlined.
-    expect(xml).not.toContain("z".repeat(WORKFLOW_RESULT_PREVIEW_CHARS + 1));
+    expect(xml).not.toContain("z".repeat(GRAPH_RUN_RESULT_PREVIEW_CHARS + 1));
   });
 });
 
@@ -77,7 +77,7 @@ describe("graphRunCompletionText", () => {
     expect(readFileSync(t.resultPath as string, "utf-8")).toBe("q".repeat(2000));
     expect(text).toContain(`<result-file>${t.resultPath}</result-file>`);
     expect(text).not.toContain("Full workflow result:");
-    expect(text).not.toContain("q".repeat(WORKFLOW_RESULT_PREVIEW_CHARS + 1));
+    expect(text).not.toContain("q".repeat(GRAPH_RUN_RESULT_PREVIEW_CHARS + 1));
   });
 
   it("returns an inline notification with no artifact for a short result", () => {

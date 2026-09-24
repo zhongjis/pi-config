@@ -44,7 +44,7 @@ export type FleetUICtx = {
 };
 
 /**
- * A workflow run, as the fleet list needs to see it.
+ * A graph run, as the fleet list needs to see it.
  *
  * Narrow on purpose: the list knows nothing about `GraphRunTask`, the runtime
  * or the dialog, so it stays as testable as it was when it only held agents.
@@ -110,11 +110,11 @@ export class FleetList {
   /** Set while a conversation overlay is open; calling it closes the overlay. */
   private viewerClose: (() => void) | undefined;
   private viewingAgentId: string | undefined;
-  /** Injected by the extension; absent until workflows are wired (or at all). */
+  /** Injected by the extension; absent until graph runs are wired (or at all). */
   private graphRunSource: (() => readonly FleetGraphRun[]) | undefined;
   private openGraphRun: ((id: string) => Promise<void> | void) | undefined;
   /**
-   * Set while the workflow inspector is up.
+   * Set while the graph run inspector is up.
    *
    * It does the two jobs `viewerClose` does for an agent's overlay — keep the
    * list out of the dialog's keys, and remember which row to come back to —
@@ -165,7 +165,7 @@ export class FleetList {
     this.inputUnsub = undefined;
     if (this.viewerClose) { this.viewerClose(); this.viewerClose = undefined; }
     this.viewingAgentId = undefined;
-    // No handle to close the workflow inspector with, but the list is going
+    // No handle to close the graph run inspector with, but the list is going
     // away — leaving the id set would keep it swallowing input forever.
     this.viewingGraphRunId = undefined;
     if (this.ui && this.widgetRegistered) this.ui.setWidget(FLEET_KEY, undefined);
@@ -236,10 +236,10 @@ export class FleetList {
   }
 
   /**
-   * Wire workflow runs into the list.
+   * Wire graph runs into the list.
    *
    * Injected rather than constructed here because the fleet list predates
-   * workflows and must keep working without them — a session with the feature
+   * graph runs and must keep working without them — a session with the feature
    * switched off never calls this, and the roster is agents-only exactly as
    * before.
    */
@@ -309,7 +309,7 @@ export class FleetList {
       // Activate: ↓ or ← at an empty prompt moves focus into the list.
       const isActivator = matchesKey(data, "down") || matchesKey(data, "left");
       // Gated on the roster, not the agents: a session whose only row is a
-      // workflow run still has somewhere to go, and requiring an agent would
+      // graph run still has somewhere to go, and requiring an agent would
       // render the row but refuse to move into it.
       if (isActivator && this.roster().length > 1 && this.ui.getEditorText() === "") {
         this.active = true;

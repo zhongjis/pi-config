@@ -40,7 +40,7 @@ const DEFAULT_WIDTH = 80;
 const WIDE_LAYOUT_WIDTH = 72;
 export const DEFAULT_PANE_BODY_ROWS = 22;
 export const MIN_PANE_BODY_ROWS = 6;
-export const WORKFLOW_DIALOG_REFRESH_MS = 500;
+export const GRAPH_RUN_DIALOG_REFRESH_MS = 500;
 
 export interface GraphRunDialogGlyphs {
   tick: string;
@@ -109,7 +109,7 @@ export function dialogRowGlyph(
   }
 }
 
-export const WORKFLOW_DIALOG_COPY = {
+export const GRAPH_RUN_DIALOG_COPY = {
   waitingForSlot: "Waiting for an agent slot.",
   waitingForResume: "Run paused; running agents finish, but no new agents start.",
   stoppedEarly: "The graph run stopped before this agent finished.",
@@ -121,7 +121,7 @@ export const WORKFLOW_DIALOG_COPY = {
 export type GraphRunDialogLevel = "roster" | "detail";
 
 export interface GraphRunDialogState {
-  /** Stable workflow entry index, never a visual row offset. */
+  /** Stable graph run entry index, never a visual row offset. */
   selectedIndex?: number;
   level: GraphRunDialogLevel;
   detailOffset: number;
@@ -387,12 +387,12 @@ type RosterItem =
   | { kind: "empty"; text: string };
 
 function rosterItems(groups: readonly PhaseGroup[]): RosterItem[] {
-  if (groups.length === 0) return [{ kind: "empty", text: WORKFLOW_DIALOG_COPY.noAgents }];
+  if (groups.length === 0) return [{ kind: "empty", text: GRAPH_RUN_DIALOG_COPY.noAgents }];
   return groups.flatMap(group => [
     { kind: "phase", group } as const,
     ...(group.agents.length > 0
       ? group.agents.map(entry => ({ kind: "agent", entry }) as const)
-      : [{ kind: "empty", text: WORKFLOW_DIALOG_COPY.noAgents } as const]),
+      : [{ kind: "empty", text: GRAPH_RUN_DIALOG_COPY.noAgents } as const]),
   ]);
 }
 
@@ -453,18 +453,18 @@ function section(lines: GraphRunCardLine[], title: string, body: string, width: 
 
 function outcomeBody(entry: GraphRunAgentEntry, state: GraphRunDisplayState): string {
   switch (state) {
-    case "skipped": return WORKFLOW_DIALOG_COPY.skippedByUser;
-    case "interrupted": return WORKFLOW_DIALOG_COPY.stoppedEarly;
+    case "skipped": return GRAPH_RUN_DIALOG_COPY.skippedByUser;
+    case "interrupted": return GRAPH_RUN_DIALOG_COPY.stoppedEarly;
     case "failed":
-    case "blocked": return entry.error ?? WORKFLOW_DIALOG_COPY.noOutcome;
-    case "done": return entry.resultPreview ?? WORKFLOW_DIALOG_COPY.noOutcome;
-    case "queued": return WORKFLOW_DIALOG_COPY.waitingForSlot;
+    case "blocked": return entry.error ?? GRAPH_RUN_DIALOG_COPY.noOutcome;
+    case "done": return entry.resultPreview ?? GRAPH_RUN_DIALOG_COPY.noOutcome;
+    case "queued": return GRAPH_RUN_DIALOG_COPY.waitingForSlot;
     case "running": return "Agent is running.";
   }
 }
 
 function detailRows(entry: GraphRunAgentEntry | undefined, view: ResolvedGraphRunDialog, width: number, now: number): GraphRunCardLine[] {
-  if (!entry) return [[{ text: `   ${WORKFLOW_DIALOG_COPY.noAgents}`, color: "dim" }]];
+  if (!entry) return [[{ text: `   ${GRAPH_RUN_DIALOG_COPY.noAgents}`, color: "dim" }]];
   const state = displayState(entry, view.graphRunActive);
   const model = graphRunAgentModel(entry, state);
   const rows: GraphRunCardLine[] = [[
@@ -473,7 +473,7 @@ function detailRows(entry: GraphRunAgentEntry | undefined, view: ResolvedGraphRu
     { text: ` · ${model}`, color: "dim" },
   ]];
   if (state === "queued") {
-    section(rows, "Waiting", view.paused ? WORKFLOW_DIALOG_COPY.waitingForResume : WORKFLOW_DIALOG_COPY.waitingForSlot, width);
+    section(rows, "Waiting", view.paused ? GRAPH_RUN_DIALOG_COPY.waitingForResume : GRAPH_RUN_DIALOG_COPY.waitingForSlot, width);
   } else if (state === "running") {
     const facts = [`${entry.toolCalls ?? 0} tool call${entry.toolCalls === 1 ? "" : "s"}`];
     if (entry.lastProgressAt) facts.push(`updated ${formatDuration(Math.max(0, now - entry.lastProgressAt))} ago`);
@@ -633,7 +633,7 @@ export class GraphRunDialog implements Component {
       this.timer = setInterval(() => {
         if (!taskIsLive(this.source().task)) this.stopTimer();
         if (!this.closed) { this.spinnerFrame++; this.tui.requestRender(); }
-      }, WORKFLOW_DIALOG_REFRESH_MS);
+      }, GRAPH_RUN_DIALOG_REFRESH_MS);
       this.timer.unref?.();
     }
   }

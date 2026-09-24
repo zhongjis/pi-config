@@ -50,8 +50,8 @@ describe("writeSnapshotAtomic", () => {
 describe("record helpers", () => {
   it("round-trips the ownership record and clears it", () => {
     expect(readRecord(dir)).toBeUndefined();
-    writeRecord(dir, { paneId: "%p9", sentinel: "Workflow · sess1234", closedByUser: false });
-    expect(readRecord(dir)).toEqual({ paneId: "%p9", sentinel: "Workflow · sess1234", closedByUser: false });
+    writeRecord(dir, { paneId: "%p9", sentinel: "Graph run · sess1234", closedByUser: false });
+    expect(readRecord(dir)).toEqual({ paneId: "%p9", sentinel: "Graph run · sess1234", closedByUser: false });
     clearRecord(dir);
     expect(readRecord(dir)).toBeUndefined();
   });

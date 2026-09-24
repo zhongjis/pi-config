@@ -1,7 +1,7 @@
 /**
  * structured-output.ts — the synthetic tool behind `agent(prompt, { schema })`.
  *
- * A workflow script that passes a `schema` wants an *object* back, not prose it
+ * An agent call that passes a `schema` wants an *object* back, not prose it
  * has to parse. Claude Code does this by giving the child a `StructuredOutput`
  * tool whose input schema is the caller's schema, so the provider fills the
  * fields, and returning the validated payload as the agent's result.

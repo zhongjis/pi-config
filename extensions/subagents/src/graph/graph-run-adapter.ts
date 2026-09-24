@@ -1,5 +1,5 @@
 /**
- * graph-run-adapter.ts — bridge a graph run into the workflow monitor.
+ * graph-run-adapter.ts — bridge a graph run into the monitor.
  *
  * The `/agents → Graph runs` dialog, the fleet widget, the inline card and the
  * Herdr pane all render a {@link GraphRunTask}'s append-only progress log. A
@@ -40,7 +40,7 @@ function resultText(value: unknown): string {
 }
 
 /**
- * Feeds a graph run's node updates into a workflow task's progress log.
+ * Feeds a graph run's node updates into a graph run task's progress log.
  *
  * Node indices stay stable while dynamic dependency stages are recomputed as nodes materialize;
  * `update` then re-emits one entry per node state change.
@@ -335,7 +335,7 @@ export class GraphRunReporter {
   }
 }
 
-/** Settle a workflow task from a graph run's result. */
+/** Settle a graph run task from its result. */
 export function completeGraphTask(task: GraphRunTask, result: RunGraphResult, now: number = Date.now()): void {
   task.control = undefined;
   task.status = result.status === "aborted" ? "killed" : result.status;

@@ -151,7 +151,7 @@ export class GraphRunPaneController {
         "--cwd",
         this.cwd,
         "--env",
-        `PI_WF_PANE_DIR=${this.dir}`,
+        `PI_GRAPH_RUN_PANE_DIR=${this.dir}`,
         "--no-focus",
       ],
       { timeout: this.timeoutMs },
@@ -184,7 +184,7 @@ export class GraphRunPaneController {
    * Close the pane at the user's request and REMEMBER the close. Unlike
    * `closeOwned` (the dispose path, which clears the record), this keeps the
    * record with `closedByUser` set, so `ensurePane(false)` will not reopen the
-   * pane until `/workflow-pane` forces it. Mirrors the viewer-side `q` close.
+   * pane until `/graph-runs` forces it. Mirrors the viewer-side `q` close.
    */
   async closeForUser(): Promise<void> {
     const record = readRecord(this.dir);

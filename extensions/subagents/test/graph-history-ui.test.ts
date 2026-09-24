@@ -67,7 +67,7 @@ it("opens history from the menu without wiring any supervision or conversation a
     const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
     void Promise.resolve(factory({ requestRender() {} } as TUI, theme as Parameters<typeof factory>[1], {} as Parameters<typeof factory>[2], resolve)).then(component => {
       expect(component).toBeInstanceOf(GraphRunDialog);
-      if (!(component instanceof GraphRunDialog)) throw new Error("Expected workflow dialog");
+      if (!(component instanceof GraphRunDialog)) throw new Error("Expected graph run dialog");
       expect(component.render(140).join("\n")).toContain("History snapshot");
       for (const key of ["p", "s", "r", "x", "c"]) component.handleInput(key);
       component.handleInput("\x1b");
@@ -96,7 +96,7 @@ it("keeps history metadata-private and ambiguous labels flat rather than reconst
 });
 
 it("round-trips v2 hierarchy, decisions and selected flow without retaining private runtime data", async () => {
-  const task = createGraphRunTask({ id: "roundtrip", script: "PRIVATE_SCRIPT", meta: { name: "context-gather", description: "Configured\nworkflow description" } });
+  const task = createGraphRunTask({ id: "roundtrip", script: "PRIVATE_SCRIPT", meta: { name: "context-gather", description: "Configured\ngraph description" } });
   Object.assign(task, { status: "completed", startTime: 0, endTime: 160000, args: "PRIVATE_INPUT", value: "PRIVATE_OUTPUT" });
   const add = (binding: string, data: Partial<import("../src/graph/progress.js").GraphRunAgentEntry>) => {
     task.graphRunProgress.push({ type: "graph_run_agent", index: task.graphRunProgress.length, label: "display", state: "done", nodeBinding: binding, instanceId: `${binding}-UUID`, recordId: "PRIVATE_RECORD", promptPreview: "PRIVATE_PROMPT", resultPreview: "PRIVATE_RESULT", ...data });
@@ -132,12 +132,12 @@ it("round-trips v2 hierarchy, decisions and selected flow without retaining priv
     await rm(directory, { recursive: true, force: true });
   }
   const history = required(mergeGraphRuns([], loaded.runs).get(task.id));
-  expect(history.meta?.description).toBe("Configured workflow description");
+  expect(history.meta?.description).toBe("Configured graph description");
   const runs = [{ id: task.id, name: "context-gather", status: history.status, source: toPaneSource(history) }];
   const render = (state = initialPanelState()) => renderPanelLines(runs, state, { width: 140 }).map(line => line.map(segment => segment.text).join(""));
   const lines = render();
   expect(lines.join("\n")).toContain("8 agents · 3 coordination nodes · 2 iterations");
-  expect(lines.join("\n")).toContain("Configured workflow description");
+  expect(lines.join("\n")).toContain("Configured graph description");
   expect(lines.join("\n")).not.toMatch(/unclassified|Flat fallback|PRIVATE_/);
   expect(lines.filter(line => /↻ Iteration/.test(line))).toHaveLength(2);
   expect(lines.filter(line => /continue|sufficient/.test(line))).toHaveLength(2);

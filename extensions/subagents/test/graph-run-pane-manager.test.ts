@@ -72,7 +72,7 @@ describe("input channel", () => {
     const task = twoPhaseTask("agr_a", 1000);
     const mgr = manager(() => [task]);
 
-    // Workflow, a0, a1; selection clamps at the last real node.
+    // Graph run, a0, a1; selection clamps at the last real node.
     for (const seq of [1, 2, 3, 4]) {
       writeInputAtomic(dir, { seq, data: b64("j") });
       processInput(mgr);
@@ -182,7 +182,7 @@ describe("esc-at-overview closes via the extension", () => {
       dir,
     });
     managers.push(mgr);
-    writeRecord(dir, { paneId: "%p9", sentinel: "Workflow · sess1234", closedByUser: false });
+    writeRecord(dir, { paneId: "%p9", sentinel: "Graph run · sess1234", closedByUser: false });
 
     // esc at the overview level → cancel → the extension closes the pane.
     writeInputAtomic(dir, { seq: 1, data: b64("\x1b") });

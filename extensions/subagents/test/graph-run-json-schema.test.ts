@@ -143,7 +143,7 @@ it.each([
   { schema: { type: 'array', items: { type: 'number' } }, good: [1], bad: ['1'] },
   { schema: { anyOf: [{ type: 'null' }, { type: 'boolean' }] }, good: null, bad: 0 },
   { schema: { type: ['string', 'number'] }, good: 0, bad: false },
-])('validates non-object workflow inputs without widening agent schemas: $schema', ({ schema, good, bad }) => {
+])('validates non-object graph run inputs without widening agent schemas: $schema', ({ schema, good, bad }) => {
   const compiled = compileInputSchema(schema);
   expect(compiled.ok).toBe(true);
   if (!compiled.ok) throw new Error(compiled.message);

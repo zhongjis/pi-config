@@ -1385,7 +1385,7 @@ describe("AgentManager — independent foreground pool", () => {
   });
 });
 
-describe("workflow pool ownership", () => {
+describe("graph run pool ownership", () => {
   let manager: AgentManager;
   afterEach(() => manager?.dispose());
 
@@ -1400,28 +1400,28 @@ describe("workflow pool ownership", () => {
     vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
       options.onAssistantUsage?.({ input: 2, output: 3, cacheWrite: 0, cacheRead: 7, cost: 0.25 });
       await new Promise<void>(resolve => { finishGraphRun = resolve; });
-      return { responseText: "workflow", session: mockSession(), aborted: false, steered: false };
+      return { responseText: "graph run", session: mockSession(), aborted: false, steered: false };
     }).mockResolvedValue({ responseText: "ordinary", session: mockSession(), aborted: false, steered: false });
-    const pending = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "workflow", {
-      description: "workflow", graphRunId: "wf-1",
+    const pending = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "graph run", {
+      description: "graph run", graphRunId: "wf-1",
     });
-    const workflow = manager.listAgents()[0];
-    expect(workflow.graphRunId).toBe("wf-1");
+    const graphRun = manager.listAgents()[0];
+    expect(graphRun.graphRunId).toBe("wf-1");
     expect(manager.getRunning()).toEqual([]);
     const ordinary = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "ordinary", { description: "ordinary" });
     expect(ordinary.record.status).toBe("completed");
     expect(started).toHaveBeenCalledTimes(1);
     expect(completed).toHaveBeenCalledTimes(1);
     expect(manager.getLifetimeCost()).toBe(0.25);
-    expect(workflow.lifetimeUsage.cacheRead).toBe(7);
+    expect(graphRun.lifetimeUsage.cacheRead).toBe(7);
     expect(usage).toHaveBeenCalledTimes(1);
     finishGraphRun?.();
     await pending;
     expect(completed).toHaveBeenCalledTimes(1);
-    expect(manager.listAgents()).toContain(workflow);
+    expect(manager.listAgents()).toContain(graphRun);
   });
 
-  it("tracks resumed workflow promises, rejects concurrent resumes, and aborts via manager", async () => {
+  it("tracks resumed graph run promises, rejects concurrent resumes, and aborts via manager", async () => {
     const { resumeAgent } = await import("../src/agent-runner.js");
     manager = new AgentManager();
     resolvedRun();

@@ -2,7 +2,7 @@
 /**
  * viewer.mjs — the plain-Node reader that runs inside the Herdr side pane.
  *
- * It owns no layout. The extension renders the workflow overview in-process (see
+ * It owns no layout. The extension renders the graph run overview in-process (see
  * render.ts), writes styled ANSI lines to `<dir>/state.json` with an atomic
  * rename, and this process paints them: clear, home, print, repeat on change.
  * That keeps the shared layout the single source of truth and needs no bundler,

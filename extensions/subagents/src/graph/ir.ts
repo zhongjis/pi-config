@@ -51,7 +51,7 @@ export interface ValueRef {
  * The declarative condition language for edge guards (§1.6).
  *
  * Deliberately small and serializable — no arbitrary predicates. Grow it only
- * when a real workflow needs an operator that is not here.
+ * when a real agent graph needs an operator that is not here.
  */
 export type Condition =
   | { eq: [ValueRef, JsonValue] }

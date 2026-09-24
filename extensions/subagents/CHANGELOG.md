@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Retired the "workflow" name for agent graph runs.** Comments, test descriptions, and extension docs now use *agent graph* / *graph run* ([ADR-0003](../../docs/adr/0003-retire-workflow-terminology.md)). Persisted contracts were hard-renamed in earlier waves; a leftover `workflowsEnabled` key still warns once and is ignored.
 - **Subagent presentation now uses the Panda Harness supervision layout.** `Agent`, `get_subagent_result`, and `steer_subagent` calls and results render width-safe compact headers plus ordered lifecycle, activity, model, tool, context, turn, duration, and result rows with configured expand hints; expanded tool results preserve complete raw content. Completion notifications and AgentWidget now use the same shared lifecycle/stat/result summary, including live and terminal status details. Malformed presentation details fall back safely. Model-facing content, execution/model behavior, FleetView, and Thinking Steps remain unchanged.
 - **Completed Agent sessions remain resumable for 30 minutes.** The terminal-record cleanup window is extended from 10 minutes so long parent verification passes can still resume foreground or background agents by ID. Running and queued agents remain exempt; session switch, reload, and shutdown cleanup are unchanged. The extra in-memory retention is bounded and does not make output transcripts resumable.
 

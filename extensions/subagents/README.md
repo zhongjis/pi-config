@@ -32,13 +32,13 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 | `src/index.ts`, `examples/agent-tool-description.md`, `test/tool-description-mode.test.ts` | Full advertisements retain verbatim model chains or parent inheritance; full/compact/custom lists separate built-in and configured extension selectors, including none/unavailable | Advertise configuration without claiming runtime loading, authentication, or permissions; compact lists still omit models |
 | `src/agent-manager.ts`, `src/agent-runner.ts`, `src/usage.ts`, `src/settings.ts`, `src/index.ts`, control regression tests | Independent foreground queue and opt-in native usage reporting; retain existing live cost bridge | Bound blocking fan-out and report each usage delta once without double-counting footer cost |
 | `src/types.ts`, `src/ui/agent-widget.ts`, `src/tool-rendering.ts`, `src/index.ts`, rendering/runtime tests | Requested/effective discrepancies and optional estimated cost appear only in expanded Run metadata | Preserve actual SDK metadata and the compact three-row layout |
-| `src/graph/`, `src/index.ts`, workflow registration/settings and UI integration | Typed `agent_graph` graph runtime: IR (`ir.ts`), validation (`validate.ts`), run-graph (`run-graph.ts`), scheduler (`scheduler.ts`), node actors (`node-actor.ts`, `node-host.ts`, `node-host-adapter.ts`), graph-run adapter (`graph-run-adapter.ts`), persistence (`graph-persist.ts`), saved-graph resolution (`saved-graph.ts`), conditions (`condition.ts`), value refs (`value-ref.ts`), JSON schema (`json-schema.ts`), workflow types (`workflow-types.ts`), entry validation (`entry.ts`, `entry-validation.ts`), outcome (`outcome.ts`), notifications (`notification.ts`), task (`task.ts`), progress (`progress.ts`), pane (`pane/`), and tool description (`tool-description.ts`); preserve local thinking/`:fast`, delegation, usage, and session-local contracts | Opt-in typed-graph orchestration with correct supervision and accounting |
-| `src/graph/tool-description.ts`, `skills/agent-graphs/SKILL.md`, `src/index.ts` | Keep the graph authoring manual in an extension-owned skill; short tool metadata points to its module-resolved path | Progressive disclosure through native `resources_discover` only when workflows are enabled; no package metadata auto-discovery or personal skill installation |
-| `src/ui/workflow-report.ts`, `src/ui/workflow-card.ts`, `src/ui/workflow-dialog.ts`, `src/ui/workflow-menu.ts`, graph presentation tests | Three-row graph-run summaries, explicit task/type rosters, state-first expanded reports, and complete retained notification results with actual artifact outcomes | Graph presentation contract; preserve model content, delivery timing, ordinary Agent notifications, and ephemeral retention |
+| `src/graph/`, `src/index.ts`, agent graph registration/settings and UI integration | Typed `agent_graph` graph runtime: IR (`ir.ts`), validation (`validate.ts`), run-graph (`run-graph.ts`), scheduler (`scheduler.ts`), node actors (`node-actor.ts`, `node-host.ts`, `node-host-adapter.ts`), graph-run adapter (`graph-run-adapter.ts`), persistence (`graph-persist.ts`), saved-graph resolution (`saved-graph.ts`), conditions (`condition.ts`), value refs (`value-ref.ts`), JSON schema (`json-schema.ts`), graph run types (`graph-run-types.ts`), entry validation (`entry.ts`, `entry-validation.ts`), outcome (`outcome.ts`), notifications (`notification.ts`), task (`task.ts`), progress (`progress.ts`), pane (`pane/`), and tool description (`tool-description.ts`); preserve local thinking/`:fast`, delegation, usage, and session-local contracts | Opt-in typed-graph orchestration with correct supervision and accounting |
+| `src/graph/tool-description.ts`, `skills/agent-graphs/SKILL.md`, `src/index.ts` | Keep the graph authoring manual in an extension-owned skill; short tool metadata points to its module-resolved path | Progressive disclosure through native `resources_discover` only when agent graphs are enabled; no package metadata auto-discovery or personal skill installation |
+| `src/ui/graph-run-report.ts`, `src/ui/graph-run-card.ts`, `src/ui/graph-run-dialog.ts`, `src/ui/graph-run-menu.ts`, graph presentation tests | Three-row graph-run summaries, explicit task/type rosters, state-first expanded reports, and complete retained notification results with actual artifact outcomes | Graph presentation contract; preserve model content, delivery timing, ordinary Agent notifications, and ephemeral retention |
 
 The base upstream provenance and existing Agent RPC/events remain unchanged. Graph-run supervision extends FleetView; Thinking Steps remains unchanged.
 
-The bundled [graph authoring skill](skills/agent-graphs/SKILL.md) covers the typed `agent_graph` API: saved and inline graphs, node types (`agent`, `human_gate`, `graph`, `expand`, `fanout`, v2 `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled workflows discover no skill.
+The bundled [graph authoring skill](skills/agent-graphs/SKILL.md) covers the typed `agent_graph` API: saved and inline graphs, node types (`agent`, `human_gate`, `graph`, `expand`, `fanout`, v2 `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled agent graphs discover no skill.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
@@ -351,9 +351,9 @@ Send a steering message to a running agent. The message interrupts after the cur
 
 ### `agent_graph` (opt-in)
 
-Typed graph orchestration — the single multi-agent execution tool in this extension. The tool validates the graph before anything runs, then executes it in the background and notifies on completion; monitor progress in `/agents → Workflows`.
+Typed graph orchestration — the single multi-agent execution tool in this extension. The tool validates the graph before anything runs, then executes it in the background and notifies on completion; monitor progress in `/agents → Graph runs`.
 
-Set `workflowsEnabled: true` in `subagents.json` or enable workflows in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled workflows add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
+Set `workflowsEnabled: true` in `subagents.json` or enable agent graphs in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled agent graphs add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
 
 | Parameter | Purpose |
 |-----------|---------|
@@ -383,11 +383,11 @@ Saved graphs live at `agent-graphs/<name>.graph.json`. One saved graph ships wit
 
 Graph effort follows local thinking authority: agent frontmatter → model-chain suffix → invocation override → SDK default, never implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 
-Graph runs MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children do not receive the `agent_graph` tool recursively. `/agents → Workflows` keeps one phase-grouped run roster with contextual controls: pause/resume, skip, retry, stop, and child conversation access. FleetView represents each graph run as one row rather than duplicating its owned children.
+Graph runs MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children do not receive the `agent_graph` tool recursively. `/agents → Graph runs` keeps one phase-grouped run roster with contextual controls: pause/resume, skip, retry, stop, and child conversation access. FleetView represents each graph run as one row rather than duplicating its owned children.
 
 Settled runs remain visible after same-session reload in `/agents → Graph runs` and Herdr as **read-only metadata history**, not execution recovery. The exact Pi session ID owns `graph-history.json` under the repository's session-local OS storage; forks/new sessions are isolated. History is bounded to 20 runs/8 MiB and retains no full prompts, inputs, outputs, errors, or artifact paths. Live runs win over same-ID history; graph resume checkpoints remain separate. See the [presentation contract](../../docs/specs/workflow-tool-output-presentation.md#implementation-decisions) for bounds and lifecycle behavior.
 
-The authoring skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover` when workflows are enabled. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
+The authoring skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover` when agent graphs are enabled. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
 
 ## Commands
 
@@ -480,14 +480,14 @@ Runtime tuning values set via `/agents` → Settings (background/foreground conc
 
 **Precedence:** project overrides global on any field present in both. Missing fields fall back to the hardcoded defaults (max concurrency `4`, default max turns unlimited, grace turns `5`, join mode `smart`, defaults enabled).
 
-**Control settings** (applied live except workflow registration):
+**Control settings** (applied live except agent graph registration):
 
 | Setting | Default | Behavior |
 |---------|---------|----------|
 | `maxConcurrentForeground` | `0` | Independent blocking-agent limit; `0` means unlimited |
 | `reportUsage` | `false` | Report pending subagent usage through final Agent/retrieval/steering tool results into native Pi session totals |
 | `showCost` | `false` | Show a positive estimated per-agent cost only in expanded Run metadata |
-| `workflowsEnabled` | `false` | Enable typed graph workflows (`agent_graph`); reload required for registration changes; disabled adds no graph tool schema/prompt cost |
+| `workflowsEnabled` | `false` | Enable typed agent graphs (`agent_graph`); reload required for registration changes; disabled adds no graph tool schema/prompt cost |
 
 Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
 

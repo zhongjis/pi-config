@@ -1,16 +1,16 @@
 ---
 name: agent-graphs
-description: Author, validate, run, and debug typed agent graphs for the `agent_graph` tool. Use when building or editing a `.graph.json` graph or an inline graph, or when a task is a multi-step / branching / looping / parallel agent workflow.
+description: Author, validate, run, and debug typed agent graphs for the `agent_graph` tool. Use when building or editing a `.graph.json` graph or an inline graph, or when a task is a multi-step / branching / looping / parallel agent graph.
 ---
 
 You author **agent graphs**: typed, declarative graphs of agent work that the
 `agent_graph` tool executes. A graph is data, not code — the runtime validates it
 before anything runs, executes it via XState with a dependency scheduler, and
-shows it live in `/agents → Workflows`.
+shows it live in `/agents → Graph runs`.
 
 Prefer a graph over ad-hoc `Agent` calls when the work has real structure:
 dependencies, branching on a result, bounded retry/loops, parallel fan-out, a
-human approval gate, or a reusable sub-workflow.
+human approval gate, or a reusable subgraph.
 
 ## Running a graph
 
@@ -22,7 +22,7 @@ agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...
 - **Saved graphs** live at `agent-graphs/<name>.graph.json`; a `/` in the name maps to a
   subdirectory (e.g. `team/my-graph` → `agent-graphs/team/my-graph.graph.json`). Author with normal file tools; no CRUD tool.
 - The call returns a **task id immediately** and runs in the background; you are
-  notified on completion. Do not poll. Watch it in `/agents → Workflows` (nodes
+  notified on completion. Do not poll. Watch it in `/agents → Graph runs` (nodes
   grouped by stage, with pause / skip / retry).
 - Invalid graphs are rejected **before** any node runs, with per-error messages.
 
@@ -165,14 +165,14 @@ where the `synthesize` node returns `{ "status": "succeeded" }` or
 `{ "status": "partial" | "failed", "reason": "<why>" }`. The runtime consumes this
 envelope, strips it from the returned value, and surfaces it as the completion status
 (`Outcome succeeded` / `Outcome partial: <reason>` / `Outcome failed: <reason>`, shown as
-`Workflow outcome … · <name>` on the collapsed card). Omit it and the run defaults to
+`Outcome … · <name>` on the collapsed card). Omit it and the run defaults to
 `Completed`; a malformed envelope is ignored and never fails an already-completed run.
 
-## Authoring workflow
+## Authoring steps
 
 1. Write the graph (inline or `.graph.json`), keeping ids and dependencies explicit.
 2. Run it — the tool validates first, so a shape error comes back before any cost.
-3. Watch `/agents → Workflows`: nodes are grouped by stage with live status;
+3. Watch `/agents → Graph runs`: nodes are grouped by stage with live status;
    conditional edges show which branch fired; expanded nodes appear as they insert.
 4. Depend only on validated structured output (`outputSchema` + `ValueRef`), never
    on an agent's prose.

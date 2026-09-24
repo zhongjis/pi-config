@@ -26,7 +26,7 @@ const fits = (lines: string[], width: number) => {
 };
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-describe("workflow reports", () => {
+describe("graph run reports", () => {
   it("resolves the configured expand hint and preserves malformed entry data expanded", () => {
     const hint = vi.spyOn(codingAgent, "keyHint").mockReturnValue("configured-key details");
     const task = createGraphRunTask({ id: "agr_test", script: "" });
@@ -120,7 +120,7 @@ describe("workflow reports", () => {
 });
 
 
-it("hides owned children only from ordinary UI and allows a workflow-only fleet to open", async () => {
+it("hides owned children only from ordinary UI and allows a graph-run-only fleet to open", async () => {
   const records = [
     { id: "ordinary", session: {}, status: "running", startedAt: 1 },
     { id: "owned", graphRunId: "agr_test", session: {}, status: "running", startedAt: 1 },
@@ -155,7 +155,7 @@ it("hides owned children only from ordinary UI and allows a workflow-only fleet 
   fleet.dispose(); widget.dispose();
 });
 
-describe("workflow disclosure states", () => {
+describe("graph run disclosure states", () => {
   it.each([
     [undefined, "no output"], [null, "null"], ["", "no output"], [[], "array · 0 items"],
     [[1, 2], "array · 2 items"], [{ research: 1, review: 2 }, "research, review"],

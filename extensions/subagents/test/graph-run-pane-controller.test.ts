@@ -19,7 +19,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const SENTINEL = "Workflow · sess1234";
+const SENTINEL = "Graph run · sess1234";
 
 function controller(exec: ReturnType<typeof vi.fn>) {
   return new GraphRunPaneController({
@@ -74,7 +74,7 @@ describe("ensurePane — fresh split", () => {
         "--cwd",
         "/work/dir",
         "--env",
-        `PI_WF_PANE_DIR=${dir}`,
+        `PI_GRAPH_RUN_PANE_DIR=${dir}`,
         "--no-focus",
       ],
       expect.anything(),

@@ -245,7 +245,7 @@ export function createGraphRuntime(
           description: `Graph run ${task.graphRunName ?? task.id}`,
           status: task.status === "completed" ? "completed" : task.status === "killed" ? "stopped" : "error",
           toolUses: task.totalToolCalls,
-          // A workflow has agents, not turns; rendering "↻0" would be noise.
+          // A graph run has agents, not turns; rendering "↻0" would be noise.
           turnCount: 0,
           totalTokens: task.totalTokens,
           durationMs: elapsedMs(task, Date.now()),

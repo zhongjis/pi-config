@@ -1,14 +1,13 @@
 import type { GraphRunOutcome } from "./outcome.js";
 
 /**
- * entry.ts — what a finished workflow leaves behind in the session transcript.
+ * entry.ts — what a finished graph run leaves behind in the session transcript.
  *
- * A workflow started from `--subagents-workflow-file` has no tool call to hang
- * its result card on, so it appends a custom session entry instead. That entry
- * has to survive a reload, which is why this is a plain-JSON snapshot rather
- * than the live {@link GraphRunTask}: the task holds an `AbortController`, the
- * script source and the run's control handle, none of which belongs in a
- * session file.
+ * A settled graph run has no tool call left to hang its result card on, so it
+ * appends a custom session entry instead. That entry has to survive a reload,
+ * which is why this is a plain-JSON snapshot rather than the live
+ * {@link GraphRunTask}: the task holds an `AbortController`, the script source
+ * and the run's control handle, none of which belongs in a session file.
  *
  * Deliberately free of any renderer import. The card this data renders through
  * lives in `ui/graph-run-report.ts` (`renderGraphRunEntryCard`), so the shape a
@@ -19,7 +18,7 @@ import type { GraphRunMeta } from "./graph-run-types.js";
 import type { GraphRunEntry, GraphRunStatus } from "./progress.js";
 import type { GraphRunTask } from "./task.js";
 
-/** `customType` of the session entry a flag-launched workflow renders through. */
+/** `customType` of the session entry a settled graph run renders through. */
 export const GRAPH_RUN_ENTRY_TYPE = "subagents:graph-run";
 
 /** The persisted snapshot of a settled run. */

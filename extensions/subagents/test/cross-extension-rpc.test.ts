@@ -252,7 +252,7 @@ describe("cross-extension RPC", () => {
       deps = { events, pi: { events }, getCtx: () => ctx, manager };
     });
 
-    it.each([undefined, "openai-codex/gpt-5.5"])("strips internal workflow options before spawning with model %s", async (model) => {
+    it.each([undefined, "openai-codex/gpt-5.5"])("strips internal graph run options before spawning with model %s", async (model) => {
       registerRpcHandlers(deps);
       const reply = vi.fn();
       events.on("subagents:rpc:spawn:reply:internal", reply);

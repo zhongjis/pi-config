@@ -2223,7 +2223,7 @@ it("does not prompt when the parent aborted during session startup", async () =>
   expect(result.aborted).toBe(true);
 });
 
-describe("workflow structured output", () => {
+describe("graph run structured output", () => {
   const schema = {
     schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
     check(value: unknown): true | string {

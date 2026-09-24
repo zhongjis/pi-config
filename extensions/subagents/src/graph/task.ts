@@ -1,5 +1,5 @@
 /**
- * task.ts — the background record one workflow run lives in.
+ * task.ts — the background record one graph run lives in.
  *
  * An `agent_graph` tool call returns a task id immediately and the run continues
  * without it, so the run's state cannot live in the tool call's closure: the
@@ -15,7 +15,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { WORKFLOW_RESULT_PREVIEW_CHARS } from "../constants.js";
+import { GRAPH_RUN_RESULT_PREVIEW_CHARS } from "../constants.js";
 import type { GraphRunControl, GraphRunMeta, GraphRunResult } from "./graph-run-types.js";
 import { outcomeLabel, type GraphRunOutcome } from "./outcome.js";
 import { collapse, elapsedMs, type GraphRunEntry, type GraphRunStatus, stats } from "./progress.js";
@@ -243,7 +243,7 @@ export function graphRunResultText(task: GraphRunTask): string {
  * when cut, so the completion notification never embeds an unbounded payload — the complete
  * result is written to an artifact and linked instead (see {@link formatGraphRunNotification}).
  */
-export function graphRunResultPreview(task: GraphRunTask, cap = WORKFLOW_RESULT_PREVIEW_CHARS): string {
+export function graphRunResultPreview(task: GraphRunTask, cap = GRAPH_RUN_RESULT_PREVIEW_CHARS): string {
   const summary =
     task.value !== null && typeof task.value === "object" && !Array.isArray(task.value)
       ? (task.value as Record<string, unknown>).summary

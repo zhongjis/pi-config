@@ -36,7 +36,7 @@ const fits = (lines: string[], width: number) => {
 };
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-describe("workflow inspector model", () => {
+describe("graph run inspector model", () => {
   it("shows only effective runtime models and honest unresolved states", () => {
     const queued = { ...agent, index: 1, label: "queued", state: "start" as const, queuedAt: 10, modelId: undefined, recordId: undefined };
     const unresolved = { ...agent, index: 2, label: "starting", modelId: undefined };
@@ -116,7 +116,7 @@ describe("workflow inspector model", () => {
   });
 });
 
-describe("workflow inspector interaction", () => {
+describe("graph run inspector interaction", () => {
   it("routes controls through stable entry and record ids", () => {
     const state = initialGraphRunDialogState(7);
     const view = resolveGraphRunDialog({ ...source(), state, width: 120 });

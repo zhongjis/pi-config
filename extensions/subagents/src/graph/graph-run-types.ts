@@ -21,14 +21,14 @@ export interface GraphRunPhaseMeta {
 export interface GraphRunMeta {
   name: string;
   description: string;
-  /** Shown in the saved-workflow listing. Not used by the runtime. */
+  /** Shown in the saved-graph listing. Not used by the runtime. */
   whenToUse?: string;
   phases?: GraphRunPhaseMeta[];
   inputSchema?: Record<string, unknown>;
 }
 
 /**
- * What a run can be told to do while it is going, from the workflows dialog.
+ * What a run can be told to do while it is going, from the graph runs dialog.
  *
  * Every method is best-effort and idempotent: the dialog renders off a progress
  * log that lags the runtime slightly, so it will sometimes ask for something

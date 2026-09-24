@@ -164,7 +164,7 @@ export default function (pi: ExtensionAPI) {
 
   // Background completion: route through group join or send individual nudge
   const manager = new AgentManager((record) => {
-    if (record.graphRunId !== undefined) return; // Owned children report only through their workflow.
+    if (record.graphRunId !== undefined) return; // Owned children report only through their graph run.
     // Emit lifecycle event based on terminal status
     const isError = record.status === "error" || record.status === "stopped" || record.status === "aborted";
     const eventData = buildEventData(record);
@@ -258,7 +258,7 @@ export default function (pi: ExtensionAPI) {
   // Background auto-supervision loop handle. Started on session_start, stopped on
   // switch/shutdown. `undefined` = not running (used as the double-start guard).
   let supervisionStop: (() => void) | undefined;
-  // The workflow inspector's Herdr side pane, constructed per activation. A
+  // The graph run inspector's Herdr side pane, constructed per activation. A
   // strict no-op when there is no Herdr-managed pane to split off, in which case
   // the in-Pi overlay stays the only inspector.
   let graphRunPane: GraphRunPaneManager | undefined;
@@ -291,7 +291,7 @@ export default function (pi: ExtensionAPI) {
       // also avoids the race where a consumer loaded after us misses the event.
       pi.events.emit("subagents:ready", {});
     }
-    // Rebuild the workflow inspector's side pane for this activation. Disposal
+    // Rebuild the graph run inspector's side pane for this activation. Disposal
     // of any prior instance is defensive: a double-bound session_start must not
     // leak a controller or its timers.
     await graphRunPane?.dispose();

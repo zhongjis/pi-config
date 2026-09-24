@@ -136,7 +136,7 @@ describe("createNodeHost", () => {
     await host.dispose();
   });
 
-  it("prepares configured graph model, thinking, and raw max turns with workflow ownership", async () => {
+  it("prepares configured graph model, thinking, and raw max turns with graph run ownership", async () => {
     configureAgent(agentConfig({ model: "test/chosen:high", maxTurns: 0 }));
     const { host } = setup("out", { context: modelContext() });
     vi.mocked(runAgent).mockClear();

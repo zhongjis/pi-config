@@ -1,5 +1,5 @@
 import type { HistoricalNodeDetail } from "../graph/history-artifact.js";
-/** Pure, read-only Herdr graph inspector. The centered workflow dialog is separate. */
+/** Pure, read-only Herdr graph inspector. The centered graph run dialog is separate. */
 
 import {
   matchesKey,
@@ -35,7 +35,7 @@ export type Target =
   | { kind: "iteration"; owner: string | number; iteration: number };
 
 export interface PanelState {
-  /** The selected workflow, iteration or node target; resolves to the first target when unset or stale. */
+  /** The selected graph run, iteration or node target; resolves to the first target when unset or stale. */
   cursor?: Target;
   /** Which run the switcher points at (index into the run list). */
   runIndex: number;
@@ -45,7 +45,7 @@ export interface PanelState {
   detailScroll: number;
   /** Roster filter: show all nodes, only running, or only failed. (v1.5) */
   filter: "all" | "running" | "failed";
-  /** Compatibility with existing panel state: stage 0 is the workflow root. */
+  /** Compatibility with existing panel state: stage 0 is the graph run root. */
   collapsedStages: number[];
   collapsedTargets?: Target[];
   /** Which zone owns the cursor: the roster overview (default) or the drilled-in detail. (v3) */
@@ -152,7 +152,7 @@ function sameTarget(a: Target, b: Target): boolean {
 function targetIndex(targets: readonly Target[], cursor: Target | undefined): number {
   return cursor ? targets.findIndex(target => sameTarget(target, cursor)) : -1;
 }
-/** Only authoritative containment is admitted. Unknown/legacy rows remain workflow children. */
+/** Only authoritative containment is admitted. Unknown/legacy rows remain graph run children. */
 function presentationTree(agents: readonly GraphRunAgentEntry[]): TreeNode {
   const root: TreeNode = { target: { kind: "stage", stage: 0 }, label: "Graph run", children: [] };
   const nodes: TreeNode[] = agents.map(entry => ({ target: { kind: "node" as const, id: nodeId(entry, agents) }, label: entry.presentation?.name ?? entry.label, entry, children: [] }));

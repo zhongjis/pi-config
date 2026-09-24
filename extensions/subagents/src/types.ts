@@ -91,7 +91,7 @@ export type JoinMode = 'async' | 'group' | 'smart';
 export type WidgetMode = 'all' | 'background' | 'off';
 
 export interface AgentRecord {
-  /** Workflow-owned children retain accounting but report through their workflow. */
+  /** Graph-run-owned children retain accounting but report through their graph run. */
   graphRunId?: string;
   cwd?: string;
   structuredJson?: string;
@@ -180,7 +180,7 @@ export interface NotificationDetails {
   outputFile?: string;
   error?: string;
   resultPreview: string;
-  /** Complete workflow presentation, independent of live task retention. */
+  /** Complete graph run presentation, independent of live task retention. */
   graphRun?: GraphRunEntryData;
   /** Additional agents in a group notification. */
   others?: NotificationDetails[];
