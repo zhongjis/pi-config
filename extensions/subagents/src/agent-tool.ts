@@ -115,7 +115,7 @@ const formatToolsSuffix = (cfg: AgentConfig | undefined): string => {
 
 const buildTypeListText = () => getAvailableTypes().map((name) => {
   const cfg = getAgentConfig(name);
-  return `- ${name}: ${cfg?.description ?? name} (Model chain: ${cfg?.model ?? "inherit parent"}) ${formatToolsSuffix(cfg)}`;
+  return `- ${name}: ${cfg?.description ?? name} ${formatToolsSuffix(cfg)}`;
 }).join("\n");
 
 const firstSentence = (text: string): string => {

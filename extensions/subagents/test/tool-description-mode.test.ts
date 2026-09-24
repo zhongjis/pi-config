@@ -105,15 +105,15 @@ describe("toolDescriptionMode", () => {
     });
     const description: string = tools.get("Agent").description;
     const sections = mode === "custom" ? description.split("\nCOMPACT\n") : [description];
-    for (const [index, section] of sections.entries()) {
-      const compact = mode === "compact" || index === 1;
+    for (const section of sections) {
       for (const fixture of fixtures) {
         const row = section.split("\n").find((line) => line.startsWith(`- ${fixture.name}:`));
         expect(row).toBeDefined();
         const metadata = new Map([...row?.matchAll(/\((Model chain|Built-in tools|Configured extension tools): ([^)]*)\)/g) ?? []].map((match) => [match[1], match[2]]));
         expect(metadata.get("Built-in tools")).toBe(fixture.builtins);
         expect(metadata.get("Configured extension tools")).toBe(fixture.extensions);
-        expect(metadata.get("Model chain")).toBe(compact ? undefined : fixture.name === "chain" ? model : "inherit parent");
+        expect(metadata.get("Model chain")).toBeUndefined();
+        expect(row).not.toContain("claude-sonnet-4-6");
       }
     }
   });
