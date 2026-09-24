@@ -29,7 +29,7 @@ const gateGraph = {
 describe("agent_graph durable human_gate resume", () => {
   it("resumes a drained human gate under a new graph attempt on restart", async () => {
     // Session 1 parks at the gate until shutdown requests cancellation.
-    const s1 = boot({ workflowsEnabled: true });
+    const s1 = boot({ agentGraphEnabled: true });
     await s1.lifecycle("session_start");
     const human = deferred<string>();
     s1.ui.select.mockReturnValue(human.promise);
@@ -61,7 +61,7 @@ describe("agent_graph durable human_gate resume", () => {
     expect(dead.status).toBe(0);
     writeFileSync(join(persistence.graphRunsDir(s1.ctx.cwd), `${runId}.json.run.lock`), JSON.stringify(dead.pid));
     // Restart admits a new graph attempt, without repairing the cancelled execution.
-    const s2 = boot({ workflowsEnabled: true });
+    const s2 = boot({ agentGraphEnabled: true });
     s2.ui.select.mockResolvedValue("Approve");
     await s2.lifecycle("session_start"); // resumeDurableGraphRuns re-launches the run
 
@@ -74,7 +74,7 @@ describe("agent_graph durable human_gate resume", () => {
 });
 
 it("persists effective fanout topology through the workflow runtime and resumes it once", async () => {
-  const s1 = boot({ workflowsEnabled: true });
+  const s1 = boot({ agentGraphEnabled: true });
   await s1.lifecycle("session_start");
   const human = deferred<string>();
   s1.ui.select.mockReturnValue(human.promise);
@@ -99,7 +99,7 @@ it("persists effective fanout topology through the workflow runtime and resumes 
   const shutdown = s1.lifecycle("session_shutdown");
   await releaseAfterPending(shutdown, () => human.resolve("Approve"));
   await shutdown;
-  const s2 = boot({ workflowsEnabled: true });
+  const s2 = boot({ agentGraphEnabled: true });
   s2.ui.select.mockResolvedValue("Approve");
   await s2.lifecycle("session_start");
   const message = await s2.notification(runId);
@@ -109,7 +109,7 @@ it("persists effective fanout topology through the workflow runtime and resumes 
 
 it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-session live", "corrupt"] as const)(
   "checks recovery ownership before side effects: %s", async kind => {
-    const origin = boot({ workflowsEnabled: true }, "origin");
+    const origin = boot({ agentGraphEnabled: true }, "origin");
     await origin.lifecycle("session_start");
     const human = deferred<string>();
     origin.ui.select.mockReturnValue(human.promise);
@@ -141,7 +141,7 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
     const release = live ? persistence.ownGraphRun(origin.ctx.cwd, runId) : undefined;
     const original = readFileSync(path, "utf8");
     const lockBefore = live || kind === "foreign dead" ? readFileSync(lock, "utf8") : undefined;
-    const next = boot({ workflowsEnabled: true }, kind === "same-session live" || kind === "corrupt" ? "origin" : "foreign");
+    const next = boot({ agentGraphEnabled: true }, kind === "same-session live" || kind === "corrupt" ? "origin" : "foreign");
     const create = vi.spyOn(tasks, "createGraphRunTask");
     const lease = vi.spyOn(persistence, "ownGraphRun");
     const write = vi.spyOn(persistence, "writeGraphSnapshot");
@@ -169,7 +169,7 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
 );
 
 it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async () => {
-  const origin = boot({ workflowsEnabled: true }, "origin");
+  const origin = boot({ agentGraphEnabled: true }, "origin");
   await origin.lifecycle("session_start");
   const human = deferred<string>();
   origin.ui.select.mockReturnValue(human.promise);
@@ -187,7 +187,7 @@ it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async
   // A live process still holds this run's lock across the resume.
   const release = persistence.ownGraphRun(origin.ctx.cwd, runId);
   const original = readFileSync(path, "utf8");
-  const next = boot({ workflowsEnabled: true }, "origin");
+  const next = boot({ agentGraphEnabled: true }, "origin");
   const create = vi.spyOn(tasks, "createGraphRunTask");
   const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
   // Force the peek to LOSE the race, then the lease to refuse the live owner.
@@ -210,7 +210,7 @@ it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async
 });
 
 it("keeps checkpoint session ownership immutable under replacement", async () => {
-  const session = boot({ workflowsEnabled: true });
+  const session = boot({ agentGraphEnabled: true });
   await session.lifecycle("session_start");
   const human = deferred<string>();
   session.ui.select.mockReturnValue(human.promise);

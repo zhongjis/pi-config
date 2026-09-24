@@ -312,7 +312,7 @@ export default function (pi: ExtensionAPI) {
         console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
     });
     await graphRunPane.reconcile();
-    if (isWorkflowsEnabled()) resumeDurableGraphRuns(ctx);
+    if (isAgentGraphEnabled()) resumeDurableGraphRuns(ctx);
   });
 
   pi.on("session_before_switch", async () => {
@@ -412,10 +412,10 @@ export default function (pi: ExtensionAPI) {
   }
 
   // Registration is fixed at activation; settings changes apply on reload.
-  let workflowsEnabled = false;
-  function isWorkflowsEnabled(): boolean { return workflowsSessionEnabled; }
-  function setWorkflowsEnabled(enabled: boolean): void {
-    workflowsEnabled = enabled;
+  let agentGraphEnabled = false;
+  function isAgentGraphEnabled(): boolean { return agentGraphSessionEnabled; }
+  function setAgentGraphEnabled(enabled: boolean): void {
+    agentGraphEnabled = enabled;
   }
 
   // ---- Agent tool description mode ----
@@ -441,7 +441,7 @@ export default function (pi: ExtensionAPI) {
       setMaxConcurrent: (n) => manager.setMaxConcurrent(n),
       setMaxConcurrentForeground: (n) => manager.setMaxConcurrentForeground(n),
       setReportUsage,
-      setWorkflowsEnabled,
+      setAgentGraphEnabled,
       setShowCost,
       setDefaultMaxTurns,
       setGraceTurns,
@@ -456,7 +456,7 @@ export default function (pi: ExtensionAPI) {
     (event, payload) => pi.events.emit(event, payload),
   );
 
-  let workflowsSessionEnabled = workflowsEnabled;
+  let agentGraphSessionEnabled = agentGraphEnabled;
 
   pi.registerTool(createAgentTool(
     {
@@ -474,7 +474,7 @@ export default function (pi: ExtensionAPI) {
   ));
 
   const graphRuntime = createGraphRuntime(
-    { pi, manager, enabled: isWorkflowsEnabled, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial },
+    { pi, manager, enabled: isAgentGraphEnabled, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial },
     { schedule: scheduleNudge, cancel: cancelNudge },
     surface => {
       if (surface !== "pane") { widget.update(); fleet.update(); }
@@ -483,10 +483,10 @@ export default function (pi: ExtensionAPI) {
   );
   const { getRuns: getGraphRuns, resume: resumeDurableGraphRuns, stop: stopGraphRuns, fleetGraphRuns } = graphRuntime;
 
-  if (isWorkflowsEnabled()) {
-    pi.on("resources_discover", () => (isWorkflowsEnabled() ? { skillPaths: [graphSkillPath] } : undefined));
+  if (isAgentGraphEnabled()) {
+    pi.on("resources_discover", () => (isAgentGraphEnabled() ? { skillPaths: [graphSkillPath] } : undefined));
   }
-  if (isWorkflowsEnabled()) pi.registerTool(graphRuntime.tool);
+  if (isAgentGraphEnabled()) pi.registerTool(graphRuntime.tool);
 
   const resultTools = createResultTools(pi, manager, {
     details: record => buildDetails(
@@ -504,7 +504,7 @@ export default function (pi: ExtensionAPI) {
     { pi, manager, reloadCustomAgents },
     agentActivity,
     {
-      get workflowsEnabled() { return isWorkflowsEnabled(); },
+      get agentGraphEnabled() { return isAgentGraphEnabled(); },
       get graphRuns() { return graphRunMenuDeps; },
       showSettings,
     },
@@ -515,7 +515,7 @@ export default function (pi: ExtensionAPI) {
       maxConcurrent: manager.getMaxConcurrent(),
       maxConcurrentForeground: manager.getMaxConcurrentForeground(),
       reportUsage,
-      workflowsEnabled,
+      agentGraphEnabled,
       showCost,
       // 0 = unlimited — per SubagentsSettings.defaultMaxTurns docstring and
       // normalizeMaxTurns() in agent-runner.ts (which maps 0 → undefined).
@@ -532,9 +532,9 @@ export default function (pi: ExtensionAPI) {
   }
 
   function applySettingValue(ctx: ExtensionCommandContext, id: string, value: string) {
-    if (id === "workflowsEnabled") {
-      setWorkflowsEnabled(value === "on");
-      notifyApplied(ctx, `Workflows ${workflowsEnabled ? "enabled" : "disabled"} for the next reload.`);
+    if (id === "agentGraphEnabled") {
+      setAgentGraphEnabled(value === "on");
+      notifyApplied(ctx, `Agent graphs ${agentGraphEnabled ? "enabled" : "disabled"} for the next reload.`);
     } else if (id === "maxConcurrent") {
       const n = parseInt(value, 10);
       if (n >= 1) {

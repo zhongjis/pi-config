@@ -16,9 +16,9 @@ export function createSettingsMenu(
     const gt = settings.graceTurns;
     return [
       {
-        id: "workflowsEnabled", label: "Agent graphs",
+        id: "agentGraphEnabled", label: "Agent graphs",
         description: "Opt-in agent graph orchestration. Changes apply on next reload.",
-        currentValue: settings.workflowsEnabled ? "on" : "off", values: ["on", "off"],
+        currentValue: settings.agentGraphEnabled ? "on" : "off", values: ["on", "off"],
       },
       {
         id: "maxConcurrent",

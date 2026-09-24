@@ -8,8 +8,8 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { JoinMode, WidgetMode } from "./types.js";
 
 export interface SubagentsSettings {
-  /** Opt-in scripted workflows; tool registration changes on reload. */
-  workflowsEnabled?: boolean;
+  /** Opt-in agent-graph orchestration; tool registration changes on reload. */
+  agentGraphEnabled?: boolean;
   maxConcurrent?: number;
   /** Foreground concurrency; 0 (default) is unlimited. */
   maxConcurrentForeground?: number;
@@ -98,7 +98,7 @@ export type ToolDescriptionMode = "full" | "compact" | "custom";
 
 /** Setter hooks used by applySettings to wire persisted values into in-memory state. */
 export interface SettingsAppliers {
-  setWorkflowsEnabled?: (enabled: boolean) => void;
+  setAgentGraphEnabled?: (enabled: boolean) => void;
   setMaxConcurrent: (n: number) => void;
   setMaxConcurrentForeground?: (n: number) => void;
   setReportUsage?: (b: boolean) => void;
@@ -133,7 +133,10 @@ function sanitize(raw: unknown): SubagentsSettings {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
   const out: SubagentsSettings = {};
-  if (typeof r.workflowsEnabled === "boolean") out.workflowsEnabled = r.workflowsEnabled;
+  if (typeof r.agentGraphEnabled === "boolean") out.agentGraphEnabled = r.agentGraphEnabled;
+  if ("workflowsEnabled" in r) {
+    console.warn('[pi-subagents] Ignoring legacy "workflowsEnabled" setting — rename it to "agentGraphEnabled" in subagents.json.');
+  }
   if (typeof r.maxConcurrentForeground === "number" && Number.isInteger(r.maxConcurrentForeground)
     && r.maxConcurrentForeground >= 0 && r.maxConcurrentForeground <= MAX_CONCURRENT_CEILING) {
     out.maxConcurrentForeground = r.maxConcurrentForeground;
@@ -232,7 +235,7 @@ export function saveSettings(s: SubagentsSettings, cwd: string = process.cwd()):
 
 /** Apply persisted settings to the in-memory state via caller-supplied setters. */
 export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers): void {
-  if (typeof s.workflowsEnabled === "boolean") appliers.setWorkflowsEnabled?.(s.workflowsEnabled);
+  if (typeof s.agentGraphEnabled === "boolean") appliers.setAgentGraphEnabled?.(s.agentGraphEnabled);
   if (typeof s.maxConcurrentForeground === "number") appliers.setMaxConcurrentForeground?.(s.maxConcurrentForeground);
   if (typeof s.reportUsage === "boolean") appliers.setReportUsage?.(s.reportUsage);
   if (typeof s.showCost === "boolean") appliers.setShowCost?.(s.showCost);

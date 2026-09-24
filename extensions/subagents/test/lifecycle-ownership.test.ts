@@ -88,7 +88,7 @@ describe("manager registry lifecycle ownership", () => {
     process.env.PI_CODING_AGENT_DIR = agentDir;
     process.env.HOME = agentDir;
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
-    writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false, workflowsEnabled: false }));
+    writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false, agentGraphEnabled: false }));
     process.chdir(tmpDir);
     Reflect.deleteProperty(globalThis, MANAGER_KEY);
     workflow.active = false;

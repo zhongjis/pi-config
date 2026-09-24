@@ -10,7 +10,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 /** Drives the registered agent_graph tool through the booted extension. */
 describe("agent_graph tool", () => {
   it("runs an inline graph in the background and notifies on completion", async () => {
-    const host = boot({ workflowsEnabled: true });
+    const host = boot({ agentGraphEnabled: true });
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));
 
@@ -36,7 +36,7 @@ describe("agent_graph tool", () => {
   });
 
   it("rejects an invalid inline graph before starting a run", async () => {
-    const host = boot({ workflowsEnabled: true });
+    const host = boot({ agentGraphEnabled: true });
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));
     await expect(
@@ -52,7 +52,7 @@ describe("agent_graph tool", () => {
   const flat = (c: { render(w: number): string[] }) => c.render(120).join("\n");
 
   it("renders 'diagnostics' expand label on isError (L3)", () => {
-    const host = boot({ workflowsEnabled: true });
+    const host = boot({ agentGraphEnabled: true });
     const tool = required(host.tools.get("agent_graph"));
     const result = { content: [{ type: "text", text: "boom" }] };
     const rendered = flat(tool.renderResult(result, { expanded: false }, plainTheme, { isError: true }));
@@ -61,7 +61,7 @@ describe("agent_graph tool", () => {
   });
 
   it("hints at /agents when task not in session (L4)", async () => {
-    const host = boot({ workflowsEnabled: true });
+    const host = boot({ agentGraphEnabled: true });
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));
     const ghostResult = {
@@ -75,7 +75,7 @@ describe("agent_graph tool", () => {
   });
 
   it("renders via workflow card for a live task, not the fallback (G1)", async () => {
-    const host = boot({ workflowsEnabled: true });
+    const host = boot({ agentGraphEnabled: true });
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));
     const graph = {
@@ -100,7 +100,7 @@ describe("agent_graph tool", () => {
   });
 
   it("renders completed graph details with exact tree connectors", async () => {
-    const host = boot({ workflowsEnabled: true });
+    const host = boot({ agentGraphEnabled: true });
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));
     const graph = {

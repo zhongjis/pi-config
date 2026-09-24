@@ -61,6 +61,25 @@ describe("settings persistence", () => {
     expect(loadSettings(projectDir)).toEqual({});
   });
 
+  it("warns once and ignores a legacy workflowsEnabled key", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    writeProject({ workflowsEnabled: true });
+    const loaded = loadSettings(projectDir);
+    expect(loaded).not.toHaveProperty("agentGraphEnabled");
+    expect(loaded).not.toHaveProperty("workflowsEnabled");
+    const legacyWarnings = warn.mock.calls.filter(c => String(c[0]).includes("agentGraphEnabled"));
+    expect(legacyWarnings).toHaveLength(1);
+    warn.mockRestore();
+  });
+
+  it("accepts the new agentGraphEnabled key without warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    writeProject({ agentGraphEnabled: true });
+    expect(loadSettings(projectDir)).toEqual({ agentGraphEnabled: true });
+    expect(warn.mock.calls.filter(c => String(c[0]).includes("agentGraphEnabled"))).toHaveLength(0);
+    warn.mockRestore();
+  });
+
   it("loads from global when no project file", () => {
     writeGlobal({ maxConcurrent: 16, graceTurns: 10 });
     expect(loadSettings(projectDir)).toEqual({ maxConcurrent: 16, graceTurns: 10 });

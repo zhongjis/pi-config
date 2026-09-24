@@ -10,7 +10,7 @@ import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
 import { boot, required } from "./graph-run-registration.fixture.js";
 
 it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s without creating a task, checkpoint or child", async kind => {
-  const session = boot({ workflowsEnabled: true });
+  const session = boot({ agentGraphEnabled: true });
   const { runAgent } = await import("../src/agent-runner.js");
   const child: AgentGraph = { nodes: { a: { type: "agent", agent: "forbidden", prompt: "work" } }, edges: [] };
   const graph: AgentGraph = kind === "denied nested graph" ? { nodes: { sub: { type: "graph", graph: "saved-child" } }, edges: [] } : child;
@@ -30,7 +30,7 @@ it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s 
 });
 
 it("removes explicit terminal cancellation rather than resuming it each restart", async () => {
-  const session = boot({ workflowsEnabled: true });
+  const session = boot({ agentGraphEnabled: true });
   const { runAgent } = await import("../src/agent-runner.js");
   const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
   const runId = "wf_abcdef123456"; const controller = new AbortController(); controller.abort();
@@ -44,7 +44,7 @@ it("removes explicit terminal cancellation rather than resuming it each restart"
 });
 
 it("removes a live explicitly-cancelled snapshot before notifying completion", async () => {
-  const session = boot({ workflowsEnabled: true });
+  const session = boot({ agentGraphEnabled: true });
   await session.lifecycle("session_start");
   const human = deferred<string>();
   session.ui.select.mockReturnValue(human.promise);
@@ -61,7 +61,7 @@ it("removes a live explicitly-cancelled snapshot before notifying completion", a
 });
 
 it("preserves a cancelled validation-gate checkpoint when resume cannot reconcile its drain", async () => {
-  const session = boot({ workflowsEnabled: true });
+  const session = boot({ agentGraphEnabled: true });
   const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work", validation: { gate: "true" } } }, edges: [] };
   const runId = "wf_abcdef123456"; const controller = new AbortController(); const gate = deferred<{ ok: boolean; output: string }>();
   let saved: persistence.GraphRunSnapshot | undefined; let entered = false;

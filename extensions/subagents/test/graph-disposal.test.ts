@@ -13,7 +13,7 @@ it.each([
   { executionFails: false, disposalFails: true, status: "failed", error: "disposal failure" },
   { executionFails: true, disposalFails: true, status: "failed", error: "checkpoint failure" },
 ] as const)("finalizes after disposal and preserves execution failure precedence: $executionFails/$disposalFails", async scenario => {
-  const session = boot({ workflowsEnabled: true });
+  const session = boot({ agentGraphEnabled: true });
   await session.lifecycle("session_start");
   let settleDisposal: () => void = () => { throw new Error("missing disposal"); };
   const disposal = new Promise<void>((resolve, reject) => {

@@ -36,7 +36,7 @@ describe("graph history lifecycle", () => {
   });
 
   it("captures a registered graph before notification, flushes at switch, and reloads only the exact session", async () => {
-    const host = boot({ workflowsEnabled: true });
+    const host = boot({ agentGraphEnabled: true });
     await host.lifecycle("session_start");
     const result = await required(host.tools.get("agent_graph")).execute("call", {
       graph: { name: "Reload history", nodes: { node: { type: "agent", agent: "fixture", prompt: "PRIVATE_SENTINEL" } }, edges: [] },

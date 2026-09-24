@@ -1,5 +1,5 @@
 {
-  "workflowsEnabled": true,
+  "agentGraphEnabled": true,
   "maxConcurrentForeground": 4,
   "reportUsage": true,
   "showCost": true
