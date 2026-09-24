@@ -95,6 +95,48 @@ function rightAlign(left: string, right: string, width: number): string {
   return truncateToWidth(leftClamped + " ".repeat(gap) + right, width);
 }
 
+/**
+ * A run's row. Shaped like an agent's — bullet, kind, name, stats flush right
+ * — so the two read as one list, with the agent count where an agent has its
+ * description and the same elapsed/token tail.
+ *
+ * `statusWord`, when set, prefixes the right-hand stats. The fleet strip omits it.
+ */
+export function formatFleetGraphRunRow(
+  bullet: string,
+  selected: boolean,
+  graphRun: FleetGraphRun,
+  width: number,
+  theme: Theme,
+  statusWord?: string,
+): string {
+  const kind = theme.fg(selected ? "text" : "muted", "graph run");
+  const name = selected ? theme.fg("text", graphRun.name) : graphRun.name;
+  const left = `  ${bullet} ${kind}  ${name}`;
+  // Frozen once the run settles, exactly as an agent's clock is.
+  const elapsed = (graphRun.completedAt ?? Date.now()) - graphRun.startedAt;
+  const agents = `${graphRun.doneCount}/${graphRun.totalCount} agent${graphRun.totalCount === 1 ? "" : "s"}`;
+  const stats = `${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(graphRun.tokens)}`;
+  const right = statusWord !== undefined ? `${statusWord} · ${stats}` : stats;
+  return rightAlign(left, selected ? theme.fg("text", right) : theme.fg("dim", right), width);
+}
+
+/** An agent's row. `statusWord`, when set, prefixes the right-hand stats. */
+export function formatFleetAgentRow(
+  bullet: string,
+  record: AgentRecord,
+  tokens: number,
+  width: number,
+  theme: Theme,
+  statusWord?: string,
+): string {
+  const left = `  ${bullet} ${theme.fg("muted", getDisplayName(record.type))}  ${record.description}`;
+  const elapsedMs = (record.completedAt ?? Date.now()) - record.startedAt; // freezes once finished
+  const stats = `${formatFleetElapsed(elapsedMs)} · ${formatFleetTokens(tokens)}`;
+  const right = statusWord !== undefined ? `${statusWord} · ${stats}` : stats;
+  return rightAlign(left, theme.fg("dim", right), width);
+}
+
 export class FleetList {
   private ui: FleetUICtx | undefined;
   private tui: any | undefined;
@@ -474,11 +516,6 @@ export class FleetList {
     return rosterIndex === sel ? theme.fg("accent", "●") : theme.fg("dim", "○");
   }
 
-  /**
-   * A run's row. Shaped like an agent's — bullet, kind, name, stats flush right
-   * — so the two read as one list, with the agent count where an agent has its
-   * description and the same elapsed/token tail.
-   */
   private renderGraphRunRow(
     rosterIndex: number,
     sel: number,
@@ -486,22 +523,11 @@ export class FleetList {
     width: number,
     theme: Theme,
   ): string {
-    const selected = rosterIndex === sel;
-    const kind = theme.fg(selected ? "text" : "muted", "graph run");
-    const name = selected ? theme.fg("text", graphRun.name) : graphRun.name;
-    const left = `  ${this.bullet(rosterIndex, sel, theme)} ${kind}  ${name}`;
-    // Frozen once the run settles, exactly as an agent's clock is.
-    const elapsed = (graphRun.completedAt ?? Date.now()) - graphRun.startedAt;
-    const agents = `${graphRun.doneCount}/${graphRun.totalCount} agent${graphRun.totalCount === 1 ? "" : "s"}`;
-    const stats = `${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(graphRun.tokens)}`;
-    return rightAlign(left, selected ? theme.fg("text", stats) : theme.fg("dim", stats), width);
+    return formatFleetGraphRunRow(this.bullet(rosterIndex, sel, theme), rosterIndex === sel, graphRun, width, theme);
   }
 
   private renderAgentRow(rosterIndex: number, sel: number, record: AgentRecord, width: number, theme: Theme): string {
-    const left = `  ${this.bullet(rosterIndex, sel, theme)} ${theme.fg("muted", getDisplayName(record.type))}  ${record.description}`;
     const tokens = getLifetimeTotal(this.agentActivity.get(record.id)?.lifetimeUsage ?? record.lifetimeUsage);
-    const elapsedMs = (record.completedAt ?? Date.now()) - record.startedAt; // freezes once finished
-    const right = theme.fg("dim", `${formatFleetElapsed(elapsedMs)} · ${formatFleetTokens(tokens)}`);
-    return rightAlign(left, right, width);
+    return formatFleetAgentRow(this.bullet(rosterIndex, sel, theme), record, tokens, width, theme);
   }
 }

@@ -14,11 +14,11 @@ import { authorizeGraphResume } from "./graph-resume-preflight.js";
 import { completeGraphTask, GraphRunReporter } from "./graph-run-adapter.js";
 import { GraphHistoryStore } from "./history.js";
 import { readGraphRunNodeDetail } from "./history-artifact.js";
-import { mergeGraphRuns } from "./history-view.js";
+import { type HistoricalGraphRun, mergeGraphRuns } from "./history-view.js";
 import type { AgentGraph } from "./ir.js";
 import { createNodeHost, type NodeHostOptions } from "./node-host-adapter.js";
 import { graphRunCompletionText } from "./notification.js";
-import { elapsedMs } from "./progress.js";
+import { collapse, elapsedMs } from "./progress.js";
 import { coerceGraphInput, type RunGraphResult, runGraph } from "./run-graph.js";
 import { resolveSavedGraph } from "./saved-graph.js";
 import type { SchedulerState } from "./scheduler.js";
@@ -42,6 +42,23 @@ interface GraphLaunch {
   readonly graph: AgentGraph;
   readonly input: unknown;
   readonly restore?: SchedulerState;
+}
+
+/** Fleet row for a settled history run. Counters come from the collapsed progress log. */
+export function historyFleetGraphRun(run: HistoricalGraphRun): FleetGraphRun {
+  const agents = collapse(run.graphRunProgress).agents;
+  const doneCount = agents.filter(agent => agent.state === "done").length;
+  const tokens = agents.reduce((total, agent) => total + (agent.tokens ?? 0), 0);
+  return {
+    id: run.id,
+    name: run.graphRunName,
+    status: run.status,
+    doneCount,
+    totalCount: run.agentCount,
+    startedAt: run.startTime,
+    completedAt: run.endTime,
+    tokens,
+  };
 }
 
 // allow: SIZE_OK — the typed graph tool and its session state share one lifecycle closure.
@@ -230,6 +247,23 @@ export function createGraphRuntime(
     }));
   }
 
+  /** Live tasks plus session history. `fleetGraphRuns` stays live-only. */
+  function monitorGraphRuns(): FleetGraphRun[] {
+    return [...getRuns().values()].map(run => {
+      if (run.type !== "history") return {
+        id: run.id,
+        name: run.meta?.name ?? run.graphRunName ?? run.id,
+        status: run.status,
+        doneCount: run.doneCount,
+        totalCount: run.agentCount,
+        startedAt: run.startTime,
+        ...(run.endTime !== undefined ? { completedAt: run.endTime } : {}),
+        tokens: run.totalTokens,
+      };
+      return historyFleetGraphRun(run);
+    });
+  }
+
   function notifyFinished(ctx: ExtensionContext, task: GraphRunTask) {
     if (!sessionActive || tasks.get(task.id) !== task) return;
     refresh("fleet");
@@ -354,5 +388,5 @@ export function createGraphRuntime(
     },
   });
 
-  return { tool, loadHistory, getRuns, resume, stop, fleetGraphRuns };
+  return { tool, loadHistory, getRuns, resume, stop, fleetGraphRuns, monitorGraphRuns };
 }
