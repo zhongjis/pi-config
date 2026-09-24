@@ -234,7 +234,6 @@ Sources: `agents/*.md`, `extensions/lib/agent-frontmatter.ts`, `omp://task-agent
 | `thinking-steps` | Collapsed/summary/expanded semantic thinking renderer, project/global preference, Alt+t, live indicator | Trial OMP's native thinking rendering first. If semantic step parsing is still desired, port only through documented renderer hooks; do not prototype-patch OMP internal `AssistantMessageComponent`. | **Optional redesign — P2** |
 | `tools` | Interactive per-branch tool enable/disable with fuzzy search and immediate active-tool changes | Use OMP `/settings`, tool approval policy, agent tool lists, and native mode filtering. Add a command only if branch-scoped toggling is a demonstrated need. | **Native — P1** |
 | `ulw` | Model-family-specific ultrawork prompt activated by `ulw`/`ultrawork`, Kua Fu gating, transcript banner | Use OMP built-in `ultrathink` and `orchestrate` magic keywords plus the orchestration policy. If the exact OmO prompt is required, make it a skill, not an event-driven extension. | **Native/skill — P1** |
-| `guardrails.json` + Home Manager hook | Blocks reads of SSH keys, cloud/GPG config, agent auth/config and other sensitive paths | Port the path policy to an OMP `tool_call` guard or native hook. Add `~/.omp` paths. Keep OMP secret obfuscation enabled as a separate outbound-data control. | **Thin security port — P0** |
 
 ## 7. External Git package inventory
 
@@ -421,9 +420,9 @@ Controls are complementary:
 4. **Agent tool lists** make read-only agents structurally unable to mutate.
 5. **Named profiles** keep offline and provider-specific credentials/state separate.
 
-Port `guardrails.json` and the Nix-managed hook before enabling repository extensions. Add OMP auth/config paths, preserve SSH/GPG/cloud patterns, and test symlink/path-normalization bypasses. Do not treat `smart-tool-guards` or approval prompts as a confidentiality sandbox.
+Add an OMP path guard before enabling repository extensions. Cover SSH/GPG/cloud and OMP auth/config paths, and test symlink/path-normalization bypasses. Do not treat `smart-tool-guards` or approval prompts as a confidentiality sandbox.
 
-Sources: `extensions/guardrails.json`, `extensions/filter-outputs/README.md`, `extensions/smart-tool-guards/README.md`, `omp://approval-mode.md`, `omp://secrets.md`.
+Sources: `extensions/filter-outputs/README.md`, `extensions/smart-tool-guards/README.md`, `omp://approval-mode.md`, `omp://secrets.md`.
 
 ## 12. Session and runtime-state migration
 
@@ -680,7 +679,7 @@ Gate:
 | Task graph loss | OMP todo silently drops blockers/owners/metadata | Port `work_items`; import and compare full schema-v2 fixtures before cutover. |
 | Home Manager ownership conflict | Installer overwrites config/auth or links point at the wrong root/profile | Keep explicit allowlist; make Nix ownership a first-class input; install dry run and idempotence test. |
 | Profile isolation surprises | Missing agents/auth/packages in opencode/local profile | Install common assets into each profile; authenticate/configure each profile deliberately; exercise all profiles. |
-| Security regression | OMP read tools access paths Pi guardrails blocked, or secrets reach provider text | Port guardrails first, enable `secrets`, test bypasses and seeded canaries before any real work. |
+| Security regression | OMP read tools access sensitive paths, or secrets reach provider text | Add path guardrails first, enable `secrets`, test bypasses and seeded canaries before any real work. |
 | External package resolver differences | Git package passes alone but fails when installed or combined | OMP manifest, explicit entrypoint, package-local dependencies, isolated and aggregate load tests. |
 | TUI internal patch breakage | Thinking/skill/header extensions crash after OMP upgrades | Use public render/widget APIs only; retire prototype patches and legacy header/footer code. |
 | Command/shortcut collision | OMP reserves a key or command name used by modes/UI | Validate through OMP keybinding/command discovery; prefer native command names and remove compatibility aliases at cutover. |
@@ -742,7 +741,6 @@ None is currently an architectural blocker. They are bounded compatibility or pr
 - `docs/specs/mode-scoped-subagent-delegation.md`
 - `extensions/*/README.md`
 - `extensions/CONVENTIONS.md`
-- `extensions/guardrails.json`
 - `agents/*.md`
 - `themes/github-diff.json`
 - `tool_models.json`

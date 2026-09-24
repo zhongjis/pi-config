@@ -19,9 +19,8 @@ NIX_MANAGED_EXTENSIONS=(
 )
 
 # Extension-dir entries that are NOT pi extensions — do NOT symlink.
-# Docs, empty placeholders, and leftover runtime junk. lib/ and guardrails.json
-# stay linked: lib is imported by other extensions, and pi-guardrails reads
-# ~/.pi/agent/extensions/guardrails.json.
+# Docs, empty placeholders, and leftover runtime junk. lib/ stays linked because
+# other extensions import it.
 EXCLUDED_EXTENSION_ITEMS=(
   "AGENTS.md"
   "CONVENTIONS.md"
