@@ -197,4 +197,31 @@ describe("registerModeCommands", () => {
 		expect(state.persistState).toHaveBeenCalled();
 		expect(notify).toHaveBeenCalledWith("Model override cleared", "success");
 	});
+
+	it("clears both model and thinking overrides with --reset", async () => {
+		const mock = createMockPi();
+		const notify = vi.fn();
+		const state = {
+			currentMode: "kuafu" as Mode,
+			modelOverride: "openai/gpt-4o" as string | undefined,
+			thinkingOverride: "high" as string | undefined,
+			loadConfig: vi.fn(() => ({ body: "build", model: "anthropic/claude-opus-4" })),
+			applyMode: vi.fn(async () => {}),
+			persistState: vi.fn(),
+		};
+
+		registerModeCommands(mock.pi as never, state as unknown as ModeStateManager);
+		const command = mock.commands.get("mode-model");
+
+		await command?.handler("--reset", {
+			ui: { notify, select: vi.fn() },
+			model: undefined,
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+		} as never);
+
+		expect(state.modelOverride).toBeUndefined();
+		expect(state.thinkingOverride).toBeUndefined();
+		expect(state.applyMode).toHaveBeenCalled();
+		expect(state.persistState).toHaveBeenCalled();
+	});
 });

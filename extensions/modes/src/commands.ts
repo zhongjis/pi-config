@@ -86,6 +86,7 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 				const lines = [
 					`Mode: ${state.currentMode}`,
 					`Override: ${override ?? "(none)"}`,
+					`Effort override: ${state.thinkingOverride ?? "(none)"}`,
 					`Configured: ${chain}`,
 					`Active: ${current ? `${current.provider}/${current.id}` : "(none)"}`,
 				];
@@ -101,11 +102,18 @@ export function registerModeCommands(pi: ExtensionAPI, state: ModeStateManager):
 			}
 
 			const previous = state.modelOverride;
-			state.modelOverride = arg === "--reset" ? undefined : arg;
+			const previousThinking = state.thinkingOverride;
+			if (arg === "--reset") {
+				state.modelOverride = undefined;
+				state.thinkingOverride = undefined;
+			} else {
+				state.modelOverride = arg;
+			}
 			try {
 				await state.applyMode(ctx, state.modelOverride !== previous);
 			} catch (error) {
 				state.modelOverride = previous;
+				state.thinkingOverride = previousThinking;
 				throw error;
 			}
 			state.persistState();

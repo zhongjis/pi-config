@@ -1,4 +1,7 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ExtensionSelection } from "../../lib/active-tools.js";
+
+type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 
 export type Mode = "kuafu" | "fuxi" | "houtu";
 
@@ -42,6 +45,7 @@ export interface ModeState {
 	planReviewApproved?: boolean;
 	planReviewFeedback?: string;
 	modelOverride?: string;
+	thinkingOverride?: ThinkingLevel;
 	delegationPolicy: VersionedDelegationPolicy;
 }
 

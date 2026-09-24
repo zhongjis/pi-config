@@ -468,6 +468,94 @@ describe("mode hooks", () => {
 		expect(mock.pi.setModel).not.toHaveBeenCalled();
 	});
 
+	it("records a user model pick from model_select set and persists", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("model_select", { source: "set", model: { provider: "openai", id: "gpt-4o" }, previousModel: {} }, {
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+			model: undefined,
+		});
+
+		expect(state.modelOverride).toBe("openai/gpt-4o");
+		expect(mock.pi.appendEntry).toHaveBeenCalledWith(
+			"agent-mode",
+			expect.objectContaining({ modelOverride: "openai/gpt-4o" }),
+		);
+	});
+
+	it("does not record a model pick while applyingModelConfig is set", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.applyingModelConfig = true;
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("model_select", { source: "set", model: { provider: "openai", id: "gpt-4o" }, previousModel: {} }, {
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+			model: undefined,
+		});
+
+		expect(state.modelOverride).toBeUndefined();
+		expect(mock.pi.appendEntry).not.toHaveBeenCalled();
+	});
+
+	it("does not re-persist when model_select repeats the current override", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = "kuafu";
+		state.modelOverride = "openai/gpt-4o";
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("model_select", { source: "set", model: { provider: "openai", id: "gpt-4o" }, previousModel: {} }, {
+			modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+			model: undefined,
+		});
+
+		expect(state.modelOverride).toBe("openai/gpt-4o");
+		expect(mock.pi.appendEntry).not.toHaveBeenCalled();
+	});
+
+	it("records a user effort pick from thinking_level_select and persists", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("thinking_level_select", { level: "high", previousLevel: "off" }, {});
+
+		expect(state.thinkingOverride).toBe("high");
+		expect(mock.pi.appendEntry).toHaveBeenCalledWith(
+			"agent-mode",
+			expect.objectContaining({ thinkingOverride: "high" }),
+		);
+	});
+
+	it("ignores thinking_level_select while applyingModelConfig is set", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.applyingModelConfig = true;
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("thinking_level_select", { level: "high", previousLevel: "off" }, {});
+
+		expect(state.thinkingOverride).toBeUndefined();
+		expect(mock.pi.appendEntry).not.toHaveBeenCalled();
+	});
+
+	it("ignores thinking_level_select that echoes the mode-applied level", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.appliedThinkingLevel = "high";
+		registerModeHooks(mock.pi as never, state);
+
+		await mock.fire("thinking_level_select", { level: "high", previousLevel: "off" }, {});
+
+		expect(state.thinkingOverride).toBeUndefined();
+		expect(mock.pi.appendEntry).not.toHaveBeenCalled();
+	});
+
 	it("uses gpt variant body when resolvedFamily is gpt", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);

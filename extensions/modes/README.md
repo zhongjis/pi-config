@@ -61,7 +61,7 @@ Create canonical upstream-format `local://DRAFT.md` and, unless `draftOnly` is s
 - `/mode [kuafu|fuxi|houtu|build|plan|execute]` — Switch agent mode
 - `/mode-model` — Show or override the mode's model
 - `/mode-model <provider/modelId>` — Set a session-scoped model override
-- `/mode-model --reset` — Clear the model override and revert to mode's chain
+- `/mode-model --reset` — Clear the model and effort overrides and revert to mode's chain
 - Tab / Ctrl+Shift+M — Submit through the `/mode` command path
 - `--mode <name>` flag on session start
 - Mode changes that touch mode-owned skill resources reload the terminal.
@@ -71,11 +71,13 @@ Create canonical upstream-format `local://DRAFT.md` and, unless `draftOnly` is s
 
 By default, each mode selects its model from the `model` frontmatter chain in `modes/<mode>/mode.md`. The `/mode-model` command lets you temporarily override this choice for the current session:
 
-- `/mode-model` — Shows current mode, override (if any), configured fallback chain, and active model.
+- `/mode-model` — Shows current mode, model override, effort override, configured fallback chain, and active model.
 - `/mode-model anthropic/claude-sonnet-4:high` — Sets a session-scoped override. Validates the model exists in the registry before applying.
-- `/mode-model --reset` — Clears the override and reverts to the mode's configured chain.
+- `/mode-model --reset` — Clears both the model and effort overrides and reverts to the mode's configured chain.
 
 The override is persisted in the session JSONL and survives `/reload`. It does **not** change the mode's frontmatter — it's a runtime override only.
+
+Manually picking a model or thinking level mid-session (via the built-in pickers) is captured the same way: the choice persists for the session, survives `/reload`, and overrides the mode's frontmatter model/effort until you run `/mode-model --reset`.
 
 ### Fast defaults
 

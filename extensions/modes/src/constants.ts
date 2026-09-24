@@ -2,8 +2,6 @@ import type { Mode } from "./types.js";
 
 export const MODES: Mode[] = ["kuafu", "fuxi", "houtu"];
 
-export const SKILL_GATED_MODES: ReadonlySet<Mode> = new Set(["fuxi"]);
-
 export const MODE_ALIASES: Record<string, Mode> = {
   build: "kuafu",
   plan: "fuxi",

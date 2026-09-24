@@ -409,6 +409,61 @@ describe("ModeStateManager", () => {
 		);
 	});
 
+	it("applies thinkingOverride instead of the resolved config level", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs["kuafu:default"] = {
+			body: "build",
+			model: "anthropic/claude-sonnet-4:medium",
+		};
+		state.thinkingOverride = "high";
+
+		const models = [
+			{ id: "claude-sonnet-4", name: "Claude Sonnet 4", provider: "anthropic" },
+		];
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry(models),
+			model: undefined,
+		};
+
+		await state.applyModelFromConfig(state.cachedConfigs["kuafu:default"]!, ctx as never);
+		expect(pi.setThinkingLevel).toHaveBeenCalledWith("high");
+		expect(state.applyingModelConfig).toBe(false);
+	});
+
+	it("persists thinkingOverride in state", () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.thinkingOverride = "high";
+		state.persistState();
+		expect(pi.appendEntry).toHaveBeenCalledWith(
+			"agent-mode",
+			expect.objectContaining({ thinkingOverride: "high" }),
+		);
+	});
+
+	it("preserves model and thinking overrides across switchMode", async () => {
+		const pi = createMockPi();
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs["fuxi:default"] = { body: "plan" };
+		state.modelOverride = "openai/gpt-4o";
+		state.thinkingOverride = "high";
+
+		const ctx = {
+			hasUI: false,
+			ui: { setStatus: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+		};
+
+		await state.switchMode("fuxi", ctx as never);
+		expect(state.currentMode).toBe("fuxi");
+		expect(state.modelOverride).toBe("openai/gpt-4o");
+		expect(state.thinkingOverride).toBe("high");
+	});
+
 	describe("loadConfig — family cache key", () => {
 		it("uses family-scoped cache key", () => {
 			const pi = createMockPi();

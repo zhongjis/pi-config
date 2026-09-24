@@ -2,11 +2,14 @@ import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js"
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
 import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
-import { MODES, MODE_COLORS, MODE_META, RESET, SKILL_GATED_MODES } from "./constants.js";
+import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
+import { getModeSkillPaths } from "./mode-skills.js";
 import { loadAgentConfig } from "./config-loader.js";
 import { getModePromptSource } from "../../lib/model-family.js";
 import { parseModelChain, resolveFirstAvailable, resolveModel } from "../../lib/model-selection.js";
 import type { AwaitingUserActionState, Mode, ModeConfig, ModeState, PlanTitleSource, VersionedDelegationPolicy } from "./types.js";
+
+type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 
 function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
@@ -88,6 +91,9 @@ export class ModeStateManager {
 	lastStatusMode: Mode | undefined;
 
 	modelOverride?: string;
+	thinkingOverride?: ThinkingLevel;
+	appliedThinkingLevel?: ThinkingLevel;
+	applyingModelConfig = false;
 	resolvedFamily: "gpt" | "gemini" | "default" = "default";
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;
@@ -105,6 +111,7 @@ export class ModeStateManager {
 			planReviewApproved: this.planReviewApproved,
 			planReviewFeedback: this.planReviewFeedback,
 			modelOverride: this.modelOverride,
+			thinkingOverride: this.thinkingOverride,
 			delegationPolicy: delegationPolicyFromConfig(this.loadConfig(this.currentMode)),
 		});
 	}
@@ -170,15 +177,21 @@ export class ModeStateManager {
 		const sameModel =
 			current && current.provider === resolved.model.provider && current.id === resolved.model.id;
 		if (resolved.fast && (initializeFast || !sameModel)) assertFastSupported(resolved.model, ctx.modelRegistry.isUsingOAuth(resolved.model));
-		if (!sameModel && await this.pi.setModel(resolved.model) === false) throw new Error(`Could not apply mode model: ${modelSpec}`);
-		this.resolvedFamily = getModePromptSource(resolved.model);
-		if (initializeFast) this.persistFastDefault(ctx, resolved.fast === true);
-
-		// Guard 3: skip setThinkingLevel if already at that level.
-		// setModel() internally preserves current level for reasoning-capable models, so
-		// on same-model paths the prior level is retained and this guard short-circuits.
-		if (resolved.thinkingLevel && resolved.thinkingLevel !== this.pi.getThinkingLevel()) {
-			this.pi.setThinkingLevel(resolved.thinkingLevel);
+		const targetLevel = this.thinkingOverride ?? resolved.thinkingLevel;
+		this.appliedThinkingLevel = targetLevel;
+		this.applyingModelConfig = true;
+		try {
+			if (!sameModel && await this.pi.setModel(resolved.model) === false) throw new Error(`Could not apply mode model: ${modelSpec}`);
+			this.resolvedFamily = getModePromptSource(resolved.model);
+			if (initializeFast) this.persistFastDefault(ctx, resolved.fast === true);
+			// Guard 3: skip setThinkingLevel if already at that level.
+			// setModel() internally preserves current level for reasoning-capable models, so
+			// on same-model paths the prior level is retained and this guard short-circuits.
+			if (targetLevel && targetLevel !== this.pi.getThinkingLevel()) {
+				this.pi.setThinkingLevel(targetLevel);
+			}
+		} finally {
+			this.applyingModelConfig = false;
 		}
 	}
 
@@ -219,7 +232,10 @@ export class ModeStateManager {
 			throw error;
 		}
 		this.persistState();
-		return mode !== previousMode && (SKILL_GATED_MODES.has(previousMode) || SKILL_GATED_MODES.has(mode));
+		// Reload only when the mode's discovered skill set actually changes; static
+		// gating drifts if a skills/ dir is later added to another mode.
+		const skillsChanged = !sameToolSet(getModeSkillPaths(previousMode), getModeSkillPaths(mode));
+		return mode !== previousMode && skillsChanged;
 	}
 
 	nextMode(): Mode {

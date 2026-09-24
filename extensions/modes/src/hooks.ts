@@ -173,6 +173,7 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 		if (modeEntry && !MODES.some((mode) => mode === modeEntry.data?.mode)) {
 			state.currentMode = "kuafu";
 			state.modelOverride = undefined;
+			state.thinkingOverride = undefined;
 			state.planTitle = undefined;
 			state.planTitleSource = undefined;
 			state.planContent = undefined;
@@ -188,6 +189,7 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 			state.planReviewApproved = modeEntry.data.planReviewApproved ?? false;
 			state.planReviewFeedback = modeEntry.data.planReviewFeedback;
 			state.modelOverride = modeEntry.data.modelOverride;
+			state.thinkingOverride = modeEntry.data.thinkingOverride;
 		}
 	}
 	if (!state.pendingPlanReviewId) {
@@ -283,7 +285,20 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		if (event.source === "restore") {
 			const config = state.loadConfig(state.currentMode);
 			await state.applyModelFromConfig(config, ctx);
+			return;
 		}
+		if (state.applyingModelConfig) return;
+		const spec = `${event.model.provider}/${event.model.id}`;
+		if (spec === state.modelOverride) return;
+		state.modelOverride = spec;
+		state.persistState();
+	});
+
+	pi.on("thinking_level_select", async (event) => {
+		if (state.applyingModelConfig) return;
+		if (event.level === state.appliedThinkingLevel) return;
+		state.thinkingOverride = event.level;
+		state.persistState();
 	});
 
 	pi.on("session_start", async (_event, ctx) => {

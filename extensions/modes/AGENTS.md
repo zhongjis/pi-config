@@ -15,7 +15,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 - Mode prompts MUST retain global AGENTS rules and shared frontmatter semantics.
 - Replacement MUST strip prior mode bodies; append mode stacks them.
 - `system_instructions` prompt mode is coerced to replacement here.
-- Session model overrides MUST NOT rewrite mode frontmatter.
+- Session model and effort (thinking-level) overrides MUST NOT rewrite mode frontmatter; they are captured from `/mode-model` and manual mid-session model/effort picks, persist with mode state, and clear via `/mode-model --reset`.
 - Runtime quota/rate-limit fallback MUST use the override or active mode chain after native settlement, with the shared lib coordinator; no chain means no recovery. Apply the next candidate's thinking/Fast defaults without replaying the prompt.
 - The selected effective model candidate defaults Fast on only with terminal `:fast`; otherwise off. Validate explicit on before applying/committing mode changes; unsupported capability MUST NOT select a fallback.
 - Persist defaults/user overrides as branch-local `fast-policy` entries. Actual mode transitions (even same-model) and changed model overrides reset the default; prompts, same-mode selection, and reload MUST preserve `/fast`. Emit `fast:policy-changed` only for session-scoped UI refresh; requests read durable policy.
