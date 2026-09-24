@@ -121,21 +121,23 @@ it.each(["session_start", "session_shutdown"])("clears unreported usage on %s", 
   expect((await finish("get_subagent_result", result)).usage).toBeUndefined();
 });
 
-it.each([undefined, "chosen"])("does not invent model mismatch for inherited/fuzzy %s", async (requested) => {
+it("does not invent a model mismatch for an inherited model", async () => {
   const { execute } = activate();
-  const result = await execute("Agent", { ...params, model: requested } as typeof params);
+  const result = await execute();
   expect(result.details?.modelName).toBe("test/chosen");
   expect(result.details?.requestedModel).toBeUndefined();
   expect(result.details?.requestedThinking).toBeUndefined();
 });
 
-it("discloses original overridden request and thinking clamp across resume", async () => {
+it("ignores caller model and thinking overrides, disclosing only the frontmatter clamp", async () => {
   writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\ndescription: fixture\nmodel: test/chosen\nthinking: high\n---\nTask");
   const { execute } = activate();
   const result = await execute("Agent", { ...params, model: "missing", thinking: "MAX" } as typeof params);
-  expect(result.details).toMatchObject({ modelName: "test/chosen", thinking: "low", requestedModel: "missing", requestedThinking: "max" });
+  expect(result.details).toMatchObject({ modelName: "test/chosen", thinking: "low", requestedThinking: "high" });
+  expect(result.details?.requestedModel).toBeUndefined();
   const resumed = await execute("Agent", { ...params, resume: result.details!.agentId, model: "chosen", thinking: "low" } as typeof params);
-  expect(resumed.details).toMatchObject({ requestedModel: "missing", requestedThinking: "max" });
+  expect(resumed.details).toMatchObject({ requestedThinking: "high" });
+  expect(resumed.details?.requestedModel).toBeUndefined();
 });
 
 
@@ -167,7 +169,7 @@ it("keeps queued details free of actual and mismatch claims, then reports runnin
   });
   const { execute, finish } = activate({ maxConcurrent: 1, reportUsage: true });
   const first = await execute("Agent", { ...params, run_in_background: true } as typeof params);
-  const queued = await execute("Agent", { ...params, model: "chosen", thinking: "high", run_in_background: true } as typeof params);
+  const queued = await execute("Agent", { ...params, run_in_background: true } as typeof params);
   expect(queued.details?.status).toBe("queued");
   for (const field of ["modelName", "thinking", "requestedModel", "requestedThinking"] as const) expect(queued.details?.[field]).toBeUndefined();
   const running = await execute("get_subagent_result", { agent_id: first.details!.agentId } as unknown as typeof params);
@@ -198,18 +200,6 @@ it("preserves pending usage through a switch preflight that does not commit", as
   expect((await finish("get_subagent_result", result)).usage).toBeUndefined();
 });
 
-it.each([new Error("registry unavailable"), "registry unavailable"])("retains raw diagnostic intent when the registry throws %s", async (error) => {
-  writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\ndescription: fixture\nmodel: test/chosen\n---\nTask");
-  const { execute, ctx } = activate();
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  vi.spyOn(ctx.modelRegistry, "getAvailable")
-    .mockReturnValueOnce([session.model!])
-    .mockImplementationOnce(() => { throw error; });
-  const result = await execute("Agent", { ...params, model: "original" } as typeof params);
-  expect(result.details).toMatchObject({ status: "completed", modelName: "test/chosen", requestedModel: "original" });
-  expect(warn).toHaveBeenCalledOnce();
-});
-
 it("prepares configured direct model, thinking, and normalized max turns before spawning", async () => {
   writeFileSync(
     join(dir, ".pi", "agents", "fixture.md"),
@@ -223,19 +213,6 @@ it("prepares configured direct model, thinking, and normalized max turns before 
     thinkingLevel: "high",
     maxTurns: undefined,
   });
-});
-
-it("rejects an explicitly out-of-scope direct model without spawning", async () => {
-  writeFileSync(join(dir, ".pi", "settings.json"), JSON.stringify({ enabledModels: ["test/allowed"] }));
-  const { execute, ctx } = activate({ scopeModels: true });
-  const allowed = { ...model, id: "allowed" };
-  (ctx.modelRegistry as { getAvailable: () => typeof model[] }).getAvailable = () => [model, allowed];
-  vi.mocked(runAgent).mockClear();
-  const result = await execute("Agent", { ...params, model: "test/chosen" } as typeof params);
-  expect(result.content[0]).toMatchObject({
-    text: 'Model not in scope: "test/chosen".\n\nAllowed models (from enabledModels):\n  test/allowed',
-  });
-  expect(runAgent).not.toHaveBeenCalled();
 });
 
 it("warns but runs when the configured direct model is out of scope", async () => {

@@ -6,8 +6,6 @@ import type { ThinkingLevel } from "../../lib/thinking-level.js";
 export interface SelectedAgentModel {
   model: Model<string> | undefined;
   thinkingLevel?: ThinkingLevel;
-  /** Invocation preference retained separately from the initially selected suffix. */
-  invocationThinkingLevel?: ThinkingLevel;
   fast?: boolean;
   /** Effective invocation spec; lets the runner retain the chosen fallback. */
   modelInput?: string;

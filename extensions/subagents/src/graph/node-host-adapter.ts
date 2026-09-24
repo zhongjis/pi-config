@@ -73,7 +73,7 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
         if (type === undefined || !currentConfig || currentConfig.enabled === false) {
           throw new Error(`Graph agent "${request.agentType}" is unavailable in the current configuration.`);
         }
-        const params = { model: request.model, thinking: request.effort };
+        const params = {};
         const { agentConfig: config, invocation, selectedModel, scope } = prepareAgentInvocation({
           agentType: type,
           params,
@@ -84,7 +84,6 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
         });
         if (scope) {
           const message = `Model not in scope: ${scope.model.provider}/${scope.model.id}`;
-          if (invocation.modelFromParams) throw new Error(message);
           if (!warned.has(message)) {
             warned.add(message);
             ctx.ui.notify(message, "warning");
@@ -116,7 +115,7 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
             structuredOutput: request.schema,
             signal: combined,
             invocation: {
-              requestedModel: request.model ?? invocation.modelInput,
+              requestedModel: invocation.modelInput,
               requestedThinking: invocation.thinking,
               thinkingDefault: invocation.thinking === undefined,
             },

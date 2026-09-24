@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type AgentSession, defineTool, type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { parseModelChain, resolveFirstAvailable } from "../../lib/model-selection.js";
 import type { AgentManager } from "./agent-manager.js";
 import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
 import { getDefaultMaxTurns, normalizeMaxTurns, SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
@@ -13,7 +12,6 @@ import type { AgentPresentation, createNotificationCoordinator } from "./notific
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import type { SubagentsSettings } from "./settings.js";
 import { getForegroundOutcomeNote } from "./status-note.js";
-import { normalizeThinkingLevel } from "./thinking-level.js";
 import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
 import type { AgentConfig, AgentInvocation, AgentRecord, SubagentType } from "./types.js";
 import { type AgentActivity, type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel, SPINNER, type UICtx } from "./ui/agent-widget.js";
@@ -177,8 +175,6 @@ If the target is already known, use a direct tool — \`read\` for a known path,
 - Use steer_subagent to send mid-run messages to a running background agent.
 - Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, etc.), since it is not aware of the user's intent.
 - If an agent's description says it should be used proactively, try to use it without the user having to ask for it first.
-- Use model to specify a different model (as "provider/modelId", or fuzzy e.g. "haiku", "sonnet").
-- Use thinking to control extended thinking level.
 - Use inherit_context if the agent needs the parent conversation history.
 
 ## Writing the prompt
@@ -253,17 +249,6 @@ Terse command-style prompts produce shallow, generic work.
       subagent_type: Type.String({
         description: `The type of specialized agent to use. Available types: ${getAvailableTypes().join(", ")}. Custom agents from .pi/agents/*.md (project) or ${getAgentDir()}/agents/*.md (global) are also available.`,
       }),
-      model: Type.Optional(
-        Type.String({
-          description:
-            'Optional model override. Accepts "provider/modelId" or fuzzy name (e.g. "haiku", "sonnet"). Omit to use the agent type\'s default.',
-        }),
-      ),
-      thinking: Type.Optional(
-        Type.String({
-          description: `Thinking level: ${THINKING_LEVELS.join(", ")}. Frontmatter and selected model suffix take precedence. Omitted: selected-model SDK default, not parent thinking.`,
-        }),
-      ),
       max_turns: Type.Optional(
         Type.Number({
           description: "Maximum number of agentic turns before stopping. Omit for unlimited (default).",
@@ -342,13 +327,6 @@ Terse command-style prompts produce shallow, generic work.
       const { agentConfig: customConfig, invocation: resolvedConfig, selectedModel: selected, scope } = prepared;
       const model = selected.model;
       if (scope) {
-        if (resolvedConfig.modelFromParams) {
-          const list = [...scope.allowed].sort().map(m => `  ${m}`).join("\n");
-          return textResult(
-            `Model not in scope: "${resolvedConfig.modelInput}".\n\n` +
-            `Allowed models (from enabledModels):\n${list}`,
-          );
-        }
         const agentLabel = customConfig?.displayName ?? subagentType;
         const modelLabel = resolvedConfig.modelInput ?? `${scope.model.provider}/${scope.model.id}`;
         ctx.ui.notify(
@@ -368,20 +346,8 @@ Terse command-style prompts produce shallow, generic work.
         writeInitialEntry(rec.outputFile, agentId, params.prompt, ctx.cwd);
       };
       const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
-      let requestedModel = params.model;
-      if (requestedModel != null) {
-        try {
-          const requested = resolveFirstAvailable(parseModelChain(requestedModel), ctx.modelRegistry)?.model;
-          if (requested) requestedModel = `${requested.provider}/${requested.id}`;
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          console.warn(`[pi-subagents] Could not resolve requested model for disclosure: ${reason}`);
-          requestedModel = params.model;
-        }
-      }
-      const requestedThinking = normalizeThinkingLevel(params.thinking?.trim().toLowerCase()) ?? thinking;
+      const requestedThinking = thinking;
       const agentInvocation: AgentInvocation = {
-        requestedModel,
         requestedThinking: THINKING_LEVELS.some((level) => level === requestedThinking) ? requestedThinking : undefined,
         thinkingDefault: thinking === undefined,
         maxTurns: normalizeMaxTurns(resolvedConfig.maxTurns),

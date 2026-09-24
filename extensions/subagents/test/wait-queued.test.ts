@@ -11,6 +11,9 @@
  * call returns the final result.
  */
 import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("../src/agent-runner.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
@@ -101,9 +104,19 @@ describe("get_subagent_result wait:true on a queued agent", () => {
       expect(queuedId).toBeDefined();
       const pending = await tools.get("get_subagent_result").execute("pending", { agent_id: queuedId, wait: false }, undefined, undefined, ctx());
       expect(pending.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.arrayContaining(["thinking: default (pending)"]) });
-      const explicit = await tools.get("Agent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "general-purpose", run_in_background: true, thinking: "high" }, undefined, undefined, ctx());
-      const retrieved = await tools.get("get_subagent_result").execute("explicit-pending", { agent_id: explicit.details.agentId, wait: false }, undefined, undefined, ctx());
-      expect(retrieved.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
+      const agentCwd = mkdtempSync(join(tmpdir(), "wait-queued-explicit-"));
+      mkdirSync(join(agentCwd, ".pi", "agents"), { recursive: true });
+      writeFileSync(join(agentCwd, ".pi", "agents", "explicit-thinker.md"), "---\ndescription: Explicit\nthinking: high\n---\nReport.\n");
+      const prevCwd = process.cwd();
+      process.chdir(agentCwd);
+      try {
+        const explicit = await tools.get("Agent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "explicit-thinker", run_in_background: true }, undefined, undefined, ctx());
+        const retrieved = await tools.get("get_subagent_result").execute("explicit-pending", { agent_id: explicit.details.agentId, wait: false }, undefined, undefined, ctx());
+        expect(retrieved.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
+      } finally {
+        process.chdir(prevCwd);
+        rmSync(agentCwd, { recursive: true, force: true });
+      }
     } finally {
       await lifecycle.get("session_shutdown")?.();
       while (resolvers.length) resolvers.shift()?.(undefined);

@@ -551,7 +551,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
           apply: (candidate, childCtx) => {
             fastPolicy.enabled = candidate.fast === true;
             fastPolicy.usingOAuth = childCtx.modelRegistry.isUsingOAuth(candidate.model);
-            const level = agentConfig?.thinking ?? candidate.thinkingLevel ?? selected.invocationThinkingLevel
+            const level = agentConfig?.thinking ?? candidate.thinkingLevel
               ?? (selected.thinkingLevel === undefined ? options.thinkingLevel : undefined);
             if (level) extensionPi.setThinkingLevel(level);
           },

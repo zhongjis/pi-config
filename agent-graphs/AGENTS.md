@@ -12,6 +12,7 @@ The repo-committed reusable agent-graph portfolio: saved `AgentGraph`s the `agen
 
 - Saved graphs are plain-JSON `AgentGraph`s resolved by filename (`context-gather`, `deep-research`); a `/` in a graph name maps to a subdirectory.
 - Every graph MUST pass `validateGraph`; a prompt `${placeholder}` MUST be wired in the node's `input`, except a bounded-feedback evaluator's runtime-reserved `${feedback}`.
+- Nodes select work by `agent`; model and thinking come only from that agent's frontmatter chain. Saved graphs MUST NOT set node model, effort, or thinking.
 - `install.sh` symlinks this directory to `~/.pi/agent/agent-graphs` for global resolution; the runtime also resolves `<cwd>/agent-graphs` and `<cwd>/.pi/agent-graphs`, highest priority first.
 - `context-gather` accepts caller-planned `{ request, tasks }` through one bounded-feedback region, which may run one evaluator-authored gap-closing iteration before synthesis. Both bounded iterations collect partial failures as evidence; callers MUST check applicable Skills before creating tasks and MUST NOT add `practice` research by default.
 - `deep-research` accepts a nonblank `{ question, context? }`, plans 1–6 disjoint verifiable tasks, dispatches local to Chengfeng and external GitHub/public web to Wenchang, and uses read-only Wenchang for planning, independent-source evaluation, and synthesis. Its bounded feedback permits at most 3 rounds, 6 tasks/round and 18 total, follows only named gaps, and retains all-settled failures.

@@ -5,8 +5,6 @@ import { normalizeThinkingLevel } from "./thinking-level.js";
 import type { AgentConfig, JoinMode, ThinkingLevel } from "./types.js";
 
 interface AgentInvocationParams {
-  model?: string;
-  thinking?: string;
   max_turns?: number;
   run_in_background?: boolean;
   inherit_context?: boolean;
@@ -19,7 +17,6 @@ export function resolveAgentInvocationConfig(
   selectedThinking?: string,
 ): {
   modelInput?: string;
-  modelFromParams: boolean;
   thinking?: ThinkingLevel;
   maxTurns?: number;
   inheritContext: boolean;
@@ -27,9 +24,8 @@ export function resolveAgentInvocationConfig(
   isolated: boolean;
 } {
   return {
-    modelInput: agentConfig?.model ?? params.model,
-    modelFromParams: agentConfig?.model == null && params.model != null,
-    thinking: normalizeThinkingLevel(agentConfig?.thinking ?? selectedThinking ?? params.thinking),
+    modelInput: agentConfig?.model,
+    thinking: normalizeThinkingLevel(agentConfig?.thinking ?? selectedThinking),
     maxTurns: agentConfig?.maxTurns ?? params.max_turns,
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,
     runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? false,
@@ -68,7 +64,7 @@ export function prepareAgentInvocation({
   const initial = resolveAgentInvocationConfig(agentConfig, params);
   const selected = resolveAgentModel(initial.modelInput, modelRegistry, parentModel);
   const invocation = resolveAgentInvocationConfig(agentConfig, params, selected.thinkingLevel);
-  const selectedModel = { ...selected, modelInput: invocation.modelInput, invocationThinkingLevel: normalizeThinkingLevel(params.thinking) };
+  const selectedModel = { ...selected, modelInput: invocation.modelInput };
   const allowed = scopeModels && selectedModel.model
     ? resolveEnabledModels(readEnabledModels(cwd), modelRegistry, cwd)
     : undefined;

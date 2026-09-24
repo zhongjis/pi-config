@@ -154,27 +154,6 @@ describe("createNodeHost", () => {
     await host.dispose();
   });
 
-  it("returns a failed graph result without spawning for an explicit out-of-scope model", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "subagents-node-host-"));
-    try {
-      mkdirSync(join(cwd, ".pi"));
-      writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({ enabledModels: ["test/allowed"] }));
-      configureAgent(agentConfig());
-      const allowed = { ...model, id: "allowed" };
-      const { host } = setup("out", { context: modelContext(cwd, [model, allowed]), scopeModels: () => true });
-      vi.mocked(runAgent).mockClear();
-      const result = await host.spawnAgent(
-        { nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task", model: "test/chosen" },
-        new AbortController().signal,
-      );
-      expect(result).toEqual({ ok: false, error: "Model not in scope: test/chosen" });
-      expect(runAgent).not.toHaveBeenCalled();
-      await host.dispose();
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
   it("warns once while running configured out-of-scope graph models", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "subagents-node-host-"));
     try {
@@ -247,10 +226,10 @@ it.each(["unknown", "removed-config", "disabled"])('fails closed for %s graph ag
   await host.dispose();
 });
 
-it("preserves case-insensitive valid names and explicit model overrides", async () => {
-  agentTypes.registerAgents(new Map([["fixture", agentConfig()]]));
+it("preserves case-insensitive valid names and resolves the agent's frontmatter model", async () => {
+  agentTypes.registerAgents(new Map([["fixture", agentConfig({ model: "test/chosen" })]]));
   const { host } = setup("done", { context: modelContext() });
-  const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "FiXtUrE", model: "test/chosen", prompt: "task" }, new AbortController().signal);
+  const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "FiXtUrE", prompt: "task" }, new AbortController().signal);
   expect(result.ok).toBe(true);
   expect(vi.mocked(runAgent).mock.calls.at(-1)?.[1]).toBe("fixture");
   expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].selectedModel?.model).toEqual(model);

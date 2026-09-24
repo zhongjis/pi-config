@@ -16,12 +16,12 @@ it.each([false, true])("reports native usage once across retrieval and resume (b
       cwd,
       prompt: "Delegate.",
       respond: routeBySession({
-        parentInitial: agentCall({ subagent_type: "controlled", prompt: "Report.", description: "controls", thinking: "max", run_in_background: background }),
+        parentInitial: agentCall({ subagent_type: "controlled", prompt: "Report.", description: "controls", run_in_background: background }),
         parentFinal: (ctx) => {
           const results = ctx.messages.filter((message): message is ToolResultMessage<unknown> => message.role === "toolResult");
           const details = results[0]?.details;
           if (!details || typeof details !== "object" || !("agentId" in details) || typeof details.agentId !== "string") throw new Error("Missing agent ID");
-          if (results.length === 2) return agentCall({ subagent_type: "controlled", prompt: "Continue.", description: "resume", resume: details.agentId, thinking: "low" }, { id: "resume" });
+          if (results.length === 2) return agentCall({ subagent_type: "controlled", prompt: "Continue.", description: "resume", resume: details.agentId }, { id: "resume" });
           if (results.length < 5) return { type: "toolCall", id: `retrieve-${results.length}`, name: "get_subagent_result", arguments: { agent_id: details.agentId, wait: true } };
           return "Done";
         },
@@ -47,8 +47,8 @@ it.each([false, true])("reports native usage once across retrieval and resume (b
     expect(run.parentSession.getSessionStats().tokens.total).toBe(mainTokens + childStats.tokens.total);
     expect(run.parentSession.getSessionStats().cost).toBeCloseTo(mainCost + childStats.cost);
     expect(run.manager?.getLifetimeCost()).toBeCloseTo(childStats.cost);
-    expect(results[1]?.details).toMatchObject({ modelName: "faux/faux-1", thinking: "off", requestedThinking: "max", cost: expect.any(Number) });
-    expect(results[3]?.details).toMatchObject({ modelName: "faux/faux-1", thinking: "off", requestedThinking: "max", cost: childStats.cost });
+    expect(results[1]?.details).toMatchObject({ modelName: "faux/faux-1", thinking: "off", requestedThinking: "high", cost: expect.any(Number) });
+    expect(results[3]?.details).toMatchObject({ modelName: "faux/faux-1", thinking: "off", requestedThinking: "high", cost: childStats.cost });
     if (background) {
       expect(results[0]?.details).toMatchObject({ modelName: undefined, thinking: undefined });
       expect(results[0]?.details).not.toHaveProperty("requestedThinking");

@@ -34,8 +34,6 @@ export interface NodeSpawnRequest {
   attempt: number;
   agentType: string;
   prompt: string;
-  model?: string;
-  effort?: string;
   /**
    * Compiled output schema. When present the host must give the child a
    * `StructuredOutput` tool and return the validated JSON as {@link NodeSpawnResult.output}.

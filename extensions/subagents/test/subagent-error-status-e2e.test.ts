@@ -9,6 +9,9 @@
 import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   agentCall,
   type PrintModeRun,
@@ -38,22 +41,33 @@ describe("issue #144 — empty-error final turns must not be 'completed'", () =>
 
   it("A03 does not retry another candidate after provider execution failure", async () => {
     let childCalls = 0;
-    run = await runPrintMode({
-      prompt: "Delegate.",
-      respond: routeBySession({
-        parentInitial: agentCall({ description: "doomed", prompt: "Do work.", model: "faux/faux-1,faux/faux-1:high" }),
-        parentFinal: "parent done",
-        // The child's one and only turn: provider error, zero content.
-        subagent: () => { childCalls++; return fauxAssistantMessage([], { stopReason: "error", errorMessage: FATAL }); },
-      }),
-    });
+    const cwd = mkdtempSync(join(tmpdir(), "subagents-doomed-"));
+    try {
+      mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
+      // The two-candidate chain lives in frontmatter; the test proves the second is never tried.
+      writeFileSync(join(cwd, ".pi", "agents", "doomed.md"), "---\ndescription: Doomed\nmodel: faux/faux-1,faux/faux-1:high\n---\nReport.\n");
+      run = await runPrintMode({
+        cwd,
+        prompt: "Delegate.",
+        respond: routeBySession({
+          parentInitial: agentCall({ subagent_type: "doomed", description: "doomed", prompt: "Do work." }),
+          parentFinal: "parent done",
+          // The child's one and only turn: provider error, zero content.
+          subagent: () => { childCalls++; return fauxAssistantMessage([], { stopReason: "error", errorMessage: FATAL }); },
+        }),
+      });
 
-    // DESIRED: the orchestrator sees a failure naming the provider error —
-    // not a clean success reading "No output.".
-    const toolResult = agentToolResult(run.parentSession);
-    expect(toolResult).toContain(FATAL);
-    expect(toolResult).not.toContain("No output.");
-    expect(childCalls).toBe(1);
+      // DESIRED: the orchestrator sees a failure naming the provider error —
+      // not a clean success reading "No output.".
+      const toolResult = agentToolResult(run.parentSession);
+      expect(toolResult).toContain(FATAL);
+      expect(toolResult).not.toContain("No output.");
+      expect(childCalls).toBe(1);
+    } finally {
+      await run?.dispose();
+      run = undefined;
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("an earlier turn's text must not mask a failed final turn as a fresh success", async () => {

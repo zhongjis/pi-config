@@ -268,9 +268,9 @@ Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_tu
 
 Model candidates accept `provider/model[:thinking]:fast`; no suffix means fixed off, never the parent's `/fast` toggle. Resume retains the selected setting. See [child policy contracts](AGENTS.md#local-contracts) for validation/isolation and [shared helpers](../lib/README.md#fast-request-helpers) for strict request mechanics.
 
-Thinking precedence: agent frontmatter → selected model-chain suffix → invocation override → SDK selected-model default. Omission never inherits parent thinking, even when the model is inherited. The installed SDK resolves its native per-model/global/Pi defaults (per-model support depends on SDK version). Before session creation, Agent reports and queued retrieval display `thinking: default (pending)` only when the invocation retains omitted-thinking intent; unknown direct/RPC intent stays unlabelled. Runtime reports replace the pending tag with the session's actual level. Resume retains the existing session level.
+Thinking precedence: agent frontmatter → selected model-chain suffix → SDK selected-model default. Omission never inherits parent thinking, even when the model is inherited, and Agent tool calls carry no thinking value. The installed SDK resolves its native per-model/global/Pi defaults (per-model support depends on SDK version). Before session creation, Agent reports and queued retrieval display `thinking: default (pending)` only when the invocation retains omitted-thinking intent; unknown RPC intent stays unlabelled. Runtime reports replace the pending tag with the session's actual level. Resume retains the existing session level.
 
-**Forgiving `model:` resolution.** A `model:` pin is matched against pi's model registry tolerantly, so cosmetic id variations don't silently drop the agent back to the parent's model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`), a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id and vice-versa), and a `provider/modelId` whose named provider doesn't carry that model retries the bare id against every provider. Precedence is **exact → fuzzy under the named provider → same model under any provider → unavailable**, so an exact match always wins and dated snapshots aren't conflated. A comma-separated chain tries candidates in order against available models; a selected candidate's thinking suffix wins over the tool-call thinking value, while explicit agent thinking remains authoritative. If no configured candidate resolves, execution fails rather than silently inheriting. Only an absent model setting inherits the parent. `/agents → Agent types` flags exhausted chains as `(unavailable)` and shows the resolved target when it differs from configuration. (This is distinct from [Model Scope](#model-scope) enforcement, which matches the `enabledModels` allowlist by *exact* entry.)
+**Forgiving `model:` resolution.** A `model:` pin is matched against pi's model registry tolerantly, so cosmetic id variations don't silently drop the agent back to the parent's model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`), a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id and vice-versa), and a `provider/modelId` whose named provider doesn't carry that model retries the bare id against every provider. Precedence is **exact → fuzzy under the named provider → same model under any provider → unavailable**, so an exact match always wins and dated snapshots aren't conflated. A comma-separated chain tries candidates in order against available models; a selected candidate's thinking suffix supplies the level when the agent omits `thinking:`, while explicit agent `thinking:` remains authoritative. If no configured candidate resolves, execution fails rather than silently inheriting. Only an absent model setting inherits the parent. `/agents → Agent types` flags exhausted chains as `(unavailable)` and shows the resolved target when it differs from configuration. (This is distinct from [Model Scope](#model-scope) enforcement, which matches the `enabledModels` allowlist by *exact* entry.)
 
 ### Tool & extension scoping
 
@@ -320,8 +320,6 @@ Launch a sub-agent.
 | `prompt` | string | yes | The task for the agent |
 | `description` | string | yes | Short 3-5 word summary (shown in UI) |
 | `subagent_type` | string | yes | Agent type (built-in or custom) |
-| `model` | string | no | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`). Resolved tolerantly (`.`/`-` and a trailing date stamp interchangeable) with provider fallback |
-| `thinking` | string | no | Thinking level: off, minimal, low, medium, high, xhigh, max (availability depends on pi version and model) |
 | `max_turns` | number | no | Max agentic turns. Omit for unlimited (default) |
 | `run_in_background` | boolean | no | Run without blocking |
 | `resume` | string | no | Agent ID to resume a previous session |
@@ -381,7 +379,7 @@ Graph checkpoints in `.pi/graph-runs/` use atomic replacement, exclusive run lea
 
 Saved graphs live at `agent-graphs/<name>.graph.json`. One saved graph ships with this config: `context-gather`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
 
-Graph effort follows local thinking authority: agent frontmatter → model-chain suffix → invocation override → SDK default, never implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
+Graph node thinking follows the agent's frontmatter → model-chain suffix → SDK default, never a node override or implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 
 Graph runs MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children do not receive the `agent_graph` tool recursively. `/agents → Graph runs` keeps one phase-grouped run roster with contextual controls: pause/resume, skip, retry, stop, and child conversation access. FleetView represents each graph run as one row rather than duplicating its owned children.
 
@@ -461,11 +459,10 @@ When on, each subagent spawn's effective model is validated against pi's own `en
 
 | Model source | Out-of-scope behavior |
 |---|---|
-| Caller-supplied via `Agent({ model: "..." })` | Hard error returned to the orchestrator, listing allowed models |
 | Pinned in agent frontmatter | Warning toast + the pinned model runs (frontmatter is authoritative) |
-| Parent-inherited (neither set) | Warning toast + parent's model runs |
+| Parent-inherited (no frontmatter model) | Warning toast + parent's model runs |
 
-**Design:** `scopeModels` is a guardrail against the orchestrator picking unexpected models at runtime, not a hard policy against user-level config. The "frontmatter is authoritative" guarantee from v0.5.1 still holds for `model:` — caller params can't override frontmatter, and frontmatter pins run even when out of scope (with a visible warning).
+**Design:** `scopeModels` surfaces effective models outside `enabledModels`; it is not a hard policy against user-level config. Agent tool calls and graph nodes carry no model, so frontmatter pins and parent inheritance always run, with a visible warning when out of scope.
 
 **Pattern format:** only exact `provider/modelId` entries are honored (e.g. `anthropic/claude-haiku-4-5-20251001`). Glob patterns (`*sonnet*`), bare model IDs, and `:thinking` suffixes — which pi itself supports — are silently dropped here. pi's `/scoped-models` picker writes exact entries, so the limitation is invisible if you configure scope through the UI. Hand-edited globs produce an empty allowed set (scope check becomes a no-op).
 

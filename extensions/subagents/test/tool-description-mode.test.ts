@@ -251,4 +251,15 @@ describe("toolDescriptionMode", () => {
       warn.mockRestore();
     }
   });
+
+  it("omits caller model and thinking overrides from the Agent tool", () => {
+    const tools = setup({ toolDescriptionMode: "full" });
+    const agent = tools.get("Agent");
+    const properties = agent.parameters.properties as Record<string, unknown>;
+    expect(properties).not.toHaveProperty("model");
+    expect(properties).not.toHaveProperty("thinking");
+    const description: string = agent.description;
+    expect(description).not.toContain("Use model to");
+    expect(description).not.toContain("Use thinking to");
+  });
 });
