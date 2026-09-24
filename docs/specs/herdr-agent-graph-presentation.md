@@ -21,7 +21,7 @@ The result is technically complete but visually expensive. An operator must tran
 
 ## Solution
 
-Present the Herdr agent-graph pane as a dense, read-only, hierarchy-first workflow inspector:
+Present the graph panel in Pi and in the Herdr pane as a dense, hierarchy-first workflow inspector; the Herdr pane stays read-only:
 
 1. Show one stable run identity, one human description, and one honest aggregate summary.
 2. Render the effective graph as a compact tree. Indentation expresses containment: workflow → coordinator → iteration → fanout/evaluator → generated agent item. Vertical order expresses progression. Dependencies that cannot be represented honestly as containment remain in selected-node detail.
@@ -141,14 +141,14 @@ The following prototype mock is normative. Text may change only when required by
 26. As an operator, I want filters, folds, scrolling, run switching, input disclosure, and conversation opening preserved, so that presentation polish does not remove supervision capability.
 27. As an operator, I want a completed run to retain the same hierarchy after reload, so that history remains a useful workflow inspector rather than degrading to a flat roster.
 28. As an operator, I want retained node artifacts resolved on demand, so that available prompt and outcome detail survives reload without entering graph-history metadata.
-29. As a maintainer, I want the centered `/agents → Graph runs` inspector unchanged, so that this Herdr-specific redesign does not conflate two surfaces.
+29. As a maintainer, I want the graph panel in Pi and in the Herdr pane to share this presentation, so that the two hosts do not diverge.
 30. As a maintainer, I want model-visible results, graph execution, notification behavior, and orchestration permissions unchanged, so that durable presentation cannot alter execution.
 31. As a maintainer, I want rendering failure to retain the existing safe fallback, so that presentation defects never remove run visibility.
 32. As a maintainer, I want the exact accepted mock covered through the highest public render seam and a real Herdr capture before and after reload, so that tests and runtime evidence prove the same presentation.
 
 ## Implementation Decisions
 
-- The existing pure Herdr observability renderer and key handler remain the single presentation seam. The pane manager continues to own run selection, panel state, and the safe fallback renderer.
+- The existing pure observability renderer and key handler remain the single presentation seam for the graph panel in Pi and in the Herdr pane. The pane manager continues to own run selection, panel state, and the safe fallback renderer.
 - Build a presentation tree from authoritative graph metadata retained by the live run projection or sanitized graph-history projection. The tree model separates workflow nodes, bounded-feedback iterations, fanout ownership, generated items, and ordinary dependencies. It does not parse display labels to infer structure.
 - Iteration rows are presentation-only structural groups derived from durable feedback iteration/ownership metadata. They are navigational grouping rows, not executable nodes and not included in the node denominator.
 - Node rows retain stable node identity for selection and detail even when their displayed labels become local to a structural group.
@@ -158,7 +158,7 @@ The following prototype mock is normative. Text may change only when required by
 - Selection uses the existing reverse-video vocabulary where available. Tree rails and lifecycle symbols remain visible inside the selected row.
 - Selected detail uses the same authoritative upstream/downstream relationships as the current panel. It presents them as a compact flow when linear and as explicit upstream/downstream groups when the relationship is not linear.
 - The existing read-only interaction model remains intact. Footer hints are derived from current focus, selection kind, expandable sections, and configured keybindings rather than hard-coded globally.
-- The centered workflow dialog remains a separate surface. Shared low-level glyph and width helpers may remain shared, but this specification does not redesign that dialog.
+- The graph panel in Pi and in the Herdr pane shares this presentation. Shared low-level glyph and width helpers may remain shared, but this specification does not redesign transcript tool rows or notifications.
 - Rendering remains width-safe by terminal cells after ANSI styling. No tree prefix, selection marker, status field, metadata suffix, or wrapped detail line may exceed the supplied width.
 - Graph history version 2 persists only sanitized presentation metadata: configured workflow description, node kind/name/role, history-local parent and dependency indices, iteration/item position, conditional/loop connections, and iteration decision enums. Capture translates transient bindings and instance IDs to local indices, then discards those runtime identities.
 - Version 1 history remains readable with its explicit flat fallback. Unknown future versions remain untouched with writes disabled. Version 2 decoding strictly allowlists fields and rejects invalid references, self-parenting, containment cycles, and out-of-bounds topology.
@@ -167,13 +167,13 @@ The following prototype mock is normative. Text may change only when required by
 
 ## Testing Decisions
 
-- The highest automated seam is the public pure Herdr panel renderer and key handler supplied with representative live and reloaded `PanelRun` data. Tests assert the rendered hierarchy and state transitions rather than private helper calls.
+- The highest automated seam is the public pure panel renderer and key handler for the graph panel in Pi and in the Herdr pane, supplied with representative live and reloaded `PanelRun` data. Tests assert the rendered hierarchy and state transitions rather than private helper calls.
 - Red tests precede production edits and prove: one-row nodes, accurate agent/coordination counts, omission of zero categories, bounded-feedback iteration groups, fanout item containment, evaluator placement, selection-gutter independence, compact selected-node flow, and `Selected node` detail labelling.
 - Fixtures use typed graph metadata, never node-label parsing, to distinguish coordination, iteration, fanout ownership, generated items, and ordinary dependencies.
 - Status tests cover queued, running, completed, failed, blocked, skipped, paused, stopped, and replayed annotation with Unicode, ASCII, colorless, selected, and settled-functional-node variants.
 - Width tests cover `0`, `1`, `2`, `8`, `20`, `40`, `80`, and `120` columns with ANSI, CJK, emoji, combining characters, long model names, long node names, and long IDs. Every physical line fits its visible-cell width.
 - Navigation tests cover roster/detail focus, selection across structural grouping rows, filtering, folding, run switching, prompt/outcome expansion, input expansion, conversation opening, paging, and escape/back behavior.
-- Compatibility tests prove the centered inspector remains unchanged, rendering failure still uses the safe fallback, and model-visible results/execution behavior are unaffected.
+- Compatibility tests prove rendering failure still uses the safe fallback, and model-visible results/execution behavior are unaffected.
 - Persistence tests round-trip a representative run through `snapshotHistory → JSON → decodeHistory → mergeWorkflowRuns → toPaneSource → renderPanelLines`; the post-reload hierarchy, counts, decisions, and flow MUST match the live projection.
 - Privacy tests inspect the serialized history and prove it contains no bindings, UUIDs, conversation handles, artifact paths, prompts, outputs, errors, scripts, or inputs. Artifact tests prove lookup is bounded, alias-keyed, optional, and unavailable outside the exact session.
 - Legacy tests keep version 1 history readable and flat; malformed version 2 topology fails closed; unknown versions remain byte-preserved and non-writable.
@@ -184,7 +184,7 @@ The following prototype mock is normative. Text may change only when required by
 ## Out of Scope
 
 - Changing graph execution, scheduling, retry, loop, fanout, bounded-feedback, execution-recovery persistence, cancellation, or outcome semantics.
-- Redesigning tool-call rows, completion notifications, the centered `/agents → Graph runs` inspector, FleetView, or agent conversations.
+- Redesigning tool-call rows, completion notifications, FleetView, or agent conversations.
 - Drawing arbitrary DAG edges as a full node-link canvas. The roster uses truthful containment plus explicit selected-node dependencies.
 - Adding mutation controls to the read-only Herdr pane.
 - Copying prompts, outputs, errors, conversations, artifact paths, or runtime identifiers into graph-history metadata.
@@ -192,4 +192,4 @@ The following prototype mock is normative. Text may change only when required by
 
 ## Further Notes
 
-This specification supersedes the stale flat, stage-oriented `Graph Run Monitor — Observability Panel` draft. The shipped workflow tool/notification specification remains authoritative for transcript tool rows and notifications; this document owns only the Herdr agent-graph side panel.
+This specification supersedes the stale flat, stage-oriented `Graph Run Monitor — Observability Panel` draft. The shipped workflow tool/notification specification remains authoritative for transcript tool rows and notifications; this document owns the graph panel in Pi and in the Herdr pane.

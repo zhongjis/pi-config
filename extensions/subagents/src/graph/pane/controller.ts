@@ -184,7 +184,7 @@ export class GraphRunPaneController {
    * Close the pane at the user's request and REMEMBER the close. Unlike
    * `closeOwned` (the dispose path, which clears the record), this keeps the
    * record with `closedByUser` set, so `ensurePane(false)` will not reopen the
-   * pane until `/graph-runs` forces it. Mirrors the viewer-side `q` close.
+   * pane until a detach (`o` in the Agent Monitor or graph panel) forces it. Mirrors the viewer-side `q` close.
    */
   async closeForUser(): Promise<void> {
     const record = readRecord(this.dir);

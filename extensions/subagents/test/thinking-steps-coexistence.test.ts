@@ -90,6 +90,8 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     thinkingStepsExtension(registry.pi);
 
     expect(registry.commands.has("agents")).toBe(true);
+    expect(registry.commands.has("agent-monitor")).toBe(true);
+    expect(registry.commands.has("graph-runs")).toBe(false);
     expect(registry.commands.has("thinking-steps")).toBe(true);
     expect(registry.shortcuts.has("alt+t")).toBe(true);
     expect(registry.lifecycle.get("session_start")).toHaveLength(2);

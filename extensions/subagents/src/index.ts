@@ -34,6 +34,7 @@ import { registerSubagentNotificationRenderer } from "./notification-rendering.j
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { startBackgroundSupervision } from "./supervision-loop.js";
 import { type AgentRecord, type JoinMode, type WidgetMode } from "./types.js";
+import { type AgentMonitorDeps, showAgentMonitor } from "./ui/agent-monitor.js";
 import {
   type AgentActivity,
   AgentWidget,
@@ -42,7 +43,7 @@ import {
   type UICtx,
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx } from "./ui/fleet-list.js";
-import { type GraphRunMenuDeps, openGraphRunFromFleet } from "./ui/graph-run-menu.js";
+import { type GraphRunMenuDeps, openGraphRunFromFleet, showGraphRunDialog } from "./ui/graph-run-menu.js";
 import { getLifetimeTotal, type LifetimeUsage, PendingUsagePool } from "./usage.js";
 
 export { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData };
@@ -481,7 +482,7 @@ export default function (pi: ExtensionAPI) {
       if (surface !== "fleet") graphRunPane?.sync();
     },
   );
-  const { getRuns: getGraphRuns, resume: resumeDurableGraphRuns, stop: stopGraphRuns, fleetGraphRuns } = graphRuntime;
+  const { getRuns: getGraphRuns, resume: resumeDurableGraphRuns, stop: stopGraphRuns, fleetGraphRuns, monitorGraphRuns } = graphRuntime;
 
   if (isAgentGraphEnabled()) {
     pi.on("resources_discover", () => (isAgentGraphEnabled() ? { skillPaths: [graphSkillPath] } : undefined));
@@ -613,18 +614,10 @@ export default function (pi: ExtensionAPI) {
     description: "Manage agents",
     handler: async (_args, ctx) => { await showAgentsMenu(ctx); },
   });
-  pi.registerCommand("graph-runs", {
-    description: "Open/reopen the graph run monitor in a Herdr side pane",
-    handler: async (_args, ctx) => {
-      // Clears any manual-close flag and force-opens for the active run. Off the
-      // Herdr path there is nothing to open, so say why rather than doing nothing.
-      if (!graphRunPane?.isEnabled()) {
-        ctx.ui.notify("Graph run monitor needs a Herdr-managed pane.", "warning");
-        return;
-      }
-      await graphRunPane.forceOpen();
-    },
-  });
+  const paneDetach = {
+    available: () => graphRunPane?.isEnabled() ?? false,
+    open: async (runId: string) => (await graphRunPane?.forceOpen(runId)) ?? false,
+  };
   const graphRunMenuDeps: GraphRunMenuDeps = {
     get tasks() { return getGraphRuns(); },
     getRecord: id => manager.getRecord(id),
@@ -632,7 +625,27 @@ export default function (pi: ExtensionAPI) {
     // Read lazily: `currentCtx` is rebound on every session_start, and the
     // fleet list may act between sessions, when there is none.
     getCtx: () => currentCtx,
+    detach: paneDetach,
   };
+  const agentMonitorDeps: AgentMonitorDeps = {
+    listAgents: () => manager.listAgents(),
+    agentActivity,
+    graphRuns: monitorGraphRuns,
+    openGraphRun: async (ctx, id) => {
+      const task = getGraphRuns().get(id);
+      if (!task) {
+        ctx.ui.notify("That graph run is no longer available.", "info");
+        return;
+      }
+      await showGraphRunDialog(ctx, task, graphRunMenuDeps);
+    },
+    viewAgentConversation,
+    detach: paneDetach,
+  };
+  pi.registerCommand("agent-monitor", {
+    description: "Open the Agent Monitor: agent graph runs and independent agents",
+    handler: async (_args, ctx) => { await showAgentMonitor(ctx, agentMonitorDeps); },
+  });
 
   fleet.setGraphRunSource(fleetGraphRuns, id => openGraphRunFromFleet(id, graphRunMenuDeps));
 }

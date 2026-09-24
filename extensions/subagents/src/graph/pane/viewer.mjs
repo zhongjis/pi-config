@@ -14,7 +14,7 @@
  * unreliable on macOS), reports its terminal size back through `viewport.json`,
  * self-terminates when the parent pi process is gone or the state directory is
  * removed, and quits on q / Ctrl+C / Ctrl+D — marking the close as the user's so
- * the extension does not reopen the pane until `/graph-runs`.
+ * the extension does not reopen the pane until a detach (`o` in the Agent Monitor or graph panel).
  */
 
 import { execFileSync } from "node:child_process";

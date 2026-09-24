@@ -1,4 +1,4 @@
-// observability-panel.test.ts — the /graph-runs pane's default view. Pure and
+// observability-panel.test.ts — the graph panel's default view (Agent Monitor and Herdr pane). Pure and
 // terminal-free, tested through the one seam (renderPanelLines / applyPanelKey),
 // asserting on produced lines and next state, never on private layout internals.
 // Exercise the REAL terminal-cell layout (not the ASCII unit stub) so the

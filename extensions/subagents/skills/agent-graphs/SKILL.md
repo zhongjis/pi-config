@@ -51,7 +51,7 @@ Depend only on the validated structured outputs, never on an agent's prose.
 
 ```jsonc
 {
-  "description": "Optional live-run purpose shown in /graph-runs",
+  "description": "Optional live-run purpose shown in the Agent Monitor",
   "inputSchema": { /* optional JSON Schema for `input` */ },
   "nodes": { "<id>": { /* GraphNode */ } },
   "edges": [ { "from": "<id>", "to": "<id>", "when": <Condition>, "loop": { "maxIterations": 3 } } ],

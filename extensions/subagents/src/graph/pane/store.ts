@@ -39,7 +39,7 @@ export interface PaneSnapshot {
  * The ownership record. `sentinel` is the pane label we set with `rename`; the
  * controller re-checks it before touching a pane, so a pane the user renamed or
  * repurposed reads as "not ours" and is left alone. `closedByUser` survives a
- * manual close so the pane is not auto-reopened until `/graph-runs`.
+ * manual close so the pane is not auto-reopened until a detach (`o` in the Agent Monitor or graph panel).
  */
 export interface PaneRecord {
   paneId: string;
