@@ -1,13 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { complete } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { classify } from "../src/classifier.js";
 
-vi.mock("@earendil-works/pi-ai/compat", () => ({ complete: vi.fn() }));
 
-const completeMock = vi.mocked(complete);
+const completeMock = vi.fn();
 const PRIMARY = { id: "classifier-primary", name: "Primary", provider: "test-primary" };
 const FALLBACK = { id: "classifier-fallback", name: "Fallback", provider: "test-fallback" };
 const SESSION = { id: "session-model", name: "Session", provider: "test-session" };
@@ -24,6 +22,12 @@ const REQUEST = {
 };
 
 type Auth = { ok: true; apiKey?: string; headers?: Record<string, string> } | { ok: false; error: string };
+type ClassifierModel = { id: string; name: string; provider: string };
+
+function configured(auth: Auth | undefined): boolean {
+	if (!auth) return true;
+	return auth.ok && Boolean(auth.apiKey);
+}
 
 function writeClassifierConfig(cwd: string): void {
 	const configDir = join(cwd, ".pi");
@@ -36,12 +40,14 @@ function writeClassifierConfig(cwd: string): void {
 }
 
 function makeContext(cwd: string, options: {
-	available?: typeof PRIMARY[];
+	available?: ClassifierModel[];
 	auth?: Auth;
-	model?: typeof PRIMARY;
+	model?: ClassifierModel;
+	unauthenticated?: ClassifierModel[];
 	readonly signal?: AbortSignal;
 } = {}) {
 	const available = options.available ?? [PRIMARY];
+	const unauthenticated = options.unauthenticated ?? [];
 	return {
 		cwd,
 		model: options.model,
@@ -50,7 +56,10 @@ function makeContext(cwd: string, options: {
 			find: (provider: string, id: string) => available.find((model) => model.provider === provider && model.id === id),
 			getAll: () => available,
 			getAvailable: () => available,
-			getApiKeyAndHeaders: vi.fn().mockResolvedValue(options.auth ?? { ok: true, apiKey: "secret", headers: { trace: "yes" } }),
+			hasConfiguredAuth: (model: ClassifierModel) =>
+				!unauthenticated.some((item) => item.provider === model.provider && item.id === model.id)
+				&& configured(options.auth),
+			complete: completeMock,
 		},
 	};
 }
@@ -88,11 +97,9 @@ describe("smart-tool-guards classifier", () => {
 		const [model, prompt, options] = call;
 
 		expect(model).toBe(PRIMARY);
-		expect(options).toMatchObject({
-			apiKey: "secret",
-			headers: { trace: "yes" },
-			reasoningEffort: "low",
-		});
+		expect(options).toMatchObject({ reasoningEffort: "low" });
+		expect(options).not.toHaveProperty("apiKey");
+		expect(options).not.toHaveProperty("headers");
 		expect(prompt.systemPrompt).toContain(`Trusted policy ID: ${REQUEST.policyId}`);
 		expect(prompt.systemPrompt).toContain(REQUEST.policyInstructions);
 		expect(prompt.systemPrompt).not.toContain(REQUEST.action.command);
@@ -162,6 +169,16 @@ describe("smart-tool-guards classifier", () => {
 			expect.any(Object),
 			expect.objectContaining({ reasoningEffort: "low" }),
 		);
+	});
+
+	it("falls through when the first candidate has no configured auth", async () => {
+		writeClassifierConfig(cwd);
+		const ctx = makeContext(cwd, { available: [PRIMARY], model: SESSION, unauthenticated: [PRIMARY] });
+		await expect(classify(REQUEST, ctx as never)).resolves.toEqual({ kind: "allow" });
+		expect(completeMock).toHaveBeenCalledTimes(1);
+		expect(completeMock.mock.calls[0]?.[0]).toBe(SESSION);
+		expect(completeMock.mock.calls[0]?.[2]).not.toHaveProperty("apiKey");
+		expect(completeMock.mock.calls[0]?.[2]).not.toHaveProperty("headers");
 	});
 
 	it("falls back to the session model when the guard chain model fails at completion", async () => {

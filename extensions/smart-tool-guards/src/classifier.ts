@@ -1,4 +1,3 @@
-import { complete } from "@earendil-works/pi-ai/compat";
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveToolModelCandidates } from "../../lib/tool-models.js";
@@ -75,13 +74,12 @@ async function attemptClassify<PolicyId extends string, Target, Action, Context>
 	candidate: { model: any; thinkingLevel?: ModelCandidate["thinkingLevel"] },
 ): Promise<Verdict | undefined> {
 	try {
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(candidate.model);
-		if (!auth.ok || !auth.apiKey) return undefined;
+		if (!ctx.modelRegistry.hasConfiguredAuth(candidate.model)) return undefined;
 
 		const deadlineSignal = AbortSignal.timeout(CLASSIFIER_DEADLINE_MS);
 		const signal = ctx.signal ? AbortSignal.any([ctx.signal, deadlineSignal]) : deadlineSignal;
 
-		const response = await complete(
+		const response = await ctx.modelRegistry.complete(
 			candidate.model,
 			{
 				systemPrompt: [
@@ -105,8 +103,6 @@ async function attemptClassify<PolicyId extends string, Target, Action, Context>
 				}],
 			},
 			{
-				apiKey: auth.apiKey,
-				headers: auth.headers,
 				reasoningEffort: candidate.thinkingLevel,
 				signal,
 			},
