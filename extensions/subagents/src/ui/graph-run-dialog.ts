@@ -1,4 +1,4 @@
-import { type HistoricalWorkflow, historyDisclosure } from "../graph/history-view.js";
+import { type HistoricalGraphRun, historyDisclosure } from "../graph/history-view.js";
 /** `/agents → Graph runs`: stable phase-grouped roster with contextual agent detail. */
 
 import {
@@ -10,31 +10,31 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import type { GraphRunMeta } from "../graph/graph-run-types.js";
 import {
   buildPhaseGroups,
   displayState,
   formatDuration,
+  type GraphRunAgentEntry,
+  type GraphRunDisplayState,
+  type GraphRunEntry,
   header,
   type PhaseGroup,
-  type WorkflowAgentEntry,
-  type WorkflowDisplayState,
-  type WorkflowEntry,
 } from "../graph/progress.js";
-import type { WorkflowMeta } from "../graph/workflow-types.js";
 import { SPINNER, type Theme } from "./agent-widget.js";
 import {
   ASCII_GLYPHS,
   clampLine,
   formatCompactTokens,
+  type GraphRunCardColor,
+  type GraphRunCardLine,
+  type GraphRunCardSegment,
+  type GraphRunCardTask,
   highlightRow,
   REPLAYED_ANNOTATION,
-  styleWorkflowCardLines,
+  styleGraphRunCardLines,
   UNICODE_GLYPHS,
-  type WorkflowCardColor,
-  type WorkflowCardLine,
-  type WorkflowCardSegment,
-  type WorkflowCardTask,
-} from "./workflow-card.js";
+} from "./graph-run-card.js";
 
 const DEFAULT_WIDTH = 80;
 const WIDE_LAYOUT_WIDTH = 72;
@@ -42,7 +42,7 @@ export const DEFAULT_PANE_BODY_ROWS = 22;
 export const MIN_PANE_BODY_ROWS = 6;
 export const WORKFLOW_DIALOG_REFRESH_MS = 500;
 
-export interface WorkflowDialogGlyphs {
+export interface GraphRunDialogGlyphs {
   tick: string;
   cross: string;
   queued: string;
@@ -63,7 +63,7 @@ export interface WorkflowDialogGlyphs {
   enter: string;
 }
 
-export const UNICODE_DIALOG_GLYPHS: WorkflowDialogGlyphs = {
+export const UNICODE_DIALOG_GLYPHS: GraphRunDialogGlyphs = {
   tick: UNICODE_GLYPHS.tick,
   cross: UNICODE_GLYPHS.cross,
   queued: "◌",
@@ -78,7 +78,7 @@ export const UNICODE_DIALOG_GLYPHS: WorkflowDialogGlyphs = {
   enter: "⏎",
 };
 
-export const ASCII_DIALOG_GLYPHS: WorkflowDialogGlyphs = {
+export const ASCII_DIALOG_GLYPHS: GraphRunDialogGlyphs = {
   tick: ASCII_GLYPHS.tick,
   cross: ASCII_GLYPHS.cross,
   queued: "o",
@@ -94,10 +94,10 @@ export const ASCII_DIALOG_GLYPHS: WorkflowDialogGlyphs = {
 };
 
 export function dialogRowGlyph(
-  state: WorkflowDisplayState,
-  glyphs: WorkflowDialogGlyphs,
+  state: GraphRunDisplayState,
+  glyphs: GraphRunDialogGlyphs,
   spinnerFrame = 0,
-): WorkflowCardSegment {
+): GraphRunCardSegment {
   switch (state) {
     case "done": return { text: glyphs.tick, color: "success" };
     case "failed": return { text: glyphs.cross, color: "error" };
@@ -118,33 +118,33 @@ export const WORKFLOW_DIALOG_COPY = {
   noAgents: "Waiting for the graph to schedule agents.",
 } as const;
 
-export type WorkflowDialogLevel = "roster" | "detail";
+export type GraphRunDialogLevel = "roster" | "detail";
 
-export interface WorkflowDialogState {
+export interface GraphRunDialogState {
   /** Stable workflow entry index, never a visual row offset. */
   selectedIndex?: number;
-  level: WorkflowDialogLevel;
+  level: GraphRunDialogLevel;
   detailOffset: number;
   helpVisible: boolean;
 }
 
-export function initialWorkflowDialogState(selectedIndex?: number): WorkflowDialogState {
+export function initialGraphRunDialogState(selectedIndex?: number): GraphRunDialogState {
   return { selectedIndex, level: "roster", detailOffset: 0, helpVisible: false };
 }
 
-export interface WorkflowDialogSource {
-  history?: HistoricalWorkflow["history"];
+export interface GraphRunDialogSource {
+  history?: HistoricalGraphRun["history"];
   /** Live graph input; history deliberately omits it. */
   input?: unknown;
-  progress: readonly WorkflowEntry[];
-  task: WorkflowCardTask;
-  meta?: WorkflowMeta;
+  progress: readonly GraphRunEntry[];
+  task: GraphRunCardTask;
+  meta?: GraphRunMeta;
   agentCount?: number;
 }
 
-export interface WorkflowDialogInput extends WorkflowDialogSource {
-  state: WorkflowDialogState;
-  available?: Partial<Record<keyof WorkflowDialogActions, boolean>>;
+export interface GraphRunDialogInput extends GraphRunDialogSource {
+  state: GraphRunDialogState;
+  available?: Partial<Record<keyof GraphRunDialogActions, boolean>>;
   now?: number;
   width?: number;
   ascii?: boolean;
@@ -153,7 +153,7 @@ export interface WorkflowDialogInput extends WorkflowDialogSource {
   fillBody?: boolean;
 }
 
-export interface WorkflowDialogActions {
+export interface GraphRunDialogActions {
   onKill?(): void;
   onPause?(): void;
   onResume?(): void;
@@ -162,7 +162,7 @@ export interface WorkflowDialogActions {
   onOpenAgent?(recordId: string): void;
 }
 
-export type WorkflowDialogAction =
+export type GraphRunDialogAction =
   | { kind: "cancel" }
   | { kind: "kill" }
   | { kind: "pause" }
@@ -171,25 +171,25 @@ export type WorkflowDialogAction =
   | { kind: "retry"; index: number }
   | { kind: "open"; recordId: string };
 
-export interface ResolvedWorkflowDialog {
+export interface ResolvedGraphRunDialog {
   readOnly?: boolean;
   groups: PhaseGroup[];
-  agents: WorkflowAgentEntry[];
+  agents: GraphRunAgentEntry[];
   selectedPosition: number;
-  selectedEntry: WorkflowAgentEntry | undefined;
-  workflowActive: boolean;
+  selectedEntry: GraphRunAgentEntry | undefined;
+  graphRunActive: boolean;
   paused: boolean;
   narrow: boolean;
 }
 
-export function workflowDialogContentWidth(terminalWidth: number): number {
+export function graphRunDialogContentWidth(terminalWidth: number): number {
   return Math.max(1, terminalWidth - 6);
 }
 
 const clampIndex = (index: number, length: number) =>
   length === 0 ? 0 : Math.min(Math.max(0, Math.trunc(index)), length - 1);
 
-export function resolveWorkflowDialog(input: WorkflowDialogInput): ResolvedWorkflowDialog {
+export function resolveGraphRunDialog(input: GraphRunDialogInput): ResolvedGraphRunDialog {
   const groups = buildPhaseGroups(input.progress, input.meta?.phases);
   const agents = groups.flatMap(group => group.agents);
   const wanted = input.state.selectedIndex;
@@ -201,15 +201,15 @@ export function resolveWorkflowDialog(input: WorkflowDialogInput): ResolvedWorkf
     readOnly: input.history !== undefined,
     selectedPosition,
     selectedEntry: agents[selectedPosition],
-    workflowActive: input.task.status === "running" || input.task.status === "paused",
+    graphRunActive: input.task.status === "running" || input.task.status === "paused",
     paused: input.task.status === "paused",
-    narrow: workflowDialogContentWidth(input.width ?? DEFAULT_WIDTH) < WIDE_LAYOUT_WIDTH,
+    narrow: graphRunDialogContentWidth(input.width ?? DEFAULT_WIDTH) < WIDE_LAYOUT_WIDTH,
   };
 }
 
 export function subStatusAnnotations(
-  entry: WorkflowAgentEntry,
-  state: WorkflowDisplayState,
+  entry: GraphRunAgentEntry,
+  state: GraphRunDisplayState,
   now: number,
 ): string[] {
   const parts: string[] = [];
@@ -223,7 +223,7 @@ export function subStatusAnnotations(
 }
 
 /** Only effective session metadata is shown; requested chains stay in diagnostics. */
-export function workflowAgentModel(entry: WorkflowAgentEntry, state: WorkflowDisplayState): string {
+export function graphRunAgentModel(entry: GraphRunAgentEntry, state: GraphRunDisplayState): string {
   if (entry.modelId) return entry.modelId;
   if (entry.cached) return "model not run";
   if (state === "queued" || state === "running") return "model pending";
@@ -231,15 +231,15 @@ export function workflowAgentModel(entry: WorkflowAgentEntry, state: WorkflowDis
 }
 
 export function agentActions(
-  entry: WorkflowAgentEntry | undefined,
-  workflowActive: boolean,
+  entry: GraphRunAgentEntry | undefined,
+  graphRunActive: boolean,
 ): { skip: boolean; retry: boolean } {
-  if (!entry || !workflowActive) return { skip: false, retry: false };
-  const state = displayState(entry, workflowActive);
+  if (!entry || !graphRunActive) return { skip: false, retry: false };
+  const state = displayState(entry, graphRunActive);
   return { skip: state === "queued" || state === "running", retry: state === "running" };
 }
 
-function statusWord(state: WorkflowDisplayState): string {
+function statusWord(state: GraphRunDisplayState): string {
   switch (state) {
     case "done": return "Completed";
     case "failed": return "Failed";
@@ -251,7 +251,7 @@ function statusWord(state: WorkflowDisplayState): string {
   }
 }
 
-function stateColor(state: WorkflowDisplayState): WorkflowCardColor {
+function stateColor(state: GraphRunDisplayState): GraphRunCardColor {
   switch (state) {
     case "done": return "success";
     case "failed": return "error";
@@ -261,20 +261,20 @@ function stateColor(state: WorkflowDisplayState): WorkflowCardColor {
   }
 }
 
-function workflowStatusLine(task: WorkflowCardTask, width: number): WorkflowCardLine {
-  const executionColor: WorkflowCardColor =
+function graphRunStatusLine(task: GraphRunCardTask, width: number): GraphRunCardLine {
+  const executionColor: GraphRunCardColor =
     task.status === "completed" ? "success"
     : task.status === "failed" ? "error"
     : task.status === "paused" ? "warning"
     : task.status === "running" ? "accent"
     : task.status === "killed" ? "warning"
     : "dim";
-  const line: WorkflowCardLine = [
+  const line: GraphRunCardLine = [
     { text: " Execution: ", color: "dim" },
     { text: task.status, color: executionColor, bold: true },
   ];
   if (task.outcome) {
-    const outcomeColor: WorkflowCardColor =
+    const outcomeColor: GraphRunCardColor =
       task.outcome.status === "succeeded" ? "success"
       : task.outcome.status === "failed" ? "error"
       : "warning";
@@ -289,9 +289,9 @@ function workflowStatusLine(task: WorkflowCardTask, width: number): WorkflowCard
   return clampLine(line, width);
 }
 
-const lineWidth = (line: WorkflowCardLine) => line.reduce((sum, part) => sum + visibleWidth(part.text), 0);
+const lineWidth = (line: GraphRunCardLine) => line.reduce((sum, part) => sum + visibleWidth(part.text), 0);
 
-function rightAlign(left: WorkflowCardLine, right: WorkflowCardLine, width: number): WorkflowCardLine {
+function rightAlign(left: GraphRunCardLine, right: GraphRunCardLine, width: number): GraphRunCardLine {
   const rightWidth = lineWidth(right);
   const clampedLeft = clampLine(left, Math.max(0, width - rightWidth - 1));
   const gap = Math.max(1, width - lineWidth(clampedLeft) - rightWidth);
@@ -304,12 +304,12 @@ function windowRange(selected: number, total: number, capacity: number): { start
   return { start, end: start + visible };
 }
 
-function padCell(line: WorkflowCardLine, width: number): WorkflowCardLine {
+function padCell(line: GraphRunCardLine, width: number): GraphRunCardLine {
   const clamped = clampLine(line, width);
   return [...clamped, { text: " ".repeat(Math.max(0, width - lineWidth(clamped))) }];
 }
 
-function frameTitle(title: string, width: number, glyphs: WorkflowDialogGlyphs): WorkflowCardLine {
+function frameTitle(title: string, width: number, glyphs: GraphRunDialogGlyphs): GraphRunCardLine {
   const shown = stripTerminalSequences(truncateToWidth(title, Math.max(0, width - 2), glyphs.ellipsis));
   const rule = Math.max(0, width - visibleWidth(shown) - 2);
   return clampLine([
@@ -321,13 +321,13 @@ function frameTitle(title: string, width: number, glyphs: WorkflowDialogGlyphs):
 
 function singlePaneFrame(
   title: string,
-  rows: WorkflowCardLine[],
+  rows: GraphRunCardLine[],
   width: number,
   bodyRows: number,
-  glyphs: WorkflowDialogGlyphs,
-): WorkflowCardLine[] {
+  glyphs: GraphRunDialogGlyphs,
+): GraphRunCardLine[] {
   const inner = Math.max(1, width - 2);
-  const lines: WorkflowCardLine[] = [[
+  const lines: GraphRunCardLine[] = [[
     { text: glyphs.box.topLeft, color: "dim" },
     ...frameTitle(title, inner, glyphs),
     { text: glyphs.box.topRight, color: "dim" },
@@ -353,13 +353,13 @@ export function leftPaneWidth(width: number): number {
 }
 
 function twoPaneFrame(options: {
-  leftTitle: string; rightTitle: string; leftRows: WorkflowCardLine[]; rightRows: WorkflowCardLine[];
-  width: number; bodyRows: number; glyphs: WorkflowDialogGlyphs;
-}): WorkflowCardLine[] {
+  leftTitle: string; rightTitle: string; leftRows: GraphRunCardLine[]; rightRows: GraphRunCardLine[];
+  width: number; bodyRows: number; glyphs: GraphRunDialogGlyphs;
+}): GraphRunCardLine[] {
   const { glyphs, width } = options;
   const left = leftPaneWidth(width);
   const right = Math.max(1, width - left - 3);
-  const lines: WorkflowCardLine[] = [[
+  const lines: GraphRunCardLine[] = [[
     { text: glyphs.box.topLeft, color: "dim" }, ...frameTitle(options.leftTitle, left, glyphs),
     { text: glyphs.box.topTee, color: "dim" }, ...frameTitle(options.rightTitle, right, glyphs),
     { text: glyphs.box.topRight, color: "dim" },
@@ -383,7 +383,7 @@ function twoPaneFrame(options: {
 
 type RosterItem =
   | { kind: "phase"; group: PhaseGroup }
-  | { kind: "agent"; entry: WorkflowAgentEntry }
+  | { kind: "agent"; entry: GraphRunAgentEntry }
   | { kind: "empty"; text: string };
 
 function rosterItems(groups: readonly PhaseGroup[]): RosterItem[] {
@@ -396,8 +396,8 @@ function rosterItems(groups: readonly PhaseGroup[]): RosterItem[] {
   ]);
 }
 
-function phaseRow(group: PhaseGroup, width: number): WorkflowCardLine {
-  const color: WorkflowCardColor = group.status === "done" ? "success" : group.status === "failed" ? "error" : "muted";
+function phaseRow(group: PhaseGroup, width: number): GraphRunCardLine {
+  const color: GraphRunCardColor = group.status === "done" ? "success" : group.status === "failed" ? "error" : "muted";
   const count = group.totalCount > 0 ? `${group.doneCount}/${group.totalCount} ` : "";
   return rightAlign(
     [{ text: ` ${group.title}`, color, bold: true }],
@@ -407,15 +407,15 @@ function phaseRow(group: PhaseGroup, width: number): WorkflowCardLine {
 }
 
 function agentRow(options: {
-  entry: WorkflowAgentEntry; selected: boolean; width: number; glyphs: WorkflowDialogGlyphs;
-  workflowActive: boolean; spinnerFrame: number; now: number;
-}): WorkflowCardLine {
-  const state = displayState(options.entry, options.workflowActive);
+  entry: GraphRunAgentEntry; selected: boolean; width: number; glyphs: GraphRunDialogGlyphs;
+  graphRunActive: boolean; spinnerFrame: number; now: number;
+}): GraphRunCardLine {
+  const state = displayState(options.entry, options.graphRunActive);
   const color = stateColor(state);
   const status = (options.entry.cached ? "Replayed" : statusWord(state)).padEnd(9);
-  const model = workflowAgentModel(options.entry, state);
+  const model = graphRunAgentModel(options.entry, state);
   const annotations = subStatusAnnotations(options.entry, state, options.now);
-  const left: WorkflowCardLine = [
+  const left: GraphRunCardLine = [
     { text: options.selected ? ` ${options.glyphs.pointer} ` : "   " },
     dialogRowGlyph(state, options.glyphs, options.spinnerFrame),
     { text: ` ${status} `, color },
@@ -424,13 +424,13 @@ function agentRow(options: {
   for (const note of annotations.filter(note => note !== REPLAYED_ANNOTATION)) {
     left.push({ text: " · ", color: "dim" }, { text: note, color: "dim" });
   }
-  const right: WorkflowCardLine = [{ text: `${model} `, color: "dim" }];
+  const right: GraphRunCardLine = [{ text: `${model} `, color: "dim" }];
   return rightAlign(left, right, options.width);
 }
 
 function renderRoster(
-  view: ResolvedWorkflowDialog, width: number, capacity: number, glyphs: WorkflowDialogGlyphs, spinnerFrame: number, now: number,
-): WorkflowCardLine[] {
+  view: ResolvedGraphRunDialog, width: number, capacity: number, glyphs: GraphRunDialogGlyphs, spinnerFrame: number, now: number,
+): GraphRunCardLine[] {
   const items = rosterItems(view.groups);
   const selectedRow = Math.max(0, items.findIndex(item => item.kind === "agent" && item.entry.index === view.selectedEntry?.index));
   const range = windowRange(selectedRow, items.length, capacity);
@@ -438,12 +438,12 @@ function renderRoster(
     if (item.kind === "phase") return phaseRow(item.group, width);
     if (item.kind === "empty") return clampLine([{ text: `   ${item.text}`, color: "dim" }], width);
     const selected = item.entry.index === view.selectedEntry?.index;
-    const row = agentRow({ entry: item.entry, selected, width, glyphs, workflowActive: view.workflowActive, spinnerFrame, now });
+    const row = agentRow({ entry: item.entry, selected, width, glyphs, graphRunActive: view.graphRunActive, spinnerFrame, now });
     return selected ? highlightRow(row, width) : row;
   });
 }
 
-function section(lines: WorkflowCardLine[], title: string, body: string, width: number): void {
+function section(lines: GraphRunCardLine[], title: string, body: string, width: number): void {
   lines.push([], clampLine([{ text: " " }, { text: title, color: "muted", bold: true }], width));
   const wrapped = wrapTextWithAnsi(body, Math.max(1, width - 4));
   for (const text of wrapped.length > 0 ? wrapped : [""]) {
@@ -451,7 +451,7 @@ function section(lines: WorkflowCardLine[], title: string, body: string, width: 
   }
 }
 
-function outcomeBody(entry: WorkflowAgentEntry, state: WorkflowDisplayState): string {
+function outcomeBody(entry: GraphRunAgentEntry, state: GraphRunDisplayState): string {
   switch (state) {
     case "skipped": return WORKFLOW_DIALOG_COPY.skippedByUser;
     case "interrupted": return WORKFLOW_DIALOG_COPY.stoppedEarly;
@@ -463,11 +463,11 @@ function outcomeBody(entry: WorkflowAgentEntry, state: WorkflowDisplayState): st
   }
 }
 
-function detailRows(entry: WorkflowAgentEntry | undefined, view: ResolvedWorkflowDialog, width: number, now: number): WorkflowCardLine[] {
+function detailRows(entry: GraphRunAgentEntry | undefined, view: ResolvedGraphRunDialog, width: number, now: number): GraphRunCardLine[] {
   if (!entry) return [[{ text: `   ${WORKFLOW_DIALOG_COPY.noAgents}`, color: "dim" }]];
-  const state = displayState(entry, view.workflowActive);
-  const model = workflowAgentModel(entry, state);
-  const rows: WorkflowCardLine[] = [[
+  const state = displayState(entry, view.graphRunActive);
+  const model = graphRunAgentModel(entry, state);
+  const rows: GraphRunCardLine[] = [[
     { text: " " },
     { text: entry.cached ? "Replayed" : statusWord(state), color: stateColor(state), bold: true },
     { text: ` · ${model}`, color: "dim" },
@@ -494,21 +494,21 @@ function detailRows(entry: WorkflowAgentEntry | undefined, view: ResolvedWorkflo
 }
 
 function footerLines(
-  input: WorkflowDialogInput, view: ResolvedWorkflowDialog, detailCount: number, detailOffset: number, width: number, glyphs: WorkflowDialogGlyphs,
-): WorkflowCardLine[] {
-  const can = (action: keyof WorkflowDialogActions) => !input.history && (input.available?.[action] ?? true);
+  input: GraphRunDialogInput, view: ResolvedGraphRunDialog, detailCount: number, detailOffset: number, width: number, glyphs: GraphRunDialogGlyphs,
+): GraphRunCardLine[] {
+  const can = (action: keyof GraphRunDialogActions) => !input.history && (input.available?.[action] ?? true);
   const inNarrowDetail = view.narrow && input.state.level === "detail";
   const primary = [
     inNarrowDetail ? `${glyphs.upDown} scroll` : `${glyphs.upDown} select`,
     ...(view.narrow && !inNarrowDetail && view.selectedEntry ? [`${glyphs.enter} details`] : []),
     ...(view.selectedEntry?.recordId && can("onOpenAgent") ? ["c conversation"] : []),
-    ...(view.paused && can("onResume") ? ["p resume"] : view.workflowActive && can("onPause") ? ["p pause"] : []),
+    ...(view.paused && can("onResume") ? ["p resume"] : view.graphRunActive && can("onPause") ? ["p pause"] : []),
   ];
-  const actions = agentActions(view.selectedEntry, view.workflowActive);
+  const actions = agentActions(view.selectedEntry, view.graphRunActive);
   const extra = [
     ...(actions.skip && can("onSkipAgent") ? ["s skip"] : []),
     ...(actions.retry && can("onRetryAgent") ? ["r retry"] : []),
-    ...(view.workflowActive && can("onKill") ? ["x stop"] : []),
+    ...(view.graphRunActive && can("onKill") ? ["x stop"] : []),
     ...(detailCount > (input.bodyRows ?? DEFAULT_PANE_BODY_ROWS) ? [`pgup/pgdn ${detailOffset + 1}/${detailCount}`] : []),
   ];
   if (extra.length > 0) primary.push(input.state.helpVisible ? "? less" : "? controls");
@@ -517,19 +517,19 @@ function footerLines(
   return wrapTextWithAnsi(text, width).map(part => clampLine([{ text: part, color: "dim" }], width));
 }
 
-function resolveWorkflowLayout(input: WorkflowDialogInput): { lines: WorkflowCardLine[]; detailOffset: number } {
+function resolveGraphRunLayout(input: GraphRunDialogInput): { lines: GraphRunCardLine[]; detailOffset: number } {
   const glyphs = input.ascii ? ASCII_DIALOG_GLYPHS : UNICODE_DIALOG_GLYPHS;
   const terminalWidth = Math.max(0, input.width ?? DEFAULT_WIDTH);
-  const width = workflowDialogContentWidth(terminalWidth);
+  const width = graphRunDialogContentWidth(terminalWidth);
   const now = input.now ?? Date.now();
-  const view = resolveWorkflowDialog(input);
+  const view = resolveGraphRunDialog(input);
   const capacity = Math.max(1, input.bodyRows ?? DEFAULT_PANE_BODY_ROWS);
   const spinnerFrame = input.spinnerFrame ?? 0;
-  const lines: WorkflowCardLine[] = [];
+  const lines: GraphRunCardLine[] = [];
   const head = header(input.task, input.meta, view.groups, input.agentCount ?? 0, now);
   lines.push(clampLine([{ text: " " }, { text: head.name, color: "toolTitle", bold: true }], width));
   lines.push(rightAlign(head.subtext ? [{ text: " " }, { text: head.subtext, color: "dim" }] : [], [{ text: head.stats, color: "dim" }], width));
-  lines.push(workflowStatusLine(input.task, width), []);
+  lines.push(graphRunStatusLine(input.task, width), []);
   if (input.history) {
     for (const text of wrapTextWithAnsi(historyDisclosure(input.history), width)) lines.push(clampLine([{ text, color: "dim" }], width));
   }
@@ -561,15 +561,15 @@ function resolveWorkflowLayout(input: WorkflowDialogInput): { lines: WorkflowCar
   return { lines: lines.map(line => clampLine(line, terminalWidth)), detailOffset };
 }
 
-export function layoutWorkflowDialog(input: WorkflowDialogInput): WorkflowCardLine[] {
-  return resolveWorkflowLayout(input).lines;
+export function layoutGraphRunDialog(input: GraphRunDialogInput): GraphRunCardLine[] {
+  return resolveGraphRunLayout(input).lines;
 }
 
-export function handleWorkflowDialogKey(
+export function handleGraphRunDialogKey(
   data: string,
-  state: WorkflowDialogState,
-  view: ResolvedWorkflowDialog,
-): { state: WorkflowDialogState; action?: WorkflowDialogAction } | undefined {
+  state: GraphRunDialogState,
+  view: ResolvedGraphRunDialog,
+): { state: GraphRunDialogState; action?: GraphRunDialogAction } | undefined {
   if (matchesKey(data, "ctrl+c") || matchesKey(data, "q")) return { state, action: { kind: "cancel" } };
   const narrowDetail = view.narrow && state.level === "detail";
   if (matchesKey(data, "escape")) {
@@ -599,24 +599,24 @@ export function handleWorkflowDialogKey(
     const recordId = view.selectedEntry?.recordId;
     return recordId ? { state, action: { kind: "open", recordId } } : undefined;
   }
-  if (matchesKey(data, "x")) return view.workflowActive ? { state, action: { kind: "kill" } } : undefined;
+  if (matchesKey(data, "x")) return view.graphRunActive ? { state, action: { kind: "kill" } } : undefined;
   if (matchesKey(data, "p")) {
-    return view.workflowActive ? { state, action: { kind: view.paused ? "resume" : "pause" } } : undefined;
+    return view.graphRunActive ? { state, action: { kind: view.paused ? "resume" : "pause" } } : undefined;
   }
-  const actions = agentActions(view.selectedEntry, view.workflowActive);
+  const actions = agentActions(view.selectedEntry, view.graphRunActive);
   if (matchesKey(data, "s") && actions.skip && view.selectedEntry) return { state, action: { kind: "skip", index: view.selectedEntry.index } };
   if (matchesKey(data, "r") && actions.retry && view.selectedEntry) return { state, action: { kind: "retry", index: view.selectedEntry.index } };
   return undefined;
 }
 
-export function plainWorkflowDialogLines(lines: readonly WorkflowCardLine[]): string[] {
+export function plainGraphRunDialogLines(lines: readonly GraphRunCardLine[]): string[] {
   return lines.map(line => line.map(segment => segment.text).join(""));
 }
 
-const taskIsLive = (task: WorkflowCardTask) => task.status === "running" || task.status === "paused";
+const taskIsLive = (task: GraphRunCardTask) => task.status === "running" || task.status === "paused";
 
-export class WorkflowDialog implements Component {
-  private state = initialWorkflowDialogState();
+export class GraphRunDialog implements Component {
+  private state = initialGraphRunDialogState();
   private spinnerFrame = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private closed = false;
@@ -624,10 +624,10 @@ export class WorkflowDialog implements Component {
 
   constructor(
     private tui: TUI,
-    private source: () => WorkflowDialogSource,
+    private source: () => GraphRunDialogSource,
     private theme: Theme,
     private done: (result: undefined) => void,
-    private actions: WorkflowDialogActions = {},
+    private actions: GraphRunDialogActions = {},
   ) {
     if (taskIsLive(this.source().task)) {
       this.timer = setInterval(() => {
@@ -640,8 +640,8 @@ export class WorkflowDialog implements Component {
 
   handleInput(data: string): void {
     if (this.closed) return;
-    const input: WorkflowDialogInput = { ...this.source(), state: this.state, width: this.lastWidth };
-    const result = handleWorkflowDialogKey(data, this.state, resolveWorkflowDialog(input));
+    const input: GraphRunDialogInput = { ...this.source(), state: this.state, width: this.lastWidth };
+    const result = handleGraphRunDialogKey(data, this.state, resolveGraphRunDialog(input));
     if (!result) return;
     this.state = result.state;
     if (result.action) this.dispatch(result.action);
@@ -651,7 +651,7 @@ export class WorkflowDialog implements Component {
   render(width: number): string[] {
     if (!Number.isFinite(width) || width <= 0) return [];
     this.lastWidth = width;
-    const layout = resolveWorkflowLayout({
+    const layout = resolveGraphRunLayout({
       ...this.source(),
       state: this.state,
       available: {
@@ -664,7 +664,7 @@ export class WorkflowDialog implements Component {
       spinnerFrame: this.spinnerFrame,
     });
     this.state.detailOffset = layout.detailOffset;
-    return styleWorkflowCardLines(layout.lines, this.theme);
+    return styleGraphRunCardLines(layout.lines, this.theme);
   }
 
   invalidate(): void {}
@@ -681,7 +681,7 @@ export class WorkflowDialog implements Component {
     this.timer = undefined;
   }
 
-  private dispatch(action: WorkflowDialogAction): void {
+  private dispatch(action: GraphRunDialogAction): void {
     switch (action.kind) {
       case "cancel": this.dispose(); this.done(undefined); return;
       case "kill": this.actions.onKill?.(); return;

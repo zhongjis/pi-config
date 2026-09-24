@@ -1,4 +1,4 @@
-// workflow-pane-manager.test.ts (Wave 2) — the input channel + per-pane view
+// graph-run-pane-manager.test.ts (Wave 2) — the input channel + per-pane view
 // state. The manager imports the pi-tui-backed renderer, so the real layout must
 // stand in for the ASCII unit stub.
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
@@ -7,13 +7,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createWorkflowPaneManager, type WorkflowPaneManager } from "../src/graph/pane/manager.js";
+import { createGraphRunPaneManager, type GraphRunPaneManager } from "../src/graph/pane/manager.js";
 import * as paneRenderer from "../src/graph/pane/render.js";
 import { readRecord, STATE_FILE, writeInputAtomic, writeRecord } from "../src/graph/pane/store.js";
-import { createWorkflowTask, type WorkflowTask } from "../src/graph/task.js";
+import { createGraphRunTask, type GraphRunTask } from "../src/graph/task.js";
 
 let dir: string;
-let managers: WorkflowPaneManager[] = [];
+let managers: GraphRunPaneManager[] = [];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "wfpane-mgr-"));
@@ -26,17 +26,17 @@ afterEach(async () => {
 
 const ok = async () => ({ code: 0, stdout: "", stderr: "", killed: false });
 
-function twoPhaseTask(id: string, startTime: number): WorkflowTask {
-  const task = createWorkflowTask({
+function twoPhaseTask(id: string, startTime: number): GraphRunTask {
+  const task = createGraphRunTask({
     id,
     script: "x",
     meta: { name: "audit", description: "d", phases: [{ title: "Discover" }, { title: "Review" }] },
     startTime,
   });
-  task.workflowName = "audit";
+  task.graphRunName = "audit";
   task.status = "running";
   task.agentCount = 2;
-  task.workflowProgress = [
+  task.graphRunProgress = [
     { type: "workflow_phase", index: 0, title: "Discover" },
     { type: "workflow_phase", index: 1, title: "Review" },
     { type: "workflow_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", recordId: "rec-a0" },
@@ -45,8 +45,8 @@ function twoPhaseTask(id: string, startTime: number): WorkflowTask {
   return task;
 }
 
-function manager(getTasks: () => WorkflowTask[], viewAgentConversation?: (recordId: string) => void) {
-  const mgr = createWorkflowPaneManager({
+function manager(getTasks: () => GraphRunTask[], viewAgentConversation?: (recordId: string) => void) {
+  const mgr = createGraphRunPaneManager({
     enabled: true,
     exec: vi.fn(ok) as any,
     parentPaneId: "%p0",
@@ -64,8 +64,8 @@ function manager(getTasks: () => WorkflowTask[], viewAgentConversation?: (record
 }
 
 const b64 = (s: string) => Buffer.from(s).toString("base64");
-const panelState = (mgr: WorkflowPaneManager) => (mgr as unknown as { panelState: { cursor?: { kind: "stage"; stage: number } | { kind: "node"; id: string }; runIndex: number; scroll: number } }).panelState;
-const processInput = (mgr: WorkflowPaneManager) => (mgr as unknown as { processInputFile: () => Promise<void> }).processInputFile();
+const panelState = (mgr: GraphRunPaneManager) => (mgr as unknown as { panelState: { cursor?: { kind: "stage"; stage: number } | { kind: "node"; id: string }; runIndex: number; scroll: number } }).panelState;
+const processInput = (mgr: GraphRunPaneManager) => (mgr as unknown as { processInputFile: () => Promise<void> }).processInputFile();
 
 describe("input channel", () => {
   it("drives the panel view state from a forwarded key and writes a fresh snapshot", () => {
@@ -169,7 +169,7 @@ describe("esc-at-overview closes via the extension", () => {
   it("closes the recorded pane, marks closedByUser, and writes no new snapshot", async () => {
     const task = twoPhaseTask("wf_a", 1000);
     const exec = vi.fn(ok);
-    const mgr = createWorkflowPaneManager({
+    const mgr = createGraphRunPaneManager({
       enabled: true,
       exec: exec as any,
       parentPaneId: "%p0",
@@ -206,10 +206,10 @@ describe("esc-at-overview closes via the extension", () => {
 describe("auto-open gating", () => {
   const splitCalled = (exec: any) =>
     exec.mock.calls.some((c: any[]) => c[0] === "herdr" && c[1]?.[1] === "split");
-  const syncNow = (mgr: WorkflowPaneManager, force: boolean) =>
+  const syncNow = (mgr: GraphRunPaneManager, force: boolean) =>
     (mgr as unknown as { syncNow: (f: boolean) => Promise<void> }).syncNow(force);
-  function mgrWith(exec: any, getTasks: () => WorkflowTask[]) {
-    const mgr = createWorkflowPaneManager({
+  function mgrWith(exec: any, getTasks: () => GraphRunTask[]) {
+    const mgr = createGraphRunPaneManager({
       enabled: true,
       exec,
       parentPaneId: "%p0",
@@ -249,7 +249,7 @@ describe("auto-open gating", () => {
 
 describe("disabled manager", () => {
   it("never processes input and holds no view state machinery", () => {
-    const mgr = createWorkflowPaneManager({
+    const mgr = createGraphRunPaneManager({
       enabled: false,
       exec: vi.fn(ok) as any,
       parentPaneId: "",

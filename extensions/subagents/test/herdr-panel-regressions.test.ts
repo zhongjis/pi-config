@@ -2,9 +2,9 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 
 import { describe, expect, it, vi } from "vitest";
 import { snapshotHistory } from "../src/graph/history.js";
-import { mergeWorkflowRuns } from "../src/graph/history-view.js";
+import { mergeGraphRuns } from "../src/graph/history-view.js";
 import { renderObservabilityPaneLines, toPaneSource } from "../src/graph/pane/render.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 import { applyPanelKey, initialPanelState, type PanelRun, renderPanelLines } from "../src/ui/observability-panel.js";
 
 const opts = { width: 120 };
@@ -56,13 +56,13 @@ describe("Herdr panel regression seams", () => {
   });
 
   it("navigates duplicate history labels independently without retaining private data", () => {
-    const task = createWorkflowTask({ id: "history", script: "" });
+    const task = createGraphRunTask({ id: "history", script: "" });
     Object.assign(task, { status: "completed", endTime: 100 });
-    task.workflowProgress = [...fixture().source.progress];
+    task.graphRunProgress = [...fixture().source.progress];
     const saved = snapshotHistory(task);
     if (!saved) throw new Error("Missing history");
     expect(JSON.stringify(saved)).not.toMatch(/presentation|record-|output-/);
-    const history = mergeWorkflowRuns([], [saved]).get(task.id);
+    const history = mergeGraphRuns([], [saved]).get(task.id);
     if (!history) throw new Error("Missing restored history");
     const run: PanelRun = { id: history.id, name: "history", status: history.status, source: toPaneSource(history) };
     const second = selectSecond(run);

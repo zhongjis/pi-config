@@ -274,7 +274,7 @@ export class AgentWidget {
    *   - `all`: every agent not owned by a workflow.
    */
   private widgetAgents() {
-    const all = this.manager.listAgents().filter(a => !a.workflowId);
+    const all = this.manager.listAgents().filter(a => !a.graphRunId);
     switch (this.mode()) {
       case "off": return [];
       case "background": return all.filter(a => a.isBackground !== false);

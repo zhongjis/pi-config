@@ -1,4 +1,4 @@
-// workflow-pane-store.test.ts (S3) — the per-pane state directory and its atomic
+// graph-run-pane-store.test.ts (S3) — the per-pane state directory and its atomic
 // writes. The viewer reads these files while the extension rewrites them, so
 // every write has to land whole (tmp + rename) and leave no debris.
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";

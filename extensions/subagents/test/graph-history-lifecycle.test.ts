@@ -2,17 +2,17 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GraphHistoryStore } from "../src/graph/history.js";
-import { createWorkflowTask } from "../src/graph/task.js";
-import { boot, required } from "./workflow-registration.fixture.js";
+import { createGraphRunTask } from "../src/graph/task.js";
+import { boot, required } from "./graph-run-registration.fixture.js";
 
 describe("graph history lifecycle", () => {
   it.each(["reload", "switch", "shutdown"] as const)("suppresses settlement during %s and flushes earlier settlements", async cause => {
     const store = await GraphHistoryStore.load(`lifecycle-${cause}`);
-    const settled = createWorkflowTask({ id: "settled", script: "" });
+    const settled = createGraphRunTask({ id: "settled", script: "" });
     Object.assign(settled, { status: "completed", endTime: Date.now() });
     store.capture(settled);
     store.disableCapture(cause);
-    const aborted = createWorkflowTask({ id: "aborted", script: "" });
+    const aborted = createGraphRunTask({ id: "aborted", script: "" });
     Object.assign(aborted, { status: "killed", endTime: Date.now() });
     aborted.abortController.abort(cause);
     store.capture(aborted);
@@ -25,7 +25,7 @@ describe("graph history lifecycle", () => {
 
   it("retains explicit user stops, not other aborts", async () => {
     const store = await GraphHistoryStore.load("user-stop");
-    const stopped = createWorkflowTask({ id: "stopped", script: "" });
+    const stopped = createGraphRunTask({ id: "stopped", script: "" });
     Object.assign(stopped, { status: "killed", endTime: Date.now() });
     store.capture(stopped);
     expect(store.runs).toEqual([]);

@@ -8,12 +8,12 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { decodeHistory, GraphHistoryStore, snapshotHistory } from "../src/graph/history.js";
-import { mergeWorkflowRuns } from "../src/graph/history-view.js";
+import { mergeGraphRuns } from "../src/graph/history-view.js";
 import { toPaneSource } from "../src/graph/pane/render.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import { createGraphRunTask } from "../src/graph/task.js";
+import { GraphRunDialog, handleGraphRunDialogKey, initialGraphRunDialogState, layoutGraphRunDialog, resolveGraphRunDialog } from "../src/ui/graph-run-dialog.js";
+import { showGraphRunsMenu } from "../src/ui/graph-run-menu.js";
 import { applyPanelKey, initialPanelState, renderPanelLines } from "../src/ui/observability-panel.js";
-import { handleWorkflowDialogKey, initialWorkflowDialogState, layoutWorkflowDialog, resolveWorkflowDialog, WorkflowDialog } from "../src/ui/workflow-dialog.js";
-import { showWorkflowsMenu } from "../src/ui/workflow-menu.js";
 
 function required<T>(value: T | null | undefined): T {
   assert.ok(value != null);
@@ -21,25 +21,25 @@ function required<T>(value: T | null | undefined): T {
 }
 
 describe("historical graph presentation", () => {
-  const live = createWorkflowTask({ id: "same", script: "" });
+  const live = createGraphRunTask({ id: "same", script: "" });
   Object.assign(live, { status: "failed", endTime: Date.now() });
-  live.workflowProgress = [{ type: "workflow_agent", index: 0, label: "failed-node", state: "error", recordId: "private", error: "private" }];
+  live.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "failed-node", state: "error", recordId: "private", error: "private" }];
   const snapshot = required(snapshotHistory(live));
   snapshot.omittedNodeCount = 3;
 
   it("merges live first by ID without making runtime handles for history", () => {
-    expect(mergeWorkflowRuns([live], [snapshot]).get("same")).toBe(live);
-    const history = required(mergeWorkflowRuns([], [snapshot]).get("same"));
+    expect(mergeGraphRuns([live], [snapshot]).get("same")).toBe(live);
+    const history = required(mergeGraphRuns([], [snapshot]).get("same"));
     expect(history).not.toHaveProperty("abortController");
     expect(history).not.toHaveProperty("control");
   });
 
   it("keeps the centered inspector's metadata-only history disclosure unchanged", () => {
-    const history = required(mergeWorkflowRuns([], [snapshot]).get("same"));
+    const history = required(mergeGraphRuns([], [snapshot]).get("same"));
     const source = toPaneSource(history);
-    const state = initialWorkflowDialogState();
+    const state = initialGraphRunDialogState();
     const input = { ...source, state, width: 140 };
-    const dialog = layoutWorkflowDialog(input).flat().map(segment => segment.text).join("\n");
+    const dialog = layoutGraphRunDialog(input).flat().map(segment => segment.text).join("\n");
     const runs = [{ id: history.id, name: "history", status: history.status, source }];
     const panelState = applyPanelKey(runs, applyPanelKey(runs, initialPanelState(), "j", { width: 140 }).state, "j", { width: 140 }).state;
     const pane = renderPanelLines(runs, panelState, { width: 140 }).flat().map(segment => segment.text).join("\n");
@@ -50,24 +50,24 @@ describe("historical graph presentation", () => {
       expect(rendered).not.toMatch(/c convo|p pause|s skip|r retry|x stop|private|Available once the agent starts/);
     }
     for (const key of ["p", "s", "r", "x", "c"]) {
-      expect(handleWorkflowDialogKey(key, state, resolveWorkflowDialog(input))?.action).toBeUndefined();
+      expect(handleGraphRunDialogKey(key, state, resolveGraphRunDialog(input))?.action).toBeUndefined();
       expect(applyPanelKey(runs, panelState, key, { width: 140 }).action).toBeUndefined();
     }
   });
 });
 
 it("opens history from the menu without wiring any supervision or conversation actions", async () => {
-  const task = createWorkflowTask({ id: "menu", script: "" });
+  const task = createGraphRunTask({ id: "menu", script: "" });
   Object.assign(task, { status: "failed", endTime: Date.now() });
-  task.workflowProgress = [{ type: "workflow_agent", index: 0, label: "node", state: "error", recordId: "private" }];
-  const tasks = mergeWorkflowRuns([], [required(snapshotHistory(task))]);
+  task.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "node", state: "error", recordId: "private" }];
+  const tasks = mergeGraphRuns([], [required(snapshotHistory(task))]);
   const open = vi.fn();
   const notify = vi.fn();
   const custom: ExtensionContext["ui"]["custom"] = (factory) => new Promise((resolve, reject) => {
     const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
     void Promise.resolve(factory({ requestRender() {} } as TUI, theme as Parameters<typeof factory>[1], {} as Parameters<typeof factory>[2], resolve)).then(component => {
-      expect(component).toBeInstanceOf(WorkflowDialog);
-      if (!(component instanceof WorkflowDialog)) throw new Error("Expected workflow dialog");
+      expect(component).toBeInstanceOf(GraphRunDialog);
+      if (!(component instanceof GraphRunDialog)) throw new Error("Expected workflow dialog");
       expect(component.render(140).join("\n")).toContain("History snapshot");
       for (const key of ["p", "s", "r", "x", "c"]) component.handleInput(key);
       component.handleInput("\x1b");
@@ -75,31 +75,31 @@ it("opens history from the menu without wiring any supervision or conversation a
   });
   const ui: Partial<ExtensionContext["ui"]> = { custom, notify };
   const ctx = { ui: ui as ExtensionContext["ui"] };
-  await showWorkflowsMenu(ctx, { tasks, getCtx: () => ctx, getRecord: vi.fn(), viewAgentConversation: open });
+  await showGraphRunsMenu(ctx, { tasks, getCtx: () => ctx, getRecord: vi.fn(), viewAgentConversation: open });
   expect(open).not.toHaveBeenCalled();
   expect(notify).not.toHaveBeenCalled();
 });
 
 it("keeps history metadata-private and ambiguous labels flat rather than reconstructing containment", () => {
-  const task = createWorkflowTask({ id: "legacy", script: "" });
+  const task = createGraphRunTask({ id: "legacy", script: "" });
   Object.assign(task, { status: "completed", endTime: Date.now() });
-  task.workflowProgress = [{ type: "workflow_agent", index: 0, label: "Research · iteration 2 · item 4", state: "done", presentation: { kind: "agent", name: "private name", parentInstanceId: "private parent", iteration: 2, itemIndex: 3 } }];
+  task.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "Research · iteration 2 · item 4", state: "done", presentation: { kind: "agent", name: "private name", parentInstanceId: "private parent", iteration: 2, itemIndex: 3 } }];
   const saved = required(decodeHistory(JSON.stringify({ version: 1, runs: [snapshotHistory(task)] })).runs[0]);
   expect(JSON.stringify(saved)).not.toMatch(/private name|private parent|presentation|topology/);
-  const history = required(mergeWorkflowRuns([], [saved]).get("legacy"));
+  const history = required(mergeGraphRuns([], [saved]).get("legacy"));
   const runs = [{ id: "legacy", name: "legacy", status: history.status, source: toPaneSource(history) }];
   const lines = renderPanelLines(runs, initialPanelState(), { width: 120 }).map(line => line.map(segment => segment.text).join(""));
   expect(lines.join("\n")).toContain("1 unclassified node");
   expect(lines.join("\n")).toContain("Flat fallback");
   expect(lines.join("\n")).not.toContain("↻ Iteration");
-  expect(lines.find(line => line.includes("Research · iteration"))).toMatch(/^     └─ ✓ done/);
+  expect(lines.find(line => line.includes("Research · iteration"))).toMatch(/^ {5}└─ ✓ done/);
 });
 
 it("round-trips v2 hierarchy, decisions and selected flow without retaining private runtime data", async () => {
-  const task = createWorkflowTask({ id: "roundtrip", script: "PRIVATE_SCRIPT", meta: { name: "context-gather", description: "Configured\nworkflow description" } });
+  const task = createGraphRunTask({ id: "roundtrip", script: "PRIVATE_SCRIPT", meta: { name: "context-gather", description: "Configured\nworkflow description" } });
   Object.assign(task, { status: "completed", startTime: 0, endTime: 160000, args: "PRIVATE_INPUT", value: "PRIVATE_OUTPUT" });
-  const add = (binding: string, data: Partial<import("../src/graph/progress.js").WorkflowAgentEntry>) => {
-    task.workflowProgress.push({ type: "workflow_agent", index: task.workflowProgress.length, label: "display", state: "done", nodeBinding: binding, instanceId: `${binding}-UUID`, recordId: "PRIVATE_RECORD", promptPreview: "PRIVATE_PROMPT", resultPreview: "PRIVATE_RESULT", ...data });
+  const add = (binding: string, data: Partial<import("../src/graph/progress.js").GraphRunAgentEntry>) => {
+    task.graphRunProgress.push({ type: "workflow_agent", index: task.graphRunProgress.length, label: "display", state: "done", nodeBinding: binding, instanceId: `${binding}-UUID`, recordId: "PRIVATE_RECORD", promptPreview: "PRIVATE_PROMPT", resultPreview: "PRIVATE_RESULT", ...data });
   };
   add("PRIVATE_OWNER", { label: "Research", presentation: { kind: "bounded_feedback", name: "Research", iterations: [{ iteration: 1, decision: "continue" }, { iteration: 2, decision: "sufficient" }] } });
   for (const iteration of [1, 2]) {
@@ -131,7 +131,7 @@ it("round-trips v2 hierarchy, decisions and selected flow without retaining priv
     vi.unstubAllEnvs();
     await rm(directory, { recursive: true, force: true });
   }
-  const history = required(mergeWorkflowRuns([], loaded.runs).get(task.id));
+  const history = required(mergeGraphRuns([], loaded.runs).get(task.id));
   expect(history.meta?.description).toBe("Configured workflow description");
   const runs = [{ id: task.id, name: "context-gather", status: history.status, source: toPaneSource(history) }];
   const render = (state = initialPanelState()) => renderPanelLines(runs, state, { width: 140 }).map(line => line.map(segment => segment.text).join(""));

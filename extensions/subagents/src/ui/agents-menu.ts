@@ -7,11 +7,11 @@ import { type AgentToolHost, THINKING_LEVELS } from "../agent-tool.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes } from "../agent-types.js";
 import type { AgentConfig, AgentRecord } from "../types.js";
 import { type AgentActivity, formatDuration, getDisplayName } from "./agent-widget.js";
-import { showWorkflowsMenu, type WorkflowMenuDeps, type WorkflowUIContext } from "./workflow-menu.js";
+import { type GraphRunMenuDeps, type GraphRunUIContext, showGraphRunsMenu } from "./graph-run-menu.js";
 
 interface AgentMenuNavigation {
   readonly workflowsEnabled: boolean;
-  readonly workflows: WorkflowMenuDeps;
+  readonly graphRuns: GraphRunMenuDeps;
   readonly showSettings: (ctx: ExtensionCommandContext) => Promise<void>;
 }
 
@@ -60,7 +60,7 @@ export function createAgentsMenu(
     reloadCustomAgents();
     const allNames = getAllTypes();
     const options: string[] = [];
-    const agents = manager.listAgents().filter(agent => agent.workflowId === undefined);
+    const agents = manager.listAgents().filter(agent => agent.graphRunId === undefined);
     if (agents.length > 0) {
       const running = agents.filter(a => a.status === "running" || a.status === "queued").length;
       const done = agents.filter(a => a.status === "completed" || a.status === "steered").length;
@@ -69,7 +69,7 @@ export function createAgentsMenu(
     if (allNames.length > 0) options.push(`Agent types (${allNames.length})`);
     options.push("Create new agent");
     options.push("Settings");
-    if (navigation.workflowsEnabled) options.push(`Graph runs (${navigation.workflows.tasks.size})`);
+    if (navigation.workflowsEnabled) options.push(`Graph runs (${navigation.graphRuns.tasks.size})`);
     const noAgentsMsg = allNames.length === 0 && agents.length === 0
       ? "No agents found. Create specialized subagents that can be delegated to.\n\n" +
         "Each subagent has its own context window, custom system prompt, and specific tools.\n\n" +
@@ -87,7 +87,7 @@ export function createAgentsMenu(
     } else if (choice === "Create new agent") {
       await showCreateWizard(ctx);
     } else if (choice.startsWith("Graph runs (")) {
-      await showWorkflowsMenu(ctx, navigation.workflows);
+      await showGraphRunsMenu(ctx, navigation.graphRuns);
       await showAgentsMenu(ctx);
     } else if (choice === "Settings") {
       await navigation.showSettings(ctx);
@@ -152,7 +152,7 @@ export function createAgentsMenu(
   }
 
   async function showRunningAgents(ctx: ExtensionCommandContext) {
-    const agents = manager.listAgents().filter(agent => agent.workflowId === undefined);
+    const agents = manager.listAgents().filter(agent => agent.graphRunId === undefined);
     if (agents.length === 0) {
       ctx.ui.notify("No agents.", "info");
       return;
@@ -171,7 +171,7 @@ export function createAgentsMenu(
     await showRunningAgents(ctx);
   }
 
-  async function viewAgentConversation(ctx: WorkflowUIContext, record: AgentRecord) {
+  async function viewAgentConversation(ctx: GraphRunUIContext, record: AgentRecord) {
     if (!record.session) {
       ctx.ui.notify(`Agent is ${record.status === "queued" ? "queued" : "expired"} — no session available.`, "info");
       return;

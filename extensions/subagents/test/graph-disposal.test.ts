@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import * as persistence from "../src/graph/graph-persist.js";
 import * as hostModule from "../src/graph/node-host-adapter.js";
 import * as tasks from "../src/graph/task.js";
-import { boot, required } from "./workflow-registration.fixture.js";
+import { boot, required } from "./graph-run-registration.fixture.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -23,7 +23,7 @@ it.each([
   const original = hostModule.createNodeHost;
   vi.spyOn(hostModule, "createNodeHost").mockImplementation(options => ({ ...original(options), dispose }));
   if (scenario.executionFails) vi.spyOn(persistence, "writeGraphSnapshot").mockImplementation(() => { throw new Error("checkpoint failure"); });
-  const create = vi.spyOn(tasks, "createWorkflowTask");
+  const create = vi.spyOn(tasks, "createGraphRunTask");
   const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
   const graph = { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
   const result = await required(session.tools.get("agent_graph")).execute("call", { graph }, undefined, undefined, session.ctx);

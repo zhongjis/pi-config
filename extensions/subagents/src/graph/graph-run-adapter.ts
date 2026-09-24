@@ -2,7 +2,7 @@
  * graph-run-adapter.ts — bridge a graph run into the workflow monitor.
  *
  * The `/agents → Graph runs` dialog, the fleet widget, the inline card and the
- * Herdr pane all render a {@link WorkflowTask}'s append-only progress log. A
+ * Herdr pane all render a {@link GraphRunTask}'s append-only progress log. A
  * graph run is node-shaped rather than script-shaped, so this maps each node's
  * {@link NodeRun} state onto a `workflow_agent` progress entry (keyed by a stable
  * per-node index, last-write-wins) — which is exactly what those surfaces already
@@ -18,10 +18,10 @@ import type { NodeInstance } from "./graph-instance-id.js";
 import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
 import { isWorkflowOutcome, WORKFLOW_OUTCOME_KEY } from "./outcome.js";
-import type { GraphNodePresentation, WorkflowAgentEntry } from "./progress.js";
+import type { GraphNodePresentation, GraphRunAgentEntry } from "./progress.js";
 import type { RunGraphResult } from "./run-graph.js";
 import type { NodeRun } from "./scheduler.js";
-import { updateWorkflowProgressBatch, type WorkflowTask } from "./task.js";
+import { type GraphRunTask, updateGraphRunProgressBatch } from "./task.js";
 
 const PROMPT_PREVIEW = 200;
 function promptPreview(value: unknown): string {
@@ -72,7 +72,7 @@ export class GraphRunReporter {
   private nextIndex = 0;
 
   constructor(
-    private readonly task: WorkflowTask,
+    private readonly task: GraphRunTask,
     graph: AgentGraph,
     now: number = Date.now(),
     private readonly getActivity?: (recordId: string) => { toolCalls?: number; tokens?: number } | undefined,
@@ -178,7 +178,7 @@ export class GraphRunReporter {
       const run = this.lastRun.get(id);
       return run === undefined ? [] : [this.entry(id, run, this.lastUpdateAt.get(id) ?? this.queuedAt)];
     });
-    if (changed.length > 0) updateWorkflowProgressBatch(this.task, changed);
+    if (changed.length > 0) updateGraphRunProgressBatch(this.task, changed);
     this.task.agentCount = Math.max(this.task.agentCount, this.index.size);
   }
 
@@ -197,7 +197,7 @@ export class GraphRunReporter {
     if (presentation) this.presentation.set(nodeId, presentation);
     this.lastRun.set(nodeId, run);
     this.lastUpdateAt.set(nodeId, updatedAt);
-    updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, updatedAt)]);
+    updateGraphRunProgressBatch(this.task, [this.entry(nodeId, run, updatedAt)]);
   }
 
   /**
@@ -209,7 +209,7 @@ export class GraphRunReporter {
   // ponytail: re-emit appends to the progress log per activity change; fine for normal runs, upgrade = in-place last-write.
   refresh(now: number = Date.now()): void {
     if (this.getActivity === undefined) return;
-    const changed: WorkflowAgentEntry[] = [];
+    const changed: GraphRunAgentEntry[] = [];
     for (const [nodeId, run] of this.lastRun) {
       if (run.status !== "running") continue;
       const recordId = this.resolved.get(nodeId)?.recordId;
@@ -220,7 +220,7 @@ export class GraphRunReporter {
       changed.push(this.entry(nodeId, run, now));
       this.lastUpdateAt.set(nodeId, now);
     }
-    if (changed.length > 0) updateWorkflowProgressBatch(this.task, changed);
+    if (changed.length > 0) updateGraphRunProgressBatch(this.task, changed);
   }
 
   setResolved(nodeId: string, info: NodeResolvedInfo, correlation: ExecutionCorrelation, now: number = Date.now()): void {
@@ -237,7 +237,7 @@ export class GraphRunReporter {
     const run = this.lastRun.get(nodeId);
     if (run !== undefined) {
       this.lastUpdateAt.set(nodeId, now);
-      updateWorkflowProgressBatch(this.task, [this.entry(nodeId, run, now)]);
+      updateGraphRunProgressBatch(this.task, [this.entry(nodeId, run, now)]);
     }
   }
 
@@ -276,7 +276,7 @@ export class GraphRunReporter {
     });
   }
 
-  private entry(nodeId: string, run: Readonly<NodeRun>, now: number): WorkflowAgentEntry {
+  private entry(nodeId: string, run: Readonly<NodeRun>, now: number): GraphRunAgentEntry {
     const deps = this.deps.get(nodeId) ?? [];
     const stage = this.stage.get(nodeId) ?? 0;
     const res = this.resolved.get(nodeId);
@@ -284,7 +284,7 @@ export class GraphRunReporter {
     // recordId) add nothing; `toolCalls` keeps a real 0, `tokens` only shows once it is non-zero.
     const act = res?.recordId !== undefined && this.getActivity !== undefined ? this.getActivity(res.recordId) : undefined;
     const prompt = this.prompt.get(nodeId);
-    const base: WorkflowAgentEntry = {
+    const base: GraphRunAgentEntry = {
       type: "workflow_agent",
       index: this.index.get(nodeId) ?? 0,
       label: this.labels.get(nodeId) ?? nodeId,
@@ -336,7 +336,7 @@ export class GraphRunReporter {
 }
 
 /** Settle a workflow task from a graph run's result. */
-export function completeGraphTask(task: WorkflowTask, result: RunGraphResult, now: number = Date.now()): void {
+export function completeGraphTask(task: GraphRunTask, result: RunGraphResult, now: number = Date.now()): void {
   task.control = undefined;
   task.status = result.status === "aborted" ? "killed" : result.status;
   // A typed graph declares its objective outcome by emitting a reserved graph output.

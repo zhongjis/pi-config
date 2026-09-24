@@ -1,7 +1,7 @@
 /**
  * manager.ts — the thin coordinator the extension wires into its lifecycle.
  *
- * It owns a {@link WorkflowPaneController}, a debounced writer, and a 1s liveness
+ * It owns a {@link GraphRunPaneController}, a debounced writer, and a 1s liveness
  * tick that refreshes elapsed time while a run is live. When there is no
  * Herdr-managed pane to split off it is a strict no-op: it holds no controller,
  * touches no filesystem, and never calls `pi.exec`, so the existing in-Pi overlay
@@ -15,18 +15,18 @@
 
 import { type FSWatcher, mkdirSync, watch } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { type GraphRunDialogSource, type GraphRunDialogState, initialGraphRunDialogState } from "../../ui/graph-run-dialog.js";
 import { initialPanelState, type PanelRun, type PanelState } from "../../ui/observability-panel.js";
-import { initialWorkflowDialogState, type WorkflowDialogSource, type WorkflowDialogState } from "../../ui/workflow-dialog.js";
-import type { WorkflowRun } from "../history-view.js";
+import type { GraphRun } from "../history-view.js";
 import {
+  GraphRunPaneController,
   type PaneExec,
-  WorkflowPaneController,
 } from "./controller.js";
 import {
   applyObservabilityPaneKey,
   applyPaneKey,
+  renderGraphRunPaneLines,
   renderObservabilityPaneLines,
-  renderWorkflowPaneLines,
   toPaneSource,
 } from "./render.js";
 import { paneDirFor, readInput, readRecord, readViewport, writeSnapshotAtomic } from "./store.js";
@@ -38,7 +38,7 @@ const SYNC_DEBOUNCE_MS = 120;
 /** Refresh cadence while a run is live, so elapsed time and status keep moving. */
 const LIVENESS_TICK_MS = 1_000;
 
-export interface WorkflowPaneManagerOptions {
+export interface GraphRunPaneManagerOptions {
   enabled: boolean;
   exec: PaneExec;
   parentPaneId: string;
@@ -47,7 +47,7 @@ export interface WorkflowPaneManagerOptions {
   sessionId: string;
   ppid: number;
   /** Live runs, read on every sync rather than snapshotted. */
-  getTasks: () => Iterable<WorkflowRun>;
+  getTasks: () => Iterable<GraphRun>;
   onError?: (err: unknown, label: string) => void;
   /** Overridable for tests; defaults to the sibling `viewer.mjs`. */
   viewerPath?: string;
@@ -57,13 +57,13 @@ export interface WorkflowPaneManagerOptions {
   viewAgentConversation?: (recordId: string) => void | Promise<void>;
 }
 
-export class WorkflowPaneManager {
+export class GraphRunPaneManager {
   private readonly enabled: boolean;
-  private readonly getTasks: () => Iterable<WorkflowRun>;
+  private readonly getTasks: () => Iterable<GraphRun>;
   private readonly onError: (err: unknown, label: string) => void;
   private readonly dir: string;
   private readonly sessionId: string;
-  private readonly controller: WorkflowPaneController | undefined;
+  private readonly controller: GraphRunPaneController | undefined;
 
   private syncTimer: ReturnType<typeof setTimeout> | undefined;
   private tick: ReturnType<typeof setInterval> | undefined;
@@ -78,7 +78,7 @@ export class WorkflowPaneManager {
   /** The run the panel last rendered, so a switch resets node selection and scroll. */
   private lastPanelRunId: string | undefined;
   /** The roster view state, kept for the on-throw fallback render. See `applyPaneKey`. */
-  private paneState: WorkflowDialogState = initialWorkflowDialogState();
+  private paneState: GraphRunDialogState = initialGraphRunDialogState();
   /** Highest input sequence already applied, so each keystroke lands once. */
   private lastInputSeq = 0;
   /** The run currently shown, so switching runs resets the view to the overview. */
@@ -87,7 +87,7 @@ export class WorkflowPaneManager {
   /** Opens the selected node's conversation overlay; called on the `c` key. */
   private readonly viewAgentConversation: ((recordId: string) => void | Promise<void>) | undefined;
 
-  constructor(options: WorkflowPaneManagerOptions) {
+  constructor(options: GraphRunPaneManagerOptions) {
     this.enabled = options.enabled;
     this.getTasks = options.getTasks;
     this.onError = options.onError ?? (() => {});
@@ -103,7 +103,7 @@ export class WorkflowPaneManager {
 
     this.dir = options.dir ?? paneDirFor(options.sessionId, options.parentPaneId, options.socket);
     const viewerPath = options.viewerPath ?? fileURLToPath(new URL("./viewer.mjs", import.meta.url));
-    this.controller = new WorkflowPaneController({
+    this.controller = new GraphRunPaneController({
       exec: options.exec,
       dir: this.dir,
       parentPaneId: options.parentPaneId,
@@ -128,7 +128,7 @@ export class WorkflowPaneManager {
       this.lastInputSeq = readInput(this.dir)?.seq ?? 0;
       this.inputWatcher = watch(this.dir, () => void this.processInputFile());
     } catch (err) {
-      this.onError(err, "workflow pane input watch");
+      this.onError(err, "graph run pane input watch");
     }
   }
 
@@ -142,7 +142,7 @@ export class WorkflowPaneManager {
     try {
       await this.controller.reconcile();
     } catch (err) {
-      this.onError(err, "workflow pane reconcile");
+      this.onError(err, "graph run pane reconcile");
     }
   }
 
@@ -194,11 +194,11 @@ export class WorkflowPaneManager {
     try {
       await this.controller.closeOwned();
     } catch (err) {
-      this.onError(err, "workflow pane close");
+      this.onError(err, "graph run pane close");
     }
   }
 
-  private pickTask(): WorkflowRun | undefined {
+  private pickTask(): GraphRun | undefined {
     const tasks = [...this.getTasks()];
     if (tasks.length === 0) return undefined;
     const live = tasks.filter(task => task.status === "running" || task.status === "paused");
@@ -210,24 +210,24 @@ export class WorkflowPaneManager {
    * Pick the run to show and reset the view when it changes. A stale phase/agent
    * index from a previous run must not carry over into a new one.
    */
-  private pickAndTrack(): WorkflowRun | undefined {
+  private pickAndTrack(): GraphRun | undefined {
     const task = this.pickTask();
     if (task?.id !== this.lastShownTaskId) {
-      this.paneState = initialWorkflowDialogState();
+      this.paneState = initialGraphRunDialogState();
       this.lastShownTaskId = task?.id;
     }
     return task;
   }
 
   /** All runs this session has seen, newest first — the switcher's run list order. */
-  private sortedTasks(): WorkflowRun[] {
+  private sortedTasks(): GraphRun[] {
     return [...this.getTasks()].sort((a, b) => b.startTime - a.startTime);
   }
 
-  private toRuns(tasks: readonly WorkflowRun[]): PanelRun[] {
+  private toRuns(tasks: readonly GraphRun[]): PanelRun[] {
     return tasks.map(task => ({
       id: task.id,
-      name: task.workflowName ?? task.meta?.name ?? task.id,
+      name: task.graphRunName ?? task.meta?.name ?? task.id,
       status: task.status,
       source: toPaneSource(task),
       ...(task.type === "history" ? { readHistoricalDetail: task.readNodeDetail } : {}),
@@ -240,7 +240,7 @@ export class WorkflowPaneManager {
    * Resets the panel's node selection, scroll, and stage collapse when the shown run
    * changes, but keeps the filter (a persistent user intent, not per-graph).
    */
-  private resolveRunIndex(tasks: readonly WorkflowRun[]): number {
+  private resolveRunIndex(tasks: readonly GraphRun[]): number {
     if (tasks.length === 0) return 0;
     let index = -1;
     if (this.pinnedRunId !== undefined) {
@@ -265,7 +265,7 @@ export class WorkflowPaneManager {
   }
 
   /** Render the panel, falling back to the roster render if the panel ever throws. */
-  private renderPanelOrRoster(tasks: readonly WorkflowRun[], width: number, rows: number | undefined): string[] {
+  private renderPanelOrRoster(tasks: readonly GraphRun[], width: number, rows: number | undefined): string[] {
     const runs = this.toRuns(tasks);
     const index = this.resolveRunIndex(tasks);
     this.panelState.runIndex = index;
@@ -273,13 +273,13 @@ export class WorkflowPaneManager {
       return renderObservabilityPaneLines(runs, this.panelState, { width, rows });
     } catch {
       const task = tasks[index] ?? tasks[0];
-      return renderWorkflowPaneLines(toPaneSource(task), { width, state: this.paneState, rows });
+      return renderGraphRunPaneLines(toPaneSource(task), { width, state: this.paneState, rows });
     }
   }
 
   /** Apply a key through the panel, falling back to the roster handler if it throws. */
   private applyPanelOrRosterKey(
-    tasks: readonly WorkflowRun[], data: string, width: number, rows: number | undefined,
+    tasks: readonly GraphRun[], data: string, width: number, rows: number | undefined,
   ): { lines: string[]; close: boolean } {
     const runs = this.toRuns(tasks);
     const index = this.resolveRunIndex(tasks);
@@ -296,7 +296,7 @@ export class WorkflowPaneManager {
       return { lines: result.lines, close: result.close };
     } catch {
       const task = tasks[index];
-      const source: WorkflowDialogSource = task
+      const source: GraphRunDialogSource = task
         ? toPaneSource(task)
         : { progress: [], task: { status: "completed", startTime: 0 }, agentCount: 0 };
       const result = applyPaneKey(source, this.paneState, data, { width, rows });
@@ -341,7 +341,7 @@ export class WorkflowPaneManager {
         lines,
       });
     } catch (err) {
-      this.onError(err, "workflow pane input");
+      this.onError(err, "graph run pane input");
     }
   }
 
@@ -399,7 +399,7 @@ export class WorkflowPaneManager {
         await this.controller.ensurePane(false);
       }
     } catch (err) {
-      this.onError(err, "workflow pane");
+      this.onError(err, "graph run pane");
     }
 
     try {
@@ -418,11 +418,11 @@ export class WorkflowPaneManager {
         lines,
       });
     } catch (err) {
-      this.onError(err, "workflow pane snapshot");
+      this.onError(err, "graph run pane snapshot");
     }
   }
 }
 
-export function createWorkflowPaneManager(options: WorkflowPaneManagerOptions): WorkflowPaneManager {
-  return new WorkflowPaneManager(options);
+export function createGraphRunPaneManager(options: GraphRunPaneManagerOptions): GraphRunPaneManager {
+  return new GraphRunPaneManager(options);
 }

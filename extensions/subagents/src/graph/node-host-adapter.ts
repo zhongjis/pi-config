@@ -18,7 +18,7 @@ import { prepareAgentInvocation } from "../invocation-config.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry, writeResultEntry } from "../output-file.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal } from "../usage.js";
-import { workflowNodeArtifactId } from "./history-artifact.js";
+import { graphRunNodeArtifactId } from "./history-artifact.js";
 import type { NodeHost, NodeSpawnRequest, NodeSpawnResult } from "./node-host.js";
 
 export const DEFAULT_GATE_TIMEOUT_MS = 10 * 60_000;
@@ -27,7 +27,7 @@ export interface NodeHostOptions {
   pi: ExtensionAPI;
   ctx: ExtensionContext;
   manager: AgentManager;
-  workflowId: string;
+  graphRunId: string;
   /** Run-wide abort, combined with each node actor's own signal. */
   signal?: AbortSignal;
   gateTimeoutMs?: number;
@@ -92,7 +92,7 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
         }
         let spawned: AgentRecord | undefined;
         const index = deps.nodeIndex?.(request.nodeId);
-        const artifactId = index === undefined ? undefined : workflowNodeArtifactId(deps.workflowId, index);
+        const artifactId = index === undefined ? undefined : graphRunNodeArtifactId(deps.graphRunId, index);
         let childSession: AgentSession | undefined;
         const streamTranscript = () => {
           if (childSession && spawned?.outputFile && artifactId && !spawned.outputCleanup) {
@@ -106,7 +106,7 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
           request.prompt,
           {
             description: request.nodeId,
-            workflowId: deps.workflowId,
+            graphRunId: deps.graphRunId,
             selectedModel,
             model: selectedModel.model,
             thinkingLevel: invocation.thinking,

@@ -1,5 +1,5 @@
 /**
- * workflow-json-schema.test.ts — the validator behind `agent({ schema })`.
+ * graph-run-json-schema.test.ts — the validator behind `agent({ schema })`.
  *
  * Pure, no stubs: this is the one place that decides whether a script-supplied
  * JSON Schema is usable and whether a child's payload matches it. The most

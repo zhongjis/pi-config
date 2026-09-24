@@ -1,16 +1,16 @@
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
 import { describe, expect, it, vi } from "vitest";
-import type { WorkflowAgentEntry } from "../src/graph/progress.js";
+import type { GraphRunAgentEntry } from "../src/graph/progress.js";
 import { initialPanelState, type PanelRun, renderPanelLines } from "../src/ui/observability-panel.js";
 
-function agent(over: Partial<WorkflowAgentEntry> & Pick<WorkflowAgentEntry, "index" | "label">): WorkflowAgentEntry {
+function agent(over: Partial<GraphRunAgentEntry> & Pick<GraphRunAgentEntry, "index" | "label">): GraphRunAgentEntry {
   return { type: "workflow_agent", state: "done", ...over };
 }
 
 function fixture(): PanelRun {
-  const progress: WorkflowAgentEntry[] = [];
-  const add = (id: string, data: Partial<WorkflowAgentEntry>) => progress.push(agent({
+  const progress: GraphRunAgentEntry[] = [];
+  const add = (id: string, data: Partial<GraphRunAgentEntry>) => progress.push(agent({
     index: progress.length,
     label: id,
     nodeBinding: id,

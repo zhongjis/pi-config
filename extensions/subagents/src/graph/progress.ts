@@ -20,14 +20,14 @@
  * unit-testable without a terminal.
  */
 
+import type { GraphRunMeta, GraphRunPhaseMeta } from "./graph-run-types.js";
 import type { GraphNode } from "./ir.js";
-import type { WorkflowMeta, WorkflowPhaseMeta } from "./workflow-types.js";
 
 /** Raw entry lifecycle, as written by the runtime. */
-export type WorkflowEntryState = "start" | "progress" | "done" | "error";
+export type GraphRunEntryState = "start" | "progress" | "done" | "error";
 
 /** Derived per-agent state, as rendered. */
-export type WorkflowDisplayState =
+export type GraphRunDisplayState =
   | "queued"
   | "running"
   | "done"
@@ -39,13 +39,13 @@ export type WorkflowDisplayState =
 /** Why an agent is on a later attempt, shown next to its row. */
 export type AttemptReason = "throttled" | "user-retry" | "stalled" | "loop" | "restore";
 
-export interface WorkflowPhaseEntry {
+export interface GraphRunPhaseEntry {
   type: "workflow_phase";
   index: number;
   title: string;
 }
 
-export interface WorkflowLogEntry {
+export interface GraphRunLogEntry {
   type: "workflow_log";
   message: string;
 }
@@ -65,7 +65,7 @@ export interface GraphNodePresentation {
   iterations?: readonly { iteration: number; decision?: "continue" | "sufficient" }[];
 }
 
-export interface WorkflowAgentEntry {
+export interface GraphRunAgentEntry {
   type: "workflow_agent";
   /** Stable identity. Re-emitting this index replaces the previous entry. */
   index: number;
@@ -86,7 +86,7 @@ export interface WorkflowAgentEntry {
    */
   phaseIndex?: number;
   phaseTitle?: string;
-  state: WorkflowEntryState;
+  state: GraphRunEntryState;
   agentId?: string;
   /**
    * The manager's `AgentRecord` id, once the child has one.
@@ -144,13 +144,13 @@ export interface WorkflowAgentEntry {
   dependents?: string[];
 }
 
-export type WorkflowEntry = WorkflowPhaseEntry | WorkflowLogEntry | WorkflowAgentEntry;
+export type GraphRunEntry = GraphRunPhaseEntry | GraphRunLogEntry | GraphRunAgentEntry;
 
 /** Overall run status, mirroring the task record. */
-export type WorkflowRunStatus = "running" | "completed" | "failed" | "killed" | "paused";
+export type GraphRunStatus = "running" | "completed" | "failed" | "killed" | "paused";
 
 export interface CollapsedProgress {
-  agents: WorkflowAgentEntry[];
+  agents: GraphRunAgentEntry[];
   logs: string[];
   phaseTitles: Map<number, string>;
 }
@@ -158,14 +158,14 @@ export interface CollapsedProgress {
 export interface PhaseGroup {
   title: string;
   status: "not-started" | "running" | "done" | "failed";
-  agents: WorkflowAgentEntry[];
+  agents: GraphRunAgentEntry[];
   doneCount: number;
   totalCount: number;
   tokens: number;
   durationMs: number;
 }
 
-export interface WorkflowStats {
+export interface GraphRunStats {
   done: number;
   failedCount: number;
   running: boolean;
@@ -180,8 +180,8 @@ export interface WorkflowStats {
  * Agent entries collapse by index (last write wins); logs accumulate in order;
  * phase titles are a lookup for grouping.
  */
-export function collapse(progress: readonly WorkflowEntry[]): CollapsedProgress {
-  const agents = new Map<number, WorkflowAgentEntry>();
+export function collapse(progress: readonly GraphRunEntry[]): CollapsedProgress {
+  const agents = new Map<number, GraphRunAgentEntry>();
   const logs: string[] = [];
   const phaseTitles = new Map<number, string>();
 
@@ -208,35 +208,35 @@ export function collapse(progress: readonly WorkflowEntry[]): CollapsedProgress 
 /**
  * Derive what to render for one agent.
  *
- * `workflowActive` is false once the run has stopped: anything still mid-flight
+ * `graphRunActive` is false once the run has stopped: anything still mid-flight
  * at that point was cut off rather than finished, hence "interrupted".
  */
-export function displayState(entry: WorkflowAgentEntry, workflowActive: boolean): WorkflowDisplayState {
+export function displayState(entry: GraphRunAgentEntry, graphRunActive: boolean): GraphRunDisplayState {
   if (entry.state === "done") return "done";
   if (entry.state === "error") {
     if (entry.skipped) return "skipped";
     if (entry.blocked) return "blocked";
     return "failed";
   }
-  if (!workflowActive) return "interrupted";
+  if (!graphRunActive) return "interrupted";
   // Queued means accepted but never given a slot. An entry with no queuedAt at
   // all predates the semaphore and is treated as running.
   return entry.queuedAt != null && entry.startedAt == null ? "queued" : "running";
 }
 
 /** True while an entry is still expected to change. */
-export function isLive(entry: WorkflowAgentEntry): boolean {
+export function isLive(entry: GraphRunAgentEntry): boolean {
   return entry.state === "start" || entry.state === "progress";
 }
 
 /** Bucket agents by phase. Returns null when no agent declared a phase. */
 function groupByPhase(
-  agents: readonly WorkflowAgentEntry[],
+  agents: readonly GraphRunAgentEntry[],
   phaseTitles: Map<number, string>,
-): { phaseIndex: number; title: string; agents: WorkflowAgentEntry[] }[] | null {
+): { phaseIndex: number; title: string; agents: GraphRunAgentEntry[] }[] | null {
   if (!agents.some(a => a.phaseIndex != null)) return null;
 
-  const byPhase = new Map<number, { phaseIndex: number; title: string; agents: WorkflowAgentEntry[] }>();
+  const byPhase = new Map<number, { phaseIndex: number; title: string; agents: GraphRunAgentEntry[] }>();
   for (const agent of agents) {
     const phaseIndex = agent.phaseIndex ?? 0;
     let group = byPhase.get(phaseIndex);
@@ -250,7 +250,7 @@ function groupByPhase(
 }
 
 /** Roll a phase's agents up into the counts and totals its header shows. */
-function summarize(group: { title: string; agents: WorkflowAgentEntry[] }): PhaseGroup {
+function summarize(group: { title: string; agents: GraphRunAgentEntry[] }): PhaseGroup {
   let done = 0;
   let failed = 0;
   let tokens = 0;
@@ -300,10 +300,10 @@ const normalizeTitle = (title: string) => title.toLowerCase().trim();
  * appended after — that is how an undeclared `phase()` "gets its own group".
  */
 function mergePhases(
-  declared: readonly WorkflowPhaseMeta[] | undefined,
-  observed: { phaseIndex: number; title: string; agents: WorkflowAgentEntry[] }[],
+  declared: readonly GraphRunPhaseMeta[] | undefined,
+  observed: { phaseIndex: number; title: string; agents: GraphRunAgentEntry[] }[],
 ): PhaseGroup[] {
-  const consumed = new Set<{ phaseIndex: number; title: string; agents: WorkflowAgentEntry[] }>();
+  const consumed = new Set<{ phaseIndex: number; title: string; agents: GraphRunAgentEntry[] }>();
   const merged: PhaseGroup[] = [];
 
   for (const phase of declared ?? []) {
@@ -335,8 +335,8 @@ function mergePhases(
  * group titled "Agents" so the tree still has one level of structure.
  */
 export function buildPhaseGroups(
-  progress: readonly WorkflowEntry[],
-  declared?: readonly WorkflowPhaseMeta[],
+  progress: readonly GraphRunEntry[],
+  declared?: readonly GraphRunPhaseMeta[],
 ): PhaseGroup[] {
   const { agents, phaseTitles } = collapse(progress);
   const observed = groupByPhase(agents, phaseTitles) ?? [];
@@ -360,7 +360,7 @@ export function buildPhaseGroups(
  * number that has emitted an entry — a fan-out reports its size before its
  * agents start, so the total does not visibly climb as they trickle in.
  */
-export function stats(progress: readonly WorkflowEntry[], agentCount = 0): WorkflowStats {
+export function stats(progress: readonly GraphRunEntry[], agentCount = 0): GraphRunStats {
   let seen = 0;
   let done = 0;
   let failed = 0;
@@ -417,7 +417,7 @@ export function formatDuration(ms: number): string {
   return `${minutes}m${seconds.toString().padStart(2, "0")}s`;
 }
 
-export interface WorkflowHeader {
+export interface GraphRunHeader {
   name: string;
   subtext: string;
   stats: string;
@@ -429,8 +429,8 @@ export interface WorkflowHeader {
  */
 export function header(
   task: {
-    status: WorkflowRunStatus;
-    workflowName?: string;
+    status: GraphRunStatus;
+    graphRunName?: string;
     summary?: string;
     description?: string;
     startTime: number;
@@ -438,11 +438,11 @@ export function header(
     totalPausedMs?: number;
     pausedAt?: number;
   },
-  meta: WorkflowMeta | undefined,
+  meta: GraphRunMeta | undefined,
   groups: readonly PhaseGroup[],
   agentCount: number,
   now: number,
-): WorkflowHeader {
+): GraphRunHeader {
   const suffix =
     task.status === "completed" ? " · done"
     : task.status === "killed" ? " · stopped"
@@ -459,7 +459,7 @@ export function header(
   totalAgents = Math.max(agentCount, totalAgents, doneAgents);
 
   return {
-    name: task.workflowName ?? meta?.name ?? task.summary ?? task.description ?? "graph run",
+    name: task.graphRunName ?? meta?.name ?? task.summary ?? task.description ?? "graph run",
     subtext: meta?.description ?? task.description ?? task.summary ?? "",
     stats: `${doneAgents}/${totalAgents} ${plural(totalAgents, "agent")} · ${formatDuration(elapsedMs(task, now))}${suffix}`,
   };

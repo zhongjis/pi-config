@@ -70,7 +70,7 @@ interface SpawnArgs {
 
 export interface SpawnOptions {
   /** Internal ownership: the workflow runtime owns its independent concurrency pool. */
-  workflowId?: string;
+  graphRunId?: string;
   structuredOutput?: CompiledSchema;
   description: string;
   model?: Model<any>;
@@ -224,7 +224,7 @@ export class AgentManager {
     const abortController = new AbortController();
     const record: AgentRecord = {
       id,
-      workflowId: options.workflowId,
+      graphRunId: options.graphRunId,
       cwd: options.cwd ?? ctx.cwd,
       type,
       description: options.description,
@@ -246,7 +246,7 @@ export class AgentManager {
     record.promise = new Promise<string>(resolve => {
       this.runs.set(id, {
         resolve, detach: () => {}, active: false,
-        pool: options.workflowId !== undefined ? undefined : options.isBackground ? "background" : foreground ? "foreground" : undefined,
+        pool: options.graphRunId !== undefined ? undefined : options.isBackground ? "background" : foreground ? "foreground" : undefined,
       });
     });
     this.agents.set(id, record);
@@ -263,7 +263,7 @@ export class AgentManager {
         if (signal.aborted) this.abort(id);
       }
       if (record.status === "stopped") return id;
-      if (options.workflowId === undefined && !options.bypassQueue && !this.poolHasRoom(foreground, options.isBackground)) {
+      if (options.graphRunId === undefined && !options.bypassQueue && !this.poolHasRoom(foreground, options.isBackground)) {
         this.queue.push({ id, args, foreground });
         return id;
       }
@@ -294,12 +294,12 @@ export class AgentManager {
       if (run.pool === "background") this.runningBackground++;
       if (run.pool === "foreground") this.runningForeground++;
     }
-    if (record.workflowId === undefined) this.onStart?.(record);
+    if (record.graphRunId === undefined) this.onStart?.(record);
 
     void runAgent(ctx, type, prompt, {
       pi,
       agentId: id,
-      workflow: options.workflowId !== undefined,
+      graphRun: options.graphRunId !== undefined,
       structuredOutput: options.structuredOutput,
       model: options.model,
       selectedModel: options.selectedModel,
@@ -338,7 +338,7 @@ export class AgentManager {
       },
       onCompaction: (info) => {
         record.compactionCount++;
-        if (record.workflowId === undefined) this.onCompact?.(record, info);
+        if (record.graphRunId === undefined) this.onCompact?.(record, info);
         options.onCompaction?.(info);
       },
       onSessionCreated: (session) => {
@@ -417,9 +417,9 @@ export class AgentManager {
   }
 
   private completeRun(record: AgentRecord): void {
-    if (!record.isBackground || record.workflowId !== undefined) record.resultConsumed = true;
+    if (!record.isBackground || record.graphRunId !== undefined) record.resultConsumed = true;
     try {
-      if (record.workflowId === undefined) this.onComplete?.(record);
+      if (record.graphRunId === undefined) this.onComplete?.(record);
     } catch (error) {
       // Notification failures are diagnostics, never failures of the child run.
       record.diagnostics ??= [];
@@ -547,7 +547,7 @@ export class AgentManager {
         },
         onCompaction: (info) => {
           record.compactionCount++;
-          if (record.workflowId === undefined) this.onCompact?.(record, info);
+          if (record.graphRunId === undefined) this.onCompact?.(record, info);
         },
         signal,
       });
@@ -611,7 +611,7 @@ export class AgentManager {
 
   /** Records currently executing (status === "running"). Used by background supervision. */
   getRunning(): AgentRecord[] {
-    return [...this.agents.values()].filter((r) => r.workflowId === undefined && r.status === "running");
+    return [...this.agents.values()].filter((r) => r.graphRunId === undefined && r.status === "running");
   }
 
   abort(id: string): boolean {

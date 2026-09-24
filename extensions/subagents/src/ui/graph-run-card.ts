@@ -3,16 +3,16 @@ import type { WorkflowOutcome } from "../graph/outcome.js";
 /** Workflow transcript reports and formatting shared with the inspector. */
 
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { GraphRunMeta } from "../graph/graph-run-types.js";
 import {
-  type WorkflowAgentEntry,
-  type WorkflowEntry,
-  type WorkflowRunStatus,
+  type GraphRunAgentEntry,
+  type GraphRunEntry,
+  type GraphRunStatus,
 } from "../graph/progress.js";
-import type { WorkflowMeta } from "../graph/workflow-types.js";
 import type { Theme } from "./agent-widget.js";
 
 
-export interface WorkflowGlyphs {
+export interface GraphRunGlyphs {
   /** Tool-title pointer, matching the Agent tool's `▸`. */
   pointer: string;
   tick: string;
@@ -34,7 +34,7 @@ export interface WorkflowGlyphs {
   warning: string;
 }
 
-export const UNICODE_GLYPHS: WorkflowGlyphs = {
+export const UNICODE_GLYPHS: GraphRunGlyphs = {
   pointer: "▸",
   tick: "✔",
   cross: "✘",
@@ -54,7 +54,7 @@ export const UNICODE_GLYPHS: WorkflowGlyphs = {
  * glyph keeps its unicode counterpart's column width so the tree stays aligned
  * either way.
  */
-export const ASCII_GLYPHS: WorkflowGlyphs = {
+export const ASCII_GLYPHS: GraphRunGlyphs = {
   pointer: ">",
   tick: "√",
   cross: "×",
@@ -82,28 +82,28 @@ export const ASCII_GLYPHS: WorkflowGlyphs = {
  * `accent` is unused by the card and exists for the workflows dialog, which
  * shares these segment types.
  */
-export type WorkflowCardColor = "success" | "error" | "warning" | "dim" | "muted" | "toolTitle" | "accent";
+export type GraphRunCardColor = "success" | "error" | "warning" | "dim" | "muted" | "toolTitle" | "accent";
 
-export interface WorkflowCardSegment {
+export interface GraphRunCardSegment {
   text: string;
-  color?: WorkflowCardColor;
+  color?: GraphRunCardColor;
   bold?: boolean;
   /** Draw the segment as a monochrome reverse-video bar; ignores `color`/`bold`. */
   reverse?: boolean;
 }
 
-export type WorkflowCardLine = WorkflowCardSegment[];
+export type GraphRunCardLine = GraphRunCardSegment[];
 
 /** The subset of the task record the card reads. */
-export interface WorkflowCardTask {
+export interface GraphRunCardTask {
   readonly id?: string;
   readonly scriptPath?: string;
   readonly resultPath?: string;
   readonly resultArtifactError?: string;
   readonly totalToolCalls?: number;
   readonly resumedFrom?: string;
-  status: WorkflowRunStatus;
-  workflowName?: string;
+  status: GraphRunStatus;
+  graphRunName?: string;
   summary?: string;
   description?: string;
   startTime: number;
@@ -115,10 +115,10 @@ export interface WorkflowCardTask {
   error?: string;
 }
 
-export interface WorkflowCardInput {
-  progress: readonly WorkflowEntry[];
-  task: WorkflowCardTask;
-  meta?: WorkflowMeta;
+export interface GraphRunCardInput {
+  progress: readonly GraphRunEntry[];
+  task: GraphRunCardTask;
+  meta?: GraphRunMeta;
   /** Agents the runtime has scheduled, which can exceed those that have reported. */
   agentCount?: number;
   /** Total tokens for the size warning; summed from the entries when omitted. */
@@ -149,7 +149,7 @@ export function formatCompactTokens(count: number): string {
  * play.
  */
 export function formatModel(
-  entry: WorkflowAgentEntry,
+  entry: GraphRunAgentEntry,
   opts?: { canonical?: boolean },
 ): string | undefined {
   const { fallbackModel, requestedModel } = entry;
@@ -175,7 +175,7 @@ export function formatModel(
  * other: an `agent()` that named no model still runs at some level, and a level
  * pi clamped is worth saying so about even when the model is unremarkable.
  */
-export function formatThinking(entry: WorkflowAgentEntry): string | undefined {
+export function formatThinking(entry: GraphRunAgentEntry): string | undefined {
   const { thinking, requestedThinking } = entry;
   if (!thinking) return undefined;
   return requestedThinking !== undefined && requestedThinking !== thinking
@@ -192,8 +192,8 @@ export function formatThinking(entry: WorkflowAgentEntry): string | undefined {
 export const REPLAYED_ANNOTATION = "from resume journal";
 
 /** Trim a line to `width`, cutting inside whichever segment crosses the edge. */
-export function clampLine(line: WorkflowCardLine, width: number): WorkflowCardLine {
-  const clamped: WorkflowCardLine = [];
+export function clampLine(line: GraphRunCardLine, width: number): GraphRunCardLine {
+  const clamped: GraphRunCardLine = [];
   let used = 0;
   for (const raw of line) {
     const segment = { ...raw, text: raw.text.replace(/\r\n?|\n/g, " ") };
@@ -215,7 +215,7 @@ export function clampLine(line: WorkflowCardLine, width: number): WorkflowCardLi
 }
 
 /** Apply the theme. Nothing here changes the layout, only its colours. */
-export function styleWorkflowCardLines(lines: readonly WorkflowCardLine[], theme: Theme): string[] {
+export function styleGraphRunCardLines(lines: readonly GraphRunCardLine[], theme: Theme): string[] {
   return lines.map(line =>
     line
       .map(segment => {
@@ -233,10 +233,10 @@ export function styleWorkflowCardLines(lines: readonly WorkflowCardLine[], theme
  * inverts. Shared "you are here" selection affordance for both roster surfaces —
  * theme-robust and unambiguous, so hue stays free to carry state, not selection.
  */
-export function highlightRow(line: WorkflowCardLine, width: number): WorkflowCardLine {
+export function highlightRow(line: GraphRunCardLine, width: number): GraphRunCardLine {
   const clamped = clampLine(line, width);
   const used = clamped.reduce((sum, segment) => sum + visibleWidth(segment.text), 0);
-  const reversed: WorkflowCardLine = clamped.map(segment => ({ text: segment.text, reverse: true }));
+  const reversed: GraphRunCardLine = clamped.map(segment => ({ text: segment.text, reverse: true }));
   if (used < width) reversed.push({ text: " ".repeat(width - used), reverse: true });
   return reversed;
 }

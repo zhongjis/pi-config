@@ -16,9 +16,9 @@
 
 import { randomUUID } from "node:crypto";
 import { WORKFLOW_RESULT_PREVIEW_CHARS } from "../constants.js";
+import type { GraphRunControl, GraphRunMeta, GraphRunResult } from "./graph-run-types.js";
 import { outcomeLabel, type WorkflowOutcome } from "./outcome.js";
-import { collapse, elapsedMs, stats, type WorkflowEntry, type WorkflowRunStatus } from "./progress.js";
-import type { WorkflowControl, WorkflowMeta, WorkflowRunResult } from "./workflow-types.js";
+import { collapse, elapsedMs, type GraphRunEntry, type GraphRunStatus, stats } from "./progress.js";
 
 const escapeXml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -27,11 +27,11 @@ export function workflowRunId(): string {
   return `wf_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
-export interface WorkflowTask {
+export interface GraphRunTask {
   /** Discriminator, alongside Claude Code's `local_agent` / `local_bash`. */
   type: "local_workflow";
   id: string;
-  status: WorkflowRunStatus;
+  status: GraphRunStatus;
   script: string;
   /** Where the script can be edited and re-run from. */
   scriptPath?: string;
@@ -39,8 +39,8 @@ export interface WorkflowTask {
   resultPath?: string;
   resultArtifactError?: string;
   args?: unknown;
-  meta?: WorkflowMeta;
-  workflowName?: string;
+  meta?: GraphRunMeta;
+  graphRunName?: string;
   /** The `tool_use_id` of the call that started this, when one did. */
   toolCallId?: string;
 
@@ -51,7 +51,7 @@ export interface WorkflowTask {
    * dialog treats "no control" as "those keys do nothing", which is the same
    * thing it does for a run that has finished.
    */
-  control?: WorkflowControl;
+  control?: GraphRunControl;
   /** When the current pause started, so `totalPausedMs` can be closed out. */
   pausedAt?: number;
 
@@ -63,7 +63,7 @@ export interface WorkflowTask {
   replayedCount: number;
 
   /** The append-only event log, in emission order. */
-  workflowProgress: WorkflowEntry[];
+  graphRunProgress: GraphRunEntry[];
   /** Bumped once per applied batch, so a renderer can tell nothing changed. */
   progressVersion: number;
   agentCount: number;
@@ -91,17 +91,17 @@ export interface WorkflowTask {
   error?: string;
 }
 
-export function createWorkflowTask(init: {
+export function createGraphRunTask(init: {
   id: string;
   script: string;
   scriptPath?: string;
   args?: unknown;
-  meta?: WorkflowMeta;
+  meta?: GraphRunMeta;
   toolCallId?: string;
   startTime?: number;
   journalPath?: string;
   resumedFrom?: string;
-}): WorkflowTask {
+}): GraphRunTask {
   return {
     type: "local_workflow",
     id: init.id,
@@ -110,12 +110,12 @@ export function createWorkflowTask(init: {
     scriptPath: init.scriptPath,
     args: init.args,
     meta: init.meta,
-    workflowName: init.meta?.name,
+    graphRunName: init.meta?.name,
     toolCallId: init.toolCallId,
     journalPath: init.journalPath,
     resumedFrom: init.resumedFrom,
     replayedCount: 0,
-    workflowProgress: [],
+    graphRunProgress: [],
     progressVersion: 0,
     agentCount: 0,
     doneCount: 0,
@@ -136,15 +136,15 @@ export function createWorkflowTask(init: {
  * frame instead of once per agent is the difference that keeps a 200-agent run
  * cheap to render.
  */
-export function updateWorkflowProgressBatch(
-  task: WorkflowTask,
-  entries: readonly WorkflowEntry[],
+export function updateGraphRunProgressBatch(
+  task: GraphRunTask,
+  entries: readonly GraphRunEntry[],
 ): void {
   if (entries.length === 0) return;
-  task.workflowProgress.push(...entries);
+  task.graphRunProgress.push(...entries);
   task.progressVersion++;
 
-  const { agents, logs } = collapse(task.workflowProgress);
+  const { agents, logs } = collapse(task.graphRunProgress);
   task.logs = logs;
   // `agentCount` is what the runtime has scheduled, which can lead what the log
   // has seen — never let a recompute walk it backwards.
@@ -170,7 +170,7 @@ export function updateWorkflowProgressBatch(
  * The elapsed figure every surface shows subtracts `totalPausedMs`, so a run
  * left paused overnight does not come back reading as a twelve-hour run.
  */
-export function pauseWorkflowTask(task: WorkflowTask, now = Date.now()): boolean {
+export function pauseGraphRunTask(task: GraphRunTask, now = Date.now()): boolean {
   if (task.status !== "running" || task.control === undefined) return false;
   task.control.pause();
   task.status = "paused";
@@ -179,7 +179,7 @@ export function pauseWorkflowTask(task: WorkflowTask, now = Date.now()): boolean
 }
 
 /** Let it go again, banking however long it was held. */
-export function resumeWorkflowTask(task: WorkflowTask, now = Date.now()): boolean {
+export function resumeGraphRunTask(task: GraphRunTask, now = Date.now()): boolean {
   if (task.status !== "paused" || task.control === undefined) return false;
   task.control.resume();
   task.status = "running";
@@ -189,7 +189,7 @@ export function resumeWorkflowTask(task: WorkflowTask, now = Date.now()): boolea
 }
 
 /** Settle a task from the run's own result. */
-export function completeWorkflowTask(task: WorkflowTask, result: WorkflowRunResult): void {
+export function completeGraphRunTask(task: GraphRunTask, result: GraphRunResult): void {
   // Banked before the status moves off "paused": a run that finished while held
   // still spent that time held, and the elapsed figure has to say so.
   if (task.pausedAt !== undefined) {
@@ -201,7 +201,7 @@ export function completeWorkflowTask(task: WorkflowTask, result: WorkflowRunResu
   task.control = undefined;
   task.status = result.status;
   task.meta ??= result.meta;
-  task.workflowName ??= result.meta.name;
+  task.graphRunName ??= result.meta.name;
   task.agentCount = Math.max(task.agentCount, result.agentCount);
   task.replayedCount = result.replayedCount;
   task.value = result.value;
@@ -214,7 +214,7 @@ export function completeWorkflowTask(task: WorkflowTask, result: WorkflowRunResu
  * Settle a task that never produced a result — a script rejected before the
  * worker started (bad `meta`, oversized source, non-JSON `args`).
  */
-export function failWorkflowTask(task: WorkflowTask, error: string): void {
+export function failGraphRunTask(task: GraphRunTask, error: string): void {
   task.control = undefined;
   task.pausedAt = undefined;
   task.status = "failed";
@@ -223,7 +223,7 @@ export function failWorkflowTask(task: WorkflowTask, error: string): void {
 }
 
 /** The run's result body; `space` controls object indentation (pretty for the artifact, compact for previews). */
-function workflowResultBody(task: WorkflowTask, space?: number): string {
+function graphRunResultBody(task: GraphRunTask, space?: number): string {
   if (task.error !== undefined) return task.error;
   if (task.value === undefined) return "No output.";
   if (typeof task.value === "string") return task.value;
@@ -231,8 +231,8 @@ function workflowResultBody(task: WorkflowTask, space?: number): string {
 }
 
 /** The COMPLETE run result as text, for the artifact file and the expanded report. */
-export function workflowResultText(task: WorkflowTask): string {
-  return workflowResultBody(task, 2);
+export function graphRunResultText(task: GraphRunTask): string {
+  return graphRunResultBody(task, 2);
 }
 
 /**
@@ -241,14 +241,14 @@ export function workflowResultText(task: WorkflowTask): string {
  * Prefers a top-level string `summary` field when the value is a plain object, otherwise a
  * compact encoding of the result body. Hard-capped to `cap` characters with a trailing ellipsis
  * when cut, so the completion notification never embeds an unbounded payload — the complete
- * result is written to an artifact and linked instead (see {@link formatWorkflowNotification}).
+ * result is written to an artifact and linked instead (see {@link formatGraphRunNotification}).
  */
-export function workflowResultPreview(task: WorkflowTask, cap = WORKFLOW_RESULT_PREVIEW_CHARS): string {
+export function graphRunResultPreview(task: GraphRunTask, cap = WORKFLOW_RESULT_PREVIEW_CHARS): string {
   const summary =
     task.value !== null && typeof task.value === "object" && !Array.isArray(task.value)
       ? (task.value as Record<string, unknown>).summary
       : undefined;
-  const base = typeof summary === "string" ? summary : workflowResultBody(task);
+  const base = typeof summary === "string" ? summary : graphRunResultBody(task);
   return base.length > cap ? `${base.slice(0, cap - 1)}…` : base;
 }
 
@@ -263,7 +263,7 @@ export function workflowResultPreview(task: WorkflowTask, cap = WORKFLOW_RESULT_
  */
 export function resolveResumeTarget(
   runId: string | undefined,
-  tasks: ReadonlyMap<string, WorkflowTask>,
+  tasks: ReadonlyMap<string, GraphRunTask>,
 ):
   | undefined
   | { ok: true; runId: string; journalPath: string; scriptPath: string }
@@ -303,9 +303,9 @@ export function resolveResumeTarget(
 }
 
 /** `<task-notification>`, in the same shape a finished background agent sends. */
-export function formatWorkflowNotification(task: WorkflowTask, now = Date.now()): string {
-  const totals = stats(task.workflowProgress, task.agentCount);
-  const agents = collapse(task.workflowProgress).agents;
+export function formatGraphRunNotification(task: GraphRunTask, now = Date.now()): string {
+  const totals = stats(task.graphRunProgress, task.agentCount);
+  const agents = collapse(task.graphRunProgress).agents;
   const skipped = agents.filter(agent => agent.skipped).length;
   const failed = agents.filter(agent => agent.state === "error" && !agent.skipped).length;
   const status =
@@ -313,9 +313,9 @@ export function formatWorkflowNotification(task: WorkflowTask, now = Date.now())
     : task.status === "killed" ? "Stopped"
     : `Error: ${task.error ?? "unknown"}`;
   // Bounded, model-facing preview. When the full result was written to an artifact, `resultPath`
-  // is already set (see workflowCompletionText) and drives the truncation marker + `<result-file>`.
+  // is already set (see graphRunCompletionText) and drives the truncation marker + `<result-file>`.
   const resultPath = task.resultPath;
-  const preview = workflowResultPreview(task);
+  const preview = graphRunResultPreview(task);
   const resultBody =
     resultPath !== undefined ? `${preview}\n...(truncated; the complete result is in the linked result file)` : preview;
   return [
@@ -324,7 +324,7 @@ export function formatWorkflowNotification(task: WorkflowTask, now = Date.now())
     task.toolCallId ? `<tool-use-id>${escapeXml(task.toolCallId)}</tool-use-id>` : null,
     task.scriptPath ? `<script>${escapeXml(task.scriptPath)}</script>` : null,
     `<status>${escapeXml(status)}</status>`,
-    `<summary>Graph run "${escapeXml(task.workflowName ?? task.id)}" — Execution: ${task.status} — ${totals.done}/${totals.total} agents completed, ${failed} failed, ${skipped} skipped${
+    `<summary>Graph run "${escapeXml(task.graphRunName ?? task.id)}" — Execution: ${task.status} — ${totals.done}/${totals.total} agents completed, ${failed} failed, ${skipped} skipped${
       task.replayedCount > 0 ? `, ${task.replayedCount} replayed from ${escapeXml(task.resumedFrom ?? "an earlier run")}` : ""
     }</summary>`,
     `<result>${escapeXml(resultBody)}</result>`,

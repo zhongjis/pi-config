@@ -1,5 +1,5 @@
 /**
- * workflow-types.ts — shared value types for the run monitor.
+ * graph-run-types.ts — shared value types for the run monitor.
  *
  * The typed graph runtime, the background task record and the UI all read these:
  * a run's live control surface, its settled result, and the up-front `meta` the
@@ -8,22 +8,22 @@
  */
 
 import type { WorkflowOutcome } from "./outcome.js";
-import type { WorkflowEntry } from "./progress.js";
+import type { GraphRunEntry } from "./progress.js";
 
 /** A phase declared up front, so the UI can show it before any agent runs. */
-export interface WorkflowPhaseMeta {
+export interface GraphRunPhaseMeta {
   title: string;
   detail?: string;
   /** Set when a phase pins a model; display-only, the runtime does not read it. */
   model?: string;
 }
 
-export interface WorkflowMeta {
+export interface GraphRunMeta {
   name: string;
   description: string;
   /** Shown in the saved-workflow listing. Not used by the runtime. */
   whenToUse?: string;
-  phases?: WorkflowPhaseMeta[];
+  phases?: GraphRunPhaseMeta[];
   inputSchema?: Record<string, unknown>;
 }
 
@@ -35,7 +35,7 @@ export interface WorkflowMeta {
  * that has just stopped being possible. `false` means "there was nothing to do
  * that to" — a caller can say so, but it is never an error.
  */
-export interface WorkflowControl {
+export interface GraphRunControl {
   /**
    * Stop *starting* agents. Ones already running are left to finish, because
    * killing model work mid-turn throws away everything it has spent and there
@@ -66,15 +66,15 @@ export interface WorkflowControl {
   retry(index: number): boolean;
 }
 
-export interface WorkflowRunResult {
+export interface GraphRunResult {
   status: "completed" | "failed" | "killed";
-  meta: WorkflowMeta;
+  meta: GraphRunMeta;
   outcome?: WorkflowOutcome;
   /** The run's return value, JSON-checked at the boundary. */
   value?: unknown;
   error?: string;
   /** The append-only log, in emission order. */
-  progress: WorkflowEntry[];
+  progress: GraphRunEntry[];
   /** Agents scheduled, including those that failed. */
   agentCount: number;
   /** How many of those came back from a journal instead of being spawned. */

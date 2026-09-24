@@ -46,11 +46,11 @@ export type FleetUICtx = {
 /**
  * A workflow run, as the fleet list needs to see it.
  *
- * Narrow on purpose: the list knows nothing about `WorkflowTask`, the runtime
+ * Narrow on purpose: the list knows nothing about `GraphRunTask`, the runtime
  * or the dialog, so it stays as testable as it was when it only held agents.
  * The extension maps its tasks into this shape and injects an opener.
  */
-export interface FleetWorkflow {
+export interface FleetGraphRun {
   id: string;
   /** The `meta.name` of the run, or its id when the script named nothing. */
   name: string;
@@ -65,8 +65,8 @@ export interface FleetWorkflow {
 
 type MainEntry = { kind: "main" };
 type AgentEntry = { kind: "agent"; record: AgentRecord };
-type WorkflowEntry = { kind: "workflow"; workflow: FleetWorkflow };
-type FleetEntry = MainEntry | WorkflowEntry | AgentEntry;
+type GraphRunEntry = { kind: "graphRun"; graphRun: FleetGraphRun };
+type FleetEntry = MainEntry | GraphRunEntry | AgentEntry;
 
 /** `11s` — integer seconds, no decimal/suffix (matches Claude Code, unlike formatMs). */
 export function formatFleetElapsed(ms: number): string {
@@ -111,8 +111,8 @@ export class FleetList {
   private viewerClose: (() => void) | undefined;
   private viewingAgentId: string | undefined;
   /** Injected by the extension; absent until workflows are wired (or at all). */
-  private workflowSource: (() => readonly FleetWorkflow[]) | undefined;
-  private openWorkflow: ((id: string) => Promise<void> | void) | undefined;
+  private graphRunSource: (() => readonly FleetGraphRun[]) | undefined;
+  private openGraphRun: ((id: string) => Promise<void> | void) | undefined;
   /**
    * Set while the workflow inspector is up.
    *
@@ -120,7 +120,7 @@ export class FleetList {
    * list out of the dialog's keys, and remember which row to come back to —
    * minus the close handle, because that overlay belongs to the extension.
    */
-  private viewingWorkflowId: string | undefined;
+  private viewingGraphRunId: string | undefined;
 
   constructor(
     private manager: AgentManager,
@@ -167,7 +167,7 @@ export class FleetList {
     this.viewingAgentId = undefined;
     // No handle to close the workflow inspector with, but the list is going
     // away — leaving the id set would keep it swallowing input forever.
-    this.viewingWorkflowId = undefined;
+    this.viewingGraphRunId = undefined;
     if (this.ui && this.widgetRegistered) this.ui.setWidget(FLEET_KEY, undefined);
     this.widgetRegistered = false;
     this.tui = undefined;
@@ -227,7 +227,7 @@ export class FleetList {
   private agentRecords(): AgentRecord[] {
     const now = Date.now();
     return this.manager.listAgents()
-      .filter(a => !a.workflowId && a.session && (
+      .filter(a => !a.graphRunId && a.session && (
         a.status === "running" || a.status === "queued"
         || a.id === this.viewingAgentId
         || (a.completedAt != null && now - a.completedAt < FINISHED_LINGER_MS)
@@ -243,19 +243,19 @@ export class FleetList {
    * switched off never calls this, and the roster is agents-only exactly as
    * before.
    */
-  setWorkflowSource(
-    source: () => readonly FleetWorkflow[],
+  setGraphRunSource(
+    source: () => readonly FleetGraphRun[],
     open: (id: string) => Promise<void> | void,
   ): void {
-    this.workflowSource = source;
-    this.openWorkflow = open;
+    this.graphRunSource = source;
+    this.openGraphRun = open;
   }
 
   /** Live runs, plus recently settled ones — the same linger the agents get. */
-  private workflows(): FleetWorkflow[] {
-    if (!this.workflowSource) return [];
+  private graphRuns(): FleetGraphRun[] {
+    if (!this.graphRunSource) return [];
     const now = Date.now();
-    return [...this.workflowSource()]
+    return [...this.graphRunSource()]
       .filter(run =>
         run.status === "running"
         || run.status === "paused"
@@ -272,7 +272,7 @@ export class FleetList {
   private roster(): FleetEntry[] {
     return [
       { kind: "main" },
-      ...this.workflows().map(workflow => ({ kind: "workflow" as const, workflow })),
+      ...this.graphRuns().map(graphRun => ({ kind: "graphRun" as const, graphRun })),
       ...this.agentRecords().map(record => ({ kind: "agent" as const, record })),
     ];
   }
@@ -295,7 +295,7 @@ export class FleetList {
     // While an overlay is open, let it own all input. Checked before the focus
     // test below, which would otherwise read the dialog holding the keyboard as
     // "the user left the list" and reset the selection out from under it.
-    if (this.viewerClose || this.viewingWorkflowId) return undefined;
+    if (this.viewerClose || this.viewingGraphRunId) return undefined;
     // Input listeners fire BEFORE the focused component, and dialogs
     // (ctx.ui.select/confirm/input, pi's own menus) swap the prompt editor out
     // while getEditorText() still reads the detached — empty — editor. So when
@@ -367,12 +367,12 @@ export class FleetList {
       this.deactivate();
       return;
     }
-    if (entry.kind === "workflow") {
+    if (entry.kind === "graphRun") {
       // The extension owns this overlay and closes it, so there is no
       // `viewerClose` to hold — but the list still has to know one is up, and
       // still has to put the cursor back on the run when it comes down.
-      this.viewingWorkflowId = entry.workflow.id;
-      void Promise.resolve().then(() => this.openWorkflow?.(entry.workflow.id)).then(
+      this.viewingGraphRunId = entry.graphRun.id;
+      void Promise.resolve().then(() => this.openGraphRun?.(entry.graphRun.id)).then(
         () => this.clearViewer(),
         () => this.clearViewer(),
       );
@@ -418,25 +418,25 @@ export class FleetList {
     // still feels natural if the list reordered (an earlier agent finished)
     // while the overlay was open. If that agent is gone, leave the index for
     // update()'s clamp to settle.
-    const viewed = this.viewingAgentId ?? this.viewingWorkflowId;
+    const viewed = this.viewingAgentId ?? this.viewingGraphRunId;
     if (viewed !== undefined) {
       const idx = this.roster().findIndex(e =>
         e.kind === "agent" ? e.record.id === viewed
-        : e.kind === "workflow" ? e.workflow.id === viewed
+        : e.kind === "graphRun" ? e.graphRun.id === viewed
         : false,
       );
       if (idx >= 0) this.selectedIndex = idx;
     }
     this.viewerClose = undefined;
     this.viewingAgentId = undefined;
-    this.viewingWorkflowId = undefined;
+    this.viewingGraphRunId = undefined;
     this.update();
   }
 
   // ---- Rendering ----
 
   private renderBar(width: number, theme: Theme): string[] {
-    const rows = this.roster().slice(1) as (WorkflowEntry | AgentEntry)[];
+    const rows = this.roster().slice(1) as (GraphRunEntry | AgentEntry)[];
     if (rows.length === 0) return [];
     // Clamp locally so a render between a roster shrink and the next update()
     // (e.g. on terminal resize) never loses the selection marker.
@@ -460,8 +460,8 @@ export class FleetList {
     for (let a = start; a < start + visible; a++) {
       const row = rows[a];
       lines.push(
-        row.kind === "workflow" ?
-          this.renderWorkflowRow(a + 1, sel, row.workflow, width, theme)
+        row.kind === "graphRun" ?
+          this.renderGraphRunRow(a + 1, sel, row.graphRun, width, theme)
         : this.renderAgentRow(a + 1, sel, row.record, width, theme),
       );
     }
@@ -479,21 +479,21 @@ export class FleetList {
    * — so the two read as one list, with the agent count where an agent has its
    * description and the same elapsed/token tail.
    */
-  private renderWorkflowRow(
+  private renderGraphRunRow(
     rosterIndex: number,
     sel: number,
-    workflow: FleetWorkflow,
+    graphRun: FleetGraphRun,
     width: number,
     theme: Theme,
   ): string {
     const selected = rosterIndex === sel;
-    const kind = theme.fg(selected ? "text" : "muted", "workflow");
-    const name = selected ? theme.fg("text", workflow.name) : workflow.name;
+    const kind = theme.fg(selected ? "text" : "muted", "graph run");
+    const name = selected ? theme.fg("text", graphRun.name) : graphRun.name;
     const left = `  ${this.bullet(rosterIndex, sel, theme)} ${kind}  ${name}`;
     // Frozen once the run settles, exactly as an agent's clock is.
-    const elapsed = (workflow.completedAt ?? Date.now()) - workflow.startedAt;
-    const agents = `${workflow.doneCount}/${workflow.totalCount} agent${workflow.totalCount === 1 ? "" : "s"}`;
-    const stats = `${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(workflow.tokens)}`;
+    const elapsed = (graphRun.completedAt ?? Date.now()) - graphRun.startedAt;
+    const agents = `${graphRun.doneCount}/${graphRun.totalCount} agent${graphRun.totalCount === 1 ? "" : "s"}`;
+    const stats = `${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(graphRun.tokens)}`;
     return rightAlign(left, selected ? theme.fg("text", stats) : theme.fg("dim", stats), width);
   }
 

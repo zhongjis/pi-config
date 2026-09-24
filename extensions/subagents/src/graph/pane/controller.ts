@@ -21,7 +21,7 @@ export type PaneExec = (
   options?: { timeout?: number },
 ) => Promise<{ code: number; stdout: string; stderr: string; killed?: boolean }>;
 
-export interface WorkflowPaneControllerOptions {
+export interface GraphRunPaneControllerOptions {
   exec: PaneExec;
   /** The per-pane state directory (see `paneDirFor`). */
   dir: string;
@@ -73,7 +73,7 @@ function parsePaneLabel(stdout: string): string | undefined {
   }
 }
 
-export class WorkflowPaneController {
+export class GraphRunPaneController {
   private readonly exec: PaneExec;
   private readonly dir: string;
   private readonly parentPaneId: string;
@@ -85,7 +85,7 @@ export class WorkflowPaneController {
   /** Dedupe concurrent ensurePane calls so a burst of syncs cannot spawn a pane storm. */
   private ensuring: Promise<void> | undefined;
 
-  constructor(options: WorkflowPaneControllerOptions) {
+  constructor(options: GraphRunPaneControllerOptions) {
     this.exec = options.exec;
     this.dir = options.dir;
     this.parentPaneId = options.parentPaneId;

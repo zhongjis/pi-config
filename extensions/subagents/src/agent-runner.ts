@@ -216,7 +216,7 @@ export interface ToolActivity {
 }
 
 export interface RunOptions {
-  workflow?: boolean;
+  graphRun?: boolean;
   structuredOutput?: CompiledSchema;
   /** ExtensionAPI instance — used for pi.exec() instead of execSync. */
   pi: ExtensionAPI;
@@ -446,13 +446,13 @@ export async function runAgent(
     systemPrompt = buildAgentPrompt({ ...fallback, name: type }, effectiveCwd, env, parentSystemPrompt, extras);
   }
 
-  if (options.workflow && !options.structuredOutput) {
+  if (options.graphRun && !options.structuredOutput) {
     systemPrompt += `
 
-<workflow_child>
+<graph_run_child>
 Your final message IS the return value of this task. An agent graph run captures it and passes it to the next stage.
 Return only the answer, in exactly the shape the prompt asks for — no preamble, no summary of what you did, no offer to continue.
-</workflow_child>`;
+</graph_run_child>`;
   }
 
   // noSkills is driven only by discoverSkills; preloaded skills (if any) are already

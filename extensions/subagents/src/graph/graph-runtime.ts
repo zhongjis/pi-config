@@ -1,11 +1,10 @@
-import { readWorkflowNodeDetail } from "./history-artifact.js";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
 import { SUBAGENT_TOOL_NAMES } from "../agent-runner.js";
 import type { NotificationDetails } from "../types.js";
-import type { FleetWorkflow } from "../ui/fleet-list.js";
-import { renderWorkflowCard } from "../ui/workflow-report.js";
+import type { FleetGraphRun } from "../ui/fleet-list.js";
+import { renderGraphRunCard } from "../ui/graph-run-report.js";
 import { getLifetimeTotal } from "../usage.js";
 import { checkGraphDelegation } from "./delegation-preflight.js";
 import { workflowEntryData } from "./entry.js";
@@ -14,26 +13,27 @@ import { deleteGraphSnapshot, graphRunHasLiveWriter, ownGraphRun, readGraphSnaps
 import { authorizeGraphResume } from "./graph-resume-preflight.js";
 import { completeGraphTask, GraphRunReporter } from "./graph-run-adapter.js";
 import { GraphHistoryStore } from "./history.js";
-import { mergeWorkflowRuns } from "./history-view.js";
+import { readGraphRunNodeDetail } from "./history-artifact.js";
+import { mergeGraphRuns } from "./history-view.js";
 import type { AgentGraph } from "./ir.js";
 import { createNodeHost, type NodeHostOptions } from "./node-host-adapter.js";
-import { workflowCompletionText } from "./notification.js";
+import { graphRunCompletionText } from "./notification.js";
 import { elapsedMs } from "./progress.js";
 import { coerceGraphInput, type RunGraphResult, runGraph } from "./run-graph.js";
 import { resolveSavedGraph } from "./saved-graph.js";
 import type { SchedulerState } from "./scheduler.js";
-import { createWorkflowTask, failWorkflowTask, type WorkflowTask, workflowResultText, workflowRunId } from "./task.js";
+import { createGraphRunTask, failGraphRunTask, type GraphRunTask, graphRunResultText, workflowRunId } from "./task.js";
 import { graphToolDescription } from "./tool-description.js";
 import { validateGraph } from "./validate.js";
 
 /** Activation-owned execution policy, read live when a graph starts a child. */
-export interface WorkflowExecutionHost extends Readonly<Pick<NodeHostOptions, "pi" | "manager" | "scopeModels" | "outputTranscript">> {
+export interface GraphExecutionHost extends Readonly<Pick<NodeHostOptions, "pi" | "manager" | "scopeModels" | "outputTranscript">> {
   readonly enabled: () => boolean;
   readonly delegationDenial: (ctx: ExtensionContext, type: string) => string | undefined;
 }
 
 /** Held delivery is shared with ordinary background-agent completions. */
-export interface WorkflowNotifications {
+export interface GraphRunNotifications {
   readonly schedule: (key: string, send: () => void) => void;
   readonly cancel: (key: string) => void;
 }
@@ -45,18 +45,18 @@ interface GraphLaunch {
 }
 
 // allow: SIZE_OK — the typed graph tool and its session state share one lifecycle closure.
-export function createWorkflowRuntime(
-  execution: WorkflowExecutionHost,
-  notifications: WorkflowNotifications,
+export function createGraphRuntime(
+  execution: GraphExecutionHost,
+  notifications: GraphRunNotifications,
   refresh: (surface: "pane" | "fleet" | "all") => void,
 ) {
   const { pi, manager } = execution;
   let history: GraphHistoryStore | undefined;
-  const tasks = new Map<string, WorkflowTask>();
+  const tasks = new Map<string, GraphRunTask>();
   let artifactScope: { cwd: string; sessionId: string } | undefined;
   const getRuns = () => {
     const scope = artifactScope;
-    return mergeWorkflowRuns(tasks.values(), history?.runs ?? [], scope ? (runId, index) => readWorkflowNodeDetail(scope, runId, index) : undefined);
+    return mergeGraphRuns(tasks.values(), history?.runs ?? [], scope ? (runId, index) => readGraphRunNodeDetail(scope, runId, index) : undefined);
   };
   const runs = new Set<Promise<void>>();
   let sessionActive = true;
@@ -69,7 +69,7 @@ export function createWorkflowRuntime(
   }
 
   /** Settle the task and map node updates onto its progress log. */
-  async function runTask(ctx: ExtensionContext, task: WorkflowTask, launch: GraphLaunch): Promise<void> {
+  async function runTask(ctx: ExtensionContext, task: GraphRunTask, launch: GraphLaunch): Promise<void> {
     const { graph, input, restore } = launch;
     const ownerSessionId = ctx.sessionManager.getSessionId();
     const reporter = new GraphRunReporter(task, graph, Date.now(), recordId => {
@@ -83,7 +83,7 @@ export function createWorkflowRuntime(
       signal: task.abortController.signal,
       scopeModels: execution.scopeModels,
       outputTranscript: execution.outputTranscript,
-      workflowId: task.id,
+      graphRunId: task.id,
       nodeIndex: nodeId => reporter.nodeIndex(nodeId),
     });
     // Node entries otherwise re-emit only on status transitions; refresh live counters too.
@@ -151,13 +151,13 @@ export function createWorkflowRuntime(
       // A live owner refused the lease during the resume race: decline rather than
       // fabricate a failure. Snapshot + live owner are left untouched.
       if (err instanceof LiveWriterError) tasks.delete(task.id);
-      else failWorkflowTask(task, err instanceof Error ? err.message : String(err));
+      else failGraphRunTask(task, err instanceof Error ? err.message : String(err));
     } finally { releaseCheckpoint?.(); }
     refresh("pane");
   }
 
   /** Detached runs remain owned until shutdown has awaited them. */
-  function launchGraph(ctx: ExtensionContext, task: WorkflowTask, launch: GraphLaunch): void {
+  function launchGraph(ctx: ExtensionContext, task: GraphRunTask, launch: GraphLaunch): void {
     const normalizedInput = coerceGraphInput(launch.input);
     task.args = normalizedInput;
     const run = runTask(ctx, task, { ...launch, input: normalizedInput })
@@ -187,7 +187,7 @@ export function createWorkflowRuntime(
         continue;
       }
       const name = snap.name ?? snap.runId;
-      const task = createWorkflowTask({
+      const task = createGraphRunTask({
         id: snap.runId,
         script: "",
         args: snap.input,
@@ -217,10 +217,10 @@ export function createWorkflowRuntime(
   }
 
   /** Only cached counters: fleet reads this on its 200ms rendering tick. */
-  function fleetWorkflows(): FleetWorkflow[] {
+  function fleetGraphRuns(): FleetGraphRun[] {
     return [...tasks.values()].map(task => ({
       id: task.id,
-      name: task.meta?.name ?? task.workflowName ?? task.id,
+      name: task.meta?.name ?? task.graphRunName ?? task.id,
       status: task.status,
       doneCount: task.doneCount,
       totalCount: task.agentCount,
@@ -230,19 +230,19 @@ export function createWorkflowRuntime(
     }));
   }
 
-  function notifyFinished(ctx: ExtensionContext, task: WorkflowTask) {
+  function notifyFinished(ctx: ExtensionContext, task: GraphRunTask) {
     if (!sessionActive || tasks.get(task.id) !== task) return;
     refresh("fleet");
-    const result = workflowResultText(task);
+    const result = graphRunResultText(task);
     notifications.schedule(task.id, () => {
       if (!sessionActive || tasks.get(task.id) !== task) return;
       pi.sendMessage<NotificationDetails>({
         customType: "subagent-notification",
-        content: workflowCompletionText(ctx, task),
+        content: graphRunCompletionText(ctx, task),
         display: true,
         details: {
           id: task.id,
-          description: `Graph run ${task.workflowName ?? task.id}`,
+          description: `Graph run ${task.graphRunName ?? task.id}`,
           status: task.status === "completed" ? "completed" : task.status === "killed" ? "stopped" : "error",
           toolUses: task.totalToolCalls,
           // A workflow has agents, not turns; rendering "↻0" would be noise.
@@ -290,8 +290,8 @@ export function createWorkflowRuntime(
           ? renderToolExpanded(`${status}\n${text || "No output."}`)
           : renderToolSummary([status, firstMeaningfulLine(text) || "No output"], theme, { expandable: true, expandLabel });
       }
-      return renderWorkflowCard(
-        { progress: task.workflowProgress, task, expanded: options.expanded, meta: task.meta, agentCount: task.agentCount, totalTokens: task.totalTokens },
+      return renderGraphRunCard(
+        { progress: task.graphRunProgress, task, expanded: options.expanded, meta: task.meta, agentCount: task.agentCount, totalTokens: task.totalTokens },
         theme,
       );
     },
@@ -326,7 +326,7 @@ export function createWorkflowRuntime(
         },
       );
       if (!preflight.ok) throw new Error(preflight.error);
-      const task = createWorkflowTask({
+      const task = createGraphRunTask({
         id: runId,
         script: "",
         args: input,
@@ -354,5 +354,5 @@ export function createWorkflowRuntime(
     },
   });
 
-  return { tool, loadHistory, getRuns, resume, stop, fleetWorkflows };
+  return { tool, loadHistory, getRuns, resume, stop, fleetGraphRuns };
 }

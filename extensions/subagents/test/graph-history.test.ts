@@ -3,9 +3,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { boundHistory, decodeHistory, GraphHistoryStore, HISTORY_FILE_BYTES, snapshotHistory } from "../src/graph/history.js";
 import { GraphRunReporter } from "../src/graph/graph-run-adapter.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import { boundHistory, decodeHistory, GraphHistoryStore, HISTORY_FILE_BYTES, snapshotHistory } from "../src/graph/history.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 
 function required<T>(value: T | null | undefined): T {
   assert.ok(value != null);
@@ -13,15 +13,15 @@ function required<T>(value: T | null | undefined): T {
 }
 
 function task(id = "run", startTime = 1) {
-  const value = createWorkflowTask({ id, script: "SECRET_SCRIPT", meta: { name: "test", description: "Configured description" } });
+  const value = createGraphRunTask({ id, script: "SECRET_SCRIPT", meta: { name: "test", description: "Configured description" } });
   Object.assign(value, { status: "completed", startTime, endTime: startTime + 1, args: "SECRET_INPUT", value: "SECRET_OUTPUT", error: "SECRET_ERROR", scriptPath: "SECRET_PATH", resultPath: "SECRET_PATH", journalPath: "SECRET_PATH", logs: ["SECRET_LOG"], outcome: { status: "partial", reason: "SECRET_REASON" } });
-  value.workflowProgress = [{ type: "workflow_agent", index: 0, label: "node\n\u001b[31mname\u001b[0m", state: "error", promptPreview: "SECRET_PROMPT", resultPreview: "SECRET_RESULT", error: "SECRET_ERROR", recordId: "SECRET_RECORD", modelId: "provider/model", attempt: 2, lastAttemptReason: "loop", deps: ["upstream"] }];
+  value.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "node\n\u001b[31mname\u001b[0m", state: "error", promptPreview: "SECRET_PROMPT", resultPreview: "SECRET_RESULT", error: "SECRET_ERROR", recordId: "SECRET_RECORD", modelId: "provider/model", attempt: 2, lastAttemptReason: "loop", deps: ["upstream"] }];
   return value;
 }
 
 describe("graph metadata history", () => {
   it.each(["loop", "restore"] as const)("allowlists %s metadata, sanitizes display strings and never hydrates runtime/content", reason => {
-    const value = task(); Object.assign(value.workflowProgress[0], { lastAttemptReason: reason });
+    const value = task(); Object.assign(value.graphRunProgress[0], { lastAttemptReason: reason });
     const snapshot = snapshotHistory(value);
     expect(snapshot).toBeDefined();
     const encoded = JSON.stringify(snapshot);
@@ -36,7 +36,7 @@ describe("graph metadata history", () => {
   });
 
   it("removes v1 bindings while preserving dependency indices", () => {
-    const value = createWorkflowTask({ id: "legacy", script: "" });
+    const value = createGraphRunTask({ id: "legacy", script: "" });
     const first = { type: "agent", name: "First", agent: "worker", prompt: "one" } as const;
     const second = { type: "agent", name: "Second", agent: "reviewer", prompt: "two" } as const;
     const reporter = new GraphRunReporter(value, { nodes: { PRIVATE_FIRST: first, PRIVATE_SECOND: second }, edges: [{ from: "PRIVATE_FIRST", to: "PRIVATE_SECOND" }] });
@@ -51,7 +51,7 @@ describe("graph metadata history", () => {
 
   it("keeps the newest 20 unique runs and bounds nodes, phases, dependencies and strings", () => {
     const value = task();
-    value.workflowProgress = Array.from({ length: 205 }, (_, index) => ({ type: "workflow_agent", index, label: "x".repeat(200), state: "done", deps: Array.from({ length: 40 }, () => "d".repeat(200)), phaseIndex: index, phaseTitle: "p".repeat(200) }));
+    value.graphRunProgress = Array.from({ length: 205 }, (_, index) => ({ type: "workflow_agent", index, label: "x".repeat(200), state: "done", deps: Array.from({ length: 40 }, () => "d".repeat(200)), phaseIndex: index, phaseTitle: "p".repeat(200) }));
     const snapshot = required(snapshotHistory(value));
     expect(snapshot.nodes).toHaveLength(200);
     expect(snapshot.omittedNodeCount).toBe(5);
@@ -113,7 +113,7 @@ describe("graph metadata history", () => {
 
 it("enforces the actual 8 MiB ceiling by evicting oldest runs before touching node tails", () => {
   const value = task();
-  value.workflowProgress = Array.from({ length: 200 }, (_, index) => ({
+  value.graphRunProgress = Array.from({ length: 200 }, (_, index) => ({
     type: "workflow_agent", index, label: `node-${index}`, state: "done",
     deps: Array.from({ length: 32 }, () => "界".repeat(160)),
   }));
@@ -164,7 +164,7 @@ it("rejects v2 cycles, duplicate indices and dangling dependency references", ()
 
 it("bounds captured topology and keeps all references valid after tail eviction", () => {
   const value = task();
-  value.workflowProgress = Array.from({ length: 205 }, (_, index) => ({
+  value.graphRunProgress = Array.from({ length: 205 }, (_, index) => ({
     type: "workflow_agent", index: index * 2, label: `Node ${index}`, state: "done",
     nodeBinding: `binding-${index}`, instanceId: `instance-${index}`,
     deps: Array.from({ length: 40 }, (_, n) => `binding-${n}`),

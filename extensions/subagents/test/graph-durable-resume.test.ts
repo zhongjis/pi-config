@@ -2,12 +2,12 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import * as persistence from "../src/graph/graph-persist.js";
 import { LiveWriterError } from "../src/graph/graph-checkpoint-owner.js";
-import * as tasks from "../src/graph/task.js";
+import * as persistence from "../src/graph/graph-persist.js";
 import { readGraphSnapshots } from "../src/graph/graph-persist.js";
+import * as tasks from "../src/graph/task.js";
 import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
-import { boot, required } from "./workflow-registration.fixture.js";
+import { boot, required } from "./graph-run-registration.fixture.js";
 
 const gateGraph = {
   name: "gated",
@@ -142,7 +142,7 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
     const original = readFileSync(path, "utf8");
     const lockBefore = live || kind === "foreign dead" ? readFileSync(lock, "utf8") : undefined;
     const next = boot({ workflowsEnabled: true }, kind === "same-session live" || kind === "corrupt" ? "origin" : "foreign");
-    const create = vi.spyOn(tasks, "createWorkflowTask");
+    const create = vi.spyOn(tasks, "createGraphRunTask");
     const lease = vi.spyOn(persistence, "ownGraphRun");
     const write = vi.spyOn(persistence, "writeGraphSnapshot");
     const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
@@ -188,7 +188,7 @@ it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async
   const release = persistence.ownGraphRun(origin.ctx.cwd, runId);
   const original = readFileSync(path, "utf8");
   const next = boot({ workflowsEnabled: true }, "origin");
-  const create = vi.spyOn(tasks, "createWorkflowTask");
+  const create = vi.spyOn(tasks, "createGraphRunTask");
   const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
   // Force the peek to LOSE the race, then the lease to refuse the live owner.
   vi.spyOn(persistence, "graphRunHasLiveWriter").mockReturnValue(false);

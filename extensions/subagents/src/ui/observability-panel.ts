@@ -13,21 +13,21 @@ import {
   collapse,
   displayState,
   formatDuration,
-  type WorkflowAgentEntry,
-  type WorkflowDisplayState,
-  type WorkflowRunStatus,
+  type GraphRunAgentEntry,
+  type GraphRunDisplayState,
+  type GraphRunStatus,
 } from "../graph/progress.js";
 import {
   clampLine,
+  type GraphRunCardColor,
+  type GraphRunCardLine,
+  type GraphRunCardSegment,
   highlightRow,
-  type WorkflowCardColor,
-  type WorkflowCardLine,
-  type WorkflowCardSegment,
-} from "./workflow-card.js";
+} from "./graph-run-card.js";
 import {
+  type GraphRunDialogSource,
   subStatusAnnotations,
-  type WorkflowDialogSource,
-} from "./workflow-dialog.js";
+} from "./graph-run-dialog.js";
 
 export type Target =
   | { kind: "stage"; stage: number }
@@ -73,8 +73,8 @@ export function initialPanelState(): PanelState {
 export interface PanelRun {
   id: string;
   name: string;
-  status: WorkflowRunStatus;
-  source: WorkflowDialogSource;
+  status: GraphRunStatus;
+  source: GraphRunDialogSource;
   readHistoricalDetail?: (index: number) => HistoricalNodeDetail | undefined;
 }
 
@@ -88,13 +88,13 @@ export interface PanelOptions {
 const clamp = (value: number, lo: number, hi: number): number =>
   Math.min(Math.max(lo, Math.trunc(value)), Math.max(lo, hi));
 
-const isActive = (status: WorkflowRunStatus): boolean => status === "running" || status === "paused";
+const isActive = (status: GraphRunStatus): boolean => status === "running" || status === "paused";
 
 /* ------------------------------------------------------------------------- *
  * Lifecycle vocabulary
  * ------------------------------------------------------------------------- */
 
-function stateColor(state: WorkflowDisplayState): WorkflowCardColor {
+function stateColor(state: GraphRunDisplayState): GraphRunCardColor {
   switch (state) {
     case "done": return "success";
     case "failed": return "error";
@@ -104,7 +104,7 @@ function stateColor(state: WorkflowDisplayState): WorkflowCardColor {
   }
 }
 
-function statusWord(state: WorkflowDisplayState): string {
+function statusWord(state: GraphRunDisplayState): string {
   switch (state) {
     case "done": return "done";
     case "failed": return "failed";
@@ -116,7 +116,7 @@ function statusWord(state: WorkflowDisplayState): string {
   }
 }
 
-function runStateColor(status: WorkflowRunStatus): WorkflowCardColor {
+function runStateColor(status: GraphRunStatus): GraphRunCardColor {
   switch (status) {
     case "running": return "accent";
     case "completed": return "success";
@@ -130,20 +130,20 @@ function runStateColor(status: WorkflowRunStatus): WorkflowCardColor {
 interface TreeNode {
   target: Target;
   label: string;
-  entry?: WorkflowAgentEntry;
+  entry?: GraphRunAgentEntry;
   decision?: string;
   children: TreeNode[];
 }
 interface TreeRow { node: TreeNode; rails: string; last: boolean; parent?: Target }
-const bindingId = (entry: WorkflowAgentEntry): string => entry.nodeBinding ?? entry.label;
-const nodeId = (entry: WorkflowAgentEntry, agents?: readonly WorkflowAgentEntry[]): string | number => {
+const bindingId = (entry: GraphRunAgentEntry): string => entry.nodeBinding ?? entry.label;
+const nodeId = (entry: GraphRunAgentEntry, agents?: readonly GraphRunAgentEntry[]): string | number => {
   if (entry.historyIndex !== undefined) return entry.historyIndex;
   const binding = bindingId(entry);
   return !entry.nodeBinding && agents?.some(other => other !== entry && bindingId(other) === binding) ? `\u0000${entry.index}` : binding;
 };
-const parentReference = (entry: WorkflowAgentEntry): string | number | undefined => entry.presentation?.parentIndex ?? entry.presentation?.parentInstanceId;
-const upstreamIds = (entry: WorkflowAgentEntry): readonly (string | number)[] => entry.depIndices ?? entry.deps ?? [];
-const downstreamIds = (entry: WorkflowAgentEntry): readonly (string | number)[] => entry.dependentIndices ?? entry.dependents ?? [];
+const parentReference = (entry: GraphRunAgentEntry): string | number | undefined => entry.presentation?.parentIndex ?? entry.presentation?.parentInstanceId;
+const upstreamIds = (entry: GraphRunAgentEntry): readonly (string | number)[] => entry.depIndices ?? entry.deps ?? [];
+const downstreamIds = (entry: GraphRunAgentEntry): readonly (string | number)[] => entry.dependentIndices ?? entry.dependents ?? [];
 function sameTarget(a: Target, b: Target): boolean {
   if (a.kind === "stage" && b.kind === "stage") return a.stage === b.stage;
   if (a.kind === "iteration" && b.kind === "iteration") return a.owner === b.owner && a.iteration === b.iteration;
@@ -153,7 +153,7 @@ function targetIndex(targets: readonly Target[], cursor: Target | undefined): nu
   return cursor ? targets.findIndex(target => sameTarget(target, cursor)) : -1;
 }
 /** Only authoritative containment is admitted. Unknown/legacy rows remain workflow children. */
-function presentationTree(agents: readonly WorkflowAgentEntry[]): TreeNode {
+function presentationTree(agents: readonly GraphRunAgentEntry[]): TreeNode {
   const root: TreeNode = { target: { kind: "stage", stage: 0 }, label: "Graph run", children: [] };
   const nodes: TreeNode[] = agents.map(entry => ({ target: { kind: "node" as const, id: nodeId(entry, agents) }, label: entry.presentation?.name ?? entry.label, entry, children: [] }));
   const byInstance = new Map<string | number, TreeNode>(nodes.flatMap(node => {
@@ -200,15 +200,15 @@ function visibleTree(root: TreeNode, state: PanelState, active: boolean, ascii: 
   visit(root, "", true);
   return rows;
 }
-function lifecycle(entry: WorkflowAgentEntry, run: PanelRun, ascii: boolean): { word: string; glyph: string; color: WorkflowCardColor } {
+function lifecycle(entry: GraphRunAgentEntry, run: PanelRun, ascii: boolean): { word: string; glyph: string; color: GraphRunCardColor } {
   const state = displayState(entry, isActive(run.status));
   if (run.status === "paused" && state === "running") return { word: "paused", glyph: ascii ? "||" : "Ⅱ", color: "warning" };
-  const glyphs: Record<WorkflowDisplayState, string> = ascii
+  const glyphs: Record<GraphRunDisplayState, string> = ascii
     ? { done: "+", running: "*", queued: "o", blocked: "!", failed: "x", skipped: "-", interrupted: "#" }
     : { done: "✓", running: "●", queued: "○", blocked: "!", failed: "×", skipped: "–", interrupted: "■" };
   return { word: statusWord(state), glyph: glyphs[state], color: stateColor(state) };
 }
-function aggregate(agents: readonly WorkflowAgentEntry[], root: TreeNode, run: PanelRun, now: number): string {
+function aggregate(agents: readonly GraphRunAgentEntry[], root: TreeNode, run: PanelRun, now: number): string {
   const known = agents.filter(entry => entry.presentation);
   const counts: string[] = [];
   const count = (n: number, singular: string, plural = `${singular}s`) => { if (n) counts.push(`${n} ${n === 1 ? singular : plural}`); };
@@ -221,21 +221,21 @@ function aggregate(agents: readonly WorkflowAgentEntry[], root: TreeNode, run: P
   if (task.startTime !== undefined) counts.push(formatDuration(Math.max(0, (task.endTime ?? task.pausedAt ?? now) - task.startTime - (task.totalPausedMs ?? 0))));
   return counts.join(" · ");
 }
-function withTrailing(line: WorkflowCardLine, metadata: string, width: number): WorkflowCardLine {
+function withTrailing(line: GraphRunCardLine, metadata: string, width: number): GraphRunCardLine {
   const used = line.reduce((sum, segment) => sum + visibleWidth(segment.text), 0);
   if (metadata && used + visibleWidth(metadata) + 2 <= width) line.push({ text: " ".repeat(width - used - visibleWidth(metadata)) + metadata, color: "dim" });
   return clampLine(line, width);
 }
-function rosterLines(plan: PanelPlan, state: PanelState): { lines: WorkflowCardLine[]; selectedRow?: number } {
+function rosterLines(plan: PanelPlan, state: PanelState): { lines: GraphRunCardLine[]; selectedRow?: number } {
   const { width, ascii, visible, resolvedCursor, run } = plan;
-  const lines: WorkflowCardLine[] = [];
+  const lines: GraphRunCardLine[] = [];
   let selectedRow: number | undefined;
   const statusWidth = Math.max(0, ...visible.flatMap(row => row.node.entry ? [visibleWidth(`${lifecycle(row.node.entry, run, ascii).glyph} ${lifecycle(row.node.entry, run, ascii).word}`)] : [])) + 2;
   for (const [index, row] of visible.entries()) {
     const { node, rails, last } = row;
     const selected = resolvedCursor && sameTarget(node.target, resolvedCursor);
     const folded = (state.collapsedTargets ?? []).some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0);
-    let line: WorkflowCardLine;
+    let line: GraphRunCardLine;
     if (node.target.kind === "stage") {
       const title = ` ${ascii ? folded ? ">" : "v" : folded ? "▸" : "▾"} Graph run `;
       const count = `${plan.agents.filter(entry => entry.state === "done").length}/${plan.agents.length} nodes`;
@@ -277,9 +277,9 @@ function formatInputValue(input: unknown): string {
 }
 
 function graphContextLines(
-  source: WorkflowDialogSource, width: number, expandedSections: readonly string[], maxRows?: number,
- ): WorkflowCardLine[] {
-  const lines: WorkflowCardLine[] = [];
+  source: GraphRunDialogSource, width: number, expandedSections: readonly string[], maxRows?: number,
+ ): GraphRunCardLine[] {
+  const lines: GraphRunCardLine[] = [];
   const description = source.meta?.description?.trim();
   if (description) {
     lines.push(...wrapTextWithAnsi(` ${description}`, Math.max(1, width)).map(text => clampLine([{ text }], width)));
@@ -309,7 +309,7 @@ function graphContextLines(
 
   // Collapsed clamps the primary pair to one line; expanded wraps every pair in
   // place so the full inputs read as prose, not JSON.
-  const valueLines: WorkflowCardLine[] = [];
+  const valueLines: GraphRunCardLine[] = [];
   for (const { label, value } of pairs) {
     const text = ` ${label}: ${value}`;
     if (expanded) {
@@ -339,7 +339,7 @@ function graphContextLines(
   return lines;
 }
 
-function outcomeText(entry: WorkflowAgentEntry, state: WorkflowDisplayState): string {
+function outcomeText(entry: GraphRunAgentEntry, state: GraphRunDisplayState): string {
   switch (state) {
     case "failed":
     case "blocked": return entry.error ?? "";
@@ -349,7 +349,7 @@ function outcomeText(entry: WorkflowAgentEntry, state: WorkflowDisplayState): st
   }
 }
 
-function runtimeFacts(entry: WorkflowAgentEntry): string {
+function runtimeFacts(entry: GraphRunAgentEntry): string {
   const parts: string[] = [];
   if (entry.tokens) parts.push(`${entry.tokens.toLocaleString("en-US")} tokens`);
   if (entry.toolCalls) parts.push(`${entry.toolCalls} tool${entry.toolCalls === 1 ? "" : "s"}`);
@@ -363,7 +363,7 @@ function runtimeFacts(entry: WorkflowAgentEntry): string {
  * a visited-set that both bounds it and guards against cycles.
  */
 function blastRadius(
-  entry: WorkflowAgentEntry, byId: Map<string | number, WorkflowAgentEntry>, active: boolean,
+  entry: GraphRunAgentEntry, byId: Map<string | number, GraphRunAgentEntry>, active: boolean,
 ): string[] {
   const skipped: string[] = [];
   const seen = new Set<string | number>([nodeId(entry)]);
@@ -394,7 +394,7 @@ function blastRadius(
 interface DetailSection {
   key: string;
   navigable: boolean;
-  lines: WorkflowCardLine[];
+  lines: GraphRunCardLine[];
 }
 
 /**
@@ -405,13 +405,13 @@ interface DetailSection {
  * undefined `bodyColor` leaves the body at the terminal default fg. Shared by Prompt/Outcome.
  */
 function collapsibleSection(
-  label: string, body: string, bodyColor: WorkflowCardColor | undefined,
+  label: string, body: string, bodyColor: GraphRunCardColor | undefined,
   expanded: boolean, enterGlyph: string, width: number,
-): WorkflowCardLine[] {
+): GraphRunCardLine[] {
   const inner = Math.max(1, width - 3);
   const wrapped = wrapTextWithAnsi(body, inner);
-  const lines: WorkflowCardLine[] = [[], clampLine([{ text: ` ${label}` }], width)];
-  const bodySeg = (text: string): WorkflowCardSegment => ({ text: `   ${text}`, ...(bodyColor ? { color: bodyColor } : {}) });
+  const lines: GraphRunCardLine[] = [[], clampLine([{ text: ` ${label}` }], width)];
+  const bodySeg = (text: string): GraphRunCardSegment => ({ text: `   ${text}`, ...(bodyColor ? { color: bodyColor } : {}) });
   if (expanded || wrapped.length <= 2) {
     for (const text of wrapped) lines.push(clampLine([bodySeg(text)], width));
     return lines;
@@ -426,15 +426,15 @@ function collapsibleSection(
 }
 
 
-function nodeDetailSections(entry: WorkflowAgentEntry, plan: Pick<PanelPlan, "agents" | "active" | "run" | "ascii" | "width" | "now">, expanded: readonly string[]): DetailSection[] {
+function nodeDetailSections(entry: GraphRunAgentEntry, plan: Pick<PanelPlan, "agents" | "active" | "run" | "ascii" | "width" | "now">, expanded: readonly string[]): DetailSection[] {
   const { agents, active, run, ascii, width, now } = plan;
   const status = lifecycle(entry, run, ascii);
-  const line = (text: string, color?: WorkflowCardColor): WorkflowCardLine => clampLine([{ text, ...(color ? { color } : {}) }], width);
+  const line = (text: string, color?: GraphRunCardColor): GraphRunCardLine => clampLine([{ text, ...(color ? { color } : {}) }], width);
   const sections: DetailSection[] = [{ key: "", navigable: false, lines: [
     line(` ${ascii ? "-" : "─"} Selected node ${(ascii ? "-" : "─").repeat(Math.max(1, width - 18))}`), [], line(` ${entry.label}`),
     withTrailing([{ text: ` ${status.word === "done" ? "Completed" : status.word[0].toUpperCase() + status.word.slice(1)}`, color: status.color }, { text: ` · ${[entry.presentation?.kind.replaceAll("_", " "), entry.agentType, entry.model ?? entry.modelId, entry.durationMs !== undefined ? formatDuration(entry.durationMs) : entry.startedAt !== undefined ? formatDuration(Math.max(0, (active ? run.source.task.pausedAt ?? now : entry.lastProgressAt ?? run.source.task.endTime ?? now) - entry.startedAt)) : undefined, entry.cached ? "replayed" : undefined].filter(Boolean).join(" · ")}`, color: "dim" }], "", width),
   ] }];
-  const byId = new Map<string | number, WorkflowAgentEntry>(agents.flatMap(agent => [[bindingId(agent), agent] as const, [nodeId(agent, agents), agent] as const]));
+  const byId = new Map<string | number, GraphRunAgentEntry>(agents.flatMap(agent => [[bindingId(agent), agent] as const, [nodeId(agent, agents), agent] as const]));
   const parent = entry.presentation?.itemIndex !== undefined && parentReference(entry) !== undefined
     ? agents.find(node => (node.historyIndex ?? node.instanceId) === parentReference(entry) && node.presentation?.kind === "fanout") : undefined;
   const deps = upstreamIds(entry).length ? upstreamIds(entry) : parent ? [nodeId(parent)] : [];
@@ -478,7 +478,7 @@ function nodeDetailSections(entry: WorkflowAgentEntry, plan: Pick<PanelPlan, "ag
   if (facts || entry.instanceId || entry.nodeKey) sections.push({ key: "identity", navigable: !!entry.instanceId, lines: metadata });
   return sections;
 }
-function openableRecordId(cursor: Target | undefined, agents: readonly WorkflowAgentEntry[]): string | undefined {
+function openableRecordId(cursor: Target | undefined, agents: readonly GraphRunAgentEntry[]): string | undefined {
   return cursor?.kind === "node" ? agents.find(agent => nodeId(agent, agents) === cursor.id)?.recordId : undefined;
 }
 /** Scroll offset that keeps `selectedRow` inside a `cap`-tall window over `length` lines (auto-follow). */
@@ -493,7 +493,7 @@ function follow(length: number, selectedRow: number | undefined, scroll: number,
   return s;
 }
 
-function padTo(lines: WorkflowCardLine[], rows: number): WorkflowCardLine[] {
+function padTo(lines: GraphRunCardLine[], rows: number): GraphRunCardLine[] {
   const out = [...lines];
   while (out.length < rows) out.push([]);
   if (out.length > rows) out.length = rows;
@@ -502,8 +502,8 @@ function padTo(lines: WorkflowCardLine[], rows: number): WorkflowCardLine[] {
 
 
 interface PanelPlan {
-  index: number; run: PanelRun; active: boolean; agents: WorkflowAgentEntry[];
-  ascii: boolean; width: number; now: number; headerLines: WorkflowCardLine[];
+  index: number; run: PanelRun; active: boolean; agents: GraphRunAgentEntry[];
+  ascii: boolean; width: number; now: number; headerLines: GraphRunCardLine[];
   visible: TreeRow[]; resolvedCursor?: Target; targets: Target[];
   detailSections: DetailSection[]; navigable: DetailSection[];
 }
@@ -536,7 +536,7 @@ function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOpti
   const detailSections = selected ? nodeDetailSections(selected, { agents, active, run, ascii, width, now }, state.expandedSections) : [];
   return { index, run, active, agents, ascii, width, now, headerLines, visible, resolvedCursor, targets, detailSections, navigable: detailSections.filter(section => section.navigable) };
 }
-function footerLine(plan: PanelPlan, state: PanelState, runCount: number, range?: string): WorkflowCardLine {
+function footerLine(plan: PanelPlan, state: PanelState, runCount: number, range?: string): GraphRunCardLine {
   const { run, ascii, width, resolvedCursor, agents, navigable } = plan;
   const hints = [...(range ? [range] : []), `${ascii ? "up/down" : "↑↓"} ${state.focus === "detail" ? "section" : "select"}`];
   if (navigable.length) hints.push("Enter expand");
@@ -550,7 +550,7 @@ function footerLine(plan: PanelPlan, state: PanelState, runCount: number, range?
   hints.push(state.focus === "detail" ? "Esc back" : "Esc close");
   return clampLine([{ text: " " + hints.join(" · "), color: "dim" }], width);
 }
-export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, opts: PanelOptions): WorkflowCardLine[] {
+export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, opts: PanelOptions): GraphRunCardLine[] {
   const width = Number.isFinite(opts.width) ? Math.max(0, Math.floor(opts.width)) : 80;
   const plan = planPanel(runs, state, opts);
   if (!plan) {
@@ -558,7 +558,7 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
     return opts.rows == null ? lines : padTo(lines, Math.max(0, opts.rows));
   }
   const { lines: roster, selectedRow } = rosterLines(plan, state);
-  const detail: WorkflowCardLine[] = [];
+  const detail: GraphRunCardLine[] = [];
   const section = state.focus === "detail" ? plan.navigable[clamp(state.detailCursor, 0, plan.navigable.length - 1)] : undefined;
   let selectedDetail: number | undefined;
   for (const block of plan.detailSections) {
@@ -592,7 +592,7 @@ const toggleSection = (keys: readonly string[], key: string): string[] =>
 
 export function applyPanelKey(
   runs: readonly PanelRun[], state: PanelState, data: string, opts: PanelOptions,
-): { state: PanelState; lines: WorkflowCardLine[]; close: boolean; action?: { kind: "open"; recordId: string } } {
+): { state: PanelState; lines: GraphRunCardLine[]; close: boolean; action?: { kind: "open"; recordId: string } } {
   const render = (next: PanelState, close = false) => ({ state: next, lines: renderPanelLines(runs, next, opts), close });
 
   if (matchesKey(data, "escape") || matchesKey(data, "q")) {

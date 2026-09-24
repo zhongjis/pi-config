@@ -6,18 +6,18 @@ import type { WorkflowOutcome } from "./outcome.js";
  * A workflow started from `--subagents-workflow-file` has no tool call to hang
  * its result card on, so it appends a custom session entry instead. That entry
  * has to survive a reload, which is why this is a plain-JSON snapshot rather
- * than the live {@link WorkflowTask}: the task holds an `AbortController`, the
+ * than the live {@link GraphRunTask}: the task holds an `AbortController`, the
  * script source and the run's control handle, none of which belongs in a
  * session file.
  *
  * Deliberately free of any renderer import. The card this data renders through
- * lives in `ui/workflow-report.ts` (`renderWorkflowEntryCard`), so the shape a
+ * lives in `ui/graph-run-report.ts` (`renderGraphRunEntryCard`), so the shape a
  * session file stores does not depend on the code that draws it.
  */
 
-import type { WorkflowEntry, WorkflowRunStatus } from "./progress.js";
-import type { WorkflowTask } from "./task.js";
-import type { WorkflowMeta } from "./workflow-types.js";
+import type { GraphRunMeta } from "./graph-run-types.js";
+import type { GraphRunEntry, GraphRunStatus } from "./progress.js";
+import type { GraphRunTask } from "./task.js";
 
 /** `customType` of the session entry a flag-launched workflow renders through. */
 export const WORKFLOW_ENTRY_TYPE = "subagents:workflow";
@@ -32,23 +32,23 @@ export interface WorkflowEntryData {
   readonly totalToolCalls?: number;
   readonly resumedFrom?: string;
   readonly pausedAt?: number;
-  status: WorkflowRunStatus;
+  status: GraphRunStatus;
   startTime: number;
   endTime?: number;
   totalPausedMs?: number;
   value?: unknown;
   outcome?: WorkflowOutcome;
   error?: string;
-  progress: WorkflowEntry[];
+  progress: GraphRunEntry[];
   agentCount: number;
   totalTokens: number;
-  meta?: WorkflowMeta;
+  meta?: GraphRunMeta;
 }
 
 /** Snapshot a settled task for {@link WORKFLOW_ENTRY_TYPE}. */
-export function workflowEntryData(task: WorkflowTask): WorkflowEntryData {
+export function workflowEntryData(task: GraphRunTask): WorkflowEntryData {
   return {
-    name: task.workflowName ?? task.id,
+    name: task.graphRunName ?? task.id,
     id: task.id,
     scriptPath: task.scriptPath,
     resultPath: task.resultPath,
@@ -63,7 +63,7 @@ export function workflowEntryData(task: WorkflowTask): WorkflowEntryData {
     value: task.value !== null && typeof task.value === "object" ? JSON.parse(JSON.stringify(task.value)) : task.value,
     error: task.error,
     ...(task.outcome === undefined ? {} : { outcome: { ...task.outcome } }),
-    progress: task.workflowProgress.map(entry => ({ ...entry })),
+    progress: task.graphRunProgress.map(entry => ({ ...entry })),
     agentCount: task.agentCount,
     totalTokens: task.totalTokens,
     ...(task.meta !== undefined ? { meta: task.meta } : {}),

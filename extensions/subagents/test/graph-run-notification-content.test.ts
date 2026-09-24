@@ -4,12 +4,12 @@ import { dirname, join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import { WORKFLOW_RESULT_PREVIEW_CHARS } from "../src/constants.js";
-import { workflowCompletionText } from "../src/graph/notification.js";
-import { createWorkflowTask, formatWorkflowNotification, type WorkflowTask, workflowResultPreview } from "../src/graph/task.js";
+import { graphRunCompletionText } from "../src/graph/notification.js";
+import { createGraphRunTask, formatGraphRunNotification, type GraphRunTask, graphRunResultPreview } from "../src/graph/task.js";
 import { createOutputFilePath } from "../src/output-file.js";
 
-function completed(value: unknown): WorkflowTask {
-  const t = createWorkflowTask({ id: "wf_note", script: "", meta: { name: "demo" } });
+function completed(value: unknown): GraphRunTask {
+  const t = createGraphRunTask({ id: "wf_note", script: "", meta: { name: "demo" } });
   t.status = "completed";
   t.value = value;
   t.endTime = t.startTime + 1;
@@ -25,33 +25,33 @@ function ctxFor(cwd: string, notify?: (message: string, level: string) => void):
   return { cwd, hasUI: notify !== undefined, ui: { notify }, sessionManager: { getSessionId: () => "sess" } } as unknown as ExtensionContext;
 }
 
-describe("workflowResultPreview", () => {
+describe("graphRunResultPreview", () => {
   it("prefers a top-level string summary over the full payload", () => {
     const t = completed({ summary: "short summary", details: "x".repeat(2000) });
-    expect(workflowResultPreview(t)).toBe("short summary");
+    expect(graphRunResultPreview(t)).toBe("short summary");
   });
 
   it("falls back to a compact (not pretty) object encoding", () => {
     const t = completed({ a: 1, b: 2 });
-    expect(workflowResultPreview(t)).toBe('{"a":1,"b":2}');
+    expect(graphRunResultPreview(t)).toBe('{"a":1,"b":2}');
   });
 
   it("caps at the preview length with a trailing ellipsis", () => {
     const t = completed("y".repeat(2000));
-    const preview = workflowResultPreview(t);
+    const preview = graphRunResultPreview(t);
     expect(preview.length).toBe(WORKFLOW_RESULT_PREVIEW_CHARS);
     expect(preview.endsWith("\u2026")).toBe(true);
   });
 
   it("returns a short string result verbatim", () => {
     const t = completed("all done");
-    expect(workflowResultPreview(t)).toBe("all done");
+    expect(graphRunResultPreview(t)).toBe("all done");
   });
 });
 
-describe("formatWorkflowNotification", () => {
+describe("formatGraphRunNotification", () => {
   it("inlines a short result and emits no result-file element", () => {
-    const xml = formatWorkflowNotification(completed("all done"));
+    const xml = formatGraphRunNotification(completed("all done"));
     expect(xml).toContain("<result>all done</result>");
     expect(xml).not.toContain("<result-file>");
   });
@@ -59,7 +59,7 @@ describe("formatWorkflowNotification", () => {
   it("marks truncation and links the artifact when a result file exists", () => {
     const t = completed("z".repeat(2000));
     t.resultPath = "/tmp/wf_note.workflow-result.txt";
-    const xml = formatWorkflowNotification(t);
+    const xml = formatGraphRunNotification(t);
     expect(xml).toContain("<result-file>/tmp/wf_note.workflow-result.txt</result-file>");
     expect(xml).toContain("truncated");
     // The full >500-char body is never inlined.
@@ -67,12 +67,12 @@ describe("formatWorkflowNotification", () => {
   });
 });
 
-describe("workflowCompletionText", () => {
+describe("graphRunCompletionText", () => {
   it("writes the complete result artifact and links it, dropping the legacy trailing line", () => {
     const cwd = mkdtempSync(join(tmpdir(), "wf-note-"));
     tmpDirs.push(cwd);
     const t = completed("q".repeat(2000));
-    const text = workflowCompletionText(ctxFor(cwd), t);
+    const text = graphRunCompletionText(ctxFor(cwd), t);
     expect(t.resultPath).toBeDefined();
     expect(readFileSync(t.resultPath as string, "utf-8")).toBe("q".repeat(2000));
     expect(text).toContain(`<result-file>${t.resultPath}</result-file>`);
@@ -84,7 +84,7 @@ describe("workflowCompletionText", () => {
     const cwd = mkdtempSync(join(tmpdir(), "wf-note-"));
     tmpDirs.push(cwd);
     const t = completed("brief");
-    const text = workflowCompletionText(ctxFor(cwd), t);
+    const text = graphRunCompletionText(ctxFor(cwd), t);
     expect(t.resultPath).toBeUndefined();
     expect(text).toContain("<result>brief</result>");
     expect(text).not.toContain("<result-file>");
@@ -98,7 +98,7 @@ describe("workflowCompletionText", () => {
     mkdirSync(join(tasksDir, "wf_note.workflow-result.txt"));
     const warnings: string[] = [];
     const t = completed("w".repeat(2000));
-    const text = workflowCompletionText(ctxFor(cwd, message => warnings.push(message)), t);
+    const text = graphRunCompletionText(ctxFor(cwd, message => warnings.push(message)), t);
     expect(t.resultArtifactError).toBeDefined();
     expect(warnings).toHaveLength(1);
     expect(text).toContain("Warning:");

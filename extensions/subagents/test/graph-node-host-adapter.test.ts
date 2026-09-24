@@ -9,11 +9,12 @@ import type { AgentGraph } from "../src/graph/ir.js";
 import { createNodeHost } from "../src/graph/node-host-adapter.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { AgentConfig } from "../src/types.js";
+
 vi.mock("../src/agent-runner.js", () => ({ runAgent: vi.fn(), resumeAgent: vi.fn() }));
 
 import { runAgent } from "../src/agent-runner.js";
+import { graphRunNodeArtifactId } from "../src/graph/history-artifact.js";
 import * as outputFiles from "../src/output-file.js";
-import { workflowNodeArtifactId } from "../src/graph/history-artifact.js";
 
 const ui: Pick<ExtensionContext["ui"], "notify"> = { notify: vi.fn() };
 const ctx = {
@@ -78,7 +79,7 @@ function setup(responseText = "done", options: { context?: ExtensionContext; sco
     pi: pi as ExtensionAPI,
     ctx: options.context ?? ctx,
     manager,
-    workflowId: "wf",
+    graphRunId: "wf",
     outputTranscript: () => false,
     scopeModels: options.scopeModels,
   });
@@ -144,12 +145,12 @@ describe("createNodeHost", () => {
       new AbortController().signal,
     );
     expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3]).toMatchObject({
-      workflow: true,
+      graphRun: true,
       selectedModel: { model, modelInput: "test/chosen:high" },
       thinkingLevel: "high",
       maxTurns: 0,
     });
-    expect(manager.listAgents()[0]?.workflowId).toBe("wf");
+    expect(manager.listAgents()[0]?.graphRunId).toBe("wf");
     await host.dispose();
   });
 
@@ -215,14 +216,14 @@ it("uses the registered history index alias for graph transcript paths and entri
   const result = vi.spyOn(outputFiles, "writeResultEntry").mockImplementation(() => {});
   const nodeIndex = vi.fn(() => 17);
   const pi: Pick<ExtensionAPI, "exec"> = { exec: vi.fn() };
-  const host = createNodeHost({ pi: pi as ExtensionAPI, ctx, manager, workflowId: "run-id", nodeIndex });
+  const host = createNodeHost({ pi: pi as ExtensionAPI, ctx, manager, graphRunId: "run-id", nodeIndex });
   vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
     const child = session();
     options.onSessionCreated?.(child);
     return { session: child, responseText: "done", aborted: false, steered: false };
   });
   await host.spawnAgent({ nodeId: "private-binding", attempt: 1, agentType: "general-purpose", prompt: "FIXTURE" }, new AbortController().signal);
-  const alias = workflowNodeArtifactId("run-id", 17);
+  const alias = graphRunNodeArtifactId("run-id", 17);
   expect(nodeIndex).toHaveBeenCalledWith("private-binding");
   expect(path).toHaveBeenCalledWith(ctx.cwd, alias, "parent");
   expect(initial).toHaveBeenCalledWith("/fixture.output", alias, "FIXTURE", ctx.cwd);

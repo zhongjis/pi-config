@@ -40,7 +40,7 @@ function required<T>(value: T | null | undefined): T {
 
 beforeEach(() => {
   originalCwd = process.cwd();
-  dir = mkdtempSync(join(tmpdir(), "workflow-registration-"));
+  dir = mkdtempSync(join(tmpdir(), "graph-run-registration-"));
   process.chdir(dir);
   vi.stubEnv("PI_CODING_AGENT_DIR", join(dir, "global"));
   vi.stubEnv("HOME", dir);

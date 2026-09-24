@@ -1,23 +1,24 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentSession, AgentSessionEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import { registerAgents } from "../src/agent-types.js";
-import { createNodeHost } from "../src/graph/node-host-adapter.js";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { GraphRunReporter } from "../src/graph/graph-run-adapter.js";
-import { executionAttemptId, type ExecutionCorrelation } from "../src/graph/graph-execution.js";
+import { type ExecutionCorrelation, executionAttemptId } from "../src/graph/graph-execution.js";
 import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
-import { createWorkflowTask } from "../src/graph/task.js";
-import { collapse } from "../src/graph/progress.js";
-import { snapshotHistory, decodeHistory } from "../src/graph/history.js";
-import { mergeWorkflowRuns } from "../src/graph/history-view.js";
+import { GraphRunReporter } from "../src/graph/graph-run-adapter.js";
+import { decodeHistory, snapshotHistory } from "../src/graph/history.js";
+import { mergeGraphRuns } from "../src/graph/history-view.js";
+import { createNodeHost } from "../src/graph/node-host-adapter.js";
 import { toPaneSource } from "../src/graph/pane/render.js";
+import { collapse } from "../src/graph/progress.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 import { initialPanelState, renderPanelLines } from "../src/ui/observability-panel.js";
 
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
 vi.mock("../src/agent-runner.js", () => ({ runAgent: vi.fn(), resumeAgent: vi.fn() }));
+
 import { runAgent } from "../src/agent-runner.js";
 
 let manager: AgentManager;
@@ -34,7 +35,7 @@ afterEach(() => {
 function setup() {
   const pi: Pick<ExtensionAPI, "exec"> = { exec: vi.fn() };
   const ctx = { cwd: "/tmp", modelRegistry: {}, model: undefined } as ExtensionContext;
-  return { host: createNodeHost({ pi: pi as ExtensionAPI, ctx, manager, workflowId: "wf", outputTranscript: () => false }) };
+  return { host: createNodeHost({ pi: pi as ExtensionAPI, ctx, manager, graphRunId: "wf", outputTranscript: () => false }) };
 }
 
 function assistant(modelId: string): AssistantMessage {
@@ -48,7 +49,7 @@ function assistant(modelId: string): AssistantMessage {
 it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing-provider"] as const)(
   "reports only this execution's assistant model live and in settled history: %s", async scenario => {
     const { host } = setup();
-    const task = createWorkflowTask({ id: "provenance", script: "" });
+    const task = createGraphRunTask({ id: "provenance", script: "" });
     const reporter = new GraphRunReporter(task, { nodes: { a: { type: "agent", agent: "general-purpose", prompt: "task" } }, edges: [] });
     const identity: ExecutionCorrelation = { runId: "provenance", instanceId: "11111111-1111-4111-8111-111111111111" as NodeInstanceId, activation: 1, graphAttempt: 1, executionAttemptId: executionAttemptId("22222222-2222-4222-8222-222222222222") };
     const running = { status: "running" as const, attempt: 1, activation: 1, graphAttempt: 1, currentExecutionAttemptId: identity.executionAttemptId };
@@ -75,14 +76,14 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
     }
     vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
       options.onSessionCreated?.(child);
-      expect(collapse(task.workflowProgress).agents[0]?.modelId).toBeUndefined();
+      expect(collapse(task.graphRunProgress).agents[0]?.modelId).toBeUndefined();
       if (scenario !== "no-evidence") {
         emit("first-model");
-        expect(collapse(task.workflowProgress).agents[0]?.modelId).toBe("first-model");
-        expect(collapse(task.workflowProgress).agents[0]?.model).toBe(scenario === "missing-provider" ? "first-model" : "test/first-model");
+        expect(collapse(task.graphRunProgress).agents[0]?.modelId).toBe("first-model");
+        expect(collapse(task.graphRunProgress).agents[0]?.model).toBe(scenario === "missing-provider" ? "first-model" : "test/first-model");
         if (scenario === "switch" || scenario === "failure") {
           emit("actual-fallback");
-          expect(collapse(task.workflowProgress).agents[0]?.modelId).toBe("actual-fallback");
+          expect(collapse(task.graphRunProgress).agents[0]?.modelId).toBe("actual-fallback");
         }
       }
       if (scenario === "failure") throw new Error("provider failed after assistant");
@@ -93,11 +94,11 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
     reporter.update("a", { ...running, status: result.ok ? "completed" : "failed", output: result.output, error: result.error }, identity);
     Object.assign(task, { status: result.ok ? "completed" : "failed", endTime: Date.now() });
     const expected = scenario === "no-evidence" ? undefined : scenario === "switch" || scenario === "failure" ? "actual-fallback" : "first-model";
-    expect(collapse(task.workflowProgress).agents[0]?.modelId).toBe(expected);
+    expect(collapse(task.graphRunProgress).agents[0]?.modelId).toBe(expected);
     const snapshot = snapshotHistory(task);
     expect(snapshot?.nodes[0]?.modelId).toBe(expected);
     const saved = decodeHistory(JSON.stringify({ version: 2, runs: [snapshot] })).runs;
-    const history = mergeWorkflowRuns([], saved).get(task.id);
+    const history = mergeGraphRuns([], saved).get(task.id);
     if (!history) throw new Error("Missing history fixture");
     const source = toPaneSource(history);
     for (const [run, modelName, nodeId] of [

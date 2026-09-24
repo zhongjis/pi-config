@@ -8,7 +8,7 @@ import { type AgentPresentation, createNotificationCoordinator } from "../src/no
 import type { AgentRecord, NotificationDetails } from "../src/types.js";
 
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
-// Stub keyHint so workflow-card renders (used by G2 tests) do not need a real TUI theme.
+// Stub keyHint so graph-run-card renders (used by G2 tests) do not need a real TUI theme.
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
   return { ...actual, keyHint: (_key: string, label?: string) => label ?? "" };
@@ -21,7 +21,7 @@ vi.mock("../src/agent-runner.js", async () => {
 
 import { runAgent } from "../src/agent-runner.js";
 import { workflowEntryData } from "../src/graph/entry.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 import subagentsExtension from "../src/index.js";
 
 type Renderable = {
@@ -457,10 +457,10 @@ describe("subagent notification rendering migration", () => {
   });
 
   it("renders workflow card for valid workflow entry in notification (G2 valid)", () => {
-    const task = createWorkflowTask({ id: "wf_note", script: "" });
+    const task = createGraphRunTask({ id: "wf_note", script: "" });
     task.status = "completed";
     task.value = "answer";
-    task.workflowName = "notify-demo";
+    task.graphRunName = "notify-demo";
     const wf = workflowEntryData(task);
     const card = renderCard({ details: notification({ workflow: wf }) }, false, 120).map(line => line.trim());
     const output = card.join("\n");

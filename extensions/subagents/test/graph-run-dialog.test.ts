@@ -5,29 +5,29 @@ import assert from "node:assert/strict";
 import type * as codingAgent from "@earendil-works/pi-coding-agent";
 import { type OverlayHandle, stripTerminalSequences, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { WorkflowAgentEntry, WorkflowEntry } from "../src/graph/progress.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import type { GraphRunAgentEntry, GraphRunEntry } from "../src/graph/progress.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 import type { AgentRecord } from "../src/types.js";
 import {
-  handleWorkflowDialogKey,
-  initialWorkflowDialogState,
-  layoutWorkflowDialog,
-  plainWorkflowDialogLines,
-  resolveWorkflowDialog,
+  GraphRunDialog,
+  graphRunAgentModel,
+  handleGraphRunDialogKey,
+  initialGraphRunDialogState,
+  layoutGraphRunDialog,
+  plainGraphRunDialogLines,
+  resolveGraphRunDialog,
   subStatusAnnotations,
-  WorkflowDialog,
-  workflowAgentModel,
-} from "../src/ui/workflow-dialog.js";
-import { showWorkflowDialog, showWorkflowsMenu } from "../src/ui/workflow-menu.js";
+} from "../src/ui/graph-run-dialog.js";
+import { showGraphRunDialog, showGraphRunsMenu } from "../src/ui/graph-run-menu.js";
 
 const theme = { fg: (_: string, text: string) => `\x1b[36m${text}\x1b[39m`, bold: (text: string) => `\x1b[1m${text}\x1b[22m` };
 const widths = [0, 1, 2, 8, 20, 40, 80, 120];
-const agent: WorkflowAgentEntry = {
+const agent: GraphRunAgentEntry = {
   type: "workflow_agent", index: 7, label: "child", state: "progress", recordId: "child-id",
   agentType: "chengfeng", model: "haiku,gpt-5.6-luna,qwen", modelId: "gpt-5.6-luna", thinking: "off",
 };
 const source = () => ({ task: { status: "running" as const, startTime: 100 }, progress: [agent] });
-const text = (input: Parameters<typeof layoutWorkflowDialog>[0]) => plainWorkflowDialogLines(layoutWorkflowDialog(input)).join("\n");
+const text = (input: Parameters<typeof layoutGraphRunDialog>[0]) => plainGraphRunDialogLines(layoutGraphRunDialog(input)).join("\n");
 const fits = (lines: string[], width: number) => {
   for (const line of lines) {
     expect(stripTerminalSequences(line)).not.toMatch(/[\r\n]/);
@@ -40,10 +40,10 @@ describe("workflow inspector model", () => {
   it("shows only effective runtime models and honest unresolved states", () => {
     const queued = { ...agent, index: 1, label: "queued", state: "start" as const, queuedAt: 10, modelId: undefined, recordId: undefined };
     const unresolved = { ...agent, index: 2, label: "starting", modelId: undefined };
-    expect(workflowAgentModel(queued, "queued")).toBe("model pending");
-    expect(workflowAgentModel(unresolved, "running")).toBe("model pending");
-    expect(workflowAgentModel(agent, "running")).toBe("gpt-5.6-luna");
-    const rendered = text({ ...source(), progress: [queued, agent], state: initialWorkflowDialogState(), width: 120 });
+    expect(graphRunAgentModel(queued, "queued")).toBe("model pending");
+    expect(graphRunAgentModel(unresolved, "running")).toBe("model pending");
+    expect(graphRunAgentModel(agent, "running")).toBe("gpt-5.6-luna");
+    const rendered = text({ ...source(), progress: [queued, agent], state: initialGraphRunDialogState(), width: 120 });
     expect(rendered).toContain("model pending");
     expect(rendered).toContain("gpt-5.6-luna");
     expect(rendered).not.toContain("haiku,gpt-5.6-luna,qwen");
@@ -51,7 +51,7 @@ describe("workflow inspector model", () => {
   });
 
   it("keeps one phase-grouped roster and explicit lifecycle words", () => {
-    const progress: WorkflowEntry[] = [
+    const progress: GraphRunEntry[] = [
       { type: "workflow_phase", index: 0, title: "Research" },
       { ...agent, index: 0, label: "running", phaseIndex: 0, phaseTitle: "Research" },
       { ...agent, index: 1, label: "queued", state: "start", queuedAt: 10, phaseIndex: 0, phaseTitle: "Research", modelId: undefined },
@@ -61,7 +61,7 @@ describe("workflow inspector model", () => {
     const rendered = text({
       task: { status: "running", startTime: 100 }, progress,
       meta: { name: "audit", description: "", phases: [{ title: "Research" }, { title: "Verify" }, { title: "Report" }] },
-      state: initialWorkflowDialogState(), width: 120,
+      state: initialGraphRunDialogState(), width: 120,
     });
     for (const marker of ["Research", "Verify", "Report", "Running", "Queued", "Completed", "Waiting for the graph to schedule"]) {
       expect(rendered).toContain(marker);
@@ -69,13 +69,13 @@ describe("workflow inspector model", () => {
   });
 
   it("shows dynamic round titles and orders attempt before its reason", () => {
-    const progress: WorkflowAgentEntry[] = [
+    const progress: GraphRunAgentEntry[] = [
       { ...agent, index: 8, label: "r1", phaseIndex: 0, phaseTitle: "Round 1/2", attempt: 2, lastAttemptReason: "user-retry" },
       { ...agent, index: 9, label: "r2", phaseIndex: 1, phaseTitle: "Round 2/2", attempt: 3, lastAttemptReason: "loop" },
     ];
     const rendered = text({
       task: { status: "running", startTime: 100 }, progress,
-      state: initialWorkflowDialogState(), width: 120,
+      state: initialGraphRunDialogState(), width: 120,
     });
     expect(rendered).toContain("Round 1/2");
     expect(rendered).toContain("Round 2/2");
@@ -90,64 +90,64 @@ describe("workflow inspector model", () => {
   });
 
   it("renders every terminal distinction and paused scheduling semantics explicitly", () => {
-    const progress: WorkflowAgentEntry[] = [
+    const progress: GraphRunAgentEntry[] = [
       { ...agent, index: 0, label: "failed", state: "error", error: "failed" },
       { ...agent, index: 1, label: "blocked", state: "error", blocked: true, error: "blocked" },
       { ...agent, index: 2, label: "skipped", state: "error", skipped: true },
       { ...agent, index: 3, label: "stopped", state: "progress" },
       { ...agent, index: 4, label: "replayed", state: "done", cached: true, modelId: undefined },
     ];
-    const rendered = text({ task: { status: "completed", startTime: 100 }, progress, state: initialWorkflowDialogState(), width: 120 });
+    const rendered = text({ task: { status: "completed", startTime: 100 }, progress, state: initialGraphRunDialogState(), width: 120 });
     for (const marker of ["Failed", "Blocked", "Skipped", "Stopped", "Replayed", "model not run"]) expect(rendered).toContain(marker);
     const queued = { ...agent, index: 5, label: "queued", state: "start" as const, queuedAt: 10, modelId: undefined };
-    const paused = text({ task: { status: "paused", startTime: 100 }, progress: [queued], state: initialWorkflowDialogState(5), width: 120 });
+    const paused = text({ task: { status: "paused", startTime: 100 }, progress: [queued], state: initialGraphRunDialogState(5), width: 120 });
     expect(paused).toContain("Execution: paused");
     expect(paused).toContain("no new agents start");
   });
 
   it("preserves selection by stable entry index as progress grows", () => {
     const chosen = { ...agent, index: 12, label: "chosen" };
-    const state = initialWorkflowDialogState(12);
-    const before = resolveWorkflowDialog({ ...source(), progress: [chosen], state, width: 120 });
-    const after = resolveWorkflowDialog({ ...source(), progress: [{ ...agent, index: 4 }, chosen, { ...agent, index: 20 }], state, width: 120 });
+    const state = initialGraphRunDialogState(12);
+    const before = resolveGraphRunDialog({ ...source(), progress: [chosen], state, width: 120 });
+    const after = resolveGraphRunDialog({ ...source(), progress: [{ ...agent, index: 4 }, chosen, { ...agent, index: 20 }], state, width: 120 });
     expect(before.selectedEntry?.label).toBe("chosen");
     expect(after.selectedEntry?.label).toBe("chosen");
-    expect(handleWorkflowDialogKey("j", state, after)?.state.selectedIndex).toBe(20);
+    expect(handleGraphRunDialogKey("j", state, after)?.state.selectedIndex).toBe(20);
   });
 });
 
 describe("workflow inspector interaction", () => {
   it("routes controls through stable entry and record ids", () => {
-    const state = initialWorkflowDialogState(7);
-    const view = resolveWorkflowDialog({ ...source(), state, width: 120 });
+    const state = initialGraphRunDialogState(7);
+    const view = resolveGraphRunDialog({ ...source(), state, width: 120 });
     for (const [key, action] of [["x", { kind: "kill" }], ["p", { kind: "pause" }], ["s", { kind: "skip", index: 7 }], ["r", { kind: "retry", index: 7 }], ["c", { kind: "open", recordId: "child-id" }]] as const) {
-      expect(handleWorkflowDialogKey(key, state, view)?.action).toEqual(action);
+      expect(handleGraphRunDialogKey(key, state, view)?.action).toEqual(action);
     }
-    const paused = resolveWorkflowDialog({ ...source(), task: { status: "paused", startTime: 100 }, state, width: 120 });
-    expect(handleWorkflowDialogKey("p", state, paused)?.action).toEqual({ kind: "resume" });
+    const paused = resolveGraphRunDialog({ ...source(), task: { status: "paused", startTime: 100 }, state, width: 120 });
+    expect(handleGraphRunDialogKey("p", state, paused)?.action).toEqual({ kind: "resume" });
   });
 
   it("uses side-by-side detail when wide and explicit drill-in/back when narrow", () => {
-    const state = initialWorkflowDialogState(7);
-    const wide = resolveWorkflowDialog({ ...source(), state, width: 120 });
+    const state = initialGraphRunDialogState(7);
+    const wide = resolveGraphRunDialog({ ...source(), state, width: 120 });
     expect(wide.narrow).toBe(false);
     expect(text({ ...source(), state, width: 120 })).toContain("Current activity");
-    const narrow = resolveWorkflowDialog({ ...source(), state, width: 40 });
+    const narrow = resolveGraphRunDialog({ ...source(), state, width: 40 });
     expect(narrow.narrow).toBe(true);
-    const opened = handleWorkflowDialogKey("\r", state, narrow);
+    const opened = handleGraphRunDialogKey("\r", state, narrow);
     assert.ok(opened);
     expect(opened.state.level).toBe("detail");
     expect(text({ ...source(), state: opened.state, width: 40 })).toContain("Current activity");
-    expect(handleWorkflowDialogKey("\x1b", opened.state, resolveWorkflowDialog({ ...source(), state: opened.state, width: 40 }))?.state.level).toBe("roster");
+    expect(handleGraphRunDialogKey("\x1b", opened.state, resolveGraphRunDialog({ ...source(), state: opened.state, width: 40 }))?.state.level).toBe("roster");
   });
 
   it("puts terminal outcome before prompt and exposes contextual controls on demand", () => {
-    const state = initialWorkflowDialogState(7);
+    const state = initialGraphRunDialogState(7);
     const progress = [{ ...agent, state: "done" as const, resultPreview: "outcome-marker", promptPreview: "prompt-marker" }];
     const collapsed = text({ task: { status: "completed", startTime: 100 }, progress, state, width: 120 });
     expect(collapsed.indexOf("outcome-marker")).toBeLessThan(collapsed.indexOf("prompt-marker"));
     expect(collapsed).not.toContain("x stop");
-    const help = handleWorkflowDialogKey("?", state, resolveWorkflowDialog({ task: { status: "running", startTime: 100 }, progress: [agent], state, width: 120 }));
+    const help = handleGraphRunDialogKey("?", state, resolveGraphRunDialog({ task: { status: "running", startTime: 100 }, progress: [agent], state, width: 120 }));
     assert.ok(help);
     const expanded = text({ ...source(), state: help.state, width: 120 });
     expect(expanded).toContain("? less");
@@ -159,7 +159,7 @@ describe("workflow inspector interaction", () => {
     vi.useFakeTimers();
     const requestRender = vi.fn<TUI["requestRender"]>();
     const task = { status: "running" as "running" | "completed", startTime: 100 };
-    const dialog = new WorkflowDialog({ requestRender, terminal: { rows: 40 } } as unknown as TUI, () => ({ task, progress: [agent] }), theme, vi.fn());
+    const dialog = new GraphRunDialog({ requestRender, terminal: { rows: 40 } } as unknown as TUI, () => ({ task, progress: [agent] }), theme, vi.fn());
     for (const width of widths) fits(dialog.render(width), width);
     vi.advanceTimersByTime(500);
     expect(requestRender).toHaveBeenCalled();
@@ -171,14 +171,14 @@ describe("workflow inspector interaction", () => {
 });
 
 it("hides the inspector while its child conversation is open, then restores it", async () => {
-  const task = createWorkflowTask({ id: "wf_test", script: "" });
-  task.workflowProgress = [agent];
-  let dialog: WorkflowDialog | undefined;
+  const task = createGraphRunTask({ id: "wf_test", script: "" });
+  task.graphRunProgress = [agent];
+  let dialog: GraphRunDialog | undefined;
   let finishViewer: (() => void) | undefined;
   const setHidden = vi.fn();
   const custom: codingAgent.ExtensionContext["ui"]["custom"] = (factory, options) => new Promise((resolve, reject) => {
     void Promise.resolve(factory({ requestRender() {} } as TUI, theme as codingAgent.Theme, {} as codingAgent.KeybindingsManager, resolve)).then(component => {
-      assert.ok(component instanceof WorkflowDialog);
+      assert.ok(component instanceof GraphRunDialog);
       dialog = component;
       assert.ok(options?.onHandle);
       options.onHandle({ setHidden } as unknown as OverlayHandle);
@@ -188,7 +188,7 @@ it("hides the inspector while its child conversation is open, then restores it",
   const ctx = { ui: ui as codingAgent.ExtensionContext["ui"] };
   const record = { id: "child-id" } as AgentRecord;
   const viewAgentConversation = vi.fn(() => new Promise<void>(resolve => { finishViewer = resolve; }));
-  const opened = showWorkflowDialog(ctx, task, { tasks: new Map([[task.id, task]]), getRecord: () => record, getCtx: () => ctx, viewAgentConversation });
+  const opened = showGraphRunDialog(ctx, task, { tasks: new Map([[task.id, task]]), getRecord: () => record, getCtx: () => ctx, viewAgentConversation });
   await vi.waitFor(() => expect(dialog).toBeDefined());
   dialog?.handleInput("c");
   expect(setHidden).toHaveBeenLastCalledWith(true);
@@ -200,13 +200,13 @@ it("hides the inspector while its child conversation is open, then restores it",
 });
 
 it("passes live outcome through the inspector and labels menu lifecycle as execution", async () => {
-  const task = createWorkflowTask({ id: "wf_outcome", script: "" });
+  const task = createGraphRunTask({ id: "wf_outcome", script: "" });
   task.status = "completed";
   task.outcome = { status: "failed", reason: "verification failed" };
   task.value = { retained: "evidence" };
   const custom: codingAgent.ExtensionContext["ui"]["custom"] = factory => new Promise((resolve, reject) => {
     void Promise.resolve(factory({ requestRender() {} } as TUI, theme as codingAgent.Theme, {} as codingAgent.KeybindingsManager, resolve)).then(component => {
-      assert.ok(component instanceof WorkflowDialog);
+      assert.ok(component instanceof GraphRunDialog);
       expect(stripTerminalSequences(component.render(120).join("\n"))).toContain("Outcome: failed — verification failed");
       component.handleInput("\x1b");
     }).then(undefined, reject);
@@ -214,8 +214,8 @@ it("passes live outcome through the inspector and labels menu lifecycle as execu
   const select = vi.fn(async () => undefined);
   const ui = { custom, select, notify: vi.fn() } as unknown as codingAgent.ExtensionContext["ui"];
   const ctx = { ui };
-  const deps = { tasks: new Map([[task.id, task], ["other", createWorkflowTask({ id: "other", script: "" })]]), getRecord: () => undefined, getCtx: () => ctx, viewAgentConversation: async () => {} };
-  await showWorkflowDialog(ctx, task, deps);
-  await showWorkflowsMenu(ctx, deps);
+  const deps = { tasks: new Map([[task.id, task], ["other", createGraphRunTask({ id: "other", script: "" })]]), getRecord: () => undefined, getCtx: () => ctx, viewAgentConversation: async () => {} };
+  await showGraphRunDialog(ctx, task, deps);
+  await showGraphRunsMenu(ctx, deps);
   expect(select).toHaveBeenCalledWith("Graph runs", expect.arrayContaining([expect.stringContaining("wf_outcome — Execution: completed")]));
 });

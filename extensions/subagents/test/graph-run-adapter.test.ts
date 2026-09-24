@@ -8,7 +8,7 @@ import { outcomeLabel, WORKFLOW_OUTCOME_KEY } from "../src/graph/outcome.js";
 import { collapse } from "../src/graph/progress.js";
 import { type RunGraphResult, runGraph } from "../src/graph/run-graph.js";
 import type { NodeRun } from "../src/graph/scheduler.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 import { initialPanelState } from "../src/ui/observability-panel.js";
 import { releaseAfterPending } from "./graph-drain.fixture.js";
 
@@ -48,7 +48,7 @@ const graph: AgentGraph = {
 };
 
 function task() {
-  return createWorkflowTask({ id: "wf_test", script: "", meta: { name: "demo", description: "demo graph" } });
+  return createGraphRunTask({ id: "wf_test", script: "", meta: { name: "demo", description: "demo graph" } });
 }
 
 describe("GraphRunReporter", () => {
@@ -59,7 +59,7 @@ describe("GraphRunReporter", () => {
     reporter.update("a", { status: "completed", attempt: 1, output: { diff: "x" } });
     reporter.update("b", { status: "running", attempt: 1 });
 
-    const { agents } = collapse(t.workflowProgress);
+    const { agents } = collapse(t.graphRunProgress);
     const a = agents.find(entry => entry.label === "a");
     const b = agents.find(entry => entry.label === "b");
     expect(a?.state).toBe("done");
@@ -90,7 +90,7 @@ describe("GraphRunReporter", () => {
     const reporter = new GraphRunReporter(t, promptGraph);
     reporter.update("big", { status: "running", attempt: 1 });
     reporter.update("sub", { status: "running", attempt: 1 });
-    const { agents } = collapse(t.workflowProgress);
+    const { agents } = collapse(t.graphRunProgress);
     const big = agents.find(entry => entry.label === "big");
     const sub = agents.find(entry => entry.label === "sub");
     // A prompt over the 200-char cap is truncated with an ellipsis.
@@ -105,11 +105,11 @@ describe("GraphRunReporter", () => {
     const reporter = new GraphRunReporter(t, graph);
     const output = "retained output ".repeat(40).trim();
     reporter.update("a", { status: "completed", attempt: 1, output });
-    const entry = collapse(t.workflowProgress).agents.find(agent => agent.label === "a");
+    const entry = collapse(t.graphRunProgress).agents.find(agent => agent.label === "a");
     expect(entry?.resultPreview).toBe(output);
 
     reporter.update("b", { status: "completed", attempt: 1, output: Symbol("result") });
-    const b = collapse(t.workflowProgress).agents.find(agent => agent.label === "b");
+    const b = collapse(t.graphRunProgress).agents.find(agent => agent.label === "b");
     expect(b?.resultPreview).toBe("Symbol(result)");
   });
 
@@ -118,7 +118,7 @@ describe("GraphRunReporter", () => {
     const reporter = new GraphRunReporter(t, graph);
     reporter.update("a", { status: "pending", attempt: 0 });
     reporter.update("b", { status: "skipped", attempt: 0 });
-    const { agents } = collapse(t.workflowProgress);
+    const { agents } = collapse(t.graphRunProgress);
     expect(agents.find(e => e.label === "a")?.blocked).toBe(true);
     expect(agents.find(e => e.label === "b")?.skipped).toBe(true);
   });
@@ -197,7 +197,7 @@ describe("GraphRunReporter", () => {
     const identity = correlation("11111111-1111-4111-8111-111111111111");
     reporter.update("a", running(identity), identity);
     reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" }, identity);
-    const { agents } = collapse(t.workflowProgress);
+    const { agents } = collapse(t.graphRunProgress);
     const a = agents.find(e => e.label === "a");
     expect(a?.model).toBe("haiku 4.5");
     expect(a?.modelId).toBe("anthropic/claude-haiku-4-5");
@@ -210,7 +210,7 @@ describe("GraphRunReporter", () => {
     reporter.update("a", running(identity), identity);
     reporter.setResolved("a", { recordId: "r1" }, identity);
     reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" }, identity);
-    const a = collapse(t.workflowProgress).agents.find(e => e.label === "a");
+    const a = collapse(t.graphRunProgress).agents.find(e => e.label === "a");
     expect(a?.recordId).toBe("r1");
     expect(a?.model).toBe("haiku 4.5");
     expect(a?.modelId).toBe("anthropic/claude-haiku-4-5");
@@ -222,7 +222,7 @@ describe("GraphRunReporter", () => {
     r2.update("a", running(secondIdentity), secondIdentity);
     r2.setResolved("a", { modelName: "sonnet", modelId: "mid" }, secondIdentity);
     r2.setResolved("a", { recordId: "r2" }, secondIdentity);
-    const a2 = collapse(t2.workflowProgress).agents.find(e => e.label === "a");
+    const a2 = collapse(t2.graphRunProgress).agents.find(e => e.label === "a");
     expect(a2?.recordId).toBe("r2");
     expect(a2?.model).toBe("sonnet");
     expect(a2?.modelId).toBe("mid");
@@ -262,7 +262,7 @@ describe("GraphRunReporter", () => {
     if (!late) throw new Error("Initial resolution callback was not captured");
     late({ recordId: "old", modelName: "old-model" });
     expect((await run).status).toBe("completed");
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")).toMatchObject({
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "a")).toMatchObject({
       attempt: 2, recordId: "current", model: "current-model", toolCalls: 9, tokens: 90,
     });
   });
@@ -281,16 +281,16 @@ describe("GraphRunReporter", () => {
       correlation("99999999-9999-4999-8999-999999999999", { graphAttempt: 2 }),
       correlation("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
     ]) reporter.setResolved("a", { recordId: "current", modelName: "current-model" }, stale, 3_000);
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")).toMatchObject({
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "a")).toMatchObject({
       attempt: 2, recordId: "old", model: "old-model", toolCalls: 1, tokens: 10, lastProgressAt: 2_000,
     });
     const replacement = correlation("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
     reporter.update("a", { ...running(replacement, 2), attemptReason: "user-retry" }, replacement, 4_000);
     reporter.setResolved("a", { recordId: "current" }, replacement, 5_000);
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")).toMatchObject({
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "a")).toMatchObject({
       attempt: 2, recordId: "current", toolCalls: 9, tokens: 90, lastProgressAt: 5_000,
     });
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "a")?.model).toBeUndefined();
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "a")?.model).toBeUndefined();
   });
 
   it("plumbs live tool-call and token counts from getActivity, re-emitting only on change", () => {
@@ -301,23 +301,23 @@ describe("GraphRunReporter", () => {
     reporter.update("a", running(identity), identity);
     reporter.setResolved("a", { recordId: "r1" }, identity);
 
-    const first = collapse(t.workflowProgress).agents.find(e => e.label === "a");
+    const first = collapse(t.graphRunProgress).agents.find(e => e.label === "a");
     expect(first?.toolCalls).toBe(2);
     expect(first?.tokens).toBe(100);
 
     // A refresh after the counts climb re-emits the running node's entry with the new counts.
-    const beforeChange = t.workflowProgress.length;
+    const beforeChange = t.graphRunProgress.length;
     activity = { toolCalls: 5, tokens: 250 };
     reporter.refresh();
-    expect(t.workflowProgress.length).toBeGreaterThan(beforeChange);
-    const updated = collapse(t.workflowProgress).agents.find(e => e.label === "a");
+    expect(t.graphRunProgress.length).toBeGreaterThan(beforeChange);
+    const updated = collapse(t.graphRunProgress).agents.find(e => e.label === "a");
     expect(updated?.toolCalls).toBe(5);
     expect(updated?.tokens).toBe(250);
 
     // A refresh with unchanged counts appends nothing.
-    const afterChange = t.workflowProgress.length;
+    const afterChange = t.graphRunProgress.length;
     reporter.refresh();
-    expect(t.workflowProgress.length).toBe(afterChange);
+    expect(t.graphRunProgress.length).toBe(afterChange);
   });
 
   it("pins startedAt across re-emits within an attempt and resets it on a new attempt", () => {
@@ -331,15 +331,15 @@ describe("GraphRunReporter", () => {
     reporter.setResolved("a", { recordId: "r1" }, identity, 5_000);
     activity = { toolCalls: 9 };
     reporter.refresh(9_000);
-    expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(1_000);
+    expect(collapse(t.graphRunProgress).agents.find(e => e.label === "a")?.startedAt).toBe(1_000);
 
     // A new attempt (retry / loop re-entry) resets startedAt to the new start.
     reporter.update("a", { status: "running", attempt: 2 }, 20_000);
-    expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(20_000);
+    expect(collapse(t.graphRunProgress).agents.find(e => e.label === "a")?.startedAt).toBe(20_000);
 
     // A terminal emit anchors to the current attempt's start, not `now`.
     reporter.update("a", { status: "completed", attempt: 2, output: "x" }, 25_000);
-    expect(collapse(t.workflowProgress).agents.find(e => e.label === "a")?.startedAt).toBe(20_000);
+    expect(collapse(t.graphRunProgress).agents.find(e => e.label === "a")?.startedAt).toBe(20_000);
   });
 
   it("registers dynamic nodes with stable metadata before their updates", () => {
@@ -356,7 +356,7 @@ describe("GraphRunReporter", () => {
     reporter.update("round-1:item:0", { ...running(identity, 2), attemptReason: "loop" }, identity, 3_000);
     reporter.setResolved("round-1:item:0", { recordId: "record-1", modelId: "provider/model" }, identity, 4_000);
 
-    const first = collapse(t.workflowProgress);
+    const first = collapse(t.graphRunProgress);
     const child = first.agents.find(entry => entry.label === "round-1:item:0");
     expect(child).toMatchObject({
       index: 2, agentType: "chengfeng", promptPreview: "research item",
@@ -377,7 +377,7 @@ describe("GraphRunReporter", () => {
       { dependencies: ["round-1:item:0"], phase: { index: 1, title: "Round 2/2" } },
     );
     reporter.update("round-2:item:0", { status: "pending", attempt: 0 });
-    const second = collapse(t.workflowProgress).agents.find(entry => entry.label === "round-2:item:0");
+    const second = collapse(t.graphRunProgress).agents.find(entry => entry.label === "round-2:item:0");
     expect(second).toMatchObject({ index: 3, phaseIndex: 1, phaseTitle: "Round 2/2" });
     expect(t.agentCount).toBe(4);
   });
@@ -398,7 +398,7 @@ describe("GraphRunReporter", () => {
     const reporter = new GraphRunReporter(t, restored, 1_000);
     reporter.update("research", { status: "running", attempt: 1 }, 1_500);
     reporter.update("research:item:0", { status: "pending", attempt: 0 }, 2_000);
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
       index: 1, deps: [], phaseIndex: 0, phaseTitle: "Stage 1",
     });
 
@@ -407,9 +407,9 @@ describe("GraphRunReporter", () => {
       restored.nodes["research:item:0"],
       { dependencies: [], phase: { index: 0, title: "Round 1/2" } },
     );
-    const child = collapse(t.workflowProgress).agents.find(entry => entry.label === "research:item:0");
+    const child = collapse(t.graphRunProgress).agents.find(entry => entry.label === "research:item:0");
     expect(child).toMatchObject({ index: 1, deps: [], phaseIndex: 0, phaseTitle: "Round 1/2" });
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "research")?.dependents).toEqual([]);
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "research")?.dependents).toEqual([]);
     expect(t.agentCount).toBe(2);
 
     reporter.registerNode(
@@ -417,7 +417,7 @@ describe("GraphRunReporter", () => {
       restored.nodes["research:item:0"],
       { dependencies: [], phase: { index: 9, title: "Ignored" } },
     );
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
       index: 1, deps: [], phaseIndex: 0, phaseTitle: "Round 1/2",
     });
   });
@@ -431,10 +431,10 @@ describe("GraphRunReporter", () => {
       { dependencies: ["late-parent"] },
     );
     reporter.update("late-child", { status: "pending", attempt: 0 }, 2_000);
-    expect(collapse(t.workflowProgress).agents.find(entry => entry.label === "late-child")).toMatchObject({
+    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "late-child")).toMatchObject({
       index: 2, phaseIndex: 0, phaseTitle: "Stage 1",
     });
-    const childEmits = t.workflowProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child").length;
+    const childEmits = t.graphRunProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child").length;
 
     reporter.registerNode(
       "late-parent",
@@ -443,14 +443,14 @@ describe("GraphRunReporter", () => {
     );
     reporter.update("late-parent", { status: "pending", attempt: 0 }, 3_000);
 
-    const agents = collapse(t.workflowProgress).agents;
+    const agents = collapse(t.graphRunProgress).agents;
     expect(agents.find(entry => entry.label === "late-parent")).toMatchObject({
       index: 3, phaseIndex: 2, phaseTitle: "Stage 3",
     });
     expect(agents.find(entry => entry.label === "late-child")).toMatchObject({
       index: 2, phaseIndex: 3, phaseTitle: "Stage 4",
     });
-    expect(t.workflowProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child")).toHaveLength(childEmits + 1);
+    expect(t.graphRunProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child")).toHaveLength(childEmits + 1);
   });
 });
 
@@ -490,10 +490,10 @@ describe("GraphRunReporter — static graph progress", () => {
     await vi.waitFor(() => expect(roots.size).toBe(4));
     roots.get("research")?.({ ok: true, output: "research complete" });
     await vi.waitFor(() => {
-      expect(collapse(t.workflowProgress).agents.find(agent => agent.label === "research")?.state).toBe("done");
+      expect(collapse(t.graphRunProgress).agents.find(agent => agent.label === "research")?.state).toBe("done");
     });
 
-    const { agents } = collapse(t.workflowProgress);
+    const { agents } = collapse(t.graphRunProgress);
     expect(agents).toHaveLength(5);
     expect(agents.find(agent => agent.label === "synthesize")?.phaseIndex).toBe(1);
     const { renderObservabilityPaneLines, toPaneSource } = await import("../src/graph/pane/render.js");
@@ -524,7 +524,7 @@ it("v2 publishes only materialized rows with name-first labels and persisted ord
   reporter.update("second", { status: "running", attempt: 1 });
   reporter.registerNode("first", { type: "fanout", name: "Research", items: { path: "$" }, itemSchema: {}, dispatch: { path: "$.x", cases: { x: "worker" } }, prompt: `\${item}` }, { dependencies: [], instance: first });
   reporter.update("first", { status: "running", attempt: 1 });
-  const rows = collapse(t.workflowProgress).agents;
+  const rows = collapse(t.graphRunProgress).agents;
   expect(rows.map(row => row.index)).toEqual([0, 1]);
   expect(rows.map(row => row.phaseIndex)).toEqual([0, 0]);
   expect(rows.map(row => row.label)).toEqual(["Research · iteration 1", "Research · iteration 1 · item 1"]);
@@ -598,7 +598,7 @@ it("projects committed feedback ownership and decisions through real dynamic mat
       : { decision: "sufficient", gaps: [], tasks: [] }) }) },
   });
   expect(result.status).toBe("completed"); expect(work).toBe(2); expect(evaluations).toBe(2);
-  const rows = collapse(t.workflowProgress).agents;
+  const rows = collapse(t.graphRunProgress).agents;
   expect(rows).toHaveLength(7);
   const owner = rows.find(row => row.presentation?.kind === "bounded_feedback");
   expect(owner?.presentation?.iterations).toEqual([{ iteration: 1, decision: "continue" }, { iteration: 2, decision: "sufficient" }]);

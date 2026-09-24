@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from "node:util";
-import type { GraphNodePresentation, WorkflowAgentEntry } from "./progress.js";
+import type { GraphNodePresentation, GraphRunAgentEntry } from "./progress.js";
 
-/** All references are WorkflowAgentEntry indices scoped to one history run. */
+/** All references are GraphRunAgentEntry indices scoped to one history run. */
 export interface HistoryTopology extends Pick<GraphNodePresentation, "kind" | "name" | "role" | "iteration" | "itemIndex" | "iterations"> {
   parentIndex?: number;
   connections?: GraphNodePresentation["historyConnections"];
@@ -47,7 +47,7 @@ export function decodeTopology(value: unknown): HistoryTopology | undefined {
   return topology;
 }
 
-export function captureTopology(entry: WorkflowAgentEntry, retained: readonly WorkflowAgentEntry[]): HistoryTopology | undefined {
+export function captureTopology(entry: GraphRunAgentEntry, retained: readonly GraphRunAgentEntry[]): HistoryTopology | undefined {
   const meta = entry.presentation;
   if (!meta) return;
   return decodeTopology({

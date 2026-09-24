@@ -8,12 +8,12 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyPaneKey } from "../src/graph/pane/input-filter.mjs";
-import { createWorkflowPaneManager, type WorkflowPaneManager } from "../src/graph/pane/manager.js";
+import { createGraphRunPaneManager, type GraphRunPaneManager } from "../src/graph/pane/manager.js";
 import { readInput, writeInputAtomic } from "../src/graph/pane/store.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 
 let dir: string;
-let managers: WorkflowPaneManager[] = [];
+let managers: GraphRunPaneManager[] = [];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "wfpane-restart-"));
@@ -25,20 +25,20 @@ afterEach(async () => {
 });
 
 function manager() {
-  const task = createWorkflowTask({
+  const task = createGraphRunTask({
     id: "wf_a", script: "x", startTime: 1000,
     meta: { name: "audit", description: "d", phases: [{ title: "Discover" }, { title: "Review" }] },
   });
-  task.workflowName = "audit";
+  task.graphRunName = "audit";
   task.status = "running";
   task.agentCount = 2;
-  task.workflowProgress = [
+  task.graphRunProgress = [
     { type: "workflow_phase", index: 0, title: "Discover" },
     { type: "workflow_phase", index: 1, title: "Review" },
     { type: "workflow_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", recordId: "rec-a0" },
     { type: "workflow_agent", index: 1, label: "a1", phaseIndex: 1, state: "progress" },
   ];
-  const mgr = createWorkflowPaneManager({
+  const mgr = createGraphRunPaneManager({
     enabled: true,
     exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "", killed: false })),
     parentPaneId: "%p0", socket: "sock", cwd: "/work", sessionId: "sess1234", ppid: 4242,
@@ -50,8 +50,8 @@ function manager() {
 
 const b64 = (s: string) => Buffer.from(s).toString("base64");
 // Typed private access keeps deterministic dispatch independent of fs.watch timing.
-const panelState = (mgr: WorkflowPaneManager) => mgr["panelState"];
-const processInput = (mgr: WorkflowPaneManager) => mgr["processInputFile"]();
+const panelState = (mgr: GraphRunPaneManager) => mgr["panelState"];
+const processInput = (mgr: GraphRunPaneManager) => mgr["processInputFile"]();
 
 // Execute the actual viewer startup and stdin handler, with a ready terminal and
 // inert timers/watchers. Real file IO preserves the persisted restart boundary.

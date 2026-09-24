@@ -4,9 +4,9 @@ import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import { firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
 import { isWorkflowEntryData } from "../graph/entry-validation.js";
 import { outcomeLabel } from "../graph/outcome.js";
-import { buildPhaseGroups, collapse, displayState, elapsedMs, formatDuration, sizeWarning, stats, type WorkflowAgentEntry } from "../graph/progress.js";
+import { buildPhaseGroups, collapse, displayState, elapsedMs, formatDuration, type GraphRunAgentEntry, sizeWarning, stats } from "../graph/progress.js";
 import type { Theme } from "./agent-widget.js";
-import { formatModel, formatThinking, REPLAYED_ANNOTATION, type WorkflowCardInput } from "./workflow-card.js";
+import { formatModel, formatThinking, type GraphRunCardInput, REPLAYED_ANNOTATION } from "./graph-run-card.js";
 
 function resultSummary(value: unknown): string {
   if (value === undefined) return "no output";
@@ -18,11 +18,11 @@ function resultSummary(value: unknown): string {
 
 const childStatuses = { queued: "Queued", running: "Running", done: "Completed", failed: "Failed", skipped: "Skipped", blocked: "Blocked", interrupted: "Interrupted" } as const;
 
-function childStatus(entry: WorkflowAgentEntry, active: boolean): string {
+function childStatus(entry: GraphRunAgentEntry, active: boolean): string {
   return entry.cached ? "Replayed" : childStatuses[displayState(entry, active)];
 }
 
-function observedCounts(agents: readonly WorkflowAgentEntry[], active: boolean): string {
+function observedCounts(agents: readonly GraphRunAgentEntry[], active: boolean): string {
   if (agents.length === 0) return "No agents observed";
   const counts = new Map<string, number>();
   for (const entry of agents) {
@@ -33,7 +33,7 @@ function observedCounts(agents: readonly WorkflowAgentEntry[], active: boolean):
 }
 
 /** State-specific report shared by live tool rows and retained snapshots. */
-export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Component {
+export function renderGraphRunCard(input: GraphRunCardInput, theme: Theme): Component {
   return {
     invalidate() {},
     render(width) {
@@ -47,7 +47,7 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const status = { running: "Running", paused: "Paused", completed: outcomeLabel(task.outcome), failed: "Execution failed", killed: "Stopped" }[task.status];
       const counts = observedCounts(agents, active);
       const activity = [running.length ? `${running.length} active` : "", queued.length ? `${queued.length} queued` : ""].filter(Boolean).join(" · ") || "waiting for graph run progress";
-      const name = task.workflowName ?? input.meta?.name ?? "Graph run";
+      const name = task.graphRunName ?? input.meta?.name ?? "Graph run";
       const identity = input.showToolTitle ? `Graph run ${status.toLowerCase()} · ${name}` : status;
       const summary = task.status === "completed" ? resultSummary(task.value) : task.error ? firstMeaningfulLine(task.error) : active ? activity : counts;
       const fields = task.value !== null && typeof task.value === "object" && !Array.isArray(task.value) ? Object.keys(task.value) : [];
@@ -55,14 +55,14 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
       const current = first ? [first.label, first.agentType, running.length > 1 ? `+${running.length - 1} active tasks` : ""].filter(Boolean).join(" · ") : counts;
       if (!input.expanded) {
         if (!input.showToolTitle) {
-          const workflowStats = stats(input.progress, input.agentCount ?? agents.length);
+          const graphRunStats = stats(input.progress, input.agentCount ?? agents.length);
           const outcome =
             task.outcome === undefined ? "not declared"
             : task.outcome.status === "succeeded" ? "succeeded"
             : `${task.outcome.status}: ${task.outcome.reason}`;
           const execution = task.status === "killed" ? "stopped" : task.status;
-          const completed = `${workflowStats.done} agent${workflowStats.done === 1 ? "" : "s"} completed`;
-          const executionDetail = task.status === "completed" ? completed : task.status === "failed" && workflowStats.failedCount > 0 ? `${workflowStats.failedCount} agent${workflowStats.failedCount === 1 ? "" : "s"} failed` : active && agents.length === 0 && task.id ? `${counts} · id: ${task.id}` : counts;
+          const completed = `${graphRunStats.done} agent${graphRunStats.done === 1 ? "" : "s"} completed`;
+          const executionDetail = task.status === "completed" ? completed : task.status === "failed" && graphRunStats.failedCount > 0 ? `${graphRunStats.failedCount} agent${graphRunStats.failedCount === 1 ? "" : "s"} failed` : active && agents.length === 0 && task.id ? `${counts} · id: ${task.id}` : counts;
           const result = task.status === "completed" ? fields.length ? fields.join(", ") : summary : task.error ? firstMeaningfulLine(task.error) : active ? activity : counts;
           return renderToolSummary(
             [`outcome: ${outcome}`, `execution: ${execution} · ${executionDetail}`, `result: ${result}`],
@@ -132,15 +132,15 @@ export function renderWorkflowCard(input: WorkflowCardInput, theme: Theme): Comp
  * says what it is. Returns undefined for an entry with no data, which is what
  * pi's renderer contract wants for "nothing to draw".
  */
-export function renderWorkflowEntryCard(data: unknown, theme: Theme, expanded = false): Component | undefined {
+export function renderGraphRunEntryCard(data: unknown, theme: Theme, expanded = false): Component | undefined {
   if (data === undefined) return undefined;
   if (!isWorkflowEntryData(data)) {
     const raw = JSON.stringify(data, null, 2) ?? "No graph run data.";
     return expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw)], theme, { expandable: true });
   }
-  return renderWorkflowCard({
+  return renderGraphRunCard({
     progress: data.progress,
-    task: { ...data, workflowName: data.name },
+    task: { ...data, graphRunName: data.name },
     meta: data.meta,
     agentCount: data.agentCount,
     totalTokens: data.totalTokens,

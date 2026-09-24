@@ -1,11 +1,11 @@
 /**
- * workflow-menu.ts — `/agents → Graph runs`, and the run inspector behind it.
+ * graph-run-menu.ts — `/agents → Graph runs`, and the run inspector behind it.
  *
  * The same shape `schedule-menu.ts` has for `/agents → Scheduled jobs`: the
  * submenu and the overlay it opens live here, and everything they need arrives
- * as {@link WorkflowMenuDeps} rather than through a closure. The inspector is
+ * as {@link GraphRunMenuDeps} rather than through a closure. The inspector is
  * reached from two places — this menu and a `workflow` row in the fleet list —
- * and both go through `showWorkflowDialog`, so the two entry points cannot
+ * and both go through `showGraphRunDialog`, so the two entry points cannot
  * drift apart on what the keys do.
  *
  * Lives in the agents menu rather than as a top-level `/workflows` command: it
@@ -15,32 +15,32 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { WorkflowRun } from "../graph/history-view.js";
+import type { GraphRun } from "../graph/history-view.js";
 import { toPaneSource } from "../graph/pane/render.js";
-import { pauseWorkflowTask, resumeWorkflowTask } from "../graph/task.js";
+import { pauseGraphRunTask, resumeGraphRunTask } from "../graph/task.js";
 import type { AgentRecord } from "../types.js";
-import { WorkflowDialog } from "./workflow-dialog.js";
+import { GraphRunDialog } from "./graph-run-dialog.js";
 
 /** Everything the menu and the inspector need from the extension around them. */
-export type WorkflowUIContext = Pick<ExtensionContext, "ui">;
+export type GraphRunUIContext = Pick<ExtensionContext, "ui">;
 
-export interface WorkflowMenuDeps {
+export interface GraphRunMenuDeps {
   /**
    * Live runs by id, read on every use rather than snapshotted: a run that
    * settled and was swept between render and keypress must be a no-op, not a
    * crash.
    */
-  tasks: ReadonlyMap<string, WorkflowRun>;
+  tasks: ReadonlyMap<string, GraphRun>;
   /** The record behind an agent id, or undefined once it has been swept. */
   getRecord(id: string): AgentRecord | undefined;
   /** The conversation overlay `c` opens on an agent row. */
-  viewAgentConversation(ctx: WorkflowUIContext, record: AgentRecord): Promise<void>;
+  viewAgentConversation(ctx: GraphRunUIContext, record: AgentRecord): Promise<void>;
   /**
    * The session context, for the fleet-list entry point — that one is a
    * keypress in a list that holds no `ctx` of its own. Undefined between
    * sessions, which is a no-op rather than an error.
    */
-  getCtx(): WorkflowUIContext | undefined;
+  getCtx(): GraphRunUIContext | undefined;
 }
 
 /**
@@ -51,12 +51,12 @@ export interface WorkflowMenuDeps {
  * the graph run hands back. `onOpenAgent` is the odd one out — it opens the
  * child's conversation rather than changing the run. The dialog derives its key
  * hints from the actions it is handed, so the footer advertises exactly what
- * works — see `WorkflowDialogActions`.
+ * works — see `GraphRunDialogActions`.
  */
-export async function showWorkflowDialog(
-  ctx: WorkflowUIContext,
-  task: WorkflowRun,
-  deps: WorkflowMenuDeps,
+export async function showGraphRunDialog(
+  ctx: GraphRunUIContext,
+  task: GraphRun,
+  deps: GraphRunMenuDeps,
 ): Promise<void> {
   // Overlaid on the same terms as the conversation viewer, because they are
   // reached the same way: both are rows of the fleet list, and opening one
@@ -74,12 +74,12 @@ export async function showWorkflowDialog(
   let overlay: { setHidden(hidden: boolean): void } | undefined;
   await ctx.ui.custom<undefined>(
     (tui, theme, _keybindings, done) =>
-      new WorkflowDialog(
+      new GraphRunDialog(
         tui,
         // Re-read on every render: the run is in the background, so the
         // dialog has to follow it rather than snapshot it at open time.
         () => task.type === "history" ? toPaneSource(task) : ({
-          progress: task.workflowProgress, task, meta: task.meta, agentCount: task.agentCount,
+          progress: task.graphRunProgress, task, meta: task.meta, agentCount: task.agentCount,
         }),
         theme,
         done,
@@ -90,14 +90,14 @@ export async function showWorkflowDialog(
             ctx.ui.notify(`Stopped graph run "${task.meta?.name ?? task.id}".`, "info");
           },
           onPause: () => {
-            if (pauseWorkflowTask(task)) {
+            if (pauseGraphRunTask(task)) {
               // Named rather than implied: "paused" on a run whose agents are
               // still finishing reads as a stronger promise than it is.
               ctx.ui.notify("Paused — running agents finish, no new ones start.", "info");
             }
           },
           onResume: () => {
-            if (resumeWorkflowTask(task)) ctx.ui.notify("Resumed.", "info");
+            if (resumeGraphRunTask(task)) ctx.ui.notify("Resumed.", "info");
           },
           onSkipAgent: index => {
             if (task.control?.skip(index) !== true) {
@@ -148,17 +148,17 @@ export async function showWorkflowDialog(
  * is handed back: the list puts the cursor back on the run rather than dropping
  * the reader at `main`.
  */
-export function openWorkflowFromFleet(id: string, deps: WorkflowMenuDeps): Promise<void> | void {
+export function openGraphRunFromFleet(id: string, deps: GraphRunMenuDeps): Promise<void> | void {
   const task = deps.tasks.get(id);
   const ctx = deps.getCtx();
   if (task === undefined || ctx === undefined) return;
-  return showWorkflowDialog(ctx, task, deps);
+  return showGraphRunDialog(ctx, task, deps);
 }
 
 /** `/agents → Graph runs` — list this session's runs, open one. */
-export async function showWorkflowsMenu(
-  ctx: WorkflowUIContext,
-  deps: WorkflowMenuDeps,
+export async function showGraphRunsMenu(
+  ctx: GraphRunUIContext,
+  deps: GraphRunMenuDeps,
 ): Promise<void> {
   const tasks = [...deps.tasks.values()].sort((a, b) => b.startTime - a.startTime);
   if (tasks.length === 0) {
@@ -166,7 +166,7 @@ export async function showWorkflowsMenu(
     return;
   }
   if (tasks.length === 1) {
-    await showWorkflowDialog(ctx, tasks[0], deps);
+    await showGraphRunDialog(ctx, tasks[0], deps);
     return;
   }
   // More than one: pick first. Newest at the top, since that is almost
@@ -181,5 +181,5 @@ export async function showWorkflowsMenu(
   );
   const picked = await ctx.ui.select("Graph runs", labels);
   const index = picked !== undefined ? labels.indexOf(picked) : -1;
-  if (index >= 0) await showWorkflowDialog(ctx, tasks[index], deps);
+  if (index >= 0) await showGraphRunDialog(ctx, tasks[index], deps);
 }

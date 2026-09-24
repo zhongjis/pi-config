@@ -111,7 +111,7 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
       // undefined".
       // Ownership and compiled schemas are internal, never caller-controlled RPC options.
       let normalizedOptions = { ...options };
-      delete normalizedOptions.workflowId;
+      delete normalizedOptions.graphRunId;
       delete normalizedOptions.structuredOutput;
       const modelInput = getAgentConfig(type)?.model ?? (typeof normalizedOptions.model === "string" ? normalizedOptions.model : undefined);
       if (modelInput !== undefined) {

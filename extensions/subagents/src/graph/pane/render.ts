@@ -2,7 +2,7 @@
  * render.ts — the pane's lines, built by the SAME layout as the in-Pi overlay.
  *
  * The whole point of Option F is that the extension keeps ownership of the
- * layout: this module calls the real `layoutWorkflowDialog` at the overview
+ * layout: this module calls the real `layoutGraphRunDialog` at the overview
  * level and themes it with an ANSI palette, so the side pane can never drift
  * from `/agents → Graph runs`. Nothing here reaches for a host — it imports only
  * pi-tui-backed pure modules — which is what lets it run in the extension
@@ -10,6 +10,19 @@
  */
 
 import type { Theme } from "../../ui/agent-widget.js";
+import type { GraphRunCardColor } from "../../ui/graph-run-card.js";
+import { styleGraphRunCardLines } from "../../ui/graph-run-card.js";
+import {
+  type GraphRunDialogActions,
+  type GraphRunDialogInput,
+  type GraphRunDialogSource,
+  type GraphRunDialogState,
+  handleGraphRunDialogKey,
+  initialGraphRunDialogState,
+  layoutGraphRunDialog,
+  MIN_PANE_BODY_ROWS,
+  resolveGraphRunDialog,
+} from "../../ui/graph-run-dialog.js";
 import {
   applyPanelKey,
   type PanelOptions,
@@ -17,20 +30,7 @@ import {
   type PanelState,
   renderPanelLines,
 } from "../../ui/observability-panel.js";
-import type { WorkflowCardColor } from "../../ui/workflow-card.js";
-import { styleWorkflowCardLines } from "../../ui/workflow-card.js";
-import {
-  handleWorkflowDialogKey,
-  initialWorkflowDialogState,
-  layoutWorkflowDialog,
-  MIN_PANE_BODY_ROWS,
-  resolveWorkflowDialog,
-  type WorkflowDialogActions,
-  type WorkflowDialogInput,
-  type WorkflowDialogSource,
-  type WorkflowDialogState,
-} from "../../ui/workflow-dialog.js";
-import type { WorkflowRun } from "../history-view.js";
+import type { GraphRun } from "../history-view.js";
 
 const RESET = "\x1b[0m";
 
@@ -38,7 +38,7 @@ const RESET = "\x1b[0m";
 const PANE_CHROME_ROWS = 9;
 
 /** SGR colour code per card colour. Kept legible over clever: one hue each. */
-const SGR: Record<WorkflowCardColor, string> = {
+const SGR: Record<GraphRunCardColor, string> = {
   success: "32", // green
   error: "31", // red
   warning: "33", // yellow
@@ -49,14 +49,14 @@ const SGR: Record<WorkflowCardColor, string> = {
 };
 
 /**
- * An ANSI theme shaped like the overlay's, so `styleWorkflowCardLines` colours
+ * An ANSI theme shaped like the overlay's, so `styleGraphRunCardLines` colours
  * the pane the same way it colours the overlay. `fg` resets after each segment
  * so a colour never bleeds into the next; an unknown colour passes through
  * untouched rather than emitting a broken escape.
  */
 export const PANE_ANSI_THEME: Theme = {
   fg(color: string, text: string): string {
-    const code = SGR[color as WorkflowCardColor];
+    const code = SGR[color as GraphRunCardColor];
     return code ? `\x1b[${code}m${text}${RESET}` : text;
   },
   bold(text: string): string {
@@ -65,16 +65,16 @@ export const PANE_ANSI_THEME: Theme = {
 };
 
 /**
- * The exact source shape the overlay reads (see `showWorkflowDialog.source()`),
+ * The exact source shape the overlay reads (see `showGraphRunDialog.source()`),
  * built from a background task so the pane follows a run the same way the overlay
  * does.
  */
-export function toPaneSource(task: WorkflowRun): WorkflowDialogSource {
+export function toPaneSource(task: GraphRun): GraphRunDialogSource {
   return {
-    progress: task.workflowProgress,
+    progress: task.graphRunProgress,
     task: {
       status: task.status,
-      workflowName: task.workflowName,
+      graphRunName: task.graphRunName,
       startTime: task.startTime,
       endTime: task.endTime,
       totalPausedMs: task.totalPausedMs,
@@ -93,7 +93,7 @@ export function toPaneSource(task: WorkflowRun): WorkflowDialogSource {
  * (`↑↓ select · ⏎ open · f filter · esc`), never `p pause` / `x stop` / `s skip` /
  * `r retry` / `c convo`. Shared so the overview render and the nav render agree.
  */
-const PANE_AVAILABLE: Partial<Record<keyof WorkflowDialogActions, boolean>> = {
+const PANE_AVAILABLE: Partial<Record<keyof GraphRunDialogActions, boolean>> = {
   onKill: false,
   onPause: false,
   onResume: false,
@@ -106,16 +106,16 @@ const PANE_AVAILABLE: Partial<Record<keyof WorkflowDialogActions, boolean>> = {
  * Render one snapshot for the pane, as ANSI strings clamped to `width`.
  *
  * Defaults to the overview level; a caller driving navigation passes the current
- * {@link WorkflowDialogState} so a live progress update preserves the selection.
+ * {@link GraphRunDialogState} so a live progress update preserves the selection.
  */
-export function renderWorkflowPaneLines(
-  source: WorkflowDialogSource,
-  opts: { width: number; ascii?: boolean; now?: number; state?: WorkflowDialogState; rows?: number },
+export function renderGraphRunPaneLines(
+  source: GraphRunDialogSource,
+  opts: { width: number; ascii?: boolean; now?: number; state?: GraphRunDialogState; rows?: number },
 ): string[] {
   const bodyRows = opts.rows != null ? Math.max(MIN_PANE_BODY_ROWS, opts.rows - PANE_CHROME_ROWS) : undefined;
-  const input: WorkflowDialogInput = {
+  const input: GraphRunDialogInput = {
     ...source,
-    state: opts.state ?? initialWorkflowDialogState(),
+    state: opts.state ?? initialGraphRunDialogState(),
     available: PANE_AVAILABLE,
     width: opts.width,
     ascii: opts.ascii,
@@ -123,7 +123,7 @@ export function renderWorkflowPaneLines(
     bodyRows,
     fillBody: opts.rows != null,
   };
-  return styleWorkflowCardLines(layoutWorkflowDialog(input), PANE_ANSI_THEME);
+  return styleGraphRunCardLines(layoutGraphRunDialog(input), PANE_ANSI_THEME);
 }
 
 /**
@@ -136,13 +136,13 @@ export function renderWorkflowPaneLines(
  * re-renders idempotently.
  */
 export function applyPaneKey(
-  source: WorkflowDialogSource,
-  state: WorkflowDialogState,
+  source: GraphRunDialogSource,
+  state: GraphRunDialogState,
   data: string,
   opts: { width: number; now?: number; ascii?: boolean; rows?: number },
-): { state: WorkflowDialogState; lines: string[]; close: boolean } {
+): { state: GraphRunDialogState; lines: string[]; close: boolean } {
   const bodyRows = opts.rows != null ? Math.max(MIN_PANE_BODY_ROWS, opts.rows - PANE_CHROME_ROWS) : undefined;
-  const input: WorkflowDialogInput = {
+  const input: GraphRunDialogInput = {
     ...source,
     state,
     available: PANE_AVAILABLE,
@@ -152,8 +152,8 @@ export function applyPaneKey(
     bodyRows,
     fillBody: opts.rows != null,
   };
-  const view = resolveWorkflowDialog(input);
-  const result = handleWorkflowDialogKey(data, state, view);
+  const view = resolveGraphRunDialog(input);
+  const result = handleGraphRunDialogKey(data, state, view);
   const nextState = result?.state ?? state;
   // The pane wires no mutating actions, so every action is ignored EXCEPT
   // `cancel` (esc/q at the overview level), which the extension turns into a
@@ -163,7 +163,7 @@ export function applyPaneKey(
   return {
     state: nextState,
     close,
-    lines: renderWorkflowPaneLines(source, {
+    lines: renderGraphRunPaneLines(source, {
       width: opts.width,
       ascii: opts.ascii,
       now: opts.now,
@@ -175,7 +175,7 @@ export function applyPaneKey(
 
 /**
  * Render the run observability panel for the pane, as ANSI strings clamped to
- * `width`. Mirrors {@link renderWorkflowPaneLines} but drives the panel renderer;
+ * `width`. Mirrors {@link renderGraphRunPaneLines} but drives the panel renderer;
  * the manager falls back to the roster render on a throw.
  */
 export function renderObservabilityPaneLines(
@@ -183,7 +183,7 @@ export function renderObservabilityPaneLines(
   state: PanelState,
   opts: PanelOptions,
 ): string[] {
-  return styleWorkflowCardLines(renderPanelLines(runs, state, opts), PANE_ANSI_THEME);
+  return styleGraphRunCardLines(renderPanelLines(runs, state, opts), PANE_ANSI_THEME);
 }
 
 /**
@@ -199,7 +199,7 @@ export function applyObservabilityPaneKey(
   const result = applyPanelKey(runs, state, data, opts);
   return {
     state: result.state,
-    lines: styleWorkflowCardLines(result.lines, PANE_ANSI_THEME),
+    lines: styleGraphRunCardLines(result.lines, PANE_ANSI_THEME),
     close: result.close,
     action: result.action,
   };

@@ -5,7 +5,7 @@ import { completeGraphTask, GraphRunReporter } from "../src/graph/graph-run-adap
 import type { AgentGraph } from "../src/graph/ir.js";
 import { collapse } from "../src/graph/progress.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
-import { createWorkflowTask } from "../src/graph/task.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 
 it("forwards nested static and fanout rows without federating direct-graph controls", async () => {
   const child: AgentGraph = {
@@ -27,7 +27,7 @@ it("forwards nested static and fanout rows without federating direct-graph contr
     },
     edges: [{ from: "gather", to: "later" }], outputs: { result: { node: "gather", path: "$.answer" } },
   };
-  const task = createWorkflowTask({ id: "nested", script: "" });
+  const task = createGraphRunTask({ id: "nested", script: "" });
   const reporter = new GraphRunReporter(task, graph);
   const added = new Map<string, { dependencies: string[] }>();
   const events: string[] = [];
@@ -38,7 +38,7 @@ it("forwards nested static and fanout rows without federating direct-graph contr
     host: { spawnAgent: async request => {
       request.onResolved?.({ recordId: `record:${request.agentType}`, modelId: "provider/model" });
       if (request.agentType === "worker") {
-        const row = collapse(task.workflowProgress).agents.find(agent => agent.agentType === "worker");
+        const row = collapse(task.graphRunProgress).agents.find(agent => agent.agentType === "worker");
         expect(row).toBeDefined();
         expect(control?.skip(row?.index ?? -1)).toBe(false);
         expect(control?.retry(row?.index ?? -1)).toBe(false);
@@ -58,7 +58,7 @@ it("forwards nested static and fanout rows without federating direct-graph contr
       events.push(`update:${id}`);
       reporter.update(id, state, correlation);
       if (id === "later:item:0" && state.status === "pending") {
-        const row = collapse(task.workflowProgress).agents.find(agent => agent.label === id);
+        const row = collapse(task.graphRunProgress).agents.find(agent => agent.label === id);
         expect(control?.skip(row?.index ?? -1)).toBe(true);
       }
     },
@@ -69,7 +69,7 @@ it("forwards nested static and fanout rows without federating direct-graph contr
   expect(task.value).toEqual({ result: "writer" });
   expect(Object.keys(result.nodes)).toEqual(["gather", "gather/research", "later", "later:item:0"]);
   expect(result.nodes["later:item:0"].status).toBe("skipped");
-  const rows = collapse(task.workflowProgress).agents;
+  const rows = collapse(task.graphRunProgress).agents;
   expect(new Set(rows.map(row => row.index)).size).toBe(rows.length);
   expect(rows).toHaveLength(7);
   const worker = rows.find(row => row.agentType === "worker");
@@ -88,7 +88,7 @@ it("keeps deeper descendants distinct from later direct expansion IDs", async ()
     nodes: { g: { type: "graph", graph: "middle" }, expand: { type: "expand", source: { path: "$" } } },
     edges: [{ from: "g", to: "expand" }],
   };
-  const task = createWorkflowTask({ id: "deep", script: "" });
+  const task = createGraphRunTask({ id: "deep", script: "" });
   const reporter = new GraphRunReporter(task, outer);
   const result = await runGraph(outer, { nodes: { "g/inner/a": { type: "agent", agent: "direct", prompt: "fixture" } }, edges: [] }, {
     loadGraph: name => name === "middle" ? middle : leaf,
@@ -101,7 +101,7 @@ it("keeps deeper descendants distinct from later direct expansion IDs", async ()
     onNodeResolved: (id, info, correlation) => reporter.setResolved(id, info, correlation),
   });
   expect(result.status).toBe("completed");
-  const rows = collapse(task.workflowProgress).agents;
+  const rows = collapse(task.graphRunProgress).agents;
   expect(rows).toHaveLength(5);
   expect(rows.find(row => row.agentType === "leaf")).toMatchObject({ label: "g/inner/a", recordId: "leaf", state: "done" });
   expect(rows.find(row => row.agentType === "direct")).toMatchObject({ recordId: "direct", state: "done" });
@@ -110,7 +110,7 @@ it("keeps deeper descendants distinct from later direct expansion IDs", async ()
 
 it("keeps a nested display binding scoped to its current run correlation", () => {
   const graph: AgentGraph = { nodes: { "nested/worker": { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
-  const task = createWorkflowTask({ id: "nested-correlation", script: "" });
+  const task = createGraphRunTask({ id: "nested-correlation", script: "" });
   const reporter = new GraphRunReporter(task, graph);
   const identity = (runId: string, id: string): ExecutionCorrelation => ({
     runId,
@@ -129,5 +129,5 @@ it("keeps a nested display binding scoped to its current run correlation", () =>
   reporter.update("nested/worker", running(second), second);
   reporter.setResolved("nested/worker", { recordId: "second", modelName: "second-model" }, second);
   reporter.setResolved("nested/worker", { recordId: "first", modelName: "first-model" }, first);
-  expect(collapse(task.workflowProgress).agents.find(row => row.label === "nested/worker")).toMatchObject({ recordId: "second", model: "second-model" });
+  expect(collapse(task.graphRunProgress).agents.find(row => row.label === "nested/worker")).toMatchObject({ recordId: "second", model: "second-model" });
 });

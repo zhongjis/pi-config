@@ -1,4 +1,4 @@
-// workflow-pane-input-filter.test.ts — the viewer forwards ONLY real nav keys.
+// graph-run-pane-input-filter.test.ts — the viewer forwards ONLY real nav keys.
 // A raw-stdin pane in a live terminal also receives mouse reports, focus
 // events, device-attribute replies, bracketed-paste markers, and escape
 // fragments split across reads. Forwarding those made the extension read a

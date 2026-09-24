@@ -3,11 +3,11 @@ import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-wor
 import { createCustomMessageCard, extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 import { isWorkflowEntryData } from "./graph/entry-validation.js";
 import type { NotificationDetails } from "./types.js";
+import { renderGraphRunEntryCard } from "./ui/graph-run-report.js";
 import {
   renderSubagentSummary,
   type SubagentSummaryStatus,
 } from "./ui/summary-renderer.js";
-import { renderWorkflowEntryCard } from "./ui/workflow-report.js";
 
 function toSummaryStatus(status: string): SubagentSummaryStatus {
   switch (status) {
@@ -123,7 +123,7 @@ export function registerSubagentNotificationRenderer(pi: ExtensionAPI): void {
       if (!isNotificationDetails(detail)) return undefined;
       if (detail.workflow !== undefined) {
         if (isWorkflowEntryData(detail.workflow)) {
-          return createCustomMessageCard("notification", renderWorkflowEntryCard(detail.workflow, theme, expanded)!, theme);
+          return createCustomMessageCard("notification", renderGraphRunEntryCard(detail.workflow, theme, expanded)!, theme);
         }
         const raw = typeof message.content === "string" ? message.content : extractToolText({ content: message.content });
         const fallback = expanded

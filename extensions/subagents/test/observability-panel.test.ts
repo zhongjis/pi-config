@@ -2,13 +2,13 @@
 // terminal-free, tested through the one seam (renderPanelLines / applyPanelKey),
 // asserting on produced lines and next state, never on private layout internals.
 // Exercise the REAL terminal-cell layout (not the ASCII unit stub) so the
-// width-safety assertion means what it says, mirroring workflow-pane-render.test.ts.
+// width-safety assertion means what it says, mirroring graph-run-pane-render.test.ts.
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { renderObservabilityPaneLines } from "../src/graph/pane/render.js";
-import type { WorkflowAgentEntry } from "../src/graph/progress.js";
+import type { GraphRunAgentEntry } from "../src/graph/progress.js";
 import { coerceGraphInput } from "../src/graph/run-graph.js";
 import {
   applyPanelKey,
@@ -20,15 +20,15 @@ import {
 
 const NOW = 1_700_000_000_000;
 
-function agent(over: Partial<WorkflowAgentEntry> & Pick<WorkflowAgentEntry, "index" | "label">): WorkflowAgentEntry {
+function agent(over: Partial<GraphRunAgentEntry> & Pick<GraphRunAgentEntry, "index" | "label">): GraphRunAgentEntry {
   return { type: "workflow_agent", state: "start", ...over };
 }
 
 const plain = (lines: ReturnType<typeof renderPanelLines>): string[] => lines.map(line => line.map(segment => segment.text).join(""));
 const opts = { width: 120, now: NOW };
 function fixture(): PanelRun {
-  const progress: WorkflowAgentEntry[] = [];
-  const add = (id: string, data: Partial<WorkflowAgentEntry>) => progress.push(agent({ index: progress.length, label: id, nodeBinding: id, instanceId: `${id}-uuid`, state: "done", ...data }));
+  const progress: GraphRunAgentEntry[] = [];
+  const add = (id: string, data: Partial<GraphRunAgentEntry>) => progress.push(agent({ index: progress.length, label: id, nodeBinding: id, instanceId: `${id}-uuid`, state: "done", ...data }));
   add("research", { presentation: { kind: "bounded_feedback", name: "Research", iterations: [{ iteration: 1, decision: "continue" }, { iteration: 2, decision: "sufficient" }] } });
   for (const iteration of [1, 2]) {
     const work = `work-${iteration}`;
@@ -59,8 +59,8 @@ describe("Herdr presentation", () => {
     expect(nodes.map(line => line.replace(/^.*(?:✓ done\s+|↻ )/, "").trim().split(/\s{2,}/)[0])).toEqual([
       "Research", "Iteration 1", "Gather evidence", "item 1", "item 2", "item 3", "item 4", "Evaluate evidence", "Iteration 2", "Gather evidence", "item 1", "Evaluate evidence", "Synthesize context",
     ]);
-    expect(nodes.find(line => line.includes("item 3"))).toMatch(/^   › │  │  │  ├─ ✓ done/);
-    expect(nodes.at(-1)).toMatch(/^     └─ ✓ done/);
+    expect(nodes.find(line => line.includes("item 3"))).toMatch(/^ {3}› │ {2}│ {2}│ {2}├─ ✓ done/);
+    expect(nodes.at(-1)).toMatch(/^ {5}└─ ✓ done/);
     expect(rows.join("\n")).not.toMatch(/running 0|queued 0|failed 0|Stage|model pending/);
   });
   it("keeps node identity at normal contrast and dims only trailing annotations/chrome", () => {
@@ -94,7 +94,7 @@ describe("Herdr presentation", () => {
     const lines = render(run, { ...selected(), cursor: { kind: "node", id: "synthesis" } });
     expect(lines.join("\n")).toContain("Upstream: research, Evaluate evidence · iteration 1");
     expect(lines.join("\n")).toContain("Downstream: unknown-a, unknown-b");
-    expect(roster(lines).find(line => line.includes("Synthesize context"))).toMatch(/^   › └─/);
+    expect(roster(lines).find(line => line.includes("Synthesize context"))).toMatch(/^ {3}› └─/);
   });
   it("uses explicit flat fallback for legacy labels, without guessing agent counts or iterations", () => {
     const run = fixture(); run.source.progress = [agent({ index: 0, label: "Research · iteration 99 · item 4", state: "done", agentType: "agent", phaseIndex: 42 })];

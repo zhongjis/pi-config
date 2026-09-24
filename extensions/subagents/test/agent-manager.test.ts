@@ -1403,10 +1403,10 @@ describe("workflow pool ownership", () => {
       return { responseText: "workflow", session: mockSession(), aborted: false, steered: false };
     }).mockResolvedValue({ responseText: "ordinary", session: mockSession(), aborted: false, steered: false });
     const pending = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "workflow", {
-      description: "workflow", workflowId: "wf-1",
+      description: "workflow", graphRunId: "wf-1",
     });
     const workflow = manager.listAgents()[0];
-    expect(workflow.workflowId).toBe("wf-1");
+    expect(workflow.graphRunId).toBe("wf-1");
     expect(manager.getRunning()).toEqual([]);
     const ordinary = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "ordinary", { description: "ordinary" });
     expect(ordinary.record.status).toBe("completed");
@@ -1425,7 +1425,7 @@ describe("workflow pool ownership", () => {
     const { resumeAgent } = await import("../src/agent-runner.js");
     manager = new AgentManager();
     resolvedRun();
-    const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "child", workflowId: "wf" });
+    const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "child", graphRunId: "wf" });
     vi.mocked(resumeAgent).mockImplementationOnce(async (_session, _prompt, options) => {
       await new Promise<void>(resolve => options?.signal?.addEventListener("abort", () => resolve(), { once: true }));
       return { text: "cancelled" };

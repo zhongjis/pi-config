@@ -1,4 +1,4 @@
-// workflow-pane-controller.test.ts (S2 + S4) — the Herdr pane lifecycle. Every
+// graph-run-pane-controller.test.ts (S2 + S4) — the Herdr pane lifecycle. Every
 // `herdr` call goes through an injected exec, so these assert the EXACT argv the
 // controller shells out with, and the own-only-what-you-create rules: never
 // close a pane the user renamed/repurposed, and never reopen after a manual
@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isHerdrPaneEnabled, WorkflowPaneController } from "../src/graph/pane/controller.js";
+import { GraphRunPaneController, isHerdrPaneEnabled } from "../src/graph/pane/controller.js";
 import { readRecord, writeRecord } from "../src/graph/pane/store.js";
 
 let dir: string;
@@ -22,7 +22,7 @@ afterEach(() => {
 const SENTINEL = "Workflow · sess1234";
 
 function controller(exec: ReturnType<typeof vi.fn>) {
-  return new WorkflowPaneController({
+  return new GraphRunPaneController({
     exec: exec as any,
     dir,
     parentPaneId: "%p0",

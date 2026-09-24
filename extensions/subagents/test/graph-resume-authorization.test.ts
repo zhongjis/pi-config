@@ -7,7 +7,7 @@ import type { AgentGraph } from "../src/graph/ir.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import * as tasks from "../src/graph/task.js";
 import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
-import { boot, required } from "./workflow-registration.fixture.js";
+import { boot, required } from "./graph-run-registration.fixture.js";
 
 it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s without creating a task, checkpoint or child", async kind => {
   const session = boot({ workflowsEnabled: true });
@@ -23,7 +23,7 @@ it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s 
   const path = join(persistence.graphRunsDir(session.ctx.cwd), `${runId}.json`);
   const original = JSON.stringify(saved); writeFileSync(path, original);
   vi.spyOn(delegation, "checkGraphDelegation").mockImplementation(current => Object.values(current.nodes).some(node => node.type === "agent" && node.agent === "forbidden") ? { ok: false, error: "delegation_policy_denied: forbidden" } : { ok: true });
-  const create = vi.spyOn(tasks, "createWorkflowTask"); const write = vi.spyOn(persistence, "writeGraphSnapshot"); const lease = vi.spyOn(persistence, "ownGraphRun");
+  const create = vi.spyOn(tasks, "createGraphRunTask"); const write = vi.spyOn(persistence, "writeGraphSnapshot"); const lease = vi.spyOn(persistence, "ownGraphRun");
   await session.lifecycle("session_start");
   expect(create).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled(); expect(lease).not.toHaveBeenCalled(); expect(runAgent).not.toHaveBeenCalled();
   expect(session.ui.notify).toHaveBeenCalled(); expect(readFileSync(path, "utf8")).toBe(original);
@@ -35,7 +35,7 @@ it("removes explicit terminal cancellation rather than resuming it each restart"
   const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
   const runId = "wf_abcdef123456"; const controller = new AbortController(); controller.abort();
   await runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => persistence.writeGraphSnapshot(session.ctx.cwd, { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: vi.fn() } });
-  const create = vi.spyOn(tasks, "createWorkflowTask");
+  const create = vi.spyOn(tasks, "createGraphRunTask");
   await session.lifecycle("session_start");
   await vi.waitFor(() => expect(required(create.mock.results[0]?.value).status).toBe("killed"));
   expect(runAgent).not.toHaveBeenCalled();
@@ -48,7 +48,7 @@ it("removes a live explicitly-cancelled snapshot before notifying completion", a
   await session.lifecycle("session_start");
   const human = deferred<string>();
   session.ui.select.mockReturnValue(human.promise);
-  const create = vi.spyOn(tasks, "createWorkflowTask");
+  const create = vi.spyOn(tasks, "createGraphRunTask");
   const graph: AgentGraph = { version: 2, nodes: { gate: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } }, after: { type: "agent", agent: "fixture", prompt: "after" } }, edges: [{ from: "gate", to: "after" }] };
   const result = await required(session.tools.get("agent_graph")).execute("call", { graph, input: {} }, undefined, undefined, session.ctx);
   const runId = required(result.details?.taskId);
@@ -72,7 +72,7 @@ it("preserves a cancelled validation-gate checkpoint when resume cannot reconcil
   const checkpoint = required(saved);
   mkdirSync(persistence.graphRunsDir(session.ctx.cwd), { recursive: true });
   const path = join(persistence.graphRunsDir(session.ctx.cwd), `${runId}.json`); const original = JSON.stringify(checkpoint); writeFileSync(path, original);
-  const create = vi.spyOn(tasks, "createWorkflowTask"); const lease = vi.spyOn(persistence, "ownGraphRun"); const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
+  const create = vi.spyOn(tasks, "createGraphRunTask"); const lease = vi.spyOn(persistence, "ownGraphRun"); const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
   await session.lifecycle("session_start");
   await vi.waitFor(() => expect(required(create.mock.results[0]?.value).status).toBe("failed"));
   expect(required(create.mock.results[0]?.value).error).toContain("Unreconciled execution drain");

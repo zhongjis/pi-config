@@ -1,11 +1,13 @@
 import { open, rename, rm } from "node:fs/promises";
-import { captureTopology, decodeTopology, historyIndices, historyInteger, historyString, historyText, pruneHistoryReferences, validHistoryReferences, type HistoryTopology } from "./history-topology.js";
-export { historyText } from "./history-topology.js";
-import { ensureSessionLocalRootDirectory, resolveSessionLocalRelativePath } from "../../../session-local/storage.js";
-import { collapse, type WorkflowAgentEntry } from "./progress.js";
-import type { WorkflowTask } from "./task.js";
+import { captureTopology, decodeTopology, type HistoryTopology, historyIndices, historyInteger, historyString, historyText, pruneHistoryReferences, validHistoryReferences } from "./history-topology.js";
 
-/** Metadata only. Never an execution checkpoint or a serialized WorkflowTask. */
+export { historyText } from "./history-topology.js";
+
+import { ensureSessionLocalRootDirectory, resolveSessionLocalRelativePath } from "../../../session-local/storage.js";
+import { collapse, type GraphRunAgentEntry } from "./progress.js";
+import type { GraphRunTask } from "./task.js";
+
+/** Metadata only. Never an execution checkpoint or a serialized GraphRunTask. */
 export interface HistoryNode {
   index: number;
   label: string;
@@ -134,8 +136,8 @@ function decodeRun(value: unknown, version = 1): GraphHistoryRun | undefined {
   };
 }
 
-export function snapshotHistory(task: WorkflowTask): GraphHistoryRun | undefined {
-  const { agents, phaseTitles } = collapse(task.workflowProgress);
+export function snapshotHistory(task: GraphRunTask): GraphHistoryRun | undefined {
+  const { agents, phaseTitles } = collapse(task.graphRunProgress);
   for (const node of agents) {
     if (node.phaseIndex !== undefined && node.phaseTitle !== undefined) phaseTitles.set(node.phaseIndex, node.phaseTitle);
   }
@@ -147,13 +149,13 @@ export function snapshotHistory(task: WorkflowTask): GraphHistoryRun | undefined
     const node = retained.find(candidate => candidate.nodeBinding === binding);
     return node ? [node.index] : [];
   }).slice(0, 32);
-  const label = (node: WorkflowAgentEntry) => {
+  const label = (node: GraphRunAgentEntry) => {
     if (node.nodeBinding === undefined || node.instanceId !== undefined) return node.label;
     return node.presentation?.name && node.presentation.name !== node.nodeBinding
       ? node.presentation.name
       : node.agentType ?? `Node ${node.index + 1}`;
   };
-  const topology = (node: WorkflowAgentEntry): HistoryTopology | undefined => {
+  const topology = (node: GraphRunAgentEntry): HistoryTopology | undefined => {
     const captured = captureTopology(node, retained);
     return captured && node.nodeBinding !== undefined && captured.name === node.nodeBinding
       ? { ...captured, name: historyText(label(node)) }
@@ -161,7 +163,7 @@ export function snapshotHistory(task: WorkflowTask): GraphHistoryRun | undefined
   };
   return decodeRun({
     topologyVersion: 2, description: historyText(task.meta?.description ?? ""),
-    id: historyText(task.id), name: historyText(task.meta?.name ?? task.workflowName ?? task.id), status: task.status, outcome: task.outcome?.status,
+    id: historyText(task.id), name: historyText(task.meta?.name ?? task.graphRunName ?? task.id), status: task.status, outcome: task.outcome?.status,
     startTime: task.startTime, endTime: task.endTime, totalPausedMs: task.totalPausedMs,
     agentCount: task.agentCount, doneCount: task.doneCount, totalTokens: task.totalTokens,
     totalToolCalls: task.totalToolCalls, replayedCount: task.replayedCount, omittedNodeCount: agents.length - retained.length,
@@ -235,7 +237,7 @@ export class GraphHistoryStore {
     }
     return store;
   }
-  capture(task: WorkflowTask): void {
+  capture(task: GraphRunTask): void {
     if (!this.writable || this.lifecycleAbortCause !== undefined) return;
     if (task.status === "killed" && task.abortController.signal.reason !== "user") return;
     const snapshot = snapshotHistory(task);

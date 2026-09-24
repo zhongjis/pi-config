@@ -1,6 +1,6 @@
 import { createAgentResultBuilder } from "./agent-result.js";
 import { createAgentTool } from "./agent-tool.js";
-import { createWorkflowRuntime } from "./graph/workflow-runtime.js";
+import { createGraphRuntime } from "./graph/graph-runtime.js";
 import { createResultTools } from "./result-tools.js";
 import { createAgentsMenu } from "./ui/agents-menu.js";
 import { createSettingsMenu } from "./ui/settings-menu.js";
@@ -27,7 +27,7 @@ import { loadCustomAgents } from "./custom-agents.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./graph/entry.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
-import { createWorkflowPaneManager, type WorkflowPaneManager } from "./graph/pane/manager.js";
+import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
 import { graphSkillPath } from "./graph/tool-description.js";
 import { createNotificationCoordinator } from "./notification-coordinator.js";
 import { registerSubagentNotificationRenderer } from "./notification-rendering.js";
@@ -42,7 +42,7 @@ import {
   type UICtx,
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx } from "./ui/fleet-list.js";
-import { openWorkflowFromFleet, type WorkflowMenuDeps } from "./ui/workflow-menu.js";
+import { type GraphRunMenuDeps, openGraphRunFromFleet } from "./ui/graph-run-menu.js";
 import { getLifetimeTotal, type LifetimeUsage, PendingUsagePool } from "./usage.js";
 
 export { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData };
@@ -164,7 +164,7 @@ export default function (pi: ExtensionAPI) {
 
   // Background completion: route through group join or send individual nudge
   const manager = new AgentManager((record) => {
-    if (record.workflowId !== undefined) return; // Owned children report only through their workflow.
+    if (record.graphRunId !== undefined) return; // Owned children report only through their workflow.
     // Emit lifecycle event based on terminal status
     const isError = record.status === "error" || record.status === "stopped" || record.status === "aborted";
     const eventData = buildEventData(record);
@@ -261,13 +261,13 @@ export default function (pi: ExtensionAPI) {
   // The workflow inspector's Herdr side pane, constructed per activation. A
   // strict no-op when there is no Herdr-managed pane to split off, in which case
   // the in-Pi overlay stays the only inspector.
-  let workflowPane: WorkflowPaneManager | undefined;
+  let graphRunPane: GraphRunPaneManager | undefined;
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
   pi.on("session_start", async (_event, ctx) => {
     if (!ownsManagerRegistry) return;
-    await stopWorkflows("reload");
-    await workflowRuntime.loadHistory(ctx);
+    await stopGraphRuns("reload");
+    await graphRuntime.loadHistory(ctx);
     currentCtx = ctx;
     pendingUsage = new PendingUsagePool();
     manager.setUsageListener(collectManagerUsage);
@@ -294,8 +294,8 @@ export default function (pi: ExtensionAPI) {
     // Rebuild the workflow inspector's side pane for this activation. Disposal
     // of any prior instance is defensive: a double-bound session_start must not
     // leak a controller or its timers.
-    await workflowPane?.dispose();
-    workflowPane = createWorkflowPaneManager({
+    await graphRunPane?.dispose();
+    graphRunPane = createGraphRunPaneManager({
       enabled: isHerdrPaneEnabled(process.env, ctx.mode),
       exec: (command, args, options) => pi.exec(command, args, options),
       parentPaneId: process.env.HERDR_PANE_ID ?? "",
@@ -303,7 +303,7 @@ export default function (pi: ExtensionAPI) {
       cwd: ctx.cwd,
       sessionId: ctx.sessionManager.getSessionId(),
       ppid: process.pid,
-      getTasks: () => getWorkflowRuns().values(),
+      getTasks: () => getGraphRuns().values(),
       viewAgentConversation: (recordId) => {
         const record = manager.getRecord(recordId);
         if (currentCtx && record) return viewAgentConversation(currentCtx, record);
@@ -311,18 +311,18 @@ export default function (pi: ExtensionAPI) {
       onError: (err, label) =>
         console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
     });
-    await workflowPane.reconcile();
+    await graphRunPane.reconcile();
     if (isWorkflowsEnabled()) resumeDurableGraphRuns(ctx);
   });
 
   pi.on("session_before_switch", async () => {
     if (!ownsManagerRegistry) return;
-    await stopWorkflows("switch");
+    await stopGraphRuns("switch");
     manager.clearCompleted(true);
     supervisionStop?.();
     supervisionStop = undefined;
-    await workflowPane?.dispose();
-    workflowPane = undefined;
+    await graphRunPane?.dispose();
+    graphRunPane = undefined;
   });
 
   // On shutdown, abort all agents immediately and clean up.
@@ -337,9 +337,9 @@ export default function (pi: ExtensionAPI) {
       manager.dispose();
       return;
     }
-    await stopWorkflows(event?.reason === "reload" ? "reload" : "shutdown");
-    await workflowPane?.dispose();
-    workflowPane = undefined;
+    await stopGraphRuns(event?.reason === "reload" ? "reload" : "shutdown");
+    await graphRunPane?.dispose();
+    graphRunPane = undefined;
     manager.setUsageListener(undefined);
     pendingUsage = new PendingUsagePool();
     rpcHandle?.unsubSpawn();
@@ -473,20 +473,20 @@ export default function (pi: ExtensionAPI) {
     notifications,
   ));
 
-  const workflowRuntime = createWorkflowRuntime(
+  const graphRuntime = createGraphRuntime(
     { pi, manager, enabled: isWorkflowsEnabled, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial },
     { schedule: scheduleNudge, cancel: cancelNudge },
     surface => {
       if (surface !== "pane") { widget.update(); fleet.update(); }
-      if (surface !== "fleet") workflowPane?.sync();
+      if (surface !== "fleet") graphRunPane?.sync();
     },
   );
-  const { getRuns: getWorkflowRuns, resume: resumeDurableGraphRuns, stop: stopWorkflows, fleetWorkflows } = workflowRuntime;
+  const { getRuns: getGraphRuns, resume: resumeDurableGraphRuns, stop: stopGraphRuns, fleetGraphRuns } = graphRuntime;
 
   if (isWorkflowsEnabled()) {
     pi.on("resources_discover", () => (isWorkflowsEnabled() ? { skillPaths: [graphSkillPath] } : undefined));
   }
-  if (isWorkflowsEnabled()) pi.registerTool(workflowRuntime.tool);
+  if (isWorkflowsEnabled()) pi.registerTool(graphRuntime.tool);
 
   const resultTools = createResultTools(pi, manager, {
     details: record => buildDetails(
@@ -505,7 +505,7 @@ export default function (pi: ExtensionAPI) {
     agentActivity,
     {
       get workflowsEnabled() { return isWorkflowsEnabled(); },
-      get workflows() { return workflowMenuDeps; },
+      get graphRuns() { return graphRunMenuDeps; },
       showSettings,
     },
   );
@@ -618,15 +618,15 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       // Clears any manual-close flag and force-opens for the active run. Off the
       // Herdr path there is nothing to open, so say why rather than doing nothing.
-      if (!workflowPane?.isEnabled()) {
+      if (!graphRunPane?.isEnabled()) {
         ctx.ui.notify("Graph run monitor needs a Herdr-managed pane.", "warning");
         return;
       }
-      await workflowPane.forceOpen();
+      await graphRunPane.forceOpen();
     },
   });
-  const workflowMenuDeps: WorkflowMenuDeps = {
-    get tasks() { return getWorkflowRuns(); },
+  const graphRunMenuDeps: GraphRunMenuDeps = {
+    get tasks() { return getGraphRuns(); },
     getRecord: id => manager.getRecord(id),
     viewAgentConversation,
     // Read lazily: `currentCtx` is rebound on every session_start, and the
@@ -634,5 +634,5 @@ export default function (pi: ExtensionAPI) {
     getCtx: () => currentCtx,
   };
 
-  fleet.setWorkflowSource(fleetWorkflows, id => openWorkflowFromFleet(id, workflowMenuDeps));
+  fleet.setGraphRunSource(fleetGraphRuns, id => openGraphRunFromFleet(id, graphRunMenuDeps));
 }

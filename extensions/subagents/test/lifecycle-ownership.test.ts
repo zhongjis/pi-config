@@ -13,14 +13,14 @@ const workflow = vi.hoisted(() => ({
   resume: vi.fn(),
 }));
 
-vi.mock("../src/graph/workflow-runtime.js", () => ({
-  createWorkflowRuntime: vi.fn(() => ({
+vi.mock("../src/graph/graph-runtime.js", () => ({
+  createGraphRuntime: vi.fn(() => ({
     tool: {},
     loadHistory: vi.fn(),
     getRuns: () => [],
     resume: workflow.resume,
     stop: workflow.stop,
-    fleetWorkflows: () => [],
+    fleetGraphRuns: () => [],
   })),
 }));
 

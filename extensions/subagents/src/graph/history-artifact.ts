@@ -9,7 +9,7 @@ export interface HistoricalNodeDetail {
 }
 
 /** Stable, bounded filename component; no runtime identity or binding participates. */
-export function workflowNodeArtifactId(runId: string, index: number): string {
+export function graphRunNodeArtifactId(runId: string, index: number): string {
   if (typeof runId !== "string" || !Number.isSafeInteger(index) || index < 0) throw new RangeError("Invalid graph run artifact key");
   return `graph-${createHash("sha256").update(runId, "utf16le").digest("hex")}-${index}`;
 }
@@ -31,12 +31,12 @@ function preview(value: string | undefined): string | undefined {
 }
 
 /** Read-only, exact-session lookup. Untrusted/missing artifacts never escape into rendering. */
-export function readWorkflowNodeDetail(
+export function readGraphRunNodeDetail(
   scope: { readonly cwd: string; readonly sessionId: string }, runId: string, index: number,
 ): HistoricalNodeDetail | undefined {
   try {
     if (!isAbsolute(scope.cwd) || !/^[A-Za-z0-9_-]+$/.test(scope.sessionId)) return undefined;
-    const alias = workflowNodeArtifactId(runId, index);
+    const alias = graphRunNodeArtifactId(runId, index);
     const path = outputFilePath(scope.cwd, alias, scope.sessionId);
     if (realpathSync(path) !== resolve(path)) return undefined;
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);

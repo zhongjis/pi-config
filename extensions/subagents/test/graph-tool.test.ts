@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { boot, plainTheme, required } from "./workflow-registration.fixture.js";
+import { boot, plainTheme, required } from "./graph-run-registration.fixture.js";
 
 // Stub keyHint so renderResult can be exercised without a real TUI theme.
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
