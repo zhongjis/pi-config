@@ -1,7 +1,7 @@
 ---
 display_name: Yunu 玉女
 description: "Frontend/web visual-engineering implementation: React/JSX/Svelte/CSS/HTML/components, styling, layout, animation, design-system/tokens, accessibility, and responsive behavior; implementation only, visual/browser QA stays with the orchestrator."
-model: gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,github-copilot/claude-opus-5.5:max,cliproxyapi/gpt-6-sol:medium,openai-codex/gpt-6-sol:medium,opencode-go/kimi-k3:max,llama-swap/qwen2.5-coder:14b:high
+model: gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,github-copilot/claude-opus-5.5:max,cliproxyapi/gpt-6-sol:medium,opencode-go/kimi-k3:max,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: impeccable

@@ -66,25 +66,38 @@ describe("agent routing contract", () => {
   it.each([
     [
       "yunu",
-      "gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,cliproxyapi/gpt-6-sol:high,openai-codex/gpt-6-sol:high,opencode-go/qwen3.6-plus:high,llama-swap/qwen2.5-coder:14b:high",
+      "gemini-3.1-pro-preview:high,anthropic/claude-opus-4-8:xhigh,github-copilot/claude-opus-5.5:max,cliproxyapi/gpt-6-sol:medium,opencode-go/kimi-k3:max,llama-swap/qwen2.5-coder:14b:high",
     ],
     [
       "guangguang",
-      "claude-haiku-4-5,cliproxyapi/gpt-6-luna:low,openai-codex/gpt-6-luna:low:fast,opencode-go/minimax-m2.5,llama-swap/qwen2.5-coder:7b:low",
+      "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go/minimax-m3:max,llama-swap/qwen2.5-coder:7b:low",
     ],
     [
       "jintong",
-      "claude-sonnet-4-6,cliproxyapi/gpt-5.6-terra:high,openai-codex/gpt-5.6-terra:high,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high",
+      "github-copilot/grok-4.7:xhigh,anthropic/claude-sonnet-5,cliproxyapi/gpt-5.6-terra:high,opencode-go/grok-4.7:xhigh,llama-swap/qwen2.5-coder:14b:high",
     ],
     [
       "juling",
-      "anthropic/claude-opus-4-8:xhigh,cliproxyapi/gpt-6-astra:medium,openai-codex/gpt-6-astra:medium,opencode-go/glm-5.2,llama-swap/qwen2.5-coder:14b:high",
+      "anthropic/claude-opus-4-8:xhigh,github-copilot/claude-opus-5.5:medium,cliproxyapi/gpt-6-astra:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high",
     ],
   ])("preserves the %s model chain", (agentName, model) => {
     const loaded = loadRepoAgents();
     previousAgentDir = loaded.previousAgentDir;
 
     expect(loaded.result.agents.get(agentName)?.model).toBe(model);
+  });
+
+  it("routes configured GPT models through cliproxyapi, not openai-codex", () => {
+    const loaded = loadRepoAgents();
+    previousAgentDir = loaded.previousAgentDir;
+
+    for (const agent of loaded.result.agents.values()) {
+      expect(agent.model ?? "", agent.name).not.toContain("openai-codex/");
+    }
+    for (const mode of ["kuafu", "houtu", "fuxi"]) {
+      const config = parseModeAgentConfig(readFileSync(`modes/${mode}/mode.md`, "utf8"));
+      expect(config?.model, mode).not.toContain("openai-codex/");
+    }
   });
 
   it("registers Cangjie as the bounded writing specialist", () => {
@@ -94,9 +107,7 @@ describe("agent routing contract", () => {
     const cangjie = loaded.result.agents.get("cangjie");
 
     expect(cangjie, "Cangjie agent must be loadable from agents/cangjie.md").toBeDefined();
-    expect(cangjie?.model).toBe(
-      "anthropic/claude-sonnet-4-6,cliproxyapi/gpt-6-sol:high,openai-codex/gpt-6-sol:high",
-    );
+    expect(cangjie?.model).toBe("github-copilot/claude-opus-5.5:low,anthropic/claude-sonnet-4-6:max");
     expect(cangjie?.description.toLowerCase()).toContain("standalone human-facing");
     expect(cangjie?.builtinToolNames).toEqual(["read", "bash", "edit", "write"]);
     expect(cangjie?.extensionToolNames).toEqual(["codegraph_*", "lsp"]);

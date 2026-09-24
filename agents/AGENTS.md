@@ -18,6 +18,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 - Custom Subagents MUST use `prompt_mode: system_instructions` to inherit global/project AGENTS.md without parent identity, subject to runtime isolation.
 - Frontmatter `description` is model-visible routing text; it MUST state the same duty boundary as the prompt body.
 - Kua Fu/Hou Tu routing prose MUST remain consistent with callable-agent descriptions.
+- Model fallback chains MUST use `cliproxyapi` instead of `openai-codex` for Codex models.
 
 ## Work Guidance
 
