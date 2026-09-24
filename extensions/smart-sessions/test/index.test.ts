@@ -2,22 +2,17 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { complete } from "@earendil-works/pi-ai/compat";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 import sessionSummaryExtension from "../index.js";
 
-vi.mock("@earendil-works/pi-ai/compat", () => ({
-	complete: vi.fn(async () => ({
-		stopReason: "stop",
-		usage: { input: 1, output: 1 },
-		content: [{ type: "text", text: "focused session summary" }],
-	})),
-}));
-
 type ModelEntry = { id: string; name?: string; provider: string };
 
-const mockedComplete = vi.mocked(complete);
+const mockedComplete = vi.fn(async () => ({
+	stopReason: "stop" as const,
+	usage: { input: 1, output: 1 },
+	content: [{ type: "text" as const, text: "focused session summary" }],
+}));
 
 let tempRoot = "";
 let tempAgentDir = "";
@@ -53,7 +48,8 @@ function createSummaryContext(models: ModelEntry[]) {
 	const ctx = createMockContext() as ReturnType<typeof createMockContext> & {
 		modelRegistry: {
 			find: ReturnType<typeof vi.fn>;
-			getApiKeyAndHeaders: ReturnType<typeof vi.fn>;
+			hasConfiguredAuth: ReturnType<typeof vi.fn>;
+			complete: typeof mockedComplete;
 			getAvailable: ReturnType<typeof vi.fn>;
 		};
 		sessionManager: ReturnType<typeof createMockContext>["sessionManager"] & {
@@ -78,7 +74,8 @@ function createSummaryContext(models: ModelEntry[]) {
 		find: vi.fn((provider: string, modelId: string) =>
 			models.find((model) => model.provider === provider && model.id === modelId),
 		),
-		getApiKeyAndHeaders: vi.fn(async () => ({ apiKey: "test-key", headers: {}, ok: true })),
+		hasConfiguredAuth: vi.fn(() => true),
+		complete: mockedComplete,
 		getAvailable: vi.fn(() => models),
 	};
 	ctx.ui = { ...ctx.ui, setWidget: vi.fn() };
@@ -104,6 +101,19 @@ async function runSummary(models: ModelEntry[]) {
 }
 
 describe("smart-sessions model selection", () => {
+	it("sends the summary through modelRegistry.complete without caller auth", async () => {
+		const model = { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" };
+		const { ctx } = await runSummary([model]);
+		expect(ctx.modelRegistry.complete).toHaveBeenCalledWith(
+			expect.objectContaining({ id: model.id, provider: model.provider }),
+			expect.any(Object),
+			expect.objectContaining({ maxTokens: 300, sessionId: "mock-session-id" }),
+		);
+		const options = ctx.modelRegistry.complete.mock.calls[0]?.[2];
+		expect(options).not.toHaveProperty("apiKey");
+		expect(options).not.toHaveProperty("headers");
+	});
+
 	it.each([
 		["Anthropic Haiku", { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" }],
 		["local Qwen", { id: "qwen2.5-coder:14b", name: "Qwen2.5 Coder 14B", provider: "llama-swap" }],

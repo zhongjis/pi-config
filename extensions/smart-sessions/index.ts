@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
@@ -289,8 +288,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 
 		const model = resolved.model;
 
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-		if (!auth?.ok || !auth.apiKey) {
+		if (!ctx.modelRegistry.hasConfiguredAuth(model)) {
 			lastError = "NO_API_KEY";
 			updateWidget(ctx);
 			return;
@@ -338,7 +336,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		pendingLLMCall = true;
 
 		// Fire-and-forget: non-blocking async LLM call
-		complete(model, {
+		ctx.modelRegistry.complete(model, {
 			systemPrompt: "You are a concise summarizer. Output a single line summary of a coding session.",
 			messages: [{
 				role: "user" as const,
@@ -346,11 +344,9 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 				timestamp: Date.now(),
 			}],
 		}, {
-			apiKey: auth.apiKey,
-			headers: auth.headers,
 			maxTokens: config.maxTokens,
 			sessionId: ctx.sessionManager.getSessionId(),
-		} as any)
+		})
 			.then((response) => {
 			// Track usage/cost
 			if (response.usage) {
