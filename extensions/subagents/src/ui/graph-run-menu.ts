@@ -8,18 +8,15 @@
  * and both go through `showGraphRunDialog`, so the two entry points cannot
  * drift apart on what the keys do.
  *
- * Lives in the agents menu rather than as its own top-level command: it
- * is one more view of the same fleet, and a second command name would only add
- * a collision surface (pi renames duplicate commands to `/graph-runs:1` and
- * `/graph-runs:2`, which breaks the bare name for both).
+ * Lives in the agents menu, FleetView and the Agent Monitor; `/agent-monitor`
+ * is the only top-level monitor command.
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { GraphRun } from "../graph/history-view.js";
-import { toPaneSource } from "../graph/pane/render.js";
 import { pauseGraphRunTask, resumeGraphRunTask } from "../graph/task.js";
 import type { AgentRecord } from "../types.js";
-import { GraphRunDialog } from "./graph-run-dialog.js";
+import { GraphRunPanelView } from "./graph-run-panel-view.js";
 
 /** Everything the menu and the inspector need from the extension around them. */
 export type GraphRunUIContext = Pick<ExtensionContext, "ui">;
@@ -41,6 +38,8 @@ export interface GraphRunMenuDeps {
    * sessions, which is a no-op rather than an error.
    */
   getCtx(): GraphRunUIContext | undefined;
+  /** Detach a graph run to the read-only Herdr side pane; absent without a Herdr-managed pane. */
+  detach?: { available(): boolean; open(runId: string): Promise<boolean> };
 }
 
 /**
@@ -64,73 +63,89 @@ export async function showGraphRunDialog(
   // into the conversation and stay in the scrollback after it closed.
   const { VIEWPORT_HEIGHT_PCT } = await import("./conversation-viewer.js");
   /**
-   * This dialog's own overlay, so `c` can hide it while the conversation is
-   * up. Overlays stack, so the viewer would render *over* it either way —
-   * but the two frames size themselves to different content, and the taller
-   * one's edges show around the shorter. Hidden, there is nothing to peek
-   * out, and un-hiding puts the focus back on the dialog when the viewer
+   * This host's own overlay, so `c` (open a node's conversation) can hide it
+   * while the viewer is up. Overlays stack, so the viewer would render *over* it
+   * either way — but the two frames size themselves to different content, and
+   * the taller one's edges show around the shorter. Hidden, there is nothing to
+   * peek out, and un-hiding puts the focus back on the panel when the viewer
    * closes.
    */
   let overlay: { setHidden(hidden: boolean): void } | undefined;
+  // Re-read on every render: the runs are in the background, so the panel
+  // follows them rather than snapshotting at open time. Newest first, as the pane.
+  const runs = () => [...deps.tasks.values()].sort((a, b) => b.startTime - a.startTime);
   await ctx.ui.custom<undefined>(
     (tui, theme, _keybindings, done) =>
-      new GraphRunDialog(
-        tui,
-        // Re-read on every render: the run is in the background, so the
-        // dialog has to follow it rather than snapshot it at open time.
-        () => task.type === "history" ? toPaneSource(task) : ({
-          progress: task.graphRunProgress, task, meta: task.meta, agentCount: task.agentCount,
-        }),
-        theme,
-        done,
-        task.type === "history" ? {} : {
-          onKill: () => {
-            if (task.abortController.signal.aborted) return;
-            task.abortController.abort("user");
-            ctx.ui.notify(`Stopped graph run "${task.meta?.name ?? task.id}".`, "info");
-          },
-          onPause: () => {
-            if (pauseGraphRunTask(task)) {
+      new GraphRunPanelView(tui, runs, task.id, theme, done, {
+        controls: true,
+        detach: deps.detach?.available() ?? false,
+        viewportPct: VIEWPORT_HEIGHT_PCT,
+        onAction: (action, run) => {
+          // Detach is the only control a history run answers; every other action
+          // is a live-run mutation and stays a no-op on read-only history.
+          if (run.type === "history") {
+            if (action.kind === "detach") {
+              void deps.detach?.open(run.id).then(ok => {
+                if (!ok) ctx.ui.notify("Detach needs a Herdr-managed pane.", "warning");
+              });
+            }
+            return;
+          }
+          switch (action.kind) {
+            case "kill":
+              if (run.abortController.signal.aborted) return;
+              run.abortController.abort("user");
+              ctx.ui.notify(`Stopped graph run "${run.meta?.name ?? run.id}".`, "info");
+              return;
+            case "pause":
               // Named rather than implied: "paused" on a run whose agents are
               // still finishing reads as a stronger promise than it is.
-              ctx.ui.notify("Paused — running agents finish, no new ones start.", "info");
-            }
-          },
-          onResume: () => {
-            if (resumeGraphRunTask(task)) ctx.ui.notify("Resumed.", "info");
-          },
-          onSkipAgent: index => {
-            if (task.control?.skip(index) !== true) {
-              ctx.ui.notify("Nothing to skip — that agent has already finished.", "info");
-            }
-          },
-          onRetryAgent: index => {
-            if (task.control?.retry(index) !== true) {
-              // The window is exactly "while it is running": before that
-              // there is nothing to stop, after it the script has its answer.
-              ctx.ui.notify("Only a running agent can be retried.", "info");
-            }
-          },
-          onOpenAgent: recordId => {
-            const record = deps.getRecord(recordId);
-            // A retained progress row can outlive its child's session.
-            if (record === undefined) {
-              ctx.ui.notify("Conversation no longer available — this agent record has been cleaned up.", "info");
+              if (pauseGraphRunTask(run)) {
+                ctx.ui.notify("Paused — running agents finish, no new ones start.", "info");
+              }
+              return;
+            case "resume":
+              if (resumeGraphRunTask(run)) ctx.ui.notify("Resumed.", "info");
+              return;
+            case "skip":
+              if (run.control?.skip(action.index) !== true) {
+                ctx.ui.notify("Nothing to skip — that agent has already finished.", "info");
+              }
+              return;
+            case "retry":
+              // The window is exactly "while it is running": before that there is
+              // nothing to stop, after it the script has its answer.
+              if (run.control?.retry(action.index) !== true) {
+                ctx.ui.notify("Only a running agent can be retried.", "info");
+              }
+              return;
+            case "open": {
+              const record = deps.getRecord(action.recordId);
+              // A retained progress row can outlive its child's session.
+              if (record === undefined) {
+                ctx.ui.notify("Conversation no longer available — this agent record has been cleaned up.", "info");
+                return;
+              }
+              overlay?.setHidden(true);
+              // Caught before the `finally`, so a viewer that fails to open still
+              // un-hides the host and cannot surface as an unhandled rejection out
+              // of a detached promise.
+              void deps.viewAgentConversation(ctx, record)
+                .catch(err => ctx.ui.notify(
+                  `Could not open the conversation: ${err instanceof Error ? err.message : String(err)}`,
+                  "warning",
+                ))
+                .finally(() => overlay?.setHidden(false));
               return;
             }
-            overlay?.setHidden(true);
-            // Caught before the `finally`, so a viewer that fails to open
-            // still un-hides the dialog and cannot surface as an unhandled
-            // rejection out of a detached promise.
-            void deps.viewAgentConversation(ctx, record)
-              .catch(err => ctx.ui.notify(
-                `Could not open the conversation: ${err instanceof Error ? err.message : String(err)}`,
-                "warning",
-              ))
-              .finally(() => overlay?.setHidden(false));
-          },
+            case "detach":
+              void deps.detach?.open(run.id).then(ok => {
+                if (!ok) ctx.ui.notify("Detach needs a Herdr-managed pane.", "warning");
+              });
+              return;
+          }
         },
-      ),
+      }),
     {
       overlay: true,
       overlayOptions: { anchor: "center", width: "90%", maxHeight: `${VIEWPORT_HEIGHT_PCT}%` },

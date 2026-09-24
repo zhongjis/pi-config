@@ -4,15 +4,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import { decodeHistory, GraphHistoryStore, snapshotHistory } from "../src/graph/history.js";
 import { mergeGraphRuns } from "../src/graph/history-view.js";
 import { toPaneSource } from "../src/graph/pane/render.js";
 import { createGraphRunTask } from "../src/graph/task.js";
-import { GraphRunDialog, handleGraphRunDialogKey, initialGraphRunDialogState, layoutGraphRunDialog, resolveGraphRunDialog } from "../src/ui/graph-run-dialog.js";
-import { showGraphRunsMenu } from "../src/ui/graph-run-menu.js";
+import { handleGraphRunDialogKey, initialGraphRunDialogState, layoutGraphRunDialog, resolveGraphRunDialog } from "../src/ui/graph-run-dialog.js";
 import { applyPanelKey, initialPanelState, renderPanelLines } from "../src/ui/observability-panel.js";
 
 function required<T>(value: T | null | undefined): T {
@@ -56,29 +53,6 @@ describe("historical graph presentation", () => {
   });
 });
 
-it("opens history from the menu without wiring any supervision or conversation actions", async () => {
-  const task = createGraphRunTask({ id: "menu", script: "" });
-  Object.assign(task, { status: "failed", endTime: Date.now() });
-  task.graphRunProgress = [{ type: "graph_run_agent", index: 0, label: "node", state: "error", recordId: "private" }];
-  const tasks = mergeGraphRuns([], [required(snapshotHistory(task))]);
-  const open = vi.fn();
-  const notify = vi.fn();
-  const custom: ExtensionContext["ui"]["custom"] = (factory) => new Promise((resolve, reject) => {
-    const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
-    void Promise.resolve(factory({ requestRender() {} } as TUI, theme as Parameters<typeof factory>[1], {} as Parameters<typeof factory>[2], resolve)).then(component => {
-      expect(component).toBeInstanceOf(GraphRunDialog);
-      if (!(component instanceof GraphRunDialog)) throw new Error("Expected graph run dialog");
-      expect(component.render(140).join("\n")).toContain("History snapshot");
-      for (const key of ["p", "s", "r", "x", "c"]) component.handleInput(key);
-      component.handleInput("\x1b");
-    }).catch(reject);
-  });
-  const ui: Partial<ExtensionContext["ui"]> = { custom, notify };
-  const ctx = { ui: ui as ExtensionContext["ui"] };
-  await showGraphRunsMenu(ctx, { tasks, getCtx: () => ctx, getRecord: vi.fn(), viewAgentConversation: open });
-  expect(open).not.toHaveBeenCalled();
-  expect(notify).not.toHaveBeenCalled();
-});
 
 it("keeps history metadata-private and ambiguous labels flat rather than reconstructing containment", () => {
   const task = createGraphRunTask({ id: "legacy", script: "" });

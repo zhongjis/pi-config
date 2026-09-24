@@ -25,6 +25,7 @@ import {
 } from "../../ui/graph-run-dialog.js";
 import {
   applyPanelKey,
+  type PanelAction,
   type PanelOptions,
   type PanelRun,
   type PanelState,
@@ -84,6 +85,21 @@ export function toPaneSource(task: GraphRun): GraphRunDialogSource {
     agentCount: task.agentCount,
     history: task.type === "history" ? task.history : undefined,
     input: task.type === "local_graph_run" ? task.args : undefined,
+  };
+}
+
+/**
+ * The switchable-run shape the observability panel reads, built from a
+ * background task. Shared so the pane manager and the in-Pi host map a run to a
+ * {@link PanelRun} identically.
+ */
+export function toPanelRun(task: GraphRun): PanelRun {
+  return {
+    id: task.id,
+    name: task.graphRunName ?? task.meta?.name ?? task.id,
+    status: task.status,
+    source: toPaneSource(task),
+    ...(task.type === "history" ? { readHistoricalDetail: task.readNodeDetail } : {}),
   };
 }
 
@@ -195,7 +211,7 @@ export function applyObservabilityPaneKey(
   state: PanelState,
   data: string,
   opts: PanelOptions,
-): { state: PanelState; lines: string[]; close: boolean; action?: { kind: "open"; recordId: string } } {
+): { state: PanelState; lines: string[]; close: boolean; action?: PanelAction } {
   const result = applyPanelKey(runs, state, data, opts);
   return {
     state: result.state,

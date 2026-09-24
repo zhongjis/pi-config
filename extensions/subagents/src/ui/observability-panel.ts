@@ -25,6 +25,7 @@ import {
   highlightRow,
 } from "./graph-run-card.js";
 import {
+  agentActions,
   type GraphRunDialogSource,
   subStatusAnnotations,
 } from "./graph-run-dialog.js";
@@ -83,7 +84,21 @@ export interface PanelOptions {
   rows?: number;
   ascii?: boolean;
   now?: number;
+  /** In-Pi host only: enable pause/resume/skip/retry/stop dispatch. Absent = read-only pane. */
+  controls?: boolean;
+  /** In-Pi host only: offer `o` detach to the Herdr pane. Absent = read-only pane. */
+  detach?: boolean;
 }
+
+/** A control the in-Pi host acts on; the read-only pane ignores everything but `open`. */
+export type PanelAction =
+  | { kind: "open"; recordId: string }
+  | { kind: "pause" }
+  | { kind: "resume" }
+  | { kind: "kill" }
+  | { kind: "skip"; index: number }
+  | { kind: "retry"; index: number }
+  | { kind: "detach" };
 
 const clamp = (value: number, lo: number, hi: number): number =>
   Math.min(Math.max(lo, Math.trunc(value)), Math.max(lo, hi));
@@ -536,8 +551,8 @@ function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOpti
   const detailSections = selected ? nodeDetailSections(selected, { agents, active, run, ascii, width, now }, state.expandedSections) : [];
   return { index, run, active, agents, ascii, width, now, headerLines, visible, resolvedCursor, targets, detailSections, navigable: detailSections.filter(section => section.navigable) };
 }
-function footerLine(plan: PanelPlan, state: PanelState, runCount: number, range?: string): GraphRunCardLine {
-  const { run, ascii, width, resolvedCursor, agents, navigable } = plan;
+function footerLine(plan: PanelPlan, state: PanelState, runCount: number, controls: boolean, detach: boolean, range?: string): GraphRunCardLine {
+  const { run, active, ascii, width, resolvedCursor, agents, navigable } = plan;
   const hints = [...(range ? [range] : []), `${ascii ? "up/down" : "↑↓"} ${state.focus === "detail" ? "section" : "select"}`];
   if (navigable.length) hints.push("Enter expand");
   else if (resolvedCursor && resolvedCursor.kind !== "node") hints.push("Enter fold");
@@ -547,6 +562,16 @@ function footerLine(plan: PanelPlan, state: PanelState, runCount: number, range?
   if (run.source.input !== undefined && !run.source.history) hints.push("e inputs");
   if (runCount > 1) hints.push(`${ascii ? "left/right" : "←→"} run`);
   if (!run.source.history && openableRecordId(resolvedCursor, agents)) hints.push("c convo");
+  if (controls && !run.source.history) {
+    if (run.status === "paused") hints.push("p resume");
+    else if (active) hints.push("p pause");
+    const entry = resolvedCursor?.kind === "node" ? agents.find(agent => nodeId(agent, agents) === resolvedCursor.id) : undefined;
+    const nodeActions = agentActions(entry, active);
+    if (nodeActions.skip) hints.push("s skip");
+    if (nodeActions.retry) hints.push("r retry");
+    if (active) hints.push("x stop");
+  }
+  if (detach) hints.push("o detach");
   hints.push(state.focus === "detail" ? "Esc back" : "Esc close");
   return clampLine([{ text: " " + hints.join(" · "), color: "dim" }], width);
 }
@@ -584,7 +609,7 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
   }
   const content = [...header, ...body];
   const output = opts.rows === undefined ? content : padTo(content, Math.max(0, opts.rows - 1));
-  if (opts.rows !== 0) output.push(footerLine(plan, state, runs.length, range));
+  if (opts.rows !== 0) output.push(footerLine(plan, state, runs.length, opts.controls ?? false, opts.detach ?? false, range));
   return output.map(line => clampLine(line, width));
 }
 const toggleSection = (keys: readonly string[], key: string): string[] =>
@@ -592,7 +617,7 @@ const toggleSection = (keys: readonly string[], key: string): string[] =>
 
 export function applyPanelKey(
   runs: readonly PanelRun[], state: PanelState, data: string, opts: PanelOptions,
-): { state: PanelState; lines: GraphRunCardLine[]; close: boolean; action?: { kind: "open"; recordId: string } } {
+): { state: PanelState; lines: GraphRunCardLine[]; close: boolean; action?: PanelAction } {
   const render = (next: PanelState, close = false) => ({ state: next, lines: renderPanelLines(runs, next, opts), close });
 
   if (matchesKey(data, "escape") || matchesKey(data, "q")) {
@@ -693,6 +718,26 @@ export function applyPanelKey(
     const recordId = openableRecordId(resolvedCursor, agents);
     // Only a node with a recordId can open; a stage cursor or record-less node leaves `c` unowned.
     if (recordId !== undefined) return { ...render(state), action: { kind: "open", recordId } };
+  }
+
+  if (opts.detach && matchesKey(data, "o")) {
+    // Detach works for any run, history included; it never mutates panel state.
+    return { ...render(state), action: { kind: "detach" } };
+  }
+
+  // In-Pi host controls: dispatch execution actions on live (non-history) runs; state never changes.
+  if (opts.controls && !plan.run.source.history) {
+    if (matchesKey(data, "p")) {
+      if (plan.run.status === "paused") return { ...render(state), action: { kind: "resume" } };
+      if (plan.active) return { ...render(state), action: { kind: "pause" } };
+    }
+    if (matchesKey(data, "x") && plan.active) return { ...render(state), action: { kind: "kill" } };
+    if (matchesKey(data, "s") || matchesKey(data, "r")) {
+      const entry = resolvedCursor?.kind === "node" ? agents.find(agent => nodeId(agent, agents) === resolvedCursor.id) : undefined;
+      const actions = agentActions(entry, plan.active);
+      if (matchesKey(data, "s") && actions.skip && entry) return { ...render(state), action: { kind: "skip", index: entry.index } };
+      if (matchesKey(data, "r") && actions.retry && entry) return { ...render(state), action: { kind: "retry", index: entry.index } };
+    }
   }
 
   // A key the panel does not own leaves state unchanged.

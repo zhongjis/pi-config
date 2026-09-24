@@ -258,3 +258,41 @@ describe("Herdr retained detail and narrow priority", () => {
     expect(lines.at(-1)).toMatch(/\d+-\d+\/\d+/);
   });
 });
+
+describe("Herdr in-Pi controls and detach", () => {
+  const controlsOpts = { ...opts, controls: true };
+  function liveRun(): PanelRun {
+    const worker = agent({ index: 0, label: "worker", nodeBinding: "worker", state: "progress", startedAt: NOW - 100, recordId: "rec-worker", agentType: "chengfeng" });
+    return { id: "live", name: "live-run", status: "running", source: { progress: [worker], task: { status: "running", startTime: NOW - 1000 } } };
+  }
+  const onNode = (): PanelState => ({ ...initialPanelState(), cursor: { kind: "node", id: "worker" } });
+
+  it("owns no execution or detach key and advertises no control hint without options", () => {
+    for (const key of ["p", "x", "s", "r", "o"]) {
+      expect(applyPanelKey([liveRun()], onNode(), key, opts).action).toBeUndefined();
+    }
+    const footer = render(liveRun(), onNode()).at(-1) ?? "";
+    for (const hint of ["p pause", "x stop", "s skip", "r retry", "o detach"]) expect(footer).not.toContain(hint);
+  });
+  it("dispatches pause, stop and skip on a running run with controls", () => {
+    expect(applyPanelKey([liveRun()], onNode(), "p", controlsOpts).action).toEqual({ kind: "pause" });
+    expect(applyPanelKey([liveRun()], onNode(), "x", controlsOpts).action).toEqual({ kind: "kill" });
+    expect(applyPanelKey([liveRun()], onNode(), "s", controlsOpts).action).toEqual({ kind: "skip", index: 0 });
+  });
+  it("dispatches resume on a paused run with controls", () => {
+    const paused = liveRun(); paused.status = "paused";
+    expect(applyPanelKey([paused], onNode(), "p", controlsOpts).action).toEqual({ kind: "resume" });
+  });
+  it("refuses every mutating control and c on a history run even with controls", () => {
+    const run = liveRun(); run.status = "completed";
+    run.source = { ...run.source, history: { omittedNodeCount: 0 } };
+    for (const key of ["p", "x", "s", "r", "c"]) {
+      expect(applyPanelKey([run], onNode(), key, controlsOpts).action).toBeUndefined();
+    }
+  });
+  it("dispatches detach for o and advertises o detach with the detach option", () => {
+    const detachOpts = { ...opts, detach: true };
+    expect(applyPanelKey([liveRun()], onNode(), "o", detachOpts).action).toEqual({ kind: "detach" });
+    expect(render(liveRun(), onNode(), detachOpts).at(-1)).toContain("o detach");
+  });
+});

@@ -276,3 +276,16 @@ it("keeps the safe centered-inspector fallback when panel rendering or key handl
     expect(readFileSync(join(dir, STATE_FILE), "utf8")).toContain("Review");
   } finally { render.mockRestore(); key.mockRestore(); }
 });
+
+describe("detach pins the named run", () => {
+  it("renders the pinned run's name in the header via forceOpen(runId)", async () => {
+    const older = twoPhaseTask("agr_old", 1000); older.graphRunName = "older-run";
+    const newer = twoPhaseTask("agr_new", 2000); newer.graphRunName = "newer-run";
+    const mgr = manager(() => [older, newer]);
+    await mgr.forceOpen("agr_old");
+    const lines: string[] = JSON.parse(readFileSync(join(dir, STATE_FILE), "utf8")).lines;
+    // The pinned (older) run owns the header; the newest live run only appears in the dim switcher line.
+    expect(lines.some(line => line.includes("older-run") && line.includes("RUNNING"))).toBe(true);
+    expect(lines.some(line => line.includes("newer-run") && line.includes("RUNNING"))).toBe(false);
+  });
+});

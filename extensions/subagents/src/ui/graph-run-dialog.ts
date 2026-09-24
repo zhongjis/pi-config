@@ -2,10 +2,8 @@ import { type HistoricalGraphRun, historyDisclosure } from "../graph/history-vie
 /** `/agents → Graph runs`: stable phase-grouped roster with contextual agent detail. */
 
 import {
-  type Component,
   matchesKey,
   stripTerminalSequences,
-  type TUI,
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
@@ -21,7 +19,7 @@ import {
   header,
   type PhaseGroup,
 } from "../graph/progress.js";
-import { SPINNER, type Theme } from "./agent-widget.js";
+import { SPINNER } from "./agent-widget.js";
 import {
   ASCII_GLYPHS,
   clampLine,
@@ -32,7 +30,6 @@ import {
   type GraphRunCardTask,
   highlightRow,
   REPLAYED_ANNOTATION,
-  styleGraphRunCardLines,
   UNICODE_GLYPHS,
 } from "./graph-run-card.js";
 
@@ -611,85 +608,4 @@ export function handleGraphRunDialogKey(
 
 export function plainGraphRunDialogLines(lines: readonly GraphRunCardLine[]): string[] {
   return lines.map(line => line.map(segment => segment.text).join(""));
-}
-
-const taskIsLive = (task: GraphRunCardTask) => task.status === "running" || task.status === "paused";
-
-export class GraphRunDialog implements Component {
-  private state = initialGraphRunDialogState();
-  private spinnerFrame = 0;
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private closed = false;
-  private lastWidth = DEFAULT_WIDTH;
-
-  constructor(
-    private tui: TUI,
-    private source: () => GraphRunDialogSource,
-    private theme: Theme,
-    private done: (result: undefined) => void,
-    private actions: GraphRunDialogActions = {},
-  ) {
-    if (taskIsLive(this.source().task)) {
-      this.timer = setInterval(() => {
-        if (!taskIsLive(this.source().task)) this.stopTimer();
-        if (!this.closed) { this.spinnerFrame++; this.tui.requestRender(); }
-      }, GRAPH_RUN_DIALOG_REFRESH_MS);
-      this.timer.unref?.();
-    }
-  }
-
-  handleInput(data: string): void {
-    if (this.closed) return;
-    const input: GraphRunDialogInput = { ...this.source(), state: this.state, width: this.lastWidth };
-    const result = handleGraphRunDialogKey(data, this.state, resolveGraphRunDialog(input));
-    if (!result) return;
-    this.state = result.state;
-    if (result.action) this.dispatch(result.action);
-    if (!this.closed) this.tui.requestRender();
-  }
-
-  render(width: number): string[] {
-    if (!Number.isFinite(width) || width <= 0) return [];
-    this.lastWidth = width;
-    const layout = resolveGraphRunLayout({
-      ...this.source(),
-      state: this.state,
-      available: {
-        onKill: !!this.actions.onKill, onPause: !!this.actions.onPause, onResume: !!this.actions.onResume,
-        onSkipAgent: !!this.actions.onSkipAgent, onRetryAgent: !!this.actions.onRetryAgent,
-        onOpenAgent: !!this.actions.onOpenAgent,
-      },
-      width,
-      bodyRows: Math.max(1, Math.min(DEFAULT_PANE_BODY_ROWS, Math.floor((this.tui.terminal?.rows ?? 40) * 0.8) - 10)),
-      spinnerFrame: this.spinnerFrame,
-    });
-    this.state.detailOffset = layout.detailOffset;
-    return styleGraphRunCardLines(layout.lines, this.theme);
-  }
-
-  invalidate(): void {}
-
-  dispose(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.stopTimer();
-  }
-
-  private stopTimer(): void {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = undefined;
-  }
-
-  private dispatch(action: GraphRunDialogAction): void {
-    switch (action.kind) {
-      case "cancel": this.dispose(); this.done(undefined); return;
-      case "kill": this.actions.onKill?.(); return;
-      case "pause": this.actions.onPause?.(); return;
-      case "resume": this.actions.onResume?.(); return;
-      case "skip": this.actions.onSkipAgent?.(action.index); return;
-      case "retry": this.actions.onRetryAgent?.(action.index); return;
-      case "open": this.actions.onOpenAgent?.(action.recordId); return;
-    }
-  }
 }

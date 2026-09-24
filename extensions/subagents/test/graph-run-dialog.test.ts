@@ -3,13 +3,11 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 
 import assert from "node:assert/strict";
 import type * as codingAgent from "@earendil-works/pi-coding-agent";
-import { type OverlayHandle, stripTerminalSequences, type TUI, visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GraphRunAgentEntry, GraphRunEntry } from "../src/graph/progress.js";
 import { createGraphRunTask } from "../src/graph/task.js";
-import type { AgentRecord } from "../src/types.js";
 import {
-  GraphRunDialog,
   graphRunAgentModel,
   handleGraphRunDialogKey,
   initialGraphRunDialogState,
@@ -18,22 +16,14 @@ import {
   resolveGraphRunDialog,
   subStatusAnnotations,
 } from "../src/ui/graph-run-dialog.js";
-import { showGraphRunDialog, showGraphRunsMenu } from "../src/ui/graph-run-menu.js";
+import { showGraphRunsMenu } from "../src/ui/graph-run-menu.js";
 
-const theme = { fg: (_: string, text: string) => `\x1b[36m${text}\x1b[39m`, bold: (text: string) => `\x1b[1m${text}\x1b[22m` };
-const widths = [0, 1, 2, 8, 20, 40, 80, 120];
 const agent: GraphRunAgentEntry = {
   type: "graph_run_agent", index: 7, label: "child", state: "progress", recordId: "child-id",
   agentType: "chengfeng", model: "haiku,gpt-5.6-luna,qwen", modelId: "gpt-5.6-luna", thinking: "off",
 };
 const source = () => ({ task: { status: "running" as const, startTime: 100 }, progress: [agent] });
 const text = (input: Parameters<typeof layoutGraphRunDialog>[0]) => plainGraphRunDialogLines(layoutGraphRunDialog(input)).join("\n");
-const fits = (lines: string[], width: number) => {
-  for (const line of lines) {
-    expect(stripTerminalSequences(line)).not.toMatch(/[\r\n]/);
-    expect(visibleWidth(line)).toBeLessThanOrEqual(width);
-  }
-};
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("graph run inspector model", () => {
@@ -154,68 +144,19 @@ describe("graph run inspector interaction", () => {
     expect(expanded).toContain("x stop");
     expect(expanded).toContain("s skip");
   });
-
-  it("fits every row and stops refreshing after settlement or disposal", () => {
-    vi.useFakeTimers();
-    const requestRender = vi.fn<TUI["requestRender"]>();
-    const task = { status: "running" as "running" | "completed", startTime: 100 };
-    const dialog = new GraphRunDialog({ requestRender, terminal: { rows: 40 } } as unknown as TUI, () => ({ task, progress: [agent] }), theme, vi.fn());
-    for (const width of widths) fits(dialog.render(width), width);
-    vi.advanceTimersByTime(500);
-    expect(requestRender).toHaveBeenCalled();
-    task.status = "completed";
-    vi.advanceTimersByTime(500);
-    expect(vi.getTimerCount()).toBe(0);
-    dialog.dispose();
-  });
 });
 
-it("hides the inspector while its child conversation is open, then restores it", async () => {
-  const task = createGraphRunTask({ id: "agr_test", script: "" });
-  task.graphRunProgress = [agent];
-  let dialog: GraphRunDialog | undefined;
-  let finishViewer: (() => void) | undefined;
-  const setHidden = vi.fn();
-  const custom: codingAgent.ExtensionContext["ui"]["custom"] = (factory, options) => new Promise((resolve, reject) => {
-    void Promise.resolve(factory({ requestRender() {} } as TUI, theme as codingAgent.Theme, {} as codingAgent.KeybindingsManager, resolve)).then(component => {
-      assert.ok(component instanceof GraphRunDialog);
-      dialog = component;
-      assert.ok(options?.onHandle);
-      options.onHandle({ setHidden } as unknown as OverlayHandle);
-    }).then(undefined, reject);
-  });
-  const ui: Pick<codingAgent.ExtensionContext["ui"], "notify" | "custom"> = { notify: vi.fn(), custom };
-  const ctx = { ui: ui as codingAgent.ExtensionContext["ui"] };
-  const record = { id: "child-id" } as AgentRecord;
-  const viewAgentConversation = vi.fn(() => new Promise<void>(resolve => { finishViewer = resolve; }));
-  const opened = showGraphRunDialog(ctx, task, { tasks: new Map([[task.id, task]]), getRecord: () => record, getCtx: () => ctx, viewAgentConversation });
-  await vi.waitFor(() => expect(dialog).toBeDefined());
-  dialog?.handleInput("c");
-  expect(setHidden).toHaveBeenLastCalledWith(true);
-  finishViewer?.();
-  await Promise.resolve(); await Promise.resolve();
-  expect(setHidden).toHaveBeenLastCalledWith(false);
-  dialog?.handleInput("\x1b");
-  await opened;
-});
-
-it("passes live outcome through the inspector and labels menu lifecycle as execution", async () => {
+it("renders live outcome in the layout and labels menu lifecycle as execution", async () => {
   const task = createGraphRunTask({ id: "agr_outcome", script: "" });
   task.status = "completed";
   task.outcome = { status: "failed", reason: "verification failed" };
   task.value = { retained: "evidence" };
-  const custom: codingAgent.ExtensionContext["ui"]["custom"] = factory => new Promise((resolve, reject) => {
-    void Promise.resolve(factory({ requestRender() {} } as TUI, theme as codingAgent.Theme, {} as codingAgent.KeybindingsManager, resolve)).then(component => {
-      assert.ok(component instanceof GraphRunDialog);
-      expect(stripTerminalSequences(component.render(120).join("\n"))).toContain("Outcome: failed — verification failed");
-      component.handleInput("\x1b");
-    }).then(undefined, reject);
-  });
+  expect(stripTerminalSequences(text({ task, progress: [agent], state: initialGraphRunDialogState(), width: 120 })))
+    .toContain("Outcome: failed — verification failed");
   const select = vi.fn(async () => undefined);
-  const ui = { custom, select, notify: vi.fn() } as unknown as codingAgent.ExtensionContext["ui"];
+  const ui = { custom: vi.fn(), select, notify: vi.fn() } as unknown as codingAgent.ExtensionContext["ui"];
   const ctx = { ui };
   const deps = { tasks: new Map([[task.id, task], ["other", createGraphRunTask({ id: "other", script: "" })]]), getRecord: () => undefined, getCtx: () => ctx, viewAgentConversation: async () => {} };
-  await showGraphRunDialog(ctx, task, deps);
   await showGraphRunsMenu(ctx, deps);
   expect(select).toHaveBeenCalledWith("Graph runs", expect.arrayContaining([expect.stringContaining("agr_outcome — Execution: completed")]));
 });

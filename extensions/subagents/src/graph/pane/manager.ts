@@ -28,6 +28,7 @@ import {
   renderGraphRunPaneLines,
   renderObservabilityPaneLines,
   toPaneSource,
+  toPanelRun,
 } from "./render.js";
 import { paneDirFor, readInput, readRecord, readViewport, writeSnapshotAtomic } from "./store.js";
 
@@ -164,8 +165,9 @@ export class GraphRunPaneManager {
    * Reopen the pane for the active run, overriding a manual close. Returns false
    * when there is no Herdr pane to open, so the caller can explain why.
    */
-  async forceOpen(): Promise<boolean> {
+  async forceOpen(runId?: string): Promise<boolean> {
     if (!this.enabled || this.disposed) return false;
+    if (runId !== undefined) this.pinnedRunId = runId;
     await this.runSync(true);
     this.updateTick();
     return true;
@@ -225,13 +227,7 @@ export class GraphRunPaneManager {
   }
 
   private toRuns(tasks: readonly GraphRun[]): PanelRun[] {
-    return tasks.map(task => ({
-      id: task.id,
-      name: task.graphRunName ?? task.meta?.name ?? task.id,
-      status: task.status,
-      source: toPaneSource(task),
-      ...(task.type === "history" ? { readHistoricalDetail: task.readNodeDetail } : {}),
-    }));
+    return tasks.map(toPanelRun);
   }
 
   /**
@@ -391,7 +387,7 @@ export class GraphRunPaneManager {
     this.pickAndTrack();
 
     try {
-      // Auto-open only once a run exists this session; a forced open (/graph-runs)
+      // Auto-open only once a run exists this session; a forced open (a detach (`o`))
       // still opens on demand. Keeps an empty pane from appearing at session start.
       if (force) {
         await this.controller.ensurePane(true);
