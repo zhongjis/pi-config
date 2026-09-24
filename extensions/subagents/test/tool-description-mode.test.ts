@@ -118,6 +118,18 @@ describe("toolDescriptionMode", () => {
     }
   });
 
+  it("background guidance blocks instead of ending the turn", () => {
+    const tools = setup({ toolDescriptionMode: "full" });
+    const guidelines = tools.get("Agent").promptGuidelines.join("\n");
+    expect(guidelines).not.toContain("Explore");
+    expect(guidelines).not.toMatch(/\bgrep\b/);
+    expect(guidelines).toContain("wait: true");
+    expect(guidelines).toContain("never end your turn");
+    const description: string = tools.get("Agent").description;
+    expect(description).toContain("wait: true");
+    expect(description).not.toContain("You will be notified when it completes");
+  });
+
   it("defaults to the explicit full mode output", async () => {
     const tools = setup();
     const defaultDescription: string = tools.get("Agent").description;

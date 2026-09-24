@@ -60,7 +60,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       }),
       wait: Type.Optional(
         Type.Boolean({
-          description: "If true, wait for the agent to complete before returning. Default: false.",
+          description: "If true, block until the agent completes. Use whenever no other work remains instead of ending your turn or repeating checks. Default: false.",
         }),
       ),
       verbose: Type.Optional(
@@ -109,7 +109,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
         `Description: ${record.description}\n\n`;
 
       if (record.status === "running") {
-        output += "Agent is still running. Use wait: true or check back later.";
+        output += "Agent is still running. When no other work remains, call again with wait: true; do not end your turn.";
       } else if (record.status === "error") {
         output += `Error: ${record.error}${partialOutputSuffix(record)}`;
       } else {

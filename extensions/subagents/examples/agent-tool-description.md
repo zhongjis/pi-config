@@ -17,7 +17,7 @@ If the target is already known, use a direct tool — `read` for a known path, `
 - Multiple Agent calls in one assistant response run concurrently. For foreground calls, the parent blocks until all return and receives results inline. If the user asks to run agents "in parallel", send one message with multiple tool calls.
 - When the agent is done, it returns a single message back to you. The result is not visible to the user — to show the user, send a text message with a concise summary.
 - Trust but verify: an agent's summary describes what it intended to do, not necessarily what it did. When an agent writes or edits code, check the actual changes before reporting work as done.
-- Use run_in_background only for work you don't need immediately. Each call returns an agent ID immediately. Continue only non-overlapping work, supervise each agent, then collect via get_subagent_result. You will be notified when it completes — do NOT poll or sleep.
+- Use run_in_background only for work you don't need immediately. Each call returns an agent ID immediately. Continue only non-overlapping work, supervise each agent, then collect via get_subagent_result. Never end your turn while a background agent runs: when no other work remains, call get_subagent_result with wait: true. Never loop wait:false checks or sleep.
 - Foreground vs background: use foreground (default) when you need results before proceeding. Use background only when you can continue non-overlapping work while supervising.
 - Use resume with an agent ID to continue a previous agent's work. A new (non-resume) Agent call starts a fresh agent with no memory of prior runs, so the prompt must be self-contained.
 - Use steer_subagent to send mid-run messages to a running background agent.
