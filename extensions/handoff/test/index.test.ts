@@ -6,9 +6,6 @@ import { MODES } from "../../modes/src/constants.js";
 
 const completeMock = vi.fn();
 
-vi.mock("@earendil-works/pi-ai", () => ({
-	complete: completeMock,
-}));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
 	BorderedLoader: class {
@@ -120,7 +117,8 @@ function createCommandContext(options: {
 		model: options.currentModel,
 		modelRegistry: {
 			getAvailable: () => [{ provider: "anthropic", id: "claude-haiku-4-5" }],
-			getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: "test-key", headers: {} })),
+			hasConfiguredAuth: vi.fn(() => true),
+			complete: completeMock,
 		},
 		sessionManager: {
 			getBranch: () => [
@@ -301,7 +299,13 @@ describe("handoff extension", () => {
 
 			expect(ui.select).toHaveBeenCalledWith("Summary model", ["anthropic/claude-haiku-4-5"]);
 			expect(completeMock).toHaveBeenCalledTimes(1);
-
+			expect(completeMock).toHaveBeenCalledWith(
+				expect.objectContaining({ provider: "anthropic", id: "claude-haiku-4-5" }),
+				expect.any(Object),
+				expect.not.objectContaining({ apiKey: expect.anything(), headers: expect.anything() }),
+			);
+			expect(completeMock.mock.calls[0]?.[2]).not.toHaveProperty("apiKey");
+			expect(completeMock.mock.calls[0]?.[2]).not.toHaveProperty("headers");
 			const saved = await readFile(join(tempHome, ".pi", "agent", "handoff.json"), "utf8");
 			expect(saved).toContain("anthropic/claude-haiku-4-5");
 		});

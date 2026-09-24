@@ -1,7 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { complete } from "@earendil-works/pi-ai/compat";
 import type { Message } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
@@ -729,19 +728,13 @@ async function generateContextSummaryWithUi(
 
       const run = async () => {
         try {
-          const auth = await ctx.modelRegistry.getApiKeyAndHeaders(
-            summaryModel.model,
-          );
-          if ("error" in auth) {
-            throw new Error(
-              auth.error || `No auth available for ${summaryModel.value}`,
-            );
+          if (!ctx.modelRegistry.hasConfiguredAuth(summaryModel.model)) {
+            throw new Error(`No auth available for ${summaryModel.value}`);
           }
 
           const summary = await generateContextSummary(
+            ctx.modelRegistry,
             summaryModel.model,
-            auth.apiKey,
-            auth.headers,
             messages,
             goal,
             loader.signal,
@@ -766,9 +759,8 @@ async function generateContextSummaryWithUi(
 }
 
 async function generateContextSummary(
-  model: any,
-  apiKey: string | undefined,
-  headers: Record<string, string> | undefined,
+  modelRegistry: Pick<ExtensionContext["modelRegistry"], "complete">,
+  model: SummaryModelChoice["model"],
   messages: Array<SessionEntry & { type: "message" }>,
   goal: string,
   signal?: AbortSignal,
@@ -788,10 +780,10 @@ async function generateContextSummary(
     timestamp: Date.now(),
   };
 
-  const response = await complete(
+  const response = await modelRegistry.complete(
     model,
     { systemPrompt, messages: [userMessage] },
-    { apiKey, headers, signal },
+    { signal },
   );
 
   if (response.stopReason === "aborted") {
