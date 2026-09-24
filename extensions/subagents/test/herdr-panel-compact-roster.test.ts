@@ -5,7 +5,7 @@ import type { GraphRunAgentEntry } from "../src/graph/progress.js";
 import { initialPanelState, type PanelRun, renderPanelLines } from "../src/ui/observability-panel.js";
 
 function agent(over: Partial<GraphRunAgentEntry> & Pick<GraphRunAgentEntry, "index" | "label">): GraphRunAgentEntry {
-  return { type: "workflow_agent", state: "done", ...over };
+  return { type: "graph_run_agent", state: "done", ...over };
 }
 
 function fixture(): PanelRun {

@@ -37,10 +37,10 @@ function twoPhaseTask(id: string, startTime: number): GraphRunTask {
   task.status = "running";
   task.agentCount = 2;
   task.graphRunProgress = [
-    { type: "workflow_phase", index: 0, title: "Discover" },
-    { type: "workflow_phase", index: 1, title: "Review" },
-    { type: "workflow_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", recordId: "rec-a0" },
-    { type: "workflow_agent", index: 1, label: "a1", phaseIndex: 1, state: "progress" },
+    { type: "graph_run_phase", index: 0, title: "Discover" },
+    { type: "graph_run_phase", index: 1, title: "Review" },
+    { type: "graph_run_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", recordId: "rec-a0" },
+    { type: "graph_run_agent", index: 1, label: "a1", phaseIndex: 1, state: "progress" },
   ];
   return task;
 }
@@ -69,7 +69,7 @@ const processInput = (mgr: GraphRunPaneManager) => (mgr as unknown as { processI
 
 describe("input channel", () => {
   it("drives the panel view state from a forwarded key and writes a fresh snapshot", () => {
-    const task = twoPhaseTask("wf_a", 1000);
+    const task = twoPhaseTask("agr_a", 1000);
     const mgr = manager(() => [task]);
 
     // Workflow, a0, a1; selection clamps at the last real node.
@@ -85,7 +85,7 @@ describe("input channel", () => {
   });
 
   it("ignores a duplicate sequence number", () => {
-    const task = twoPhaseTask("wf_a", 1000);
+    const task = twoPhaseTask("agr_a", 1000);
     const mgr = manager(() => [task]);
 
     // Two downs land the cursor on the first node (stage 0 header, then a0).
@@ -107,7 +107,7 @@ describe("input channel", () => {
   });
 
   it("decodes control-byte ESC sequences (down arrow) from base64", () => {
-    const task = twoPhaseTask("wf_a", 1000);
+    const task = twoPhaseTask("agr_a", 1000);
     const mgr = manager(() => [task]);
 
     writeInputAtomic(dir, { seq: 1, data: b64("\x1b[B") });
@@ -116,7 +116,7 @@ describe("input channel", () => {
   });
 
   it("resets node selection when the shown run changes", async () => {
-    let tasks = [twoPhaseTask("wf_a", 1000)];
+    let tasks = [twoPhaseTask("agr_a", 1000)];
     const mgr = manager(() => tasks);
 
     // Move the cursor in run A.
@@ -125,7 +125,7 @@ describe("input channel", () => {
     expect(panelState(mgr).cursor).toEqual({ kind: "stage", stage: 0 });
 
     // A newer run appears; the next render must start it with no cursor.
-    tasks = [twoPhaseTask("wf_b", 2000)];
+    tasks = [twoPhaseTask("agr_b", 2000)];
     await (mgr as unknown as { syncNow: (force: boolean) => Promise<void> }).syncNow(false);
     expect(panelState(mgr).cursor).toBeUndefined();
     expect(panelState(mgr).scroll).toBe(0);
@@ -133,7 +133,7 @@ describe("input channel", () => {
 
   it("opens the selected node's conversation on c without closing the pane", async () => {
     const view = vi.fn();
-    const task = twoPhaseTask("wf_a", 1000);
+    const task = twoPhaseTask("agr_a", 1000);
     const mgr = manager(() => [task], view);
     // Walk the cursor to the node with a recordId (stage 0 header, then a0).
     writeInputAtomic(dir, { seq: 1, data: b64("j") });
@@ -152,7 +152,7 @@ describe("input channel", () => {
 
 describe("external stage folding", () => {
   it("forwards Space to fold and reopen the selected stage", async () => {
-    const task = twoPhaseTask("wf_a", 1000);
+    const task = twoPhaseTask("agr_a", 1000);
     const mgr = manager(() => [task]);
     writeInputAtomic(dir, { seq: 1, data: b64("j") });
     await processInput(mgr);
@@ -167,7 +167,7 @@ describe("external stage folding", () => {
 
 describe("esc-at-overview closes via the extension", () => {
   it("closes the recorded pane, marks closedByUser, and writes no new snapshot", async () => {
-    const task = twoPhaseTask("wf_a", 1000);
+    const task = twoPhaseTask("agr_a", 1000);
     const exec = vi.fn(ok);
     const mgr = createGraphRunPaneManager({
       enabled: true,
@@ -195,7 +195,7 @@ describe("esc-at-overview closes via the extension", () => {
   });
 
   it("still writes a snapshot for a navigation key", async () => {
-    const task = twoPhaseTask("wf_a", 1000);
+    const task = twoPhaseTask("agr_a", 1000);
     const mgr = manager(() => [task]);
     writeInputAtomic(dir, { seq: 1, data: b64("j") });
     await processInput(mgr);
@@ -234,7 +234,7 @@ describe("auto-open gating", () => {
 
   it("splits a pane on sync once a run exists", async () => {
     const exec = vi.fn(ok);
-    const mgr = mgrWith(exec as any, () => [twoPhaseTask("wf_a", 1000)]);
+    const mgr = mgrWith(exec as any, () => [twoPhaseTask("agr_a", 1000)]);
     await syncNow(mgr, false);
     expect(splitCalled(exec)).toBe(true);
   });

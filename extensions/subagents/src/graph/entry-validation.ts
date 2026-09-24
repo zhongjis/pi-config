@@ -1,17 +1,17 @@
 import { Type } from "typebox";
 import { Check } from "typebox/value";
-import type { WorkflowEntryData } from "./entry.js";
-import { isWorkflowOutcome } from "./outcome.js";
+import type { GraphRunEntryData } from "./entry.js";
+import { isGraphRunOutcome } from "./outcome.js";
 
 const text = Type.Optional(Type.String());
 const number = Type.Optional(Type.Number());
 const flag = Type.Optional(Type.Boolean());
 const phase = Type.Object({ title: Type.String(), detail: text, model: text });
 const progress = Type.Union([
-  Type.Object({ type: Type.Literal("workflow_phase"), index: Type.Number(), title: Type.String() }),
-  Type.Object({ type: Type.Literal("workflow_log"), message: Type.String() }),
+  Type.Object({ type: Type.Literal("graph_run_phase"), index: Type.Number(), title: Type.String() }),
+  Type.Object({ type: Type.Literal("graph_run_log"), message: Type.String() }),
   Type.Object({
-    type: Type.Literal("workflow_agent"), index: Type.Number(), label: Type.String(),
+    type: Type.Literal("graph_run_agent"), index: Type.Number(), label: Type.String(),
     state: Type.Union([Type.Literal("start"), Type.Literal("progress"), Type.Literal("done"), Type.Literal("error")]),
     phaseIndex: number, phaseTitle: text, agentId: text, recordId: text, agentType: text,
     nodeKey: text, nodeBinding: text, instanceId: text, materializationOrdinal: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -47,7 +47,7 @@ function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
 }
 
 /** The entry and notification boundary; no live task lookup or restoration. */
-export function isWorkflowEntryData(value: unknown): value is WorkflowEntryData {
+export function isGraphRunEntryData(value: unknown): value is GraphRunEntryData {
   return isJsonValue(value) && Check(snapshot, value) &&
-    (!("outcome" in value) || value.outcome === undefined || isWorkflowOutcome(value.outcome));
+    (!("outcome" in value) || value.outcome === undefined || isGraphRunOutcome(value.outcome));
 }

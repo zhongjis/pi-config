@@ -50,7 +50,7 @@ describe("historical node artifacts", () => {
     reporter.registerNode("binding", node, { dependencies: [], instance });
     reporter.update("binding", { status: "completed", attempt: 1, output: "OUTCOME" });
     expect(reporter.nodeIndex(instance.instanceId)).toBe(instance.ordinal);
-    expect(task.graphRunProgress.find(entry => entry.type === "workflow_agent")?.index).toBe(instance.ordinal);
+    expect(task.graphRunProgress.find(entry => entry.type === "graph_run_agent")?.index).toBe(instance.ordinal);
     expect(reporter.nodeIndex("missing")).toBeUndefined();
   });
 
@@ -102,7 +102,7 @@ describe("historical node artifacts", () => {
     f.entry("assistant", [{ type: "text", text: "FINAL_FIXTURE" }]);
     const task = createGraphRunTask({ id: f.runId, script: "PRIVATE_SCRIPT" });
     Object.assign(task, { status: "completed", endTime: Date.now() });
-    task.graphRunProgress = [7, 8].map(index => ({ type: "workflow_agent", index, label: `Node ${index}`, state: "done", promptPreview: "PRIVATE_PROMPT", resultPreview: "PRIVATE_OUTPUT", recordId: "PRIVATE_UUID", presentation: { kind: "agent", name: `Node ${index}` } }));
+    task.graphRunProgress = [7, 8].map(index => ({ type: "graph_run_agent", index, label: `Node ${index}`, state: "done", promptPreview: "PRIVATE_PROMPT", resultPreview: "PRIVATE_OUTPUT", recordId: "PRIVATE_UUID", presentation: { kind: "agent", name: `Node ${index}` } }));
     const json = JSON.stringify({ version: 2, runs: [snapshotHistory(task)] });
     expect(json).not.toMatch(/PRIVATE_|outputFile|artifact|alias|prompt|resultPreview/);
     const resolver = vi.fn((runId: string, index: number) => readGraphRunNodeDetail(f, runId, index));

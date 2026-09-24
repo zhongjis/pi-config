@@ -2,7 +2,7 @@
 import { keyHint } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import { firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
-import { isWorkflowEntryData } from "../graph/entry-validation.js";
+import { isGraphRunEntryData } from "../graph/entry-validation.js";
 import { outcomeLabel } from "../graph/outcome.js";
 import { buildPhaseGroups, collapse, displayState, elapsedMs, formatDuration, type GraphRunAgentEntry, sizeWarning, stats } from "../graph/progress.js";
 import type { Theme } from "./agent-widget.js";
@@ -134,7 +134,7 @@ export function renderGraphRunCard(input: GraphRunCardInput, theme: Theme): Comp
  */
 export function renderGraphRunEntryCard(data: unknown, theme: Theme, expanded = false): Component | undefined {
   if (data === undefined) return undefined;
-  if (!isWorkflowEntryData(data)) {
+  if (!isGraphRunEntryData(data)) {
     const raw = JSON.stringify(data, null, 2) ?? "No graph run data.";
     return expanded ? renderToolExpanded(raw) : renderToolSummary([firstMeaningfulLine(raw)], theme, { expandable: true });
   }

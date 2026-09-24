@@ -1,4 +1,4 @@
-import type { WorkflowOutcome } from "./outcome.js";
+import type { GraphRunOutcome } from "./outcome.js";
 
 /**
  * entry.ts — what a finished workflow leaves behind in the session transcript.
@@ -20,10 +20,10 @@ import type { GraphRunEntry, GraphRunStatus } from "./progress.js";
 import type { GraphRunTask } from "./task.js";
 
 /** `customType` of the session entry a flag-launched workflow renders through. */
-export const WORKFLOW_ENTRY_TYPE = "subagents:workflow";
+export const GRAPH_RUN_ENTRY_TYPE = "subagents:graph-run";
 
 /** The persisted snapshot of a settled run. */
-export interface WorkflowEntryData {
+export interface GraphRunEntryData {
   name: string;
   readonly id?: string;
   readonly scriptPath?: string;
@@ -37,7 +37,7 @@ export interface WorkflowEntryData {
   endTime?: number;
   totalPausedMs?: number;
   value?: unknown;
-  outcome?: WorkflowOutcome;
+  outcome?: GraphRunOutcome;
   error?: string;
   progress: GraphRunEntry[];
   agentCount: number;
@@ -45,8 +45,8 @@ export interface WorkflowEntryData {
   meta?: GraphRunMeta;
 }
 
-/** Snapshot a settled task for {@link WORKFLOW_ENTRY_TYPE}. */
-export function workflowEntryData(task: GraphRunTask): WorkflowEntryData {
+/** Snapshot a settled task for {@link GRAPH_RUN_ENTRY_TYPE}. */
+export function graphRunEntryData(task: GraphRunTask): GraphRunEntryData {
   return {
     name: task.graphRunName ?? task.id,
     id: task.id,

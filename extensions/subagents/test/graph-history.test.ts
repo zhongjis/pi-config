@@ -15,7 +15,7 @@ function required<T>(value: T | null | undefined): T {
 function task(id = "run", startTime = 1) {
   const value = createGraphRunTask({ id, script: "SECRET_SCRIPT", meta: { name: "test", description: "Configured description" } });
   Object.assign(value, { status: "completed", startTime, endTime: startTime + 1, args: "SECRET_INPUT", value: "SECRET_OUTPUT", error: "SECRET_ERROR", scriptPath: "SECRET_PATH", resultPath: "SECRET_PATH", journalPath: "SECRET_PATH", logs: ["SECRET_LOG"], outcome: { status: "partial", reason: "SECRET_REASON" } });
-  value.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "node\n\u001b[31mname\u001b[0m", state: "error", promptPreview: "SECRET_PROMPT", resultPreview: "SECRET_RESULT", error: "SECRET_ERROR", recordId: "SECRET_RECORD", modelId: "provider/model", attempt: 2, lastAttemptReason: "loop", deps: ["upstream"] }];
+  value.graphRunProgress = [{ type: "graph_run_agent", index: 0, label: "node\n\u001b[31mname\u001b[0m", state: "error", promptPreview: "SECRET_PROMPT", resultPreview: "SECRET_RESULT", error: "SECRET_ERROR", recordId: "SECRET_RECORD", modelId: "provider/model", attempt: 2, lastAttemptReason: "loop", deps: ["upstream"] }];
   return value;
 }
 
@@ -51,7 +51,7 @@ describe("graph metadata history", () => {
 
   it("keeps the newest 20 unique runs and bounds nodes, phases, dependencies and strings", () => {
     const value = task();
-    value.graphRunProgress = Array.from({ length: 205 }, (_, index) => ({ type: "workflow_agent", index, label: "x".repeat(200), state: "done", deps: Array.from({ length: 40 }, () => "d".repeat(200)), phaseIndex: index, phaseTitle: "p".repeat(200) }));
+    value.graphRunProgress = Array.from({ length: 205 }, (_, index) => ({ type: "graph_run_agent", index, label: "x".repeat(200), state: "done", deps: Array.from({ length: 40 }, () => "d".repeat(200)), phaseIndex: index, phaseTitle: "p".repeat(200) }));
     const snapshot = required(snapshotHistory(value));
     expect(snapshot.nodes).toHaveLength(200);
     expect(snapshot.omittedNodeCount).toBe(5);
@@ -114,7 +114,7 @@ describe("graph metadata history", () => {
 it("enforces the actual 8 MiB ceiling by evicting oldest runs before touching node tails", () => {
   const value = task();
   value.graphRunProgress = Array.from({ length: 200 }, (_, index) => ({
-    type: "workflow_agent", index, label: `node-${index}`, state: "done",
+    type: "graph_run_agent", index, label: `node-${index}`, state: "done",
     deps: Array.from({ length: 32 }, () => "界".repeat(160)),
   }));
   const snapshot = required(snapshotHistory(value));
@@ -165,7 +165,7 @@ it("rejects v2 cycles, duplicate indices and dangling dependency references", ()
 it("bounds captured topology and keeps all references valid after tail eviction", () => {
   const value = task();
   value.graphRunProgress = Array.from({ length: 205 }, (_, index) => ({
-    type: "workflow_agent", index: index * 2, label: `Node ${index}`, state: "done",
+    type: "graph_run_agent", index: index * 2, label: `Node ${index}`, state: "done",
     nodeBinding: `binding-${index}`, instanceId: `instance-${index}`,
     deps: Array.from({ length: 40 }, (_, n) => `binding-${n}`),
     dependents: ["binding-204"],

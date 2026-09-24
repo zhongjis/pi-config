@@ -19,7 +19,7 @@ const graph: AgentGraph = {
 };
 async function frames(budgets: { deadline?: number; spendLimit?: number } = {}): Promise<GraphRunSnapshot[]> {
   const result: GraphRunSnapshot[] = []; let evaluations = 0; let evidence = 0;
-  const input = { tasks: [{ kind: "a", goal: "first" }] }; const runId = "wf_feedback1";
+  const input = { tasks: [{ kind: "a", goal: "first" }] }; const runId = "agr_feedback1";
   const feedback = graph.nodes.feedback;
   if (feedback.type !== "bounded_feedback") throw new Error("missing feedback fixture");
   const definition = { ...graph, nodes: { ...graph.nodes, feedback: { ...feedback, ...budgets } } };
@@ -70,7 +70,7 @@ it("retains nested invocation history and unique recursive ordinals across a v1 
   const cwd = mkdtempSync(join(tmpdir(), "graph-transition-")); directories.push(cwd);
   const parent: AgentGraph = { nodes: { start: { type: "agent", agent: "start", prompt: "start" }, sub: { type: "graph", graph: "child" }, check: { type: "agent", agent: "check", prompt: "check" } }, edges: [{ from: "start", to: "sub" }, { from: "sub", to: "check", when: { eq: [{ node: "sub", path: "$.done" }, false] } }, { from: "check", to: "sub", loop: { maxIterations: 2 } }] };
   const child: AgentGraph = { version: 2, nodes: { worker: { type: "agent", agent: "worker", prompt: "child", outputSchema: { type: "object" } } }, edges: [], outputs: { done: { node: "worker", path: "$.done" } } };
-  const runId = "wf_nestedloop"; let checks = 0;
+  const runId = "agr_nestedloop"; let checks = 0;
   const result = await runGraph(parent, {}, { runId, loadGraph: () => child, onCheckpoint: (state, graph) => writeGraphSnapshot(cwd, { version: 2, runId, state, graph, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: async request => ({ ok: true, output: request.agentType === "worker" ? JSON.stringify({ done: ++checks === 2 }) : "continue" }) } });
   expect(result.status).toBe("completed");
   const [saved] = readGraphSnapshots(cwd); const nested = saved.state.runtime?.nested?.sub;
@@ -123,7 +123,7 @@ it("keeps unbudgeted v1 loops resumable when later child executions cost less", 
     review: { type: "agent", agent: "review", prompt: "review", outputSchema: { type: "object" } },
     fix: { type: "agent", agent: "fix", prompt: "fix" },
   }, edges: [{ from: "start", to: "review" }, { from: "review", to: "fix", when: { eq: [{ node: "review", path: "$.approved" }, false] } }, { from: "fix", to: "review", loop: { maxIterations: 2 } }] };
-  let reviews = 0; const runId = "wf_v1cost";
+  let reviews = 0; const runId = "agr_v1cost";
   const result = await runGraph(legacy, {}, { runId, onCheckpoint: (state, graph) => writeGraphSnapshot(cwd, { version: 2, runId, state, graph, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: async request => {
     if (request.agentType !== "review") return { ok: true, costUsd: 0, output: "ok" };
     reviews += 1; return { ok: true, costUsd: reviews === 1 ? 0.5 : 0.2, output: JSON.stringify({ approved: reviews === 2 }) };

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { createCustomMessageCard, extractToolText, firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
-import { isWorkflowEntryData } from "./graph/entry-validation.js";
+import { isGraphRunEntryData } from "./graph/entry-validation.js";
 import type { NotificationDetails } from "./types.js";
 import { renderGraphRunEntryCard } from "./ui/graph-run-report.js";
 import {
@@ -121,9 +121,9 @@ export function registerSubagentNotificationRenderer(pi: ExtensionAPI): void {
     (message, { expanded }, theme) => {
       const detail = message.details;
       if (!isNotificationDetails(detail)) return undefined;
-      if (detail.workflow !== undefined) {
-        if (isWorkflowEntryData(detail.workflow)) {
-          return createCustomMessageCard("notification", renderGraphRunEntryCard(detail.workflow, theme, expanded)!, theme);
+      if (detail.graphRun !== undefined) {
+        if (isGraphRunEntryData(detail.graphRun)) {
+          return createCustomMessageCard("notification", renderGraphRunEntryCard(detail.graphRun, theme, expanded)!, theme);
         }
         const raw = typeof message.content === "string" ? message.content : extractToolText({ content: message.content });
         const fallback = expanded

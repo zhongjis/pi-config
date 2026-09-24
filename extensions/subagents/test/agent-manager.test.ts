@@ -1396,10 +1396,10 @@ describe("workflow pool ownership", () => {
     manager = new AgentManager(completed, 1, started);
     manager.setMaxConcurrentForeground(1);
     manager.setUsageListener(usage);
-    let finishWorkflow: (() => void) | undefined;
+    let finishGraphRun: (() => void) | undefined;
     vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
       options.onAssistantUsage?.({ input: 2, output: 3, cacheWrite: 0, cacheRead: 7, cost: 0.25 });
-      await new Promise<void>(resolve => { finishWorkflow = resolve; });
+      await new Promise<void>(resolve => { finishGraphRun = resolve; });
       return { responseText: "workflow", session: mockSession(), aborted: false, steered: false };
     }).mockResolvedValue({ responseText: "ordinary", session: mockSession(), aborted: false, steered: false });
     const pending = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "workflow", {
@@ -1415,7 +1415,7 @@ describe("workflow pool ownership", () => {
     expect(manager.getLifetimeCost()).toBe(0.25);
     expect(workflow.lifetimeUsage.cacheRead).toBe(7);
     expect(usage).toHaveBeenCalledTimes(1);
-    finishWorkflow?.();
+    finishGraphRun?.();
     await pending;
     expect(completed).toHaveBeenCalledTimes(1);
     expect(manager.listAgents()).toContain(workflow);

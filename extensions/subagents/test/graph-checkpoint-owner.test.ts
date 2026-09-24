@@ -12,9 +12,9 @@ let cwd: string | undefined;
 afterEach(() => { vi.restoreAllMocks(); if (cwd) fs.rmSync(cwd, { recursive: true, force: true }); });
 function fixture() {
   cwd = fs.mkdtempSync(join(tmpdir(), "graph-lock-"));
-  const release = ownGraphRun(cwd, "wf_abcdef123456");
+  const release = ownGraphRun(cwd, "agr_abcdef123456");
   expect(release.reclaimedDeadWriter).toBe(false);
-  const path = join(graphRunsDir(cwd), "wf_abcdef123456.json.run.lock");
+  const path = join(graphRunsDir(cwd), "agr_abcdef123456.json.run.lock");
   const metadata: Record<string, unknown> = JSON.parse(fs.readFileSync(path, "utf8"));
   release();
   const dead = Number(spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout);
@@ -25,7 +25,7 @@ it("recovers an orphaned recovery guard as well as the dead run owner", () => {
   const { cwd, path, metadata, dead } = fixture();
   fs.writeFileSync(path, JSON.stringify({ ...metadata, pid: dead }));
   fs.writeFileSync(`${path}.recovery`, JSON.stringify({ ...metadata, pid: dead, nonce: randomUUID() }));
-  const release = ownGraphRun(cwd, "wf_abcdef123456");
+  const release = ownGraphRun(cwd, "agr_abcdef123456");
   expect(release.reclaimedDeadWriter).toBe(true);
   release();
   expect(fs.readdirSync(graphRunsDir(cwd))).toEqual([]);
@@ -34,7 +34,7 @@ it.skipIf(process.platform !== "linux")("distinguishes a reused PID by process-s
   const { cwd, path, metadata } = fixture();
   expect(metadata.start).toEqual(expect.any(String)); expect(metadata.nonce).toEqual(expect.any(String));
   fs.writeFileSync(path, JSON.stringify({ ...metadata, start: "previous-process-start" }));
-  const release = ownGraphRun(cwd, "wf_abcdef123456"); release();
+  const release = ownGraphRun(cwd, "agr_abcdef123456"); release();
 });
 it("rechecks ownership under the recovery guard before unlinking", () => {
   const { cwd, path, metadata, dead } = fixture();
@@ -45,27 +45,27 @@ it("rechecks ownership under the recovery guard before unlinking", () => {
     link(source, target);
     if (String(target) === `${path}.recovery`) fs.writeFileSync(path, replacement);
   });
-  expect(() => ownGraphRun(cwd, "wf_abcdef123456")).toThrow();
+  expect(() => ownGraphRun(cwd, "agr_abcdef123456")).toThrow();
   expect(fs.readFileSync(path, "utf8")).toBe(replacement);
 });
 it("refuses a second live writer with a typed LiveWriterError", () => {
   const { cwd } = fixture();
-  const release = ownGraphRun(cwd, "wf_abcdef123456");
+  const release = ownGraphRun(cwd, "agr_abcdef123456");
   try {
-    expect(() => ownGraphRun(cwd, "wf_abcdef123456")).toThrow(LiveWriterError);
+    expect(() => ownGraphRun(cwd, "agr_abcdef123456")).toThrow(LiveWriterError);
   } finally { release(); }
 });
 it("peeks a self-held live run lock and clears once released or absent", () => {
   const { cwd } = fixture();
-  const release = ownGraphRun(cwd, "wf_abcdef123456");
-  expect(graphRunHasLiveWriter(cwd, "wf_abcdef123456")).toBe(true);
+  const release = ownGraphRun(cwd, "agr_abcdef123456");
+  expect(graphRunHasLiveWriter(cwd, "agr_abcdef123456")).toBe(true);
   release();
-  expect(graphRunHasLiveWriter(cwd, "wf_abcdef123456")).toBe(false);
-  expect(graphRunHasLiveWriter(cwd, "wf_000000000000")).toBe(false);
+  expect(graphRunHasLiveWriter(cwd, "agr_abcdef123456")).toBe(false);
+  expect(graphRunHasLiveWriter(cwd, "agr_000000000000")).toBe(false);
 });
 it("peeks false for a dead-PID run lock", () => {
   const { cwd, path, metadata, dead } = fixture();
   fs.writeFileSync(path, JSON.stringify({ ...metadata, pid: dead }));
-  expect(graphRunHasLiveWriter(cwd, "wf_abcdef123456")).toBe(false);
+  expect(graphRunHasLiveWriter(cwd, "agr_abcdef123456")).toBe(false);
   expect(checkpointHasLiveWriter(path.slice(0, -".run.lock".length))).toBe(false);
 });

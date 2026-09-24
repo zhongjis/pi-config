@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWorkflowEntryData } from "../src/graph/entry-validation.js";
+import { isGraphRunEntryData } from "../src/graph/entry-validation.js";
 import type { AgentGraph, FanoutNode, GraphFragment } from "../src/graph/ir.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
@@ -88,9 +88,9 @@ describe("entry dependency boundary", () => {
   it.each(["deps", "dependents"])("validates optional %s as string arrays", field => {
     const entry = (value: unknown) => ({
       name: "fixture", status: "completed", startTime: 0, agentCount: 1, totalTokens: 0,
-      progress: [{ type: "workflow_agent", index: 0, label: "a", state: "done", [field]: value }],
+      progress: [{ type: "graph_run_agent", index: 0, label: "a", state: "done", [field]: value }],
     });
-    for (const valid of [undefined, [], ["a", "b"]]) expect(isWorkflowEntryData(entry(valid))).toBe(true);
-    for (const invalid of [null, "a", 1, {}, [1], ["a", null]]) expect(isWorkflowEntryData(entry(invalid))).toBe(false);
+    for (const valid of [undefined, [], ["a", "b"]]) expect(isGraphRunEntryData(entry(valid))).toBe(true);
+    for (const invalid of [null, "a", 1, {}, [1], ["a", null]]) expect(isGraphRunEntryData(entry(invalid))).toBe(false);
   });
 });

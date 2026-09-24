@@ -15,10 +15,10 @@ const NOW = 1_700_000_000_000;
 function source(): GraphRunDialogSource {
   return {
     progress: [
-      { type: "workflow_phase", index: 0, title: "Discover" },
-      { type: "workflow_phase", index: 1, title: "Review" },
+      { type: "graph_run_phase", index: 0, title: "Discover" },
+      { type: "graph_run_phase", index: 1, title: "Review" },
       {
-        type: "workflow_agent",
+        type: "graph_run_agent",
         index: 0,
         label: "discover-auth",
         phaseIndex: 0,
@@ -30,7 +30,7 @@ function source(): GraphRunDialogSource {
         durationMs: 4200,
       },
       {
-        type: "workflow_agent",
+        type: "graph_run_agent",
         index: 1,
         label: "review-auth",
         phaseIndex: 1,
@@ -40,7 +40,7 @@ function source(): GraphRunDialogSource {
         model: "haiku 4.5",
       },
       {
-        type: "workflow_agent",
+        type: "graph_run_agent",
         index: 2,
         label: "review-net",
         phaseIndex: 1,
@@ -88,7 +88,7 @@ describe("renderGraphRunPaneLines", () => {
   });
 
   it("builds the exact source shape the overlay reads from a task", () => {
-    const task = createGraphRunTask({ id: "wf_1", script: "x", meta: { name: "audit", description: "d" } });
+    const task = createGraphRunTask({ id: "agr_1", script: "x", meta: { name: "audit", description: "d" } });
     task.graphRunName = "audit";
     task.agentCount = 4;
     const src = toPaneSource(task);
@@ -170,7 +170,7 @@ describe("applyPaneKey — read-only in-pane navigation", () => {
 it("keeps the centered/fallback inspector unchanged when Herdr presentation metadata is added", () => {
   const input = source();
   const before = renderGraphRunPaneLines(input, { width: 120, now: NOW });
-  input.progress = input.progress.map(entry => entry.type === "workflow_agent" ? { ...entry, presentation: { kind: "agent" as const, name: "Herdr-only name", iteration: 9 } } : entry);
+  input.progress = input.progress.map(entry => entry.type === "graph_run_agent" ? { ...entry, presentation: { kind: "agent" as const, name: "Herdr-only name", iteration: 9 } } : entry);
   expect(renderGraphRunPaneLines(input, { width: 120, now: NOW })).toEqual(before);
   const nav = applyPaneKey(input, initialGraphRunDialogState(), "\r", { width: 120, now: NOW });
   expect(nav).toEqual(applyPaneKey(source(), initialGraphRunDialogState(), "\r", { width: 120, now: NOW }));

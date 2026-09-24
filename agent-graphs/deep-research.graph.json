@@ -87,6 +87,6 @@
     "rejectedClaims": { "node": "synthesize", "path": "$.rejectedClaims" },
     "gaps": { "node": "synthesize", "path": "$.gaps" },
     "failures": { "node": "synthesize", "path": "$.failures" },
-    "$subagentWorkflowOutcome": { "node": "synthesize", "path": "$.outcome" }
+    "$agentGraphOutcome": { "node": "synthesize", "path": "$.outcome" }
   }
 }

@@ -12,7 +12,7 @@ export function graphRunCompletionText(ctx: ExtensionContext, task: GraphRunTask
   // linked from the notification via `<result-file>`, so the model never carries an unbounded body.
   if (result.length <= WORKFLOW_RESULT_PREVIEW_CHARS) return formatGraphRunNotification(task);
   try {
-    const path = join(dirname(createOutputFilePath(ctx.cwd, task.id, ctx.sessionManager.getSessionId())), `${task.id}.workflow-result.txt`);
+    const path = join(dirname(createOutputFilePath(ctx.cwd, task.id, ctx.sessionManager.getSessionId())), `${task.id}.graph-result.txt`);
     writeFileSync(path, result, "utf-8");
     task.resultPath = path;
     // `task.resultPath` now drives the truncation marker and `<result-file>` element inside the XML.

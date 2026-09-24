@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { type CheckpointLease, checkpointHasLiveWriter, ownCheckpoint, writeOwnedCheckpoint } from "./graph-checkpoint-owner.js";
 import { validateCheckpointTransition } from "./graph-checkpoint-transition.js";
 import { validateGraphRestore } from "./graph-restore-validation.js";
-import { isWorkflowRunId, snapshotDirectory, snapshotPath } from "./graph-snapshot-path.js";
+import { isGraphRunId, snapshotDirectory, snapshotPath } from "./graph-snapshot-path.js";
 import { validateSchedulerState } from "./graph-state-validation.js";
 import type { AgentGraph } from "./ir.js";
 import type { SchedulerState } from "./scheduler.js";
@@ -106,7 +106,7 @@ function isSnapshot(value: unknown): value is GraphRunSnapshot {
   const s = value as Record<string, unknown>;
   return (
     (s.version === 1 || s.version === 2) &&
-    isWorkflowRunId(s.runId) &&
+    isGraphRunId(s.runId) &&
     (s.ownerSessionId === undefined || (typeof s.ownerSessionId === "string" && s.ownerSessionId.length > 0)) &&
     typeof s.waitingGate === "string" &&
     typeof s.graph === "object" &&

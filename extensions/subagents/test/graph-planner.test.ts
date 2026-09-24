@@ -86,7 +86,7 @@ describe("pure Panda planning", () => {
   });
 
   it("treats prototype names as bindings, never inherited feedback or materialization ownership", () => {
-    const runtime = new GraphInstances("wf_projection").state; runtime.feedback = {};
+    const runtime = new GraphInstances("agr_projection").state; runtime.feedback = {};
     const state: SchedulerState = { nodes: {}, loopCounts: {}, runtime };
     applyProjection(state, { kind: "materialize", ids: ["constructor", "__proto__"] });
     expect(Object.keys(state.nodes)).toEqual(["constructor", "__proto__"]);

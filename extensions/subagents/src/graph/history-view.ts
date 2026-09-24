@@ -39,9 +39,9 @@ function historyView(run: GraphHistoryRun, readDetail?: (runId: string, index: n
     history: { omittedNodeCount: run.omittedNodeCount, outcome: run.outcome },
     meta: { name: run.name, description: run.description ?? "", phases: run.phases.map(phase => ({ title: phase.title })) },
     graphRunProgress: [
-      ...run.phases.map(phase => ({ type: "workflow_phase" as const, ...phase })),
+      ...run.phases.map(phase => ({ type: "graph_run_phase" as const, ...phase })),
       ...run.nodes.map(node => ({
-        ...node, type: "workflow_agent" as const, phaseTitle: node.phaseIndex === undefined ? undefined : titles.get(node.phaseIndex),
+        ...node, type: "graph_run_agent" as const, phaseTitle: node.phaseIndex === undefined ? undefined : titles.get(node.phaseIndex),
         ...(run.topologyVersion === 2 ? { historyIndex: node.index,
           presentation: node.topology ? { kind: node.topology.kind, name: node.topology.name, role: node.topology.role,
             parentIndex: node.topology.parentIndex, iteration: node.topology.iteration, itemIndex: node.topology.itemIndex,

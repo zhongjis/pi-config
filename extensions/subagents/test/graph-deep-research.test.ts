@@ -55,7 +55,7 @@ describe("deep-research portfolio", () => {
     expect(graph.edges).toEqual([{ from: "plan", to: "research" }, { from: "research", to: "synthesize" }]);
     expect(agentNode(graph, "synthesize").input?.research).toEqual({ node: "research", path: "$" });
     for (const field of ["markdown", "acceptedFindings", "verifiedCoverage", "rejectedClaims", "gaps", "failures"]) expect(graph.outputs?.[field]).toEqual({ node: "synthesize", path: `$.${field}` });
-    expect(graph.outputs?.$subagentWorkflowOutcome).toEqual({ node: "synthesize", path: "$.outcome" });
+    expect(graph.outputs?.$agentGraphOutcome).toEqual({ node: "synthesize", path: "$.outcome" });
     expect([agentNode(graph, "plan").agent, research.evaluator.agent, agentNode(graph, "synthesize").agent]).toEqual(["wenchang", "wenchang", "wenchang"]);
     expect(Object.values(research.work.dispatch.cases).every(name => ["chengfeng", "wenchang"].includes(name))).toBe(true);
     expect(Object.values(graph.nodes).every(node => node.type !== "expand" && node.type !== "human_gate" && !("validation" in node && node.validation))).toBe(true);
@@ -131,7 +131,7 @@ describe("deep-research portfolio", () => {
     expect(evaluations).toBe(1);
     expect(work).toBe(2);
     expect(result.feedback?.research).toMatchObject({ reason: "sufficient", partial: true, gaps: [gap], counters: { iterations: 1, totalItems: 2 }, exhaustedBounds: [] });
-    expect(result.outputs.$subagentWorkflowOutcome).toMatchObject({ status: "partial" });
+    expect(result.outputs.$agentGraphOutcome).toMatchObject({ status: "partial" });
   });
 
   it("preserves partial deep research", async () => {
@@ -155,6 +155,6 @@ describe("deep-research portfolio", () => {
     expect(result.feedback?.research).toMatchObject({ reason: "iteration limit", partial: true, counters: { iterations: 3, totalItems: 4 } });
     expect(result.feedback?.research?.iterations[0]?.results).toEqual(expect.arrayContaining([expect.objectContaining({ status: "failed", error: "source offline" })]));
     expect(result.outputs).toMatchObject({ rejectedClaims: ["Unverified claim"], gaps: ["Disputed claim remains"], failures: ["source offline"] });
-    expect(result.outputs.$subagentWorkflowOutcome).toMatchObject({ status: "partial", reason: expect.stringContaining("source offline") });
+    expect(result.outputs.$agentGraphOutcome).toMatchObject({ status: "partial", reason: expect.stringContaining("source offline") });
   });
 });

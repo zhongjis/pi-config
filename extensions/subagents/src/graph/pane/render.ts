@@ -78,12 +78,12 @@ export function toPaneSource(task: GraphRun): GraphRunDialogSource {
       startTime: task.startTime,
       endTime: task.endTime,
       totalPausedMs: task.totalPausedMs,
-      pausedAt: task.type === "local_workflow" ? task.pausedAt : undefined,
+      pausedAt: task.type === "local_graph_run" ? task.pausedAt : undefined,
     },
     meta: task.meta,
     agentCount: task.agentCount,
     history: task.type === "history" ? task.history : undefined,
-    input: task.type === "local_workflow" ? task.args : undefined,
+    input: task.type === "local_graph_run" ? task.args : undefined,
   };
 }
 

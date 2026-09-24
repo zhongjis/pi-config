@@ -20,7 +20,7 @@ vi.mock("../src/agent-runner.js", async () => {
 });
 
 import { runAgent } from "../src/agent-runner.js";
-import { workflowEntryData } from "../src/graph/entry.js";
+import { graphRunEntryData } from "../src/graph/entry.js";
 import { createGraphRunTask } from "../src/graph/task.js";
 import subagentsExtension from "../src/index.js";
 
@@ -457,12 +457,12 @@ describe("subagent notification rendering migration", () => {
   });
 
   it("renders workflow card for valid workflow entry in notification (G2 valid)", () => {
-    const task = createGraphRunTask({ id: "wf_note", script: "" });
+    const task = createGraphRunTask({ id: "agr_note", script: "" });
     task.status = "completed";
     task.value = "answer";
     task.graphRunName = "notify-demo";
-    const wf = workflowEntryData(task);
-    const card = renderCard({ details: notification({ workflow: wf }) }, false, 120).map(line => line.trim());
+    const wf = graphRunEntryData(task);
+    const card = renderCard({ details: notification({ graphRun: wf }) }, false, 120).map(line => line.trim());
     const output = card.join("\n");
     expect(card[1]).toBe("[notification]");
     expect(output).toContain("notify-demo");
@@ -474,7 +474,7 @@ describe("subagent notification rendering migration", () => {
   it("falls back to raw content for invalid workflow entry in notification (G2 invalid)", () => {
     const renderer = requireRenderer();
     const result = renderer(
-      { details: notification({ workflow: { not: "valid" } as unknown as NotificationDetails["workflow"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],
+      { details: notification({ graphRun: { not: "valid" } as unknown as NotificationDetails["graphRun"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],
       { expanded: false },
       theme,
     );
@@ -484,7 +484,7 @@ describe("subagent notification rendering migration", () => {
   it("keeps malformed workflow fallback previews and expand hints flat", () => {
     const renderer = requireRenderer();
     const result = renderer(
-      { details: notification({ workflow: { not: "valid" } as unknown as NotificationDetails["workflow"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],
+      { details: notification({ graphRun: { not: "valid" } as unknown as NotificationDetails["graphRun"] }), content: "raw-graph-text" } as Parameters<typeof renderer>[0],
       { expanded: false },
       theme,
     );

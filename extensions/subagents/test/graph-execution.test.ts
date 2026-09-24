@@ -5,7 +5,7 @@ import type { SchedulerState } from "../src/graph/scheduler.js";
 
 const instanceId = "00000000-0000-4000-8000-000000000001" as NodeInstanceId;
 const id = executionAttemptId("00000000-0000-4000-8000-000000000002");
-const identity = { runId: "wf_execution", instanceId, activation: 1, graphAttempt: 1, executionAttemptId: id };
+const identity = { runId: "agr_execution", instanceId, activation: 1, graphAttempt: 1, executionAttemptId: id };
 const event = (payload: ExecutionEvent["payload"]): ExecutionEvent => ({ ...identity, payload });
 const admitted = event({ kind: "admitted", resources: ["repo"], budget: { maxExecutions: 2 } });
 const dispatch = event({ kind: "dispatched", target: "agent" });

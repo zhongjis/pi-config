@@ -23,7 +23,7 @@ function required<T>(value: T | null | undefined): T {
 describe("historical graph presentation", () => {
   const live = createGraphRunTask({ id: "same", script: "" });
   Object.assign(live, { status: "failed", endTime: Date.now() });
-  live.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "failed-node", state: "error", recordId: "private", error: "private" }];
+  live.graphRunProgress = [{ type: "graph_run_agent", index: 0, label: "failed-node", state: "error", recordId: "private", error: "private" }];
   const snapshot = required(snapshotHistory(live));
   snapshot.omittedNodeCount = 3;
 
@@ -59,7 +59,7 @@ describe("historical graph presentation", () => {
 it("opens history from the menu without wiring any supervision or conversation actions", async () => {
   const task = createGraphRunTask({ id: "menu", script: "" });
   Object.assign(task, { status: "failed", endTime: Date.now() });
-  task.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "node", state: "error", recordId: "private" }];
+  task.graphRunProgress = [{ type: "graph_run_agent", index: 0, label: "node", state: "error", recordId: "private" }];
   const tasks = mergeGraphRuns([], [required(snapshotHistory(task))]);
   const open = vi.fn();
   const notify = vi.fn();
@@ -83,7 +83,7 @@ it("opens history from the menu without wiring any supervision or conversation a
 it("keeps history metadata-private and ambiguous labels flat rather than reconstructing containment", () => {
   const task = createGraphRunTask({ id: "legacy", script: "" });
   Object.assign(task, { status: "completed", endTime: Date.now() });
-  task.graphRunProgress = [{ type: "workflow_agent", index: 0, label: "Research · iteration 2 · item 4", state: "done", presentation: { kind: "agent", name: "private name", parentInstanceId: "private parent", iteration: 2, itemIndex: 3 } }];
+  task.graphRunProgress = [{ type: "graph_run_agent", index: 0, label: "Research · iteration 2 · item 4", state: "done", presentation: { kind: "agent", name: "private name", parentInstanceId: "private parent", iteration: 2, itemIndex: 3 } }];
   const saved = required(decodeHistory(JSON.stringify({ version: 1, runs: [snapshotHistory(task)] })).runs[0]);
   expect(JSON.stringify(saved)).not.toMatch(/private name|private parent|presentation|topology/);
   const history = required(mergeGraphRuns([], [saved]).get("legacy"));
@@ -99,7 +99,7 @@ it("round-trips v2 hierarchy, decisions and selected flow without retaining priv
   const task = createGraphRunTask({ id: "roundtrip", script: "PRIVATE_SCRIPT", meta: { name: "context-gather", description: "Configured\nworkflow description" } });
   Object.assign(task, { status: "completed", startTime: 0, endTime: 160000, args: "PRIVATE_INPUT", value: "PRIVATE_OUTPUT" });
   const add = (binding: string, data: Partial<import("../src/graph/progress.js").GraphRunAgentEntry>) => {
-    task.graphRunProgress.push({ type: "workflow_agent", index: task.graphRunProgress.length, label: "display", state: "done", nodeBinding: binding, instanceId: `${binding}-UUID`, recordId: "PRIVATE_RECORD", promptPreview: "PRIVATE_PROMPT", resultPreview: "PRIVATE_RESULT", ...data });
+    task.graphRunProgress.push({ type: "graph_run_agent", index: task.graphRunProgress.length, label: "display", state: "done", nodeBinding: binding, instanceId: `${binding}-UUID`, recordId: "PRIVATE_RECORD", promptPreview: "PRIVATE_PROMPT", resultPreview: "PRIVATE_RESULT", ...data });
   };
   add("PRIVATE_OWNER", { label: "Research", presentation: { kind: "bounded_feedback", name: "Research", iterations: [{ iteration: 1, decision: "continue" }, { iteration: 2, decision: "sufficient" }] } });
   for (const iteration of [1, 2]) {

@@ -12,7 +12,7 @@ function fixture(): PanelRun {
   return { id: "run", name: "run", status: "completed", source: {
     task: { status: "completed", startTime: 0, endTime: 100 },
     meta: { name: "run", description: "description" },
-    progress: [0, 1].map(index => ({ type: "workflow_agent", index: index + 10, label: "Same", state: "done", resultPreview: `output-${index}`, recordId: `record-${index}`, presentation: { kind: "agent", name: "Same" } })),
+    progress: [0, 1].map(index => ({ type: "graph_run_agent", index: index + 10, label: "Same", state: "done", resultPreview: `output-${index}`, recordId: `record-${index}`, presentation: { kind: "agent", name: "Same" } })),
   } };
 }
 const text = (lines: ReturnType<typeof renderPanelLines>) => lines.map(line => line.map(segment => segment.text).join(""));

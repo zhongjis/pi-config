@@ -4,7 +4,7 @@ import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
 import { completeGraphTask, GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
-import { outcomeLabel, WORKFLOW_OUTCOME_KEY } from "../src/graph/outcome.js";
+import { outcomeLabel, GRAPH_OUTCOME_KEY } from "../src/graph/outcome.js";
 import { collapse } from "../src/graph/progress.js";
 import { type RunGraphResult, runGraph } from "../src/graph/run-graph.js";
 import type { NodeRun } from "../src/graph/scheduler.js";
@@ -48,7 +48,7 @@ const graph: AgentGraph = {
 };
 
 function task() {
-  return createGraphRunTask({ id: "wf_test", script: "", meta: { name: "demo", description: "demo graph" } });
+  return createGraphRunTask({ id: "agr_test", script: "", meta: { name: "demo", description: "demo graph" } });
 }
 
 describe("GraphRunReporter", () => {
@@ -140,13 +140,13 @@ describe("GraphRunReporter", () => {
     const t = task();
     const result: RunGraphResult = {
       status: "completed",
-      outputs: { r: 1, [WORKFLOW_OUTCOME_KEY]: { status: "partial", reason: "x" } },
+      outputs: { r: 1, [GRAPH_OUTCOME_KEY]: { status: "partial", reason: "x" } },
       nodes: { a: { status: "completed", attempt: 1 }, b: { status: "completed", attempt: 1 } },
     };
     completeGraphTask(t, result);
     expect(t.outcome).toEqual({ status: "partial", reason: "x" });
     expect(t.value).toEqual({ r: 1 });
-    expect((t.value as Record<string, unknown>)[WORKFLOW_OUTCOME_KEY]).toBeUndefined();
+    expect((t.value as Record<string, unknown>)[GRAPH_OUTCOME_KEY]).toBeUndefined();
   });
 
   it("completeGraphTask leaves outcome undefined and returns outputs verbatim without a declared envelope", () => {
@@ -164,13 +164,13 @@ describe("GraphRunReporter", () => {
     const t = task();
     completeGraphTask(t, {
       status: "completed",
-      outputs: { r: 1, [WORKFLOW_OUTCOME_KEY]: { status: "bogus" } },
+      outputs: { r: 1, [GRAPH_OUTCOME_KEY]: { status: "bogus" } },
       nodes: { a: { status: "completed", attempt: 1 }, b: { status: "completed", attempt: 1 } },
     });
     expect(t.status).toBe("completed");
     expect(t.outcome).toBeUndefined();
     expect(t.value).toEqual({ r: 1 });
-    expect((t.value as Record<string, unknown>)[WORKFLOW_OUTCOME_KEY]).toBeUndefined();
+    expect((t.value as Record<string, unknown>)[GRAPH_OUTCOME_KEY]).toBeUndefined();
   });
 
   it("completeGraphTask surfaces failed node errors", () => {
@@ -434,7 +434,7 @@ describe("GraphRunReporter", () => {
     expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "late-child")).toMatchObject({
       index: 2, phaseIndex: 0, phaseTitle: "Stage 1",
     });
-    const childEmits = t.graphRunProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child").length;
+    const childEmits = t.graphRunProgress.filter(entry => entry.type === "graph_run_agent" && entry.label === "late-child").length;
 
     reporter.registerNode(
       "late-parent",
@@ -450,7 +450,7 @@ describe("GraphRunReporter", () => {
     expect(agents.find(entry => entry.label === "late-child")).toMatchObject({
       index: 2, phaseIndex: 3, phaseTitle: "Stage 4",
     });
-    expect(t.graphRunProgress.filter(entry => entry.type === "workflow_agent" && entry.label === "late-child")).toHaveLength(childEmits + 1);
+    expect(t.graphRunProgress.filter(entry => entry.type === "graph_run_agent" && entry.label === "late-child")).toHaveLength(childEmits + 1);
   });
 });
 
@@ -563,9 +563,9 @@ it("retains typed v2 terminal metadata in the workflow result on materialization
 });
 
 it("validates provenance fields at the notification boundary", async () => {
-  const { isWorkflowEntryData } = await import("../src/graph/entry-validation.js");
-  const entry = { name: "demo", status: "running", startTime: 0, agentCount: 1, totalTokens: 0, progress: [{ type: "workflow_agent", index: 0, label: "Same", state: "progress", nodeBinding: 42 }] };
-  expect(isWorkflowEntryData(entry)).toBe(false);
+  const { isGraphRunEntryData } = await import("../src/graph/entry-validation.js");
+  const entry = { name: "demo", status: "running", startTime: 0, agentCount: 1, totalTokens: 0, progress: [{ type: "graph_run_agent", index: 0, label: "Same", state: "progress", nodeBinding: 42 }] };
+  expect(isGraphRunEntryData(entry)).toBe(false);
 });
 
 describe("outcomeLabel", () => {

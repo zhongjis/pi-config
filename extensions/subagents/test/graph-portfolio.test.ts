@@ -209,7 +209,7 @@ describe("adaptive context-gather contract", () => {
       unknowns: { node: "synthesize", path: "$.unknowns" },
       evidence: { node: "synthesize", path: "$.evidence" },
       conflicts: { node: "synthesize", path: "$.conflicts" },
-      $subagentWorkflowOutcome: { node: "synthesize", path: "$.outcome" },
+      $agentGraphOutcome: { node: "synthesize", path: "$.outcome" },
     });
     const synthesize = agentNode(graph, "synthesize");
     expect(synthesize.agent).toBe("jintong");

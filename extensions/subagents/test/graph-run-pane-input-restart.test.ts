@@ -26,17 +26,17 @@ afterEach(async () => {
 
 function manager() {
   const task = createGraphRunTask({
-    id: "wf_a", script: "x", startTime: 1000,
+    id: "agr_a", script: "x", startTime: 1000,
     meta: { name: "audit", description: "d", phases: [{ title: "Discover" }, { title: "Review" }] },
   });
   task.graphRunName = "audit";
   task.status = "running";
   task.agentCount = 2;
   task.graphRunProgress = [
-    { type: "workflow_phase", index: 0, title: "Discover" },
-    { type: "workflow_phase", index: 1, title: "Review" },
-    { type: "workflow_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", recordId: "rec-a0" },
-    { type: "workflow_agent", index: 1, label: "a1", phaseIndex: 1, state: "progress" },
+    { type: "graph_run_phase", index: 0, title: "Discover" },
+    { type: "graph_run_phase", index: 1, title: "Review" },
+    { type: "graph_run_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", recordId: "rec-a0" },
+    { type: "graph_run_agent", index: 1, label: "a1", phaseIndex: 1, state: "progress" },
   ];
   const mgr = createGraphRunPaneManager({
     enabled: true,

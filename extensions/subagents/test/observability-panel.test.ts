@@ -21,7 +21,7 @@ import {
 const NOW = 1_700_000_000_000;
 
 function agent(over: Partial<GraphRunAgentEntry> & Pick<GraphRunAgentEntry, "index" | "label">): GraphRunAgentEntry {
-  return { type: "workflow_agent", state: "start", ...over };
+  return { type: "graph_run_agent", state: "start", ...over };
 }
 
 const plain = (lines: ReturnType<typeof renderPanelLines>): string[] => lines.map(line => line.map(segment => segment.text).join(""));
@@ -89,7 +89,7 @@ describe("Herdr presentation", () => {
   });
   it("keeps non-linear dependencies explicit and never makes a DAG edge containment", () => {
     const run = fixture(); const last = run.source.progress.at(-1);
-    if (last?.type !== "workflow_agent") throw new Error("fixture");
+    if (last?.type !== "graph_run_agent") throw new Error("fixture");
     last.deps = ["research", "eval-1"]; last.dependents = ["unknown-a", "unknown-b"];
     const lines = render(run, { ...selected(), cursor: { kind: "node", id: "synthesis" } });
     expect(lines.join("\n")).toContain("Upstream: research, Evaluate evidence · iteration 1");
@@ -127,7 +127,7 @@ describe("Herdr presentation", () => {
   });
   it("is cell-safe at the public ANSI seam including zero and grapheme-sized widths", () => {
     const run = fixture(); run.name = "漢字👩‍💻é".repeat(20);
-    const item = run.source.progress[3]; if (item.type !== "workflow_agent") throw new Error("fixture");
+    const item = run.source.progress[3]; if (item.type !== "graph_run_agent") throw new Error("fixture");
     item.label = "漢字👩‍💻é".repeat(20); item.model = "very-long-model".repeat(20); item.instanceId = "uuid".repeat(40);
     item.promptPreview = item.resultPreview = "\x1b[31m漢字👩‍💻é\x1b[0m ".repeat(30);
     for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) for (const ascii of [false, true]) for (const rows of [undefined, 12, 40]) {
@@ -153,7 +153,7 @@ describe("Herdr read-only navigation", () => {
   });
   it("retains ancestors of a filtered descendant and preserves selected identity across materialization", () => {
     const run = fixture(); run.status = "running";
-    const item = run.source.progress[4]; if (item.type !== "workflow_agent") throw new Error("fixture"); item.state = "progress"; item.startedAt = NOW;
+    const item = run.source.progress[4]; if (item.type !== "graph_run_agent") throw new Error("fixture"); item.state = "progress"; item.startedAt = NOW;
     const next = applyPanelKey([run], selected(), "f", opts);
     expect(next.state.cursor).toEqual(selected().cursor);
     const output = roster(plain(next.lines)).join("\n");
@@ -218,7 +218,7 @@ describe("Herdr retained detail and narrow priority", () => {
   it("derives collection flow from authoritative ownership when item dependencies are empty", () => {
     const run = fixture();
     const entry = run.source.progress[4];
-    if (entry.type !== "workflow_agent") throw new Error("fixture");
+    if (entry.type !== "graph_run_agent") throw new Error("fixture");
     entry.deps = []; entry.dependents = [];
     const detail = render(run).join("\n").split("Selected node")[1];
     expect(detail).toContain("Gather evidence · iteration 1");
@@ -231,7 +231,7 @@ describe("Herdr retained detail and narrow priority", () => {
   it("keeps conditional/loop facts explicit rather than drawing a linear flow", () => {
     const run = fixture();
     const entry = run.source.progress[4];
-    if (entry.type !== "workflow_agent" || !entry.presentation) throw new Error("fixture");
+    if (entry.type !== "graph_run_agent" || !entry.presentation) throw new Error("fixture");
     entry.presentation.connections = [{ binding: "research", direction: "upstream", kind: "loop" }, { binding: "synthesis", direction: "downstream", kind: "conditional" }];
     const detail = render(run).join("\n").split("Selected node")[1];
     expect(detail).toContain("upstream: research (loop)");
@@ -241,12 +241,12 @@ describe("Herdr retained detail and narrow priority", () => {
   it("retains transitive failure detail, full expanded output, paging position and section focus", () => {
     const run = fixture(); run.status = "failed";
     const root = run.source.progress[0]; const child = run.source.progress[1];
-    if (root.type !== "workflow_agent" || child.type !== "workflow_agent") throw new Error("fixture");
+    if (root.type !== "graph_run_agent" || child.type !== "graph_run_agent") throw new Error("fixture");
     root.state = "error"; root.error = "retained failure"; root.dependents = ["work-1"];
     child.state = "error"; child.skipped = true;
     expect(render(run, { ...selected(), cursor: { kind: "node", id: "research" } }).join("\n")).toContain("Blast radius: work-1");
     const output = fixture(); const item = output.source.progress[4];
-    if (item.type !== "workflow_agent") throw new Error("fixture");
+    if (item.type !== "graph_run_agent") throw new Error("fixture");
     item.resultPreview = Array.from({ length: 100 }, (_, index) => `retained-line-${index}`).join("\n");
     let state: PanelState = { ...selected(), focus: "detail", detailCursor: 1, expandedSections: ["outcome"] };
     const options = { width: 80, rows: 24, now: NOW };

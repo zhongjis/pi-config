@@ -142,12 +142,12 @@ it("does not mistake inherited object names for restored nested ownership", asyn
   const parent: AgentGraph = { version: 2, nodes: { constructor: { type: "graph" as const, graph: "child" } }, edges: [] };
   const child: AgentGraph = { nodes: { worker: { type: "agent", agent: "fixture", prompt: "child" } }, edges: [] };
   let saved: SchedulerState | undefined; const controller = new AbortController(); controller.abort("shutdown");
-  await runGraph(parent, {}, { runId: "wf_prototype", signal: controller.signal, host: { spawnAgent: vi.fn() }, onCheckpoint: state => { saved = structuredClone(state); } });
+  await runGraph(parent, {}, { runId: "agr_prototype", signal: controller.signal, host: { spawnAgent: vi.fn() }, onCheckpoint: state => { saved = structuredClone(state); } });
   if (!saved?.runtime) throw new Error("missing checkpoint");
   saved.runtime.nested = {};
-  authorizeGraphResume({ version: 2, runId: "wf_prototype", graph: parent, state: saved, input: {}, waitingGate: "", savedAt: 0 }, { deny: () => undefined, load: () => child });
+  authorizeGraphResume({ version: 2, runId: "agr_prototype", graph: parent, state: saved, input: {}, waitingGate: "", savedAt: 0 }, { deny: () => undefined, load: () => child });
   const spawnAgent = vi.fn(async () => ({ ok: true, output: "ok" }));
-  const result = await runGraph(parent, {}, { runId: "wf_prototype", restore: saved, loadGraph: () => child, host: { spawnAgent }, onCheckpoint: state => { saved = state; } });
+  const result = await runGraph(parent, {}, { runId: "agr_prototype", restore: saved, loadGraph: () => child, host: { spawnAgent }, onCheckpoint: state => { saved = state; } });
   expect(result.status).toBe("completed"); expect(spawnAgent).toHaveBeenCalledTimes(1);
   expect(Object.hasOwn(saved.runtime?.nested ?? {}, "constructor")).toBe(true);
 });

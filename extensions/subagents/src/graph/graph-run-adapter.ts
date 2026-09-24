@@ -4,7 +4,7 @@
  * The `/agents → Graph runs` dialog, the fleet widget, the inline card and the
  * Herdr pane all render a {@link GraphRunTask}'s append-only progress log. A
  * graph run is node-shaped rather than script-shaped, so this maps each node's
- * {@link NodeRun} state onto a `workflow_agent` progress entry (keyed by a stable
+ * {@link NodeRun} state onto a `graph_run_agent` progress entry (keyed by a stable
  * per-node index, last-write-wins) — which is exactly what those surfaces already
  * know how to collapse and draw. Each node row carries its incoming dependencies
  * so the roster reads as a graph, not a flat list.
@@ -17,7 +17,7 @@ import { type ExecutionCorrelation, matchesExecution } from "./graph-execution.j
 import type { NodeInstance } from "./graph-instance-id.js";
 import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
-import { isWorkflowOutcome, WORKFLOW_OUTCOME_KEY } from "./outcome.js";
+import { isGraphRunOutcome, GRAPH_OUTCOME_KEY } from "./outcome.js";
 import type { GraphNodePresentation, GraphRunAgentEntry } from "./progress.js";
 import type { RunGraphResult } from "./run-graph.js";
 import type { NodeRun } from "./scheduler.js";
@@ -285,7 +285,7 @@ export class GraphRunReporter {
     const act = res?.recordId !== undefined && this.getActivity !== undefined ? this.getActivity(res.recordId) : undefined;
     const prompt = this.prompt.get(nodeId);
     const base: GraphRunAgentEntry = {
-      type: "workflow_agent",
+      type: "graph_run_agent",
       index: this.index.get(nodeId) ?? 0,
       label: this.labels.get(nodeId) ?? nodeId,
       nodeBinding: nodeId,
@@ -345,9 +345,9 @@ export function completeGraphTask(task: GraphRunTask, result: RunGraphResult, no
   // presentation verdict: leave `task.outcome` undefined (defaulting to "Completed") and never
   // fail the run. Always strip the reserved key so it never leaks into the user-facing value.
   const outputs = { ...result.outputs };
-  const declared = outputs[WORKFLOW_OUTCOME_KEY];
-  if (isWorkflowOutcome(declared)) task.outcome = declared;
-  delete outputs[WORKFLOW_OUTCOME_KEY];
+  const declared = outputs[GRAPH_OUTCOME_KEY];
+  if (isGraphRunOutcome(declared)) task.outcome = declared;
+  delete outputs[GRAPH_OUTCOME_KEY];
   task.value = result.feedback && Object.keys(result.feedback).length > 0
     ? { outputs, feedback: result.feedback }
     : outputs;

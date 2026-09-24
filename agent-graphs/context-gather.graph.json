@@ -154,6 +154,6 @@
     "unknowns": { "node": "synthesize", "path": "$.unknowns" },
     "evidence": { "node": "synthesize", "path": "$.evidence" },
     "conflicts": { "node": "synthesize", "path": "$.conflicts" },
-    "$subagentWorkflowOutcome": { "node": "synthesize", "path": "$.outcome" }
+    "$agentGraphOutcome": { "node": "synthesize", "path": "$.outcome" }
   }
 }

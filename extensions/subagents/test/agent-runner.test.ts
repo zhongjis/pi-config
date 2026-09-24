@@ -2241,7 +2241,7 @@ describe("workflow structured output", () => {
       const tool = createAgentSession.mock.calls[0][0].customTools[0];
       if (calls === 2 || calls === 4) await tool.execute("result", { answer: `answer-${calls}` });
     });
-    const result = await runAgent(ctx, "Explore", "answer", { pi, workflow: true, structuredOutput: schema });
+    const result = await runAgent(ctx, "Explore", "answer", { pi, graphRun: true, structuredOutput: schema });
     expect(createAgentSession.mock.calls[0][0].tools).toContain("StructuredOutput");
     expect(result.structuredJson).toBe('{"answer":"answer-2"}');
     expect(result.structuredRetried).toBe(true);
@@ -2280,7 +2280,7 @@ describe("workflow structured output", () => {
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ extensions: true, extensionToolNames: [], allowNesting: true }));
     const { session, listeners } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "answer", { pi, workflow: true, structuredOutput: schema });
+    const result = await runAgent(ctx, "Explore", "answer", { pi, graphRun: true, structuredOutput: schema });
     expect(session.getActiveToolNames()).toContain("StructuredOutput");
     expect(createAgentSession.mock.calls[0][0].excludeTools).toContain("agent_graph");
     await expect(session.agent.beforeToolCall?.({ toolCall: { name: "StructuredOutput" } })).resolves.toBeUndefined();

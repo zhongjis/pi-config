@@ -14,7 +14,7 @@ it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s 
   const { runAgent } = await import("../src/agent-runner.js");
   const child: AgentGraph = { nodes: { a: { type: "agent", agent: "forbidden", prompt: "work" } }, edges: [] };
   const graph: AgentGraph = kind === "denied nested graph" ? { nodes: { sub: { type: "graph", graph: "saved-child" } }, edges: [] } : child;
-  const runId = "wf_abcdef123456";
+  const runId = "agr_abcdef123456";
   let saved: persistence.GraphRunSnapshot | undefined;
   await runGraph(graph, {}, { runId, loadGraph: () => child, onCheckpoint: (state, effective) => { saved = { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }; }, host: { spawnAgent: async () => ({ ok: true, output: "ok" }) } });
   if (!saved) throw new Error("missing fixture");
@@ -33,7 +33,7 @@ it("removes explicit terminal cancellation rather than resuming it each restart"
   const session = boot({ agentGraphEnabled: true });
   const { runAgent } = await import("../src/agent-runner.js");
   const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
-  const runId = "wf_abcdef123456"; const controller = new AbortController(); controller.abort();
+  const runId = "agr_abcdef123456"; const controller = new AbortController(); controller.abort();
   await runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => persistence.writeGraphSnapshot(session.ctx.cwd, { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: vi.fn() } });
   const create = vi.spyOn(tasks, "createGraphRunTask");
   await session.lifecycle("session_start");
@@ -63,7 +63,7 @@ it("removes a live explicitly-cancelled snapshot before notifying completion", a
 it("preserves a cancelled validation-gate checkpoint when resume cannot reconcile its drain", async () => {
   const session = boot({ agentGraphEnabled: true });
   const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work", validation: { gate: "true" } } }, edges: [] };
-  const runId = "wf_abcdef123456"; const controller = new AbortController(); const gate = deferred<{ ok: boolean; output: string }>();
+  const runId = "agr_abcdef123456"; const controller = new AbortController(); const gate = deferred<{ ok: boolean; output: string }>();
   let saved: persistence.GraphRunSnapshot | undefined; let entered = false;
   const running = runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => {
     if (state.runtime?.cancelled && !saved) saved = { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 };

@@ -1,4 +1,4 @@
-import type { WorkflowOutcome } from "../graph/outcome.js";
+import type { GraphRunOutcome } from "../graph/outcome.js";
 
 /** Workflow transcript reports and formatting shared with the inspector. */
 
@@ -111,7 +111,7 @@ export interface GraphRunCardTask {
   totalPausedMs?: number;
   pausedAt?: number;
   value?: unknown;
-  outcome?: WorkflowOutcome;
+  outcome?: GraphRunOutcome;
   error?: string;
 }
 

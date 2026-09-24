@@ -40,13 +40,13 @@ export type GraphRunDisplayState =
 export type AttemptReason = "throttled" | "user-retry" | "stalled" | "loop" | "restore";
 
 export interface GraphRunPhaseEntry {
-  type: "workflow_phase";
+  type: "graph_run_phase";
   index: number;
   title: string;
 }
 
 export interface GraphRunLogEntry {
-  type: "workflow_log";
+  type: "graph_run_log";
   message: string;
 }
 
@@ -66,7 +66,7 @@ export interface GraphNodePresentation {
 }
 
 export interface GraphRunAgentEntry {
-  type: "workflow_agent";
+  type: "graph_run_agent";
   /** Stable identity. Re-emitting this index replaces the previous entry. */
   index: number;
   label: string;
@@ -186,7 +186,7 @@ export function collapse(progress: readonly GraphRunEntry[]): CollapsedProgress 
   const phaseTitles = new Map<number, string>();
 
   for (const entry of progress) {
-    if (entry.type === "workflow_agent") {
+    if (entry.type === "graph_run_agent") {
       agents.set(entry.index, entry);
       if (entry.phaseIndex !== undefined && entry.phaseTitle !== undefined) {
         const current = phaseTitles.get(entry.phaseIndex);
@@ -194,7 +194,7 @@ export function collapse(progress: readonly GraphRunEntry[]): CollapsedProgress 
           phaseTitles.set(entry.phaseIndex, entry.phaseTitle);
         }
       }
-    } else if (entry.type === "workflow_log") logs.push(entry.message);
+    } else if (entry.type === "graph_run_log") logs.push(entry.message);
     else phaseTitles.set(entry.index, entry.title);
   }
 

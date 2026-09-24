@@ -23,7 +23,7 @@ import { showGraphRunDialog, showGraphRunsMenu } from "../src/ui/graph-run-menu.
 const theme = { fg: (_: string, text: string) => `\x1b[36m${text}\x1b[39m`, bold: (text: string) => `\x1b[1m${text}\x1b[22m` };
 const widths = [0, 1, 2, 8, 20, 40, 80, 120];
 const agent: GraphRunAgentEntry = {
-  type: "workflow_agent", index: 7, label: "child", state: "progress", recordId: "child-id",
+  type: "graph_run_agent", index: 7, label: "child", state: "progress", recordId: "child-id",
   agentType: "chengfeng", model: "haiku,gpt-5.6-luna,qwen", modelId: "gpt-5.6-luna", thinking: "off",
 };
 const source = () => ({ task: { status: "running" as const, startTime: 100 }, progress: [agent] });
@@ -52,10 +52,10 @@ describe("workflow inspector model", () => {
 
   it("keeps one phase-grouped roster and explicit lifecycle words", () => {
     const progress: GraphRunEntry[] = [
-      { type: "workflow_phase", index: 0, title: "Research" },
+      { type: "graph_run_phase", index: 0, title: "Research" },
       { ...agent, index: 0, label: "running", phaseIndex: 0, phaseTitle: "Research" },
       { ...agent, index: 1, label: "queued", state: "start", queuedAt: 10, phaseIndex: 0, phaseTitle: "Research", modelId: undefined },
-      { type: "workflow_phase", index: 1, title: "Verify" },
+      { type: "graph_run_phase", index: 1, title: "Verify" },
       { ...agent, index: 2, label: "finished", state: "done", phaseIndex: 1, phaseTitle: "Verify" },
     ];
     const rendered = text({
@@ -171,7 +171,7 @@ describe("workflow inspector interaction", () => {
 });
 
 it("hides the inspector while its child conversation is open, then restores it", async () => {
-  const task = createGraphRunTask({ id: "wf_test", script: "" });
+  const task = createGraphRunTask({ id: "agr_test", script: "" });
   task.graphRunProgress = [agent];
   let dialog: GraphRunDialog | undefined;
   let finishViewer: (() => void) | undefined;
@@ -200,7 +200,7 @@ it("hides the inspector while its child conversation is open, then restores it",
 });
 
 it("passes live outcome through the inspector and labels menu lifecycle as execution", async () => {
-  const task = createGraphRunTask({ id: "wf_outcome", script: "" });
+  const task = createGraphRunTask({ id: "agr_outcome", script: "" });
   task.status = "completed";
   task.outcome = { status: "failed", reason: "verification failed" };
   task.value = { retained: "evidence" };
@@ -217,5 +217,5 @@ it("passes live outcome through the inspector and labels menu lifecycle as execu
   const deps = { tasks: new Map([[task.id, task], ["other", createGraphRunTask({ id: "other", script: "" })]]), getRecord: () => undefined, getCtx: () => ctx, viewAgentConversation: async () => {} };
   await showGraphRunDialog(ctx, task, deps);
   await showGraphRunsMenu(ctx, deps);
-  expect(select).toHaveBeenCalledWith("Graph runs", expect.arrayContaining([expect.stringContaining("wf_outcome — Execution: completed")]));
+  expect(select).toHaveBeenCalledWith("Graph runs", expect.arrayContaining([expect.stringContaining("agr_outcome — Execution: completed")]));
 });

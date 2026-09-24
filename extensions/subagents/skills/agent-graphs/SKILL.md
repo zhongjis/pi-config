@@ -153,11 +153,11 @@ even when their dependencies would allow parallelism.
 ## Declaring the run outcome
 
 A graph declares its objective outcome — independent of execution success — by emitting a
-reserved output named `$subagentWorkflowOutcome`:
+reserved output named `$agentGraphOutcome`:
 
 ```jsonc
 "outputs": {
-  "$subagentWorkflowOutcome": { "node": "synthesize", "path": "$.outcome" }
+  "$agentGraphOutcome": { "node": "synthesize", "path": "$.outcome" }
 }
 ```
 

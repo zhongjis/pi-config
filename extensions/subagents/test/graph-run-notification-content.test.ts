@@ -9,7 +9,7 @@ import { createGraphRunTask, formatGraphRunNotification, type GraphRunTask, grap
 import { createOutputFilePath } from "../src/output-file.js";
 
 function completed(value: unknown): GraphRunTask {
-  const t = createGraphRunTask({ id: "wf_note", script: "", meta: { name: "demo" } });
+  const t = createGraphRunTask({ id: "agr_note", script: "", meta: { name: "demo" } });
   t.status = "completed";
   t.value = value;
   t.endTime = t.startTime + 1;
@@ -58,9 +58,9 @@ describe("formatGraphRunNotification", () => {
 
   it("marks truncation and links the artifact when a result file exists", () => {
     const t = completed("z".repeat(2000));
-    t.resultPath = "/tmp/wf_note.workflow-result.txt";
+    t.resultPath = "/tmp/agr_note.graph-result.txt";
     const xml = formatGraphRunNotification(t);
-    expect(xml).toContain("<result-file>/tmp/wf_note.workflow-result.txt</result-file>");
+    expect(xml).toContain("<result-file>/tmp/agr_note.graph-result.txt</result-file>");
     expect(xml).toContain("truncated");
     // The full >500-char body is never inlined.
     expect(xml).not.toContain("z".repeat(WORKFLOW_RESULT_PREVIEW_CHARS + 1));
@@ -94,8 +94,8 @@ describe("graphRunCompletionText", () => {
     const cwd = mkdtempSync(join(tmpdir(), "wf-note-"));
     tmpDirs.push(cwd);
     // Occupy the artifact path with a directory so writeFileSync throws EISDIR.
-    const tasksDir = dirname(createOutputFilePath(cwd, "wf_note", "sess"));
-    mkdirSync(join(tasksDir, "wf_note.workflow-result.txt"));
+    const tasksDir = dirname(createOutputFilePath(cwd, "agr_note", "sess"));
+    mkdirSync(join(tasksDir, "agr_note.graph-result.txt"));
     const warnings: string[] = [];
     const t = completed("w".repeat(2000));
     const text = graphRunCompletionText(ctxFor(cwd, message => warnings.push(message)), t);

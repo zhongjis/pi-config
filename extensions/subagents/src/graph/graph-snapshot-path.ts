@@ -1,9 +1,9 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-/** The workflowRunId contract (including compatible Claude-style run IDs), not a path. */
-export function isWorkflowRunId(value: unknown): value is string {
-  return typeof value === "string" && /^wf_[a-z0-9-]{6,}$/.test(value);
+/** The makeGraphRunId contract (the `agr_` run-id format), not a path. */
+export function isGraphRunId(value: unknown): value is string {
+  return typeof value === "string" && /^agr_[a-z0-9-]{6,}$/.test(value);
 }
 
 export function snapshotDirectory(cwd: string, create = false): string {
@@ -26,7 +26,7 @@ export function snapshotDirectory(cwd: string, create = false): string {
 }
 
 export function snapshotPath(cwd: string, runId: string, create = false): string {
-  if (!isWorkflowRunId(runId)) throw new TypeError("Invalid workflow run ID");
+  if (!isGraphRunId(runId)) throw new TypeError("Invalid workflow run ID");
   const directory = snapshotDirectory(cwd, create);
   const path = join(directory, `${runId}.json`);
   if (dirname(path) !== directory) throw new TypeError("Checkpoint path escapes run directory");

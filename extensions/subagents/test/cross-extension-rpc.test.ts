@@ -258,7 +258,7 @@ describe("cross-extension RPC", () => {
       events.on("subagents:rpc:spawn:reply:internal", reply);
       const options = Object.freeze({
         description: "ordinary RPC child", isBackground: true, model,
-        graphRunId: "wf_forged", structuredOutput: { validate: () => true },
+        graphRunId: "agr_forged", structuredOutput: { validate: () => true },
       });
       events.emit("subagents:rpc:spawn", { requestId: "internal", type: "general-purpose", prompt: "task", options });
 
@@ -269,7 +269,7 @@ describe("cross-extension RPC", () => {
       expect(forwarded).not.toHaveProperty("structuredOutput");
       expect(forwarded).toMatchObject({ description: "ordinary RPC child", isBackground: true });
       if (model !== undefined) expect(forwarded.model).toBe(fakeModel);
-      expect(options.graphRunId).toBe("wf_forged");
+      expect(options.graphRunId).toBe("agr_forged");
       expect(options.structuredOutput.validate()).toBe(true);
     });
 

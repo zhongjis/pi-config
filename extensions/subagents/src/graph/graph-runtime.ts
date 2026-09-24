@@ -7,7 +7,7 @@ import type { FleetGraphRun } from "../ui/fleet-list.js";
 import { renderGraphRunCard } from "../ui/graph-run-report.js";
 import { getLifetimeTotal } from "../usage.js";
 import { checkGraphDelegation } from "./delegation-preflight.js";
-import { workflowEntryData } from "./entry.js";
+import { graphRunEntryData } from "./entry.js";
 import { type CheckpointLease, LiveWriterError } from "./graph-checkpoint-owner.js";
 import { deleteGraphSnapshot, graphRunHasLiveWriter, ownGraphRun, readGraphSnapshots, writeGraphSnapshot } from "./graph-persist.js";
 import { authorizeGraphResume } from "./graph-resume-preflight.js";
@@ -22,7 +22,7 @@ import { elapsedMs } from "./progress.js";
 import { coerceGraphInput, type RunGraphResult, runGraph } from "./run-graph.js";
 import { resolveSavedGraph } from "./saved-graph.js";
 import type { SchedulerState } from "./scheduler.js";
-import { createGraphRunTask, failGraphRunTask, type GraphRunTask, graphRunResultText, workflowRunId } from "./task.js";
+import { createGraphRunTask, failGraphRunTask, type GraphRunTask, graphRunResultText, makeGraphRunId } from "./task.js";
 import { graphToolDescription } from "./tool-description.js";
 import { validateGraph } from "./validate.js";
 
@@ -251,7 +251,7 @@ export function createGraphRuntime(
           durationMs: elapsedMs(task, Date.now()),
           error: task.error,
           resultPreview: result.length > 500 ? `${result.slice(0, 500)}…` : result,
-          workflow: workflowEntryData(task),
+          graphRun: graphRunEntryData(task),
         },
       }, { deliverAs: "followUp", triggerTurn: true });
     });
@@ -313,7 +313,7 @@ export function createGraphRuntime(
       const verdict = validateGraph(graph);
       if (!verdict.ok) throw new Error(`Invalid agent graph:\n- ${verdict.errors.join("\n- ")}`);
 
-      const runId = workflowRunId();
+      const runId = makeGraphRunId();
       const input = coerceGraphInput(params.input);
       const liveGraph = graph as AgentGraph;
       // Reject disallowed graphs before creating a task or spawning any child.

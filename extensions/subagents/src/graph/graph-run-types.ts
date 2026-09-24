@@ -7,7 +7,7 @@
  * import an engine just to name one of its types.
  */
 
-import type { WorkflowOutcome } from "./outcome.js";
+import type { GraphRunOutcome } from "./outcome.js";
 import type { GraphRunEntry } from "./progress.js";
 
 /** A phase declared up front, so the UI can show it before any agent runs. */
@@ -69,7 +69,7 @@ export interface GraphRunControl {
 export interface GraphRunResult {
   status: "completed" | "failed" | "killed";
   meta: GraphRunMeta;
-  outcome?: WorkflowOutcome;
+  outcome?: GraphRunOutcome;
   /** The run's return value, JSON-checked at the boundary. */
   value?: unknown;
   error?: string;

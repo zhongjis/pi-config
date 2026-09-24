@@ -37,16 +37,16 @@ function snapshot(runId: string): GraphRunSnapshot {
 describe("graph-persist file IO", () => {
   it("writes, reads, and deletes snapshots", () => {
     cwd = mkdtempSync(join(tmpdir(), "gp-"));
-    writeGraphSnapshot(cwd, snapshot("wf_first1"));
-    writeGraphSnapshot(cwd, snapshot("wf_second"));
-    expect(readGraphSnapshots(cwd).map(s => s.runId).sort()).toEqual(["wf_first1", "wf_second"]);
-    deleteGraphSnapshot(cwd, "wf_first1");
-    expect(readGraphSnapshots(cwd).map(s => s.runId)).toEqual(["wf_second"]);
+    writeGraphSnapshot(cwd, snapshot("agr_first1"));
+    writeGraphSnapshot(cwd, snapshot("agr_second"));
+    expect(readGraphSnapshots(cwd).map(s => s.runId).sort()).toEqual(["agr_first1", "agr_second"]);
+    deleteGraphSnapshot(cwd, "agr_first1");
+    expect(readGraphSnapshots(cwd).map(s => s.runId)).toEqual(["agr_second"]);
   });
 
   it("preserves the restorable state round-trip", () => {
     cwd = mkdtempSync(join(tmpdir(), "gp-"));
-    writeGraphSnapshot(cwd, snapshot("wf_xxxxxx"));
+    writeGraphSnapshot(cwd, snapshot("agr_xxxxxx"));
     const [loaded] = readGraphSnapshots(cwd);
     expect(loaded.waitingGate).toBe("gate");
     expect(loaded.state.nodes.a).toEqual({ status: "completed", attempt: 1, output: "x" });
@@ -55,10 +55,10 @@ describe("graph-persist file IO", () => {
 
   it("skips corrupt or wrong-version files", () => {
     cwd = mkdtempSync(join(tmpdir(), "gp-"));
-    writeGraphSnapshot(cwd, snapshot("wf_okxxxx"));
+    writeGraphSnapshot(cwd, snapshot("agr_okxxxx"));
     writeFileSync(join(graphRunsDir(cwd), "bad.json"), "{ not json", "utf-8");
     writeFileSync(join(graphRunsDir(cwd), "wrong.json"), JSON.stringify({ version: 2, runId: "x" }), "utf-8");
-    expect(readGraphSnapshots(cwd).map(s => s.runId)).toEqual(["wf_okxxxx"]);
+    expect(readGraphSnapshots(cwd).map(s => s.runId)).toEqual(["agr_okxxxx"]);
   });
 
   it("returns empty when the directory does not exist", () => {
@@ -69,7 +69,7 @@ describe("graph-persist file IO", () => {
 
 it("round-trips effective dynamic definitions, collection order, failures, and attempt reasons in v1", () => {
   cwd = mkdtempSync(join(tmpdir(), "gp-"));
-  const saved = snapshot("wf_dynamic");
+  const saved = snapshot("agr_dynamic");
   saved.graph.nodes.a = {
     type: "fanout", items: { path: "$.tasks" }, itemSchema: { type: "object" },
     dispatch: { path: "$.source", cases: { project: "x" } }, prompt: `\${item}`,
@@ -86,7 +86,7 @@ describe("atomic graph checkpoint replacement", () => {
   it.each(["write", "file sync", "rename", "directory sync"])("keeps a complete checkpoint after %s fails", stage => {
     const directory = mkdtempSync(join(tmpdir(), "gp-atomic-"));
     cwd = directory;
-    const prior = snapshot("wf_atomic");
+    const prior = snapshot("agr_atomic");
     writeGraphSnapshot(cwd, prior);
     const next = { ...prior, savedAt: 2 };
     const failure = new Error(`injected ${stage} failure`);
@@ -111,9 +111,9 @@ describe("atomic graph checkpoint replacement", () => {
       });
     }
     expect(() => writeGraphSnapshot(directory, next)).toThrow(failure);
-    const persisted: unknown = JSON.parse(readFileSync(join(graphRunsDir(cwd), "wf_atomic.json"), "utf8"));
+    const persisted: unknown = JSON.parse(readFileSync(join(graphRunsDir(cwd), "agr_atomic.json"), "utf8"));
     expect(persisted).toEqual(stage === "directory sync" ? next : prior);
-    expect(readdirSync(graphRunsDir(cwd))).toEqual(["wf_atomic.json"]);
+    expect(readdirSync(graphRunsDir(cwd))).toEqual(["agr_atomic.json"]);
   });
 
   it("syncs the file before rename and the directory after rename", () => {
@@ -127,14 +127,14 @@ describe("atomic graph checkpoint replacement", () => {
       expect(String(from)).toContain(graphRunsDir(cwd ?? ""));
       rename(from, to);
     });
-    writeGraphSnapshot(cwd, snapshot("wf_atomic"));
+    writeGraphSnapshot(cwd, snapshot("agr_atomic"));
     expect(events).toEqual(["sync", "rename", "sync"]);
   });
 });
 
 it("rejects stale checkpoint owners and reports unknown or corrupt v2 snapshots", () => {
   cwd = mkdtempSync(join(tmpdir(), "gp-v2-"));
-  const base = snapshot("wf_version2");
+  const base = snapshot("agr_version2");
   const instanceId = "00000000-0000-4000-8000-000000000001";
   if (!isInstanceId(instanceId)) throw new Error("invalid fixture ID");
   const next: GraphRunSnapshot = { ...base, version: 2, state: { ...base.state, runtime: { version: 2, runId: base.runId, startedAt: 1000, revision: 1, manifest: [{ binding: "a", nodeKey: "a", ordinal: 0, instanceId }] } } };
@@ -153,7 +153,7 @@ it("atomically upgrades legacy state before dispatch and retains IDs on the next
   const { runGraph } = await import("../src/graph/run-graph.js");
   cwd = mkdtempSync(join(tmpdir(), "gp-upgrade-"));
   const directory = cwd;
-  const legacy = snapshot("wf_upgrade");
+  const legacy = snapshot("agr_upgrade");
   legacy.state.nodes.a = { status: "pending", attempt: 0 };
   writeGraphSnapshot(directory, legacy);
   const writer = (state: GraphRunSnapshot["state"], graph: GraphRunSnapshot["graph"]) => {
@@ -180,10 +180,10 @@ it("holds one live run owner across multiple checkpoints until release", async (
   const { ownGraphRun } = await import("../src/graph/graph-persist.js");
   cwd = mkdtempSync(join(tmpdir(), "gp-owner-"));
   const directory = cwd;
-  const release = ownGraphRun(directory, "wf_owner1");
-  try { expect(() => ownGraphRun(directory, "wf_owner1")).toThrow(/live writer/); }
+  const release = ownGraphRun(directory, "agr_owner1");
+  try { expect(() => ownGraphRun(directory, "agr_owner1")).toThrow(/live writer/); }
   finally { release(); }
-  const releaseNext = ownGraphRun(directory, "wf_owner1");
+  const releaseNext = ownGraphRun(directory, "agr_owner1");
   releaseNext();
   expect(readdirSync(graphRunsDir(directory))).toEqual([]);
 });

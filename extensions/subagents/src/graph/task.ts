@@ -3,9 +3,9 @@
  *
  * An `agent_graph` tool call returns a task id immediately and the run continues
  * without it, so the run's state cannot live in the tool call's closure: the
- * inline card, the completion notification and (later) the `/agents → Workflows` dialog
+ * inline card, the completion notification and (later) the `/agents → Graph runs` dialog
  * all read it after `execute` has returned. This is that record, shaped after
- * Claude Code's `local_workflow` task so the fields line up with what the
+ * Claude Code's local task types so the fields line up with what the
  * renderers already expect.
  *
  * The progress log is append-only and collapses by index (see `progress.ts`),
@@ -17,19 +17,19 @@
 import { randomUUID } from "node:crypto";
 import { WORKFLOW_RESULT_PREVIEW_CHARS } from "../constants.js";
 import type { GraphRunControl, GraphRunMeta, GraphRunResult } from "./graph-run-types.js";
-import { outcomeLabel, type WorkflowOutcome } from "./outcome.js";
+import { outcomeLabel, type GraphRunOutcome } from "./outcome.js";
 import { collapse, elapsedMs, type GraphRunEntry, type GraphRunStatus, stats } from "./progress.js";
 
 const escapeXml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** `wf_` + hex, matching Claude Code's `^wf_[a-z0-9-]{6,}$` run ids. */
-export function workflowRunId(): string {
-  return `wf_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+/** `agr_` + hex; our own run-id format (task fields shaped after Claude Code's local task types). */
+export function makeGraphRunId(): string {
+  return `agr_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
 export interface GraphRunTask {
   /** Discriminator, alongside Claude Code's `local_agent` / `local_bash`. */
-  type: "local_workflow";
+  type: "local_graph_run";
   id: string;
   status: GraphRunStatus;
   script: string;
@@ -87,7 +87,7 @@ export interface GraphRunTask {
 
   /** The script's return value, once the run produced one. */
   value?: unknown;
-  outcome?: WorkflowOutcome;
+  outcome?: GraphRunOutcome;
   error?: string;
 }
 
@@ -103,7 +103,7 @@ export function createGraphRunTask(init: {
   resumedFrom?: string;
 }): GraphRunTask {
   return {
-    type: "local_workflow",
+    type: "local_graph_run",
     id: init.id,
     status: "running",
     script: init.script,

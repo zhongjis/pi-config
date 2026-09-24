@@ -25,7 +25,7 @@ import { getAvailableTypes, isDefaultsDisabled, registerAgents, setDefaultsDisab
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
-import { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData } from "./graph/entry.js";
+import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
 import { graphSkillPath } from "./graph/tool-description.js";
@@ -45,7 +45,7 @@ import { FleetList, type FleetUICtx } from "./ui/fleet-list.js";
 import { type GraphRunMenuDeps, openGraphRunFromFleet } from "./ui/graph-run-menu.js";
 import { getLifetimeTotal, type LifetimeUsage, PendingUsagePool } from "./usage.js";
 
-export { WORKFLOW_ENTRY_TYPE, type WorkflowEntryData, workflowEntryData };
+export { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData };
 
 // ---- Shared helpers ----
 

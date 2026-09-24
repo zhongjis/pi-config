@@ -6,7 +6,7 @@ import * as codingAgent from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
-import { workflowEntryData } from "../src/graph/entry.js";
+import { graphRunEntryData } from "../src/graph/entry.js";
 import { elapsedMs, type GraphRunAgentEntry, stats } from "../src/graph/progress.js";
 import { createGraphRunTask, pauseGraphRunTask, resolveResumeTarget, resumeGraphRunTask, updateGraphRunProgressBatch } from "../src/graph/task.js";
 import type { AgentRecord } from "../src/types.js";
@@ -15,7 +15,7 @@ import { type FleetGraphRun, FleetList } from "../src/ui/fleet-list.js";
 import { renderGraphRunCard, renderGraphRunEntryCard } from "../src/ui/graph-run-report.js";
 
 const theme = { fg: (_: string, s: string) => `\x1b[36m${s}\x1b[39m`, bold: (s: string) => `\x1b[1m${s}\x1b[22m` };
-const agent: GraphRunAgentEntry = { type: "workflow_agent", index: 7, label: "child", state: "progress", recordId: "child-id", model: "actual-sdk-model", thinking: "off" };
+const agent: GraphRunAgentEntry = { type: "graph_run_agent", index: 7, label: "child", state: "progress", recordId: "child-id", model: "actual-sdk-model", thinking: "off" };
 const widths = [0, ...Array.from({ length: 12 }, (_, index) => index + 1), 20, 40, 80, 120];
 const plain = (lines: string[]) => lines.map(stripTerminalSequences).join("\n");
 const fits = (lines: string[], width: number) => {
@@ -29,7 +29,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 describe("workflow reports", () => {
   it("resolves the configured expand hint and preserves malformed entry data expanded", () => {
     const hint = vi.spyOn(codingAgent, "keyHint").mockReturnValue("configured-key details");
-    const task = createGraphRunTask({ id: "wf_test", script: "" });
+    const task = createGraphRunTask({ id: "agr_test", script: "" });
     expect(plain(renderGraphRunCard({ task, progress: [] }, theme).render(80))).toContain("configured-key");
     expect(hint).toHaveBeenCalledWith("app.tools.expand", expect.any(String));
     const malformed: unknown = { retained: "raw-marker", status: "unknown" };
@@ -40,7 +40,7 @@ describe("workflow reports", () => {
 
   it("renders completed graph tool details as a structured tree", () => {
     vi.spyOn(codingAgent, "keyHint").mockImplementation((_key, label) => `Ctrl+O ${label}`);
-    const task = createGraphRunTask({ id: "wf_tree", script: "" });
+    const task = createGraphRunTask({ id: "agr_tree", script: "" });
     task.status = "completed";
     task.value = { summary: "done", relevantFiles: [], constraints: [], unknowns: [] };
     task.graphRunProgress = Array.from({ length: 5 }, (_, index) => ({ ...agent, index, state: "done" }));
@@ -52,12 +52,12 @@ describe("workflow reports", () => {
     ]);
   });
   it.each(["running", "paused", "completed", "failed", "killed"] as const)("keeps %s compact across terminal widths without modifying data", status => {
-    const task = createGraphRunTask({ id: "wf_test", script: "", startTime: 100 });
+    const task = createGraphRunTask({ id: "agr_test", script: "", startTime: 100 });
     task.status = status;
     task.value = "結果🙂 é " + "x".repeat(200);
     task.error = status === "failed" ? "failure-marker " + "y".repeat(200) : undefined;
-    task.graphRunProgress = [agent, { type: "workflow_log", message: "line1\nline2" }];
-    const before = JSON.stringify(workflowEntryData(task));
+    task.graphRunProgress = [agent, { type: "graph_run_log", message: "line1\nline2" }];
+    const before = JSON.stringify(graphRunEntryData(task));
     for (const width of widths) {
       const rows = renderGraphRunCard({ task, progress: task.graphRunProgress }, theme).render(width);
       fits(rows, width);
@@ -65,15 +65,15 @@ describe("workflow reports", () => {
       const expanded = renderGraphRunCard({ task, progress: task.graphRunProgress, expanded: true }, theme).render(width);
       fits(expanded, width);
     }
-    expect(JSON.stringify(workflowEntryData(task))).toBe(before);
+    expect(JSON.stringify(graphRunEntryData(task))).toBe(before);
   });
 
   it("retains the complete terminal report, per-child previews, and logs expanded after serialization", () => {
-    const task = createGraphRunTask({ id: "wf_test", script: "", startTime: 100 });
+    const task = createGraphRunTask({ id: "agr_test", script: "", startTime: 100 });
     task.status = "completed";
     task.value = Array.from({ length: 60 }, (_, i) => `value-${i}`).join("\n");
-    task.graphRunProgress = [{ ...agent, state: "done", promptPreview: "prompt-tail", resultPreview: "child-tail" }, { type: "workflow_log", message: "log-tail" }];
-    const restored = JSON.parse(JSON.stringify(workflowEntryData(task)));
+    task.graphRunProgress = [{ ...agent, state: "done", promptPreview: "prompt-tail", resultPreview: "child-tail" }, { type: "graph_run_log", message: "log-tail" }];
+    const restored = JSON.parse(JSON.stringify(graphRunEntryData(task)));
     const card = renderGraphRunEntryCard(restored, theme, true);
     assert.ok(card);
     const report = plain(card.render(40));
@@ -82,7 +82,7 @@ describe("workflow reports", () => {
   });
 
   it("collapses updates for counts and rejects a paused journal as a new resume target", () => {
-    const task = createGraphRunTask({ id: "wf_test", script: "", startTime: 100, journalPath: "/journal" });
+    const task = createGraphRunTask({ id: "agr_test", script: "", startTime: 100, journalPath: "/journal" });
     const control = { pause: vi.fn(), resume: vi.fn(), isPaused: () => false, skip: () => true, retry: () => true };
     task.control = control;
     updateGraphRunProgressBatch(task, [agent, { ...agent, state: "done", tokens: 10 }]);
@@ -96,26 +96,26 @@ describe("workflow reports", () => {
   });
   it("keeps direct graph execution states truthful without a stale run id", () => {
     vi.spyOn(codingAgent, "keyHint").mockReturnValue("expand details");
-    const task = createGraphRunTask({ id: "wf_ack", script: "" });
+    const task = createGraphRunTask({ id: "agr_ack", script: "" });
     task.status = "running";
 
     const collapsed = renderGraphRunCard({ task, progress: [] }, theme).render(80);
-    expect(plain(collapsed)).toContain("execution: running · No agents observed · id: wf_ack");
+    expect(plain(collapsed)).toContain("execution: running · No agents observed · id: agr_ack");
     expect(collapsed.length).toBeLessThanOrEqual(4);
 
     task.graphRunProgress = [agent];
     const afterChild = plain(renderGraphRunCard({ task, progress: task.graphRunProgress }, theme).render(80));
     expect(afterChild).toContain("execution: running · 1 agent running");
-    expect(afterChild).not.toContain("id: wf_ack");
+    expect(afterChild).not.toContain("id: agr_ack");
 
     task.status = "failed";
     task.error = "failure";
     expect(plain(renderGraphRunCard({ task, progress: [] }, theme).render(80))).toContain("execution: failed");
-    expect(plain(renderGraphRunCard({ task, progress: [] }, theme).render(80))).not.toContain("id: wf_ack");
+    expect(plain(renderGraphRunCard({ task, progress: [] }, theme).render(80))).not.toContain("id: agr_ack");
 
     task.status = "killed";
     expect(plain(renderGraphRunCard({ task, progress: [] }, theme).render(80))).toContain("execution: stopped");
-    expect(plain(renderGraphRunCard({ task, progress: [] }, theme).render(80))).not.toContain("id: wf_ack");
+    expect(plain(renderGraphRunCard({ task, progress: [] }, theme).render(80))).not.toContain("id: agr_ack");
   });
 });
 
@@ -123,7 +123,7 @@ describe("workflow reports", () => {
 it("hides owned children only from ordinary UI and allows a workflow-only fleet to open", async () => {
   const records = [
     { id: "ordinary", session: {}, status: "running", startedAt: 1 },
-    { id: "owned", graphRunId: "wf_test", session: {}, status: "running", startedAt: 1 },
+    { id: "owned", graphRunId: "agr_test", session: {}, status: "running", startedAt: 1 },
   ] as AgentRecord[];
   const manager = new AgentManager();
   vi.spyOn(manager, "listAgents").mockReturnValue(records);
@@ -144,14 +144,14 @@ it("hides owned children only from ordinary UI and allows a workflow-only fleet 
   fleet.update();
   expect(widgetSetWidget).toHaveBeenLastCalledWith("agents", undefined);
   expect(fleetSetWidget).toHaveBeenLastCalledWith("fleet", undefined);
-  const run: FleetGraphRun = { id: "wf_test", name: "run", status: "running", doneCount: 0, totalCount: 1, startedAt: 1, tokens: 0 };
+  const run: FleetGraphRun = { id: "agr_test", name: "run", status: "running", doneCount: 0, totalCount: 1, startedAt: 1, tokens: 0 };
   const open = vi.fn(async () => {});
   fleet.setGraphRunSource(() => [run], open);
   fleet.update();
   expect(fleet.handleKey("\x1b[B")).toEqual({ consume: true });
   fleet.handleKey("\x1b[B"); fleet.handleKey("\r");
   await Promise.resolve();
-  expect(open).toHaveBeenCalledWith("wf_test");
+  expect(open).toHaveBeenCalledWith("agr_test");
   fleet.dispose(); widget.dispose();
 });
 
@@ -160,15 +160,15 @@ describe("workflow disclosure states", () => {
     [undefined, "no output"], [null, "null"], ["", "no output"], [[], "array · 0 items"],
     [[1, 2], "array · 2 items"], [{ research: 1, review: 2 }, "research, review"],
   ])("summarizes returned %j without stale activity", (value, summary) => {
-    const task = createGraphRunTask({ id: "wf_empty", script: "" });
+    const task = createGraphRunTask({ id: "agr_empty", script: "" });
     task.status = "completed"; task.value = value;
-    const text = plain(renderGraphRunCard({ task, progress: [{ type: "workflow_log", message: "stale-activity" }] }, theme).render(120));
+    const text = plain(renderGraphRunCard({ task, progress: [{ type: "graph_run_log", message: "stale-activity" }] }, theme).render(120));
     expect(text).toContain(summary);
     expect(text).not.toContain("stale-activity");
   });
 
   it("distinguishes queued work, child errors, and replayed work in the retained roster", () => {
-    const task = createGraphRunTask({ id: "wf_states", script: "" });
+    const task = createGraphRunTask({ id: "agr_states", script: "" });
     const entries: GraphRunAgentEntry[] = [
       { ...agent, index: 0, label: "waiting", agentType: "fixture", queuedAt: 10 },
       { ...agent, index: 1, label: "failure", state: "error", error: "child-failure" },
@@ -185,14 +185,14 @@ describe("workflow disclosure states", () => {
 });
 
 it("fits serialized notification identities, structured Unicode results, and full artifact paths", () => {
-  const task = createGraphRunTask({ id: "wf_width", script: "" });
+  const task = createGraphRunTask({ id: "agr_width", script: "" });
   task.status = "completed";
   task.graphRunName = "界🙂 é\r\n".repeat(8);
   task.scriptPath = "/tmp/" + "長".repeat(70);
   task.resultPath = "/tmp/" + "result".repeat(30);
   task.value = { ["字段".repeat(30)]: "\u001b[36m結果🙂 é\u001b[0m\r\n".repeat(10), tail: "json-tail" };
   task.graphRunProgress = [{ ...agent, state: "done", label: "子🙂\nagent", agentType: "fixture" }];
-  const snapshot: unknown = JSON.parse(JSON.stringify(workflowEntryData(task)));
+  const snapshot: unknown = JSON.parse(JSON.stringify(graphRunEntryData(task)));
   for (const expanded of [false, true]) {
     const component = renderGraphRunEntryCard(snapshot, theme, expanded);
     assert.ok(component);
@@ -210,7 +210,7 @@ it("fits serialized notification identities, structured Unicode results, and ful
 });
 
 it("does not advertise a reserved journal as a written artifact after a zero-child failure", () => {
-  const task = createGraphRunTask({ id: "wf_failure", script: "", journalPath: "/reserved-unwritten-journal" });
+  const task = createGraphRunTask({ id: "agr_failure", script: "", journalPath: "/reserved-unwritten-journal" });
   task.status = "failed"; task.error = "script-failed";
   const report = plain(renderGraphRunCard({ task, progress: [], expanded: true }, theme).render(120));
   expect(report).toContain("script-failed");
@@ -219,10 +219,10 @@ it("does not advertise a reserved journal as a written artifact after a zero-chi
 });
 
 it("snapshots JSON-serializable object returns without requiring structured-clone compatibility", () => {
-  const task = createGraphRunTask({ id: "wf_json", script: "" });
+  const task = createGraphRunTask({ id: "agr_json", script: "" });
   task.status = "completed";
   task.value = { date: new Date("2026-09-14T00:00:00Z"), answer: "retained-json-answer", omitted: () => true };
-  const snapshot = workflowEntryData(task);
+  const snapshot = graphRunEntryData(task);
   expect(snapshot.value).toEqual({ date: "2026-09-14T00:00:00.000Z", answer: "retained-json-answer" });
   const report = renderGraphRunEntryCard(snapshot, theme, true);
   assert.ok(report);
