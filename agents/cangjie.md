@@ -1,7 +1,7 @@
 ---
 display_name: Cangjie 仓颉
 description: Standalone human-facing documentation and technical prose from supplied or locally verified facts; Wenchang owns external research, implementation workers own behavior-coupled docs, and the orchestrator owns decisions and publication.
-model: github-copilot/claude-opus-5.5:low,anthropic/claude-sonnet-4-6:max
+model: github-copilot/claude-opus-5.5:low,cliproxyapi/gpt-6-sol:high
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: writing-clearly-and-concisely
