@@ -9,6 +9,7 @@ import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { classifyPaneKey } from "../src/graph/pane/input-filter.mjs";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "../src/graph/pane/manager.js";
+import { paintFrame, shownLines } from "../src/graph/pane/paint.mjs";
 import { readInput, writeInputAtomic } from "../src/graph/pane/store.js";
 import { createGraphRunTask } from "../src/graph/task.js";
 
@@ -64,6 +65,7 @@ function startViewer() {
       argv: ["node", "viewer.mjs", "--dir", dir], pid: process.pid, stdin, stdout,
     }),
     Buffer, existsSync, readFileSync, renameSync, writeFileSync, join, classifyPaneKey,
+    paintFrame, shownLines,
     watch: () => ({ close() {} }),
     setTimeout: vi.fn(), clearTimeout: vi.fn(), setInterval: vi.fn(), clearInterval: vi.fn(),
   });

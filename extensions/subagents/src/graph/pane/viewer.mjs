@@ -4,7 +4,8 @@
  *
  * It owns no layout. The extension renders the graph run overview in-process (see
  * render.ts), writes styled ANSI lines to `<dir>/state.json` with an atomic
- * rename, and this process paints them: clear, home, print, repeat on change.
+ * rename, and this process paints them as in-place synchronized frames (see
+ * paint.mjs), writing only when the frame changes.
  * That keeps the shared layout the single source of truth and needs no bundler,
  * no dist, and no runtime dependencies here — only Node built-ins.
  *
@@ -21,6 +22,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classifyPaneKey } from "./input-filter.mjs";
+import { paintFrame, shownLines } from "./paint.mjs";
 
 const REPAINT_DEBOUNCE_MS = 30;
 const SAFETY_POLL_MS = 400;
@@ -54,6 +56,7 @@ let safetyTimer = null;
 let parentTimer = null;
 let parentGone = false;
 let lastLines = [];
+let lastFrame = "";
 let inputSeq = 0;
 try {
   const input = JSON.parse(readFileSync(inputFile, "utf8"));
@@ -108,11 +111,11 @@ function readLines() {
 }
 
 function paint(lines) {
-  // Clear scrollback + screen, home the cursor, then print each row from column
-  // zero (\r\n, since raw-mode stdin can disable the tty's LF→CRLF translation).
-  let out = "\x1b[2J\x1b[3J\x1b[H";
-  out += lines.join("\r\n");
-  process.stdout.write(out);
+  const rows = process.stdout.rows || 0;
+  const frame = paintFrame(shownLines(lines, { rows, parentGone }), rows);
+  if (frame === lastFrame) return;
+  lastFrame = frame;
+  process.stdout.write(frame);
 }
 
 function repaint() {
@@ -123,8 +126,7 @@ function repaint() {
   }
   const lines = readLines();
   if (lines) lastLines = lines;
-  const shown = parentGone ? [...lastLines, "", "Pi session ended — press q to close"] : lastLines;
-  paint(shown);
+  paint(lastLines);
 }
 
 function scheduleRepaint() {
@@ -284,10 +286,12 @@ function main() {
   }
 
   process.stdout.on("resize", () => {
+    lastFrame = "";
     writeViewport();
     scheduleRepaint();
   });
   process.on("SIGWINCH", () => {
+    lastFrame = "";
     writeViewport();
     scheduleRepaint();
   });
