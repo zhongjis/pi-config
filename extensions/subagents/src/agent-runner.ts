@@ -703,8 +703,13 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   const subagentSessionsDir = options.parentSessionId
     ? join(getAgentDir(), SUBAGENT_SESSION_DIR_NAME, options.parentSessionId)
     : undefined;
+  const sessionDir = configuredSessionDir ?? subagentSessionsDir ?? defaultSessionDir;
+  const parentSessionFile = ctx.sessionManager?.getSessionFile?.();
+  const parentFile = typeof parentSessionFile === "string" && parentSessionFile.length > 0 ? parentSessionFile : undefined;
   const sessionManager = agentConfig?.persistSession
-    ? SessionManager.create(effectiveCwd, configuredSessionDir ?? subagentSessionsDir ?? defaultSessionDir)
+    ? parentFile
+      ? SessionManager.create(effectiveCwd, sessionDir, { parentSession: parentFile })
+      : SessionManager.create(effectiveCwd, sessionDir)
     : SessionManager.inMemory(effectiveCwd);
 
   // Persist the parent branch's effective Agent-tree scope before the session

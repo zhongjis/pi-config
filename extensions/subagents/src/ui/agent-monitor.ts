@@ -1,6 +1,7 @@
 /**
  * agent-monitor.ts — full-screen roster of this session's agent graph runs and
- * independent agents, including finished entries still retained in memory.
+ * independent agents, including finished entries still retained in memory and
+ * persisted history of independent persist_session runs.
  *
  * Enter opens a graph run or an agent's conversation. `o` detaches graph runs only.
  */

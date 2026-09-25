@@ -109,6 +109,8 @@ export interface AgentRecord {
   startedAt: number;
   completedAt?: number;
   session?: AgentSession;
+  /** Persisted child session JSONL path; set only when the child session is persisted. */
+  sessionFile?: string;
   abortController?: AbortController;
   promise?: Promise<string>;
   groupId?: string;

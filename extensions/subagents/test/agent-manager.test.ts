@@ -1438,3 +1438,49 @@ describe("graph run pool ownership", () => {
     expect(await record.promise).toBe("cancelled");
   });
 });
+
+describe("AgentManager session listener", () => {
+  let manager: AgentManager;
+  afterEach(() => manager?.dispose());
+  function persisted(sessionFile: string, persistedSession = true) {
+    return {
+      dispose: vi.fn(),
+      sessionManager: {
+        isPersisted: () => persistedSession,
+        getSessionFile: () => sessionFile,
+      },
+    };
+  }
+  it("fires with sessionFile for a persisted session and leaves it absent for in-memory", async () => {
+    manager = new AgentManager();
+    const listener = vi.fn();
+    manager.setSessionListener(listener);
+    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, prompt, opts) => {
+      const session = prompt === "memory" ? persisted("/tmp/ignored.jsonl", false) : persisted("/tmp/child.jsonl");
+      opts?.onSessionCreated?.(session as never);
+      return { responseText: "done", session, aborted: false, steered: false };
+    });
+    const persistedId = manager.spawn(mockPi, mockCtx, "general-purpose", "persisted", { description: "persisted", isBackground: true });
+    const memoryId = manager.spawn(mockPi, mockCtx, "general-purpose", "memory", { description: "memory", isBackground: true });
+    await manager.getRecord(persistedId)!.promise;
+    await manager.getRecord(memoryId)!.promise;
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener.mock.calls[0][0].sessionFile).toBe("/tmp/child.jsonl");
+    expect(manager.getRecord(persistedId)!.sessionFile).toBe("/tmp/child.jsonl");
+    expect(listener.mock.calls[1][0].sessionFile).toBeUndefined();
+    expect(manager.getRecord(memoryId)!.sessionFile).toBeUndefined();
+  });
+  it("does not call the listener for graph-owned children", async () => {
+    manager = new AgentManager();
+    const listener = vi.fn();
+    manager.setSessionListener(listener);
+    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts) => {
+      const session = persisted("/tmp/graph-child.jsonl");
+      opts?.onSessionCreated?.(session as never);
+      return { responseText: "done", session, aborted: false, steered: false };
+    });
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "graph", { description: "graph", graphRunId: "run-1" });
+    await manager.getRecord(id)!.promise;
+    expect(listener).not.toHaveBeenCalled();
+  });
+});

@@ -131,6 +131,7 @@ export class AgentManager {
   private maxConcurrentForeground = 0;
   private runningForeground = 0;
   private usageListener?: (usage: LifetimeUsage) => void;
+  private sessionListener?: (record: AgentRecord) => void;
   private disposed = false;
   /** Independent FIFO pools share a queue; detached spawns have no foreground slot. */
   private queue: { id: string; args: SpawnArgs; foreground: boolean }[] = [];
@@ -182,6 +183,10 @@ export class AgentManager {
 
   setUsageListener(listener: ((usage: LifetimeUsage) => void) | undefined): void {
     this.usageListener = listener;
+  }
+
+  setSessionListener(listener: ((record: AgentRecord) => void) | undefined): void {
+    this.sessionListener = listener;
   }
 
   /**
@@ -355,6 +360,10 @@ export class AgentManager {
           }
           record.pendingSteers = undefined;
         }
+        const childSession = session.sessionManager as { isPersisted?: () => boolean; getSessionFile?: () => string | undefined } | undefined;
+        const sessionFile = childSession?.isPersisted?.() ? childSession.getSessionFile?.() : undefined;
+        if (sessionFile) record.sessionFile = sessionFile;
+        if (record.graphRunId === undefined) this.sessionListener?.(record);
         options.onSessionCreated?.(session);
       },
     })

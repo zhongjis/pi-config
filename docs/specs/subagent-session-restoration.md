@@ -1,6 +1,6 @@
 # Subagent Session Restoration
 
-**Status:** implemented
+**Status:** retired — this described the removed `extensions/subagent/` runtime (deleted in commit a39c14d) and is not implemented in the current `extensions/subagents`. The current runtime offers read-only monitor history only.
 
 ## Problem Statement
 

@@ -18,6 +18,7 @@ import { createSettingsMenu } from "./ui/settings-menu.js";
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, Text } from "@earendil-works/pi-tui";
+import { AgentHistoryStore, mergeAgentHistory } from "./agent-history.js";
 import { AgentManager } from "./agent-manager.js";
 import { registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
 import { getDefaultMaxTurns, getGraceTurns, SUBAGENT_TOOL_NAMES, setDefaultMaxTurns, setGraceTurns } from "./agent-runner.js";
@@ -164,8 +165,11 @@ export default function (pi: ExtensionAPI) {
   }
 
   // Background completion: route through group join or send individual nudge
+  let agentHistory: AgentHistoryStore | undefined;
+  const historyOwners = new WeakMap<AgentRecord, AgentHistoryStore>();
   const manager = new AgentManager((record) => {
     if (record.graphRunId !== undefined) return; // Owned children report only through their graph run.
+    historyOwners.get(record)?.capture(record);
     // Emit lifecycle event based on terminal status
     const isError = record.status === "error" || record.status === "stopped" || record.status === "aborted";
     const eventData = buildEventData(record);
@@ -204,6 +208,11 @@ export default function (pi: ExtensionAPI) {
 
   const collectManagerUsage = (usage: LifetimeUsage) => { if (reportUsage) pendingUsage.add(usage); };
   manager.setUsageListener(collectManagerUsage);
+  manager.setSessionListener(record => {
+    if (!agentHistory || !record.sessionFile) return;
+    historyOwners.set(record, agentHistory);
+    agentHistory.capture(record);
+  });
 
   // Inject the delegation-policy gate into the manager (defense in depth: the
   // Agent tool and RPC handler both deny earlier, but any spawn reaching the
@@ -269,6 +278,7 @@ export default function (pi: ExtensionAPI) {
     if (!ownsManagerRegistry) return;
     await stopGraphRuns("reload");
     await graphRuntime.loadHistory(ctx);
+    agentHistory = await AgentHistoryStore.load(ctx.sessionManager.getSessionId(), message => ctx.ui.notify(message, "warning"));
     currentCtx = ctx;
     pendingUsage = new PendingUsagePool();
     manager.setUsageListener(collectManagerUsage);
@@ -318,6 +328,9 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_before_switch", async () => {
     if (!ownsManagerRegistry) return;
+    agentHistory?.disableCapture();
+    await agentHistory?.flush();
+    agentHistory = undefined;
     await stopGraphRuns("switch");
     manager.clearCompleted(true);
     supervisionStop?.();
@@ -338,6 +351,9 @@ export default function (pi: ExtensionAPI) {
       manager.dispose();
       return;
     }
+    agentHistory?.disableCapture();
+    await agentHistory?.flush();
+    agentHistory = undefined;
     await stopGraphRuns(event?.reason === "reload" ? "reload" : "shutdown");
     await graphRunPane?.dispose();
     graphRunPane = undefined;
@@ -628,7 +644,7 @@ export default function (pi: ExtensionAPI) {
     detach: paneDetach,
   };
   const agentMonitorDeps: AgentMonitorDeps = {
-    listAgents: () => manager.listAgents(),
+    listAgents: () => mergeAgentHistory(manager.listAgents(), agentHistory?.runs ?? []),
     agentActivity,
     graphRuns: monitorGraphRuns,
     openGraphRun: async (ctx, id) => {

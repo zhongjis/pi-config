@@ -1003,6 +1003,18 @@ describe("agent-runner session persistence", () => {
     expect(sessionManagerInMemory).toHaveBeenCalledWith("/tmp");
     expect(sessionManagerCreate).not.toHaveBeenCalled();
   });
+
+  it("passes the parent session file as native parentSession lineage", async () => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ persistSession: true }));
+    settingsManagerGetSessionDir.mockReturnValue("/normal/pi/sessions");
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+    await runAgent({
+      ...ctx,
+      sessionManager: { ...ctx.sessionManager, getSessionFile: () => "/tmp/parent.jsonl" },
+    }, "Explore", "go", { pi });
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions", { parentSession: "/tmp/parent.jsonl" });
+  });
 });
 
 describe("agent-runner session-local Agent-tree scope", () => {

@@ -52,8 +52,12 @@ export const DEFAULT_COMPACTION_SETTINGS = {
   keepRecentTokens: 20000,
 };
 
-export function buildSessionContext() {
-  return { messages: [] };
+export function buildSessionContext(entries: Array<{ type?: string; message?: unknown }> = []) {
+  return {
+    messages: entries.flatMap(entry => entry?.type === "message" && entry.message ? [entry.message] : []),
+    thinkingLevel: "off",
+    model: null,
+  };
 }
 
 export function convertToLlm<T>(value: T): T {
@@ -276,3 +280,16 @@ export function serializeConversation(messages: unknown): string {
 export function rawKeyHint(text: string): string {
   return text;
 }
+
+/** Read-only session JSONL helpers used by agent-history unit tests. Current v3 files need no migration. */
+export function parseSessionEntries(content: string): Array<Record<string, unknown>> {
+  const entries: Array<Record<string, unknown>> = [];
+  for (const line of content.trim().split("\n")) {
+    if (!line.trim()) continue;
+    try { entries.push(JSON.parse(line) as Record<string, unknown>); } catch { /* skip malformed lines */ }
+  }
+  return entries;
+}
+
+export function migrateSessionEntries(_entries: unknown[]): void {}
+

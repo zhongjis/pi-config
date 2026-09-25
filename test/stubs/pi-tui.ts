@@ -692,6 +692,10 @@ export function matchesKey(candidate: unknown, expected: unknown): boolean {
   return false;
 }
 
+export function stripTerminalSequences(text: string): string {
+  return stripAnsi(text);
+}
+
 export function truncateToWidth(text: string, maxWidth: number, ellipsis = "...", pad = false): string {
   if (maxWidth <= 0) return "";
   const plain = stripAnsi(text);

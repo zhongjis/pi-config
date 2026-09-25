@@ -90,7 +90,7 @@ See [modes.md](specs/modes.md) for the shipped mode contract and [orchistration.
 | [modes.md](specs/modes.md) | Agent modes design and switching behavior |
 | [mode-prompt-parity.md](specs/mode-prompt-parity.md) | Upstream evidence and local invariants for mode prompt parity work |
 | [mode-prompt-audit-checklist.md](specs/mode-prompt-audit-checklist.md) | Future prompt audit checklist for construction semantics, provenance, parity, and scope guardrails |
-| [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Planned restore-first continuation for persisted subagent sessions |
+| [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Retired description of the removed `extensions/subagent/` restore runtime; current runtime has read-only monitor history only |
 | [workflow-tool-output-presentation.md](specs/workflow-tool-output-presentation.md) | Workflow tool/notification disclosure, complete results, and task/Subagent identity |
 | [workflow-presentation-implementation.md](guides/workflow-presentation-implementation.md) | Implementation plan and verification evidence for workflow presentation |
 | [subagents-upstream-upgrade.md](specs/subagents-upstream-upgrade.md) | Draft v0.19.0 upstream sync, local compatibility, and Scripted Workflows |

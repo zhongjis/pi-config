@@ -98,7 +98,7 @@ function boot(settings: Record<string, unknown> = {}, sessionId = "parent") {
   const ctx = ctxFixture as ExtensionContext;
   const extensionApi: Pick<ExtensionAPI, "events" | "appendEntry" | "sendMessage" | "registerFlag" | "registerMessageRenderer" | "setActiveTools" | "getActiveTools"> = api;
   extension(extensionApi as ExtensionAPI);
-  const lifecycle = async (name: string) => { for (const hook of hooks.get(name) ?? []) await hook({}, ctx); };
+  const lifecycle = async (name: string, event: unknown = {}) => { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); };
   shutdown = () => lifecycle("session_shutdown");
   const notification = async (id: string) => {
     await vi.waitFor(() => expect(api.sendMessage.mock.calls.some(([message]) => message.content.includes(`<task-id>${id}</task-id>`))).toBe(true));
@@ -109,4 +109,8 @@ function boot(settings: Record<string, unknown> = {}, sessionId = "parent") {
     setFlag: (value: unknown) => { flag = value; }, setForeign: (value: typeof foreign) => { foreign = value; } };
 }
 
-export { artifactDirs, boot, dir, originalCwd, plainTheme, required, session, settingsUI };
+function mockRunAgent(impl: typeof runAgent): void {
+  vi.mocked(runAgent).mockImplementation(impl);
+}
+
+export { artifactDirs, boot, dir, mockRunAgent, originalCwd, plainTheme, required, session, settingsUI };
