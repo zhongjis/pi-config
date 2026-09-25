@@ -4,10 +4,10 @@
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
 import assert from "node:assert/strict";
-import type { TUI } from "@earendil-works/pi-tui";
+import { type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
-import { mergeGraphRuns } from "../src/graph/history-view.js";
 import { snapshotHistory } from "../src/graph/history.js";
+import { mergeGraphRuns } from "../src/graph/history-view.js";
 import { createGraphRunTask, type GraphRunTask } from "../src/graph/task.js";
 import { GraphRunPanelView } from "../src/ui/graph-run-panel-view.js";
 
@@ -87,5 +87,40 @@ describe("GraphRunPanelView", () => {
     view.handleInput("j");
     for (const key of ["p", "x", "s", "r", "c"]) view.handleInput(key);
     expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("frames the in-Pi panel and keeps the footer under the separator", () => {
+    const task = liveTask("agr_a", "alpha-run", 1000);
+    const view = new GraphRunPanelView(fakeTui(), () => [task], task.id, theme, vi.fn(), {
+      controls: true, detach: false, viewportPct: 70, onAction: vi.fn(),
+    });
+    const lines = view.render(120);
+    expect(lines[0]?.startsWith("╭")).toBe(true);
+    expect(lines.at(-1)?.startsWith("╰")).toBe(true);
+    expect(lines.at(-3)?.startsWith("├")).toBe(true);
+    expect(lines.at(-2)).toContain("close");
+    view.dispose();
+  });
+
+  it("fills the frame to the exact width and restores the background after reverse video", () => {
+    const bg = "\x1b[48;5;236m";
+    const ansi = {
+      fg: (_color: string, text: string) => `\x1b[31m${text}\x1b[39m`,
+      bold: (text: string) => `\x1b[1m${text}\x1b[22m`,
+      getBgAnsi: () => bg,
+    };
+    const task = liveTask("agr_a", "alpha-run", 1000);
+    const view = new GraphRunPanelView(fakeTui(), () => [task], task.id, ansi, vi.fn(), {
+      controls: true, detach: false, viewportPct: 70, onAction: vi.fn(),
+    });
+    const lines = view.render(64);
+    for (const line of lines) {
+      expect(visibleWidth(line)).toBe(64);
+      expect(line.startsWith(bg)).toBe(true);
+      expect(line.endsWith("\x1b[49m")).toBe(true);
+    }
+    expect(lines.some(line => line.includes(`\x1b[0m${bg}`))).toBe(true);
+    expect(view.render(5).some(line => line.startsWith("╭"))).toBe(false);
+    view.dispose();
   });
 });

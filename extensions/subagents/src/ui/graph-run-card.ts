@@ -240,3 +240,71 @@ export function highlightRow(line: GraphRunCardLine, width: number): GraphRunCar
   if (used < width) reversed.push({ text: " ".repeat(width - used), reverse: true });
   return reversed;
 }
+
+/** Theme plus the optional Pi background the overlay fill uses. */
+export type OverlayTheme = Theme & { getBgAnsi?(color: "customMessageBg"): string };
+
+/**
+ * Rounded overlay frame.
+ *
+ * Width that is non-finite or ≤ 0 yields nothing. Width below 6 returns the
+ * body clamped to that width, with no border and no fill. At width ≥ 6 every
+ * line is exactly `width` cells. When `theme.getBgAnsi` exists, each line is
+ * painted with `customMessageBg`, and that fill is re-applied after `\x1b[0m`
+ * and `\x1b[49m` so reverse-video and `theme.bg` resets do not punch holes.
+ */
+export function frameOverlay(
+  body: readonly string[],
+  width: number,
+  theme: OverlayTheme,
+  opts?: { title?: string; right?: string; footer?: readonly string[] },
+): string[] {
+  if (!Number.isFinite(width) || width <= 0) return [];
+  if (width < 6) return body.map(line => truncateToWidth(line, width, ""));
+  const lines = [
+    topBorder(width, theme, opts?.title, opts?.right),
+    ...body.map(line => frameRow(line, width, theme)),
+  ];
+  if (opts?.footer) {
+    lines.push(theme.fg("border", `├${"─".repeat(width - 2)}┤`));
+    for (const line of opts.footer) lines.push(frameRow(line, width, theme));
+  }
+  lines.push(theme.fg("border", `╰${"─".repeat(width - 2)}╯`));
+  return lines.map(line => paintFill(line, theme));
+}
+
+function paintFill(line: string, theme: OverlayTheme): string {
+  const bg = theme.getBgAnsi?.("customMessageBg");
+  if (!bg) return line;
+  return `${bg}${line.replaceAll("\x1b[0m", `\x1b[0m${bg}`).replaceAll("\x1b[49m", `\x1b[49m${bg}`)}\x1b[49m`;
+}
+
+function frameRow(content: string, width: number, theme: OverlayTheme): string {
+  const innerW = width - 4;
+  const clipped = truncateToWidth(content, innerW, "…");
+  const pad = Math.max(0, innerW - visibleWidth(clipped));
+  return `${theme.fg("border", "│")} ${clipped}${" ".repeat(pad)} ${theme.fg("border", "│")}`;
+}
+
+function topBorder(width: number, theme: OverlayTheme, title?: string, right?: string): string {
+  const plain = theme.fg("border", `╭${"─".repeat(width - 2)}╮`);
+  if (!title) return plain;
+  const fitted = right ? titledBorder(width, theme, title, right) : undefined;
+  if (fitted) return fitted;
+  const maxTitle = width - 6;
+  if (maxTitle < 1) return plain;
+  const clipped = visibleWidth(title) <= maxTitle ? title : stripTerminalSequences(truncateToWidth(title, maxTitle, "…"));
+  return titledBorder(width, theme, clipped) ?? plain;
+}
+
+function titledBorder(width: number, theme: OverlayTheme, title: string, right?: string): string | undefined {
+  if (!title) return undefined;
+  const titleW = visibleWidth(title);
+  const rightW = right ? visibleWidth(right) : 0;
+  const dashes = width - (right ? titleW + rightW + 8 : titleW + 5);
+  if (dashes < 1) return undefined;
+  const left = theme.fg("border", "╭─ ");
+  const styledTitle = theme.bold(theme.fg("accent", title));
+  if (!right) return `${left}${styledTitle}${theme.fg("border", ` ${"─".repeat(dashes)}╮`)}`;
+  return `${left}${styledTitle}${theme.fg("border", ` ${"─".repeat(dashes)} `)}${theme.fg("dim", right)}${theme.fg("border", " ─╮")}`;
+}

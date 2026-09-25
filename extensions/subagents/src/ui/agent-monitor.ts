@@ -5,11 +5,12 @@
  * Enter opens a graph run or an agent's conversation. `o` detaches graph runs only.
  */
 
-import { type Component, matchesKey, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, matchesKey, stripTerminalSequences, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal } from "../usage.js";
 import { type AgentActivity, type Theme } from "./agent-widget.js";
 import { type FleetGraphRun, formatFleetAgentRow, formatFleetGraphRunRow } from "./fleet-list.js";
+import { frameOverlay, type OverlayTheme } from "./graph-run-card.js";
 import type { GraphRunUIContext } from "./graph-run-menu.js";
 
 export type MonitorFilter = "all" | "running" | "failed";
@@ -106,8 +107,59 @@ function monitorRows(sections: { graphRuns: readonly FleetGraphRun[]; agents: re
   ];
 }
 
-function bullet(selected: boolean, theme: Theme): string {
-  return selected ? theme.fg("accent", "●") : theme.fg("dim", "○");
+function statusMark(entry: FleetGraphRun | AgentRecord): { glyph: string; color: string } {
+  if ("doneCount" in entry) {
+    switch (entry.status) {
+      case "running": return { glyph: "●", color: "accent" };
+      case "paused": return { glyph: "Ⅱ", color: "warning" };
+      case "completed": return { glyph: "✓", color: "success" };
+      case "failed": return { glyph: "×", color: "error" };
+      case "killed": return { glyph: "■", color: "dim" };
+    }
+  }
+  switch (entry.status) {
+    case "queued": return { glyph: "○", color: "dim" };
+    case "running": return { glyph: "●", color: "accent" };
+    case "completed":
+    case "steered": return { glyph: "✓", color: "success" };
+    case "aborted":
+    case "stopped": return { glyph: "■", color: "dim" };
+    case "error": return { glyph: "×", color: "error" };
+  }
+}
+
+function statusParts(entry: FleetGraphRun | AgentRecord, theme: Theme): { bullet: string; statusWord: string } {
+  const mark = statusMark(entry);
+  return { bullet: theme.fg(mark.color, mark.glyph), statusWord: theme.fg(mark.color, monitorStatusWord(entry)) };
+}
+
+function reverseRow(row: string, width: number): string {
+  const plain = stripTerminalSequences(truncateToWidth(row, Math.max(0, width), ""));
+  return `\x1b[7m${plain}${" ".repeat(Math.max(0, width - visibleWidth(plain)))}\x1b[27m`;
+}
+
+function liveCount<T>(items: readonly T[], live: (item: T) => boolean): { live: number; finished: number } {
+  const active = items.filter(live).length;
+  return { live: active, finished: items.length - active };
+}
+
+function sectionHeader(label: string, live: number, finished: number, width: number, theme: Theme): string {
+  const title = theme.bold(theme.fg("text", label));
+  const counts = theme.fg("dim", `${live} live · ${finished} finished`);
+  const prefix = "─ ";
+  const dashes = width - visibleWidth(prefix) - visibleWidth(title) - visibleWidth(counts) - 2;
+  if (dashes >= 1) return `${prefix}${title} ${theme.fg("borderMuted", "─".repeat(dashes))} ${counts}`;
+  return truncateToWidth(`${prefix}${title} ${counts}`, Math.max(0, width), "…");
+}
+
+function centerLine(text: string, width: number): string {
+  const used = visibleWidth(text);
+  if (used >= width) return truncateToWidth(text, Math.max(0, width), "…");
+  return " ".repeat(Math.floor((width - used) / 2)) + text;
+}
+
+function padLines(lines: string[], min: number): string[] {
+  return lines.length >= min ? lines : lines.concat(Array.from({ length: min - lines.length }, () => ""));
 }
 
 function rightAlign(left: string, right: string, width: number): string {
@@ -161,7 +213,7 @@ export class AgentMonitor implements Component {
 
   constructor(
     private tui: TUI,
-    private theme: Theme,
+    private theme: OverlayTheme,
     private done: (result: undefined) => void,
     private ctx: GraphRunUIContext,
     private deps: AgentMonitorDeps,
@@ -207,42 +259,47 @@ export class AgentMonitor implements Component {
   }
 
   render(width: number): string[] {
+    const innerW = Math.max(0, width - 4);
     const sections = monitorSections(this.deps.graphRuns(), this.deps.listAgents(), this.filter);
     const rows = monitorRows(sections);
     const index = this.syncSelection(rows);
     const selectedKey = rows[index]?.key;
+    const minBody = Math.min(this.bodyCapacity(), 10);
     const body: string[] = [];
     let focus = 0;
     const emptyAll = this.filter === "all" && sections.graphRuns.length === 0 && sections.agents.length === 0;
     if (emptyAll) {
-      body.push(this.theme.fg("dim", "  No agents or graph runs in this session yet."));
+      const message = centerLine(this.theme.fg("dim", "No agents or graph runs in this session yet."), innerW);
+      const mid = Math.floor((minBody - 1) / 2);
+      for (let row = 0; row < minBody; row++) body.push(row === mid ? message : "");
     } else {
-      body.push(this.theme.fg("dim", "  ── agent graph runs ──"));
+      const pushRow = (key: string, line: string) => {
+        if (key === selectedKey) focus = body.length;
+        body.push(key === selectedKey ? reverseRow(line, innerW) : line);
+      };
+      const graphCounts = liveCount(sections.graphRuns, graphLive);
+      body.push(sectionHeader("Agent graph runs", graphCounts.live, graphCounts.finished, innerW, this.theme));
       if (sections.graphRuns.length === 0) body.push(this.theme.fg("dim", "  (none)"));
       for (const run of sections.graphRuns) {
-        const key = `g:${run.id}`;
-        const selected = key === selectedKey;
-        if (selected) focus = body.length;
-        body.push(formatFleetGraphRunRow(bullet(selected, this.theme), selected, run, width, this.theme, monitorStatusWord(run)));
+        const status = statusParts(run, this.theme);
+        pushRow(`g:${run.id}`, formatFleetGraphRunRow(status.bullet, false, run, innerW, this.theme, status.statusWord));
       }
       body.push("");
-      body.push(this.theme.fg("dim", "  ── independent agents ──"));
+      const agentCounts = liveCount(sections.agents, agentLive);
+      body.push(sectionHeader("Independent agents", agentCounts.live, agentCounts.finished, innerW, this.theme));
       if (sections.agents.length === 0) body.push(this.theme.fg("dim", "  (none)"));
       for (const record of sections.agents) {
-        const key = `a:${record.id}`;
-        const selected = key === selectedKey;
-        if (selected) focus = body.length;
+        const status = statusParts(record, this.theme);
         const tokens = getLifetimeTotal(this.deps.agentActivity.get(record.id)?.lifetimeUsage ?? record.lifetimeUsage);
-        body.push(formatFleetAgentRow(bullet(selected, this.theme), record, tokens, width, this.theme, monitorStatusWord(record)));
+        pushRow(`a:${record.id}`, formatFleetAgentRow(status.bullet, record, tokens, innerW, this.theme, status.statusWord));
       }
     }
-    const lines = [
-      this.titleLine(width),
-      "",
-      ...windowBody(body, focus, this.bodyCapacity(), this.theme, width),
-      this.footer(rows[index]),
-    ];
-    return lines.map(line => truncateToWidth(line, width));
+    const windowed = emptyAll ? body : padLines(windowBody(body, focus, this.bodyCapacity(), this.theme, innerW), minBody);
+    return frameOverlay(windowed, width, this.theme, {
+      title: "Agent Monitor",
+      right: this.filter === "all" ? undefined : `filter: ${this.filter}`,
+      footer: [this.footer(rows[index])],
+    });
   }
 
   invalidate(): void {}
@@ -256,17 +313,12 @@ export class AgentMonitor implements Component {
     }
   }
 
-  private titleLine(width: number): string {
-    const title = this.theme.bold(" Agent Monitor");
-    if (this.filter === "all") return title;
-    return rightAlign(title, this.theme.fg("dim", `filter: ${this.filter}`), width);
-  }
-
   private footer(row: MonitorRow | undefined): string {
-    let text = "↑↓ select · enter open · f filter";
-    if (row?.kind === "graph" && this.deps.detach?.available()) text += " · o detach";
-    text += " · esc close";
-    return this.theme.fg("dim", text);
+    const key = (text: string) => this.theme.fg("text", text);
+    const label = (text: string) => this.theme.fg("dim", text);
+    let text = key("↑↓") + label(" select") + label(" · ") + key("enter") + label(" open") + label(" · ") + key("f") + label(" filter");
+    if (row?.kind === "graph" && this.deps.detach?.available()) text += label(" · ") + key("o") + label(" detach");
+    return text + label(" · ") + key("esc") + label(" close");
   }
 
   private bodyCapacity(): number {

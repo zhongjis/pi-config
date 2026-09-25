@@ -12,8 +12,7 @@
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import type { GraphRun } from "../graph/history-view.js";
 import { toPanelRun } from "../graph/pane/render.js";
-import type { Theme } from "./agent-widget.js";
-import { styleGraphRunCardLines } from "./graph-run-card.js";
+import { frameOverlay, type OverlayTheme, styleGraphRunCardLines } from "./graph-run-card.js";
 import { GRAPH_RUN_DIALOG_REFRESH_MS } from "./graph-run-dialog.js";
 import {
   applyPanelKey,
@@ -43,7 +42,7 @@ export class GraphRunPanelView implements Component {
     private tui: TUI,
     private runs: () => readonly GraphRun[],
     initialRunId: string,
-    private theme: Theme,
+    private theme: OverlayTheme,
     private done: (result: undefined) => void,
     private options: GraphRunPanelViewOptions,
   ) {
@@ -61,14 +60,17 @@ export class GraphRunPanelView implements Component {
     if (!Number.isFinite(width) || width <= 0) return [];
     this.lastWidth = width;
     const panelRuns = this.trackShownRun(this.runs());
-    return styleGraphRunCardLines(renderPanelLines(panelRuns, this.state, this.opts(width)), this.theme);
+    const layout = this.layout(width);
+    const lines = styleGraphRunCardLines(renderPanelLines(panelRuns, this.state, layout.opts), this.theme);
+    if (!layout.framed) return lines;
+    return frameOverlay(lines.slice(0, -1), width, this.theme, { footer: [lines.at(-1) ?? ""] });
   }
 
   handleInput(data: string): void {
     if (this.closed) return;
     const list = this.runs();
     const panelRuns = this.trackShownRun(list);
-    const result = applyPanelKey(panelRuns, this.state, data, this.opts(this.lastWidth));
+    const result = applyPanelKey(panelRuns, this.state, data, this.layout(this.lastWidth).opts);
     this.state = result.state;
     this.shownRunId = list[this.state.runIndex]?.id ?? this.shownRunId;
     if (result.close) {
@@ -94,9 +96,18 @@ export class GraphRunPanelView implements Component {
     return list.map(toPanelRun);
   }
 
-  private opts(width: number): PanelOptions {
-    const rows = Math.max(12, Math.floor(((this.tui.terminal?.rows ?? 40) * this.options.viewportPct) / 100) - 2);
-    return { width, rows, controls: this.options.controls, detach: this.options.detach };
+  private layout(width: number): { framed: boolean; opts: PanelOptions } {
+    const total = Math.max(12, Math.floor(((this.tui.terminal?.rows ?? 40) * this.options.viewportPct) / 100) - 2);
+    const framed = width >= 6;
+    return {
+      framed,
+      opts: {
+        width: framed ? width - 4 : width,
+        rows: framed ? total - 3 : total,
+        controls: this.options.controls,
+        detach: this.options.detach,
+      },
+    };
   }
 
   private hasLiveRun(): boolean {

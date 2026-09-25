@@ -1,3 +1,6 @@
+// Real terminal-cell metrics: the unit stub strips ANSI, which would hide the frame fill.
+vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
+
 import { type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { historyFleetGraphRun } from "../src/graph/graph-runtime.js";
@@ -22,6 +25,39 @@ const ENTER = "\r";
 const CTRL_C = "\x03";
 
 const theme = { fg: (c: string, s: string) => `<${c}>${s}</${c}>`, bold: (s: string) => `*${s}*` };
+const ANSI_BG = "\x1b[48;5;236m";
+const colorDigit: Record<string, string> = {
+  accent: "1",
+  success: "2",
+  error: "3",
+  warning: "4",
+  dim: "5",
+  border: "6",
+  text: "7",
+  borderMuted: "8",
+  muted: "9",
+};
+const ansiTheme = {
+  fg: (color: string, text: string) => `\x1b[3${colorDigit[color] ?? "0"}m${text}\x1b[39m`,
+  bold: (text: string) => `\x1b[1m${text}\x1b[22m`,
+  getBgAnsi: () => ANSI_BG,
+};
+
+type MonitorTheme = typeof theme | typeof ansiTheme;
+
+function plain(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*m/g, "").replace(/<\/?[^>]+>/g, "");
+}
+
+function selectedText(lines: readonly string[]): string {
+  return lines.filter(line => line.includes("\x1b[7m")).map(plain).join("\n");
+}
+
+function bodyLines(lines: readonly string[]): string[] {
+  const plainLines = lines.map(plain);
+  const sep = plainLines.findIndex(line => line.startsWith("├"));
+  return sep < 0 ? [] : plainLines.slice(1, sep);
+}
 
 function makeRecord(over: Partial<AgentRecord> = {}): AgentRecord {
   return {
@@ -65,6 +101,7 @@ function setup(opts: {
   viewAgentConversation?: AgentMonitorDeps["viewAgentConversation"];
   viewportPct?: number;
   rows?: number;
+  theme?: MonitorTheme;
 } = {}) {
   const notify = vi.fn();
   const ctx = { ui: { notify } } as GraphRunUIContext;
@@ -81,7 +118,7 @@ function setup(opts: {
     ...(opts.detach ? { detach: opts.detach } : {}),
   };
   const tui = { terminal: { rows: opts.rows ?? 40 }, requestRender: vi.fn() } as unknown as TUI;
-  const component = new AgentMonitor(tui, theme, done, ctx, deps, {
+  const component = new AgentMonitor(tui, opts.theme ?? theme, done, ctx, deps, {
     viewportPct: opts.viewportPct ?? 70,
     getOverlay: () => overlay,
   });
@@ -215,12 +252,14 @@ describe("AgentMonitor", () => {
     expect(emptyText).not.toContain("independent agents");
 
     const finished = setup({
+      theme: ansiTheme,
       graphRuns: [makeRun({ id: "g-done", name: "audit", status: "completed", startedAt: 1_000, completedAt: 2_000 })],
       agents: [makeRecord({ id: "a-err", description: "boom", status: "error", startedAt: 1_100, completedAt: 2_100 })],
     });
-    const text = finished.render();
-    expect(text).toContain("── agent graph runs ──");
-    expect(text).toContain("── independent agents ──");
+    const text = plain(finished.render());
+    expect(text).toContain("Agent graph runs");
+    expect(text).toContain("Independent agents");
+    expect(text).not.toContain("── agent graph runs ──");
     expect(text).toContain("audit");
     expect(text).toContain("boom");
     expect(text).toContain("done");
@@ -233,8 +272,8 @@ describe("AgentMonitor", () => {
     });
     placeholders.component.handleInput("f");
     const filtered = placeholders.render();
-    expect(filtered).toContain("── agent graph runs ──");
-    expect(filtered).toContain("── independent agents ──");
+    expect(filtered).toContain("Agent graph runs");
+    expect(filtered).toContain("Independent agents");
     expect(filtered.split("(none)")).toHaveLength(3);
     expect(filtered).toContain("filter: running");
   });
@@ -256,13 +295,15 @@ describe("AgentMonitor", () => {
       },
     ]]);
     const harness = setup({
+      theme: ansiTheme,
       agents: [
         record,
         makeRecord({ id: "child", graphRunId: "g1", description: "hidden child", status: "running" }),
       ],
       activity,
     });
-    const text = harness.render();
+    const text = plain(harness.render());
+    expect(text).toContain("Independent agents");
     expect(text).toContain("independent");
     expect(text).toContain("↓ 2.0k tokens");
     expect(text).not.toContain("hidden child");
@@ -270,11 +311,13 @@ describe("AgentMonitor", () => {
   });
 
   it("clamps every line to the render width", () => {
+    // Tag markup is visible width; real theme ANSI is not. Prove the clamp with the ANSI stub.
     const harness = setup({
+      theme: ansiTheme,
       graphRuns: [makeRun({ name: "n".repeat(80), status: "completed", completedAt: 2_000 })],
       agents: [makeRecord({ description: "d".repeat(80), status: "error", completedAt: 2_000 })],
     });
-    for (const line of harness.lines(32)) expect(visibleWidth(line)).toBeLessThanOrEqual(32);
+    for (const line of harness.lines(32)) expect(visibleWidth(line)).toBe(32);
   });
 
   it("keeps the selected row visible and shows more indicators", () => {
@@ -285,7 +328,7 @@ describe("AgentMonitor", () => {
       status: "running",
       startedAt: now - index,
     }));
-    const harness = setup({ graphRuns, viewportPct: 10, rows: 40 });
+    const harness = setup({ graphRuns, viewportPct: 10, rows: 40, theme: ansiTheme });
     const top = harness.render(160);
     expect(top).toContain("run-0");
     expect(top).toContain("↓");
@@ -295,7 +338,7 @@ describe("AgentMonitor", () => {
     expect(bottom).toContain("run-19");
     expect(bottom).toContain("↑");
     expect(bottom).not.toContain("run-0");
-    expect(bottom).toContain("esc close");
+    expect(plain(bottom)).toContain("esc close");
   });
 
   it("moves without wrapping and clamps when the selected entry vanishes", () => {
@@ -306,21 +349,21 @@ describe("AgentMonitor", () => {
       makeRun({ id: "c", name: "gamma", status: "running", startedAt: now - 20 }),
     ];
     const harness = setup({ graphRuns: runs });
-    const shown = () => harness.render(160);
-    expect(shown()).toContain("<text>alpha</text>");
+    const shown = () => harness.lines(160);
+    expect(selectedText(shown())).toContain("alpha");
     harness.component.handleInput(UP);
-    expect(shown()).toContain("<text>alpha</text>");
+    expect(selectedText(shown())).toContain("alpha");
     harness.component.handleInput("j");
-    expect(shown()).toContain("<text>beta</text>");
+    expect(selectedText(shown())).toContain("beta");
     harness.component.handleInput(DOWN);
-    expect(shown()).toContain("<text>gamma</text>");
+    expect(selectedText(shown())).toContain("gamma");
     harness.component.handleInput(DOWN);
-    expect(shown()).toContain("<text>gamma</text>");
+    expect(selectedText(shown())).toContain("gamma");
     harness.component.handleInput("k");
-    expect(shown()).toContain("<text>beta</text>");
+    expect(selectedText(shown())).toContain("beta");
     runs.splice(1, 1);
-    expect(shown()).toContain("<text>gamma</text>");
-    expect(shown()).not.toContain("beta");
+    expect(selectedText(shown())).toContain("gamma");
+    expect(harness.render(160)).not.toContain("beta");
   });
 
   it("opens a graph run and hides the overlay until it returns", async () => {
@@ -361,10 +404,11 @@ describe("AgentMonitor", () => {
   it("detaches a selected graph run when a pane is available", () => {
     const open = vi.fn(async () => true);
     const harness = setup({
+      theme: ansiTheme,
       graphRuns: [makeRun({ id: "g1", name: "audit" })],
       detach: { available: () => true, open },
     });
-    expect(harness.render()).toContain("o detach");
+    expect(plain(harness.render())).toContain("o detach");
     harness.component.handleInput("o");
     expect(open).toHaveBeenCalledWith("g1");
     expect(harness.notify).not.toHaveBeenCalled();
@@ -376,7 +420,7 @@ describe("AgentMonitor", () => {
       graphRuns: [makeRun({ id: "g1" })],
       detach: { available: () => false, open },
     });
-    expect(harness.render()).not.toContain("o detach");
+    expect(plain(harness.render())).not.toContain("o detach");
     harness.component.handleInput("o");
     expect(harness.notify).toHaveBeenCalledWith("Detach needs a Herdr-managed pane.", "warning");
     expect(open).not.toHaveBeenCalled();
@@ -395,7 +439,7 @@ describe("AgentMonitor", () => {
     harness.component.handleInput("o");
     expect(harness.notify).toHaveBeenCalledWith("Detach supports agent graph runs only.", "info");
     expect(open).not.toHaveBeenCalled();
-    expect(harness.render()).not.toContain("o detach");
+    expect(plain(harness.render())).not.toContain("o detach");
   });
 
   it("cycles the filter and selects the first row", () => {
@@ -407,22 +451,113 @@ describe("AgentMonitor", () => {
         makeRun({ id: "done", name: "gamma", status: "completed", startedAt: now - 30, completedAt: now - 20 }),
       ],
     });
-    const shown = (width = 160) => harness.render(width);
+    const shown = (width = 160) => harness.lines(width);
     harness.component.handleInput("j");
-    expect(shown()).toContain("<text>beta</text>");
+    expect(selectedText(shown())).toContain("beta");
     harness.component.handleInput("f");
     const running = shown();
-    expect(running).toContain("filter: running");
-    expect(running).toContain("<text>alpha</text>");
-    expect(running).not.toContain("gamma");
+    expect(plain(running[0] ?? "")).toContain("filter: running");
+    expect(running.join("\n")).not.toContain("gamma");
+    expect(selectedText(running)).toContain("alpha");
     harness.component.handleInput("f");
-    expect(shown()).toContain("filter: failed");
+    expect(plain(shown()[0] ?? "")).toContain("filter: failed");
     harness.component.handleInput("f");
     const all = shown();
-    expect(all).not.toContain("filter:");
-    expect(all).toContain("alpha");
-    expect(all).toContain("gamma");
-    expect(all).toContain("<text>alpha</text>");
+    expect(plain(all.join("\n"))).not.toContain("filter:");
+    expect(all.join("\n")).toContain("alpha");
+    expect(all.join("\n")).toContain("gamma");
+    expect(selectedText(all)).toContain("alpha");
+  });
+
+  it("frames the overlay, fills a solid background, and stays width-safe", () => {
+    const harness = setup({
+      theme: ansiTheme,
+      graphRuns: [
+        makeRun({ id: "live", name: "alpha", status: "running", startedAt: 2_000 }),
+        makeRun({ id: "done", name: "audit", status: "completed", startedAt: 1_000, completedAt: 1_500 }),
+      ],
+      agents: [makeRecord({ id: "boom", description: "boom", status: "error", startedAt: 900, completedAt: 1_200 })],
+    });
+    const lines = harness.lines(80);
+    expect(plain(lines[0] ?? "").startsWith("╭")).toBe(true);
+    expect(plain(lines[0] ?? "")).toContain("Agent Monitor");
+    expect(plain(lines.at(-1) ?? "").startsWith("╰")).toBe(true);
+    expect(plain(lines.at(-3) ?? "").startsWith("├")).toBe(true);
+    expect(plain(lines.at(-2) ?? "")).toContain("esc close");
+    for (const line of lines) {
+      expect(visibleWidth(line)).toBe(80);
+      expect(line.startsWith(ANSI_BG)).toBe(true);
+      expect(line.endsWith("\x1b[49m")).toBe(true);
+      const body = line.slice(ANSI_BG.length, -"\x1b[49m".length);
+      for (const token of ["\x1b[0m", "\x1b[49m"]) {
+        let index = body.indexOf(token);
+        while (index !== -1) {
+          expect(body.slice(index + token.length, index + token.length + ANSI_BG.length)).toBe(ANSI_BG);
+          index = body.indexOf(token, index + token.length);
+        }
+      }
+    }
+
+    for (const width of [6, 20, 40, 80, 120]) {
+      for (const line of harness.lines(width)) expect(visibleWidth(line)).toBe(width);
+    }
+    expect(harness.lines(0)).toEqual([]);
+    for (const width of [1, 5]) {
+      const narrow = harness.lines(width);
+      expect(narrow.some(line => plain(line).startsWith("╭"))).toBe(false);
+      for (const line of narrow) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it("does not paint a background when the theme has no fill", () => {
+    const harness = setup({ graphRuns: [makeRun()] });
+    expect(harness.render()).not.toContain("\x1b[48");
+  });
+
+  it("shows section counts and state-colored status on unselected rows", () => {
+    const harness = setup({
+      theme: ansiTheme,
+      graphRuns: [
+        makeRun({ id: "live", name: "alpha", status: "running", startedAt: 3_000 }),
+        makeRun({ id: "done", name: "audit", status: "completed", startedAt: 1_000, completedAt: 1_500 }),
+      ],
+      agents: [
+        makeRecord({ id: "live-agent", description: "working", status: "running", startedAt: 2_000 }),
+        makeRecord({ id: "boom", description: "boom", status: "error", startedAt: 900, completedAt: 1_200 }),
+      ],
+    });
+    harness.component.handleInput("j");
+    harness.component.handleInput("j");
+    const text = harness.render();
+    expect(text).toContain("Agent graph runs");
+    expect(text).toContain("Independent agents");
+    expect(plain(text).split("1 live · 1 finished").length - 1).toBe(2);
+    expect(text).toContain("\x1b[32m✓\x1b[39m");
+    expect(text).toContain("\x1b[32mdone\x1b[39m");
+    expect(text).toContain("\x1b[33m×\x1b[39m");
+    expect(text).toContain("\x1b[31m●\x1b[39m");
+    expect(text).toContain("\x1b[31mrunning\x1b[39m");
+    const reversed = harness.lines().filter(line => line.includes("\x1b[7m"));
+    expect(reversed).toHaveLength(1);
+    const row = reversed[0] ?? "";
+    const start = row.indexOf("\x1b[7m") + "\x1b[7m".length;
+    const end = row.indexOf("\x1b[27m", start);
+    expect(end).toBeGreaterThan(start);
+    expect(row.slice(start, end)).not.toMatch(/\x1b\[/);
+  });
+
+  it("centers the empty-session copy in a stable body and hides the filter label", () => {
+    const empty = setup({ theme: ansiTheme });
+    const lines = empty.lines();
+    const body = bodyLines(lines);
+    expect(body.length).toBeGreaterThanOrEqual(10);
+    expect(body.some(line => line.includes("No agents or graph runs in this session yet."))).toBe(true);
+    expect(plain(lines[0] ?? "")).not.toContain("filter:");
+
+    const filtered = setup({ theme: ansiTheme });
+    filtered.component.handleInput("f");
+    expect(plain(filtered.lines()[0] ?? "")).toContain("filter: running");
+    expect(plain(filtered.render())).toContain("Agent graph runs");
   });
 
   it("closes on esc, q, and ctrl+c", () => {

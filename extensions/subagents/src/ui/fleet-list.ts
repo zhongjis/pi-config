@@ -100,7 +100,7 @@ function rightAlign(left: string, right: string, width: number): string {
  * — so the two read as one list, with the agent count where an agent has its
  * description and the same elapsed/token tail.
  *
- * `statusWord`, when set, prefixes the right-hand stats. The fleet strip omits it.
+ * `statusWord`, when set, is caller-styled and prefixes dim stats. The fleet strip omits it.
  */
 export function formatFleetGraphRunRow(
   bullet: string,
@@ -117,8 +117,10 @@ export function formatFleetGraphRunRow(
   const elapsed = (graphRun.completedAt ?? Date.now()) - graphRun.startedAt;
   const agents = `${graphRun.doneCount}/${graphRun.totalCount} agent${graphRun.totalCount === 1 ? "" : "s"}`;
   const stats = `${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(graphRun.tokens)}`;
-  const right = statusWord !== undefined ? `${statusWord} · ${stats}` : stats;
-  return rightAlign(left, selected ? theme.fg("text", right) : theme.fg("dim", right), width);
+  if (statusWord === undefined) {
+    return rightAlign(left, selected ? theme.fg("text", stats) : theme.fg("dim", stats), width);
+  }
+  return rightAlign(left, statusWord + theme.fg("dim", ` · ${stats}`), width);
 }
 
 /** An agent's row. `statusWord`, when set, prefixes the right-hand stats. */
@@ -133,8 +135,8 @@ export function formatFleetAgentRow(
   const left = `  ${bullet} ${theme.fg("muted", getDisplayName(record.type))}  ${record.description}`;
   const elapsedMs = (record.completedAt ?? Date.now()) - record.startedAt; // freezes once finished
   const stats = `${formatFleetElapsed(elapsedMs)} · ${formatFleetTokens(tokens)}`;
-  const right = statusWord !== undefined ? `${statusWord} · ${stats}` : stats;
-  return rightAlign(left, theme.fg("dim", right), width);
+  if (statusWord === undefined) return rightAlign(left, theme.fg("dim", stats), width);
+  return rightAlign(left, statusWord + theme.fg("dim", ` · ${stats}`), width);
 }
 
 export class FleetList {
