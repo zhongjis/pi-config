@@ -502,7 +502,7 @@ describe("GraphRunReporter — static graph progress", () => {
       initialPanelState(),
       { width: 100, rows: 40, now: 1_700_000_000_000 },
     ).join("\n");
-    expect(rendered).toContain("1/5 nodes");
+    expect(rendered).toContain("✓ 1 done");
     expect(rendered).toContain("5 agents");
     expect(rendered).toContain("synthesize");
 

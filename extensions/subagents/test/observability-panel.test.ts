@@ -50,8 +50,9 @@ describe("Herdr presentation", () => {
     const lines = render(); const rows = roster(lines);
     expect(rows.filter(line => line.includes("context-gather"))).toHaveLength(1);
     expect(rows[0]).toMatch(/context-gather\s+COMPLETED/);
-    expect(rows.join("\n")).toContain("8 agents · 3 coordination nodes · 2 iterations · 2m40s");
-    expect(rows.join("\n")).toContain("11/11 nodes");
+    expect(rows.join("\n")).toContain("8 agents · 3 coordination nodes · 2 iterations");
+    expect(lines.at(-2)).toContain("✓ 11 done");
+    expect(lines.at(-2)?.trimEnd().endsWith("2m40s")).toBe(true);
     expect(rows.filter(line => /✓ done/.test(line))).toHaveLength(11);
     expect(rows.filter(line => /↻ Iteration/.test(line))).toHaveLength(2);
     expect(rows.filter(line => /continue|sufficient/.test(line))).toHaveLength(2);

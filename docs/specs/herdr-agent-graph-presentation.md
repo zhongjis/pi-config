@@ -23,7 +23,7 @@ The result is technically complete but visually expensive. An operator must tran
 
 Present the graph panel in Pi and in the Herdr pane as a dense, hierarchy-first workflow inspector; the Herdr pane stays read-only:
 
-1. Show one stable run identity, one human description, and one honest aggregate summary.
+1. Show one stable run identity, one human description, and one honest composition-only aggregate summary; carry live elapsed on the `∑` status line rather than the aggregate.
 2. Render the effective graph as a compact tree. Indentation expresses containment: workflow → coordinator → iteration → fanout/evaluator → generated agent item. Vertical order expresses progression. Dependencies that cannot be represented honestly as containment remain in selected-node detail.
 3. Give each graph node one physical roster row. Keep the status symbol, short status text, node label, and trailing role/model metadata on that row.
 4. Represent bounded-feedback rounds with a `↻ Iteration N` structural row instead of repeating `· iteration N` on every child.
@@ -35,30 +35,31 @@ Present the graph panel in Pi and in the Herdr pane as a dense, hierarchy-first 
 10. Preserve width safety, Unicode/ASCII fallback, read-only behavior, filters, folding, run switching, scrolling, contextual key hints, and the existing render fallback.
 11. Preserve the same hierarchy, counts, configured workflow description, iteration decisions, and flow after extension or session reload.
 12. Resolve historical selected-node prompt and outcome from bounded session artifacts on demand when available; never copy that content or its private location into graph history.
+13. On a live run, carry elapsed and lifecycle composition on a `∑` status line above the footer, bracket the elapsed of each running or queued agent row, and fold the settled frontier first when a bounded pane cannot show the whole roster.
 
 ### Exact accepted mock
 
-The following prototype mock is normative. Text may change only when required by the actual run data, current lifecycle, configured keybindings, terminal width, or Unicode/ASCII mode. Hierarchy, ordering, density, labels, disclosure, and emphasis MUST match it.
+The following mock is a real capture of the completed `context-gather` fixture at 72 columns and is normative. Text may change only when required by the actual run data, current lifecycle, configured keybindings, terminal width, or Unicode/ASCII mode. Hierarchy, ordering, density, labels, disclosure, and emphasis MUST match it.
 
 ```text
- context-gather                                             COMPLETED
+ context-gather                                                COMPLETED
  Adaptively gather evidence with one gap-closing pass
- 8 agents · 3 coordination nodes · 2 iterations · 2m40s
+ 8 agents · 3 coordination nodes · 2 iterations
 
- ▾ Workflow ───────────────────────────────────────────── 11/11 nodes
+ ▾ Graph run ───────────────────────────────────────────────────────────
 
-     ├─ ✓ done  Research                     bounded feedback · 2 iterations
-     │  ├─ ↻ Iteration 1                                      continue
-     │  │  ├─ ✓ done  Gather evidence               fanout · 4 agents
-     │  │  │  ├─ ✓ done  item 1            chengfeng · GPT-5.6 Luna
-     │  │  │  ├─ ✓ done  item 2            chengfeng · GPT-5.6 Luna
-   › │  │  │  ├─ ✓ done  item 3            chengfeng · GPT-5.6 Luna
-     │  │  │  └─ ✓ done  item 4             wenchang · GPT-5.6 Luna
-     │  │  └─ ✓ done  Evaluate evidence      direnjie · GPT-5.6 Sol
-     │  └─ ↻ Iteration 2                                    sufficient
-     │     ├─ ✓ done  Gather evidence                fanout · 1 agent
-     │     │  └─ ✓ done  item 1            chengfeng · GPT-5.6 Luna
-     │     └─ ✓ done  Evaluate evidence      direnjie · GPT-5.6 Sol
+     ├─ ✓ done  Research                 bounded feedback · 2 iterations
+     │  ├─ ↻ Iteration 1                                        continue
+     │  │  ├─ ✓ done  Gather evidence                  fanout · 4 agents
+     │  │  │  ├─ ✓ done  item 1                 chengfeng · GPT-5.6 Luna
+     │  │  │  ├─ ✓ done  item 2                 chengfeng · GPT-5.6 Luna
+   › │  │  │  ├─ ✓ done  item 3                 chengfeng · GPT-5.6 Luna
+     │  │  │  └─ ✓ done  item 4                 chengfeng · GPT-5.6 Luna
+     │  │  └─ ✓ done  Evaluate evidence           direnjie · GPT-5.6 Sol
+     │  └─ ↻ Iteration 2                                      sufficient
+     │     ├─ ✓ done  Gather evidence                   fanout · 1 agent
+     │     │  └─ ✓ done  item 1                 chengfeng · GPT-5.6 Luna
+     │     └─ ✓ done  Evaluate evidence           direnjie · GPT-5.6 Sol
      └─ ✓ done  Synthesize context               jintong · GPT-5.6 Terra
 
 
@@ -73,19 +74,56 @@ The following prototype mock is normative. Text may change only when required by
            └─ Evaluate evidence · iteration 1
 
  Prompt
-   Investigate current Herdr side-panel presentation.
-   Explain hierarchy, visible states, and focused polish…    Enter expand
+   retained prompt retained prompt retained prompt retained prompt
+   retained prompt retained prompt retained pr…  Enter expand (+8 lines)
 
  Outcome
-   Found current dashboard hierarchy, status vocabulary,
-   presentation constraints, and focused polish options…    Enter expand
+   retained outcome retained outcome retained outcome retained outcome
+   retained outcome retained outcome retained …  Enter expand (+8 lines)
 
  Metadata
    45,423 tokens · 11 tools
    Key: research
-   Instance: 95b97c52…                                  Space identity
+   Instance: work-1-2…                                    Space identity
+ ∑ ✓ 11 done                                                       2m40s
+ ↑↓ select · Enter expand · Space fold · f filter · c convo · Esc close
+```
 
- ↑↓ select · Enter expand · Space fold · f filter · e inputs · Esc close
+### Live frontier mock
+
+While a run is live in a bounded pane, the panel folds the settled frontier first and reports composition on a `∑` status line above the footer. This capture of the in-flight bounded-feedback fixture at 72×30 is normative:
+
+```text
+ context-gather                                                  RUNNING
+ Adaptively gather evidence with one gap-closing pass
+ 9 agents · 3 coordination nodes · 2 iterations
+
+ ▾ Graph run ───────────────────────────────────────────────────────────
+
+     ├─ ● running  Research              bounded feedback · 2 iterations
+     │  ├─ ↻ Iteration 1 ▸                             6 done · continue
+     │  └─ ↻ Iteration 2
+     │     ├─ ● running  Gather evidence               fanout · 2 agents
+     │     │  ├─ ✓ done     item 1              chengfeng · GPT-5.6 Luna
+   › │     │  └─ ● running  item 2 [21s]        chengfeng · GPT-5.6 Luna
+     │     └─ ○ queued   Evaluate evidence [50s]  direnjie · GPT-5.6 Sol
+     └─ ○ queued   Synthesize context [3m20s]    jintong · GPT-5.6 Terra
+
+
+ ─ Selected node ──────────────────────────────────────────────────────
+
+ Gather evidence · iteration 2 · item 2
+ Running · agent · chengfeng · GPT-5.6 Luna · 21s
+
+ Flow
+   Gather evidence · iteration 2
+      └─ this agent
+
+
+
+
+ ∑ ● 3 running · ○ 2 queued · ✓ 7 done                             3m20s
+ ↑↓ select · Enter expand · Space fold · f filter · Esc close
 ```
 
 ### Visual semantics
@@ -98,6 +136,8 @@ The following prototype mock is normative. Text may change only when required by
 - The selection gutter is independent from tree and status columns. Reverse video is preferred; `›` is the visible fallback. Selecting a row restores full contrast to that row.
 - Node labels remain normal foreground. Tree rails, separators, structural counts, iteration decisions, node types, models, and telemetry are subordinate. Settled functional-node identity MUST NOT resemble disabled content.
 - At narrow widths preserve, in order: selection, tree position, status text, and node identity. Drop or wrap model, actor, role, and coordination metadata before truncating primary state.
+- Running and queued agent rows carry a dim elapsed bracket after the label (`item 2 [21s]`, `Evaluate evidence [50s]`), anchored on `startedAt` for running and `queuedAt` for queued and frozen at `pausedAt` while the run is paused. Coordination rows and settled rows never bracket, and the trailing `waiting` annotation is not repeated. A bracket appears whole or not at all. Under width pressure trailing metadata drops the model before the agent type.
+- The `∑` status line sits directly above the footer and counts every entry by lifecycle in the fixed order failed, blocked, stopped, running, paused, queued, done, skipped, omitting zero categories. Each segment keeps its lifecycle color; elapsed is right-aligned and uncolored. Under width pressure it drops the glyphs first, then trailing segments, always keeping elapsed. ASCII mode drops the `∑` glyph and uses the ASCII lifecycle glyphs.
 
 ### Structural semantics
 
@@ -110,6 +150,8 @@ The following prototype mock is normative. Text may change only when required by
 - The selected-node `Flow` section expresses the immediate upstream → selected node → immediate downstream relationship. Multi-parent, cross-group, conditional, and loop dependencies remain explicit there rather than being falsified as tree ownership.
 - Iteration decisions such as `continue` and `sufficient` appear once on the iteration row.
 - Generated item labels are local to their fanout (`item 1`) because iteration and fanout context are already visible in the tree. Selected-node identity retains the complete binding label.
+- Under a bounded live pane the roster auto-folds its settled frontier: only while the run is running or paused, only when the roster overflows its height budget, folding the topmost eligible group first and stopping once the roster fits. The budget always assumes the `Selected node` zone takes its full share, so moving the cursor between node and structural rows never folds or unfolds other groups. A group is eligible only when it has children, every entry beneath it is `done`, the user has not expanded it, and the cursor does not sit inside it. A folded settled iteration summarizes as `N done · decision`.
+- Auto-fold is derived per render and never persisted, so roster navigation targets always equal the rendered rows. A user Space toggle wins over auto-fold: expanding an auto-folded group records it in `expandedTargets` and keeps it open; folding records it in `collapsedTargets`. Run switching clears both.
 
 ## User Stories
 
@@ -164,6 +206,8 @@ The following prototype mock is normative. Text may change only when required by
 - Version 1 history remains readable with its explicit flat fallback. Unknown future versions remain untouched with writes disabled. Version 2 decoding strictly allowlists fields and rejects invalid references, self-parenting, containment cycles, and out-of-bounds topology.
 - Graph-owned transcript artifacts use deterministic run-ID plus history-index aliases. Historical detail resolves them only while they remain in the current session artifact area; graph history stores neither content, paths, runtime IDs, conversation handles, nor artifact availability promises.
 - Presentation work MUST NOT change graph execution, model-visible tool content, notification delivery, orchestration permissions, or execution-recovery snapshots.
+- A single height-budget helper derives the roster floor, header rows, detail cap, and roster cap; `planPanel` reads its roster cap to decide frontier auto-fold and `renderPanelLines` reads it to lay out, so folding and layout agree. From three rows up, the bottom two physical rows are reserved for the `∑` line and footer; a two-row pane keeps one content row and the footer, a one-row pane keeps only the footer, and a zero-row pane renders nothing.
+- Panel state gains an optional user-owned `expandedTargets`. Effective folds are `collapsedTargets` plus the per-render auto-fold set, which never includes a group in `expandedTargets`. The pane manager and run switching reset both `collapsedTargets` and `expandedTargets`.
 
 ## Testing Decisions
 
@@ -180,6 +224,7 @@ The following prototype mock is normative. Text may change only when required by
 - Runtime verification uses a fresh Pi session launched through `interactive_shell` to execute the saved `context-gather` graph. Execution evidence proves real fanout, bounded-feedback evaluation and decisions, and synthesis; multi-iteration fixtures cover the continuation shape deterministically.
 - Presentation verification uses Herdr itself, following `herdr --skill`, because the interactive-shell terminal does not display the Herdr side pane. Live and post-reload captures MUST each be compared line-by-line and hierarchy-by-hierarchy against the exact accepted mock at a representative wide size and once at a narrow width.
 - Real verification checks semantic colors, Unicode/ASCII fallback where configurable, reverse-video selection, node-row density, iteration grouping, selected-node detail ordering, width safety, contextual footer hints, and cleanup of every temporary Pi/Herdr process.
+- `herdr-panel-live-frontier.test.ts` covers the live-run presentation through the same public seam: the `∑` composition line with its authoritative order, zero-omission, width degradation, and ASCII fallback; per-node elapsed brackets and paused lifecycle; frontier auto-fold guards; user-toggle-wins over auto-fold; and the normative live-frontier mock at 72×30 and 44×30.
 
 ## Out of Scope
 

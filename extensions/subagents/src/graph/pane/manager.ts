@@ -255,6 +255,7 @@ export class GraphRunPaneManager {
       // Stages differ per graph; keep the user's filter intent across the switch.
       this.panelState.collapsedStages = [];
       this.panelState.collapsedTargets = [];
+      this.panelState.expandedTargets = [];
       this.lastPanelRunId = shownId;
     }
     return index;

@@ -49,6 +49,8 @@ export interface PanelState {
   /** Compatibility with existing panel state: stage 0 is the graph run root. */
   collapsedStages: number[];
   collapsedTargets?: Target[];
+  /** Groups the user explicitly expanded; they stay open even when frontier auto-fold would fold them. */
+  expandedTargets?: Target[];
   /** Which zone owns the cursor: the roster overview (default) or the drilled-in detail. (v3) */
   focus: "roster" | "detail";
   /** Index into the detail's navigable (expandable) sections. (v3) */
@@ -203,12 +205,12 @@ function presentationTree(agents: readonly GraphRunAgentEntry[]): TreeNode {
   for (const owner of iterations.keys()) owner.children.sort((a, b) => a.target.kind === "iteration" && b.target.kind === "iteration" ? a.target.iteration - b.target.iteration : 0);
   return root;
 }
-function visibleTree(root: TreeNode, state: PanelState, active: boolean, ascii: boolean): TreeRow[] {
+function visibleTree(root: TreeNode, state: PanelState, active: boolean, ascii: boolean, folded: readonly Target[]): TreeRow[] {
   const matches = (node: TreeNode): boolean => state.filter === "all" || (node.entry && displayState(node.entry, active) === state.filter) || node.children.some(matches);
   const rows: TreeRow[] = [];
   const visit = (node: TreeNode, rails: string, last: boolean, parent?: Target): void => {
     rows.push({ node, rails, last, parent });
-    if ((state.collapsedTargets ?? []).some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0)) return;
+    if (folded.some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0)) return;
     const children = node.children.filter(matches);
     children.forEach((child, i) => { visit(child, parent ? rails + (last ? "   " : ascii ? "|  " : "│  ") : "", i === children.length - 1, node.target); });
   };
@@ -223,7 +225,7 @@ function lifecycle(entry: GraphRunAgentEntry, run: PanelRun, ascii: boolean): { 
     : { done: "✓", running: "●", queued: "○", blocked: "!", failed: "×", skipped: "–", interrupted: "■" };
   return { word: statusWord(state), glyph: glyphs[state], color: stateColor(state) };
 }
-function aggregate(agents: readonly GraphRunAgentEntry[], root: TreeNode, run: PanelRun, now: number): string {
+function aggregate(agents: readonly GraphRunAgentEntry[], root: TreeNode): string {
   const known = agents.filter(entry => entry.presentation);
   const counts: string[] = [];
   const count = (n: number, singular: string, plural = `${singular}s`) => { if (n) counts.push(`${n} ${n === 1 ? singular : plural}`); };
@@ -232,13 +234,13 @@ function aggregate(agents: readonly GraphRunAgentEntry[], root: TreeNode, run: P
   count(agents.length - known.length, "unclassified node");
   const rounds = (node: TreeNode): number => (node.target.kind === "iteration" ? 1 : 0) + node.children.reduce((sum, child) => sum + rounds(child), 0);
   count(rounds(root), "iteration");
-  const task = run.source.task;
-  if (task.startTime !== undefined) counts.push(formatDuration(Math.max(0, (task.endTime ?? task.pausedAt ?? now) - task.startTime - (task.totalPausedMs ?? 0))));
   return counts.join(" · ");
 }
-function withTrailing(line: GraphRunCardLine, metadata: string, width: number): GraphRunCardLine {
+function withTrailing(line: GraphRunCardLine, metadata: string | readonly string[], width: number): GraphRunCardLine {
   const used = line.reduce((sum, segment) => sum + visibleWidth(segment.text), 0);
-  if (metadata && used + visibleWidth(metadata) + 2 <= width) line.push({ text: " ".repeat(width - used - visibleWidth(metadata)) + metadata, color: "dim" });
+  const candidates = typeof metadata === "string" ? [metadata] : metadata;
+  const chosen = candidates.find(candidate => candidate.length > 0 && used + visibleWidth(candidate) + 2 <= width);
+  if (chosen !== undefined) line.push({ text: " ".repeat(width - used - visibleWidth(chosen)) + chosen, color: "dim" });
   return clampLine(line, width);
 }
 function rosterLines(plan: PanelPlan, state: PanelState): { lines: GraphRunCardLine[]; selectedRow?: number } {
@@ -249,29 +251,54 @@ function rosterLines(plan: PanelPlan, state: PanelState): { lines: GraphRunCardL
   for (const [index, row] of visible.entries()) {
     const { node, rails, last } = row;
     const selected = resolvedCursor && sameTarget(node.target, resolvedCursor);
-    const folded = (state.collapsedTargets ?? []).some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0);
+    const folded = plan.folded.some(target => sameTarget(target, node.target)) || node.target.kind === "stage" && state.collapsedStages.includes(0);
     let line: GraphRunCardLine;
     if (node.target.kind === "stage") {
       const title = ` ${ascii ? folded ? ">" : "v" : folded ? "▸" : "▾"} Graph run `;
-      const count = `${plan.agents.filter(entry => entry.state === "done").length}/${plan.agents.length} nodes`;
-      line = clampLine([{ text: title }, { text: (ascii ? "-" : "─").repeat(Math.max(1, width - visibleWidth(title) - count.length - 1)) + " " + count, color: "dim" }], width);
+      line = clampLine([{ text: title }, { text: (ascii ? "-" : "─").repeat(Math.max(1, width - visibleWidth(title))), color: "dim" }], width);
     } else {
       const compact = width < 40;
       const gutter = selected ? ascii ? "> " : "› " : "  ";
       const tree = compact ? rails.replaceAll("  ", "") : rails;
       const branch = ascii ? last ? "`" : "+" : last ? "└" : "├";
       const prefix = [{ text: (compact ? "" : "   ") + gutter }, { text: tree + branch + (compact ? " " : ascii ? "- " : "─ "), color: "dim" as const }];
+      const foldMarker = folded ? [{ text: ascii ? " [+]" : " ▸", color: "dim" as const }] : [];
       if (node.entry) {
         const status = lifecycle(node.entry, run, ascii);
         const field = `${status.glyph} ${status.word}`;
-        const metadata = node.entry.presentation;
-        let trailing = metadata?.kind === "bounded_feedback" ? `bounded feedback${node.children.length ? ` · ${node.children.length} iteration${node.children.length === 1 ? "" : "s"}` : ""}`
-          : metadata?.kind === "fanout" ? `fanout${node.children.length ? ` · ${node.children.length} agent${node.children.length === 1 ? "" : "s"}` : ""}`
-          : [node.entry.agentType, node.entry.model ?? node.entry.modelId].filter(Boolean).join(" · ");
-        const annotations = subStatusAnnotations(node.entry, displayState(node.entry, plan.active), plan.now).filter(value => value !== "replayed" && value !== "cached" && value !== "from resume journal");
-        if (annotations.length) trailing += `${trailing ? " · " : ""}${annotations.join(" · ")}`;
-        line = withTrailing([...prefix, { text: field, color: status.color }, { text: " ".repeat(compact ? 1 : Math.max(2, statusWidth - visibleWidth(field))) + node.label }, ...(node.entry.cached ? [{ text: " · replayed", color: "dim" as const }] : []), ...(folded ? [{ text: ascii ? " [+]" : " ▸", color: "dim" as const }] : [])], trailing, width);
-      } else line = withTrailing([...prefix, { text: `${ascii ? "" : "↻ "}${node.label}` }, ...(folded ? [{ text: ascii ? " [+]" : " ▸", color: "dim" as const }] : [])], node.decision ?? "", width);
+        const meta = node.entry.presentation;
+        const annotations = subStatusAnnotations(node.entry, displayState(node.entry, plan.active), plan.now).filter(value => value !== "replayed" && value !== "cached" && value !== "from resume journal" && !value.startsWith("waiting "));
+        const coordination = meta?.kind === "fanout" || meta?.kind === "bounded_feedback";
+        let trailing: string | readonly string[];
+        if (coordination) {
+          let coord = meta?.kind === "bounded_feedback" ? `bounded feedback${node.children.length ? ` · ${node.children.length} iteration${node.children.length === 1 ? "" : "s"}` : ""}`
+            : `fanout${node.children.length ? ` · ${node.children.length} agent${node.children.length === 1 ? "" : "s"}` : ""}`;
+          if (annotations.length) coord += ` · ${annotations.join(" · ")}`;
+          trailing = coord;
+        } else {
+          const model = node.entry.model ?? node.entry.modelId;
+          trailing = [
+            [node.entry.agentType, model, ...annotations].filter(Boolean).join(" · "),
+            [node.entry.agentType, ...annotations].filter(Boolean).join(" · "),
+            annotations.join(" · "),
+          ].filter((candidate, i, all) => candidate.length > 0 && all.indexOf(candidate) === i);
+        }
+        const displayed = displayState(node.entry, plan.active);
+        const anchorTime = coordination ? undefined : displayed === "running" ? node.entry.startedAt : displayed === "queued" ? node.entry.queuedAt : undefined;
+        const cells = [...prefix, { text: field, color: status.color }, { text: " ".repeat(compact ? 1 : Math.max(2, statusWidth - visibleWidth(field))) + node.label }];
+        if (anchorTime !== undefined) {
+          const bracket = { text: ` [${formatDuration(Math.max(0, (run.source.task.pausedAt ?? plan.now) - anchorTime))}]`, color: "dim" as const };
+          if (cells.reduce((sum, segment) => sum + visibleWidth(segment.text), 0) + visibleWidth(bracket.text) <= width) cells.push(bracket);
+        }
+        line = withTrailing([...cells, ...(node.entry.cached ? [{ text: " · replayed", color: "dim" as const }] : []), ...foldMarker], trailing, width);
+      } else {
+        const entries = subtreeEntries(node);
+        const allDone = folded && entries.length > 0 && entries.every(entry => displayState(entry, plan.active) === "done");
+        const trailing: string | readonly string[] = allDone
+          ? node.decision ? [`${entries.length} done · ${node.decision}`, node.decision] : [`${entries.length} done`]
+          : node.decision ?? "";
+        line = withTrailing([...prefix, { text: `${ascii ? "" : "↻ "}${node.label}` }, ...foldMarker], trailing, width);
+      }
     }
     if (resolvedCursor && sameTarget(node.target, resolvedCursor)) selectedRow = lines.length;
     lines.push(selected && state.focus === "roster" ? highlightRow(line, width) : line);
@@ -520,7 +547,92 @@ interface PanelPlan {
   index: number; run: PanelRun; active: boolean; agents: GraphRunAgentEntry[];
   ascii: boolean; width: number; now: number; headerLines: GraphRunCardLine[];
   visible: TreeRow[]; resolvedCursor?: Target; targets: Target[];
-  detailSections: DetailSection[]; navigable: DetailSection[];
+  detailSections: DetailSection[]; navigable: DetailSection[]; folded: Target[];
+}
+function subtreeEntries(node: TreeNode): GraphRunAgentEntry[] {
+  const entries: GraphRunAgentEntry[] = [];
+  const walk = (current: TreeNode): void => { if (current.entry) entries.push(current.entry); for (const child of current.children) walk(child); };
+  walk(node);
+  return entries;
+}
+function descendantTargets(node: TreeNode): Target[] {
+  const targets: Target[] = [];
+  const walk = (current: TreeNode): void => { for (const child of current.children) { targets.push(child.target); walk(child); } };
+  walk(node);
+  return targets;
+}
+/** Bottom rows owned by the ∑ status line and key-hint footer; ∑ yields first so a 2-row pane still shows its selected row. */
+function reservedRows(rows: number | undefined): number {
+  return rows === undefined || rows >= 3 ? 2 : rows >= 1 ? 1 : 0;
+}
+/** Shared roster/detail height caps so planPanel's auto-fold and renderPanelLines lay out against the same budget. */
+function heightBudget(rosterLen: number, headerLen: number, detailLen: number, rows: number, reserved: number): { headerRows: number; detailCap: number; rosterCap: number } {
+  const rosterFloor = Math.min(rosterLen, 3, Math.max(0, rows - reserved));
+  const headerRows = Math.min(headerLen, Math.max(0, rows - reserved - rosterFloor));
+  const capacity = Math.max(0, rows - headerRows - reserved);
+  const detailCap = detailLen ? Math.min(detailLen, Math.max(0, Math.min(capacity - rosterFloor - 2, Math.max(5, Math.floor(capacity * .4))))) : 0;
+  const rosterCap = Math.max(0, capacity - detailCap - (detailCap ? 2 : 0));
+  return { headerRows, detailCap, rosterCap };
+}
+/** Frontier-first: fold the topmost settled groups until the roster fits; derived per render, never stored. */
+function autoFoldTargets(visible: TreeRow[], state: PanelState, active: boolean, rosterCap: number, cursor: Target | undefined): Target[] {
+  const collapsed = state.collapsedTargets ?? [];
+  const expanded = state.expandedTargets ?? [];
+  const auto: Target[] = [];
+  const hidden: Target[] = [];
+  let rosterLen = visible.length + (visible.length > 1 ? 1 : 0);
+  for (const row of visible) {
+    if (rosterLen <= rosterCap) break;
+    const node = row.node;
+    if (node.target.kind === "stage" || node.children.length === 0) continue;
+    if (hidden.some(target => sameTarget(target, node.target))) continue;
+    if (collapsed.some(target => sameTarget(target, node.target)) || expanded.some(target => sameTarget(target, node.target))) continue;
+    const entries = subtreeEntries(node);
+    if (entries.length === 0 || !entries.every(entry => displayState(entry, active) === "done")) continue;
+    const descendants = descendantTargets(node);
+    if (cursor && descendants.some(target => sameTarget(target, cursor))) continue;
+    auto.push(node.target);
+    hidden.push(...descendants);
+    rosterLen -= visible.filter(other => descendants.some(target => sameTarget(target, other.node.target))).length;
+  }
+  return auto;
+}
+/** The ∑ composition line: every entry bucketed by lifecycle word in a fixed order, elapsed right-aligned. */
+function summaryLine(plan: PanelPlan, width: number): GraphRunCardLine {
+  const { agents, run, ascii, now } = plan;
+  const order = ["failed", "blocked", "stopped", "running", "paused", "queued", "done", "skipped"];
+  const buckets = new Map<string, { glyph: string; color: GraphRunCardColor; count: number }>();
+  for (const entry of agents) {
+    const { word, glyph, color } = lifecycle(entry, run, ascii);
+    const bucket = buckets.get(word);
+    if (bucket) bucket.count += 1;
+    else buckets.set(word, { glyph, color, count: 1 });
+  }
+  let segments = order.flatMap(word => { const bucket = buckets.get(word); return bucket ? [{ word, ...bucket }] : []; });
+  const task = run.source.task;
+  const elapsed = task.startTime !== undefined
+    ? formatDuration(Math.max(0, (task.endTime ?? task.pausedAt ?? now) - task.startTime - (task.totalPausedMs ?? 0)))
+    : "";
+  const elapsedWidth = visibleWidth(elapsed);
+  const build = (glyphs: boolean): GraphRunCardSegment[] => {
+    const parts: GraphRunCardSegment[] = [{ text: ascii ? " " : " ∑ ", color: "dim" }];
+    segments.forEach((segment, i) => {
+      if (i > 0) parts.push({ text: " · ", color: "dim" });
+      parts.push({ text: glyphs ? `${segment.glyph} ${segment.count} ${segment.word}` : `${segment.count} ${segment.word}`, color: segment.color });
+    });
+    return parts;
+  };
+  const usedOf = (parts: GraphRunCardSegment[]): number => parts.reduce((sum, part) => sum + visibleWidth(part.text), 0);
+  let parts = build(true);
+  if (usedOf(parts) + elapsedWidth + 2 > width) {
+    parts = build(false);
+    while (segments.length > 0 && usedOf(parts) + elapsedWidth + 2 > width) {
+      segments = segments.slice(0, -1);
+      parts = build(false);
+    }
+  }
+  if (elapsed) parts.push({ text: " ".repeat(Math.max(0, width - usedOf(parts) - elapsedWidth)) + elapsed });
+  return clampLine(parts, width);
 }
 function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOptions): PanelPlan | null {
   if (!runs.length) return null;
@@ -532,9 +644,13 @@ function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOpti
   const active = isActive(run.status);
   const agents = collapse(run.source.progress).agents;
   const tree = presentationTree(agents);
-  const visible = visibleTree(tree, state, active, ascii);
-  const targets = visible.map(row => row.node.target);
-  const resolvedCursor = targets[targetIndex(targets, state.cursor)] ?? targets[0];
+  // Budget and auto-fold read the fully expanded roster before any frontier fold.
+  const collapsed = state.collapsedTargets ?? [];
+  const preVisible = visibleTree(tree, state, active, ascii, collapsed);
+  const preTargets = preVisible.map(row => row.node.target);
+  const preCursor = preTargets[targetIndex(preTargets, state.cursor)] ?? preTargets[0];
+  const selected = preCursor?.kind === "node" ? agents.find(entry => nodeId(entry, agents) === preCursor.id) : undefined;
+  const detailSections = selected ? nodeDetailSections(selected, { agents, active, run, ascii, width, now }, state.expandedSections) : [];
   const headerLines = [withTrailing([{ text: ` ${run.name}`, color: "toolTitle" as const, bold: true }], run.status === "killed" ? "STOPPED" : run.status.toUpperCase(), width)];
   // The lifecycle is semantic color, never a duplicate glyph.
   const statusSegment = headerLines[0].at(-1);
@@ -542,14 +658,28 @@ function planPanel(runs: readonly PanelRun[], state: PanelState, opts: PanelOpti
   else headerLines.push(clampLine([{ text: ` ${run.status === "killed" ? "STOPPED" : run.status.toUpperCase()}`, color: runStateColor(run.status) }], width));
   if (runs.length > 1) headerLines.push(clampLine([{ text: ` ${index + 1}/${runs.length} · ${runs.filter((_, i) => i !== index).map(other => other.name).join(" · ")}`, color: "dim" }], width));
   headerLines.push(...graphContextLines(run.source, width, state.expandedSections, opts.rows == null ? undefined : Math.max(2, opts.rows - 8)));
-  headerLines.push(clampLine([{ text: ` ${aggregate(agents, tree, run, now)}`, color: "dim" }], width));
+  headerLines.push(clampLine([{ text: ` ${aggregate(agents, tree)}`, color: "dim" }], width));
   if (state.filter !== "all") headerLines.push(clampLine([{ text: ` Filter: ${state.filter}`, color: "warning" }], width));
   if (agents.some(entry => !entry.presentation)) headerLines.push(clampLine([{ text: " Flat fallback: ownership unavailable for unclassified nodes", color: "dim" }], width));
   if (run.source.history) headerLines.push(...wrapTextWithAnsi(historyDisclosure(run.source.history, !!run.readHistoricalDetail), Math.max(1, width)).map(text => clampLine([{ text, color: "dim" }], width)));
   headerLines.push([]);
-  const selected = resolvedCursor?.kind === "node" ? agents.find(entry => nodeId(entry, agents) === resolvedCursor.id) : undefined;
-  const detailSections = selected ? nodeDetailSections(selected, { agents, active, run, ascii, width, now }, state.expandedSections) : [];
-  return { index, run, active, agents, ascii, width, now, headerLines, visible, resolvedCursor, targets, detailSections, navigable: detailSections.filter(section => section.navigable) };
+  // Fold the settled frontier only under a bounded live height, never a group the user expanded or the cursor sits inside.
+  let folded = collapsed;
+  if (active && opts.rows !== undefined) {
+    const reserved = reservedRows(opts.rows);
+    const rosterLen = preVisible.length + (preVisible.length > 1 ? 1 : 0);
+    // Budget as if the detail zone takes its full share, so moving the cursor between node and
+    // structural rows (with and without detail) never folds or unfolds other groups.
+    const { rosterCap } = heightBudget(rosterLen, headerLines.length, Number.MAX_SAFE_INTEGER, opts.rows, reserved);
+    if (rosterLen > rosterCap) {
+      const auto = autoFoldTargets(preVisible, state, active, rosterCap, preCursor);
+      if (auto.length) folded = [...collapsed, ...auto];
+    }
+  }
+  const visible = folded === collapsed ? preVisible : visibleTree(tree, state, active, ascii, folded);
+  const targets = visible.map(row => row.node.target);
+  const resolvedCursor = targets[targetIndex(targets, state.cursor)] ?? targets[0];
+  return { index, run, active, agents, ascii, width, now, headerLines, visible, resolvedCursor, targets, detailSections, navigable: detailSections.filter(section => section.navigable), folded };
 }
 function footerLine(plan: PanelPlan, state: PanelState, runCount: number, controls: boolean, detach: boolean, range?: string): GraphRunCardLine {
   const { run, active, ascii, width, resolvedCursor, agents, navigable } = plan;
@@ -594,12 +724,10 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
   let header = plan.headerLines;
   let body = [...roster, [], [], ...detail];
   let range: string | undefined;
+  const reserved = reservedRows(opts.rows);
   if (opts.rows !== undefined) {
-    const rosterFloor = Math.min(roster.length, 3, Math.max(0, opts.rows - 1));
-    header = header.slice(0, Math.max(0, opts.rows - 1 - rosterFloor));
-    const capacity = Math.max(0, opts.rows - header.length - 1);
-    const detailCap = detail.length ? Math.min(detail.length, Math.max(0, Math.min(capacity - rosterFloor - 2, Math.max(5, Math.floor(capacity * .4))))) : 0;
-    const rosterCap = Math.max(0, capacity - detailCap - (detailCap ? 2 : 0));
+    const { headerRows, detailCap, rosterCap } = heightBudget(roster.length, header.length, detail.length, opts.rows, reserved);
+    header = header.slice(0, headerRows);
     const selection = state.scroll === 0 ? selectedRow : undefined;
     const scroll = follow(roster.length, selection, state.scroll, rosterCap);
     const detailScroll = follow(detail.length, state.detailScroll === 0 ? selectedDetail : undefined, state.detailScroll, detailCap);
@@ -608,9 +736,11 @@ export function renderPanelLines(runs: readonly PanelRun[], state: PanelState, o
     body = [...roster.slice(scroll, scroll + rosterCap), ...(detailCap ? [[], []] : []), ...detail.slice(detailScroll, detailScroll + detailCap)];
   }
   const content = [...header, ...body];
-  const output = opts.rows === undefined ? content : padTo(content, Math.max(0, opts.rows - 1));
-  if (opts.rows !== 0) output.push(footerLine(plan, state, runs.length, opts.controls ?? false, opts.detach ?? false, range));
-  return output.map(line => clampLine(line, width));
+  const tail: GraphRunCardLine[] = [];
+  if (reserved === 2) tail.push(summaryLine(plan, width));
+  if (opts.rows !== 0) tail.push(footerLine(plan, state, runs.length, opts.controls ?? false, opts.detach ?? false, range));
+  const sized = opts.rows === undefined ? content : padTo(content, Math.max(0, opts.rows - reserved));
+  return [...sized, ...tail].map(line => clampLine(line, width));
 }
 const toggleSection = (keys: readonly string[], key: string): string[] =>
   keys.includes(key) ? keys.filter(k => k !== key) : [...keys, key];
@@ -637,7 +767,7 @@ export function applyPanelKey(
     // Persist the filter across a run switch; stages differ per graph, so reset to the overview.
     return render({
       runIndex: nextIndex, scroll: 0, detailScroll: 0, filter: state.filter,
-      collapsedStages: [], collapsedTargets: [], focus: "roster", detailCursor: 0, expandedSections: [],
+      collapsedStages: [], collapsedTargets: [], expandedTargets: [], focus: "roster", detailCursor: 0, expandedSections: [],
     });
   }
 
@@ -693,9 +823,15 @@ export function applyPanelKey(
     if (!row) return render(state);
     const target = row.node.children.length ? row.node.target : row.parent ?? { kind: "stage", stage: 0 };
     const collapsed = state.collapsedTargets ?? [];
-    const next = collapsed.some(item => sameTarget(item, target))
-      ? collapsed.filter(item => !sameTarget(item, target)) : [...collapsed, target];
-    return render({ ...state, collapsedStages: [], collapsedTargets: next, cursor: target, scroll: 0 });
+    const expanded = state.expandedTargets ?? [];
+    const effectivelyFolded = plan.folded.some(item => sameTarget(item, target)) || target.kind === "stage" && state.collapsedStages.includes(0);
+    const nextCollapsed = effectivelyFolded
+      ? collapsed.filter(item => !sameTarget(item, target))
+      : [...collapsed.filter(item => !sameTarget(item, target)), target];
+    const nextExpanded = effectivelyFolded
+      ? [...expanded.filter(item => !sameTarget(item, target)), target]
+      : expanded.filter(item => !sameTarget(item, target));
+    return render({ ...state, collapsedStages: [], collapsedTargets: nextCollapsed, expandedTargets: nextExpanded, cursor: target, scroll: 0 });
   }
 
   const down = matchesKey(data, "down") || matchesKey(data, "j");
