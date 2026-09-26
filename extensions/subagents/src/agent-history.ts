@@ -145,16 +145,33 @@ export function mergeAgentHistory(live: AgentRecord[], runs: readonly AgentHisto
   return [...live, ...history];
 }
 
+export type HistoryConversation =
+  | { ok: true; messages: AgentMessage[] }
+  | { ok: false; reason: "missing" | "unreadable" | "invalid"; code?: string };
+
+function readErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return;
+  return typeof error.code === "string" ? error.code : undefined;
+}
+
 /** Read-only. Never opens a SessionManager, which can rewrite legacy files. */
-export async function readHistoryConversation(sessionFile: string): Promise<AgentMessage[] | undefined> {
-  if (!validSessionFile(sessionFile)) return undefined;
+export async function readHistoryConversation(sessionFile: string): Promise<HistoryConversation> {
+  if (!validSessionFile(sessionFile)) return { ok: false, reason: "invalid" };
+  let text: string;
   try {
-    const entries = parseSessionEntries(await readFile(sessionFile, "utf8"));
-    if (!entries.some(entry => entry.type === "session")) return undefined;
+    text = await readFile(sessionFile, "utf8");
+  } catch (error) {
+    const code = readErrorCode(error);
+    if (code === "ENOENT" || code === "ENOTDIR") return { ok: false, reason: "missing" };
+    return code === undefined ? { ok: false, reason: "unreadable" } : { ok: false, reason: "unreadable", code };
+  }
+  try {
+    const entries = parseSessionEntries(text);
+    if (!entries.some(entry => entry.type === "session")) return { ok: false, reason: "invalid" };
     migrateSessionEntries(entries);
-    return buildSessionContext(entries.filter((entry): entry is SessionEntry => entry.type !== "session")).messages;
+    return { ok: true, messages: buildSessionContext(entries.filter((entry): entry is SessionEntry => entry.type !== "session")).messages };
   } catch {
-    return undefined;
+    return { ok: false, reason: "invalid" };
   }
 }
 

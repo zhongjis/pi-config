@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -181,16 +181,23 @@ describe("independent agent history", () => {
     expect(merged[1]).not.toHaveProperty("error");
   });
 
-  it("reads a v3 child transcript without writing it, and misses a missing file", async () => {
+  it("reads a v3 child transcript without writing it, and reports why a transcript cannot be read", async () => {
     const fixture = join(root, "transcript.jsonl");
     await writeFile(fixture, SESSION_JSONL);
     const before = await readFile(fixture);
-    const messages = await readHistoryConversation(fixture);
-    expect(JSON.stringify(messages)).toContain("VISIBLE_HISTORY");
+    const loaded = await readHistoryConversation(fixture);
     expect(await readFile(fixture)).toEqual(before);
-    expect(await readHistoryConversation(join(root, "missing.jsonl"))).toBeUndefined();
-    expect(await readHistoryConversation(join(root, "bad.jsonl"))).toBeUndefined();
+    expect(loaded).toEqual({ ok: true, messages: expect.any(Array) });
+    expect(JSON.stringify(loaded)).toContain("VISIBLE_HISTORY");
+    expect(await readHistoryConversation(join(root, "missing.jsonl"))).toEqual({ ok: false, reason: "missing" });
     await writeFile(join(root, "bad.jsonl"), "not-json\n");
-    expect(await readHistoryConversation(join(root, "bad.jsonl"))).toBeUndefined();
+    expect(await readHistoryConversation(join(root, "bad.jsonl"))).toEqual({ ok: false, reason: "invalid" });
+    await writeFile(join(root, "no-header.jsonl"), `${JSON.stringify({ type: "message", id: "m1" })}\n`);
+    expect(await readHistoryConversation(join(root, "no-header.jsonl"))).toEqual({ ok: false, reason: "invalid" });
+    expect(await readHistoryConversation("child.jsonl")).toEqual({ ok: false, reason: "invalid" });
+    await mkdir(join(root, "x.jsonl"));
+    expect(await readHistoryConversation(join(root, "x.jsonl"))).toEqual({ ok: false, reason: "unreadable", code: "EISDIR" });
+    await writeFile(join(root, "not-dir.jsonl"), "x");
+    expect(await readHistoryConversation(join(root, "not-dir.jsonl", "nested.jsonl"))).toEqual({ ok: false, reason: "missing" });
   });
 });

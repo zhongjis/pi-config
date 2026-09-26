@@ -1,6 +1,6 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join, sep } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import type { AgentRecord } from "../src/types.js";
@@ -65,6 +65,38 @@ describe("agent history conversation", () => {
     rendered = "";
     await menu.viewAgentConversation({ ui: { custom, notify: notify.fn } } as never, historyRecord(join(root, "missing.jsonl")));
     expect(rendered).toBe("");
-    expect(notify.calls).toContainEqual(["Conversation file is no longer available.", "info"]);
+    expect(notify.calls).toContainEqual([`Conversation file is missing: ${join(root, "missing.jsonl")}`, "info"]);
+  });
+
+  it("warns when a history file is not a Pi session", async () => {
+    root = await mkdtemp(join(tmpdir(), "agent-history-menu-"));
+    const bad = join(root, "bad.jsonl");
+    await writeFile(bad, "not-json\n");
+    const notify = { calls: [] as unknown[][], fn: (...args: unknown[]) => { notify.calls.push(args); } };
+    await menu.viewAgentConversation({ ui: { custom: async () => {}, notify: notify.fn } } as never, historyRecord(bad));
+    expect(notify.calls).toEqual([[`Conversation file is not a Pi session: ${bad}`, "warning"]]);
+  });
+
+  it("warns when a history file is unreadable", async () => {
+    root = await mkdtemp(join(tmpdir(), "agent-history-menu-"));
+    const dir = join(root, "x.jsonl");
+    await mkdir(dir);
+    const notify = { calls: [] as unknown[][], fn: (...args: unknown[]) => { notify.calls.push(args); } };
+    await menu.viewAgentConversation({ ui: { custom: async () => {}, notify: notify.fn } } as never, historyRecord(dir));
+    expect(notify.calls).toEqual([[`Conversation file is unreadable (EISDIR): ${dir}`, "warning"]]);
+  });
+
+  it("replaces the home directory only at a path-segment boundary", async () => {
+    const home = homedir();
+    const under = join(home, "pi-config-agent-history-missing.jsonl");
+    const sibling = join(`${home}2`, "missing.jsonl");
+    const notify = { calls: [] as unknown[][], fn: (...args: unknown[]) => { notify.calls.push(args); } };
+    const ui = { ui: { custom: async () => {}, notify: notify.fn } } as never;
+    await menu.viewAgentConversation(ui, historyRecord(under));
+    await menu.viewAgentConversation(ui, historyRecord(sibling));
+    expect(notify.calls).toEqual([
+      [`Conversation file is missing: ~${sep}pi-config-agent-history-missing.jsonl`, "info"],
+      [`Conversation file is missing: ${sibling}`, "info"],
+    ]);
   });
 });

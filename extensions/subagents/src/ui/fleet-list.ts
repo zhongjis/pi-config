@@ -16,7 +16,7 @@ import type { AgentManager } from "../agent-manager.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal } from "../usage.js";
 import { type AgentActivity, getDisplayName, type Theme } from "./agent-widget.js";
-import { ConversationViewer, VIEWPORT_HEIGHT_PCT } from "./conversation-viewer.js";
+import { openConversationOverlay } from "./conversation-overlay.js";
 
 /** Widget key for the below-editor fleet list. */
 const FLEET_KEY = "fleet";
@@ -424,36 +424,13 @@ export class FleetList {
     }
     const record = entry.record;
     if (!this.ui) return;
-    if (!record.session) {
-      this.ui.notify(`Agent is ${record.status} — no session available.`, "info");
-      return;
-    }
-    const session = record.session;
-    const activity = this.agentActivity.get(record.id);
     this.viewingAgentId = record.id;
-
-    void this.ui.custom<undefined>(
-      (tui, theme, keybindings, done) => {
-        this.viewerClose = () => done(undefined);
-        return new ConversationViewer(
-          tui,
-          session,
-          record,
-          activity,
-          theme,
-          done,
-          () => {
-            if (this.manager.abort(record.id)) this.ui?.notify(`Stopped "${record.description}".`, "info");
-          },
-          keybindings,
-          (message: string) => this.manager.steer(record.id, message),
-        );
-      },
-      {
-        overlay: true,
-        overlayOptions: { anchor: "center", width: "90%", maxHeight: `${VIEWPORT_HEIGHT_PCT}%` },
-      },
-    ).then(() => this.clearViewer(), () => this.clearViewer());
+    void openConversationOverlay(this.ui, record, {
+      manager: this.manager,
+      agentActivity: this.agentActivity,
+    }, {
+      onOpen: close => { this.viewerClose = close; },
+    }).then(() => this.clearViewer(), () => this.clearViewer());
   }
 
   /** Reset overlay state and return to the list (on close, auto-close, or error). */

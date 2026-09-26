@@ -1,9 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { type AgentSession, type ExtensionCommandContext, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { type ExtensionCommandContext, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../../lib/model-selection.js";
-import { readHistoryConversation } from "../agent-history.js";
 import { type AgentToolHost, THINKING_LEVELS } from "../agent-tool.js";
 import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes } from "../agent-types.js";
 import type { AgentConfig, AgentRecord } from "../types.js";
@@ -173,41 +172,8 @@ export function createAgentsMenu(
   }
 
   async function viewAgentConversation(ctx: GraphRunUIContext, record: AgentRecord) {
-    if (!record.session && record.sessionFile) {
-      const messages = await readHistoryConversation(record.sessionFile);
-      if (messages === undefined) {
-        ctx.ui.notify("Conversation file is no longer available.", "info");
-        return;
-      }
-      const { ConversationViewer, VIEWPORT_HEIGHT_PCT } = await import("./conversation-viewer.js");
-      const session = { messages, subscribe: () => () => {} } as unknown as AgentSession;
-      await ctx.ui.custom<undefined>(
-        (tui, theme, keybindings, done) => new ConversationViewer(tui, session, record, undefined, theme, done, undefined, keybindings),
-        {
-          overlay: true,
-          overlayOptions: { anchor: "center", width: "90%", maxHeight: `${VIEWPORT_HEIGHT_PCT}%` },
-        },
-      );
-      return;
-    }
-    if (!record.session) {
-      ctx.ui.notify(`Agent is ${record.status === "queued" ? "queued" : "expired"} — no session available.`, "info");
-      return;
-    }
-    const { ConversationViewer, VIEWPORT_HEIGHT_PCT } = await import("./conversation-viewer.js");
-    const session = record.session;
-    const activity = agentActivity.get(record.id);
-    await ctx.ui.custom<undefined>(
-      (tui, theme, keybindings, done) => {
-        return new ConversationViewer(tui, session, record, activity, theme, done, () => {
-          if (manager.abort(record.id)) ctx.ui.notify(`Stopped "${record.description}".`, "info");
-        }, keybindings, (message: string) => manager.steer(record.id, message));
-      },
-      {
-        overlay: true,
-        overlayOptions: { anchor: "center", width: "90%", maxHeight: `${VIEWPORT_HEIGHT_PCT}%` },
-      },
-    );
+    const { openConversationOverlay } = await import("./conversation-overlay.js");
+    await openConversationOverlay(ctx.ui, record, { manager, agentActivity });
   }
 
   async function showAgentDetail(ctx: ExtensionCommandContext, name: string) {
