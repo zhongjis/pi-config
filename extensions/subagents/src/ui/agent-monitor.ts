@@ -89,7 +89,7 @@ function graphStatusWord(status: FleetGraphRun["status"]): string {
   }
 }
 
-function agentStatusWord(status: AgentRecord["status"]): string {
+export function agentStatusWord(status: AgentRecord["status"]): string {
   switch (status) {
     case "queued": return "queued";
     case "running": return "running";
@@ -108,7 +108,7 @@ function monitorRows(sections: { graphRuns: readonly FleetGraphRun[]; agents: re
   ];
 }
 
-function statusMark(entry: FleetGraphRun | AgentRecord): { glyph: string; color: string } {
+export function statusMark(entry: FleetGraphRun | AgentRecord): { glyph: string; color: string } {
   if ("doneCount" in entry) {
     switch (entry.status) {
       case "running": return { glyph: "●", color: "accent" };

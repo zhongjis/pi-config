@@ -693,7 +693,14 @@ export function matchesKey(candidate: unknown, expected: unknown): boolean {
 }
 
 export function stripTerminalSequences(text: string): string {
-  return stripAnsi(text);
+  // Mirror @earendil-works/pi-tui's real stripTerminalSequences: remove CSI
+  // (styling/cursor/clear, terminated by m/G/K/H/J) plus OSC and APC control
+  // sequences, not just SGR. `stripAnsi` above stays SGR-only for the width
+  // helpers that only ever see themed (SGR) text.
+  if (!text.includes("\x1b")) return text;
+  return text
+    .replace(/\x1b\[[^mGKHJ]*[mGKHJ]/g, "")
+    .replace(/\x1b[\]_][^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
 }
 
 export function truncateToWidth(text: string, maxWidth: number, ellipsis = "...", pad = false): string {
