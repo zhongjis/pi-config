@@ -1,6 +1,6 @@
 Launch a new agent to handle complex, multi-step tasks autonomously.
 
-Available agent types and configured defaults (not invocation overrides). Configuration only; runtime access depends on extension loading, authentication, and permissions:
+Configured agent types and defaults (not invocation overrides; current mode may permit only a subset). Runtime access also depends on extension loading, authentication, and permissions:
 {{typeList}}
 
 Custom agents can be defined in .pi/agents/<name>.md (project) or {{agentDir}}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.
@@ -9,7 +9,7 @@ When using the Agent tool, specify a subagent_type parameter to select which age
 
 ## When not to use
 
-If the target is already known, use a direct tool — `read` for a known path, `grep`/`find` for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match an available agent type.
+If the target is already known, use a direct tool — `read` for a known path, `grep`/`find` for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match a configured agent type.
 
 ## Usage notes
 

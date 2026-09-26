@@ -96,14 +96,56 @@ export function resolveDelegationRequest(
 
 export const DELEGATION_POLICY_DENIED = "delegation_policy_denied" as const;
 
-export interface ResolvedDelegationPolicy {
+export interface ResolvedDelegationPolicyContext {
 	status: "unrestricted" | "resolved" | "unresolved";
 	activeMode: string | undefined;
 	permittedTypes: string[];
+}
+
+export interface ResolvedDelegationPolicy extends ResolvedDelegationPolicyContext {
 	decision: {
 		allowed: boolean;
 		category: typeof DELEGATION_POLICY_DENIED | undefined;
 		requestedType: string;
+	};
+}
+
+function resolveDelegationPolicyContext(input: {
+	activeMode: string | undefined;
+	policy?: DelegationPolicy;
+	availableTypes: string[];
+}): ResolvedDelegationPolicyContext {
+	const { activeMode, policy, availableTypes } = input;
+	if (!activeMode) {
+		return { status: "unrestricted", activeMode: undefined, permittedTypes: [...availableTypes] };
+	}
+	if (!policy || !hasDelegationPolicy(policy)) {
+		return { status: "unresolved", activeMode, permittedTypes: [] };
+	}
+	return {
+		status: "resolved",
+		activeMode,
+		permittedTypes: getPermittedDelegationTypes(policy, availableTypes),
+	};
+}
+
+function resolveDelegationDecision(
+	context: ResolvedDelegationPolicyContext,
+	requestedType: string,
+	availableTypes: string[],
+): ResolvedDelegationPolicy {
+	const canonicalRequestedType =
+		resolveCanonicalType(requestedType, buildCanonicalTypeMap(availableTypes)) ?? requestedType;
+	const allowed = context.status === "unrestricted" || context.permittedTypes.some(
+		(type) => type.toLowerCase() === canonicalRequestedType.toLowerCase(),
+	);
+	return {
+		...context,
+		decision: {
+			allowed,
+			category: allowed ? undefined : DELEGATION_POLICY_DENIED,
+			requestedType: canonicalRequestedType,
+		},
 	};
 }
 
@@ -114,59 +156,11 @@ export function resolveDelegationPolicy(input: {
 	availableTypes: string[];
 	requestedType: string;
 }): ResolvedDelegationPolicy {
-	const { activeMode, policy, availableTypes, requestedType } = input;
-	if (!activeMode) {
-		const requested =
-			resolveCanonicalType(requestedType, buildCanonicalTypeMap(availableTypes)) ??
-			requestedType;
-		return {
-			status: "unrestricted",
-			activeMode: undefined,
-			permittedTypes: [...availableTypes],
-			decision: { allowed: true, category: undefined, requestedType: requested },
-		};
-	}
-
-	if (!policy || !hasDelegationPolicy(policy)) {
-		return {
-			status: "unresolved",
-			activeMode,
-			permittedTypes: [],
-			decision: {
-				allowed: false,
-				category: DELEGATION_POLICY_DENIED,
-				requestedType,
-			},
-		};
-	}
-
-	const resolved = resolveDelegationRequest(policy, requestedType, availableTypes);
-	return {
-		status: "resolved",
-		activeMode,
-		permittedTypes: resolved.permittedTypes,
-		decision: {
-			allowed: resolved.allowed,
-			category: resolved.allowed ? undefined : DELEGATION_POLICY_DENIED,
-			requestedType: resolved.requestedType,
-		},
-	};
-}
-
-function unresolvedDelegationPolicy(
-	activeMode: string | undefined,
-	requestedType: string,
-): ResolvedDelegationPolicy {
-	return {
-		status: "unresolved",
-		activeMode,
-		permittedTypes: [],
-		decision: {
-			allowed: false,
-			category: DELEGATION_POLICY_DENIED,
-			requestedType,
-		},
-	};
+	return resolveDelegationDecision(
+		resolveDelegationPolicyContext(input),
+		input.requestedType,
+		input.availableTypes,
+	);
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -195,20 +189,18 @@ function parsePersistedModeState(data: unknown): {
 	};
 }
 
-/** Resolve delegation authority from the latest persisted agent-mode entry only. */
-export function resolvePersistedDelegationPolicy(input: {
+/** Resolve current delegation authority from the latest persisted agent-mode entry only. */
+export function resolvePersistedDelegationPolicyContext(input: {
 	entries: readonly ModeStateEntryLike[];
 	availableTypes: string[];
-	requestedType: string;
-}): ResolvedDelegationPolicy {
+}): ResolvedDelegationPolicyContext {
 	const latestEntry = [...input.entries].reverse().find(
 		(entry) => entry.type === "custom" && entry.customType === "agent-mode",
 	);
 	if (!latestEntry) {
-		return resolveDelegationPolicy({
+		return resolveDelegationPolicyContext({
 			activeMode: undefined,
 			availableTypes: input.availableTypes,
-			requestedType: input.requestedType,
 		});
 	}
 
@@ -218,15 +210,27 @@ export function resolvePersistedDelegationPolicy(input: {
 			? latestEntry.data as Record<string, unknown>
 			: undefined;
 		const activeMode = typeof data?.mode === "string" && data.mode.trim() ? data.mode : undefined;
-		return unresolvedDelegationPolicy(activeMode, input.requestedType);
+		return { status: "unresolved", activeMode, permittedTypes: [] };
 	}
 
-	return resolveDelegationPolicy({
+	return resolveDelegationPolicyContext({
 		activeMode: persisted.activeMode,
 		policy: persisted.policy,
 		availableTypes: input.availableTypes,
-		requestedType: input.requestedType,
 	});
+}
+
+/** Resolve a delegation request against the latest persisted mode policy. */
+export function resolvePersistedDelegationPolicy(input: {
+	entries: readonly ModeStateEntryLike[];
+	availableTypes: string[];
+	requestedType: string;
+}): ResolvedDelegationPolicy {
+	return resolveDelegationDecision(
+		resolvePersistedDelegationPolicyContext(input),
+		input.requestedType,
+		input.availableTypes,
+	);
 }
 
 export function formatDelegationPolicyDenial(

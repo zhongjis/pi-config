@@ -497,12 +497,14 @@ The custom QoL footer retains its live accounting: parent assistant-message cost
 
 **Output transcript** (`outputTranscript`, default `true`): the project/global default for writing each subagent's `.output` transcript. Toggle via `/agents → Settings → Output transcript`, or set `false` in `subagents.json` to make transcripts opt-in project-wide — useful when run transcripts shouldn't sit on disk for backup or DLP tooling to pick up. A custom agent's `output_transcript` frontmatter overrides this per agent. Applied live at spawn time. Governs only the transcript, not `persist_session` or memory files.
 
-**Tool description** (`toolDescriptionMode`, default `"full"`): which Agent tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (~1,400 tokens with the default agents); `"compact"` is ~75% smaller — one-line agent type list, terse usage notes — for small/local models where tool-spec tokens are expensive. Per-option details stay in the parameter descriptions in every mode (the parameter schema is never customizable). Applies on the next pi session.
+**Tool description** (`toolDescriptionMode`, default `"full"`): which Agent tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (~1,400 tokens with the default agents); `"compact"` is ~75% smaller — one-line configured-agent list, terse usage notes — for small/local models where tool-spec tokens are expensive. The `subagent_type` parameter points to this roster without repeating agent names. Applies on the next pi session.
 
-`"custom"` registers your own description from `<cwd>/.pi/agent-tool-description.md` (project) or `<agentDir>/agent-tool-description.md` (global; project wins). The file is read once at tool registration, so edits also apply on the next pi session. Dynamic parts stay live via placeholders — a static agent list would go stale the moment you add a custom agent:
+The configured roster is capability metadata, not delegation authority. While the Agent tool is active, the extension adds one replaceable system-prompt hint containing the current mode's permitted target names. It derives from the same persisted delegation policy as runtime enforcement, stays byte-stable while the mode is unchanged, and replaces the prior hint after a mode or branch change instead of accumulating stale messages.
+
+`"custom"` registers your own description from `<cwd>/.pi/agent-tool-description.md` (project) or `<agentDir>/agent-tool-description.md` (global; project wins). The file is read once at tool registration, so edits also apply on the next pi session. Dynamic parts stay live via placeholders — a static configured-agent list would go stale the moment you add a custom agent:
 
 ```markdown
-Launch an autonomous agent. Available types:
+Launch an autonomous agent. Configured types:
 {{typeList}}
 
 Custom agents live in .pi/agents/ or {{agentDir}}/agents/.

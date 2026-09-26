@@ -25,7 +25,8 @@ import { getDefaultMaxTurns, getGraceTurns, SUBAGENT_TOOL_NAMES, setDefaultMaxTu
 import { getAvailableTypes, isDefaultsDisabled, registerAgents, setDefaultsDisabled } from "./agent-types.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
-import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
+import { replaceDelegationPolicyHint } from "./delegation-hint.js";
+import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
@@ -231,6 +232,15 @@ export default function (pi: ExtensionAPI) {
       : formatDelegationPolicyDenial(decision, type);
   };
   manager.setPolicyChecker((ctx, type) => delegationDenial(ctx, type));
+
+  pi.on("before_agent_start", (event, ctx) => {
+    if (!pi.getActiveTools().includes(SUBAGENT_TOOL_NAMES.AGENT)) return;
+    const policy = resolvePersistedDelegationPolicyContext({
+      entries: readModeEntries(ctx),
+      availableTypes: getAvailableTypes(),
+    });
+    return { systemPrompt: replaceDelegationPolicyHint(event.systemPrompt, policy) };
+  });
 
   // Expose manager via Symbol.for() global registry for cross-package access.
   // Standard Node.js pattern for cross-package singletons (used by OpenTelemetry, etc.).

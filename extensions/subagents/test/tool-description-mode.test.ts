@@ -15,6 +15,7 @@ const EXAMPLE_TEMPLATE = fileURLToPath(new URL("../examples/agent-tool-descripti
 function makePi() {
   const tools = new Map<string, any>();
   const handlers = new Map<string, any>();
+  const activeTools = ["Agent"];
 
   return {
     pi: {
@@ -26,6 +27,7 @@ function makePi() {
       on: vi.fn((event: string, handler: any) => {
         handlers.set(event, handler);
       }),
+      getActiveTools: vi.fn(() => activeTools),
       events: {
         emit: vi.fn(),
         on: vi.fn(() => vi.fn()),
@@ -35,6 +37,7 @@ function makePi() {
     } as any,
     tools,
     handlers,
+    activeTools,
   };
 }
 
@@ -46,6 +49,8 @@ describe("toolDescriptionMode", () => {
   let prevAgentDir: string | undefined;
   let prevHome: string | undefined;
   let shutdown: (() => Promise<void>) | undefined;
+  let currentHandlers: Map<string, any>;
+  let currentActiveTools: string[];
 
   function setup(settings?: Record<string, unknown>, beforeInstantiate?: () => void) {
     tmpDir = mkdtempSync(join(tmpdir(), "pi-tooldesc-"));
@@ -64,7 +69,9 @@ describe("toolDescriptionMode", () => {
     beforeInstantiate?.();
     process.chdir(tmpDir);
 
-    const { pi, tools, handlers } = makePi();
+    const { pi, tools, handlers, activeTools } = makePi();
+    currentHandlers = handlers;
+    currentActiveTools = activeTools;
     subagentsExtension(pi);
     shutdown = async () => {
       await handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
@@ -116,6 +123,53 @@ describe("toolDescriptionMode", () => {
         expect(row).not.toContain("claude-sonnet-4-6");
       }
     }
+  });
+
+  it("keeps one configured roster and no parameter roster", () => {
+    const tools = setup({ toolDescriptionMode: "full" });
+    const agent = tools.get("Agent");
+    const description: string = agent.description;
+    const parameterDescription: string = agent.parameters.properties.subagent_type.description;
+    expect(description.match(/^- general-purpose:/gm)).toHaveLength(1);
+    expect(parameterDescription).not.toContain("general-purpose");
+    expect(parameterDescription).not.toContain("chengfeng");
+  });
+
+  it("replaces the current permitted-target hint as mode policy changes", async () => {
+    const tools = setup({ toolDescriptionMode: "full" }, () => {
+      const dir = join(tmpDir, ".pi", "agents");
+      mkdirSync(dir);
+      writeFileSync(join(dir, "alpha.md"), "---\ndescription: Alpha worker.\n---\nAlpha.\n");
+      writeFileSync(join(dir, "beta.md"), "---\ndescription: Beta worker.\n---\nBeta.\n");
+    });
+    expect(tools.has("Agent")).toBe(true);
+    let entries: unknown[] = [
+      { type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 1, allowDelegationTo: ["alpha"], disallowDelegationTo: [] } } },
+    ];
+    const ctx = { sessionManager: { getEntries: () => entries } };
+    const beforeAgentStart = currentHandlers.get("before_agent_start");
+
+    const first = await beforeAgentStart({ systemPrompt: "BASE" }, ctx);
+    expect(first.systemPrompt.match(/<!-- subagents:delegation-policy -->/g)).toHaveLength(1);
+    expect(first.systemPrompt).toContain("alpha");
+    expect(first.systemPrompt).not.toContain("beta");
+    const unchanged = await beforeAgentStart({ systemPrompt: first.systemPrompt }, ctx);
+    expect(unchanged.systemPrompt).toBe(first.systemPrompt);
+
+    entries = [
+      { type: "custom", customType: "agent-mode", data: { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["beta"], disallowDelegationTo: [] } } },
+    ];
+    const second = await beforeAgentStart({ systemPrompt: first.systemPrompt }, ctx);
+    expect(second.systemPrompt.match(/<!-- subagents:delegation-policy -->/g)).toHaveLength(1);
+    expect(second.systemPrompt).toContain("beta");
+    expect(second.systemPrompt).not.toContain("alpha");
+
+    entries = [{ type: "custom", customType: "agent-mode", data: { mode: "fuxi" } }];
+    const unresolved = await beforeAgentStart({ systemPrompt: second.systemPrompt }, ctx);
+    expect(unresolved.systemPrompt).toContain("permitted delegation targets: none");
+
+    currentActiveTools.length = 0;
+    expect(await beforeAgentStart({ systemPrompt: "BASE" }, ctx)).toBeUndefined();
   });
 
   it("background guidance blocks instead of ending the turn", () => {

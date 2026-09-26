@@ -136,10 +136,10 @@ export function createAgentTool(
   const { activity: agentActivity, widget, fleet } = presentation;
   const buildDetails = createAgentResultBuilder(() => settings.showCost);
 
-  const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Agent types:
+  const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Configured agent types (current mode may permit only a subset):
 ${buildCompactTypeListText()}
 
-Configuration only; runtime access depends on extension loading, authentication, and permissions.
+Runtime access also depends on extension loading, authentication, and permissions.
 
 Custom agents: .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global).
 
@@ -152,7 +152,7 @@ Notes:
 
   const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously.
 
-Available agent types and configured defaults (not invocation overrides). Configuration only; runtime access depends on extension loading, authentication, and permissions:
+Configured agent types and defaults (not invocation overrides; current mode may permit only a subset). Runtime access also depends on extension loading, authentication, and permissions:
 ${buildTypeListText()}
 
 Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.
@@ -161,7 +161,7 @@ When using the Agent tool, specify a subagent_type parameter to select which age
 
 ## When not to use
 
-If the target is already known, use a direct tool — \`read\` for a known path, \`grep\`/\`find\` for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match an available agent type.
+If the target is already known, use a direct tool — \`read\` for a known path, \`grep\`/\`find\` for a specific symbol or string. Reserve this tool for open-ended questions that span the codebase, or tasks that match a configured agent type.
 
 ## Usage notes
 
@@ -247,7 +247,7 @@ Terse command-style prompts produce shallow, generic work.
         description: "A short (3-5 word) description of the task (shown in UI).",
       }),
       subagent_type: Type.String({
-        description: `The type of specialized agent to use. Available types: ${getAvailableTypes().join(", ")}. Custom agents from .pi/agents/*.md (project) or ${getAgentDir()}/agents/*.md (global) are also available.`,
+        description: "Select a configured agent type from this tool's configured roster. The current delegation policy may permit only a subset.",
       }),
       max_turns: Type.Optional(
         Type.Number({
