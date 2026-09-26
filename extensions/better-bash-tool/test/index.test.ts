@@ -9,8 +9,16 @@ const nativeRenderResultMock = vi.hoisted(() => vi.fn(() => ({ native: "rendered
 
 const bashMockState = vi.hoisted(() => ({
   createCalls: [] as string[],
+  createOptions: [] as Array<{
+    spawnHook?: (base: { command: string; cwd: string; env: Record<string, string> }) => {
+      command: string;
+      cwd: string;
+      env: Record<string, string>;
+    };
+  } | undefined>,
   executeCalls: [] as Array<{
     boundCwd: string;
+    spawnCwd: string;
     toolCallId: string;
     params: { command: string; timeout?: number };
     onUpdate: unknown;
@@ -19,14 +27,19 @@ const bashMockState = vi.hoisted(() => ({
 }));
 
 const createBashToolDefinitionMock = vi.hoisted(() =>
-  vi.fn((cwd: string) => {
+  vi.fn((cwd: string, options?: (typeof bashMockState.createOptions)[number]) => {
+    const callIndex = bashMockState.createCalls.length;
     bashMockState.createCalls.push(cwd);
+    bashMockState.createOptions.push(options);
     return {
       name: "bash",
       label: "bash",
       renderResult: nativeRenderResultMock,
       execute: vi.fn(async (toolCallId: string, params: { command: string; timeout?: number }, _signal: unknown, onUpdate: unknown, ctx: { cwd: string }) => {
-        bashMockState.executeCalls.push({ boundCwd: cwd, toolCallId, params, onUpdate, ctx });
+        const recorded = bashMockState.createOptions[callIndex];
+        const base = { command: params.command, cwd: ctx?.cwd || cwd, env: {} };
+        const spawn = recorded?.spawnHook ? recorded.spawnHook(base) : base;
+        bashMockState.executeCalls.push({ boundCwd: cwd, spawnCwd: spawn.cwd, toolCallId, params, onUpdate, ctx });
         return {
           content: [{ type: "text", text: `ran ${params.command}` }],
           details: { cwd },
@@ -84,6 +97,7 @@ describe("better-bash-tool", () => {
   beforeEach(() => {
     createBashToolDefinitionMock.mockClear();
     bashMockState.createCalls.length = 0;
+    bashMockState.createOptions.length = 0;
     bashMockState.executeCalls.length = 0;
     nativeRenderResultMock.mockClear();
   });
@@ -113,10 +127,16 @@ describe("better-bash-tool", () => {
     );
 
     const resolvedCwd = resolve("/repo/worktree", "packages/app");
-    expect(createBashToolDefinitionMock).toHaveBeenNthCalledWith(2, resolvedCwd);
+    expect(resolvedCwd).not.toBe(ctx.cwd);
+    expect(createBashToolDefinitionMock).toHaveBeenNthCalledWith(
+      2,
+      resolvedCwd,
+      expect.objectContaining({ spawnHook: expect.any(Function) }),
+    );
     expect(bashMockState.executeCalls).toHaveLength(1);
     expect(bashMockState.executeCalls[0]).toMatchObject({
       boundCwd: resolvedCwd,
+      spawnCwd: resolvedCwd,
       toolCallId: "call-1",
       params: { command: "pwd", timeout: 15 },
       ctx: { cwd: "/repo/worktree" },
@@ -127,6 +147,9 @@ describe("better-bash-tool", () => {
       content: [{ type: "text", text: "ran pwd" }],
       details: { cwd: resolvedCwd },
     });
+
+    await tool.execute("call-2", { command: "pwd" }, undefined, onUpdate, ctx);
+    expect(bashMockState.executeCalls[1]?.spawnCwd).toBe(ctx.cwd);
   });
 
   it("renders aligned call row with tool name, shortened cwd, command preview, and timeout", async () => {

@@ -127,7 +127,10 @@ export default function betterBashTool(pi: ExtensionAPI): void {
 
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const effectiveCwd = params.cwd ? resolve(ctx.cwd, params.cwd) : ctx.cwd;
-      const bashForCwd = createBashToolDefinition(effectiveCwd);
+      // Native execute prefers ctx.cwd; spawnHook runs after that resolution.
+      const bashForCwd = createBashToolDefinition(effectiveCwd, {
+        spawnHook: (spawn) => ({ ...spawn, cwd: effectiveCwd }),
+      });
       return bashForCwd.execute(
         toolCallId,
         { command: params.command, timeout: params.timeout },
