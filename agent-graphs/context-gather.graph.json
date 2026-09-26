@@ -1,46 +1,97 @@
 {
   "version": 2,
   "name": "context-gather",
-  "description": "Adaptively gather caller-planned evidence with at most one gap-closing iteration.",
+  "description": "Plan, gather, evaluate, and synthesize bounded evidence for requested coverage.",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "request": { "type": "string" },
-      "tasks": {
+      "request": { "type": "string", "minLength": 1, "pattern": "\\S" },
+      "requiredCoverage": {
         "type": "array",
         "minItems": 1,
+        "maxItems": 12,
+        "uniqueItems": true,
         "items": {
           "type": "object",
           "properties": {
-            "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
-            "question": { "type": "string" },
-            "reason": { "type": "string" }
+            "id": { "type": "string", "minLength": 1, "pattern": "\\S" },
+            "criterion": { "type": "string", "minLength": 1, "pattern": "\\S" }
           },
-          "required": ["source", "question"]
+          "required": ["id", "criterion"],
+          "additionalProperties": false
         }
+      },
+      "budget": {
+        "type": "object",
+        "properties": {
+          "maxTasks": { "type": "integer", "minimum": 1, "maximum": 6 },
+          "maxGapTasks": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "maxAnswerWords": { "type": "integer", "minimum": 100, "maximum": 2000 }
+        },
+        "required": ["maxTasks", "maxGapTasks", "maxAnswerWords"],
+        "additionalProperties": false
       }
     },
-    "required": ["request", "tasks"]
+    "required": ["request", "requiredCoverage", "budget"],
+    "additionalProperties": false
   },
   "nodes": {
+    "plan": {
+      "type": "agent",
+      "name": "Plan coverage",
+      "agent": "xuannv",
+      "prompt": "Plan minimum distinct, non-overlapping evidence tasks. Request: ${request}\nCoverage: ${requiredCoverage}\nBudget: ${budget}\nJSON only. Create 1–6 tasks within budget.maxTasks; map every required coverage ID and no others. Tasks need source, focused question, purpose, criterionIds. Local git/history: project; remote issues/PRs: work-records. NEVER use practice unless required.",
+      "input": {
+        "request": { "path": "$.request" },
+        "requiredCoverage": { "path": "$.requiredCoverage" },
+        "budget": { "path": "$.budget" }
+      },
+      "retry": { "maxAttempts": 2 },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
+                "question": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                "purpose": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } }
+              },
+              "required": ["source", "question", "purpose", "criterionIds"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["tasks"],
+        "additionalProperties": false
+      }
+    },
     "research": {
       "type": "bounded_feedback",
-      "name": "Research",
+      "name": "Research coverage",
       "maxIterations": 2,
-      "maxItemsPerIteration": 200,
-      "maxTotalItems": 400,
+      "maxItemsPerIteration": 6,
+      "maxTotalItems": 9,
       "work": {
         "type": "fanout",
         "name": "Gather evidence",
-        "items": { "path": "$.tasks" },
+        "items": { "node": "plan", "path": "$.tasks" },
         "itemSchema": {
           "type": "object",
           "properties": {
             "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
-            "question": { "type": "string" },
-            "reason": { "type": "string" }
+            "question": { "type": "string", "minLength": 1, "pattern": "\\S" },
+            "purpose": { "type": "string", "minLength": 1, "pattern": "\\S" },
+            "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } }
           },
-          "required": ["source", "question"]
+          "required": ["source", "question", "purpose", "criterionIds"],
+          "additionalProperties": false
         },
         "dispatch": {
           "path": "$.source",
@@ -52,50 +103,66 @@
             "practice": "wenchang"
           }
         },
-        "prompt": "Request: ${request}\nTask: ${item}\n\nReturn validated JSON only: source, evidence (claim plus provenance), relevantFiles, constraints, unknowns, and conflicts. Use empty arrays when none apply.",
-        "input": { "request": { "path": "$.request" } },
+        "prompt": "Gather atomic evidence. Request: ${request}\nCoverage: ${requiredCoverage}\nTask: ${item}\nOpen sources directly; page titles, snippets, uninspected content are leads only. JSON source MUST match task source; only task criterionIds. Distinct claims; each claimId unique. Use one opened source per provenance: canonical path/URL, locator, excerpt. NEVER combine references. Unsupported details are unknowns; incompatible evidence are conflicts. NEVER write essays or repeat claims.",
+        "input": {
+          "request": { "path": "$.request" },
+          "requiredCoverage": { "path": "$.requiredCoverage" }
+        },
         "outputSchema": {
           "type": "object",
           "properties": {
             "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
-            "evidence": {
+            "claims": {
               "type": "array",
+              "maxItems": 4,
+              "uniqueItems": true,
               "items": {
                 "type": "object",
                 "properties": {
-                  "claim": { "type": "string" },
+                  "claimId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                  "claim": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                  "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+                  "confidence": { "type": "string", "enum": ["direct", "inferred"] },
                   "provenance": {
                     "type": "array",
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "uniqueItems": true,
                     "items": {
                       "type": "object",
                       "properties": {
-                        "reference": { "type": "string" },
-                        "detail": { "type": "string" }
+                        "reference": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                        "locator": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                        "excerpt": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                        "detail": { "type": "string", "minLength": 1, "pattern": "\\S" }
                       },
-                      "required": ["reference", "detail"]
+                      "required": ["reference", "locator", "excerpt", "detail"],
+                      "additionalProperties": false
                     }
                   }
                 },
-                "required": ["claim", "provenance"]
+                "required": ["claimId", "claim", "criterionIds", "confidence", "provenance"],
+                "additionalProperties": false
               }
             },
-            "relevantFiles": { "type": "array", "items": { "type": "string" } },
-            "constraints": { "type": "array", "items": { "type": "string" } },
-            "unknowns": { "type": "array", "items": { "type": "string" } },
-            "conflicts": { "type": "array", "items": { "type": "string" } }
+            "unknowns": { "type": "array", "maxItems": 6, "uniqueItems": true, "items": { "type": "string", "pattern": "\\S" } },
+            "conflicts": { "type": "array", "maxItems": 4, "uniqueItems": true, "items": { "type": "string", "pattern": "\\S" } }
           },
-          "required": ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"]
+          "required": ["source", "claims", "unknowns", "conflicts"],
+          "additionalProperties": false
         }
       },
       "evaluator": {
         "type": "agent",
-        "name": "Evaluate evidence",
+        "name": "Evaluate coverage",
         "agent": "direnjie",
-        "prompt": "Evaluate the collected evidence against the request.\n\nRequest: ${request}\nOriginal tasks: ${tasks}\nAll accumulated iterations, all-settled results, and unresolved gaps: ${feedback}\n\nFailed or skipped evidence results are unresolved unknowns. Return only { decision: \"sufficient\" | \"continue\", gaps: [{ id, description }], tasks: [{ gapId, item: { source, question, reason } }] }. For sufficient, tasks must be empty. For continue, every task must link to a declared gap. Do not add practice research by default.",
+        "prompt": "Verify every required coverage item. Request: ${request}\nCoverage: ${requiredCoverage}\nBudget: ${budget}\nPlan: ${plan}\nResults: ${feedback}\nDirect provenance requires locator and excerpt; confidence/schema are not proof. Only opened direct evidence supports coverage; inferred claims leave gaps. Page titles and uninspected content are not direct proof. Failed and skipped results, duplicate claimIds, source mismatches, and claim criterionIds outside their task are unknowns, not proof. Decision JSON only. Continue only for one narrow material gap task. Gap task criterionIds MUST use only required coverage IDs. NEVER use practice unless required. Local git/history: project; remote issues/PRs: work-records. Gap tasks MUST use a new source/access method and state why evidence is insufficient. NEVER repeat work or exceed budget.maxGapTasks. No useful budget-fit task? Return sufficient with gaps for a partial Outcome. Sufficient requires empty tasks.",
         "retry": { "maxAttempts": 2 },
         "input": {
           "request": { "path": "$.request" },
-          "tasks": { "path": "$.tasks" }
+          "requiredCoverage": { "path": "$.requiredCoverage" },
+          "budget": { "path": "$.budget" },
+          "plan": { "node": "plan", "path": "$" }
         }
       }
     },
@@ -103,54 +170,153 @@
       "type": "agent",
       "name": "Synthesize context",
       "agent": "jintong",
-      "prompt": "Synthesize GatheredContext.\n\nRequest: ${request}\nOriginal tasks: ${tasks}\nComplete terminal bounded-feedback result: ${research}\n\nTreat every failed or skipped collected result and its error as an unknown; preserve partial successful evidence. Return summary, relevantFiles, constraints, unknowns, evidence with provenance, and conflicts as validated JSON only.\n\nAlso return outcome: set status to \"succeeded\" when every requested task produced usable evidence; \"partial\" when any collected result failed or was skipped or unknowns remain (reason must name the missing coverage); \"failed\" when no task produced usable evidence (reason must say why).",
+      "prompt": "Produce concise verified answer. Request: ${request}\nCoverage: ${requiredCoverage}\nBudget: ${budget}\nPlan: ${plan}\nResearch: ${research}\nJSON only from validated claims. Deduplicate meaning/source; keep canonical claims, unique claimIds; use one source per provenance. NEVER combine references. Limit budget.maxAnswerWords. Preserve failed and skipped results, conflicts, unknowns. Every verifiedCoverage claimId MUST exist in evidence. verifiedCoverage IDs MUST exactly match required coverage IDs; page titles and uninspected content are not direct evidence. Supported requires direct evidence. Succeeded: all supported. Partial: useful evidence with gaps; reason MUST name missing coverage. Failed: no reliable evidence.",
+      "retry": { "maxAttempts": 2 },
       "input": {
         "request": { "path": "$.request" },
-        "tasks": { "path": "$.tasks" },
+        "requiredCoverage": { "path": "$.requiredCoverage" },
+        "budget": { "path": "$.budget" },
+        "plan": { "node": "plan", "path": "$" },
         "research": { "node": "research", "path": "$" }
       },
       "outputSchema": {
         "type": "object",
         "properties": {
-          "summary": { "type": "string" },
-          "relevantFiles": { "type": "array", "items": { "type": "string" } },
-          "constraints": { "type": "array", "items": { "type": "string" } },
-          "unknowns": { "type": "array", "items": { "type": "string" } },
-          "evidence": {
+          "answer": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "verifiedCoverage": {
             "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "uniqueItems": true,
             "items": {
               "type": "object",
               "properties": {
-                "claim": { "type": "string" },
+                "id": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                "status": { "type": "string", "enum": ["supported", "partial", "missing"] },
+                "claimIds": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+                "reason": { "type": "string", "minLength": 1, "pattern": "\\S" }
+              },
+              "required": ["id", "status", "claimIds"],
+              "allOf": [
+                {
+                  "if": { "properties": { "status": { "enum": ["partial", "missing"] } }, "required": ["status"] },
+                  "then": { "required": ["reason"] }
+                },
+                {
+                  "if": { "properties": { "status": { "const": "supported" } }, "required": ["status"] },
+                  "then": { "properties": { "claimIds": { "minItems": 1 } } }
+                },
+                {
+                  "if": { "properties": { "status": { "const": "partial" } }, "required": ["status"] },
+                  "then": { "properties": { "claimIds": { "minItems": 1 } } }
+                },
+                {
+                  "if": { "properties": { "status": { "const": "missing" } }, "required": ["status"] },
+                  "then": { "properties": { "claimIds": { "maxItems": 0 } } }
+                }
+              ],
+              "additionalProperties": false
+            }
+          },
+          "unknowns": { "type": "array", "maxItems": 12, "uniqueItems": true, "items": { "type": "string", "pattern": "\\S" } },
+          "evidence": {
+            "type": "array",
+            "maxItems": 18,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "properties": {
+                "claimId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                "claim": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+                "confidence": { "type": "string", "enum": ["direct", "inferred"] },
                 "provenance": {
                   "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "uniqueItems": true,
                   "items": {
                     "type": "object",
                     "properties": {
-                      "reference": { "type": "string" },
-                      "detail": { "type": "string" }
+                      "reference": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                      "locator": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                      "excerpt": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                      "detail": { "type": "string", "minLength": 1, "pattern": "\\S" }
                     },
-                    "required": ["reference", "detail"]
+                    "required": ["reference", "locator", "excerpt", "detail"],
+                    "additionalProperties": false
                   }
                 }
               },
-              "required": ["claim", "provenance"]
+              "required": ["claimId", "claim", "criterionIds", "confidence", "provenance"],
+              "additionalProperties": false
             }
           },
-          "conflicts": { "type": "array", "items": { "type": "string" } },
-          "outcome": { "type": "object", "properties": { "status": { "type": "string", "enum": ["succeeded", "partial", "failed"] }, "reason": { "type": "string" } }, "required": ["status"] }
+          "conflicts": { "type": "array", "maxItems": 8, "uniqueItems": true, "items": { "type": "string", "pattern": "\\S" } },
+          "outcome": {
+            "type": "object",
+            "properties": {
+              "status": { "type": "string", "enum": ["succeeded", "partial", "failed"] },
+              "reason": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["status", "reason"],
+            "additionalProperties": false
+          }
         },
-        "required": ["summary", "relevantFiles", "constraints", "unknowns", "evidence", "conflicts"]
+        "allOf": [
+          {
+            "if": {
+              "properties": { "outcome": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] } },
+              "required": ["outcome"]
+            },
+            "then": {
+              "properties": {
+                "verifiedCoverage": { "items": { "properties": { "status": { "const": "supported" } } } },
+                "unknowns": { "maxItems": 0 },
+                "conflicts": { "maxItems": 0 },
+                "evidence": { "minItems": 1 }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "outcome": { "properties": { "status": { "const": "failed" } }, "required": ["status"] } },
+              "required": ["outcome"]
+            },
+            "then": {
+              "properties": {
+                "verifiedCoverage": { "items": { "properties": { "status": { "const": "missing" } } } },
+                "evidence": { "maxItems": 0 }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "outcome": { "properties": { "status": { "const": "partial" } }, "required": ["status"] } },
+              "required": ["outcome"]
+            },
+            "then": {
+              "properties": { "evidence": { "minItems": 1 } },
+              "anyOf": [
+                { "properties": { "verifiedCoverage": { "contains": { "properties": { "status": { "enum": ["partial", "missing"] } }, "required": ["status"] } } } },
+                { "properties": { "unknowns": { "minItems": 1 } } },
+                { "properties": { "conflicts": { "minItems": 1 } } }
+              ]
+            }
+          }
+        ],
+        "required": ["answer", "verifiedCoverage", "unknowns", "evidence", "conflicts", "outcome"],
+        "additionalProperties": false
       }
     }
   },
   "edges": [
+    { "from": "plan", "to": "research" },
     { "from": "research", "to": "synthesize" }
   ],
   "outputs": {
-    "summary": { "node": "synthesize", "path": "$.summary" },
-    "relevantFiles": { "node": "synthesize", "path": "$.relevantFiles" },
-    "constraints": { "node": "synthesize", "path": "$.constraints" },
+    "answer": { "node": "synthesize", "path": "$.answer" },
+    "verifiedCoverage": { "node": "synthesize", "path": "$.verifiedCoverage" },
     "unknowns": { "node": "synthesize", "path": "$.unknowns" },
     "evidence": { "node": "synthesize", "path": "$.evidence" },
     "conflicts": { "node": "synthesize", "path": "$.conflicts" },
