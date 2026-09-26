@@ -20,19 +20,9 @@
           "required": ["id", "criterion"],
           "additionalProperties": false
         }
-      },
-      "budget": {
-        "type": "object",
-        "properties": {
-          "maxTasks": { "type": "integer", "minimum": 1, "maximum": 6 },
-          "maxGapTasks": { "type": "integer", "minimum": 0, "maximum": 3 },
-          "maxAnswerWords": { "type": "integer", "minimum": 100, "maximum": 2000 }
-        },
-        "required": ["maxTasks", "maxGapTasks", "maxAnswerWords"],
-        "additionalProperties": false
       }
     },
-    "required": ["request", "requiredCoverage", "budget"],
+    "required": ["request", "requiredCoverage"],
     "additionalProperties": false
   },
   "nodes": {
@@ -40,11 +30,10 @@
       "type": "agent",
       "name": "Plan coverage",
       "agent": "xuannv",
-      "prompt": "Plan minimum distinct, non-overlapping evidence tasks. Request: ${request}\nCoverage: ${requiredCoverage}\nBudget: ${budget}\nJSON only. Create 1–6 tasks within budget.maxTasks; map every required coverage ID and no others. Tasks need source, focused question, purpose, criterionIds. Local git/history: project; remote issues/PRs: work-records. NEVER use practice unless required.",
+      "prompt": "Plan minimum distinct, non-overlapping evidence tasks. Request: ${request}\nCoverage: ${requiredCoverage}\nJSON only. Create 1–6 tasks; map every required coverage ID and no others. Tasks need source, focused question, purpose, criterionIds. Local git/history: project; remote issues/PRs: work-records. NEVER use practice unless required.",
       "input": {
         "request": { "path": "$.request" },
-        "requiredCoverage": { "path": "$.requiredCoverage" },
-        "budget": { "path": "$.budget" }
+        "requiredCoverage": { "path": "$.requiredCoverage" }
       },
       "retry": { "maxAttempts": 2 },
       "outputSchema": {
@@ -156,12 +145,11 @@
         "type": "agent",
         "name": "Evaluate coverage",
         "agent": "direnjie",
-        "prompt": "Verify every required coverage item. Request: ${request}\nCoverage: ${requiredCoverage}\nBudget: ${budget}\nPlan: ${plan}\nResults: ${feedback}\nDirect provenance requires locator and excerpt; confidence/schema are not proof. Only opened direct evidence supports coverage; inferred claims leave gaps. Page titles and uninspected content are not direct proof. Failed and skipped results, duplicate claimIds, source mismatches, and claim criterionIds outside their task are unknowns, not proof. Decision JSON only. Continue only for one narrow material gap task. Gap task criterionIds MUST use only required coverage IDs. NEVER use practice unless required. Local git/history: project; remote issues/PRs: work-records. Gap tasks MUST use a new source/access method and state why evidence is insufficient. NEVER repeat work or exceed budget.maxGapTasks. No useful budget-fit task? Return sufficient with gaps for a partial Outcome. Sufficient requires empty tasks.",
+        "prompt": "Verify every required coverage item. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResults: ${feedback}\nDirect provenance requires locator and excerpt; confidence/schema are not proof. Only opened direct evidence supports coverage; inferred claims leave gaps. Page titles and uninspected content are not direct proof. Failed and skipped results, duplicate claimIds, source mismatches, and claim criterionIds outside their task are unknowns, not proof. Decision JSON only. Continue only for one narrow material gap task. Gap task criterionIds MUST use only required coverage IDs. NEVER use practice unless required. Local git/history: project; remote issues/PRs: work-records. Gap tasks MUST use a new source/access method and state why evidence is insufficient. NEVER repeat work or exceed graph bounds. No useful gap task? Return sufficient with gaps for a partial Outcome. Sufficient requires empty tasks.",
         "retry": { "maxAttempts": 2 },
         "input": {
           "request": { "path": "$.request" },
           "requiredCoverage": { "path": "$.requiredCoverage" },
-          "budget": { "path": "$.budget" },
           "plan": { "node": "plan", "path": "$" }
         }
       }
@@ -170,12 +158,11 @@
       "type": "agent",
       "name": "Synthesize context",
       "agent": "jintong",
-      "prompt": "Produce concise verified answer. Request: ${request}\nCoverage: ${requiredCoverage}\nBudget: ${budget}\nPlan: ${plan}\nResearch: ${research}\nJSON only from validated claims. Deduplicate meaning/source; keep canonical claims, unique claimIds; use one source per provenance. NEVER combine references. Limit budget.maxAnswerWords. Preserve failed and skipped results, conflicts, unknowns. Every verifiedCoverage claimId MUST exist in evidence. verifiedCoverage IDs MUST exactly match required coverage IDs; page titles and uninspected content are not direct evidence. Supported requires direct evidence. Succeeded: all supported. Partial: useful evidence with gaps; reason MUST name missing coverage. Failed: no reliable evidence.",
+      "prompt": "Produce concise verified answer. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResearch: ${research}\nJSON only from validated claims. Deduplicate meaning/source; keep canonical claims, unique claimIds; use one source per provenance. NEVER combine references. Limit answer to 800 words. Preserve failed and skipped results, conflicts, unknowns. Every verifiedCoverage claimId MUST exist in evidence. verifiedCoverage IDs MUST exactly match required coverage IDs; page titles and uninspected content are not direct evidence. Supported requires direct evidence. Succeeded: all supported. Partial: useful evidence with gaps; reason MUST name missing coverage. Failed: no reliable evidence.",
       "retry": { "maxAttempts": 2 },
       "input": {
         "request": { "path": "$.request" },
         "requiredCoverage": { "path": "$.requiredCoverage" },
-        "budget": { "path": "$.budget" },
         "plan": { "node": "plan", "path": "$" },
         "research": { "node": "research", "path": "$" }
       },

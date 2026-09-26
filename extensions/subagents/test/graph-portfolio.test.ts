@@ -95,7 +95,6 @@ const INPUT = {
     { id: "configuration", criterion: "Current configuration is directly evidenced." },
     { id: "runtime", criterion: "Runtime behavior is directly evidenced." },
   ],
-  budget: { maxTasks: 2, maxGapTasks: 1, maxAnswerWords: 300 },
 };
 
 const INITIAL_TASK = {
@@ -199,14 +198,14 @@ describe("adaptive context-gather contract", () => {
     expect(graph.version).toBe(2);
     expect(graph.inputSchema).toMatchObject({
       type: "object",
-      required: ["request", "requiredCoverage", "budget"],
+      required: ["request", "requiredCoverage"],
       additionalProperties: false,
       properties: {
         request: { type: "string", minLength: 1, pattern: "\\S" },
         requiredCoverage: { type: "array", minItems: 1, maxItems: 12 },
-        budget: { type: "object", required: ["maxTasks", "maxGapTasks", "maxAnswerWords"] },
       },
     });
+    expect(graph.inputSchema).not.toHaveProperty("properties.budget");
     expect(Object.keys(graph.nodes)).toEqual(["plan", "research", "synthesize"]);
     expect(graph.edges).toEqual([{ from: "plan", to: "research" }, { from: "research", to: "synthesize" }]);
 
@@ -216,7 +215,6 @@ describe("adaptive context-gather contract", () => {
       input: {
         request: { path: "$.request" },
         requiredCoverage: { path: "$.requiredCoverage" },
-        budget: { path: "$.budget" },
       },
       retry: { maxAttempts: 2 },
       outputSchema: {
@@ -254,13 +252,16 @@ describe("adaptive context-gather contract", () => {
       input: {
         request: { path: "$.request" },
         requiredCoverage: { path: "$.requiredCoverage" },
-        budget: { path: "$.budget" },
         plan: { node: "plan", path: "$" },
       },
       retry: { maxAttempts: 2 },
     });
     expect(research.evaluator.input).not.toHaveProperty("feedback");
     expect(placeholders(research.evaluator.prompt)).toContain("feedback");
+    for (const node of [plan, research.work, research.evaluator]) {
+      expect(node.input).not.toHaveProperty("budget");
+      expect(placeholders(node.prompt)).not.toContain("budget");
+    }
     expect(research.work.prompt).toContain("one opened source per provenance");
     expect(research.work.prompt).toContain("NEVER combine");
     expect(research.evaluator.prompt).toContain("locator and excerpt");
@@ -377,7 +378,6 @@ describe("adaptive context-gather contract", () => {
       input: {
         request: { path: "$.request" },
         requiredCoverage: { path: "$.requiredCoverage" },
-        budget: { path: "$.budget" },
         plan: { node: "plan", path: "$" },
         research: { node: "research", path: "$" },
       },
@@ -391,5 +391,7 @@ describe("adaptive context-gather contract", () => {
         },
       },
     });
+    expect(synthesize.input).not.toHaveProperty("budget");
+    expect(placeholders(synthesize.prompt)).not.toContain("budget");
   });
 });

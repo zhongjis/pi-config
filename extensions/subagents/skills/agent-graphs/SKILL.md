@@ -23,7 +23,6 @@ agent_graph({
       { id: "repository", criterion: "Current repository behavior" },
       { id: "upstream", criterion: "Authoritative upstream contract" },
     ],
-    budget: { maxTasks: 4, maxGapTasks: 2, maxAnswerWords: 800 },
   },
 })
 agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...} })
