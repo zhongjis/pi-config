@@ -18,6 +18,7 @@ const classifyMock = vi.mocked(classify);
 type Handler = (event: ToolCallEvent, ctx: ExtensionContext) => unknown | Promise<unknown>;
 
 type ShutdownHandler = () => unknown | Promise<unknown>;
+type MessageEndHandler = (event: { message?: unknown }, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type BusHandler = (data: unknown) => void;
 
 function eventBus() {
@@ -44,15 +45,17 @@ function eventBus() {
 
 function makeRuntime(bus = eventBus()) {
 	const handlers: Handler[] = [];
+	const messageEndHandlers: MessageEndHandler[] = [];
 	const shutdownHandlers: ShutdownHandler[] = [];
 	const pi = {
 		events: bus.facade(),
-		on: vi.fn((name: string, handler: Handler | ShutdownHandler) => {
+		on: vi.fn((name: string, handler: Handler | MessageEndHandler | ShutdownHandler) => {
 			if (name === "tool_call") handlers.push(handler as Handler);
+			if (name === "message_end") messageEndHandlers.push(handler as MessageEndHandler);
 			if (name === "session_shutdown") shutdownHandlers.push(handler as ShutdownHandler);
 		}),
 	} as unknown as ExtensionAPI;
-	return { pi, handlers, shutdownHandlers };
+	return { pi, handlers, messageEndHandlers, shutdownHandlers };
 }
 
 function context(cwd = "/repo/worktree"): ExtensionContext {
@@ -66,6 +69,10 @@ function bashEvent(input: Record<string, unknown>): ToolCallEvent {
 		toolName: "bash",
 		input,
 	} as ToolCallEvent;
+}
+
+function messageEnd(message: Record<string, unknown>) {
+	return { type: "message_end", message };
 }
 
 function guard(pi: ExtensionAPI, id = "scope", reason = "Guard reason."): void {
@@ -296,5 +303,163 @@ describe("smart-tool-guards bash hook", () => {
 		expect(replacement.handlers).toHaveLength(1);
 		expect(hasGuardCapability(makeRuntime(bus).pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
 		expect(await replacement.handlers[0](bashEvent({ command: "pwd" }), context())).toBeUndefined();
+	});
+
+	it("classifies the model-issued command after a tool_call input mutation", async () => {
+		const { pi, handlers, messageEndHandlers } = makeRuntime();
+		guard(pi);
+		smartToolGuards(pi);
+		expect(messageEndHandlers).toHaveLength(1);
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git log --oneline" } }],
+		}), context());
+		const input = Object.freeze({ command: "rtk git log --oneline", cwd: "packages/app", timeout: 3 });
+		const event = bashEvent(input);
+
+		expect(await handlers[0](event, context("/repo/worktree"))).toBeUndefined();
+		expect(event.input).toBe(input);
+		expect(event.input).toEqual({ command: "rtk git log --oneline", cwd: "packages/app", timeout: 3 });
+		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
+			action: {
+				command: "git log --oneline",
+				requestedCwd: "packages/app",
+				requestedTimeout: 3,
+			},
+			context: { effectiveCwd: resolve("/repo/worktree", "packages/app") },
+		}), expect.objectContaining({ cwd: "/repo/worktree" }));
+
+		classifyMock.mockClear();
+		expect(await handlers[0](bashEvent({ command: "rtk git status" }), context())).toBeUndefined();
+		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
+			action: expect.objectContaining({ command: "rtk git status" }),
+		}), expect.anything());
+	});
+
+	it("applies deterministic policy to the model-issued command, not the mutated input", async () => {
+		const { pi, handlers, messageEndHandlers } = makeRuntime();
+		guard(pi);
+		smartToolGuards(pi);
+		expect(await handlers[0](bashEvent({ command: "rtk git push" }), context())).toBeUndefined();
+		expect(classifyMock).toHaveBeenCalledOnce();
+		classifyMock.mockClear();
+
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git push" } }],
+		}), context());
+		const input = Object.freeze({ command: "rtk git push" });
+		const event = bashEvent(input);
+
+		expect(await handlers[0](event, context())).toEqual({
+			block: true,
+			reason: [
+				"[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=scope]",
+				"Bash not run: Read-only policy matched: vcs-mutation. Guard active: Guard reason.",
+			].join("\n"),
+		});
+		expect(event.input).toBe(input);
+		expect(classifyMock).not.toHaveBeenCalled();
+	});
+
+	it("reads a model-issued command from JSON-string tool call arguments", async () => {
+		const { pi, handlers, messageEndHandlers } = makeRuntime();
+		guard(pi);
+		smartToolGuards(pi);
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [{
+				type: "toolCall",
+				id: "call-1",
+				name: "bash",
+				arguments: JSON.stringify({ command: "git log --oneline" }),
+			}],
+		}), context());
+
+		expect(await handlers[0](bashEvent({ command: "rtk git log --oneline" }), context())).toBeUndefined();
+		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
+			action: expect.objectContaining({ command: "git log --oneline" }),
+		}), expect.anything());
+	});
+
+	it("ignores non-assistant message_end and non-bash tool calls when recording", async () => {
+		const { pi, handlers, messageEndHandlers } = makeRuntime();
+		guard(pi);
+		smartToolGuards(pi);
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "call-read", name: "read", arguments: { path: "a" } },
+				{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git status" } },
+			],
+		}), context());
+		await messageEndHandlers[0](messageEnd({ role: "user", content: "git push" }), context());
+		await messageEndHandlers[0](messageEnd({
+			role: "toolResult",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git push" } }],
+		}), context());
+
+		expect(await handlers[0]({
+			type: "tool_call",
+			toolCallId: "call-read",
+			toolName: "read",
+			input: { path: "a" },
+		} as ToolCallEvent, context())).toBeUndefined();
+		expect(classifyMock).not.toHaveBeenCalled();
+		expect(await handlers[0](bashEvent({ command: "rtk git status" }), context())).toBeUndefined();
+		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
+			action: expect.objectContaining({ command: "git status" }),
+		}), expect.anything());
+
+		classifyMock.mockClear();
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [
+				{ type: "toolCall", id: "call-1", name: "read", arguments: { command: "pwd" } },
+				{ type: "text", text: "pwd" },
+				{ type: "toolCall", id: "call-1", name: "bash", arguments: "{" },
+				{ type: "toolCall", id: "call-2", name: "bash", arguments: { command: 1 } },
+			],
+		}), context());
+		expect(await handlers[0](bashEvent({ command: "git status" }), context())).toBeUndefined();
+		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
+			action: expect.objectContaining({ command: "git status" }),
+		}), expect.anything());
+	});
+
+	it("replaces recorded commands on each assistant message", async () => {
+		const { pi, handlers, messageEndHandlers } = makeRuntime();
+		guard(pi);
+		smartToolGuards(pi);
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git push" } }],
+		}), context());
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-2", name: "bash", arguments: { command: "git status" } }],
+		}), context());
+
+		expect(await handlers[0](bashEvent({ command: "rtk git push" }), context())).toBeUndefined();
+		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
+			action: expect.objectContaining({ command: "rtk git push" }),
+		}), expect.anything());
+	});
+
+	it("clears recorded commands on session shutdown", async () => {
+		const { pi, handlers, messageEndHandlers, shutdownHandlers } = makeRuntime();
+		guard(pi);
+		const scopeShutdowns = shutdownHandlers.length;
+		smartToolGuards(pi);
+		await messageEndHandlers[0](messageEnd({
+			role: "assistant",
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git log --oneline" } }],
+		}), context());
+		for (const shutdown of shutdownHandlers.slice(scopeShutdowns)) await shutdown();
+
+		expect(await handlers[0](bashEvent({ command: "rtk git log --oneline" }), context())).toBeUndefined();
+		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
+			action: expect.objectContaining({ command: "rtk git log --oneline" }),
+		}), expect.anything());
 	});
 });

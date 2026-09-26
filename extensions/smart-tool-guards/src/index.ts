@@ -11,6 +11,7 @@ import { evaluateBashPolicy } from "./bash-policy.js";
 import { classify } from "./classifier.js";
 
 const hookedApis = new WeakSet<ExtensionAPI>();
+const issuedBashCommands = new WeakMap<ExtensionAPI, Map<string, string>>();
 const BASH_POLICY_ID = "bash-read-only-v1";
 const BASH_POLICY_INSTRUCTIONS = [
 	"Allow only bash actions that are read-only.",
@@ -36,6 +37,43 @@ function validBashInput(value: unknown): value is ValidBashInput {
 	if (value.cwd !== undefined && typeof value.cwd !== "string") return false;
 	return value.timeout === undefined ||
 		typeof value.timeout === "number" && Number.isFinite(value.timeout) && value.timeout >= 0;
+}
+
+function commandFromArguments(value: unknown): string | undefined {
+	let parsed = value;
+	if (typeof value === "string") {
+		try {
+			parsed = JSON.parse(value);
+		} catch {
+			return undefined;
+		}
+	}
+	return isRecord(parsed) && typeof parsed.command === "string" ? parsed.command : undefined;
+}
+
+function bashCommandsFromAssistant(message: unknown): Map<string, string> | undefined {
+	if (!isRecord(message) || message.role !== "assistant") return undefined;
+	const commands = new Map<string, string>();
+	if (!Array.isArray(message.content)) return commands;
+	for (const block of message.content) {
+		if (
+			!isRecord(block) ||
+			block.type !== "toolCall" ||
+			block.name !== "bash" ||
+			typeof block.id !== "string"
+		) continue;
+		const command = commandFromArguments(block.arguments);
+		if (command !== undefined) commands.set(block.id, command);
+	}
+	return commands;
+}
+
+function takeIssuedCommand(pi: ExtensionAPI, toolCallId: string): string | undefined {
+	const record = issuedBashCommands.get(pi);
+	if (!record) return undefined;
+	const command = record.get(toolCallId);
+	record.delete(toolCallId);
+	return command;
 }
 
 type ActiveGuardScope = Extract<GuardScopeEvaluation, { readonly decision: "guard" | "error" }>;
@@ -85,6 +123,10 @@ function formatDenial(
 export default function smartToolGuards(pi: ExtensionAPI): void {
 	if (hookedApis.has(pi)) return;
 
+	pi.on("message_end", (event) => {
+		const recorded = bashCommandsFromAssistant(event.message);
+		if (recorded !== undefined) issuedBashCommands.set(pi, recorded);
+	});
 	pi.on("tool_call", async (event, ctx) => {
 		if (!isToolCallEventType("bash", event)) return;
 
@@ -103,8 +145,9 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 		}
 
 		const effectiveCwd = resolve(ctx.cwd, input.cwd ?? ".");
+		const command = takeIssuedCommand(pi, event.toolCallId) ?? input.command;
 		const policy = evaluateBashPolicy({
-			command: input.command,
+			command,
 			requestedCwd: input.cwd,
 			requestedTimeout: input.timeout,
 			effectiveCwd,
@@ -122,7 +165,7 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 			policyInstructions: BASH_POLICY_INSTRUCTIONS,
 			target: "bash" as const,
 			action: {
-				command: input.command,
+				command,
 				requestedCwd: input.cwd,
 				requestedTimeout: input.timeout,
 			},
@@ -141,6 +184,7 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 		});
 	});
 	pi.on("session_shutdown", () => {
+		issuedBashCommands.delete(pi);
 		hookedApis.delete(pi);
 	});
 	registerGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY);

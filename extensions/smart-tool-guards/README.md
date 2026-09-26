@@ -35,7 +35,7 @@ Guarded calls use this precedence:
 3. Exact trimmed `pwd` and exact single-command, read-only `agent-browser` forms allow without a classifier call. The browser allowlist covers page inspection, runtime and metadata reads, documented output-only flags and filters, and help/version queries; URL reads, effectful waits, mutating siblings, wrappers, pipelines, and compound commands are excluded.
 4. Every other command defers to the classifier.
 
-The guard never rewrites input. Allowed calls continue through Pi's native `bash` executor with the original command, requested `cwd`, and requested `timeout`. Classifier context includes the requested values plus an effective cwd resolved from the session cwd; omitted timeout remains omitted. Caller cancellation and the classifier's own five-second decision deadline both abort the nested model request, independently of native execution timeout.
+The guard evaluates the model-issued command recorded at assistant `message_end`, and falls back to the current input when no record exists. `tool_call` input mutations by other extensions (for example `rtk`) are trusted and not re-evaluated. The guard itself never rewrites input. Allowed calls continue through Pi's native `bash` executor with the current input, requested `cwd`, and requested `timeout`. Classifier context includes the evaluated command, the requested cwd and timeout, and an effective cwd resolved from the session cwd; omitted timeout remains omitted. Caller cancellation and the classifier's own five-second decision deadline both abort the nested model request, independently of native execution timeout.
 
 ## Classifier Contract
 

@@ -12,6 +12,7 @@ Authorize selected native bash calls through deterministic policy and model clas
 - Guarded execution MUST fail closed on scope, input, or exhausted-classifier failures.
 - Non-bash tools and abstaining callers MUST retain native behavior.
 - Allowed calls MUST preserve command, cwd, timeout, and native execution semantics.
+- Policy and classifier MUST evaluate the model-issued command recorded at assistant `message_end`; other extensions' `tool_call` mutations are trusted and not re-evaluated.
 - Trusted policy MUST remain separate from untrusted command/context JSON.
 - Classifier verdicts MUST match the exact allow/block schema.
 - Denials MUST retain the stable envelope without raw provider errors.
