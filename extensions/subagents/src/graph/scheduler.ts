@@ -6,6 +6,8 @@ import type { NodeId } from "./ir.js";
 export type NodeStatus = "pending" | "running" | "completed" | "failed" | "skipped";
 
 export interface NodeRun {
+  /** Presentation only, derived from committed execution dispatch evidence. */
+  decisionSource?: "human" | "subagent";
   activation?: number;
   graphAttempt?: number;
   currentExecutionAttemptId?: ExecutionAttemptId;

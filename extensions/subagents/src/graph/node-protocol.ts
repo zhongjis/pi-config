@@ -22,6 +22,7 @@ export interface NodeEnvelope {
 }
 export type NodeOperation =
   | { readonly kind: "gate"; readonly costUsd: number | undefined }
+  | { readonly kind: "human"; readonly reason: string; readonly costUsd: number | undefined }
   | { readonly kind: "repair"; readonly result: Readonly<NodeSpawnResult>; readonly executed: boolean }
   | { readonly kind: "cancel"; readonly disposition: CancellationReason }
   | { readonly kind: "settle"; readonly result: Readonly<NodeSpawnResult>; readonly executed: boolean;
@@ -55,7 +56,7 @@ export function captureRequest(request: NodeRequest): NodeRequest {
   switch (operation.kind) {
     case "repair": case "settle": return Object.freeze({ ...request, correlation: Object.freeze({ ...request.correlation }),
       operation: Object.freeze({ ...operation, result: Object.freeze({ ...operation.result }) }) });
-    case "gate": case "cancel": return Object.freeze({ ...request, correlation: Object.freeze({ ...request.correlation }), operation: Object.freeze({ ...operation }) });
+    case "human": case "gate": case "cancel": return Object.freeze({ ...request, correlation: Object.freeze({ ...request.correlation }), operation: Object.freeze({ ...operation }) });
     default: { const exhaustive: never = operation; throw new TypeError(`Unknown node operation: ${exhaustive}`); }
   }
 }
@@ -114,7 +115,7 @@ export class NodeRequestJournal {
         }
         break;
       }
-      case "gate": case "cancel": case "settle":
+      case "human": case "gate": case "cancel": case "settle":
         if (!matchesExecution(entry.request.correlation, receipt.correlation) || receipt.executionSequence !== this.latest.executionSequence) throw new TypeError("Invalid node acknowledgment identity");
         break;
       default: { const exhaustive: never = entry.request.operation; throw new TypeError(`Unknown node operation: ${exhaustive}`); }

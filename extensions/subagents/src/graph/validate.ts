@@ -12,6 +12,7 @@
  * author sees all of them at once instead of one per round-trip.
  */
 
+import { compileDecisionSchema } from "./decision-gate.js";
 import { type GraphNode, NODE_TYPES, type NodeId } from "./ir.js";
 import { compileInputSchema, compileJsonSchema } from "./json-schema.js";
 import { isJsonPath } from "./value-ref.js";
@@ -233,12 +234,20 @@ class Validator {
           }
         }
         break;
-      case "human_gate":
+      case "agent_gate": case "hybrid_gate": case "human_gate":
+        if (type !== "human_gate" && !isNonEmptyString(node.agent)) this.err(`${path}.agent`, "must be a non-empty agent selector");
+        if (type === "human_gate" && node.agent !== undefined) this.err(`${path}.agent`, "human_gate cannot select an agent");
         if (!isNonEmptyString(node.prompt)) this.err(`${path}.prompt`, "must be a non-empty prompt");
         this.inputMap(`${path}.input`, node.input);
         this.promptPlaceholders(path, node.prompt, node.input);
-        if (node.outputSchema === undefined) this.err(`${path}.outputSchema`, "is required for a human_gate node");
-        else this.schema(`${path}.outputSchema`, node.outputSchema, true);
+        if (node.outputSchema === undefined) this.err(`${path}.outputSchema`, "is required for a decision gate node");
+        else {
+          this.schema(`${path}.outputSchema`, node.outputSchema, true);
+          try {
+            const schema = compileDecisionSchema(node.outputSchema);
+            if (schema.check({ approved: true }) !== true && schema.check({ approved: false }) !== true) this.err(`${path}.outputSchema`, "must accept an approve/reject decision { approved: boolean }");
+          } catch (error) { this.err(`${path}.outputSchema`, error instanceof Error ? error.message : String(error)); }
+        }
         break;
       case "graph":
         if (!isNonEmptyString(node.graph)) this.err(`${path}.graph`, "must be a non-empty saved-graph reference");

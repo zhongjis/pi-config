@@ -1,6 +1,6 @@
 ---
 name: agent-graphs
-description: Author, validate, run, and debug typed agent graphs for the `agent_graph` tool. Use when building or editing a `.graph.json` graph or an inline graph, or when a task is a multi-step / branching / looping / parallel agent graph.
+description: Author, validate, run, and debug typed agent graphs for the `agent_graph` tool. Use when building or editing a saved `.graph.json` or `.graph.yaml` graph, an inline graph, or when a task is a multi-step / branching / looping / parallel agent graph.
 ---
 
 You author **agent graphs**: typed, declarative graphs of agent work that the
@@ -28,8 +28,8 @@ agent_graph({
 agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...} })
 ```
 
-- **Saved graphs** live at `agent-graphs/<name>.graph.json`; a `/` in the name maps to a
-  subdirectory (e.g. `team/my-graph` → `agent-graphs/team/my-graph.graph.json`). Author with normal file tools; no CRUD tool.
+- **Saved graphs** live at `agent-graphs/<name>.graph.json` or `.graph.yaml`; a `/` in the name maps to a
+  subdirectory (e.g. `team/my-graph` → `agent-graphs/team/my-graph.graph.yaml`). Matching JSON and YAML names in one root are ambiguous. Author with normal file tools; no CRUD tool.
 - The call returns a **task id immediately** and runs in the background; you are
   notified on completion. Do not poll. Watch it in `/agents → Graph runs` (nodes
   grouped by stage, with pause / skip / retry).
@@ -85,8 +85,26 @@ settled but none activated, the node is **skipped**.
   `prompt` is a template: `${name}` is replaced by the resolved value of `input.name`.
   With `outputSchema` the child must return matching structured JSON. `validation.gate`
   is a shell command that must pass; `retry.maxAttempts` re-runs on schema/gate failure.
-- **human_gate** — pauses for a human decision; `outputSchema` is required (v1 UI is
-  approve/reject, producing `{ "approved": boolean }`).
+- **human_gate** — human-only approve/reject through the existing UI; never spawns an agent.
+- **agent_gate** — a configured `agent` decides; no human fallback.
+- **hybrid_gate** — the configured `agent` decides first; only a valid typed `undecided`
+  with a nonempty reason opens the human approve/reject UI.
+  ```jsonc
+  { "type": "hybrid_gate", "agent": "yanluo", "prompt": "Approve the plan?",
+    "outputSchema": { "type": "object", "properties": { "approved": { "type": "boolean" } },
+      "required": ["approved"], "additionalProperties": false } }
+  ```
+  All three decision gates require `prompt` and `outputSchema`, support template `input`,
+  and expose exactly `{ "approved": boolean }`; conditions read `$.approved`.
+  `outputSchema` constrains this exposed value, not the private agent result.
+  Agent-backed gates use a strict internal structured protocol:
+  `{ "status": "decided", "decision": { "approved": boolean } }` or
+  `{ "status": "undecided", "reason": "nonempty explanation" }` (no extra fields).
+  `agent_gate` fails on `undecided`. Invalid output, inability, unavailable agents and
+  execution failures fail both agent-backed gates without prompting. Gate agents obey
+  normal delegation permissions. Hybrid escalation is checkpointed before prompting;
+  lifecycle resume of a waiting hybrid preserves the human choice rather than rerunning
+  its agent. The monitor identifies the decision maker as human or the configured agent.
 - **graph** — runs a saved subgraph and uses its `outputs` as this node's output.
   ```jsonc
   { "type": "graph", "graph": "context-gather", "input": { "task": { "path": "$.task" } } }
@@ -179,10 +197,10 @@ envelope, strips it from the returned value, and surfaces it as the completion s
 
 ## Authoring steps
 
-1. Write the graph (inline or `.graph.json`), keeping ids and dependencies explicit.
+1. Write the graph (inline, `.graph.json`, or `.graph.yaml`), keeping ids and dependencies explicit.
 2. Run it — the tool validates first, so a shape error comes back before any cost.
 3. Watch `/agents → Graph runs`: nodes are grouped by stage with live status;
    conditional edges show which branch fired; expanded nodes appear as they insert.
 4. Depend only on validated structured output (`outputSchema` + `ValueRef`), never
    on an agent's prose.
-5. Promote a proven inline graph to `agent-graphs/<name>.graph.json`.
+5. Promote a proven inline graph to `agent-graphs/<name>.graph.json` or `.graph.yaml`.

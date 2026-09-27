@@ -40,7 +40,7 @@ Agent descendants automatically share the parent Agent tree's `local://` storage
 
 The base upstream provenance and existing Agent RPC/events remain unchanged. Graph-run supervision extends FleetView; Thinking Steps remains unchanged.
 
-The bundled [graph authoring skill](skills/agent-graphs/SKILL.md) covers the typed `agent_graph` API: saved and inline graphs, node types (`agent`, `human_gate`, `graph`, `expand`, `fanout`, v2 `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled agent graphs discover no skill.
+The bundled [graph authoring skill](skills/agent-graphs/SKILL.md) covers the typed `agent_graph` API: saved and inline graphs, node types (`agent`, `human_gate`, `agent_gate`, `hybrid_gate`, `graph`, `expand`, `fanout`, v2 `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled agent graphs discover no skill.
 
 <img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
 
@@ -368,19 +368,23 @@ The tool validates the graph structure before allocating a run; invalid graphs a
 | Type | Description |
 |------|-------------|
 | `agent` | Runs a Pi subagent with the given prompt and agent type |
-| `human_gate` | Pauses the run for approve/reject from a human |
+| `human_gate` | Human-only approve/reject; never delegates |
+| `agent_gate` | Configured Subagent decision; uncertainty fails without human fallback |
+| `hybrid_gate` | Configured Subagent first; only valid typed uncertainty prompts a human |
 | `graph` | Runs a saved subgraph as a nested execution |
 | `expand` | Splices a runtime-generated `GraphFragment` into the run |
 | `fanout` | Awaits one typed, input-ordered all-settled agent collection |
 | `bounded_feedback` | Version 2: repeats fixed fanout/evaluator templates under explicit bounds, retaining every iteration |
 
-Typed node `outputSchema` drives declarative edge conditions and bounded loops. A node may carry a `validation.gate` shell command and `retry` configuration.
+Typed node `outputSchema` drives declarative edge conditions and bounded loops. An `agent` node may carry a `validation.gate` shell command and `retry` configuration; deterministic validation is not a decision gate.
+
+All three decision gates expose exactly `{ approved: boolean }`, with conditions reading `$.approved`. Their required `outputSchema` validates this exposed value. Agent-backed gates require an `agent` selector and use the private structured result `{ status: "decided", decision: { approved: boolean } }` or `{ status: "undecided", reason: "nonempty explanation" }`. Only the latter permits hybrid escalation; invalid output, inability, unavailable agents and execution failures fail closed. Delegation preflight and dispatch authorization cover gate agents. The execution ledger records the decision source, and monitor labels distinguish humans from Subagents. Hybrid human escalation commits before prompting; lifecycle resume preserves the human-only boundary, including draining non-abortable prompts before releasing capacity.
 
 Version 2 separates authored keys, optional display names and durable UUID-v4 runtime instances. Its checkpointed feedback decisions, bounds, terminal results and public fixture are documented in [Bounded Feedback](skills/agent-graphs/references/bounded-feedback.md). V2 monitor rows follow materialization order; future iterations are absent. Optional `deadline` bounds elapsed milliseconds from the persisted run start; `spendLimit` bounds reported work/evaluator USD cost, including repairs. Limits stop growth before materialization/continuation with preserved partial evidence; missing execution-cost accounting fails closed rather than estimating tokens. Restore preserves start/costs, while fresh replay starts anew. Already-admitted work may finish beyond a limit.
 
 Graph checkpoints in `.pi/graph-runs/` use atomic replacement, exclusive run leases and append-only versioned manifests before dispatch. Each new snapshot retains its originating exact Pi session ID across writes: only that session auto-resumes it after restart. Other sessions silently ignore it whether its writer is live or dead; ownerless legacy snapshots remain untouched and are never automatically adopted. The lease still prevents concurrent same-session writers. Restore validates filename containment, scheduler state, executable children and recursive delegation policy before creating tasks or writing. Session-owned v1 snapshots upgrade before execution; unknown/corrupt snapshots fail visibly. Retry/restore retain IDs and attempt budgets, while fresh runs allocate new identities. Explicit cancellation is terminal; lifecycle interruptions remain resumable. Crash recovery can repeat external actions; it is not an exactly-once guarantee.
 
-Saved graphs live at `agent-graphs/<name>.graph.json`. One saved graph ships with this config: `context-gather`. Spec: [`docs/specs/agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md).
+Saved graphs live at `agent-graphs/<name>.graph.json` or `.graph.yaml`; matching formats in one root are ambiguous. This config ships `context-gather` and `deep-research`. Specs: [`agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md) and [`agent-graph-yaml-invocation-gates.md`](../../docs/specs/agent-graph-yaml-invocation-gates.md).
 
 Graph node thinking follows the agent's frontmatter → model-chain suffix → SDK default, never a node override or implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 

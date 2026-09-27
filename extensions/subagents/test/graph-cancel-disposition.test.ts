@@ -55,7 +55,7 @@ it.each((["reload", "switch", "shutdown"] as const).flatMap(reason => (["agent",
   const before = requireValue(frames.find(state => !drained(state) && ledger(state).some(row => "payload" in row && row.payload.kind === "cancel-requested")), "missing cancellation checkpoint");
   for (const saved of [before, requireValue(frames.at(-1), "missing terminal checkpoint")]) {
     let latest: SchedulerState | undefined; let admission: SchedulerState | undefined; const identities: ExecutionCorrelation[] = [];
-    const replacement = async (request: { correlation?: ExecutionCorrelation }) => { identities.push(requireValue(request.correlation, "missing execution correlation")); return { ok: true, output: "{}" }; };
+    const replacement = async (request: { correlation?: ExecutionCorrelation }) => { identities.push(requireValue(request.correlation, "missing execution correlation")); return { ok: true, output: type === "human_gate" ? '{"approved":true}' : "{}" }; };
     const result = await runGraph(graph, {}, { restore: saved, reclaimedDeadWriter: true, onCheckpoint: state => { validateGraphRestore(state, graph); latest = state; if (state.nodes.a.status === "running" && state.nodes.a.graphAttempt === 2) admission ??= state; }, host: { reconcileDrain: async () => true, spawnAgent: replacement, awaitHumanGate: replacement } });
     expect(result.nodes.a).toMatchObject({ status: "completed", activation: 1, graphAttempt: 2, attempt: 2, attemptReason: "restore" });
     expect(identities).toHaveLength(1); expect(identities[0].executionAttemptId).not.toBe(saved.nodes.a.currentExecutionAttemptId);

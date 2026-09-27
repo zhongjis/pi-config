@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { decision, decisionSchema, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal } from "./bounded-feedback.js";
 import { type CoordinatorReceipt, type CoordinatorRequest, coordinatorReceipt, type FeedbackOwnerView } from "./coordinator-protocol.js";
+import { compileDecisionSchema } from "./decision-gate.js";
 import { prepareFanout } from "./fanout.js";
 import { validateCheckpointTransition } from "./graph-checkpoint-transition.js";
 import { matchesExecution, upgradeLegacyExecution } from "./graph-execution.js";
@@ -20,12 +21,12 @@ import type {
   AgentGraph,
   AgentNode,
   BoundedFeedbackNode,
+  DecisionGateNode,
   ExpandNode,
   FanoutNode,
   FanoutResult,
   GraphFragment,
   GraphNode,
-  HumanGateNode,
   NodeId,
   SubgraphNode,
   ValueRef,
@@ -56,7 +57,7 @@ function interpolate(prompt: string, input: AgentNode["input"], ctx: ResolutionC
 /** Parse a completed node's output for the projection: JSON when schema'd, else text. */
 function parseOutput(node: GraphNode, result: NodeSpawnResult): unknown {
   if (!result.ok || result.output === undefined) return undefined;
-  if ((node.type === "agent" && node.outputSchema !== undefined) || node.type === "human_gate") {
+  if ((node.type === "agent" && node.outputSchema !== undefined) || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate") {
     try {
       return JSON.parse(result.output);
     } catch {
@@ -203,6 +204,13 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const run = projection.nodes.get(id);
     if (run !== undefined) {
       const copy = { ...run }; const identity = executions.current(id);
+      delete copy.decisionSource; // Presentation is derived, never restored as authority.
+      const type = nodeDefs.get(id)?.type;
+      if (run.status === "completed" && identity && (type === "human_gate" || type === "agent_gate" || type === "hybrid_gate")) {
+        const rows = executions.rows(identity);
+        const dispatch = rows.filter(row => row.payload.kind === "dispatched").at(-1)?.payload;
+        if (dispatch?.kind === "dispatched" && rows.some(row => row.payload.kind === "outcome" && row.payload.status === "success")) copy.decisionSource = dispatch.target === "human-gate" ? "human" : "subagent";
+      }
       const presentation = graph.version === 2 ? presentationOf(id) : undefined;
       publish(() => options.onNodeUpdate?.(displayId(id), copy, identity, presentation));
     }
@@ -505,7 +513,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const admitted = correlation && executions.rows(correlation).find(row => row.payload.kind === "admitted")?.payload;
     return admitted?.kind === "admitted" ? admitted.resources : [];
   };
-  const running = (): string[] => [...new Set([...owned().filter(id => ["agent", "human_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")), ...[...projection.nodes].filter(([id, run]) => run.status === "running" && ["agent", "human_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")).map(([id]) => id)])];
+  const running = (): string[] => [...new Set([...owned().filter(id => ["agent", "human_gate", "agent_gate", "hybrid_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")), ...[...projection.nodes].filter(([id, run]) => run.status === "running" && ["agent", "human_gate", "agent_gate", "hybrid_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")).map(([id]) => id)])];
   const canAdmit = (resources: readonly string[]): boolean => resources.every(name => {
     const capacity = options.resources?.[name]?.capacity;
     return hasCapacity(running().filter(id => resourceNames(id).includes(name)).length, capacity);
@@ -543,20 +551,31 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
         onNodeResolved: (childId, info, identity) => options.onNodeResolved?.(nestedId(childId), info, identity),
       } } } };
   };
-  const admit = (id: string, node: AgentNode | HumanGateNode): GraphAdmission | undefined => {
-    const denied = node.type === "agent" ? options.authorizeAgent?.(node.agent) : !options.host.awaitHumanGate ? "This host cannot await human input" : undefined;
+  const gateWaiting = (id: string): void => {
+    const { runtime: _runtime, ...state } = projection.snapshotState(); const definition = effectiveGraph();
+    publish(() => options.onGateWaiting?.(id, state, definition));
+  };
+  const admit = (id: string, node: AgentNode | DecisionGateNode): GraphAdmission | undefined => {
+    const denied = node.type !== "human_gate" ? options.authorizeAgent?.(node.agent) : !options.host.awaitHumanGate ? "This host cannot await human input" : undefined;
     if (denied) { complete(id, { ok: false, error: denied }); report(id); return undefined; }
+    const previous = executions.current(id);
+    const dispatch = previous && executions.rows(previous).filter(row => row.payload.kind === "dispatched").at(-1)?.payload;
+    // An interrupted hybrid human boundary must not become another automated decision.
+    const humanReason = node.type === "hybrid_gate" && (restoringStarts.has(id) || projection.nodes.get(id)?.attemptReason === "restore") && dispatch?.kind === "dispatched" && dispatch.target === "human-gate" ? dispatch.reason : undefined;
     startNode(id);
-    const correlation = executions.begin(id, node);
+    const correlation = executions.begin(id, node, humanReason);
     if (!correlation) { complete(id, { ok: false, error: "Execution budget exhausted" }); report(id); return undefined; }
     report(id);
     const receipt = admissionReceipt({ id, incarnation: randomUUID(), correlation, executionSequence: executions.index.consumed(correlation) });
-    if (node.type === "human_gate") {
+    if (node.type !== "agent") {
       const prompt = interpolate(node.prompt, node.input, contextOf(projection, input));
-      const compiled = compileJsonSchema(node.outputSchema);
-      const { runtime: _runtime, ...state } = projection.snapshotState(); const definition = effectiveGraph();
-      publish(() => options.onGateWaiting?.(id, state, definition));
-      return { kind: "human", id, input: { receipt, host: options.host, node: { kind: "human", nodeId: id, prompt, ...(compiled.ok ? { schema: compiled.compiled } : {}) } } };
+      const schema = compileDecisionSchema(node.outputSchema);
+      if (node.type === "human_gate" || humanReason !== undefined) gateWaiting(id);
+      return { kind: "human", id, input: { receipt, host: options.host,
+        ...(node.type !== "human_gate" ? { authorize: () => options.authorizeAgent?.(node.agent) } : {}),
+        node: { nodeId: graph.version === 2 ? instances.get(id).instanceId : id, prompt: humanReason ? `${prompt}\n\nSubagent undecided: ${humanReason}` : prompt, schema,
+          ...(node.type === "human_gate" ? { kind: "human" } : { kind: "decision", agentType: node.agent, hybrid: node.type === "hybrid_gate", humanOnly: humanReason !== undefined }),
+        } } };
     }
     const compiled = node.outputSchema === undefined ? undefined : compileJsonSchema(node.outputSchema);
     const exec: { -readonly [Key in keyof AgentLifecycleInput["node"]]: AgentLifecycleInput["node"][Key] } = {
@@ -595,7 +614,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       if (!canAdmit(node.type === "agent" ? node.resources ?? [] : [])) continue;
       changed = true;
       switch (node.type) {
-        case "agent": case "human_gate": { const admission = admit(id, node); if (admission) wave.push(admission); break; }
+        case "agent": case "human_gate": case "agent_gate": case "hybrid_gate": { const admission = admit(id, node); if (admission) wave.push(admission); break; }
         case "graph": { startNode(id); report(id); const admission = subgraph(id, node); if (admission) wave.push(admission); break; }
         case "bounded_feedback": wave.push(admitFeedback(id)); break;
         case "fanout": wave.push(admitFanout(id)); break;
@@ -646,6 +665,14 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     if (!node || !current || !matchesExecution(current, correlation) || !matchesExecution(receipt.correlation, correlation) || receipt.id !== id || receipt.incarnation !== request.incarnation) throw new TypeError("Stale node transaction identity");
     const intent = disposition(id);
     switch (operation.kind) {
+      case "human":
+        if (node.type !== "hybrid_gate" || !operation.reason.trim() || executions.rows(current).some(row => row.payload.kind === "drain-ack")) throw new TypeError("Invalid human decision boundary");
+        if (!intent) {
+          executions.cost(id, current, operation.costUsd);
+          executions.emit(id, { ...current, payload: { kind: "dispatched", target: "human-gate", reason: operation.reason } });
+          gateWaiting(id);
+        }
+        checkpoint(); report(id); return receipt;
       case "gate":
         if (node.type !== "agent" || executions.rows(current).some(row => row.payload.kind === "drain-ack")) throw new TypeError("Invalid node gate boundary");
         // A queued gate still needs its ACK after cancellation, but cannot dispatch another effect.

@@ -9,7 +9,7 @@ it.each(["agent", "human_gate"] as const)("dispatches %s through admission and r
     input: { graph: { nodes: { a: type === "agent" ? { type, agent: "worker", prompt: "fixture" } : { type, prompt: "fixture", outputSchema: { type: "object" } } }, edges: [] }, input: {}, depth: 0,
       options: { onCheckpoint: () => { events.push("checkpoint"); }, host: {
         spawnAgent: async () => { events.push("effect"); return { ok: true }; },
-        awaitHumanGate: async () => { events.push("effect"); return { ok: true, output: "{}" }; },
+        awaitHumanGate: async () => { events.push("effect"); return { ok: true, output: '{"approved":true}' }; },
       } } },
   }).start();
   expect((await toPromise(actor)).status).toBe("completed");

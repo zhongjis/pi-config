@@ -5,6 +5,7 @@ import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-wor
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import * as agentTypes from "../src/agent-types.js";
+import { agentDecisionSchema, decisionValueSchema } from "../src/graph/decision-gate.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import { createNodeHost } from "../src/graph/node-host-adapter.js";
 import { runGraph } from "../src/graph/run-graph.js";
@@ -233,5 +234,42 @@ it("preserves case-insensitive valid names and resolves the agent's frontmatter 
   expect(result.ok).toBe(true);
   expect(vi.mocked(runAgent).mock.calls.at(-1)?.[1]).toBe("fixture");
   expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].selectedModel?.model).toEqual(model);
+  await host.dispose();
+});
+
+it.each(["agent_gate", "hybrid_gate"] as const)("runs %s through AgentManager with the private schema", async type => {
+  configureAgent(agentConfig());
+  const select = vi.fn<ExtensionContext["ui"]["select"]>();
+  const { host } = setup(JSON.stringify({ status: "decided", decision: { approved: false } }), { context: { ...ctx, ui: { ...ctx.ui, select } } });
+  const graph: AgentGraph = { nodes: { gate: { type, agent: "fixture", prompt: "Decide", outputSchema: decisionValueSchema } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
+  const result = await runGraph(graph, {}, { host });
+  expect(result.outputs).toEqual({ result: { approved: false } });
+  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].structuredOutput?.schema).toEqual(agentDecisionSchema);
+  expect(select).not.toHaveBeenCalled();
+  await host.dispose();
+});
+
+it.each(["unknown", "disabled", "execution"])("hybrid never opens UI for %s agent failure", async failure => {
+  const select = vi.fn<ExtensionContext["ui"]["select"]>();
+  const { host } = setup("invalid decision", { context: { ...ctx, ui: { ...ctx.ui, select } } });
+  if (failure === "unknown") vi.spyOn(agentTypes, "resolveType").mockReturnValue(undefined);
+  else configureAgent(agentConfig({ enabled: failure !== "disabled" }));
+  if (failure === "execution") vi.mocked(runAgent).mockRejectedValue(new Error("executor failed"));
+  const graph: AgentGraph = { nodes: { gate: { type: "hybrid_gate", agent: "fixture", prompt: "Decide", outputSchema: decisionValueSchema } }, edges: [] };
+  const result = await runGraph(graph, {}, { host });
+  expect(result.nodes.gate.status).toBe("failed");
+  expect(select).not.toHaveBeenCalled();
+  await host.dispose();
+});
+
+it("hybrid uses the existing approve/reject UI after typed uncertainty", async () => {
+  configureAgent(agentConfig());
+  const select = vi.fn<ExtensionContext["ui"]["select"]>().mockResolvedValue("Reject");
+  const { host } = setup(JSON.stringify({ status: "undecided", reason: "Need approval" }), { context: { ...ctx, ui: { ...ctx.ui, select } } });
+  const graph: AgentGraph = { nodes: { gate: { type: "hybrid_gate", agent: "fixture", prompt: "Decide", outputSchema: decisionValueSchema } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
+  const result = await runGraph(graph, {}, { host });
+  expect(result.outputs).toEqual({ result: { approved: false } });
+  expect(select).toHaveBeenCalledWith(expect.any(String), ["Approve", "Reject"]);
+  expect(runAgent).toHaveBeenCalledOnce();
   await host.dispose();
 });

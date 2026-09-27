@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { type CancellationReason, type ExecutionCorrelation, type ExecutionEvent, ExecutionIndex, executionAttemptId, matchesExecution } from "./graph-execution.js";
 import type { GraphRuntimeState, NestedCheckpoint, NodeInstanceId } from "./graph-instance-id.js";
 import { applyRecovery, ProjectionTable, type RecoveryProposal } from "./graph-projection.js";
-import type { AgentNode, HumanGateNode } from "./ir.js";
+import type { AgentNode, DecisionGateNode } from "./ir.js";
 import type { NodeHost, NodeSpawnResult } from "./node-host.js";
 import type { NodeRun } from "./scheduler.js";
 import { subgraphRecoveryProposal } from "./subgraph-disposition.js";
@@ -36,7 +36,7 @@ export class GraphExecutions {
   }
   current(id: string): ExecutionCorrelation | undefined { return this.latest.get(id); }
   rows(correlation: ExecutionCorrelation): readonly ExecutionEvent[] { return this.index.executions.get(correlation.executionAttemptId) ?? []; }
-  begin(id: string, node: AgentNode | HumanGateNode): ExecutionCorrelation | undefined {
+  begin(id: string, node: AgentNode | DecisionGateNode, humanReason?: string): ExecutionCorrelation | undefined {
     const run = this.nodes.get(id);
     if (!run || run.activation === undefined || run.graphAttempt === undefined) throw new TypeError(`Missing execution state for ${id}`);
     const scope = { runId: this.runtime.runId, instanceId: this.identity(id), activation: run.activation, graphAttempt: run.graphAttempt };
@@ -44,7 +44,7 @@ export class GraphExecutions {
     if (this.index.consumed(scope) >= budget.maxExecutions) return undefined;
     const correlation = Object.freeze({ ...scope, executionAttemptId: executionAttemptId(randomUUID()) });
     this.index.append({ ...correlation, payload: { kind: "admitted", resources: node.type === "agent" ? [...node.resources ?? []] : [], budget } });
-    this.index.append({ ...correlation, payload: { kind: "dispatched", target: node.type === "agent" ? "agent" : "human-gate" } });
+    this.index.append({ ...correlation, payload: { kind: "dispatched", target: node.type === "human_gate" || humanReason !== undefined ? "human-gate" : "agent", ...(humanReason !== undefined ? { reason: humanReason } : {}) } });
     this.latest.set(id, correlation); run.currentExecutionAttemptId = correlation.executionAttemptId;
     return correlation;
   }

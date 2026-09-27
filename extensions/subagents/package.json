@@ -64,6 +64,7 @@
     "image": "https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png"
   },
   "dependencies": {
-    "xstate": "^5.33.2"
+    "xstate": "^5.33.2",
+    "yaml": "^2.9.0"
   }
 }
