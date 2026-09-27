@@ -100,6 +100,7 @@ See [modes.md](specs/modes.md) for the shipped mode contract and [orchistration.
 | [herdr-agent-graph-presentation.md](specs/herdr-agent-graph-presentation.md) | Shipped durable hierarchy-first presentation contract for the Herdr agent-graph side panel |
 | [dynamic-agent-graph-expansion.md](specs/dynamic-agent-graph-expansion.md) | Shipped awaited typed fanout, all-settled collection, persistence, and dynamic monitor contract |
 | [agent-graph-bounded-feedback.md](specs/agent-graph-bounded-feedback.md) | Shipped bounded feedback over fanout with durable runtime identity, crash-safe iteration materialization, and partial synthesis |
+| [agent-graph-yaml-invocation-gates.md](specs/agent-graph-yaml-invocation-gates.md) | Draft saved agent graph YAML, explicit `$graph:<name>` invocation, and three decision gates |
 | [dynamic-agent-graph-expansion-implementation.md](guides/dynamic-agent-graph-expansion-implementation.md) | Implementation plan and verification path for awaited dynamic fanout and two-round context gathering |
 | [testing/README.md](guides/testing/README.md) | Extension testing policy and two-tier model |
 | [testing/unit-test.md](guides/testing/unit-test.md) | Unit test conventions |

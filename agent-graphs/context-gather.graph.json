@@ -20,6 +20,16 @@
           "required": ["id", "criterion"],
           "additionalProperties": false
         }
+      },
+      "budget": {
+        "type": "object",
+        "properties": {
+          "maxTasks": { "type": "integer", "minimum": 1, "maximum": 6 },
+          "maxGapTasks": { "type": "integer", "minimum": 0, "maximum": 3 },
+          "maxAnswerWords": { "type": "integer", "minimum": 100, "maximum": 2000 }
+        },
+        "required": ["maxTasks", "maxGapTasks", "maxAnswerWords"],
+        "additionalProperties": false
       }
     },
     "required": ["request", "requiredCoverage"],
