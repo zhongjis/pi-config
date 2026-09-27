@@ -19,81 +19,56 @@ const PORTFOLIO = [
   "deep-research",
 ] as const;
 
-const INITIAL_TASK_SCHEMA = {
+const TASK_SCHEMA = {
   type: "object",
   properties: {
     source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
-    question: { type: "string" },
-    reason: { type: "string" },
+    question: { type: "string", minLength: 1 },
+    purpose: { type: "string", minLength: 1 },
+    criterionIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } },
   },
-  required: ["source", "question"],
-} as const;
+  required: ["source", "question", "purpose", "criterionIds"],
+  additionalProperties: false,
+};
 
-const EVIDENCE_SCHEMA = {
+const CLAIM_SCHEMA = {
   type: "object",
   properties: {
-    source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
-    evidence: {
+    claimId: { type: "string", minLength: 1 },
+    claim: { type: "string", minLength: 1 },
+    criterionIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } },
+    confidence: { type: "string", enum: ["direct", "inferred"] },
+    provenance: {
       type: "array",
+      minItems: 1,
+      maxItems: 4,
       items: {
         type: "object",
         properties: {
-          claim: { type: "string" },
-          provenance: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: { reference: { type: "string" }, detail: { type: "string" } },
-              required: ["reference", "detail"],
-            },
-          },
+          reference: { type: "string", minLength: 1 },
+          locator: { type: "string", minLength: 1 },
+          excerpt: { type: "string", minLength: 1 },
+          detail: { type: "string", minLength: 1 },
         },
-        required: ["claim", "provenance"],
+        required: ["reference", "locator", "excerpt", "detail"],
+        additionalProperties: false,
       },
     },
-    relevantFiles: { type: "array", items: { type: "string" } },
-    constraints: { type: "array", items: { type: "string" } },
-    unknowns: { type: "array", items: { type: "string" } },
-    conflicts: { type: "array", items: { type: "string" } },
   },
-  required: ["source", "evidence", "relevantFiles", "constraints", "unknowns", "conflicts"],
-} as const;
+  required: ["claimId", "claim", "criterionIds", "confidence", "provenance"],
+  additionalProperties: false,
+};
 
-
-describe("agent-graph reusable portfolio", () => {
-  for (const name of PORTFOLIO) {
-    it(`resolves and validates ${name}`, () => {
-      const resolved = resolveSavedGraph(name, REPO_ROOT);
-      expect(resolved.ok, resolved.ok ? "" : resolved.message).toBe(true);
-      if (!resolved.ok) return;
-      const verdict = validateGraph(resolved.graph);
-      expect(verdict.ok, verdict.errors.join("\n")).toBe(true);
-    });
-  }
-});
-
-it("describes the context-gather graph", () => {
-  const resolved = resolveSavedGraph("context-gather", REPO_ROOT);
-  expect(resolved.ok, resolved.ok ? "" : resolved.message).toBe(true);
-  if (!resolved.ok) return;
-  const description = (resolved.graph as { description?: unknown }).description;
-  expect(typeof description).toBe("string");
-  if (typeof description !== "string") return;
-  expect(description.trim()).not.toBe("");
-});
-
+function isAgentGraph(value: unknown): value is AgentGraph {
+  return validateGraph(value).ok;
+}
 
 function savedGraph(name: string): AgentGraph {
   const resolved = resolveSavedGraph(name, REPO_ROOT);
   expect(resolved.ok, resolved.ok ? "" : resolved.message).toBe(true);
   if (!resolved.ok) throw new Error(resolved.message);
-  return resolved.graph as AgentGraph;
-}
-
-function requiresInput(graph: AgentGraph, field: string): void {
-  const schema = graph.inputSchema as { properties?: Record<string, unknown>; required?: unknown } | undefined;
-  expect(schema?.properties).toHaveProperty(field);
-  expect(schema?.required).toContain(field);
+  if (!isAgentGraph(resolved.graph)) throw new Error(`Saved graph ${name} did not validate`);
+  return resolved.graph;
 }
 
 function agentNode(graph: AgentGraph, id: string): Extract<GraphNode, { type: "agent" }> {
@@ -110,119 +85,313 @@ function boundedFeedbackNode(graph: AgentGraph, id: string): Extract<GraphNode, 
   return node;
 }
 
+function placeholders(prompt: string): string[] {
+  return [...prompt.matchAll(/\$\{([A-Za-z_$][\w$]*)\}/g)].map(([, name]) => name);
+}
+
+const INPUT = {
+  request: "Verify the current repository configuration and runtime behavior.",
+  requiredCoverage: [
+    { id: "configuration", criterion: "Current configuration is directly evidenced." },
+    { id: "runtime", criterion: "Runtime behavior is directly evidenced." },
+  ],
+};
+
+const INITIAL_TASK = {
+  source: "project",
+  question: "Inspect the repository configuration and runtime entry point.",
+  purpose: "Establish the requested configuration and runtime coverage.",
+  criterionIds: ["configuration", "runtime"],
+};
+
+const GAP_TASK = {
+  source: "project",
+  question: "Inspect the runtime path for the missing coverage criterion.",
+  purpose: "Close the isolated runtime coverage gap.",
+  criterionIds: ["runtime"],
+};
+
+const PROJECT_EVIDENCE = {
+  source: "project",
+  claims: [{
+    claimId: "project-runtime-entry",
+    claim: "The repository runtime entry point declares the configured behavior.",
+    criterionIds: ["configuration", "runtime"],
+    confidence: "direct",
+    provenance: [{
+      reference: "extensions/subagents/src/index.ts",
+      locator: "activate",
+      excerpt: "export function activate",
+      detail: "The activation entry point is present in the repository source.",
+    }],
+  }],
+  unknowns: [],
+  conflicts: [],
+};
+
+const GAP_EVIDENCE = {
+  source: "project",
+  claims: [{
+    claimId: "project-runtime-gap",
+    claim: "The targeted runtime path provides the missing direct evidence.",
+    criterionIds: ["runtime"],
+    confidence: "direct",
+    provenance: [{
+      reference: "extensions/subagents/src/graph/run-graph.ts",
+      locator: "runGraph",
+      excerpt: "export async function runGraph",
+      detail: "The graph execution entry point is directly defined by this source.",
+    }],
+  }],
+  unknowns: [],
+  conflicts: [],
+};
+
+const SUFFICIENT = { decision: "sufficient", gaps: [], tasks: [] };
+
+const COMPLETE_SYNTHESIS = {
+  answer: "The configuration and runtime behavior are directly evidenced.",
+  verifiedCoverage: [
+    { id: "configuration", status: "supported", claimIds: ["project-runtime-entry"] },
+    { id: "runtime", status: "supported", claimIds: ["project-runtime-entry"] },
+  ],
+  unknowns: [],
+  evidence: PROJECT_EVIDENCE.claims,
+  conflicts: [],
+  outcome: { status: "succeeded", reason: "All requested coverage is directly supported." },
+};
+
+const PARTIAL_SYNTHESIS = {
+  answer: "Configuration is supported; runtime coverage remains unknown.",
+  verifiedCoverage: [
+    { id: "configuration", status: "supported", claimIds: ["project-runtime-entry"] },
+    { id: "runtime", status: "missing", claimIds: [], reason: "No direct runtime evidence was found." },
+  ],
+  unknowns: ["No direct runtime evidence was found."],
+  evidence: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, criterionIds: ["configuration"] })),
+  conflicts: [],
+  outcome: { status: "partial", reason: "Missing runtime coverage." },
+};
+
+describe("agent-graph reusable portfolio", () => {
+  for (const name of PORTFOLIO) {
+    it(`resolves and validates ${name}`, () => {
+      const resolved = resolveSavedGraph(name, REPO_ROOT);
+      expect(resolved.ok, resolved.ok ? "" : resolved.message).toBe(true);
+      if (!resolved.ok) return;
+      const verdict = validateGraph(resolved.graph);
+      expect(verdict.ok, verdict.errors.join("\n")).toBe(true);
+    });
+  }
+});
+
+it("describes the context-gather graph", () => {
+  const description = savedGraph("context-gather").description;
+  expect(typeof description).toBe("string");
+  if (typeof description !== "string") throw new Error("Context-gather graph needs a description");
+  expect(description.trim()).not.toBe("");
+});
+
 describe("adaptive context-gather contract", () => {
-  it("uses one bounded-feedback research region with exact bounds", () => {
+  it("plans criterion-linked research with the bounded feedback contract", () => {
     const graph = savedGraph("context-gather");
-    requiresInput(graph, "request");
-    requiresInput(graph, "tasks");
     expect(graph.version).toBe(2);
-    expect(Object.keys(graph.nodes)).toEqual(["research", "synthesize"]);
-    expect(Object.values(graph.nodes).filter(node => node.type === "bounded_feedback")).toHaveLength(1);
-    expect(Object.values(graph.nodes).some(node => node.type === "fanout" || node.type === "expand")).toBe(false);
-    expect(graph.edges).toEqual([{ from: "research", to: "synthesize" }]);
+    expect(graph.inputSchema).toMatchObject({
+      type: "object",
+      required: ["request", "requiredCoverage"],
+      additionalProperties: false,
+      properties: {
+        request: { type: "string", minLength: 1, pattern: "\\S" },
+        requiredCoverage: { type: "array", minItems: 1, maxItems: 12 },
+      },
+    });
+    expect(graph.inputSchema).not.toHaveProperty("properties.budget");
+    expect(Object.keys(graph.nodes)).toEqual(["plan", "research", "synthesize"]);
+    expect(graph.edges).toEqual([{ from: "plan", to: "research" }, { from: "research", to: "synthesize" }]);
+
+    const plan = agentNode(graph, "plan");
+    expect(plan).toMatchObject({
+      agent: "xuannv",
+      input: {
+        request: { path: "$.request" },
+        requiredCoverage: { path: "$.requiredCoverage" },
+      },
+      retry: { maxAttempts: 2 },
+      outputSchema: {
+        type: "object",
+        properties: { tasks: { type: "array", minItems: 1, maxItems: 6, items: TASK_SCHEMA } },
+        required: ["tasks"],
+        additionalProperties: false,
+      },
+    });
 
     const research = boundedFeedbackNode(graph, "research");
-    expect(research.name).toBe("Research");
-    expect(research.maxIterations).toBe(2);
-    expect(research.maxItemsPerIteration).toBe(200);
-    expect(research.maxTotalItems).toBe(400);
-    expect(research.work).toMatchObject({
-      type: "fanout",
-      name: "Gather evidence",
-      items: { path: "$.tasks" },
-      itemSchema: INITIAL_TASK_SCHEMA,
-      dispatch: {
-        path: "$.source",
-        cases: {
-          project: "chengfeng",
-          platform: "wenchang",
-          upstream: "wenchang",
-          "work-records": "wenchang",
-          practice: "wenchang",
-        },
-      },
-      input: { request: { path: "$.request" } },
-      outputSchema: EVIDENCE_SCHEMA,
+    expect(research).toMatchObject({ maxIterations: 2, maxItemsPerIteration: 6, maxTotalItems: 9 });
+    expect(research.work.items).toEqual({ node: "plan", path: "$.tasks" });
+    expect(research.work.dispatch).toEqual({
+      path: "$.source",
+      cases: { project: "chengfeng", platform: "wenchang", upstream: "wenchang", "work-records": "wenchang", practice: "wenchang" },
     });
-  });
-
-  it("uses the reserved accumulated feedback evaluator contract", () => {
-    const research = boundedFeedbackNode(savedGraph("context-gather"), "research");
+    expect(research.work).toMatchObject({
+      input: { request: { path: "$.request" }, requiredCoverage: { path: "$.requiredCoverage" } },
+      itemSchema: TASK_SCHEMA,
+      outputSchema: {
+        type: "object",
+        properties: {
+          source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
+          claims: { type: "array", maxItems: 4, items: CLAIM_SCHEMA },
+          unknowns: { type: "array", maxItems: 6 },
+          conflicts: { type: "array", maxItems: 4 },
+        },
+        required: ["source", "claims", "unknowns", "conflicts"],
+        additionalProperties: false,
+      },
+    });
     expect(research.evaluator).toMatchObject({
-      type: "agent",
-      name: "Evaluate evidence",
       agent: "direnjie",
-      input: { request: { path: "$.request" }, tasks: { path: "$.tasks" } },
+      input: {
+        request: { path: "$.request" },
+        requiredCoverage: { path: "$.requiredCoverage" },
+        plan: { node: "plan", path: "$" },
+      },
       retry: { maxAttempts: 2 },
     });
     expect(research.evaluator.input).not.toHaveProperty("feedback");
-    expect(research.evaluator.outputSchema).toBeUndefined();
-    for (const placeholder of [`\${request}`, `\${tasks}`, `\${feedback}`]) expect(research.evaluator.prompt).toContain(placeholder);
-    expect(research.evaluator.prompt).toContain("gapId");
-    expect(research.evaluator.prompt.toLowerCase()).toContain("do not add practice research by default");
-  });
-
-  it("runs sufficient and one-continuation evidence fixtures without materializing future work", async () => {
-    const sufficient = { decision: "sufficient", gaps: [], tasks: [] };
-    const continueOnce = {
-      decision: "continue",
-      gaps: [{ id: "platform-gap", description: "Platform behavior is unverified" }],
-      tasks: [{ gapId: "platform-gap", item: { source: "platform", question: "Verify the platform behavior", reason: "Close platform-gap" } }],
-    };
-    const gatheredContext = {
-      summary: "Evidence gathered.", relevantFiles: [], constraints: [], unknowns: [],
-      evidence: [{ claim: "Observed evidence", provenance: [{ reference: "fixture", detail: "stub" }] }], conflicts: [],
-    };
-    for (const [fixture, expectedAgents] of [
-      [[sufficient], ["chengfeng", "direnjie", "jintong"]],
-      [[continueOnce, sufficient], ["chengfeng", "direnjie", "wenchang", "direnjie", "jintong"]],
-    ] as const) {
-      const decisions = [...fixture];
-      const agents: string[] = [];
-      let bindings: string[] = [];
-      const result = await runGraph(savedGraph("context-gather"), {
-        request: "Gather context",
-        tasks: [{ source: "project", question: "Find the implementation" }],
-      }, {
-        onCheckpoint: (_state, effective) => { bindings = Object.keys(effective.nodes); },
-        host: { spawnAgent: async request => {
-          agents.push(request.agentType);
-          if (request.agentType === "direnjie") return { ok: true, output: JSON.stringify(decisions.shift()) };
-          if (request.agentType === "jintong") return { ok: true, output: JSON.stringify(gatheredContext) };
-          return { ok: true, output: JSON.stringify({ source: "project", evidence: [], relevantFiles: [], constraints: [], unknowns: [], conflicts: [] }) };
-        } },
-      });
-      expect(result.status).toBe("completed");
-      expect(result.outputs).toEqual(gatheredContext);
-      expect(agents).toEqual(expectedAgents);
-      if (expectedAgents.length === 3) expect(bindings.some(id => id.includes(":iteration:2:"))).toBe(false);
-      else expect(bindings.filter(id => id.includes(":iteration:2:")).length).toBe(3);
+    expect(placeholders(research.evaluator.prompt)).toContain("feedback");
+    for (const node of [plan, research.work, research.evaluator]) {
+      expect(node.input).not.toHaveProperty("budget");
+      expect(placeholders(node.prompt)).not.toContain("budget");
     }
+    expect(research.work.prompt).toContain("one opened source per provenance");
+    expect(research.work.prompt).toContain("NEVER combine");
+    expect(research.evaluator.prompt).toContain("locator and excerpt");
   });
 
-  it("preserves GatheredContext outputs and synthesis input", () => {
+  it("runs a sufficient first round without materializing iteration two", async () => {
+    const agents: string[] = [];
+    let bindings: string[] = [];
+    const result = await runGraph(savedGraph("context-gather"), INPUT, {
+      onCheckpoint: (_state, effective) => { bindings = Object.keys(effective.nodes); },
+      host: { spawnAgent: async request => {
+        agents.push(request.agentType);
+        if (request.agentType === "xuannv") return { ok: true, output: JSON.stringify({ tasks: [INITIAL_TASK] }) };
+        if (request.agentType === "chengfeng") return { ok: true, output: JSON.stringify(PROJECT_EVIDENCE) };
+        if (request.agentType === "direnjie") return { ok: true, output: JSON.stringify(SUFFICIENT) };
+        if (request.agentType === "jintong") return { ok: true, output: JSON.stringify(COMPLETE_SYNTHESIS) };
+        throw new Error(`Unexpected agent ${request.agentType}`);
+      } },
+    });
+    expect(result.status).toBe("completed");
+    expect(agents).toEqual(["xuannv", "chengfeng", "direnjie", "jintong"]);
+    expect(bindings.some(id => id.includes(":iteration:2:"))).toBe(false);
+  });
+
+  it("runs one project gap task in iteration two", async () => {
+    const followup = {
+      decision: "continue",
+      gaps: [{ id: "runtime", description: "Runtime coverage lacks direct evidence." }],
+      tasks: [{ gapId: "runtime", item: GAP_TASK }],
+    };
+    const decisions = [followup, SUFFICIENT];
+    const evidence = [PROJECT_EVIDENCE, GAP_EVIDENCE];
+    const agents: string[] = [];
+    let bindings: string[] = [];
+    const result = await runGraph(savedGraph("context-gather"), INPUT, {
+      onCheckpoint: (_state, effective) => { bindings = Object.keys(effective.nodes); },
+      host: { spawnAgent: async request => {
+        agents.push(request.agentType);
+        if (request.agentType === "xuannv") return { ok: true, output: JSON.stringify({ tasks: [INITIAL_TASK] }) };
+        if (request.agentType === "chengfeng") {
+          const output = evidence.shift();
+          if (!output) throw new Error("Unexpected research round");
+          return { ok: true, output: JSON.stringify(output) };
+        }
+        if (request.agentType === "direnjie") {
+          const output = decisions.shift();
+          if (!output) throw new Error("Unexpected evaluation round");
+          return { ok: true, output: JSON.stringify(output) };
+        }
+        if (request.agentType === "jintong") return { ok: true, output: JSON.stringify(COMPLETE_SYNTHESIS) };
+        throw new Error(`Unexpected agent ${request.agentType}`);
+      } },
+    });
+    expect(result.status).toBe("completed");
+    expect(agents).toEqual(["xuannv", "chengfeng", "direnjie", "chengfeng", "direnjie", "jintong"]);
+    expect(bindings.some(id => id.includes(":iteration:2:"))).toBe(true);
+  });
+
+  it("returns partial coverage without exposing the outcome envelope as payload", async () => {
+    const partialPlan = { ...INITIAL_TASK, criterionIds: ["configuration"] };
+    const partialEvidence = {
+      ...PROJECT_EVIDENCE,
+      claims: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, criterionIds: ["configuration"] })),
+      unknowns: ["No direct runtime evidence was found."],
+    };
+    const agents: string[] = [];
+    const result = await runGraph(savedGraph("context-gather"), INPUT, {
+      onCheckpoint: () => {},
+      host: { spawnAgent: async request => {
+        agents.push(request.agentType);
+        if (request.agentType === "xuannv") return { ok: true, output: JSON.stringify({ tasks: [partialPlan] }) };
+        if (request.agentType === "chengfeng") return { ok: true, output: JSON.stringify(partialEvidence) };
+        if (request.agentType === "direnjie") return {
+          ok: true,
+          output: JSON.stringify({
+            decision: "sufficient",
+            gaps: [{ id: "runtime", description: "No direct runtime evidence was found." }],
+            tasks: [],
+          }),
+        };
+        if (request.agentType === "jintong") return { ok: true, output: JSON.stringify(PARTIAL_SYNTHESIS) };
+        throw new Error(`Unexpected agent ${request.agentType}`);
+      } },
+    });
+    const { $agentGraphOutcome: outcome, ...returnedOutputs } = result.outputs;
+    expect(result.status).toBe("completed");
+    expect(agents).toEqual(["xuannv", "chengfeng", "direnjie", "jintong"]);
+    expect(outcome).toEqual({ status: "partial", reason: "Missing runtime coverage." });
+    expect(returnedOutputs).toEqual({
+      answer: PARTIAL_SYNTHESIS.answer,
+      verifiedCoverage: PARTIAL_SYNTHESIS.verifiedCoverage,
+      unknowns: PARTIAL_SYNTHESIS.unknowns,
+      evidence: PARTIAL_SYNTHESIS.evidence,
+      conflicts: PARTIAL_SYNTHESIS.conflicts,
+    });
+    expect(returnedOutputs).not.toHaveProperty("$agentGraphOutcome");
+  });
+
+  it("maps the final synthesis payload and inputs", () => {
     const graph = savedGraph("context-gather");
     expect(graph.outputs).toEqual({
-      summary: { node: "synthesize", path: "$.summary" },
-      relevantFiles: { node: "synthesize", path: "$.relevantFiles" },
-      constraints: { node: "synthesize", path: "$.constraints" },
+      answer: { node: "synthesize", path: "$.answer" },
+      verifiedCoverage: { node: "synthesize", path: "$.verifiedCoverage" },
       unknowns: { node: "synthesize", path: "$.unknowns" },
       evidence: { node: "synthesize", path: "$.evidence" },
       conflicts: { node: "synthesize", path: "$.conflicts" },
       $agentGraphOutcome: { node: "synthesize", path: "$.outcome" },
     });
     const synthesize = agentNode(graph, "synthesize");
-    expect(synthesize.agent).toBe("jintong");
-    expect(synthesize.name).toBe("Synthesize context");
-    expect(synthesize.input).toEqual({
-      request: { path: "$.request" },
-      tasks: { path: "$.tasks" },
-      research: { node: "research", path: "$" },
+    expect(synthesize.prompt).toContain("one source per provenance");
+    expect(synthesize.prompt).toContain("NEVER combine");
+    expect(synthesize).toMatchObject({
+      agent: "jintong",
+      input: {
+        request: { path: "$.request" },
+        requiredCoverage: { path: "$.requiredCoverage" },
+        plan: { node: "plan", path: "$" },
+        research: { node: "research", path: "$" },
+      },
+      outputSchema: {
+        type: "object",
+        properties: {
+          verifiedCoverage: { type: "array", minItems: 1, maxItems: 12 },
+          unknowns: { type: "array", maxItems: 12 },
+          evidence: { type: "array", maxItems: 18, items: CLAIM_SCHEMA },
+          conflicts: { type: "array", maxItems: 8 },
+        },
+      },
     });
-    expect(synthesize.outputSchema).toMatchObject({
-      type: "object",
-      properties: { evidence: EVIDENCE_SCHEMA.properties.evidence },
-      required: ["summary", "relevantFiles", "constraints", "unknowns", "evidence", "conflicts"],
-    });
+    expect(synthesize.input).not.toHaveProperty("budget");
+    expect(placeholders(synthesize.prompt)).not.toContain("budget");
   });
 });

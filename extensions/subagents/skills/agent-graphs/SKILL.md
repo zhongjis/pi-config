@@ -15,8 +15,17 @@ human approval gate, or a reusable subgraph.
 ## Running a graph
 
 ```ts
-agent_graph({ graph: "context-gather", input: { request: "...", tasks: [ ... ] } })   // saved
-agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...} })  // inline
+agent_graph({
+  graph: "context-gather",
+  input: {
+    request: "...",
+    requiredCoverage: [
+      { id: "repository", criterion: "Current repository behavior" },
+      { id: "upstream", criterion: "Authoritative upstream contract" },
+    ],
+  },
+})
+agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...} })
 ```
 
 - **Saved graphs** live at `agent-graphs/<name>.graph.json`; a `/` in the name maps to a
