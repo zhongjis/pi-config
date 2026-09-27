@@ -171,6 +171,43 @@ for its required bounds, typed decisions, accumulation and durable identity cont
 Read [Dynamic Expansion](references/dynamic-expansion.md) for typed task schemas,
 dispatch, awaited collection, round namespaces, bounded evaluators, and failure handling.
 
+## Evaluation architecture
+
+Use bounded feedback as a typed judge only when another iteration has a specific decision to make.
+
+- **State** — evaluator reads validated evidence, failures, conflicts, and named gaps.
+- **Transition** — continue only for one named material gap with distinct access, expected information, and narrower non-repeated work.
+- **Progress** — runtime rejects repeated task collections, no new validated output, and bound overrun.
+- **Outcome** — synthesis declares succeeded, partial, or failed from retained evidence and gaps.
+
+```jsonc
+"work": {
+  "itemSchema": { "type": "object", "required": ["source", "question"], "properties": { "source": { "type": "string" }, "question": { "type": "string" } } },
+  "prompt": "Gather one atomic gap-closing fact: ${item}"
+},
+"evaluator": {
+  "type": "agent",
+  "prompt": "State/transition judge. ${feedback} Continue only for one named material gap with distinct access and expected new information; otherwise sufficient with named gaps.",
+  "input": { "goal": { "path": "$.goal" } }
+}
+```
+
+The evaluator's injected decision links each `gapId` to a work item satisfying `itemSchema`; read [Bounded Feedback](references/bounded-feedback.md) for decision shape, bounds, persistence, and termination.
+
+### When not to add a judge
+
+- One pass answers the request → use ordinary fanout.
+- Deterministic validation decides → use schema, gate, or condition.
+- No typed evidence state exists → collect it first.
+- No downstream decision or repair uses the verdict → evaluate offline.
+
+### Trace-driven refinement
+
+1. Capture graph, inputs, structured outputs, activated branches, failures, retries, bounds, cost, and latency.
+2. Name one transition failure and propose one graph change; keep authority, schemas, and hard bounds immutable.
+3. Run baseline and candidate against the same replayable cases; grade state, transition, progress, outcome, cost, and latency.
+4. Promote the candidate only after held-out improvement and human review; retain the prior graph for rollback.
+
 ## Resources
 
 A node's `resources: ["workspace:main"]` are admitted only while under the

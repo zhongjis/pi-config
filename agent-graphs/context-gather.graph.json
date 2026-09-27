@@ -20,16 +20,6 @@
           "required": ["id", "criterion"],
           "additionalProperties": false
         }
-      },
-      "budget": {
-        "type": "object",
-        "properties": {
-          "maxTasks": { "type": "integer", "minimum": 1, "maximum": 6 },
-          "maxGapTasks": { "type": "integer", "minimum": 0, "maximum": 3 },
-          "maxAnswerWords": { "type": "integer", "minimum": 100, "maximum": 2000 }
-        },
-        "required": ["maxTasks", "maxGapTasks", "maxAnswerWords"],
-        "additionalProperties": false
       }
     },
     "required": ["request", "requiredCoverage"],
@@ -155,7 +145,7 @@
         "type": "agent",
         "name": "Evaluate coverage",
         "agent": "direnjie",
-        "prompt": "Verify every required coverage item. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResults: ${feedback}\nDirect provenance requires locator and excerpt; confidence/schema are not proof. Only opened direct evidence supports coverage; inferred claims leave gaps. Page titles and uninspected content are not direct proof. Failed and skipped results, duplicate claimIds, source mismatches, and claim criterionIds outside their task are unknowns, not proof. Decision JSON only. Continue only for one narrow material gap task. Gap task criterionIds MUST use only required coverage IDs. NEVER use practice unless required. Local git/history: project; remote issues/PRs: work-records. Gap tasks MUST use a new source/access method and state why evidence is insufficient. NEVER repeat work or exceed graph bounds. No useful gap task? Return sufficient with gaps for a partial Outcome. Sufficient requires empty tasks.",
+        "prompt": "State/transition judge: verify every required coverage item, then continue only when one named material gap can be closed. Transition test: distinct source/access method; expected new information; no repeated or broader work. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResults: ${feedback}\nDirect provenance requires locator and excerpt; confidence/schema are not proof. Only opened direct evidence supports coverage; inferred claims leave gaps. Page titles and uninspected content are not direct proof. Failed and skipped results, duplicate claimIds, source mismatches, and claim criterionIds outside their task are unknowns, not proof. Decision JSON only. Gap task criterionIds MUST use only required coverage IDs. NEVER use practice unless required. Local git/history: project; remote issues/PRs: work-records. State why existing evidence is insufficient and what expected information the task adds. NEVER exceed graph bounds. No qualifying transition? Return sufficient with named partial gaps and empty tasks for a partial Outcome.",
         "retry": { "maxAttempts": 2 },
         "input": {
           "request": { "path": "$.request" },
