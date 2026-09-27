@@ -8,6 +8,9 @@ import {
   type ParsedSkillBlock,
 } from "@earendil-works/pi-coding-agent"
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui"
+import { compileInputSchema, type CompiledSchema } from "../subagents/src/graph/json-schema.js"
+import { coerceGraphInput } from "../subagents/src/graph/run-graph.js"
+import { listSavedGraphNames, resolveSavedGraph } from "../subagents/src/graph/saved-graph.js"
 
 type AutocompleteItem = {
   value: string
@@ -58,6 +61,14 @@ type SkillInfo = {
   sourceInfo?: SkillCommand["sourceInfo"]
 }
 
+type PendingGraphInvocation = {
+  name: string
+  originalPrompt: string
+  description?: string
+  inputSchema?: unknown
+  inputValidator?: CompiledSchema
+}
+
 type LoadedSkillEntryData = {
   name?: string
   source?: "tool-result"
@@ -77,10 +88,12 @@ type InlineSkillSessionEntry = {
 
 const LOADED_SKILL_ENTRY_TYPE = "loaded-skill"
 const INLINE_SKILL_MESSAGE_TYPE = "inline-skill"
+const INLINE_GRAPH_MESSAGE_TYPE = "inline-graph-invocation"
 const MAX_SUGGESTIONS = 30
 const SKILL_TOKEN_RE =
   /(^|[\s([{,])\$skill:([a-z0-9][a-z0-9-]{0,63})(?![a-z0-9-]|[:/])/gi
-const SLASH_SKILL_CONTEXT_RE = /(?:^|[\s([{,])\$(?:skill:)?[a-z0-9-]*$/i
+const GRAPH_TOKEN_RE = /(^|[\s([{,])\$graph:([^\s)\]}>,"']*)/gi
+const SLASH_TOKEN_CONTEXT_RE = /(?:^|[\s([{,])\$(?:(?:skill|graph):)?[a-z0-9._/-]*$/i
 
 function fuzzyScore(value: string, query: string): number {
   const target = value.toLowerCase()
@@ -110,6 +123,14 @@ function filterSkills(skills: SkillInfo[], query: string): SkillInfo[] {
       (a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name),
     )
     .map((entry) => entry.skill)
+}
+
+function filterGraphNames(names: string[], query: string): string[] {
+  return names
+    .map((name) => ({ name, score: fuzzyScore(name, query) }))
+    .filter((entry) => entry.score > 0)
+    .toSorted((left, right) => right.score - left.score || left.name.localeCompare(right.name))
+    .map((entry) => entry.name)
 }
 
 function getAutocompleteSourceTag(
@@ -310,18 +331,75 @@ function findInlineSkills(
   return { selected }
 }
 
-function extractSlashSkillPrefix(textBeforeCursor: string): string | undefined {
-  const match = textBeforeCursor.match(/(?:^|[\s([{,])\$(?:skill:)?([a-z0-9-]*)$/i)
-  return match?.[1]
+function findGraphTokenNames(text: string): string[] {
+  return [...text.matchAll(GRAPH_TOKEN_RE)].map((match) => match[2] ?? "")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function createGraphInvocation(
+  name: string,
+  originalPrompt: string,
+  cwd: string,
+): PendingGraphInvocation | { error: string } {
+  const resolved = resolveSavedGraph(name, cwd)
+  if (!resolved.ok) return { error: resolved.message }
+  const graph = isRecord(resolved.graph) ? resolved.graph : {}
+  const inputSchema = graph.inputSchema
+  let inputValidator: CompiledSchema | undefined
+  if (inputSchema !== undefined) {
+    const compiled = compileInputSchema(inputSchema)
+    if (!compiled.ok) return { error: `Graph "${name}" has an invalid inputSchema: ${compiled.message}` }
+    inputValidator = compiled.compiled
+  }
+  return {
+    name,
+    originalPrompt,
+    ...(typeof graph.description === "string" ? { description: graph.description } : {}),
+    ...(inputSchema !== undefined ? { inputSchema } : {}),
+    ...(inputValidator ? { inputValidator } : {}),
+  }
+}
+
+function graphContextJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c")
+}
+
+function buildGraphInvocationContent(invocation: PendingGraphInvocation): string {
+  const description = invocation.description === undefined
+    ? ""
+    : `\n<saved_graph_description_json>${graphContextJson(invocation.description)}</saved_graph_description_json>`
+  const inputSchema = invocation.inputSchema === undefined
+    ? ""
+    : `\n<saved_graph_input_schema_json>${graphContextJson(invocation.inputSchema)}</saved_graph_input_schema_json>`
+  return `<saved_graph_invocation>\n<selected_saved_graph>${invocation.name}</selected_saved_graph>${description}${inputSchema}\n<original_user_prompt_json>${graphContextJson(invocation.originalPrompt)}</original_user_prompt_json>\n<instructions>User explicitly authorized only selected_saved_graph. Declared nested subgraphs run internally through executor preflight. Decode original_user_prompt_json and construct agent_graph.input to satisfy saved_graph_input_schema_json when present, inferring/mapping values from the full request. Ask the user only when required values cannot be inferred. Call existing agent_graph with selected_saved_graph; do not use inline, nested, or unrelated graphs.</instructions>\n</saved_graph_invocation>`
+}
+
+type SlashTokenPrefix = {
+  kind: "all" | "skill" | "graph"
+  query: string
+}
+
+function extractSlashTokenPrefix(textBeforeCursor: string): SlashTokenPrefix | undefined {
+  const match = textBeforeCursor.match(/(?:^|[\s([{,])\$(?:(skill|graph):)?([a-z0-9._/-]*)$/i)
+  if (!match) return undefined
+  const kind = match[1]?.toLowerCase()
+  return {
+    kind: kind === "skill" || kind === "graph" ? kind : "all",
+    query: match[2] ?? "",
+  }
 }
 
 function isPromptStartSlashToken(
   lines: string[],
   cursorLine: number,
   textBeforeCursor: string,
-  prefix: string,
+  prefix: SlashTokenPrefix,
 ): boolean {
-  const slashPrefixStart = textBeforeCursor.length - prefix.length - 1
+  const tokenPrefixLength = prefix.kind === "all" ? 1 : prefix.kind.length + 2
+  const slashPrefixStart = textBeforeCursor.length - prefix.query.length - tokenPrefixLength
   if (slashPrefixStart < 0) return false
   const earlierLinesAreBlank = lines
     .slice(0, cursorLine)
@@ -372,11 +450,11 @@ function runSlashAutocompleteTrigger(
     typeof editor.tryTriggerAutocomplete !== "function"
   )
     return
-  if (!/^[a-zA-Z0-9\-_$]$/.test(data)) return
+  if (!/^[a-zA-Z0-9._:/\-_$]$/.test(data)) return
 
   const currentLine = editor.state.lines[editor.state.cursorLine] ?? ""
   const textBeforeCursor = currentLine.slice(0, editor.state.cursorCol)
-  if (SLASH_SKILL_CONTEXT_RE.test(textBeforeCursor)) {
+  if (SLASH_TOKEN_CONTEXT_RE.test(textBeforeCursor)) {
     editor.tryTriggerAutocomplete()
   }
 }
@@ -421,6 +499,7 @@ function stripNativeSkillItems(
 
 function createSlashSkillAutocompleteProvider(
   pi: ExtensionAPI,
+  cwd: string,
   current: AutocompleteProvider,
 ): AutocompleteProvider {
   return {
@@ -432,8 +511,8 @@ function createSlashSkillAutocompleteProvider(
     ): Promise<AutocompleteSuggestions | null> {
       const currentLine = lines[cursorLine] ?? ""
       const textBeforeCursor = currentLine.slice(0, cursorCol)
-      const query = extractSlashSkillPrefix(textBeforeCursor)
-      if (query === undefined) {
+      const prefix = extractSlashTokenPrefix(textBeforeCursor)
+      if (prefix === undefined) {
         const deferred = await current.getSuggestions(
           lines,
           cursorLine,
@@ -449,37 +528,46 @@ function createSlashSkillAutocompleteProvider(
         cursorCol,
         options,
       )
-      const skills = getSkills(pi)
-      if (options.signal.aborted || skills.length === 0) {
-        return currentSuggestions
-      }
+      if (options.signal.aborted) return currentSuggestions
 
-      const matches = query
-        ? filterSkills(skills, query).slice(0, MAX_SUGGESTIONS)
-        : skills.slice(0, MAX_SUGGESTIONS)
-
-      if (matches.length === 0) return currentSuggestions
-
-      const skillItems = matches.map((skill): AutocompleteItem => {
-        const item: AutocompleteItem = {
-          value: `$skill:${skill.name}`,
-          label: `$skill:${skill.name}`,
-        }
-        const description = prefixAutocompleteDescription(skill)
-        if (description) item.description = description
-        return item
-      })
+      const skillItems = prefix.kind === "graph"
+        ? []
+        : (prefix.query
+          ? filterSkills(getSkills(pi), prefix.query)
+          : getSkills(pi))
+            .slice(0, MAX_SUGGESTIONS)
+            .map((skill): AutocompleteItem => {
+              const item: AutocompleteItem = {
+                value: `$skill:${skill.name}`,
+                label: `$skill:${skill.name}`,
+              }
+              const description = prefixAutocompleteDescription(skill)
+              if (description) item.description = description
+              return item
+            })
+      const graphItems = prefix.kind === "skill" || !pi.getActiveTools().includes("agent_graph")
+        ? []
+        : (prefix.query
+          ? filterGraphNames(listSavedGraphNames(cwd), prefix.query)
+          : listSavedGraphNames(cwd))
+            .slice(0, MAX_SUGGESTIONS)
+            .map((name): AutocompleteItem => ({
+              value: `$graph:${name}`,
+              label: `$graph:${name}`,
+            }))
+      const tokenItems = [...skillItems, ...graphItems]
+      if (tokenItems.length === 0) return currentSuggestions
 
       return mergeAutocompleteItems({
         current: currentSuggestions,
-        skillItems,
+        skillItems: tokenItems,
         preferCommands: isPromptStartSlashToken(
           lines,
           cursorLine,
           textBeforeCursor,
-          query,
+          prefix,
         ),
-        prefix: query,
+        prefix: prefix.query,
       })
     },
 
@@ -488,14 +576,14 @@ function createSlashSkillAutocompleteProvider(
       const prefixStart = cursorCol - prefix.length
       const beforePrefix =
         prefixStart >= 0 ? currentLine.slice(0, prefixStart) : ""
-      const tokenMatch = beforePrefix.match(/\$(?:skill:)?$/i)
-      const isSlashSkillCompletion =
-        item.label.startsWith("$skill:") &&
-        item.value.startsWith("$skill:") &&
+      const tokenMatch = beforePrefix.match(/\$(?:(?:skill|graph):)?$/i)
+      const isSlashTokenCompletion =
+        (item.label.startsWith("$skill:") || item.label.startsWith("$graph:")) &&
+        (item.value.startsWith("$skill:") || item.value.startsWith("$graph:")) &&
         prefixStart >= 0 &&
         tokenMatch !== null
 
-      if (!isSlashSkillCompletion || !tokenMatch) {
+      if (!isSlashTokenCompletion || !tokenMatch) {
         return current.applyCompletion(
           lines,
           cursorLine,
@@ -507,9 +595,7 @@ function createSlashSkillAutocompleteProvider(
 
       const tokenStart = beforePrefix.length - tokenMatch[0].length
       const beforeToken = currentLine.slice(0, tokenStart)
-      // Consume any trailing skill-name characters so re-editing an existing
-      // `$skill:<name>` token (cursor anywhere inside it) replaces the whole token.
-      const afterCursor = currentLine.slice(cursorCol).replace(/^[a-z0-9-]*/i, "")
+      const afterCursor = currentLine.slice(cursorCol).replace(/^[a-z0-9._/-]*/i, "")
       const suffix = afterCursor.startsWith(" ") ? "" : " "
       const nextLines = [...lines]
       nextLines[cursorLine] =
@@ -534,6 +620,13 @@ export default function (pi: ExtensionAPI): void {
   let pendingInlineSkillContent: string | undefined
   let pendingInlineSkillNames: string[] = []
   let pendingInlineSkillBlocks: ParsedSkillBlock[] = []
+  let pendingGraphInvocation: PendingGraphInvocation | undefined
+  let activeGraphAuthorization: {
+    sessionId: string
+    name: string
+    state: "unused" | "clarifying" | "consumed"
+    inputValidator?: CompiledSchema
+  } | undefined
   let loadedSkills = new Set<string>()
 
   installSlashAutocompleteTrigger()
@@ -589,13 +682,15 @@ export default function (pi: ExtensionAPI): void {
   })
 
   pi.on("session_start", async (_event, ctx) => {
+    activeGraphAuthorization = undefined
     loadedSkills = restoreLoadedSkills(ctx)
     ctx.ui.addAutocompleteProvider((current) =>
-      createSlashSkillAutocompleteProvider(pi, current),
+      createSlashSkillAutocompleteProvider(pi, ctx.cwd, current),
     )
   })
 
   pi.on("session_tree", async (_event, ctx) => {
+    activeGraphAuthorization = undefined
     loadedSkills = restoreLoadedSkills(ctx)
   })
 
@@ -620,21 +715,65 @@ export default function (pi: ExtensionAPI): void {
     pendingInlineSkillContent = undefined
     pendingInlineSkillNames = []
     pendingInlineSkillBlocks = []
+    pendingGraphInvocation = undefined
     loadedSkills = restoreLoadedSkills(ctx)
-    if (event.source === "extension" || !event.text.includes("$skill:")) {
+    if (event.source === "extension") return { action: "continue" }
+
+    const sessionId = ctx.sessionManager.getSessionId()
+    const graphTokenNames = findGraphTokenNames(event.text)
+    if (graphTokenNames.length > 0) {
+      // A new graph request, even an invalid one, must not retain prior authority.
+      activeGraphAuthorization = undefined
+    } else if (activeGraphAuthorization?.sessionId !== sessionId) {
+      activeGraphAuthorization = undefined
+    } else if (activeGraphAuthorization?.state === "consumed") {
+      // The next ordinary user input ends a consumed graph invocation.
+      activeGraphAuthorization = undefined
+    } else if (activeGraphAuthorization?.state === "unused") {
+      // This user input is the sole clarification turn for an unused token.
+      activeGraphAuthorization.state = "clarifying"
+    } else if (activeGraphAuthorization?.state === "clarifying") {
+      activeGraphAuthorization = undefined
+    }
+
+    if (!event.text.includes("$skill:") && graphTokenNames.length === 0) {
       return { action: "continue" }
     }
     if (hasStartingCommandConflict(pi, event.text)) {
       return { action: "continue" }
     }
 
+    if (graphTokenNames.length > 0) {
+      const selectedNames = [...new Set(graphTokenNames)]
+      if (selectedNames.length > 1) {
+        ctx.ui.notify(
+          `inline-skills: multiple saved graph tokens are not allowed: ${selectedNames.join(", ")}`,
+          "error",
+        )
+        return { action: "handled" }
+      }
+      if (!pi.getActiveTools().includes("agent_graph")) {
+        ctx.ui.notify("inline-skills: saved graph support is disabled in this session.", "error")
+        return { action: "handled" }
+      }
+      const invocation = createGraphInvocation(selectedNames[0], event.text, ctx.cwd)
+      if ("error" in invocation) {
+        ctx.ui.notify(`inline-skills: ${invocation.error}`, "error")
+        return { action: "handled" }
+      }
+      pendingGraphInvocation = invocation
+      activeGraphAuthorization = {
+        sessionId,
+        name: invocation.name,
+        state: "unused",
+        ...(invocation.inputValidator ? { inputValidator: invocation.inputValidator } : {}),
+      }
+    }
+
     const expanded = findInlineSkills(event.text, getSkills(pi))
-    if (!expanded) return { action: "continue" }
-
-    const skillsToInject = expanded.selected.filter(
+    const skillsToInject = expanded?.selected.filter(
       (skill) => !loadedSkills.has(skill.name),
-    )
-
+    ) ?? []
     if (skillsToInject.length > 0) {
       try {
         const inlineSkillContent = buildInlineSkillContent(
@@ -658,6 +797,7 @@ export default function (pi: ExtensionAPI): void {
       }
     }
 
+    if (!pendingGraphInvocation && !expanded) return { action: "continue" }
     return {
       action: "transform",
       text: event.text,
@@ -665,20 +805,64 @@ export default function (pi: ExtensionAPI): void {
     }
   })
 
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName !== "agent_graph" || !activeGraphAuthorization) return
+    if (activeGraphAuthorization.sessionId !== ctx.sessionManager.getSessionId()) {
+      activeGraphAuthorization = undefined
+      return
+    }
+    const toolInput = isRecord(event.input) ? event.input : {}
+    const graph = toolInput.graph
+    if (
+      activeGraphAuthorization.state !== "consumed" &&
+      typeof graph === "string" &&
+      graph === activeGraphAuthorization.name
+    ) {
+      const validation = activeGraphAuthorization.inputValidator?.check(
+        coerceGraphInput(toolInput.input),
+      )
+      if (validation !== undefined && validation !== true) {
+        return {
+          block: true,
+          reason: `agent_graph input does not satisfy the selected saved graph schema: ${validation}`,
+        }
+      }
+      activeGraphAuthorization.state = "consumed"
+      return
+    }
+    return {
+      block: true,
+      reason: activeGraphAuthorization.state === "consumed"
+        ? "agent_graph authorization was already consumed."
+        : "agent_graph is authorized only for the selected saved graph.",
+    }
+  })
+
+  pi.on("agent_end", async () => {
+    if (activeGraphAuthorization?.state === "clarifying") {
+      activeGraphAuthorization = undefined
+    }
+  })
+
   pi.on("before_agent_start", async () => {
-    if (!pendingInlineSkillContent) return
-    const content = pendingInlineSkillContent
-    const names = pendingInlineSkillNames
+    if (!pendingInlineSkillContent && !pendingGraphInvocation) return
     const skills = pendingInlineSkillBlocks
+    const names = pendingInlineSkillNames
+    const graphInvocation = pendingGraphInvocation
+    const content = [
+      pendingInlineSkillContent,
+      graphInvocation ? buildGraphInvocationContent(graphInvocation) : undefined,
+    ].filter((part): part is string => part !== undefined).join("\n\n")
     pendingInlineSkillContent = undefined
     pendingInlineSkillNames = []
     pendingInlineSkillBlocks = []
+    pendingGraphInvocation = undefined
     return {
       message: {
-        customType: INLINE_SKILL_MESSAGE_TYPE,
+        customType: skills.length > 0 ? INLINE_SKILL_MESSAGE_TYPE : INLINE_GRAPH_MESSAGE_TYPE,
         content,
-        display: true,
-        details: { names, skills },
+        display: skills.length > 0,
+        ...(skills.length > 0 ? { details: { names, skills } } : {}),
       },
     }
   })

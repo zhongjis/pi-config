@@ -15,7 +15,7 @@ export const historyIndices = (value: unknown): value is number[] => Array.isArr
 /** Decode an allowlist, never copy untrusted objects into presentation. */
 export function decodeTopology(value: unknown): HistoryTopology | undefined {
   if (!record(value) || !historyString(value.name)) return;
-  if (value.kind !== "agent" && value.kind !== "fanout" && value.kind !== "bounded_feedback" && value.kind !== "graph" && value.kind !== "expand" && value.kind !== "human_gate") return;
+  if (value.kind !== "agent" && value.kind !== "fanout" && value.kind !== "bounded_feedback" && value.kind !== "graph" && value.kind !== "expand" && value.kind !== "human_gate" && value.kind !== "agent_gate" && value.kind !== "hybrid_gate") return;
   const topology: HistoryTopology = { kind: value.kind, name: historyText(value.name) };
   for (const key of ["parentIndex", "iteration", "itemIndex"] as const) {
     if (value[key] === undefined) continue;

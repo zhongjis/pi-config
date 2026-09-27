@@ -17,7 +17,7 @@ import { type ExecutionCorrelation, matchesExecution } from "./graph-execution.j
 import type { NodeInstance } from "./graph-instance-id.js";
 import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
-import { isGraphRunOutcome, GRAPH_OUTCOME_KEY } from "./outcome.js";
+import { GRAPH_OUTCOME_KEY, isGraphRunOutcome } from "./outcome.js";
 import type { GraphNodePresentation, GraphRunAgentEntry } from "./progress.js";
 import type { RunGraphResult } from "./run-graph.js";
 import type { NodeRun } from "./scheduler.js";
@@ -94,9 +94,9 @@ export class GraphRunReporter {
         connections: graph.edges.flatMap(edge => (edge.from === id || edge.to === id) && (edge.loop || edge.when)
           ? [{ binding: edge.from === id ? edge.to : edge.from, direction: edge.from === id ? "downstream" as const : "upstream" as const, kind: edge.loop ? "loop" as const : "conditional" as const }] : []),
       });
-      this.agentType.set(id, node.type === "agent" ? node.agent : node.type);
-      // Only agent / human_gate nodes carry a prompt; subgraph and expand nodes have none.
-      if (node.type === "agent" || node.type === "human_gate") this.prompt.set(id, node.prompt);
+      this.agentType.set(id, node.type === "agent" || node.type === "agent_gate" || node.type === "hybrid_gate" ? node.agent : node.type);
+      // Execution nodes carry prompts; subgraph and expand nodes have none.
+      if (node.type === "agent" || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate") this.prompt.set(id, node.prompt);
     }
     // Downstream is the inverse of deps: each node lists the nodes it unblocks, so
     // the monitor can join a failure to its blast radius without re-walking edges.
@@ -158,8 +158,8 @@ export class GraphRunReporter {
     this.deps.set(nodeId, dependencies);
     const previousStage = this.stage.get(nodeId);
     const previousTitle = this.explicitPhase.get(nodeId)?.title ?? (previousStage !== undefined ? `Stage ${previousStage + 1}` : undefined);
-    this.agentType.set(nodeId, node.type === "agent" ? node.agent : node.type);
-    if (node.type === "agent" || node.type === "human_gate" || node.type === "fanout") {
+    this.agentType.set(nodeId, node.type === "agent" || node.type === "agent_gate" || node.type === "hybrid_gate" ? node.agent : node.type);
+    if (node.type === "agent" || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate" || node.type === "fanout") {
       this.prompt.set(nodeId, node.prompt);
     }
     if (metadata.phase !== undefined && metadata.instance === undefined) this.explicitPhase.set(nodeId, metadata.phase);
@@ -298,7 +298,7 @@ export class GraphRunReporter {
       state: "start",
       phaseIndex: stage,
       phaseTitle: this.explicitPhase.get(nodeId)?.title ?? `Stage ${stage + 1}`,
-      agentType: this.agentType.get(nodeId),
+      agentType: run.decisionSource === "human" ? "human" : this.agentType.get(nodeId),
       // ponytail: the pre-interpolation template (`${ref}` unresolved — P2 per ir.ts); good enough, upgrade = capture the resolved NodeSpawnRequest.prompt via onResolved.
       ...(prompt ? { promptPreview: promptPreview(prompt) } : {}),
       deps,

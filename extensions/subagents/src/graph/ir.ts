@@ -98,13 +98,19 @@ export interface AgentNode {
   resources?: string[];
 }
 
-/** Pauses the run until a person approves, rejects, edits, or supplies data. */
+/** Pauses the run until a person approves or rejects. */
 export interface HumanGateNode {
   type: "human_gate";
   prompt: Template;
   input?: Record<string, ValueRef>;
   outputSchema: JsonSchema;
 }
+
+/** A configured Subagent decides; only hybrid_gate may escalate typed uncertainty. */
+export type AgentGateNode = Omit<HumanGateNode, "type"> & {
+  agent: string;
+} & ({ type: "agent_gate" } | { type: "hybrid_gate" });
+export type DecisionGateNode = HumanGateNode | AgentGateNode;
 
 /** Invokes a reusable saved graph as a node — the main composition mechanism. */
 export interface SubgraphNode {
@@ -170,7 +176,7 @@ export interface BoundedFeedbackNode {
   readonly spendLimit?: number;
 }
 
-export type GraphNode = (AgentNode | HumanGateNode | SubgraphNode | ExpandNode | FanoutNode | BoundedFeedbackNode) & { readonly name?: string };
+export type GraphNode = (AgentNode | DecisionGateNode | SubgraphNode | ExpandNode | FanoutNode | BoundedFeedbackNode) & { readonly name?: string };
 
 /** A dependency/dataflow edge, optionally guarded and optionally a bounded loop. */
 export interface GraphEdge {
@@ -208,5 +214,5 @@ export interface GraphFragment {
   outputs?: Record<string, ValueRef>;
 }
 
-export const NODE_TYPES = ["agent", "human_gate", "graph", "expand", "fanout", "bounded_feedback"] as const;
+export const NODE_TYPES = ["agent", "human_gate", "agent_gate", "hybrid_gate", "graph", "expand", "fanout", "bounded_feedback"] as const;
 export type NodeType = (typeof NODE_TYPES)[number];

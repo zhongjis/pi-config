@@ -1,4 +1,5 @@
 import { fromPromise } from "xstate";
+import { compiledAgentDecisionSchema, parseAgentDecision } from "./decision-gate.js";
 import type { NodeSpawnResult } from "./node-host.js";
 import { envelope, type NodeResolution, type NodeSession } from "./node-lifecycle-session.js";
 
@@ -9,6 +10,7 @@ export interface NodeEffectInput {
 export interface NodeEffectResult {
   readonly result: NodeSpawnResult;
   readonly executed: boolean;
+  readonly undecidedReason?: string;
 }
 const aborted = (): NodeSpawnResult => ({ ok: false, skipped: true, error: "Aborted." });
 
@@ -17,7 +19,7 @@ export const spawnNodeEffect = fromPromise<NodeEffectResult, NodeEffectInput>(as
   await Promise.resolve();
   const context = input.context;
   const { host, node, authorize } = context.input;
-  if (node.kind !== "agent") throw new TypeError("Agent effect requires an agent node");
+  if (node.kind === "human") throw new TypeError("Agent effect requires an agent node");
   const abort = AbortSignal.any([signal, context.controller.signal]);
   if (context.cancellation || context.failure || abort.aborted) return { result: aborted(), executed: false };
   const identity = envelope(context);
@@ -27,9 +29,19 @@ export const spawnNodeEffect = fromPromise<NodeEffectResult, NodeEffectInput>(as
   let active = true;
   try {
     const result = await host.spawnAgent({ nodeId: node.nodeId, prompt: node.prompt, agentType: node.agentType,
-      attempt: context.receipt.executionSequence, correlation: identity.correlation, ...(node.schema ? { schema: node.schema } : {}),
+      attempt: context.receipt.executionSequence, correlation: identity.correlation, ...(node.kind === "decision" ? { schema: compiledAgentDecisionSchema } : node.schema ? { schema: node.schema } : {}),
       onResolved: info => { if (active && !abort.aborted) input.resolved({ type: "NODE.RESOLVED", ...identity, info }); },
     }, abort);
+    if (node.kind === "decision" && result.ok && !abort.aborted) {
+      try {
+        const decision = parseAgentDecision(result.output);
+        if (decision.status === "decided") return { result: { ...result, output: JSON.stringify(decision.decision) }, executed: true };
+        if (node.hybrid) return { result, executed: true, undecidedReason: decision.reason };
+        return { result: { ...result, ok: false, error: `Agent gate undecided: ${decision.reason}` }, executed: true };
+      } catch (error) {
+        return { result: { ...result, ok: false, error: error instanceof Error ? error.message : String(error) }, executed: true };
+      }
+    }
     return { result, executed: true };
   } catch (error) {
     return { result: { ok: false, error: error instanceof Error ? error.message : String(error) }, executed: true };
@@ -64,9 +76,9 @@ export const humanNodeEffect = fromPromise<NodeEffectResult, NodeEffectInput>(as
   if (denied) return { result: { ok: false, error: denied }, executed: false };
   if (context.cancellation || context.failure || abort.aborted) return { result: aborted(), executed: false };
   try {
-    const result = host.awaitHumanGate ? await host.awaitHumanGate({ nodeId: node.nodeId, prompt: node.prompt,
+    const result = host.awaitHumanGate ? await host.awaitHumanGate({ nodeId: node.nodeId, prompt: context.undecidedReason ? `${node.prompt}\n\nSubagent undecided: ${context.undecidedReason}` : node.prompt,
       correlation: context.receipt.correlation, ...(node.schema ? { schema: node.schema } : {}),
     }, abort) : { ok: false, error: "This host cannot await human input" };
-    return { result, executed: false };
+    return { result, executed: context.executed };
   } catch (error) { return { result: { ok: false, error: error instanceof Error ? error.message : String(error) }, executed: false }; }
 });

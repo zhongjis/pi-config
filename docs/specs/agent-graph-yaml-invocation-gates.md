@@ -1,6 +1,6 @@
 # Saved Agent Graph YAML, Manual Invocation, and Decision Gates
 
-Status: draft
+Status: shipped
 
 ## Problem Statement
 
@@ -64,4 +64,4 @@ Test externally visible contracts at the highest existing seams rather than acto
 
 ## Further Notes
 
-This is a draft contract, not a description of shipped support. The repository-owned portfolio can remain JSON until YAML parsing and its validation coverage are in place.
+This contract is shipped on this implementation branch. The repository-owned portfolio may remain JSON because JSON and YAML saved graphs share the same validation and runtime path.

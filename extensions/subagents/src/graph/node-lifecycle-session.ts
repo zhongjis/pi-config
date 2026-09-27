@@ -18,7 +18,7 @@ export interface AgentLifecycleInput extends NodeInput {
   readonly node: Prompt & { readonly kind: "agent"; readonly agentType: string; readonly gate?: string; readonly maxAttempts?: number };
 }
 export interface HumanGateLifecycleInput extends NodeInput {
-  readonly node: Prompt & { readonly kind: "human" };
+  readonly node: Prompt & ({ readonly kind: "human" } | { readonly kind: "decision"; readonly agentType: string; readonly hybrid: boolean; readonly humanOnly: boolean });
 }
 export type NodeLifecycleInput = AgentLifecycleInput | HumanGateLifecycleInput;
 export type NodeResolution = Extract<NodeParentEvent, { type: "NODE.RESOLVED" }>;
@@ -35,7 +35,8 @@ export interface NodeSession {
   executed: boolean;
   requestSequence: number;
   pending?: NodeRequest;
-  continuation?: "spawn" | "gate";
+  continuation?: "spawn" | "gate" | "human";
+  undecidedReason?: string;
   cancellation?: { readonly disposition: CancellationReason; readonly reason: unknown };
   cancelAcknowledged: boolean;
   settled: boolean;
@@ -84,6 +85,7 @@ export function acceptAck(context: NodeSession, ack: NodeAck): void {
   switch (ack.operation.kind) {
     case "repair": context.continuation = "spawn"; context.executed = false; break;
     case "gate": context.continuation = "gate"; break;
+    case "human": context.continuation = "human"; break;
     case "cancel": context.cancelAcknowledged = true; context.controller.abort(context.cancellation?.reason); break;
     case "settle": context.settled = true; break;
     default: { const exhaustive: never = ack.operation; throw new TypeError(`Unknown node operation: ${exhaustive}`); }

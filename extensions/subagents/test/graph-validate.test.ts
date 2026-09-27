@@ -33,7 +33,7 @@ function reviewLoopGraph(): AgentGraph {
         },
       },
       fix: { type: "agent", agent: "jintong", prompt: "Fix the issues" },
-      approve: { type: "human_gate", prompt: "Approve?", outputSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] } },
+      approve: { type: "human_gate", prompt: "Approve?", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } },
     },
     edges: [
       { from: "implement", to: "review" },
@@ -113,7 +113,7 @@ describe("validateGraph — rejects malformed graphs", () => {
 
   it("rejects an unknown node type", () => {
     const errors = bad({ nodes: { a: { type: "action", action: "sh" } }, edges: [] });
-    expect(errors.some(e => e.includes("nodes.a.type") && e.includes("agent | human_gate | graph | expand"))).toBe(true);
+    expect(errors.some(e => e.includes("nodes.a.type") && e.includes("agent | human_gate | agent_gate | hybrid_gate | graph | expand"))).toBe(true);
   });
 
   it("rejects an agent prompt whose placeholder is not wired in input", () => {
@@ -147,7 +147,7 @@ describe("validateGraph — rejects malformed graphs", () => {
 
   it("requires outputSchema on a human_gate", () => {
     const errors = bad({ nodes: { g: { type: "human_gate", prompt: "ok?" } }, edges: [] });
-    expect(errors).toContain("nodes.g.outputSchema: is required for a human_gate node");
+    expect(errors).toContain("nodes.g.outputSchema: is required for a decision gate node");
   });
 
   it("rejects edges referencing unknown nodes", () => {

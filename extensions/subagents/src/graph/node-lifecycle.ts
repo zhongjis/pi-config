@@ -13,7 +13,7 @@ function lifecycle<Input extends NodeLifecycleInput>(id: string) {
     guards: {
       blocked: ({ context }) => Boolean(context.failure || context.cancellation),
       failed: ({ context }) => Boolean(context.failure),
-      agent: ({ context }) => context.input.node.kind === "agent",
+      agent: ({ context }) => context.input.node.kind === "agent" || context.input.node.kind === "decision" && !context.input.node.humanOnly,
       needsGate: ({ context }) => context.result.ok && context.input.node.kind === "agent" && context.input.node.gate !== undefined,
       canRepair: ({ context }) => context.input.node.kind === "agent" && !context.result.ok && !context.result.skipped &&
         context.receipt.executionSequence < Math.max(1, context.input.node.maxAttempts ?? 1),
@@ -25,6 +25,10 @@ function lifecycle<Input extends NodeLifecycleInput>(id: string) {
         }
       }),
       askGate: enqueueActions(({ context, enqueue }) => { enqueue.sendParent(nodeRequest(context, { kind: "gate", costUsd: context.result.costUsd })); }),
+      askHuman: enqueueActions(({ context, enqueue }) => {
+        if (!context.undecidedReason) throw new TypeError("Missing typed uncertainty");
+        enqueue.sendParent(nodeRequest(context, { kind: "human", reason: context.undecidedReason, costUsd: context.result.costUsd }));
+      }),
       askRepair: enqueueActions(({ context, enqueue }) => { enqueue.sendParent(nodeRequest(context, { kind: "repair", result: context.result, executed: context.executed })); }),
       askSettlement: enqueueActions(({ context, enqueue }) => {
         const operation = settlement(context);
@@ -62,10 +66,12 @@ function lifecycle<Input extends NodeLifecycleInput>(id: string) {
       spawning: {
         entry: "beginEffect",
         invoke: { src: "spawn", input: ({ context, self }) => ({ context, resolved: event => self.send(event) }),
-          onDone: { target: "schema", actions: ({ context, event }) => { context.active = false; context.result = event.output.result; context.executed = event.output.executed; } },
+          onDone: { target: "decision", actions: ({ context, event }) => { context.active = false; context.result = event.output.result; context.executed = event.output.executed; context.undecidedReason = event.output.undecidedReason; } },
           onError: { target: "waiting", actions: ({ context, event }) => { context.active = false; failNode(context, event.error); } },
         },
       },
+      decision: { always: [{ guard: "blocked", target: "waiting" }, { guard: ({ context }) => context.undecidedReason !== undefined, target: "requestingHuman" }, { target: "schema" }] },
+      requestingHuman: { entry: "askHuman", always: "waiting" },
       prompting: {
         entry: "beginEffect",
         invoke: { src: "human", input: ({ context, self }) => ({ context, resolved: event => self.send(event) }),
@@ -96,6 +102,7 @@ function lifecycle<Input extends NodeLifecycleInput>(id: string) {
           { guard: ({ context }) => context.cancelAcknowledged && !context.pending, target: "requestingSettlement" },
           { guard: ({ context }) => !context.cancellation && !context.pending && context.continuation === "spawn", target: "ready" },
           { guard: ({ context }) => !context.cancellation && !context.pending && context.continuation === "gate", target: "gating" },
+          { guard: ({ context }) => !context.cancellation && !context.pending && context.continuation === "human", target: "prompting" },
         ],
       },
       settledAwaitingRelease: {
