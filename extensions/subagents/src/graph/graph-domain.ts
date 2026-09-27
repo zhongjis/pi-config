@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { checkContextOutput, validateContextInput } from "./context-gather-policy.js";
 import { isDeepStrictEqual } from "node:util";
 import { decision, decisionSchema, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal } from "./bounded-feedback.js";
 import { type CoordinatorReceipt, type CoordinatorRequest, coordinatorReceipt, type FeedbackOwnerView } from "./coordinator-protocol.js";
@@ -109,6 +110,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
   }
   if (graph.version === 2 && options.restore && !options.restore.runtime) throw new TypeError("Missing v2 restore manifest");
   input = coerceGraphInput(input);
+  validateContextInput(graph, input);
   if (options.restore) {
     if (options.restore.runtime) validateGraphRestore(options.restore, graph, input);
     else validateSchedulerState(options.restore, graph);
@@ -593,6 +595,14 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
         const valid = schema.check(value); if (valid !== true) return valid;
         try { decision(value, evaluation.node); return true; }
         catch (error) { if (error instanceof Error) return error.message; throw error; }
+      } };
+    }
+    const stage = id === "plan" || id === "synthesize" ? id : feedbackStates.research?.active?.evaluator === id ? "evaluation" : undefined;
+    if (graph.semanticPolicy && stage && exec.schema) {
+      const schema = exec.schema;
+      exec.schema = { ...schema, check: value => {
+        const valid = schema.check(value);
+        return valid === true ? checkContextOutput({ graph, input, stage, research: projection.nodes.get("research")?.output }, value) : valid;
       } };
     }
     return { kind: "agent", id, input: { receipt, host: options.host, authorize: () => options.authorizeAgent?.(node.agent), node: exec } };

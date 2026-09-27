@@ -195,6 +195,7 @@ export interface AgentGraph {
   version?: number;
   /** Optional human-readable purpose shown only for live graph runs. */
   description?: string;
+  semanticPolicy?: "context-gather-v1";
   inputSchema?: JsonSchema;
   outputSchema?: JsonSchema;
   nodes: Record<NodeId, GraphNode>;

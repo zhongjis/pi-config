@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { validateContextRestore } from "./context-gather-policy.js";
 import { canonical, decision, decisionSchema, type FeedbackIteration, type FeedbackState, feedbackBudgetBounds, feedbackContinuation } from "./bounded-feedback.js";
 import { prepareFanout } from "./fanout.js";
 import { consumedExecutions } from "./graph-execution.js";
@@ -19,6 +20,7 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
     if (Array.isArray(children)) for (const child of children) if (child && typeof child.nodeId === "string") materializedPrompts.add(child.nodeId);
   }
   validateSchedulerState(state, graph, materializedPrompts);
+  validateContextRestore(graph, input, state);
   const runtime = state.runtime;
   if (!runtime) throw new TypeError("Missing v2 runtime state");
   validateManifest(runtime, graph);

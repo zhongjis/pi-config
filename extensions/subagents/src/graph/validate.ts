@@ -372,6 +372,14 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
   if (graph.name !== undefined && typeof graph.name !== "string") errors.push("name: must be a string when present");
   if (graph.version !== undefined && graph.version !== 1 && graph.version !== 2) errors.push("version: supported versions are 1 and 2");
   if (graph.description !== undefined && typeof graph.description !== "string") errors.push("description: must be a string when present");
+  if (graph.semanticPolicy !== undefined && graph.semanticPolicy !== "context-gather-v1") errors.push("semanticPolicy: unsupported policy");
+  if (graph.semanticPolicy === "context-gather-v1") {
+    const nodes = isPlainObject(graph.nodes) ? graph.nodes : {};
+    if (graph.version !== 2 || !isPlainObject(nodes.research) || nodes.research.type !== "bounded_feedback" ||
+      [nodes.plan, nodes.synthesize].some(node => !isPlainObject(node) || node.type !== "agent" || node.outputSchema === undefined)) {
+      errors.push("semanticPolicy: context-gather-v1 requires v2 plan/research/synthesize structured nodes");
+    }
+  }
   if (graph.inputSchema !== undefined) {
     const compiled = compileInputSchema(graph.inputSchema);
     if (compiled.ok === false) errors.push(`inputSchema: ${compiled.message}`);

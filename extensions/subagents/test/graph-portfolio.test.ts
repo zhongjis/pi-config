@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentGraph, GraphNode } from "../src/graph/ir.js";
 import { runGraph } from "../src/graph/run-graph.js";
+import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
+import type { SchedulerState } from "../src/graph/scheduler.js";
 import { resolveSavedGraph } from "../src/graph/saved-graph.js";
 import { validateGraph } from "../src/graph/validate.js";
 
@@ -321,7 +323,7 @@ describe("adaptive context-gather contract", () => {
   });
 
   it("returns partial coverage without exposing the outcome envelope as payload", async () => {
-    const partialPlan = { ...INITIAL_TASK, criterionIds: ["configuration"] };
+    const partialPlan = INITIAL_TASK;
     const partialEvidence = {
       ...PROJECT_EVIDENCE,
       claims: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, criterionIds: ["configuration"] })),
@@ -394,4 +396,134 @@ describe("adaptive context-gather contract", () => {
     expect(synthesize.input).not.toHaveProperty("budget");
     expect(placeholders(synthesize.prompt)).not.toContain("budget");
   });
+});
+
+describe("context-gather semantic policy", () => {
+  async function runCase(overrides: { plan?: unknown; research?: unknown; synthesis?: unknown; evaluation?: unknown } = {}) {
+    const calls: string[] = [];
+    const checkpoints: { state: SchedulerState; graph: AgentGraph }[] = [];
+    const result = await runGraph(savedGraph("context-gather"), INPUT, {
+      onCheckpoint: (state, graph) => {
+        validateGraphRestore(state, graph, INPUT);
+        checkpoints.push(structuredClone({ state, graph }));
+      },
+      host: { spawnAgent: async request => {
+        calls.push(request.agentType);
+        const outputs: Record<string, unknown> = {
+          xuannv: overrides.plan ?? { tasks: [INITIAL_TASK] },
+          chengfeng: overrides.research ?? PROJECT_EVIDENCE,
+          direnjie: overrides.evaluation ?? SUFFICIENT,
+          jintong: overrides.synthesis ?? COMPLETE_SYNTHESIS,
+        };
+        return { ok: true, output: JSON.stringify(outputs[request.agentType]) };
+      } },
+    });
+    return { result, calls, checkpoints };
+  }
+
+  it("validates only the recognized explicit policy, independently of display name", () => {
+    const graph = savedGraph("context-gather");
+    expect(graph.semanticPolicy).toBe("context-gather-v1");
+    expect(validateGraph({ ...graph, name: "renamed" }).ok).toBe(true);
+    expect(validateGraph({ ...graph, semanticPolicy: "context-gather-v2" }).ok).toBe(false);
+  });
+
+  it("rejects duplicate requested IDs before dispatch", async () => {
+    let calls = 0;
+    await expect(runGraph(savedGraph("context-gather"), { ...INPUT, requiredCoverage: [
+      { id: "configuration", criterion: "First" }, { id: "configuration", criterion: "Different" },
+    ] }, { onCheckpoint: () => {}, host: { spawnAgent: async () => { calls++; return { ok: false }; } } })).rejects.toThrow(/coverage/i);
+    expect(calls).toBe(0);
+  });
+
+  it.each([[["configuration", "other"]], [["configuration"]]])("rejects invalid plan coverage %j with retries", async criterionIds => {
+    const { result, calls } = await runCase({ plan: { tasks: [{ ...INITIAL_TASK, criterionIds }] } });
+    expect(result.nodes.plan.status).toBe("failed");
+    expect(calls).toEqual(["xuannv", "xuannv"]);
+  });
+
+  it("rejects out-of-scope continuation before dispatching another task", async () => {
+    const { result, calls } = await runCase({ evaluation: { decision: "continue", gaps: [{ id: "gap", description: "Missing" }], tasks: [{ gapId: "gap", item: { ...GAP_TASK, criterionIds: ["other"] } }] } });
+    expect(calls.filter(agent => agent === "direnjie")).toHaveLength(2);
+    expect(calls.filter(agent => agent === "chengfeng")).toHaveLength(1);
+    expect(result.feedback?.research?.reason).toBe("evaluator failure");
+  });
+
+  it.each([
+    ["invented claim", { evidence: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "invented" })) }],
+    ["changed text", { evidence: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claim: "New text" })) }],
+    ["changed criteria", { evidence: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, criterionIds: ["configuration"] })) }],
+    ["changed provenance", { evidence: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, provenance: claim.provenance.map(source => ({ ...source, excerpt: "New excerpt" })) })) }],
+    ["nonexistent reference", { verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.map(row => ({ ...row, claimIds: ["absent"] })) }],
+    ["incomplete succeeded coverage", { verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.slice(0, 1) }],
+    ["unrequested coverage", { verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.map((row, index) => ({ ...row, id: `other-${index}` })) }],
+    ["duplicate coverage", { verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.map(row => ({ ...row, id: "configuration", reason: row.id })) }],
+  ])("rejects %s through synthesis retries", async (_label, override) => {
+    const { result, calls } = await runCase({ synthesis: { ...COMPLETE_SYNTHESIS, ...override } });
+    expect(result.nodes.synthesize.status).toBe("failed");
+    expect(calls.filter(agent => agent === "jintong")).toHaveLength(2);
+  });
+
+  it.each(["promotion", "inferred support"])("rejects %s", async kind => {
+    const claims = PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, confidence: "inferred" }));
+    const { result } = await runCase({ research: { ...PROJECT_EVIDENCE, claims }, synthesis: { ...COMPLETE_SYNTHESIS, evidence: kind === "promotion" ? PROJECT_EVIDENCE.claims : claims } });
+    expect(result.nodes.synthesize.status).toBe("failed");
+  });
+
+  it("requires claim references to match their coverage criterion", async () => {
+    const claims = PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, criterionIds: ["configuration"] }));
+    const { result } = await runCase({ research: { ...PROJECT_EVIDENCE, claims }, synthesis: { ...COMPLETE_SYNTHESIS, evidence: claims } });
+    expect(result.nodes.synthesize.status).toBe("failed");
+  });
+
+  it("rejects ambiguous raw claim IDs across results", async () => {
+    const { result } = await runCase({ plan: { tasks: [INITIAL_TASK, GAP_TASK] } });
+    expect(result.nodes.synthesize.status).toBe("failed");
+  });
+
+  it("does not turn inferred workflow-example into new direct claims", async () => {
+    const claims = PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "workflow-example", confidence: "inferred" }));
+    const evidence = ["operation-monitoring", "context-gather-example"].flatMap(claimId => PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId })));
+    const { result } = await runCase({ research: { ...PROJECT_EVIDENCE, claims }, synthesis: { ...COMPLETE_SYNTHESIS, evidence, verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.map((row, index) => ({ ...row, claimIds: [evidence[index].claimId] })) } });
+    expect(result.nodes.synthesize.status).toBe("failed");
+  });
+});
+
+it("restores policy checkpoints and rejects forged continuation and final evidence before dispatch", async () => {
+  const checkpoints: { state: SchedulerState; graph: AgentGraph }[] = [];
+  let work = 0; let evaluations = 0;
+  const followup = { decision: "continue", gaps: [{ id: "runtime", description: "Missing" }], tasks: [{ gapId: "runtime", item: GAP_TASK }] };
+  await runGraph(savedGraph("context-gather"), INPUT, {
+    onCheckpoint: (state, graph) => { validateGraphRestore(state, graph, INPUT); checkpoints.push(structuredClone({ state, graph })); },
+    host: { spawnAgent: async request => {
+      const outputs: Record<string, unknown> = {
+        xuannv: { tasks: [INITIAL_TASK] },
+        chengfeng: work === 0 ? PROJECT_EVIDENCE : GAP_EVIDENCE,
+        direnjie: evaluations === 0 ? followup : SUFFICIENT,
+        jintong: COMPLETE_SYNTHESIS,
+      };
+      if (request.agentType === "chengfeng") work++;
+      if (request.agentType === "direnjie") evaluations++;
+      return { ok: true, output: JSON.stringify(outputs[request.agentType]) };
+    } },
+  });
+  const saved = checkpoints.at(-1);
+  if (!saved) throw new Error("Missing terminal checkpoint");
+  let dispatches = 0; let writes = 0;
+  const restored = await runGraph(saved.graph, INPUT, { restore: saved.state, onCheckpoint: () => {}, host: { spawnAgent: async () => { dispatches++; return { ok: false }; } } });
+  expect(restored.outputs.evidence).toEqual(PROJECT_EVIDENCE.claims);
+  expect(dispatches).toBe(0);
+  for (const kind of ["continuation", "synthesis"]) {
+    const state = structuredClone(saved.state);
+    if (kind === "continuation") {
+      const evaluator = state.runtime?.feedback?.research.iterations[0]?.evaluator;
+      if (!evaluator) throw new Error("Missing evaluator");
+      state.nodes[evaluator].output = { ...followup, tasks: [{ gapId: "runtime", item: { ...GAP_TASK, criterionIds: ["outside"] } }] };
+    } else {
+      state.nodes.synthesize.output = { ...COMPLETE_SYNTHESIS, evidence: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, confidence: "inferred" })) };
+    }
+    await expect(runGraph(saved.graph, INPUT, { restore: state, onCheckpoint: () => { writes++; }, host: { spawnAgent: async () => { dispatches++; return { ok: false }; } } })).rejects.toThrow(/semantic output/);
+  }
+  expect(dispatches).toBe(0);
+  expect(writes).toBe(0);
 });
