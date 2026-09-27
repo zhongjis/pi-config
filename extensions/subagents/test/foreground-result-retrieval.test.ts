@@ -76,7 +76,7 @@ async function runForegroundSteeredAgent(tools: Map<string, any>) {
     aborted: false,
     steered: true,
   });
-  const res = await tools.get("Agent").execute(
+  const res = await tools.get("agent").execute(
     "tc-fg",
     {
       prompt: "Perform a very thorough read-only codebase exploration.",
@@ -152,7 +152,7 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     expect(textOf(res)).toContain(`Agent ID: ${id}`);
 
     vi.mocked(resumeAgent).mockResolvedValue({ text: "RESUMED-PAYLOAD" });
-    const resumed = await tools.get("Agent").execute(
+    const resumed = await tools.get("agent").execute(
       "tc-resume",
       {
         prompt: "Continue from the previous result.",

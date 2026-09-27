@@ -7,7 +7,7 @@
 
 export const DEFAULT_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
 
-export const NESTED_SUBAGENT_TOOL_NAMES = ["Agent", "get_subagent_result", "steer_subagent"] as const;
+export const NESTED_SUBAGENT_TOOL_NAMES = ["agent", "get_subagent_result", "steer_subagent"] as const;
 
 export type ExtensionSelection = true | readonly string[] | false;
 export type ExtensionToolSelection = readonly string[] | false | undefined;

@@ -15,7 +15,7 @@ function registerHook(): Handler {
 }
 
 const denial = {
-  toolName: "Agent",
+  toolName: "agent",
   content: [{ type: "text", text: "denied raw" }],
   details: {
     category: "delegation_policy_denied",
@@ -25,7 +25,7 @@ const denial = {
   isError: false,
 };
 
-describe("Agent policy-denial tool_result hook", () => {
+describe("agent policy-denial tool_result hook", () => {
   it("marks structured policy denials as errors without replacing content or details", () => {
     const handler = registerHook();
     const patch = handler(denial);
@@ -45,7 +45,7 @@ describe("Agent policy-denial tool_result hook", () => {
     { ...denial, details: undefined },
     { ...denial, details: null },
     { ...denial, isError: true },
-    { toolName: "Agent", content: [], details: { category: "delegation_policy_denied" } },
+    { toolName: "agent", content: [], details: { category: "delegation_policy_denied" } },
   ])("leaves successful, unrelated, malformed, or already-error results unchanged", (event) => {
     expect(registerHook()(event)).toBeUndefined();
   });

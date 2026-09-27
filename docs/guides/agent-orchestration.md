@@ -11,7 +11,7 @@ Where the details live:
 | Workflow lifecycles and how-to | [`docs/guides/orchistration.md`](orchistration.md) |
 | Delegation authorization internals | [`docs/specs/mode-scoped-subagent-delegation.md`](../specs/mode-scoped-subagent-delegation.md) |
 | Mode switching, plan approval, restrictions | [`docs/specs/modes.md`](../specs/modes.md) · [`extensions/modes/README.md`](../../extensions/modes/README.md) |
-| `Agent` tool API (spawn / resume / supervise) | [`extensions/subagents/README.md`](../../extensions/subagents/README.md) |
+| `agent` tool API (spawn / resume / supervise) | [`extensions/subagents/README.md`](../../extensions/subagents/README.md) |
 | Frontmatter fields (`allow_delegation_to`, `prompt_mode`, …) | [`docs/guides/agent-frontmatter.md`](agent-frontmatter.md) |
 
 ---
@@ -23,7 +23,7 @@ Where the details live:
 | **Single-session** | Kua Fu | Classify the request, delegate specialists, verify, respond — all in the current session. |
 | **Plan-then-execute** | Fu Xi → Hou Tu | Fu Xi plans; on approval a **child session** opens in Hou Tu to execute. |
 
-All modes delegate through the same `Agent` tool. What differs per mode is *which*
+All modes delegate through the same `agent` tool. What differs per mode is *which*
 subagents it may call, *how* it routes, and *when* it hands off.
 
 ---
@@ -108,7 +108,7 @@ spawn ingress (a denial reports the permitted targets). Full model:
 | Any → any | manual | `/mode <name>`, `/mode:<name> <text>`, `Ctrl+Shift+M` cycle, or `--mode` at startup. |
 
 `fuxi` and `houtu` are **modes, not spawnable subagents** — moving between them is a
-mode switch (or the approval bridge), never an `Agent` call. See
+mode switch (or the approval bridge), never an `agent` call. See
 [modes.md](../specs/modes.md) for switching details.
 
 ---

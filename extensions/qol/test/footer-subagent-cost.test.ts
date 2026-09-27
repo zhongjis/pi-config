@@ -48,7 +48,7 @@ it.each(["native", "off"])("counts child costs once with reportUsage=%s", async 
           {
             type: "message",
             message: {
-              role: "toolResult", toolName: "Agent", toolCallId: "child-1",
+              role: "toolResult", toolName: "agent", toolCallId: "child-1",
               content: [{ type: "text", text: "Child completed" }], isError: false,
               ...(reportUsage === "native" ? {
                 usage: { ...parentUsage, cost: { ...parentUsage.cost, input: 1, output: 1, total: 2 } },

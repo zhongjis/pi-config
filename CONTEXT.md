@@ -19,7 +19,7 @@ A persona under `modes/` that swaps the main agent's prompt and tool access for 
 _Avoid_: mode (when a persona is meant), persona
 
 **Subagent**:
-A delegate persona under `agents/`, invoked by an orchestrator through the `Agent` tool to do one bounded task.
+A delegate persona under `agents/`, invoked by an orchestrator through the `agent` tool to do one bounded task.
 _Avoid_: helper, worker
 
 ## Capability sources

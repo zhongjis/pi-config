@@ -14,8 +14,8 @@ const PROJECT_ROOT = resolve(__dirname, "../..");
 const WIDTHS = [20, 40, 80, 120] as const;
 const NATIVE_RESULT_DELEGATES = new Set(["bash"]);
 const EXPECTED_TOOL_NAMES = [
-  "Agent",
   "Task",
+  "agent",
   "ask",
   "bash",
   "boomerang",
@@ -118,7 +118,7 @@ type ToolFixture = {
 };
 
 const FIXTURES: Record<(typeof EXPECTED_TOOL_NAMES)[number], ToolFixture> = {
-  Agent: {
+  agent: {
     args: { prompt: "Audit renderer output", description: "renderer audit", subagent_type: "juling", skills: ["pi-extensions", "vitest"] },
     raw: "Renderer audit complete.\nRAW31_01",
     details: {
@@ -328,7 +328,7 @@ describe("tool output TUI rendering — real Pi integration", () => {
       type: "message",
       message: expect.objectContaining({
         role: "assistant",
-        content: expect.arrayContaining([expect.objectContaining({ type: "toolCall", name: "Agent", arguments: expect.objectContaining({ skills: ["pi-extensions", "vitest"] }) })]),
+        content: expect.arrayContaining([expect.objectContaining({ type: "toolCall", name: "agent", arguments: expect.objectContaining({ skills: ["pi-extensions", "vitest"] }) })]),
       }),
     }));
     expect(lines).toContainEqual(expect.objectContaining({ type: "message", message: expect.objectContaining({ role: "toolResult", toolName: "steer_subagent", isError: true }) }));

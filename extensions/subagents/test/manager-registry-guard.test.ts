@@ -57,7 +57,7 @@ const textOf = (r: any): string => r.content[0].text;
 
 async function spawnBackground(tools: Map<string, any>): Promise<string> {
   vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}) as any); // never resolves
-  const r = await tools.get("Agent").execute(
+  const r = await tools.get("agent").execute(
     "tc-spawn",
     { prompt: "go", description: "registry test agent", subagent_type: "general-purpose", run_in_background: true },
     undefined,

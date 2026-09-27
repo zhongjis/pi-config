@@ -76,29 +76,29 @@ function activate(settings: Record<string, unknown> = {}) {
     for (const hook of hooks.get("tool_result") ?? []) event = { ...event, ...await hook(event, ctx) };
     return event;
   };
-  const execute = (name = "Agent", input = params, id = "call", update?: (result: Result) => void) => tools.get(name)!.execute(id, input, undefined, update, ctx);
+  const execute = (name = "agent", input = params, id = "call", update?: (result: Result) => void) => tools.get(name)!.execute(id, input, undefined, update, ctx);
   return { execute, finish, lifecycle, appliers: appliers!, ctx };
 }
 
 it("reports final deltas once across retrieval and resume, never on partial results", async () => {
   const { execute, finish } = activate({ reportUsage: true, showCost: true });
   const updates: Result[] = [];
-  const result = await execute("Agent", params, "spawn", (value) => updates.push(value));
+  const result = await execute("agent", params, "spawn", (value) => updates.push(value));
   expect(updates.every((value) => value.usage === undefined)).toBe(true);
   expect(result.usage).toBeUndefined();
   expect(result.details?.cost).toBe(0.25);
-  expect((await finish("Agent", result)).usage).toMatchObject({ input: 10, output: 2, cacheRead: 7, cost: { total: 0.25 } });
+  expect((await finish("agent", result)).usage).toMatchObject({ input: 10, output: 2, cacheRead: 7, cost: { total: 0.25 } });
   const read = await execute("get_subagent_result", { agent_id: result.details!.agentId } as unknown as typeof params);
   expect((await finish("get_subagent_result", read)).usage).toBeUndefined();
-  const resumed = await execute("Agent", { ...params, resume: result.details!.agentId } as typeof params);
-  expect((await finish("Agent", resumed)).usage?.cost.total).toBe(0.25);
+  const resumed = await execute("agent", { ...params, resume: result.details!.agentId } as typeof params);
+  expect((await finish("agent", resumed)).usage?.cost.total).toBe(0.25);
 });
 
 it("holds background usage for an eligible result and merges foreign usage", async () => {
   const { execute, finish } = activate({ reportUsage: true });
-  const result = await execute("Agent", { ...params, run_in_background: true } as typeof params);
+  const result = await execute("agent", { ...params, run_in_background: true } as typeof params);
   await Promise.resolve();
-  expect((await finish("Agent", result, "")).usage).toBeUndefined();
+  expect((await finish("agent", result, "")).usage).toBeUndefined();
   expect((await finish("read", result)).usage).toBeUndefined();
   const foreign: Usage = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, totalTokens: 10, cost: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 } };
   const merged = await finish("steer_subagent", result, "steer", foreign);
@@ -111,7 +111,7 @@ it("defaults reporting and cost off, but tracks costs", async () => {
   const { execute, finish } = activate();
   const result = await execute();
   expect(result.details?.cost).toBeUndefined();
-  expect((await finish("Agent", result)).usage).toBeUndefined();
+  expect((await finish("agent", result)).usage).toBeUndefined();
 });
 
 it.each(["session_start", "session_shutdown"])("clears unreported usage on %s", async (event) => {
@@ -132,10 +132,10 @@ it("does not invent a model mismatch for an inherited model", async () => {
 it("ignores caller model and thinking overrides, disclosing only the frontmatter clamp", async () => {
   writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\ndescription: fixture\nmodel: test/chosen\nthinking: high\n---\nTask");
   const { execute } = activate();
-  const result = await execute("Agent", { ...params, model: "missing", thinking: "MAX" } as typeof params);
+  const result = await execute("agent", { ...params, model: "missing", thinking: "MAX" } as typeof params);
   expect(result.details).toMatchObject({ modelName: "test/chosen", thinking: "low", requestedThinking: "high" });
   expect(result.details?.requestedModel).toBeUndefined();
-  const resumed = await execute("Agent", { ...params, resume: result.details!.agentId, model: "chosen", thinking: "low" } as typeof params);
+  const resumed = await execute("agent", { ...params, resume: result.details!.agentId, model: "chosen", thinking: "low" } as typeof params);
   expect(resumed.details).toMatchObject({ requestedThinking: "high" });
   expect(resumed.details?.requestedModel).toBeUndefined();
 });
@@ -147,9 +147,9 @@ it("drops pending usage when disabled and does not accumulate while off", async 
   appliers.setReportUsage!(false);
   const off = await execute();
   appliers.setReportUsage!(true);
-  expect((await finish("Agent", off)).usage).toBeUndefined();
+  expect((await finish("agent", off)).usage).toBeUndefined();
   const fresh = await execute();
-  expect((await finish("Agent", fresh)).usage?.input).toBe(10);
+  expect((await finish("agent", fresh)).usage?.input).toBe(10);
 });
 
 it("shows configuration thinking clamping even without a caller thinking override", async () => {
@@ -168,8 +168,8 @@ it("keeps queued details free of actual and mismatch claims, then reports runnin
     return { responseText: "done", session, aborted: false, steered: false };
   });
   const { execute, finish } = activate({ maxConcurrent: 1, reportUsage: true });
-  const first = await execute("Agent", { ...params, run_in_background: true } as typeof params);
-  const queued = await execute("Agent", { ...params, run_in_background: true } as typeof params);
+  const first = await execute("agent", { ...params, run_in_background: true } as typeof params);
+  const queued = await execute("agent", { ...params, run_in_background: true } as typeof params);
   expect(queued.details?.status).toBe("queued");
   for (const field of ["modelName", "thinking", "requestedModel", "requestedThinking"] as const) expect(queued.details?.[field]).toBeUndefined();
   const running = await execute("get_subagent_result", { agent_id: first.details!.agentId } as unknown as typeof params);
@@ -188,7 +188,7 @@ it("retains spent deltas through failed calls", async () => {
   const { execute, finish } = activate({ reportUsage: true });
   const result = await execute();
   expect(result.details?.status).toBe("error");
-  expect((await finish("Agent", result)).usage?.input).toBe(10);
+  expect((await finish("agent", result)).usage?.input).toBe(10);
 });
 
 it("preserves pending usage through a switch preflight that does not commit", async () => {
@@ -207,7 +207,7 @@ it("prepares configured direct model, thinking, and normalized max turns before 
   );
   const { execute } = activate();
   vi.mocked(runAgent).mockClear();
-  await execute("Agent", { ...params, model: "test/missing", thinking: "low", max_turns: 3 } as typeof params);
+  await execute("agent", { ...params, model: "test/missing", thinking: "low", max_turns: 3 } as typeof params);
   expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3]).toMatchObject({
     selectedModel: { model, modelInput: "test/chosen:high" },
     thinkingLevel: "high",

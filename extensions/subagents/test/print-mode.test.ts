@@ -82,7 +82,7 @@ describe("print mode background notifications", () => {
     subagentsExtension(pi);
     vi.useFakeTimers();
 
-    const agentTool = tools.get("Agent");
+    const agentTool = tools.get("agent");
     await agentTool.execute(
       "tool-call-1",
       {

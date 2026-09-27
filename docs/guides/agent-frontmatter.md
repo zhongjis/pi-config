@@ -84,9 +84,9 @@ Consumed by the subagent extension. Only include fields that differ from the def
 | `discover_skills` | boolean | `true` | Whether pi's skill **catalog** is discoverable on demand (drives runtime `noSkills = !discover_skills`). `false`/`none` disables the catalog. |
 | `preload_skills` | CSV \| `none` | — | Skill names whose full body is eagerly injected into the system prompt (via `preloadSkills()` → `skillBlocks`). Independent of `discover_skills` — the catalog can be on while some skills are preloaded. |
 | `prompt_mode` | `replace` \| `append` \| `system_instructions` | `replace` | How the body forms the system prompt (see [prompt_mode](#prompt_mode)). |
-| `allow_delegation_to` | CSV | unrestricted | Agent names this agent may spawn via `Agent`. |
+| `allow_delegation_to` | CSV | unrestricted | Agent names this agent may spawn via `agent`. |
 | `disallow_delegation_to` | CSV | — | Agent names this agent may not spawn. Applied as exclusions after `allow_delegation_to`. |
-| `allow_nesting` | boolean | `false` | Permit nested subagent tools (`Agent`, `get_subagent_result`, `steer_subagent`) — only if also allowed by tool policy. |
+| `allow_nesting` | boolean | `false` | Permit nested subagent tools (`agent`, `get_subagent_result`, `steer_subagent`) — only if also allowed by tool policy. |
 | `inherit_context` | boolean | `false` | Fork the parent conversation into the agent so it sees chat history. |
 | `run_in_background` | boolean | `false` | Run in background by default. |
 | `isolated` | boolean | `false` | No extension/MCP tools at all — built-ins only. Overrides `extensions`/`extension_tools`. |
@@ -94,7 +94,7 @@ Consumed by the subagent extension. Only include fields that differ from the def
 | `enabled` | boolean | `true` | Set `enabled: false` to disable the agent definition. |
 
 > **Not a frontmatter field:** `thinking`. Per-call `thinking`, `model`, and
-> `max_turns` are also **`Agent` tool invocation parameters**; frontmatter sets
+> `max_turns` are also **`agent` tool invocation parameters**; frontmatter sets
 > the defaults, the tool call can override. Thinking level for the frontmatter
 > `model` is expressed as a suffix in the model spec (`:high`, `:xhigh`), not a
 > separate key.
@@ -182,7 +182,7 @@ Final active tools are computed by
 2. **`extensions`** — master switch for extension/MCP tools. `false` disables all.
 3. **`extension_tools`** — post-load allowlist. `undefined` = all available;
    `false`/`none` = none; a list = exact names or `prefix*` wildcards.
-4. **`allow_nesting`** — nested subagent tools (`Agent`, `get_subagent_result`,
+4. **`allow_nesting`** — nested subagent tools (`agent`, `get_subagent_result`,
    `steer_subagent`) are removed unless this is `true`.
 
 Precedence and rules:
@@ -227,7 +227,7 @@ for chain resolution and fallback semantics.
 ## Delegation fields
 
 `allow_delegation_to` / `disallow_delegation_to` govern which agent types a
-mode or agent may spawn through the `Agent` tool.
+mode or agent may spawn through the `agent` tool.
 
 - The **allowlist is applied first**, then `disallow_delegation_to` removes entries
   from that set.
@@ -300,7 +300,7 @@ description: Default build mode. A senior engineer who ships by orchestrating sp
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:medium
 inherit_context: false
 builtin_tools: read,bash,edit,write
-extension_tools: ask,Agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal
+extension_tools: ask,agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal
 allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
 disallow_delegation_to: houtu
 allow_nesting: true
@@ -323,6 +323,6 @@ There is no repo-local automated validator for agent/mode markdown. After editin
 1. Re-read the changed frontmatter and body for internal consistency.
 2. Confirm no obsolete fields (`tools`, `disallowed_tools`, `disallow_tools`, `skills`, `inherit_skills`) remain.
 3. Confirm tool access matches role scope (read-only agents get no mutating tools).
-4. For subagents, test by launching through the `Agent` tool.
+4. For subagents, test by launching through the `agent` tool.
 5. For modes, exercise the relevant integration coverage
    (`pnpm test:integration` or the focused mode test) for runtime-sensitive changes.

@@ -401,7 +401,7 @@ describe("subagent notification rendering migration", () => {
       aborted: false,
       steered: false,
     });
-    const tool = tools.get("Agent");
+    const tool = tools.get("agent");
     expect(tool).toBeDefined();
 
     await tool?.execute(

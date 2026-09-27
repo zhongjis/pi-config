@@ -130,7 +130,7 @@ describe("manager registry lifecycle ownership", () => {
 
     const child = makePi();
     Reflect.apply(subagentsExtension, undefined, [child.pi]);
-    expect(child.tools.has("Agent"), "child tool registration remains available").toBe(true);
+    expect(child.tools.has("agent"), "child tool registration remains available").toBe(true);
     await fire(child, "session_start", {}, context());
     await fire(child, "tool_execution_start", {}, context());
     await fire(child, "session_before_switch");

@@ -16,7 +16,7 @@ real session: 70 of 74 logical tasks unfinished with no technical or external bl
   sizing proxy in the Fu Xi planner, the Kua Fu / Hou Tu orchestrators, and the
   `modes/AGENTS.md` contract. **Upstream omo has no such guard** (verified against the
   generated final prompts in `docs/references/oh-my-openagent/final-prompts/` and upstream Sisyphus-Junior).
-- Hou Tu kept Atlas's post-delegation rule verbatim: "after EVERY verified `Agent`
+- Hou Tu kept Atlas's post-delegation rule verbatim: "after EVERY verified `agent`
   completion → mark the pi-task completed + check the PLAN box + do not launch the next
   task first."
 - When a plan item exceeded 3 files the worker rejected it, so Hou Tu manually carved it
@@ -25,7 +25,7 @@ real session: 70 of 74 logical tasks unfinished with no technical or external bl
   marking it forbade the next slice. Deadlock.
 
 Upstream never hits this because it has no worker guard: one plan item = one worker
-session, resumed in place (`Agent(resume)`) until the whole item verifies. A "successful
+session, resumed in place (`agent(resume)`) until the whole item verifies. A "successful
 partial slice that must not flip the checkbox" cannot occur, so the same Atlas rule is safe.
 
 ## Decision
@@ -38,7 +38,7 @@ machinery:
    `BLOCKED` with a resume anchor and is never reported as `COMPLETED`.
 2. Keep Hou Tu's Atlas post-delegation rule and Section 3.5 resume-in-place **verbatim**.
    Reword only the delegation-sizing sentence to forbid re-splitting a plan item: an
-   over-large item runs as one resumable worker session continued with `Agent(resume)`
+   over-large item runs as one resumable worker session continued with `agent(resume)`
    until its whole requirement verifies.
 3. Size by **upstream granularity** — one domain / one deliverable, target 5-8 todos per
    wave, split by domain or coupling, **not by a fixed file count** — in the Fu Xi ulw-plan
@@ -54,12 +54,12 @@ plan-time granularity + per-run turn/tool ceilings + resume-in-place.
 ## Consequences
 
 - The deadlock cannot recur: one plan item maps to one resumable worker session, so a
-  verified `Agent` completion only occurs when the whole item is done and the Atlas rule
+  verified `agent` completion only occurs when the whole item is done and the Atlas rule
   fires exactly once. Locked by `test/houtu-slice-deadlock.test.ts`.
 - Hou Tu stays faithful to upstream Atlas (rule kept verbatim); the fix removes a
   divergence instead of adding Pi-specific slice-lifecycle machinery.
-- Reliance on `Agent(resume)` increases. The secondary defect noted in issue #10 (a stale
-  `Agent(resume)` returning a prior completed summary) is now load-bearing and should be
+- Reliance on `agent(resume)` increases. The secondary defect noted in issue #10 (a stale
+  `agent(resume)` returning a prior completed summary) is now load-bearing and should be
   fixed as a follow-up.
 - Worker self-protection against runaway scope is now the planner's + harness turn
   ceiling's responsibility, not the worker's. The worker `<critical>` scope-containment

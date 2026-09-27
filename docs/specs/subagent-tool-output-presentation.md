@@ -2,7 +2,7 @@
 
 **Status:** planned
 
-Implemented run-report contract: `Agent` and `get_subagent_result` now share actual-session metadata and compact/expanded rendering. The owning [Subagent contract](../../extensions/subagents/AGENTS.md) records implemented guarantees. Broader stories below remain design targets where not covered by that contract.
+Implemented run-report contract: `agent` and `get_subagent_result` now share actual-session metadata and compact/expanded rendering. The owning [Subagent contract](../../extensions/subagents/AGENTS.md) records implemented guarantees. Broader stories below remain design targets where not covered by that contract.
 
 ## Problem Statement
 

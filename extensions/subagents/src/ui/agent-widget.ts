@@ -67,7 +67,7 @@ export interface AgentActivity {
   lastProgressAt?: number;
 }
 
-/** Metadata attached to Agent tool results for custom rendering. */
+/** Metadata attached to `agent` tool results for custom rendering. */
 export interface AgentDetails {
   displayName: string;
   description: string;
@@ -101,7 +101,7 @@ export interface AgentDetails {
   error?: string;
   /**
    * Stable delegation-policy denial metadata (mirrors the OLD subagent
-   * extension). Present only on a denied Agent tool result; the tool_result
+   * extension). Present only on a denied `agent` tool result; the tool_result
    * hook keys off `category` + `invocationStatus` to mark the call as an error.
    */
   invocationStatus?: "failed";
@@ -269,7 +269,7 @@ export class AgentWidget {
    *     (`isBackground === false`); keep everything else — background, queued,
    *     scheduled, or RPC-spawned (`undefined`). Keying off the `isBackground`
    *     record flag rather than the UI-only `invocation` snapshot (which only the
-   *     Agent-tool path sets), and excluding rather than allow-listing, means
+   *     `agent` tool path sets), and excluding rather than allow-listing, means
    *     only proven-foreground runs drop out — nothing else silently vanishes.
    *   - `all`: every agent not owned by a graph run.
    */

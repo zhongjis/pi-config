@@ -8,7 +8,7 @@ import { createSettingsMenu } from "./ui/settings-menu.js";
  * pi-agents — A pi extension providing Claude Code-style autonomous sub-agents.
  *
  * Tools:
- *   Agent             — LLM-callable: spawn a sub-agent
+ *   agent             — LLM-callable: spawn a sub-agent
  *   get_subagent_result  — LLM-callable: check background agent status/result
  *   steer_subagent       — LLM-callable: send a steering message to a running agent
  *
@@ -114,14 +114,14 @@ export default function (pi: ExtensionAPI) {
   const buildDetails = createAgentResultBuilder(() => showCost);
 
   // Mark structured delegation-policy denials (details.category ===
-  // "delegation_policy_denied") as tool errors so the LLM sees a failed Agent
+  // "delegation_policy_denied") as tool errors so the LLM sees a failed `agent`
   // call instead of a success. Registered once per activation.
   registerAgentPolicyDenialResultHook(pi);
 
   // ---- Register custom notification renderer ----
   registerSubagentNotificationRenderer(pi);
 
-  /** Reload agents from project/global custom agent dirs and merge with defaults (called on init and each Agent invocation). */
+  /** Reload agents from project/global custom agent dirs and merge with defaults (called on init and each `agent` invocation). */
   const reloadCustomAgents = () => {
     const userAgents = loadCustomAgents(process.cwd());
     registerAgents(userAgents);
@@ -216,7 +216,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Inject the delegation-policy gate into the manager (defense in depth: the
-  // Agent tool and RPC handler both deny earlier, but any spawn reaching the
+  // `agent` tool and RPC handler both deny earlier, but any spawn reaching the
   // manager is still gated). The manager stays free of session-state imports —
   // this closure reads the persisted agent-mode policy from the spawn ctx and
   // fails closed on denial.
@@ -390,7 +390,7 @@ export default function (pi: ExtensionAPI) {
   // Live widget: show running agents above editor.
   // widgetMode (default "background") selects what the widget shows: "all" =
   // every agent; "background" = hide foreground (they already render inline as
-  // the Agent tool result, so showing them here too is a duplicate, #118), keep
+  // the `agent` tool result, so showing them here too is a duplicate, #118), keep
   // everything else; "off" = hide the widget entirely. Read live at render time.
   let widgetMode: WidgetMode = "background";
   function getWidgetMode(): WidgetMode { return widgetMode; }
@@ -445,7 +445,7 @@ export default function (pi: ExtensionAPI) {
     agentGraphEnabled = enabled;
   }
 
-  // ---- Agent tool description mode ----
+  // ---- agent tool description mode ----
   // "full" (default) keeps the rich Claude Code-style description; "compact"
   // swaps in a ~75% smaller one for small/local models (#91). Read once at
   // tool registration — flipping it applies on the next pi session.

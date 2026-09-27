@@ -476,7 +476,7 @@ export default function profilesExtension(pi: ExtensionAPI): void {
       };
     }
 
-    if (event.toolName !== "Agent") return;
+    if (event.toolName !== "agent") return;
 
     const requestedType =
       typeof event.input.subagent_type === "string"

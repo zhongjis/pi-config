@@ -43,7 +43,7 @@ export interface AgentConfig {
   allowDelegationTo?: string[];
   /** Agent denylist — these subagents may not be delegated to. */
   disallowDelegationTo?: string[];
-  /** When true, subagent keeps Agent/get_subagent_result/steer_subagent tools (can delegate). */
+  /** When true, subagent keeps agent/get_subagent_result/steer_subagent tools (can delegate). */
   allowNesting?: boolean;
   /** true = inherit all, string[] = only listed, false = none */
   extensions: true | string[] | false;
@@ -85,7 +85,7 @@ export type JoinMode = 'async' | 'group' | 'smart';
  * Display mode for the persistent above-editor agent widget.
  * - `all`: show every agent (foreground + background).
  * - `background`: hide foreground agents (they already render inline as the
- *   Agent tool result, #118); show background/queued/scheduled/RPC.
+ *   `agent` tool result, #118); show background/queued/scheduled/RPC.
  * - `off`: hide the widget entirely.
  */
 export type WidgetMode = 'all' | 'background' | 'off';
@@ -119,7 +119,7 @@ export interface AgentRecord {
   resultConsumed?: boolean;
   /** Steering messages queued before the session was ready. */
   pendingSteers?: string[];
-  /** The tool_use_id from the original Agent tool call. */
+  /** The tool_use_id from the original `agent` tool call. */
   toolCallId?: string;
   /** Path to the streaming output transcript file. */
   outputFile?: string;
@@ -138,12 +138,12 @@ export interface AgentRecord {
   /**
    * Whether this agent was spawned to run in the background. Tri-state, set at
    * spawn from `SpawnOptions.isBackground`: `true` = background, `false` =
-   * foreground (has an inline Agent tool-result surface), `undefined` = the
+   * foreground (has an inline `agent` tool-result surface), `undefined` = the
    * caller never declared it (e.g. a cross-extension RPC spawn, which is detached
    * and has no inline surface). The widget's background-only filter keys off this
    * — and excludes only explicit `false`, so `undefined` agents stay visible.
    * Reliable across ALL spawn paths, unlike the UI-only `invocation` snapshot,
-   * which only the Agent-tool path populates.
+   * which only the `agent` tool path populates.
    */
   isBackground?: boolean;
   /** Effective runtime metadata, refreshed from the retained session. */

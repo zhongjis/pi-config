@@ -108,7 +108,7 @@ F1-F4 run after ALL todos, concurrently where independent; ALL must approve. Rej
 
 When `review_required` is false, do not load heavy review machinery. When a complete plan makes required or user-selected review actionable, load `review-lifecycle.md`; it is canonical for request/round state, digest/CAS, reviewer intake, retries, receipts, and live-plan validation.
 
-Review workers use only supported syntax. Launch with `Agent(..., run_in_background=true, inherit_context=false)`. Wait for a known lane only with:
+Review workers use only supported syntax. Launch with `agent(..., run_in_background=true, inherit_context=false)`. Wait for a known lane only with:
 
 ```
 get_subagent_result({ agent_id, wait: true })

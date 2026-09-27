@@ -17,7 +17,7 @@ export function registerAgentPolicyDenialResultHook(pi: Pick<ExtensionAPI, "on">
   pi.on("tool_result", (rawEvent) => {
     const event = rawEvent as AgentToolResultEvent | null;
     if (
-      event?.toolName !== "Agent" ||
+      event?.toolName !== "agent" ||
       event.isError === true ||
       !Array.isArray(event.content) ||
       !isPolicyDenialDetails(event.details)

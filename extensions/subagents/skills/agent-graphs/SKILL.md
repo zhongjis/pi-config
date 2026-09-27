@@ -8,7 +8,7 @@ You author **agent graphs**: typed, declarative graphs of agent work that the
 before anything runs, executes it via XState with a dependency scheduler, and
 shows it live in `/agents → Graph runs`.
 
-Prefer a graph over ad-hoc `Agent` calls when the work has real structure:
+Prefer a graph over ad-hoc `agent` calls when the work has real structure:
 dependencies, branching on a result, bounded retry/loops, parallel fan-out, a
 human approval gate, or a reusable subgraph.
 

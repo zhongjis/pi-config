@@ -36,7 +36,7 @@ describe("agent routing contract", () => {
     expect(xuannv?.allowNesting).toBe(true);
     expect(xuannv?.builtinToolNames).toEqual(["read", "bash"]);
     expect(xuannv?.extensionToolNames).toEqual(
-      expect.arrayContaining(["Agent", "get_subagent_result", "steer_subagent"]),
+      expect.arrayContaining(["agent", "get_subagent_result", "steer_subagent"]),
     );
     expect(xuannv?.extensionToolNames).not.toEqual(
       expect.arrayContaining(["bash", "edit", "write"]),

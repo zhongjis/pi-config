@@ -55,8 +55,8 @@ describe("plan execution goal builder", () => {
   it("preserves the public Hou Tu plan-execution seam", () => {
     const goal = buildPlanExecutionGoal("/tmp/PLAN.md");
     expect(goal).toMatch(/approved plan at \/tmp\/PLAN\.md/i);
-    expect(goal).toMatch(/foreground Agent calls[\s\S]*concurrent/i);
-    expect(goal).toMatch(/background Agent calls[\s\S]*(?:exploration|research)/i);
+    expect(goal).toMatch(/foreground `agent` calls[\s\S]*concurrent/i);
+    expect(goal).toMatch(/background `agent` calls[\s\S]*(?:exploration|research)/i);
     expect(goal).toMatch(
       /local:\/\/\{plan-name\}\/notepads\/[\s\S]*learnings\.md[\s\S]*decisions\.md[\s\S]*issues\.md[\s\S]*blockers\.md/i,
     );

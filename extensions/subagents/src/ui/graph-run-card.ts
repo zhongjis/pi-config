@@ -13,7 +13,7 @@ import type { Theme } from "./agent-widget.js";
 
 
 export interface GraphRunGlyphs {
-  /** Tool-title pointer, matching the Agent tool's `▸`. */
+  /** Tool-title pointer, matching the `agent` tool's `▸`. */
   pointer: string;
   tick: string;
   cross: string;
@@ -29,7 +29,7 @@ export interface GraphRunGlyphs {
   vertical: string;
   branch: string;
   lastBranch: string;
-  /** Log-line prefix, matching the Agent tool's result lines. */
+  /** Log-line prefix, matching the `agent` tool's result lines. */
   log: string;
   warning: string;
 }

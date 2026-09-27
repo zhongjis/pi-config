@@ -11,7 +11,7 @@ Related: [../ideas/agent-graph-design-v2.md](../ideas/agent-graph-design-v2.md) 
 ## Problem Statement
 
 The typed `agent_graph` runtime shipped (design §1), but nothing durable exercises it.
-Multi-agent work in this harness is still expressed as ad-hoc `Agent` calls or the
+Multi-agent work in this harness is still expressed as ad-hoc `agent` calls or the
 legacy `SubagentWorkflow` scripts. As a graph author I have no proven, reusable
 graphs to start from, no evidence the runtime survives real composite runs
 (subgraphs, human gates, bounded loops, dynamic expansion, resource scheduling),

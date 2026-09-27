@@ -1,7 +1,7 @@
 // End-to-end test for `toolDescriptionMode` (#91): settings file → sanitize →
 // applier → registration-time description pick. Instantiates the real extension
 // with a mock pi (same pattern as print-mode.test.ts) inside a temp cwd, then
-// inspects the registered Agent tool's description.
+// inspects the registered `agent` tool's description.
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +15,7 @@ const EXAMPLE_TEMPLATE = fileURLToPath(new URL("../examples/agent-tool-descripti
 function makePi() {
   const tools = new Map<string, any>();
   const handlers = new Map<string, any>();
-  const activeTools = ["Agent"];
+  const activeTools = ["agent"];
 
   return {
     pi: {
@@ -110,7 +110,7 @@ describe("toolDescriptionMode", () => {
         writeFileSync(join(tmpDir, ".pi", "agent-tool-description.md"), "{{typeList}}\nCOMPACT\n{{compactTypeList}}");
       }
     });
-    const description: string = tools.get("Agent").description;
+    const description: string = tools.get("agent").description;
     const sections = mode === "custom" ? description.split("\nCOMPACT\n") : [description];
     for (const section of sections) {
       for (const fixture of fixtures) {
@@ -127,7 +127,7 @@ describe("toolDescriptionMode", () => {
 
   it("keeps one configured roster and no parameter roster", () => {
     const tools = setup({ toolDescriptionMode: "full" });
-    const agent = tools.get("Agent");
+    const agent = tools.get("agent");
     const description: string = agent.description;
     const parameterDescription: string = agent.parameters.properties.subagent_type.description;
     expect(description.match(/^- general-purpose:/gm)).toHaveLength(1);
@@ -142,7 +142,7 @@ describe("toolDescriptionMode", () => {
       writeFileSync(join(dir, "alpha.md"), "---\ndescription: Alpha worker.\n---\nAlpha.\n");
       writeFileSync(join(dir, "beta.md"), "---\ndescription: Beta worker.\n---\nBeta.\n");
     });
-    expect(tools.has("Agent")).toBe(true);
+    expect(tools.has("agent")).toBe(true);
     let entries: unknown[] = [
       { type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 1, allowDelegationTo: ["alpha"], disallowDelegationTo: [] } } },
     ];
@@ -174,25 +174,25 @@ describe("toolDescriptionMode", () => {
 
   it("background guidance blocks instead of ending the turn", () => {
     const tools = setup({ toolDescriptionMode: "full" });
-    const guidelines = tools.get("Agent").promptGuidelines.join("\n");
+    const guidelines = tools.get("agent").promptGuidelines.join("\n");
     expect(guidelines).not.toContain("Explore");
     expect(guidelines).not.toMatch(/\bgrep\b/);
     expect(guidelines).toContain("wait: true");
     expect(guidelines).toContain("never end your turn");
-    const description: string = tools.get("Agent").description;
+    const description: string = tools.get("agent").description;
     expect(description).toContain("wait: true");
     expect(description).not.toContain("You will be notified when it completes");
   });
 
   it("defaults to the explicit full mode output", async () => {
     const tools = setup();
-    const defaultDescription: string = tools.get("Agent").description;
+    const defaultDescription: string = tools.get("agent").description;
 
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
     const explicit = makePi();
     subagentsExtension(explicit.pi);
     try {
-      expect(defaultDescription).toBe(explicit.tools.get("Agent").description);
+      expect(defaultDescription).toBe(explicit.tools.get("agent").description);
     } finally {
       await explicit.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
     }
@@ -200,13 +200,13 @@ describe("toolDescriptionMode", () => {
 
   it("compact mode selects a distinct, smaller description", async () => {
     const tools = setup({ toolDescriptionMode: "compact" });
-    const compactDescription: string = tools.get("Agent").description;
+    const compactDescription: string = tools.get("agent").description;
 
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
     const full = makePi();
     subagentsExtension(full.pi);
     try {
-      const fullDescription: string = full.tools.get("Agent").description;
+      const fullDescription: string = full.tools.get("agent").description;
       expect(compactDescription).not.toBe(fullDescription);
       expect(compactDescription.length).toBeLessThan(fullDescription.length);
     } finally {
@@ -216,13 +216,13 @@ describe("toolDescriptionMode", () => {
 
   it("invalid mode in the settings file falls back to full mode", async () => {
     const tools = setup({ toolDescriptionMode: "tiny" });
-    const invalidModeDescription: string = tools.get("Agent").description;
+    const invalidModeDescription: string = tools.get("agent").description;
 
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
     const full = makePi();
     subagentsExtension(full.pi);
     try {
-      expect(invalidModeDescription).toBe(full.tools.get("Agent").description);
+      expect(invalidModeDescription).toBe(full.tools.get("agent").description);
     } finally {
       await full.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
     }
@@ -235,7 +235,7 @@ describe("toolDescriptionMode", () => {
         "My agents:\n{{typeList}}\n\nGlobal dir: {{agentDir}}\nUnknown: {{nope}}\nCost: $& stays literal",
       );
     });
-    const desc: string = tools.get("Agent").description;
+    const desc: string = tools.get("agent").description;
     expect(desc).toContain("My agents:");
     expect(desc).toContain("- general-purpose:");
     expect(desc).toContain(`Global dir: ${hermeticAgentDir}`);
@@ -247,7 +247,7 @@ describe("toolDescriptionMode", () => {
     const tools = setup({ toolDescriptionMode: "custom" }, () => {
       writeFileSync(join(hermeticAgentDir, "agent-tool-description.md"), "GLOBAL CUSTOM\n{{compactTypeList}}");
     });
-    const desc: string = tools.get("Agent").description;
+    const desc: string = tools.get("agent").description;
     expect(desc).toContain("GLOBAL CUSTOM");
     expect(desc).not.toContain("{{compactTypeList}}");
     expect(desc).toContain("general-purpose");
@@ -261,7 +261,7 @@ describe("toolDescriptionMode", () => {
         "A {{typeList}} B {{compactTypeList}} C {{agentDir}} D",
       );
     });
-    const desc: string = tools.get("Agent").description;
+    const desc: string = tools.get("agent").description;
     expect(desc).not.toContain("}{{");
     expect(desc).not.toContain("}}");
   })
@@ -273,14 +273,14 @@ describe("toolDescriptionMode", () => {
     const tools = setup({ toolDescriptionMode: "custom" }, () => {
       writeFileSync(join(tmpDir, ".pi", "agent-tool-description.md"), example);
     });
-    const customDesc: string = tools.get("Agent").description;
+    const customDesc: string = tools.get("agent").description;
 
     // Second instance in the same hermetic cwd, flipped to full mode.
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
     const second = makePi();
     subagentsExtension(second.pi);
     try {
-      expect(customDesc).toBe(second.tools.get("Agent").description);
+      expect(customDesc).toBe(second.tools.get("agent").description);
     } finally {
       await second.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
     }
@@ -290,13 +290,13 @@ describe("toolDescriptionMode", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const tools = setup({ toolDescriptionMode: "custom" });
-      const fallbackDescription: string = tools.get("Agent").description;
+      const fallbackDescription: string = tools.get("agent").description;
 
       writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ toolDescriptionMode: "full" }));
       const full = makePi();
       subagentsExtension(full.pi);
       try {
-        expect(fallbackDescription).toBe(full.tools.get("Agent").description);
+        expect(fallbackDescription).toBe(full.tools.get("agent").description);
         expect(warn).toHaveBeenCalledWith(expect.stringContaining("no agent-tool-description.md found"));
       } finally {
         await full.handlers.get("session_shutdown")?.({}, { hasUI: false, ui: {} } as any);
@@ -306,9 +306,9 @@ describe("toolDescriptionMode", () => {
     }
   });
 
-  it("omits caller model and thinking overrides from the Agent tool", () => {
+  it("omits caller model and thinking overrides from the agent tool", () => {
     const tools = setup({ toolDescriptionMode: "full" });
-    const agent = tools.get("Agent");
+    const agent = tools.get("agent");
     const properties = agent.parameters.properties as Record<string, unknown>;
     expect(properties).not.toHaveProperty("model");
     expect(properties).not.toHaveProperty("thinking");

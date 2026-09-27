@@ -83,7 +83,7 @@ Hou Tu conducts the approved plan rather than editing product files itself.
 
 ### Delegate and supervise
 
-- Independent implementation tasks launch as multiple **foreground** `Agent` calls in one response. They run concurrently while Hou Tu waits for all results.
+- Independent implementation tasks launch as multiple **foreground** `agent` calls in one response. They run concurrently while Hou Tu waits for all results.
 - Background agents are only for non-blocking exploration or research, never implementation parallelism.
 - Hou Tu delegates product-code, test-file, documentation, and git mutations. It retains PLAN, Task, and shared-notepad orchestration state.
 - Workers receive bounded prompts and only relevant shared notes. Their summaries and notepad entries remain claims until Hou Tu verifies them.
@@ -140,4 +140,4 @@ If Kua Fu discovers that the work needs a durable, user-approved plan and clean 
 - [Modes Extension](../specs/modes.md) — shipped mode switching, restrictions, approval state, and handoff behavior
 - [Mode-scoped Subagent Delegation](../specs/mode-scoped-subagent-delegation.md) — delegation authorization contract
 - [Agent frontmatter](agent-frontmatter.md) — mode and agent configuration fields
-- [Subagents extension](../../extensions/subagents/README.md) — `Agent` execution and supervision tools
+- [Subagents extension](../../extensions/subagents/README.md) — `agent` execution and supervision tools

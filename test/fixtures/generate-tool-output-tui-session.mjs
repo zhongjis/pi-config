@@ -43,7 +43,7 @@ const entries = [
       content: [{
         type: "toolCall",
         id: "tool-agent-renderer",
-        name: "Agent",
+        name: "agent",
         arguments: {
           prompt: "Audit all tool output renderers offline.",
           description: "renderer proof",
@@ -67,7 +67,7 @@ const entries = [
     message: {
       role: "toolResult",
       toolCallId: "tool-agent-renderer",
-      toolName: "Agent",
+      toolName: "agent",
       content: [{
         type: "text",
         text: "All 31 renderer pairs verified.\nFull renderer result retained for terminal expansion.",

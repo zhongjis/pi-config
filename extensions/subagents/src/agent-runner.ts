@@ -58,7 +58,7 @@ const GUARDED_CANONICAL_AGENT_TYPES = new Set([
  * derived from pi — but they only need defining once.
  */
 export const SUBAGENT_TOOL_NAMES = {
-  AGENT: "Agent",
+  AGENT: "agent",
   GET_RESULT: "get_subagent_result",
   STEER: "steer_subagent",
   AGENT_GRAPH: "agent_graph",

@@ -63,10 +63,10 @@ After explicit approval, call `plan_scaffold` without `draftOnly: true`, then AP
 Fan out independent read-only research in one turn. Every delegated prompt names TASK / DELIVERABLE / SCOPE / VERIFY, states the role, and carries only needed context:
 
 ```
-Agent(subagent_type="chengfeng", description="Map the implementation surface", prompt="TASK: act as a repository explorer. DELIVERABLE: ... SCOPE: ... VERIFY: ...", run_in_background=true)
+agent(subagent_type="chengfeng", description="Map the implementation surface", prompt="TASK: act as a repository explorer. DELIVERABLE: ... SCOPE: ... VERIFY: ...", run_in_background=true)
 ```
 
-ONLY planning subagents: `chengfeng` (repo patterns/tests), `wenchang` (external docs/contracts), `direnjie` (gap/scope analysis), `yanluo` (high-accuracy plan review), independent `taishang` (high-accuracy review; F1 plan compliance during execution). Never ask a child to edit. Use `get_subagent_result` to collect, `steer_subagent` for focused correction, and `Agent(resume: agentId)` only for salvageable interrupted work. F2 remains the `orchestrator-owned code-quality gate`.
+ONLY planning subagents: `chengfeng` (repo patterns/tests), `wenchang` (external docs/contracts), `direnjie` (gap/scope analysis), `yanluo` (high-accuracy plan review), independent `taishang` (high-accuracy review; F1 plan compliance during execution). Never ask a child to edit. Use `get_subagent_result` to collect, `steer_subagent` for focused correction, and `agent(resume: agentId)` only for salvageable interrupted work. F2 remains the `orchestrator-owned code-quality gate`.
 
 ## Stop
 

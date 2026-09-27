@@ -27,7 +27,7 @@ describe("independent agent history lifecycle", () => {
       settled = true;
       return { responseText: "SECRET_RESULT", session, aborted: true, steered: false };
     });
-    await host.tools.get("Agent")!.execute("call", {
+    await host.tools.get("agent")!.execute("call", {
       prompt: "SECRET_PROMPT",
       description: "history review",
       subagent_type: "general-purpose",

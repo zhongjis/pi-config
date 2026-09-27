@@ -92,7 +92,7 @@ const PROMPT_GUIDE = [
   "## Agent-tree-local storage (session-local)",
   "Read and write scratch/working files at `local://` paths with the `read`, `write`, and `edit` tools — no separate tool:",
   "- `write` to a `local://<rel/path>` path creates or overwrites a file; `read` and `edit` take the same `local://` paths.",
-  "- Files resolve under one per-Agent-tree root shared by a parent session and its fresh `Agent` descendants; unrelated sessions use separate roots.",
+  "- Files resolve under one per-Agent-tree root shared by a parent session and its fresh agent descendants; unrelated sessions use separate roots.",
   "- `read` of bare `local://` lists this tree's local storage and its backing directory.",
   "- Only these three tools resolve `local://`; other tools such as `bash` and `mcporter` receive it as a literal string. Results echo `local://` paths, not the backing location, and `..` traversal is rejected.",
   "This is same-user convenience scoping, not an OS sandbox.",

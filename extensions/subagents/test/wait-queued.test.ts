@@ -79,7 +79,7 @@ function deferredRuns() {
 }
 
 async function spawnBackground(tools: Map<string, any>): Promise<{ id: string; queued: boolean }> {
-  const r = await tools.get("Agent").execute(
+  const r = await tools.get("agent").execute(
     "tc-spawn",
     { prompt: "go", description: "queued-wait test agent", subagent_type: "general-purpose", run_in_background: true },
     undefined,
@@ -110,7 +110,7 @@ describe("get_subagent_result wait:true on a queued agent", () => {
       const prevCwd = process.cwd();
       process.chdir(agentCwd);
       try {
-        const explicit = await tools.get("Agent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "explicit-thinker", run_in_background: true }, undefined, undefined, ctx());
+        const explicit = await tools.get("agent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "explicit-thinker", run_in_background: true }, undefined, undefined, ctx());
         const retrieved = await tools.get("get_subagent_result").execute("explicit-pending", { agent_id: explicit.details.agentId, wait: false }, undefined, undefined, ctx());
         expect(retrieved.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
       } finally {

@@ -95,7 +95,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("Agent").execute(
+    await tools.get("agent").execute(
       "tool-call",
       { prompt: "process sensitive data", description: "Process sensitive data", subagent_type: "sensitive" },
       undefined,
@@ -114,7 +114,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("Agent").execute(
+    await tools.get("agent").execute(
       "tool-call",
       { prompt: "process sensitive data", description: "Process sensitive data", subagent_type: "sensitive" },
       undefined,
@@ -132,7 +132,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("Agent").execute(
+    await tools.get("agent").execute(
       "tool-call",
       { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "general-purpose" },
       undefined,
@@ -152,7 +152,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("Agent").execute(
+    await tools.get("agent").execute(
       "tool-call",
       { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "general-purpose" },
       undefined,
@@ -172,7 +172,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("Agent").execute(
+    await tools.get("agent").execute(
       "tool-call",
       { prompt: "audited work", description: "Do audited work", subagent_type: "audited" },
       undefined,

@@ -60,7 +60,7 @@ const AVAILABLE_TOOL_NAMES = [
   "fetch_content",
   "get_search_content",
   "mcporter",
-  "Agent",
+  "agent",
   "get_subagent_result",
   "steer_subagent",
 ];
@@ -100,7 +100,7 @@ describe("fleet frontmatter — computeActiveToolNames matches authored intent",
       new Set(["read", "bash", "edit", "write", "codegraph_search", "codegraph_explore", "lsp"]),
     );
     expect(active).not.toContain("grep"); // not in builtin_tools
-    expect(active).not.toContain("Agent"); // no allow_nesting
+    expect(active).not.toContain("agent"); // no allow_nesting
   });
 
   it("guangguang → read,bash,edit,write,lsp", () => {
@@ -113,7 +113,7 @@ describe("fleet frontmatter — computeActiveToolNames matches authored intent",
     ["chengfeng", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
     ["direnjie", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
     ["taishang", ["read", "bash", "look_at", "codegraph_search", "codegraph_explore", "lsp"]],
-    ["xuannv", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp", "Agent", "get_subagent_result", "steer_subagent"]],
+    ["xuannv", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp", "agent", "get_subagent_result", "steer_subagent"]],
     ["yanluo", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
   ] as const)("%s → guarded built-in bash with role tools preserved", (agent, expected) => {
     const active = activeFor(`agents/${agent}.md`);

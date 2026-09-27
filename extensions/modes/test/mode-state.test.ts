@@ -66,7 +66,7 @@ describe("ModeStateManager", () => {
 				{ name: "ask" },
 				{ name: "web_search" },
 				{ name: "clauderock" },
-				{ name: "Agent" },
+				{ name: "agent" },
 				{ name: "get_subagent_result" },
 				{ name: "steer_subagent" },
 				{ name: "plan_approve" },
@@ -269,13 +269,13 @@ describe("ModeStateManager", () => {
 	});
 
 
-	it("removes nested Agent tools unless allow_nesting is true", async () => {
-		const pi = createMockPi(["read", "Agent", "get_subagent_result", "steer_subagent"]);
+	it("removes nested agent tools unless allow_nesting is true", async () => {
+		const pi = createMockPi(["read", "agent", "get_subagent_result", "steer_subagent"]);
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "prompt",
 			builtinToolNames: ["read"],
-			extensionToolNames: ["Agent", "get_subagent_result", "steer_subagent"],
+			extensionToolNames: ["agent", "get_subagent_result", "steer_subagent"],
 			extensions: true,
 		};
 

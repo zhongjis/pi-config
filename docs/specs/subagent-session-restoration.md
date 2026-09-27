@@ -4,7 +4,7 @@
 
 ## Problem Statement
 
-Originally, Panda Harness persisted each subagent conversation as a Pi session JSONL file, but the `Agent` tool could resume only while the corresponding `AgentSession` remained in memory. Completed agent records were cleaned up after a retention period or during session lifecycle cleanup. The parent conversation could still contain the valid agent ID and the tool result could still advertise that ID as resumable, yet a later resume returned `Agent not found` even though the child session file remained on disk.
+Originally, Panda Harness persisted each subagent conversation as a Pi session JSONL file, but the `agent` tool could resume only while the corresponding `AgentSession` remained in memory. Completed agent records were cleaned up after a retention period or during session lifecycle cleanup. The parent conversation could still contain the valid agent ID and the tool result could still advertise that ID as resumable, yet a later resume returned `Agent not found` even though the child session file remained on disk.
 
 This broke an expected orchestration flow: a parent agent asked a specialist to review work, applied changes, then asked the same specialist to recheck them. The parent should recover the specialist's persisted conversation instead of losing continuity because an in-memory cache expired.
 
@@ -12,13 +12,13 @@ The runtime also needs a clear boundary between continuing prior work and starti
 
 ## Solution
 
-When the caller requests `Agent(resume: agentId)`, the subagent runtime resolves the agent in this order:
+When the caller requests `agent(resume: agentId)`, the subagent runtime resolves the agent in this order:
 
 1. If the live `AgentSession` still exists, continue it directly.
 2. Otherwise, use durable parent-to-child metadata to locate the persisted child session JSONL, validate the restoration environment, recreate compatible runtime dependencies, open the session through Pi's session API, and continue from its active leaf.
 3. If restoration fails, return a typed failure with a stable reason. Do not start a replacement automatically.
 
-Starting a fresh subagent remains the existing explicit path: call `Agent` without `resume`. The parent model chooses between reuse and a new session based on work semantics:
+Starting a fresh subagent remains the existing explicit path: call `agent` without `resume`. The parent model chooses between reuse and a new session based on work semantics:
 
 - Reuse for the same workstream, follow-up, correction, recheck, or continuation where prior findings and evidence matter.
 - Start new for independent review, unrelated work, a different specialty, or any task where prior context would bias the result.
@@ -99,7 +99,7 @@ The parent and UI receive a concise status that distinguishes `resumed_live`, `r
 ## Testing Decisions
 
 - Tests assert external behavior: whether the same conversation continues, whether prior context is available, whether the correct status is returned, and whether unsafe fallback is prevented. They do not assert private map layout or internal helper calls.
-- The primary seam is the registered `Agent` tool exercised through the real subagent runtime with a temporary persisted session directory. This is the highest seam that covers tool arguments, durable lookup, cleanup, Pi session reopening, runtime reconstruction, prompting, and returned status in one test path.
+- The primary seam is the registered `agent` tool exercised through the real subagent runtime with a temporary persisted session directory. This is the highest seam that covers tool arguments, durable lookup, cleanup, Pi session reopening, runtime reconstruction, prompting, and returned status in one test path.
 - Existing subagent integration and agent-run parity tests provide prior art for tool-level continuation and lifecycle consistency.
 - Focused manager/session tests cover failure classification that is expensive to trigger through the full tool seam, including corrupt files, missing runtime dependencies, scope mismatch, and unsafe interrupted operations.
 - A live-resume characterization test covers spawn, completion, resume before cleanup, `resumed_live`, and prior-context continuity.
@@ -140,4 +140,4 @@ The original failure was not caused by missing conversation persistence. Child J
 
 Pi provides the required session primitive through `SessionManager.open`. Panda Harness now persists the child linkage and recreates the non-serializable runtime environment. Persisted conversation history is sufficient for completed idle sessions; it is not sufficient to resume an in-flight provider stream or safely infer whether an unfinished external side effect should run again.
 
-The design intentionally treats restore failure as failure. If callers want independent work after failure, they can make a second explicit `Agent` invocation without `resume`. This keeps continuity claims truthful and prevents accidental duplicate work.
+The design intentionally treats restore failure as failure. If callers want independent work after failure, they can make a second explicit `agent` invocation without `resume`. This keeps continuity claims truthful and prevents accidental duplicate work.

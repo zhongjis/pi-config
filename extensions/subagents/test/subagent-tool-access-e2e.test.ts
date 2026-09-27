@@ -101,7 +101,7 @@ export default function(pi: ExtensionAPI) {
 description: F3 tool matrix probe
 builtin_tools: read
 extensions: true
-extension_tools: matrix.allowed, Agent, get_subagent_result, steer_subagent
+extension_tools: matrix.allowed, agent, get_subagent_result, steer_subagent
 ---
 
 Report the active tool matrix.
@@ -180,7 +180,7 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 		expect(nonNestedTools).not.toContain("bash");
 		expect(nonNestedTools).toContain("matrix.allowed");
 		expect(nonNestedTools).not.toContain("matrix.denied");
-		expect(nonNestedTools).not.toContain("Agent");
+		expect(nonNestedTools).not.toContain("agent");
 		expect(nonNestedTools).not.toContain("get_subagent_result");
 		expect(nonNestedTools).not.toContain("steer_subagent");
 	});
@@ -200,6 +200,6 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 		expect(wenchangTools).not.toContain("write");
 		expect(wenchangTools).not.toContain("matrix.allowed");
 		expect(wenchangTools).not.toContain("matrix.denied");
-		expect(wenchangTools).not.toContain("Agent");
+		expect(wenchangTools).not.toContain("agent");
 	});
 });

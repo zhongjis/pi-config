@@ -4,7 +4,7 @@ Status: shipped
 
 Owner: docs/AGENTS.md (specs bucket)
 
-Related: [Subagent tool-output presentation](subagent-tool-output-presentation.md) (Agent tool rows) · [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) (cross-extension tool rows and notifications) · [Retired script-runtime presentation record](workflow-tool-output-presentation.md) (historical only) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
+Related: [Subagent tool-output presentation](subagent-tool-output-presentation.md) (`agent` tool rows) · [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) (cross-extension tool rows and notifications) · [Retired script-runtime presentation record](workflow-tool-output-presentation.md) (historical only) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
 
 ## Problem Statement
 
@@ -237,4 +237,4 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 
 ## Further Notes
 
-This specification supersedes the stale flat, stage-oriented `Graph Run Monitor — Observability Panel` draft and owns the graph panel in Pi and in the Herdr pane. [Subagent tool-output presentation](subagent-tool-output-presentation.md) covers Agent tool rows; the [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) covers cross-extension tool rows and notifications. The workflow presentation record is retired and is not current authority.
+This specification supersedes the stale flat, stage-oriented `Graph Run Monitor — Observability Panel` draft and owns the graph panel in Pi and in the Herdr pane. [Subagent tool-output presentation](subagent-tool-output-presentation.md) covers `agent` tool rows; the [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) covers cross-extension tool rows and notifications. The workflow presentation record is retired and is not current authority.

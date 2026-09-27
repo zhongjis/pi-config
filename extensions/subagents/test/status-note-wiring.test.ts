@@ -1,7 +1,7 @@
 /**
  * status-note-wiring.test.ts — proves the status note actually reaches the
  * PARENT through the real tool handlers, not just that getStatusNote() returns
- * a string. Drives the registered `Agent` / `get_subagent_result` tools and
+ * a string. Drives the registered `agent` / `get_subagent_result` tools and
  * inspects the text delivered back, for a turn-limit abort and a user stop.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -85,7 +85,7 @@ describe("status note reaches the parent through the real handlers", () => {
     const { pi, tools } = makePi();
     subagentsExtension(pi);
 
-    const res = await tools.get("Agent").execute(
+    const res = await tools.get("agent").execute(
       "tc1",
       { prompt: "go", description: "d", subagent_type: "general-purpose" },
       undefined, undefined, ctx(),
@@ -122,7 +122,7 @@ describe("status note reaches the parent through the real handlers", () => {
     subagentsExtension(pi);
 
     const parent = new AbortController();
-    const call = tools.get("Agent").execute(
+    const call = tools.get("agent").execute(
       "tc-stop",
       { prompt: "go", description: "d", subagent_type: "general-purpose" },
       parent.signal, undefined, ctx(),
@@ -157,7 +157,7 @@ describe("status note reaches the parent through the real handlers", () => {
     subagentsExtension(pi);
     await bind(lifecycle); // register RPC channels via session_start (#142)
 
-    const spawn = await tools.get("Agent").execute(
+    const spawn = await tools.get("agent").execute(
       "tc2",
       { prompt: "go", description: "d", subagent_type: "general-purpose", run_in_background: true },
       undefined, undefined, ctx(),

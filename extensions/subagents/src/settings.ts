@@ -33,7 +33,7 @@ export interface SubagentsSettings {
    *
    * scopeModels guards against runtime LLM choices, not user-level config.
    * Out-of-scope handling reflects this:
-   *   - Caller-supplied via `Agent({ model: "..." })` (only when frontmatter
+   *   - Caller-supplied via `agent({ model: "..." })` (only when frontmatter
    *     has no `model:`, since frontmatter is authoritative): hard error
    *     returned to the orchestrator, listing the allowed models. The LLM
    *     made an explicit out-of-scope choice and gets explicit feedback.
@@ -55,7 +55,7 @@ export interface SubagentsSettings {
    */
   disableDefaultAgents?: boolean;
   /**
-   * Which Agent tool description the LLM sees. "full" (default) is the rich
+   * Which `agent` tool description the LLM sees. "full" (default) is the rich
    * Claude Code-style prompt; "compact" is a ~75% smaller version (one-line
    * agent type list, terse usage notes) for small/local models where tool-spec
    * tokens are expensive; "custom" reads `.pi/agent-tool-description.md`
@@ -75,7 +75,7 @@ export interface SubagentsSettings {
    * Display mode for the persistent above-editor agent widget:
    *   - `all`: show every agent (foreground + background).
    *   - `background`: hide foreground agents — they already render inline as the
-   *     Agent tool result, so the widget would otherwise double-render them
+   *     `agent` tool result, so the widget would otherwise double-render them
    *     (#118); everything else (background, queued, scheduled, RPC) stays.
    *   - `off`: hide the widget entirely.
    * Defaults to `background`. Pure-UI and applied live (toggling refreshes the

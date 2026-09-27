@@ -182,7 +182,7 @@ export function buildFauxSteps(
 	const nextToolCallId = () => `playbook-tc-${++toolCallCounter}`;
 
 	// The parent session drives the very first model call (a spawned subagent can
-	// only call the model AFTER the parent's Agent tool has run). So the first
+	// only call the model AFTER the parent's `agent` tool has run). So the first
 	// caller's sessionId identifies the parent; every later distinct session is a
 	// subagent. `parentSessionId` (from the session object, if resolvable) seeds
 	// this; otherwise it is captured dynamically.

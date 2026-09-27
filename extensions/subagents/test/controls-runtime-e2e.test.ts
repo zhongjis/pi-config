@@ -91,7 +91,7 @@ it("returns complete inline results for queued foreground calls in the real host
         subagent: "Complete",
       }),
     });
-    const results = run.parentSession.messages.filter((message): message is ToolResultMessage<unknown> => message.role === "toolResult" && message.toolName === "Agent");
+    const results = run.parentSession.messages.filter((message): message is ToolResultMessage<unknown> => message.role === "toolResult" && message.toolName === "agent");
     expect(results).toHaveLength(3);
     for (const result of results) expect(result.details).toMatchObject({ status: "completed", result: "Complete", toolUses: 0 });
     expect(run.manager?.hasRunning()).toBe(false);
