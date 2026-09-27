@@ -1,5 +1,7 @@
 # Mode-Scoped Subagent Delegation
 
+Status: shipped
+
 ## Problem Statement
 
 Mode frontmatter already declares which subagent types a mode may delegate to. Its canonical parser persists a versioned policy snapshot in `agent-mode` state; subagent direct `Agent` and RPC execution consume that snapshot. Registered Pi tool schemas cannot refresh safely after a mode switch, so the global `Agent` contract must not embed a target list that can become stale or advertise targets forbidden by an active mode.

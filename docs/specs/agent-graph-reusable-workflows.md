@@ -1,12 +1,12 @@
 # Reusable Agent-Graph Workflow Portfolio
 
-Status: draft
+Status: superseded
 
 Owner: docs/AGENTS.md (specs bucket)
 
 Related: [../ideas/agent-graph-design-v2.md](../ideas/agent-graph-design-v2.md) §2 · [../guides/agent-graph-implementation.md](../guides/agent-graph-implementation.md) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
 
-> **Superseded (2026):** The shipped portfolio was reduced to a single graph, `context-gather`. The five composite/flow graphs — `review-loop`, `work-verify`, `ulw-plan`, `execute-plan`, `ulw` — were removed: `review-loop`/`work-verify` had correctness gaps and the mode-flow graphs were unproven topology demos never wired into the Mode Agents. The design record below is retained as history and does not describe the current shipped state.
+> **Current state:** This portfolio proposal is superseded. Only graphs committed under [`agent-graphs/`](../../agent-graphs/) are authoritative; currently `context-gather` and `deep-research` exist. The composite/flow graphs proposed below are historical design, not shipped topology.
 
 ## Problem Statement
 

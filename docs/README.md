@@ -5,7 +5,7 @@ Design notes, standards, and reference material for this Pi harness.
 ## Documentation Buckets
 
 - `ideas/` — speculative, non-binding notes. Every document carries `Status: idea`.
-- `specs/` — Panda Harness contracts (`draft` / `planned` / `shipped` / `superseded` / `retired`).
+- `specs/` — Panda Harness contracts. Every spec must declare exactly one `Status:` from the allowed lifecycle statuses below.
 - `adr/` — append-only ADRs: one decision per `NNNN-short-title.md`, including why X was chosen over Y.
 - `guides/` — task-oriented instructions (e.g. testing).
 - `references/` — stable, citable external material.
@@ -21,7 +21,7 @@ Behavioral conflicts resolve: `rules/` → `adr/` → shipped `specs/` → `guid
 
 ## Lifecycle Statuses
 
-`idea` · `draft` · `planned` · `shipped` · `superseded` · `retired`. Ideas always use exact `Status: idea`. Supersede an ADR with a new ADR plus reciprocal `Supersedes` / `Superseded by` links; never edit ADR history.
+`idea` · `draft` · `planned` · `shipped` · `superseded` · `retired`. Every spec declares one of these statuses near its title. Ideas always use exact `Status: idea`. Supersede an ADR with a new ADR plus reciprocal `Supersedes` / `Superseded by` links; never edit ADR history.
 
 ## What This Harness Is
 
@@ -64,12 +64,7 @@ Extensions grow through three tiers (never skip ahead):
 
 ### Vendored Extensions
 
-Some extensions are vendored from upstream repositories. These have a `package.json` with `repository` field pointing to the original source. Vendored extensions preserve upstream attribution and document adaptation notes in their README.
-
-Current vendored extensions:
-- `subagent` — from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
-- `tasks` — from [tintinweb/pi-tasks](https://github.com/tintinweb/pi-tasks)
-- `web-access` — package `pi-web-access` from [nicobailon/pi-web-access](https://github.com/nicobailon/pi-web-access)
+Check `extensions/*/package.json` for current vendored packages and their upstream `repository` metadata. The present package directories are `subagents/`, `tasks/`, and `lsp/`; their READMEs own adaptation notes.
 
 ### Agent Modes
 
@@ -88,23 +83,20 @@ See [modes.md](specs/modes.md) for the shipped mode contract and [orchistration.
 | [extension-model-usage.md](specs/extension-model-usage.md) | Shared `tool_models.json` role schema for extension-owned LLM calls |
 | [model-selection-and-fallback.md](specs/model-selection-and-fallback.md) | Model-chain parsing, profile filtering, and fallback behavior |
 | [modes.md](specs/modes.md) | Agent modes design and switching behavior |
-| [mode-prompt-parity.md](specs/mode-prompt-parity.md) | Upstream evidence and local invariants for mode prompt parity work |
-| [mode-prompt-audit-checklist.md](specs/mode-prompt-audit-checklist.md) | Future prompt audit checklist for construction semantics, provenance, parity, and scope guardrails |
-| [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Retired description of the removed `extensions/subagent/` restore runtime; current runtime has read-only monitor history only |
-| [workflow-tool-output-presentation.md](specs/workflow-tool-output-presentation.md) | Workflow tool/notification disclosure, complete results, and task/Subagent identity |
-| [workflow-presentation-implementation.md](guides/workflow-presentation-implementation.md) | Implementation plan and verification evidence for workflow presentation |
-| [subagents-upstream-upgrade.md](specs/subagents-upstream-upgrade.md) | Draft v0.19.0 upstream sync, local compatibility, and Scripted Workflows |
-| [omp-harness-migration.md](specs/omp-harness-migration.md) | Draft feature inventory and migration design for replacing Pi with OMP |
-| [agent-graph-implementation.md](guides/agent-graph-implementation.md) | Draft Section 1 implementation plan for the XState-based `agent_graph` runtime |
-| [agent-graph-reusable-workflows.md](specs/agent-graph-reusable-workflows.md) | Draft reusable agent-graph workflow portfolio (shared subgraphs + fuxi/houtu/kuafu flows) and its runtime hardening + test strategy |
-| [herdr-agent-graph-presentation.md](specs/herdr-agent-graph-presentation.md) | Shipped durable hierarchy-first presentation contract for the Herdr agent-graph side panel |
+| [mode-prompt-parity.md](specs/mode-prompt-parity.md) | Shipped upstream baseline and local mode prompt invariants |
+| [mode-prompt-audit-checklist.md](specs/mode-prompt-audit-checklist.md) | Active prompt audit procedure |
+| [subagent-session-restoration.md](specs/subagent-session-restoration.md) | Retired removed-runtime record; current runtime has read-only monitor history |
+| [omp-harness-migration.md](specs/omp-harness-migration.md) | Retired, time-bound OMP assessment; not current topology or an active migration decision |
+| [agent-graph-implementation.md](guides/agent-graph-implementation.md) | Shipped graph runtime implementation boundary record |
+| [agent-graph-reusable-workflows.md](specs/agent-graph-reusable-workflows.md) | Superseded portfolio proposal; consult committed `agent-graphs/` for current graphs |
+| [herdr-agent-graph-presentation.md](specs/herdr-agent-graph-presentation.md) | Shipped hierarchy-first presentation contract for the Herdr agent-graph panel |
 | [dynamic-agent-graph-expansion.md](specs/dynamic-agent-graph-expansion.md) | Shipped awaited typed fanout, all-settled collection, persistence, and dynamic monitor contract |
-| [agent-graph-bounded-feedback.md](specs/agent-graph-bounded-feedback.md) | Shipped bounded feedback over fanout with durable runtime identity, crash-safe iteration materialization, and partial synthesis |
-| [agent-graph-yaml-invocation-gates.md](specs/agent-graph-yaml-invocation-gates.md) | Shipped saved agent graph YAML, explicit `$graph:<name>` invocation, and three decision gates |
-| [dynamic-agent-graph-expansion-implementation.md](guides/dynamic-agent-graph-expansion-implementation.md) | Implementation plan and verification path for awaited dynamic fanout and two-round context gathering |
-| [testing/README.md](guides/testing/README.md) | Extension testing policy and two-tier model |
+| [agent-graph-bounded-feedback.md](specs/agent-graph-bounded-feedback.md) | Shipped bounded feedback with durable runtime identity and partial synthesis |
+| [agent-graph-yaml-invocation-gates.md](specs/agent-graph-yaml-invocation-gates.md) | Shipped saved graph YAML, `$graph:<name>` invocation, and decision gates |
+| [dynamic-agent-graph-expansion-implementation.md](guides/dynamic-agent-graph-expansion-implementation.md) | Shipped implementation record; pre-migration paths and IDs are historical |
+| [testing/README.md](guides/testing/README.md) | Testing overview for unit, integration, and subagents-e2e projects |
 | [testing/unit-test.md](guides/testing/unit-test.md) | Unit test conventions |
-| [testing/integration-test.md](guides/testing/integration-test.md) | Integration test approach |
+| [testing/integration-test.md](guides/testing/integration-test.md) | Faux-provider integration testing approach |
 
 ## Guides
 

@@ -1,5 +1,7 @@
 # Mode Prompt Audit Checklist
 
+Status: shipped
+
 Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior parity where applicable, not exact upstream copies.
 
 ## Scope Guardrails
@@ -9,21 +11,9 @@ Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior pa
 - Do not claim local prompts are exact upstream copies.
 - Do not edit prompt, test, or code files unless the active task explicitly includes them.
 
-## Construction Semantics
+## Construction Reference
 
-- Default family uses `mode.md` frontmatter and body.
-- GPT family uses `gpt.md` as a body-only replacement when present. It retains parsed `mode.md` frontmatter and must be self-contained. A mode without a `gpt.md` (Fu Xi) uses the default `mode.md` body for GPT-family runs.
-- Gemini family uses `gemini.md` as a body-only corrective overlay on the default `mode.md` body, not as a replacement.
-- Active mode prompt markers strip stale mode blocks before injecting the resolved prompt.
-- Review the final injected prompt for each affected family. Source-file review alone is insufficient.
-
-## Current File Matrix
-
-| Mode | `mode.md` | `gpt.md` | `gemini.md` |
-|---|---:|---:|---:|
-| kuafu | Yes | Yes | Yes |
-| fuxi | Yes | — (inherits default) | Yes |
-| houtu | Yes | Yes | Yes |
+Use [mode-prompt-parity.md](mode-prompt-parity.md) as the single source for family construction semantics, current file matrix, and local invariants. Audit the final injected prompt for each affected family, not just the source files.
 
 ## Upstream Provenance Rule
 
@@ -35,7 +25,7 @@ Before prompt edits, record:
 - missing-path or negative evidence when a global prompt/profile is absent;
 - local adaptation source and Pi-native tool mapping.
 
-Use `docs/specs/mode-prompt-parity.md` as the current provenance baseline. Preserve behavior parity and Pi tool adaptation; do not present local prompts as exact upstream copies.
+Use [mode-prompt-parity.md](mode-prompt-parity.md) as the provenance baseline. Preserve behavior parity and Pi tool adaptation; do not present local prompts as exact upstream copies.
 
 ## Parity Review Checklist
 

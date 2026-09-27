@@ -1,8 +1,10 @@
 # Awaited Dynamic Agent-Graph Expansion — Implementation Plan
 
-Status: completed
+Status: shipped
 
 Contract: [../specs/dynamic-agent-graph-expansion.md](../specs/dynamic-agent-graph-expansion.md)
+
+This shipped implementation record retains pre-terminology-migration file names and run IDs. They are historical examples, not current paths or contracts; use the owning extension and ADR 0003 for current names.
 
 ## Goal
 

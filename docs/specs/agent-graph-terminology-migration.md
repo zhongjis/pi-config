@@ -1,10 +1,12 @@
 # Retire the "workflow" Terminology in the Subagents Extension
 
-Status: draft
+Status: shipped
 
 Owner: docs/AGENTS.md (specs bucket)
 
 Related: [../../extensions/subagents/CONTEXT.md](../../extensions/subagents/CONTEXT.md) (glossary) · [../../CONTEXT-MAP.md](../../CONTEXT-MAP.md) · [ADR 0002 — remove SubagentWorkflow script runtime](../adr/0002-remove-subagentworkflow-script-runtime.md) · [workflow-tool-output-presentation.md](workflow-tool-output-presentation.md) · [herdr-agent-graph-presentation.md](herdr-agent-graph-presentation.md)
+
+ADR 0003 records completion of this migration. The detailed design below is implementation history, not a current inventory of old names or paths.
 
 ## Problem Statement
 

@@ -1,5 +1,7 @@
 # Model Selection and Fallback
 
+Status: shipped
+
 How a model gets chosen, and what happens when the chosen one is unavailable.
 
 This document describes the engine. Profiles, modes, subagents, and tool-model

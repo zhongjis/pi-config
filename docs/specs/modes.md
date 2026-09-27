@@ -1,5 +1,7 @@
 # Modes Extension
 
+Status: shipped
+
 The modes extension implements agent persona switching for three modes — **Kua Fu 夸父** (build), **Fu Xi 伏羲** (plan), and **Hou Tu 后土** (execute). It manages mode-specific tool restrictions, system prompt injection, plan state, approval, and the handoff bridge to execution.
 
 For the practical plan and build lifecycles, see [orchistration.md](../guides/orchistration.md).

@@ -1,5 +1,7 @@
 # Extension Model Role Config
 
+Status: shipped
+
 Shared tool-owned LLM calls use `tool_models.json` role config instead of per-extension constants.
 
 Load order:

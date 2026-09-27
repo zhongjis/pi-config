@@ -1,194 +1,45 @@
 # Integration Testing
 
-Integration tests run extensions inside the **real pi runtime** using [@marcfargas/pi-test-harness](https://github.com/marcfargas/pi-test-harness). Extensions load, register, and hook into actual pi code paths — only the LLM and optionally tool execution are replaced.
+The `integration` Vitest project loads extensions into a real Pi session with a deterministic faux model provider. The repository's [`test/integration/helpers/faux-session.ts`](../../../test/integration/helpers/faux-session.ts) exports `createTestSession`, `when`, `calls`, and `says`. Use these local helpers rather than importing the upstream test harness directly. The real agent loop and extension hooks run; playbook actions supply model responses without network access.
 
-## Location
-
-- `test/integration/` — all integration test files
-- `vitest.config.ts` — vitest config with `integration` project (no stub aliases, real pi packages)
-
-## Running
+## Run
 
 ```bash
-pnpm test:integration   # run integration tests only
-pnpm test               # run both unit + integration
+pnpm test:integration
+pnpm test  # all configured Vitest projects
 ```
 
-## How It Works
+Integration tests live under `test/integration/`. The project uses real Pi packages, no unit-test stub aliases, and a 30-second test timeout; see [`vitest.config.ts`](../../../vitest.config.ts).
 
-pi-test-harness substitutes three boundary points while keeping everything else real:
+## Write a faux-provider playbook
 
-| What | Substituted with | Purpose |
-|------|-----------------|---------|
-| `streamFn` | Playbook | Scripts what the model "decides" |
-| `tool.execute()` | Mock handler | Controls what tools "return" (hooks still fire) |
-| `ctx.ui.*` | Mock UI | Controls what the user "answers" |
-
-```
-┌─────────────────────────────────────────┐
-│  Real pi environment                    │
-│                                         │
-│  Extensions ─── loaded for real         │
-│  Tool registry ─ real hooks + wrapping  │
-│  Session state ─ in-memory persistence  │
-│                                         │
-│  ┌───────────────────────────────────┐  │
-│  │  streamFn ── REPLACED by playbook │  │
-│  │  tool.execute() INTERCEPTED       │  │
-│  │  ctx.ui.* ── INTERCEPTED + logged │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-```
-
-## Dependencies
-
-These are in root `devDependencies` (aligned with nix pi version):
-
-```
-@marcfargas/pi-test-harness  — test harness (git dep)
-@earendil-works/pi-coding-agent — real pi runtime
-@earendil-works/pi-ai           — real AI types
-@earendil-works/pi-agent-core   — real agent core
-```
-
-## Playbook DSL
-
-### `when(prompt, actions)` — defines a conversation turn
+This example follows the session, tool mock, and event-assertion pattern in [`modes.integration.test.ts`](../../../test/integration/modes.integration.test.ts):
 
 ```typescript
-when("Deploy the app", [
-  calls("bash", { command: "pnpm run build" }),
-  calls("bash", { command: "gcloud run deploy" }),
-  says("Deployed successfully."),
-])
-```
+import { afterEach, describe, expect, it } from "vitest";
+import { resolve } from "node:path";
+import { createTestSession, when, calls, says, type TestSession } from "./helpers/faux-session.js";
 
-### `calls(tool, params)` — model calls a tool
+const EXTENSION = resolve(__dirname, "../../extensions/modes/src/index.ts");
 
-Pi's hooks fire, the tool executes (real or mocked), result feeds back.
-
-### `says(text)` — model emits text, turn ends
-
-### Multi-turn conversations
-
-```typescript
-await t.run(
-  when("What files?", [
-    calls("bash", { command: "ls" }),
-    says("Found 3 files."),
-  ]),
-  when("Read the README", [
-    calls("read", { path: "README.md" }),
-    says("Here's what it says..."),
-  ]),
-);
-```
-
-## Writing Integration Tests
-
-### Basic pattern
-
-```typescript
-import { describe, it, expect, afterEach } from "vitest";
-import {
-  createTestSession,
-  when, calls, says,
-  type TestSession,
-} from "@marcfargas/pi-test-harness";
-
-describe("my-extension integration", () => {
+describe("modes integration", () => {
   let t: TestSession;
   afterEach(() => t?.dispose());
 
-  it("loads and registers tools", async () => {
+  it("runs a model-requested tool", async () => {
     t = await createTestSession({
-      extensions: ["./extensions/my-ext/src/index.ts"],
-      mockTools: {
-        bash: (params) => `$ ${params.command}\noutput`,
-        read: "file contents",
-        write: "written",
-        edit: "edited",
-      },
+      extensions: [EXTENSION],
+      mockTools: { bash: "mock output" },
     });
-
-    await t.run(
-      when("Do something", [
-        calls("bash", { command: "ls" }),
-        says("Done."),
-      ]),
-    );
-
+    await t.run(when("Run a command", [
+      calls("bash", { command: "pwd" }),
+      says("Done."),
+    ]));
     expect(t.events.toolResultsFor("bash")).toHaveLength(1);
   });
 });
 ```
 
-### Mock tools
+The playbook supplies ordered model actions; `calls` invokes a tool and `says` completes the response. `mockTools` substitutes selected tool results while extension-registered tools and hooks still run. `mockUI` can provide answers for extension UI calls. Inspect `t.events.toolCallsFor(name)`, `toolResultsFor(name)`, `blockedCalls()`, `uiCallsFor(name)`, and `messages` for assertions. Dispose of the session after each test to release its temporary directory.
 
-```typescript
-mockTools: {
-  bash: "static output",                          // static string
-  read: (params) => `contents of ${params.path}`, // dynamic function
-  write: {                                         // full ToolResult
-    content: [{ type: "text", text: "Written" }],
-    details: { bytesWritten: 42 },
-  },
-}
-```
-
-Extension-registered tools execute for real unless listed in `mockTools`.
-
-### Mock UI
-
-```typescript
-mockUI: {
-  confirm: false,
-  select: 0,
-  input: "user input",
-}
-```
-
-### Event assertions
-
-```typescript
-t.events.toolCallsFor("bash")     // ToolCallRecord[]
-t.events.toolResultsFor("bash")   // ToolResultRecord[]
-t.events.blockedCalls()            // tools blocked by hooks
-t.events.uiCallsFor("confirm")    // UICallRecord[]
-t.events.messages                  // AgentMessage[]
-```
-
-### Late-bound params
-
-When one tool call produces a value needed by the next:
-
-```typescript
-let id = "";
-await t.run(
-  when("Create and use", [
-    calls("create_thing", { name: "test" })
-      .then((result) => { id = result.text.match(/ID-\w+/)![0]; }),
-    calls("use_thing", () => ({ id })),
-    says("Done."),
-  ]),
-);
-```
-
-## Which Extensions Need Integration Tests
-
-| Priority | Extension | Why |
-|----------|-----------|-----|
-| High | `modes/` | Complex hook interaction, plan-mode blocking, delegation filtering |
-| High | `handoff/` | Protocol lifecycle, session boundary crossing, bridge RPC |
-| Medium | `tasks/` | Session state, subagent events, auto-clear logic |
-| Medium | `subagents/` | Background supervision, delegation policy |
-| Low | Simple extensions | Smoke test + unit tests sufficient |
-
-## Gotchas
-
-- **Timeout**: integration tests use 30s timeout (vs default 5s for unit tests)
-- **Cleanup**: always call `t?.dispose()` in `afterEach` to clean up temp directories
-- **Session boundaries**: pi-test-harness runs in-process — actual session switching (new process) cannot be tested. Test the logic up to the boundary.
-- **Agent configs**: if extension reads agent `.md` files, ensure `createTestSession` can find them (may need `configDir` option)
-- **Version alignment**: pi packages in `devDependencies` must match nix pi version to avoid skew
-- **pnpm patch**: `patches/@marcfargas__pi-test-harness@0.5.0.patch` fixes 3 compat issues with pi 0.67 (`setTools` → `state.tools`, auth mock methods). If pi-test-harness updates, re-check whether the patch is still needed.
+For extension calls to a separate model, [`smart-tool-guards.integration.test.ts`](../../../test/integration/smart-tool-guards.integration.test.ts) demonstrates `fauxResponseRouter`. For tests that need a different session setup, see [`fast-session.ts`](../../../test/integration/helpers/fast-session.ts) and its use in [`fast.integration.test.ts`](../../../test/integration/fast.integration.test.ts).

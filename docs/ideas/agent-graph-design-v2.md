@@ -2,7 +2,7 @@
 
 Status: idea
 
-Non-binding design note for replacing the `SubagentWorkflow` script runtime in `extensions/subagents` with a typed, graph-first runtime on XState. Section 1 (the runtime and the `agent_graph` tool) is the subject of the initial work. Section 2 (the reusable workflow portfolio) is a **deferred future proposal** — read the banner there before treating any of it as planned.
+Non-binding historical design note for replacing the now-removed `SubagentWorkflow` script runtime in `extensions/subagents` with a typed, graph-first runtime on XState. Section 1 describes the original runtime proposal; Section 2 describes a portfolio proposal now superseded by the committed graphs. Neither section inventories current runtime paths.
 
 The graph is the product-level abstraction; XState is the execution substrate.
 
@@ -23,7 +23,7 @@ Settled decisions that scope this work:
 
 Already shipped and kept (ported onto the new runtime, not reinvented): typed structured output (`agent({schema})` → JSON Schema validation), durable in-session replay/resume (journal + stable keys), saved version-controlled workflow files, explicit `outcome` envelopes, and a progress monitor (today a tree, to become a graph).
 
-Retired with the script runtime: the current real consumers `workflows/deep-research.js` and `workflows/last30days.js`. They are out of scope and safe to discard or deprecate — no port is required before the script runtime is deleted (§2.8).
+Retired with the script runtime: its former consumers `workflows/deep-research.js` and `workflows/last30days.js`. These are historical paths, not current scripts or installation items.
 
 ---
 

@@ -2,6 +2,8 @@
 
 Status: idea
 
+Historical idea: this note describes the removed `extensions/subagent/` runtime and its former paths, not current Subagent or Herdr behavior. Consult the current `extensions/subagents/` contracts before proposing a panel.
+
 ## Summary
 
 A Herdr pane can show a subagent transcript on the right without competing with Pi's TUI renderer. It cannot attach directly to the current subagent, because `extensions/subagent/` runs each child as an in-process `AgentSession`, not as a process in its own PTY. The extension therefore needs a small read-only bridge between `AgentRun` or `AgentSession` events and a viewer process running in the Herdr pane.

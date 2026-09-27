@@ -4,7 +4,7 @@ Status: shipped
 
 Owner: docs/AGENTS.md (specs bucket)
 
-Related: [Workflow Tool and Notification Presentation](workflow-tool-output-presentation.md) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
+Related: [Retired script-runtime presentation record](workflow-tool-output-presentation.md) (historical only) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
 
 ## Problem Statement
 

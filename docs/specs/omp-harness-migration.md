@@ -1,8 +1,10 @@
 # OMP Harness Migration Assessment
 
-- **Status:** draft
+Status: retired
 - **Date:** 2026-08-04
 - **Decision under review:** replace Pi 0.83.0 as Panda Harness's runtime base with OMP 17.2.4.
+
+**Historical scope:** This 2026-08-04 inventory and OMP 17.2.4 assessment are a time-bound snapshot, not current repository topology or an active migration decision. The recommendation below belongs to that assessment only; revalidate all claims before use.
 
 ## Executive decision
 

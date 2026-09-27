@@ -2,7 +2,7 @@
 
 Status: idea
 
-Research and recommendations, not an implementation plan or execution policy.
+Historical research and recommendations about the removed `SubagentWorkflow` script runtime, not an implementation plan or current execution policy. Paths, IDs, and authoring-skill findings below describe the pre-graph runtime only.
 
 ## Conclusion
 

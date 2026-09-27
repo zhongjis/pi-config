@@ -1,5 +1,7 @@
 # Extension README Standard
 
+Status: shipped
+
 Every extension **must** have a `README.md` in its directory. This is the primary documentation surface for anyone reading, maintaining, or adapting an extension.
 
 ## Required Sections
