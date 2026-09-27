@@ -354,7 +354,7 @@ Send a steering message to a running agent. The message interrupts after the cur
 
 Typed graph orchestration — the single multi-agent execution tool in this extension. The tool validates the graph before anything runs, then executes it in the background and notifies on completion; monitor progress in `/agents → Graph runs`.
 
-Set `workflowsEnabled: true` in `subagents.json` or enable agent graphs in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled agent graphs add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
+Set `agentGraphEnabled: true` in `subagents.json` or enable agent graphs in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled agent graphs add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
 
 | Parameter | Purpose |
 |-----------|---------|
@@ -384,13 +384,13 @@ Version 2 separates authored keys, optional display names and durable UUID-v4 ru
 
 Graph checkpoints in `.pi/graph-runs/` use atomic replacement, exclusive run leases and append-only versioned manifests before dispatch. Each new snapshot retains its originating exact Pi session ID across writes: only that session auto-resumes it after restart. Other sessions silently ignore it whether its writer is live or dead; ownerless legacy snapshots remain untouched and are never automatically adopted. The lease still prevents concurrent same-session writers. Restore validates filename containment, scheduler state, executable children and recursive delegation policy before creating tasks or writing. Session-owned v1 snapshots upgrade before execution; unknown/corrupt snapshots fail visibly. Retry/restore retain IDs and attempt budgets, while fresh runs allocate new identities. Explicit cancellation is terminal; lifecycle interruptions remain resumable. Crash recovery can repeat external actions; it is not an exactly-once guarantee.
 
-Saved graphs live at `agent-graphs/<name>.graph.json` or `.graph.yaml`; matching formats in one root are ambiguous. This config ships `context-gather` and `deep-research`. Specs: [`agent-graph-reusable-workflows.md`](../../docs/specs/agent-graph-reusable-workflows.md) and [`agent-graph-yaml-invocation-gates.md`](../../docs/specs/agent-graph-yaml-invocation-gates.md).
+Saved graphs live at `agent-graphs/<name>.graph.json` or `.graph.yaml`; matching formats in one root are ambiguous. The committed [agent-graph portfolio](../../agent-graphs/) contains `context-gather` and `deep-research`; the bundled [authoring skill](skills/agent-graphs/SKILL.md) covers graph creation and invocation. See the [YAML and invocation-gates spec](../../docs/specs/agent-graph-yaml-invocation-gates.md) for those contracts.
 
 Graph node thinking follows the agent's frontmatter → model-chain suffix → SDK default, never a node override or implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 
 Graph runs MUST respect active delegation permissions, with independent pool accounting and explicit ownership of their children. Owned children do not receive the `agent_graph` tool recursively. `/agents → Graph runs` keeps one phase-grouped run roster with contextual controls: pause/resume, skip, retry, stop, and child conversation access. FleetView represents each graph run as one row rather than duplicating its owned children.
 
-Settled runs remain visible after same-session reload in `/agents → Graph runs` and Herdr as **read-only metadata history**, not execution recovery. The exact Pi session ID owns `graph-history.json` under the repository's session-local OS storage; forks/new sessions are isolated. History is bounded to 20 runs/8 MiB and retains no full prompts, inputs, outputs, errors, or artifact paths. Live runs win over same-ID history; graph resume checkpoints remain separate. See the [presentation contract](../../docs/specs/workflow-tool-output-presentation.md#implementation-decisions) for bounds and lifecycle behavior.
+Settled runs remain visible after same-session reload in `/agents → Graph runs` and Herdr as **read-only metadata history**, not execution recovery. The exact Pi session ID owns `graph-history.json` under the repository's session-local OS storage; forks/new sessions are isolated. History is bounded to 20 runs/8 MiB and retains no full prompts, inputs, outputs, errors, or artifact paths. Live runs win over same-ID history; graph resume checkpoints remain separate. The [Herdr graph presentation spec](../../docs/specs/herdr-agent-graph-presentation.md) owns the graph inspector and history display; the [TUI rendering guide](../../docs/guides/tool-output-tui-rendering.md) covers tool rows and notifications.
 
 The authoring skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover` when agent graphs are enabled. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
 
@@ -491,7 +491,7 @@ Runtime tuning values set via `/agents` → Settings (background/foreground conc
 | `maxConcurrentForeground` | `0` | Independent blocking-agent limit; `0` means unlimited |
 | `reportUsage` | `false` | Report pending subagent usage through final Agent/retrieval/steering tool results into native Pi session totals |
 | `showCost` | `false` | Show a positive estimated per-agent cost only in expanded Run metadata |
-| `workflowsEnabled` | `false` | Enable typed agent graphs (`agent_graph`); reload required for registration changes; disabled adds no graph tool schema/prompt cost |
+| `agentGraphEnabled` | `false` | Enable typed agent graphs (`agent_graph`); reload required for registration changes; disabled adds no graph tool schema/prompt cost |
 
 Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
 

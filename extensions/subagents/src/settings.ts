@@ -134,9 +134,6 @@ function sanitize(raw: unknown): SubagentsSettings {
   const r = raw as Record<string, unknown>;
   const out: SubagentsSettings = {};
   if (typeof r.agentGraphEnabled === "boolean") out.agentGraphEnabled = r.agentGraphEnabled;
-  if ("workflowsEnabled" in r) {
-    console.warn('[pi-subagents] Ignoring legacy "workflowsEnabled" setting — rename it to "agentGraphEnabled" in subagents.json.');
-  }
   if (typeof r.maxConcurrentForeground === "number" && Number.isInteger(r.maxConcurrentForeground)
     && r.maxConcurrentForeground >= 0 && r.maxConcurrentForeground <= MAX_CONCURRENT_CEILING) {
     out.maxConcurrentForeground = r.maxConcurrentForeground;

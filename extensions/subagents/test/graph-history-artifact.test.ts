@@ -19,7 +19,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 function fixture() {
   const cwd = mkdtempSync(join(tmpdir(), "history-artifact-"));
   dirs.push(cwd);
-  const sessionId = "session", runId = "workflow-run";
+  const sessionId = "session", runId = "graph-run";
   const alias = graphRunNodeArtifactId(runId, 7);
   const path = createOutputFilePath(cwd, alias, sessionId);
   dirs.push(dirname(dirname(path)));

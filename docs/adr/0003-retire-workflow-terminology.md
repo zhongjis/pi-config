@@ -21,14 +21,14 @@ Rename the internal run/host/UI identifier family from `Workflow*` to the engine
 - entry shape `WorkflowEntryData` → `GraphRunEntryData`
 - artifact suffix `.workflow-result.txt` → `.graph-result.txt`
 
-Two guardrails accompany the hard rename:
+Two guardrails accompanied the hard rename:
 
-1. **No silent disable.** Renaming the config key would otherwise silently turn the feature off (the setter never fires, so the `agent_graph` tool never registers, with no error). `loadSettings` therefore emits a one-time `console.warn` when a legacy `workflowsEnabled` key is present. This is the only behavior change in the migration.
-2. **Clean-slate migration.** Old `wf_` snapshots and `subagents:workflow` session entries become unrecognized after the rename; by existing design they are ignored-if-foreign, so they orphan harmlessly. The migration was performed with no live runs and the snapshot directory drained.
+1. **Config migration.** At the time of the rename, `loadSettings` warned once when it read a legacy `workflowsEnabled` key; that warning was subsequently removed after installed configs moved to `agentGraphEnabled`. The shipped key is `agentGraphEnabled`, with no legacy compatibility handling.
+2. **Clean-slate migration.** Old `wf_` snapshots and `subagents:workflow` session entries became unrecognized after the rename; by existing design they are ignored-if-foreign, so they orphan harmlessly. The migration was performed with no live runs and the snapshot directory drained.
 
 ## Consequences
 
-- One vocabulary. `rg -i workflow` over the extension's `src`/`test` returns only the legacy-key warning's intentional strings.
-- **Breaking for stale config and out-of-repo state.** A config file still using `workflowsEnabled` no longer enables the feature and must be renamed to `agentGraphEnabled`; the deployed `~/.pi/agent/subagents.json` is a symlink to the repo file, so it moves in lockstep. Out-of-repo saved graphs must update the reserved outcome key. Pre-migration on-disk snapshots and session entries are intentionally abandoned.
+- One vocabulary. Current extension code and tests use graph terminology; the legacy-key warning is no longer retained.
+- **Breaking for stale config and out-of-repo state.** A config file still using `workflowsEnabled` no longer enables the feature and must be renamed to `agentGraphEnabled`; no compatibility warning or fallback remains. The deployed `~/.pi/agent/subagents.json` is a symlink to the repo file, so it moves in lockstep. Out-of-repo saved graphs must update the reserved outcome key. Pre-migration on-disk snapshots and session entries are intentionally abandoned.
 - The rename is otherwise behavior-preserving: `tsc` clean and the full test suite unchanged at its pre-existing failure baseline across every wave.
 - The "uniform" alternative (also renaming the engine's existing `GraphRun*` to `AgentGraphRun*`) was rejected as scope creep over clean, non-workflow code.

@@ -8,11 +8,11 @@ import { resolveSavedGraph } from "../src/graph/saved-graph.js";
 import { validateGraph } from "../src/graph/validate.js";
 
 /**
- * The shipped reusable agent-graph portfolio (docs/specs/agent-graph-reusable-workflows.md)
- * must always resolve and validate. These saved graphs are Pi's known-good
- * starting points, so a shape regression in one of them should fail here rather
- * than at a live tool call. `cwd` is the repo root, mirroring how the runtime
- * resolves `agent-graphs/<name>.graph.json` in production.
+ * The shipped reusable agent-graph portfolio in the committed `agent-graphs/` directory
+ * must always resolve and validate. These saved graphs are Pi's known-good starting
+ * points, so a shape regression in one of them should fail here rather than at a live
+ * tool call. `cwd` is the repo root, mirroring how the runtime resolves
+ * `agent-graphs/<name>.graph.json` in production.
  */
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -481,8 +481,8 @@ describe("context-gather semantic policy", () => {
     expect(result.nodes.synthesize.status).toBe("failed");
   });
 
-  it("does not turn inferred workflow-example into new direct claims", async () => {
-    const claims = PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "workflow-example", confidence: "inferred" }));
+  it("does not turn inferred graph-example into new direct claims", async () => {
+    const claims = PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "graph-example", confidence: "inferred" }));
     const evidence = ["operation-monitoring", "context-gather-example"].flatMap(claimId => PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId })));
     const { result } = await runCase({ research: { ...PROJECT_EVIDENCE, claims }, synthesis: { ...COMPLETE_SYNTHESIS, evidence, verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.map((row, index) => ({ ...row, claimIds: [evidence[index].claimId] })) } });
     expect(result.nodes.synthesize.status).toBe("failed");

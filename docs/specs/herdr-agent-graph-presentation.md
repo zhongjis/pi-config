@@ -4,27 +4,27 @@ Status: shipped
 
 Owner: docs/AGENTS.md (specs bucket)
 
-Related: [Retired script-runtime presentation record](workflow-tool-output-presentation.md) (historical only) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
+Related: [Subagent tool-output presentation](subagent-tool-output-presentation.md) (Agent tool rows) · [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) (cross-extension tool rows and notifications) · [Retired script-runtime presentation record](workflow-tool-output-presentation.md) (historical only) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
 
 ## Problem Statement
 
-The Herdr side panel exposes enough agent-graph data to reconstruct what a workflow is doing, but it does not present that data in the order an operator needs it. Run identity, description, inputs, several progress counters, lifecycle totals, graph rows, node types, model names, dependency facts, prompt text, runtime telemetry, and retained output all compete in one narrow column.
+The Herdr side panel exposes enough agent-graph data to reconstruct what a graph run is doing, but it does not present that data in the order an operator needs it. Run identity, description, inputs, several progress counters, lifecycle totals, graph rows, node types, model names, dependency facts, prompt text, runtime telemetry, and retained output all compete in one narrow column.
 
 The current roster is flat even when the graph contains meaningful containment. A bounded-feedback coordinator, its iterations, each fanout, generated agent items, evaluators, and downstream synthesis appear as sibling rows. Repeated suffixes such as `iteration 1` carry structure as prose rather than layout. The selected-node detail repeats internal labels and exposes long identity values before the retained result.
 
 The result is technically complete but visually expensive. An operator must translate implementation-shaped rows into answers to four basic questions:
 
-- What workflow is this, and has it completed?
+- Which graph run is this, and has it completed?
 - Which work belongs together?
 - Which node is selected, and what did it produce?
 - Which information is primary versus diagnostic metadata?
 
 ## Solution
 
-Present the graph panel in Pi and in the Herdr pane as a dense, hierarchy-first workflow inspector; the Herdr pane stays read-only:
+Present the graph panel in Pi and in the Herdr pane as a dense, hierarchy-first graph inspector; the Herdr pane stays read-only:
 
 1. Show one stable run identity, one human description, and one honest composition-only aggregate summary; carry live elapsed on the `∑` status line rather than the aggregate.
-2. Render the effective graph as a compact tree. Indentation expresses containment: workflow → coordinator → iteration → fanout/evaluator → generated agent item. Vertical order expresses progression. Dependencies that cannot be represented honestly as containment remain in selected-node detail.
+2. Render the effective graph as a compact tree. Indentation expresses containment: graph run → coordinator → iteration → fanout/evaluator → generated agent item. Vertical order expresses progression. Dependencies that cannot be represented honestly as containment remain in selected-node detail.
 3. Give each graph node one physical roster row. Keep the status symbol, short status text, node label, and trailing role/model metadata on that row.
 4. Represent bounded-feedback rounds with a `↻ Iteration N` structural row instead of repeating `· iteration N` on every child.
 5. Keep selection in its own gutter. Selection never replaces lifecycle status or corrupts tree rails.
@@ -33,7 +33,7 @@ Present the graph panel in Pi and in the Herdr pane as a dense, hierarchy-first 
 8. Call the lower zone `Selected node`, because agent and coordination nodes are both selectable. Put retained prompt/outcome before low-value identity metadata.
 9. Omit zero-value counters. Separate agents from coordination nodes in the aggregate summary.
 10. Preserve width safety, Unicode/ASCII fallback, read-only behavior, filters, folding, run switching, scrolling, contextual key hints, and the existing render fallback.
-11. Preserve the same hierarchy, counts, configured workflow description, iteration decisions, and flow after extension or session reload.
+11. Preserve the same hierarchy, counts, configured graph description, iteration decisions, and flow after extension or session reload.
 12. Resolve historical selected-node prompt and outcome from bounded session artifacts on demand when available; never copy that content or its private location into graph history.
 13. On a live run, carry elapsed and lifecycle composition on a `∑` status line above the footer, bracket the elapsed of each running or queued agent row, and fold the settled frontier first when a bounded pane cannot show the whole roster.
 
@@ -146,7 +146,7 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 - A bounded-feedback node contains iteration groups.
 - Each iteration contains its work fanout and evaluator.
 - A fanout contains the generated agent items it owns.
-- A downstream root node such as synthesis remains a workflow child; it does not become a visual child of an upstream node merely because it depends on that node.
+- A downstream root node such as synthesis remains a graph-run child; it does not become a visual child of an upstream node merely because it depends on that node.
 - The selected-node `Flow` section expresses the immediate upstream → selected node → immediate downstream relationship. Multi-parent, cross-group, conditional, and loop dependencies remain explicit there rather than being falsified as tree ownership.
 - Iteration decisions such as `continue` and `sufficient` appear once on the iteration row.
 - Generated item labels are local to their fanout (`item 1`) because iteration and fanout context are already visible in the tree. Selected-node identity retains the complete binding label.
@@ -155,8 +155,8 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 
 ## User Stories
 
-1. As an operator, I want one stable workflow identity, so that repeated headings do not compete for attention.
-2. As an operator, I want one aggregate progress line, so that workflow progress is not represented by several unexplained counters.
+1. As an operator, I want one stable graph-run identity, so that repeated headings do not compete for attention.
+2. As an operator, I want one aggregate progress line, so that graph-run progress is not represented by several unexplained counters.
 3. As an operator, I want agent and coordination-node counts distinguished, so that structural nodes are not reported as agents.
 4. As an operator, I want zero-value lifecycle categories omitted, so that completed runs do not advertise `running 0`, `queued 0`, and `failed 0`.
 5. As an operator, I want the graph rendered as a hierarchy, so that containment is visible without reading repeated suffixes.
@@ -181,7 +181,7 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 24. As an ASCII-terminal user, I want a complete textual fallback, so that graph hierarchy and lifecycle remain understandable without Unicode.
 25. As an operator, I want contextual footer controls, so that only actions valid for the current focus and selection are advertised.
 26. As an operator, I want filters, folds, scrolling, run switching, input disclosure, and conversation opening preserved, so that presentation polish does not remove supervision capability.
-27. As an operator, I want a completed run to retain the same hierarchy after reload, so that history remains a useful workflow inspector rather than degrading to a flat roster.
+27. As an operator, I want a completed run to retain the same hierarchy after reload, so that history remains a useful graph inspector rather than degrading to a flat roster.
 28. As an operator, I want retained node artifacts resolved on demand, so that available prompt and outcome detail survives reload without entering graph-history metadata.
 29. As a maintainer, I want the graph panel in Pi and in the Herdr pane to share this presentation, so that the two hosts do not diverge.
 30. As a maintainer, I want model-visible results, graph execution, notification behavior, and orchestration permissions unchanged, so that durable presentation cannot alter execution.
@@ -191,7 +191,7 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 ## Implementation Decisions
 
 - The existing pure observability renderer and key handler remain the single presentation seam for the graph panel in Pi and in the Herdr pane. The pane manager continues to own run selection, panel state, and the safe fallback renderer.
-- Build a presentation tree from authoritative graph metadata retained by the live run projection or sanitized graph-history projection. The tree model separates workflow nodes, bounded-feedback iterations, fanout ownership, generated items, and ordinary dependencies. It does not parse display labels to infer structure.
+- Build a presentation tree from authoritative graph metadata retained by the live run projection or sanitized graph-history projection. The tree model separates graph nodes, bounded-feedback iterations, fanout ownership, generated items, and ordinary dependencies. It does not parse display labels to infer structure.
 - Iteration rows are presentation-only structural groups derived from durable feedback iteration/ownership metadata. They are navigational grouping rows, not executable nodes and not included in the node denominator.
 - Node rows retain stable node identity for selection and detail even when their displayed labels become local to a structural group.
 - Role classification is explicit: executable agent nodes count as agents; bounded feedback and fanout owners count as coordination nodes. Iteration groups do not count as either.
@@ -202,7 +202,7 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 - The existing read-only interaction model remains intact. Footer hints are derived from current focus, selection kind, expandable sections, and configured keybindings rather than hard-coded globally.
 - The graph panel in Pi and in the Herdr pane shares this presentation. Shared low-level glyph and width helpers may remain shared, but this specification does not redesign transcript tool rows or notifications.
 - Rendering remains width-safe by terminal cells after ANSI styling. No tree prefix, selection marker, status field, metadata suffix, or wrapped detail line may exceed the supplied width.
-- Graph history version 2 persists only sanitized presentation metadata: configured workflow description, node kind/name/role, history-local parent and dependency indices, iteration/item position, conditional/loop connections, and iteration decision enums. Capture translates transient bindings and instance IDs to local indices, then discards those runtime identities.
+- Graph history version 2 persists only sanitized presentation metadata: configured graph description, node kind/name/role, history-local parent and dependency indices, iteration/item position, conditional/loop connections, and iteration decision enums. Capture translates transient bindings and instance IDs to local indices, then discards those runtime identities.
 - Version 1 history remains readable with its explicit flat fallback. Unknown future versions remain untouched with writes disabled. Version 2 decoding strictly allowlists fields and rejects invalid references, self-parenting, containment cycles, and out-of-bounds topology.
 - Graph-owned transcript artifacts use deterministic run-ID plus history-index aliases. Historical detail resolves them only while they remain in the current session artifact area; graph history stores neither content, paths, runtime IDs, conversation handles, nor artifact availability promises.
 - Presentation work MUST NOT change graph execution, model-visible tool content, notification delivery, orchestration permissions, or execution-recovery snapshots.
@@ -218,7 +218,7 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 - Width tests cover `0`, `1`, `2`, `8`, `20`, `40`, `80`, and `120` columns with ANSI, CJK, emoji, combining characters, long model names, long node names, and long IDs. Every physical line fits its visible-cell width.
 - Navigation tests cover roster/detail focus, selection across structural grouping rows, filtering, folding, run switching, prompt/outcome expansion, input expansion, conversation opening, paging, and escape/back behavior.
 - Compatibility tests prove rendering failure still uses the safe fallback, and model-visible results/execution behavior are unaffected.
-- Persistence tests round-trip a representative run through `snapshotHistory → JSON → decodeHistory → mergeWorkflowRuns → toPaneSource → renderPanelLines`; the post-reload hierarchy, counts, decisions, and flow MUST match the live projection.
+- Persistence tests round-trip a representative run through `snapshotHistory → JSON → decodeHistory → mergeGraphRuns → toPaneSource → renderPanelLines`; the post-reload hierarchy, counts, decisions, and flow MUST match the live projection.
 - Privacy tests inspect the serialized history and prove it contains no bindings, UUIDs, conversation handles, artifact paths, prompts, outputs, errors, scripts, or inputs. Artifact tests prove lookup is bounded, alias-keyed, optional, and unavailable outside the exact session.
 - Legacy tests keep version 1 history readable and flat; malformed version 2 topology fails closed; unknown versions remain byte-preserved and non-writable.
 - Runtime verification uses a fresh Pi session launched through `interactive_shell` to execute the saved `context-gather` graph. Execution evidence proves real fanout, bounded-feedback evaluation and decisions, and synthesis; multi-iteration fixtures cover the continuation shape deterministically.
@@ -237,4 +237,4 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 
 ## Further Notes
 
-This specification supersedes the stale flat, stage-oriented `Graph Run Monitor — Observability Panel` draft. The shipped workflow tool/notification specification remains authoritative for transcript tool rows and notifications; this document owns the graph panel in Pi and in the Herdr pane.
+This specification supersedes the stale flat, stage-oriented `Graph Run Monitor — Observability Panel` draft and owns the graph panel in Pi and in the Herdr pane. [Subagent tool-output presentation](subagent-tool-output-presentation.md) covers Agent tool rows; the [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) covers cross-extension tool rows and notifications. The workflow presentation record is retired and is not current authority.
