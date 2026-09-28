@@ -117,7 +117,7 @@ export function renderAgentToolResult(
   const waiting = details.status === "queued" || details.status === "background";
   const error = details.error;
   const primary = error || (waiting
-    ? `${details.status === "queued" ? "waiting for a slot" : "started in background"} · id: ${details.agentId ?? "unavailable"} · next: get_subagent_result`
+    ? `${details.status === "queued" ? "waiting for a slot" : "started in background"} · id: ${details.agentId ?? "unavailable"} · next: get_agent_result`
     : active ? details.activity || "starting session" : details.result?.trim() || "No output.");
   const metadata = getRunMetadata(details, Boolean(options.expanded));
 
@@ -160,6 +160,27 @@ export function renderGetSubagentResult(
   theme: ToolTheme,
 ) {
   return renderAgentToolResult(result, options, theme);
+}
+
+export function renderGetAgentResultCall(args: { run_id?: string; wait?: boolean; verbose?: boolean }, theme: ToolTheme) {
+  const flags = [args.run_id, args.wait ? "wait" : undefined, args.verbose ? "verbose" : undefined].filter(Boolean);
+  return renderToolCall("get_agent_result", flags.join(" · "), theme);
+}
+
+export function renderGetAgentResult(result: TextToolResult, options: { expanded?: boolean; isPartial?: boolean }, theme: ToolTheme) {
+  const details = result.details;
+  if (!details || typeof details !== "object" || !("kind" in details) || details.kind !== "graph" ||
+    !("status" in details) || typeof details.status !== "string") return renderGetSubagentResult(result, options, theme);
+  const text = extractToolText(result);
+  if (options.expanded) return renderToolExpanded(text || "No output.");
+  const gate = "gate" in details ? details.gate : undefined;
+  const prompt = gate && typeof gate === "object" && "prompt" in gate && typeof gate.prompt === "string" ? gate.prompt : undefined;
+  const error = "error" in details && typeof details.error === "string" ? details.error : undefined;
+  const status = options.isPartial ? "Retrieving graph result" : prompt !== undefined ? "Human input required" : `Execution: ${details.status}`;
+  const outcome = "outcome" in details ? details.outcome : undefined;
+  const verdict = outcome && typeof outcome === "object" && "status" in outcome && typeof outcome.status === "string"
+    ? `Outcome: ${outcome.status}${"reason" in outcome && typeof outcome.reason === "string" ? ` — ${outcome.reason}` : ""}` : undefined;
+  return renderToolSummary([status, prompt ?? error ?? verdict ?? "Expand for graph output and outcome"], theme, { expandable: true });
 }
 
 const MESSAGE_PREVIEW_CHARS = 72;

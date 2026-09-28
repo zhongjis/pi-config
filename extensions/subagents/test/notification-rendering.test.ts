@@ -379,10 +379,10 @@ describe("subagent notification rendering migration", () => {
 
     const message = notificationPi.sendMessage.mock.calls[0]?.[0] as SentMessage;
     const omitted = result.length - 500;
-    const route = outputFile ? "transcript below" : `get_subagent_result(agent_id: "${record.id}")`;
+    const route = outputFile ? "transcript below" : `get_agent_result(run_id: "${record.id}")`;
     const marker = `… ${omitted} character${omitted === 1 ? "" : "s"} omitted · full output: ${route}`;
     expect(message.details.resultPreview).toBe(`${result.slice(0, 500)}\n${marker}`);
-    expect(message.content).toContain("...(truncated, use get_subagent_result for full output)");
+    expect(message.content).toContain("...(truncated, use get_agent_result for full output)");
     expect(message.content).not.toContain(marker);
 
     const expanded = notificationContent(renderCard({ details: message.details }, true, 5_000)).join("\n");

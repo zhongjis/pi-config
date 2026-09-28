@@ -43,7 +43,7 @@ export interface AgentConfig {
   allowDelegationTo?: string[];
   /** Agent denylist — these subagents may not be delegated to. */
   disallowDelegationTo?: string[];
-  /** When true, subagent keeps agent/get_subagent_result/steer_subagent tools (can delegate). */
+  /** Permits allowlisted nested launch, retrieval, steering, and graph-gate resolution tools. */
   allowNesting?: boolean;
   /** true = inherit all, string[] = only listed, false = none */
   extensions: true | string[] | false;
@@ -115,7 +115,7 @@ export interface AgentRecord {
   promise?: Promise<string>;
   groupId?: string;
   joinMode?: JoinMode;
-  /** Set when result was already consumed via get_subagent_result — suppresses completion notification. */
+  /** Set when retrieval consumed the result via get_agent_result or its compatibility alias — suppresses completion notification. */
   resultConsumed?: boolean;
   /** Steering messages queued before the session was ready. */
   pendingSteers?: string[];

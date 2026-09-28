@@ -24,7 +24,7 @@ import extension from "../src/index.js";
 
 type Result = { content: { type: string; text?: string }[]; details?: { taskId?: string }; usage?: ToolResultEvent["usage"] };
 const plainTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
-type Tool = { name: string; description: string; parameters: { properties: Record<string, unknown> }; renderResult(result: Result, options: { expanded: boolean }, theme: typeof plainTheme, context: { isError: boolean }): { render(width: number): string[] }; execute(id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, update: undefined, ctx: ExtensionContext): Promise<Result> };
+type Tool = { name: string; description: string; parameters: { properties: Record<string, unknown> }; renderCall(args: Record<string, unknown>, theme: typeof plainTheme): { render(width: number): string[] }; renderResult(result: Result, options: { expanded: boolean }, theme: typeof plainTheme, context: { isError: boolean }): { render(width: number): string[] }; execute(id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, update: undefined, ctx: ExtensionContext): Promise<Result> };
 type Hook = (event: unknown, ctx: ExtensionContext) => unknown;
 const model = { provider: "test", id: "chosen", name: "Chosen", reasoning: true };
 let dir: string;

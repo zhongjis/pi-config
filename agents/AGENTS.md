@@ -12,7 +12,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 
 - You MUST follow the [frontmatter guide](../docs/guides/agent-frontmatter.md).
 - You MUST preserve role boundaries in the [orchestration guide](../docs/guides/agent-orchestration.md).
-- You MUST align tool allowlists with each agent's stated role.
+- You MUST align tool allowlists with each agent's stated role. Xuannv MAY retrieve independent results through canonical `get_agent_result` or legacy `get_subagent_result`; this grants no graph execution or human-approval authority.
 - Read-only consultants MUST NOT receive mutating tools; bash requires runtime guarding.
 - Mode frontmatter, not guide tables, authorizes mode-scoped delegation.
 - Custom Subagents MUST use `prompt_mode: system_instructions` to inherit global/project AGENTS.md without parent identity, subject to runtime isolation.

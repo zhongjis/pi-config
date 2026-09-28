@@ -30,15 +30,32 @@ agent_graph({ graph: { nodes: {...}, edges: [...], outputs: {...} }, input: {...
 
 - **Saved graphs** live at `agent-graphs/<name>.graph.json` or `.graph.yaml`; a `/` in the name maps to a
   subdirectory (e.g. `team/my-graph` → `agent-graphs/team/my-graph.graph.yaml`). Matching JSON and YAML names in one root are ambiguous. Author with normal file tools; no CRUD tool.
-- The call returns a **task id immediately** and runs in the background; you are
-  notified on completion. Do not poll. Watch it in `/agents → Graph runs` (nodes
-  grouped by stage, with pause / skip / retry).
+- The call returns a **run ID immediately**. Continue only non-overlapping work,
+  then MUST call `get_agent_result({run_id, wait:true})`. NEVER end the turn, poll
+  or sleep while the run is active. `/agents → Graph runs` provides supervision.
 - Invalid graphs are rejected **before** any node runs, with per-error messages.
 
 ## Consuming a run result
 
-The call returns a task id immediately and runs in the background; you are notified on
-completion with a `<task-notification>`. Read it in this order:
+`get_agent_result({run_id, wait:true})` returns graph execution status, output and
+objective outcome, or a pending `gate` with `gate_id`, `revision`, `kind`, `prompt`
+and `response_schema`. Details discriminate `kind: "graph"` from independent agents.
+
+For a gate, MUST use `ask` to collect the human's choice, then call:
+
+```ts
+resolve_agent_graph_gate({ run_id, gate_id, revision, response: { approved: true } })
+get_agent_result({ run_id, wait: true })
+```
+
+Copy returned identities exactly and submit the actual human response; NEVER invent
+approval. Repeated retrieval does not consume a gate. Identical responses are idempotent
+within the activation; stale/conflicting responses fail. Reload reconstructs pending
+gates with fresh revisions, including nested gates; retrieve again before asking.
+Cancelling retrieval stops only that wait. Unobserved gates receive an actionable
+follow-up; observed gates do not receive duplicate nudges.
+
+Completion notifications remain available as `<task-notification>`. Read them in this order:
 
 1. `<status>` — the declared outcome. `Completed` means the graph did not flag a
    problem; `Outcome partial: <reason>` or `Outcome failed: <reason>`
@@ -85,10 +102,10 @@ settled but none activated, the node is **skipped**.
   `prompt` is a template: `${name}` is replaced by the resolved value of `input.name`.
   With `outputSchema` the child must return matching structured JSON. `validation.gate`
   is a shell command that must pass; `retry.maxAttempts` re-runs on schema/gate failure.
-- **human_gate** — human-only approve/reject through the existing UI; never spawns an agent.
+- **human_gate** — publishes a durable human request for orchestrator `ask` + resolution; never spawns an agent.
 - **agent_gate** — a configured `agent` decides; no human fallback.
 - **hybrid_gate** — the configured `agent` decides first; only a valid typed `undecided`
-  with a nonempty reason opens the human approve/reject UI.
+  with a nonempty reason publishes a human request.
   ```jsonc
   { "type": "hybrid_gate", "agent": "yanluo", "prompt": "Approve the plan?",
     "outputSchema": { "type": "object", "properties": { "approved": { "type": "boolean" } },
@@ -102,9 +119,9 @@ settled but none activated, the node is **skipped**.
   `{ "status": "undecided", "reason": "nonempty explanation" }` (no extra fields).
   `agent_gate` fails on `undecided`. Invalid output, inability, unavailable agents and
   execution failures fail both agent-backed gates without prompting. Gate agents obey
-  normal delegation permissions. Hybrid escalation is checkpointed before prompting;
-  lifecycle resume of a waiting hybrid preserves the human choice rather than rerunning
-  its agent. The monitor identifies the decision maker as human or the configured agent.
+  normal delegation permissions. Hybrid escalation is checkpointed before publication;
+  lifecycle resume of a waiting hybrid preserves the human-only boundary rather than
+  rerunning its agent. The monitor identifies the decision maker as human or the configured agent.
 - **graph** — runs a saved subgraph and uses its `outputs` as this node's output.
   ```jsonc
   { "type": "graph", "graph": "context-gather", "input": { "task": { "path": "$.task" } } }

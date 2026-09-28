@@ -6,7 +6,8 @@ import * as persistence from "../src/graph/graph-persist.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import * as tasks from "../src/graph/task.js";
-import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
+import { deferred } from "./graph-drain.fixture.js";
+import { pendingGate, resolveGate } from "./gate-tools.fixture.js";
 import { boot, required } from "./graph-run-registration.fixture.js";
 
 it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s without creating a task, checkpoint or child", async kind => {
@@ -46,17 +47,15 @@ it("removes explicit terminal cancellation rather than resuming it each restart"
 it("removes a live explicitly-cancelled snapshot before notifying completion", async () => {
   const session = boot({ agentGraphEnabled: true });
   await session.lifecycle("session_start");
-  const human = deferred<string>();
-  session.ui.select.mockReturnValue(human.promise);
   const create = vi.spyOn(tasks, "createGraphRunTask");
   const graph: AgentGraph = { version: 2, nodes: { gate: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } }, after: { type: "agent", agent: "fixture", prompt: "after" } }, edges: [{ from: "gate", to: "after" }] };
   const result = await required(session.tools.get("agent_graph")).execute("call", { graph, input: {} }, undefined, undefined, session.ctx);
   const runId = required(result.details?.taskId);
   await vi.waitFor(() => expect(persistence.readGraphSnapshots(session.ctx.cwd).some(snapshot => snapshot.state.nodes.gate?.status === "running")).toBe(true));
+  const gate = await pendingGate(session, runId);
   required(create.mock.results[0]?.value).abortController.abort("user-cancel");
-  const notification = session.notification(runId);
-  await releaseAfterPending(notification, () => human.resolve("Approve"));
-  await notification;
+  await session.notification(runId);
+  await expect(resolveGate(session, gate)).rejects.toThrow(/stale|unavailable/i);
   expect(persistence.readGraphSnapshots(session.ctx.cwd)).toEqual([]);
 });
 

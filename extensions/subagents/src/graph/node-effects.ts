@@ -77,7 +77,7 @@ export const humanNodeEffect = fromPromise<NodeEffectResult, NodeEffectInput>(as
   if (context.cancellation || context.failure || abort.aborted) return { result: aborted(), executed: false };
   try {
     const result = host.awaitHumanGate ? await host.awaitHumanGate({ nodeId: node.nodeId, prompt: context.undecidedReason ? `${node.prompt}\n\nSubagent undecided: ${context.undecidedReason}` : node.prompt,
-      correlation: context.receipt.correlation, ...(node.schema ? { schema: node.schema } : {}),
+      correlation: context.receipt.correlation, kind: node.kind === "human" ? "human_gate" : "hybrid_gate", ...(node.schema ? { schema: node.schema } : {}),
     }, abort) : { ok: false, error: "This host cannot await human input" };
     return { result, executed: context.executed };
   } catch (error) { return { result: { ok: false, error: error instanceof Error ? error.message : String(error) }, executed: false }; }

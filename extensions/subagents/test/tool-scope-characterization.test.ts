@@ -125,6 +125,12 @@ beforeEach(() => {
 // ===========================================================================
 
 describe("installExtensionToolScope — characterization", () => {
+  it("excludes canonical retrieval and gate resolution from non-nesting children", async () => {
+    const session = makeFakeSession(["read", "get_agent_result", "resolve_agent_graph_gate"]);
+    install(session, { allowNesting: false });
+    expect(session.getActiveToolNames()).toEqual(["read"]);
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "resolve_agent_graph_gate" } })).resolves.toMatchObject({ block: true });
+  });
   /**
    * HAPPY PATH: extension_tools wildcard.
    *

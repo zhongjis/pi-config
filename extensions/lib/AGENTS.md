@@ -20,6 +20,7 @@ Provide shared extension utilities and integration primitives.
 - Fast allowlist changes require official provider evidence for exact public model IDs, matching regression tests, and updated [support documentation and sources](README.md#fast-request-helpers); no inferred aliases, wildcards, or internal models.
 - The CLIProxyAPI Fast profile is only `cliproxyapi` / `openai-responses` and accepts Pi local API-key auth; preserve the separate OpenAI Codex OAuth requirement.
 - `tool-output.ts` owns shared passive TUI helpers, including custom-message Box shells; callers retain content construction and delivery.
+- `active-tools.ts` MUST classify canonical/legacy result retrieval and graph-gate resolution as nested controls; tool allowlists NEVER override `allowNesting: false`.
 
 ## Work Guidance
 

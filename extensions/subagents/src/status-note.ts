@@ -34,7 +34,7 @@ export function getStatusNote(status: string): string {
  *   - it has no agent id. The id travels in the tool result's renderer
  *     `details`, which is never serialized to the model. A parent that reads
  *     "output may be partial" as "truncated, go retrieve the rest" therefore
- *     has nothing valid to call `get_subagent_result` with, and will invent an
+ *     has no valid run ID for result retrieval, and will invent an
  *     id (#174).
  *
  * Only the lead clause varies between the three, and each variation carries
@@ -48,7 +48,7 @@ export function getStatusNote(status: string): string {
  * two ways invites a hunt for a distinction that isn't there.
  *
  * Every clause is a statement about state, never an instruction to act, and
- * `get_subagent_result` is never named — naming the tool we steer away from only
+ * result retrieval tools are never named — naming tools we steer away from only
  * raises its salience. Two instructions were tried here and cut: "re-spawn with
  * a higher max_turns" (pushes a fresh multi-minute run to save one wasted tool
  * call) and, on `stopped`, "ask before restarting it" (restates the lead, and

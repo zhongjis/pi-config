@@ -139,7 +139,7 @@ agent(subagent_type="taishang", description="Independently review the complete p
 Persist returned session receipt through receipt CAS. Keep both in flight. Collect each known lane only with:
 
 ```
-get_subagent_result({ agent_id, wait: true })
+get_agent_result({run_id, wait:true})
 ```
 
 Elapsed time never implies failure or cancellation. Never duplicate, replace, or terminalize a running lane because time passed. Use `steer_subagent` only for focused live correction and `agent(resume: agentId)` only for a salvageable interrupted lane.

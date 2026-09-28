@@ -7,7 +7,7 @@ import { AgentManager } from "../src/agent-manager.js";
 import * as agentTypes from "../src/agent-types.js";
 import { agentDecisionSchema, decisionValueSchema } from "../src/graph/decision-gate.js";
 import type { AgentGraph } from "../src/graph/ir.js";
-import { createNodeHost } from "../src/graph/node-host-adapter.js";
+import { createNodeHost, type NodeHostOptions } from "../src/graph/node-host-adapter.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { AgentConfig } from "../src/types.js";
 
@@ -72,7 +72,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-function setup(responseText = "done", options: { context?: ExtensionContext; scopeModels?: () => boolean } = {}) {
+function setup(responseText = "done", options: { context?: ExtensionContext; scopeModels?: () => boolean; awaitHumanGate?: NodeHostOptions["awaitHumanGate"] } = {}) {
   manager = new AgentManager();
   const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: "passed", stderr: "", killed: false });
   const pi: Pick<ExtensionAPI, "exec"> = { exec };
@@ -83,6 +83,7 @@ function setup(responseText = "done", options: { context?: ExtensionContext; sco
     graphRunId: "wf",
     outputTranscript: () => false,
     scopeModels: options.scopeModels,
+    awaitHumanGate: options.awaitHumanGate,
   });
   vi.mocked(runAgent).mockImplementation(async () => ({ session: session(), responseText, aborted: false, steered: false }));
   return { host, exec };
@@ -262,14 +263,16 @@ it.each(["unknown", "disabled", "execution"])("hybrid never opens UI for %s agen
   await host.dispose();
 });
 
-it("hybrid uses the existing approve/reject UI after typed uncertainty", async () => {
+it("hybrid hands off typed uncertainty without opening UI", async () => {
   configureAgent(agentConfig());
-  const select = vi.fn<ExtensionContext["ui"]["select"]>().mockResolvedValue("Reject");
-  const { host } = setup(JSON.stringify({ status: "undecided", reason: "Need approval" }), { context: { ...ctx, ui: { ...ctx.ui, select } } });
+  const select = vi.fn<ExtensionContext["ui"]["select"]>();
+  const awaitHumanGate = vi.fn<NonNullable<NodeHostOptions["awaitHumanGate"]>>().mockResolvedValue({ ok: true, output: '{"approved":false}' });
+  const { host } = setup(JSON.stringify({ status: "undecided", reason: "Need approval" }), { context: { ...ctx, ui: { ...ctx.ui, select } }, awaitHumanGate });
   const graph: AgentGraph = { nodes: { gate: { type: "hybrid_gate", agent: "fixture", prompt: "Decide", outputSchema: decisionValueSchema } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
   const result = await runGraph(graph, {}, { host });
   expect(result.outputs).toEqual({ result: { approved: false } });
-  expect(select).toHaveBeenCalledWith(expect.any(String), ["Approve", "Reject"]);
+  expect(select).not.toHaveBeenCalled();
+  expect(awaitHumanGate).toHaveBeenCalledWith(expect.objectContaining({ kind: "hybrid_gate", prompt: expect.stringContaining("Need approval"), correlation: expect.any(Object) }), expect.any(AbortSignal));
   expect(runAgent).toHaveBeenCalledOnce();
   await host.dispose();
 });

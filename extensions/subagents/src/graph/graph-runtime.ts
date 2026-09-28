@@ -1,3 +1,7 @@
+import { createGateNotifications } from "./gate-notifications.js";
+import { createGateResolutionTool } from "./gate-tool.js";
+import { createGateHandoff } from "./gate-handoff.js";
+import { createGraphResultObserver } from "./result-observer.js";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
@@ -70,6 +74,8 @@ export function createGraphRuntime(
   const { pi, manager } = execution;
   let history: GraphHistoryStore | undefined;
   const tasks = new Map<string, GraphRunTask>();
+  const gates = new Map<string, ReturnType<typeof createGateHandoff>>();
+  const results = createGraphResultObserver(id => tasks.get(id), id => gates.get(id)?.pending(), (id, gate) => gates.get(id)?.observed(gate.gate_id));
   let artifactScope: { cwd: string; sessionId: string } | undefined;
   const getRuns = () => {
     const scope = artifactScope;
@@ -93,7 +99,11 @@ export function createGraphRuntime(
       const r = manager.getRecord(recordId);
       return r ? { toolCalls: r.toolUses, tokens: getLifetimeTotal(r.lifetimeUsage) } : undefined;
     });
+    const delivery = createGateNotifications(pi, notifications, task, gateId => sessionActive && gates.get(task.id)?.has(gateId) === true);
+    const handoff = createGateHandoff(() => results.changed(task.id), delivery);
+    gates.set(task.id, handoff);
     const host = createNodeHost({
+      awaitHumanGate: handoff.awaitHumanGate,
       pi,
       ctx,
       manager,
@@ -125,6 +135,7 @@ export function createGraphRuntime(
             ...(task.meta?.name !== undefined ? { name: task.meta.name } : {}),
             state, savedAt: Date.now(),
           });
+          handoff.checkpoint(state);
         },
         signal: task.abortController.signal,
         ...(restore !== undefined ? { restore } : {}),
@@ -152,6 +163,7 @@ export function createGraphRuntime(
       failure = { error: error instanceof Error ? error : new Error(String(error)) };
     }
     clearInterval(activityTick);
+    handoff.close();
     try {
       await host.dispose();
     } catch (error) {
@@ -186,7 +198,7 @@ export function createGraphRuntime(
       })
       .catch(error => console.warn(`[pi-subagents] graph completion: ${String(error)}`));
     runs.add(run);
-    void run.finally(() => runs.delete(run));
+    void run.finally(() => { runs.delete(run); results.changed(task.id); });
   }
 
   /** Resume the last complete checkpoint, including gates and feedback transitions. */
@@ -231,6 +243,7 @@ export function createGraphRuntime(
     await history?.flush();
     history = undefined;
     tasks.clear();
+    gates.clear();
   }
 
   /** Only cached counters: fleet reads this on its 200ms rendering tick. */
@@ -381,12 +394,13 @@ export function createGraphRuntime(
           text:
             `Agent graph "${graphName}" started in the background.\n` +
             `Task ID: ${runId}\n` +
-            `\nYou will be notified when it finishes — do NOT poll or sleep waiting for it.`,
+            `\nCollect with get_agent_result({run_id: "${runId}", wait: true}). Do not end the turn, poll or sleep.\n` +
+            `If human input is required, use ask then resolve_agent_graph_gate; collect again. Completion notifications remain enabled.`,
         }],
         details: { taskId: runId },
       };
     },
   });
 
-  return { tool, loadHistory, getRuns, resume, stop, fleetGraphRuns, monitorGraphRuns };
+  return { tool, resolveGateTool: createGateResolutionTool(id => gates.get(id)), retrieve: results.retrieve, loadHistory, getRuns, resume, stop, fleetGraphRuns, monitorGraphRuns };
 }

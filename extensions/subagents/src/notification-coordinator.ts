@@ -33,7 +33,7 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
 
   const resultPreview = record.result
     ? record.result.length > resultMaxLen
-      ? record.result.slice(0, resultMaxLen) + "\n...(truncated, use get_subagent_result for full output)"
+      ? record.result.slice(0, resultMaxLen) + "\n...(truncated, use get_agent_result for full output)"
       : record.result
     : "No output.";
 
@@ -66,7 +66,7 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
     error: record.error,
     resultPreview: record.result
       ? record.result.length > resultMaxLen
-        ? `${record.result.slice(0, resultMaxLen)}\n… ${record.result.length - resultMaxLen} character${record.result.length - resultMaxLen === 1 ? "" : "s"} omitted · full output: ${record.outputFile ? "transcript below" : `get_subagent_result(agent_id: "${record.id}")`}`
+        ? `${record.result.slice(0, resultMaxLen)}\n… ${record.result.length - resultMaxLen} character${record.result.length - resultMaxLen === 1 ? "" : "s"} omitted · full output: ${record.outputFile ? "transcript below" : `get_agent_result(run_id: "${record.id}")`}`
         : record.result
       : "No output.",
   };
@@ -151,7 +151,7 @@ export function createNotificationCoordinator(
         }
         pi.sendMessage<NotificationDetails>({
           customType: "subagent-notification",
-          content: `Background agent group completed: ${label}\n\n${notifications}\n\nUse get_subagent_result for full output.`,
+          content: `Background agent group completed: ${label}\n\n${notifications}\n\nUse get_agent_result for full output.`,
           display: true,
           details,
         }, { deliverAs: "followUp", triggerTurn: true });

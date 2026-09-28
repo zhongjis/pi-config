@@ -70,7 +70,7 @@ Research the factual gaps that determine scope, implementation, and verification
 
 Before relying on research, resolve material contradictions and verify decision-relevant claims. Continue while a named gap needs evidence; stop when it is answered or report why it remains unresolved. Do not repeat searches solely to satisfy a phase or lane count.
 
-You MUST collect background results with `get_subagent_result` using returned agent IDs and integrate decision-relevant findings before relying on them.
+You MUST collect background results with `get_agent_result({run_id, wait:true})` using returned agent IDs and integrate decision-relevant findings before relying on them.
 
 **xuannv (automatic planning):**
 - You MUST invoke xuannv for multi-file, interdependent, or unclear work; skip only genuinely trivial single-step work.

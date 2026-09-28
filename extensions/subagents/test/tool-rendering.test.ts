@@ -226,7 +226,7 @@ describe("subagent tool rendering migration", () => {
     } };
     const compact = requireTool(name).renderResult(result, { expanded: false }, theme);
     const text = renderText(compact, 240);
-    expect(text).toContain("├─ queued · waiting for a slot · id: actual-id · next: get_subagent_result");
+    expect(text).toContain("├─ queued · waiting for a slot · id: actual-id · next: get_agent_result");
     expect(text).toContain("├─ thinking: default (pending)");
     expect(text).not.toMatch(/model:|provider\/model|status:|turns:|soft limit:|tools:|tokens:|duration:/);
     for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {

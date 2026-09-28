@@ -111,7 +111,7 @@ When `review_required` is false, do not load heavy review machinery. When a comp
 Review workers use only supported syntax. Launch with `agent(..., run_in_background=true, inherit_context=false)`. Wait for a known lane only with:
 
 ```
-get_subagent_result({ agent_id, wait: true })
+get_agent_result({run_id, wait:true})
 ```
 
 Elapsed time never implies failure or cancellation. Never duplicate or replace a running reviewer because of elapsed time.

@@ -50,7 +50,7 @@ https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
 
 ## Features
 
-- **Claude Code look & feel** — same tool names, calling conventions, and UI patterns (`agent`, `get_subagent_result`, `steer_subagent`) — feels native
+- **Agent supervision** — launch with `agent`, collect with `get_agent_result({run_id, wait:true})`, and redirect active workers with `steer_subagent`
 - **Parallel background agents** — spawn multiple agents that run concurrently with automatic queuing (configurable concurrency limit, default 4) and smart group join (consolidated notifications)
 - **Live widget UI** — persistent above-editor widget with animated spinners, live tool activity, token counts, and colored status icons. Configurable via `/agents → Settings → Widget`: `all` (every agent), `background` (default — hides foreground runs, which already render inline as the `agent` tool result), or `off`
 - **FleetView** — Claude Code-style navigable list of `main` + every running subagent rendered below the editor (earliest-launched first). Press `↓` (or `←`) at an empty prompt to jump in, `↑`/`↓` to move the selection, `Enter` to open the selected agent's live, auto-updating conversation, `Esc` to return. Finished agents linger briefly before dropping out, and a viewer stays open through completion so you can read the final output. Toggle via `/agents → Settings → Fleet view`
@@ -329,9 +329,37 @@ Launch a sub-agent.
 | `isolated` | boolean | no | No extension/MCP tools |
 | `inherit_context` | boolean | no | Fork parent conversation into agent |
 
-### `get_subagent_result`
+### `get_agent_result`
 
-Check status and retrieve results from a background agent.
+Canonical retrieval accepts `{ run_id, wait?, verbose? }` for an independent Agent ID or
+an `agr_*` graph run ID. `wait: true` waits without polling for terminal output or an
+actionable human gate; cancellation stops only the retrieval, never the run. `verbose`
+adds an independent agent's conversation. Details discriminate `kind: "agent"` and
+`kind: "graph"`; graph results retain execution status, objective outcome and output.
+Continue non-overlapping work, then collect with `wait: true` rather than ending the turn.
+
+A graph `gate` contains `gate_id`, `revision`, `kind`, `prompt` and `response_schema`.
+Repeated reads return the same pending gate without advancing execution. Collect the
+human choice through `ask`, then submit it with `resolve_agent_graph_gate` and wait again.
+
+### `resolve_agent_graph_gate`
+
+Accepts `{ run_id, gate_id, revision, response: { approved: boolean } }`. Copy the returned
+identities exactly. Responses must satisfy the authored gate schema and current committed
+execution identity. Identical accepted responses are idempotent within the activation;
+stale or conflicting responses fail. Reload reconstructs pending gates with new revisions
+and rejects pre-reload responses, including nested gates: retrieve and ask again.
+No new prompt/response history is persisted. Acceptance resumes normal checkpointed node
+settlement; it is not an exactly-once guarantee across process failure.
+
+Unobserved gates use the existing held follow-up notification channel. Retrieval cancels
+its gate nudge, not the gate; completion notifications remain enabled. Graph hosts never
+open a UI prompt themselves.
+
+### `get_subagent_result` (compatibility alias)
+
+Retains the independent-agent behavior and argument contract below; new callers use
+`get_agent_result` with `run_id`. This alias does not retrieve graph runs.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -352,7 +380,7 @@ Send a steering message to a running agent. The message interrupts after the cur
 
 ### `agent_graph` (opt-in)
 
-Typed graph orchestration — the single multi-agent execution tool in this extension. The tool validates the graph before anything runs, then executes it in the background and notifies on completion; monitor progress in `/agents → Graph runs`.
+Typed graph orchestration — the multi-agent launch tool. It validates before execution and returns a background run ID. Collect with `get_agent_result({run_id, wait:true})`; handle returned human gates with `ask` and `resolve_agent_graph_gate`, then collect again. Completion notifications and `/agents → Graph runs` supervision remain available.
 
 Set `agentGraphEnabled: true` in `subagents.json` or enable agent graphs in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled agent graphs add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
 
@@ -378,7 +406,7 @@ The tool validates the graph structure before allocating a run; invalid graphs a
 
 Typed node `outputSchema` drives declarative edge conditions and bounded loops. An `agent` node may carry a `validation.gate` shell command and `retry` configuration; deterministic validation is not a decision gate.
 
-All three decision gates expose exactly `{ approved: boolean }`, with conditions reading `$.approved`. Their required `outputSchema` validates this exposed value. Agent-backed gates require an `agent` selector and use the private structured result `{ status: "decided", decision: { approved: boolean } }` or `{ status: "undecided", reason: "nonempty explanation" }`. Only the latter permits hybrid escalation; invalid output, inability, unavailable agents and execution failures fail closed. Delegation preflight and dispatch authorization cover gate agents. The execution ledger records the decision source, and monitor labels distinguish humans from Subagents. Hybrid human escalation commits before prompting; lifecycle resume preserves the human-only boundary, including draining non-abortable prompts before releasing capacity.
+All three decision gates expose exactly `{ approved: boolean }`, with conditions reading `$.approved`. Their required `outputSchema` validates this exposed value. Agent-backed gates require an `agent` selector and use the private structured result `{ status: "decided", decision: { approved: boolean } }` or `{ status: "undecided", reason: "nonempty explanation" }`. Only the latter permits hybrid escalation; invalid output, inability, unavailable agents and execution failures fail closed. Delegation preflight and dispatch authorization cover gate agents. The execution ledger records the decision source, and monitor labels distinguish humans from Subagents. Human requests publish only after the dispatch checkpoint and containing nested checkpoints commit. Hybrid lifecycle resume preserves the human-only boundary without another agent decision; normal host-drain and capacity ownership remain intact.
 
 Version 2 separates authored keys, optional display names and durable UUID-v4 runtime instances. Its checkpointed feedback decisions, bounds, terminal results and public fixture are documented in [Bounded Feedback](skills/agent-graphs/references/bounded-feedback.md). V2 monitor rows follow materialization order; future iterations are absent. Optional `deadline` bounds elapsed milliseconds from the persisted run start; `spendLimit` bounds reported work/evaluator USD cost, including repairs. Limits stop growth before materialization/continuation with preserved partial evidence; missing execution-cost accounting fails closed rather than estimating tokens. Restore preserves start/costs, while fresh replay starts anew. Already-admitted work may finish beyond a limit.
 

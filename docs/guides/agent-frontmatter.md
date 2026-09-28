@@ -86,7 +86,7 @@ Consumed by the subagent extension. Only include fields that differ from the def
 | `prompt_mode` | `replace` \| `append` \| `system_instructions` | `replace` | How the body forms the system prompt (see [prompt_mode](#prompt_mode)). |
 | `allow_delegation_to` | CSV | unrestricted | Agent names this agent may spawn via `agent`. |
 | `disallow_delegation_to` | CSV | — | Agent names this agent may not spawn. Applied as exclusions after `allow_delegation_to`. |
-| `allow_nesting` | boolean | `false` | Permit nested subagent tools (`agent`, `get_subagent_result`, `steer_subagent`) — only if also allowed by tool policy. |
+| `allow_nesting` | boolean | `false` | Permit nested controls (`agent`, `get_agent_result`, compatibility alias `get_subagent_result`, `resolve_agent_graph_gate`, `steer_subagent`) — only if also allowed by tool policy. |
 | `inherit_context` | boolean | `false` | Fork the parent conversation into the agent so it sees chat history. |
 | `run_in_background` | boolean | `false` | Run in background by default. |
 | `isolated` | boolean | `false` | No extension/MCP tools at all — built-ins only. Overrides `extensions`/`extension_tools`. |
@@ -182,8 +182,8 @@ Final active tools are computed by
 2. **`extensions`** — master switch for extension/MCP tools. `false` disables all.
 3. **`extension_tools`** — post-load allowlist. `undefined` = all available;
    `false`/`none` = none; a list = exact names or `prefix*` wildcards.
-4. **`allow_nesting`** — nested subagent tools (`agent`, `get_subagent_result`,
-   `steer_subagent`) are removed unless this is `true`.
+4. **`allow_nesting`** — nested controls (`agent`, `get_agent_result`, compatibility alias `get_subagent_result`,
+   `resolve_agent_graph_gate`, `steer_subagent`) are removed unless this is `true`.
 
 Precedence and rules:
 
@@ -300,7 +300,7 @@ description: Default build mode. A senior engineer who ships by orchestrating sp
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:medium
 inherit_context: false
 builtin_tools: read,bash,edit,write
-extension_tools: ask,agent,get_subagent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal
+extension_tools: ask,agent,get_agent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal
 allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
 disallow_delegation_to: houtu
 allow_nesting: true

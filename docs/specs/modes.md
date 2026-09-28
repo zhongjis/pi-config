@@ -59,7 +59,7 @@ Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` 
 | `builtin_tools` | comma-separated built-in names | Exact built-in allowlist: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; `none` means no built-ins. |
 | `extensions` | comma-separated strings \| `true` \| `false` | Extension availability/source scope. `true`/omitted enables extension tools, `false`/`none` disables them, CSV preserves source names where supported. Current active-tool filtering treats CSV as enabled; exact tool filtering comes from `extension_tools`. |
 | `extension_tools` | comma-separated tool names or `_*` suffix wildcards | Extension-tool allowlist after extensions are available; `none` means no extension tools. Exact names and prefix wildcards like `codegraph_*` are supported. Cannot grant built-ins. |
-| `allow_nesting` | boolean | When true, permits nested subagent tools (`agent`, `get_subagent_result`, `steer_subagent`) if also allowlisted by extension tool policy. |
+| `allow_nesting` | boolean | When true, permits nested controls (`agent`, `get_agent_result`, compatibility alias `get_subagent_result`, `resolve_agent_graph_gate`, `steer_subagent`) if also allowlisted by extension tool policy. |
 | `allow_delegation_to` | comma-separated strings | Allowlist of subagent types the mode may delegate to. |
 | `disallow_delegation_to` | comma-separated strings | Blocklist of subagent types. Applied as exclusions from `allow_delegation_to` when both are set. |
 | `model` | string | Model fallback chain. Comma-separated `provider/modelId:thinkingLevel` entries; first available match wins. |

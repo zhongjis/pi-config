@@ -89,7 +89,7 @@ Assign workers focused regression checks and file-local lint/format; parent owns
 2. You MUST mark each logical task `in_progress` before dispatch.
 3. You MUST dispatch independent implementation in one foreground fan-out.
 4. Background work is allowed only for non-blocking exploration/research by `chengfeng` or `wenchang`.
-5. You MUST retain returned Agent IDs, collect background results with `get_subagent_result`, and steer only active workers with `steer_subagent`.
+5. You MUST retain returned Agent IDs, collect background results with `get_agent_result({run_id, wait:true})`, and steer only active workers with `steer_subagent`.
 6. You MUST NOT duplicate delegated exploration. Dependent work MUST wait; unrelated work MAY continue.
 
 ## 6. Verify independently

@@ -6,7 +6,7 @@ import { LiveWriterError } from "../src/graph/graph-checkpoint-owner.js";
 import * as persistence from "../src/graph/graph-persist.js";
 import { readGraphSnapshots } from "../src/graph/graph-persist.js";
 import * as tasks from "../src/graph/task.js";
-import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
+import { pendingGate, resolveGate } from "./gate-tools.fixture.js";
 import { boot, required } from "./graph-run-registration.fixture.js";
 
 const gateGraph = {
@@ -31,8 +31,7 @@ describe("agent_graph durable human_gate resume", () => {
     // Session 1 parks at the gate until shutdown requests cancellation.
     const s1 = boot({ agentGraphEnabled: true });
     await s1.lifecycle("session_start");
-    const human = deferred<string>();
-    s1.ui.select.mockReturnValue(human.promise);
+
     const result = await required(s1.tools.get("agent_graph")).execute(
       "call",
       { graph: gateGraph, input: {} },
@@ -42,9 +41,10 @@ describe("agent_graph durable human_gate resume", () => {
     );
     const runId = required(result.details?.taskId);
 
-    // The run reaches the gate and writes a durable snapshot.
+    const oldGate = await pendingGate(s1, runId);
+    // Retrieval becomes actionable only after its dispatch checkpoint.
     await vi.waitFor(() => {
-      expect(s1.ui.select.mock.calls.length, JSON.stringify(s1.api.sendMessage.mock.calls)).toBeGreaterThan(0);
+      expect(s1.ui.select).not.toHaveBeenCalled();
       expect(readGraphSnapshots(s1.ctx.cwd).some(s => s.runId === runId)).toBe(true);
     });
 
@@ -52,7 +52,7 @@ describe("agent_graph durable human_gate resume", () => {
     vi.spyOn(s1.ctx.sessionManager, "getSessionId").mockReturnValue("switched");
     // Simulate shutdown: the parked run aborts, but its snapshot is kept.
     const shutdown = s1.lifecycle("session_shutdown");
-    await releaseAfterPending(shutdown, () => human.resolve("Approve"));
+
     await shutdown;
     expect(required(readGraphSnapshots(s1.ctx.cwd).find(s => s.runId === runId))).toMatchObject({ ownerSessionId: "parent" });
 
@@ -62,12 +62,15 @@ describe("agent_graph durable human_gate resume", () => {
     writeFileSync(join(persistence.graphRunsDir(s1.ctx.cwd), `${runId}.json.run.lock`), JSON.stringify(dead.pid));
     // Restart admits a new graph attempt, without repairing the cancelled execution.
     const s2 = boot({ agentGraphEnabled: true });
-    s2.ui.select.mockResolvedValue("Approve");
     await s2.lifecycle("session_start"); // resumeDurableGraphRuns re-launches the run
 
+    const gate = await pendingGate(s2, runId);
+    expect(gate.revision).not.toBe(oldGate.revision);
+    await expect(resolveGate(s2, oldGate)).rejects.toThrow(/stale/i);
+    await resolveGate(s2, gate);
     const message = await s2.notification(runId);
     expect(message.content).toContain("Execution: completed");
-    expect(s2.ui.select).toHaveBeenCalledTimes(1);
+    expect(s2.ui.select).not.toHaveBeenCalled();
     // A settled run clears its snapshot.
     expect(readGraphSnapshots(s2.ctx.cwd).some(s => s.runId === runId)).toBe(false);
   });
@@ -76,8 +79,7 @@ describe("agent_graph durable human_gate resume", () => {
 it("persists effective fanout topology through the graph runtime and resumes it once", async () => {
   const s1 = boot({ agentGraphEnabled: true });
   await s1.lifecycle("session_start");
-  const human = deferred<string>();
-  s1.ui.select.mockReturnValue(human.promise);
+
   const graph = {
     nodes: {
       research: {
@@ -97,11 +99,11 @@ it("persists effective fanout topology through the graph runtime and resumes it 
   expect(saved.graph.nodes["research:item:0"]).toMatchObject({ type: "agent", agent: "fixture" });
   expect(saved.state.collections?.research).toEqual([{ nodeId: "research:item:0", item: { source: "project" } }]);
   const shutdown = s1.lifecycle("session_shutdown");
-  await releaseAfterPending(shutdown, () => human.resolve("Approve"));
+
   await shutdown;
   const s2 = boot({ agentGraphEnabled: true });
-  s2.ui.select.mockResolvedValue("Approve");
   await s2.lifecycle("session_start");
+  await resolveGate(s2, await pendingGate(s2, runId));
   const message = await s2.notification(runId);
   expect(message.content).toContain("Execution: completed");
   expect(readGraphSnapshots(s2.ctx.cwd).some(s => s.runId === runId)).toBe(false);
@@ -111,19 +113,18 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
   "checks recovery ownership before side effects: %s", async kind => {
     const origin = boot({ agentGraphEnabled: true }, "origin");
     await origin.lifecycle("session_start");
-    const human = deferred<string>();
-    origin.ui.select.mockReturnValue(human.promise);
+
     const result = await required(origin.tools.get("agent_graph")).execute(
       "call", { graph: gateGraph, input: {} }, undefined, undefined, origin.ctx,
     );
     const runId = required(result.details?.taskId);
-    await vi.waitFor(() => expect(origin.ui.select.mock.calls.length, JSON.stringify(origin.api.sendMessage.mock.calls)).toBe(1));
+    await pendingGate(origin, runId);
     const path = join(persistence.graphRunsDir(origin.ctx.cwd), `${runId}.json`);
     const lock = `${path}.run.lock`;
     const live = kind === "foreign live" || kind === "same-session live";
     {
       const shutdown = origin.lifecycle("session_shutdown");
-      await releaseAfterPending(shutdown, () => human.resolve("Approve"));
+
       await shutdown;
       if (kind === "foreign dead") {
         const dead = spawnSync(process.execPath, ["-e", ""], { encoding: "utf8" });
@@ -171,17 +172,16 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
 it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async () => {
   const origin = boot({ agentGraphEnabled: true }, "origin");
   await origin.lifecycle("session_start");
-  const human = deferred<string>();
-  origin.ui.select.mockReturnValue(human.promise);
+
   const result = await required(origin.tools.get("agent_graph")).execute(
     "call", { graph: gateGraph, input: {} }, undefined, undefined, origin.ctx,
   );
   const runId = required(result.details?.taskId);
-  await vi.waitFor(() => expect(origin.ui.select.mock.calls.length, JSON.stringify(origin.api.sendMessage.mock.calls)).toBe(1));
+  await pendingGate(origin, runId);
   const path = join(persistence.graphRunsDir(origin.ctx.cwd), `${runId}.json`);
   {
     const shutdown = origin.lifecycle("session_shutdown");
-    await releaseAfterPending(shutdown, () => human.resolve("Approve"));
+
     await shutdown;
   }
   // A live process still holds this run's lock across the resume.
@@ -212,15 +212,14 @@ it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async
 it("keeps checkpoint session ownership immutable under replacement", async () => {
   const session = boot({ agentGraphEnabled: true });
   await session.lifecycle("session_start");
-  const human = deferred<string>();
-  session.ui.select.mockReturnValue(human.promise);
+
   const result = await required(session.tools.get("agent_graph")).execute(
     "call", { graph: { nodes: { gate: gateGraph.nodes.gate }, edges: [] }, input: {} }, undefined, undefined, session.ctx,
   );
   const runId = required(result.details?.taskId);
-  await vi.waitFor(() => expect(session.ui.select).toHaveBeenCalledOnce());
+  await pendingGate(session, runId);
   const shutdown = session.lifecycle("session_shutdown");
-  await releaseAfterPending(shutdown, () => human.resolve("Approve"));
+
   await shutdown;
   const path = join(persistence.graphRunsDir(session.ctx.cwd), `${runId}.json`);
   const original = readFileSync(path, "utf8");

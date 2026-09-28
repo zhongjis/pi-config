@@ -34,6 +34,7 @@ export interface NodeHostOptions {
   scopeModels?: () => boolean;
   outputTranscript?: () => boolean;
   nodeIndex?: (nodeId: string) => number | undefined;
+  awaitHumanGate?: NodeHost["awaitHumanGate"];
 }
 
 function toNodeResult(record: AgentRecord): NodeSpawnResult {
@@ -183,16 +184,11 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
     },
 
     async awaitHumanGate(request, signal) {
-      if (signal.aborted) return { ok: false, skipped: true, error: "Aborted." };
-      // ponytail: v1 is approve/reject only, surfaced through ctx.ui.select and
-      // producing { approved }; richer typed forms and durable resume across a
-      // process restart are the known ceiling (design v2 §1.3 / P4). A human_gate
-      // schema should therefore accept { approved: boolean }. ctx.ui.select takes
-      // no signal, so a skip of an already-open prompt only settles once the user
-      // answers or dismisses it.
-      const choice = await ctx.ui.select(request.prompt, ["Approve", "Reject"]);
-      if (choice === undefined) return { ok: false, skipped: true, error: "Human gate dismissed." };
-      return { ok: true, output: JSON.stringify({ approved: choice === "Approve" }) };
+      if (disposed) throw new Error("Node host is disposed.");
+      const combined = deps.signal ? AbortSignal.any([deps.signal, signal]) : signal;
+      combined.throwIfAborted();
+      if (!deps.awaitHumanGate) return { ok: false, error: "Human gate handoff is unavailable." };
+      return deps.awaitHumanGate(request, combined);
     },
 
     async dispose() {

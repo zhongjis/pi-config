@@ -98,7 +98,7 @@ Structured collapsed **tool-result** detail rows use tree connectors consistentl
 ```text
 ▸ Jintong 金童 [background] · Audit tool rendering
 ├─ ● running · reading renderer tests · 24s
-├─ id: 7cb5b424 · next: check with get_subagent_result
+├─ id: 7cb5b424 · next: collect with get_agent_result
 └─ Ctrl+O details
 ```
 

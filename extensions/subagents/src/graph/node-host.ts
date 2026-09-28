@@ -69,6 +69,7 @@ export interface NodeGateResult {
 /** A pause point awaiting a human decision (approve / reject / supply data). */
 export interface HumanGateRequest {
   correlation?: ExecutionCorrelation;
+  kind?: "human_gate" | "hybrid_gate";
   nodeId: string;
   prompt: string;
   /** The shape the human's response must satisfy. */

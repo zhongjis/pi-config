@@ -61,7 +61,9 @@ const AVAILABLE_TOOL_NAMES = [
   "get_search_content",
   "mcporter",
   "agent",
+  "get_agent_result",
   "get_subagent_result",
+  "resolve_agent_graph_gate",
   "steer_subagent",
 ];
 
@@ -94,6 +96,9 @@ describe("fleet frontmatter — shared schema acceptance", () => {
 });
 
 describe("fleet frontmatter — computeActiveToolNames matches authored intent", () => {
+  it.each(["kuafu", "houtu", "fuxi"])("%s can retrieve and resolve graph gates", mode => {
+    expect(activeFor(`modes/${mode}/mode.md`)).toEqual(expect.arrayContaining(["get_agent_result", "get_subagent_result", "resolve_agent_graph_gate"]));
+  });
   it("jintong → read,bash,edit,write,codegraph_*,lsp (no nesting)", () => {
     const active = activeFor("agents/jintong.md");
     expect(new Set(active)).toEqual(
@@ -113,7 +118,7 @@ describe("fleet frontmatter — computeActiveToolNames matches authored intent",
     ["chengfeng", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
     ["direnjie", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
     ["taishang", ["read", "bash", "look_at", "codegraph_search", "codegraph_explore", "lsp"]],
-    ["xuannv", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp", "agent", "get_subagent_result", "steer_subagent"]],
+    ["xuannv", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp", "agent", "get_agent_result", "get_subagent_result", "steer_subagent"]],
     ["yanluo", ["read", "bash", "codegraph_search", "codegraph_explore", "lsp"]],
   ] as const)("%s → guarded built-in bash with role tools preserved", (agent, expected) => {
     const active = activeFor(`agents/${agent}.md`);

@@ -41,7 +41,7 @@ Only diagnosed reasoning-capability failure or increased risk escalates.
 - Delegate one coarsest-cohesive plan task per `agent` session. Keep an indivisible item one resumable workstream with staged green checkpoints and a last-green fail-safe.
 - Independent implementation MUST launch as multiple foreground `agent` calls in one assistant response. They run concurrently while the parent blocks until all return.
 - Background work is allowed only for non-blocking exploration/research by `chengfeng` or `wenchang`. Named dependencies or overlapping write paths remain sequential.
-- Keep returned Agent IDs in active session memory only. Collect with `get_subagent_result`; steer live workers with `steer_subagent`. Never duplicate delegated recon.
+- Keep returned Agent IDs in active session memory only. You MUST collect with `get_agent_result({run_id, wait:true})`; steer live workers with `steer_subagent`. Never duplicate delegated recon.
 - Every worker prompt MUST contain exactly six top-level sections, `## 1. TASK` through `## 6. CONTEXT`.
 - Task-relevant shared-note READ/conditional-APPEND instructions MUST appear only under worker `## 6. CONTEXT`; use ordinary `local://{plan-name}/notepads/` entries.
 - Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.

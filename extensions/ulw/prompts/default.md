@@ -112,7 +112,7 @@ agent(subagent_type="xuannv", run_in_background=false, prompt="<gathered context
 
 ### SESSION CONTINUITY WITH XUANNV
 
-Resume the SAME xuannv session for follow-ups via `agent(subagent_type="xuannv", resume="<agentId>", ...)` — collect output with `get_subagent_result` and redirect with `steer_subagent`. Do NOT spawn a fresh xuannv that loses context.
+Resume the SAME xuannv session for follow-ups via `agent(subagent_type="xuannv", resume="<agentId>", ...)` — you MUST collect output with `get_agent_result({run_id, wait:true})` and redirect with `steer_subagent`. Do NOT spawn a fresh xuannv that loses context.
 
 | Scenario | Action |
 |----------|--------|
@@ -174,7 +174,7 @@ agent(subagent_type="guangguang", run_in_background=true)
   - GOOD pair (test-first, ordered): `module.test: Write FAILING case invalid-email→ValidationError for S2 - verify by RED with assertion msg` → `src/module: Implement validateEmail() for S2 - verify by module.test GREEN + curl 400 body`
   - BAD: "Implement feature" / "Fix bug" / "Add tests later" / production code before its failing test → rewrite.
 - **PARALLEL**: Fire independent agent calls simultaneously via `agent(run_in_background=true)` — NEVER wait sequentially. But NEVER parallelise RED and GREEN of the same scenario.
-- **BACKGROUND FIRST**: Use background agents for exploration/research (chengfeng / wenchang), and supervise them with `get_subagent_result`.
+- **BACKGROUND FIRST**: Use background agents for exploration/research (chengfeng / wenchang), and MUST collect with `get_agent_result({run_id, wait:true})`.
 - **VERIFY**: Re-read the request after completion. Check every scenario PASS with both artifacts captured.
 - **DELEGATE**: Don't do everything yourself — orchestrate specialized agents for their strengths.
 

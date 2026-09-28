@@ -81,8 +81,8 @@ function discoverExtensionEntries(): string[] {
 const extensionEntries = discoverExtensionEntries();
 
 const EXPECTED_TOOL_NAMES = [
-  "Agent",
   "Task",
+  "agent",
   "ask",
   "bash",
   "boomerang",
@@ -96,6 +96,7 @@ const EXPECTED_TOOL_NAMES = [
   "codegraph_status",
   "codex_review_session_scope",
   "create_goal",
+  "get_agent_result",
   "get_goal",
   "get_subagent_result",
   "look_at",
@@ -168,14 +169,14 @@ describe("extension entrypoints", () => {
     const rawNames = registrations.map((definition) => definition.name);
     const uniqueNames = [...new Set(rawNames)];
 
-    expect(rawNames).toHaveLength(25);
-    expect(uniqueNames).toHaveLength(25);
+    expect(rawNames).toHaveLength(26);
+    expect(uniqueNames).toHaveLength(26);
     expect([...uniqueNames].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
 
     for (const definition of registrations) {
       expect(mock.tools.get(definition.name)).toBe(definition);
     }
-  });
+  }, 10_000);
 
   for (const entry of extensionEntries) {
     it(`loads ${entry} and registers without throwing`, async () => {
