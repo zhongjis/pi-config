@@ -175,6 +175,42 @@ declare `loop`; the cap bounds it.
 ]
 ```
 
+The cap stops only its own edge. After the last re-entry, the final `fix` output goes
+unreviewed, `done` is skipped, and the run still completes. Keep `loop` on the back edge
+into the judge (`fix → review`); a `loop` on `review → fix` validates yet skips `fix`.
+Declare `$agentGraphOutcome` from the judge so a capped run reports its last verdict.
+
+## Determinism contract
+
+The graph is the machine: it owns rules, identity, and transitions. Agents own the
+generative work inside one state, and every next step follows from validated output.
+
+- **Rules live in the machine.** When typed data can decide a rule, enforce it with
+  `enum`/`const`/`if`–`then`, a condition, a `semanticPolicy`, or `validation.gate`.
+  A prompt may restate the rule as a hint; the machine enforces it.
+- **Branches are typed events.** A branching node emits one enum field, and each value
+  gets exactly one guarded edge. Prompts describe their state's work; edges carry order.
+  ```jsonc
+  // review node
+  "outputSchema": { "type": "object", "required": ["event"], "properties": { "event": { "enum": ["approve", "revise", "escalate"] } } }
+  // edges
+  { "from": "review", "to": "ship",  "when": { "eq": [ { "node": "review", "path": "$.event" }, "approve" ] } },
+  { "from": "review", "to": "fix",   "when": { "eq": [ { "node": "review", "path": "$.event" }, "revise" ] } },
+  { "from": "review", "to": "human", "when": { "eq": [ { "node": "review", "path": "$.event" }, "escalate" ] } }
+  ```
+- **Side effects sit behind approval.** Reach nodes that write, send, or push only
+  through an `approved: true` gate edge or a passing `validation.gate`.
+- **Outcome follows evidence.** Couple outcome fields to evidence with `if`/`then` so only
+  the matching status validates (see `context-gather` synthesis). Read values the machine
+  already holds, such as a fanout child's `item`, instead of asking agents to echo them.
+- **The machine hands out identity.** Parallel children see only `${item}`, so have one
+  upstream node give each item a `taskId`, prefix derived IDs with it, and constrain both
+  with `pattern`. Item IDs make every task collection look new to the runtime's exact
+  repeat check, so progress then rests on the evaluator's transition rule and hard bounds.
+- **Validate at the owning state.** Reject bad output in the node that produced it, where
+  StructuredOutput rejection lets that agent correct itself. Downstream nodes cannot
+  repair upstream data, and a node retry reruns the same prompt.
+
 ## Dynamic expansion
 
 Use `fanout` for a runtime list of same-contract tasks; use `expand` when a node
@@ -221,8 +257,14 @@ The evaluator's injected decision links each `gapId` to a work item satisfying `
 ### Trace-driven refinement
 
 1. Capture graph, inputs, structured outputs, activated branches, failures, retries, bounds, cost, and latency.
-2. Name one transition failure and propose one graph change; keep authority, schemas, and hard bounds immutable.
-3. Run baseline and candidate against the same replayable cases; grade state, transition, progress, outcome, cost, and latency.
+   The run result carries outputs and bounded-feedback `feedback` (iterations, tasks, results, `reason`,
+   `exhaustedBounds`); session `graph-history.json` keeps per-node status, attempts, timing, and tokens
+   without outputs; `.pi/graph-runs/` checkpoints are deleted when a run settles.
+2. Name one transition failure and have an agent other than the judged nodes propose one graph change;
+   keep authority, schemas, and hard bounds immutable.
+3. Run baseline and candidate against the same replayable cases. Grade states (per-node output), edges
+   (branches fired, loop iterations, retries, evaluator `continue` rate, rounds without new validated
+   output), outcome, cost, and latency.
 4. Promote the candidate only after held-out improvement and human review; retain the prior graph for rollback.
 
 ## Resources
@@ -248,6 +290,21 @@ envelope, strips it from the returned value, and surfaces it as the completion s
 (`Outcome succeeded` / `Outcome partial: <reason>` / `Outcome failed: <reason>`, shown as
 `Outcome … · <name>` on the collapsed card). Omit it and the run defaults to
 `Completed`; a malformed envelope is ignored and never fails an already-completed run.
+
+The envelope is exact: `succeeded` carries no other key, and `partial`/`failed` carry only a
+nonblank `reason`. Make the schema match so a wrong envelope is rejected in-session:
+
+```jsonc
+"outcome": { "type": "object", "additionalProperties": false, "required": ["status"],
+  "properties": { "status": { "enum": ["succeeded", "partial", "failed"] }, "reason": { "type": "string", "pattern": "\\S" } },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "succeeded" } } }, "then": { "not": { "required": ["reason"] } } },
+    { "if": { "properties": { "status": { "enum": ["partial", "failed"] } } }, "then": { "required": ["reason"] } }
+  ] }
+```
+
+A skipped source node yields no envelope, so read the outcome from a node that runs on
+every path.
 
 ## Authoring steps
 
