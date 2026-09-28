@@ -31,7 +31,7 @@
       "type": "agent",
       "name": "Plan coverage",
       "agent": "xuannv",
-      "prompt": "Plan minimum distinct, non-overlapping evidence tasks. Request: ${request}\nCoverage: ${requiredCoverage}\nJSON only. Create 1–6 tasks; map every required coverage ID and no others. Tasks need source, focused question, purpose, criterionIds. Local git/history: project; remote issues/PRs: work-records. NEVER use practice unless required.",
+      "prompt": "Plan minimum distinct, non-overlapping evidence tasks. Request: ${request}\nCoverage: ${requiredCoverage}\nJSON only. Create 1–6 tasks; map every required coverage ID and no others. Tasks need taskId, source, focused question, purpose, criterionIds. Number tasks taskId t1, t2, ... in order. Local git/history: project; remote issues/PRs: work-records. NEVER use practice unless required.",
       "input": {
         "request": { "path": "$.request" },
         "requiredCoverage": { "path": "$.requiredCoverage" }
@@ -51,9 +51,10 @@
                 "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
                 "question": { "type": "string", "minLength": 1, "pattern": "\\S" },
                 "purpose": { "type": "string", "minLength": 1, "pattern": "\\S" },
-                "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } }
+                "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+                "taskId": { "type": "string", "pattern": "^t[1-6]$" }
               },
-              "required": ["source", "question", "purpose", "criterionIds"],
+              "required": ["source", "question", "purpose", "criterionIds", "taskId"],
               "additionalProperties": false
             }
           }
@@ -78,9 +79,10 @@
             "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
             "question": { "type": "string", "minLength": 1, "pattern": "\\S" },
             "purpose": { "type": "string", "minLength": 1, "pattern": "\\S" },
-            "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } }
+            "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+            "taskId": { "type": "string", "pattern": "^[tg][1-6]$" }
           },
-          "required": ["source", "question", "purpose", "criterionIds"],
+          "required": ["source", "question", "purpose", "criterionIds", "taskId"],
           "additionalProperties": false
         },
         "dispatch": {
@@ -93,7 +95,7 @@
             "practice": "wenchang"
           }
         },
-        "prompt": "Gather atomic evidence. Request: ${request}\nCoverage: ${requiredCoverage}\nTask: ${item}\nOpen sources directly; page titles, snippets, uninspected content are leads only. JSON source MUST match task source; only task criterionIds. Distinct claims; each claimId unique. Use one opened source per provenance: canonical path/URL, locator, excerpt. NEVER combine references. Unsupported details are unknowns; incompatible evidence are conflicts. NEVER write essays or repeat claims.",
+        "prompt": "Gather atomic evidence. Request: ${request}\nCoverage: ${requiredCoverage}\nTask: ${item}\nOpen sources directly; page titles, snippets, uninspected content are leads only. Claims use only task criterionIds. Distinct claims; each claimId unique. claimId MUST be <item taskId>-c<n>, n=1..4. Use one opened source per provenance: canonical path/URL, locator, excerpt. NEVER combine references. Unsupported details are unknowns; incompatible evidence are conflicts. NEVER write essays or repeat claims.",
         "input": {
           "request": { "path": "$.request" },
           "requiredCoverage": { "path": "$.requiredCoverage" }
@@ -101,7 +103,6 @@
         "outputSchema": {
           "type": "object",
           "properties": {
-            "source": { "type": "string", "enum": ["project", "platform", "upstream", "work-records", "practice"] },
             "claims": {
               "type": "array",
               "maxItems": 4,
@@ -109,7 +110,7 @@
               "items": {
                 "type": "object",
                 "properties": {
-                  "claimId": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                  "claimId": { "type": "string", "minLength": 1, "pattern": "^[tg][1-6]-c[1-4]$" },
                   "claim": { "type": "string", "minLength": 1, "pattern": "\\S" },
                   "criterionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
                   "confidence": { "type": "string", "enum": ["direct", "inferred"] },
@@ -138,7 +139,7 @@
             "unknowns": { "type": "array", "maxItems": 6, "uniqueItems": true, "items": { "type": "string", "pattern": "\\S" } },
             "conflicts": { "type": "array", "maxItems": 4, "uniqueItems": true, "items": { "type": "string", "pattern": "\\S" } }
           },
-          "required": ["source", "claims", "unknowns", "conflicts"],
+          "required": ["claims", "unknowns", "conflicts"],
           "additionalProperties": false
         }
       },
@@ -146,7 +147,7 @@
         "type": "agent",
         "name": "Evaluate coverage",
         "agent": "direnjie",
-        "prompt": "State/transition judge: verify every required coverage item, then continue only when one named material gap can be closed. Transition test: distinct source/access method; expected new information; no repeated or broader work. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResults: ${feedback}\nDirect provenance requires locator and excerpt; confidence/schema are not proof. Only opened direct evidence supports coverage; inferred claims leave gaps. Page titles and uninspected content are not direct proof. Failed and skipped results, duplicate claimIds, source mismatches, and claim criterionIds outside their task are unknowns, not proof. Decision JSON only. Gap task criterionIds MUST use only required coverage IDs. NEVER use practice unless required. Local git/history: project; remote issues/PRs: work-records. State why existing evidence is insufficient and what expected information the task adds. NEVER exceed graph bounds. No qualifying transition? Return sufficient with named partial gaps and empty tasks for a partial Outcome.",
+        "prompt": "State/transition judge: verify every required coverage item, then continue only when one named material gap can be closed. Transition test: distinct source/access method; expected new information; no repeated or broader work. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResults: ${feedback}\nDirect provenance requires locator and excerpt; confidence/schema are not proof. Only opened direct evidence supports coverage; inferred claims leave gaps. Page titles and uninspected content are not direct proof. Failed and skipped results, duplicate claimIds, and claim criterionIds outside their task are unknowns, not proof. Decision JSON only. Gap task criterionIds MUST use only required coverage IDs. Gap tasks use taskId g1, g2, ... in order. NEVER use practice unless required. Local git/history: project; remote issues/PRs: work-records. State why existing evidence is insufficient and what expected information the task adds. NEVER exceed graph bounds. No qualifying transition? Return sufficient with named partial gaps and empty tasks for a partial Outcome.",
         "retry": { "maxAttempts": 2 },
         "input": {
           "request": { "path": "$.request" },
@@ -159,7 +160,7 @@
       "type": "agent",
       "name": "Synthesize context",
       "agent": "jintong",
-      "prompt": "Produce concise verified answer. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResearch: ${research}\nJSON only from validated claims. Deduplicate meaning/source; keep canonical claims, unique claimIds; use one source per provenance. NEVER combine references. Limit answer to 800 words. Preserve failed and skipped results, conflicts, unknowns. Every verifiedCoverage claimId MUST exist in evidence. verifiedCoverage IDs MUST exactly match required coverage IDs; page titles and uninspected content are not direct evidence. Supported requires direct evidence. Succeeded: all supported. Partial: useful evidence with gaps; reason MUST name missing coverage. Failed: no reliable evidence.",
+      "prompt": "Produce concise verified answer. Request: ${request}\nCoverage: ${requiredCoverage}\nPlan: ${plan}\nResearch: ${research}\nJSON only from validated claims. Deduplicate meaning/source; keep canonical claims, unique claimIds; use one source per provenance. NEVER combine references. Limit answer to 800 words. Preserve failed and skipped results, conflicts, unknowns. Every verifiedCoverage claimId MUST exist in evidence. verifiedCoverage IDs MUST exactly match required coverage IDs; page titles and uninspected content are not direct evidence. Supported requires direct evidence. Succeeded: all supported; omit reason. Partial: useful evidence with gaps; reason MUST name missing coverage. Failed: no reliable evidence; reason MUST name missing coverage.",
       "retry": { "maxAttempts": 2 },
       "input": {
         "request": { "path": "$.request" },
@@ -247,8 +248,18 @@
               "status": { "type": "string", "enum": ["succeeded", "partial", "failed"] },
               "reason": { "type": "string", "minLength": 1, "pattern": "\\S" }
             },
-            "required": ["status", "reason"],
-            "additionalProperties": false
+            "required": ["status"],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": { "properties": { "status": { "const": "succeeded" } }, "required": ["status"] },
+                "then": { "not": { "required": ["reason"] } }
+              },
+              {
+                "if": { "properties": { "status": { "enum": ["partial", "failed"] } }, "required": ["status"] },
+                "then": { "required": ["reason"] }
+              }
+            ]
           }
         },
         "allOf": [

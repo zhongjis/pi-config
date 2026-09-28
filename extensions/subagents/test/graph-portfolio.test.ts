@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentGraph, GraphNode } from "../src/graph/ir.js";
+import { compileJsonSchema } from "../src/graph/json-schema.js";
+import { isGraphRunOutcome } from "../src/graph/outcome.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
@@ -21,17 +23,24 @@ const PORTFOLIO = [
   "deep-research",
 ] as const;
 
-const TASK_SCHEMA = {
-  type: "object",
-  properties: {
-    source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
-    question: { type: "string", minLength: 1 },
-    purpose: { type: "string", minLength: 1 },
-    criterionIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } },
-  },
-  required: ["source", "question", "purpose", "criterionIds"],
-  additionalProperties: false,
+const TASK_FIELDS = {
+  source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
+  question: { type: "string", minLength: 1 },
+  purpose: { type: "string", minLength: 1 },
+  criterionIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } },
 };
+
+function taskSchema(taskIdPattern: string) {
+  return {
+    type: "object",
+    properties: { ...TASK_FIELDS, taskId: { type: "string", pattern: taskIdPattern } },
+    required: ["source", "question", "purpose", "criterionIds", "taskId"],
+    additionalProperties: false,
+  };
+}
+
+const PLAN_TASK_SCHEMA = taskSchema("^t[1-6]$");
+const ITEM_TASK_SCHEMA = taskSchema("^[tg][1-6]$");
 
 const CLAIM_SCHEMA = {
   type: "object",
@@ -60,6 +69,20 @@ const CLAIM_SCHEMA = {
   required: ["claimId", "claim", "criterionIds", "confidence", "provenance"],
   additionalProperties: false,
 };
+
+const WORKER_CLAIM_SCHEMA = {
+  ...CLAIM_SCHEMA,
+  properties: {
+    ...CLAIM_SCHEMA.properties,
+    claimId: { type: "string", minLength: 1, pattern: "^[tg][1-6]-c[1-4]$" },
+  },
+};
+
+function schemaCheck(schema: unknown, value: unknown): true | string {
+  const compiled = compileJsonSchema(schema);
+  if (!compiled.ok) throw new Error(compiled.message);
+  return compiled.compiled.check(value);
+}
 
 function isAgentGraph(value: unknown): value is AgentGraph {
   return validateGraph(value).ok;
@@ -100,6 +123,7 @@ const INPUT = {
 };
 
 const INITIAL_TASK = {
+  taskId: "t1",
   source: "project",
   question: "Inspect the repository configuration and runtime entry point.",
   purpose: "Establish the requested configuration and runtime coverage.",
@@ -107,6 +131,7 @@ const INITIAL_TASK = {
 };
 
 const GAP_TASK = {
+  taskId: "g1",
   source: "project",
   question: "Inspect the runtime path for the missing coverage criterion.",
   purpose: "Close the isolated runtime coverage gap.",
@@ -114,9 +139,8 @@ const GAP_TASK = {
 };
 
 const PROJECT_EVIDENCE = {
-  source: "project",
   claims: [{
-    claimId: "project-runtime-entry",
+    claimId: "t1-c1",
     claim: "The repository runtime entry point declares the configured behavior.",
     criterionIds: ["configuration", "runtime"],
     confidence: "direct",
@@ -132,9 +156,8 @@ const PROJECT_EVIDENCE = {
 };
 
 const GAP_EVIDENCE = {
-  source: "project",
   claims: [{
-    claimId: "project-runtime-gap",
+    claimId: "g1-c1",
     claim: "The targeted runtime path provides the missing direct evidence.",
     criterionIds: ["runtime"],
     confidence: "direct",
@@ -154,19 +177,19 @@ const SUFFICIENT = { decision: "sufficient", gaps: [], tasks: [] };
 const COMPLETE_SYNTHESIS = {
   answer: "The configuration and runtime behavior are directly evidenced.",
   verifiedCoverage: [
-    { id: "configuration", status: "supported", claimIds: ["project-runtime-entry"] },
-    { id: "runtime", status: "supported", claimIds: ["project-runtime-entry"] },
+    { id: "configuration", status: "supported", claimIds: ["t1-c1"] },
+    { id: "runtime", status: "supported", claimIds: ["t1-c1"] },
   ],
   unknowns: [],
   evidence: PROJECT_EVIDENCE.claims,
   conflicts: [],
-  outcome: { status: "succeeded", reason: "All requested coverage is directly supported." },
+  outcome: { status: "succeeded" },
 };
 
 const PARTIAL_SYNTHESIS = {
   answer: "Configuration is supported; runtime coverage remains unknown.",
   verifiedCoverage: [
-    { id: "configuration", status: "supported", claimIds: ["project-runtime-entry"] },
+    { id: "configuration", status: "supported", claimIds: ["t1-c1"] },
     { id: "runtime", status: "missing", claimIds: [], reason: "No direct runtime evidence was found." },
   ],
   unknowns: ["No direct runtime evidence was found."],
@@ -221,7 +244,7 @@ describe("adaptive context-gather contract", () => {
       retry: { maxAttempts: 2 },
       outputSchema: {
         type: "object",
-        properties: { tasks: { type: "array", minItems: 1, maxItems: 6, items: TASK_SCHEMA } },
+        properties: { tasks: { type: "array", minItems: 1, maxItems: 6, items: PLAN_TASK_SCHEMA } },
         required: ["tasks"],
         additionalProperties: false,
       },
@@ -236,19 +259,20 @@ describe("adaptive context-gather contract", () => {
     });
     expect(research.work).toMatchObject({
       input: { request: { path: "$.request" }, requiredCoverage: { path: "$.requiredCoverage" } },
-      itemSchema: TASK_SCHEMA,
+      itemSchema: ITEM_TASK_SCHEMA,
       outputSchema: {
         type: "object",
         properties: {
-          source: { type: "string", enum: ["project", "platform", "upstream", "work-records", "practice"] },
-          claims: { type: "array", maxItems: 4, items: CLAIM_SCHEMA },
+          claims: { type: "array", maxItems: 4, items: WORKER_CLAIM_SCHEMA },
           unknowns: { type: "array", maxItems: 6 },
           conflicts: { type: "array", maxItems: 4 },
         },
-        required: ["source", "claims", "unknowns", "conflicts"],
+        required: ["claims", "unknowns", "conflicts"],
         additionalProperties: false,
       },
     });
+    expect(research.work.outputSchema).not.toHaveProperty("properties.source");
+    expect(research.work.outputSchema?.required).not.toContain("source");
     expect(research.evaluator).toMatchObject({
       agent: "direnjie",
       input: {
@@ -264,8 +288,14 @@ describe("adaptive context-gather contract", () => {
       expect(node.input).not.toHaveProperty("budget");
       expect(placeholders(node.prompt)).not.toContain("budget");
     }
+    expect(plan.prompt).toContain("Number tasks taskId t1, t2, ... in order.");
+    expect(research.work.prompt).toContain("claimId MUST be <item taskId>-c<n>, n=1..4.");
+    expect(research.work.prompt).not.toContain("JSON source MUST match task source");
+    expect(research.work.prompt).toContain("only task criterionIds");
     expect(research.work.prompt).toContain("one opened source per provenance");
     expect(research.work.prompt).toContain("NEVER combine");
+    expect(research.evaluator.prompt).toContain("Gap tasks use taskId g1, g2, ... in order.");
+    expect(research.evaluator.prompt).not.toContain("source mismatches");
     expect(research.evaluator.prompt).toContain("locator and excerpt");
   });
 
@@ -283,6 +313,8 @@ describe("adaptive context-gather contract", () => {
         throw new Error(`Unexpected agent ${request.agentType}`);
       } },
     });
+    expect(isGraphRunOutcome(result.outputs.$agentGraphOutcome), JSON.stringify(result.nodes.synthesize)).toBe(true);
+    expect(result.outputs.$agentGraphOutcome).toEqual({ status: "succeeded" });
     expect(result.status).toBe("completed");
     expect(agents).toEqual(["xuannv", "chengfeng", "direnjie", "jintong"]);
     expect(bindings.some(id => id.includes(":iteration:2:"))).toBe(false);
@@ -375,6 +407,8 @@ describe("adaptive context-gather contract", () => {
     const synthesize = agentNode(graph, "synthesize");
     expect(synthesize.prompt).toContain("one source per provenance");
     expect(synthesize.prompt).toContain("NEVER combine");
+    expect(synthesize.prompt).toContain("omit reason");
+    expect(synthesize.prompt).toContain("reason MUST name missing coverage");
     expect(synthesize).toMatchObject({
       agent: "jintong",
       input: {
@@ -395,6 +429,14 @@ describe("adaptive context-gather contract", () => {
     });
     expect(synthesize.input).not.toHaveProperty("budget");
     expect(placeholders(synthesize.prompt)).not.toContain("budget");
+  });
+
+  it("rejects a succeeded reason and a partial outcome without one", () => {
+    const schema = agentNode(savedGraph("context-gather"), "synthesize").outputSchema;
+    expect(schemaCheck(schema, { ...COMPLETE_SYNTHESIS, outcome: { status: "succeeded", reason: "All requested coverage is directly supported." } })).not.toBe(true);
+    expect(schemaCheck(schema, { ...PARTIAL_SYNTHESIS, outcome: { status: "partial" } })).not.toBe(true);
+    expect(schemaCheck(schema, COMPLETE_SYNTHESIS)).toBe(true);
+    expect(schemaCheck(schema, PARTIAL_SYNTHESIS)).toBe(true);
   });
 });
 
@@ -477,15 +519,18 @@ describe("context-gather semantic policy", () => {
   });
 
   it("rejects ambiguous raw claim IDs across results", async () => {
-    const { result } = await runCase({ plan: { tasks: [INITIAL_TASK, GAP_TASK] } });
+    const { result } = await runCase({ plan: { tasks: [INITIAL_TASK, { ...GAP_TASK, taskId: "t2" }] } });
     expect(result.nodes.synthesize.status).toBe("failed");
+    expect(result.nodes.synthesize.error).toContain("Ambiguous research claimId: t1-c1");
   });
 
   it("does not turn inferred graph-example into new direct claims", async () => {
-    const claims = PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "graph-example", confidence: "inferred" }));
-    const evidence = ["operation-monitoring", "context-gather-example"].flatMap(claimId => PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId })));
+    const claims = PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "t1-c2", confidence: "inferred" }));
+    const evidence = ["t1-c3", "t1-c4"].flatMap(claimId => PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId })));
     const { result } = await runCase({ research: { ...PROJECT_EVIDENCE, claims }, synthesis: { ...COMPLETE_SYNTHESIS, evidence, verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.map((row, index) => ({ ...row, claimIds: [evidence[index].claimId] })) } });
+    expect(result.feedback?.research?.iterations[0]?.results.every(row => row.status === "completed")).toBe(true);
     expect(result.nodes.synthesize.status).toBe("failed");
+    expect(result.nodes.synthesize.error).toContain("Evidence must copy a unique completed research claim exactly");
   });
 });
 
