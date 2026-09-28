@@ -1,7 +1,7 @@
 import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { parseModelChain, resolveAllAvailable } from "./model-selection.js";
-import { isQuotaOrRateLimitError } from "./provider-errors.js";
+import { isAccessDeniedError, isQuotaOrRateLimitError } from "./provider-errors.js";
 
 export type RuntimeModelCandidate = ReturnType<typeof resolveAllAvailable>[number];
 
@@ -14,7 +14,7 @@ export interface RuntimeModelFallbackPolicy {
 	apply(candidate: RuntimeModelCandidate, ctx: ExtensionContext): void;
 }
 
-/** Coordinates one user-input episode of post-native-retry quota/rate-limit recovery. */
+/** Coordinates one user-input episode of post-native-retry quota/rate-limit/access-denied recovery. */
 export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeModelFallbackPolicy): void {
 	let pending: AssistantMessage | undefined;
 	let attempted = new Set<string>();
@@ -35,7 +35,7 @@ export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeMo
 		const message = event.message;
 		pending = message.stopReason === "error"
 			&& !isContextOverflow(message, ctx.model?.contextWindow)
-			&& isQuotaOrRateLimitError(message)
+			&& (isQuotaOrRateLimitError(message) || isAccessDeniedError(message))
 			? message
 			: undefined;
 	});

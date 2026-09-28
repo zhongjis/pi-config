@@ -130,6 +130,14 @@ describe("registerRuntimeModelFallback", () => {
 		expect(exhausted.selections).toEqual([MODELS[1], MODELS[2]]);
 	});
 
+	it("falls back after access-denied errors", async () => {
+		const harness = createHarness();
+		await harness.userInput();
+		await settleQuota(harness, "403 {\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"Your role does not include access to this feature.\"}}");
+		expect(harness.selections).toEqual([MODELS[1]]);
+		expect(harness.continuations).toEqual([{ display: false, triggerTurn: true }]);
+	});
+
 	it("cancels a pending fallback when the user manually selects a model", async () => {
 		const harness = createHarness();
 		await harness.userInput();

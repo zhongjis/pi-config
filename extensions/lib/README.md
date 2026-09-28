@@ -9,7 +9,7 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 | `active-tools.ts` | Shared active-tool allowlist policy for built-ins and extension tools |
 | `agent-frontmatter.ts` | Shared agent/mode frontmatter parser (`builtin_tools`, `extension_tools`, delegation, model) |
 | `model-selection.ts` | Parse and resolve model spec strings (`provider/model:level:fast,fallback`); selected candidate alone carries optional `fast` metadata |
-| `runtime-model-fallback.ts` | Shared post-native-retry quota/rate-limit coordinator; hidden same-transcript continuation, ordered authenticated identities, no cycling |
+| `runtime-model-fallback.ts` | Shared post-native-retry quota/rate-limit/access-denied coordinator; hidden same-transcript continuation, ordered authenticated identities, no cycling |
 | `tool-model-defaults.ts` | Built-in shared tool-model roles and tool mappings |
 | `fast.ts` | `getFastProfile`, `getFastEligibility`, `transformFastPayload`, `transformFastHeaders` — stateless Codex/CLIProxyAPI/Anthropic request recipes |
 | `thinking-level.ts` | `ThinkingLevel` type, validation, normalization |
@@ -18,7 +18,7 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 | `status.ts` | Status bar helpers |
 | `utils.ts` | `debounce`, `checkExec`, `notifyError`, `computeLineDiff` |
 | `ux.ts` | UX helpers |
-| `provider-errors.ts` | `getErrorText`, `isQuotaError` (402 + billing/credit/quota/spend), `isRateLimitError` (429 + rate-limit keywords), `isQuotaOrRateLimitError` |
+| `provider-errors.ts` | `getErrorText`, `isQuotaError` (402 + billing/credit/quota/spend), `isRateLimitError` (429 + rate-limit keywords), `isQuotaOrRateLimitError`, `isAccessDeniedError` (403 + permission/access-denied keywords) |
 | `fallback-cache.ts` | `createFlatFallbackCache(filename)` + `createKeyedFallbackCache(filename)` — cross-session fallback state with optional TTL |
 | `notify-once.ts` | `createOnceNotifier()` — defer notifications from stream-wrapping code until a safe UI moment (e.g., `turn_end`) |
 | `stream-fallback.ts` | `streamWithFallback(opts)` — generic two-tier failover wrapper; `patchEventModelId(event, id)` — rewrite model fields on emitted events |

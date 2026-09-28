@@ -1,7 +1,8 @@
 /**
- * Provider error classification — quota (402 + billing keywords) and
- * rate-limit (429 + rate-limit keywords) detection across both thrown
- * errors and event-stream error events.
+ * Provider error classification — quota (402 + billing keywords),
+ * rate-limit (429 + rate-limit keywords), and access-denied (403 +
+ * permission keywords) detection across both thrown errors and event-stream
+ * error events.
  *
  * Works with any provider: anthropic, openai, opencode, bedrock, etc.
  * Keyword lists cover the common phrasings each provider uses.
@@ -62,6 +63,13 @@ export function isRateLimitError(err: unknown): boolean {
 		|| msg.includes("rate-limit")
 		|| msg.includes("rate_limit")
 		|| msg.includes("too many requests");
+}
+
+/** 403 Forbidden, or message containing permission/access-denied keywords. */
+export function isAccessDeniedError(err: unknown): boolean {
+	if (!err || typeof err !== "object") return false;
+	if (getStatus(err) === 403) return true;
+	return /\b403\b|forbidden|permission.?(?:error|denied)|access.?denied/.test(getErrorText(err));
 }
 
 /** Either quota or rate-limit — common "should I failover?" predicate. */

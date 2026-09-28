@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	getErrorText,
+	isAccessDeniedError,
 	isQuotaError,
 	isQuotaOrRateLimitError,
 	isRateLimitError,
@@ -98,5 +99,23 @@ describe("isQuotaOrRateLimitError", () => {
 	it("returns false for neither", () => {
 		expect(isQuotaOrRateLimitError({ status: 500 })).toBe(false);
 		expect(isQuotaOrRateLimitError({ message: "bad request" })).toBe(false);
+	});
+});
+
+describe("isAccessDeniedError", () => {
+	it("detects HTTP 403 status fields and provider message shapes", () => {
+		expect(isAccessDeniedError({ status: 403 })).toBe(true);
+		expect(isAccessDeniedError({ error: { status: 403 } })).toBe(true);
+		expect(isAccessDeniedError({ errorMessage: "403 {\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"Your role does not include access to this feature.\"}}" })).toBe(true);
+		expect(isAccessDeniedError({ errorMessage: "403 status code (no body)" })).toBe(true);
+		expect(isAccessDeniedError({ message: "PERMISSION_DENIED: model not enabled" })).toBe(true);
+		expect(isAccessDeniedError({ message: "AccessDeniedException: not authorized" })).toBe(true);
+	});
+
+	it("returns false for other errors", () => {
+		expect(isAccessDeniedError({ status: 401 })).toBe(false);
+		expect(isAccessDeniedError({ errorMessage: "400 invalid API key" })).toBe(false);
+		expect(isAccessDeniedError({ errorMessage: "prompt is too long: 214035 tokens" })).toBe(false);
+		expect(isAccessDeniedError(null)).toBe(false);
 	});
 });

@@ -36,7 +36,7 @@ surfaces make already returns a profile-filtered list.
 Resolution fallback happens before a request. Runtime behavior is separate:
 [`clauderock`](#runtime-provider-failover-clauderock) can switch an Anthropic
 stream's provider, while the shared extension coordinator can continue a settled
-quota/rate-limit failure on the next configured model-chain candidate.
+quota/rate-limit/access-denied failure on the next configured model-chain candidate.
 
 ---
 
@@ -256,7 +256,7 @@ then react to a request failure; neither changes Pi core.
 ### Post-native-retry chain continuation
 
 [`runtime-model-fallback.ts`](../../extensions/lib/runtime-model-fallback.ts) waits for
-Pi to settle its native retries. Only then, after an assistant quota/rate-limit
+Pi to settle its native retries. Only then, after an assistant quota/rate-limit/access-denied
 failure, it resolves the configured chain's authenticated identities in order and
 switches to the next untried candidate. The failed assistant entry remains in the
 transcript. A hidden continuation starts a new turn in that same transcript, retaining
