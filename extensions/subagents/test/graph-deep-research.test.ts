@@ -1,7 +1,9 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentGraph, GraphNode } from "../src/graph/ir.js";
+import { compileJsonSchema } from "../src/graph/json-schema.js";
 import type { NodeSpawnRequest } from "../src/graph/node-host.js";
+import { isGraphRunOutcome } from "../src/graph/outcome.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import { resolveSavedGraph } from "../src/graph/saved-graph.js";
 import { validateGraph } from "../src/graph/validate.js";
@@ -26,18 +28,37 @@ function boundedFeedbackNode(graph: AgentGraph, id: string): Extract<GraphNode, 
   return node;
 }
 
-const researchTask = (source: "local" | "github" | "web", question: string, purpose = "discover") => ({ source, question, purpose });
-const planFixture = { tasks: [researchTask("local", "Inspect code"), researchTask("web", "Inspect documentation")] };
+const researchTask = (source: "local" | "github" | "web", question: string, purpose = "discover", partIds: string[] = ["p1"]) => ({ source, question, purpose, partIds });
+const planFixture = { parts: [{ id: "p1", question: "What behavior is implemented?" }], tasks: [researchTask("local", "Inspect code"), researchTask("web", "Inspect documentation")] };
 const sourceFixture = { claims: [{ claim: "Example claim", excerpt: "Opened excerpt", reference: "https://example.org/source", source: "opened source" }], gaps: [] };
 const sufficientFixture = { decision: "sufficient", gaps: [], tasks: [] };
 const reportFixture = (status: "succeeded" | "partial") => ({
   markdown: "# Research\nExample claim [1].\n\n[1] Opened source (https://example.org/source)",
-  acceptedFindings: [{ claim: "Example claim", citations: ["[1]"], verification: "selected independent check" }],
-  verifiedCoverage: ["Example claim"], rejectedClaims: status === "partial" ? ["Unverified claim"] : [],
+  acceptedFindings: [{ claim: "Example claim", citations: ["[1]"], verification: "independently-checked" }],
+  verifiedCoverage: status === "partial"
+    ? [{ id: "p1", status: "partial", citations: ["[1]"], reason: "Disputed claim and source offline" }]
+    : [{ id: "p1", status: "supported", citations: ["[1]"] }],
+  rejectedClaims: status === "partial" ? ["Unverified claim"] : [],
   gaps: status === "partial" ? ["Disputed claim remains"] : [], failures: status === "partial" ? ["source offline"] : [],
   outcome: status === "partial" ? { status, reason: "Disputed claim and source offline" } : { status },
 });
 function accepts(request: NodeSpawnRequest, fixture: unknown): boolean { return request.schema?.check(fixture) === true; }
+function schemaCheck(schema: unknown): (value: unknown) => true | string {
+  const compiled = compileJsonSchema(schema);
+  expect(compiled.ok, compiled.ok ? "" : compiled.message).toBe(true);
+  if (!compiled.ok) throw new Error(compiled.message);
+  return value => compiled.compiled.check(value);
+}
+const typedFinding = (verification: "independently-checked" | "single-source" | "disputed" = "independently-checked") => ({ claim: "Example claim", citations: ["[1]"], verification });
+const typedReport = (coverage: unknown, outcome: unknown, findings: unknown = [typedFinding()]) => ({
+  markdown: "# Research\nExample claim [1].\n\n[1] Opened source (https://example.org/source)",
+  acceptedFindings: findings, verifiedCoverage: coverage, rejectedClaims: [], gaps: [], failures: [], outcome,
+});
+const supportedPart = { id: "p1", status: "supported", citations: ["[1]"] };
+const partialPart = { id: "p1", status: "partial", citations: ["[1]"], reason: "Unresolved part" };
+const validSucceeded = typedReport([supportedPart], { status: "succeeded" });
+const validPartial = typedReport([partialPart], { status: "partial", reason: "p1 unresolved" });
+const validFailed = typedReport([{ id: "p1", status: "missing", citations: [], reason: "No reliable findings" }], { status: "failed", reason: "No reliable findings" }, []);
 
 describe("deep-research portfolio", () => {
   it("validates deep research wiring", async () => {
@@ -45,7 +66,7 @@ describe("deep-research portfolio", () => {
     expect(validateGraph(savedGraph("context-gather")).ok).toBe(true);
     expect(graph.version).toBe(2);
     expect(graph.inputSchema).toMatchObject({ required: ["question"], properties: { question: { type: "string", pattern: "\\S" } } });
-    expect(agentNode(graph, "plan").outputSchema).toMatchObject({ required: ["tasks"], properties: { tasks: { minItems: 1, maxItems: 6 } } });
+    expect(agentNode(graph, "plan").outputSchema).toMatchObject({ required: ["parts", "tasks"], properties: { tasks: { minItems: 1, maxItems: 6 } } });
     const research = boundedFeedbackNode(graph, "research");
     expect(research).toMatchObject({ maxIterations: 3, maxItemsPerIteration: 6, maxTotalItems: 18 });
     expect(research.work.items).toEqual({ node: "plan", path: "$.tasks" });
@@ -85,7 +106,10 @@ describe("deep-research portfolio", () => {
     expect(agents.filter(agent => agent === "chengfeng")).toHaveLength(1);
     expect(agents.filter(agent => agent === "wenchang")).toHaveLength(4);
     expect(result.feedback?.research).toMatchObject({ reason: "sufficient", partial: false, counters: { iterations: 1, totalItems: 2 } });
-    expect(result.outputs).toMatchObject({ markdown: expect.stringContaining("[1]"), acceptedFindings: [{ claim: "Example claim", citations: ["[1]"], verification: "selected independent check" }], verifiedCoverage: ["Example claim"], gaps: [], failures: [] });
+    expect(result.outputs).toMatchObject({ markdown: expect.stringContaining("[1]"), acceptedFindings: [{ claim: "Example claim", citations: ["[1]"], verification: "independently-checked" }], verifiedCoverage: [{ id: "p1", status: "supported", citations: ["[1]"] }], gaps: [], failures: [] });
+    expect(result.outputs.parts).toEqual(planFixture.parts);
+    expect(isGraphRunOutcome(result.outputs.$agentGraphOutcome)).toBe(true);
+    expect(result.outputs.$agentGraphOutcome).toEqual({ status: "succeeded" });
   });
 
   it("dispatches a distinct source check in round two after continue", async () => {
@@ -139,7 +163,7 @@ describe("deep-research portfolio", () => {
     const followup = () => ({ decision: "continue", gaps: [{ id: `gap-${evaluations}`, description: "Disputed claim" }], tasks: [{ gapId: `gap-${evaluations}`, item: researchTask("web", `Independent source ${evaluations}`, "verify") }] });
     const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior" }, {
       onCheckpoint: () => {}, host: { spawnAgent: async request => {
-        if (accepts(request, planFixture)) return { ok: true, output: JSON.stringify({ tasks: [researchTask("github", "Inspect issue"), researchTask("local", "Inspect code")] }) };
+        if (accepts(request, planFixture)) return { ok: true, output: JSON.stringify({ parts: planFixture.parts, tasks: [researchTask("github", "Inspect issue"), researchTask("local", "Inspect code")] }) };
         if (accepts(request, sufficientFixture)) { evaluations++; return { ok: true, output: JSON.stringify(followup()) }; }
         if (accepts(request, reportFixture("partial"))) return { ok: true, output: JSON.stringify(reportFixture("partial")) };
         if (accepts(request, sourceFixture)) {
@@ -156,5 +180,39 @@ describe("deep-research portfolio", () => {
     expect(result.feedback?.research?.iterations[0]?.results).toEqual(expect.arrayContaining([expect.objectContaining({ status: "failed", error: "source offline" })]));
     expect(result.outputs).toMatchObject({ rejectedClaims: ["Unverified claim"], gaps: ["Disputed claim remains"], failures: ["source offline"] });
     expect(result.outputs.$agentGraphOutcome).toMatchObject({ status: "partial", reason: expect.stringContaining("source offline") });
+  });
+
+  it("requires plan parts, task partIds, and parts output", () => {
+    const graph = savedGraph("deep-research");
+    const plan = agentNode(graph, "plan").outputSchema;
+    expect(plan).toMatchObject({
+      required: ["parts", "tasks"],
+      properties: {
+        parts: { type: "array", minItems: 1, maxItems: 6, uniqueItems: true, items: { additionalProperties: false, required: ["id", "question"], properties: { id: { type: "string", pattern: "^p[1-6]$" }, question: { type: "string", minLength: 1 } } } },
+        tasks: { items: { required: ["source", "question", "purpose", "partIds"], properties: { partIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", pattern: "^p[1-6]$" } } } } },
+      },
+    });
+    expect(boundedFeedbackNode(graph, "research").work.itemSchema).toMatchObject({
+      required: ["source", "question", "purpose", "partIds"],
+      properties: { partIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", pattern: "^p[1-6]$" } } },
+    });
+    expect(graph.outputs?.parts).toEqual({ node: "plan", path: "$.parts" });
+  });
+
+  it.each([
+    ["succeeded-with-reason", validSucceeded, { ...validSucceeded, outcome: { status: "succeeded", reason: "extra" } }],
+    ["partial-without-reason", validPartial, { ...validPartial, outcome: { status: "partial" } }],
+    ["succeeded with a non-supported part", validSucceeded, typedReport([partialPart], { status: "succeeded" })],
+    ["succeeded with a disputed finding", validSucceeded, typedReport([supportedPart], { status: "succeeded" }, [typedFinding("disputed")])],
+  ])("rejects %s", (_label, valid, invalid) => {
+    const check = schemaCheck(agentNode(savedGraph("deep-research"), "synthesize").outputSchema);
+    expect([check(valid), check(invalid)]).toEqual([true, expect.any(String)]);
+  });
+
+  it("accepts typed coverage fixtures", () => {
+    const check = schemaCheck(agentNode(savedGraph("deep-research"), "synthesize").outputSchema);
+    expect(check(validSucceeded)).toBe(true);
+    expect(check(validPartial)).toBe(true);
+    expect(check(validFailed)).toBe(true);
   });
 });
