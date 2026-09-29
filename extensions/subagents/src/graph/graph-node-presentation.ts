@@ -2,6 +2,13 @@ import type { GraphRuntimeState, NodeInstance } from "./graph-instance-id.js";
 import type { GraphEdge, GraphNode } from "./ir.js";
 import type { GraphNodePresentation } from "./progress.js";
 
+/** Row label: authored `name`, else the authored node key, else the agent or node type for runtime-generated nodes. */
+export function presentationName(node: GraphNode, instance: NodeInstance | undefined): string {
+  if (node.name) return node.name;
+  if (instance !== undefined && instance.binding === instance.nodeKey) return instance.nodeKey;
+  return node.type === "agent" ? node.agent : node.type.replaceAll("_", " ");
+}
+
 /** Transient inspector facts derived from committed ownership, never persisted. */
 export function nodePresentation(node: GraphNode, instance: NodeInstance, runtime: GraphRuntimeState): GraphNodePresentation {
   const parent = runtime.manifest.find(row => row.instanceId === instance.parentInstanceId);
@@ -10,7 +17,7 @@ export function nodePresentation(node: GraphNode, instance: NodeInstance, runtim
     : feedback?.iterations.find(row => row.iteration === instance.iteration);
   const owned = runtime.feedback?.[instance.binding];
   return {
-    kind: node.type, name: node.name || (node.type === "agent" ? node.agent : node.type.replaceAll("_", " ")),
+    kind: node.type, name: presentationName(node, instance),
     ...(instance.parentInstanceId ? { parentInstanceId: instance.parentInstanceId } : {}),
     ...(instance.iteration !== undefined ? { iteration: instance.iteration } : {}),
     ...(instance.itemIndex !== undefined ? { itemIndex: instance.itemIndex, role: "item" as const } :

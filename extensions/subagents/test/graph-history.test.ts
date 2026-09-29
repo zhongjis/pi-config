@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { NodeInstance } from "../src/graph/graph-instance-id.js";
 import { GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import { boundHistory, decodeHistory, GraphHistoryStore, HISTORY_FILE_BYTES, snapshotHistory } from "../src/graph/history.js";
 import { createGraphRunTask } from "../src/graph/task.js";
@@ -49,6 +50,20 @@ describe("graph metadata history", () => {
     expect(JSON.stringify(snapshot)).not.toContain("PRIVATE_");
     expect(snapshot.nodes.map(node => node.label)).toEqual(["First", "Second"]);
     expect(snapshot.nodes[1]?.depIndices).toEqual([0]);
+  });
+
+  it("records agent labels, not node keys, for unnamed authored nodes", () => {
+    const value = createGraphRunTask({ id: "keyed", script: "" });
+    const node = { type: "agent", agent: "worker", prompt: "one" } as const;
+    const reporter = new GraphRunReporter(value);
+    const instance = { instanceId: "11111111-1111-4111-8111-111111111111", nodeKey: "PRIVATE_KEY", binding: "PRIVATE_KEY", ordinal: 0 } as NodeInstance;
+    reporter.registerNode("PRIVATE_KEY", node, { dependencies: [], instance });
+    reporter.update("PRIVATE_KEY", { status: "completed", attempt: 1, output: "one" });
+    expect(value.graphRunProgress.at(-1)).toMatchObject({ label: "PRIVATE_KEY" });
+    Object.assign(value, { status: "completed", endTime: Date.now() });
+    const snapshot = required(snapshotHistory(value));
+    expect(JSON.stringify(snapshot)).not.toContain("PRIVATE_");
+    expect(snapshot.nodes.map(row => row.label)).toEqual(["worker"]);
   });
 
   it("keeps the newest 20 unique runs and bounds nodes, phases, dependencies and strings", () => {

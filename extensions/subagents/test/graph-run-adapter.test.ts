@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { type ExecutionCorrelation, executionAttemptId } from "../src/graph/graph-execution.js";
-import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
+import type { NodeInstance, NodeInstanceId } from "../src/graph/graph-instance-id.js";
+import { presentationName } from "../src/graph/graph-node-presentation.js";
 import { completeGraphTask, GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
@@ -471,6 +472,7 @@ describe("GraphRunReporter — static graph progress", () => {
     const { agents } = collapse(t.graphRunProgress);
     expect(agents).toHaveLength(5);
     expect(agents.find(agent => agent.nodeBinding === "synthesize")?.blocked).toBe(true);
+    expect(agents.map(agent => agent.label).sort()).toEqual(["document", "research", "review", "synthesize", "test"]);
     const { renderObservabilityPaneLines, toPaneSource } = await import("../src/graph/pane/render.js");
     const rendered = renderObservabilityPaneLines(
       [{ id: t.id, name: "demo", status: t.status, source: toPaneSource(t) }],
@@ -486,6 +488,17 @@ describe("GraphRunReporter — static graph progress", () => {
     await expect(run).resolves.toMatchObject({ status: "aborted" });
   });
 });
+
+it("labels unnamed authored nodes by node key and unnamed generated nodes by agent", () => {
+  const node = { type: "agent", agent: "jintong", prompt: "x" } as const;
+  const authored = { nodeKey: "review", binding: "review" } as NodeInstance;
+  const generated = { nodeKey: "research", binding: "research:item:0" } as NodeInstance;
+  expect(presentationName(node, authored)).toBe("review");
+  expect(presentationName(node, generated)).toBe("jintong");
+  expect(presentationName({ ...node, name: "Review" }, authored)).toBe("Review");
+  expect(presentationName({ type: "human_gate", prompt: "x", outputSchema: {} }, undefined)).toBe("human gate");
+});
+
 
 it("v2 publishes only materialized rows with name-first labels and persisted ordering", async () => {
   const { GraphInstances } = await import("../src/graph/graph-instance-id.js");

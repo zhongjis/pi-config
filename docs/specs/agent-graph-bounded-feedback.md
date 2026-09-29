@@ -124,8 +124,8 @@ Lifecycle rules are:
 
 ### Monitor and terminal output
 
-- The monitor shows `name` first when present, otherwise a readable role or type label. Iteration and item context appears as metadata, for example `Research · iteration 2 · item 3`.
-- Authored keys and UUIDs appear only in detail or debug views. UUIDs do not determine row order; the monotonic materialization ordinal does.
+- The monitor shows `name` first when present, otherwise the authored node key; runtime-generated nodes (fanout items, bounded-feedback work and evaluator) without a name show their agent or node type. Iteration and item context appears as metadata, for example `Research · iteration 2 · item 3`.
+- Authored keys label only unnamed authored nodes; otherwise authored keys and UUIDs appear only in detail or debug views. Graph history never records keys: it stores the agent or type label instead. UUIDs do not determine row order; the monotonic materialization ordinal does.
 - Uninstantiated future iterations do not appear. A continuation becomes visible only from its persisted materialization manifest.
 - The terminal output includes the stop reason, whether synthesis is partial, all accumulated outcomes, unresolved gaps, counters and exhausted bounds, and optional replay lineage.
 

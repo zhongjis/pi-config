@@ -138,7 +138,7 @@ There is no shell or action node. A deterministic check is `validation.gate` on 
 
 Spell field names exactly. Unknown keys are ignored, except on `bounded_feedback`, which rejects them. A misspelled `outputschema` yields an untyped node.
 
-Optional `name` labels the node's monitor row; without it the row shows the agent name (or node type), so name nodes that share an agent. It is presentation only and may duplicate.
+Optional `name` labels the node's monitor row; without it the row shows the node key. It is presentation only and may duplicate.
 
 - **agent** — runs one subagent. See [Agent nodes](#agent-nodes).
 - **human_gate** — publishes a durable human request. The orchestrator uses `ask`, then `resolve_agent_graph_gate`. Never spawns an agent.

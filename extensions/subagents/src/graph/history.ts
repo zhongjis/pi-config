@@ -149,15 +149,17 @@ export function snapshotHistory(task: GraphRunTask): GraphHistoryRun | undefined
     const node = retained.find(candidate => candidate.nodeBinding === binding);
     return node ? [node.index] : [];
   }).slice(0, 32);
+  // Unnamed authored nodes are labelled by their key; history never records bindings or keys.
+  const keyed = (node: GraphRunAgentEntry, name: string | undefined) => name === node.nodeBinding || (node.nodeKey !== undefined && name === node.nodeKey);
   const label = (node: GraphRunAgentEntry) => {
-    if (node.nodeBinding === undefined || node.instanceId !== undefined) return node.label;
-    return node.presentation?.name && node.presentation.name !== node.nodeBinding
+    if (node.nodeBinding === undefined || (node.instanceId !== undefined && !keyed(node, node.label))) return node.label;
+    return node.presentation?.name && !keyed(node, node.presentation.name)
       ? node.presentation.name
       : node.agentType ?? `Node ${node.index + 1}`;
   };
   const topology = (node: GraphRunAgentEntry): HistoryTopology | undefined => {
     const captured = captureTopology(node, retained);
-    return captured && node.nodeBinding !== undefined && captured.name === node.nodeBinding
+    return captured && node.nodeBinding !== undefined && keyed(node, captured.name)
       ? { ...captured, name: historyText(label(node)) }
       : captured;
   };

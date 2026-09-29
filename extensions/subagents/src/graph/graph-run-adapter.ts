@@ -15,6 +15,7 @@
 
 import { type ExecutionCorrelation, matchesExecution } from "./graph-execution.js";
 import type { NodeInstance } from "./graph-instance-id.js";
+import { presentationName } from "./graph-node-presentation.js";
 import type { FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
 import { GRAPH_OUTCOME_KEY, isGraphRunOutcome } from "./outcome.js";
@@ -96,7 +97,7 @@ export class GraphRunReporter {
     const instance = metadata.instance;
     if (instance || metadata.presentation) this.presentation.set(nodeId, metadata.presentation ?? {
       kind: node.type,
-      name: node.name || (node.type === "agent" ? node.agent : node.type.replaceAll("_", " ")),
+      name: presentationName(node, instance),
       ...(instance?.parentInstanceId ? { parentInstanceId: instance.parentInstanceId } : {}),
       ...(instance?.iteration !== undefined ? { iteration: instance.iteration } : {}),
       ...(instance?.itemIndex !== undefined ? { itemIndex: instance.itemIndex, role: "item" } : {}),
@@ -109,7 +110,7 @@ export class GraphRunReporter {
       this.index.set(nodeId, instance.ordinal);
       this.nextIndex = Math.max(this.nextIndex, instance.ordinal + 1);
       this.executionIndex.set(instance.instanceId, instance.ordinal);
-      this.labels.set(nodeId, [(node.name || (node.type === "agent" ? node.agent : node.type.replaceAll("_", " "))).replace(/[\r\n]/g, " "),
+      this.labels.set(nodeId, [presentationName(node, instance).replace(/[\r\n]/g, " "),
         ...(instance.iteration !== undefined ? [`iteration ${instance.iteration}`] : []),
         ...(instance.itemIndex !== undefined ? [`item ${instance.itemIndex + 1}`] : []),
       ].join(" · "));
