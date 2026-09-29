@@ -98,11 +98,11 @@ Structured collapsed **tool-result** detail rows use tree connectors consistentl
 ```text
 ▸ Jintong 金童 [background] · Audit tool rendering
 ├─ ● running · reading renderer tests · 24s
-├─ id: 7cb5b424 · next: collect with get_agent_result
+├─ id: <agent-id> · next: collect with get_agent_result
 └─ Ctrl+O details
 ```
 
-Examples in this guide show Pi's current default expand binding. Renderers must resolve
+Examples in this guide show Pi's default expand binding. Renderers must resolve
 the configured `app.tools.expand` key hint instead of embedding `Ctrl+O`.
 
 Omit zero values and unavailable metadata. Do not spend rows on `0 tools`, `0 tokens`,
@@ -138,7 +138,7 @@ Found three presentation gaps:
 
 Run
 ────────────────────────────────────────────────────────
-ID        7cb5b424
+ID        <agent-id>
 Mode      foreground
 Thinking  high
 
@@ -161,10 +161,10 @@ separates concepts that are often incorrectly overloaded:
 ```typescript
 interface ToolPresentation {
   lifecycle: "queued" | "running" | "terminal";
-  outcome?: "completed" | "stopped" | "aborted" | "failed" | "denied" | "missing";
-  invocation?: "started" | "resumed" | "restored";
-  acknowledgement?: "delivered";
-  completionReason?: "normal" | "turn-limit";
+  outcome?: string;          // terminal outcome, e.g. completed, stopped, failed, denied
+  invocation?: string;       // how the run began, e.g. started or resumed
+  acknowledgement?: string;  // e.g. delivered
+  completionReason?: string; // e.g. normal or a configured limit
   delivery?: "foreground" | "background";
   activity?: string;
   result?: string;
@@ -180,7 +180,7 @@ interface ToolPresentation {
 }
 ```
 
-Adapt this shape to the tool. Do not introduce fields that cannot occur.
+Adapt this shape to the tool; the owning extension defines its concrete values. Do not introduce fields that cannot occur.
 
 Important distinctions:
 
@@ -299,7 +299,7 @@ transcript navigation belongs in the dedicated viewer when one exists.
 ```text
 ▸ Agent [background] · Audit tool rendering
 ├─ ◦ queued · waiting for capacity
-├─ id: 7cb5b424
+├─ id: <agent-id>
 └─ Ctrl+O details
 ```
 
@@ -316,7 +316,7 @@ Tools that send instructions or change control state need a compact confirmation
 run report.
 
 ```text
-▸ steer_subagent · 7cb5b424 · "Focus on renderer consistency"
+▸ steer_subagent · <agent-id> · "Focus on renderer consistency"
 └─ ✓ steering message delivered
 ```
 

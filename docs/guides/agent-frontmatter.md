@@ -50,48 +50,23 @@ mode config invalid** (`parseModeAgentConfig` returns `null`).
 
 ---
 
-## Value formats (shared parser)
+## Fields
 
-The parser normalizes values consistently across all fields:
+[`extensions/lib/agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts)
+defines every field, its value format, and its default. Only include fields that
+differ from the default. Parsing rules worth knowing while authoring:
 
-| Format | Meaning | Examples |
-|--------|---------|----------|
-| CSV string | Comma-separated list, trimmed, empties dropped | `read,bash,edit` |
-| `none` | Explicit empty list (distinct from omitting) | `extension_tools: none` |
-| `true` / omitted | Inherit-all | `extensions: true` |
-| `false` / `none` | Inherit-nothing | `extensions: false` |
-| Boolean | `true` only; anything else is falsy | `allow_nesting: true` |
-| Wildcard | Trailing `_*` / `*` prefix match (extension tools only) | `codegraph_*` |
+- List fields take CSV strings; `none` is an explicit empty list, distinct from omitting the field.
+- Boolean flags are strict: only the literal `true` enables them.
+- `extension_tools` accepts trailing `*` prefix wildcards (`codegraph_*`).
 
-Booleans are strict: for `allow_nesting`, `inherit_context`, `run_in_background`,
-`isolated`, only the literal `true` enables the flag.
+Fields whose purpose the code does not make obvious:
 
----
-
-## Subagent frontmatter fields
-
-Consumed by the subagent extension. Only include fields that differ from the default.
-
-| Field | Type | Default | Purpose |
-|-------|------|---------|---------|
-| `description` | string | agent name | One-line summary shown in the Agent picker and used by orchestrators to route. **Write this well** — it is the routing signal. |
-| `display_name` | string | — | Human label shown in UI (e.g. `Taishang 太上老君`). |
-| `model` | string | inherit parent | Model fallback chain (see [Model chain](#model-chain-and-thinking-level)). |
-| `builtin_tools` | CSV of built-ins \| `none` | all built-ins | Allowlist from `read, bash, edit, write, grep, find, ls`. Names outside this set are never granted. `none` = no built-ins. |
-| `extension_tools` | CSV / wildcards \| `none` | all available | Exact extension/MCP tool allowlist after extensions load. Supports `foo_*` prefix wildcards. `none` = no extension tools. Cannot grant built-ins. |
-| `extensions` | `true` \| `false`/`none` \| CSV | `true` | Whether extension/MCP tools are available at all. `false`/`none` disables them. A **CSV value is currently treated as "enabled" (equivalent to `true`)** at the active-tool layer — it does not scope tools to those sources. Use `extension_tools` for per-tool filtering and `exclude_extensions` for per-source exclusion. (`inherit_extensions` is an accepted alias.) |
-| `exclude_extensions` | CSV | — | Extension source names to exclude. |
-| `discover_skills` | boolean | `true` | Whether pi's skill **catalog** is discoverable on demand (drives runtime `noSkills = !discover_skills`). `false`/`none` disables the catalog. |
-| `preload_skills` | CSV \| `none` | — | Skill names whose full body is eagerly injected into the system prompt (via `preloadSkills()` → `skillBlocks`). Independent of `discover_skills` — the catalog can be on while some skills are preloaded. |
-| `prompt_mode` | `replace` \| `append` \| `system_instructions` | `replace` | How the body forms the system prompt (see [prompt_mode](#prompt_mode)). |
-| `allow_delegation_to` | CSV | unrestricted | Agent names this agent may spawn via `agent`. |
-| `disallow_delegation_to` | CSV | — | Agent names this agent may not spawn. Applied as exclusions after `allow_delegation_to`. |
-| `allow_nesting` | boolean | `false` | Permit nested controls (`agent`, `get_agent_result`, compatibility alias `get_subagent_result`, `resolve_agent_graph_gate`, `steer_subagent`) — only if also allowed by tool policy. |
-| `inherit_context` | boolean | `false` | Fork the parent conversation into the agent so it sees chat history. |
-| `run_in_background` | boolean | `false` | Run in background by default. |
-| `isolated` | boolean | `false` | No extension/MCP tools at all — built-ins only. Overrides `extensions`/`extension_tools`. |
-| `max_turns` | non-negative int | unlimited | Cap on agentic turns. `0` or omit = unlimited. |
-| `enabled` | boolean | `true` | Set `enabled: false` to disable the agent definition. |
+- `description` — shown in the Agent picker and used by orchestrators to route. **Write this well** — it is the routing signal.
+- `extensions` — master switch for extension/MCP tools. A CSV value counts as enabled; it does not scope tools to those sources. Use `extension_tools` for per-tool filtering and `exclude_extensions` for per-source exclusion.
+- `discover_skills` — whether pi's skill **catalog** is discoverable on demand.
+- `preload_skills` — skill names whose full body is injected into the system prompt. Independent of `discover_skills`.
+- `isolated` — built-ins only; overrides `extensions`/`extension_tools`.
 
 > **Not a frontmatter field:** `thinking`. Per-call `thinking`, `model`, and
 > `max_turns` are also **`agent` tool invocation parameters**; frontmatter sets
@@ -101,20 +76,14 @@ Consumed by the subagent extension. Only include fields that differ from the def
 
 ---
 
-## Mode frontmatter fields
+## Mode frontmatter
 
-A mode file uses the **same parser**, but `parseModeAgentConfig` reads only these:
+A mode file uses the **same parser**, but `parseModeAgentConfig` reads only the
+tool-selection, delegation, `allow_nesting`, `prompt_mode`, and `model` fields.
+Mode-specific differences:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `prompt_mode` | `append` \| everything-else→`replace` | Modes collapse `system_instructions` to `replace`. Mode `prompt_mode` does **not** control AGENTS.md injection — modes always run with project AGENTS.md present. |
-| `builtin_tools` | CSV \| `none` | Only applied when a tool-selection field is present (see below). |
-| `extension_tools` | CSV / wildcards \| `none` | Post-load extension-tool filter. |
-| `extensions` | `true` \| `false`/`none` \| CSV | Extension availability. A CSV value is treated as "enabled" (equivalent to `true`) at the active-tool layer, not a source scope. |
-| `allow_delegation_to` | CSV | Subagent types this mode may delegate to. |
-| `disallow_delegation_to` | CSV | Blocklist, applied as exclusions from `allow_delegation_to`. |
-| `allow_nesting` | boolean | Permit nested subagent tools. |
-| `model` | string | Mode model fallback chain. Overridable per-session with `/mode-model`. |
+- `prompt_mode` collapses `system_instructions` to `replace`, and does **not** control AGENTS.md injection — modes always run with project AGENTS.md present.
+- `model` is overridable per session with `/mode-model`.
 
 **Tool-selection gating.** `builtin_tools`, `extension_tools`, and `extensions`
 are applied only when at least one tool-selection field
@@ -244,7 +213,7 @@ the authorization authority (see
 
 ## Invalid / obsolete fields
 
-The following legacy fields make a definition **invalid** — the loader emits an
+The following obsolete fields make a definition **invalid** — the loader emits an
 error diagnostic and skips the agent, and a mode config becomes `null`:
 
 - `tools` → use `builtin_tools` + `extension_tools` instead.

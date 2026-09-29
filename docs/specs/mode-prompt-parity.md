@@ -9,9 +9,7 @@ Purpose: record accepted Oh My OpenAgent (omo) synchronization baselines and loc
 - Accepted omo release baseline: `v4.19.0`.
 - Upstream repo: `https://github.com/code-yeongyu/oh-my-openagent`.
 - Oh My OpenAgent reference archive target: `docs/references/oh-my-openagent/final-prompts/`. Generate it on demand with `pnpm sync:oh-my-openagent-prompts` and verify with `pnpm check:oh-my-openagent-prompts` before consultation. It may be absent from the current source tree; never hand-edit generated files. The generated `.omo-final-prompts.json` manifest records repository, source SHA, version, and frozen date. The generation script pins `5.0.0-beta.21`, a different baseline from the accepted `v4.19.0` parity work above.
-- Earlier path-level audit evidence used commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`; it remains evidence for the paths below, not the current release baseline.
-
-Required upstream paths verified in the earlier `f7ec55526b2a3603665c5c0308b031a4f14900b0` audit:
+Required upstream paths (verified at commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`):
 
 - `packages/omo-opencode/src/agents/sisyphus-agent-factory.ts`
 - `packages/omo-opencode/src/agents/prometheus/system-prompt.ts`
@@ -23,35 +21,31 @@ Relevant generated final prompt baselines **when the archive has been generated 
 - Sisyphus: `docs/references/oh-my-openagent/final-prompts/sisyphus/*.md` (model-family final prompts generated from TypeScript builders).
 - Prometheus: `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`.
 - Atlas: `docs/references/oh-my-openagent/final-prompts/atlas/{default,gpt,gemini,glm,kimi,kimi-k2-7,opus-4-7}.md`.
-- Fu Xi active `ulw-plan`: `modes/fuxi/skills/ulw-plan/{SKILL.md,agents/openai.yaml,references/adversarial-research.md,references/full-workflow.md,references/intent-clear.md,references/intent-unclear.md,references/review-lifecycle.md,scripts/scaffold-plan.mjs}`. It began as the six-file pinned `v4.19.0` upstream copy; staged conditional references and other changes are Pi runtime adaptations.
+- Fu Xi active `ulw-plan`: `modes/fuxi/skills/ulw-plan/{SKILL.md,agents/openai.yaml,references/adversarial-research.md,references/full-workflow.md,references/intent-clear.md,references/intent-unclear.md,references/review-lifecycle.md,scripts/scaffold-plan.mjs}`. It is based on the pinned `v4.19.0` upstream skill; staged conditional references and other differences are Pi runtime adaptations.
 
-## Applied v4.16.3 Agent Mappings
+## Agent Mappings
 
-Accepted, applied local mappings:
+Accepted local mappings (from omo `v4.16.3`):
 
-- [`agents/chengfeng.md`](../../agents/chengfeng.md) maps omo Explorer-style read-only reconnaissance to Chengfeng, preserves Pi CodeGraph/LSP/literal-search contracts, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
-- [`agents/wenchang.md`](../../agents/wenchang.md) maps omo Librarian-style external research to Wenchang, preserves opened-source citation safeguards, and adds `openai-codex/gpt-5.6-terra:medium` to its model chain.
-- [`agents/jintong.md`](../../agents/jintong.md) uses `opencode-go/glm-5.2:high` for its OpenCode Go implementation-worker mapping.
-- [`agents/juling.md`](../../agents/juling.md) uses `opencode-go/glm-5.2` for its OpenCode Go complex implementation-worker mapping.
+- [`agents/chengfeng.md`](../../agents/chengfeng.md) maps omo Explorer-style read-only reconnaissance to Chengfeng, preserves Pi CodeGraph/LSP/literal-search contracts.
+- [`agents/wenchang.md`](../../agents/wenchang.md) maps omo Librarian-style external research to Wenchang, preserves opened-source citation safeguards.
+- [`agents/jintong.md`](../../agents/jintong.md) is the implementation-worker mapping.
+- [`agents/juling.md`](../../agents/juling.md) is the complex implementation-worker mapping.
 
-`opencode-go/glm-5.2` availability was verified before these mappings were accepted.
+Model chains live in each agent's frontmatter.
 
 Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md) and [`modes/kuafu/gpt.md`](../../modes/kuafu/gpt.md) are not applied changes and are intentionally excluded from the accepted mapping baseline.
 
 ## Local Construction Semantics
 
 - `mode.md`: default body. Frontmatter + body parsed. Default/unknown family uses this body unchanged.
-- `gpt.md`: body-only replacement. If present and non-empty, it replaces the `mode.md` body while retaining parsed frontmatter config from `mode.md`. A mode without a `gpt.md` (Fu Xi) uses the default `mode.md` body for GPT-family runs.
+- `gpt.md`: body-only replacement. If present and non-empty, it replaces the `mode.md` body while retaining parsed frontmatter config from `mode.md`. A mode without a `gpt.md` uses the default `mode.md` body for GPT-family runs.
 - `gemini.md`: body-only overlay. If present and non-empty, it is injected into the default `mode.md` body before `<critical>`, else after `</role>`, else appended.
 - Hook behavior: resolved model family is applied before prompt injection. Active mode body is wrapped in `<!-- mode:<mode> --> ... <!-- /mode:<mode> -->`; stale mode blocks are stripped before replacement.
 
-## Current File Matrix
+## File Matrix
 
-| Mode | Upstream Target | Default `mode.md` | GPT `gpt.md` | Gemini `gemini.md` |
-|---|---|---:|---:|---:|
-| Kuafu | Sisyphus | present | present | present |
-| Fuxi | Prometheus | present | absent (inherits default) | present |
-| Houtu | Atlas | present | present | present |
+Kuafu maps to Sisyphus, Fuxi to Prometheus, and Houtu to Atlas. [`modes/README.md`](../../modes/README.md) owns which variant files each mode has.
 
 ## Upstream-to-Local Map
 
@@ -76,7 +70,7 @@ Local invariants before edits:
 
 Evidence:
 
-- Earlier audit evidence of `prometheus/system-prompt.ts` identified only `prometheusPromptVariants.default`; `getPrometheusPrompt()` ignored model and disabled tools. Generate and verify `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` before consulting that prompt. The active Fu Xi adaptation at `modes/fuxi/skills/ulw-plan/` preserves the pinned upstream format and guidance while mapping artifacts and runtime mechanics to Pi.
+- At the audited commit, `prometheus/system-prompt.ts` defined only `prometheusPromptVariants.default`; `getPrometheusPrompt()` ignored model and disabled tools. Generate and verify `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` before consulting that prompt. The active Fu Xi adaptation at `modes/fuxi/skills/ulw-plan/` preserves the pinned upstream format and guidance while mapping artifacts and runtime mechanics to Pi.
 
 Local invariants before edits:
 
@@ -93,7 +87,7 @@ Local invariants before edits:
 Evidence:
 
 - `atlas/agent.ts` routes model variants through `getAtlasPromptSource()`, loads prompt bodies from `atlasPromptVariants`, and creates Atlas as master orchestrator.
-- Earlier audit evidence identified Atlas prompts under the generated archive target `docs/references/oh-my-openagent/final-prompts/atlas/`; generate and verify it before comparison. Local scope uses only `default.md`, `gpt.md`, `gemini.md`.
+- Atlas prompts live under the generated archive target `docs/references/oh-my-openagent/final-prompts/atlas/`; generate and verify it before comparison. Local scope uses only `default.md`, `gpt.md`, `gemini.md`.
 - Atlas prompts define conductor identity: delegate, coordinate, verify; never write code; complete every plan task; parallelize independent work; verify every delegation; update plan state only after evidence; run final verification wave.
 
 Local invariants before edits:
@@ -119,7 +113,7 @@ Local invariants before edits:
 ## Non-Goals
 
 - No model families beyond local default/GPT/Gemini.
-- No model-chain, provider, auth, or registry changes beyond accepted mappings recorded above.
+- No model-chain, provider, auth, or registry changes.
 - No wholesale upstream prompt clone.
 - No exact-copy claim. Target final injected behavior parity where applicable, with Pi-native tools and constraints.
 - Audit-only proposals remain unapplied until separately approved.

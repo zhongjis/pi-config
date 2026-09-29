@@ -2,7 +2,7 @@
 
 Status: idea
 
-This is a non-binding design, not a description of shipped behavior or approval to migrate the runtime. The current implementation record, [Agent Graph Runtime — Lifecycle Implementation](../guides/agent-graph-implementation.md), and the [subagents runtime contracts](../../extensions/subagents/AGENTS.md) remain authoritative. The earlier [XState v5 lifecycle idea](agent-graph-xstate5-lifecycle.md) is historical context for the architecture now largely shipped; this note explores a separate simplification.
+This is a non-binding design, not a description of shipped behavior or approval to migrate the runtime. The runtime code under `extensions/subagents/src/graph/` and the [subagents runtime contracts](../../extensions/subagents/AGENTS.md) remain authoritative.
 
 ## Boundary and authority
 
@@ -63,7 +63,7 @@ An MVP would cover validated static typed DAGs, agent/validation executors, dura
 
 ## Difference from the shipped runtime
 
-The shipped runtime already uses a root `graphLogic` XState actor as the sole run-lifecycle authority. Panda's `SchedulerState` projection, execution ledger, and checkpoints carry durable facts; XState snapshots are not persisted. Root transactions select projection changes and own typed `NodeActor` children plus dedicated `ExpandActor`, `FanoutActor`, `FeedbackActor`, and `SubgraphActor` coordinators. NODE/COORD requests, ACKs, checkpoint handoffs, physical drain, and explicit release guard their boundaries. [Implementation record](../guides/agent-graph-implementation.md) · [runtime contracts](../../extensions/subagents/AGENTS.md)
+The shipped runtime uses a root `graphLogic` XState actor as the run-lifecycle authority over Panda's durable projection, with typed node and coordinator actors; see the [runtime contracts](../../extensions/subagents/AGENTS.md).
 
 | Concern | Shipped runtime | Greenfield idea |
 | --- | --- | --- |

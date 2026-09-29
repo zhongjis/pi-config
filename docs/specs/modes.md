@@ -53,16 +53,13 @@ Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` 
 
 ### Frontmatter Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `prompt_mode` | `"append"` \| `"replace"` (`"system_instructions"` accepted by parser, coerced to `"replace"` for modes) | How the mode body is injected into the system prompt. `replace` (default) strips previous mode bodies first, then appends the wrapped current mode body. `append` adds the wrapped body without stripping. Mode-level `prompt_mode` does not control AGENTS.md injection — modes always run with project AGENTS.md present. |
-| `builtin_tools` | comma-separated built-in names | Exact built-in allowlist: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`; `none` means no built-ins. |
-| `extensions` | comma-separated strings \| `true` \| `false` | Extension availability/source scope. `true`/omitted enables extension tools, `false`/`none` disables them, CSV preserves source names where supported. Current active-tool filtering treats CSV as enabled; exact tool filtering comes from `extension_tools`. |
-| `extension_tools` | comma-separated tool names or `_*` suffix wildcards | Extension-tool allowlist after extensions are available; `none` means no extension tools. Exact names and prefix wildcards like `codegraph_*` are supported. Cannot grant built-ins. |
-| `allow_nesting` | boolean | When true, permits nested controls (`agent`, `get_agent_result`, compatibility alias `get_subagent_result`, `resolve_agent_graph_gate`, `steer_subagent`) if also allowlisted by extension tool policy. |
-| `allow_delegation_to` | comma-separated strings | Allowlist of subagent types the mode may delegate to. |
-| `disallow_delegation_to` | comma-separated strings | Blocklist of subagent types. Applied as exclusions from `allow_delegation_to` when both are set. |
-| `model` | string | Model fallback chain. Comma-separated `provider/modelId:thinkingLevel` entries; first available match wins. |
+[`agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts) defines the frontmatter fields and how they are parsed. The [agent frontmatter guide](../guides/agent-frontmatter.md) explains how to author them. Mode-specific rules:
+
+- `prompt_mode` defaults to `replace`, which strips earlier mode bodies and then appends the wrapped current body. `append` adds the wrapped body without stripping, and `system_instructions` is treated as `replace`. Modes always run with project AGENTS.md present; `prompt_mode` does not control AGENTS.md injection.
+- `builtin_tools` is an exact built-in allowlist, and `extension_tools` cannot grant built-ins.
+- `allow_nesting` permits nested subagent controls only when extension tool policy also allowlists them.
+- `disallow_delegation_to` is applied as exclusions from `allow_delegation_to` when both are set.
+- `model` is a model chain; the first available match wins ([model selection](model-selection-and-fallback.md)).
 
 ### Prompt Injection
 
@@ -101,18 +98,7 @@ The extension tracks plan state in memory via `ModeStateManager` and persists it
 
 ### Tracked State
 
-| Field | Description |
-|-------|-------------|
-| `mode` | Current active mode. |
-| `planTitle` | Derived from the first H1 heading in `PLAN.md`, or explicitly set. |
-| `planTitleSource` | How the title was derived: `"content-h1"`, `"explicit-exit"`, or `"cached-state"`. |
-| `planContent` | Current plan file content snapshot. |
-| `pendingPlanReviewId` | Runtime field for a pending Plannotator browser review ID. Persists as `planReviewId`. |
-| `planReviewPending` | Whether a Plannotator browser review is in progress. |
-| `awaitingUserAction` | Persisted wait marker, used for pending browser review with `suppressContinuationReminder`. |
-| `planReviewApproved` | Whether the plan has been approved by the current approval flow. |
-| `planReviewFeedback` | Feedback from a rejected Plannotator review. |
-| `plannotatorAvailable` / `plannotatorUnavailableReason` | In-memory availability cache; not persisted. |
+`ModeState` in [`types.ts`](../../extensions/modes/src/types.ts) defines the tracked fields: the mode, plan title and content, and Plannotator review state. The Plannotator availability cache stays in memory and is not persisted.
 
 ### Title Derivation
 
@@ -167,9 +153,9 @@ When no UI is available, the flow auto-approves and prepares the handoff.
 
 Plannotator uses direct browser-session integration, not event IPC.
 
-- `plannotator-direct.ts` lazily imports the installed Plannotator browser-review module.
+- The installed Plannotator browser-review module is imported lazily.
 - Availability probing checks that required functions and HTML assets are present.
-- `plannotator.ts` starts a direct browser review and stores `pendingPlanReviewId`, `planReviewPending`, and `awaitingUserAction`.
+- Starting a browser review records pending review state and an `awaitingUserAction` marker.
 - The browser session's `onDecision` callback routes approval/rejection back to `handlePlanReviewResult`.
 - On approval, the plan is marked approved and handoff preparation runs.
 - On rejection, feedback is persisted and sent back to Fu Xi as a follow-up refinement request.
@@ -196,13 +182,7 @@ Mode state survives pi restarts through two mechanisms.
 
 ### Session JSONL Entries
 
-`appendEntry("agent-mode", state)` writes the persisted `ModeState` object to the session file. On `session_start`, the extension replays session entries to find the latest `agent-mode` entry and restores:
-
-- Current mode
-- Plan title, title source, and content
-- Review state (`planReviewId` restored into runtime `pendingPlanReviewId`, pending flag, approved flag, feedback)
-- `awaitingUserAction`
-- `modelOverride`
+`appendEntry("agent-mode", state)` writes the persisted `ModeState` object to the session file. On `session_start`, the extension restores the latest `agent-mode` entry, including the mode, plan state, review state, and `modelOverride`.
 
 ### Local Plan File
 
@@ -214,25 +194,14 @@ The `--mode` flag takes precedence over session-restored mode. If a flag is prov
 
 ### Model Restoration
 
-On session start, the mode's model is applied via `applyModelFromConfig`. If pi subsequently restores a previously saved model (e.g., when resuming a session), the `model_select` hook detects `source === "restore"` and re-applies the mode's model — ensuring the mode's configured chain (or active override) takes precedence over the session's last-used model.
+
+On session start, the mode's model is applied via `applyModelFromConfig`. If pi then restores the session's saved model (for example, when resuming a session), the `model_select` hook detects `source === "restore"` and re-applies the mode's model — ensuring the mode's configured chain (or active override) takes precedence over the session's last-used model.
 ### Review Recovery
+
 On session start, if a pending Plannotator review ID exists in restored state, recovery clears it because browser review sessions do not survive the restart. It also clears the related `awaitingUserAction` marker and notifies the user when UI is available.
 
 ---
 
-## File Structure
+## Source
 
-```
-extensions/modes/src/
-  types.ts                Type definitions (Mode, ModeConfig, ModeState, plan/review types)
-  constants.ts            Mode lists, aliases, colors, file names
-  config-loader.ts        Reads and parses modes/<mode>/mode.md frontmatter and body (+ gpt.md/gemini.md variants)
-  mode-state.ts           ModeStateManager class — state, persistence, mode switching, tool filtering
-  commands.ts             /mode command, /mode:<name> commands, bare word input, Ctrl+Shift+M, Tab, --mode flag
-  hooks.ts                tool_call restrictions, tool_result plan-write detection, prompt injection, session lifecycle
-  plan-storage.ts         PLAN.md/DRAFT.md read/write, title derivation, plan hydration
-  plan-approval.ts        Approval menu variants, editor refinement, high-accuracy instructions
-  plannotator.ts          Direct browser review coordination, decision handling, handoff preparation, recovery
-  plannotator-direct.ts   Direct Plannotator package import, availability probe, browser session start
-  index.ts                Extension entry point — wires state, resolver, plan_approve tool, commands, hooks
-```
+The implementation lives in [`extensions/modes/src/`](../../extensions/modes/src/).

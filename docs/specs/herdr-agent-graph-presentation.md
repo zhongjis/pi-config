@@ -4,15 +4,13 @@ Status: shipped
 
 Owner: docs/AGENTS.md (specs bucket)
 
-Related: [Subagent tool-output presentation](subagent-tool-output-presentation.md) (`agent` tool rows) · [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) (cross-extension tool rows and notifications) · [Retired script-runtime presentation record](workflow-tool-output-presentation.md) (historical only) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
+Related: [Subagent tool-output presentation](subagent-tool-output-presentation.md) (`agent` tool rows) · [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) (cross-extension tool rows and notifications) · [Awaited Dynamic Agent-Graph Expansion](dynamic-agent-graph-expansion.md) · [Agent-Graph Bounded Feedback](agent-graph-bounded-feedback.md)
 
 ## Problem Statement
 
-The Herdr side panel exposes enough agent-graph data to reconstruct what a graph run is doing, but it does not present that data in the order an operator needs it. Run identity, description, inputs, several progress counters, lifecycle totals, graph rows, node types, model names, dependency facts, prompt text, runtime telemetry, and retained output all compete in one narrow column.
+The Herdr side panel carries enough agent-graph data to reconstruct what a graph run is doing, and it must present that data in the order an operator needs it. Run identity, description, inputs, several progress counters, lifecycle totals, graph rows, node types, model names, dependency facts, prompt text, runtime telemetry, and retained output all compete in one narrow column.
 
-The current roster is flat even when the graph contains meaningful containment. A bounded-feedback coordinator, its iterations, each fanout, generated agent items, evaluators, and downstream synthesis appear as sibling rows. Repeated suffixes such as `iteration 1` carry structure as prose rather than layout. The selected-node detail repeats internal labels and exposes long identity values before the retained result.
-
-The result is technically complete but visually expensive. An operator must translate implementation-shaped rows into answers to four basic questions:
+A flat roster hides meaningful containment: a bounded-feedback coordinator, its iterations, each fanout, generated agent items, evaluators, and downstream synthesis would appear as sibling rows, with suffixes such as `iteration 1` carrying structure as prose. The panel must instead answer four basic questions:
 
 - Which graph run is this, and has it completed?
 - Which work belongs together?
@@ -198,7 +196,7 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 - The roster renderer owns four aligned columns: selection gutter, tree prefix, fixed lifecycle field, and flexible node content. Trailing metadata is width-budgeted independently.
 - Status vocabulary reuses semantic theme roles and existing Unicode/ASCII capabilities. Text labels remain present alongside symbols.
 - Selection uses the existing reverse-video vocabulary where available. Tree rails and lifecycle symbols remain visible inside the selected row.
-- Selected detail uses the same authoritative upstream/downstream relationships as the current panel. It presents them as a compact flow when linear and as explicit upstream/downstream groups when the relationship is not linear.
+- Selected detail uses the same authoritative upstream/downstream relationships as the graph runtime reports. It presents them as a compact flow when linear and as explicit upstream/downstream groups when the relationship is not linear.
 - The existing read-only interaction model remains intact. Footer hints are derived from current focus, selection kind, expandable sections, and configured keybindings rather than hard-coded globally.
 - The graph panel in Pi and in the Herdr pane shares this presentation. Shared low-level glyph and width helpers may remain shared, but this specification does not redesign transcript tool rows or notifications.
 - Rendering remains width-safe by terminal cells after ANSI styling. No tree prefix, selection marker, status field, metadata suffix, or wrapped detail line may exceed the supplied width.
@@ -212,7 +210,7 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 ## Testing Decisions
 
 - The highest automated seam is the public pure panel renderer and key handler for the graph panel in Pi and in the Herdr pane, supplied with representative live and reloaded `PanelRun` data. Tests assert the rendered hierarchy and state transitions rather than private helper calls.
-- Red tests precede production edits and prove: one-row nodes, accurate agent/coordination counts, omission of zero categories, bounded-feedback iteration groups, fanout item containment, evaluator placement, selection-gutter independence, compact selected-node flow, and `Selected node` detail labelling.
+- Renderer tests prove: one-row nodes, accurate agent/coordination counts, omission of zero categories, bounded-feedback iteration groups, fanout item containment, evaluator placement, selection-gutter independence, compact selected-node flow, and `Selected node` detail labelling.
 - Fixtures use typed graph metadata, never node-label parsing, to distinguish coordination, iteration, fanout ownership, generated items, and ordinary dependencies.
 - Status tests cover queued, running, completed, failed, blocked, skipped, paused, stopped, and replayed annotation with Unicode, ASCII, colorless, selected, and settled-functional-node variants.
 - Width tests cover `0`, `1`, `2`, `8`, `20`, `40`, `80`, and `120` columns with ANSI, CJK, emoji, combining characters, long model names, long node names, and long IDs. Every physical line fits its visible-cell width.
@@ -220,11 +218,11 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 - Compatibility tests prove rendering failure still uses the safe fallback, and model-visible results/execution behavior are unaffected.
 - Persistence tests round-trip a representative run through `snapshotHistory → JSON → decodeHistory → mergeGraphRuns → toPaneSource → renderPanelLines`; the post-reload hierarchy, counts, decisions, and flow MUST match the live projection.
 - Privacy tests inspect the serialized history and prove it contains no bindings, UUIDs, conversation handles, artifact paths, prompts, outputs, errors, scripts, or inputs. Artifact tests prove lookup is bounded, alias-keyed, optional, and unavailable outside the exact session.
-- Legacy tests keep version 1 history readable and flat; malformed version 2 topology fails closed; unknown versions remain byte-preserved and non-writable.
+- Compatibility tests keep version 1 history readable and flat; malformed version 2 topology fails closed; unknown versions remain byte-preserved and non-writable.
 - Runtime verification uses a fresh Pi session launched through `interactive_shell` to execute the saved `context-gather` graph. Execution evidence proves real fanout, bounded-feedback evaluation and decisions, and synthesis; multi-iteration fixtures cover the continuation shape deterministically.
 - Presentation verification uses Herdr itself, following `herdr --skill`, because the interactive-shell terminal does not display the Herdr side pane. Live and post-reload captures MUST each be compared line-by-line and hierarchy-by-hierarchy against the exact accepted mock at a representative wide size and once at a narrow width.
 - Real verification checks semantic colors, Unicode/ASCII fallback where configurable, reverse-video selection, node-row density, iteration grouping, selected-node detail ordering, width safety, contextual footer hints, and cleanup of every temporary Pi/Herdr process.
-- `herdr-panel-live-frontier.test.ts` covers the live-run presentation through the same public seam: the `∑` composition line with its authoritative order, zero-omission, width degradation, and ASCII fallback; per-node elapsed brackets and paused lifecycle; frontier auto-fold guards; user-toggle-wins over auto-fold; and the normative live-frontier mock at 72×30 and 44×30.
+- [`herdr-panel-live-frontier.test.ts`](../../extensions/subagents/test/herdr-panel-live-frontier.test.ts) covers the live-run presentation through the same public seam: the `∑` composition line with its authoritative order, zero-omission, width degradation, and ASCII fallback; per-node elapsed brackets and paused lifecycle; frontier auto-fold guards; user-toggle-wins over auto-fold; and the normative live-frontier mock at 72×30 and 44×30.
 
 ## Out of Scope
 
@@ -237,4 +235,4 @@ While a run is live in a bounded pane, the panel folds the settled frontier firs
 
 ## Further Notes
 
-This specification supersedes the stale flat, stage-oriented `Graph Run Monitor — Observability Panel` draft and owns the graph panel in Pi and in the Herdr pane. [Subagent tool-output presentation](subagent-tool-output-presentation.md) covers `agent` tool rows; the [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) covers cross-extension tool rows and notifications. The workflow presentation record is retired and is not current authority.
+This specification owns the graph panel in Pi and in the Herdr pane. [Subagent tool-output presentation](subagent-tool-output-presentation.md) covers `agent` tool rows; the [Tool Output TUI Rendering Guide](../guides/tool-output-tui-rendering.md) covers cross-extension tool rows and notifications.

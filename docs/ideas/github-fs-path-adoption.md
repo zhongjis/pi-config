@@ -12,19 +12,13 @@ combination of low prompt salience, competition from more prominently advertised
 tools, `github://`-specific friction, and a routing mismatch where the worker most
 likely to fetch GitHub content is tool-scoped away from these paths.
 
-## Current behavior (wiring is fine)
+## Problem
 
-- `github-fs` is a **pure hook extension**: it registers no tools, only
-  `tool_call` / `tool_result` / `before_agent_start` hooks
-  (`extensions/github-fs/index.ts`).
-- `before_agent_start` appends `PROMPT_GUIDE` — the exact `## GitHub virtual paths`
-  block — to the system prompt (`extensions/github-fs/index.ts:71-84, 262-266`).
-- Because github-fs registers no tools, worker `extension_tools` allowlists cannot
-  gate it. Only `extensions: true | false | list` controls whether its hooks load.
-- Workers that omit `extensions:` default to `true`
-  (`extensions/lib/agent-frontmatter.ts` `inheritField(undefined) → true`), so the
-  extension loads and its hooks bind for all non-isolated workers. The grammar
-  therefore reaches main agent and workers alike.
+The path grammar reaches the main agent and every non-isolated subagent: github-fs
+is a hook-only extension that appends its `## GitHub virtual paths` guide to the
+system prompt, and `extension_tools` allowlists cannot gate it. Agents still reach
+for other tools. See [`extensions/github-fs/`](../../extensions/github-fs/) for the
+hooks and grammar.
 
 ## Why the paths are underused
 
@@ -44,8 +38,8 @@ likely to fetch GitHub content is tool-scoped away from these paths.
 3. **`github://` carries extra friction (why it is the biggest loser).**
    - It always requires a fully-qualified `owner/repo`. `pr://123` and `issue://123`
      derive the repo from the cwd remote (zero friction); `github://` never does
-     (`extensions/github-fs/parse.ts:339` throws on `<2` segments; `ContentTarget.repo`
-     is non-optional). The agent must already know owner/repo, so use is not reflexive.
+     (`extensions/github-fs/parse.ts` rejects a `github://` path
+     without both segments). The agent must already know owner/repo, so use is not reflexive.
    - Its unique value — read a repo file without cloning, at any ref, from any repo —
      overlaps three stronger habits: local `read`, `fetch_content` (which loudly
      claims GitHub support), and `gh api` / raw URLs. `pr://` and `issue://` have no
@@ -85,10 +79,10 @@ asserting a running worker's effective system prompt contains the
 
 ## Relevant code
 
-- `extensions/github-fs/index.ts` — hooks, `PROMPT_GUIDE`, read-path rewrite
-- `extensions/github-fs/parse.ts` — URI grammar; `github://` owner/repo requirement
-- `extensions/github-fs/README.md` — path grammar reference
-- `extensions/lib/agent-frontmatter.ts` — `extensions:` default resolution
-- `extensions/subagents/src/agent-runner.ts` — subagent extension loading and binding
-- `agents/wenchang.md`, `agents/chengfeng.md` — worker tool scoping
+- [`extensions/github-fs/index.ts`](../../extensions/github-fs/index.ts) — hooks, `PROMPT_GUIDE`, read-path rewrite
+- [`extensions/github-fs/parse.ts`](../../extensions/github-fs/parse.ts) — URI grammar; `github://` owner/repo requirement
+- [`extensions/github-fs/README.md`](../../extensions/github-fs/README.md) — path grammar reference
+- [`extensions/lib/agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts) — `extensions:` default resolution
+- [`extensions/subagents/src/agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts) — subagent extension loading and binding
+- [`agents/wenchang.md`](../../agents/wenchang.md), [`agents/chengfeng.md`](../../agents/chengfeng.md) — worker tool scoping
 - `~/.pi/agent/skills/gh/SKILL.md` — competing CLI skill (no path cross-reference)

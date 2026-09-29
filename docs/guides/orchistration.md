@@ -48,7 +48,7 @@ The workflow combines protocol requirements with runtime-enforced mechanics:
 | **Prompt/protocol** | Fu Xi's interview and reviews; Hou Tu's PLAN/Task synchronization, scheduling, delegation, and verification order; Kua Fu's routing and supervision |
 | **Runtime** | Fu Xi's allowed write paths and guarded shell access; mode-scoped delegation authorization; approval state and prepared-handoff registration; child-session creation and `agent-mode: houtu` seeding |
 
-The runtime does not independently prove that a prompt-level review or verification step occurred. The shipped runtime and mode prompts remain authoritative if this guide drifts.
+The runtime does not independently prove that a prompt-level review or verification step occurred. The runtime and mode prompts are authoritative where this guide differs.
 
 ## Plan with Fu Xi
 

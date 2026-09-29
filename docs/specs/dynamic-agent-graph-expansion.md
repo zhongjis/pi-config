@@ -4,17 +4,17 @@ Status: shipped
 
 Owner: `extensions/subagents` graph runtime
 
-Related: [Reusable Agent-Graph Workflow Portfolio](agent-graph-reusable-workflows.md) · [Herdr Agent-Graph Panel Presentation](herdr-agent-graph-presentation.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
+Related: [Herdr Agent-Graph Panel Presentation](herdr-agent-graph-presentation.md) · authoring skill `extensions/subagents/skills/agent-graphs/SKILL.md`
 
 ## Problem
 
-The graph runtime can splice a model-authored `GraphFragment` with `expand`, but it cannot express a typed list of work items as visible child nodes and await their combined results. `context-gather` therefore declares ten possible source lanes up front even when a request needs one. Herdr shows unused lanes, and a second evidence round depends on another fixed set of nodes.
+`expand` splices a model-authored `GraphFragment`, but it cannot turn a typed list of work items into visible child nodes and await their combined results. Without that, a graph such as `context-gather` would have to declare every possible source lane up front, show unused lanes in Herdr, and repeat a fixed node set for each evidence round.
 
 The runtime needs one small, reusable primitive that materializes only requested tasks, runs each task in a fresh Subagent, waits for every task to settle, and returns successes and failures as typed data.
 
 ## Decision
 
-Add a `fanout` graph node. Preserve valid `expand` behavior; both `fanout` and legacy `expand` insertion must enforce the 500-node effective-run ceiling before inserting any nodes. This is a safety-backstop correction, not a change to valid expansion semantics.
+Use a `fanout` graph node. Both `fanout` and `expand` insertion must enforce the 500-node effective-run ceiling before inserting any nodes.
 
 A `fanout` resolves a typed item array, maps each item to an agent selector through an author-declared dispatch table, creates one ordinary dynamic `agent` node per item, and remains a running barrier until all owned children settle. The parent then completes with ordered, all-settled results.
 
@@ -22,46 +22,13 @@ A `fanout` resolves a typed item array, maps each item to an agent selector thro
 
 ## IR Contract
 
-```ts
-interface FanoutNode {
-  type: "fanout";
-  items: ValueRef;
-  itemSchema: JsonSchema;
-  dispatch: {
-    path: string;                  // JSONPath relative to one item
-    cases: Record<string, string>; // resolved value -> agent selector
-  };
-  prompt: Template;
-  input?: Record<string, ValueRef>;
-  outputSchema?: JsonSchema;       // each child's structured output
-  phase?: {
-    index: number;                 // zero-based monitor group
-    title: string;
-  };
-}
-```
+`FanoutNode`, `FanoutResult`, and their fields are defined in [`ir.ts`](../../extensions/subagents/src/graph/ir.ts). A fanout names an `items` ValueRef, an object-root `itemSchema`, a `dispatch` table that maps a JSONPath value within one item to an agent selector, a `prompt` template, optional `input` bindings and per-child `outputSchema`, and optional `phase` metadata for the monitor group.
 
 The prompt may use `${item}` plus keys declared in `input`. `${item}` expands to the complete JSON item. The dispatch table has no default: an unknown value is an authoring or task error, never an implicit agent choice.
 
 `itemSchema` must have an object root. The runtime validates every item before creating any child. `outputSchema`, when present, uses the same structured-output contract as an `agent` node.
 
-A completed fanout exposes:
-
-```ts
-interface FanoutResult {
-  results: Array<{
-    nodeId: string;
-    index: number;
-    item: JsonValue;
-    status: "completed" | "failed" | "skipped";
-    attempt: number;
-    output?: unknown;
-    error?: string;
-  }>;
-}
-```
-
-Results preserve input order, regardless of completion order.
+A completed fanout exposes one result per item, carrying the child node ID, item index, item, status (`completed`, `failed`, or `skipped`), attempt, and output or error. Results preserve input order, regardless of completion order.
 
 ## Execution Contract
 
@@ -131,7 +98,7 @@ Herdr must show:
 - `attempt N · user retry` or `attempt N · loop` when applicable;
 - retained child inspection under existing live/history privacy and size limits.
 
-Fanout children are never labelled resumed because this change adds no Subagent continuation.
+Fanout children are never labelled resumed because fanout adds no Subagent continuation.
 
 ## `context-gather`
 
@@ -173,6 +140,6 @@ Each evaluator sees the original request, requested tasks, prior evidence, and a
 - Model-authored raw graph fragments for context gathering.
 - A general unbounded evaluator loop.
 - Access-policy or approval machinery.
-- Changes to valid legacy `expand` behavior beyond enforcing the effective-run node ceiling.
+- Changes to valid `expand` behavior beyond enforcing the effective-run node ceiling.
 - Federated pause, skip, or retry controls for nodes inside recursively invoked subgraphs.
 - Global concurrency, resource, node-run, or retry budgets shared across recursive subgraph schedulers.

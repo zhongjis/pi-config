@@ -6,8 +6,8 @@ Unit tests validate extension logic in isolation using hand-rolled stubs instead
 
 - `extensions/*/test/` — per-extension unit tests; extension-specific tests belong here, next to the extension
 - `test/extensions.smoke.test.ts` — auto-discovery smoke test for all extensions
-- `test/stubs/` — stub modules for `@earendil-works/pi-ai`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`
-- `test/fixtures/` — `mock-pi.ts`, `mock-context.ts`; root `test/` is for shared harness files, not per-extension specs
+- [`test/stubs/`](../../../test/stubs/) — stub modules for the `@earendil-works/*` Pi packages
+- [`test/fixtures/`](../../../test/fixtures/) — shared mocks such as `createMockPi`; root `test/` is for shared harness files, not per-extension specs
 
 ## Running
 
@@ -76,17 +76,6 @@ describe("my-extension", () => {
   });
 });
 ```
-
-### Key stubs
-
-| Stub | Provides |
-|------|----------|
-| `test/stubs/pi-ai.ts` | `API`, `Model`, `Message` types, `complete()`, `getModel()` |
-| `test/stubs/pi-coding-agent.ts` | `Pi` type, extension registration types |
-| `test/stubs/pi-agent-core.ts` | Core agent types |
-| `test/stubs/pi-tui.ts` | TUI rendering types |
-| `test/fixtures/mock-pi.ts` | Full mock `Pi` object with lifecycle, commands, tools, events |
-| `test/fixtures/mock-context.ts` | Mock `Context` with UI, session manager |
 
 ## Maintenance
 

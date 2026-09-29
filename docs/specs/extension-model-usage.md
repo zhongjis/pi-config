@@ -6,13 +6,13 @@ Shared tool-owned LLM calls use `tool_models.json` role config instead of per-ex
 
 Load order:
 
-1. built-in defaults in `extensions/lib/tool-models.ts`
+1. built-in defaults in [`extensions/lib/tool-model-defaults.ts`](../../extensions/lib/tool-model-defaults.ts), loaded by [`extensions/lib/tool-models.ts`](../../extensions/lib/tool-models.ts)
 2. global `~/.pi/agent/tool_models.json`
 3. project `.pi/tool_models.json`
 
 Later layers override earlier layers.
 
-`install.sh` symlinks the repo's top-level `tool_models.json` into the global path.
+`install.sh` symlinks the repo's root [`tool_models.json`](../../tool_models.json) into the global path. That file and the built-in defaults hold the current role chains.
 
 ## Schema
 
@@ -20,16 +20,10 @@ Later layers override earlier layers.
 {
   "version": 1,
   "roles": {
-    "summary.session": "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b",
-    "commit": "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
-    "guard.tool": "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5",
-    "vision.inspect": "gpt-5.5:medium,mimo-v2.5,kimi-k2.6,glm-4.6v,gpt-5-nano"
+    "<role>": "<model chain>"
   },
   "tools": {
-    "smart-sessions.summary": { "role": "summary.session" },
-    "boomerang.commit": { "role": "commit" },
-    "smart-tool-guards.classifier": { "role": "guard.tool" },
-    "multimodal-look.inspect": { "role": "vision.inspect" }
+    "<tool key>": { "role": "<role>" }
   }
 }
 ```
@@ -45,34 +39,29 @@ Rules:
 
 ## Built-in tool keys
 
-| Tool key | Built-in role | Purpose | Consumer |
-|---|---|---|---|
-| `smart-sessions.summary` | `summary.session` | One-line session-name summary | `extensions/smart-sessions/index.ts` |
-| `boomerang.commit` | `commit` | `/boomerang:commit` target model | `extensions/boomerang/commit.ts` |
-| `smart-tool-guards.classifier` | `guard.tool` | Classify deferred guarded built-in `bash` commands | `extensions/smart-tool-guards/src/classifier.ts` |
-| `multimodal-look.inspect` | `vision.inspect` | Inspect one image in an isolated child session | `extensions/multimodal-look/index.ts` |
+Each extension-owned call reads one tool key, named `<extension>.<purpose>`. The built-in keys and their roles are defined in [`tool-model-defaults.ts`](../../extensions/lib/tool-model-defaults.ts). The consumers are [`smart-sessions`](../../extensions/smart-sessions/index.ts), [`boomerang`](../../extensions/boomerang/commit.ts), [`smart-tool-guards`](../../extensions/smart-tool-guards/src/classifier.ts), and [`multimodal-look`](../../extensions/multimodal-look/index.ts).
 
 ## Extension behavior
 
 ### `smart-tool-guards`
 
-Guarded built-in `bash` commands that are neither deterministic danger nor exact `pwd` resolve `smart-tool-guards.classifier`. Its built-in role is `guard.tool`, with chain `openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5`. Fu Xi and the protected read-only subagents opt into this guard through trusted scope providers; other callers bypass it.
+Guarded built-in `bash` commands that are neither deterministic danger nor exact `pwd` resolve `smart-tool-guards.classifier`. Its built-in role is `guard.tool`. Fu Xi and the protected read-only subagents opt into this guard through trusted scope providers; other callers bypass it.
 
 Global or project config may replace the entire `guard.tool` chain, repoint the tool key to another role, or set a direct tool `chain`; a direct chain wins over its role. The classifier tries each candidate in order — the resolved `guard.tool` chain, then the current session model — and advances to the next whenever a candidate cannot produce a valid verdict (cleared selection, unavailable or unauthenticated model, provider error, cancellation, or invalid verdict). The first valid allow/block verdict wins and a valid block is never downgraded; only when no candidate yields a verdict does it fail closed and block the guarded command.
 
 ### `smart-sessions`
 
-Legacy `session-summary.json` still has highest priority when both `provider` and `model` are non-blank. That explicit pair calls `ctx.modelRegistry.find(provider, model)` and fails hard if unavailable.
+An explicit `session-summary.json` pair has highest priority when both `provider` and `model` are non-blank. That explicit pair calls `ctx.modelRegistry.find(provider, model)` and fails hard if unavailable.
 
 When either field is blank or missing, `smart-sessions` resolves `smart-sessions.summary` from `tool_models.json` and uses the resolved model object for auth and `complete()`.
 
 ### `boomerang`
 
-`/boomerang:commit` resolves `boomerang.commit` at command time from `ctx.cwd`, then feeds the candidates into the existing commit resolver. The existing context-window gate remains: if every configured commit model is unavailable or too small, it falls back to the current model with the existing warning.
+`/boomerang:commit` resolves `boomerang.commit` at command time from `ctx.cwd`, then feeds the candidates into the commit resolver, which applies a context-window gate: if every configured commit model is unavailable or too small, it falls back to the current model with a warning.
 
 ### `multimodal-look`
 
-`look_at` resolves `multimodal-look.inspect` through `vision.inspect`; global and project layers may replace the role, repoint the tool, or set a preferred direct chain. The default chain is `gpt-5.5:medium,mimo-v2.5,kimi-k2.6,glm-4.6v,gpt-5-nano`. If no configured candidate resolves, it uses the current model only when that model declares image input support; otherwise the existing explicit error is thrown before a child session is created. The isolated session and main-session model behavior remain unchanged.
+`look_at` resolves `multimodal-look.inspect` through `vision.inspect`; global and project layers may replace the role, repoint the tool, or set a preferred direct chain. If no configured candidate resolves, it uses the current model only when that model declares image input support; otherwise an explicit error is thrown before a child session is created.
 
 ## Related docs
 

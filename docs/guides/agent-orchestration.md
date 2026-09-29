@@ -16,18 +16,6 @@ Where the details live:
 
 ---
 
-## Two orchestration philosophies
-
-| Workflow | Modes | Shape |
-|----------|-------|-------|
-| **Single-session** | Kua Fu | Classify the request, delegate specialists, verify, respond — all in the current session. |
-| **Plan-then-execute** | Fu Xi → Hou Tu | Fu Xi plans; on approval a **child session** opens in Hou Tu to execute. |
-
-All modes delegate through the same `agent` tool. What differs per mode is *which*
-subagents it may call, *how* it routes, and *when* it hands off.
-
----
-
 ## Modes at a glance
 
 | Mode | Alias | Orchestration role |
@@ -68,26 +56,11 @@ Roles and tool posture are defined in each `agents/<name>.md`; see
 
 ## Delegation matrix
 
-Which subagent each mode may delegate to. **Authoritative source is each mode's
-`allow_delegation_to` / `disallow_delegation_to` frontmatter** (`modes/<mode>/mode.md`);
-this table is a convenience snapshot.
+Each mode's `allow_delegation_to` / `disallow_delegation_to` frontmatter defines
+which subagents it may delegate to: [`kuafu`](../../modes/kuafu/mode.md),
+[`fuxi`](../../modes/fuxi/mode.md), [`houtu`](../../modes/houtu/mode.md).
 
-| Target ↓ / Mode → | kuafu | fuxi | houtu |
-|---|:---:|:---:|:---:|
-| chengfeng | ✓ | ✓ | ✓ |
-| wenchang | ✓ | ✓ | ✓ |
-| cangjie | ✓ | — | ✓ |
-| taishang | ✓ | ✓ | ✓ |
-| direnjie | ✓ | ✓ | ✓ |
-| yanluo | — | ✓ | — |
-| xuannv | ✓ | — | — |
-| jintong | ✓ | — | ✓ |
-| juling | ✓ | — | ✓ |
-| guangguang | ✓ | — | ✓ |
-| yunu | ✓ | ✓ | ✓ |
-| houtu | ✗ | ✗ | — |
-
-Notes: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `yunu` only
+Routing intent: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `yunu` only
 for UI feasibility input, not general implementation. `yanluo` is fuxi-only and
 `xuannv` is kuafu-only. **Hou Tu is never a delegation target** — it is reached
 through the approval → `/handoff:start-work` bridge, not by delegation.
@@ -105,7 +78,7 @@ spawn ingress (a denial reports the permitted targets). Full model:
 |------------|---------|-----------|
 | Fu Xi → Hou Tu | plan approved | `plan_approve` → `/handoff:start-work` opens a child session seeded `agent-mode: houtu`. |
 | Kua Fu → Fu Xi | plan-first work | User switches with `/mode fuxi`. Kua Fu does **not** spawn Fu Xi as a subagent. |
-| Any → any | manual | `/mode <name>`, `/mode:<name> <text>`, `Ctrl+Shift+M` cycle, or `--mode` at startup. |
+| Any → any | manual | `/mode <name>` or the other switching entry points in [modes.md](../specs/modes.md). |
 
 `fuxi` and `houtu` are **modes, not spawnable subagents** — moving between them is a
 mode switch (or the approval bridge), never an `agent` call. See

@@ -1,16 +1,12 @@
 # Subagent Tool Output Presentation
 
-**Status:** planned
+Status: shipped
 
-Implemented run-report contract: `agent`, canonical `get_agent_result`, and legacy `get_subagent_result` share independent-agent metadata and compact/expanded rendering. Canonical graph retrieval distinguishes execution, objective outcome and human-required gates without opening UI. The owning [Subagent contract](../../extensions/subagents/AGENTS.md) records implemented guarantees. Broader stories below remain design targets where not covered by that contract.
+`agent`, canonical `get_agent_result`, and its compatibility alias `get_subagent_result` share independent-agent metadata and compact/expanded rendering; `steer_subagent` has its own action-report renderer ([`tool-rendering.ts`](../../extensions/subagents/src/tool-rendering.ts)). Canonical graph retrieval distinguishes execution, objective outcome, and human-required gates without opening UI. The owning [Subagent contract](../../extensions/subagents/AGENTS.md) also records these guarantees.
 
 ## Problem Statement
 
-Panda Harness exposes Subagent work through three related tools: starting or resuming a Subagent, checking a background run, and steering a running Subagent. Their human-facing tool output does not yet form one coherent presentation system.
-
-Collapsed output reports useful facts, but spreads status, activity, identity, model, usage, result previews, artifacts, and next actions across too many rows. Users must scan telemetry to answer simple questions: Is the Subagent still working? Did it finish? What did it produce? What should I do next?
-
-Expanded output is complete but mostly presents raw model-facing text. Metadata repeats, final results lack visual hierarchy, errors compete with secondary details, and paths are difficult to scan. Steering output also lacks the custom presentation used by the other Subagent tools.
+Panda Harness exposes Subagent work through three related tools: starting or resuming a Subagent, checking a background run, and steering a running Subagent. Their human-facing output must answer simple questions at a glance: Is the Subagent still working? Did it finish? What did it produce? What should I do next? Raw model-facing text repeats metadata, lacks hierarchy for final results, lets errors compete with secondary details, and makes paths hard to scan.
 
 The interface needs progressive disclosure without changing the tool results consumed by the parent Agent. Collapsed output should support supervision at a glance. Expanded output should provide a readable, complete run report. The `/agents` interface should remain the interactive conversation viewer rather than being duplicated inside every tool row.
 
@@ -24,7 +20,7 @@ Present all Subagent tool output through a consistent human-facing system:
 - Starting or resuming a Subagent and checking its result share one run-report presentation model. Steering uses a smaller action-report renderer built from the same status, width, and theme conventions.
 - Human-facing rendering consumes additive, JSON-safe presentation details derived from runtime state. It does not parse human prose when structured state is available.
 - Model-facing `content`, `isError`, result-consumption timing, persistence, notifications, and public lifecycle/event contracts remain unchanged.
-- If presentation details are absent, malformed, or from an older result, expanded rendering falls back to the original raw content instead of hiding information or failing the tool row.
+- If presentation details are absent, malformed, or unsupported, expanded rendering falls back to the original raw content instead of hiding information or failing the tool row.
 
 This creates three deliberate disclosure levels:
 
@@ -119,11 +115,11 @@ This creates three deliberate disclosure levels:
 - State coverage includes queued, running partial, foreground completion, background acknowledgement, background completion, completed at turn limit, stopped, hard-limit abort, runtime error, policy denial, missing agent, live resume, restored-session resume, empty output, and malformed details.
 - Collapsed tests assert no more than three result lines, omission of all run statistics, model/thinking-only metadata, decision-relevant ordering, configured expand hints, safe preview truncation, and complete identifiers in expanded mode.
 - Expanded tests assert status/error-first hierarchy, complete Markdown result text, metadata and artifact grouping, verbose conversation preservation, empty-result messaging, and raw-content fallback.
-- Compatibility tests capture model-facing `content` and `isError` before and after presentation changes and assert byte-for-byte equality for every tool/state fixture.
+- Compatibility tests assert that model-facing `content` and `isError` stay byte-for-byte unchanged for every tool/state fixture.
 - Width tests render at 8, 20, 40, 80, and 120 columns with CJK text, emoji, combining characters, ANSI styling, long unbroken text, long paths, URLs, Markdown, and code blocks. Every returned line must fit its visible width. Expanded values may wrap but may not use semantic ellipsis.
 - Theme tests use semantic theme roles and confirm that status still includes readable text when color is absent.
 - Partial-result tests confirm that live updates and final output use consistent status semantics and that progress updates do not replace authoritative final content.
-- Prior art includes existing Subagent tool-renderer tests, summary-renderer width tests, live activity projection tests, conversation-viewer tests, result-recovery tests, and extension session-context integration tests.
+- Renderer tests live in [`extensions/subagents/test/`](../../extensions/subagents/test/).
 - One real Pi TUI scenario starts a background Subagent, captures collapsed output, toggles the configured expand action, captures expanded output, checks width and hierarchy, then checks completion or failure presentation. The capture verifies Pi integration rather than replacing component contract tests.
 - Focused Extension tests, type checking, and the repository's Extension smoke suite remain required implementation gates.
 
@@ -142,6 +138,6 @@ This creates three deliberate disclosure levels:
 
 ## Further Notes
 
-Taishang found no architectural blocker. The review identified four requirements that must remain explicit during implementation: presentation data must come from typed runtime state rather than parsed prose; lifecycle state must remain separate from delivery and invocation outcomes; expanded losslessness means complete visible content with raw fallback rather than byte-identical styling; and every line must obey visible terminal width under real Unicode and ANSI conditions.
+Four requirements stay explicit: presentation data must come from typed runtime state rather than parsed prose; lifecycle state must remain separate from delivery and invocation outcomes; expanded losslessness means complete visible content with raw fallback rather than byte-identical styling; and every line must obey visible terminal width under real Unicode and ANSI conditions.
 
 The design intentionally favors a quiet collapsed row and a readable expanded report. Complete interactive history remains available through `/agents`, while durable output and session artifacts preserve deeper evidence. This avoids turning every tool result into a second conversation viewer.

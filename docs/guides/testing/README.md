@@ -19,11 +19,7 @@ pnpm exec vitest run --project subagents-e2e  # subagents-e2e only
 
 ## Vitest Workspace
 
-Three Vitest projects are defined in `vitest.config.ts`:
-
-- **unit** — stub aliases for Pi packages; excludes integration and subagents-e2e tests.
-- **integration** — real Pi packages; includes `test/integration/**/*.test.ts`, 30-second timeout.
-- **subagents-e2e** — real Pi packages; includes `extensions/subagents/test/**/*e2e*.test.ts`, 30-second timeout. There is currently no dedicated package script for this project.
+[`vitest.config.ts`](../../../vitest.config.ts) defines the projects, their include patterns, stub aliases, and timeouts.
 
 Rule: extension-specific unit tests stay next to their extension under `extensions/foo/test/`. Root `test/` holds shared harness tests, smoke coverage, fixtures, and stubs.
 
@@ -34,4 +30,4 @@ Rule: extension-specific unit tests stay next to their extension under `extensio
 
 ## install.sh Behavior
 
-The test framework stays in the repository. The top-level `install.sh` allowlist symlinks only runtime support items (`agents/`, `agent-graphs/`, `modes/`, `caveman.json`, `pi-herdr-btw.json`, `session-summary.json`, `subagents.json`, `tool_models.json`, `scripts/`, and `themes/`) into `~/.pi/agent/`. Test infrastructure (`test/`, `vitest.config.ts`, `package.json`, `node_modules/`) is not installed.
+The test framework stays in the repository. `install.sh` symlinks only runtime support items into `~/.pi/agent/`; its allowlist is in [`install.sh`](../../../install.sh). Test infrastructure (`test/`, `vitest.config.ts`, `package.json`, `node_modules/`) is not installed.

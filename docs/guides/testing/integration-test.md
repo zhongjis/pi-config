@@ -9,7 +9,7 @@ pnpm test:integration
 pnpm test  # all configured Vitest projects
 ```
 
-Integration tests live under `test/integration/`. The project uses real Pi packages, no unit-test stub aliases, and a 30-second test timeout; see [`vitest.config.ts`](../../../vitest.config.ts).
+Integration tests live under `test/integration/`. The project uses real Pi packages and no unit-test stub aliases; see [`vitest.config.ts`](../../../vitest.config.ts).
 
 ## Write a faux-provider playbook
 
@@ -40,6 +40,6 @@ describe("modes integration", () => {
 });
 ```
 
-The playbook supplies ordered model actions; `calls` invokes a tool and `says` completes the response. `mockTools` substitutes selected tool results while extension-registered tools and hooks still run. `mockUI` can provide answers for extension UI calls. Inspect `t.events.toolCallsFor(name)`, `toolResultsFor(name)`, `blockedCalls()`, `uiCallsFor(name)`, and `messages` for assertions. Dispose of the session after each test to release its temporary directory.
+The playbook supplies ordered model actions; `calls` invokes a tool and `says` completes the response. `mockTools` substitutes selected tool results while extension-registered tools and hooks still run. `mockUI` can provide answers for extension UI calls. Assert against `t.events`; `faux-session.ts` defines its query helpers. Dispose of the session after each test to release its temporary directory.
 
 For extension calls to a separate model, [`smart-tool-guards.integration.test.ts`](../../../test/integration/smart-tool-guards.integration.test.ts) demonstrates `fauxResponseRouter`. For tests that need a different session setup, see [`fast-session.ts`](../../../test/integration/helpers/fast-session.ts) and its use in [`fast.integration.test.ts`](../../../test/integration/fast.integration.test.ts).

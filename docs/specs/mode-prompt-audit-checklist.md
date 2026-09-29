@@ -13,7 +13,7 @@ Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior pa
 
 ## Construction Reference
 
-Use [mode-prompt-parity.md](mode-prompt-parity.md) as the single source for family construction semantics, current file matrix, and local invariants. Audit the final injected prompt for each affected family, not just the source files.
+Use [mode-prompt-parity.md](mode-prompt-parity.md) as the single source for family construction semantics and local invariants; [modes/README.md](../../modes/README.md) owns the prompt file set. Audit the final injected prompt for each affected family, not just the source files.
 
 ## Upstream Provenance Rule
 

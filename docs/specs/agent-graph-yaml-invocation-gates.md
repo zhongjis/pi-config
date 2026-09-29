@@ -4,7 +4,7 @@ Status: shipped
 
 ## Problem Statement
 
-Saved agent graphs currently resolve only JSON, manual prompts have no explicit saved-agent-graph token beside `$skill:<name>`, and `human_gate` offers an approve/reject decision only through the existing UI. Authors need a readable persisted format, users need deliberate invocation by name, and graph authors need a small choice between human and Subagent decisions without weakening the existing approval boundary or inventing another executor.
+Authors need a readable persisted format, users need deliberate invocation by name, and graph authors need a small choice between human and Subagent decisions without weakening the existing approval boundary or inventing another executor.
 
 ## Solution
 
@@ -38,7 +38,7 @@ Saved agent graphs currently resolve only JSON, manual prompts have no explicit 
 
 ## Implementation Decisions
 
-- The saved-agent-graph resolver alone parses persisted YAML, using a direct YAML dependency and JSON-compatible values. It rejects duplicate keys and unsafe or excessive aliases before passing data through the existing `AgentGraph` validation and runtime. JSON remains backward compatible; root precedence remains unchanged. Same-name JSON and YAML within one root fail as ambiguous rather than selecting a preferred format. The repository-owned portfolio may migrate after parser support exists.
+- The saved-agent-graph resolver alone parses persisted YAML, using a direct YAML dependency and JSON-compatible values. It rejects duplicate keys and unsafe or excessive aliases before passing data through the existing `AgentGraph` validation and runtime. JSON and YAML share root precedence. Same-name JSON and YAML within one root fail as ambiguous rather than selecting a preferred format.
 - `$graph:<name>` is manual opt-in for one exactly named saved agent graph; it is not an inline graph format. Autocomplete and runtime use the same resolvable names and precedence. The token remains visible. Multiple distinct graph tokens fail before launch. Missing, ambiguous, and disabled resolutions produce clear errors.
 - The token permits the selected agent graph and its declared nested subgraphs through existing delegation preflight, not arbitrary other agent graph runs. The current orchestrator, not token handling, maps the full request to input, asks about required input it cannot infer, and calls `agent_graph`. The graph tool retains validation and delegation preflight before launch. Token handling does not execute an agent graph directly or make the parent orchestrator callable from a background run.
 - `human_gate` is human-only and retains the current approve/reject UI and approval boundary. The v1 decision value exposed by all three gates is exactly `{ approved: boolean }`; downstream conditions use `$.approved`. Gate `outputSchema` validation applies to that value, not to the internal agent result. `agent_gate` and `hybrid_gate` each name a configured Subagent. Their decision attempt returns only `decided` carrying `{ approved: boolean }`, or `undecided` carrying a nonempty reason. The runtime unwraps a `decided` result and validates its decision value before exposing it downstream.
@@ -47,7 +47,7 @@ Saved agent graphs currently resolve only JSON, manual prompts have no explicit 
 
 ## Testing Decisions
 
-Test externally visible contracts at the highest existing seams rather than actor internals:
+Test externally visible contracts at the highest existing seams rather than actor internals. Tests live in [`extensions/subagents/test/`](../../extensions/subagents/test/). The seams are:
 
 1. **Saved resolver:** accept JSON and YAML equivalents through the same validation path; retain JSON compatibility and root precedence; reject same-name cross-format files in one root, duplicate keys, unsafe or excessive aliases, and values outside the accepted JSON-compatible data shape. Validate the repository-owned portfolio after any YAML migration.
 2. **Inline token extension:** assert token detection and autocomplete over resolvable saved agent graphs under runtime precedence; token visibility and explicit opt-in; authorization of exactly the selected saved agent graph and its declared nested subgraphs, not unrelated runs; original prompt preservation and injected graph request context; rejection of multiple distinct tokens; clear missing, ambiguous, and disabled errors; and no direct agent graph execution by token handling.
@@ -64,4 +64,4 @@ Test externally visible contracts at the highest existing seams rather than acto
 
 ## Further Notes
 
-This contract is shipped on this implementation branch. The repository-owned portfolio may remain JSON because JSON and YAML saved graphs share the same validation and runtime path.
+The repository-owned portfolio may remain JSON because JSON and YAML saved graphs share the same validation and runtime path.
