@@ -87,6 +87,39 @@ function resultOf(context: GraphContext): RunGraphResult {
   return context.domain?.result(!!context.cancellation) ?? { status: "failed", outputs: {}, nodes: {} };
 }
 
+type PersistenceChartOptions = {
+  readonly id?: string;
+  readonly entry?: "checkpoint";
+  readonly failed: string;
+  readonly onError: string;
+  readonly empty: readonly {
+    readonly guard: (args: { readonly context: GraphContext }) => boolean;
+    readonly target: string;
+    readonly actions?: "committed";
+  }[];
+};
+function persistenceChart<const T extends PersistenceChartOptions>(options: T) {
+  return {
+    ...(options.id === undefined ? {} : { id: options.id }),
+    ...(options.entry === undefined ? {} : { entry: options.entry }),
+    tags: "persisting" as const,
+    initial: "select" as const,
+    states: {
+      select: { always: [
+        { guard: "failed" as const, target: options.failed },
+        ...options.empty,
+        { guard: "nested" as const, target: "request" as const },
+        { target: "writing" as const },
+      ] },
+      request: { entry: "requestCheckpoint" as const, always: { guard: "failed" as const, target: "#graphDrain" as const }, on: { "CHECKPOINT.ACK": { guard: (({ context, event }) => domainOf(context).frames[0]?.state.runtime?.revision === event.sequence) satisfies (args: { readonly context: GraphContext; readonly event: Extract<GraphEvent, { type: "CHECKPOINT.ACK" }> }) => boolean, target: "select" as const, actions: "advanceCheckpoint" as const } } },
+      writing: { invoke: { src: "persist" as const, input: (({ context }) => context) satisfies (args: { readonly context: GraphContext }) => GraphContext,
+        onDone: { target: "select" as const, actions: "advanceCheckpoint" as const },
+        onError: { target: options.onError, actions: (({ context, event }) => { context.failure ??= { error: event.error }; }) satisfies (args: { readonly context: GraphContext; readonly event: { readonly error: unknown } }) => void },
+      } },
+    },
+  };
+}
+
 /** Root lifecycle authority. Panda checkpoints, not XState snapshots, remain durable. */
 // allow: SIZE_OK — the root machine keeps admission, persistence, cancellation and physical drain in one hierarchy.
 export const graphLogic = setup({
@@ -412,27 +445,24 @@ export const graphLogic = setup({
             replying: { entry: "committed", always: "route" },
             transaction: { entry: "request", always: "route" },
             settling: { entry: "settle", always: "route" },
-            persisting: {
-              id: "graphPersist", tags: "persisting", initial: "select",
-              states: {
-                select: { always: [{ guard: "failed", target: "#graphDrain" }, { guard: ({ context }) => !context.domain?.frames.length, target: "#graphPublished", actions: "committed" }, { guard: "nested", target: "request" }, { target: "writing" }] },
-                request: { entry: "requestCheckpoint", always: { guard: "failed", target: "#graphDrain" }, on: { "CHECKPOINT.ACK": { guard: ({ context, event }) => domainOf(context).frames[0]?.state.runtime?.revision === event.sequence, target: "select", actions: "advanceCheckpoint" } } },
-                writing: { invoke: { src: "persist", input: ({ context }) => context,
-                  onDone: { target: "select", actions: "advanceCheckpoint" }, onError: { target: "#graphDrain", actions: ({ context, event }) => { context.failure ??= { error: event.error }; } },
-                } },
-              },
-            },
+            persisting: persistenceChart({
+              id: "graphPersist",
+              failed: "#graphDrain",
+              onError: "#graphDrain",
+              empty: [{ guard: ({ context }) => !context.domain?.frames.length, target: "#graphPublished", actions: "committed" }],
+            }),
             publishing: { id: "graphPublished", invoke: { src: "publish", input: ({ context }) => domainOf(context).publications.splice(0),
               onDone: "route", onError: { target: "route", actions: ({ context, event }) => { context.failure ??= { error: event.error }; } },
             } },
             cancelling: { entry: "cancel", always: [{ guard: "failed", target: "draining" }, { target: "persistingCancel" }] },
-            persistingCancel: {
-              tags: "persisting", initial: "select", states: {
-                select: { always: [{ guard: "failed", target: "#graphDrain" }, { guard: ({ context }) => !context.domain?.frames.length && context.admissions.length > 0, target: "#graphCancelDispatch", actions: "committed" }, { guard: ({ context }) => !context.domain?.frames.length, target: "#graphDrain", actions: "committed" }, { guard: "nested", target: "request" }, { target: "writing" }] },
-                request: { entry: "requestCheckpoint", always: { guard: "failed", target: "#graphDrain" }, on: { "CHECKPOINT.ACK": { guard: ({ context, event }) => domainOf(context).frames[0]?.state.runtime?.revision === event.sequence, target: "select", actions: "advanceCheckpoint" } } },
-                writing: { invoke: { src: "persist", input: ({ context }) => context, onDone: { target: "select", actions: "advanceCheckpoint" }, onError: { target: "#graphDrain", actions: ({ context, event }) => { context.failure ??= { error: event.error }; } } } },
-              },
-            },
+            persistingCancel: persistenceChart({
+              failed: "#graphDrain",
+              onError: "#graphDrain",
+              empty: [
+                { guard: ({ context }) => !context.domain?.frames.length && context.admissions.length > 0, target: "#graphCancelDispatch", actions: "committed" },
+                { guard: ({ context }) => !context.domain?.frames.length, target: "#graphDrain", actions: "committed" },
+              ],
+            }),
             dispatchingCancel: { id: "graphCancelDispatch", tags: "draining", entry: ["dispatch", sendTo(({ self }) => self, { type: "WAKE" })], on: { WAKE: "draining" } },
             draining: {
               id: "graphDrain", tags: "draining", entry: "abortChildren", always: "drainWaiting",
@@ -449,20 +479,17 @@ export const graphLogic = setup({
             },
             drainRequest: { entry: "request", always: [{ guard: "failed", target: "draining" }, { target: "persistingDrain" }] },
             settlingDrain: { entry: "settle", always: [{ guard: "failed", target: "draining" }, { target: "persistingDrain" }] },
-            persistingDrain: {
-              tags: "persisting", initial: "select", states: {
-                select: { always: [{ guard: "failed", target: "#graphDrain" }, { guard: ({ context }) => !context.domain?.frames.length, target: "#graphDrainWait", actions: "committed" }, { guard: "nested", target: "request" }, { target: "writing" }] },
-                request: { entry: "requestCheckpoint", always: { guard: "failed", target: "#graphDrain" }, on: { "CHECKPOINT.ACK": { guard: ({ context, event }) => domainOf(context).frames[0]?.state.runtime?.revision === event.sequence, target: "select", actions: "advanceCheckpoint" } } },
-                writing: { invoke: { src: "persist", input: ({ context }) => context, onDone: { target: "select", actions: "advanceCheckpoint" }, onError: { target: "#graphDrain", actions: ({ context, event }) => { context.failure ??= { error: event.error }; } } } },
-              },
-            },
-            checkpointingTerminal: {
-              entry: "checkpoint", tags: "persisting", initial: "select", states: {
-                select: { always: [{ guard: "failed", target: "#graphFinished" }, { guard: ({ context }) => !context.domain?.frames.length, target: "#graphFinished" }, { guard: "nested", target: "request" }, { target: "writing" }] },
-                request: { entry: "requestCheckpoint", always: { guard: "failed", target: "#graphDrain" }, on: { "CHECKPOINT.ACK": { guard: ({ context, event }) => domainOf(context).frames[0]?.state.runtime?.revision === event.sequence, target: "select", actions: "advanceCheckpoint" } } },
-                writing: { invoke: { src: "persist", input: ({ context }) => context, onDone: { target: "select", actions: "advanceCheckpoint" }, onError: { target: "#graphFinished", actions: ({ context, event }) => { context.failure ??= { error: event.error }; } } } },
-              },
-            },
+            persistingDrain: persistenceChart({
+              failed: "#graphDrain",
+              onError: "#graphDrain",
+              empty: [{ guard: ({ context }) => !context.domain?.frames.length, target: "#graphDrainWait", actions: "committed" }],
+            }),
+            checkpointingTerminal: persistenceChart({
+              entry: "checkpoint",
+              failed: "#graphFinished",
+              onError: "#graphFinished",
+              empty: [{ guard: ({ context }) => !context.domain?.frames.length, target: "#graphFinished" }],
+            }),
             finished: { id: "graphFinished", always: [{ guard: "nested", target: "notifying" }, { guard: "failed", target: "#graph.infrastructureFailure" }, { target: "#graph.terminal" }] },
             notifying: { entry: "notifyParent" },
           },
