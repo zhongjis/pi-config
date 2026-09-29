@@ -73,7 +73,7 @@ export function isJsonPath(path: string): boolean {
 const STEP = /^(?:\.([A-Za-z_$][\w$]*)|\[(\d+)\]|\["([^"]*)"\])/;
 
 /** Split `.a.b[0]["k"]` into `["a","b",0,"k"]`, or undefined if malformed. */
-function tokenize(rest: string): (string | number)[] | undefined {
+export function tokenize(rest: string): (string | number)[] | undefined {
   const tokens: (string | number)[] = [];
   let remaining = rest;
   while (remaining.length > 0) {

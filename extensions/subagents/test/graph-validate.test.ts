@@ -340,3 +340,187 @@ it("does not accept literal placeholders as authored agents or arbitrary expansi
   expect(validateGraph({ nodes, edges: [] }).ok).toBe(false);
   expect(validateFragment({ nodes, edges: [] }, []).ok).toBe(false);
 });
+
+const closedGuardSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    verdict: { type: "string" },
+    count: { type: "integer" },
+    score: { type: "number" },
+    flag: { type: "boolean" },
+    note: { type: "null" },
+    label: { type: ["string", "null"] },
+    review: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        verdict: { type: "string" },
+        items: {
+          type: "array",
+          items: { type: "object", additionalProperties: false, properties: { name: { type: "string" } } },
+        },
+      },
+    },
+  },
+};
+
+function guardGraph(when: unknown, outputSchema: unknown = closedGuardSchema, inputSchema?: unknown) {
+  return validateGraph({
+    ...(inputSchema === undefined ? {} : { inputSchema }),
+    nodes: {
+      review: { type: "agent", agent: "x", prompt: "p", outputSchema },
+      next: { type: "agent", agent: "x", prompt: "p" },
+    },
+    edges: [{ from: "review", to: "next", when }],
+  });
+}
+
+describe("validateGraph — edge guard paths", () => {
+  it("rejects a closed-schema typo and accepts a real property", () => {
+    const typo = guardGraph({ eq: [{ node: "review", path: "$.verdcit" }, "x"] });
+    expect(typo.ok).toBe(false);
+    expect(typo.errors).toContain('edges[0].when.eq[0].path: "$.verdcit" cannot exist in "review" output schema');
+    expect(guardGraph({ eq: [{ node: "review", path: "$.verdict" }, "x"] })).toEqual({ ok: true, errors: [] });
+    expect(guardGraph({ eq: [{ node: "review", path: '$["verdict"]' }, "x"] })).toEqual({ ok: true, errors: [] });
+  });
+
+  it("accepts a typo when the schema is open or a combinator makes the level unknown", () => {
+    const open = { type: "object", properties: { verdict: { type: "string" } } };
+    expect(guardGraph({ eq: [{ node: "review", path: "$.verdcit" }, "x"] }, open)).toEqual({ ok: true, errors: [] });
+    const extra = { type: "object", properties: { verdict: { type: "string" } }, additionalProperties: { type: "string" } };
+    expect(guardGraph({ exists: { node: "review", path: "$.verdcit" } }, extra)).toEqual({ ok: true, errors: [] });
+    const opaque: Record<string, unknown> = {
+      oneOf: [{ required: ["verdict"] }],
+      anyOf: [{ required: ["verdict"] }],
+      allOf: [{ required: ["verdict"] }],
+      patternProperties: { "^x": { type: "string" } },
+      if: { required: ["verdict"] },
+      // biome-ignore lint/suspicious/noThenProperty: JSON Schema `then` keyword fixture.
+      then: { required: ["verdict"] },
+      else: { required: ["verdict"] },
+      $ref: "#/$defs/x",
+      unevaluatedProperties: false,
+      dependentSchemas: { verdict: { required: ["verdict"] } },
+    };
+    for (const [key, value] of Object.entries(opaque)) {
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: { verdict: { type: "string" } },
+        [key]: value,
+      };
+      expect(guardGraph({ eq: [{ node: "review", path: "$.verdcit" }, "x"] }, schema), key).toEqual({ ok: true, errors: [] });
+    }
+    const branched = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        review: { oneOf: [{ type: "object", additionalProperties: false, properties: { verdict: { type: "string" } } }] },
+      },
+    };
+    expect(guardGraph({ eq: [{ node: "review", path: "$.review.verdcit" }, "x"] }, branched)).toEqual({ ok: true, errors: [] });
+  });
+
+  it("checks nested properties and array indexes, and rejects descent below a scalar", () => {
+    expect(guardGraph({ eq: [{ node: "review", path: "$.review.verdict" }, "ok"] })).toEqual({ ok: true, errors: [] });
+    expect(guardGraph({ eq: [{ node: "review", path: "$.review.items[0].name" }, "ok"] })).toEqual({ ok: true, errors: [] });
+    const nested = guardGraph({ eq: [{ node: "review", path: "$.review.verdcit" }, "ok"] });
+    expect(nested.errors).toContain('edges[0].when.eq[0].path: "$.review.verdcit" cannot exist in "review" output schema');
+    const index = guardGraph({ eq: [{ node: "review", path: "$.review.items[0].nme" }, "ok"] });
+    expect(index.errors).toContain('edges[0].when.eq[0].path: "$.review.items[0].nme" cannot exist in "review" output schema');
+    const tuple = {
+      type: "object",
+      additionalProperties: false,
+      properties: { pair: { type: "array", items: [{ type: "string" }, { type: "number" }] } },
+    };
+    expect(guardGraph({ eq: [{ node: "review", path: "$.pair[0].nope" }, "ok"] }, tuple)).toEqual({ ok: true, errors: [] });
+    const prefixed = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        pair: {
+          type: "array",
+          prefixItems: [{ type: "object", additionalProperties: false, properties: { name: { type: "string" } } }],
+          items: { type: "string" },
+        },
+      },
+    };
+    expect(guardGraph({ eq: [{ node: "review", path: "$.pair[0].name" }, "ok"] }, prefixed)).toEqual({ ok: true, errors: [] });
+    for (const path of ["$.count.extra", "$.score.extra", "$.flag.extra", "$.note.extra", "$.label.extra", "$.verdict.extra"]) {
+      const result = guardGraph({ gt: [{ node: "review", path }, 1] });
+      expect(result.errors).toContain(`edges[0].when.gt[0].path: "${path}" cannot exist in "review" output schema`);
+    }
+  });
+
+  it("checks decision-gate paths against the exposed approved boolean", () => {
+    for (const type of ["human_gate", "agent_gate", "hybrid_gate"] as const) {
+      const gate = {
+        type,
+        prompt: "Decide",
+        outputSchema: { type: "object" },
+        ...(type === "human_gate" ? {} : { agent: "reviewer" }),
+      };
+      const graph = (path: string) => validateGraph({
+        nodes: { gate, next: { type: "agent", agent: "x", prompt: "p" } },
+        edges: [{ from: "gate", to: "next", when: { eq: [{ node: "gate", path }, true] } }],
+      });
+      expect(graph("$.approved")).toEqual({ ok: true, errors: [] });
+      expect(graph("$.aproved").errors).toContain('edges[0].when.eq[0].path: "$.aproved" cannot exist in "gate" output schema');
+      expect(graph("$.approved.extra").errors).toContain('edges[0].when.eq[0].path: "$.approved.extra" cannot exist in "gate" output schema');
+    }
+  });
+
+  it("checks a node-less guard against a closed graph input schema", () => {
+    const inputSchema = { type: "object", additionalProperties: false, properties: { task: { type: "string" } } };
+    const typo = guardGraph({ exists: { path: "$.tsk" } }, closedGuardSchema, inputSchema);
+    expect(typo.errors).toContain('edges[0].when.exists.path: "$.tsk" cannot exist in graph input schema');
+    expect(guardGraph({ exists: { path: "$.task" } }, closedGuardSchema, inputSchema)).toEqual({ ok: true, errors: [] });
+    expect(guardGraph({ exists: { path: "$.tsk" } })).toEqual({ ok: true, errors: [] });
+    const open = { type: "object", properties: { task: { type: "string" } } };
+    expect(guardGraph({ exists: { path: "$.tsk" } }, closedGuardSchema, open)).toEqual({ ok: true, errors: [] });
+  });
+
+  it("reports every nested exists, and, or, and not guard", () => {
+    const result = guardGraph({
+      and: [
+        { exists: { node: "review", path: "$.verdcit" } },
+        { not: { ne: [{ node: "review", path: "$.count.extra" }, 1] } },
+        { or: [{ gte: [{ node: "review", path: "$.flag.nope" }, 1] }, { lt: [{ node: "review", path: "$.verdict" }, 1] }] },
+      ],
+    });
+    expect(result.errors).toEqual([
+      'edges[0].when.and[0].exists.path: "$.verdcit" cannot exist in "review" output schema',
+      'edges[0].when.and[1].not.ne[0].path: "$.count.extra" cannot exist in "review" output schema',
+      'edges[0].when.and[2].or[0].gte[0].path: "$.flag.nope" cannot exist in "review" output schema',
+    ]);
+  });
+
+  it("does not guess unknown output shapes or non-guard ValueRefs", () => {
+    const next = { type: "agent" as const, agent: "x", prompt: "p" };
+    const when = { eq: [{ node: "src", path: "$.verdcit" }, true] };
+    expect(validateGraph({ nodes: { src: next, next }, edges: [{ from: "src", to: "next", when }] })).toEqual({ ok: true, errors: [] });
+    expect(validateGraph({
+      nodes: { src: { type: "graph", graph: "child" }, next },
+      edges: [{ from: "src", to: "next", when }],
+    })).toEqual({ ok: true, errors: [] });
+    expect(validateGraph({
+      nodes: { src: { type: "expand", source: { path: "$" } }, next },
+      edges: [{ from: "src", to: "next", when }],
+    })).toEqual({ ok: true, errors: [] });
+    const fanout = {
+      type: "fanout", items: { path: "$" }, itemSchema: { type: "object" },
+      dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: "${item}",
+      outputSchema: closedGuardSchema,
+    };
+    expect(validateGraph({ nodes: { src: fanout, next }, edges: [{ from: "src", to: "next", when }] })).toEqual({ ok: true, errors: [] });
+    expect(validateGraph({
+      nodes: {
+        review: { type: "agent", agent: "x", prompt: "p", outputSchema: closedGuardSchema },
+        next: { ...next, input: { v: { node: "review", path: "$.verdcit" } } },
+      },
+      edges: [],
+      outputs: { v: { node: "review", path: "$.verdcit" } },
+    })).toEqual({ ok: true, errors: [] });
+  });
+});

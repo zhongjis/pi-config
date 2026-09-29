@@ -6,16 +6,16 @@
  * for a saved/inline graph, and {@link validateFragment} for a runtime
  * expansion, which is held to the same rules against the ids already in the run.
  *
- * The check is deliberately exhaustive over the IR shape (docs/ideas/
- * agent-graph-design-v2.md §1.8): every node type, every reference, every edge,
+ * The check is deliberately exhaustive over the IR shape: every node type,
+ * every reference, every edge,
  * every condition, and every embedded JSON Schema. Errors accumulate so an
  * author sees all of them at once instead of one per round-trip.
  */
 
-import { compileDecisionSchema } from "./decision-gate.js";
+import { compileDecisionSchema, decisionValueSchema } from "./decision-gate.js";
 import { type GraphNode, NODE_TYPES, type NodeId } from "./ir.js";
 import { compileInputSchema, compileJsonSchema } from "./json-schema.js";
-import { isJsonPath } from "./value-ref.js";
+import { isJsonPath, tokenize } from "./value-ref.js";
 
 export interface ValidationResult {
   ok: boolean;
@@ -41,6 +41,36 @@ function isPositiveInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+const DECISION_NODE_TYPES = new Set(["human_gate", "agent_gate", "hybrid_gate"]);
+const SCALAR_TYPES = new Set(["string", "number", "integer", "boolean", "null"]);
+const OPAQUE_SCHEMA_KEYS = ["patternProperties", "allOf", "anyOf", "oneOf", "if", "then", "else", "$ref", "unevaluatedProperties", "dependentSchemas"] as const;
+
+function opaqueSchema(schema: Record<string, unknown>): boolean {
+  return OPAQUE_SCHEMA_KEYS.some(key => Object.hasOwn(schema, key));
+}
+
+function onlyScalar(type: unknown): boolean {
+  if (typeof type === "string") return SCALAR_TYPES.has(type);
+  return Array.isArray(type) && type.length > 0 && type.every(item => typeof item === "string" && SCALAR_TYPES.has(item));
+}
+
+/** True only when the remaining path cannot exist. Unknown or open schema is not impossible. */
+function pathCannotExist(schema: unknown, tokens: readonly (string | number)[], index = 0): boolean {
+  if (index >= tokens.length || !isPlainObject(schema) || opaqueSchema(schema)) return false;
+  if (onlyScalar(schema.type)) return true;
+  const token = tokens[index];
+  if (typeof token === "number") {
+    // prefixItems can override items for an index; don't guess which schema applies.
+    if (Object.hasOwn(schema, "prefixItems")) return false;
+    return isPlainObject(schema.items) && pathCannotExist(schema.items, tokens, index + 1);
+  }
+  const properties = schema.properties;
+  if (!isPlainObject(properties) || !Object.hasOwn(properties, token)) {
+    return isPlainObject(properties) && schema.additionalProperties === false;
+  }
+  return pathCannotExist(Object.getOwnPropertyDescriptor(properties, token)?.value, tokens, index + 1);
+}
+
 /**
  * Accumulates errors under a dotted path so each message says where it is.
  * `known` is the set of node ids a reference may point at — for a fragment this
@@ -50,7 +80,7 @@ function isPositiveInt(value: unknown): value is number {
 class Validator {
   readonly errors: string[] = [];
 
-  constructor(private readonly known: Set<NodeId>, private readonly materializedPrompts: ReadonlySet<NodeId>) {}
+  constructor(private readonly known: Set<NodeId>, private readonly materializedPrompts: ReadonlySet<NodeId>, private readonly nodes: Record<string, unknown>, private readonly inputSchema: unknown) {}
 
   private err(path: string, message: string): void {
     this.errors.push(`${path}: ${message}`);
@@ -68,6 +98,32 @@ class Validator {
     if (typeof ref.path !== "string" || !ref.path.startsWith("$")) {
       this.err(`${path}.path`, 'must be a JSONPath string starting with "$"');
     }
+  }
+
+  /** Edge guards only. Missing, open, or combinator schemas are not proof a path cannot exist. */
+  private guardPath(path: string, ref: unknown): void {
+    if (!isPlainObject(ref) || typeof ref.path !== "string" || !ref.path.startsWith("$")) return;
+    const tokens = tokenize(ref.path.slice(1));
+    if (tokens === undefined || tokens.length === 0) return;
+    const source = this.guardSchema(ref);
+    if (source === undefined || !pathCannotExist(source.schema, tokens)) return;
+    this.err(`${path}.path`, `"${ref.path}" cannot exist in ${source.where}`);
+  }
+
+  private guardSchema(ref: Record<string, unknown>): { schema: unknown; where: string } | undefined {
+    if (ref.node === undefined) {
+      return isPlainObject(this.inputSchema) ? { schema: this.inputSchema, where: "graph input schema" } : undefined;
+    }
+    if (typeof ref.node !== "string" || !Object.hasOwn(this.nodes, ref.node)) return undefined;
+    const node = this.nodes[ref.node];
+    if (!isPlainObject(node)) return undefined;
+    if (node.type === "agent") {
+      return node.outputSchema === undefined ? undefined : { schema: node.outputSchema, where: `"${ref.node}" output schema` };
+    }
+    if (typeof node.type === "string" && DECISION_NODE_TYPES.has(node.type)) {
+      return { schema: decisionValueSchema, where: `"${ref.node}" output schema` };
+    }
+    return undefined;
   }
 
   condition(path: string, cond: unknown): void {
@@ -88,6 +144,7 @@ class Validator {
         return;
       }
       this.valueRef(`${path}.${op}[0]`, operand[0]);
+      this.guardPath(`${path}.${op}[0]`, operand[0]);
       if (NUMERIC_OPS.has(op) && typeof operand[1] !== "number") {
         this.err(`${path}.${op}[1]`, "must be a number");
       }
@@ -95,6 +152,7 @@ class Validator {
     }
     if (op === "exists") {
       this.valueRef(`${path}.exists`, operand);
+      this.guardPath(`${path}.exists`, operand);
       return;
     }
     if (op === "and" || op === "or") {
@@ -304,6 +362,7 @@ function validateCore(
   outputs: unknown,
   existingIds: Set<NodeId>,
   materializedPrompts: ReadonlySet<NodeId> = new Set(),
+  inputSchema?: unknown,
 ): ValidationResult {
   const errors: string[] = [];
 
@@ -320,7 +379,7 @@ function validateCore(
   }
 
   const known = new Set<NodeId>([...existingIds, ...ids]);
-  const validator = new Validator(known, materializedPrompts);
+  const validator = new Validator(known, materializedPrompts, nodes, inputSchema);
   for (const id of ids) validator.node(id, (nodes as Record<string, unknown>)[id]);
 
   if (edges !== undefined) {
@@ -392,7 +451,7 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
   if (graph.version !== 2 && isPlainObject(graph.nodes)) {
     for (const [id, node] of Object.entries(graph.nodes)) if (isPlainObject(node) && node.type === "bounded_feedback") errors.push(`nodes.${id}: bounded feedback requires version 2`);
   }
-  const core = validateCore(graph.nodes, graph.edges, graph.outputs, new Set(), materializedPrompts);
+  const core = validateCore(graph.nodes, graph.edges, graph.outputs, new Set(), materializedPrompts, graph.inputSchema);
   errors.push(...core.errors);
   return { ok: errors.length === 0, errors };
 }
