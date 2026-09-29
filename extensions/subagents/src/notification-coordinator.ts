@@ -89,15 +89,22 @@ export function createNotificationCoordinator(
   presentation: AgentPresentation,
 ) {
   const pendingNudges = new Map<string, ReturnType<typeof setTimeout>>();
+  let parking = false;
+  const parked = new Map<string, () => void>();
   let currentBatchAgents: { id: string; joinMode: JoinMode }[] = [];
   let batchFinalizeTimer: ReturnType<typeof setTimeout> | undefined;
   let batchCounter = 0;
+
+  function deliver(send: () => void) {
+    try { send(); } catch { /* ignore stale completion side-effect errors */ }
+  }
 
   function schedule(key: string, send: () => void, delay = NUDGE_HOLD_MS) {
     cancel(key);
     pendingNudges.set(key, setTimeout(() => {
       pendingNudges.delete(key);
-      try { send(); } catch { /* ignore stale completion side-effect errors */ }
+      if (parking) parked.set(key, send);
+      else deliver(send);
     }, delay));
   }
 
@@ -107,6 +114,19 @@ export function createNotificationCoordinator(
       clearTimeout(timer);
       pendingNudges.delete(key);
     }
+    parked.delete(key);
+  }
+
+  function hold() {
+    parking = true;
+  }
+
+  function release(flush = true) {
+    parking = false;
+    if (!flush) return;
+    const sends = [...parked.values()];
+    parked.clear();
+    for (const send of sends) deliver(send);
   }
 
   function emitIndividualNudge(record: AgentRecord) {
@@ -217,7 +237,9 @@ export function createNotificationCoordinator(
   function clearPending() {
     for (const timer of pendingNudges.values()) clearTimeout(timer);
     pendingNudges.clear();
+    parked.clear();
+    parking = false;
   }
 
-  return { schedule, cancel, onComplete, track, clearPending };
+  return { schedule, cancel, onComplete, track, clearPending, hold, release };
 }

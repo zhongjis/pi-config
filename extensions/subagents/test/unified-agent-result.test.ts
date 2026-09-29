@@ -61,3 +61,71 @@ describe("registered result retrieval", () => {
     }
   });
 });
+
+describe("turn-boundary completion notifications", () => {
+  const turnStart = { type: "turn_start", turnIndex: 0, timestamp: 0 };
+  const finalTurn = {
+    type: "turn_end",
+    turnIndex: 0,
+    message: { role: "assistant", stopReason: "stop", content: [] },
+    toolResults: [],
+  };
+  const waitPastHold = () => new Promise((resolve) => setTimeout(resolve, 500));
+  const notified = (host: ReturnType<typeof boot>, id: string) =>
+    host.api.sendMessage.mock.calls.some(([message]) => String(message.content).includes(`<task-id>${id}</task-id>`));
+
+  it("omits a collected background notification at the final turn", async () => {
+    const host = boot();
+    await host.lifecycle("session_start");
+    await host.lifecycle("turn_start", turnStart);
+    const launched = await required(host.tools.get("agent")).execute("launch", {
+      subagent_type: "fixture", prompt: "bg-result", description: "parked", run_in_background: true,
+    }, undefined, undefined, host.ctx);
+    const id = required(/Agent ID: (\S+)/.exec(launched.content.map((part) => part.text ?? "").join("\n"))?.[1]);
+    await waitPastHold();
+    const result = await required(host.tools.get("get_agent_result")).execute("read", { run_id: id, wait: true }, undefined, undefined, host.ctx);
+    expect(result.content.map((part) => part.text ?? "").join("\n")).toContain("bg-result");
+    await host.lifecycle("turn_end", finalTurn);
+    expect(notified(host, id)).toBe(false);
+  });
+
+  it("delivers an uncollected background notification at the final turn", async () => {
+    const host = boot();
+    await host.lifecycle("session_start");
+    await host.lifecycle("turn_start", turnStart);
+    const launched = await required(host.tools.get("agent")).execute("launch", {
+      subagent_type: "fixture", prompt: "bg-open", description: "still parked", run_in_background: true,
+    }, undefined, undefined, host.ctx);
+    const id = required(/Agent ID: (\S+)/.exec(launched.content.map((part) => part.text ?? "").join("\n"))?.[1]);
+    await waitPastHold();
+    expect(notified(host, id)).toBe(false);
+    await host.lifecycle("turn_end", finalTurn);
+    expect(notified(host, id)).toBe(true);
+    const call = required(host.api.sendMessage.mock.calls.find(([message]) => String(message.content).includes(`<task-id>${id}</task-id>`)));
+    expect(call[1]).toEqual({ deliverAs: "followUp", triggerTurn: true });
+  });
+
+  it("omits a collected graph completion notification after the final turn", async () => {
+    const host = boot({ agentGraphEnabled: true });
+    await host.lifecycle("session_start");
+    await host.lifecycle("turn_start", turnStart);
+    let release: (() => void) | undefined;
+    const parked = new Promise<void>((resolve) => { release = resolve; });
+    mockRunAgent(async () => {
+      await parked;
+      return { responseText: "graph-result", session, aborted: false, steered: false };
+    });
+    const launched = await required(host.tools.get("agent_graph")).execute("launch", {
+      graph: { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [], outputs: { answer: { node: "a", path: "$" } } },
+    }, undefined, undefined, host.ctx);
+    const id = required(launched.details?.taskId);
+    const waiting = required(host.tools.get("get_agent_result")).execute("read", { run_id: id, wait: true }, undefined, undefined, host.ctx);
+    required(release)();
+    const result = await waiting;
+    expect(result.content.map((part) => part.text ?? "").join("\n")).toContain("graph-result");
+    expect(result.content.map((part) => part.text ?? "").join("\n")).toContain("completed");
+    await waitPastHold();
+    await host.lifecycle("turn_end", finalTurn);
+    expect(notified(host, id)).toBe(false);
+  });
+});

@@ -89,6 +89,8 @@ export interface GraphRunTask {
   value?: unknown;
   outcome?: GraphRunOutcome;
   error?: string;
+  /** Set when retrieval collected a terminal graph run — suppresses completion notification. */
+  resultConsumed?: boolean;
 }
 
 export function createGraphRunTask(init: {

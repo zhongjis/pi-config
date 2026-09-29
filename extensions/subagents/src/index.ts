@@ -145,6 +145,24 @@ export default function (pi: ExtensionAPI) {
     get fleet() { return fleet; },
   });
   const { schedule: scheduleNudge, cancel: cancelNudge } = notifications;
+  // Park completion follow-ups while this session's turn runs. Pi queues followUp
+  // immediately, so a mid-turn send cannot be retracted.
+  pi.on("turn_start", () => notifications.hold());
+  pi.on("turn_end", (event) => {
+    const message = event.message;
+    if (
+      event.toolResults.length === 0
+      && message.role === "assistant"
+      && message.stopReason !== "error"
+      && message.stopReason !== "aborted"
+    ) {
+      notifications.release();
+    }
+  });
+  pi.on("agent_end", (event) => {
+    const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+    notifications.release(lastAssistant?.stopReason !== "aborted");
+  });
 
   /** Helper: build event data for lifecycle events from an AgentRecord. */
   function buildEventData(record: AgentRecord) {
@@ -344,6 +362,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_before_switch", async () => {
     if (!ownsManagerRegistry) return;
+    notifications.clearPending();
     agentHistory?.disableCapture();
     await agentHistory?.flush();
     agentHistory = undefined;

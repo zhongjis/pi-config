@@ -78,7 +78,12 @@ export function createGraphRuntime(
   let history: GraphHistoryStore | undefined;
   const tasks = new Map<string, GraphRunTask>();
   const gates = new Map<string, ReturnType<typeof createGateHandoff>>();
-  const results = createGraphResultObserver(id => tasks.get(id), id => gates.get(id)?.pending(), (id, gate) => gates.get(id)?.observed(gate.gate_id));
+  const results = createGraphResultObserver(
+    id => tasks.get(id),
+    id => gates.get(id)?.pending(),
+    (id, gate) => gates.get(id)?.observed(gate.gate_id),
+    id => { const task = tasks.get(id); if (task) task.resultConsumed = true; notifications.cancel(id); },
+  );
   let artifactScope: { cwd: string; sessionId: string } | undefined;
   const getRuns = () => {
     const scope = artifactScope;
@@ -301,6 +306,7 @@ export function createGraphRuntime(
     const result = graphRunResultText(task);
     notifications.schedule(task.id, () => {
       if (!sessionActive || tasks.get(task.id) !== task) return;
+      if (task.resultConsumed) return;
       pi.sendMessage<NotificationDetails>({
         customType: "subagent-notification",
         content: graphRunCompletionText(ctx, task),
@@ -349,7 +355,7 @@ export function createGraphRuntime(
       if (renderContext.isError || !task) {
         const status = renderContext.isError
           ? "Failed"
-          : "Live graph state unavailable in this session — see /agents › Graph runs or the completion notification";
+          : "Live graph state unavailable in this session — see /agents › Graph runs";
         const expandLabel = renderContext.isError ? "diagnostics" : "details";
         return options.expanded
           ? renderToolExpanded(`${status}\n${text || "No output."}`)
@@ -413,7 +419,7 @@ export function createGraphRuntime(
             `Agent graph "${graphName}" started in the background.\n` +
             `Task ID: ${runId}\n` +
             `\nCollect with get_agent_result({run_id: "${runId}", wait: true}). Do not end the turn, poll or sleep.\n` +
-            `If human input is required, use ask then resolve_agent_graph_gate; collect again. Completion notifications remain enabled.`,
+            `If human input is required, use ask then resolve_agent_graph_gate; collect again. A completion notification is sent only if the run was not already collected.`,
         }],
         details: { taskId: runId },
       };

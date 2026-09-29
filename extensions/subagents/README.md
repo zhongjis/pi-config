@@ -267,12 +267,12 @@ persisted. Acceptance resumes normal checkpointed node settlement; it is not an
 exactly-once guarantee across process failure.
 
 Unobserved gates use the existing held follow-up notification channel. Retrieval cancels
-its gate nudge, not the gate; completion notifications remain enabled. Graph hosts never
-open a UI prompt themselves.
+its gate nudge, not the gate; retrieving a terminal run consumes its completion notification.
+Graph hosts never open a UI prompt themselves.
 
 ### `agent_graph` (opt-in)
 
-Typed graph orchestration — the multi-agent launch tool. It takes `graph` (a saved graph name or an inline `AgentGraph`) and `input`, validates before execution, and returns a background run ID. Invalid graphs are rejected in the initiating tool call; graph, agent, gate and condition failures are reported asynchronously. Collect with `get_agent_result({run_id, wait:true})`; handle returned human gates with `ask` and `resolve_agent_graph_gate`, then collect again. Completion notifications and `/agents → Graph runs` supervision remain available.
+Typed graph orchestration — the multi-agent launch tool. It takes `graph` (a saved graph name or an inline `AgentGraph`) and `input`, validates before execution, and returns a background run ID. Invalid graphs are rejected in the initiating tool call; graph, agent, gate and condition failures are reported asynchronously. Collect with `get_agent_result({run_id, wait:true})`; handle returned human gates with `ask` and `resolve_agent_graph_gate`, then collect again. Completion notifications (for uncollected runs) and `/agents → Graph runs` supervision remain available.
 
 Set `agentGraphEnabled: true` in `subagents.json` or enable agent graphs in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled agent graphs add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
 
@@ -329,7 +329,7 @@ Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeg
 
 ## Join Strategies
 
-When background agents complete, they notify the main agent. The **join mode** controls how these notifications are delivered. It applies only to background agents.
+When background agents complete, they notify the main agent. The **join mode** controls how these notifications are delivered. It applies only to background agents. Notifications for results already collected with get_agent_result are omitted, and notifications that arrive while the orchestrator's turn runs are delivered at the end of that turn.
 
 | Mode | Behavior |
 |------|----------|
