@@ -18,7 +18,7 @@ Own the harness's consolidated session UI and built-in write presentation.
 
 ## Work Guidance
 
-- [README](README.md) owns footer symbols, lifecycle hooks, and command behavior.
+- [README](README.md) owns footer symbols and command behavior; [src/](src/) owns lifecycle hooks.
 - Presentation changes MUST NOT alter model-visible results or native write behavior.
 - Startup header configuration SHOULD avoid duplicate default resource listings.
 

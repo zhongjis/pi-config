@@ -5,12 +5,12 @@
 Use `pi.events` for cross-extension coordination only. In this repo, custom channels fall into 3 classes:
 
 - **Shared semantic signal** — stable repo-wide meaning. Current shared signal: `user-prompted`.
-- **Lifecycle / discovery broadcast** — one-way status events named `<namespace>:<event>`, e.g. `subagents:created`, `subagents:started`, `subagents:completed`, `subagents:failed`, `subagents:ready`, `subagents:steered`.
+- **Lifecycle / discovery broadcast** — one-way status events named `<namespace>:<event>`, e.g. `subagents:completed`.
 - **RPC request / reply** — request on `<namespace>:rpc:<method>`, reply on `${channel}:reply:${requestId}`.
 
 ### Naming + contract rules
 
-- Keep existing shared signal `user-prompted` as-is. Do **not** rename it to a namespaced form now.
+- Keep the shared signal `user-prompted` as-is. Do **not** rename it to a namespaced form.
 - New lifecycle/discovery families should use colon namespaces.
 - Every RPC request payload must include `requestId`.
 - Every RPC reply must use envelope `{ success: true, data? } | { success: false, error: string }`.
@@ -61,13 +61,12 @@ awaitingUserAction: {
 }
 ```
 
-Current repo behavior:
-- `extensions/tasks/src/lifecycle/finish-continuation.ts` suppresses finish follow-ups for same-run `user-prompted` and removes its listener on shutdown.
-- It also suppresses finish follow-ups when latest `agent-mode` state contains `awaitingUserAction.suppressContinuationReminder === true`.
-- Any existing Goal record owns continuation; Tasks never overrides Goal status or limits. The periodic transient Task tool-activity reminder is separate.
-- `planReviewPending` is supported for current plan-review flow compatibility, but new generic waiting flows should prefer `awaitingUserAction`.
+Continuation contract:
+- [`finish-continuation.ts`](tasks/src/lifecycle/finish-continuation.ts) is the reference consumer of both signals.
+- Any existing Goal record owns continuation; Tasks never overrides Goal status or limits.
+- New generic waiting flows MUST use `awaitingUserAction`; `planReviewPending` serves only the plan-review flow.
 
-## Current event families
+## Event families
 
 | Family | Purpose | Contract | Scope |
 |--------|---------|----------|-------|

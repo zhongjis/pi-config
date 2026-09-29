@@ -5,7 +5,7 @@ Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains `ultra
 ## Ownership
 
 - Owns keyword detection, model-family prompt selection, prompt variants, the activation banner, and tests.
-- [README](README.md) owns hooks and upstream adaptation.
+- [README](README.md) owns upstream adaptation; [index.ts](index.ts) owns hooks.
 
 ## Local Contracts
 

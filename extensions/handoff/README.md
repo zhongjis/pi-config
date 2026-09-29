@@ -12,31 +12,17 @@ Session handoff system for transferring context to a new focused session.
 - Exports runtime utilities (`buildPlanExecutionGoal`, `registerDirectHandoffBridge`, etc.) for use by other extensions
 - Uses an event bus bridge for direct handoff requests between extensions
 
-## Commands
+## Entry Points
 
 - `/handoff [-mode <mode>] [-no-summarize] <content>` — Transfer context to a new focused session; `-mode` selects its mode
 - `/handoff:mode <mode> <content>` — Immediately transfer context to a new session in the selected mode
 - `/handoff:file [-no-summarize] [goal]` — Write a handoff document to a temp file (`$TMPDIR/handoff-<timestamp>.md`) for another agent to pick up
 - `/handoff:start-work` — Hand off an approved plan to an execution agent in a new session
 
-With summarization enabled, `/handoff:file` asks the model for a self-contained brief focused on the supplied goal, or the current unfinished task when omitted. Sections cover Task, Findings and evidence, Remaining questions, Constraints, and Relevant files. Instructions preserve authorization limits and require secret redaction. The receiving agent uses its own working directory; source paths are evidence references, not instructions to change directories. File export creates no new session; `/handoff` keeps its existing session-summary behavior.
+With summarization enabled, `/handoff:file` asks the model for a self-contained brief focused on the supplied goal, or the current unfinished task when omitted. Sections cover Task, Findings and evidence, Remaining questions, Constraints, and Relevant files. Instructions preserve authorization limits and require secret redaction. The receiving agent uses its own working directory; source paths are evidence references, not instructions to change directories. File export creates no new session; `/handoff` summarizes into a new session.
 
-## Hooks
-
-- `session_shutdown` — Unsubscribe the direct handoff bridge
+Commands are registered in [`index.ts`](index.ts).
 
 ## Configuration
 
-### Config file
-
-`~/.pi/agent/handoff.json`:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `lastSummaryModel` | `string` | `undefined` | Last model used for session summarization |
-
-## Files Worth Reading
-
-- `index.ts` — Command registration and bridge setup
-- `config.ts` — Config file I/O
-- `runtime.ts` — Core handoff logic: summarization, session creation, bridge protocol
+`~/.pi/agent/handoff.json` remembers the last summary model; keys are defined in [`config.ts`](config.ts).

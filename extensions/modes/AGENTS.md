@@ -26,7 +26,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 
 ## Work Guidance
 
-- [README](README.md) owns mode aliases, frontmatter, tools, and transition behavior.
+- [README](README.md) owns mode aliases, frontmatter, and transition behavior; [commands](src/commands.ts) and [index](src/index.ts) own the command and tool sets.
 - You MUST use the shared frontmatter schema rather than revive obsolete tool keys.
 
 ## Verification

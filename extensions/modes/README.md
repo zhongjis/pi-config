@@ -12,7 +12,7 @@ Three modes with distinct agent personas:
 | Fu Xi 伏羲 | `plan` | Planning and decomposition. Drafts plans with gap review. |
 | Hou Tu 后土 | `execute` | Focused execution worker. Runs plans step by step. |
 
-Retired or malformed saved modes fall back to clean `kuafu`, discarding their model override and planning/review state. Valid saved state still restores when `--mode` is absent or explicitly `kuafu`; other CLI values retain their existing precedence.
+Saved modes that are unknown or malformed fall back to clean `kuafu`, discarding their model override and planning/review state. Valid saved state still restores when `--mode` is absent or explicitly `kuafu`; other CLI values retain their existing precedence.
 
 Each mode reads its prompt from `modes/<mode>/mode.md`. Global AGENTS.md rules stay active in all modes.
 
@@ -38,46 +38,17 @@ Obsolete `tools`, `disallowed_tools`, and `disallow_tools` frontmatter is reject
 Configured model chains (or the active `/mode-model` override) use the shared
 [post-native-retry continuation contract](../../docs/specs/model-selection-and-fallback.md#post-native-retry-chain-continuation).
 
-## Tools
+## Entry Points
 
-### `plan_approve`
+- `/mode [kuafu|fuxi|houtu|build|plan|execute]` or `--mode <name>` — switch mode; Tab / Ctrl+Shift+M cycle modes.
+- `/mode-model` — show, set (`<provider/modelId>`), or `--reset` the session-scoped model override.
+- `plan_approve` and `plan_scaffold` — Fu Xi planning tools.
 
-Present the plan approval menu after plan generation is complete.
-
-**Parameters:**
-- `variant` (optional): `"post-gap-review"` (default, includes High Accuracy Review option) or `"post-high-accuracy"` (after Yan Luo already approved)
-
-### `plan_scaffold`
-
-Create canonical upstream-format `local://DRAFT.md` and, unless `draftOnly` is set, `local://PLAN.md`. Existing scaffold artifacts are resume-safe no-ops; destructive reset of edited content requires both `reset` and `force`.
-
-**Parameters:**
-- `slug`: lowercase letters, digits, and hyphens (maximum 80 characters)
-- `intent`: `"clear"` or `"unclear"`
-- `draftOnly`, `reviewRequired`, `reset`, `force` (optional booleans)
-
-## Commands
-
-- `/mode [kuafu|fuxi|houtu|build|plan|execute]` — Switch agent mode
-- `/mode-model` — Show or override the mode's model
-- `/mode-model <provider/modelId>` — Set a session-scoped model override
-- `/mode-model --reset` — Clear the model and effort overrides and revert to mode's chain
-- Tab / Ctrl+Shift+M — Submit through the `/mode` command path
-- `--mode <name>` flag on session start
-- Mode changes that touch mode-owned skill resources reload the terminal.
-- Prompt args on those transitions do not auto-run; resubmit after reload.
+[src/commands.ts](src/commands.ts) registers the commands and [src/index.ts](src/index.ts) registers the planning tools and hooks. Mode changes that touch mode-owned skill resources reload the terminal; prompt args on those transitions do not auto-run, so resubmit after reload.
 
 ## Model Override
 
-By default, each mode selects its model from the `model` frontmatter chain in `modes/<mode>/mode.md`. The `/mode-model` command lets you temporarily override this choice for the current session:
-
-- `/mode-model` — Shows current mode, model override, effort override, configured fallback chain, and active model.
-- `/mode-model anthropic/claude-sonnet-4:high` — Sets a session-scoped override. Validates the model exists in the registry before applying.
-- `/mode-model --reset` — Clears both the model and effort overrides and reverts to the mode's configured chain.
-
-The override is persisted in the session JSONL and survives `/reload`. It does **not** change the mode's frontmatter — it's a runtime override only.
-
-Manually picking a model or thinking level mid-session (via the built-in pickers) is captured the same way: the choice persists for the session, survives `/reload`, and overrides the mode's frontmatter model/effort until you run `/mode-model --reset`.
+Each mode selects its model from the `model` frontmatter chain in `modes/<mode>/mode.md`. A `/mode-model` override, or a manual model or thinking-level pick mid-session, persists in the session, survives `/reload`, and wins over the frontmatter until `/mode-model --reset`. It never rewrites frontmatter.
 
 ### Fast defaults
 
@@ -86,23 +57,3 @@ Model candidates accept `provider/model[:thinking]:fast`, for example `anthropic
 Defaults and `/fast` overrides live in the current session branch. Repeated prompts, same-mode selection, and reload preserve the override. Actual mode transitions reset to the new effective candidate's default, even for the same model. A changed `/mode-model` override/reset applies that effective chain's default; it remains session-local.
 
 The [Fast extension](../fast/README.md) applies defaults using [strict request helpers](../lib/README.md#fast-request-helpers).
-
-## Hooks
-
-- `session_start`, `session_tree` — Restore mode state
-- `before_agent_start` — Inject mode-specific prompt
-- `model_select` — Re-apply mode model when session restores a saved model
-- `resources_discover` — Expose only the active mode's existing `modes/<mode>/skills` directory
-- `input` — Handle mode switching keywords
-- Status bar shows current mode with color coding
-
-## Files Worth Reading
-
-- `src/index.ts` — Extension entry and planning tool registration
-- `src/hooks.ts` — Lifecycle hooks and prompt injection
-- `src/commands.ts` — Mode switching commands
-- `src/mode-state.ts` — Mode state management and persistence
-- `src/mode-skills.ts` — Active-mode discovery of existing mode-owned skill directories
-- `src/plan-approval.ts` — Plan review approval flow
-- `src/constants.ts` — Mode definitions, aliases, colors
-- `src/types.ts` — Type definitions

@@ -25,7 +25,7 @@ Maintain persistent task tracking, dependencies, and task supervision state.
 
 ## Work Guidance
 
-- [README](README.md) owns tool semantics, scope settings, storage, and RPC names.
+- [README](README.md) owns tool semantics and storage; [config](src/tasks-config.ts) and [RPC handlers](src/bridge/rpc-handlers.ts) own settings and RPC names.
 - You MUST preserve [upstream provenance and adaptations](README.md#upstream) and [LICENSE](LICENSE).
 - Store changes SHOULD use existing migration, DAG, and corruption regressions.
 

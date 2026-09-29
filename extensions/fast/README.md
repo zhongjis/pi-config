@@ -22,18 +22,11 @@ Merged locally from two separate upstream extensions by Diego Petrucci (MIT, cop
 - **claude-fast:** https://github.com/diegopetrucci/pi-extensions/tree/main/extensions/claude-fast — `@diegopetrucci/pi-claude-fast` v0.1.2
 - **Last synced commit:** `384a6aca78dd5e08d607c8b434f04406c478c155`
 
-Because the two upstream packages are merged into one local extension behind a profile registry, future upstream syncs must be applied per-profile by hand (see `AGENTS.md`).
+Because the two upstream packages are merged into one local extension behind a profile registry, upstream syncs must be applied per-profile by hand (see `AGENTS.md`).
 
-## Commands
+## Entry Points
 
-- `/fast` — Toggle Fast mode on or off for the current session. Bare toggle only; any argument prints usage.
-
-## Hooks
-
-- `session_start`, `model_select` — Refresh footer from branch-local policy.
-- `before_provider_request` — Apply the provider-specific Fast field.
-- `before_provider_headers` — Merge/mask request-local beta headers, never mutate shared model headers.
-- `fast:policy-changed` — Session-ID-scoped UI refresh only; request policy always reads the current branch.
+- `/fast` — toggle Fast mode on or off for the current session. Bare toggle only; any argument prints usage. The command and provider-request hooks are registered in [`index.ts`](index.ts).
 
 ## Settings / Configuration
 

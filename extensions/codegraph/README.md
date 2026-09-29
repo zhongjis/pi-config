@@ -4,7 +4,7 @@ Vendored CodeGraph Pi extension. Registers native `codegraph_*` tools that proxy
 
 ## Provenance
 
-No longer a straight fork. This extension began as a vendored copy of `@vndv/pi-codegraph` and has since absorbed QoL, limit, and timeout fixes from several other Pi CodeGraph adapters, plus locally-authored changes — it no longer tracks any single upstream. The underlying engine is the `@colbymchenry/codegraph` CLI, which every adapter (including this one) proxies via `codegraph serve --mcp`.
+This extension is based on a vendored copy of `@vndv/pi-codegraph`, combined with QoL, limit, and timeout fixes from other Pi CodeGraph adapters and locally authored changes. It does not track a single upstream. The underlying engine is the `@colbymchenry/codegraph` CLI, which every adapter (including this one) proxies via `codegraph serve --mcp`.
 
 **Base vendor — `@vndv/pi-codegraph@0.1.8`**
 
@@ -15,7 +15,7 @@ No longer a straight fork. This extension began as a vendored copy of `@vndv/pi-
 - **shasum:** `cc61254ed346c2728fa054d49935d8c63dca7878`
 - **integrity:** `sha512-viJnU4zxpPSPzvn4YCaAK7K73zTpHyg71MbpCfIBF+7kUPZ6JrrHQE1w1yRRjcfQ3BaA4/bAny2WVpSBxcCxFg==`
 
-**Absorbed fixes (sourced from peer adapters / locally authored):**
+**Additional fixes (from peer adapters or locally authored):**
 
 - Per-request JSON-RPC timeout + subprocess kill (`CODEGRAPH_TIMEOUT_MS`) and one retry after a `tools/call` timeout — adapted from `gripebomb/pi-codegraph-extension`.
 - Actionable spawn / uninitialized-index error guidance — adapted from `gripebomb/pi-codegraph-extension`.
@@ -24,22 +24,10 @@ No longer a straight fork. This extension began as a vendored copy of `@vndv/pi-
 
 `AGENTS.md` holds the per-change table (what / why / origin) and is the source of truth for divergences.
 
-## Tools
+## Entry Points
 
-All tools accept optional `projectPath` to query another absolute CodeGraph-enabled project directory; when omitted, this repo build uses the active Pi `ctx.cwd`.
-
-- `codegraph_search` — symbol search by name. Params: `query`, optional `kind`, `limit`, `projectPath`.
-- `codegraph_callers` — functions or methods that call `symbol`. Params: `symbol`, optional `limit`, `projectPath`.
-- `codegraph_callees` — functions or methods called by `symbol`. Params: `symbol`, optional `limit`, `projectPath`.
-- `codegraph_impact` — impact radius for changing `symbol`. Params: `symbol`, optional `depth`, `projectPath`.
-- `codegraph_explore` — related source grouped by file. Params: `query`, optional `maxFiles`, `projectPath`.
-- `codegraph_node` — symbol details plus callers/callees. Params: `symbol`, optional `includeCode`, `projectPath`.
-- `codegraph_status` — CodeGraph index status. Params: optional `projectPath`.
-- `codegraph_files` — indexed file tree. Params: optional `path`, `pattern`, `format`, `includeMetadata`, `maxDepth`, `projectPath`.
-
-## Hooks
-
-- `before_agent_start` — when the active project (`ctx.cwd`) or nearest in-repo ancestor has a valid `.codegraph/` project marker, appends concise CodeGraph-first guidance, anti-patterns, and one cold-start note. Re-checked each turn, so a marker created mid-session is picked up on the next turn. No marker means no CodeGraph guidance.
+- `codegraph_*` tools — search, callers/callees, impact, explore, node, status, and files. All accept optional `projectPath`; without it they use the active Pi `ctx.cwd`. Tool schemas and the `before_agent_start` guidance hook are registered in [`index.ts`](index.ts).
+- When the active project has a valid `.codegraph/` marker, CodeGraph-first guidance is appended to the system prompt each turn.
 
 ## Configuration / Requirements
 

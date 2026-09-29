@@ -6,58 +6,27 @@ Persistent `/goal` support for pi, porting Codex-style goal mode: a thread-scope
 
 - Source: https://github.com/code-yeongyu/oh-my-openagent (monorepo path `packages/pi-goal`, branch `dev`)
 - Upstream package: `@oh-my-opencode/pi-goal` v4.15.1 (vendored in that monorepo from `code-yeongyu/pi-goal`)
-- Last synced commit: `dec381ed201a1326883db9f42bdb3c2add91b299`
+- Commit: `dec381ed201a1326883db9f42bdb3c2add91b299`
 - License: MIT (`LICENSE` vendored)
-- Local changes summary: copied upstream `src/` and `test/` into `extensions/goal/`; migrated pi peer imports from the old `@mariozechner/*` scope to `@earendil-works/*`; migrated the test suite from `bun:test` to `vitest` (incl. `setSystemTime` → `vi` fake timers); added a root `index.ts` re-export shim for this repo's `extensions/<name>/index.ts` discovery; omitted upstream `package.json`/tsconfig/biome/CI/`SKILL.md` because root catalog deps and root tooling already cover them.
+- Local changes: vendors upstream `src/` and `test/`; pi peer imports use `@earendil-works/*`; tests run under `vitest` (with `vi` fake timers); a root `index.ts` re-export shim supports this repo's `extensions/<name>/index.ts` discovery; upstream `package.json`/tsconfig/biome/CI/`SKILL.md` are omitted because root catalog deps and tooling cover them.
 
 ## Tools
 
-### `create_goal`
+- `create_goal` — create an active goal with an `objective` and optional `token_budget`; fails if an active goal exists.
+- `update_goal` — set `status` to `complete` only when the objective is achieved, or `blocked` only after the same blocking condition recurs for ≥3 consecutive turns. Pause/resume are user-controlled.
+- `get_goal` — return the current goal, usage, and budget.
+- `/goal [<objective>|pause|resume|clear]` — show, set, pause, resume, or clear the goal.
 
-Create a new active goal (or replace the current goal when it is complete). Fails if an active goal already exists.
-
-| Name | Type | Required | Notes |
-|------|------|----------|-------|
-| `objective` | string | Yes | Concrete objective to pursue. |
-| `token_budget` | integer | No | Positive token budget; goal becomes `budgetLimited` when exhausted. Omit unless explicitly requested. |
-
-### `update_goal`
-
-| Name | Type | Required | Notes |
-|------|------|----------|-------|
-| `status` | `"complete"` \| `"blocked"` | Yes | `complete` only when the objective is achieved; `blocked` only after the same blocking condition recurs for ≥3 consecutive turns. Pause/resume are user-controlled. |
-
-### `get_goal`
-
-Return the current goal for this thread (status, token and elapsed-time usage, budget). No parameters.
-
-## Commands
-
-- `/goal <objective>` — set or replace the goal (prompts to confirm replacement when one exists).
-- `/goal` — show the current goal.
-- `/goal pause` — pause autonomous continuation without deleting the goal.
-- `/goal resume` — reactivate a paused goal.
-- `/goal clear` — remove the goal.
-
-## Hooks
-
-- `session_start` — load goal, restore accounting, offer to resume a paused goal on `resume`, queue the continuation prompt when idle.
-- `agent_start` / `agent_end` — track per-turn token/time usage, enforce the token budget (→ `budgetLimited`), and queue the hidden continuation prompt while the goal stays `active`.
-- `session_shutdown` — flush accounting and clear in-memory state.
+Tool schemas, the command, and lifecycle hooks are registered in [`src/index.ts`](src/index.ts).
 
 ## Settings / Configuration
 
-No config file. Goal state persists as JSON keyed by thread id:
-
-- With a session: `<sessionDir>/extensions/goal/<threadId>.json`.
-- Without a session: `$PI_CODING_AGENT_DIR/extensions/goal/no-session/<cwd-hash>/<threadId>.json` (defaults under `~/.pi/agent`).
-
-Statuses: `active`, `paused`, `blocked`, `budgetLimited`, `complete`.
+No config file. Goal state persists as JSON keyed by thread id, under the session directory or `$PI_CODING_AGENT_DIR` (default `~/.pi/agent`) when there is no session. Paths are resolved in [`src/goal/context.ts`](src/goal/context.ts); statuses are defined in [`src/goal/types.ts`](src/goal/types.ts).
 
 ## Local Additions
 
-Features added on top of upstream (see AGENTS.md `## Local Tweaks`):
+Local features on top of upstream:
 
 - **Compact tool-result rendering** (`src/goal/render.ts`): the `create_goal`/`get_goal`/`update_goal` tools show a collapsed `keyword: content` summary (objective, status, elapsed time, tokens) with an expand hint; expanding shows the raw JSON. Model-visible `result.content` is unchanged.
 - **Footer bridge:** the goal status indicator is published for the `qol` extension's footer instead of clobbering the shared footer slot; a standalone Codex-style footer is the fallback when `qol` is absent.
-- **Shared context reader** (`src/goal/context.ts`): `goalStoreRef` is the single context-to-storage resolver; `readGoalForContext` returns a Goal or null and propagates lookup errors. Tasks defers continuation for every existing Goal status and fails closed on lookup errors. Goal scheduling is unchanged.
+- **Shared context reader** (`src/goal/context.ts`): `goalStoreRef` is the single context-to-storage resolver; `readGoalForContext` returns a Goal or null and propagates lookup errors. Tasks defers continuation for every existing Goal status and fails closed on lookup errors; this does not affect Goal scheduling.

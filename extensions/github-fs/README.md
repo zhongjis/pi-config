@@ -44,21 +44,9 @@ Query flags: `?comments=0` (hide comments), `?state=open|closed|merged|all`, `?l
 - Freshness: `?refresh=1` always refetches; terminal items (merged/closed) are served indefinitely; otherwise a 5-minute soft TTL. Entries past a 7-day hard TTL are evicted opportunistically on write.
 - `github://` with a full 40-hex-SHA `?ref=` is treated as immutable (cached indefinitely); branch/tag/short-sha/omitted refs use the soft TTL. Fetched files materialize with their real extension (e.g. `.ts`) so `read` gives language-aware summaries and anchors; directory/PR/issue views stay `.md`.
 
-## Hooks
+## Entry Points
 
-- `tool_call` — rewrite `pr://`/`issue://`/`github://` read paths to a cache file; block `write`/`edit`
-- `tool_result` — rewrite the cache path back to the virtual path
-- `tool_execution_end` / `session_start` — clean up resolution tracking
-- `before_agent_start` — append the path grammar to the system prompt
-
-## Files Worth Reading
-
-- `index.ts` — hooks + composition root
-- `resolve.ts` — host/repo derivation + fetch/cache orchestration
-- `parse.ts` — URI grammar
-- `gh.ts` — `gh` spawn layer + multi-account auth
-- `render.ts` — JSON/diff → markdown
-- `cache.ts` — account-scoped file cache
+There is no separate tool: `read` a `pr://`, `issue://`, or `github://` path. The read/write interception and prompt-grammar hooks are registered in [`index.ts`](index.ts); the URI grammar is parsed in [`parse.ts`](parse.ts).
 
 ## Out Of Scope
 

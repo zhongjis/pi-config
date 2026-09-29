@@ -14,20 +14,9 @@ A `$graph:` token authorizes exactly one resolvable saved graph for the current 
 - License: MIT — Copyright (c) 2026 Tifan Dwi Avianto (see `LICENSE`)
 - Local changes: invocation token changed from upstream `/name` to `$skill:<name>`; `$graph:<name>` adds explicit saved-graph opt-in; Pi-native skill entries are stripped from `/` autocomplete; vendored as flat-tier `index.ts`; upstream `package.json`/`tsconfig.json`/`CHANGELOG.md`/`assets/` omitted; README replaced.
 
-## Commands
+## Entry Points
 
-- `/loaded-skills`: List skills loaded in the current session.
+- Type `$` in the editor for `$skill:` / `$graph:` autocomplete.
+- `/loaded-skills` — list skills loaded in the current session.
 
-## Hooks
-
-- `session_start`: clear graph authorization, restore loaded-skill state, and register `$skill:` plus resolver-backed `$graph:` autocomplete.
-- `session_tree`: clear graph authorization and refresh the loaded-skill set on branch switch.
-- `tool_result`: mark a skill loaded when its `SKILL.md` is read via the `read` tool.
-- `input`: stage matching skills, validate one visible saved-graph token, and advance or clear session-bound authorization without changing prompt text.
-- `before_agent_start`: inject staged skill content and saved-graph orchestration context.
-- `tool_call`: coerce and validate matching graph input against its declared schema before consuming authorization, then retain the guard against later calls.
-- `agent_end`: clear unused authorization only after its single clarification turn ends without a matching call.
-
-## Events
-
-- Registers an `inline-skill` custom message renderer and appends `loaded-skill` session entries. Imports the subagents saved-graph resolver; no cross-extension events or RPC.
+The command, lifecycle hooks, and the `inline-skill` message renderer are registered in [`index.ts`](index.ts).

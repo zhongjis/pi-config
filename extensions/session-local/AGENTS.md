@@ -18,7 +18,7 @@ Provide Agent-tree-local file storage through `local://` paths.
 
 ## Work Guidance
 
-- [README](README.md) owns path grammar and exported storage API.
+- [README](README.md) owns path grammar; [storage.ts](storage.ts) owns the exported storage API.
 - Cross-extension consumers SHOULD reuse [storage helpers](storage.ts).
 - Backing-file access by same-user processes MUST NOT be described as isolation failure.
 

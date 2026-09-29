@@ -18,7 +18,7 @@ Constrain model availability to the active provider profile.
 
 ## Work Guidance
 
-- [README](README.md) owns provider lists, profile fields, and frontmatter compatibility.
+- [README](README.md) owns frontmatter compatibility; [index.ts](index.ts) owns provider lists and profile fields.
 - Model assignments SHOULD stay in frontmatter, not duplicate profile-specific agent definitions.
 
 ## Verification

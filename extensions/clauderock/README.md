@@ -12,35 +12,12 @@ Anthropic-to-AWS-Bedrock failover provider. Automatically routes Claude API requ
 - Shows `● Clauderock` status bar indicator when fallback is active
 - Resolves AWS credentials from profile files, env vars, or SDK chain (handles dual-source conflicts)
 
-## Commands
+## Entry Points
 
-- `/clauderock` or `/clauderock status` — Show current routing state
-- `/clauderock on` — Force all requests through Bedrock
-- `/clauderock off` — Switch back to Claude direct API, clear cache
-- `/clauderock health` — Check Claude API quota and AWS credential validity
-- `/clauderock test` — Run raw Bedrock SDK + pi-ai pipeline diagnostic
-
-## Hooks
-
-- `session_start` — Reset notification flags, detect provider
-- `model_select` — Track whether current model is Anthropic
-- `message_start` — Notify user of active fallback on first message
-- `turn_end` — Deliver deferred quota-exhausted notifications
+- `/clauderock` shows routing state; `/clauderock on|off|health|test` force, clear, check, or diagnose Bedrock routing. Commands, the provider, and hooks are registered in [`index.ts`](index.ts).
 
 ## Configuration
 
-### Cache file
-
-`~/.pi/agent/clauderock-state.json`:
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `exhausted` | `boolean` | Whether fallback is active |
-| `since` | `string` | ISO timestamp of activation |
-| `reason` | `string` | Error message that triggered fallback |
-
-### Environment variables
-
-- `AWS_PROFILE` — AWS profile for Bedrock authentication
-- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — Static AWS credentials
-- `AWS_REGION` / `AWS_DEFAULT_REGION` — AWS region (defaults to `us-east-1`)
+- Fallback state is cached at `~/.pi/agent/clauderock-state.json`.
+- AWS credentials come from `AWS_PROFILE`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, or the SDK chain; region from `AWS_REGION` / `AWS_DEFAULT_REGION`.
+- Cache fields and defaults are defined in [`index.ts`](index.ts).

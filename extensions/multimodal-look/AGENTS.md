@@ -21,7 +21,7 @@ Inspect one image with an isolated, profile-aware vision model through `look_at`
 
 ## Work Guidance
 
-- [README](README.md) owns input grammar, shared routing configuration, and fallback notification behavior.
+- [README](README.md) owns shared routing configuration and fallback notification behavior.
 - Vision model selection MUST use the active registry rather than bypass profile filtering.
 
 ## Verification

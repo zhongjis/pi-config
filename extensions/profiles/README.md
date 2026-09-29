@@ -13,19 +13,13 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 
 ## Profiles
 
-| Profile | Providers kept | Intended use |
-|---|---|---|
-| `default` | `anthropic`, `github-copilot`, `openai-codex`, `cliproxyapi`, `openai`, `amazon-bedrock`, `google` | US default — paid frontier models. |
-| `opencode` | `opencode-go` | China — OpenCode Go subscription, Zen overflow. |
-| `local` | `llama-swap` | Offline-first or no-network environments. Blocks external research tools and wenchang. |
+`default` keeps the paid frontier providers, `opencode` keeps OpenCode Go, and `local` keeps llama-swap and blocks external research tools and wenchang. `DEFAULT_PROFILES_CONFIG` in [index.ts](index.ts) defines each profile's providers, default model, status text, blocked agents and tools, and system prompt.
 
 Profiles are hardcoded. No config files.
 
-## Commands
+## Entry Points
 
-- `/profile` or `/profile status` — Show active profile.
-- `/profile <name>` — Switch to a named profile.
-- `/profile:default`, `/profile:opencode`, `/profile:local` — Shortcut commands for built-in profiles.
+- `/profile [status|<name>]` — show or switch the active profile. [index.ts](index.ts) registers this and the per-profile shortcut commands.
 
 ## CLI flag
 
@@ -46,18 +40,6 @@ When a session starts, the active profile is determined by the first match:
 2. `panda:profile` custom entry in the session journal (from a previous `/profile <name>` or `--profile`).
 3. `PI_PROFILE` environment variable.
 4. Hardcoded default: `default`.
-
-## Profile fields
-
-| Key | Type | Description |
-|-----|------|-------------|
-| `providers` | `string[]` | Allowed model providers. |
-| `defaultModel` | `string` | Model to force-switch to when current model is out-of-profile. |
-| `statusText` | `string` | Status bar indicator text. |
-| `blockedAgents` | `string[]` | Subagents to block while this profile is active. |
-| `blockedTools` | `string[]` | Tools to block while this profile is active. |
-| `systemPrompt` | `string` | Extra system prompt injected while this profile is active. |
-| `notifyOnSessionStart` | `boolean` | Show a notification when this profile activates on session start. |
 
 ## Frontmatter compatibility
 

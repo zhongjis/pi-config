@@ -26,18 +26,12 @@ After native retry and auto-compaction processing settles, QoL immediately reque
 
 `prompt-url` detects supported GitHub PR and issue prompts, shows URL metadata above the editor, and derives a session name when no custom name exists. Metadata loads through `gh pr view` or `gh issue view`.
 
-## Commands
+## Entry Points
 
-- `/session:copy-id` — copy current session ID and session log path through the shared clipboard helper; print the payload when clipboard access fails.
-- `/exit` — exit Pi cleanly through `ctx.shutdown()`.
+- `/session:copy-id` — copy the session ID and log path (printed when clipboard access fails).
+- `/exit` — exit Pi cleanly.
 
-## Hooks
-
-- `session_start` — refresh and install the header, reset the compaction guard, install the footer, and rebuild `prompt-url` from session history.
-- `model_select` — reinstall header and footer for current model state.
-- `agent_settled` — compact once when still over limit after native processing, unless Pi or queue-steer has queued/released continuation work.
-- `before_agent_start` — detect a supported GitHub URL prompt and populate `prompt-url`.
-- `session_switch` — rebuild or clear `prompt-url` from switched session history.
+[src/index.ts](src/index.ts) installs each feature; its modules register the commands and hooks.
 
 ## Write Override
 

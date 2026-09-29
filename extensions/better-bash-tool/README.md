@@ -9,13 +9,6 @@ Overrides the built-in `bash` tool with a `cwd` parameter and native streaming r
 - Custom call rendering: cwd (shortened with `~`) and any timeout on the header line, with the bold command on its own indented `$` line below so a long worktree cwd never runs into the command after wrapping. Wrapped and multi-line commands hang-indent every continuation line under the command text so the block reads as one unit. This is presentation only — the command string sent to the model is unchanged
 - Native bash result rendering: incremental output streaming, collapsed output preview, expand hint, elapsed/took timing, truncation warnings
 
-## Tools
+## Entry Points
 
-### `bash`
-
-Execute a bash command in a directory (overrides built-in).
-
-**Parameters:**
-- `command` (required): Bash command to execute. Must not start with `cd`.
-- `timeout` (optional): Kill command after this many seconds.
-- `cwd` (optional): Working directory. Resolves relative paths against context cwd. Fails explicitly if missing.
+- `bash` tool — overrides the built-in; takes `command`, optional `timeout`, and optional `cwd`. The schema is registered in [`src/index.ts`](src/index.ts).

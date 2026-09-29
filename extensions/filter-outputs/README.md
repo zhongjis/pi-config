@@ -18,6 +18,4 @@ Additionally redacts entire file contents when `read` tool accesses sensitive fi
 
 Shows a notification when redaction occurs.
 
-## Hooks
-
-- `tool_result` — Scans and redacts sensitive patterns from tool output text
+The `tool_result` hook and redaction patterns are defined in [`index.ts`](index.ts).

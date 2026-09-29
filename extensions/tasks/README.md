@@ -41,17 +41,7 @@ Shows running, ready, blocked, and completed counts. Running and ready work appe
 
 ## Finish nudges
 
-After a clean `agent_end`, `agent_settled` may trigger a hidden follow-up when Pi is idle with no queued messages. Only successful `Task` create/update IDs from the current real-user-input episode qualify; list/get, failed updates, and deletions do not enroll work. Successful mutations expose surviving IDs in `details.taskIds`.
-
-- Local session/memory tasks only (`PI_TASKS=off` is in-memory); shared/project/named lists, nonempty owners, Fuxi planning tasks, and child agents are excluded.
-- At most two nudges per real-user episode. Another nudge requires a new forward status high-water mark on enrolled tasks. Metadata edits, new tasks, deletion, and status churn do not renew the allowance. Stagnation/cap produces one visible unresolved-task notice, never task mutations.
-- Abort/error, same-run `user-prompted`, latest mode `planReviewPending` / `awaitingUserAction.suppressContinuationReminder`, and running subagents suppress automatic follow-ups. The host `active_agent` system tag identifies children; assistant prose is not parsed for authority.
-- Any existing Goal record (including complete, paused, blocked, or budget-limited) owns continuation. Goal read failures suppress nudges; live guards and task state are checked again after the asynchronous lookup.
-- Conservative ceiling: any `process` / `interactive_shell` invocation suppresses that run because no authoritative live wait state is available. A future live-state accessor can narrow this guard.
-- Real input and session/tree changes invalidate stale decisions; synthetic follow-ups never reset the cap. Event-bus listeners attach only at `session_start` and are removed on shutdown, so filtered-out factories do not subscribe.
-- Each nudge includes at most 10 task IDs/statuses/subjects, with subjects normalized to one line and truncated to 120 Unicode code points. It requires dependency order and passing required verification before marking tasks completed; authorization boundaries remain authoritative.
-
-The periodic transient tool-activity reminder remains independent and unchanged.
+When Pi settles idle after a clean run, a hidden follow-up may remind the agent to finish unresolved local tasks it created or updated in the current user episode. Nudges are bounded, never mutate tasks, and yield to Goal, child agents, pending user or mode actions, and running processes. [src/lifecycle/finish-continuation.ts](src/lifecycle/finish-continuation.ts) defines eligibility and limits.
 
 ## Commands
 
@@ -59,10 +49,7 @@ The periodic transient tool-activity reminder remains independent and unchanged.
 
 ## Settings
 
-| Setting | Values | Default | Description |
-|---------|--------|---------|-------------|
-| `taskScope` | `memory` / `session` / `project` | `session` | Where tasks persist |
-| `autoClearCompleted` | `never` / `on_list_complete` / `on_task_complete` | `on_list_complete` | Remove completed tasks after a turn delay |
+`taskScope` selects `memory`, `session`, or `project` persistence; `autoClearCompleted` controls removal of completed tasks. [src/tasks-config.ts](src/tasks-config.ts) defines keys and defaults.
 
 Persisted to `.pi/tasks-config.json`. Override scope with `PI_TASKS` (`off`, named list, or file path).
 
@@ -72,14 +59,11 @@ Persisted to `.pi/tasks-config.json`. Override scope with `PI_TASKS` (`off`, nam
 - `session` — `.pi/tasks/tasks-<sessionId>.json`
 - `project` — `.pi/tasks/tasks.json`
 
-On-disk state uses `schemaVersion: 2`. Legacy v1 state migrates on first write inside the advisory lock. Pre-v2 snapshots remain under `~/.pi/tasks.bak-pre-v2-<ts>/`.
+On-disk state uses `schemaVersion: 2`.
 
 ## Events
 
-| Event | Direction | Purpose |
-|-------|-----------|---------|
-| `tasks:rpc:update` | listen | Apply task updates from another extension |
-| `tasks:rpc:clear-planning-tasks` | listen | Delete planning tasks tagged for a handoff session |
+Other extensions can update tasks and clear handoff planning tasks over the event bus; [src/bridge/rpc-handlers.ts](src/bridge/rpc-handlers.ts) defines the events.
 
 ## Upstream
 
@@ -87,4 +71,4 @@ On-disk state uses `schemaVersion: 2`. Legacy v1 state migrates on first write i
 - **Version:** 0.5.0
 - **Commit:** `30c3452fd1292860482f1afc7908edb76a46f1ed`
 - **License:** MIT
-- **Adapted:** Directory entrypoint, peer dependency style, root-relative test/lint scripts, planning-handoff cleanup/provenance, compact tool rendering, and consolidation of the task tools into a single `Task` tool (`op: create/update/list/get`) with the dead background-process tools removed.
+- **Adapted:** Directory entrypoint, peer dependency style, root-relative test/lint scripts, planning-handoff cleanup/provenance, compact tool rendering, and a single `Task` tool (`op: create/update/list/get`) with no background-process tools.

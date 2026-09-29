@@ -10,10 +10,6 @@ Interactive tool enable/disable UI with per-branch persistence.
 - Restores saved tool state on session start and session tree navigation
 - Uses pi's `setActiveTools` API to apply changes immediately
 
-## Commands
+## Entry Points
 
-- `/tools` — Open interactive tool configuration (type to search, ↑↓ navigate, Enter/Space toggle, Esc close)
-
-## Hooks
-
-- `session_start`, `session_tree` — Restore tool state from branch history
+- `/tools` — open the tool list (type to search, Enter/Space toggle, Esc close). [index.ts](index.ts) registers the command and hooks.

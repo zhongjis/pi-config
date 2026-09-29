@@ -4,7 +4,7 @@ Opens [hunk](https://github.com/modem-dev/hunk) to review git changes — the wo
 
 ## What It Does
 
-- Routes `/diff [arg]` to the matching hunk invocation (see Commands below)
+- Routes `/diff [arg]` to the matching hunk invocation (see Entry Points below)
 - For the default and `staged` views, checks first whether there is anything to review and exits early if not
 - Suspends pi's TUI and hands the terminal to hunk (interactive multi-file review: sidebar navigation, syntax highlighting, untracked files)
 - Resumes pi's TUI when hunk exits
@@ -12,18 +12,9 @@ Opens [hunk](https://github.com/modem-dev/hunk) to review git changes — the wo
 
 Requires `hunk` on PATH and interactive (TUI) mode.
 
-## Commands
+## Entry Points
 
-| Command | Base it diffs against | "Show me…" | hunk invocation |
-|---|---|---|---|
-| `/diff` | working tree | uncommitted | `hunk diff` |
-| `/diff staged` | index (alias: `cached`) | what's staged | `hunk diff --staged` |
-| `/diff base` | `@{upstream}` merge-base | unpushed work (vs my remote branch) | `hunk diff $(git merge-base HEAD @{upstream})` |
-| `/diff pr [<ref>]` | integration branch merge-base | the whole PR | `hunk diff $(git merge-base HEAD <origin/HEAD\|ref>)` |
-| `/diff pr-walkthrough [<ref>]` | integration branch merge-base | the PR, **annotated by the agent** | agent writes sidecar → `hunk diff <sha> --agent-context notes.json` |
-| `/diff <ref>` | a ref, direct | working tree vs that ref | `hunk diff <ref>` |
-| `/diff commit` | last commit | most recent commit | `hunk show` |
-| `/diff stash` | latest stash | stash entry | `hunk stash show` |
+`/diff` opens the working tree. Subcommands `staged` (alias `cached`), `base`, `pr [<ref>]`, `pr-walkthrough [<ref>]`, `commit`, `stash`, and any `<ref>` select other views. The command, its hunk invocations, and the `open_pr_walkthrough` tool are registered in [`index.ts`](index.ts).
 
 `base` and `pr` both resolve a base ref, take its merge-base with `HEAD`, then hand `hunk diff <sha>`. The only difference is **which** ref:
 

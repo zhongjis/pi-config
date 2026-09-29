@@ -5,63 +5,23 @@ Vendored `pi-boomerang` extension for token-efficient autonomous task execution.
 ## Upstream
 
 - Source: https://github.com/nicobailon/pi-boomerang
-- Last synced version: 0.7.0
-- Last synced commit: `1a5985b2d92cfa84ce1f470d100d02b368711a91`
+- Version: 0.7.0
+- Commit: `1a5985b2d92cfa84ce1f470d100d02b368711a91`
 - License: not declared upstream
-- Local changes summary: copied into `extensions/boomerang/`, preserved local `/boomerang:commit` and tool rendering, replaced README with local repo format, omitted upstream package files because root dependencies already provide required packages.
+- Local changes: adds `/boomerang:commit` and local tool rendering; README is in local repo format; upstream package files are omitted because root dependencies provide the required packages.
 
-## Tools
+## Entry Points
 
-### `boomerang`
-
-Agent-callable tool, disabled by default until `/boomerang tool on`.
-
-Parameters:
-
-| Name | Type | Required | Notes |
-|------|------|----------|-------|
-| `task` | string | No | Task to execute; supports `--rethrow N`. Omit to set/collapse an anchor. |
-
-## Commands
-
-- `/boomerang <task>` — run task autonomously, then summarize context.
+- `/boomerang <task>` — run a task autonomously, then summarize the branch. Supports `--rethrow N` passes and `/a -> /b` prompt-template chains.
 - `/boomerang:commit [args]` — run `commit [args]` through boomerang with the `git-master` skill injected.
-- `/boomerang <task> --rethrow N` — run repeated passes with summaries between passes.
-- `/boomerang <task> --loop N` — compatibility alias for `--rethrow N`.
-- `/boomerang /a -> /b -> /c` — chain prompt templates before summarizing.
-- `/boomerang auto [on|off|toggle|status]` — one-shot wrapping for next normal prompt.
-- `/boomerang anchor [show|clear]` — set, inspect, or clear shared summary anchor.
-- `/boomerang tool [on [guidance]|off]` — enable/disable agent-callable tool.
-- `/boomerang guidance [text|clear]` — set or clear tool guidance.
-- `/boomerang-retry-summary` — retry only a failed summary collapse; never reruns the autonomous task.
-- `/boomerang-cancel` — abort active boomerang without summarizing.
-- `Ctrl+Alt+B` — toggle one-shot auto-boomerang mode.
+- `boomerang` tool — agent-callable, disabled until `/boomerang tool on`.
 
-## Hooks
+Commands, subcommands, shortcuts, the tool schema, and lifecycle hooks are registered in [`index.ts`](index.ts); `/boomerang:commit` lives in [`commit.ts`](commit.ts).
 
-- `input` — captures next prompt when auto mode is enabled.
-- `before_agent_start` — injects boomerang instructions, tool guidance, optional skill content.
-- `agent_end` — advances chains and queued tool tasks; successful collapse waits for command-context idle, while aborted/error runs restore state without summarizing.
-- `session_before_tree` — provides generated summary for tree navigation.
-- `session_before_compact` — prevents immediate compaction of freshly summarized branch state.
-- `session_start` / `session_shutdown` — clears transient boomerang state and invalidates stale deferred collapses/handoffs.
+## Configuration
 
-## Settings / Configuration
-
-Config persists at `~/.pi/agent/boomerang.json`.
-
-Fields:
-
-- `toolEnabled` — boolean; whether agent-callable `boomerang` tool is enabled.
-- `toolGuidance` — string or null; extra system-prompt guidance for tool use.
-
-Prompt-template frontmatter accepts Pi thinking levels through `max`.
-
-Model role config: `/boomerang:commit` uses the `boomerang.commit` rule / `commit` role from `~/.pi/agent/tool_models.json` or project `.pi/tool_models.json`.
-
-## Events
-
-Uses Pi lifecycle events only; no custom cross-extension event channels.
+- Tool settings persist at `~/.pi/agent/boomerang.json`; keys and defaults are defined in [`index.ts`](index.ts).
+- `/boomerang:commit` resolves the `boomerang.commit` rule / `commit` role from `~/.pi/agent/tool_models.json` or project `.pi/tool_models.json`.
 
 ## Local Additions
 

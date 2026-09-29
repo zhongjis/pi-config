@@ -59,4 +59,4 @@ Guarded execution fails closed. Scope-provider failure, malformed input, and det
 
 This is an authorization guard, not a shell sandbox or security boundary. Allowed shell commands retain native shell power.
 
-Repository changes do not update an existing live Pi process. After this migration is accepted, the user must run `bash install.sh` later and restart Pi; that install links `smart-tool-guards` and removes stale repo-owned extension symlinks. Do not run both old and new extension copies in one process.
+Repository changes do not update an existing live Pi process. Run `bash install.sh` and restart Pi to pick up changes; the install links `smart-tool-guards` and removes stale repo-owned extension symlinks. Do not run two copies of the extension in one process.

@@ -13,21 +13,9 @@ Runs `codex review` on current git changes or agent-selected session scope and p
 
 Requires `codex` CLI on PATH and a valid `codex login` session.
 
-## Commands
+## Entry Points
 
-| Command | Target | Behavior |
-|---|---|---|
-| `/codex:review` | Current repo branch + dirty files | Runs branch review vs upstream/origin base when branch has commits, then dirty review when working tree has changes |
-| `/codex:review session` | Agent-selected session scope | Sends a follow-up prompt asking the agent to confirm repo/path scope, then the agent calls `codex_review_session_scope` |
+- `/codex:review` — review branch changes plus dirty files.
+- `/codex:review session` — the agent confirms scope, then calls `codex_review_session_scope`.
 
-## Tools
-
-| Tool | Caller | Purpose |
-|---|---|---|
-| `codex_review_session_scope` | Agent after `/codex:review session` | Runs Codex against confirmed repo scopes. Included/excluded paths are passed as prompt scope, not hard CLI path filters. |
-
-## Events
-
-| Event | When |
-|---|---|
-| `user-prompted` | Emitted before the post-review prompt asking whether the agent should address Codex comments. |
+[index.ts](index.ts) registers the commands, tool, and events.

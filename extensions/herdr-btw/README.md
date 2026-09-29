@@ -27,6 +27,8 @@ separate Pi process and can merge its findings back into the parent.
 /btw help                 show the grammar
 ```
 
+Commands are registered in [`index.ts`](index.ts).
+
 Only the exact first words `ask`, `config`, `merge`, and `help` are subcommands;
 anything else is treated as a question.
 
@@ -42,18 +44,7 @@ parent picks it up. In the parent, `/btw merge` rescans for pending requests.
 
 ## Config
 
-`/btw config` shows current defaults; settings persist in Pi's agent directory
-(`~/.pi/agent/pi-herdr-btw.json` by default).
-
-```text
-/btw config auto-submit on|off
-/btw config close-on-exit on|off
-/btw config model inherit|provider/model
-/btw config thinking inherit|off|minimal|low|medium|high|xhigh|max
-/btw config tools inherit|all|read-only|none
-/btw config split right|down
-/btw config reset
-```
+`/btw config` shows current defaults and sets auto-submit, close-on-exit, model, thinking, tools, and split direction; `/btw config reset` restores defaults. Settings persist in Pi's agent directory (`~/.pi/agent/pi-herdr-btw.json` by default). Keys and defaults are defined in [`src/config.ts`](src/config.ts).
 
 ## Prompt cache
 
@@ -80,8 +71,8 @@ delivered), and cleaned up after 24 hours if left stale.
 - Commit: `679916281e46d4930969183562b5d343df0e968c`
 - License: MIT — Copyright (c) 2026 Oscar Gabriel (see [LICENSE](LICENSE))
 - Local adaptation: `index.ts`, `src/config.ts`, and `src/core.ts` carry a local patch (closeOnExit config
-  flag + PAYLOAD\_VERSION 4→5); `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, and `LICENSE` are
+  flag and PAYLOAD\_VERSION 5); `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, and `LICENSE` are
   vendored verbatim. The standalone toolchain and upstream test suite are not vendored.
 - Repo-root `pi-herdr-btw.json` provides a committed portable default (autoSubmit+closeOnExit ON),
   symlinked to `~/.pi/agent/pi-herdr-btw.json` by `install.sh`.
-  See [AGENTS.md](AGENTS.md) for the full Local Tweaks record.
+  See [AGENTS.md](AGENTS.md) for the Local Tweaks re-apply checklist.

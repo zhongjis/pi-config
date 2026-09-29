@@ -17,23 +17,4 @@ This is same-user convenience scoping, not an OS sandbox. Extensions and process
 
 ### Exported API
 
-Other extensions can import storage utilities:
-
-- `getSessionLocalScopeId(ctx)` — Derive the active branch's effective Agent-tree root ID
-- `seedSessionLocalScope(parentCtx, childSessionManager)` — Seed a fresh child with that root ID
-- `getSessionLocalPath(ctx, relativePath)` — Resolve a relative path within Agent-tree-local storage
-- `ensureSessionLocalRootDirectory(ctx)` — Create the Agent-tree-local root directory
-- `readSessionLocalFile(ctx, relativePath)` — Read a file from Agent-tree-local storage
-- `writeSessionLocalFile(ctx, relativePath, content)` — Write a file to Agent-tree-local storage
-
-## Hooks
-
-- `tool_call` — Intercept and rewrite `local://` paths in read/write/edit calls
-- `tool_result` — Rewrite resolved paths back to `local://` in results
-- `tool_execution_end` — Clean up resolution tracking
-- `before_agent_start` — Append `local://` path grammar to the cacheable system prompt so every session/mode/agent learns the read/write/edit usage
-
-## Files Worth Reading
-
-- `index.ts` — Tool call/result interception and path rewriting
-- `storage.ts` — Path resolution, validation, and file I/O utilities
+Other extensions import path resolution and file helpers from [storage.ts](storage.ts). [index.ts](index.ts) registers the interception hooks.

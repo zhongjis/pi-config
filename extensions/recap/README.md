@@ -6,6 +6,6 @@ Copyright 2026 L2ncE. Licensed under Apache-2.0; see [LICENSE](LICENSE).
 
 ## Local changes
 
-- Split the extension by content, settings, model selection, and lifecycle responsibilities.
-- Replace `recap.model` selection with the repository `tool_models.json` key `recap.generate`, mapped to `summary.session`.
-- Retry configured chain candidates before an authenticated current-session-model fallback; cancellation stops retries.
+- Content, settings, model selection, and lifecycle live in separate modules.
+- Model selection uses the `tool_models.json` key `recap.generate`, mapped to `summary.session`; `recap.model` is not supported.
+- Configured chain candidates are tried in order before an authenticated current-session-model fallback; cancellation stops retries.

@@ -5,21 +5,15 @@ Loads direnv environment variables on session start and auto-reloads on `.envrc`
 ## Upstream
 
 - Source: https://github.com/rytswd/pi-agent-extensions/tree/main/direnv
-- Last synced version: `main` (no releases/tags published)
-- Last synced commit: `9df8ca72acda83b4249f50c4b0211ac217d94624`
-- Sync date: 2026-05-05
+- Version: `main` (no releases/tags published)
+- Commit: `9df8ca72acda83b4249f50c4b0211ac217d94624`
 - License: MIT
 - Local changes: stale-context guards, session switch/tree reloads, shared debounce, local README/AGENTS docs
 
-## Commands
+## Entry Points
 
-- `/direnv` — Manually reload direnv environment variables for the current session.
-
-## Hooks
-
-- `session_start` — Activates direnv and starts file watchers.
-- `session_switch`, `session_tree` — Re-activates direnv for the new active session context.
-- `session_shutdown` — Stops watchers and clears active context.
+- `/direnv` — manually reload direnv environment variables for the current session.
+- direnv activates on session start, session switch, and tree navigation. The command and hooks are registered in [`index.ts`](index.ts).
 
 ## Settings / Configuration
 
