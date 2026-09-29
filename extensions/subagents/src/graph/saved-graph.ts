@@ -121,21 +121,27 @@ export function resolveSavedGraph(name: string, cwd: string): SavedGraph {
       };
     }
 
-    const candidate = candidates[0];
-    let raw: string;
-    try {
-      raw = readFileSync(candidate.path, "utf-8");
-    } catch (error) {
-      return { ok: false, message: `Could not read graph "${candidate.path}": ${error instanceof Error ? error.message : String(error)}` };
-    }
-    if (candidate.format === "yaml") return parseYamlGraph(raw, candidate.path);
-    try {
-      return { ok: true, graph: JSON.parse(raw), path: candidate.path, format: "json" };
-    } catch (error) {
-      return { ok: false, message: `Graph "${candidate.path}" is not valid JSON: ${error instanceof Error ? error.message : String(error)}` };
-    }
+    return readGraphFile(candidates[0].path);
   }
   return { ok: false, message: `No saved graph named "${trimmed}". Looked in: ${roots.join(", ")}.` };
+}
+
+/** Parse one `.graph.json` / `.graph.yaml` file with the saved-graph safety rules; shape is unvalidated. */
+export function readGraphFile(path: string): SavedGraph {
+  const file = SAVED_GRAPH_FILES.find(candidate => path.endsWith(candidate.extension));
+  if (!file) return { ok: false, message: `Graph file "${path}" must end in ${GRAPH_EXTENSIONS.join(" or ")}.` };
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf-8");
+  } catch (error) {
+    return { ok: false, message: `Could not read graph "${path}": ${error instanceof Error ? error.message : String(error)}` };
+  }
+  if (file.format === "yaml") return parseYamlGraph(raw, path);
+  try {
+    return { ok: true, graph: JSON.parse(raw), path, format: "json" };
+  } catch (error) {
+    return { ok: false, message: `Graph "${path}" is not valid JSON: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 /** List resolvable saved graph names using the same roots and ambiguity rules as resolution. */

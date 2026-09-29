@@ -420,6 +420,8 @@ Graph runs MUST respect active delegation permissions, with independent pool acc
 
 Settled runs remain visible after same-session reload in `/agents → Graph runs` and Herdr as **read-only metadata history**, not execution recovery. The exact Pi session ID owns `graph-history.json` under the repository's session-local OS storage; forks/new sessions are isolated. History is bounded to 20 runs/8 MiB and retains no full prompts, inputs, outputs, errors, or artifact paths. Live runs win over same-ID history; graph resume checkpoints remain separate. The [Herdr graph presentation spec](../../docs/specs/herdr-agent-graph-presentation.md) owns the graph inspector and history display; the [TUI rendering guide](../../docs/guides/tool-output-tui-rendering.md) covers tool rows and notifications.
 
+Every run also writes `<runId>.trace.jsonl` (graph, input, per-node status/attempt/output/error, end) to the session task artifact area beside node transcripts, kept after settlement and capped at 8 MiB. With `graphRuntimeTrace` on, `<runId>.runtime.jsonl` beside it records XState event/microstep names without context or event payloads. Traces contain inputs and outputs, with the same privacy as node transcripts; graph history never records their paths. Write failures warn once per session and never fail the run.
+
 The authoring skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover` when agent graphs are enabled. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
 
 ## Commands
@@ -427,6 +429,7 @@ The authoring skill (`skills/agent-graphs/SKILL.md`) is discovered via `resource
 | Command | Description |
 |---------|-------------|
 | `/agents` | Interactive agent management menu |
+| `/agent-graph-replay <runId> <graph>` | Agent graphs only: replay a current-session run trace through a saved or file graph's planner without model calls and show a display-only diff; `fanout`, `bounded_feedback`, `expand`, and `graph` nodes replay atomically |
 
 The `/agents` command opens an interactive menu:
 
@@ -520,6 +523,7 @@ Runtime tuning values set via `/agents` → Settings (background/foreground conc
 | `reportUsage` | `false` | Report pending subagent usage through final `agent`/retrieval/steering tool results into native Pi session totals |
 | `showCost` | `false` | Show a positive estimated per-agent cost only in expanded Run metadata |
 | `agentGraphEnabled` | `false` | Enable typed agent graphs (`agent_graph`); reload required for registration changes; disabled adds no graph tool schema/prompt cost |
+| `graphRuntimeTrace` | `false` | Write a per-run XState runtime inspection log (`<runId>.runtime.jsonl`); read at each graph run start ("Graph runtime trace" in `/agents → Settings`) |
 
 Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
 

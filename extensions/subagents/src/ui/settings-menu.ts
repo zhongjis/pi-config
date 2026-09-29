@@ -21,6 +21,11 @@ export function createSettingsMenu(
         currentValue: settings.agentGraphEnabled ? "on" : "off", values: ["on", "off"],
       },
       {
+        id: "graphRuntimeTrace", label: "Graph runtime trace",
+        description: "Write each graph run's XState event/state log (<runId>.runtime.jsonl) beside its trace. Applies to runs started afterwards.",
+        currentValue: settings.graphRuntimeTrace ? "on" : "off", values: ["on", "off"],
+      },
+      {
         id: "maxConcurrent",
         label: "Max concurrency",
         description: "Max concurrent background agents (Enter to type)",

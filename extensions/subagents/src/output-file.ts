@@ -23,15 +23,19 @@ export function encodeCwd(cwd: string): string {
     .replace(/^-+/, "");           // strip leading dashes (POSIX root, UNC)
 }
 
-/** Compute the existing task artifact address without creating directories. */
-export function outputFilePath(cwd: string, agentId: string, sessionId: string): string {
-  return join(tmpdir(), `pi-subagents-${process.getuid?.() ?? 0}`, encodeCwd(cwd), sessionId, "tasks", `${agentId}.output`);
+/** Address a file in the exact-session task artifact area without creating directories. */
+export function sessionArtifactPath(cwd: string, sessionId: string, fileName: string): string {
+  return join(tmpdir(), `pi-subagents-${process.getuid?.() ?? 0}`, encodeCwd(cwd), sessionId, "tasks", fileName);
 }
 
-/** Create the output file path, ensuring the directory exists.
- *  Mirrors Claude Code's layout: /tmp/{prefix}-{uid}/{encoded-cwd}/{sessionId}/tasks/{agentId}.output */
-export function createOutputFilePath(cwd: string, agentId: string, sessionId: string): string {
-  const path = outputFilePath(cwd, agentId, sessionId);
+/** Compute the existing task artifact address without creating directories. */
+export function outputFilePath(cwd: string, agentId: string, sessionId: string): string {
+  return sessionArtifactPath(cwd, sessionId, `${agentId}.output`);
+}
+
+/** Create an exact-session task artifact path, enforcing the private 0700 root. */
+export function createSessionArtifactPath(cwd: string, sessionId: string, fileName: string): string {
+  const path = sessionArtifactPath(cwd, sessionId, fileName);
   const root = join(tmpdir(), `pi-subagents-${process.getuid?.() ?? 0}`);
   mkdirSync(root, { recursive: true, mode: 0o700 });
   // chmod is a no-op on Windows and throws on some Windows filesystems.
@@ -43,6 +47,12 @@ export function createOutputFilePath(cwd: string, agentId: string, sessionId: st
   }
   mkdirSync(dirname(path), { recursive: true });
   return path;
+}
+
+/** Create the output file path, ensuring the directory exists.
+ *  Mirrors Claude Code's layout: /tmp/{prefix}-{uid}/{encoded-cwd}/{sessionId}/tasks/{agentId}.output */
+export function createOutputFilePath(cwd: string, agentId: string, sessionId: string): string {
+  return createSessionArtifactPath(cwd, sessionId, `${agentId}.output`);
 }
 
 /** Write the initial user prompt entry. */

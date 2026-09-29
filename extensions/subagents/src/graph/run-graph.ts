@@ -1,4 +1,4 @@
-import { createActor, toPromise } from "xstate";
+import { createActor, type InspectionEvent, toPromise } from "xstate";
 import type { FeedbackResult } from "./bounded-feedback.js";
 import { graphLogic } from "./graph-actor.js";
 import type { ExecutionCorrelation } from "./graph-execution.js";
@@ -65,6 +65,8 @@ export interface RunGraphOptions {
   restore?: SchedulerState;
   /** Fired when a human_gate begins awaiting, carrying the run state to persist. */
   onGateWaiting?(nodeId: string, state: SchedulerState, effectiveGraph: AgentGraph): void;
+  /** System-wide XState inspection (covers nested graph actors); passed only when provided. */
+  inspect?(event: InspectionEvent): void;
 }
 
 export interface RunGraphResult {
@@ -85,7 +87,7 @@ export function coerceGraphInput(input: unknown): unknown {
 
 /** The actor owns lifecycle; this adapter owns only the external signal listener. */
 export async function runGraph(graph: AgentGraph, input: unknown, options: RunGraphOptions): Promise<RunGraphResult> {
-  const actor = createActor(graphLogic, { input: { graph, input, options, depth: 0 } });
+  const actor = createActor(graphLogic, { input: { graph, input, options, depth: 0 }, ...(options.inspect ? { inspect: options.inspect } : {}) });
   const abort = () => actor.send({ type: "CANCEL", reason: options.signal?.reason });
   const result = toPromise(actor);
   options.signal?.addEventListener("abort", abort, { once: true });

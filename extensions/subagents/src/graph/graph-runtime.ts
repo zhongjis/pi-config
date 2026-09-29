@@ -28,12 +28,15 @@ import { resolveSavedGraph } from "./saved-graph.js";
 import type { SchedulerState } from "./scheduler.js";
 import { createGraphRunTask, failGraphRunTask, type GraphRunTask, graphRunResultText, makeGraphRunId } from "./task.js";
 import { graphToolDescription } from "./tool-description.js";
+import { createGraphRuntimeLogPath, createGraphTracePath, GRAPH_RUNTIME_LOG_WARNING, GRAPH_TRACE_WARNING, type GraphRuntimeLog, type GraphTrace, openGraphRuntimeLog, openGraphTrace } from "./trace.js";
 import { validateGraph } from "./validate.js";
 
 /** Activation-owned execution policy, read live when a graph starts a child. */
 export interface GraphExecutionHost extends Readonly<Pick<NodeHostOptions, "pi" | "manager" | "scopeModels" | "outputTranscript">> {
   readonly enabled: () => boolean;
   readonly delegationDenial: (ctx: ExtensionContext, type: string) => string | undefined;
+  /** Opt-in XState inspection log; read when each run starts. */
+  readonly runtimeTrace: () => boolean;
 }
 
 /** Held delivery is shared with ordinary background-agent completions. */
@@ -83,12 +86,16 @@ export function createGraphRuntime(
   };
   const runs = new Set<Promise<void>>();
   let sessionActive = true;
+  let traceWarned = false;
+  let runtimeLogWarned = false;
 
   async function loadHistory(ctx: ExtensionContext): Promise<void> {
     const sessionId = ctx.sessionManager.getSessionId();
     history = await GraphHistoryStore.load(sessionId, message => ctx.ui.notify(message, "warning"));
     artifactScope = { cwd: ctx.cwd, sessionId };
     sessionActive = true;
+    traceWarned = false;
+    runtimeLogWarned = false;
   }
 
   /** Settle the task and map node updates onto its progress log. */
@@ -122,8 +129,14 @@ export function createGraphRuntime(
     let releaseCheckpoint: CheckpointLease | undefined;
     let result: RunGraphResult | undefined;
     let failure: { error: unknown } | undefined;
+    let trace: GraphTrace | undefined;
+    let runtimeLog: GraphRuntimeLog | undefined;
     try {
       releaseCheckpoint = ownGraphRun(ctx.cwd, task.id);
+      trace = openGraphTrace({ create: () => createGraphTracePath(ctx.cwd, ownerSessionId, task.id), runId: task.id, graph, input, resume: restore !== undefined,
+        warn: () => { if (!traceWarned && sessionActive) { traceWarned = true; ctx.ui.notify(GRAPH_TRACE_WARNING, "warning"); } } });
+      if (execution.runtimeTrace()) runtimeLog = openGraphRuntimeLog({ create: () => createGraphRuntimeLogPath(ctx.cwd, ownerSessionId, task.id), resume: restore !== undefined,
+        warn: () => { if (!runtimeLogWarned && sessionActive) { runtimeLogWarned = true; ctx.ui.notify(GRAPH_RUNTIME_LOG_WARNING, "warning"); } } });
       result = await runGraph(graph, input, {
         host,
         runId: task.id,
@@ -139,6 +152,7 @@ export function createGraphRuntime(
         },
         signal: task.abortController.signal,
         ...(restore !== undefined ? { restore } : {}),
+        ...(runtimeLog ? { inspect: runtimeLog.inspect } : {}),
         loadGraph: name => {
           const resolved = resolveSavedGraph(name, ctx.cwd);
           return resolved.ok ? (resolved.graph as AgentGraph) : undefined;
@@ -147,10 +161,12 @@ export function createGraphRuntime(
           task.control = control;
         },
         onNodeAdded: (nodeId, node, metadata) => {
+          trace?.added(nodeId, node);
           reporter.registerNode(nodeId, node, metadata);
           refresh("pane");
         },
         onNodeUpdate: (nodeId, run, correlation, presentation) => {
+          trace?.update(nodeId, run);
           reporter.update(nodeId, run, correlation, undefined, presentation);
           refresh("pane");
         },
@@ -162,6 +178,8 @@ export function createGraphRuntime(
     } catch (error) {
       failure = { error: error instanceof Error ? error : new Error(String(error)) };
     }
+    trace?.end(result ?? { status: "failed", outputs: {} });
+    runtimeLog?.close();
     clearInterval(activityTick);
     handoff.close();
     try {

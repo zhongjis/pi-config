@@ -17,6 +17,8 @@ export interface SubagentsSettings {
   reportUsage?: boolean;
   /** Expanded-only per-agent cost metadata. Defaults to false. */
   showCost?: boolean;
+  /** Opt-in XState inspection log (`<runId>.runtime.jsonl`) for graph runs started afterwards. Defaults to false. */
+  graphRuntimeTrace?: boolean;
   /**
    * 0 = unlimited — the extension's single source of truth for that convention:
    * `normalizeMaxTurns()` in agent-runner.ts treats 0 → `undefined`, and the
@@ -103,6 +105,7 @@ export interface SettingsAppliers {
   setMaxConcurrentForeground?: (n: number) => void;
   setReportUsage?: (b: boolean) => void;
   setShowCost?: (b: boolean) => void;
+  setGraphRuntimeTrace?: (b: boolean) => void;
   setDefaultMaxTurns: (n: number) => void;
   setGraceTurns: (n: number) => void;
   setDefaultJoinMode: (mode: JoinMode) => void;
@@ -140,6 +143,7 @@ function sanitize(raw: unknown): SubagentsSettings {
   }
   if (typeof r.reportUsage === "boolean") out.reportUsage = r.reportUsage;
   if (typeof r.showCost === "boolean") out.showCost = r.showCost;
+  if (typeof r.graphRuntimeTrace === "boolean") out.graphRuntimeTrace = r.graphRuntimeTrace;
   if (
     Number.isInteger(r.maxConcurrent) &&
     (r.maxConcurrent as number) >= 1 &&
@@ -236,6 +240,7 @@ export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers):
   if (typeof s.maxConcurrentForeground === "number") appliers.setMaxConcurrentForeground?.(s.maxConcurrentForeground);
   if (typeof s.reportUsage === "boolean") appliers.setReportUsage?.(s.reportUsage);
   if (typeof s.showCost === "boolean") appliers.setShowCost?.(s.showCost);
+  if (typeof s.graphRuntimeTrace === "boolean") appliers.setGraphRuntimeTrace?.(s.graphRuntimeTrace);
   if (typeof s.maxConcurrent === "number") appliers.setMaxConcurrent(s.maxConcurrent);
   if (typeof s.defaultMaxTurns === "number") appliers.setDefaultMaxTurns(s.defaultMaxTurns);
   if (typeof s.graceTurns === "number") appliers.setGraceTurns(s.graceTurns);

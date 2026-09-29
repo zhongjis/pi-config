@@ -1,6 +1,7 @@
 import { createAgentResultBuilder } from "./agent-result.js";
 import { createAgentTool } from "./agent-tool.js";
 import { createGraphRuntime } from "./graph/graph-runtime.js";
+import { runReplayCommand } from "./graph/replay-command.js";
 import { createResultTools } from "./result-tools.js";
 import { createAgentsMenu } from "./ui/agents-menu.js";
 import { createSettingsMenu } from "./ui/settings-menu.js";
@@ -87,6 +88,9 @@ export default function (pi: ExtensionAPI) {
     if (!enabled) pendingUsage = new PendingUsagePool();
   }
   function setShowCost(enabled: boolean): void { showCost = enabled; }
+  // Read when each graph run starts; no reload needed.
+  let graphRuntimeTrace = false;
+  function setGraphRuntimeTrace(enabled: boolean): void { graphRuntimeTrace = enabled; }
 
   // tool_result runs only for final results, including thrown/cancelled calls.
   // No execute/stream callback drains the pool, so cancellation cannot lose deltas.
@@ -472,6 +476,7 @@ export default function (pi: ExtensionAPI) {
       setReportUsage,
       setAgentGraphEnabled,
       setShowCost,
+      setGraphRuntimeTrace,
       setDefaultMaxTurns,
       setGraceTurns,
       setDefaultJoinMode,
@@ -503,7 +508,8 @@ export default function (pi: ExtensionAPI) {
   ));
 
   const graphRuntime = createGraphRuntime(
-    { pi, manager, enabled: isAgentGraphEnabled, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial },
+    { pi, manager, enabled: isAgentGraphEnabled, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial,
+      runtimeTrace: () => graphRuntimeTrace },
     { schedule: scheduleNudge, cancel: cancelNudge },
     surface => {
       if (surface !== "pane") { widget.update(); fleet.update(); }
@@ -518,6 +524,13 @@ export default function (pi: ExtensionAPI) {
   if (isAgentGraphEnabled()) {
     pi.registerTool(graphRuntime.tool);
     pi.registerTool(graphRuntime.resolveGateTool);
+    pi.registerCommand("agent-graph-replay", {
+      description: "Replay a recorded agent graph run trace against a candidate graph: /agent-graph-replay <runId> <graph>",
+      handler: async (args, ctx) => {
+        const notice = runReplayCommand(args, ctx.cwd, ctx.sessionManager.getSessionId());
+        ctx.ui.notify(notice.text, notice.level);
+      },
+    });
   }
 
   const resultTools = createResultTools(pi, manager, {
@@ -550,6 +563,7 @@ export default function (pi: ExtensionAPI) {
       reportUsage,
       agentGraphEnabled,
       showCost,
+      graphRuntimeTrace,
       // 0 = unlimited — per SubagentsSettings.defaultMaxTurns docstring and
       // normalizeMaxTurns() in agent-runner.ts (which maps 0 → undefined).
       defaultMaxTurns: getDefaultMaxTurns() ?? 0,
@@ -586,6 +600,9 @@ export default function (pi: ExtensionAPI) {
     } else if (id === "showCost") {
       setShowCost(value === "on");
       notifyApplied(ctx, `Expanded cost ${showCost ? "enabled" : "disabled"}`);
+    } else if (id === "graphRuntimeTrace") {
+      setGraphRuntimeTrace(value === "on");
+      notifyApplied(ctx, `Graph runtime trace ${graphRuntimeTrace ? "enabled" : "disabled"} for new graph runs`);
     } else if (id === "defaultMaxTurns") {
       const n = parseInt(value, 10);
       if (n === 0) {
