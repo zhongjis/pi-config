@@ -2,8 +2,8 @@
 
 Status: shipped
 Date: 2026-09-17
-Supersedes: [agent-graph-design-v2.md §2.8](../ideas/agent-graph-design-v2.md) deferral of legacy removal
-Related: [agent-graph-reusable-workflows.md](../specs/agent-graph-reusable-workflows.md) · [agent-graph-implementation.md](../guides/agent-graph-implementation.md)
+Supersedes: [agent-graph-design-v2.md §2.8](https://github.com/zhongjis/pi-config/blob/6f5563a8f975323e7326472fea9c0e32e332157d/docs/ideas/agent-graph-design-v2.md) deferral of legacy removal
+Related: [agent-graph-reusable-workflows.md](https://github.com/zhongjis/pi-config/blob/6f5563a8f975323e7326472fea9c0e32e332157d/docs/specs/agent-graph-reusable-workflows.md) · [agent-graph-implementation.md](https://github.com/zhongjis/pi-config/blob/6f5563a8f975323e7326472fea9c0e32e332157d/docs/guides/agent-graph-implementation.md)
 
 ## Context
 

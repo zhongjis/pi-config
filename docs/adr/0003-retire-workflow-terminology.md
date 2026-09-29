@@ -2,7 +2,7 @@
 
 Status: shipped
 Date: 2026
-Related: [../specs/agent-graph-terminology-migration.md](../specs/agent-graph-terminology-migration.md) · [../../extensions/subagents/CONTEXT.md](../../extensions/subagents/CONTEXT.md) · [0002-remove-subagentworkflow-script-runtime.md](0002-remove-subagentworkflow-script-runtime.md)
+Related: [../specs/agent-graph-terminology-migration.md](https://github.com/zhongjis/pi-config/blob/6f5563a8f975323e7326472fea9c0e32e332157d/docs/specs/agent-graph-terminology-migration.md) · [../../extensions/subagents/CONTEXT.md](../../extensions/subagents/CONTEXT.md) · [0002-remove-subagentworkflow-script-runtime.md](0002-remove-subagentworkflow-script-runtime.md)
 
 ## Context
 
