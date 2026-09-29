@@ -1,52 +1,12 @@
-# @tintinweb/pi-subagents
+# subagents
 
 A [pi](https://pi.dev) extension that brings **Claude Code-style autonomous sub-agents** to pi. Spawn specialized agents that run in isolated sessions — each with its own tools, system prompt, model, and thinking level. Run them in foreground or background, steer them mid-run, resume completed sessions, and define your own custom agent types.
 
 Agent descendants automatically share the parent Agent tree's `local://` storage root while retaining separate conversations, tools, and models.
 
-## Upstream
+## Attribution
 
-- **Source:** https://github.com/tintinweb/pi-subagents
-- **Version/tag:** `v0.14.3`
-- **Immutable ref:** `c10b1836256e760da75296ccd4e57a77ada1325e`
-- **License:** MIT
-- **Local import commit:** `5bec4ea2378fd39241ab6088144e372314f1b464`
-- **Adapted:** Panda Harness presentation, root test/discovery wiring, orchestration guidance, and Agent-tree `local://` inheritance.
-- **Selective control backports:** `v0.19.0` (`4f572eaa04c09d3dbc16e4a5f13a16b295e84e14`), adapted without changing the base pin or execution/persistence defaults.[1]
-- **Selective workflow import:** full `v0.19.0` scripted `SubagentWorkflow` feature from `4f572eaa04c09d3dbc16e4a5f13a16b295e84e14`, plus lowercase workflow-name collision fix `e955e29c51b7a6cce37e1108cd2d6c57a77e151c`; separate from the original base provenance above.[1][2]
-- **Scripted workflow removed:** the imported `SubagentWorkflow` script runtime was subsequently removed and replaced by the typed `agent_graph` graph runtime. See [ADR-0002](../../docs/adr/0002-remove-subagentworkflow-script-runtime.md).
-
-## Local Tweaks
-
-| File | What | Why |
-|------|------|-----|
-| `src/tool-rendering.ts`, `src/index.ts`, `src/types.ts`, `src/agent-manager.ts`, `src/ui/agent-widget.ts`, `test/tool-rendering.test.ts`, `test/runtime-metadata-e2e.test.ts` | Compact status/preview, model/thinking, and configured expand hint; telemetry only expanded; complete Markdown result/error before Run metadata, diagnostics, and artifacts; SDK metadata across foreground, retrieval, and resume | Quiet, truthful supervision without rewriting model-facing content; malformed/legacy details retain raw output |
-| `src/notification-rendering.ts`, `src/ui/summary-renderer.ts`, `src/constants.ts`, `src/index.ts`, `test/notification-rendering.test.ts`, `test/summary-renderer.test.ts` | Width-safe completion notifications use a shared lifecycle/stat/result summary and retain expanded preview/transcript details | Align completion presentation without changing notification content delivered to the model |
-| `src/ui/agent-widget.ts`, `src/ui/summary-renderer.ts`, `test/agent-widget.test.ts`, `test/fleet-wiring.test.ts` | AgentWidget uses the shared summary for running and finished rows, preserving live activity, context, and status detail | Keep widget and notification status vocabulary consistent |
-| `pnpm-workspace.yaml`, `scripts/lint-typecheck.mjs`, `vitest.config.ts`, root smoke/planning/integration contracts, `test/helpers/**`, `test/fixtures/**` | Root discovery and Pi 0.85.1 SDK alignment target `subagents`; presentation tests stay package-local | Keep the vendored live package covered after replacing the old local extension |
-| `src/agent-manager.ts`, `test/agent-manager.test.ts` | Terminal Agent records retain their in-memory sessions for 30 minutes before timer cleanup | Preserve resumability across long parent verification while keeping retention bounded |
-| `src/model-resolution.ts`, `src/invocation-config.ts`, `src/cross-extension-rpc.ts`, `src/agent-runner.ts` | Ordered available-model chains and thinking precedence; exhausted chains fail; final answers at the soft limit complete without steering; diagnostics do not count as tool uses | Honor configured routing and report actual execution |
-| `src/index.ts`, `src/agent-runner.ts`, `src/tool-rendering.ts`, thinking regression tests | Omitted thinking delegates to the selected-model SDK default; pending configuration becomes actual session metadata | Never inherit parent thinking implicitly or present a pending default as actual |
-| `src/model-resolution.ts`, `src/index.ts`, `src/cross-extension-rpc.ts`, `src/agent-manager.ts`, `src/agent-runner.ts` | Selected `:fast` metadata travels unchanged to an always-retained hidden request policy; no suffix means fixed off, including isolated/resumed children | Frontmatter authority and concurrent registry safety without inheriting parent `/fast` state |
-| `src/agent-runner.ts`, `../lib/runtime-model-fallback.ts` | Hidden configured-chain recovery; see the [runtime continuation contract](../../docs/specs/model-selection-and-fallback.md#post-native-retry-chain-continuation) | Preserve configured subagent recovery through isolation/exclusions |
-| `src/agent-tool.ts`, `examples/agent-tool-description.md`, `test/tool-description-mode.test.ts` | Advertisements omit model configuration; full/compact/custom lists separate built-in and configured extension selectors, including none/unavailable | Advertise configuration without claiming runtime loading, authentication, or permissions; results report the actual model |
-| `src/agent-manager.ts`, `src/agent-runner.ts`, `src/usage.ts`, `src/settings.ts`, `src/index.ts`, control regression tests | Independent foreground queue and opt-in native usage reporting; retain existing live cost bridge | Bound blocking fan-out and report each usage delta once without double-counting footer cost |
-| `src/types.ts`, `src/ui/agent-widget.ts`, `src/tool-rendering.ts`, `src/index.ts`, rendering/runtime tests | Requested/effective discrepancies and optional estimated cost appear only in expanded Run metadata | Preserve actual SDK metadata and the compact three-row layout |
-| `src/graph/`, `src/index.ts`, agent graph registration/settings and UI integration | Typed `agent_graph` graph runtime: IR (`ir.ts`), validation (`validate.ts`), run-graph (`run-graph.ts`), scheduler (`scheduler.ts`), node actors (`node-actor.ts`, `node-host.ts`, `node-host-adapter.ts`), graph-run adapter (`graph-run-adapter.ts`), persistence (`graph-persist.ts`), saved-graph resolution (`saved-graph.ts`), conditions (`condition.ts`), value refs (`value-ref.ts`), JSON schema (`json-schema.ts`), graph run types (`graph-run-types.ts`), entry validation (`entry.ts`, `entry-validation.ts`), outcome (`outcome.ts`), notifications (`notification.ts`), task (`task.ts`), progress (`progress.ts`), pane (`pane/`), and tool description (`tool-description.ts`); preserve local thinking/`:fast`, delegation, usage, and session-local contracts | Opt-in typed-graph orchestration with correct supervision and accounting |
-| `src/graph/tool-description.ts`, `skills/agent-graphs/SKILL.md`, `src/index.ts` | Keep graph usage guidance in an extension-owned skill, with the authoring manual in its references; tool metadata owns when to use `agent_graph` and points to the skill's module-resolved path | Progressive disclosure through native `resources_discover` only when agent graphs are enabled; no package metadata auto-discovery or personal skill installation |
-| `src/ui/graph-run-report.ts`, `src/ui/graph-run-card.ts`, `src/ui/graph-run-dialog.ts`, `src/ui/graph-run-menu.ts`, graph presentation tests | Three-row graph-run summaries, explicit task/type rosters, state-first expanded reports, and complete retained notification results with actual artifact outcomes | Graph presentation contract; preserve model content, delivery timing, ordinary Agent notifications, and ephemeral retention |
-| `src/ui/agent-monitor.ts`, `src/ui/graph-run-panel-view.ts`, `src/ui/observability-panel.ts`, `src/ui/graph-run-menu.ts`, `src/graph/pane/`, `src/graph/graph-runtime.ts`, `src/index.ts`, monitor and panel tests | `/agent-monitor` replaces `/graph-runs`; the in-Pi graph inspector renders the observability panel with contextual controls; `o` detaches a graph run to the Herdr pane | One entry point for graph runs and independent agents, and one graph layout in Pi and Herdr |
-| `src/agent-history.ts`, `src/index.ts`, `src/agent-manager.ts`, `src/agent-runner.ts`, `src/ui/agents-menu.ts`, `src/types.ts` | Session-local read-only history of independent `persist_session` runs in `/agent-monitor`; child sessions record native `parentSession` | Reload keeps a bounded pointer to the child JSONL without restoring the run or storing prompts, results, or errors |
-
-The base upstream provenance and existing Agent RPC/events remain unchanged. Graph-run supervision extends FleetView; Thinking Steps remains unchanged.
-
-The bundled [agent-graph skill](skills/agent-graphs/SKILL.md) covers running graphs: saved-graph selection, ad-hoc inline graphs, input, gates and results. Its [authoring reference](skills/agent-graphs/references/authoring.md) covers the typed API: saved and inline graphs, node types (`agent`, `human_gate`, `agent_gate`, `hybrid_gate`, `graph`, `expand`, `fanout`, v2 `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled agent graphs discover no skill.
-
-<img width="600" alt="pi-subagents screenshot" src="https://github.com/tintinweb/pi-subagents/raw/master/media/screenshot.png" />
-
-
-https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
-
+Derived from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents) under the MIT license; see [LICENSE](LICENSE).
 
 ## Features
 
@@ -74,15 +34,7 @@ https://github.com/user-attachments/assets/8685261b-9338-4fea-8dfe-1c590d5df543
 
 ## Install
 
-```bash
-pi install npm:@tintinweb/pi-subagents
-```
-
-Or load directly for development:
-
-```bash
-pi -e ./src/index.ts
-```
+This repository installs the extension through its root `install.sh`; see the root [README](../../README.md).
 
 ## Quick Start
 
@@ -213,7 +165,7 @@ Agents are discovered from three locations (higher priority wins):
 | 2 | `.agents/agents/<name>.md` | Project — the shared cross-tool `.agents` workspace (same convention as `.agents/skills/`) |
 | 3 | `$PI_CODING_AGENT_DIR/agents/<name>.md` (default `~/.pi/agent/agents/<name>.md`) | Global — available everywhere |
 
-Project-level agents override global ones with the same name, so you can customize a global agent for a specific project. If both project locations define the same name, **`.pi/agents/` wins** — `.pi` stays the project authority; `.agents/agents/` is an additional read location for projects that keep their agent assets in the `.agents` workspace. The global location follows the upstream `PI_CODING_AGENT_DIR` env var — set it to relocate all pi-coding-agent state (agents, skills, settings) to a custom directory.
+Project-level agents override global ones with the same name, so you can customize a global agent for a specific project. If both project locations define the same name, **`.pi/agents/` wins** — `.pi` stays the project authority; `.agents/agents/` is an additional read location for projects that keep their agent assets in the `.agents` workspace. The global location follows Pi's `PI_CODING_AGENT_DIR` env var — set it to relocate all pi-coding-agent state (agents, skills, settings) to a custom directory.
 
 ### Example: `.pi/agents/auditor.md`
 
@@ -243,29 +195,7 @@ agent({ subagent_type: "auditor", prompt: "Review the auth module", description:
 
 ### Frontmatter Fields
 
-All fields are optional — sensible defaults for everything.
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `description` | filename | Agent description shown in tool listings |
-| `display_name` | — | Display name for UI (e.g. widget, agent list) |
-| `tools` | all 7 | Which tools the agent can call. Built-in names (`read, grep, …`), `*` / `all` (all built-ins), `none`, and `ext:<extension>` / `ext:<extension>/<tool>` selectors for extension tools. See [Tool & extension scoping](#tool--extension-scoping) below |
-| `extensions` | `true` | Which user-configured extensions to load for the agent. `true` (all defaults), `false` (none), or an explicit list: `[mcp, "/abs/path.ts", "*"]`. Hidden hook-only `session-local` and `subagent-fast` runtimes remain bound for Agent-tree storage and fixed request policy. See [Tool & extension scoping](#tool--extension-scoping) below |
-| `exclude_extensions` | — | User-extension denylist applied after `extensions:` — exclude wins except for trusted hook-only `session-local` and `subagent-fast` plumbing. Plain names only (case-insensitive), no paths or `*`. Useful with `extensions: true` to drop one extension (e.g. `pi-notify`) |
-| `skills` | `true` | Inherit skills from parent. Can be a comma-separated list of skill names to preload (see [Skill Preloading](#skill-preloading) for discovery locations) |
-| `memory` | — | Persistent agent memory scope: `project`, `local`, or `user`. Auto-detects read-only agents |
-| `disallowed_tools` | — | Comma-separated tools to deny even if extensions provide them |
-| `model` | inherit parent | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`). Resolved tolerantly (`.`/`-` and a trailing date stamp are interchangeable) and falls back to the same model under another provider if the named one doesn't have it |
-| `thinking` | model default | off, minimal, low, medium, high, xhigh, max — actual availability depends on your pi version and model; pi clamps unsupported levels down |
-| `max_turns` | unlimited | Max agentic turns before graceful shutdown. `0` or omit for unlimited |
-| `persist_session` | `false` | Persist this subagent as a normal pi session instead of keeping the session in memory only. Independent persisted runs are listed in `/agent-monitor` after reload as read-only history (pointer and light metadata only, not a resume). The subagent's `.output` transcript is still written either way unless `output_transcript: false`. The child session records the parent session file as Pi `parentSession` lineage when that file is known |
-| `output_transcript` | `true` (or `subagents.json` `outputTranscript`) | Write this subagent's `.output` transcript; when set, overrides the `subagents.json` `outputTranscript` default. Set `false` to write no transcript file or path. Governs only the transcript — independent of `persist_session` and `memory:` |
-| `session_dir` | pi default | Optional session directory when `persist_session: true`; omitted uses pi's normal session location, and relative paths resolve from the agent cwd |
-| `prompt_mode` | `replace` | `replace`: body is the full system prompt (no AGENTS.md / CLAUDE.md inheritance). `append`: body appended to parent's prompt (agent acts as a "parent twin" — inherits parent's AGENTS.md / CLAUDE.md) |
-| `inherit_context` | `false` | Fork parent conversation into agent |
-| `run_in_background` | `false` | Run in background by default |
-| `isolated` | `false` | Hermetic specialist mode: forces user extensions off, disables skills/context, and drops `ext:` selectors. Only built-in tools surface; hidden hook-only `session-local` and `subagent-fast` runtimes remain bound. Not filesystem isolation |
-| `enabled` | `true` | Set to `false` to disable an agent (useful for hiding a default agent per-project) |
+All fields are optional. [src/types.ts](src/types.ts) defines the fields and [../lib/agent-frontmatter.ts](../lib/agent-frontmatter.ts) parses them; the [agent frontmatter guide](../../docs/guides/agent-frontmatter.md) explains their use.
 
 Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, or `isolated`, those values are locked for that agent. `agent` tool parameters only fill fields the agent config leaves unspecified.
 
@@ -314,95 +244,39 @@ A few rules the examples don't make obvious:
 
 ## Tools
 
-### `agent`
+[src/index.ts](src/index.ts) registers the tools; [src/agent-tool.ts](src/agent-tool.ts), [src/result-tools.ts](src/result-tools.ts) and [src/graph/graph-runtime.ts](src/graph/graph-runtime.ts) define their parameters.
 
-Launch a sub-agent.
+- `agent` launches a sub-agent in the foreground or background, or resumes one.
+- `get_agent_result` retrieves an independent Agent ID or an `agr_*` graph run ID; `wait: true` waits without polling for terminal output or an actionable human gate, and cancelling it stops only the wait, never the run. Continue non-overlapping work, then collect with `wait: true` rather than ending the turn.
+- `resolve_agent_graph_gate` submits the human choice for a returned graph gate.
+- `get_subagent_result` is a compatibility alias for independent agents only; new callers use `get_agent_result`.
+- `steer_subagent` sends a message to a running agent; it takes effect after the current tool execution.
+- `agent_graph` (opt-in) launches a typed graph.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `prompt` | string | yes | The task for the agent |
-| `description` | string | yes | Short 3-5 word summary (shown in UI) |
-| `subagent_type` | string | yes | Agent type (built-in or custom) |
-| `max_turns` | number | no | Max agentic turns. Omit for unlimited (default) |
-| `run_in_background` | boolean | no | Run without blocking |
-| `resume` | string | no | Agent ID to resume a previous session |
-| `isolated` | boolean | no | No extension/MCP tools |
-| `inherit_context` | boolean | no | Fork parent conversation into agent |
-
-### `get_agent_result`
-
-Canonical retrieval accepts `{ run_id, wait?, verbose? }` for an independent Agent ID or
-an `agr_*` graph run ID. `wait: true` waits without polling for terminal output or an
-actionable human gate; cancellation stops only the retrieval, never the run. `verbose`
-adds an independent agent's conversation. Details discriminate `kind: "agent"` and
-`kind: "graph"`; graph results retain execution status, objective outcome and output.
-Continue non-overlapping work, then collect with `wait: true` rather than ending the turn.
+### Graph gates
 
 A graph `gate` contains `gate_id`, `revision`, `kind`, `prompt` and `response_schema`.
 Repeated reads return the same pending gate without advancing execution. Collect the
-human choice through `ask`, then submit it with `resolve_agent_graph_gate` and wait again.
-
-### `resolve_agent_graph_gate`
-
-Accepts `{ run_id, gate_id, revision, response: { approved: boolean } }`. Copy the returned
-identities exactly. Responses must satisfy the authored gate schema and current committed
-execution identity. Identical accepted responses are idempotent within the activation;
-stale or conflicting responses fail. Reload reconstructs pending gates with new revisions
-and rejects pre-reload responses, including nested gates: retrieve and ask again.
-No new prompt/response history is persisted. Acceptance resumes normal checkpointed node
-settlement; it is not an exactly-once guarantee across process failure.
+human choice through `ask`, then submit `{ run_id, gate_id, revision, response: { approved: boolean } }`
+with `resolve_agent_graph_gate` and wait again. Copy the returned identities exactly.
+Responses must satisfy the authored gate schema and current committed execution identity.
+Identical accepted responses are idempotent within the activation; stale or conflicting
+responses fail. Reload reconstructs pending gates with new revisions and rejects pre-reload
+responses, including nested gates: retrieve and ask again. No prompt/response history is
+persisted. Acceptance resumes normal checkpointed node settlement; it is not an
+exactly-once guarantee across process failure.
 
 Unobserved gates use the existing held follow-up notification channel. Retrieval cancels
 its gate nudge, not the gate; completion notifications remain enabled. Graph hosts never
 open a UI prompt themselves.
 
-### `get_subagent_result` (compatibility alias)
-
-Retains the independent-agent behavior and argument contract below; new callers use
-`get_agent_result` with `run_id`. This alias does not retrieve graph runs.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `agent_id` | string | yes | Agent ID to check |
-| `wait` | boolean | no | Wait for completion |
-| `verbose` | boolean | no | Include full conversation log |
-
-Cancelling a `wait: true` call (for example, with `Esc`) stops only the wait. The background agent keeps running, and its completion notification still arrives normally.
-
-### `steer_subagent`
-
-Send a steering message to a running agent. The message interrupts after the current tool execution.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `agent_id` | string | yes | Agent ID to steer |
-| `message` | string | yes | Message to inject into agent conversation |
-
 ### `agent_graph` (opt-in)
 
-Typed graph orchestration — the multi-agent launch tool. It validates before execution and returns a background run ID. Collect with `get_agent_result({run_id, wait:true})`; handle returned human gates with `ask` and `resolve_agent_graph_gate`, then collect again. Completion notifications and `/agents → Graph runs` supervision remain available.
+Typed graph orchestration — the multi-agent launch tool. It takes `graph` (a saved graph name or an inline `AgentGraph`) and `input`, validates before execution, and returns a background run ID. Invalid graphs are rejected in the initiating tool call; graph, agent, gate and condition failures are reported asynchronously. Collect with `get_agent_result({run_id, wait:true})`; handle returned human gates with `ask` and `resolve_agent_graph_gate`, then collect again. Completion notifications and `/agents → Graph runs` supervision remain available.
 
 Set `agentGraphEnabled: true` in `subagents.json` or enable agent graphs in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled agent graphs add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
 
-| Parameter | Purpose |
-|-----------|---------|
-| `graph` | Saved graph name (string) or an inline `AgentGraph` object (nodes + edges) |
-| `input` | Input values passed to the graph |
-
-The tool validates the graph structure before allocating a run; invalid graphs are rejected in the initiating tool call. Valid calls return a background run ID immediately; graph/agent/gate/condition failures are reported asynchronously.
-
-**Node types:**
-
-| Type | Description |
-|------|-------------|
-| `agent` | Runs a Pi subagent with the given prompt and agent type |
-| `human_gate` | Human-only approve/reject; never delegates |
-| `agent_gate` | Configured Subagent decision; uncertainty fails without human fallback |
-| `hybrid_gate` | Configured Subagent first; only valid typed uncertainty prompts a human |
-| `graph` | Runs a saved subgraph as a nested execution |
-| `expand` | Splices a runtime-generated `GraphFragment` into the run |
-| `fanout` | Awaits one typed, input-ordered all-settled agent collection |
-| `bounded_feedback` | Version 2: repeats fixed fanout/evaluator templates under explicit bounds, retaining every iteration |
+The bundled [agent-graph skill](skills/agent-graphs/SKILL.md) covers running graphs: saved-graph selection, ad-hoc inline graphs, input, gates and results. Its [authoring reference](skills/agent-graphs/references/authoring.md) covers the typed API: saved and inline graphs, node types (`agent`, `human_gate`, `agent_gate`, `hybrid_gate`, `graph`, `expand`, `fanout`, v2 `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled agent graphs discover no skill.
 
 Typed node `outputSchema` drives declarative edge conditions and bounded loops. An `agent` node may carry a `validation.gate` shell command and `retry` configuration; deterministic validation is not a decision gate.
 
@@ -412,7 +286,7 @@ Version 2 separates authored keys, optional display names and durable UUID-v4 ru
 
 Graph checkpoints in `.pi/graph-runs/` use atomic replacement, exclusive run leases and append-only versioned manifests before dispatch. Each new snapshot retains its originating exact Pi session ID across writes: only that session auto-resumes it after restart. Other sessions silently ignore it whether its writer is live or dead; ownerless legacy snapshots remain untouched and are never automatically adopted. The lease still prevents concurrent same-session writers. Restore validates filename containment, scheduler state, executable children and recursive delegation policy before creating tasks or writing. Session-owned v1 snapshots upgrade before execution; unknown/corrupt snapshots fail visibly. Retry/restore retain IDs and attempt budgets, while fresh runs allocate new identities. Explicit cancellation is terminal; lifecycle interruptions remain resumable. Crash recovery can repeat external actions; it is not an exactly-once guarantee.
 
-Saved graphs live at `agent-graphs/<name>.graph.json` or `.graph.yaml`; matching formats in one root are ambiguous. Resolution roots and their priority live in [`saved-graph.ts`](src/graph/saved-graph.ts). The committed [agent-graph portfolio](../../agent-graphs/) contains `context-gather` and `deep-research`; the bundled [agent-graph skill](skills/agent-graphs/SKILL.md) covers invocation and its [authoring reference](skills/agent-graphs/references/authoring.md) covers creation. See the [YAML and invocation-gates spec](../../docs/specs/agent-graph-yaml-invocation-gates.md) for those contracts.
+Saved graphs live at `agent-graphs/<name>.graph.json` or `.graph.yaml`; matching formats in one root are ambiguous. [src/graph/saved-graph.ts](src/graph/saved-graph.ts) defines the resolution roots and their priority. The committed [agent-graph portfolio](../../agent-graphs/) contains `context-gather` and `deep-research`; the bundled [agent-graph skill](skills/agent-graphs/SKILL.md) covers invocation and its [authoring reference](skills/agent-graphs/references/authoring.md) covers creation. See the [YAML and invocation-gates spec](../../docs/specs/agent-graph-yaml-invocation-gates.md) for those contracts.
 
 Graph node thinking follows the agent's frontmatter → model-chain suffix → SDK default, never a node override or implicit parent thinking. Ordered model chains, `:fast`, Agent-tree `local://` inheritance, bounded 30-minute Agent retention, and usage/cost controls retain their local contracts.
 
@@ -426,30 +300,11 @@ The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resour
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/agents` | Interactive agent management menu |
-| `/agent-graph-replay <runId> <graph>` | Agent graphs only: replay a current-session run trace through a saved or file graph's planner without model calls and show a display-only diff; `fanout`, `bounded_feedback`, `expand`, and `graph` nodes replay atomically |
+[src/index.ts](src/index.ts) registers the commands:
 
-The `/agents` command opens an interactive menu:
-
-```
-Running agents (2) — 1 running, 1 done     ← only shown when agents exist
-Agent types (6)                             ← unified list: defaults + custom
-Create new agent                            ← manual wizard or AI-generated
-Settings                                    ← max concurrency, max turns, grace turns, join mode
-```
-
-- **Running agents** — select one to open its live conversation viewer. While it's still running, press `Enter` to open the steering composer, then `Enter` again to send a message that redirects the agent (same mechanism as the `steer_subagent` tool; `Esc` or an empty submit returns), or press `x` (then `x` again to confirm) to stop/abort it — including **background** agents, which a global Esc can't unambiguously target (Esc still stops a blocking foreground `agent` call). A stopped agent reports its partial output flagged as incomplete, not as a completion.
-- **Agent types** — unified list with source indicators: `•` (project), `◦` (global), `✕` (disabled). Each row shows the agent's model, and the highlighted agent's full description appears below the list. The model column flags `(unavailable)` when no configured chain candidate is available, and shows `(→ provider/id)` when it resolves to a different provider or version than configured. Select an agent to manage it:
-  - **Default agents** (no override): Eject (export as `.md`), Disable
-  - **Default agents** (ejected/overridden): Edit, Disable, Reset to default, Delete
-  - **Custom agents**: Edit, Disable, Delete
-  - **Disabled agents**: Enable, Edit, Delete
-- **Eject** — writes the embedded default config as a `.md` file to project or personal location, so you can customize it
-- **Disable/Enable** — toggle agent availability. Disabled agents stay visible in the list (marked `✕`) and can be re-enabled
-- **Create new agent** — choose project/personal location, then manual wizard (step-by-step prompts for name, tools, model, thinking, system prompt) or AI-generated (describe what the agent should do and a sub-agent writes the `.md` file). Any name is allowed, including default agent names (overrides them)
-- **Settings** — configure max concurrency, default max turns, grace turns, and join mode at runtime
+- `/agents` opens the management menu: running agents (open the conversation viewer, steer with `Enter`, stop with `x` twice), agent types (eject, edit, disable/enable, reset, delete), create a new agent (manual wizard or AI-generated), and settings. Agent type rows show source (`•` project, `◦` global, `✕` disabled) and model, flagging `(unavailable)` chains and `(→ provider/id)` resolutions.
+- `/agent-monitor` opens the Agent Monitor.
+- `/agent-graph-replay <runId> <graph>` (agent graphs only) replays a current-session run trace through a saved or file graph's planner without model calls and shows a display-only diff.
 
 ## Graceful Max Turns
 
@@ -479,7 +334,7 @@ When background agents complete, they notify the main agent. The **join mode** c
 | Mode | Behavior |
 |------|----------|
 | `smart` (default) | 2+ background agents spawned in the same turn are auto-grouped into a single consolidated notification. Solo agents notify individually. |
-| `async` | Each agent sends its own notification on completion (original behavior). Best when results need incremental processing. |
+| `async` | Each agent sends its own notification on completion. Best when results need incremental processing. |
 | `group` | Force grouping even when spawning a single agent. Useful when you know more agents will follow. |
 
 **Timeout behavior:** When agents are grouped, a 30-second timeout starts after the first agent completes. If not all agents finish in time, a partial notification is sent with completed results and remaining agents continue with a shorter 15-second re-batch window for stragglers.
@@ -491,7 +346,7 @@ When background agents complete, they notify the main agent. The **join mode** c
 
 **Opt-in:** off by default. Enable via `/agents → Settings → Scope models`.
 
-When on, each subagent spawn's effective model is validated against pi's own `enabledModels` list (configured via pi's `/scoped-models` UI). pi-subagents reads that list; it doesn't manage it. Both of pi's settings files are honored: global `~/.pi/agent/settings.json` and project-local `<cwd>/.pi/settings.json`. **Project overrides global** — mirrors pi's `SettingsManager` deep-merge, so a tighter per-project scope (hand-edited into the project settings) is respected.
+When on, each subagent spawn's effective model is validated against pi's own `enabledModels` list (configured via pi's `/scoped-models` UI). This extension reads that list; it doesn't manage it. Both of pi's settings files are honored: global `~/.pi/agent/settings.json` and project-local `<cwd>/.pi/settings.json`. **Project overrides global** — mirrors pi's `SettingsManager` deep-merge, so a tighter per-project scope (hand-edited into the project settings) is respected.
 
 **Out-of-scope handling depends on source:**
 
@@ -508,22 +363,14 @@ When on, each subagent spawn's effective model is validated against pi's own `en
 
 ## Persistent Settings
 
-Runtime tuning values set via `/agents` → Settings (background/foreground concurrency, usage reporting, expanded cost display, default max turns, grace turns, default join mode, scheduling on/off, scope models on/off, disable defaults on/off, output transcript on/off, tool description full/compact/custom, widget all/background/off) persist across pi restarts. Two files, merged on load:
+Runtime settings changed via `/agents` → Settings persist across pi restarts. Two files, merged on load:
 
 - **Global:** `~/.pi/agent/subagents.json` — your machine-wide defaults. Edit by hand; the `/agents` menu never writes here.
 - **Project:** `<cwd>/.pi/subagents.json` — per-project overrides. Written by `/agents` → Settings.
 
-**Precedence:** project overrides global on any field present in both. Missing fields fall back to the hardcoded defaults (max concurrency `4`, default max turns unlimited, grace turns `5`, join mode `smart`, defaults enabled).
+**Precedence:** project overrides global on any field present in both. Missing fields fall back to the defaults in [src/settings.ts](src/settings.ts).
 
-**Control settings** (applied live except agent graph registration):
-
-| Setting | Default | Behavior |
-|---------|---------|----------|
-| `maxConcurrentForeground` | `0` | Independent blocking-agent limit; `0` means unlimited |
-| `reportUsage` | `false` | Report pending subagent usage through final `agent`/retrieval/steering tool results into native Pi session totals |
-| `showCost` | `false` | Show a positive estimated per-agent cost only in expanded Run metadata |
-| `agentGraphEnabled` | `false` | Enable typed agent graphs (`agent_graph`); reload required for registration changes; disabled adds no graph tool schema/prompt cost |
-| `graphRuntimeTrace` | `false` | Write a per-run XState runtime inspection log (`<runId>.runtime.jsonl`); read at each graph run start ("Graph runtime trace" in `/agents → Settings`) |
+[src/settings.ts](src/settings.ts) defines every key and default. Control settings apply live, except agent graph registration, which requires reload.
 
 Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
 
@@ -564,99 +411,22 @@ EOF
 
 Every project now starts with concurrency 16 and grace 10, without ever touching the menu. Individual projects can still override via `/agents` → Settings.
 
-**Failure behavior:** missing file is silent; malformed JSON logs a `[pi-subagents] Ignoring malformed settings at …` warning to stderr; invalid/out-of-range field values are dropped per-field; write failures downgrade the `/agents` toast to a warning with `(session only; failed to persist)`.
+**Failure behavior:** missing file is silent; malformed JSON logs a warning to stderr; invalid/out-of-range field values are dropped per-field; write failures downgrade the `/agents` toast to a warning with `(session only; failed to persist)`.
 
 ## Events
 
-Agent lifecycle events are emitted via `pi.events.emit()` so other extensions can react:
-
-| Event | When | Key fields |
-|-------|------|------------|
-| `subagents:created` | Background agent registered | `id`, `type`, `description`, `isBackground` |
-| `subagents:started` | Agent transitions to running (including queued→running) | `id`, `type`, `description` |
-| `subagents:completed` | Agent finished successfully (background and foreground) | `id`, `type`, `durationMs`, `tokens` (lifetime `{ input, output, total }`), `toolUses`, `result` |
-| `subagents:failed` | Agent errored, stopped, or aborted (background and foreground) | same as completed + `error`, `status` |
-| `subagents:steered` | Steering message sent | `id`, `message` |
-| `subagents:compacted` | Agent's session successfully compacted | `id`, `type`, `description`, `reason` (`"manual"` / `"threshold"` / `"overflow"`), `tokensBefore`, `compactionCount` |
-| `subagents:scheduled` | Schedule lifecycle change | `{ type: "added" \| "removed" \| "updated" \| "fired" \| "error", … }` (job/agentId/error fields per type) |
-| `subagents:scheduler_ready` | Scheduler bound to session, enabled jobs armed | `sessionId`, `jobCount` |
-| `subagents:ready` | RPC handlers registered and armed — fired on session start; not emitted in a session that excludes pi-subagents | — |
-| `subagents:settings_loaded` | Persisted settings applied at extension init | `settings` (merged global + project) |
-| `subagents:settings_changed` | `/agents` → Settings mutation was applied | `settings`, `persisted` (`boolean` — `false` on write failure) |
-
-`tokens.total` = `input + output + cacheWrite`. `cacheRead` is excluded — each turn's `cacheRead` is the cumulative cached prefix re-read on that one API call, so summing per-message would over-count it. Use `contextUsage.percent` (surfaced as `(NN%)` in the widget) for current context size.
+The extension emits the `subagents:*` lifecycle event family (agent created/started/completed/failed/steered/compacted, scheduling, readiness and settings) on `pi.events` from [src/index.ts](src/index.ts) and [src/agent-tool.ts](src/agent-tool.ts); see [../CONVENTIONS.md](../CONVENTIONS.md) for event conventions.
 
 ## Cross-Extension RPC
 
-Other pi extensions can spawn and stop subagents programmatically via the `pi.events` event bus, without importing this package directly.
+Other pi extensions can spawn and stop subagents through the `pi.events` bus without importing this package. [src/cross-extension-rpc.ts](src/cross-extension-rpc.ts) defines the payloads.
 
-All RPC replies use a standardized envelope: `{ success: true, data?: T }` on success, `{ success: false, error: string }` on failure.
+- Requests go to `subagents:rpc:<method>` with a `requestId`; methods are `ping` (returns the protocol version), `spawn` (returns the agent ID) and `stop`.
+- Replies arrive on `subagents:rpc:<method>:reply:${requestId}`, so concurrent requests don't interfere.
+- Every reply uses the envelope `{ success: true, data?: T }` or `{ success: false, error: string }`.
+- `subagents:ready` fires when the handlers are registered on session start. A session that excludes this extension emits no `subagents:ready` and does not answer the RPC channels; give discovery a timeout.
 
-### Discovery
-
-Listen for `subagents:ready` to know when RPC handlers are available:
-
-```typescript
-pi.events.on("subagents:ready", () => {
-  // RPC handlers are registered — safe to call ping/spawn/stop
-});
-```
-
-`subagents:ready` fires only when pi-subagents is actually loaded **and bound** in the current session. A session that excludes it (via an agent's `extensions:`) emits no `subagents:ready` and does not answer the RPC channels — exactly as if pi-subagents were not installed. Treat "no `subagents:ready`" as "not available here" and give discovery a timeout rather than waiting indefinitely.
-
-### Ping
-
-Check if the subagents extension is loaded and get the protocol version:
-
-```typescript
-const requestId = crypto.randomUUID();
-const unsub = pi.events.on(`subagents:rpc:ping:reply:${requestId}`, (reply) => {
-  unsub();
-  if (reply.success) console.log("Protocol version:", reply.data.version);
-});
-pi.events.emit("subagents:rpc:ping", { requestId });
-```
-
-### Spawn
-
-Spawn a subagent and receive its ID:
-
-```typescript
-const requestId = crypto.randomUUID();
-const unsub = pi.events.on(`subagents:rpc:spawn:reply:${requestId}`, (reply) => {
-  unsub();
-  if (!reply.success) {
-    console.error("Spawn failed:", reply.error);
-  } else {
-    console.log("Agent ID:", reply.data.id);
-  }
-});
-pi.events.emit("subagents:rpc:spawn", {
-  requestId,
-  type: "general-purpose",
-  prompt: "Do something useful",
-  options: { description: "My task", run_in_background: true },
-});
-```
-
-`options.model` accepts either a `Model` object (e.g. `ctx.model`) or a `"provider/modelId"` string — strings are resolved against `ctx.modelRegistry` at the RPC boundary, so cross-extension callers can forward serializable values without losing auth context.
-
-`options.cwd` (absolute path to an existing directory — anything else returns an error envelope; `null` means unset) runs the agent in a different working directory than the parent session. Its tools operate there and the prompt's environment block describes it, but **`.pi` config still loads from the parent session's project** — the target directory's `.pi` extensions never execute, and its agents/skills/settings are not picked up. Agents with `memory:` keep reading/writing the parent project's memory.
-
-### Stop
-
-Stop a running agent by ID:
-
-```typescript
-const requestId = crypto.randomUUID();
-const unsub = pi.events.on(`subagents:rpc:stop:reply:${requestId}`, (reply) => {
-  unsub();
-  if (!reply.success) console.error("Stop failed:", reply.error);
-});
-pi.events.emit("subagents:rpc:stop", { requestId, agentId: "agent-id-here" });
-```
-
-Reply channels are scoped per `requestId`, so concurrent requests don't interfere.
+`spawn` accepts `options.model` as a `Model` object or a `"provider/modelId"` string resolved against `ctx.modelRegistry`. `options.cwd` (an existing absolute directory) runs the agent elsewhere, but `.pi` config, agents, skills, settings and memory still come from the parent session's project.
 
 ## Persistent Agent Memory
 
@@ -674,8 +444,6 @@ memory: project   # project | local | user
 | `local` | `.pi/agent-memory-local/<name>/` | Machine-specific (gitignored) |
 | `user` | `<agentDir>/agent-memory/<name>/` (default `~/.pi/agent/agent-memory/`, honors `PI_CODING_AGENT_DIR`) | Global personal memory |
 
-The `user` scope previously hardcoded `~/.pi/agent-memory/`. If that legacy directory exists for an agent and the new location doesn't, it keeps being used — existing memories aren't orphaned.
-
 Memory uses a `MEMORY.md` index file and individual memory files with frontmatter. Agents with write tools get full read-write access. **Read-only agents** (no `write`/`edit` tools) automatically get read-only memory — they can consume memories written by other agents but cannot modify them. This prevents unintended tool escalation.
 
 The `disallowed_tools` field is respected when determining write capability — an agent with `tools: write` + `disallowed_tools: write` correctly gets read-only memory.
@@ -690,15 +458,7 @@ skills: api-conventions, error-handling
 ---
 ```
 
-**Discovery roots** (checked in this order, first match wins):
-
-| Scope | Path | Source |
-|---|---|---|
-| Project | `<cwd>/.pi/skills/` | Pi-standard |
-| Project | `<cwd>/.agents/skills/` | [Agent Skills spec](https://agentskills.io/integrate-skills) |
-| User | `$PI_CODING_AGENT_DIR/skills/` (default `~/.pi/agent/skills/`) | Pi-standard |
-| User | `~/.agents/skills/` | [Agent Skills spec](https://agentskills.io/integrate-skills) |
-| User | `~/.pi/skills/` | Legacy (pre-Pi) |
+[src/skill-loader.ts](src/skill-loader.ts) defines the discovery roots (project `.pi/skills/` and `.agents/skills/`, then user locations) and their order; the first match wins.
 
 **Per root, a skill named `foo` resolves to the first of:**
 
@@ -722,38 +482,3 @@ disallowed_tools: write, edit
 ```
 
 This is useful for creating agents that inherit extension tools but should not have write access.
-
-## Architecture
-
-```
-src/
-  index.ts            # Extension entry: tool/command registration, rendering
-  types.ts            # Type definitions (AgentConfig, AgentRecord, etc.)
-  default-agents.ts   # Embedded default agent configs (general-purpose, Explore, Plan)
-  agent-types.ts      # Unified agent registry (defaults + user), tool name resolution
-  agent-runner.ts     # Session creation, execution, graceful max_turns, steer/resume
-  agent-manager.ts    # Agent lifecycle, concurrency queue, completion notifications
-  cross-extension-rpc.ts # RPC handlers for cross-extension spawn/ping via pi.events
-  group-join.ts       # Group join manager: batched completion notifications with timeout
-  custom-agents.ts    # Load user-defined agents from .pi/agents/, .agents/agents/, and global agents
-  memory.ts           # Persistent agent memory (resolve, read, build prompt blocks)
-  skill-loader.ts     # Preload skills (Pi-standard + Agent Skills spec layouts)
-  output-file.ts      # Streaming output file transcripts for agent sessions
-  graph/              # Typed graph runtime: IR, validation, run-graph, scheduler, node actors, persistence, saved-graph resolution, conditions, value refs, JSON schema, progress, notifications, and pane UI
-  prompts.ts          # Config-driven system prompt builder
-  context.ts          # Parent conversation context for inherit_context
-  env.ts              # Environment detection (git, platform)
-  ui/
-    agent-widget.ts       # Persistent widget: spinners, activity, status icons, theming
-    conversation-viewer.ts # Live conversation overlay for viewing agent sessions
-```
-
-## License
-
-MIT — [tintinweb](https://github.com/tintinweb)
-
-## Sources
-
-[1] Upstream control implementation, v0.19.0 (https://github.com/tintinweb/pi-subagents/tree/4f572eaa04c09d3dbc16e4a5f13a16b295e84e14/src)
-
-[2] Upstream lowercase workflow-name collision fix (https://github.com/tintinweb/pi-subagents/commit/e955e29c51b7a6cce37e1108cd2d6c57a77e151c)
