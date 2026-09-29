@@ -33,7 +33,7 @@ it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s 
 it("removes explicit terminal cancellation rather than resuming it each restart", async () => {
   const session = boot({ agentGraphEnabled: true });
   const { runAgent } = await import("../src/agent-runner.js");
-  const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
+  const graph: AgentGraph = { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
   const runId = "agr_abcdef123456"; const controller = new AbortController(); controller.abort();
   await runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => persistence.writeGraphSnapshot(session.ctx.cwd, { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: vi.fn() } });
   const create = vi.spyOn(tasks, "createGraphRunTask");
@@ -48,7 +48,7 @@ it("removes a live explicitly-cancelled snapshot before notifying completion", a
   const session = boot({ agentGraphEnabled: true });
   await session.lifecycle("session_start");
   const create = vi.spyOn(tasks, "createGraphRunTask");
-  const graph: AgentGraph = { version: 2, nodes: { gate: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } }, after: { type: "agent", agent: "fixture", prompt: "after" } }, edges: [{ from: "gate", to: "after" }] };
+  const graph: AgentGraph = { nodes: { gate: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } }, after: { type: "agent", agent: "fixture", prompt: "after" } }, edges: [{ from: "gate", to: "after" }] };
   const result = await required(session.tools.get("agent_graph")).execute("call", { graph, input: {} }, undefined, undefined, session.ctx);
   const runId = required(result.details?.taskId);
   await vi.waitFor(() => expect(persistence.readGraphSnapshots(session.ctx.cwd).some(snapshot => snapshot.state.nodes.gate?.status === "running")).toBe(true));
@@ -61,7 +61,7 @@ it("removes a live explicitly-cancelled snapshot before notifying completion", a
 
 it("preserves a cancelled validation-gate checkpoint when resume cannot reconcile its drain", async () => {
   const session = boot({ agentGraphEnabled: true });
-  const graph: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "fixture", prompt: "work", validation: { gate: "true" } } }, edges: [] };
+  const graph: AgentGraph = { nodes: { a: { type: "agent", agent: "fixture", prompt: "work", validation: { gate: "true" } } }, edges: [] };
   const runId = "agr_abcdef123456"; const controller = new AbortController(); const gate = deferred<{ ok: boolean; output: string }>();
   let saved: persistence.GraphRunSnapshot | undefined; let entered = false;
   const running = runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => {

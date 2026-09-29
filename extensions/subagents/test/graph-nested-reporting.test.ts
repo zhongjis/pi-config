@@ -28,7 +28,7 @@ it("forwards nested static and fanout rows without federating direct-graph contr
     edges: [{ from: "gather", to: "later" }], outputs: { result: { node: "gather", path: "$.answer" } },
   };
   const task = createGraphRunTask({ id: "nested", script: "" });
-  const reporter = new GraphRunReporter(task, graph);
+  const reporter = new GraphRunReporter(task);
   const added = new Map<string, { dependencies: string[] }>();
   const events: string[] = [];
   let control: GraphControl | undefined;
@@ -58,7 +58,7 @@ it("forwards nested static and fanout rows without federating direct-graph contr
       events.push(`update:${id}`);
       reporter.update(id, state, correlation);
       if (id === "later:item:0" && state.status === "pending") {
-        const row = collapse(task.graphRunProgress).agents.find(agent => agent.label === id);
+        const row = collapse(task.graphRunProgress).agents.find(agent => agent.nodeBinding === id);
         expect(control?.skip(row?.index ?? -1)).toBe(true);
       }
     },
@@ -73,11 +73,11 @@ it("forwards nested static and fanout rows without federating direct-graph contr
   expect(new Set(rows.map(row => row.index)).size).toBe(rows.length);
   expect(rows).toHaveLength(7);
   const worker = rows.find(row => row.agentType === "worker");
-  expect(worker).toMatchObject({ label: "gather/research:item:0", phaseTitle: "Round 1/2", deps: [], state: "done", recordId: "record:worker", modelId: "provider/model" });
+  expect(worker).toMatchObject({ nodeBinding: "gather/research:item:0", phaseTitle: "Graph", deps: [], state: "done", recordId: "record:worker", modelId: "provider/model" });
   const summary = rows.find(row => row.agentType === "writer");
   expect(summary?.deps).toHaveLength(1);
   expect(summary?.deps?.[0]).not.toBe("gather/research"); // That ID belongs to the outer agent.
-  expect(rows.find(row => row.label === summary?.deps?.[0])?.dependents).toContain(summary?.label);
+  expect(rows.find(row => row.nodeBinding === summary?.deps?.[0])?.dependents).toContain(summary?.nodeBinding);
   for (const id of added.keys()) expect(events.indexOf(`added:${id}`)).toBeLessThan(events.indexOf(`update:${id}`));
 });
 
@@ -89,7 +89,7 @@ it("keeps deeper descendants distinct from later direct expansion IDs", async ()
     edges: [{ from: "g", to: "expand" }],
   };
   const task = createGraphRunTask({ id: "deep", script: "" });
-  const reporter = new GraphRunReporter(task, outer);
+  const reporter = new GraphRunReporter(task);
   const result = await runGraph(outer, { nodes: { "g/inner/a": { type: "agent", agent: "direct", prompt: "fixture" } }, edges: [] }, {
     loadGraph: name => name === "middle" ? middle : leaf,
     host: { spawnAgent: async request => {
@@ -103,15 +103,16 @@ it("keeps deeper descendants distinct from later direct expansion IDs", async ()
   expect(result.status).toBe("completed");
   const rows = collapse(task.graphRunProgress).agents;
   expect(rows).toHaveLength(5);
-  expect(rows.find(row => row.agentType === "leaf")).toMatchObject({ label: "g/inner/a", recordId: "leaf", state: "done" });
+  expect(rows.find(row => row.agentType === "leaf")).toMatchObject({ nodeBinding: "g/inner/a", recordId: "leaf", state: "done" });
   expect(rows.find(row => row.agentType === "direct")).toMatchObject({ recordId: "direct", state: "done" });
-  expect(new Set(rows.map(row => row.label)).size).toBe(5);
+  expect(new Set(rows.map(row => row.nodeBinding)).size).toBe(5);
 });
 
 it("keeps a nested display binding scoped to its current run correlation", () => {
   const graph: AgentGraph = { nodes: { "nested/worker": { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
   const task = createGraphRunTask({ id: "nested-correlation", script: "" });
-  const reporter = new GraphRunReporter(task, graph);
+  const reporter = new GraphRunReporter(task);
+  reporter.registerNode("nested/worker", graph.nodes["nested/worker"], { dependencies: [] });
   const identity = (runId: string, id: string): ExecutionCorrelation => ({
     runId,
     instanceId: "11111111-1111-4111-8111-111111111111" as NodeInstanceId,

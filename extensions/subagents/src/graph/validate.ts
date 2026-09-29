@@ -429,14 +429,13 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
   const errors: string[] = [];
   if (graph.id !== undefined && !isNonEmptyString(graph.id)) errors.push("id: must be a non-empty string when present");
   if (graph.name !== undefined && typeof graph.name !== "string") errors.push("name: must be a string when present");
-  if (graph.version !== undefined && graph.version !== 1 && graph.version !== 2) errors.push("version: supported versions are 1 and 2");
   if (graph.description !== undefined && typeof graph.description !== "string") errors.push("description: must be a string when present");
   if (graph.semanticPolicy !== undefined && graph.semanticPolicy !== "context-gather-v1") errors.push("semanticPolicy: unsupported policy");
   if (graph.semanticPolicy === "context-gather-v1") {
     const nodes = isPlainObject(graph.nodes) ? graph.nodes : {};
-    if (graph.version !== 2 || !isPlainObject(nodes.research) || nodes.research.type !== "bounded_feedback" ||
+    if (!isPlainObject(nodes.research) || nodes.research.type !== "bounded_feedback" ||
       [nodes.plan, nodes.synthesize].some(node => !isPlainObject(node) || node.type !== "agent" || node.outputSchema === undefined)) {
-      errors.push("semanticPolicy: context-gather-v1 requires v2 plan/research/synthesize structured nodes");
+      errors.push("semanticPolicy: context-gather-v1 requires plan/research/synthesize structured nodes");
     }
   }
   if (graph.inputSchema !== undefined) {
@@ -448,9 +447,6 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
     if (compiled.ok === false) errors.push(`outputSchema: ${compiled.message}`);
   }
 
-  if (graph.version !== 2 && isPlainObject(graph.nodes)) {
-    for (const [id, node] of Object.entries(graph.nodes)) if (isPlainObject(node) && node.type === "bounded_feedback") errors.push(`nodes.${id}: bounded feedback requires version 2`);
-  }
   const core = validateCore(graph.nodes, graph.edges, graph.outputs, new Set(), materializedPrompts, graph.inputSchema);
   errors.push(...core.errors);
   return { ok: errors.length === 0, errors };

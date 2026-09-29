@@ -25,7 +25,7 @@ interface FanoutNode {
   prompt: Template;
   input?: Record<string, ValueRef>;
   outputSchema?: JsonSchema;       // each child's structured output
-  phase?: { index: number; title: string };
+  phase?: { index: number; title: string }; // validated, not displayed
 }
 ```
 
@@ -78,7 +78,7 @@ Validate the caller input and repeat its item contract on the fanout. `${item}` 
         },
         "required": ["evidence"]
       },
-      "phase": { "index": 0, "title": "Round 1/2" }
+      "name": "Research round 1"
     }
   }
 }
@@ -94,20 +94,13 @@ Downstream nodes therefore read a complete all-settled collection. They never ne
 
 ## Per-round namespaces
 
-Generated IDs are deterministic: `<fanout-id>:item:<index>`. Give each round a distinct fanout node ID, such as `research-round-1` and `research-round-2`; their generated IDs cannot collide.
+Generated IDs are deterministic: `<fanout-id>:item:<index>`. Give each round a distinct fanout node ID, such as `research-round-1` and `research-round-2`; their generated IDs cannot collide. The monitor nests generated rows under their fanout and labels each `<fanout name or agent> · item <n>`; name each fanout so its round is readable. `phase` is validated but not displayed.
 
-Set phase metadata on each fanout so generated rows appear in the intended monitor group:
-
-| Fanout node | Generated IDs | Phase |
-|---|---|---|
-| `research-round-1` | `research-round-1:item:<index>` | `{ "index": 0, "title": "Round 1/2" }` |
-| `research-round-2` | `research-round-2:item:<index>` | `{ "index": 2, "title": "Round 2/2" }` |
-
-Phase rounds and execution attempts are independent. A retry or loop rerun increments `attempt`; it does not create another evidence round.
+A retry or loop rerun increments `attempt`; it does not create another evidence round.
 
 ## Bounded evaluation loops
 
-Version 1 legacy. For version 2, prefer `bounded_feedback`; read [Bounded Feedback](bounded-feedback.md). In a version 1 graph, bound adaptive work with explicit fanout/evaluator pairs rather than a back-edge into one fanout:
+Prefer `bounded_feedback` for adaptive rounds; read [Bounded Feedback](bounded-feedback.md). For a fixed number of rounds, bound work with explicit fanout/evaluator pairs rather than a back-edge into one fanout:
 
 ```jsonc
 "edges": [
@@ -162,7 +155,14 @@ A completed fanout returns results in input order, not completion order:
 ```ts
 interface FanoutResult {
   results: Array<{
-    nodeId: string;
+    nodeId: string; // scheduler binding `<fanout-id>:item:<index>`, never a UUID
+    instanceId: string; // run-scoped UUID v4
+    nodeKey: string;
+    binding: string;
+    ordinal: number;
+    parentInstanceId?: string;
+    iteration?: number;
+    itemIndex?: number;
     index: number;
     item: JsonValue;
     status: "completed" | "failed" | "skipped";

@@ -35,11 +35,13 @@ describe("graph metadata history", () => {
     expect(JSON.stringify(decodeHistory(JSON.stringify({ version: 2, runs: [injected] })))).not.toContain("SECRET_");
   });
 
-  it("removes v1 bindings while preserving dependency indices", () => {
+  it("removes authored bindings while preserving dependency indices", () => {
     const value = createGraphRunTask({ id: "legacy", script: "" });
     const first = { type: "agent", name: "First", agent: "worker", prompt: "one" } as const;
     const second = { type: "agent", name: "Second", agent: "reviewer", prompt: "two" } as const;
-    const reporter = new GraphRunReporter(value, { nodes: { PRIVATE_FIRST: first, PRIVATE_SECOND: second }, edges: [{ from: "PRIVATE_FIRST", to: "PRIVATE_SECOND" }] });
+    const reporter = new GraphRunReporter(value);
+    reporter.registerNode("PRIVATE_FIRST", first, { dependencies: [], presentation: { kind: "agent", name: first.name } });
+    reporter.registerNode("PRIVATE_SECOND", second, { dependencies: ["PRIVATE_FIRST"], presentation: { kind: "agent", name: second.name } });
     reporter.update("PRIVATE_FIRST", { status: "completed", attempt: 1, output: "one" });
     reporter.update("PRIVATE_SECOND", { status: "completed", attempt: 1, output: "two" });
     Object.assign(value, { status: "completed", endTime: Date.now() });

@@ -50,7 +50,7 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
   "reports only this execution's assistant model live and in settled history: %s", async scenario => {
     const { host } = setup();
     const task = createGraphRunTask({ id: "provenance", script: "" });
-    const reporter = new GraphRunReporter(task, { nodes: { a: { type: "agent", agent: "general-purpose", prompt: "task" } }, edges: [] });
+    const reporter = new GraphRunReporter(task);
     const identity: ExecutionCorrelation = { runId: "provenance", instanceId: "11111111-1111-4111-8111-111111111111" as NodeInstanceId, activation: 1, graphAttempt: 1, executionAttemptId: executionAttemptId("22222222-2222-4222-8222-222222222222") };
     const running = { status: "running" as const, attempt: 1, activation: 1, graphAttempt: 1, currentExecutionAttemptId: identity.executionAttemptId };
     reporter.update("a", running, identity);

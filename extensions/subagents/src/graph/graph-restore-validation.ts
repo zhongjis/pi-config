@@ -42,8 +42,7 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
     children.forEach((child, index) => {
       const instance = instances.get(child.nodeId);
       if (!instance || instance.parentInstanceId !== parent.instanceId || instance.nodeKey !== parent.nodeKey || instance.itemIndex !== index || instance.iteration !== parent.iteration || executionTemplate(graph.nodes[child.nodeId]) !== executionTemplate(prepared.items[index].node)) throw new TypeError("Invalid child definition or provenance");
-      // V1 graphs retain their legacy child result shape after snapshot upgrade.
-      if (graph.version === 2 && Object.entries(instance).some(([field, value]) => !isDeepStrictEqual(Reflect.get(child, field), value))) throw new TypeError("Invalid child collection provenance");
+      if (Object.entries(instance).some(([field, value]) => !isDeepStrictEqual(Reflect.get(child, field), value))) throw new TypeError("Invalid child collection provenance");
     });
   }
   const ordinals = new Set(runtime.manifest.map(row => row.ordinal));

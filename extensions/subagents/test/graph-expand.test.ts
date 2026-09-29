@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentGraph, GraphFragment } from "../src/graph/ir.js";
 import type { NodeHost } from "../src/graph/node-host.js";
 import { namespaceFragment, runGraph } from "../src/graph/run-graph.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 
 /** A fragment whose two nodes are linked by an internal edge + input reference. */
 const internalFragment: GraphFragment = {
@@ -60,14 +61,15 @@ describe("namespaceFragment", () => {
 describe("runGraph — expand nodes", () => {
   it("inserts a fragment from an upstream output and runs the new nodes to completion", async () => {
     const fragment: GraphFragment = { nodes: { w: { type: "agent", agent: "x", prompt: "w" } }, edges: [] };
+    const { onNodeAdded, binding } = instanceBindings();
     const host: NodeHost = {
       spawnAgent: async request => {
-        if (request.nodeId === "gen") return { ok: true, output: JSON.stringify(fragment) };
-        if (request.nodeId === "w") return { ok: true, output: "worked" };
+        if (binding(request.nodeId) === "gen") return { ok: true, output: JSON.stringify(fragment) };
+        if (binding(request.nodeId) === "w") return { ok: true, output: "worked" };
         return { ok: true, output: "ok" };
       },
     };
-    const result = await runGraph(expandGraph(), {}, { host });
+    const result = await runGraph(expandGraph(), {}, { host, onNodeAdded });
     expect(result.status).toBe("completed");
     expect(result.nodes.exp.status).toBe("completed");
     expect(result.nodes.w.status).toBe("completed"); // the inserted node ran
@@ -76,10 +78,11 @@ describe("runGraph — expand nodes", () => {
 
   it("fails the expand node when the resolved fragment is invalid", async () => {
     const bad = { nodes: { oops: { type: "nope" } }, edges: [] };
+    const { onNodeAdded, binding } = instanceBindings();
     const host: NodeHost = {
-      spawnAgent: async request => (request.nodeId === "gen" ? { ok: true, output: JSON.stringify(bad) } : { ok: true, output: "ok" }),
+      spawnAgent: async request => (binding(request.nodeId) === "gen" ? { ok: true, output: JSON.stringify(bad) } : { ok: true, output: "ok" }),
     };
-    const result = await runGraph(expandGraph(), {}, { host });
+    const result = await runGraph(expandGraph(), {}, { host, onNodeAdded });
     expect(result.status).toBe("failed");
     expect(result.nodes.exp.status).toBe("failed");
     expect(result.nodes.exp.error).toContain("invalid");
@@ -103,13 +106,14 @@ describe("runGraph — expand nodes", () => {
   });
 
   it("namespaces inserted ids and resolves their internal edges", async () => {
+    const { onNodeAdded, binding } = instanceBindings();
     const host: NodeHost = {
       spawnAgent: async request => {
-        if (request.nodeId === "gen") return { ok: true, output: JSON.stringify(internalFragment) };
-        return { ok: true, output: `${request.nodeId}-out` };
+        if (binding(request.nodeId) === "gen") return { ok: true, output: JSON.stringify(internalFragment) };
+        return { ok: true, output: `${binding(request.nodeId)}-out` };
       },
     };
-    const result = await runGraph(expandGraph("sub"), {}, { host });
+    const result = await runGraph(expandGraph("sub"), {}, { host, onNodeAdded });
     expect(result.status).toBe("completed");
     // Ids are prefixed, and sub:b completing proves its internal edge from sub:a was rewritten.
     expect(result.nodes["sub:a"].status).toBe("completed");
@@ -121,9 +125,10 @@ it("rejects expand insertion atomically when the effective graph would exceed 50
   const nodes: GraphFragment["nodes"] = {};
   for (let index = 0; index < 499; index++) nodes[`child${index}`] = { type: "agent", agent: "x", prompt: "fixture" };
   const spawned: string[] = [];
-  const result = await runGraph(expandGraph("batch"), {}, { host: {
+  const { onNodeAdded, binding } = instanceBindings();
+  const result = await runGraph(expandGraph("batch"), {}, { onNodeAdded, host: {
     spawnAgent: async request => {
-      spawned.push(request.nodeId);
+      spawned.push(binding(request.nodeId));
       return { ok: true, output: JSON.stringify({ nodes, edges: [] }) };
     },
   } });

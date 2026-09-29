@@ -97,7 +97,7 @@ it("persists effective fanout topology through the graph runtime and resumes it 
   await vi.waitFor(() => expect(readGraphSnapshots(s1.ctx.cwd).some(s => s.runId === runId)).toBe(true));
   const saved = required(readGraphSnapshots(s1.ctx.cwd).find(s => s.runId === runId));
   expect(saved.graph.nodes["research:item:0"]).toMatchObject({ type: "agent", agent: "fixture" });
-  expect(saved.state.collections?.research).toEqual([{ nodeId: "research:item:0", item: { source: "project" } }]);
+  expect(saved.state.collections?.research).toEqual([{ nodeId: "research:item:0", item: { source: "project" }, binding: "research:item:0", nodeKey: "research", itemIndex: 0, ordinal: 2, instanceId: expect.any(String), parentInstanceId: expect.any(String) }]);
   const shutdown = s1.lifecycle("session_shutdown");
 
   await shutdown;

@@ -8,7 +8,7 @@ import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 
 const worker = { type: "agent", agent: "worker", prompt: "fixture" } as const;
-const graph: AgentGraph = { version: 2, nodes: { a: worker, b: worker }, edges: [] };
+const graph: AgentGraph = { nodes: { a: worker, b: worker }, edges: [] };
 function deferred<T>() {
   let resolve: (value: T) => void = () => { throw new Error("Missing resolver"); };
   const promise = new Promise<T>(yes => { resolve = yes; });
@@ -88,7 +88,7 @@ describe("GraphActor root authority", () => {
 
 it("holds newly expanded work when admission publication pauses an existing wave", async () => {
   let control: GraphControl | undefined; const started: string[] = [];
-  const run = runGraph({ version: 2, nodes: { before: { ...worker, agent: "before" }, expand: { type: "expand", source: { path: "$" } } }, edges: [] },
+  const run = runGraph({ nodes: { before: { ...worker, agent: "before" }, expand: { type: "expand", source: { path: "$" } } }, edges: [] },
     { nodes: { after: { ...worker, agent: "after" } }, edges: [] }, {
       onCheckpoint: () => {}, onControl: value => { control = value; },
       onNodeAdded: id => { if (id === "after") control?.pause(); },
@@ -100,12 +100,12 @@ it("holds newly expanded work when admission publication pauses an existing wave
   expect(started).toEqual(["before", "after"]);
 });
 
-it("preserves empty outputs for non-durable cancellation after partial completion", async () => {
+it("keeps completed outputs when cancelled after partial completion", async () => {
   const controller = new AbortController(); let calls = 0;
   const result = await runGraph({ nodes: { a: worker, b: worker }, edges: [{ from: "a", to: "b" }], outputs: { result: { node: "a", path: "$" } } }, {}, {
     signal: controller.signal, host: { spawnAgent: async () => { if (++calls === 2) controller.abort(); return { ok: true, output: "partial" }; } },
   });
-  expect(result.status).toBe("aborted"); expect(result.outputs).toEqual({});
+  expect(result.status).toBe("aborted"); expect(result.outputs).toEqual({ result: "partial" });
 });
 
 it.each(["skip", "retry"] as const)("drains an admission cancelled by %s publication before dispatch", async kind => {

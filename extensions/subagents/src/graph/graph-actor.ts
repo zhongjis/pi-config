@@ -72,7 +72,6 @@ const persist = fromPromise<void, GraphContext>(async ({ input: context }) => {
   await Promise.resolve();
   if (context.failure) return;
   const domain = domainOf(context); const frame = domain.frames[0];
-  if (!domain.durable) return;
   context.controlBusy = true;
   try {
     const committed: unknown = domain.options.onCheckpoint?.(frame.state, frame.graph);

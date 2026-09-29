@@ -95,7 +95,6 @@ describe("correlated ordinary repair", () => {
   it.each(["schema", "gate"] as const)("%s repair preserves graph-start counters", async kind => {
     let executions = 0;
     const graph: AgentGraph = {
-      version: 2,
       nodes: { worker: {
         type: "agent", agent: "worker", prompt: "fixture", retry: { maxAttempts: 2 },
         ...(kind === "schema" ? { outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } } : { validation: { gate: "true" } }),
@@ -118,7 +117,6 @@ describe("correlated ordinary repair", () => {
 
   it("restoring the second admission never replenishes its repair budget", async () => {
     const graph: AgentGraph = {
-      version: 2,
       nodes: { worker: {
         type: "agent", agent: "worker", prompt: "fixture", retry: { maxAttempts: 2 },
         outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] },

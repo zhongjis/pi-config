@@ -2,24 +2,27 @@ import { describe, expect, it } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 import { releaseAfterPending } from "./graph-drain.fixture.js";
 
 const agent = () => ({ type: "agent" as const, agent: "x", prompt: "p" });
 const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 
-/** A host whose every spawn parks until the test resolves it by node id. */
+/** A host whose every spawn parks until the test resolves it by node binding. */
 function gatedHost() {
+  const { onNodeAdded, binding } = instanceBindings();
   const gates = new Map<string, (result: NodeSpawnResult) => void>();
   const started: string[] = [];
   const host: NodeHost = {
     spawnAgent: request =>
       new Promise<NodeSpawnResult>(resolve => {
-        started.push(request.nodeId);
-        gates.set(request.nodeId, resolve);
+        started.push(binding(request.nodeId));
+        gates.set(binding(request.nodeId), resolve);
       }),
   };
   return {
     host,
+    onNodeAdded,
     started,
     finish: (id: string, result: NodeSpawnResult) => gates.get(id)?.(result),
   };
@@ -32,7 +35,7 @@ describe("runGraph live controls", () => {
   it("pause stops new admission until resume", async () => {
     const g = gatedHost();
     let control!: GraphControl;
-    const run = runGraph(chain, {}, { host: g.host, onControl: c => (control = c) });
+    const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
     await tick();
     expect(g.started).toEqual(["a"]);
 
@@ -51,7 +54,7 @@ describe("runGraph live controls", () => {
   it("skips a pending node and its dependents", async () => {
     const g = gatedHost();
     let control!: GraphControl;
-    const run = runGraph(chain, {}, { host: g.host, onControl: c => (control = c) });
+    const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
     await tick();
     expect(control.skip(1)).toBe(true); // b is pending
     g.finish("a", { ok: true, output: "x" });
@@ -62,7 +65,7 @@ describe("runGraph live controls", () => {
   it("skips a running node", async () => {
     const g = gatedHost();
     let control!: GraphControl;
-    const run = runGraph(chain, {}, { host: g.host, onControl: c => (control = c) });
+    const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
     await tick();
     expect(control.skip(0)).toBe(true); // a is running
     await releaseAfterPending(run, () => g.finish("a", { ok: true }));
@@ -74,7 +77,7 @@ describe("runGraph live controls", () => {
   it("retries a running node, re-running it", async () => {
     const g = gatedHost();
     let control!: GraphControl;
-    const run = runGraph(chain, {}, { host: g.host, onControl: c => (control = c) });
+    const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
     await tick();
     expect(control.retry(0)).toBe(true); // stop + re-run a
     await releaseAfterPending(run, () => {

@@ -1,5 +1,4 @@
 {
-  "version": 2,
   "semanticPolicy": "context-gather-v1",
   "name": "context-gather",
   "description": "Plan, gather, evaluate, and synthesize bounded evidence for requested coverage.",

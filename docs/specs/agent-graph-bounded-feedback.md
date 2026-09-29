@@ -14,14 +14,14 @@ Panda Harness needed feedback-driven repetition without model-authored topology.
 
 ## Solution
 
-Bounded feedback is a version-2 graph capability that composes around the existing `fanout` contract. A bounded-feedback node repeatedly instantiates an author-defined work template—initially a `fanout`—and an evaluator template. The evaluator returns a typed decision:
+Bounded feedback is a graph capability that composes around the existing `fanout` contract. A bounded-feedback node repeatedly instantiates an author-defined work template—initially a `fanout`—and an evaluator template. The evaluator returns a typed decision:
 
 - `sufficient`, with no next tasks; or
 - `continue`, with unresolved gaps and one or more gap-linked next tasks.
 
 Each accepted continuation appends a new immutable iteration. The runtime, not the evaluator, validates the decision, allocates runtime identities, binds the fixed templates, enforces topology and budgets, persists the transition, and records the stop reason. The evaluator may propose tasks only through the author-declared work template; it cannot add arbitrary nodes or edges.
 
-The feature preserves `fanout` as the single-collection primitive. Existing version-1 graphs and their `FanoutResult.nodeId` meaning remain valid. Random UUIDs identify materialized runtime instances only; authored keys remain readable and deterministic for graph authoring and source review.
+The feature preserves `fanout` as the single-collection primitive. Random UUIDs identify materialized runtime instances only; authored keys remain readable and deterministic for graph authoring and source review.
 
 ## User Stories
 
@@ -40,8 +40,8 @@ The feature preserves `fanout` as the single-collection primitive. Existing vers
 13. As a runtime maintainer, I want materialization recorded durably before dispatch, so restore neither changes instance IDs nor appends the same successor twice.
 14. As an operator, I want retry and restore to retain instance IDs while recording new attempts, so one materialized node remains traceable across execution attempts.
 15. As an operator, I want a fresh replay to create a new run and new instance IDs, so it cannot be mistaken for continuation of the original run.
-16. As a graph author, I want version-1 graph files to remain valid, so adopting bounded feedback is opt-in through graph version 2.
-17. As an operator restoring historical work, I want unsupported graph or snapshot versions rejected before execution, so incompatible state never runs partially.
+16. As a graph author, I want to use bounded feedback in any graph, so adaptive rounds need no separate graph format.
+17. As an operator restoring historical work, I want unsupported snapshot versions rejected before execution, so incompatible state never runs partially.
 18. As a maintainer, I want crashes around evaluator completion and successor materialization covered at the scheduler/persistence boundary, so the most dangerous transition has executable evidence.
 19. As a downstream caller, I want every terminal result to include the stop reason and partial-completeness state, so sufficient, bounded, failed, and cancelled runs are distinguishable.
 
@@ -49,7 +49,7 @@ The feature preserves `fanout` as the single-collection primitive. Existing vers
 
 ### Capability and ownership
 
-- The graph schema and validator own version selection, template shape, typed evaluator decisions, `ValueRef` validation, and static budget validation.
+- The graph schema and validator own template shape, typed evaluator decisions, `ValueRef` validation, and static budget validation.
 - FeedbackActor owns volatile iteration sequencing through bounded committed owner views. FeedbackActor, every work FanoutActor, evaluator and item actor are direct root-owned siblings; the feedback coordinator never spawns or stops them.
 - The evaluator proposes gaps and next tasks. Root transactions validate the decision, allocate identities, enforce template topology and all budgets, persist state, and choose the terminal reason.
 - Root GraphActor owns planning, dispatch, attempts, controls, capacity, checkpoint and terminal authority. Coordinators consume no executor slots but block done/drain until release. The monitor adapter renders persisted runtime state; it does not infer identity or future topology.
@@ -83,7 +83,7 @@ Lifecycle rules are:
 ### Bounds and termination
 
 - `maxIterations` is required and positive; it includes the initial iteration. `maxItemsPerIteration` and `maxTotalItems` are required positive bounds.
-- Existing effective-node and node-run ceilings remain authoritative. Optional `deadline` is a positive safe-integer duration in milliseconds from the persisted v2 run start; optional `spendLimit` is positive finite USD. Unknown budget-shaped fields are rejected.
+- Existing effective-node and node-run ceilings remain authoritative. Optional `deadline` is a positive safe-integer duration in milliseconds from the persisted run start; optional `spendLimit` is positive finite USD. Unknown budget-shaped fields are rejected.
 - The injected runtime clock defaults to `Date.now`. Check budgets before initial materialization, after evaluator completion before committing continuation intent, and on restored intent before allocating UUIDs, materializing or dispatching successors. Reaching a configured limit returns `deadline/spend limit`, `partial: true`, preserved accumulated evidence and `exhaustedBounds` naming `deadline` and/or `spendLimit`.
 - Spend comes only from authoritative child `AgentRecord.lifetimeCost` → `NodeSpawnResult.costUsd` → persisted cumulative `NodeRun.costUsd`, summed across this region's work children and evaluator executions, including repairs. Never estimate from tokens. Missing accounting for any settled execution stops growth with `spend accounting unavailable` in `exhaustedBounds`.
 - Bounds govern admission/continuation, not in-flight preemption: already-admitted work and evaluator repairs may finish beyond a limit. Omitting both limits preserves unbudgeted execution behavior.
@@ -105,8 +105,8 @@ Lifecycle rules are:
 - Retry may repeat an internal or external action; this contract does not promise exactly-once external effects. Attempt metadata makes repeated execution visible.
 - Fresh replay creates a new run identity, start timestamp and zero accumulated execution spend, and rematerializes all runtime nodes with new UUIDs. Optional lineage may identify the source run but cannot reuse its instance IDs.
 - Restore retains the durable start, cost totals and accounting gaps; suspension does not replenish budgets. Checkpoint validation rejects invalid budget metadata and replacement cannot rewrite the start, roll back budget-check time/costs, erase missing-accounting evidence or rewrite settled costs. Older unbudgeted v2 snapshots without a start remain usable; a deadline-configured snapshot missing its start fails closed rather than restarting its clock.
-- The low-level `runGraph` API requires a synchronous `onCheckpoint(state, effectiveGraph)` writer for version 2; the graph runtime supplies the filesystem writer and stable run ID. A throwing writer stops dispatch and retains the previous valid checkpoint.
-- Nested saved graphs checkpoint their effective graph, input and state inside the parent's atomic checkpoint. Each invocation has its own stable run scope; completed invocation history and run-scoped recursive monitor-ordinal mappings remain durable. This lets version-1 callers invoke a saved version-2 feedback graph.
+- The low-level `runGraph` API accepts a synchronous `onCheckpoint(state, effectiveGraph)` writer and defaults it to a no-op writer; the `agent_graph` tool always supplies the filesystem writer and stable run ID. A throwing writer stops dispatch and retains the previous valid checkpoint.
+- Nested saved graphs checkpoint their effective graph, input and state inside the parent's atomic checkpoint. Each invocation has its own stable run scope; completed invocation history and run-scoped recursive monitor-ordinal mappings remain durable.
 - A strictly validated version-1 snapshot upgrades once, atomically, before dispatch. Restore checks executable fanout children, ownership, outcomes and terminal consistency, and re-authorizes all persisted nested graphs before task creation, leases or writes. Invalid snapshots remain untouched with visible errors.
 - Snapshot IDs follow `^agr_[a-z0-9-]{6,}$` and must equal their filename stem. Symlinked `.pi`, checkpoint directories, snapshots and owner files are rejected. This is containment for persisted data, not a filesystem sandbox against concurrent same-user mutation.
 - Atomic replacement uses file sync, rename and supported directory sync. Under one write lock, revision and append-only transition checks preserve existing UUIDs, provenance, executable definitions, settled outcomes and iteration history.
@@ -116,10 +116,10 @@ Lifecycle rules are:
 
 ### Graph and snapshot versions
 
-- An absent graph version means version 1. Existing version-1 graph files remain valid, and bounded feedback requires graph version 2.
-- Version 1 retains the shipped `FanoutResult.nodeId` contract. It is not silently redefined as a UUID.
-- Version 2 exposes `instanceId` plus stable authored-key and provenance fields for dynamic results. Presentation and wiring use their designated fields rather than overloading one identifier.
-- Snapshot version 2 stores the instance manifest and bounded-feedback checkpoint state. Unknown graph or snapshot versions fail before execution.
+- Graphs have no version field; a leftover `version` key is ignored. `bounded_feedback` and `semanticPolicy` work in any graph.
+- Every run checkpoints and carries run-scoped UUID-v4 instance IDs. Fanout result rows always include `instanceId`, `nodeKey`, `binding` and `ordinal`, plus `parentInstanceId`, `iteration` and `itemIndex` where they apply. `FanoutResult.nodeId` remains the generated scheduler binding (`<fanout-id>:item:<index>`), never a UUID alias. Presentation and wiring use their designated fields rather than overloading one identifier.
+- A run result is `{ outputs, feedback }` only when the graph has a bounded-feedback node; otherwise it is the flat outputs map.
+- Snapshot version 2 stores the instance manifest and bounded-feedback checkpoint state. Unknown snapshot versions fail before execution. A checkpoint whose fanout rows lack instance fields fails restore validation and stays untouched with a visible error.
 - If version-1 snapshot upgrade is supported, it runs once and checkpoints the complete version-2 state before any dispatch. Otherwise restore fails with a clear unsupported-version error.
 
 ### Monitor and terminal output
@@ -152,8 +152,8 @@ Acceptance coverage must include:
 15. **Crash after dispatch:** restore retains IDs and appends attempt metadata without claiming exactly-once external effects.
 16. **Stable restore IDs:** static nodes, iteration templates, and fanout children keep their UUIDs across repeated restores.
 17. **Fresh replay IDs:** replay creates a new run and new UUIDs while preserving authored keys and optional lineage.
-18. **Version-1 compatibility:** unversioned and explicit version-1 graphs retain shipped fanout behavior and `FanoutResult.nodeId`; bounded feedback is rejected in version 1.
-19. **Version handling:** unknown graph and snapshot versions fail before execution; any supported version-1 snapshot upgrade checkpoints once before dispatch.
+18. **Graph shape:** a leftover `version` key is ignored; bounded feedback validates in any graph; fanout rows carry instance fields while `FanoutResult.nodeId` stays the scheduler binding.
+19. **Version handling:** unknown snapshot versions fail before execution; any supported version-1 snapshot upgrade checkpoints once before dispatch.
 20. **Monitor behavior:** only materialized iterations appear; rows use name-first labels, iteration/item metadata, materialization order, and detail-only authored keys/UUIDs.
 21. **Failure policy:** exhausted evaluator failure yields partial synthesis, while corrupt state or materialization failure fails visibly and does not masquerade as complete synthesis.
 22. **Downstream terminal output:** every terminal reason produces a typed result containing complete accumulated outcomes, unresolved gaps, counters, and partial-completeness state.
@@ -163,11 +163,11 @@ Acceptance coverage must include:
 
 - Generic dynamic topology or unrestricted model-authored nodes and edges.
 - Replacing authored graph keys with UUIDs, or using display names as identity.
-- Changing the shipped version-1 fanout contract or redefining `FanoutResult.nodeId`.
+- Redefining `FanoutResult.nodeId` as a UUID.
 - Unbounded evaluator loops or evaluator-selected templates, agents, edges, budgets, or stop policy.
 - Exactly-once external side effects across retry or crash recovery.
 - Subagent conversation continuation beyond existing runtime behavior.
-- A mandatory migration of existing version-1 graph files or snapshots.
+- A mandatory migration of existing snapshots.
 
 ## Further Notes
 

@@ -102,7 +102,7 @@ export function createGraphRuntime(
   async function runTask(ctx: ExtensionContext, task: GraphRunTask, launch: GraphLaunch): Promise<void> {
     const { graph, input, restore } = launch;
     const ownerSessionId = ctx.sessionManager.getSessionId();
-    const reporter = new GraphRunReporter(task, graph, Date.now(), recordId => {
+    const reporter = new GraphRunReporter(task, Date.now(), recordId => {
       const r = manager.getRecord(recordId);
       return r ? { toolCalls: r.toolUses, tokens: getLifetimeTotal(r.lifetimeUsage) } : undefined;
     });

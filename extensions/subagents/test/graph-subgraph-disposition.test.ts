@@ -6,8 +6,8 @@ import type { AgentGraph } from "../src/graph/ir.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 
-const child: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "worker", prompt: "x" } }, edges: [] };
-const graph: AgentGraph = { version: 2, nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
+const child: AgentGraph = { nodes: { a: { type: "agent", agent: "worker", prompt: "x" } }, edges: [] };
+const graph: AgentGraph = { nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
 const snapshot = (state: SchedulerState) => ({ version: 2 as const, runId: state.runtime?.runId ?? "", state, graph, input: {}, waitingGate: "", savedAt: 0 });
 
 it.each(["skip", "retry"] as const)("recovers subgraph %s at both drain crash boundaries without stale replay", async reason => {
@@ -90,9 +90,9 @@ it.each(["skip", "retry"] as const)("fails closed on a nested validation drain b
 });
 
 it("rejects an undrained nested descendant in cancelled historical subgraph state", async () => {
-  const leaf: AgentGraph = { version: 2, nodes: { a: { type: "agent", agent: "worker", prompt: "x", validation: { gate: "true" } } }, edges: [] };
-  const middle: AgentGraph = { version: 2, nodes: { nested: { type: "graph", graph: "leaf" } }, edges: [] };
-  const parent: AgentGraph = { version: 2, nodes: { sub: { type: "graph", graph: "middle" } }, edges: [] };
+  const leaf: AgentGraph = { nodes: { a: { type: "agent", agent: "worker", prompt: "x", validation: { gate: "true" } } }, edges: [] };
+  const middle: AgentGraph = { nodes: { nested: { type: "graph", graph: "leaf" } }, edges: [] };
+  const parent: AgentGraph = { nodes: { sub: { type: "graph", graph: "middle" } }, edges: [] };
   const loadGraph = (name: string) => name === "middle" ? middle : name === "leaf" ? leaf : undefined;
   const frames: SchedulerState[] = []; let control: GraphControl | undefined; let release: (() => void) | undefined;
   const running = runGraph(parent, {}, { loadGraph, onControl: value => { control = value; }, onCheckpoint: state => frames.push(state), host: {

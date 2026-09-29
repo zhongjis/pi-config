@@ -7,6 +7,7 @@ import type { NodeSpawnResult } from "../src/graph/node-host.js";
 import { type ParsedTrace, parseTrace, replayTrace } from "../src/graph/replay.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import { openGraphTrace, schemaHash } from "../src/graph/trace.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
@@ -17,9 +18,10 @@ async function record(graph: AgentGraph, script: (id: string, count: number) => 
   const path = join(dir, "run.trace.jsonl");
   const trace = openGraphTrace({ create: () => path, runId: "agr_abc123", graph, input, warn: vi.fn() });
   const counts = new Map<string, number>();
+  const bindings = instanceBindings();
   const result = await runGraph(graph, input, {
-    host: { spawnAgent: async request => { const count = (counts.get(request.nodeId) ?? 0) + 1; counts.set(request.nodeId, count); return script(request.nodeId, count); } },
-    onNodeAdded: (id, node) => trace.added(id, node), onNodeUpdate: (id, run) => trace.update(id, run),
+    host: { spawnAgent: async request => { const id = bindings.binding(request.nodeId); const count = (counts.get(id) ?? 0) + 1; counts.set(id, count); return script(id, count); } },
+    onNodeAdded: (id, node, metadata) => { bindings.onNodeAdded(id, node, metadata); trace.added(id, node); }, onNodeUpdate: (id, run) => trace.update(id, run),
   });
   trace.end(result);
   return readFileSync(path, "utf8");

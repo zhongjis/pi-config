@@ -22,7 +22,7 @@ export function nestedMaterializations(graph: AgentGraph, state: SchedulerState)
     id: instance.binding, key: `${state.runtime?.runId}/${instance.instanceId}`,
     node: graph.nodes[instance.binding], run: state.nodes[instance.binding], ordinal: instance.ordinal,
     dependencies: graph.edges.filter(edge => edge.to === instance.binding).map(edge => edge.from),
-    ...(graph.version === 2 && state.runtime ? { instance, presentation: { ...nodePresentation(graph.nodes[instance.binding], instance, state.runtime), connections: graphConnections(graph.edges, instance.binding) } } : {}),
+    ...(state.runtime ? { instance, presentation: { ...nodePresentation(graph.nodes[instance.binding], instance, state.runtime), connections: graphConnections(graph.edges, instance.binding) } } : {}),
   }));
   for (const [binding, child] of Object.entries(state.runtime?.nested ?? {})) rows.push(...restoredNestedRows(child, binding));
   return rows.sort((left, right) => left.ordinal - right.ordinal);

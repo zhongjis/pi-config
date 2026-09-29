@@ -190,7 +190,6 @@ export interface GraphEdge {
 export interface AgentGraph {
   id?: string;
   name?: string;
-  version?: number;
   /** Optional human-readable purpose shown only for live graph runs. */
   description?: string;
   semanticPolicy?: "context-gather-v1";

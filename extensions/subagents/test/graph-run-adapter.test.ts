@@ -10,6 +10,7 @@ import { type RunGraphResult, runGraph } from "../src/graph/run-graph.js";
 import type { NodeRun } from "../src/graph/scheduler.js";
 import { createGraphRunTask } from "../src/graph/task.js";
 import { initialPanelState } from "../src/ui/observability-panel.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 import { releaseAfterPending } from "./graph-drain.fixture.js";
 
 function correlation(
@@ -47,6 +48,13 @@ const graph: AgentGraph = {
   edges: [{ from: "a", to: "b" }],
 };
 
+/** Registers static rows the way a run publishes them before their first update. */
+function register(reporter: GraphRunReporter, definition: AgentGraph): void {
+  for (const [id, node] of Object.entries(definition.nodes)) {
+    reporter.registerNode(id, node, { dependencies: definition.edges.filter(edge => edge.to === id && edge.loop === undefined).map(edge => edge.from) });
+  }
+}
+
 function task() {
   return createGraphRunTask({ id: "agr_test", script: "", meta: { name: "demo", description: "demo graph" } });
 }
@@ -54,7 +62,8 @@ function task() {
 describe("GraphRunReporter", () => {
   it("maps node states onto the progress log, carrying each node's prompt", () => {
     const t = task();
-    const reporter = new GraphRunReporter(t, graph);
+    const reporter = new GraphRunReporter(t);
+    register(reporter, graph);
     reporter.update("a", { status: "running", attempt: 1 });
     reporter.update("a", { status: "completed", attempt: 1, output: { diff: "x" } });
     reporter.update("b", { status: "running", attempt: 1 });
@@ -87,7 +96,8 @@ describe("GraphRunReporter", () => {
       edges: [{ from: "big", to: "sub" }],
     };
     const t = task();
-    const reporter = new GraphRunReporter(t, promptGraph);
+    const reporter = new GraphRunReporter(t);
+    register(reporter, promptGraph);
     reporter.update("big", { status: "running", attempt: 1 });
     reporter.update("sub", { status: "running", attempt: 1 });
     const { agents } = collapse(t.graphRunProgress);
@@ -102,7 +112,7 @@ describe("GraphRunReporter", () => {
 
   it("retains complete node output while keeping prompt previews capped", () => {
     const t = task();
-    const reporter = new GraphRunReporter(t, graph);
+    const reporter = new GraphRunReporter(t);
     const output = "retained output ".repeat(40).trim();
     reporter.update("a", { status: "completed", attempt: 1, output });
     const entry = collapse(t.graphRunProgress).agents.find(agent => agent.label === "a");
@@ -115,7 +125,8 @@ describe("GraphRunReporter", () => {
 
   it("renders a pending node as blocked and a skipped node as skipped", () => {
     const t = task();
-    const reporter = new GraphRunReporter(t, graph);
+    const reporter = new GraphRunReporter(t);
+    register(reporter, graph);
     reporter.update("a", { status: "pending", attempt: 0 });
     reporter.update("b", { status: "skipped", attempt: 0 });
     const { agents } = collapse(t.graphRunProgress);
@@ -193,7 +204,7 @@ describe("GraphRunReporter", () => {
 
   it("setResolved plumbs model and modelId into the node's progress entry", () => {
     const t = task();
-    const reporter = new GraphRunReporter(t, graph);
+    const reporter = new GraphRunReporter(t);
     const identity = correlation("11111111-1111-4111-8111-111111111111");
     reporter.update("a", running(identity), identity);
     reporter.setResolved("a", { modelName: "haiku 4.5", modelId: "anthropic/claude-haiku-4-5" }, identity);
@@ -205,7 +216,7 @@ describe("GraphRunReporter", () => {
 
   it("setResolved merges recordId and model across calls without clobbering, in either order", () => {
     const t = task();
-    const reporter = new GraphRunReporter(t, graph);
+    const reporter = new GraphRunReporter(t);
     const identity = correlation("22222222-2222-4222-8222-222222222222");
     reporter.update("a", running(identity), identity);
     reporter.setResolved("a", { recordId: "r1" }, identity);
@@ -217,7 +228,7 @@ describe("GraphRunReporter", () => {
 
     // Reverse order clobbers nothing either.
     const t2 = task();
-    const r2 = new GraphRunReporter(t2, graph);
+    const r2 = new GraphRunReporter(t2);
     const secondIdentity = correlation("33333333-3333-4333-8333-333333333333");
     r2.update("a", running(secondIdentity), secondIdentity);
     r2.setResolved("a", { modelName: "sonnet", modelId: "mid" }, secondIdentity);
@@ -231,7 +242,7 @@ describe("GraphRunReporter", () => {
   it("runtime filters late pre-retry resolution before reporter delivery", async () => {
     const t = task();
     const activity = new Map([["old", { toolCalls: 1, tokens: 10 }], ["current", { toolCalls: 9, tokens: 90 }]]);
-    const reporter = new GraphRunReporter(t, graph, 1_000, recordId => activity.get(recordId));
+    const reporter = new GraphRunReporter(t, 1_000, recordId => activity.get(recordId));
     let control: import("../src/graph/run-graph.js").GraphControl | undefined;
     let stale: ((info: { recordId?: string; modelName?: string }) => void) | undefined;
     let releaseFirst: ((result: NodeSpawnResult) => void) | undefined;
@@ -270,7 +281,7 @@ describe("GraphRunReporter", () => {
   it("keeps only the current full execution correlation in the collapsed row", () => {
     const t = task();
     const activity = new Map([["old", { toolCalls: 1, tokens: 10 }], ["current", { toolCalls: 9, tokens: 90 }]]);
-    const reporter = new GraphRunReporter(t, graph, 1_000, recordId => activity.get(recordId));
+    const reporter = new GraphRunReporter(t, 1_000, recordId => activity.get(recordId));
     const current = correlation("44444444-4444-4444-8444-444444444444");
     reporter.update("a", { ...running(current, 2), attemptReason: "user-retry" }, current, 1_000);
     reporter.setResolved("a", { recordId: "old", modelName: "old-model" }, current, 2_000);
@@ -296,7 +307,7 @@ describe("GraphRunReporter", () => {
   it("plumbs live tool-call and token counts from getActivity, re-emitting only on change", () => {
     const t = task();
     let activity: { toolCalls?: number; tokens?: number } | undefined = { toolCalls: 2, tokens: 100 };
-    const reporter = new GraphRunReporter(t, graph, Date.now(), () => activity);
+    const reporter = new GraphRunReporter(t, Date.now(), () => activity);
     const identity = correlation("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
     reporter.update("a", running(identity), identity);
     reporter.setResolved("a", { recordId: "r1" }, identity);
@@ -323,7 +334,7 @@ describe("GraphRunReporter", () => {
   it("pins startedAt across re-emits within an attempt and resets it on a new attempt", () => {
     const t = task();
     let activity: { toolCalls?: number; tokens?: number } | undefined = { toolCalls: 1 };
-    const reporter = new GraphRunReporter(t, graph, 1_000, () => activity);
+    const reporter = new GraphRunReporter(t, 1_000, () => activity);
 
     // First running emit stamps startedAt; re-emits from setResolved/refresh must not restamp it.
     const identity = correlation("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
@@ -344,7 +355,8 @@ describe("GraphRunReporter", () => {
 
   it("registers dynamic nodes with stable metadata before their updates", () => {
     const t = task();
-    const reporter = new GraphRunReporter(t, graph, 1_000);
+    const reporter = new GraphRunReporter(t, 1_000);
+    register(reporter, graph);
     reporter.update("a", { status: "completed", attempt: 1, output: "done" }, 2_000);
 
     reporter.registerNode(
@@ -382,49 +394,10 @@ describe("GraphRunReporter", () => {
     expect(t.agentCount).toBe(4);
   });
 
-  it("enriches pre-seeded restored fanout children without changing their indices", () => {
-    const restored: AgentGraph = {
-      nodes: {
-        research: {
-          type: "fanout", items: { path: "$.items" }, itemSchema: {},
-          dispatch: { path: "$.kind", cases: { code: "chengfeng" } },
-          prompt: `research \${item}`, phase: { index: 0, title: "Round 1/2" },
-        },
-        "research:item:0": { type: "agent", agent: "chengfeng", prompt: "research item" },
-      },
-      edges: [],
-    };
-    const t = task();
-    const reporter = new GraphRunReporter(t, restored, 1_000);
-    reporter.update("research", { status: "running", attempt: 1 }, 1_500);
-    reporter.update("research:item:0", { status: "pending", attempt: 0 }, 2_000);
-    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
-      index: 1, deps: [], phaseIndex: 0, phaseTitle: "Stage 1",
-    });
-
-    reporter.registerNode(
-      "research:item:0",
-      restored.nodes["research:item:0"],
-      { dependencies: [], phase: { index: 0, title: "Round 1/2" } },
-    );
-    const child = collapse(t.graphRunProgress).agents.find(entry => entry.label === "research:item:0");
-    expect(child).toMatchObject({ index: 1, deps: [], phaseIndex: 0, phaseTitle: "Round 1/2" });
-    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "research")?.dependents).toEqual([]);
-    expect(t.agentCount).toBe(2);
-
-    reporter.registerNode(
-      "research:item:0",
-      restored.nodes["research:item:0"],
-      { dependencies: [], phase: { index: 9, title: "Ignored" } },
-    );
-    expect(collapse(t.graphRunProgress).agents.find(entry => entry.label === "research:item:0")).toMatchObject({
-      index: 1, deps: [], phaseIndex: 0, phaseTitle: "Round 1/2",
-    });
-  });
-
   it("recomputes legacy dynamic stages when dependencies register in reverse order", () => {
     const t = task();
-    const reporter = new GraphRunReporter(t, graph, 1_000);
+    const reporter = new GraphRunReporter(t, 1_000);
+    register(reporter, graph);
     reporter.registerNode(
       "late-child",
       { type: "agent", agent: "chengfeng", prompt: "child" },
@@ -455,7 +428,7 @@ describe("GraphRunReporter", () => {
 });
 
 describe("GraphRunReporter — static graph progress", () => {
-  it("pre-seeds all static stages through runGraph updates before synthesize starts", async () => {
+  it("publishes all static rows through runGraph before synthesize starts", async () => {
     const staged: AgentGraph = {
       nodes: {
         research: { type: "agent", agent: "jintong", prompt: "research" },
@@ -472,30 +445,32 @@ describe("GraphRunReporter — static graph progress", () => {
       ],
     };
     const t = task();
-    const reporter = new GraphRunReporter(t, staged, 1_700_000_000_000);
+    const reporter = new GraphRunReporter(t, 1_700_000_000_000);
     const controller = new AbortController();
     const roots = new Map<string, (result: NodeSpawnResult) => void>();
+    const { onNodeAdded, binding } = instanceBindings();
     const graphHost: NodeHost = {
       spawnAgent: request => {
-        if (request.nodeId === "synthesize") return Promise.resolve({ ok: true, output: "done" });
-        return new Promise(resolve => roots.set(request.nodeId, resolve));
+        if (binding(request.nodeId) === "synthesize") return Promise.resolve({ ok: true, output: "done" });
+        return new Promise(resolve => roots.set(binding(request.nodeId), resolve));
       },
     };
 
     const run = runGraph(staged, {}, {
       host: graphHost,
       signal: controller.signal,
+      onNodeAdded: (id, node, metadata) => { onNodeAdded(id, node, metadata); reporter.registerNode(id, node, metadata); },
       onNodeUpdate: (id, node, identity) => reporter.update(id, { ...node } satisfies NodeRun, identity, 1_700_000_000_000),
     });
     await vi.waitFor(() => expect(roots.size).toBe(4));
     roots.get("research")?.({ ok: true, output: "research complete" });
     await vi.waitFor(() => {
-      expect(collapse(t.graphRunProgress).agents.find(agent => agent.label === "research")?.state).toBe("done");
+      expect(collapse(t.graphRunProgress).agents.find(agent => agent.nodeBinding === "research")?.state).toBe("done");
     });
 
     const { agents } = collapse(t.graphRunProgress);
     expect(agents).toHaveLength(5);
-    expect(agents.find(agent => agent.label === "synthesize")?.phaseIndex).toBe(1);
+    expect(agents.find(agent => agent.nodeBinding === "synthesize")?.blocked).toBe(true);
     const { renderObservabilityPaneLines, toPaneSource } = await import("../src/graph/pane/render.js");
     const rendered = renderObservabilityPaneLines(
       [{ id: t.id, name: "demo", status: t.status, source: toPaneSource(t) }],
@@ -504,7 +479,7 @@ describe("GraphRunReporter — static graph progress", () => {
     ).join("\n");
     expect(rendered).toContain("✓ 1 done");
     expect(rendered).toContain("5 agents");
-    expect(rendered).toContain("synthesize");
+    expect(rendered).toContain("queued");
 
     controller.abort();
     await releaseAfterPending(run, () => { for (const finish of roots.values()) finish({ ok: true }); });
@@ -518,7 +493,7 @@ it("v2 publishes only materialized rows with name-first labels and persisted ord
   const first = identities.add("first", { nodeKey: "research", iteration: 1 });
   const second = identities.add("second", { nodeKey: "research", parentInstanceId: first.instanceId, iteration: 1, itemIndex: 0 });
   const t = task();
-  const reporter = new GraphRunReporter(t, { ...graph, version: 2 });
+  const reporter = new GraphRunReporter(t);
   expect(t.agentCount).toBe(0);
   reporter.registerNode("second", { type: "agent", agent: "worker", name: "Research", prompt: "x" }, { dependencies: ["first"], instance: second });
   reporter.update("second", { status: "running", attempt: 1 });
@@ -537,7 +512,7 @@ it("keeps duplicate v2 labels navigable and identity details width-safe", async 
   const { renderObservabilityPaneLines, toPaneSource } = await import("../src/graph/pane/render.js");
   const { visibleWidth } = await import("@earendil-works/pi-tui");
   const t = task();
-  const reporter = new GraphRunReporter(t, { version: 2, nodes: {}, edges: [] });
+  const reporter = new GraphRunReporter(t);
   const identities = new GraphInstances("run");
   const left = identities.add("left", { nodeKey: "left" });
   const right = identities.add("right", { nodeKey: "right" });
@@ -581,12 +556,12 @@ describe("outcomeLabel", () => {
 });
 
 it("projects committed feedback ownership and decisions through real dynamic materialization", async () => {
-  const dynamic: AgentGraph = { version: 2, nodes: { research: {
+  const dynamic: AgentGraph = { nodes: { research: {
     type: "bounded_feedback", name: "Names are not structure", maxIterations: 2, maxItemsPerIteration: 1, maxTotalItems: 2,
     work: { type: "fanout", name: "Work", items: { path: "$.tasks" }, itemSchema: { type: "object", properties: { kind: { type: "string" }, query: { type: "string" } }, required: ["kind", "query"], additionalProperties: false }, dispatch: { path: "$.kind", cases: { local: "worker" } }, prompt: "${item}", outputSchema: { type: "object" } },
     evaluator: { type: "agent", name: "Judge", agent: "judge", prompt: "${feedback}" },
   } }, edges: [] };
-  const t = task(); const reporter = new GraphRunReporter(t, dynamic);
+  const t = task(); const reporter = new GraphRunReporter(t);
   const input = { tasks: [{ kind: "local", query: "first" }] };
   let evaluations = 0; let work = 0;
   const result = await runGraph(dynamic, input, {

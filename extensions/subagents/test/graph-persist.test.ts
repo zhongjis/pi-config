@@ -3,6 +3,7 @@ import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
 import { ProjectionDriver as Scheduler } from "./graph-projection.fixture.js";
 
@@ -75,14 +76,15 @@ describe("runGraph durable resume", () => {
       loopCounts: {},
     };
     const spawned: string[] = [];
+    const { onNodeAdded, binding } = instanceBindings();
     const host: NodeHost = {
       spawnAgent: async request => {
-        spawned.push(request.nodeId);
+        spawned.push(binding(request.nodeId));
         return { ok: true, output: "x" } satisfies NodeSpawnResult;
       },
       awaitHumanGate: async () => ({ ok: true, output: '{"approved":true}' }),
     };
-    const result = await runGraph(gateGraph, {}, { host, restore });
+    const result = await runGraph(gateGraph, {}, { host, restore, onNodeAdded });
     expect(result.status).toBe("completed");
     expect(spawned).toEqual(["done"]); // "a" was restored, not re-run
     expect(result.outputs).toEqual({ decision: true });
@@ -107,10 +109,11 @@ it("restores an active collection without replenishing interrupted legacy execut
   const captures: { state: SchedulerState; graph: AgentGraph }[] = [];
   const controller = new AbortController();
   const human = deferred<NodeSpawnResult>();
+  const { onNodeAdded, binding } = instanceBindings();
   const run = runGraph(graph, input, {
-    signal: controller.signal, concurrency: 4,
+    signal: controller.signal, concurrency: 4, onNodeAdded,
     host: {
-      spawnAgent: request => new Promise(resolve => { gates.set(request.nodeId, resolve); }),
+      spawnAgent: request => new Promise(resolve => { gates.set(binding(request.nodeId), resolve); }),
       awaitHumanGate: () => human.promise,
     },
     onGateWaiting: (_id, state, effective) => captures.push({ state, graph: effective }),
@@ -144,11 +147,11 @@ it("restores an active collection without replenishing interrupted legacy execut
     },
     onNodeAdded: (id, _node, metadata) => {
       added.push(id);
-      expect(metadata.dependencies).toEqual([]);
+      if (id.startsWith("research:item:")) expect(metadata.dependencies).toEqual([]);
     },
   });
   expect(spawned).toEqual([]);
-  expect(added).toEqual(["research:item:0", "research:item:1", "research:item:2"]);
+  expect(added).toEqual(["research", "trigger", "gate", "research:item:0", "research:item:1", "research:item:2"]);
   expect(restored.status).toBe("failed");
   expect(restored.nodes.research.attempt).toBe(1);
   expect(restored.nodes["research:item:2"].attempt).toBe(1);

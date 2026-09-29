@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentGraph, FanoutNode } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 import { releaseAfterPending } from "./graph-drain.fixture.js";
 
 const fanout: FanoutNode = {
@@ -16,15 +17,16 @@ const graph: AgentGraph = {
 const tasks = [{ source: "project" }, { source: "external" }];
 
 function parkedHost() {
+  const { onNodeAdded, binding } = instanceBindings();
   const finish = new Map<string, (result: NodeSpawnResult) => void>();
   const started: string[] = [];
   const host: NodeHost = {
     spawnAgent: request => new Promise(resolve => {
-      started.push(request.nodeId);
-      finish.set(request.nodeId, resolve);
+      started.push(binding(request.nodeId));
+      finish.set(binding(request.nodeId), resolve);
     }),
   };
-  return { host, finish, started };
+  return { host, onNodeAdded, finish, started };
 }
 
 function required<T>(value: T | undefined): T {
@@ -39,9 +41,11 @@ describe("awaited fanout", () => {
     const run = runGraph(graph, { tasks }, {
       host: parked.host,
       onNodeAdded: (id, node, metadata) => {
+        parked.onNodeAdded(id, node, metadata);
         events.push(`added:${id}`);
+        if (id === "research") return;
         expect(node.type).toBe("agent");
-        expect(metadata).toEqual({ dependencies: [], phase: fanout.phase });
+        expect(metadata).toMatchObject({ dependencies: [], phase: fanout.phase, instance: { nodeKey: "research", binding: id } });
       },
       onNodeUpdate: (id, state) => events.push(`${state.status}:${id}`),
     });
@@ -52,9 +56,10 @@ describe("awaited fanout", () => {
     required(parked.finish.get("research:item:0"))({ ok: true, output: "evidence" });
     const result = await run;
     expect(result.status).toBe("completed");
+    const instance = { instanceId: expect.any(String), parentInstanceId: expect.any(String), nodeKey: "research" };
     expect(result.outputs.evidence).toEqual([
-      { nodeId: "research:item:0", index: 0, item: tasks[0], status: "completed", attempt: 1, output: "evidence" },
-      { nodeId: "research:item:1", index: 1, item: tasks[1], status: "failed", attempt: 1, error: "unavailable" },
+      { nodeId: "research:item:0", index: 0, item: tasks[0], status: "completed", attempt: 1, output: "evidence", ...instance, binding: "research:item:0", itemIndex: 0, ordinal: 1 },
+      { nodeId: "research:item:1", index: 1, item: tasks[1], status: "failed", attempt: 1, error: "unavailable", ...instance, binding: "research:item:1", itemIndex: 1, ordinal: 2 },
     ]);
     expect(result.nodes["research:item:1"].status).toBe("failed");
     for (const id of parked.started) expect(events.indexOf(`added:${id}`)).toBeLessThan(events.indexOf(`running:${id}`));
@@ -83,7 +88,7 @@ describe("awaited fanout", () => {
     expect(result.nodes.research.error).toBeTruthy();
     expect(Object.keys(result.nodes)).toEqual(["research"]);
     expect(spawnAgent).not.toHaveBeenCalled();
-    expect(added).not.toHaveBeenCalled();
+    expect(added.mock.calls.map(([id]) => id)).toEqual(["research"]);
   });
 
   it("rejects deterministic ID collisions without inserting siblings", async () => {
@@ -134,7 +139,7 @@ describe("awaited fanout", () => {
   it("keeps dynamic control indices stable across pause, retry, and skip", async () => {
     const parked = parkedHost();
     let control: GraphControl | undefined;
-    const run = runGraph(graph, { tasks }, { host: parked.host, concurrency: 1, onControl: c => { control = c; } });
+    const run = runGraph(graph, { tasks }, { host: parked.host, onNodeAdded: parked.onNodeAdded, concurrency: 1, onControl: c => { control = c; } });
     await vi.waitFor(() => expect(parked.started).toEqual(["research:item:0"]));
     required(control).pause();
     expect(required(control).retry(1)).toBe(true);
@@ -157,7 +162,7 @@ describe("awaited fanout", () => {
     let control: GraphControl | undefined;
     const updates: string[] = [];
     const run = runGraph(graph, { tasks: [tasks[0]] }, {
-      host: parked.host, onControl: c => { control = c; },
+      host: parked.host, onNodeAdded: parked.onNodeAdded, onControl: c => { control = c; },
       onNodeUpdate: (id, state) => updates.push(`${id}:${state.status}`),
     });
     await vi.waitFor(() => expect(parked.started).toHaveLength(1));
@@ -214,7 +219,6 @@ it("restores literal fanout item placeholders without duplicate dispatch or iden
   const checkpoints: { state: import("../src/graph/scheduler.js").SchedulerState; graph: AgentGraph }[] = [];
   let initialPrompt: string | undefined;
   await runGraph({
-    version: 2,
     nodes: { research: {
       ...fanout,
       prompt: `{"task":\${item},"context":\${context}}`,

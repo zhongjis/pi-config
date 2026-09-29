@@ -3,12 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
-import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 import { canonicalJson, type GraphTrace, graphTracePath, openGraphTrace, schemaHash } from "../src/graph/trace.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 
-const host = (script: (id: string) => NodeSpawnResult): NodeHost => ({ spawnAgent: async request => script(request.nodeId) });
 const graph: AgentGraph = {
   nodes: {
     a: { type: "agent", agent: "x", prompt: "a", outputSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] } },
@@ -24,10 +23,11 @@ const lines = (path: string) => readFileSync(path, "utf8").trim().split("\n").ma
 
 /** Same wiring graph-runtime uses: node lines come only from post-commit publications. */
 async function traced(trace: GraphTrace, onCheckpoint?: (state: SchedulerState) => void) {
+  const { onNodeAdded, binding } = instanceBindings();
   const result = await runGraph(graph, { task: "t" }, {
-    host: host(id => ({ ok: true, output: id === "a" ? '{"ok":true}' : "done" })),
+    host: { spawnAgent: async request => ({ ok: true, output: binding(request.nodeId) === "a" ? '{"ok":true}' : "done" }) },
     onCheckpoint: state => onCheckpoint?.(state),
-    onNodeAdded: (id, node) => trace.added(id, node),
+    onNodeAdded: (id, node, metadata) => { onNodeAdded(id, node, metadata); trace.added(id, node); },
     onNodeUpdate: (id, run) => trace.update(id, run),
   });
   trace.end(result);

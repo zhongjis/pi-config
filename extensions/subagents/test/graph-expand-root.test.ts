@@ -6,7 +6,7 @@ import type { AgentGraph, GraphFragment } from "../src/graph/ir.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 
-const graph: AgentGraph = { version: 2, nodes: { e: { type: "expand", source: { path: "$" } } }, edges: [] };
+const graph: AgentGraph = { nodes: { e: { type: "expand", source: { path: "$" } } }, edges: [] };
 const fragment: GraphFragment = { nodes: { child: { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
 it("checkpoints running identity before actor creation and atomic insertion before registration and dispatch", async () => {
   const order: string[] = []; const frames: SchedulerState[] = [];
@@ -93,7 +93,7 @@ it("accepts exactly 500 effective nodes", async () => {
 
 it.each(["new-loop", "new-path"])("rejects %s reaching an existing barrier before any insertion or publication", async kind => {
   const ordinary = { type: "agent" as const, agent: "worker", prompt: "fixture" };
-  const base: AgentGraph = { version: 2, nodes: {
+  const base: AgentGraph = { nodes: {
     ...graph.nodes, review: ordinary, fix: ordinary,
     barrier: { type: "fanout", items: { path: "$.items" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: "${item}" },
   }, edges: kind === "new-loop" ? [{ from: "review", to: "barrier" }] : [{ from: "fix", to: "review", loop: { maxIterations: 2 } }] };

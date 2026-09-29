@@ -1,5 +1,4 @@
 {
-  "version": 2,
   "name": "deep-research",
   "description": "Plan bounded read-only research, check selected claims independently, and return a cited report with explicit gaps.",
   "inputSchema": {

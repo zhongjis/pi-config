@@ -4,7 +4,7 @@ import { runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 import { deferred, releaseAfterPending } from "./graph-drain.fixture.js";
 
-const graph: AgentGraph = { version: 2, nodes: {
+const graph: AgentGraph = { nodes: {
   left: { type: "agent", name: "Same", agent: "worker", prompt: "a" },
   right: { type: "agent", name: "Same", agent: "worker", prompt: "b" },
 }, edges: [] };
@@ -49,7 +49,7 @@ describe("v2 runtime identity", () => {
 });
 
 it("checkpoints fanout children before dispatch and restores the same IDs after dispatch crashes", async () => {
-  const fanout: AgentGraph = { version: 2, nodes: { work: { type: "fanout", items: { path: "$" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: `\${item}` } }, edges: [] };
+  const fanout: AgentGraph = { nodes: { work: { type: "fanout", items: { path: "$" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: `\${item}` } }, edges: [] };
   let saved: SchedulerState | undefined;
   let effective = fanout;
   let dispatched: { state: SchedulerState; graph: AgentGraph } | undefined;
@@ -94,18 +94,18 @@ it("checkpoints nested v2 runs inside their parent before publishing rows or dis
   const result = await runGraph(parent, {}, { host: { spawnAgent }, loadGraph: () => graph, onCheckpoint: (state, definition) => { saved = state; effective = definition; }, onNodeAdded: (_id, _node, metadata) => { if (metadata.instance) added.push(metadata.instance.ordinal); } });
   expect(result.status).toBe("completed");
   expect(spawnAgent).toHaveBeenCalledTimes(2);
-  expect(added).toEqual([1, 2]);
+  expect(added).toEqual([0, 1, 2]);
   const allocate = vi.fn(() => "bad");
   if (!saved) throw new Error("missing parent checkpoint");
   const restoredOrdinals: number[] = [];
   await runGraph(effective, {}, { host: { spawnAgent }, restore: saved, allocateInstanceId: allocate, loadGraph: () => graph, onCheckpoint: () => {}, onNodeAdded: (_id, _node, metadata) => { if (metadata.instance) restoredOrdinals.push(metadata.instance.ordinal); } });
-  expect(restoredOrdinals).toEqual([1, 2]);
+  expect(restoredOrdinals).toEqual([0, 1, 2]);
   expect(allocate).not.toHaveBeenCalled();
   expect(spawnAgent).toHaveBeenCalledTimes(2);
 });
 
 it.each(["missing mapping", "missing counter", "low counter"])("rejects nested %s before writes or dispatch", async mutation => {
-  const parent: AgentGraph = { version: 2, nodes: { nested: { type: "graph", graph: "child" } }, edges: [] };
+  const parent: AgentGraph = { nodes: { nested: { type: "graph", graph: "child" } }, edges: [] };
   let saved: SchedulerState | undefined;
   await runGraph(parent, {}, { loadGraph: () => graph, onCheckpoint: state => { saved = state; }, host: { spawnAgent: async () => ({ ok: true, output: "ok" }) } });
   if (!saved?.runtime?.nested?.nested) throw new Error("missing nested fixture");
@@ -121,9 +121,9 @@ it.each(["missing mapping", "missing counter", "low counter"])("rejects nested %
 it("reserves and restores every three-level nested ordinal before publishing rows", async () => {
   const { validateGraphRestore } = await import("../src/graph/graph-restore-validation.js");
   const { restoredNestedRows } = await import("../src/graph/graph-nested-checkpoint.js");
-  const top: AgentGraph = { version: 2, nodes: { middle: { type: "graph", graph: "middle" } }, edges: [] };
+  const top: AgentGraph = { nodes: { middle: { type: "graph", graph: "middle" } }, edges: [] };
   const middle: AgentGraph = { nodes: { leaf: { type: "graph", graph: "leaf" } }, edges: [] };
-  const leaf: AgentGraph = { version: 2, nodes: { worker: { type: "agent", agent: "fixture", prompt: "leaf" } }, edges: [] };
+  const leaf: AgentGraph = { nodes: { worker: { type: "agent", agent: "fixture", prompt: "leaf" } }, edges: [] };
   let saved: SchedulerState | undefined;
   await runGraph(top, {}, { runId: "nested-depth", loadGraph: name => name === "middle" ? middle : leaf, host: { spawnAgent: async () => ({ ok: true, output: "ok" }) }, onCheckpoint: (state, effective) => { validateGraphRestore(state, effective); saved = structuredClone(state); } });
   const nested = saved?.runtime?.nested?.middle;
@@ -139,7 +139,7 @@ it("reserves and restores every three-level nested ordinal before publishing row
 
 it("does not mistake inherited object names for restored nested ownership", async () => {
   const { authorizeGraphResume } = await import("../src/graph/graph-resume-preflight.js");
-  const parent: AgentGraph = { version: 2, nodes: { constructor: { type: "graph" as const, graph: "child" } }, edges: [] };
+  const parent: AgentGraph = { nodes: { constructor: { type: "graph" as const, graph: "child" } }, edges: [] };
   const child: AgentGraph = { nodes: { worker: { type: "agent", agent: "fixture", prompt: "child" } }, edges: [] };
   let saved: SchedulerState | undefined; const controller = new AbortController(); controller.abort("shutdown");
   await runGraph(parent, {}, { runId: "agr_prototype", signal: controller.signal, host: { spawnAgent: vi.fn() }, onCheckpoint: state => { saved = structuredClone(state); } });

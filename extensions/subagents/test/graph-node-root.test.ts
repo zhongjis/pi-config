@@ -15,7 +15,7 @@ async function fixture(kind: "gate" | "repair" = "gate") {
     inspect: event => {
       if (event.type === "@xstate.event" && event.event.type === "NODE.ACK") deliveries.push("ack");
     },
-    input: { graph: { version: 2, nodes: { a: { type: "agent", agent: "worker", prompt: "fixture", retry: { maxAttempts: 3 }, ...(kind === "gate" ? { validation: { gate: "check" } } : {}) } }, edges: [] }, input: {}, depth: 0,
+    input: { graph: { nodes: { a: { type: "agent", agent: "worker", prompt: "fixture", retry: { maxAttempts: 3 }, ...(kind === "gate" ? { validation: { gate: "check" } } : {}) } }, edges: [] }, input: {}, depth: 0,
       options: { onNodeResolved: resolved, onCheckpoint: state => { frames.push(state); deliveries.push("checkpoint"); }, host: {
         spawnAgent: async () => { if (kind === "repair" && ++spawns > 1) await physical(); return { ok: kind === "gate" }; },
         runGate: async () => { await physical(); return { ok: true, output: "" }; },

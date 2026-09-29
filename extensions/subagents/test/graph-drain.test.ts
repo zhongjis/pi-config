@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeSpawnResult } from "../src/graph/node-host.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 
 function deferred<T>() {
   let resolve: (value: T) => void = () => { throw new Error("not initialized"); };
@@ -18,12 +19,14 @@ const capacityCases = (["skip", "retry"] as const).flatMap(action =>
 it.each(capacityCases)("retains $capacity after $action until settlement (reject=$reject)", async ({ action, reject, capacity }) => {
     const pending = deferred<NodeSpawnResult>();
     const started: string[] = [];
+    const { onNodeAdded, binding } = instanceBindings();
     let control: GraphControl | undefined;
     const run = runGraph(graph, {}, {
+      onNodeAdded,
       concurrency: capacity === "concurrency" ? 1 : 2,
       resources: capacity === "resource" ? { exclusive: { capacity: 1 } } : {},
       onControl: value => { control = value; },
-      host: { spawnAgent: async request => { started.push(request.nodeId); return started.length === 1 ? pending.promise : { ok: true }; } },
+      host: { spawnAgent: async request => { started.push(binding(request.nodeId)); return started.length === 1 ? pending.promise : { ok: true }; } },
     });
     await vi.waitFor(() => expect(started).toEqual(["a"]));
     expect(control?.[action](0)).toBe(true);
@@ -83,7 +86,7 @@ it("skip preserves the existing human-gate drain boundary", async () => {
 it("blocks accounting and gates when the host aborts the run before returning", async () => {
   const controller = new AbortController();
   const gate = vi.fn(async () => ({ ok: true, output: "" }));
-  const run = await runGraph({ version: 2, nodes: { a: { type: "agent", agent: "worker", prompt: "fixture", validation: { gate: "true" } } }, edges: [] }, {}, {
+  const run = await runGraph({ nodes: { a: { type: "agent", agent: "worker", prompt: "fixture", validation: { gate: "true" } } }, edges: [] }, {}, {
     signal: controller.signal, onCheckpoint: () => {},
     host: { spawnAgent: async () => { controller.abort(); return { ok: true, costUsd: 1 }; }, runGate: gate },
   });

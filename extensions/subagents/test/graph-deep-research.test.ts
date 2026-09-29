@@ -64,7 +64,6 @@ describe("deep-research portfolio", () => {
   it("validates deep research wiring", async () => {
     const graph = savedGraph("deep-research");
     expect(validateGraph(savedGraph("context-gather")).ok).toBe(true);
-    expect(graph.version).toBe(2);
     expect(graph.inputSchema).toMatchObject({ required: ["question"], properties: { question: { type: "string", pattern: "\\S" } } });
     expect(agentNode(graph, "plan").outputSchema).toMatchObject({ required: ["parts", "tasks"], properties: { tasks: { minItems: 1, maxItems: 6 } } });
     const research = boundedFeedbackNode(graph, "research");

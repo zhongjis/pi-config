@@ -220,7 +220,6 @@ it("describes the context-gather graph", () => {
 describe("adaptive context-gather contract", () => {
   it("plans criterion-linked research with the bounded feedback contract", () => {
     const graph = savedGraph("context-gather");
-    expect(graph.version).toBe(2);
     expect(graph.inputSchema).toMatchObject({
       type: "object",
       required: ["request", "requiredCoverage"],

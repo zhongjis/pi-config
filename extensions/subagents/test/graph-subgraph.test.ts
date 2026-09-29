@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 
 /** A child graph whose single node's value becomes the declared `echo` output. */
 const childGraph: AgentGraph = {
@@ -24,10 +25,11 @@ const loadGraph = (name: string): AgentGraph | undefined => (name === "child" ? 
 
 describe("runGraph — subgraph (graph) nodes", () => {
   it("composes a child graph; its outputs become the node output and flow downstream", async () => {
+    const { onNodeAdded, binding } = instanceBindings();
     const host: NodeHost = {
-      spawnAgent: async request => (request.nodeId === "inner" ? { ok: true, output: "child-out" } : { ok: true, output: "ok" }),
+      spawnAgent: async request => (binding(request.nodeId) === "sub/inner" ? { ok: true, output: "child-out" } : { ok: true, output: "ok" }),
     };
-    const result = await runGraph(parentGraph, {}, { host, loadGraph });
+    const result = await runGraph(parentGraph, {}, { host, loadGraph, onNodeAdded });
     expect(result.status).toBe("completed");
     expect(result.nodes.sub.status).toBe("completed");
     expect(result.nodes.sub.output).toEqual({ echo: "child-out" }); // child outputs became the node output
@@ -36,10 +38,11 @@ describe("runGraph — subgraph (graph) nodes", () => {
   });
 
   it("fails the subgraph node when the child run fails", async () => {
+    const { onNodeAdded, binding } = instanceBindings();
     const host: NodeHost = {
-      spawnAgent: async request => (request.nodeId === "inner" ? { ok: false, error: "boom" } : { ok: true, output: "ok" }),
+      spawnAgent: async request => (binding(request.nodeId) === "sub/inner" ? { ok: false, error: "boom" } : { ok: true, output: "ok" }),
     };
-    const result = await runGraph(parentGraph, {}, { host, loadGraph });
+    const result = await runGraph(parentGraph, {}, { host, loadGraph, onNodeAdded });
     expect(result.status).toBe("failed");
     expect(result.nodes.sub.status).toBe("failed");
     expect(result.nodes.sub.error).toContain("failed");

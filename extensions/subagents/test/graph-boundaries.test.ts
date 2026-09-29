@@ -25,7 +25,7 @@ describe("placed expansion boundary", () => {
       onNodeAdded: id => added.push(id),
     });
     expect(result.status).toBe(collision ? "failed" : "completed");
-    expect(added).toEqual(collision ? [] : ["ns:a", "ns:b"]);
+    expect(added).toEqual(collision ? ["exp", "ns:a"] : ["exp", "a", "ns:a", "ns:b"]);
     expect(result.nodes[collision ? "ns:a" : "a"].output).toBe("original");
     if (collision) expect(result.nodes.exp.error).toContain("collid");
   });

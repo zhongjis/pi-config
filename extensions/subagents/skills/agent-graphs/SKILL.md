@@ -50,14 +50,14 @@ Every `agent_graph` call runs either a saved graph (`graph: "<name>"`) or an ad-
        description: "Locate an implementation, then explain it",
        nodes: {
          locate: {
-           type: "agent", agent: "chengfeng",
+           type: "agent", agent: "chengfeng", name: "Locate",
            prompt: "Find the files that implement ${topic}.",
            input: { topic: { path: "$.topic" } },
            outputSchema: { type: "object", required: ["files"], additionalProperties: false,
              properties: { files: { type: "array", items: { type: "string" } } } },
          },
          explain: {
-           type: "agent", agent: "chengfeng",
+           type: "agent", agent: "chengfeng", name: "Explain",
            prompt: "Explain how ${topic} works in these files: ${files}",
            input: { topic: { path: "$.topic" }, files: { node: "locate", path: "$.files" } },
            outputSchema: { type: "object", required: ["summary"], additionalProperties: false,

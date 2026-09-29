@@ -7,7 +7,7 @@ import { graphLogic } from "../src/graph/graph-actor.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 
-const graph: AgentGraph = { version: 2, nodes: { e: { type: "expand", source: { path: "$" } } }, edges: [] };
+const graph: AgentGraph = { nodes: { e: { type: "expand", source: { path: "$" } } }, edges: [] };
 function parked() {
   let request: CoordinatorRequest | undefined;
   const events: CoordinatorChildEvent[] = [];
@@ -59,7 +59,7 @@ it.each(["conflict", "reorder", "stale"] as const)("fails closed on root %s and 
 });
 it("acknowledges nested expansion only after its containing outer checkpoint", async () => {
   const frames: SchedulerState[] = []; let acks = 0;
-  const outer: AgentGraph = { version: 2, nodes: { nested: { type: "graph", graph: "inner" } }, edges: [] };
+  const outer: AgentGraph = { nodes: { nested: { type: "graph", graph: "inner" } }, edges: [] };
   const actor = createActor(graphLogic, { input: { graph: outer, input: {}, depth: 0, options: { loadGraph: () => graph, host: { spawnAgent: async () => ({ ok: true }) }, onCheckpoint: state => { frames.push(state); } } }, inspect: event => {
     if (event.type === "@xstate.event" && event.event.type === "COORD.ACK" && event.event.receipt.kind === "expand") { acks++; expect(frames.at(-1)?.runtime?.nested?.nested.state.nodes.e.status).toBe("failed"); }
   } });

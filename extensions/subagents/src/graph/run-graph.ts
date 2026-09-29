@@ -35,7 +35,7 @@ export interface RunGraphOptions {
   allocateInstanceId?: () => string;
   /** Injectable epoch-millisecond clock for durable feedback deadlines. */
   now?: () => number;
-  /** Synchronous durable commit; throwing prevents further dispatch. Required for v2. */
+  /** Synchronous durable commit; throwing prevents further dispatch. Omitted means a no-op writer. */
   onCheckpoint?(state: SchedulerState, graph: AgentGraph): void;
   concurrency?: number;
   signal?: AbortSignal;

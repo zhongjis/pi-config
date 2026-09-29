@@ -7,9 +7,9 @@ import type { AgentGraph } from "../src/graph/ir.js";
 import type { GraphControl } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 
-const leaf: AgentGraph = { version: 2, nodes: { leaf: { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
-const middle: AgentGraph = { version: 2, nodes: { inner: { type: "graph", graph: "leaf" } }, edges: [] };
-const graph: AgentGraph = { version: 2, nodes: { outer: { type: "graph", graph: "middle" } }, edges: [] };
+const leaf: AgentGraph = { nodes: { leaf: { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
+const middle: AgentGraph = { nodes: { inner: { type: "graph", graph: "leaf" } }, edges: [] };
+const graph: AgentGraph = { nodes: { outer: { type: "graph", graph: "middle" } }, edges: [] };
 const loadGraph = (name: string) => name === "middle" ? middle : name === "leaf" ? leaf : undefined;
 const deepest = (state: SchedulerState | undefined) => state?.runtime?.nested?.outer.state.runtime?.nested?.inner.state;
 
@@ -63,7 +63,7 @@ it("commits three-level checkpoints before cascading ACKs, ordinal publication a
 });
 
 it.each(["skip", "cancel", "failure"] as const)("retains three-level ownership during %s until a noncooperative human gate drains", async kind => {
-  const gated: AgentGraph = { version: 2, nodes: { leaf: { type: "human_gate", prompt: "fixture", outputSchema: { type: "object" } } }, edges: [] };
+  const gated: AgentGraph = { nodes: { leaf: { type: "human_gate", prompt: "fixture", outputSchema: { type: "object" } } }, edges: [] };
   const parent: AgentGraph = { ...graph, nodes: { ...graph.nodes, sibling: { type: "agent", agent: "worker", prompt: "fixture" } } };
   let release: (() => void) | undefined;
   let signal: AbortSignal | undefined;

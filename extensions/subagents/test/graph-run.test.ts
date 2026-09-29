@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
-import { coerceGraphInput, runGraph } from "../src/graph/run-graph.js";
+import { coerceGraphInput, type RunGraphOptions, runGraph } from "../src/graph/run-graph.js";
 import type { NodeRun } from "../src/graph/scheduler.js";
+import { instanceBindings } from "./graph-bindings.fixture.js";
 
-/** A host that scripts each spawn by node id + attempt. */
-function host(script: (nodeId: string, attempt: number) => NodeSpawnResult): NodeHost {
-  return { spawnAgent: async request => script(request.nodeId, request.attempt) };
+/** Run options whose host scripts each spawn by node binding + attempt. */
+function scripted(script: (nodeId: string, attempt: number) => NodeSpawnResult): Pick<RunGraphOptions, "host" | "onNodeAdded"> {
+  const { onNodeAdded, binding } = instanceBindings();
+  return { host: { spawnAgent: async request => script(binding(request.nodeId), request.attempt) }, onNodeAdded };
 }
 const okText = (output: string): NodeSpawnResult => ({ ok: true, output });
 
@@ -38,7 +40,7 @@ describe("runGraph — end to end via XState actors", () => {
       edges: [{ from: "a", to: "b" }],
       outputs: { r: { node: "b", path: "$" } },
     };
-    const result = await runGraph(graph, {}, { host: host(() => okText("out")) });
+    const result = await runGraph(graph, {}, { ...scripted(() => okText("out")) });
     expect(result.status).toBe("completed");
     expect(result.nodes.a.status).toBe("completed");
     expect(result.nodes.b.status).toBe("completed");
@@ -75,7 +77,7 @@ describe("runGraph — end to end via XState actors", () => {
     // here since request.attempt is the node-internal retry counter, not the loop.
     let reviews = 0;
     const result = await runGraph(reviewGraph, {}, {
-      host: host(id => {
+      ...scripted(id => {
         if (id !== "review") return okText("ok");
         reviews++;
         return okText(JSON.stringify({ approved: reviews >= 3 }));
@@ -90,7 +92,7 @@ describe("runGraph — end to end via XState actors", () => {
 
   it("fails a node whose structured output violates its schema", async () => {
     const result = await runGraph(reviewGraph, {}, {
-      host: host((id) => (id === "review" ? okText('{"approved":"yes"}') : okText("ok"))),
+      ...scripted((id) => (id === "review" ? okText('{"approved":"yes"}') : okText("ok"))),
     });
     expect(result.status).toBe("failed");
     expect(result.nodes.review.status).toBe("failed");
@@ -100,7 +102,7 @@ describe("runGraph — end to end via XState actors", () => {
   it("returns aborted when the signal is already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
-    const result = await runGraph(reviewGraph, {}, { host: host(() => okText("ok")), signal: controller.signal });
+    const result = await runGraph(reviewGraph, {}, { ...scripted(() => okText("ok")), signal: controller.signal });
     expect(result.status).toBe("aborted");
   });
 
@@ -109,7 +111,7 @@ describe("runGraph — end to end via XState actors", () => {
       nodes: { g: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object" } } },
       edges: [],
     };
-    const result = await runGraph(graph, {}, { host: host(() => okText("x")) });
+    const result = await runGraph(graph, {}, { ...scripted(() => okText("x")) });
     expect(result.status).toBe("failed");
     expect(result.nodes.g.error).toContain("await human input");
   });
@@ -117,7 +119,7 @@ describe("runGraph — end to end via XState actors", () => {
   it("reports node updates as the run progresses", async () => {
     const seen: string[] = [];
     await runGraph(reviewGraph, {}, {
-      host: host((id, attempt) => (id === "review" ? okText(JSON.stringify({ approved: attempt >= 1 })) : okText("ok"))),
+      ...scripted((id, attempt) => (id === "review" ? okText(JSON.stringify({ approved: attempt >= 1 })) : okText("ok"))),
       onNodeUpdate: (id, run) => seen.push(`${id}:${run.status}`),
     });
     expect(seen).toContain("implement:running");
@@ -168,7 +170,7 @@ describe("runGraph — static progress reporting", () => {
     const updates: NodeUpdate[] = [];
 
     const result = await runGraph(graph, {}, {
-      host: host(() => okText("unused")),
+      ...scripted(() => okText("unused")),
       signal: controller.signal,
       onControl: () => events.push("control"),
       onNodeUpdate: (id, run) => {
@@ -188,7 +190,7 @@ describe("runGraph — static progress reporting", () => {
   it("reports restored statuses faithfully before scheduling", async () => {
     const updates: NodeUpdate[] = [];
     await runGraph(graph, {}, {
-      host: host(() => okText("done")),
+      ...scripted(() => okText("done")),
       restore: {
         nodes: {
           first: { status: "completed", attempt: 1, output: "saved" },
@@ -216,7 +218,7 @@ describe("runGraph — static progress reporting", () => {
     };
 
     await runGraph(conditional, {}, {
-      host: host(() => okText("no")),
+      ...scripted(() => okText("no")),
       onNodeUpdate: (id, run) => updates.push(snapshotNodeUpdate(id, run)),
     });
 
@@ -240,7 +242,7 @@ describe("runGraph — static progress reporting", () => {
     };
 
     await runGraph(cycle, {}, {
-      host: host(() => okText("unused")),
+      ...scripted(() => okText("unused")),
       onNodeUpdate: (id, run) => updates.push(snapshotNodeUpdate(id, run)),
     });
 

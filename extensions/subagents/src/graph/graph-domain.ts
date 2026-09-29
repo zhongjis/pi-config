@@ -101,14 +101,10 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
   const { graph, options, depth } = source;
   let input = source.input;
   assertGraphDepth(options.restore, depth);
-  if (graph.version !== undefined && graph.version !== 1 && graph.version !== 2) throw new TypeError("Unsupported graph version");
-  if (graph.version !== 2 && Object.values(graph.nodes).some(node => node.type === "bounded_feedback")) throw new TypeError("Bounded feedback requires version 2");
-  if ((graph.version === 2 || options.restore?.runtime !== undefined) && !options.onCheckpoint && depth === 0) throw new TypeError("Version 2 requires a durable checkpoint writer");
-  if (graph.version === 2 && !options.restore) {
+  if (!options.restore) {
     const validation = validateGraph(graph);
     if (!validation.ok) throw new TypeError(validation.errors.join("; "));
   }
-  if (graph.version === 2 && options.restore && !options.restore.runtime) throw new TypeError("Missing v2 restore manifest");
   input = coerceGraphInput(input);
   validateContextInput(graph, input);
   if (options.restore) {
@@ -129,7 +125,6 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
   const effectiveGraph = (): AgentGraph => ({ ...graph, nodes: Object.fromEntries(nodeDefs), edges: [...effectiveEdges] });
   const restoredRuntime = options.restore?.runtime;
   const restoringNested = new Set(Object.entries(restoredRuntime?.nested ?? {}).filter(([id, child]) => { const run = options.restore?.nodes[id]; return child.state.runtime?.runId.endsWith(`/${run?.attempt}`) && (run?.status === "running" || run?.status === "pending" && !run.attemptReason); }).map(([id]) => id));
-  const durable = graph.version === 2 || restoredRuntime !== undefined || options.onCheckpoint !== undefined;
   const instances = new GraphInstances(options.runId ?? restoredRuntime?.runId ?? randomUUID(), options.allocateInstanceId, restoredRuntime, options.now);
   if (instances && !restoredRuntime) {
     const collections = options.restore?.collections ?? {};
@@ -165,8 +160,8 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     executions.flush(); normalizeFeedbackSkips(); instances.state.revision++;
     frames.push({ state: structuredClone({ ...projection.snapshotState(), runtime: instances.state }), graph: effectiveGraph(), input, publications: [] });
   };
-  const orderedIds: (string | undefined)[] = durable ? [] : Object.keys(graph.nodes);
-  if (durable) for (const row of instances.state.manifest) orderedIds[row.ordinal] = row.binding;
+  const orderedIds: (string | undefined)[] = [];
+  for (const row of instances.state.manifest) orderedIds[row.ordinal] = row.binding;
   // Display identities are separate from projection identities. Reserve static IDs,
   // then disambiguate nested and later dynamic rows without changing graph wiring.
   const displayIds = new Map(Object.keys(graph.nodes).map(id => [id, id]));
@@ -186,7 +181,6 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     return mapped;
   };
   const nestedIds = new Map<string, Map<string, string>>();
-  const registeredNested = new Set<string>();
   const presentationOf = (id: string): GraphNodePresentation => {
     const node = nodeDefs.get(id);
     if (!node) throw new TypeError("Missing presentation node");
@@ -195,11 +189,10 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     };
   };
   const registerNode: NonNullable<RunGraphOptions["onNodeAdded"]> = (id, node, metadata) => {
-    if (durable) orderedIds[instances.get(id).ordinal] = id;
-    else orderedIds.push(id);
+    orderedIds[instances.get(id).ordinal] = id;
     publish(() => options.onNodeAdded?.(displayId(id), node, { ...metadata,
-      ...(durable ? { ordinal: instances.get(id).ordinal, materializationKey: `${instances.state.runId}/${instances.get(id).instanceId}` } : {}),
-      ...(graph.version === 2 && instances ? { instance: instances.get(id), presentation: presentationOf(id) } : {}),
+      ordinal: instances.get(id).ordinal, materializationKey: `${instances.state.runId}/${instances.get(id).instanceId}`,
+      instance: instances.get(id), presentation: presentationOf(id),
       dependencies: metadata.dependencies.map(displayId) }));
   };
   const report = (id: string): void => {
@@ -213,7 +206,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
         const dispatch = rows.filter(row => row.payload.kind === "dispatched").at(-1)?.payload;
         if (dispatch?.kind === "dispatched" && rows.some(row => row.payload.kind === "outcome" && row.payload.status === "success")) copy.decisionSource = dispatch.target === "human-gate" ? "human" : "subagent";
       }
-      const presentation = graph.version === 2 ? presentationOf(id) : undefined;
+      const presentation = presentationOf(id);
       publish(() => options.onNodeUpdate?.(displayId(id), copy, identity, presentation));
     }
   };
@@ -325,7 +318,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       report(id);
     };
     if (!prepared.ok) { fail(prepared.error); return; }
-    if (graph.version === 2 && !projection.canMaterialize(prepared.items.length)) { fail("total node run limit"); return; }
+    if (!projection.canMaterialize(prepared.items.length)) { fail("total node run limit"); return; }
     if (nodeDefs.size + prepared.items.length > MAX_NODES) {
       fail(`effective graph exceeds the limit of ${MAX_NODES} nodes`);
       return;
@@ -342,7 +335,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       nodeDefs.set(childId, child);
       instances?.add(childId, { nodeKey: id, parentInstanceId: instances.get(id).instanceId, itemIndex });
     }
-    if (graph.version === 2 && instances) projection.apply({ kind: "collection", id, children: children.map(child => ({ ...child, ...instances.get(child.nodeId) })) });
+    projection.apply({ kind: "collection", id, children: children.map(child => ({ ...child, ...instances.get(child.nodeId) })) });
     for (const [childId, child] of Object.entries(nodes)) {
       registerNode(childId, child, { dependencies: [], ...(node.phase ? { phase: node.phase } : {}) });
       report(childId);
@@ -472,13 +465,11 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
   };
 
   const initializePublications = (): void => {
-  if (durable) {
-    for (const instance of instances.state.manifest) {
-      const node = nodeDefs.get(instance.binding);
-      if (node) publish(() => options.onNodeAdded?.(displayId(instance.binding), node, {
-        ordinal: instance.ordinal, materializationKey: `${instances.state.runId}/${instance.instanceId}`, ...(graph.version === 2 ? { instance, presentation: presentationOf(instance.binding) } : {}), dependencies: effectiveEdges.filter(edge => edge.to === instance.binding).map(edge => displayId(edge.from)),
-      }));
-    }
+  for (const instance of instances.state.manifest) {
+    const node = nodeDefs.get(instance.binding);
+    if (node) publish(() => options.onNodeAdded?.(displayId(instance.binding), node, {
+      ordinal: instance.ordinal, materializationKey: `${instances.state.runId}/${instance.instanceId}`, instance, presentation: presentationOf(instance.binding), dependencies: effectiveEdges.filter(edge => edge.to === instance.binding).map(edge => displayId(edge.from)),
+    }));
   }
   for (const [id, saved] of Object.entries(instances?.state.nested ?? {})) {
     const status = projection.nodes.get(id)?.status;
@@ -495,15 +486,6 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     }
   }
   // Hydration has validated ownership before any restored metadata is exposed.
-  if (!durable) for (const [parentId, children] of projection.collections) {
-    const parent = nodeDefs.get(parentId);
-    for (const { nodeId } of children) {
-      const child = nodeDefs.get(nodeId);
-      if (parent?.type === "fanout" && child !== undefined) {
-        publish(() => options.onNodeAdded?.(displayId(nodeId), child, { dependencies: [], ...(parent.phase ? { phase: parent.phase } : {}) }));
-      }
-    }
-  }
   // Seed the monitor from authoritative hydrated state before scheduling. Dynamic
   // expand nodes remain reported only through their runtime transitions.
   for (const id of Object.keys(graph.nodes)) report(id);
@@ -538,12 +520,11 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     };
     const added: NonNullable<RunGraphOptions["onNodeAdded"]> = (childId, child, metadata) => {
       const mapped = nestedId(childId);
-      if (!registeredNested.has(mapped)) { registeredNested.add(mapped); if (!durable) orderedIds.push(undefined); }
       const ordinals = instances.state.nested?.[id]?.ordinals;
       const ordinal = metadata.materializationKey ? ordinals?.[metadata.materializationKey] : undefined;
-      if (durable && ordinal === undefined) throw new TypeError("Missing committed nested ordinal");
-      if (ordinal !== undefined) orderedIds[ordinal] = undefined;
-      options.onNodeAdded?.(mapped, child, { ...metadata, ...(metadata.presentation ? { presentation: { ...metadata.presentation, connections: metadata.presentation.connections?.map(edge => ({ ...edge, binding: nestedId(edge.binding) })) } } : {}), ...(ordinal !== undefined ? { ordinal, ...(metadata.instance ? { instance: { ...metadata.instance, ordinal } } : {}) } : {}), dependencies: metadata.dependencies.map(nestedId) });
+      if (ordinal === undefined) throw new TypeError("Missing committed nested ordinal");
+      orderedIds[ordinal] = undefined;
+      options.onNodeAdded?.(mapped, child, { ...metadata, ...(metadata.presentation ? { presentation: { ...metadata.presentation, connections: metadata.presentation.connections?.map(edge => ({ ...edge, binding: nestedId(edge.binding) })) } } : {}), ordinal, ...(metadata.instance ? { instance: { ...metadata.instance, ordinal } } : {}), dependencies: metadata.dependencies.map(nestedId) });
     };
     return { kind: "graph", id, input: { receipt: coordinatorIdentity(id, randomUUID()), child: { graph: childGraph, input: childInput, depth: depth + 1,
       parent: { id, invocation: childInvocation(id) }, options: { ...childOptions(options), signal: undefined,
@@ -575,13 +556,13 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       if (node.type === "human_gate" || humanReason !== undefined) gateWaiting(id);
       return { kind: "human", id, input: { receipt, host: options.host,
         ...(node.type !== "human_gate" ? { authorize: () => options.authorizeAgent?.(node.agent) } : {}),
-        node: { nodeId: graph.version === 2 ? instances.get(id).instanceId : id, prompt: humanReason ? `${prompt}\n\nSubagent undecided: ${humanReason}` : prompt, schema,
+        node: { nodeId: instances.get(id).instanceId, prompt: humanReason ? `${prompt}\n\nSubagent undecided: ${humanReason}` : prompt, schema,
           ...(node.type === "human_gate" ? { kind: "human" } : { kind: "decision", agentType: node.agent, hybrid: node.type === "hybrid_gate", humanOnly: humanReason !== undefined }),
         } } };
     }
     const compiled = node.outputSchema === undefined ? undefined : compileJsonSchema(node.outputSchema);
     const exec: { -readonly [Key in keyof AgentLifecycleInput["node"]]: AgentLifecycleInput["node"][Key] } = {
-      kind: "agent", nodeId: graph.version === 2 ? instances.get(id).instanceId : id,
+      kind: "agent", nodeId: instances.get(id).instanceId,
       agentType: node.agent, prompt: interpolate(node.prompt, node.input, contextOf(projection, input)),
       maxAttempts: node.retry?.maxAttempts ?? 1, gate: node.validation?.gate,
       ...(compiled?.ok ? { schema: compiled.compiled } : {}),
@@ -762,7 +743,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       report(id);
   };
   return {
-    options, durable, frames, publications, projection, instances, executions, plan, running, checkpoint, control, controlCandidate, disposition, acceptNested, childInvocation,
+    options, frames, publications, projection, instances, executions, plan, running, checkpoint, control, controlCandidate, disposition, acceptNested, childInvocation,
     nodeRequest, coordinatorRequest, coordinatorIdentity, collectionView, feedbackView,
     nodeResolved: (event: Extract<NodeParentEvent, { type: "NODE.RESOLVED" }>) => {
       if (executions.accepts(event.id, event.correlation)) publish(() => options.onNodeResolved?.(displayId(event.id), event.info, event.correlation));
@@ -780,7 +761,10 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       executions.cancelAll(lifecycle ? "lifecycle" : "cancel");
       if (!lifecycle) { protocolRuntime.cancelled = true; cancelFeedback(); } checkpoint();
     },
-    result: (aborted: boolean): RunGraphResult => ({ status: aborted ? "aborted" : projection.runStatus(new Set(Object.values(feedbackStates).flatMap(state => [...state.iterations, ...(state.active ? [state.active] : [])].map(row => row.evaluator)))) === "failed" ? "failed" : "completed", outputs: aborted && !durable ? {} : projection.resolveOutputs(), nodes: Object.fromEntries([...projection.nodes].map(([id, run]) => [id, { ...run }])), ...(graph.version === 2 ? { feedback: Object.fromEntries(Object.entries(feedbackStates).flatMap(([id, state]) => state.terminal ? [[id, state.terminal]] : [])) } : {}) }),
+    result: (aborted: boolean): RunGraphResult => {
+      const feedback = Object.fromEntries(Object.entries(feedbackStates).flatMap(([id, state]) => state.terminal ? [[id, state.terminal]] : []));
+      return { status: aborted ? "aborted" : projection.runStatus(new Set(Object.values(feedbackStates).flatMap(state => [...state.iterations, ...(state.active ? [state.active] : [])].map(row => row.evaluator)))) === "failed" ? "failed" : "completed", outputs: projection.resolveOutputs(), nodes: Object.fromEntries([...projection.nodes].map(([id, run]) => [id, { ...run }])), ...(Object.keys(feedback).length ? { feedback } : {}) };
+    },
   };
 }
 export type GraphDomain = ReturnType<typeof createGraphDomain>;

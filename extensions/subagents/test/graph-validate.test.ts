@@ -7,7 +7,6 @@ function reviewLoopGraph(): AgentGraph {
   return {
     id: "shared/review-loop",
     name: "review loop",
-    version: 1,
     inputSchema: { type: "object", properties: { task: { type: "string" } }, required: ["task"] },
     nodes: {
       implement: {
@@ -293,14 +292,12 @@ describe("fanout validation", () => {
       maxTotalItems: 4,
     };
     const transitive = validateGraph({
-      version: 2,
       nodes: { review: ordinary, barrier },
       edges: [{ from: "review", to: "barrier" }, { from: "barrier", to: "review", loop: { maxIterations: 2 } }],
     });
     expect(transitive.ok).toBe(false);
     expect(transitive.errors.join("; ")).toContain("edges[1].to: loop target");
     const direct = validateGraph({
-      version: 2,
       nodes: { review: ordinary, barrier },
       edges: [{ from: "review", to: "barrier", loop: { maxIterations: 2 } }],
     });
@@ -313,10 +310,9 @@ describe("fanout validation", () => {
 });
 
 describe("graph versions", () => {
-  it("accepts v1 defaults and v2, rejects unknown versions", () => {
+  it("ignores legacy version keys", () => {
     const base = { nodes: { a: { type: "agent", agent: "x", prompt: "x" } }, edges: [] };
     for (const version of [undefined, 1, 2]) expect(validateGraph({ ...base, version }).ok).toBe(true);
-    for (const version of [0, 3, -1, 1.5, "2", null]) expect(validateGraph({ ...base, version }).ok).toBe(false);
   });
 });
 

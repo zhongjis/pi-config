@@ -9,7 +9,7 @@ import { runGraph } from "../src/graph/run-graph.js";
 const directories: string[] = [];
 afterEach(() => { for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true }); });
 const graph: AgentGraph = {
-  version: 2, nodes: {
+  nodes: {
     spare: { type: "agent", agent: "spare", prompt: "spare" },
     feedback: { type: "bounded_feedback", maxIterations: 2, maxItemsPerIteration: 2, maxTotalItems: 4,
       work: { type: "fanout", items: { path: "$.tasks" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { a: "worker" } }, prompt: `\${item}`, outputSchema: { type: "object" } },
@@ -69,7 +69,7 @@ it("retains nested invocation history and unique recursive ordinals across a v1 
   const { restoredNestedRows } = await import("../src/graph/graph-nested-checkpoint.js");
   const cwd = mkdtempSync(join(tmpdir(), "graph-transition-")); directories.push(cwd);
   const parent: AgentGraph = { nodes: { start: { type: "agent", agent: "start", prompt: "start" }, sub: { type: "graph", graph: "child" }, check: { type: "agent", agent: "check", prompt: "check" } }, edges: [{ from: "start", to: "sub" }, { from: "sub", to: "check", when: { eq: [{ node: "sub", path: "$.done" }, false] } }, { from: "check", to: "sub", loop: { maxIterations: 2 } }] };
-  const child: AgentGraph = { version: 2, nodes: { worker: { type: "agent", agent: "worker", prompt: "child", outputSchema: { type: "object" } } }, edges: [], outputs: { done: { node: "worker", path: "$.done" } } };
+  const child: AgentGraph = { nodes: { worker: { type: "agent", agent: "worker", prompt: "child", outputSchema: { type: "object" } } }, edges: [], outputs: { done: { node: "worker", path: "$.done" } } };
   const runId = "agr_nestedloop"; let checks = 0;
   const result = await runGraph(parent, {}, { runId, loadGraph: () => child, onCheckpoint: (state, graph) => writeGraphSnapshot(cwd, { version: 2, runId, state, graph, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: async request => ({ ok: true, output: request.agentType === "worker" ? JSON.stringify({ done: ++checks === 2 }) : "continue" }) } });
   expect(result.status).toBe("completed");

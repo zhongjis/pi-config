@@ -15,7 +15,7 @@
 
 import { type ExecutionCorrelation, matchesExecution } from "./graph-execution.js";
 import type { NodeInstance } from "./graph-instance-id.js";
-import type { AgentGraph, FanoutPhase, GraphNode } from "./ir.js";
+import type { FanoutPhase, GraphNode } from "./ir.js";
 import type { NodeResolvedInfo } from "./node-host.js";
 import { GRAPH_OUTCOME_KEY, isGraphRunOutcome } from "./outcome.js";
 import type { GraphNodePresentation, GraphRunAgentEntry } from "./progress.js";
@@ -73,45 +73,10 @@ export class GraphRunReporter {
 
   constructor(
     private readonly task: GraphRunTask,
-    graph: AgentGraph,
     now: number = Date.now(),
     private readonly getActivity?: (recordId: string) => { toolCalls?: number; tokens?: number } | undefined,
   ) {
     this.queuedAt = now;
-    const ids = graph.version === 2 ? [] : Object.keys(graph.nodes);
-    ids.forEach((id, i) => {
-      this.index.set(id, i);
-    });
-    this.nextIndex = ids.length;
-    for (const id of ids) {
-      // Forward (non-loop) predecessors are the node's real dependencies.
-      this.deps.set(
-        id,
-        graph.edges.filter(edge => edge.to === id && edge.loop === undefined).map(edge => edge.from),
-      );
-      const node = graph.nodes[id];
-      this.presentation.set(id, { kind: node.type, name: node.name || id,
-        connections: graph.edges.flatMap(edge => (edge.from === id || edge.to === id) && (edge.loop || edge.when)
-          ? [{ binding: edge.from === id ? edge.to : edge.from, direction: edge.from === id ? "downstream" as const : "upstream" as const, kind: edge.loop ? "loop" as const : "conditional" as const }] : []),
-      });
-      this.agentType.set(id, node.type === "agent" || node.type === "agent_gate" || node.type === "hybrid_gate" ? node.agent : node.type);
-      // Execution nodes carry prompts; subgraph and expand nodes have none.
-      if (node.type === "agent" || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate") this.prompt.set(id, node.prompt);
-    }
-    // Downstream is the inverse of deps: each node lists the nodes it unblocks, so
-    // the monitor can join a failure to its blast radius without re-walking edges.
-    for (const id of ids) {
-      for (const dep of this.deps.get(id) ?? []) {
-        const list = this.dependents.get(dep) ?? [];
-        list.push(id);
-        this.dependents.set(dep, list);
-      }
-    }
-    this.recomputeStages();
-
-    // The run's total is known up front — every declared node — so the header
-    // reads N/total from the first frame rather than growing as nodes appear.
-    this.task.agentCount = Math.max(this.task.agentCount, ids.length);
   }
 
   /** Already-assigned progress/history identity; never allocate during artifact lookup. */
@@ -128,10 +93,8 @@ export class GraphRunReporter {
     if (this.registered.has(nodeId)) return;
     this.registered.add(nodeId);
 
-    const preseeded = this.index.has(nodeId);
     const instance = metadata.instance;
-    if (preseeded || instance || metadata.presentation) this.presentation.set(nodeId, metadata.presentation ?? {
-      ...this.presentation.get(nodeId),
+    if (instance || metadata.presentation) this.presentation.set(nodeId, metadata.presentation ?? {
       kind: node.type,
       name: node.name || (node.type === "agent" ? node.agent : node.type.replaceAll("_", " ")),
       ...(instance?.parentInstanceId ? { parentInstanceId: instance.parentInstanceId } : {}),
@@ -153,8 +116,8 @@ export class GraphRunReporter {
     } else if (metadata.ordinal !== undefined) {
       this.index.set(nodeId, metadata.ordinal);
       this.nextIndex = Math.max(this.nextIndex, metadata.ordinal + 1);
-    } else if (!preseeded) this.index.set(nodeId, this.nextIndex++);
-    const dependencies = [...new Set([...(preseeded ? this.deps.get(nodeId) ?? [] : []), ...metadata.dependencies])];
+    } else this.index.set(nodeId, this.nextIndex++);
+    const dependencies = [...new Set(metadata.dependencies)];
     this.deps.set(nodeId, dependencies);
     const previousStage = this.stage.get(nodeId);
     const previousTitle = this.explicitPhase.get(nodeId)?.title ?? (previousStage !== undefined ? `Stage ${previousStage + 1}` : undefined);

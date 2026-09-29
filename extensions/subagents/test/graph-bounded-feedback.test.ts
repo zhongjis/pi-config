@@ -19,7 +19,7 @@ const feedback: BoundedFeedbackNode = {
 const initial = { kind: "local", query: "first" };
 const more = { decision: "continue", gaps: [{ id: "g", description: "missing" }], tasks: [{ gapId: "g", item: { kind: "local", query: "second" } }] };
 const enough = { decision: "sufficient", gaps: [], tasks: [] };
-function graph(node = feedback): AgentGraph { return { version: 2, nodes: { research: node }, edges: [], outputs: { evidence: { node: "research", path: "$" } } }; }
+function graph(node = feedback): AgentGraph { return { nodes: { research: node }, edges: [], outputs: { evidence: { node: "research", path: "$" } } }; }
 async function execute(decisions: unknown[], node = feedback) {
   const requests: { nodeId: string; agentType: string; attempt: number }[] = [];
   const checkpoints: { state: SchedulerState; graph: AgentGraph }[] = [];
@@ -35,9 +35,9 @@ async function execute(decisions: unknown[], node = feedback) {
 }
 
 describe("bounded feedback", () => {
-  it("validates versions, templates, bounds and references; preflights both templates", () => {
+  it("validates without a version, templates, bounds and references; preflights both templates", () => {
     expect(validateGraph(graph()).ok).toBe(true);
-    for (const version of [undefined, 1, 3]) expect(validateGraph({ ...graph(), version }).ok).toBe(false);
+    for (const version of [1, 2]) expect(validateGraph({ ...graph(), version }).ok).toBe(true);
     for (const field of ["maxIterations", "maxItemsPerIteration", "maxTotalItems"]) {
       for (const value of [undefined, 0, -1, 1.5]) expect(validateGraph(graph({ ...feedback, [field]: value })).ok).toBe(false);
     }

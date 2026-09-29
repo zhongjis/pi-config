@@ -45,7 +45,7 @@ describe("historical node artifacts", () => {
     const task = createGraphRunTask({ id: "run", script: "" });
     const node = { type: "agent", agent: "fixture", prompt: "PROMPT" } as const;
     const instance = new GraphInstances("run").add("binding", { nodeKey: "binding" });
-    const reporter = new GraphRunReporter(task, { version: 2, nodes: { binding: node }, edges: [] });
+    const reporter = new GraphRunReporter(task);
     expect(reporter.nodeIndex("binding")).toBeUndefined();
     reporter.registerNode("binding", node, { dependencies: [], instance });
     reporter.update("binding", { status: "completed", attempt: 1, output: "OUTCOME" });

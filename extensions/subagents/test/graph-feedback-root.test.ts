@@ -13,7 +13,7 @@ const feedback: BoundedFeedbackNode = {
   work: { type: "fanout", items: { path: "$" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { work: "worker" } }, prompt: "${item}", outputSchema: { type: "object" } },
   evaluator: { type: "agent", agent: "judge", prompt: "${feedback}" },
 };
-const graph: AgentGraph = { version: 2, nodes: { f: feedback }, edges: [], outputs: { result: { node: "f", path: "$" } } };
+const graph: AgentGraph = { nodes: { f: feedback }, edges: [], outputs: { result: { node: "f", path: "$" } } };
 const input = [{ kind: "work" }];
 const enough = { decision: "sufficient", gaps: [], tasks: [] };
 const more = { decision: "continue", gaps: [{ id: "g", description: "missing" }], tasks: [{ gapId: "g", item: { kind: "work", next: true } }] };

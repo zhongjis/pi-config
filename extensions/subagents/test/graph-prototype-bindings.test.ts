@@ -4,7 +4,6 @@ import { runGraph } from "../src/graph/run-graph.js";
 
 it("returns a serializable terminal feedback result for a __proto__ binding", async () => {
   const graph: AgentGraph = {
-    version: 2,
     nodes: { ["__proto__"]: {
       type: "bounded_feedback", maxIterations: 1, maxItemsPerIteration: 1, maxTotalItems: 1,
       work: {

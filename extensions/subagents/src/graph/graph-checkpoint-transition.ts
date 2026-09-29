@@ -79,7 +79,7 @@ function transition(previous: SchedulerState, next: SchedulerState, graph: Agent
     const successor = next.nodes[key];
     if (!successor || successor.attempt < run.attempt || successor.attempt > run.attempt + 1) throw new TypeError("Checkpoint rolls back/skips attempts");
     if ((run.costUsd !== undefined && (successor.costUsd === undefined || successor.costUsd < run.costUsd)) || (run.costUnavailable && !successor.costUnavailable) || (successor.costAttempts ?? 0) < (run.costAttempts ?? 0)) throw new TypeError("Checkpoint rolls back cost accounting");
-    if (graph.version === 2 && successor.costAttempts === run.costAttempts && (successor.costUsd !== run.costUsd || successor.costUnavailable !== run.costUnavailable)) throw new TypeError("Checkpoint rewrites execution cost");
+    if (successor.costAttempts === run.costAttempts && (successor.costUsd !== run.costUsd || successor.costUnavailable !== run.costUnavailable)) throw new TypeError("Checkpoint rewrites execution cost");
     if (["completed", "failed", "skipped"].includes(run.status) && !isDeepStrictEqual(run, successor)) {
       const loop = run.status === "completed" && successor.status === "pending" && successor.attemptReason === "loop" && graph.edges.some(edge => edge.to === key && next.nodes[edge.from]?.status === "completed" && (previous.nodes[edge.from]?.status !== "completed" || previous.nodes[edge.from]?.attempt !== next.nodes[edge.from]?.attempt));
       if (!loop) throw new TypeError("Checkpoint rewrites a settled node");

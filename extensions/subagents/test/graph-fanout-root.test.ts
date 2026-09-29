@@ -9,7 +9,7 @@ import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 
 const fanout: FanoutNode = { type: "fanout", items: { path: "$" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { work: "worker" } }, prompt: "${item}" };
-const graph: AgentGraph = { version: 2, nodes: { f: fanout }, edges: [], outputs: { result: { node: "f", path: "$" } } };
+const graph: AgentGraph = { nodes: { f: fanout }, edges: [], outputs: { result: { node: "f", path: "$" } } };
 const input = [{ kind: "work" }];
 it("commits admission before coordinator spawn and materialization before leaf registration; actors are root siblings", async () => {
   const order: string[] = []; const frames: SchedulerState[] = [];

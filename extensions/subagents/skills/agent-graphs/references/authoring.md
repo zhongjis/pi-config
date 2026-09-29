@@ -23,7 +23,6 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
 {
   "name": "review-fix",
   "description": "Implement, review, and approve before a side effect",
-  "version": 1,
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -33,6 +32,7 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
   "nodes": {
     "implement": {
       "type": "agent",
+      "name": "Implement",
       "agent": "jintong",
       "prompt": "Implement this task. Return JSON only.\n${task}",
       "input": { "task": { "path": "$.task" } },
@@ -74,6 +74,7 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
     },
     "fix": {
       "type": "agent",
+      "name": "Fix findings",
       "agent": "jintong",
       "prompt": "Fix these review findings for the task.\nTask: ${task}\nFindings: ${findings}",
       "input": { "task": { "path": "$.task" }, "findings": { "node": "review", "path": "$.findings" } },
@@ -91,6 +92,7 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
     },
     "ship": {
       "type": "agent",
+      "name": "Ship",
       "agent": "jintong",
       "prompt": "Commit the approved change and push the branch. Skip any step already done."
     }
@@ -113,7 +115,6 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
 
 ```jsonc
 {
-  "version": 1,
   "name": "optional",
   "id": "optional",
   "description": "Shown in the monitor",
@@ -124,12 +125,11 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
 }
 ```
 
-- `version` — omit or `1`. `2` is required for `bounded_feedback` and adds durable instance IDs. The tool checkpoints active runs and resumes them after reload in the same session.
 - `name`, `id` — optional strings.
 - `description` — optional; shown for the live run.
 - `inputSchema` — documents `input`. A direct `agent_graph` call does not enforce it. See [SKILL.md](../SKILL.md).
 - `outputSchema` — compiled for validity only, never enforced. Omit it.
-- `semanticPolicy` — only `context-gather-v1`. Requires version 2 and structured `plan`, `research` (`bounded_feedback`), and `synthesize` nodes. Reserved for `context-gather`.
+- `semanticPolicy` — only `context-gather-v1`. Requires structured `plan`, `research` (`bounded_feedback`), and `synthesize` nodes. Reserved for `context-gather`.
 - `nodes`, `edges`, `outputs` — the graph. Node ids are unique. `outputs` values are ValueRefs.
 
 There is no shell or action node. A deterministic check is `validation.gate` on the node that owns it.
@@ -138,7 +138,7 @@ There is no shell or action node. A deterministic check is `validation.gate` on 
 
 Spell field names exactly. Unknown keys are ignored, except on `bounded_feedback`, which rejects them. A misspelled `outputschema` yields an untyped node.
 
-Optional `name` is presentation only and may duplicate.
+Optional `name` labels the node's monitor row; without it the row shows the agent name (or node type), so name nodes that share an agent. It is presentation only and may duplicate.
 
 - **agent** — runs one subagent. See [Agent nodes](#agent-nodes).
 - **human_gate** — publishes a durable human request. The orchestrator uses `ask`, then `resolve_agent_graph_gate`. Never spawns an agent.
@@ -147,7 +147,7 @@ Optional `name` is presentation only and may duplicate.
 - **graph** — runs a saved graph by name, not an inline graph. This node's output is that graph's `outputs`. Delegation preflight recurses into a saved graph it can load. An unresolvable name fails when the node runs.
 - **fanout** — turns a validated runtime item array into ordinary agent children, awaits every child, and returns input-ordered all-settled results. Read [dynamic-expansion.md](dynamic-expansion.md).
 - **expand** — splices a runtime `GraphFragment` (`{ nodes, edges, outputs? }`) into the live graph. `namespace` isolates inserted ids. A fragment MUST NOT contain `fanout` or `bounded_feedback`. Read [dynamic-expansion.md](dynamic-expansion.md).
-- **bounded_feedback** — version 2. Fixed work and evaluator templates, with required bounds. Read [bounded-feedback.md](bounded-feedback.md).
+- **bounded_feedback** — fixed work and evaluator templates, with required bounds. Read [bounded-feedback.md](bounded-feedback.md).
 
 All three decision gates require `prompt` and `outputSchema`, support template `input`, and expose exactly `{ "approved": boolean }`. Conditions read `$.approved`. `outputSchema` constrains that exposed value, not the private agent result. Agent-backed gates use a strict internal protocol: `{ "status": "decided", "decision": { "approved": boolean } }` or `{ "status": "undecided", "reason": "nonempty explanation" }` (no extra fields). Invalid output, inability, unavailable agents, and execution failures fail both agent-backed gates without prompting. Gate agents obey normal delegation permissions. Hybrid escalation is checkpointed before publication. Lifecycle resume of a waiting hybrid keeps the human-only boundary and does not rerun its agent. The monitor names the decision maker as human or the configured agent.
 
@@ -251,7 +251,7 @@ A skipped source yields no envelope. Read the outcome from a node that runs on e
 
 **Fanout gather + synthesize.** One fanout, then one agent that reads `$.results` and keeps successes, failures, and gaps. Read [dynamic-expansion.md](dynamic-expansion.md).
 
-**Adaptive evidence rounds.** Prefer version 2 `bounded_feedback`. Version 1 explicit per-round fanout/evaluator pairs are legacy, for version 1 graphs only. Read [bounded-feedback.md](bounded-feedback.md).
+**Adaptive evidence rounds.** Prefer `bounded_feedback`. Explicit per-round fanout/evaluator pairs remain valid for a fixed number of rounds. Read [bounded-feedback.md](bounded-feedback.md).
 
 ### Evaluation architecture
 
@@ -309,8 +309,8 @@ The validator reports every error at once, with dotted paths (`nodes.review.prom
 
 ## Reference implementations
 
-- [context-gather.graph.json](../../../../../agent-graphs/context-gather.graph.json) — version 2 evidence gathering with `semanticPolicy: "context-gather-v1"`.
-- [deep-research.graph.json](../../../../../agent-graphs/deep-research.graph.json) — version 2 read-only cited research.
+- [context-gather.graph.json](../../../../../agent-graphs/context-gather.graph.json) — evidence gathering with `semanticPolicy: "context-gather-v1"`.
+- [deep-research.graph.json](../../../../../agent-graphs/deep-research.graph.json) — read-only cited research.
 - Contracts: [agent-graphs/AGENTS.md](../../../../../agent-graphs/AGENTS.md).
 
 Promote a proven inline graph to a saved root: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, or `~/.pi/agent/agent-graphs`. Save it as `<name>.graph.json`; `.graph.yaml` is the fallback format. A `/` in the name is a subdirectory. Keep one format per name in a root.

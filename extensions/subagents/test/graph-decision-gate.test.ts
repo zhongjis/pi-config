@@ -13,7 +13,7 @@ import { createGraphRunTask } from "../src/graph/task.js";
 const decided = (approved: boolean) => JSON.stringify({ status: "decided", decision: { approved } });
 const undecided = JSON.stringify({ status: "undecided", reason: "Need a human choice" });
 function graph(type: "agent_gate" | "hybrid_gate", outputSchema = decisionValueSchema): AgentGraph {
-  return { version: 2, nodes: {
+  return { nodes: {
     gate: { type, agent: "reviewer", prompt: `Approve \${plan}?`, input: { plan: { path: "$.plan" } }, outputSchema },
     done: { type: "agent", agent: "worker", prompt: "Finish" },
   }, edges: [{ from: "gate", to: "done", when: { eq: [{ node: "gate", path: "$.approved" }, true] } }], outputs: { decision: { node: "gate", path: "$" } } };
@@ -128,7 +128,7 @@ describe("decision gates through runGraph", () => {
 it.each([false, true])("monitor labels the actual decision maker (human=%s)", async human => {
   const definition = graph("hybrid_gate");
   const task = createGraphRunTask({ id: "agr_gate", script: "", meta: { name: "Gate", description: "Decision provenance" } });
-  const reporter = new GraphRunReporter(task, definition); let saved: SchedulerState | undefined;
+  const reporter = new GraphRunReporter(task); let saved: SchedulerState | undefined;
   const result = await runGraph(definition, {}, { onCheckpoint: state => { check(definition)(state); saved = state; },
     onNodeAdded: (id, node, metadata) => reporter.registerNode(id, node, metadata),
     onNodeUpdate: (id, run, identity) => reporter.update(id, run, identity),
@@ -165,7 +165,7 @@ it("restore rejects inventing or bypassing a hybrid human boundary", async () =>
 it.each(["dismissed", "failed", "cancelled"] as const)("does not claim a human decision while waiting or %s", async outcome => {
   const definition = graph("hybrid_gate"); const controller = new AbortController();
   const task = createGraphRunTask({ id: "agr_pending_gate", script: "", meta: { name: "Gate", description: "Pending decision provenance" } });
-  const reporter = new GraphRunReporter(task, definition); const sources: (string | undefined)[] = [];
+  const reporter = new GraphRunReporter(task); const sources: (string | undefined)[] = [];
   let release: ((result: NodeSpawnResult) => void) | undefined; let saved: SchedulerState | undefined;
   const observe = (id: string, run: Parameters<GraphRunReporter["update"]>[1]) => {
     if (id === "gate") sources.push(run.decisionSource);

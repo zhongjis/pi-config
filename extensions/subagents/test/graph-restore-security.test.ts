@@ -72,7 +72,7 @@ it("rejects reordered legacy collection ownership before upgrade", async () => {
 
 it("rejects identity replacement even with the correct next revision", async () => {
   const cwd = directory(); let saved: GraphRunSnapshot | undefined;
-  await runGraph({ ...graph, version: 2 }, {}, { runId: legacy().runId, onCheckpoint: (state, effective) => { saved = { ...legacy(), version: 2, graph: effective, state }; writeGraphSnapshot(cwd, saved); }, host: { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }) } });
+  await runGraph({ ...graph }, {}, { runId: legacy().runId, onCheckpoint: (state, effective) => { saved = { ...legacy(), version: 2, graph: effective, state }; writeGraphSnapshot(cwd, saved); }, host: { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }) } });
   if (!saved?.state.runtime) throw new Error("missing fixture");
   const before = readFileSync(join(graphRunsDir(cwd), `${saved.runId}.json`), "utf8");
   const next = structuredClone(saved); if (!next.state.runtime) throw new Error("missing runtime");
@@ -104,7 +104,7 @@ it("isolates nested protocol ledgers and rejects partial recursive checkpoints",
   const { upgradeLegacyExecution } = await import("../src/graph/graph-execution.js");
   const { validateGraphRestore } = await import("../src/graph/graph-restore-validation.js");
   const { validateCheckpointTransition } = await import("../src/graph/graph-checkpoint-transition.js");
-  const parent: AgentGraph = { version: 2, nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
+  const parent: AgentGraph = { nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
   let saved: SchedulerState | undefined;
   await runGraph(parent, {}, { runId: "agr_abcdef123456", loadGraph: () => graph, host: { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }) }, onCheckpoint: state => { saved = structuredClone(state); } });
   const savedState = saved;

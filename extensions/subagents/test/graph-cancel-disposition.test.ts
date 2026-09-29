@@ -14,7 +14,7 @@ const ledger = (state: SchedulerState) => requireValue(requireValue(state.runtim
 const drained = (state: SchedulerState) => ledger(state).some(row => "payload" in row && row.payload.kind === "drain-ack");
 
 it.each(["skip", "retry"] as const)("restores durable %s before and after recovery drain", async reason => {
-  const graph: AgentGraph = { version: 2, nodes: { a: agent }, edges: [] };
+  const graph: AgentGraph = { nodes: { a: agent }, edges: [] };
   let control: GraphControl | undefined; let release: (() => void) | undefined;
   const frames: SchedulerState[] = []; let starts = 0;
   const running = runGraph(graph, {}, { onControl: value => { control = value; }, onCheckpoint: state => frames.push(state), host: { spawnAgent: async () => {
@@ -47,7 +47,7 @@ it.each(["skip", "retry"] as const)("restores durable %s before and after recove
 });
 
 it.each((["reload", "switch", "shutdown"] as const).flatMap(reason => (["agent", "human_gate"] as const).map(type => ({ reason, type }))))("$reason restarts one-attempt $type in a new graph attempt", async ({ reason, type }) => {
-  const graph: AgentGraph = { version: 2, nodes: { a: type === "agent" ? { ...agent, retry: { maxAttempts: 1 } } : { type, prompt: "x", outputSchema: { type: "object" } } }, edges: [] };
+  const graph: AgentGraph = { nodes: { a: type === "agent" ? { ...agent, retry: { maxAttempts: 1 } } : { type, prompt: "x", outputSchema: { type: "object" } } }, edges: [] };
   const controller = new AbortController(); let release: (() => void) | undefined; const frames: SchedulerState[] = [];
   const effect = async () => { await new Promise<void>(resolve => { release = resolve; }); return { ok: true, output: "{}" }; };
   const running = runGraph(graph, {}, { signal: controller.signal, onCheckpoint: state => frames.push(state), host: { spawnAgent: effect, awaitHumanGate: effect } });
@@ -72,8 +72,8 @@ it.each((["reload", "switch", "shutdown"] as const).flatMap(reason => (["agent",
 });
 
 it("keeps nested skip scoped to its admitted execution", async () => {
-  const child: AgentGraph = { version: 2, nodes: { a: agent }, edges: [] };
-  const graph: AgentGraph = { version: 2, nodes: { left: { type: "graph", graph: "child" }, right: { type: "graph", graph: "child" } }, edges: [] };
+  const child: AgentGraph = { nodes: { a: agent }, edges: [] };
+  const graph: AgentGraph = { nodes: { left: { type: "graph", graph: "child" }, right: { type: "graph", graph: "child" } }, edges: [] };
   let saved: SchedulerState | undefined; const release: (() => void)[] = []; const controller = new AbortController();
   const running = runGraph(graph, {}, { loadGraph: () => child, signal: controller.signal, onCheckpoint: state => { saved = state; }, host: { spawnAgent: async () => { await new Promise<void>(resolve => release.push(resolve)); return { ok: true, output: "ok" }; } } });
   await vi.waitFor(() => expect(release).toHaveLength(2)); const state = structuredClone(requireValue(saved, "missing nested checkpoint"));
@@ -98,7 +98,7 @@ it("keeps nested skip scoped to its admitted execution", async () => {
 });
 
 it("whole-run cancel stays terminal across pre-drain recovery", async () => {
-  const graph: AgentGraph = { version: 2, nodes: { a: agent }, edges: [] };
+  const graph: AgentGraph = { nodes: { a: agent }, edges: [] };
   let release: (() => void) | undefined; let saved: SchedulerState | undefined; const controller = new AbortController();
   const running = runGraph(graph, {}, { signal: controller.signal, onCheckpoint: state => {
     if (!saved && state.runtime?.executionLedger?.some(row => "payload" in row && row.payload.kind === "cancel-requested")) saved = state;

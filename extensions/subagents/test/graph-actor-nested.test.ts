@@ -7,8 +7,8 @@ import type { ChildCheckpointRequest } from "../src/graph/graph-protocol.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import { subgraphLogic } from "../src/graph/subgraph-actor.js";
 
-const child: AgentGraph = { version: 2, nodes: { leaf: { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
-const graph: AgentGraph = { version: 2, nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
+const child: AgentGraph = { nodes: { leaf: { type: "agent", agent: "worker", prompt: "fixture" } }, edges: [] };
+const graph: AgentGraph = { nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
 function parked() {
   let release: (() => void) | undefined; let writes = 0; let latest: ChildCheckpointRequest | undefined;
   const actor = createActor(graphLogic, { inspect: event => { if (event.type === "@xstate.event" && event.event.type === "CHECKPOINT.REQUEST") latest = event.event as ChildCheckpointRequest; }, input: { graph, input: {}, depth: 0, options: {
