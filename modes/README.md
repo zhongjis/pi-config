@@ -12,15 +12,9 @@ Fu Xi architecture:
 - Fu Xi prompt files are a thin Prometheus family.
 - Fu Xi ships no dedicated `gpt.md`; GPT-family runs inherit the default `mode.md` body.
 - Active planner policy lives in `modes/fuxi/skills/ulw-plan/SKILL.md`; Fu Xi prompts require loading it before planning, and its `references/*` files resolve relative to the skill base dir.
-- Fu Xi’s exactly seven planning stages are authoritative in `modes/fuxi/skills/ulw-plan/SKILL.md`; do not duplicate them here.
+- Fu Xi’s planning stages are authoritative in `modes/fuxi/skills/ulw-plan/SKILL.md`; do not duplicate them here.
 
-Current file matrix:
-
-| Mode | `mode.md` | `gpt.md` | `gemini.md` | mode skill migration |
-|---|---:|---:|---:|---|
-| kuafu | Yes | Yes | Yes | none |
-| fuxi | Yes | — (inherits default) | Yes | mode-local `skills/ulw-plan` |
-| houtu | Yes | Yes | Yes | none |
+The active modes are the directories here that contain a `mode.md`; which of `gpt.md` and `gemini.md` each mode ships is visible in its directory.
 
 Prompt audits must review the final injected prompt, not only source files, and preserve locked family anchors plus the final injected session audit requirement. See `../docs/specs/mode-prompt-audit-checklist.md`.
 

@@ -5,7 +5,6 @@ Repository-owned maintenance skills and their supporting references.
 ## Ownership
 
 - [skills/](skills/) is the repository skill source.
-- [../.pi/skills](../.pi/skills) symlinks to this tree.
 - This document owns all skills and supporting files below `.agents/`.
 - External global skills and mode-owned skills are outside this scope.
 

@@ -37,34 +37,19 @@ Short, forceful overlays maintain context while mitigating these known weaknesse
 
 ## Our Mode Mapping
 
-| Mode | Role | Default Model | GPT Variant | Gemini Variant |
-|------|------|--------------|-------------|----------------|
-| **kuafu** | Build orchestrator | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **fuxi** | Strategic planner | `anthropic/claude-opus-4-8:xhigh` | Default body (no `gpt.md`) | Yes (`gemini.md`) |
-| **houtu** | Plan executor | `github-copilot/claude-sonnet-5` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **luban** | Superpowers discipline | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **shennong** | Product judgment | `anthropic/claude-opus-4-8:xhigh` | Yes (`gpt.md`) | Yes (`gemini.md`) |
-| **zhurong** | Deep-worker autonomy | `openai-codex/gpt-5.6-sol:high` (GPT-only) | No (GPT-only, `mode.md` body) | No (GPT-only) |
-
-All five modes have default/GPT/Gemini prompt coverage. GPT files are standalone replacement bodies — except Fu Xi's thin Prometheus family, which ships no dedicated `gpt.md` and inherits the default `mode.md` body for GPT runs; Gemini files are corrective overlays on default bodies.
+[`modes/README.md`](README.md) owns the active mode set and how each family's prompt file is built. Each mode's `mode.md` frontmatter owns its default model.
 
 ## Local Addition: Small Models as Corrective
 
 We leverage local chains (e.g., `llama-swap/qwen2.5-coder:14b`) alongside cloud services. Small models often bypass tools or finish early due to limited capacity rather than training bias.
 
-Our `getModePromptSource` logic defaults local/small models to the **Default** family. They receive the detailed, mechanic-style Claude prompts for maximum guidance. Persistent failures in specific local models can trigger reclassification in `model-family.ts`.
+[`getModePromptSource`](../extensions/lib/model-family.ts) defaults local/small models to the **Default** family, so they receive the detailed, mechanic-style prompts. Reclassify a local model in that file when it fails persistently.
 
 ## Family Detection
 
-Logic relies on string matching:
+[`extensions/lib/model-family.ts`](../extensions/lib/model-family.ts) owns detection. It matches on the model ID, not the provider name alone, so proxied models (litellm and similar) resolve to their real family.
 
-- Provider starts with `google` or `google-vertex` -> Gemini
-- Model ID contains `gpt` (case-insensitive) -> GPT
-- Others (Claude, Kimi, GLM, Qwen, local) -> Default
-
-Detection checks the Model ID to handle proxies (litellm, vellm, etc.) correctly.
-
-GPT detection limitation: the `gpt` substring match cannot distinguish non-reasoning `gpt-4o` from GPT-5.x reasoning models, so both resolve to the same `gpt.md`. The corrected GPT guidance above is scoped to GPT-5.x reasoning models; detection cannot currently honor that version boundary.
+Limitation: GPT detection cannot distinguish non-reasoning GPT models from GPT-5.x reasoning models, so both use `gpt.md`. The GPT guidance above targets GPT-5.x reasoning models.
 
 ## Sources
 

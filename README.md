@@ -4,11 +4,11 @@ Panda Harness is this user's personal [Pi](https://github.com/mariozechner/pi-co
 
 It keeps three things in one place:
 
-- personal Pi agents and extensions
+- personal Pi agents, modes, and extensions
 - a reproducible Nix development shell
 - a standard root-level testing flow for extensions
 
-This repo stays **personal in scope**. It is not trying to become a shared framework or CI-heavy template right now.
+This repo stays **personal in scope**. It is not a shared framework or CI-heavy template.
 
 ## Quick start
 
@@ -20,7 +20,7 @@ bash install.sh
 
 ### Load the dev shell
 
-Prefer `direnv` over manually running `nix develop`.
+Use `direnv` as the normal way to enter the development environment; the flake remains the source of truth.
 
 ```bash
 direnv allow
@@ -36,54 +36,19 @@ pnpm install
 ### Run the standard checks
 
 ```bash
-pnpm test:extensions
-pnpm lint:typecheck
+pnpm test:extensions   # extension tests plus root smoke coverage
+pnpm lint:typecheck    # root and package-local lint/typecheck
 ```
 
-## What is in this repo
+[`package.json`](package.json) owns the full script list; [the testing guide](docs/guides/testing/README.md) owns the test layout and maintenance rules.
 
-| Path | Purpose |
-| --- | --- |
-| `agents/` | Custom Pi agent definitions |
-| `extensions/` | Pi extensions and extension packages |
-| `test/` | Root smoke harness and shared test fixtures/stubs |
-| `docs/` | Human-facing design and testing notes |
-| `scripts/` | Helper scripts for repo maintenance |
+## Where things live
 
-## Extension testing model
+- [`AGENTS.md`](AGENTS.md) — AI-facing maintenance rules; its Child DOX Index maps every top-level directory to its owning doc.
+- [`docs/README.md`](docs/README.md) — human-facing specs, guides, ADRs, and ideas.
+- [`CONTEXT-MAP.md`](CONTEXT-MAP.md) — domain vocabulary.
 
-Panda Harness uses one root entrypoint for extension validation:
-
-- `pnpm test:extensions`
-
-That root flow combines:
-
-1. existing extension-local tests where they already exist
-2. root smoke coverage for top-level extension entrypoints
-
-See `docs/guides/testing/README.md` for the exact maintenance rules.
-
-## Repo checks
-
-- `pnpm test:extensions` — extension tests and smoke coverage
-- `pnpm lint:typecheck` — root lint/typecheck plus package-local lint/typecheck where available
-
-## Documentation split
-
-- `README.md` — human-facing overview
-- `AGENTS.md` — AI-facing maintenance rules and repo boundaries
-- `docs/specs/extension-model-usage.md` — `tool_models.json` role schema for extension-owned LLM calls
-- `docs/specs/model-selection-and-fallback.md` — model-chain parsing and fallback behavior
-- `docs/guides/testing/README.md` — extension testing policy
-- `docs/guides/orchistration.md` — practical orchestration lifecycle and workflow guide
-
-## Local workflow preference
-
-Use `direnv` as the default shell loader for this repo.
-
-The flake is still the source of truth, but `direnv` should be the normal way to enter the development environment.
-
-## Current boundaries
+## Boundaries
 
 - no GitHub workflow automation
 - no broad AI doc coverage enforcement

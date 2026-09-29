@@ -4,7 +4,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 
 ## Ownership
 
-- [README.md](README.md) owns prompt construction and the current family matrix.
+- [README.md](README.md) owns prompt construction.
 - This document owns shared mode docs and `houtu/`, `kuafu/`.
 - The Fu Xi child owns its prompts and local skills.
 - The active mode set is `kuafu`, `fuxi`, and `houtu`.
