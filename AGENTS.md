@@ -86,10 +86,11 @@ When the user requests a durable behavior change, record it here or in the relev
 - Keep global subagent defaults in root `subagents.json`: `agentGraphEnabled: true`, `maxConcurrentForeground: 4`, `reportUsage: true`, `showCost: true`, `graphRuntimeTrace: true`; `install.sh` symlinks it to `~/.pi/agent/subagents.json`. Enable workflows for all modes while preserving their delegation restrictions.
 - Install repository-owned `agent-graphs/` (the reusable agent-graph portfolio) through `install.sh`; correct global symlinks are idempotent, wrong or dangling symlinks may be replaced, and non-symlink conflicts must remain untouched.
 - Use [CONTEXT-MAP.md](CONTEXT-MAP.md) for terminology — the root [CONTEXT.md](CONTEXT.md) plus the [subagents context](extensions/subagents/CONTEXT.md) — and [README.md](README.md) for repository entrypoints.
+- Docs describe current state only: no dates, commit narratives, migration notes, implementation records, or retired docs (git keeps history). Code is the source of truth, so docs link to owning code instead of copying inventories. ADRs and `CHANGELOG.md` files are exempt; [docs/README.md](docs/README.md) owns the writing rules.
 
 ## Child DOX Index
 
-- [.agents/AGENTS.md](.agents/AGENTS.md) — repository-owned maintenance skills and references; `.pi/skills` links to this skill tree.
+- [.agents/AGENTS.md](.agents/AGENTS.md) — repository-owned maintenance skills and references.
 - [agents/AGENTS.md](agents/AGENTS.md) — Subagent definitions and delegation contracts.
 - [agent-graphs/AGENTS.md](agent-graphs/AGENTS.md) — the repo-committed reusable agent-graph portfolio, installed globally via `install.sh`.
 - [docs/AGENTS.md](docs/AGENTS.md) — human-facing specifications, decisions, guides, and reference material.
@@ -99,4 +100,4 @@ When the user requests a durable behavior change, record it here or in the relev
 - [test/AGENTS.md](test/AGENTS.md) — shared test harness, stubs, fixtures, and real-runtime integration tests.
 - [themes/AGENTS.md](themes/AGENTS.md) — local Pi theme assets.
 
-Root owns files outside these subtrees, including installation, environment and package manifests, root documentation, and `.pi/` configuration and local artifacts. The `.pi/skills` symlink uses the `.agents/AGENTS.md` chain.
+Root owns files outside these subtrees, including installation, environment and package manifests, root documentation, and `.pi/` configuration and local artifacts.

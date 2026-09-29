@@ -16,14 +16,13 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - You MUST preserve behavior across localized refactors and extension boundaries.
 - You MUST follow [event/RPC conventions](CONVENTIONS.md) for channel names, envelopes, and listener cleanup.
 - [Fast](fast/README.md) owns interactive command/status telemetry; [lib](lib/README.md#fast-request-helpers), [modes](modes/AGENTS.md), and [subagents](subagents/AGENTS.md) own recipes and policy contracts.
-- Blocking model-callable UI tools MUST emit `user-prompted` before their first prompt; durable waiting state MUST persist separately.
 - Vendored changes MUST preserve provenance and LICENSE; local deltas belong with the owning extension's documentation.
+- Extension docs MUST follow the [README standard](../docs/specs/extensions.md): current state only, linking to registration code instead of copying inventories. `## Local Tweaks` sections list current upstream divergences, not change history.
 - `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display.
 
 ## Work Guidance
 
 - Extension implementation work MUST start with the installed [pi-extensions router](../.agents/skills/pi-extensions/SKILL.md).
-- Vendoring work SHOULD use [pi-extension-vendoring](../.agents/skills/pi-extension-vendoring/SKILL.md).
 - Presentation work SHOULD use [panda-harness-tui-standard](../.agents/skills/panda-harness-tui-standard/SKILL.md).
 
 ## Verification
