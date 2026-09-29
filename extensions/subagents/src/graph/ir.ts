@@ -10,8 +10,6 @@
  * with declarative {@link Condition}s on edges, and every value that crosses
  * between nodes is a {@link ValueRef}. That is what lets the whole graph be
  * validated before anything runs and rendered as a graph while it runs.
- *
- * See docs/ideas/agent-graph-design-v2.md §1.2–§1.8.
  */
 
 import type { NodeInstance } from "./graph-instance-id.js";
