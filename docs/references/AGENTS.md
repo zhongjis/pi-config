@@ -10,7 +10,7 @@ Archived external evidence and generated reference snapshots for documentation.
 ## Local Contracts
 
 - External and generated evidence supports claims; it is not execution policy.
-- Generated archives must record source provenance and instructions for refreshing and verifying them. Consult the owning generation scripts before using an archive.
+- Generated archives must record source provenance and instructions for refreshing and verifying them.
 
 ## Work Guidance
 

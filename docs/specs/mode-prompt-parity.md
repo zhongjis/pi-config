@@ -8,7 +8,7 @@ Purpose: record accepted Oh My OpenAgent (omo) synchronization baselines and loc
 
 - Accepted omo release baseline: `v4.19.0`.
 - Upstream repo: `https://github.com/code-yeongyu/oh-my-openagent`.
-- Oh My OpenAgent reference archive target: `docs/references/oh-my-openagent/final-prompts/`. Generate it on demand with `pnpm sync:oh-my-openagent-prompts` and verify with `pnpm check:oh-my-openagent-prompts` before consultation. It may be absent from the current source tree; never hand-edit generated files. The generated `.omo-final-prompts.json` manifest records repository, source SHA, version, and frozen date. The generation script pins `5.0.0-beta.21`, a different baseline from the accepted `v4.19.0` parity work above.
+
 Required upstream paths (verified at commit `f7ec55526b2a3603665c5c0308b031a4f14900b0`):
 
 - `packages/omo-opencode/src/agents/sisyphus-agent-factory.ts`
@@ -16,11 +16,8 @@ Required upstream paths (verified at commit `f7ec55526b2a3603665c5c0308b031a4f14
 - `packages/omo-opencode/src/agents/atlas/agent.ts`
 - `packages/prompts-core/src/atlas-prompts.ts`
 
-Relevant generated final prompt baselines **when the archive has been generated and verified**:
+Local baselines:
 
-- Sisyphus: `docs/references/oh-my-openagent/final-prompts/sisyphus/*.md` (model-family final prompts generated from TypeScript builders).
-- Prometheus: `docs/references/oh-my-openagent/final-prompts/prometheus/default.md`.
-- Atlas: `docs/references/oh-my-openagent/final-prompts/atlas/{default,gpt,gemini,glm,kimi,kimi-k2-7,opus-4-7}.md`.
 - Fu Xi active `ulw-plan`: `modes/fuxi/skills/ulw-plan/{SKILL.md,agents/openai.yaml,references/adversarial-research.md,references/full-workflow.md,references/intent-clear.md,references/intent-unclear.md,references/review-lifecycle.md,scripts/scaffold-plan.mjs}`. It is based on the pinned `v4.19.0` upstream skill; staged conditional references and other differences are Pi runtime adaptations.
 
 ## Agent Mappings
@@ -70,7 +67,7 @@ Local invariants before edits:
 
 Evidence:
 
-- At the audited commit, `prometheus/system-prompt.ts` defined only `prometheusPromptVariants.default`; `getPrometheusPrompt()` ignored model and disabled tools. Generate and verify `docs/references/oh-my-openagent/final-prompts/prometheus/default.md` before consulting that prompt. The active Fu Xi adaptation at `modes/fuxi/skills/ulw-plan/` preserves the pinned upstream format and guidance while mapping artifacts and runtime mechanics to Pi.
+- At the audited commit, `prometheus/system-prompt.ts` defined only `prometheusPromptVariants.default`; `getPrometheusPrompt()` ignored model and disabled tools. The active Fu Xi adaptation at `modes/fuxi/skills/ulw-plan/` preserves the pinned upstream format and guidance while mapping artifacts and runtime mechanics to Pi.
 
 Local invariants before edits:
 
@@ -87,7 +84,7 @@ Local invariants before edits:
 Evidence:
 
 - `atlas/agent.ts` routes model variants through `getAtlasPromptSource()`, loads prompt bodies from `atlasPromptVariants`, and creates Atlas as master orchestrator.
-- Atlas prompts live under the generated archive target `docs/references/oh-my-openagent/final-prompts/atlas/`; generate and verify it before comparison. Local scope uses only `default.md`, `gpt.md`, `gemini.md`.
+- Local scope uses only the Atlas `default`, `gpt`, and `gemini` prompt variants.
 - Atlas prompts define conductor identity: delegate, coordinate, verify; never write code; complete every plan task; parallelize independent work; verify every delegation; update plan state only after evidence; run final verification wave.
 
 Local invariants before edits:
