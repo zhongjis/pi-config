@@ -41,11 +41,11 @@ function liveFixture(): PanelRun {
   add("research", { state: "progress", startedAt: 0, agentType: undefined, model: undefined, presentation: { kind: "bounded_feedback", name: "Research", iterations: [{ iteration: 1, decision: "continue" }] } });
   add("work-1", { label: "Gather evidence · iteration 1", agentType: undefined, model: undefined, presentation: { kind: "fanout", name: "Gather evidence", parentInstanceId: "research-uuid", iteration: 1 } });
   for (const i of [0, 1, 2, 3]) add(`work-1-${i + 1}`, { durationMs: 40_000, label: `Gather evidence · iteration 1 · item ${i + 1}`, presentation: { kind: "agent", name: `item ${i + 1}`, parentInstanceId: "work-1-uuid", iteration: 1, itemIndex: i } });
-  add("eval-1", { label: "Evaluate evidence · iteration 1", agentType: "direnjie", model: "GPT-5.6 Sol", durationMs: 30_000, presentation: { kind: "agent", name: "Evaluate evidence", parentInstanceId: "research-uuid", iteration: 1 } });
+  add("eval-1", { label: "Evaluate evidence · iteration 1", agentType: "direnjie", model: "GPT-6.1 Sol", durationMs: 30_000, presentation: { kind: "agent", name: "Evaluate evidence", parentInstanceId: "research-uuid", iteration: 1 } });
   add("work-2", { state: "progress", startedAt: 150_000, label: "Gather evidence · iteration 2", agentType: undefined, model: undefined, presentation: { kind: "fanout", name: "Gather evidence", parentInstanceId: "research-uuid", iteration: 2 } });
   add("work-2-1", { durationMs: 21_000, label: "Gather evidence · iteration 2 · item 1", presentation: { kind: "agent", name: "item 1", parentInstanceId: "work-2-uuid", iteration: 2, itemIndex: 0 } });
   add("work-2-2", { state: "progress", startedAt: 179_000, label: "Gather evidence · iteration 2 · item 2", presentation: { kind: "agent", name: "item 2", parentInstanceId: "work-2-uuid", iteration: 2, itemIndex: 1 } });
-  add("eval-2", { state: "start", queuedAt: 150_000, label: "Evaluate evidence · iteration 2", agentType: "direnjie", model: "GPT-5.6 Sol", presentation: { kind: "agent", name: "Evaluate evidence", parentInstanceId: "research-uuid", iteration: 2 } });
+  add("eval-2", { state: "start", queuedAt: 150_000, label: "Evaluate evidence · iteration 2", agentType: "direnjie", model: "GPT-6.1 Sol", presentation: { kind: "agent", name: "Evaluate evidence", parentInstanceId: "research-uuid", iteration: 2 } });
   add("synthesis", { state: "start", queuedAt: 0, agentType: "jintong", model: "GPT-5.6 Terra", deps: ["research"], presentation: { kind: "agent", name: "Synthesize context" } });
   return { id: "r1", name: "context-gather", status: "running", source: { task: { status: "running", startTime: 0 }, meta: { name: "context-gather", description: "Adaptively gather evidence with one gap-closing pass" }, progress } };
 }
@@ -66,7 +66,7 @@ const MOCK_72 = [
   "     │     ├─ ● running  Gather evidence               fanout · 2 agents",
   "     │     │  ├─ ✓ done     item 1              chengfeng · GPT-5.6 Luna",
   "   › │     │  └─ ● running  item 2 [21s]        chengfeng · GPT-5.6 Luna",
-  "     │     └─ ○ queued   Evaluate evidence [50s]  direnjie · GPT-5.6 Sol",
+  "     │     └─ ○ queued   Evaluate evidence [50s]  direnjie · GPT-6.1 Sol",
   "     └─ ○ queued   Synthesize context [3m20s]    jintong · GPT-5.6 Terra",
   "",
   "",

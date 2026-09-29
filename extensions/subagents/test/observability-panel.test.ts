@@ -36,7 +36,7 @@ function fixture(): PanelRun {
     for (let itemIndex = 0; itemIndex < (iteration === 1 ? 4 : 1); itemIndex++) {
       add(`${work}-${itemIndex}`, { label: `Gather evidence · iteration ${iteration} · item ${itemIndex + 1}`, agentType: "chengfeng", model: "GPT-5.6 Luna", recordId: `record-${iteration}-${itemIndex}`, nodeKey: "research", promptPreview: "retained prompt ".repeat(40), resultPreview: "retained outcome ".repeat(40), tokens: 45423, toolCalls: 11, durationMs: 45000, deps: [work], dependents: [`eval-${iteration}`], presentation: { kind: "agent", name: "not a structural label", parentInstanceId: `${work}-uuid`, iteration, itemIndex, role: "item" } });
     }
-    add(`eval-${iteration}`, { label: `Evaluate evidence · iteration ${iteration}`, agentType: "direnjie", model: "GPT-5.6 Sol", presentation: { kind: "agent", name: "Evaluate evidence", parentInstanceId: "research-uuid", iteration, role: "evaluator" } });
+    add(`eval-${iteration}`, { label: `Evaluate evidence · iteration ${iteration}`, agentType: "direnjie", model: "GPT-6.1 Sol", presentation: { kind: "agent", name: "Evaluate evidence", parentInstanceId: "research-uuid", iteration, role: "evaluator" } });
   }
   add("synthesis", { presentation: { kind: "agent", name: "Synthesize context" }, agentType: "jintong", model: "GPT-5.6 Terra", deps: ["research"] });
   return { id: "fixture", name: "context-gather", status: "completed", source: { progress, meta: { name: "context-gather", description: "Adaptively gather evidence with one gap-closing pass" }, task: { status: "completed", startTime: NOW - 160000, endTime: NOW } } };
