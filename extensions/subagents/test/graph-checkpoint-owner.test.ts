@@ -11,7 +11,8 @@ vi.mock("node:fs", async original => ({ ...await original<typeof import("node:fs
 let cwd: string | undefined;
 afterEach(() => { vi.restoreAllMocks(); if (cwd) fs.rmSync(cwd, { recursive: true, force: true }); });
 function fixture() {
-  cwd = fs.mkdtempSync(join(tmpdir(), "graph-lock-"));
+  // Checkpoint paths are canonical (realpath of cwd); a symlinked tmpdir (macOS /var) must not split them.
+  cwd = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), "graph-lock-")));
   const release = ownGraphRun(cwd, "agr_abcdef123456");
   expect(release.reclaimedDeadWriter).toBe(false);
   const path = join(graphRunsDir(cwd), "agr_abcdef123456.json.run.lock");
