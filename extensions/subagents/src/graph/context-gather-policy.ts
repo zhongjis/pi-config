@@ -29,8 +29,17 @@ export function validateContextInput(graph: AgentGraph, input: unknown): void {
 interface ContextOutput {
   readonly graph: AgentGraph;
   readonly input: unknown;
-  readonly stage: "plan" | "synthesize" | "evaluation";
+  readonly stage: "plan" | "synthesize" | "evaluation" | "work";
   readonly research?: unknown;
+  readonly plan?: unknown;
+  readonly item?: unknown;
+}
+
+function priorTaskIds(context: ContextOutput): Set<string> {
+  const used = new Set<string>();
+  if (record(context.plan)) for (const task of array(object(context.plan).tasks)) used.add(id(object(task).taskId));
+  if (record(context.research)) for (const iteration of array(object(context.research).iterations)) for (const task of array(object(iteration).tasks)) used.add(id(object(task).taskId));
+  return used;
 }
 
 /** Relational checks supplement JSON Schema at the existing repair seam; never rewrite evidence. */
@@ -39,10 +48,30 @@ export function checkContextOutput(context: ContextOutput, value: unknown): true
   try {
     const requested = coverage(context.input);
     const output = object(value);
+    if (context.stage === "work") {
+      const item = object(context.item);
+      const taskId = id(item.taskId);
+      const allowed = new Set(array(item.criterionIds).map(criterion => id(criterion)));
+      for (const claim of array(output.claims)) {
+        const row = object(claim);
+        const claimId = id(row.claimId);
+        if (!claimId.startsWith(`${taskId}-`)) throw new TypeError(`Claim claimId must start with taskId prefix ${taskId}-: ${claimId}`);
+        for (const criterion of array(row.criterionIds)) {
+          const key = id(criterion);
+          if (!allowed.has(key)) throw new TypeError(`Claim criterionId outside task: ${key}`);
+        }
+      }
+      return true;
+    }
     if (context.stage !== "synthesize") {
       const covered = new Set<string>();
+      const seen = new Set<string>();
+      const used = context.stage === "evaluation" ? priorTaskIds(context) : new Set<string>();
       for (const task of array(output.tasks)) {
         const item = object(context.stage === "evaluation" ? object(task).item : task);
+        const taskId = id(item.taskId);
+        if (seen.has(taskId) || used.has(taskId)) throw new TypeError(`Duplicate taskId: ${taskId}`);
+        seen.add(taskId);
         for (const criterion of array(item.criterionIds)) {
           const key = id(criterion);
           if (!requested.has(key)) throw new TypeError(`Task criterionId outside required coverage: ${key}`);
@@ -97,12 +126,21 @@ export function validateContextRestore(graph: AgentGraph, input: unknown, state:
   if (graph.semanticPolicy !== "context-gather-v1") return;
   validateContextInput(graph, input);
   const feedback = state.runtime?.feedback?.research;
-  const evaluators = new Set([...(feedback?.iterations.map(row => row.evaluator) ?? []), ...(feedback?.active ? [feedback.active.evaluator] : [])]);
+  const rounds = [...(feedback?.iterations ?? []), ...(feedback?.active ? [feedback.active] : [])];
+  const evaluators = new Set(rounds.map(row => row.evaluator));
+  const workItems = new Map<string, unknown>();
+  for (const row of rounds) {
+    for (const child of state.collections?.[row.work] ?? []) workItems.set(child.nodeId, child.item);
+    row.tasks.forEach((task, index) => { const nodeId = `${row.work}:item:${index}`; if (!workItems.has(nodeId)) workItems.set(nodeId, task); });
+  }
   for (const [key, run] of Object.entries(state.nodes)) {
     if (run.status !== "completed") continue;
-    const stage = key === "plan" || key === "synthesize" ? key : evaluators.has(key) ? "evaluation" : undefined;
+    const item = workItems.get(key);
+    const stage = key === "plan" || key === "synthesize" ? key : evaluators.has(key) ? "evaluation" : item !== undefined ? "work" : undefined;
     if (!stage) continue;
-    const check = checkContextOutput({ graph, input, stage, research: state.nodes.research?.output }, run.output);
+    const index = feedback?.iterations.findIndex(row => row.evaluator === key) ?? -1;
+    const prior = stage !== "evaluation" || !feedback ? [] : feedback.active?.evaluator === key ? rounds : index >= 0 ? feedback.iterations.slice(0, index + 1) : rounds;
+    const check = checkContextOutput({ graph, input, stage, item, plan: state.nodes.plan?.output, research: stage === "synthesize" ? state.nodes.research?.output : { iterations: prior } }, run.output);
     if (check !== true) throw new TypeError(`Invalid restored semantic output: ${check}`);
   }
 }

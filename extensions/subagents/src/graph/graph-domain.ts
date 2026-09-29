@@ -597,12 +597,17 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
         catch (error) { if (error instanceof Error) return error.message; throw error; }
       } };
     }
-    const stage = id === "plan" || id === "synthesize" ? id : feedbackStates.research?.active?.evaluator === id ? "evaluation" : undefined;
+    const feedback = feedbackStates.research;
+    const item = feedback && [...feedback.iterations, ...(feedback.active ? [feedback.active] : [])].flatMap(row => projection.collections.get(row.work) ?? []).find(child => child.nodeId === id)?.item;
+    const stage = id === "plan" || id === "synthesize" ? id : feedback?.active?.evaluator === id ? "evaluation" : item !== undefined ? "work" : undefined;
     if (graph.semanticPolicy && stage && exec.schema) {
       const schema = exec.schema;
       exec.schema = { ...schema, check: value => {
         const valid = schema.check(value);
-        return valid === true ? checkContextOutput({ graph, input, stage, research: projection.nodes.get("research")?.output }, value) : valid;
+        if (valid !== true) return valid;
+        const current = feedbackStates.research;
+        const prior = [...(current?.iterations ?? []), ...(current?.active ? [current.active] : [])];
+        return checkContextOutput({ graph, input, stage, item, plan: projection.nodes.get("plan")?.output, research: stage === "synthesize" ? projection.nodes.get("research")?.output : { iterations: prior } }, value);
       } };
     }
     return { kind: "agent", id, input: { receipt, host: options.host, authorize: () => options.authorizeAgent?.(node.agent), node: exec } };

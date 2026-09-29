@@ -519,7 +519,8 @@ describe("context-gather semantic policy", () => {
   });
 
   it("rejects ambiguous raw claim IDs across results", async () => {
-    const { result } = await runCase({ plan: { tasks: [INITIAL_TASK, { ...GAP_TASK, taskId: "t2" }] } });
+    const claims = [PROJECT_EVIDENCE.claims[0], { ...PROJECT_EVIDENCE.claims[0], claim: "A second distinct claim with the same id." }];
+    const { result } = await runCase({ research: { ...PROJECT_EVIDENCE, claims } });
     expect(result.nodes.synthesize.status).toBe("failed");
     expect(result.nodes.synthesize.error).toContain("Ambiguous research claimId: t1-c1");
   });
@@ -531,6 +532,47 @@ describe("context-gather semantic policy", () => {
     expect(result.feedback?.research?.iterations[0]?.results.every(row => row.status === "completed")).toBe(true);
     expect(result.nodes.synthesize.status).toBe("failed");
     expect(result.nodes.synthesize.error).toContain("Evidence must copy a unique completed research claim exactly");
+  });
+
+  it("accepts prefixed claims and distinct task ids", async () => {
+    const { result } = await runCase();
+    expect(result.status).toBe("completed");
+    expect(result.nodes["research:iteration:1:work:item:0"]?.status).toBe("completed");
+  });
+
+  it("rejects a worker claimId outside its task prefix", async () => {
+    const { result, calls } = await runCase({ research: { ...PROJECT_EVIDENCE, claims: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "t2-c1" })) } });
+    const worker = result.nodes["research:iteration:1:work:item:0"];
+    expect(worker?.status).toBe("failed");
+    expect(worker?.error).toContain("context-gather-v1:");
+    expect(worker?.error).toContain("t2-c1");
+    expect(calls.filter(agent => agent === "chengfeng")).toHaveLength(1);
+  });
+
+  it("rejects a worker claim criterionId outside its task", async () => {
+    const { result, calls } = await runCase({ research: { ...PROJECT_EVIDENCE, claims: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, criterionIds: ["other"] })) } });
+    const worker = result.nodes["research:iteration:1:work:item:0"];
+    expect(worker?.status).toBe("failed");
+    expect(worker?.error).toContain("context-gather-v1:");
+    expect(worker?.error).toContain("other");
+    expect(calls.filter(agent => agent === "chengfeng")).toHaveLength(1);
+  });
+
+  it("rejects duplicate plan taskIds", async () => {
+    const { result, calls } = await runCase({ plan: { tasks: [INITIAL_TASK, { ...INITIAL_TASK, question: "Inspect a second configuration path.", purpose: "Keep the duplicate id distinct in the schema." }] } });
+    expect(result.nodes.plan.status).toBe("failed");
+    expect(result.nodes.plan.error).toContain("context-gather-v1:");
+    expect(result.nodes.plan.error).toContain("Duplicate taskId: t1");
+    expect(calls).toEqual(["xuannv", "xuannv"]);
+  });
+
+  it("rejects an evaluator gap taskId that reuses a plan taskId", async () => {
+    const { result, calls } = await runCase({ evaluation: { decision: "continue", gaps: [{ id: "runtime", description: "Runtime coverage lacks direct evidence." }], tasks: [{ gapId: "runtime", item: { ...GAP_TASK, taskId: "t1" } }] } });
+    expect(calls.filter(agent => agent === "direnjie")).toHaveLength(2);
+    expect(calls.filter(agent => agent === "chengfeng")).toHaveLength(1);
+    expect(result.feedback?.research?.reason).toBe("evaluator failure");
+    expect(result.nodes["research:iteration:1:evaluator"]?.error).toContain("context-gather-v1:");
+    expect(result.nodes["research:iteration:1:evaluator"]?.error).toContain("Duplicate taskId: t1");
   });
 });
 
@@ -558,12 +600,25 @@ it("restores policy checkpoints and rejects forged continuation and final eviden
   const restored = await runGraph(saved.graph, INPUT, { restore: saved.state, onCheckpoint: () => {}, host: { spawnAgent: async () => { dispatches++; return { ok: false }; } } });
   expect(restored.outputs.evidence).toEqual(PROJECT_EVIDENCE.claims);
   expect(dispatches).toBe(0);
-  for (const kind of ["continuation", "synthesis"]) {
+  for (const kind of ["continuation", "synthesis", "work"]) {
     const state = structuredClone(saved.state);
     if (kind === "continuation") {
       const evaluator = state.runtime?.feedback?.research.iterations[0]?.evaluator;
       if (!evaluator) throw new Error("Missing evaluator");
       state.nodes[evaluator].output = { ...followup, tasks: [{ gapId: "runtime", item: { ...GAP_TASK, criterionIds: ["outside"] } }] };
+    } else if (kind === "work") {
+      const forged = { ...PROJECT_EVIDENCE, claims: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, claimId: "t2-c1" })) };
+      const feedback = state.runtime?.feedback?.research;
+      if (!feedback?.terminal) throw new Error("Missing feedback");
+      state.nodes["research:iteration:1:work:item:0"].output = forged;
+      const fanout = state.nodes["research:iteration:1:work"].output as { results: { output?: unknown }[] };
+      fanout.results[0].output = forged;
+      const forgedResults = <T extends { results: readonly { output?: unknown }[] }>(row: T): T => ({ ...row, results: row.results.map((result, index) => index === 0 ? { ...result, output: forged } : result) });
+      feedback.iterations[0] = forgedResults(feedback.iterations[0]);
+      feedback.terminal = { ...feedback.terminal, iterations: feedback.terminal.iterations.map((row, index) => index === 0 ? forgedResults(row) : row) };
+      const research = state.nodes.research.output as { iterations: { results: { output?: unknown }[] }[] };
+      research.iterations[0].results[0].output = forged;
+      state.nodes.synthesize.output = { ...COMPLETE_SYNTHESIS, evidence: forged.claims, verifiedCoverage: COMPLETE_SYNTHESIS.verifiedCoverage.map(row => ({ ...row, claimIds: ["t2-c1"] })) };
     } else {
       state.nodes.synthesize.output = { ...COMPLETE_SYNTHESIS, evidence: PROJECT_EVIDENCE.claims.map(claim => ({ ...claim, confidence: "inferred" })) };
     }
