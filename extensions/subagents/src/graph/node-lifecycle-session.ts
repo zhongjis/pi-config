@@ -36,6 +36,8 @@ export interface NodeSession {
   requestSequence: number;
   pending?: NodeRequest;
   continuation?: "spawn" | "gate" | "human";
+  // ponytail: actor-local; a restored execution has no remembered failure and uses the original prompt.
+  repairError?: string;
   undecidedReason?: string;
   cancellation?: { readonly disposition: CancellationReason; readonly reason: unknown };
   cancelAcknowledged: boolean;
@@ -83,7 +85,7 @@ export function acceptAck(context: NodeSession, ack: NodeAck): void {
   context.receipt = admissionReceipt(ack.receipt);
   context.pending = undefined;
   switch (ack.operation.kind) {
-    case "repair": context.continuation = "spawn"; context.executed = false; break;
+    case "repair": context.repairError = context.result.error; context.continuation = "spawn"; context.executed = false; break;
     case "gate": context.continuation = "gate"; break;
     case "human": context.continuation = "human"; break;
     case "cancel": context.cancelAcknowledged = true; context.controller.abort(context.cancellation?.reason); break;

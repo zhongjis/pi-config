@@ -127,3 +127,58 @@ it("repairs a failed gate with a new spawn before running the next gate", async 
   expect(order).toEqual(["spawn", "gate", "spawn", "gate"]);
   expect(run.events.filter(event => event.type === "NODE.REQUEST").map(event => event.operation.kind)).toEqual(["gate", "repair", "gate", "settle"]);
 });
+
+it("keeps attempt 1 identical and appends the schema failure to the repaired prompt", async () => {
+  const prompts: string[] = [];
+  const input = agentInput({ host: { spawnAgent: async request => { prompts.push(request.prompt); return { ok: true, output: prompts.length === 1 ? '{"approved":"yes"}' : '{"approved":true}' }; } },
+    node: { ...agentInput().node, schema: schema(), maxAttempts: 2 } });
+  const actor = machine(input); actor.admit();
+  const repair = await actor.next("NODE.REQUEST");
+  expect(prompts).toEqual(["fixture"]);
+  const error = repair.operation.kind === "repair" ? repair.operation.result.error : undefined;
+  expect(error).toEqual(expect.stringContaining("did not match the requested schema"));
+  actor.ack(repair, repaired(input.receipt));
+  await actor.next("NODE.REQUEST", 1);
+  expect(prompts[1]).toBe(`fixture\n\nPrevious attempt 1 failed:\n${error}\nReturn a corrected result.`);
+  actor.parent.stop();
+});
+
+it("includes the failing gate stderr tail in the repaired prompt", async () => {
+  const stderr = "fatal: validation gate rejected the diff";
+  const output = `${"stdout ".repeat(500)}${stderr}`;
+  const prompts: string[] = [];
+  let gates = 0;
+  const input = agentInput({ host: {
+    spawnAgent: async request => { prompts.push(request.prompt); return { ok: true }; },
+    runGate: async () => ({ ok: ++gates > 1, output: gates === 1 ? output : "" }),
+  }, node: { ...agentInput().node, gate: "check", maxAttempts: 2 } });
+  await terminal(input);
+  expect(prompts[0]).toBe("fixture");
+  expect(prompts[1]).toContain("Previous attempt 1 failed:");
+  expect(prompts[1]).toContain(stderr);
+  expect(prompts[1]).toContain("Return a corrected result.");
+  expect(prompts[1]).not.toContain(output);
+});
+
+it("bounds a very long repair error to its tail and numbers later attempts", async () => {
+  const marker = "UNIQUE_TAIL";
+  const error = `${"x".repeat(4000)}${marker}`;
+  const prompts: string[] = [];
+  const input = agentInput({ host: { spawnAgent: async request => { prompts.push(request.prompt); return { ok: false, error }; } },
+    node: { ...agentInput().node, maxAttempts: 3 } });
+  await terminal(input);
+  const tail = error.slice(-2000);
+  expect(prompts[0]).toBe("fixture");
+  expect(prompts[1]).toBe(`fixture\n\nPrevious attempt 1 failed:\n${tail}\nReturn a corrected result.`);
+  expect(prompts[2]).toBe(`fixture\n\nPrevious attempt 2 failed:\n${tail}\nReturn a corrected result.`);
+  expect(tail).toHaveLength(2000);
+  expect(tail.endsWith(marker)).toBe(true);
+});
+
+it("uses the original prompt when a restored attempt has no remembered failure", async () => {
+  const prompts: string[] = [];
+  const input = agentInput({ host: { spawnAgent: async request => { prompts.push(request.prompt); return { ok: true }; } },
+    node: { ...agentInput().node, maxAttempts: 3 } });
+  await terminal({ ...input, receipt: { ...input.receipt, executionSequence: 2 } });
+  expect(prompts).toEqual(["fixture"]);
+});

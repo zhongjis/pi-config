@@ -13,6 +13,14 @@ export interface NodeEffectResult {
   readonly undecidedReason?: string;
 }
 const aborted = (): NodeSpawnResult => ({ ok: false, skipped: true, error: "Aborted." });
+const REPAIR_TAIL = 2000;
+function spawnPrompt(context: NodeSession): string {
+  const error = context.repairError;
+  const attempt = context.receipt.executionSequence;
+  if (context.input.node.kind !== "agent" || attempt <= 1 || !error) return context.input.node.prompt;
+  const tail = error.length > REPAIR_TAIL ? error.slice(-REPAIR_TAIL) : error;
+  return `${context.input.node.prompt}\n\nPrevious attempt ${attempt - 1} failed:\n${tail}\nReturn a corrected result.`;
+}
 
 /** Exactly one host spawn. Schema, retries, and checkpoints belong to the machine. */
 export const spawnNodeEffect = fromPromise<NodeEffectResult, NodeEffectInput>(async ({ input, signal }) => {
@@ -28,7 +36,7 @@ export const spawnNodeEffect = fromPromise<NodeEffectResult, NodeEffectInput>(as
   if (context.cancellation || context.failure || abort.aborted) return { result: aborted(), executed: false };
   let active = true;
   try {
-    const result = await host.spawnAgent({ nodeId: node.nodeId, prompt: node.prompt, agentType: node.agentType,
+    const result = await host.spawnAgent({ nodeId: node.nodeId, prompt: spawnPrompt(context), agentType: node.agentType,
       attempt: context.receipt.executionSequence, correlation: identity.correlation, ...(node.kind === "decision" ? { schema: compiledAgentDecisionSchema } : node.schema ? { schema: node.schema } : {}),
       onResolved: info => { if (active && !abort.aborted) input.resolved({ type: "NODE.RESOLVED", ...identity, info }); },
     }, abort);
