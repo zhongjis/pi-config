@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative } from "node:path";
 import { outputFilePath } from "../output-file.js";
 
 export interface HistoricalNodeDetail {
@@ -38,7 +39,9 @@ export function readGraphRunNodeDetail(
     if (!isAbsolute(scope.cwd) || !/^[A-Za-z0-9_-]+$/.test(scope.sessionId)) return undefined;
     const alias = graphRunNodeArtifactId(runId, index);
     const path = outputFilePath(scope.cwd, alias, scope.sessionId);
-    if (realpathSync(path) !== resolve(path)) return undefined;
+    // The OS temp root may itself be a symlink (macOS /var -> /private/var); nothing below it may be.
+    const root = tmpdir();
+    if (realpathSync(path) !== join(realpathSync(root), relative(root, path))) return undefined;
     const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     let raw: string;
     try {

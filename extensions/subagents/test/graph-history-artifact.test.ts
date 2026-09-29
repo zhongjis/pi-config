@@ -1,6 +1,6 @@
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
-import { appendFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -95,6 +95,17 @@ describe("historical node artifacts", () => {
     const detail = f.read();
     expect(detail?.outcome?.length).toBeLessThan(17000);
     expect(detail?.outcome).toContain("truncated");
+  });
+
+  it("rejects artifacts reached through a symlink inside the session artifact area", () => {
+    const f = fixture();
+    f.entry("assistant", [{ type: "text", text: "FINAL_FIXTURE" }]);
+    expect(f.read()).toEqual({ prompt: "PROMPT_FIXTURE", outcome: "FINAL_FIXTURE" });
+    const linked = dirname(outputFilePath(f.cwd, f.alias, "linked"));
+    mkdirSync(dirname(linked), { recursive: true });
+    dirs.push(dirname(linked));
+    symlinkSync(dirname(f.path), linked);
+    expect(readGraphRunNodeDetail({ cwd: f.cwd, sessionId: "linked" }, f.runId, 7)).toBeUndefined();
   });
 
   it("resolves only selected history detail after metadata reload, outside the centered source", () => {
