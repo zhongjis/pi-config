@@ -1,7 +1,7 @@
 {
   "name": "@panda/pi-subagents",
-  "version": "0.14.3",
-  "description": "A pi extension extension that brings smart Claude Code-style autonomous sub-agents to pi.",
+  "version": "1.0.0",
+  "description": "A pi extension that brings smart Claude Code-style autonomous sub-agents to pi.",
   "author": "tintinweb",
   "license": "MIT",
   "keywords": [
@@ -33,8 +33,6 @@
     }
   },
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "vitest run e2e --reporter=verbose",
