@@ -107,7 +107,7 @@ describe("agent routing contract", () => {
     const cangjie = loaded.result.agents.get("cangjie");
 
     expect(cangjie, "Cangjie agent must be loadable from agents/cangjie.md").toBeDefined();
-    expect(cangjie?.model).toBe("github-copilot/claude-opus-5.5:low,anthropic/claude-sonnet-4-6:max");
+    expect(cangjie?.model).toBe("github-copilot/claude-opus-5.5:low,cliproxyapi/gpt-6-sol:high");
     expect(cangjie?.description.toLowerCase()).toContain("standalone human-facing");
     expect(cangjie?.builtinToolNames).toEqual(["read", "bash", "edit", "write"]);
     expect(cangjie?.extensionToolNames).toEqual(["codegraph_*", "lsp"]);
