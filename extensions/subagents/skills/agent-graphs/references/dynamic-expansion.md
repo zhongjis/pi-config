@@ -15,6 +15,7 @@ A fanout node has this contract:
 ```ts
 interface FanoutNode {
   type: "fanout";
+  name?: string;
   items: ValueRef;
   itemSchema: JsonSchema; // object root
   dispatch: {
@@ -106,7 +107,7 @@ Phase rounds and execution attempts are independent. A retry or loop rerun incre
 
 ## Bounded evaluation loops
 
-Bound adaptive work with explicit fanout/evaluator pairs rather than a back-edge into one fanout:
+Version 1 legacy. For version 2, prefer `bounded_feedback`; read [Bounded Feedback](bounded-feedback.md). In a version 1 graph, bound adaptive work with explicit fanout/evaluator pairs rather than a back-edge into one fanout:
 
 ```jsonc
 "edges": [
