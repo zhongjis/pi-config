@@ -6,14 +6,13 @@ The repo-committed reusable agent-graph portfolio: saved `AgentGraph`s the `agen
 
 - Owns `context-gather.graph.json` and `deep-research.graph.json` at the directory root.
 - The `agent_graph` runtime and its contracts live in [../extensions/subagents](../extensions/subagents/AGENTS.md).
-- The portfolio spec is [../docs/specs/agent-graph-reusable-workflows.md](../docs/specs/agent-graph-reusable-workflows.md).
 
 ## Local Contracts
 
 - Saved graphs are JSON or YAML `AgentGraph`s resolved by filename (`context-gather`, `deep-research`); a `/` in a graph name maps to a subdirectory. Within one resolution root, matching `.graph.json` and `.graph.yaml` files are ambiguous.
 - Every graph MUST pass `validateGraph`; a prompt `${placeholder}` MUST be wired in the node's `input`, except a bounded-feedback evaluator's runtime-reserved `${feedback}`.
 - Nodes select work by `agent`; model and thinking come only from that agent's frontmatter chain. Saved graphs MUST NOT set node model, effort, or thinking.
-- `install.sh` symlinks this directory to `~/.pi/agent/agent-graphs` for global resolution; the runtime also resolves `<cwd>/agent-graphs` and `<cwd>/.pi/agent-graphs`, highest priority first.
+- `install.sh` symlinks this directory to `~/.pi/agent/agent-graphs` for global resolution. Resolution roots, highest priority first: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, then `~/.pi/agent/agent-graphs`.
 - Saved-graph outcome schemas MUST match the runtime envelope exactly: `succeeded` omits `reason`; `partial`/`failed` require a nonblank `reason`. Any other envelope is silently ignored and the run shows `Completed`.
 - `context-gather` accepts `{ request, requiredCoverage }`, plans 1–6 non-overlapping atomic-evidence tasks, and may run one evaluator-authored gap-closing iteration before synthesis. Graph-owned bounds allow at most 2 iterations, 6 tasks per iteration, and 9 total tasks. Its evaluator judges state and transition: continue only for one named material gap with distinct source/access, expected information, and no repeated or broader work; otherwise preserve partial gaps. Synthesis MUST declare partial when material required coverage remains missing.
 - `context-gather` hands identity to workers through items: plan tasks use `taskId` `t1`–`t6` and evaluator gap tasks `g1`–`g6` (collision-free only while `maxIterations` ≤ 2); worker `claimId`s follow `<taskId>-c<n>`. Schema patterns enforce the format; `context-gather-v1` enforces the rest: each claim's `claimId` starts with `<item.taskId>-` and its `criterionIds` are a subset of the item's, plan `taskId`s are unique, and gap `taskId`s are unique and disjoint from plan and earlier/current iteration IDs. Workers do not echo `source`; the runtime-carried item identifies it.
