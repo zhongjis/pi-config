@@ -1,13 +1,14 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
 
 const ANSI_ESCAPE_REGEX = /\u001B\[[0-9;]*m/g;
 
-// Status keys to hide from line 3 entirely.
-// - thinking-steps: duplicates thinking level already shown on line 2 model segment
+// Status keys to hide from the status line entirely.
+// - thinking-steps: duplicates thinking level already shown in the stats-line model segment
 // - caveman: noise; user opts in via /caveman
 const HIDDEN_STATUS_KEYS = new Set(["thinking-steps", "caveman"]);
 
@@ -169,7 +170,7 @@ function hasQueueSteerPendingWork(): boolean {
   }
 }
 
-// Style one infrastructure status entry for the right of line 3. LSP (from the lsp
+// Style one infrastructure status entry for the right of the status line. LSP (from the lsp
 // extension) is special-cased: its status text is "LSP N/M running" only when N servers are
 // active, and "LSP 0/M" / "LSP none" / "LSP disabled" otherwise. We show it only when at
 // least one server is active, drop the trailing "running" phrase, and convey the active
@@ -213,18 +214,30 @@ function getCostSegment(
 }
 
 function getPathLine(
-  ctx: Pick<ExtensionContext, "cwd" | "sessionManager">,
+  cwd: string,
+  repoName: string | null,
   branch: string | null,
   theme: ExtensionContext["ui"]["theme"],
 ): string {
-  const sep = theme.fg("dim", " \u00b7 ");
-  const parts = [theme.fg("muted", branch ? basename(ctx.cwd) : shortenPath(ctx.cwd))];
+  const parts = [theme.fg("muted", repoName ?? (branch ? basename(cwd) : shortenPath(cwd)))];
   if (branch) parts.push(theme.fg("accent", branch));
+  return parts.join(theme.fg("dim", " \u00b7 "));
+}
 
-  const sessionName = ctx.sessionManager.getSessionName();
-  if (sessionName) parts.push(theme.fg("muted", sessionName));
-
-  return parts.join(sep);
+// Repo name from git's common dir, so linked worktrees show the main repo, not the worktree dir.
+function getRepoName(cwd: string): string | null {
+  try {
+    const common = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
+    }).trim();
+    const name = basename(common) === ".git" ? basename(dirname(common)) : basename(common).replace(/\.git$/, "");
+    return name || null;
+  } catch {
+    return null;
+  }
 }
 
 function getModelSegment(
@@ -238,7 +251,7 @@ function getModelSegment(
   return `${name} · ${thinkingLevel}`;
 }
 
-// Labeled token row: "in 10 · out 2.7k · cache 166k/87k"
+// Labeled token row: "in 10 · out 2.7k · cache 92%"
 function formatTokenRow(
   totals: { input: number; output: number; cacheRead: number; cacheWrite: number },
   theme: ExtensionContext["ui"]["theme"],
@@ -251,9 +264,11 @@ function formatTokenRow(
   if (totals.output) {
     segs.push(theme.fg("dim", "out ") + theme.fg("muted", formatTokens(totals.output)));
   }
-  if (totals.cacheRead || totals.cacheWrite) {
-    const cacheVal = `${formatTokens(totals.cacheRead)}/${formatTokens(totals.cacheWrite)}`;
-    segs.push(theme.fg("dim", "cache ") + theme.fg("muted", cacheVal));
+  // Cache hit rate: input excludes cached tokens, so the full prompt is input + read + write.
+  const prompt = totals.input + totals.cacheRead + totals.cacheWrite;
+  if (totals.cacheRead && prompt) {
+    const pct = Math.round((totals.cacheRead / prompt) * 100);
+    segs.push(theme.fg("dim", "cache ") + theme.fg("muted", `${pct}%`));
   }
   return segs.join(sep);
 }
@@ -324,6 +339,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
   function installFooter(ctx: ExtensionContext): void {
     currentCtx = ctx;
     if (!ctx.hasUI) return;
+    const repoName = getRepoName(ctx.cwd);
 
     ctx.ui.setFooter((tui, theme, footerData) => {
       const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
@@ -336,7 +352,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
         render(width: number): string[] {
           const branch = footerData.getGitBranch();
           const pathLine = truncateToWidth(
-            getPathLine(ctx, branch, theme),
+            getPathLine(ctx.cwd, repoName, branch, theme),
             width,
             theme.fg("dim", "..."),
           );
@@ -373,6 +389,10 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           const tokenRight = formatTokenRow(totals, theme);
 
           const lines = [pathLine];
+          const sessionName = ctx.sessionManager.getSessionName();
+          if (sessionName) {
+            lines.push(truncateToWidth(theme.fg("accent", sessionName), width, theme.fg("dim", "...")));
+          }
           const availableLeft = tokenRight
             ? Math.max(10, width - visibleWidth(tokenRight) - 2)
             : width;
@@ -393,12 +413,12 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
             lines.push(statsLeft);
           }
 
-          // Line 3: extension statuses, with hidden keys filtered out.
+          // Status line: extension statuses, with hidden keys filtered out.
           const statusEntries = Array.from(footerData.getExtensionStatuses().entries())
             .filter(([key]) => !HIDDEN_STATUS_KEYS.has(key))
             .sort(([a], [b]) => a.localeCompare(b));
 
-          // Infrastructure statuses (MCP, LSP, etc.) go far-right on line 3.
+          // Infrastructure statuses (MCP, LSP, etc.) go far-right on the status line.
           const infraPattern = /^(MCP|LSP)\b/;
           const infraEntries = statusEntries.filter(([, text]) =>
             infraPattern.test(stripAnsi(sanitizeStatusText(text))),

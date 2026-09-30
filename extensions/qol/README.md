@@ -8,10 +8,11 @@ The startup header shows a π block mark, Pi version, model, working directory, 
 
 ## Footer
 
-The footer uses up to three compact lines for:
+The footer uses up to four compact lines for:
 
-- project path, git branch, and session name;
-- context usage, model/thinking level, latest token rate, cost, and token totals;
+- repository name and git branch (linked worktrees show the main repository name), or the working directory outside git;
+- session name, when set;
+- context usage, model/thinking level, latest token rate, cost, token totals, and session cache hit rate;
 - extension statuses, goal state, and active infrastructure status such as LSP.
 
 QoL owns the single footer slot while preserving the existing bridge contracts:
