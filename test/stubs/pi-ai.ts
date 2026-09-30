@@ -24,13 +24,6 @@ export function StringEnum(values: string[], options: Record<string, unknown> = 
   };
 }
 
-export function createAssistantMessageEventStream() {
-  return {
-    on() {},
-    async *[Symbol.asyncIterator]() {}
-  };
-}
-
 export async function streamSimple() {
   return {
     content: [],

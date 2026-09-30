@@ -11,7 +11,7 @@ Provide shared extension utilities and integration primitives.
 
 - `initLib(pi)` wires debug support idempotently across callers.
 - The default discovery entrypoint MUST remain a no-op; consumers initialize explicitly.
-- Utilities include clipboard I/O, logging, caches, and stream wrappers; not all helpers are pure.
+- Utilities include clipboard I/O and logging; not all helpers are pure.
 - RPC requests MUST carry `requestId`; replies use `{ success: true, data? }` or `{ success: false, error: string }`.
 - Temporary RPC reply listeners MUST unsubscribe on settlement or timeout.
 - `runtime-model-fallback.ts` coordinates quota/rate-limit/access-denied (403) recovery only at native `agent_settled`; callers own chain and thinking/Fast policy. Preserve transcript, use hidden continuation, advance authenticated identities without cycling, and stop on abort, overflow, other errors, absent/exhausted chains.
