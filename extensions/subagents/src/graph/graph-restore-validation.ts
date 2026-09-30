@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { validateContextRestore } from "./context-gather-policy.js";
+import { validateDeepResearchRestore } from "./deep-research-policy.js";
 import { canonical, decision, decisionSchema, type FeedbackIteration, type FeedbackState, feedbackBudgetBounds, feedbackContinuation } from "./bounded-feedback.js";
 import { prepareFanout } from "./fanout.js";
 import { consumedExecutions } from "./graph-execution.js";
@@ -21,6 +22,7 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
   }
   validateSchedulerState(state, graph, materializedPrompts);
   validateContextRestore(graph, input, state);
+  validateDeepResearchRestore(graph, state);
   const runtime = state.runtime;
   if (!runtime) throw new TypeError("Missing v2 runtime state");
   validateManifest(runtime, graph);

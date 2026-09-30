@@ -430,12 +430,19 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
   if (graph.id !== undefined && !isNonEmptyString(graph.id)) errors.push("id: must be a non-empty string when present");
   if (graph.name !== undefined && typeof graph.name !== "string") errors.push("name: must be a string when present");
   if (graph.description !== undefined && typeof graph.description !== "string") errors.push("description: must be a string when present");
-  if (graph.semanticPolicy !== undefined && graph.semanticPolicy !== "context-gather-v1") errors.push("semanticPolicy: unsupported policy");
+  if (graph.semanticPolicy !== undefined && graph.semanticPolicy !== "context-gather-v1" && graph.semanticPolicy !== "deep-research-v1") errors.push("semanticPolicy: unsupported policy");
   if (graph.semanticPolicy === "context-gather-v1") {
     const nodes = isPlainObject(graph.nodes) ? graph.nodes : {};
     if (!isPlainObject(nodes.research) || nodes.research.type !== "bounded_feedback" ||
       [nodes.plan, nodes.synthesize].some(node => !isPlainObject(node) || node.type !== "agent" || node.outputSchema === undefined)) {
       errors.push("semanticPolicy: context-gather-v1 requires plan/research/synthesize structured nodes");
+    }
+  }
+  if (graph.semanticPolicy === "deep-research-v1") {
+    const nodes = isPlainObject(graph.nodes) ? graph.nodes : {};
+    if (!isPlainObject(nodes.planning) || nodes.planning.type !== "graph" || !isPlainObject(nodes.research) || nodes.research.type !== "bounded_feedback" ||
+      !isPlainObject(nodes.synthesize) || nodes.synthesize.type !== "agent") {
+      errors.push("semanticPolicy: deep-research-v1 requires planning (graph), research (bounded_feedback) and synthesize (agent) nodes");
     }
   }
   if (graph.inputSchema !== undefined) {

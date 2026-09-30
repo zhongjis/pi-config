@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { checkContextOutput, validateContextInput } from "./context-gather-policy.js";
+import { checkDeepResearchOutput, evaluatorFeedback, visitedLine, writerResearch } from "./deep-research-policy.js";
 import { isDeepStrictEqual } from "node:util";
 import { decision, decisionSchema, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal } from "./bounded-feedback.js";
 import { type CoordinatorReceipt, type CoordinatorRequest, coordinatorReceipt, type FeedbackOwnerView } from "./coordinator-protocol.js";
@@ -570,7 +571,8 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const evaluation = evaluationFor(id);
     if (evaluation && exec.schema) {
       const context = contextOf(projection, input);
-      exec.prompt = interpolate(evaluation.node.evaluator.prompt, { ...evaluation.node.evaluator.input, feedback: { node: id, path: "$" } }, { ...context, outputs: new Map([...context.outputs, [id, evaluation.input]]) });
+      const feedbackInput = graph.semanticPolicy === "deep-research-v1" && feedbackStates.research?.active?.evaluator === id ? evaluatorFeedback(projection.nodes.get("planning")?.output, evaluation.input.iterations, evaluation.input.gaps) : evaluation.input;
+      exec.prompt = interpolate(evaluation.node.evaluator.prompt, { ...evaluation.node.evaluator.input, feedback: { node: id, path: "$" } }, { ...context, outputs: new Map([...context.outputs, [id, feedbackInput]]) });
       const schema = exec.schema;
       exec.schema = { ...schema, check: value => {
         const valid = schema.check(value); if (valid !== true) return valid;
@@ -581,7 +583,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const feedback = feedbackStates.research;
     const item = feedback && [...feedback.iterations, ...(feedback.active ? [feedback.active] : [])].flatMap(row => projection.collections.get(row.work) ?? []).find(child => child.nodeId === id)?.item;
     const stage = id === "plan" || id === "synthesize" ? id : feedback?.active?.evaluator === id ? "evaluation" : item !== undefined ? "work" : undefined;
-    if (graph.semanticPolicy && stage && exec.schema) {
+    if (graph.semanticPolicy === "context-gather-v1" && stage && exec.schema) {
       const schema = exec.schema;
       exec.schema = { ...schema, check: value => {
         const valid = schema.check(value);
@@ -590,6 +592,25 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
         const prior = [...(current?.iterations ?? []), ...(current?.active ? [current.active] : [])];
         return checkContextOutput({ graph, input, stage, item, plan: projection.nodes.get("plan")?.output, research: stage === "synthesize" ? projection.nodes.get("research")?.output : { iterations: prior } }, value);
       } };
+    }
+    if (graph.semanticPolicy === "deep-research-v1") {
+      const planning = projection.nodes.get("planning")?.output;
+      const round = stage === "work" ? [...(feedback?.iterations ?? []), ...(feedback?.active ? [feedback.active] : [])].find(row => projection.collections.get(row.work)?.some(child => child.nodeId === id)) : undefined;
+      const visited = round && round.iteration >= 2 ? visitedLine(planning, feedback?.iterations.filter(row => row.iteration < round.iteration) ?? []) : undefined;
+      if (visited) exec.prompt += visited;
+      if (id === "synthesize") {
+        const context = contextOf(projection, input);
+        exec.prompt = interpolate(node.prompt, node.input, { ...context, outputs: new Map([...context.outputs, ["research", writerResearch(planning, projection.nodes.get("research")?.output)]]) });
+      }
+      if ((stage === "evaluation" || stage === "synthesize") && exec.schema) {
+        const schema = exec.schema;
+        const iterations = evaluation?.input.iterations;
+        exec.schema = { ...schema, check: value => {
+          const valid = schema.check(value);
+          if (valid !== true) return valid;
+          return checkDeepResearchOutput({ graph, stage, planning: projection.nodes.get("planning")?.output, iterations, research: projection.nodes.get("research")?.output }, value);
+        } };
+      }
     }
     return { kind: "agent", id, input: { receipt, host: options.host, authorize: () => options.authorizeAgent?.(node.agent), node: exec } };
   };

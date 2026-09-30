@@ -129,7 +129,7 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
 - `description` — optional; shown for the live run.
 - `inputSchema` — documents `input`. A direct `agent_graph` call does not enforce it. See [SKILL.md](../SKILL.md).
 - `outputSchema` — compiled for validity only, never enforced. Omit it.
-- `semanticPolicy` — only `context-gather-v1`. Requires structured `plan`, `research` (`bounded_feedback`), and `synthesize` nodes. Reserved for `context-gather`.
+- `semanticPolicy` — `context-gather-v1` or `deep-research-v1`. `context-gather-v1` requires structured `plan`, `research` (`bounded_feedback`), and `synthesize` nodes and is reserved for `context-gather`. `deep-research-v1` requires `planning` (`graph` returning `{parts, tasks, seed, approved}`), `research` (`bounded_feedback`), and `synthesize` (`agent`) and is reserved for `deep-research`; see [bounded-feedback.md](bounded-feedback.md#deep-research-v1).
 - `nodes`, `edges`, `outputs` — the graph. Node ids are unique. `outputs` values are ValueRefs.
 
 There is no shell or action node. A deterministic check is `validation.gate` on the node that owns it.

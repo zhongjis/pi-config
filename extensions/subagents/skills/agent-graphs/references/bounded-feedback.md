@@ -42,6 +42,16 @@ Reasons: `sufficient`, `iteration limit`, `item limit`, `deadline/spend limit`, 
 
 Child results include `instanceId`, `nodeKey`, `binding`, `ordinal`, and applicable `parentInstanceId`, `iteration`, `itemIndex`. `nodeId` remains the generated scheduler binding, never a UUID alias.
 
+## deep-research-v1
+
+Under `semanticPolicy: "deep-research-v1"`, [deep-research-policy.ts](../../../src/graph/deep-research-policy.ts) replaces raw rounds with an evidence ledger built from `planning.seed` (round 0) and saved `research` iterations. Templates stay unchanged; only admitted prompts differ.
+
+- Ledger: `{claims:[{id, partIds, claim, excerpt, reference, source, duplicateIds?}], tasks:[{id, item}], gaps:[{id, partIds, gap}], failures:[{id, item, status, error}], visited:[reference]}`. Claim IDs are `r<round>-<item>-<claim>` (1-based item and claim), assigned from position; item IDs are `r<round>-<item>`. Claims with the same normalized reference and excerpt keep the first ID, list later ones in `duplicateIds`, and merge their `partIds`. `partIds` come from the work item (seed items have none), so a seed claim re-found by a task counts for that task's parts. `visited` holds normalized claim references (URL fragment and trailing slash dropped).
+- Evaluator `${feedback}` is the ledger plus `openGaps` (the previous decision's gaps). `decision: "sufficient"` is repaired while a plan part has neither a claim tagged with it nor a returned gap whose id starts with `<partId>-`.
+- Writer `synthesize` prompt references to node `research` resolve to the ledger plus `terminal: {reason, partial, gaps, counters}`. Output is repaired unless every `r<n>-<n>-<n>` token in `markdown` and every `acceptedFindings[].claimIds` / `verifiedCoverage[].claimIds` entry is a ledger ID, every http(s) URL in `markdown` is a visited reference, `verifiedCoverage` lists each plan part exactly once, and `supported` coverage has a claim ID.
+- Work items in iteration 2 and later get an appended line listing already opened references.
+- Restore reapplies the evaluator and writer checks to completed outputs.
+
 ## Persistence
 
 Active runs checkpoint and resume after reload or a session switch in the same session. Retry and restore reuse instance IDs. A dispatched action may repeat after a crash (not exactly-once) — make external effects idempotent. Storage, lease, and restore internals: [agent-graph-bounded-feedback.md](../../../../../docs/specs/agent-graph-bounded-feedback.md).

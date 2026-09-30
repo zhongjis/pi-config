@@ -192,7 +192,7 @@ export interface AgentGraph {
   name?: string;
   /** Optional human-readable purpose shown only for live graph runs. */
   description?: string;
-  semanticPolicy?: "context-gather-v1";
+  semanticPolicy?: "context-gather-v1" | "deep-research-v1";
   inputSchema?: JsonSchema;
   outputSchema?: JsonSchema;
   nodes: Record<NodeId, GraphNode>;
