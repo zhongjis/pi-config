@@ -526,7 +526,7 @@ export function agentToolResults(session: AgentSession): string[] {
 /**
  * All text across the whole conversation — assistant turns, user/nudge messages,
  * and every tool result. Use this to assert a child's output *materialized
- * somewhere* (a foreground tool result, a get_subagent_result result, a held
+ * somewhere* (a foreground tool result, a get_agent_result result, a held
  * nudge), rather than only in the parent's final message which may summarize it.
  */
 export function conversationText(session: AgentSession): string {

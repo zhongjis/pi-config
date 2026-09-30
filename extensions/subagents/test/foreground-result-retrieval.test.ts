@@ -1,6 +1,6 @@
 /**
  * foreground-result-retrieval.test.ts — issue #174, via the REAL Agent,
- * get_subagent_result, and resume paths.
+ * get_agent_result, and resume paths.
  *
  * A foreground agent that wraps up at max_turns remains resumable. Its exact
  * Agent ID must therefore reach model-visible content, not renderer-only
@@ -127,7 +127,7 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     vi.restoreAllMocks();
   });
 
-  it("is NOT cleaned up — get_subagent_result with the real id still resolves it", async () => {
+  it("is NOT cleaned up — get_agent_result with the real id still resolves it", async () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
     const { res, id } = await runForegroundSteeredAgent(tools);
@@ -136,7 +136,7 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     expect(textOf(res)).toContain("wrapped up at the turn limit");
 
     // No /new, no /resume, no session switch — exactly the reporter's sequence.
-    const read = await tools.get("get_subagent_result").execute("tc-read", { agent_id: id }, undefined, undefined, ctx());
+    const read = await tools.get("get_agent_result").execute("tc-read", { run_id: id }, undefined, undefined, ctx());
     const out = textOf(read);
     expect(out).not.toContain("Agent not found");
     expect(out).toContain("THE-RESULT-PAYLOAD");
@@ -187,7 +187,7 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     await child.lifecycle.get("session_shutdown")?.({}, ctx());
 
     // The parent's record must be untouched — separate manager per activation.
-    const read = await parent.tools.get("get_subagent_result").execute("tc-read", { agent_id: id }, undefined, undefined, ctx());
+    const read = await parent.tools.get("get_agent_result").execute("tc-read", { run_id: id }, undefined, undefined, ctx());
     const out = textOf(read);
     expect(out).not.toContain("Agent not found");
     expect(out).toContain("THE-RESULT-PAYLOAD");
@@ -205,7 +205,7 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     // them. This is the ONLY path that makes a foreground id stop resolving.
     await lifecycle.get("session_before_switch")?.();
 
-    const read = await tools.get("get_subagent_result").execute("tc-read", { agent_id: id }, undefined, undefined, ctx());
+    const read = await tools.get("get_agent_result").execute("tc-read", { run_id: id }, undefined, undefined, ctx());
     expect(textOf(read)).toContain("Agent not found");
 
     await lifecycle.get("session_shutdown")?.({}, ctx());

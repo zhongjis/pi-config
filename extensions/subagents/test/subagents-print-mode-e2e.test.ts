@@ -291,7 +291,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
 //
 // These are SMOKE tests, not strict assertions: a live model decides whether and
 // how to call the tool, so we cover the subset it can be reliably steered into
-// (foreground spawn, background spawn + get_subagent_result, an Explore spawn)
+// (foreground spawn, background spawn + get_agent_result, an Explore spawn)
 // and assert robust invariants (a real spawn happened and produced output).
 // Per-feature determinism lives in the faux suite above, which scripts exact calls.
 const LIVE_TIMEOUT = 150_000;
@@ -333,13 +333,13 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
   );
 
   it(
-    "BACKGROUND spawn + get_subagent_result — model backgrounds work then retrieves it",
+    "BACKGROUND spawn + get_agent_result — model backgrounds work then retrieves it",
     async () => {
       run = await runPrintMode({
         prompt:
           "Spawn a general-purpose subagent IN THE BACKGROUND (run_in_background: true) whose " +
           "only task is to reply with the exact word BGPONG. After it finishes, use the " +
-          "get_subagent_result tool to fetch its result, then tell me exactly what it said.",
+          "get_agent_result tool to fetch its result, then tell me exactly what it said.",
         timeoutMs: LIVE_TIMEOUT,
       });
       const calls = agentToolCalls(run.parentSession);
@@ -348,7 +348,7 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
       // …and the spawn returned the "started in background" envelope…
       expect(agentToolResults(run.parentSession).join("\n")).toMatch(/background/i);
       // …and the background child genuinely ran (its result surfaced somewhere:
-      // via get_subagent_result and/or the held final answer).
+      // via get_agent_result and/or the held final answer).
       expect(run.responseText).toMatch(/BGPONG/i);
     },
     LIVE_VITEST_TIMEOUT,
@@ -386,7 +386,7 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
           "1) FOREGROUND: spawn a general-purpose subagent (run_in_background: false) whose only",
           "   task is to reply with the exact token FG_OK. Confirm you got FG_OK back.",
           "2) BACKGROUND: spawn a general-purpose subagent with run_in_background: true whose only",
-          "   task is to reply with the exact token BG_OK. After it finishes, call get_subagent_result",
+          "   task is to reply with the exact token BG_OK. After it finishes, call get_agent_result",
           "   to retrieve its output. Confirm you got BG_OK.",
           "3) EXPLORE: spawn a subagent with subagent_type 'Explore' to summarize the current",
           "   working directory in one line.",
@@ -404,11 +404,11 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
       // — a background spawn
       expect(calls.some((c) => c.run_in_background === true)).toBe(true);
       // — the result-retrieval tool was called
-      expect(tools).toContain("get_subagent_result");
+      expect(tools).toContain("get_agent_result");
       // — the Explore type was dispatched
       expect(calls.some((c) => String(c.subagent_type ?? "").toLowerCase() === "explore")).toBe(true);
       // — and the real child outputs materialized in the conversation (the
-      //   foreground tool result + the get_subagent_result result). We check the
+      //   foreground tool result + the get_agent_result result). We check the
       //   whole transcript, not the final message: the agent's closing report
       //   tends to summarize ("Step 1 PASS") rather than re-echo the raw tokens.
       const transcript = conversationText(run.parentSession);

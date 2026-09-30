@@ -249,7 +249,6 @@ A few rules the examples don't make obvious:
 - `agent` launches a sub-agent in the foreground or background, or resumes one.
 - `get_agent_result` retrieves an independent Agent ID or an `agr_*` graph run ID; `wait: true` waits without polling for terminal output or an actionable human gate, and cancelling it stops only the wait, never the run. Continue non-overlapping work, then collect with `wait: true` rather than ending the turn.
 - `resolve_agent_graph_gate` submits the human choice for a returned graph gate.
-- `get_subagent_result` is a compatibility alias for independent agents only; new callers use `get_agent_result`.
 - `steer_subagent` sends a message to a running agent; it takes effect after the current tool execution.
 - `agent_graph` (opt-in) launches a typed graph.
 

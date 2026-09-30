@@ -14,12 +14,6 @@ type AgentToolRenderArgs = {
   run_in_background?: boolean;
 };
 
-type GetSubagentResultArgs = {
-  agent_id: string;
-  wait?: boolean;
-  verbose?: boolean;
-};
-
 type SteerSubagentArgs = {
   agent_id: string;
   message: string;
@@ -149,19 +143,6 @@ export function renderAgentToolResult(
   return report;
 }
 
-export function renderGetSubagentResultCall(args: GetSubagentResultArgs, theme: ToolTheme) {
-  const flags = [args.wait ? "wait" : undefined, args.verbose ? "verbose" : undefined].filter(Boolean);
-  return renderToolCall("get_subagent_result", [args.agent_id, ...flags].join(" · "), theme);
-}
-
-export function renderGetSubagentResult(
-  result: TextToolResult,
-  options: { expanded?: boolean; isPartial?: boolean },
-  theme: ToolTheme,
-) {
-  return renderAgentToolResult(result, options, theme);
-}
-
 export function renderGetAgentResultCall(args: { run_id?: string; wait?: boolean; verbose?: boolean }, theme: ToolTheme) {
   const flags = [args.run_id, args.wait ? "wait" : undefined, args.verbose ? "verbose" : undefined].filter(Boolean);
   return renderToolCall("get_agent_result", flags.join(" · "), theme);
@@ -170,7 +151,7 @@ export function renderGetAgentResultCall(args: { run_id?: string; wait?: boolean
 export function renderGetAgentResult(result: TextToolResult, options: { expanded?: boolean; isPartial?: boolean }, theme: ToolTheme) {
   const details = result.details;
   if (!details || typeof details !== "object" || !("kind" in details) || details.kind !== "graph" ||
-    !("status" in details) || typeof details.status !== "string") return renderGetSubagentResult(result, options, theme);
+    !("status" in details) || typeof details.status !== "string") return renderAgentToolResult(result, options, theme);
   const text = extractToolText(result);
   if (options.expanded) return renderToolExpanded(text || "No output.");
   const gate = "gate" in details ? details.gate : undefined;

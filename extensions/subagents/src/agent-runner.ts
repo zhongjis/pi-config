@@ -60,7 +60,6 @@ const GUARDED_CANONICAL_AGENT_TYPES = new Set([
  */
 export const SUBAGENT_TOOL_NAMES = {
   AGENT: "agent",
-  GET_RESULT: "get_subagent_result",
   GET_AGENT_RESULT: "get_agent_result",
   RESOLVE_GRAPH_GATE: "resolve_agent_graph_gate",
   STEER: "steer_subagent",

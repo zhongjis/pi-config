@@ -5,7 +5,7 @@ model: anthropic/claude-opus-4-8:xhigh,github-copilot/claude-opus-5.5:max,clipro
 prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read,bash
-extension_tools: codegraph_*,lsp,agent,get_agent_result,get_subagent_result,steer_subagent
+extension_tools: codegraph_*,lsp,agent,get_agent_result,steer_subagent
 extensions: true
 exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
 allow_delegation_to: chengfeng,wenchang,direnjie

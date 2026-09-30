@@ -1,7 +1,7 @@
 /**
  * status-note-wiring.test.ts — proves the status note actually reaches the
  * PARENT through the real tool handlers, not just that getStatusNote() returns
- * a string. Drives the registered `agent` / `get_subagent_result` tools and
+ * a string. Drives the registered `agent` / `get_agent_result` tools and
  * inspects the text delivered back, for a turn-limit abort and a user stop.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,7 +107,7 @@ describe("status note reaches the parent through the real handlers", () => {
     // advising a fresh run to save one wasted tool call is a bet nothing here
     // can measure. And naming the tool we steer away from only raises its salience.
     expect(out).not.toContain("re-spawn");
-    expect(out).not.toContain("get_subagent_result");
+    expect(out).not.toContain("get_agent_result");
   });
 
   it("foreground user-stop → tells the parent NOT to restart it unasked", async () => {
@@ -150,7 +150,7 @@ describe("status note reaches the parent through the real handlers", () => {
     expect(out).not.toContain("ask before");
   });
 
-  it("background user-stop → get_subagent_result flags STOPPED BY THE USER (not completed)", async () => {
+  it("background user-stop → get_agent_result flags STOPPED BY THE USER (not completed)", async () => {
     // A background agent that never settles on its own — only a stop ends it.
     vi.mocked(runAgent).mockReturnValue(new Promise(() => {}) as any);
     const { pi, tools, eventHandlers, lifecycle } = makePi();
@@ -168,8 +168,8 @@ describe("status note reaches the parent through the real handlers", () => {
     // The user stops it — same path the viewer's stop key uses (manager.abort).
     eventHandlers.get("subagents:rpc:stop")?.({ requestId: "r1", agentId: id });
 
-    const res = await tools.get("get_subagent_result").execute(
-      "tc3", { agent_id: id }, undefined, undefined, ctx(),
+    const res = await tools.get("get_agent_result").execute(
+      "tc3", { run_id: id }, undefined, undefined, ctx(),
     );
 
     const out = textOf(res);

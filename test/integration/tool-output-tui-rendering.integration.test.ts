@@ -124,7 +124,6 @@ const FIXTURES: Record<string, ToolFixture> = {
   create_goal: { args: { objective: "Prove renderer output" }, raw: "Goal created: Prove renderer output\nRAW31_20", details: {} },
   get_goal: { args: {}, raw: "Goal active: Prove renderer output\nRAW31_21", details: {} },
   get_agent_result: { args: { run_id: "agent-render-1", wait: false }, raw: "Agent agent-render-1 completed.\nResult: renderer audit complete\nRAW31_32", details: {} },
-  get_subagent_result: { args: { agent_id: "agent-render-1", wait: false }, raw: "Agent agent-render-1 completed.\nResult: renderer audit complete\nRAW31_22", details: {} },
   look_at: { args: { file_path: "screens/界面.png", goal: "Find renderer status" }, raw: "Renderer status is visible.\nRAW31_23", details: {} },
   lsp: { args: { operation: "diagnostics", filePath: "extensions/render.ts" }, raw: "No diagnostics found.\nRAW31_24", details: {} },
   open_pr_walkthrough: { args: { sidecar_path: "/tmp/review-sidecar.json", head_sha: "0123456789abcdef" }, raw: "- extensions/render.ts:31 — Renderer verified\nRAW31_25", details: {} },

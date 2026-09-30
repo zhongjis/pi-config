@@ -11,7 +11,6 @@ import { createSettingsMenu } from "./ui/settings-menu.js";
  * Tools:
  *   agent             — LLM-callable: spawn a sub-agent
  *   get_agent_result     — LLM-callable: collect agent/graph results or pending human gates
- *   get_subagent_result  — compatibility alias for independent-agent retrieval
  *   resolve_agent_graph_gate — LLM-callable: submit a human gate response (graph opt-in)
  *   steer_subagent       — LLM-callable: send a steering message to a running agent
  *
@@ -560,7 +559,6 @@ export default function (pi: ExtensionAPI) {
     ),
     cancelNudge,
   }, isAgentGraphEnabled() ? graphRuntime : undefined);
-  pi.registerTool(resultTools.getResult);
   pi.registerTool(resultTools.getAgentResult);
   pi.registerTool(resultTools.steer);
 

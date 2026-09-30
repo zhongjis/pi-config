@@ -115,7 +115,7 @@ export interface AgentRecord {
   promise?: Promise<string>;
   groupId?: string;
   joinMode?: JoinMode;
-  /** Set when retrieval consumed the result via get_agent_result or its compatibility alias — suppresses completion notification. */
+  /** Set when retrieval consumed the result via get_agent_result — suppresses completion notification. */
   resultConsumed?: boolean;
   /** Steering messages queued before the session was ready. */
   pendingSteers?: string[];

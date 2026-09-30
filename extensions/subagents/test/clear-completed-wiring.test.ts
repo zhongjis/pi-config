@@ -1,10 +1,10 @@
 /**
  * clear-completed-wiring.test.ts — reproduces issue #108 end-to-end through the
- * REAL session lifecycle handlers + the REAL get_subagent_result tool.
+ * REAL session lifecycle handlers + the REAL get_agent_result tool.
  *
  * Bug: a background agent that has COMPLETED but whose result the LLM hasn't read
  * yet (resultConsumed=false) was wiped by clearCompleted() on session_start /
- * session_before_switch, so the next get_subagent_result returned "Agent not
+ * session_before_switch, so the next get_agent_result returned "Agent not
  * found". The fix makes both handlers call clearCompleted(true), preserving
  * unread records (the 10-minute timer evicts them later).
  *
@@ -67,7 +67,7 @@ const flush = async () => {
 };
 
 // Spawn a real background agent and drive it to status "completed" with
-// resultConsumed=false (only get_subagent_result sets that flag for background).
+// resultConsumed=false (only get_agent_result sets that flag for background).
 async function spawnCompletedBackgroundAgent(tools: Map<string, any>): Promise<string> {
   vi.mocked(runAgent).mockResolvedValue({
     responseText: "THE-RESULT-PAYLOAD",
@@ -129,7 +129,7 @@ describe("issue #108: unread completed background agents survive session events"
     // The exact #108 trigger: a session switch fires before the LLM read the result.
     await lifecycle.get("session_before_switch")?.();
 
-    const res = await tools.get("get_subagent_result").execute("tc-read", { agent_id: id }, undefined, undefined, ctx());
+    const res = await tools.get("get_agent_result").execute("tc-read", { run_id: id }, undefined, undefined, ctx());
     const out = textOf(res);
     expect(out).not.toContain("Agent not found");
     expect(out).toContain("THE-RESULT-PAYLOAD");
@@ -144,7 +144,7 @@ describe("issue #108: unread completed background agents survive session events"
 
     await lifecycle.get("session_start")?.({}, ctx());
 
-    const res = await tools.get("get_subagent_result").execute("tc-read", { agent_id: id }, undefined, undefined, ctx());
+    const res = await tools.get("get_agent_result").execute("tc-read", { run_id: id }, undefined, undefined, ctx());
     const out = textOf(res);
     expect(out).not.toContain("Agent not found");
     expect(out).toContain("THE-RESULT-PAYLOAD");
@@ -158,13 +158,13 @@ describe("issue #108: unread completed background agents survive session events"
     const id = await spawnCompletedBackgroundAgent(tools);
 
     // LLM reads the result → resultConsumed=true.
-    const first = await tools.get("get_subagent_result").execute("tc-read1", { agent_id: id }, undefined, undefined, ctx());
+    const first = await tools.get("get_agent_result").execute("tc-read1", { run_id: id }, undefined, undefined, ctx());
     expect(textOf(first)).toContain("THE-RESULT-PAYLOAD");
 
     // Now a session switch SHOULD clean it up (consumed records are not preserved).
     await lifecycle.get("session_before_switch")?.();
 
-    const second = await tools.get("get_subagent_result").execute("tc-read2", { agent_id: id }, undefined, undefined, ctx());
+    const second = await tools.get("get_agent_result").execute("tc-read2", { run_id: id }, undefined, undefined, ctx());
     expect(textOf(second)).toContain("Agent not found");
 
     await lifecycle.get("session_shutdown")?.({}, ctx());

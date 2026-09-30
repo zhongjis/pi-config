@@ -22,7 +22,7 @@ it.each([false, true])("reports native usage once across retrieval and resume (b
           const details = results[0]?.details;
           if (!details || typeof details !== "object" || !("agentId" in details) || typeof details.agentId !== "string") throw new Error("Missing agent ID");
           if (results.length === 2) return agentCall({ subagent_type: "controlled", prompt: "Continue.", description: "resume", resume: details.agentId }, { id: "resume" });
-          if (results.length < 5) return { type: "toolCall", id: `retrieve-${results.length}`, name: "get_subagent_result", arguments: { agent_id: details.agentId, wait: true } };
+          if (results.length < 5) return { type: "toolCall", id: `retrieve-${results.length}`, name: "get_agent_result", arguments: { run_id: details.agentId, wait: true } };
           return "Done";
         },
         subagent: "Complete",

@@ -48,15 +48,15 @@ describe("Packet B actual SDK metadata", () => {
       run = await runPrintMode({ cwd, prompt: "Delegate.", reasoning: true, parentThinking: "high", respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "pending", prompt: "Report.", description: "pending", run_in_background: true }),
         parentFinal: (ctx) => {
-          if (ctx.messages.some((m) => m.role === "toolResult" && m.toolName === "get_subagent_result")) return "Done";
+          if (ctx.messages.some((m) => m.role === "toolResult" && m.toolName === "get_agent_result")) return "Done";
           const first = ctx.messages.find((m): m is ToolResultMessage => m.role === "toolResult" && m.toolName === "agent");
           const id = first?.content.filter((b) => b.type === "text").map((b) => b.text).join("").match(/Agent ID: (\S+)/)?.[1];
           if (!id) throw new Error("Missing Agent ID");
-          return { type: "toolCall", id: "retrieve", name: "get_subagent_result", arguments: { agent_id: id, wait: true } };
+          return { type: "toolCall", id: "retrieve", name: "get_agent_result", arguments: { run_id: id, wait: true } };
         },
         subagent: "Done",
       }) });
-      const results = run.parentSession.messages.filter((m): m is ToolResultMessage => m.role === "toolResult" && ["agent", "get_subagent_result"].includes(m.toolName));
+      const results = run.parentSession.messages.filter((m): m is ToolResultMessage => m.role === "toolResult" && ["agent", "get_agent_result"].includes(m.toolName));
       expect(results[0]?.details).toMatchObject({ thinking: undefined, tags: expect.arrayContaining(["thinking: default (pending)"]) });
       expect(results[1]?.details).toMatchObject({ thinking: "medium", tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
     } finally {
@@ -79,7 +79,7 @@ describe("Packet B actual SDK metadata", () => {
           const text = first?.content.filter((b) => b.type === "text").map((b) => b.text).join("") ?? "";
           const id = text.match(/Agent ID: (\S+)/)?.[1];
           if (!id) throw new Error("Missing Agent ID");
-          if (phase++ === 0) return { type: "toolCall", id: "retrieve", name: "get_subagent_result", arguments: { agent_id: id, wait: true, verbose: true } };
+          if (phase++ === 0) return { type: "toolCall", id: "retrieve", name: "get_agent_result", arguments: { run_id: id, wait: true, verbose: true } };
           if (phase === 2) {
             // Resume must describe the retained session, not unrelated current configuration.
             writeFileSync(config, "---\ndescription: Metadata\nmodel: missing/changed\nprompt_mode: append\nthinking: low\n---\nReport.\n");
@@ -89,7 +89,7 @@ describe("Packet B actual SDK metadata", () => {
         },
         subagent: "**ACTUAL_ANSWER**\n\n- 界面 é\n\n```ts\nconst complete = true;\n```",
       }) });
-      const results = run.parentSession.messages.filter((m): m is ToolResultMessage => m.role === "toolResult" && ["agent", "get_subagent_result"].includes(m.toolName));
+      const results = run.parentSession.messages.filter((m): m is ToolResultMessage => m.role === "toolResult" && ["agent", "get_agent_result"].includes(m.toolName));
       expect(results).toHaveLength(3);
       const id = results[0]?.content.filter((b) => b.type === "text").map((b) => b.text).join("").match(/Agent ID: (\S+)/)?.[1];
       const record = run.manager?.getRecord(id ?? "") as AgentRecord | undefined;

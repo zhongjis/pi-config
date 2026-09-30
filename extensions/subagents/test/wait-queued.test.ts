@@ -1,5 +1,5 @@
 /**
- * wait-queued.test.ts — get_subagent_result(wait: true) lifecycle behavior.
+ * wait-queued.test.ts — get_agent_result(wait: true) lifecycle behavior.
  *
  * Queued records have no promise yet (it's created when the queue starts
  * them), so the old `status === "running" && record.promise` condition
@@ -90,7 +90,7 @@ async function spawnBackground(tools: Map<string, any>): Promise<{ id: string; q
   return { id, queued: textOf(r).includes("queued in background") };
 }
 
-describe("get_subagent_result wait:true on a queued agent", () => {
+describe("get_agent_result wait:true on a queued agent", () => {
   it("queued_retrieval_retains_default_intent_without_claiming_actual_thinking", async () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
@@ -102,7 +102,7 @@ describe("get_subagent_result wait:true on a queued agent", () => {
         if (queued) queuedId = id;
       }
       expect(queuedId).toBeDefined();
-      const pending = await tools.get("get_subagent_result").execute("pending", { agent_id: queuedId, wait: false }, undefined, undefined, ctx());
+      const pending = await tools.get("get_agent_result").execute("pending", { run_id: queuedId, wait: false }, undefined, undefined, ctx());
       expect(pending.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.arrayContaining(["thinking: default (pending)"]) });
       const agentCwd = mkdtempSync(join(tmpdir(), "wait-queued-explicit-"));
       mkdirSync(join(agentCwd, ".pi", "agents"), { recursive: true });
@@ -111,7 +111,7 @@ describe("get_subagent_result wait:true on a queued agent", () => {
       process.chdir(agentCwd);
       try {
         const explicit = await tools.get("agent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "explicit-thinker", run_in_background: true }, undefined, undefined, ctx());
-        const retrieved = await tools.get("get_subagent_result").execute("explicit-pending", { agent_id: explicit.details.agentId, wait: false }, undefined, undefined, ctx());
+        const retrieved = await tools.get("get_agent_result").execute("explicit-pending", { run_id: explicit.details.agentId, wait: false }, undefined, undefined, ctx());
         expect(retrieved.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
       } finally {
         process.chdir(prevCwd);
@@ -140,8 +140,8 @@ describe("get_subagent_result wait:true on a queued agent", () => {
 
     // wait:true on the QUEUED agent — must not return "still running".
     const waitPromise = tools
-      .get("get_subagent_result")
-      .execute("tc-wait", { agent_id: queuedId, wait: true }, undefined, undefined, ctx());
+      .get("get_agent_result")
+      .execute("tc-wait", { run_id: queuedId, wait: true }, undefined, undefined, ctx());
 
     // Drain: resolve running agents until the queued one starts and finishes.
     let settled = false;
@@ -185,8 +185,8 @@ describe("get_subagent_result wait:true on a queued agent", () => {
     const controller = new AbortController();
     const removeListener = vi.spyOn(controller.signal, "removeEventListener");
     const waitOutcome = tools
-      .get("get_subagent_result")
-      .execute("tc-wait-abort", { agent_id: id, wait: true }, controller.signal, undefined, ctx())
+      .get("get_agent_result")
+      .execute("tc-wait-abort", { run_id: id, wait: true }, controller.signal, undefined, ctx())
       .then(
         () => "resolved",
         (error: unknown) => error instanceof Error ? error.name : String(error),
@@ -205,8 +205,8 @@ describe("get_subagent_result wait:true on a queued agent", () => {
     await new Promise((r) => setTimeout(r, 350));
 
     const completedResult = await tools
-      .get("get_subagent_result")
-      .execute("tc-result", { agent_id: id }, undefined, undefined, ctx());
+      .get("get_agent_result")
+      .execute("tc-result", { run_id: id }, undefined, undefined, ctx());
 
     await lifecycle.get("session_shutdown")?.();
 
@@ -231,8 +231,8 @@ describe("get_subagent_result wait:true on a queued agent", () => {
 
     const controller = new AbortController();
     const waitOutcome = tools
-      .get("get_subagent_result")
-      .execute("tc-queued-abort", { agent_id: queuedId, wait: true }, controller.signal, undefined, ctx())
+      .get("get_agent_result")
+      .execute("tc-queued-abort", { run_id: queuedId, wait: true }, controller.signal, undefined, ctx())
       .then(
         () => "resolved",
         (error: unknown) => error instanceof Error ? error.name : String(error),
@@ -249,8 +249,8 @@ describe("get_subagent_result wait:true on a queued agent", () => {
       while (resolvers.length > 0) resolvers.shift()!();
       await flush();
       const result = await tools
-        .get("get_subagent_result")
-        .execute("tc-queued-result", { agent_id: queuedId }, undefined, undefined, ctx());
+        .get("get_agent_result")
+        .execute("tc-queued-result", { run_id: queuedId }, undefined, undefined, ctx());
       if (textOf(result).includes("THE-RESULT-PAYLOAD")) completedResult = result;
       await new Promise((r) => setTimeout(r, 25));
     }

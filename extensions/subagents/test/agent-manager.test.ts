@@ -43,7 +43,7 @@ describe("AgentManager — Bug 1 race condition (resultConsumed vs onComplete)",
     });
     const record = manager.getRecord(id)!;
 
-    // Simulate the buggy get_subagent_result: await THEN mark consumed
+    // Simulate the buggy get_agent_result: await THEN mark consumed
     await record.promise;
     record.resultConsumed = true; // too late — onComplete already fired
 
@@ -448,7 +448,7 @@ describe("AgentManager — Bug 3 clearCompleted", () => {
     expect(manager.getRecord(id)!.resultConsumed).toBeFalsy();
 
     // Error records with unread results are also preserved — the LLM should
-    // be able to read the error message via get_subagent_result before the
+    // be able to read the error message via get_agent_result before the
     // record is evicted.
     manager.clearCompleted(true);
     expect(manager.getRecord(id)).toBeDefined();

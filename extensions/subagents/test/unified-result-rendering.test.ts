@@ -17,7 +17,6 @@ it("renders canonical calls and graph gates with bounded rows and complete expan
   const call = tool.renderCall({ run_id: id, wait: true }, plainTheme).render(120).join("\n");
   expect(call).toContain("get_agent_result");
   expect(call).toContain(id);
-  expect(call).not.toContain("get_subagent_result");
   const result = await retrieve(host, id);
   const before = JSON.stringify(result);
   for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {

@@ -151,7 +151,7 @@ Final active tools are computed by
 2. **`extensions`** — master switch for extension/MCP tools. `false` disables all.
 3. **`extension_tools`** — post-load allowlist. `undefined` = all available;
    `false`/`none` = none; a list = exact names or `prefix*` wildcards.
-4. **`allow_nesting`** — nested controls (`agent`, `get_agent_result`, compatibility alias `get_subagent_result`,
+4. **`allow_nesting`** — nested controls (`agent`, `get_agent_result`,
    `resolve_agent_graph_gate`, `steer_subagent`) are removed unless this is `true`.
 
 Precedence and rules:
