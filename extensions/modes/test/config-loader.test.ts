@@ -10,7 +10,7 @@ import { loadAgentConfig, parseModeAgentConfig } from "../src/config-loader.js";
 import { derivePlanTitleFromMarkdown } from "../src/plan-storage.js";
 
 describe("parseModeAgentConfig", () => {
-	it("parses migrated builtin and extension tool frontmatter", () => {
+	it("parses builtin and extension tool frontmatter", () => {
 		const config = parseModeAgentConfig(`---
 prompt_mode: replace
 builtin_tools: read,write,edit
@@ -53,7 +53,7 @@ Prompt only.`);
 		expect(config?.extensions).toBeUndefined();
 	});
 
-	it("rejects obsolete tools frontmatter", () => {
+	it("returns null for invalid frontmatter fields", () => {
 		expect(parseModeAgentConfig(`---
 tools: read,bash
 ---

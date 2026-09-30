@@ -91,12 +91,6 @@ afterEach(() => {
 });
 
 describe("session:copy-id", () => {
-  it("registers the current command description", () => {
-    expect(registerCommand().description).toBe(
-      "Copy current session ID and session log path to clipboard",
-    );
-  });
-
   it("serializes an undefined session file as exact null metadata", async () => {
     writeClipboardMock.mockResolvedValue("wl-copy");
     const { ctx } = createContext(undefined);

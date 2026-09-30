@@ -29,7 +29,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 ## Verification
 
 - You MUST use the frontmatter guide's verification checklist after definition edits.
-- Agent routing/loading coverage: `pnpm exec vitest run --project unit test/planning-agent-contract.test.ts`.
+- Agent definition loading coverage: `pnpm exec vitest run --project unit extensions/subagents/test/tool-scope-golden.test.ts`.
 
 ## Child DOX Index
 

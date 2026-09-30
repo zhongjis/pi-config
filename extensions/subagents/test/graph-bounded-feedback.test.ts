@@ -35,9 +35,8 @@ async function execute(decisions: unknown[], node = feedback) {
 }
 
 describe("bounded feedback", () => {
-  it("validates without a version, templates, bounds and references; preflights both templates", () => {
+  it("validates templates, bounds and references; preflights both templates", () => {
     expect(validateGraph(graph()).ok).toBe(true);
-    for (const version of [1, 2]) expect(validateGraph({ ...graph(), version }).ok).toBe(true);
     for (const field of ["maxIterations", "maxItemsPerIteration", "maxTotalItems"]) {
       for (const value of [undefined, 0, -1, 1.5]) expect(validateGraph(graph({ ...feedback, [field]: value })).ok).toBe(false);
     }
@@ -57,6 +56,10 @@ describe("bounded feedback", () => {
       const final = checkpoints.at(-1);
       expect(final?.state.runtime?.manifest).toHaveLength(1 + count * 3);
     }
+  });
+  it("sufficient with remaining gaps is partial", async () => {
+    const { result } = await execute([{ ...enough, gaps: [{ id: "g", description: "x" }] }]);
+    expect(result.outputs.evidence).toMatchObject({ reason: "sufficient", partial: true });
   });
   it("repairs malformed and gap-unlinked decisions on the same evaluator instance", async () => {
     const { result, requests } = await execute([{ ...more, tasks: [{ gapId: "unknown", item: initial }] }, enough]);
@@ -494,12 +497,6 @@ it("rejects forged evaluator failure counts and error rewrites at durable replac
   if (!omitted.state.runtime?.feedback) throw new Error("missing feedback");
   delete omitted.state.runtime.feedback.research.retryFailures; delete omitted.state.runtime.feedback.research.retryError;
   expect(() => validateCheckpointTransition(snapshots[snapshots.indexOf(first) - 1], omitted)).toThrow(/execution outcomes/);
-  const legacy = structuredClone(first);
-  if (!legacy.state.runtime) throw new Error("missing runtime");
-  Reflect.deleteProperty(legacy.state.runtime, "executionProtocolVersion");
-  Reflect.deleteProperty(legacy.state.runtime, "executionLedger");
-  for (const run of Object.values(legacy.state.nodes)) { delete run.currentExecutionAttemptId; delete run.activation; delete run.graphAttempt; }
-  expect(() => validateGraphRestore(legacy.state, legacy.graph, legacy.input)).not.toThrow();
 });
 
 it("initializes failure evidence at zero and resets it only for successor materialization", async () => {
@@ -531,34 +528,6 @@ it("initializes failure evidence at zero and resets it only for successor materi
   if (!materialized?.state.runtime?.feedback?.research) throw new Error("missing initial manifest");
   delete materialized.state.runtime.feedback.research.retryFailures;
   expect(() => validateGraphRestore(materialized.state, materialized.graph, materialized.input)).not.toThrow();
-});
-
-it.each([0, 1])("reconciles post-baseline failures while retaining %i historical legacy failures", async historical => {
-  const { checkpoints: original } = await execute([{}, enough], { ...feedback, evaluator: { ...feedback.evaluator, retry: { maxAttempts: 3 } } });
-  const saved = structuredClone(original.find(row => row.state.runtime?.feedback?.research?.retryFailures === 1));
-  if (!saved?.state.runtime?.feedback) throw new Error("missing repair checkpoint");
-  Reflect.deleteProperty(saved.state.runtime, "executionProtocolVersion"); Reflect.deleteProperty(saved.state.runtime, "executionLedger");
-  for (const run of Object.values(saved.state.nodes)) { delete run.currentExecutionAttemptId; delete run.activation; delete run.graphAttempt; }
-  saved.state.runtime.feedback.research.retryFailures = historical;
-  if (!historical) delete saved.state.runtime.feedback.research.retryError;
-  const { checkpoints, onCheckpoint } = durableFeedbackCheckpoints();
-  onCheckpoint(saved.state, saved.graph);
-  let judges = 0;
-  const result = await runGraph(saved.graph, { tasks: [initial] }, { restore: saved.state, onCheckpoint, host: { spawnAgent: async () => ({ ok: true, output: JSON.stringify(++judges === 1 ? {} : enough) }) } });
-  expect(result.feedback?.research.reason).toBe("sufficient"); expect(judges).toBe(2);
-  const repaired = checkpoints.find(row => row.state.runtime?.feedback?.research?.retryFailures === historical + 1);
-  if (!repaired?.state.runtime?.feedback) throw new Error("missing post-baseline repair");
-  expect(repaired.state.runtime.executionLedger?.some(row => "kind" in row && row.kind === "legacy-baseline")).toBe(true);
-  const forged = structuredClone(repaired);
-  if (!forged.state.runtime?.feedback) throw new Error("missing feedback");
-  delete forged.state.runtime.feedback.research.retryFailures; delete forged.state.runtime.feedback.research.retryError;
-  expect(() => validateGraphRestore(forged.state, forged.graph, forged.input)).toThrow(/execution outcomes/);
-  for (const field of ["executionProtocolVersion", "executionLedger"]) {
-    const partial = structuredClone(repaired); Reflect.deleteProperty(partial.state.runtime ?? {}, field);
-    expect(() => validateGraphRestore(partial.state, partial.graph, partial.input)).toThrow(TypeError);
-  }
-  const unknown = structuredClone(repaired); Reflect.set(unknown.state.runtime ?? {}, "executionProtocolVersion", 2);
-  expect(() => validateGraphRestore(unknown.state, unknown.graph, unknown.input)).toThrow(TypeError);
 });
 
 it("types tasks[].item to the work item schema in the injected decision schema", () => {

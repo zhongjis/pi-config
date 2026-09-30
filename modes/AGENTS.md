@@ -48,7 +48,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 
 ## Verification
 
-- Family coverage: `pnpm exec vitest run --project unit test/fuxi-clearance.test.ts`.
+- Family coverage: `pnpm exec vitest run --project unit extensions/modes/test/config-loader.test.ts`.
 - Runtime-sensitive edits: `pnpm exec vitest run --project integration test/integration/modes.integration.test.ts`.
 
 ## Child DOX Index

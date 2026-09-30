@@ -109,7 +109,7 @@ it("persists effective fanout topology through the graph runtime and resumes it 
   expect(readGraphSnapshots(s2.ctx.cwd).some(s => s.runId === runId)).toBe(false);
 });
 
-it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-session live", "corrupt"] as const)(
+it.each(["foreign live", "foreign dead", "ownerless v2", "same-session live", "corrupt"] as const)(
   "checks recovery ownership before side effects: %s", async kind => {
     const origin = boot({ agentGraphEnabled: true }, "origin");
     await origin.lifecycle("session_start");
@@ -131,10 +131,9 @@ it.each(["foreign live", "foreign dead", "ownerless v1", "ownerless v2", "same-s
         expect(dead.status).toBe(0);
         writeFileSync(lock, JSON.stringify(dead.pid));
       }
-      if (kind === "ownerless v1" || kind === "ownerless v2") {
+      if (kind === "ownerless v2") {
         const saved = required(readGraphSnapshots(origin.ctx.cwd).find(s => s.runId === runId));
         delete saved.ownerSessionId;
-        if (kind === "ownerless v1") saved.version = 1;
         writeFileSync(path, JSON.stringify(saved));
       }
       if (kind === "corrupt") writeFileSync(path, "{broken");

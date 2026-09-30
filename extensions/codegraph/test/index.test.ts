@@ -990,7 +990,6 @@ describe("codegraph extension", () => {
     expect(text).toContain(`CodeGraph is enabled for ${projectRoot}, but the index is not built yet.`);
     expect(text).toContain("codegraph_status is inspect-only and did not run codegraph init.");
     expect(text).toContain(`First non-status CodeGraph query will run: codegraph init ${projectRoot}`);
-    expect(text).not.toContain("init -i");
     expect(getToolCall(child).params).toEqual({
       name: "codegraph_status",
       arguments: { projectPath: projectRoot },

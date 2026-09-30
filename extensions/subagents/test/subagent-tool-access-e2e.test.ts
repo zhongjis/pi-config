@@ -13,7 +13,7 @@
  * per-test `ModelRuntime` satisfies `createAgentSession`; assertions read the
  * gated tool set the moment the session exists.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,8 +31,6 @@ vi.setConfig({ testTimeout: 30_000 });
 const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 const SUBAGENT_SOURCE = path.join(PROJECT_ROOT, "extensions/subagents/src/index.ts");
 const MATRIX_AGENT = "jintong";
-const WENCHANG_AGENT = "wenchang";
-const WENCHANG_SOURCE = path.join(PROJECT_ROOT, "agents/wenchang.md");
 
 let testCwd = "";
 let previousAgentDir: string | undefined;
@@ -88,9 +86,6 @@ function matrixTool(name: string) {
 export default function(pi: ExtensionAPI) {
   pi.registerTool(matrixTool("matrix.allowed"));
   pi.registerTool(matrixTool("matrix.denied"));
-  for (const name of ["web_search", "code_search", "fetch_content", "get_search_content", "mcporter", "mcp"]) {
-    pi.registerTool(matrixTool(name));
-  }
 }
 `,
 	);
@@ -101,14 +96,12 @@ export default function(pi: ExtensionAPI) {
 description: F3 tool matrix probe
 builtin_tools: read
 extensions: true
-extension_tools: matrix.allowed, agent, get_subagent_result, steer_subagent
+extension_tools: matrix.allowed, agent, get_agent_result, steer_subagent
 ---
 
 Report the active tool matrix.
 `,
 	);
-
-	writeFileSync(path.join(agentsDir, `${WENCHANG_AGENT}.md`), readFileSync(WENCHANG_SOURCE, "utf8"));
 }
 
 function cleanupRuntimeFixtures(): void {
@@ -181,25 +174,7 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 		expect(nonNestedTools).toContain("matrix.allowed");
 		expect(nonNestedTools).not.toContain("matrix.denied");
 		expect(nonNestedTools).not.toContain("agent");
-		expect(nonNestedTools).not.toContain("get_subagent_result");
+		expect(nonNestedTools).not.toContain("get_agent_result");
 		expect(nonNestedTools).not.toContain("steer_subagent");
-	});
-
-	it("gives the real Wen Chang agent access to mcporter", async () => {
-		const wenchangTools = await activeToolsFor(WENCHANG_AGENT);
-
-		expect(wenchangTools).toContain("read");
-		expect(wenchangTools).toContain("web_search");
-		expect(wenchangTools).toContain("code_search");
-		expect(wenchangTools).toContain("fetch_content");
-		expect(wenchangTools).toContain("get_search_content");
-		expect(wenchangTools).toContain("mcporter");
-		expect(wenchangTools).not.toContain("mcp");
-		expect(wenchangTools).not.toContain("bash");
-		expect(wenchangTools).not.toContain("edit");
-		expect(wenchangTools).not.toContain("write");
-		expect(wenchangTools).not.toContain("matrix.allowed");
-		expect(wenchangTools).not.toContain("matrix.denied");
-		expect(wenchangTools).not.toContain("agent");
 	});
 });

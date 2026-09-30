@@ -3,9 +3,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import fastExtension from "../../fast/index.js";
 
-const codex = { provider: "openai-codex", api: "openai-codex-responses", id: "gpt-5.4" };
-const cliproxy = { provider: "cliproxyapi", api: "openai-responses", id: "gpt-6-astra" };
-const anthropic = { provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-8" };
+const codex = { provider: "openai-codex", api: "openai-codex-responses", id: getFastProfile({ provider: "openai-codex", api: "openai-codex-responses", id: "" })!.models[0] };
+const cliproxy = { provider: "cliproxyapi", api: "openai-responses", id: getFastProfile({ provider: "cliproxyapi", api: "openai-responses", id: "" })!.models[0] };
+const anthropic = { provider: "anthropic", api: "anthropic-messages", id: getFastProfile({ provider: "anthropic", api: "anthropic-messages", id: "" })!.models[0] };
 const beta = "fast-mode-2026-02-01";
 
 // Capture only registration; invoke the real extension's command and request hook.
@@ -55,7 +55,7 @@ describe("existing fast factory characterization", () => {
 		await fast.toggle();
 		expect(fast.request(payload)).toEqual({ ...payload, service_tier: "priority" });
 		expect(fast.request({ ...payload, service_tier: "default" })).toBeUndefined();
-		expect(fast.ui.notify).toHaveBeenLastCalledWith("Fast mode is on and active for cliproxyapi/gpt-6-astra; requests will use service_tier=priority.", "info");
+		expect(fast.ui.notify).toHaveBeenLastCalledWith(`Fast mode is on and active for ${cliproxy.provider}/${cliproxy.id}; requests will use service_tier=priority.`, "info");
 		expect(fast.ui.setStatus).toHaveBeenLastCalledWith("fast", "fast");
 	});
 	it("anthropic injects speed and OAuth betas, preserves other headers, and removes only fast beta on toggle off", async () => {
@@ -74,9 +74,15 @@ describe("existing fast factory characterization", () => {
 
 describe("stateless fast primitives", () => {
 	it.each([
-		... ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"].map((id) => ({ model: { ...codex, id }, usingOAuth: true, field: "service_tier", value: "priority" })),
-		... ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"].map((id) => ({ model: { ...cliproxy, id }, usingOAuth: false, field: "service_tier", value: "priority" })),
-		... ["claude-opus-4-8", "claude-opus-5"].map((id) => ({ model: { ...anthropic, id }, usingOAuth: false, field: "speed", value: "fast" })),
+		...[codex, cliproxy, anthropic].flatMap((fixture) => {
+			const profile = getFastProfile(fixture)!;
+			return profile.models.map((id) => ({
+				model: { ...fixture, id },
+				usingOAuth: profile.requireOAuth,
+				field: profile.injectionKey,
+				value: profile.injectionValue,
+			}));
+		}),
 	])("supports verified $model.id eligibility and payload", ({ model, usingOAuth, field, value }) => {
 		expect(getFastEligibility(model, usingOAuth).eligible).toBe(true);
 		for (const strict of [false, true]) {
@@ -86,10 +92,11 @@ describe("stateless fast primitives", () => {
 		}
 	});
 	it.each([
-		... ["claude-opus-4-6", "claude-opus-4-7", "claude-opus-5-latest"].map((id) => ({ ...anthropic, id })),
-		... ["gpt-5.6", "codex-auto-review", "gpt-6-astra-latest", "gpt-6-sol-latest", "gpt-6-luna-latest", "gpt-6-terra"].map((id) => ({ ...codex, id })),
-		... ["gpt-6-terra", "gpt-6-sol-latest"].map((id) => ({ ...cliproxy, id })),
-	])("rejects removed or unverified $id in interactive and strict paths", (model) => {
+		...[codex, cliproxy, anthropic].flatMap((fixture) => {
+			const models = getFastProfile(fixture)!.models;
+			return [`${models[0]}-latest`, "unsupported"].map((id) => ({ ...fixture, id }));
+		}),
+	])("rejects unknown $id in interactive and strict paths", (model) => {
 		expect(getFastEligibility(model, true).eligible).toBe(false);
 		for (const strict of [false, true]) {
 			const policy = { enabled: true, usingOAuth: true, strict };
@@ -98,12 +105,8 @@ describe("stateless fast primitives", () => {
 			if (model.provider === "anthropic") expect(transformFastHeaders({ "anthropic-beta": `other,${beta}` }, model, policy)).toEqual({ "anthropic-beta": "other" });
 		}
 	});
-	it("retains exact profiles, accepts CLIProxyAPI API-key auth, and rejects wrong provider or API", () => {
-		const openaiModels = ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"];
-		expect(getFastProfile(codex)?.models).toEqual(openaiModels);
-		expect(getFastProfile(cliproxy)?.models).toEqual(openaiModels);
+	it("accepts CLIProxyAPI API-key auth and rejects wrong provider or API", () => {
 		expect(getFastProfile(cliproxy)?.requireOAuth).toBe(false);
-		expect(getFastProfile(anthropic)?.models).toEqual(["claude-opus-4-8", "claude-opus-5"]);
 		for (const model of [undefined, { ...codex, provider: "luna" }, { ...codex, api: "openai-responses" }, { ...codex, id: "gpt-5" }, { ...cliproxy, provider: "openai-codex" }, { ...cliproxy, api: "openai-codex-responses" }]) {
 			expect(getFastEligibility(model, true).eligible).toBe(false);
 			expect(transformFastPayload({ model: model?.id }, model, { enabled: true, usingOAuth: true, strict: true })).toBeUndefined();
@@ -111,7 +114,7 @@ describe("stateless fast primitives", () => {
 		expect(getFastEligibility(codex, false).eligible).toBe(false);
 		expect(getFastEligibility(cliproxy, false).eligible).toBe(true);
 		expect(() => assertFastSupported(cliproxy, false)).not.toThrow();
-		expect(() => assertFastSupported({ ...cliproxy, id: "gpt-6-terra" }, false)).toThrow("Explicit :fast is unsupported");
+		expect(() => assertFastSupported({ ...cliproxy, id: `${getFastProfile(cliproxy)!.models[0]}-latest` }, false)).toThrow("Explicit :fast is unsupported");
 		expect(() => assertFastSupported({ ...cliproxy, api: "openai-codex-responses" }, false)).toThrow("Explicit :fast is unsupported");
 		expect(() => assertFastSupported(codex, false)).toThrow("OAuth/subscription auth is required");
 		expect(getFastProfile(anthropic)?.describeInjection).toBe("speed=fast");

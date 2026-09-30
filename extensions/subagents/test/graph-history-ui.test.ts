@@ -53,22 +53,6 @@ describe("historical graph presentation", () => {
   });
 });
 
-
-it("keeps history metadata-private and ambiguous labels flat rather than reconstructing containment", () => {
-  const task = createGraphRunTask({ id: "legacy", script: "" });
-  Object.assign(task, { status: "completed", endTime: Date.now() });
-  task.graphRunProgress = [{ type: "graph_run_agent", index: 0, label: "Research · iteration 2 · item 4", state: "done", presentation: { kind: "agent", name: "private name", parentInstanceId: "private parent", iteration: 2, itemIndex: 3 } }];
-  const saved = required(decodeHistory(JSON.stringify({ version: 1, runs: [snapshotHistory(task)] })).runs[0]);
-  expect(JSON.stringify(saved)).not.toMatch(/private name|private parent|presentation|topology/);
-  const history = required(mergeGraphRuns([], [saved]).get("legacy"));
-  const runs = [{ id: "legacy", name: "legacy", status: history.status, source: toPaneSource(history) }];
-  const lines = renderPanelLines(runs, initialPanelState(), { width: 120 }).map(line => line.map(segment => segment.text).join(""));
-  expect(lines.join("\n")).toContain("1 unclassified node");
-  expect(lines.join("\n")).toContain("Flat fallback");
-  expect(lines.join("\n")).not.toContain("↻ Iteration");
-  expect(lines.find(line => line.includes("Research · iteration"))).toMatch(/^ {5}└─ ✓ done/);
-});
-
 it("round-trips v2 hierarchy, decisions and selected flow without retaining private runtime data", async () => {
   const task = createGraphRunTask({ id: "roundtrip", script: "PRIVATE_SCRIPT", meta: { name: "context-gather", description: "Configured\ngraph description" } });
   Object.assign(task, { status: "completed", startTime: 0, endTime: 160000, args: "PRIVATE_INPUT", value: "PRIVATE_OUTPUT" });

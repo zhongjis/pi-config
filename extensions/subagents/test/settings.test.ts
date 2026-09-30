@@ -127,15 +127,6 @@ describe("settings persistence", () => {
     expect(loadSettings(projectDir)).toEqual({}); // non-boolean dropped
   });
 
-
-  it("sanitize drops schedulingEnabled entirely (scheduling removed)", () => {
-    // schedulingEnabled is no longer a recognized field — sanitize must strip it.
-    writeProject({ schedulingEnabled: true, outputTranscript: true });
-    const result = loadSettings(projectDir);
-    expect(result).not.toHaveProperty("schedulingEnabled");
-    expect(result.outputTranscript).toBe(true);
-  });
-
   it("saveSettings writes only to the project file; global is untouched", () => {
     writeGlobal({ maxConcurrent: 16 });
     saveSettings({ maxConcurrent: 2 }, projectDir);
@@ -488,7 +479,6 @@ describe("settings persistence", () => {
         setDefaultMaxTurns: vi.fn(),
         setGraceTurns: vi.fn(),
         setDefaultJoinMode: vi.fn(),
-        setSchedulingEnabled: vi.fn(),
         setScopeModels: vi.fn(),
         setDisableDefaultAgents: vi.fn(),
         setToolDescriptionMode: vi.fn(),

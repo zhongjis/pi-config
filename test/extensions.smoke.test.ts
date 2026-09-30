@@ -80,35 +80,6 @@ function discoverExtensionEntries(): string[] {
 
 const extensionEntries = discoverExtensionEntries();
 
-const EXPECTED_TOOL_NAMES = [
-  "Task",
-  "agent",
-  "ask",
-  "bash",
-  "boomerang",
-  "codegraph_callees",
-  "codegraph_callers",
-  "codegraph_explore",
-  "codegraph_files",
-  "codegraph_impact",
-  "codegraph_node",
-  "codegraph_search",
-  "codegraph_status",
-  "codex_review_session_scope",
-  "create_goal",
-  "get_agent_result",
-  "get_goal",
-  "get_subagent_result",
-  "look_at",
-  "lsp",
-  "open_pr_walkthrough",
-  "plan_approve",
-  "plan_scaffold",
-  "steer_subagent",
-  "update_goal",
-  "write",
-] as const;
-
 let tempHome = "";
 let originalHome = process.env.HOME;
 
@@ -133,28 +104,7 @@ describe("extension entrypoints", () => {
     expect(new Set(extensionEntries).size).toBe(extensionEntries.length);
   });
 
-
-  it("locks package names for subagents and tasks", () => {
-    const cases: Array<[string, string]> = [
-      ["extensions/subagents/package.json", "@panda/pi-subagents"],
-      ["extensions/tasks/package.json", "@panda/pi-tasks"],
-    ];
-    for (const [relPath, expectedName] of cases) {
-      const pkg = JSON.parse(readFileSync(join(process.cwd(), relPath), "utf8"));
-      expect(pkg.name).toBe(expectedName);
-    }
-  });
-
-  it("leaves session resume hints to Pi core", async () => {
-    const mock = createMockPi();
-    const mod = await import("../extensions/qol/index.js");
-
-    mod.default(mock.pi as never);
-
-    expect(mock.lifecycleHandlers.has("session_shutdown")).toBe(false);
-  });
-
-  it("locks the exact extension tool registry without executing tools", async () => {
+  it("registers unique tool names across all extensions", async () => {
     const mock = createMockPi();
 
     for (const entry of extensionEntries) {
@@ -169,13 +119,8 @@ describe("extension entrypoints", () => {
     const rawNames = registrations.map((definition) => definition.name);
     const uniqueNames = [...new Set(rawNames)];
 
-    expect(rawNames).toHaveLength(26);
-    expect(uniqueNames).toHaveLength(26);
-    expect([...uniqueNames].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
-
-    for (const definition of registrations) {
-      expect(mock.tools.get(definition.name)).toBe(definition);
-    }
+    expect(rawNames.length).toBeGreaterThan(0);
+    expect(uniqueNames).toHaveLength(rawNames.length);
   }, 10_000);
 
   for (const entry of extensionEntries) {

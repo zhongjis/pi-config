@@ -53,7 +53,7 @@ function text(result: any): string {
 }
 
 describe("Task consolidated tool", () => {
-  it("registers a single Task tool (no legacy names)", () => {
+  it("registers only the consolidated Task tool", () => {
     const mock = mockPi();
     initExtension(mock.pi as any);
     expect([...mock.tools.keys()].sort()).toEqual(["Task"]);

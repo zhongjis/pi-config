@@ -309,13 +309,6 @@ describe("fanout validation", () => {
   });
 });
 
-describe("graph versions", () => {
-  it("ignores legacy version keys", () => {
-    const base = { nodes: { a: { type: "agent", agent: "x", prompt: "x" } }, edges: [] };
-    for (const version of [undefined, 1, 2]) expect(validateGraph({ ...base, version }).ok).toBe(true);
-  });
-});
-
 it("checks guarded cyclic paths and prototype-name IDs without traversing loop edges", () => {
   const agent = { type: "agent", agent: "worker", prompt: "fixture" };
   const fanout = { type: "fanout", items: { path: "$" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: "${item}" };

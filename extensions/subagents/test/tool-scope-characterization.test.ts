@@ -65,6 +65,7 @@ vi.mock("../src/skill-loader.js", () => ({ preloadSkills: vi.fn(() => []) }));
 // Import the real function under test — AFTER mocks are declared.
 // ---------------------------------------------------------------------------
 import { installExtensionToolScope } from "../src/agent-tool-scope.js";
+import { NESTED_SUBAGENT_TOOL_NAMES } from "../../lib/active-tools.js";
 
 type InstallCtx = Parameters<typeof installExtensionToolScope>[1];
 
@@ -131,6 +132,14 @@ describe("installExtensionToolScope — characterization", () => {
     expect(session.getActiveToolNames()).toEqual(["read"]);
     await expect(session.agent.beforeToolCall?.({ toolCall: { name: "resolve_agent_graph_gate" } })).resolves.toMatchObject({ block: true });
   });
+
+  it("allowNesting admits nested subagent tools", () => {
+    const nested = ["read", ...NESTED_SUBAGENT_TOOL_NAMES];
+    const session = makeFakeSession(nested);
+    install(session, { allowNesting: true });
+    expect(session.getActiveToolNames()).toEqual(nested);
+  });
+
   /**
    * HAPPY PATH: extension_tools wildcard.
    *

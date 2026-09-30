@@ -16,10 +16,7 @@ describe("parseReviewMode", () => {
     expect(parseReviewMode("SESSION")).toEqual({ kind: "session" });
   });
 
-  it("rejects old and unknown modes", () => {
-    expect(parseReviewMode("uncommitted").kind).toBe("invalid");
-    expect(parseReviewMode("base origin/main").kind).toBe("invalid");
-    expect(parseReviewMode("commit HEAD").kind).toBe("invalid");
+  it("rejects unknown modes and extra args", () => {
     expect(parseReviewMode("session extra").kind).toBe("invalid");
     expect(parseReviewMode("unknown").kind).toBe("invalid");
   });

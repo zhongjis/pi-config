@@ -45,7 +45,7 @@ describe("registered result retrieval", () => {
     expect(result.content.map(part => part.text ?? "").join("\n")).toContain("graph-result");
     expect(result.content.map(part => part.text ?? "").join("\n")).toContain("completed");
   });
-  it("retrieves an independent terminal agent through the canonical tool and legacy alias", async () => {
+  it("retrieves an independent terminal agent through get_agent_result", async () => {
     const host = boot();
     await host.lifecycle("session_start");
     const launched = await required(host.tools.get("agent")).execute("launch", {
@@ -53,15 +53,12 @@ describe("registered result retrieval", () => {
     }, undefined, undefined, host.ctx);
     const text = launched.content.map(part => part.text ?? "").join("\n");
     const id = required(/Agent ID: (\S+)/.exec(text)?.[1]);
-    expect(host.tools.has("get_agent_result")).toBe(true);
-    for (const name of ["get_agent_result", "get_subagent_result"]) {
-      const result = await required(host.tools.get(name)).execute("read", {
-        ...(name === "get_agent_result" ? { run_id: id } : { agent_id: id }), wait: true,
-      }, undefined, undefined, host.ctx);
-      const body = result.content.map(part => part.text ?? "").join("\n");
-      expect(body).toContain("independent-result");
-      expect(body).not.toContain("Full result with every round:");
-    }
+    const result = await required(host.tools.get("get_agent_result")).execute("read", {
+      run_id: id, wait: true,
+    }, undefined, undefined, host.ctx);
+    const body = result.content.map(part => part.text ?? "").join("\n");
+    expect(body).toContain("independent-result");
+    expect(body).not.toContain("Full result with every round:");
   });
   it("returns compact bounded-feedback retrieval text and keeps rounds in the artifact and details", async () => {
     const host = boot({ agentGraphEnabled: true });

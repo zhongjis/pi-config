@@ -115,7 +115,7 @@ describe("runPlanApprovalFlow", () => {
 });
 
 describe("modes extension plan_approve tool", () => {
-	it("returns a Pi 0.70-compatible tool result with details", async () => {
+	it("returns a tool result with details", async () => {
 		plannotatorMocks.checkPlannotatorAvailability.mockClear();
 		plannotatorMocks.prepareApprovedPlanHandoff.mockClear();
 

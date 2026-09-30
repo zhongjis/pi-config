@@ -47,11 +47,7 @@ describe("resolveAgentInvocationConfig", () => {
     expect(resolved.isolated).toBe(false);
   });
 
-  it("normalizes thinking 'none' to 'off' (backward compat)", () => {
-    expect(resolveAgentInvocationConfig(undefined, {}, "none").thinking).toBe("off");
-  });
-
-  it("passes non-legacy thinking levels through unchanged (incl. pi 0.80 'max')", () => {
+  it("passes thinking levels through unchanged (incl. 'max')", () => {
     expect(resolveAgentInvocationConfig(undefined, {}, "high").thinking).toBe("high");
     expect(resolveAgentInvocationConfig(undefined, {}, "max").thinking).toBe("max");
   });
@@ -103,11 +99,6 @@ describe("resolveAgentInvocationConfig", () => {
     expect(resolved.runInBackground).toBe(false);
     expect(resolved.isolated).toBe(false);
   });
-
-  it("resolved config has no isolation key (worktree isolation removed)", () => {
-    const resolved = resolveAgentInvocationConfig(makeConfig(), {});
-    expect(resolved).not.toHaveProperty("isolation");
-  });
 });
 
 describe("resolveJoinMode", () => {
@@ -122,30 +113,28 @@ describe("resolveJoinMode", () => {
   });
 });
 
-describe("prepareAgentInvocation caller overrides", () => {
+describe("prepareAgentInvocation", () => {
   const plain = { provider: "test", id: "plain", name: "Plain" };
   const parent = { provider: "test", id: "parent", name: "Parent" };
   const registry = { find: (provider: string, id: string) => [plain, parent].find((m) => m.provider === provider && m.id === id), getAll: () => [plain, parent], getAvailable: () => [plain, parent] };
   const prepare = (agentType: string) => prepareAgentInvocation({
     agentType,
-    // Stray caller values an LLM may still send; they are no longer part of any contract.
-    params: { model: "test/parent", thinking: "high" } as never,
+    params: {},
     modelRegistry: registry as never,
     parentModel: parent as never,
     cwd: process.cwd(),
     scopeModels: false,
   });
 
-  it("ignores caller model and thinking for a suffixless frontmatter chain", () => {
+  it("resolves the frontmatter model", () => {
     registerAgents(new Map([["suffixless", makeConfig({ name: "suffixless", model: "test/plain" })]]));
     const prepared = prepare("suffixless");
     expect(prepared.invocation.modelInput).toBe("test/plain");
     expect(prepared.invocation.thinking).toBeUndefined();
     expect(prepared.selectedModel.model).toMatchObject({ id: "plain" });
-    expect(prepared.selectedModel).not.toHaveProperty("invocationThinkingLevel");
   });
 
-  it("inherits the parent model instead of a caller model when frontmatter omits model", () => {
+  it("inherits the parent model via prepareAgentInvocation when frontmatter omits model", () => {
     registerAgents(new Map([["inherit", makeConfig({ name: "inherit" })]]));
     const prepared = prepare("inherit");
     expect(prepared.invocation.modelInput).toBeUndefined();

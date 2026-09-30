@@ -6,7 +6,6 @@ import {
 	registerGuardCapability,
 	registerGuardScopeProvider,
 	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
-	type GuardCapability,
 	type GuardScopeProvider,
 } from "../guard-registration.js";
 
@@ -79,23 +78,6 @@ describe("guard capability registration", () => {
 
 		const replacement = runtime(bus);
 		registerGuardCapability(replacement, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY);
-		expect(hasGuardCapability(runtime(bus), SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
-	});
-
-	it("ignores legacy process-global capability and scope registries", async () => {
-		const bus = eventBus();
-		const shutdownHandlers: ShutdownHandler[] = [];
-		const pi = runtime(bus, shutdownHandlers);
-		const legacyCapabilities = new WeakMap<object, Set<GuardCapability>>();
-		legacyCapabilities.set(pi.events, new Set([SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY]));
-		Reflect.set(globalThis, Symbol.for("pi-config.guard-registration-registry"), legacyCapabilities);
-		const legacyScopes = new WeakMap<object, Map<string, GuardScopeProvider>>();
-		legacyScopes.set(pi.events, new Map([["legacy", () => ({ decision: "guard", reason: "legacy" })]]));
-		Reflect.set(globalThis, Symbol.for("pi-config.guard-scope-provider-registry"), legacyScopes);
-
-		expect(hasGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(false);
-		expect(await evaluateGuardScope(pi, event, ctx)).toEqual({ decision: "abstain" });
-		expect(() => registerGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).not.toThrow();
 		expect(hasGuardCapability(runtime(bus), SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)).toBe(true);
 	});
 });

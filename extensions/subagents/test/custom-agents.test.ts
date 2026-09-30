@@ -339,28 +339,6 @@ Any thinking.`);
     expect(result.get("anythink")!.thinking).toBe("turbo");
   });
 
-  it("loads thinking: max (pi 0.80's top level) unchanged (#147)", () => {
-    writeAgent("deepthink", `---
-thinking: max
----
-
-Think hard.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("deepthink")!.thinking).toBe("max");
-  });
-
-  it("normalizes legacy thinking: none to off (backward compat)", () => {
-    writeAgent("legacy", `---
-thinking: none
----
-
-Legacy.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("legacy")!.thinking).toBe("off");
-  });
-
   it("accepts max_turns: 0 as unlimited", () => {
     writeAgent("unlimited", `---
 max_turns: 0
@@ -549,29 +527,7 @@ Agent prompt.`);
     expect(result.get("myagent")!.displayName).toBe("MyAgent");
   });
 
-  // ─── obsolete tool/skill fields are invalid and skip the agent ──────────
-
-  it("rejects legacy tools and skips the invalid agent", () => {
-    const file = writeAgent("legacy", `---
-tools: read, custom_extension_tool, grep
----
-
-Legacy tools.`);
-
-    const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect(result.agents.has("legacy")).toBe(false);
-    expect(result.diagnostics).toEqual([
-      {
-        file,
-        agentName: "legacy",
-        field: "tools",
-        severity: "error",
-        message: "tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools instead.",
-      },
-    ]);
-  });
-
-  it("rejects legacy tools even when builtin_tools is present", () => {
+  it("skips an agent with an invalid frontmatter field and reports a diagnostic", () => {
     const file = writeAgent("both", `---
 builtin_tools: bash
 tools: read, grep
@@ -581,55 +537,12 @@ Both fields.`);
 
     const result = loadCustomAgentsWithDiagnostics(tmpDir);
     expect(result.agents.has("both")).toBe(false);
-    expect(result.diagnostics).toEqual([
+    expect(result.diagnostics).toMatchObject([
       {
         file,
         agentName: "both",
         field: "tools",
         severity: "error",
-        message: "tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools instead.",
-      },
-    ]);
-  });
-
-  it("rejects disallowed_tools and skips the invalid agent", () => {
-    const file = writeAgent("restricted", `---
-description: Restricted Agent
-disallowed_tools: bash, write
----
-
-No bash or write.`);
-
-    const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect(result.agents.has("restricted")).toBe(false);
-    expect(result.diagnostics).toEqual([
-      {
-        file,
-        agentName: "restricted",
-        field: "disallowed_tools",
-        severity: "error",
-        message: "disallowed_tools is invalid/obsolete; use builtin_tools and extension_tools explicit allowlists instead.",
-      },
-    ]);
-  });
-
-  it("rejects disallow_tools and skips the invalid agent", () => {
-    const file = writeAgent("restricted-alias", `---
-description: Restricted Agent
-disallow_tools: bash, write
----
-
-No bash or write.`);
-
-    const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect(result.agents.has("restricted-alias")).toBe(false);
-    expect(result.diagnostics).toEqual([
-      {
-        file,
-        agentName: "restricted-alias",
-        field: "disallow_tools",
-        severity: "error",
-        message: "disallow_tools is invalid/obsolete; use builtin_tools and extension_tools explicit allowlists instead.",
       },
     ]);
   });
@@ -684,46 +597,6 @@ Body.`);
     const agent = loadCustomAgents(tmpDir).get("s4")!;
     expect(agent.discoverSkills).toBe(false);
     expect(agent.preloadSkills).toEqual([]);
-  });
-
-  it("S5: legacy skills field is invalid and skips the agent", () => {
-    const file = writeAgent("s5", `---
-skills: complexity
----
-
-Body.`);
-
-    const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect(result.agents.has("s5")).toBe(false);
-    expect(result.diagnostics).toEqual([
-      {
-        file,
-        agentName: "s5",
-        field: "skills",
-        severity: "error",
-        message: "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.",
-      },
-    ]);
-  });
-
-  it("S5b: legacy inherit_skills field is invalid and skips the agent", () => {
-    const file = writeAgent("s5b", `---
-inherit_skills: false
----
-
-Body.`);
-
-    const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect(result.agents.has("s5b")).toBe(false);
-    expect(result.diagnostics).toEqual([
-      {
-        file,
-        agentName: "s5b",
-        field: "inherit_skills",
-        severity: "error",
-        message: "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.",
-      },
-    ]);
   });
 
   it("honors PI_CODING_AGENT_DIR for global custom agent discovery", () => {

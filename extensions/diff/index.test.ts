@@ -13,10 +13,6 @@ const NEW_USER =
   '{"comments":[{"noteId":"mcp:abc","source":"user","filePath":"file.txt","hunkIndex":0,"newRange":[4,4],"body":"Fix this wording","author":"me","createdAt":"2026-07-15T19:58:11.876Z","editable":true}]}';
 const NEW_AGENT =
   '{"comments":[{"noteId":"mcp:abc","source":"agent","filePath":"file.txt","hunkIndex":0,"newRange":[4,4],"body":"Fix this wording","author":"me","createdAt":"2026-07-15T19:58:11.876Z","editable":true}]}';
-const LEGACY =
-  '{"comments":[{"commentId":"mcp:abc","filePath":"file.txt","hunkIndex":0,"side":"new","line":4,"summary":"Fix this wording","author":"user","createdAt":"2026-07-15T19:58:11.876Z"}]}';
-const LEGACY_BARE_ARRAY =
-  '[{"commentId":"mcp:abc","filePath":"file.txt","hunkIndex":0,"side":"new","line":4,"summary":"Fix this wording","author":"user","createdAt":"2026-07-15T19:58:11.876Z"}]';
 // Captured verbatim from the hunk 0.17.1 daemon: an --agent-context annotation
 // surfaces as source "ai"; a live HTTP comment-list response for a user note.
 const NEW_AI =
@@ -32,12 +28,6 @@ describe("parseHunkComments", () => {
     ]);
   });
 
-  it("parses the legacy schema (no source)", () => {
-    expect(parseHunkComments(LEGACY)).toEqual([
-      { file: "file.txt", line: 4, summary: "Fix this wording", source: null },
-    ]);
-  });
-
   it("preserves source=agent (does not filter)", () => {
     expect(parseHunkComments(NEW_AGENT)).toEqual([
       { file: "file.txt", line: 4, summary: "Fix this wording", source: "agent" },
@@ -46,12 +36,6 @@ describe("parseHunkComments", () => {
 
   it("returns [] for valid JSON with no comments", () => {
     expect(parseHunkComments('{"comments":[]}')).toEqual([]);
-  });
-
-  it("parses a bare-array legacy payload", () => {
-    expect(parseHunkComments(LEGACY_BARE_ARRAY)).toEqual([
-      { file: "file.txt", line: 4, summary: "Fix this wording", source: null },
-    ]);
   });
 
   it("returns null for invalid JSON", () => {
@@ -66,12 +50,11 @@ describe("parseHunkComments", () => {
 });
 
 describe("keepUserAuthored", () => {
-  it("keeps user + legacy (null) and drops agent/ai", () => {
+  it("keeps user and drops agent/ai", () => {
     const user: HunkComment = { file: "a", line: 1, summary: "u", source: "user" };
     const agent: HunkComment = { file: "b", line: 2, summary: "a", source: "agent" };
     const ai: HunkComment = { file: "d", line: 4, summary: "ai", source: "ai" };
-    const legacy: HunkComment = { file: "c", line: 3, summary: "l", source: null };
-    expect(keepUserAuthored([user, agent, ai, legacy])).toEqual([user, legacy]);
+    expect(keepUserAuthored([user, agent, ai])).toEqual([user]);
   });
 });
 

@@ -27,12 +27,12 @@ Maintain persistent task tracking, dependencies, and task supervision state.
 
 - [README](README.md) owns tool semantics and storage; [config](src/tasks-config.ts) and [RPC handlers](src/bridge/rpc-handlers.ts) own settings and RPC names.
 - You MUST preserve [upstream provenance and adaptations](README.md#upstream) and [LICENSE](LICENSE).
-- Store changes SHOULD use existing migration, DAG, and corruption regressions.
+- Store changes SHOULD use existing DAG and corruption regressions.
 
 ## Verification
 
 - From repository root: `pnpm exec vitest run --project unit extensions/tasks/test`.
-- [Task tool](test/task-tool.test.ts), [FSM](test/fsm-illegal-transition.test.ts), and [migration](test/migration-idempotent.test.ts) tests cover distinct contracts.
+- [Task tool](test/task-tool.test.ts), [FSM](test/fsm-illegal-transition.test.ts), and [store](test/task-store.test.ts) tests cover distinct contracts.
 - [Finish continuation](test/finish-continuation.test.ts) covers episode bounds, Goal authority, eligibility, waits, and asynchronous invalidation.
 
 ## Child DOX Index

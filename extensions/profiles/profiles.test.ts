@@ -141,7 +141,6 @@ describe("registry filter", () => {
 		const visible = ctx.modelRegistry.getAvailable().map((m: MockModel) => m.provider);
 		expect(visible).toContain("anthropic");
 		expect(visible).toContain("openai-codex");
-		expect(visible).toContain("cliproxyapi");
 		expect(visible).not.toContain("opencode-go");
 		expect(visible).not.toContain("llama-swap");
 	});
@@ -156,7 +155,6 @@ describe("registry filter", () => {
 		expect(visible).not.toContain("opencode");
 		expect(visible).not.toContain("anthropic");
 		expect(visible).not.toContain("llama-swap");
-		expect(visible).not.toContain("cliproxyapi");
 	});
 
 	it("filters to llama-swap when profile=local", async () => {
@@ -234,14 +232,6 @@ describe("model forcing", () => {
 		expect(harness.pi.setModel).not.toHaveBeenCalled();
 	});
 
-	it("retains a selected cliproxyapi model in the default profile", async () => {
-		const harness = createHarness();
-		const ctx = createContext(cliproxyapiModel);
-		await harness.fire("session_start", {}, ctx);
-		expect(harness.pi.setModel).not.toHaveBeenCalled();
-		expect(ctx.modelRegistry.getAvailable()).toContain(cliproxyapiModel);
-	});
-
 	it("switches to profile's defaultModel when current model is out-of-profile", async () => {
 		process.env.PI_PROFILE = "opencode";
 		const harness = createHarness();
@@ -315,9 +305,9 @@ describe("/profile command", () => {
 describe("/profile:<name> shortcut commands", () => {
 	it("registers /profile:<name> command for each built-in profile", () => {
 		const harness = createHarness();
-		expect(harness.commands.has("profile:default")).toBe(true);
-		expect(harness.commands.has("profile:opencode")).toBe(true);
-		expect(harness.commands.has("profile:local")).toBe(true);
+		for (const name of Object.keys(DEFAULT_PROFILES_CONFIG.profiles)) {
+			expect(harness.commands.has(`profile:${name}`)).toBe(true);
+		}
 	});
 });
 

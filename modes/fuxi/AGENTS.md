@@ -30,7 +30,6 @@ Fu Xi's thin planner prompt family and authoritative planning skill.
 
 ## Verification
 
-- Family contract: `pnpm exec vitest run --project unit test/fuxi-clearance.test.ts`.
 - Runtime mode coverage: `pnpm exec vitest run --project integration test/integration/modes.integration.test.ts`.
 
 ## Child DOX Index

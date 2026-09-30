@@ -132,24 +132,14 @@ it("keeps unbudgeted v1 loops resumable when later child executions cost less", 
   expect(readGraphSnapshots(cwd)[0].state.nodes.review.costUsd).toBeCloseTo(0.7);
 });
 
-it.each([1, 2] as const)("retains envelope v%s while upgrading and enforcing immutable execution prefixes", async version => {
-  const { upgradeLegacyExecution } = await import("../src/graph/graph-execution.js");
+it("enforces immutable execution prefixes across replacements", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "graph-execution-")); directories.push(cwd);
-  const saved = (await frames())[0];
-  if (!saved?.state.runtime) throw new Error("missing runtime");
-  saved.version = version;
-  Reflect.deleteProperty(saved.state.runtime, "executionProtocolVersion");
-  Reflect.deleteProperty(saved.state.runtime, "executionLedger");
-  writeGraphSnapshot(cwd, saved);
-  const upgraded = { ...saved, state: upgradeLegacyExecution(saved.state) };
-  const upgradedRuntime = upgraded.state.runtime;
-  if (!upgradedRuntime) throw new Error("missing upgraded runtime");
-  upgradedRuntime.revision++;
-  writeGraphSnapshot(cwd, upgraded);
-  expect(readGraphSnapshots(cwd)[0].version).toBe(version);
+  for (const snapshot of await frames()) writeGraphSnapshot(cwd, snapshot);
+  const [saved] = readGraphSnapshots(cwd);
+  expect(saved.state.runtime?.executionLedger?.length).toBeGreaterThan(0);
   const path = join(graphRunsDir(cwd), `${saved.runId}.json`); const bytes = readFileSync(path, "utf8");
   for (const change of ["remove", "partial", "downgrade", "rewrite", "truncate"] as const) {
-    const next = structuredClone(upgraded); const runtime = next.state.runtime;
+    const next = structuredClone(saved); const runtime = next.state.runtime;
     if (!runtime) throw new Error("missing cloned runtime");
     runtime.revision++;
     if (change === "remove") { Reflect.deleteProperty(runtime, "executionProtocolVersion"); Reflect.deleteProperty(runtime, "executionLedger"); }

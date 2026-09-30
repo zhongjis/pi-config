@@ -284,7 +284,6 @@ describe("handoff extension", () => {
 			expect(appendedCustomEntries).toEqual([{ customType: "agent-mode", data: { mode: "houtu" } }]);
 			expect(replacementUi.setEditorText).toHaveBeenCalledTimes(1);
 			expect(replacementUi.setEditorText.mock.calls[0][0]).toContain("ship feature");
-			// sendUserMessage no longer used for prompt delivery
 			expect(mock.sendUserMessage).not.toHaveBeenCalled();
 		});
 	});

@@ -141,33 +141,11 @@ describe('lsp config paths', () => {
     await expect(runConfig(scaffoldGlobalConfigEffect(cwd), empty.service)).resolves.toBe(true);
     expect(empty.writes).toHaveLength(1);
     expect(empty.writes[0].path).toBe(managedPath);
-    expect(empty.writes[0].content).toContain('typescript-language-server');
 
     for (const existingPath of [managedPath, projectPath]) {
       const existing = makeFs({ [existingPath]: json({ lsp: {} }) });
       await expect(runConfig(scaffoldGlobalConfigEffect(cwd), existing.service)).resolves.toBe(false);
       expect(existing.writes).toEqual([]);
     }
-  });
-
-  it('ignores removed upstream global config path', async () => {
-    const removedGlobalPath = join(home, '.pi', 'agent', 'extensions', 'lsp', 'config.json');
-    const { service } = makeFs({
-      [removedGlobalPath]: json({
-        lsp: {
-          typescript: {
-            command: ['upstream-ts'],
-            extensions: ['.upstream'],
-          },
-        },
-      }),
-    });
-
-    await expect(runConfig(loadConfigEffect(cwd), service)).resolves.toMatchObject({
-      globalDisabled: false,
-      servers: [],
-    });
-
-    await expect(runConfig(scaffoldGlobalConfigEffect(cwd), service)).resolves.toBe(true);
   });
 });

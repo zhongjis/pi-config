@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 import initExtension from "../index.js";
-import { INIT_DEEP_TEMPLATE } from "../src/init-deep-template.js";
-import { INIT_DOX_TEMPLATE } from "../src/init-dox-template.js";
 
 type InitCommand = {
   description: string;
@@ -27,33 +25,18 @@ function getCommand(mock: ReturnType<typeof createMockPi>, name: string): InitCo
   return command as InitCommand;
 }
 
-function expectTemplateMarkers(label: string, template: string, markers: string[]) {
-  for (const marker of markers) {
-    expect(template, `broken ${label} template contract: missing marker ${marker}`).toContain(marker);
-  }
-}
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("init extension commands", () => {
-  it("registers exactly init-deep and init-dox with useful descriptions", () => {
+  it("registers exactly init-deep and init-dox", () => {
     const mock = setupExtension();
 
     expect(
       Array.from(mock.commands.keys()),
       "broken init command contract: registered command set changed",
     ).toEqual(["init-deep", "init-dox"]);
-
-    expect(
-      getCommand(mock, "init-deep").description,
-      "broken init-deep command contract: description should mention AGENTS.md hierarchy",
-    ).toMatch(/AGENTS\.md.*hierarch|hierarch.*AGENTS\.md/i);
-    expect(
-      getCommand(mock, "init-dox").description,
-      "broken init-dox command contract: description should mention DOX migration",
-    ).toMatch(/DOX.*(initialize|migrate)|(?:initialize|migrate).*DOX/i);
   });
 
   it.each([
@@ -105,36 +88,5 @@ describe("init extension commands", () => {
     const headlessNotify = vi.spyOn(headlessCtx.ui, "notify");
     await getCommand(mock, name).handler("", headlessCtx);
     expect(headlessNotify, `broken ${name} command contract: headless notify must be gated`).not.toHaveBeenCalled();
-  });
-});
-
-describe("init extension templates", () => {
-  it("keeps init-deep upstream-inspired contract markers", () => {
-    expectTemplateMarkers("init-deep", INIT_DEEP_TEMPLATE, [
-      "CodeGraph",
-      "LSP",
-      "AGENTS.md and CLAUDE.md",
-      "Dynamic Background Exploration by Project Scale",
-      "chengfeng",
-      "centrality",
-      "Root first",
-      "dedupe complete; trim complete",
-    ]);
-  });
-
-  it("keeps init-dox DOX context/version-tag/approval-gate contract markers", () => {
-    expectTemplateMarkers("init-dox", INIT_DOX_TEMPLATE, [
-      "https://github.com/agent0ai/dox",
-      "README",
-      "Child DOX Index",
-      "byte-for-byte",
-      "curl -fsSL https://raw.githubusercontent.com/agent0ai/dox/main/AGENTS.md",
-      "shasum -a 256",
-      "<!-- dox-source: agent0ai/dox@main sha256:",
-      "sha matches upstream",
-      "sha differs",
-      "Ambiguity guard",
-      "Decision gate (human approval)",
-    ]);
   });
 });

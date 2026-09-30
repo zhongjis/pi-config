@@ -11,69 +11,82 @@ const dirs: string[] = [];
 function directory() { const path = mkdtempSync(join(tmpdir(), "graph-security-")); dirs.push(path); return path; }
 afterEach(() => { for (const path of dirs.splice(0)) rmSync(path, { recursive: true, force: true }); });
 const graph: AgentGraph = { nodes: { a: { type: "agent", agent: "worker", prompt: "x", outputSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] } } }, edges: [] };
-function legacy(): GraphRunSnapshot { return { version: 1, runId: "agr_abcdef123456", graph, input: {}, waitingGate: "", savedAt: 0, state: { nodes: { a: { status: "completed", attempt: 1, output: { ok: true } } }, loopCounts: {} } }; }
+const runId = "agr_abcdef123456";
+const gateGraph: AgentGraph = { nodes: { a: { type: "human_gate", prompt: "approve", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } } }, edges: [] };
+const host = { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }), awaitHumanGate: async () => ({ ok: true, output: '{"approved":true}' }) };
+async function checkpoint(cwd: string, source: AgentGraph = graph): Promise<GraphRunSnapshot> {
+  let saved: GraphRunSnapshot | undefined;
+  await runGraph(source, {}, { runId, onCheckpoint: (state, effective) => { saved = structuredClone({ version: 2, runId, graph: effective, input: {}, waitingGate: "", savedAt: 0, state }); writeGraphSnapshot(cwd, saved); }, host });
+  if (!saved?.state.runtime) throw new Error("missing fixture");
+  return saved;
+}
 
-it("contains every snapshot write/delete/lease and rejects mismatched filenames", () => {
+it("contains every snapshot write/delete/lease and rejects mismatched filenames", async () => {
   const cwd = directory();
-  mkdirSync(graphRunsDir(cwd), { recursive: true });
+  const saved = await checkpoint(cwd);
+  expect(readGraphSnapshots(cwd)).toEqual([saved]);
   const outside = join(cwd, ".pi", "outside.json");
   writeFileSync(outside, "untouched");
-  const bad = { ...legacy(), runId: "../outside" };
-  writeFileSync(join(graphRunsDir(cwd), "agr_abcdef123456.json"), JSON.stringify(bad));
+  const bad = { ...saved, runId: "../outside" };
+  writeFileSync(join(graphRunsDir(cwd), `${runId}.json`), JSON.stringify(bad));
   const invalid = vi.fn();
   expect(readGraphSnapshots(cwd, invalid)).toEqual([]);
-  expect(invalid).toHaveBeenCalled();
-  for (const runId of ["../outside", "agr_../../outside", "agr_abc/def", "agr_abc\\def", "agr_short", "", "/tmp/outside"]) {
-    expect(() => writeGraphSnapshot(cwd, { ...legacy(), runId })).toThrow();
-    expect(() => deleteGraphSnapshot(cwd, runId)).toThrow();
-    expect(() => ownGraphRun(cwd, runId)).toThrow();
+  expect(invalid).toHaveBeenCalledWith(expect.stringMatching(/Unsupported or corrupt/));
+  const unsafe = /Invalid graph run ID|escapes|Unsafe checkpoint/;
+  for (const badId of ["../outside", "agr_../../outside", "agr_abc/def", "agr_abc\\def", "agr_short", "", "/tmp/outside"]) {
+    const forged = structuredClone(saved); forged.runId = badId;
+    if (forged.state.runtime) Object.assign(forged.state.runtime, { runId: badId, executionLedger: forged.state.runtime.executionLedger?.map(row => ({ ...row, runId: badId })) });
+    // An empty run ID fails runtime identity validation before the path guard.
+    expect(() => writeGraphSnapshot(cwd, forged)).toThrow(badId ? unsafe : /Invalid/);
+    expect(() => deleteGraphSnapshot(cwd, badId)).toThrow(unsafe);
+    expect(() => ownGraphRun(cwd, badId)).toThrow(unsafe);
   }
-  writeFileSync(join(graphRunsDir(cwd), "agr_abcdef123456.json"), JSON.stringify({ ...legacy(), runId: "agr_123456abcdef" }));
+  invalid.mockClear();
+  writeFileSync(join(graphRunsDir(cwd), `${runId}.json`), JSON.stringify({ ...saved, runId: "agr_123456abcdef" }));
   expect(readGraphSnapshots(cwd, invalid)).toEqual([]);
+  expect(invalid).toHaveBeenCalledWith(expect.stringMatching(/Unsupported or corrupt/));
   expect(readFileSync(outside, "utf8")).toBe("untouched");
 });
 
-it("rejects symlinked checkpoint directories and files", () => {
+it("rejects symlinked checkpoint directories and files", async () => {
+  const saved = await checkpoint(directory());
   const cwd = directory(); const outside = directory();
   mkdirSync(join(cwd, ".pi"));
   symlinkSync(outside, graphRunsDir(cwd), "dir");
-  expect(() => writeGraphSnapshot(cwd, legacy())).toThrow();
-  expect(() => deleteGraphSnapshot(cwd, legacy().runId)).toThrow();
-  expect(() => ownGraphRun(cwd, legacy().runId)).toThrow();
+  expect(() => writeGraphSnapshot(cwd, saved)).toThrow(/Unsafe checkpoint/);
+  expect(() => deleteGraphSnapshot(cwd, saved.runId)).toThrow(/Unsafe checkpoint/);
+  expect(() => ownGraphRun(cwd, saved.runId)).toThrow(/Unsafe checkpoint/);
   expect(readdirSync(outside)).toEqual([]);
   rmSync(graphRunsDir(cwd)); mkdirSync(graphRunsDir(cwd));
-  const target = join(outside, "target.json"); writeFileSync(target, JSON.stringify(legacy()));
-  symlinkSync(target, join(graphRunsDir(cwd), `${legacy().runId}.json`));
+  const target = join(outside, "target.json"); writeFileSync(target, JSON.stringify(saved));
+  symlinkSync(target, join(graphRunsDir(cwd), `${saved.runId}.json`));
   expect(readGraphSnapshots(cwd, vi.fn())).toEqual([]);
-  expect(() => writeGraphSnapshot(cwd, legacy())).toThrow();
+  expect(() => writeGraphSnapshot(cwd, saved)).toThrow(/Unsafe checkpoint/);
 });
 
-it.each(["missing", "unknown", "status", "attempt", "loops", "output", "gate output"])("rejects invalid legacy %s before upgrade writes or dispatch", async kind => {
-  const saved = legacy();
+it.each([graph, gateGraph])("restores an unmodified completed checkpoint without dispatch", async source => {
+  const saved = await checkpoint(directory(), source);
+  const spawnAgent = vi.fn(); const onCheckpoint = vi.fn();
+  await expect(runGraph(saved.graph, saved.input, { runId: saved.runId, restore: saved.state, host: { spawnAgent }, onCheckpoint })).resolves.toMatchObject({ status: "completed" });
+  expect(spawnAgent).not.toHaveBeenCalled();
+});
+
+it.each(["missing", "unknown", "status", "attempt", "loops", "output", "gate output"])("rejects forged restore %s before writes or dispatch", async kind => {
+  const saved = await checkpoint(directory(), kind === "gate output" ? gateGraph : graph);
   if (kind === "missing") delete saved.state.nodes.a;
   if (kind === "unknown") saved.state.nodes.extra = { status: "pending", attempt: 0 };
   if (kind === "status") Object.assign(saved.state.nodes.a, { status: "invented" });
   if (kind === "attempt") saved.state.nodes.a.attempt = -1;
   if (kind === "loops") saved.state.loopCounts["missing->a"] = 1;
   if (kind === "output") saved.state.nodes.a.output = { ok: "forged" };
-  if (kind === "gate output") { saved.graph = { nodes: { a: { type: "human_gate", prompt: "approve", outputSchema: { type: "boolean" } } }, edges: [] }; }
+  if (kind === "gate output") saved.state.nodes.a.output = { approved: "forged" };
   const spawnAgent = vi.fn(); const onCheckpoint = vi.fn();
-  await expect(runGraph(saved.graph, saved.input, { restore: saved.state, host: { spawnAgent }, onCheckpoint })).rejects.toThrow();
-  expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
-});
-
-it("rejects reordered legacy collection ownership before upgrade", async () => {
-  const fanout: AgentGraph = { nodes: { f: { type: "fanout", items: { path: "$" }, itemSchema: { type: "object" }, dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: `\${item}` }, "f:item:0": { type: "agent", agent: "worker", prompt: "{}" } }, edges: [] };
-  const state: SchedulerState = { nodes: { f: { status: "running", attempt: 1 }, "f:item:0": { status: "pending", attempt: 0 } }, loopCounts: {}, collections: { f: [{ nodeId: "f:item:1", item: { kind: "x" } }] } };
-  const onCheckpoint = vi.fn(); const spawnAgent = vi.fn();
-  await expect(runGraph(fanout, [], { restore: state, onCheckpoint, host: { spawnAgent } })).rejects.toThrow();
+  await expect(runGraph(saved.graph, saved.input, { runId: saved.runId, restore: saved.state, host: { spawnAgent }, onCheckpoint })).rejects.toThrow();
   expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
 });
 
 it("rejects identity replacement even with the correct next revision", async () => {
-  const cwd = directory(); let saved: GraphRunSnapshot | undefined;
-  await runGraph({ ...graph }, {}, { runId: legacy().runId, onCheckpoint: (state, effective) => { saved = { ...legacy(), version: 2, graph: effective, state }; writeGraphSnapshot(cwd, saved); }, host: { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }) } });
-  if (!saved?.state.runtime) throw new Error("missing fixture");
+  const cwd = directory(); const saved = await checkpoint(cwd);
   const before = readFileSync(join(graphRunsDir(cwd), `${saved.runId}.json`), "utf8");
   const next = structuredClone(saved); if (!next.state.runtime) throw new Error("missing runtime");
   next.state.runtime.revision++;
@@ -101,7 +114,6 @@ it.each(["partial", "owner", "cost", "budget", "resources"])("rejects forged exe
 });
 
 it("isolates nested protocol ledgers and rejects partial recursive checkpoints", async () => {
-  const { upgradeLegacyExecution } = await import("../src/graph/graph-execution.js");
   const { validateGraphRestore } = await import("../src/graph/graph-restore-validation.js");
   const { validateCheckpointTransition } = await import("../src/graph/graph-checkpoint-transition.js");
   const parent: AgentGraph = { nodes: { sub: { type: "graph", graph: "child" } }, edges: [] };
@@ -110,7 +122,6 @@ it("isolates nested protocol ledgers and rejects partial recursive checkpoints",
   const savedState = saved;
   const nested = savedState?.runtime?.nested?.sub;
   if (!savedState || !nested) throw new Error("missing nested runtime");
-  nested.state = upgradeLegacyExecution(nested.state);
   validateGraphRestore(savedState, parent);
   const snapshot: GraphRunSnapshot = { version: 2, runId: "agr_abcdef123456", graph: parent, state: savedState, input: {}, waitingGate: "", savedAt: 0 };
   for (const mutation of ["partial", "owner", "remove"] as const) {

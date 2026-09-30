@@ -22,14 +22,20 @@ afterEach(() => {
 });
 
 function snapshot(runId: string): GraphRunSnapshot {
+  const instanceId = "00000000-0000-4000-8000-000000000001";
+  if (!isInstanceId(instanceId)) throw new Error("invalid fixture ID");
   return {
-    version: 1,
+    version: 2,
     runId,
     name: "demo",
     graph: { nodes: { a: { type: "agent", agent: "x", prompt: "p" } }, edges: [] },
     input: { task: "t" },
-    waitingGate: "gate",
-    state: { nodes: { a: { status: "completed", attempt: 1, output: "x" } }, loopCounts: {} },
+    waitingGate: "",
+    state: {
+      nodes: { a: { status: "pending", attempt: 0 } },
+      loopCounts: {},
+      runtime: { version: 2, runId, startedAt: 1000, revision: 1, manifest: [{ binding: "a", nodeKey: "a", ordinal: 0, instanceId }], executionProtocolVersion: 1, executionLedger: [] },
+    },
     savedAt: 1,
   };
 }
@@ -48,8 +54,7 @@ describe("graph-persist file IO", () => {
     cwd = mkdtempSync(join(tmpdir(), "gp-"));
     writeGraphSnapshot(cwd, snapshot("agr_xxxxxx"));
     const [loaded] = readGraphSnapshots(cwd);
-    expect(loaded.waitingGate).toBe("gate");
-    expect(loaded.state.nodes.a).toEqual({ status: "completed", attempt: 1, output: "x" });
+    expect(loaded.state.nodes.a).toEqual({ status: "pending", attempt: 0 });
     expect(loaded.graph.nodes.a).toBeDefined();
   });
 
@@ -57,7 +62,7 @@ describe("graph-persist file IO", () => {
     cwd = mkdtempSync(join(tmpdir(), "gp-"));
     writeGraphSnapshot(cwd, snapshot("agr_okxxxx"));
     writeFileSync(join(graphRunsDir(cwd), "bad.json"), "{ not json", "utf-8");
-    writeFileSync(join(graphRunsDir(cwd), "wrong.json"), JSON.stringify({ version: 2, runId: "x" }), "utf-8");
+    writeFileSync(join(graphRunsDir(cwd), "wrong.json"), JSON.stringify({ version: 99, runId: "x" }), "utf-8");
     expect(readGraphSnapshots(cwd).map(s => s.runId)).toEqual(["agr_okxxxx"]);
   });
 
@@ -67,28 +72,15 @@ describe("graph-persist file IO", () => {
   });
 });
 
-it("round-trips effective dynamic definitions, collection order, failures, and attempt reasons in v1", () => {
-  cwd = mkdtempSync(join(tmpdir(), "gp-"));
-  const saved = snapshot("agr_dynamic");
-  saved.graph.nodes.a = {
-    type: "fanout", items: { path: "$.tasks" }, itemSchema: { type: "object" },
-    dispatch: { path: "$.source", cases: { project: "x" } }, prompt: `\${item}`,
-  };
-  saved.graph.nodes["a:item:0"] = { type: "agent", agent: "x", prompt: "fixture" };
-  saved.state.nodes.a = { status: "running", attempt: 1 };
-  saved.state.nodes["a:item:0"] = { status: "failed", attempt: 2, attemptReason: "user-retry", error: "offline" };
-  saved.state.collections = { a: [{ nodeId: "a:item:0", item: { source: "project" } }] };
-  writeGraphSnapshot(cwd, saved);
-  expect(readGraphSnapshots(cwd)).toEqual([saved]);
-});
-
 describe("atomic graph checkpoint replacement", () => {
   it.each(["write", "file sync", "rename", "directory sync"])("keeps a complete checkpoint after %s fails", stage => {
     const directory = mkdtempSync(join(tmpdir(), "gp-atomic-"));
     cwd = directory;
     const prior = snapshot("agr_atomic");
     writeGraphSnapshot(cwd, prior);
-    const next = { ...prior, savedAt: 2 };
+    const next = structuredClone({ ...prior, savedAt: 2 });
+    if (!next.state.runtime) throw new Error("missing runtime");
+    next.state.runtime.revision++;
     const failure = new Error(`injected ${stage} failure`);
     if (stage === "write") {
       const write = fs.writeFileSync;
@@ -134,10 +126,7 @@ describe("atomic graph checkpoint replacement", () => {
 
 it("rejects stale checkpoint owners and reports unknown or corrupt v2 snapshots", () => {
   cwd = mkdtempSync(join(tmpdir(), "gp-v2-"));
-  const base = snapshot("agr_version2");
-  const instanceId = "00000000-0000-4000-8000-000000000001";
-  if (!isInstanceId(instanceId)) throw new Error("invalid fixture ID");
-  const next: GraphRunSnapshot = { ...base, version: 2, state: { ...base.state, runtime: { version: 2, runId: base.runId, startedAt: 1000, revision: 1, manifest: [{ binding: "a", nodeKey: "a", ordinal: 0, instanceId }] } } };
+  const next = snapshot("agr_version2");
   writeGraphSnapshot(cwd, next);
   const directory = cwd;
   expect(() => writeGraphSnapshot(directory, next)).toThrow(/stale/i);
@@ -147,33 +136,6 @@ it("rejects stale checkpoint owners and reports unknown or corrupt v2 snapshots"
   writeFileSync(join(graphRunsDir(cwd), "corrupt.json"), JSON.stringify({ ...next, state: {} }));
   expect(readGraphSnapshots(cwd, invalid)).toEqual([next]);
   expect(invalid).toHaveBeenCalledTimes(2);
-});
-
-it("atomically upgrades legacy state before dispatch and retains IDs on the next restore", async () => {
-  const { runGraph } = await import("../src/graph/run-graph.js");
-  cwd = mkdtempSync(join(tmpdir(), "gp-upgrade-"));
-  const directory = cwd;
-  const legacy = snapshot("agr_upgrade");
-  legacy.state.nodes.a = { status: "pending", attempt: 0 };
-  writeGraphSnapshot(directory, legacy);
-  const writer = (state: GraphRunSnapshot["state"], graph: GraphRunSnapshot["graph"]) => {
-    writeGraphSnapshot(directory, { ...legacy, version: 2, state, graph });
-  };
-  const spawnAgent = vi.fn(async (request: { nodeId: string }) => {
-    expect(readGraphSnapshots(directory)[0]?.version).toBe(2);
-    expect(request.nodeId).toBe("a"); // v1 dispatch/result IDs remain authored bindings
-    return { ok: true, output: "ok" };
-  });
-  await runGraph(legacy.graph, legacy.input, { runId: legacy.runId, restore: legacy.state, onCheckpoint: writer, host: { spawnAgent } });
-  const saved = readGraphSnapshots(directory)[0];
-  if (!saved?.state.runtime) throw new Error("missing upgraded checkpoint");
-  const ids = saved.state.runtime.manifest;
-  const allocate = vi.fn(() => "bad");
-  await runGraph(saved.graph, saved.input, { runId: saved.runId, restore: saved.state, onCheckpoint: writer, allocateInstanceId: allocate, host: { spawnAgent } });
-  expect(allocate).not.toHaveBeenCalled();
-  expect(spawnAgent).toHaveBeenCalledTimes(1);
-  expect(readGraphSnapshots(directory)[0]?.state.runtime?.manifest).toEqual(ids);
-  expect(() => writeGraphSnapshot(directory, legacy)).toThrow(/Stale/);
 });
 
 it("holds one live run owner across multiple checkpoints until release", async () => {

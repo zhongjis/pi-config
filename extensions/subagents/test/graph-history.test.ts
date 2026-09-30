@@ -81,7 +81,7 @@ describe("graph metadata history", () => {
     expect(bounded[0].id).toBe("run-20");
     expect(bounded.some(run => run.id === "run-0")).toBe(false);
     const small = boundHistory([snapshot], 30000);
-    expect(Buffer.byteLength(JSON.stringify({ version: 1, runs: small }))).toBeLessThanOrEqual(30000);
+    expect(Buffer.byteLength(JSON.stringify({ version: 2, runs: small }))).toBeLessThanOrEqual(30000);
     expect(small[0].omittedNodeCount).toBeGreaterThan(5);
   });
 
@@ -131,18 +131,19 @@ describe("graph metadata history", () => {
 it("enforces the actual 8 MiB ceiling by evicting oldest runs before touching node tails", () => {
   const value = task();
   value.graphRunProgress = Array.from({ length: 200 }, (_, index) => ({
-    type: "graph_run_agent", index, label: `node-${index}`, state: "done",
-    deps: Array.from({ length: 32 }, () => "界".repeat(160)),
+    type: "graph_run_agent", index, label: "界".repeat(160), state: "done",
+    nodeBinding: `binding-${index}`, instanceId: `instance-${index}`,
+    presentation: { kind: "bounded_feedback", name: "Display",
+      connections: Array.from({ length: 32 }, (_, n) => ({ binding: `binding-${n}`, direction: "downstream", kind: "loop" })),
+      iterations: Array.from({ length: 64 }, (_, n) => ({ iteration: n + 1, decision: "continue" })),
+    },
   }));
   const snapshot = required(snapshotHistory(value));
-  // Legacy label dependencies remain bounded on migration and exercise byte eviction.
-  snapshot.nodes = snapshot.nodes.map(node => ({ ...node, deps: Array.from({ length: 32 }, () => "界".repeat(160)) }));
-  delete snapshot.topologyVersion;
-  delete snapshot.description;
+  expect(snapshot.nodes).toHaveLength(200);
   const input = Array.from({ length: 20 }, (_, index) => ({ ...snapshot, id: `run-${index}`, startTime: index }));
-  expect(Buffer.byteLength(JSON.stringify({ version: 1, runs: input }))).toBeGreaterThan(HISTORY_FILE_BYTES);
+  expect(Buffer.byteLength(JSON.stringify({ version: 2, runs: input }))).toBeGreaterThan(HISTORY_FILE_BYTES);
   const bounded = boundHistory(input);
-  expect(Buffer.byteLength(JSON.stringify({ version: 1, runs: bounded }))).toBeLessThanOrEqual(HISTORY_FILE_BYTES);
+  expect(Buffer.byteLength(JSON.stringify({ version: 2, runs: bounded }))).toBeLessThanOrEqual(HISTORY_FILE_BYTES);
   expect(bounded[0].id).toBe("run-19");
   expect(bounded.length).toBeLessThan(20);
   expect(bounded.every(run => run.omittedNodeCount === 0)).toBe(true);
@@ -203,13 +204,10 @@ it("bounds captured topology and keeps all references valid after tail eviction"
   expect(decodeHistory(JSON.stringify({ version: 2, runs: bounded })).runs).toEqual(bounded);
 });
 
-it("discards injected topology fields while preserving legacy flat runs on v2 writes", () => {
+it("discards injected topology fields on v2 decode", () => {
   const run = required(snapshotHistory(task()));
   const injected = { ...run, nodes: [{ ...run.nodes[0], topology: { kind: "agent", name: "Safe", prompt: "PRIVATE_PROMPT", instanceId: "PRIVATE_UUID", connections: [{ index: 0, direction: "upstream", kind: "loop", binding: "PRIVATE_BINDING" }], iterations: [{ iteration: 1, decision: "continue", reason: "PRIVATE_REASON" }] } }] };
   const decoded = decodeHistory(JSON.stringify({ version: 2, runs: [injected] }));
   expect(decoded.runs).toHaveLength(1);
   expect(JSON.stringify(decoded)).not.toContain("PRIVATE_");
-  const legacy = decodeHistory(JSON.stringify({ version: 1, runs: [injected] })).runs;
-  expect(JSON.stringify(legacy)).not.toMatch(/topology|description|depIndices|dependentIndices/);
-  expect(decodeHistory(JSON.stringify({ version: 2, runs: legacy })).runs).toEqual(legacy);
 });

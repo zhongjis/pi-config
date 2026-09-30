@@ -32,7 +32,7 @@ The repo-committed reusable agent-graph portfolio: saved `AgentGraph`s the `agen
 
 ## Verification
 
-- `pnpm --dir extensions/subagents exec vitest run test/graph-portfolio.test.ts test/graph-deep-research.test.ts test/graph-deep-research-policy.test.ts` validates saved graphs and exercises context-gather planning, gap closure, partial Outcomes, plus deep-research wiring, scope re-plan, ledger prompts, policy checks and failures.
+- `pnpm --dir extensions/subagents exec vitest run test/graph-portfolio.test.ts test/graph-deep-research-policy.test.ts` validates saved graphs and exercises context-gather policy; graph-deep-research-policy covers deep-research policy.
 
 ## Child DOX Index
 

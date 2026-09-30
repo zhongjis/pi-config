@@ -77,7 +77,7 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     const registry = makePi();
     subagentsExtension(registry.pi);
 
-    const subagentTools = ["agent", "get_subagent_result", "steer_subagent"].map((name) => {
+    const subagentTools = ["agent", "get_agent_result", "steer_subagent"].map((name) => {
       const tool = registry.tools.get(name);
       expect(tool, `${name} registered`).toBeDefined();
       expect(tool?.renderCall, `${name}.renderCall`).toBeTypeOf("function");
@@ -91,7 +91,6 @@ describe("subagents + thinking-steps presentation coexistence", () => {
 
     expect(registry.commands.has("agents")).toBe(true);
     expect(registry.commands.has("agent-monitor")).toBe(true);
-    expect(registry.commands.has("graph-runs")).toBe(false);
     expect(registry.commands.has("thinking-steps")).toBe(true);
     expect(registry.shortcuts.has("alt+t")).toBe(true);
     expect(registry.lifecycle.get("session_start")).toHaveLength(2);
@@ -101,7 +100,7 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     }
 
     expect(
-      ["agent", "get_subagent_result", "steer_subagent"].map((name) => registry.tools.get(name)),
+      ["agent", "get_agent_result", "steer_subagent"].map((name) => registry.tools.get(name)),
     ).toEqual(subagentTools);
     expect(registry.renderers.get("subagent-notification")).toBe(notificationRenderer);
 

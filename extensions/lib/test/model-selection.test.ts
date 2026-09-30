@@ -151,7 +151,7 @@ describe("fast candidate metadata", () => {
       { model: "p/id:FAST" },
     ]);
   });
-  it("carries only the selected candidate fast flag and keeps legacy shape otherwise", () => {
+  it("carries only the selected candidate fast flag and omits fast otherwise", () => {
     expect(resolveFirstAvailable(parseModelChain("missing:fast,gemini-flash:low:fast"), makeRegistry())).toEqual({ model: MODELS[1], thinkingLevel: "low", fast: true });
     expect(resolveFirstAvailable(parseModelChain("missing:fast,gemini-flash"), makeRegistry())).toEqual({ model: MODELS[1], thinkingLevel: undefined });
   });

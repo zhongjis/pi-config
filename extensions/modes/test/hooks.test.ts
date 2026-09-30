@@ -132,7 +132,7 @@ async function renderInjectedPrompt({
 }
 
 describe("mode hooks", () => {
-	it.each(["luban", "shennong", "zhurong", "unknown", "", null, undefined, 42, {}, []])(
+	it.each(["unknown", "", null, undefined, 42, {}, []])(
 		"discards invalid saved mode %j and its associated state", async (mode: unknown) => {
 			const mock = createMockPi();
 			const state = new ModeStateManager(mock.pi as never);

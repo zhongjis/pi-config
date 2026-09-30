@@ -146,9 +146,9 @@ describe("goal tool rendering", () => {
 		expect(partial).not.toContain("app.tools.expand");
 
 		const malformed = renderText(
-			tools.get("get_goal")!.renderResult!(content("legacy goal output"), {}, plainTheme),
+			tools.get("get_goal")!.renderResult!(content("unstructured goal output"), {}, plainTheme),
 		);
-		expect(malformed).toContain("goal: legacy goal output");
+		expect(malformed).toContain("goal: unstructured goal output");
 
 		const rawError = "cannot create a new goal because this thread already has a goal; use update_goal only when the existing goal is complete\nstack hidden";
 		const error = renderText(

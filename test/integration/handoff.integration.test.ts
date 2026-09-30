@@ -65,14 +65,12 @@ describe("handoff extension — integration", () => {
 		const handoffModeCmd = commands.find((command) => command.name === "handoff:mode");
 		expect(handoffModeCmd).toBeDefined();
 		expect(handoffModeCmd!.getArgumentCompletions!("")?.map(({ value }) => value)).toEqual(MODES);
-		for (const retired of ["luban", "shennong", "zhurong"]) {
-			const errors: string[] = [];
-			await handoffModeCmd?.handler(`${retired} -no-summarize execute requirements`, {
-				ui: { notify: (_message: string, level: string) => errors.push(level) },
-				newSession: async () => { throw new Error("Retired mode must not create a session"); },
-			});
-			expect(errors).toEqual(["error"]);
-		}
+		const errors: string[] = [];
+		await handoffModeCmd?.handler("bogus -no-summarize execute requirements", {
+			ui: { notify: (_message: string, level: string) => errors.push(level) },
+			newSession: async () => { throw new Error("Unknown mode must not create a session"); },
+		});
+		expect(errors).toEqual(["error"]);
 
 		const seededEntries: Array<{ type: string; data: unknown }> = [];
 		await handoffModeCmd!.handler("houtu -no-summarize execute requirements", {

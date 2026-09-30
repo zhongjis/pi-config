@@ -88,8 +88,8 @@ it("reports final deltas once across retrieval and resume, never on partial resu
   expect(result.usage).toBeUndefined();
   expect(result.details?.cost).toBe(0.25);
   expect((await finish("agent", result)).usage).toMatchObject({ input: 10, output: 2, cacheRead: 7, cost: { total: 0.25 } });
-  const read = await execute("get_subagent_result", { agent_id: result.details!.agentId } as unknown as typeof params);
-  expect((await finish("get_subagent_result", read)).usage).toBeUndefined();
+  const read = await execute("get_agent_result", { run_id: result.details!.agentId } as unknown as typeof params);
+  expect((await finish("get_agent_result", read)).usage).toBeUndefined();
   const resumed = await execute("agent", { ...params, resume: result.details!.agentId } as typeof params);
   expect((await finish("agent", resumed)).usage?.cost.total).toBe(0.25);
 });
@@ -104,7 +104,7 @@ it("holds background usage for an eligible result and merges foreign usage", asy
   const merged = await finish("steer_subagent", result, "steer", foreign);
   expect(merged.usage).toMatchObject({ input: 11, output: 4, cacheRead: 10, cacheWrite: 7, totalTokens: 32, cost: { input: 1, total: 10.25 } });
   expect(foreign.input).toBe(1);
-  expect((await finish("get_subagent_result", result)).usage).toBeUndefined();
+  expect((await finish("get_agent_result", result)).usage).toBeUndefined();
 });
 
 it("defaults reporting and cost off, but tracks costs", async () => {
@@ -118,7 +118,7 @@ it.each(["session_start", "session_shutdown"])("clears unreported usage on %s", 
   const { execute, finish, lifecycle } = activate({ reportUsage: true });
   const result = await execute();
   await lifecycle(event);
-  expect((await finish("get_subagent_result", result)).usage).toBeUndefined();
+  expect((await finish("get_agent_result", result)).usage).toBeUndefined();
 });
 
 it("does not invent a model mismatch for an inherited model", async () => {
@@ -172,11 +172,11 @@ it("keeps queued details free of actual and mismatch claims, then reports runnin
   const queued = await execute("agent", { ...params, run_in_background: true } as typeof params);
   expect(queued.details?.status).toBe("queued");
   for (const field of ["modelName", "thinking", "requestedModel", "requestedThinking"] as const) expect(queued.details?.[field]).toBeUndefined();
-  const running = await execute("get_subagent_result", { agent_id: first.details!.agentId } as unknown as typeof params);
+  const running = await execute("get_agent_result", { run_id: first.details!.agentId } as unknown as typeof params);
   expect(running.details?.status).toBe("running");
-  expect((await finish("get_subagent_result", running)).usage?.input).toBe(10);
+  expect((await finish("get_agent_result", running)).usage?.input).toBe(10);
   release!();
-  await execute("get_subagent_result", { agent_id: queued.details!.agentId, wait: true } as unknown as typeof params);
+  await execute("get_agent_result", { run_id: queued.details!.agentId, wait: true } as unknown as typeof params);
 });
 
 it("retains spent deltas through failed calls", async () => {
@@ -196,8 +196,8 @@ it("preserves pending usage through a switch preflight that does not commit", as
   const result = await execute();
   await lifecycle("session_before_switch");
   // Another extension can cancel the switch: no shutdown/start follows.
-  expect((await finish("get_subagent_result", result)).usage?.input).toBe(10);
-  expect((await finish("get_subagent_result", result)).usage).toBeUndefined();
+  expect((await finish("get_agent_result", result)).usage?.input).toBe(10);
+  expect((await finish("get_agent_result", result)).usage).toBeUndefined();
 });
 
 it("prepares configured direct model, thinking, and normalized max turns before spawning", async () => {

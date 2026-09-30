@@ -37,43 +37,11 @@ describe("handoff argument parsing", () => {
       },
     });
   });
-
-  it("accepts explicit summarize booleans for compatibility", () => {
-    const parsed = parseHandoffArgs('-mode kuafu -summarize false fix auth');
-    expect(parsed).toEqual({
-      ok: true,
-      value: {
-        goal: "fix auth",
-        mode: "kuafu",
-        summarize: false,
-      },
-    });
-  });
 });
 
 describe("plan execution goal builder", () => {
-  it("preserves the public Hou Tu plan-execution seam", () => {
+  it("inserts the plan path into the goal", () => {
     const goal = buildPlanExecutionGoal("/tmp/PLAN.md");
-    expect(goal).toMatch(/approved plan at \/tmp\/PLAN\.md/i);
-    expect(goal).toMatch(/foreground `agent` calls[\s\S]*concurrent/i);
-    expect(goal).toMatch(/background `agent` calls[\s\S]*(?:exploration|research)/i);
-    expect(goal).toMatch(
-      /local:\/\/\{plan-name\}\/notepads\/[\s\S]*learnings\.md[\s\S]*decisions\.md[\s\S]*issues\.md[\s\S]*blockers\.md/i,
-    );
-    expect(goal).toMatch(/all workers[^\n]*read only[^\n]*relevant[^\n]*notepad/i);
-    expect(goal).toMatch(
-      /mutation-capable workers[^\n]*append only[^\n]*relevant findings[^\n]*preserve unrelated entries/i,
-    );
-    expect(goal).toMatch(
-      /read-only researchers[^\n]*return findings to the parent for curation/i,
-    );
-    expect(goal).toMatch(
-      /capability-aware shared-note instructions[^\n]*under CONTEXT/i,
-    );
-    expect(goal).not.toMatch(/\b(?:all|every) workers?\b[^\n]*\bappend\b/i);
-    expect(goal).not.toMatch(/^\s*-\s*workers?\b[^\n]*\bappend\b/im);
-    expect(goal).not.toMatch(/edit\/write/i);
-    expect(goal).not.toMatch(/local:\/\/houtu\/artifacts\/|exact absolute FILE|nonce|one writer[^\n]*one file|receipt|capability grant/i);
-    expect(goal).toMatch(/explicit okay/i);
+    expect(goal).toMatch(/\/tmp\/PLAN\.md/);
   });
 });

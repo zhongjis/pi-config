@@ -1,7 +1,6 @@
 import { expect, it } from "vitest";
-import { appendExecution, type ExecutionEvent, type ExecutionLedgerEntry, executionAttemptId, matchesExecution, projectExecution, remainingExecutions, upgradeLegacyExecution, validateExecutionProtocol } from "../src/graph/graph-execution.js";
+import { appendExecution, type ExecutionEvent, type ExecutionLedgerEntry, executionAttemptId, matchesExecution, projectExecution, remainingExecutions, validateExecutionProtocol } from "../src/graph/graph-execution.js";
 import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
-import type { SchedulerState } from "../src/graph/scheduler.js";
 
 const instanceId = "00000000-0000-4000-8000-000000000001" as NodeInstanceId;
 const id = executionAttemptId("00000000-0000-4000-8000-000000000002");
@@ -13,10 +12,6 @@ const cost = event({ kind: "cost", costUsd: 0.2 });
 const outcome = event({ kind: "outcome", status: "success" });
 const drain = event({ kind: "drain-ack", source: "live" });
 const append = (...events: ExecutionEvent[]) => events.reduce<readonly ExecutionLedgerEntry[]>((ledger, row) => appendExecution(ledger, row), []);
-function requireValue<T>(value: T | undefined, message = "missing test value"): T {
-  if (value === undefined) throw new Error(message);
-  return value;
-}
 
 it.each(["runId", "instanceId", "activation", "graphAttempt", "executionAttemptId"] as const)("matches all five correlation fields: %s", field => {
   const changed = { ...identity, [field]: typeof identity[field] === "number" ? 2 : "different" };
@@ -68,30 +63,15 @@ it("validates UUIDs, positive counters, finite costs and immutable admission bud
   expect(remainingExecutions(full, identity, { maxExecutions: 2 })).toBe(0);
   expect(() => appendExecution(full, { ...second, executionAttemptId: executionAttemptId("00000000-0000-4000-8000-000000000004") })).toThrow();
 });
-export function legacy(attempt = 0): SchedulerState {
-  return { nodes: { worker: { status: "pending", attempt, ...(attempt ? { costAttempts: 1, costUsd: 0.5 } : {}) } }, loopCounts: {}, runtime: { version: 2, runId: identity.runId, revision: 1, manifest: [{ instanceId, nodeKey: "worker", binding: "worker", ordinal: 0 }] } };
-}
-it.each([0, 1, 3])("upgrades legacy attempt %s deterministically without inventing executions", attempt => {
-  const before = legacy(attempt); const upgraded = upgradeLegacyExecution(before);
-  expect(before.runtime?.executionLedger).toBeUndefined();
-  expect(upgradeLegacyExecution(upgraded)).toBe(upgraded);
-  expect(upgraded.runtime?.executionLedger).toEqual([{ kind: "legacy-baseline", runId: identity.runId, instanceId, activation: attempt ? 1 : 0, graphAttempt: attempt ? 1 : 0, consumedExecutions: attempt, costAttempts: attempt ? 1 : 0, costUsd: attempt ? 0.5 : 0, costUnavailable: false }]);
-  const runtime = requireValue(upgraded.runtime, "missing upgraded runtime");
-  const executionLedger = requireValue(runtime.executionLedger, "missing execution ledger");
-  expect(projectExecution(executionLedger, { ...identity, activation: attempt ? 1 : 0, graphAttempt: attempt ? 1 : 0 }).consumedExecutions).toBe(attempt);
+it("validates the protocol presence matrix and ownership", () => {
+  const runtime = { runId: identity.runId, manifest: [{ instanceId }], executionProtocolVersion: 1, executionLedger: [] };
   validateExecutionProtocol(runtime);
-});
-it("validates the protocol presence matrix, ownership and legacy evidence", () => {
-  const runtime = requireValue(legacy().runtime, "missing legacy runtime");
-  validateExecutionProtocol(runtime);
-  validateExecutionProtocol({ ...runtime, executionProtocolVersion: 1, executionLedger: [] });
-  for (const fields of [{ executionProtocolVersion: 1 }, { executionLedger: [] }, { executionProtocolVersion: 2, executionLedger: [] }, { executionProtocolVersion: undefined, executionLedger: undefined }]) {
+  for (const field of ["executionProtocolVersion", "executionLedger"]) {
+    const partial = { ...runtime }; Reflect.deleteProperty(partial, field);
+    expect(() => validateExecutionProtocol(partial)).toThrow();
+  }
+  for (const fields of [{ executionProtocolVersion: 2, executionLedger: [] }, { executionProtocolVersion: undefined, executionLedger: undefined }]) {
     expect(() => validateExecutionProtocol(Object.assign({}, runtime, fields))).toThrow();
   }
-  for (const bad of [{ ...admitted, runId: "other" }, { ...admitted, instanceId: id }, { ...admitted, activation: 2 }]) expect(() => validateExecutionProtocol({ ...runtime, executionProtocolVersion: 1, executionLedger: [bad] } )).toThrow();
-  const upgraded = upgradeLegacyExecution(legacy(3));
-  const upgradedRuntime = requireValue(upgraded.runtime, "missing upgraded runtime");
-  const [baseline] = requireValue(upgradedRuntime.executionLedger, "missing execution ledger");
-  if (!baseline) throw new Error("missing execution baseline");
-  expect(() => validateExecutionProtocol({ ...runtime, executionProtocolVersion: 1, executionLedger: [{ ...baseline, costAttempts: 4 }] })).toThrow();
+  for (const bad of [{ ...admitted, runId: "other" }, { ...admitted, instanceId: id }, { ...admitted, activation: 2 }]) expect(() => validateExecutionProtocol({ ...runtime, executionLedger: [bad] } )).toThrow();
 });

@@ -46,22 +46,18 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
   });
 
   it.each([
-    { frontmatter: "", expected: "high", suffix: ":high", stray: undefined as string | undefined },
-    { frontmatter: "thinking: minimal\n", expected: "minimal", suffix: ":high", stray: undefined as string | undefined },
-    // Suffixless fallback + no frontmatter thinking: caller thinking is no longer a source,
-    // so the SDK/faux default ("medium") applies. The stray `thinking` proves it is ignored.
-    { frontmatter: "", expected: "medium", suffix: "", stray: "low" },
-  ])("A01 selects first available chain candidate and thinking precedence ($expected)", async ({ frontmatter, expected, suffix, stray }) => {
+    { frontmatter: "", expected: "high", suffix: ":high" },
+    { frontmatter: "thinking: minimal\n", expected: "minimal", suffix: ":high" },
+    { frontmatter: "", expected: "medium", suffix: "" },
+  ])("A01 selects first available chain candidate and thinking precedence ($expected)", async ({ frontmatter, expected, suffix }) => {
     const cwd = mkdtempSync(join(tmpdir(), "subagents-chain-"));
     let localRun: PrintModeRun | undefined;
     try {
       mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
       writeFileSync(join(cwd, ".pi", "agents", "chain.md"),
         `---\ndescription: Chain\nmodel: missing/nope:low,faux/faux-1${suffix}\n${frontmatter}---\nReport.\n`);
-      const call: Record<string, unknown> = { subagent_type: "chain", description: "chain", prompt: "Report." };
-      if (stray !== undefined) call.thinking = stray;
       localRun = await runPrintMode({ cwd, reasoning: true, prompt: "Delegate.", respond: routeBySession({
-        parentInitial: agentCall(call as { prompt: string; description: string }),
+        parentInitial: agentCall({ subagent_type: "chain", description: "chain", prompt: "Report." }),
         parentFinal: "Done", subagent: "CHAIN_OK",
       }) });
       const output = agentToolResults(localRun.parentSession).join("\n");
