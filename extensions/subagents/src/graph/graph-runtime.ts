@@ -21,7 +21,7 @@ import { readGraphRunNodeDetail } from "./history-artifact.js";
 import { type HistoricalGraphRun, mergeGraphRuns } from "./history-view.js";
 import type { AgentGraph } from "./ir.js";
 import { createNodeHost, type NodeHostOptions } from "./node-host-adapter.js";
-import { graphRunCompletionText } from "./notification.js";
+import { graphRunCompletionText, writeGraphResultArtifact } from "./notification.js";
 import { collapse, elapsedMs } from "./progress.js";
 import { coerceGraphInput, type RunGraphResult, runGraph } from "./run-graph.js";
 import { resolveSavedGraph } from "./saved-graph.js";
@@ -196,6 +196,7 @@ export function createGraphRuntime(
       if (failure) throw failure.error;
       if (result) {
         completeGraphTask(task, result);
+        writeGraphResultArtifact(ctx, task); // sync: retrieval can observe this task as soon as we yield
         // Lifecycle aborts retain the checkpoint; genuinely settled runs clear it.
         if (result.status !== "aborted" || !["reload", "switch", "shutdown"].includes(task.abortController.signal.reason)) deleteGraphSnapshot(ctx.cwd, task.id);
       }

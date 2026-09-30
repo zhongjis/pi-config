@@ -1,5 +1,5 @@
 import type { GateRequest } from "./gate-handoff.js";
-import { graphRunResultText, type GraphRunTask } from "./task.js";
+import { type GraphRunTask, graphRunModelText } from "./task.js";
 
 /** Runtime-owned observation; cancelling a subscriber never cancels execution. */
 export function createGraphResultObserver(lookup: (id: string) => GraphRunTask | undefined, gate: (id: string) => GateRequest | undefined, observed: (id: string, gate: GateRequest) => void, collected: (id: string) => void) {
@@ -35,7 +35,7 @@ export function createGraphResultObserver(lookup: (id: string) => GraphRunTask |
     if (request) observed(id, request);
     const details = { kind: "graph" as const, taskId: id, run_id: id, status: task.status, gate: request, output: task.value, outcome: task.outcome, error: task.error };
     return {
-      content: [{ type: "text" as const, text: `Graph: ${id}\nExecution: ${task.status}\n${task.outcome ? `Outcome: ${JSON.stringify(task.outcome)}\n` : ""}\n${request ? `Human input required. Use ask, then resolve_agent_graph_gate with run_id, gate_id, revision and response.\n${JSON.stringify(request)}` : graphRunResultText(task)}` }],
+      content: [{ type: "text" as const, text: `Graph: ${id}\nExecution: ${task.status}\n${task.outcome ? `Outcome: ${JSON.stringify(task.outcome)}\n` : ""}\n${request ? `Human input required. Use ask, then resolve_agent_graph_gate with run_id, gate_id, revision and response.\n${JSON.stringify(request)}` : graphRunModelText(task)}` }],
       details,
     };
   }

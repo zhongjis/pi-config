@@ -35,7 +35,7 @@ export interface GraphRunTask {
   script: string;
   /** Where the script can be edited and re-run from. */
   scriptPath?: string;
-  /** Presentation facts set only by the existing completion artifact writer. */
+  /** Set by the graph-result artifact writer when the full result is saved or that save fails. */
   resultPath?: string;
   resultArtifactError?: string;
   args?: unknown;
@@ -237,6 +237,45 @@ export function graphRunResultText(task: GraphRunTask): string {
   return graphRunResultBody(task, 2);
 }
 
+const FEEDBACK_SUMMARY_KEYS = ["reason", "partial", "counters", "gaps", "exhaustedBounds"] as const;
+
+function plainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function feedbackSummary(feedback: Record<string, unknown>): Record<string, Record<string, unknown>> {
+  const summary: Record<string, Record<string, unknown>> = {};
+  for (const [nodeId, entry] of Object.entries(feedback)) {
+    const picked: Record<string, unknown> = {};
+    if (plainRecord(entry)) {
+      for (const key of FEEDBACK_SUMMARY_KEYS) if (entry[key] !== undefined) picked[key] = entry[key];
+    }
+    summary[nodeId] = picked;
+  }
+  return summary;
+}
+
+/**
+ * Model-facing retrieval text. A bounded-feedback value keeps compact outputs plus a summary
+ * (`iterations` and other raw rounds stay in the artifact). Every other value matches
+ * {@link graphRunResultText}.
+ *
+ * ponytail: the round file is linked only when the full result exceeds the preview cap, same as
+ * notifications. Always write feedback artifacts if a small run must keep rounds model-reachable.
+ */
+export function graphRunModelText(task: GraphRunTask): string {
+  if (task.error !== undefined) return task.error;
+  if (task.value === undefined) return "No output.";
+  if (typeof task.value === "string") return task.value;
+  if (!plainRecord(task.value) || !Object.hasOwn(task.value, "outputs") || !plainRecord(task.value.feedback)) {
+    return graphRunResultText(task);
+  }
+  let text = JSON.stringify({ outputs: task.value.outputs, feedback: feedbackSummary(task.value.feedback) });
+  if (task.resultPath !== undefined) text += `\n\nFull result with every round: ${task.resultPath}`;
+  else if (task.resultArtifactError !== undefined) text += `\n\n${task.resultArtifactError}`;
+  return text;
+}
+
 /**
  * A bounded, model-facing preview of the run result.
  *
@@ -315,7 +354,7 @@ export function formatGraphRunNotification(task: GraphRunTask, now = Date.now())
     : task.status === "killed" ? "Stopped"
     : `Error: ${task.error ?? "unknown"}`;
   // Bounded, model-facing preview. When the full result was written to an artifact, `resultPath`
-  // is already set (see graphRunCompletionText) and drives the truncation marker + `<result-file>`.
+  // is already set (see writeGraphResultArtifact) and drives the truncation marker + `<result-file>`.
   const resultPath = task.resultPath;
   const preview = graphRunResultPreview(task);
   const resultBody =

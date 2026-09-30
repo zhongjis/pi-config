@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { boot, mockRunAgent, required, session } from "./graph-run-registration.fixture.js";
 
@@ -57,8 +58,57 @@ describe("registered result retrieval", () => {
       const result = await required(host.tools.get(name)).execute("read", {
         ...(name === "get_agent_result" ? { run_id: id } : { agent_id: id }), wait: true,
       }, undefined, undefined, host.ctx);
-      expect(result.content.map(part => part.text ?? "").join("\n")).toContain("independent-result");
+      const body = result.content.map(part => part.text ?? "").join("\n");
+      expect(body).toContain("independent-result");
+      expect(body).not.toContain("Full result with every round:");
     }
+  });
+  it("returns compact bounded-feedback retrieval text and keeps rounds in the artifact and details", async () => {
+    const host = boot({ agentGraphEnabled: true });
+    await host.lifecycle("session_start");
+    const round = `round-secret-${"x".repeat(800)}`;
+    const prompts: string[] = [];
+    mockRunAgent(async (_ctx, _type, prompt, options) => {
+      prompts.push(prompt);
+      options.onSessionCreated?.(session);
+      const responseText = prompt.startsWith("EVAL")
+        ? JSON.stringify({ decision: "sufficient", gaps: [], tasks: [] })
+        : JSON.stringify({ blob: round });
+      return { responseText, session, aborted: false, steered: false };
+    });
+    const launched = await required(host.tools.get("agent_graph")).execute("launch", {
+      graph: {
+        nodes: {
+          research: {
+            type: "bounded_feedback", name: "Research", maxIterations: 1, maxItemsPerIteration: 1, maxTotalItems: 1,
+            work: {
+              type: "fanout", items: { path: "$.tasks" },
+              itemSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
+              dispatch: { path: "$.query", cases: { q: "fixture" } }, prompt: "WORK " + "$" + "{item}",
+              outputSchema: { type: "object", properties: { blob: { type: "string" } }, required: ["blob"], additionalProperties: false },
+            },
+            evaluator: { type: "agent", agent: "fixture", prompt: "EVAL " + "$" + "{feedback}" },
+          },
+        },
+        edges: [],
+        outputs: { topic: { path: "$.topic" } },
+      },
+      input: { topic: "compact", tasks: [{ query: "q" }] },
+    }, undefined, undefined, host.ctx);
+    const id = required(launched.details?.taskId);
+    const result = await required(host.tools.get("get_agent_result")).execute("read", { run_id: id, wait: true }, undefined, undefined, host.ctx);
+    const text = result.content.map(part => part.text ?? "").join("\n");
+    expect(result.details, `${text}\n${prompts.join("\n---\n")}`).toMatchObject({
+      kind: "graph", status: "completed",
+      output: { feedback: { research: { iterations: expect.any(Array) } } },
+    });
+    const output = (result.details as { output?: { feedback?: { research?: { iterations?: unknown } } } } | undefined)?.output;
+    expect(JSON.stringify(output?.feedback?.research?.iterations)).toContain(round);
+    expect(text).not.toContain(round);
+    expect(text).not.toContain('"iterations":[');
+    const artifact = /Full result with every round: (\S+)/.exec(text)?.[1];
+    expect(artifact, text).toMatch(/\.graph-result\.txt$/);
+    expect(readFileSync(artifact as string, "utf-8")).toContain(round);
   });
 });
 

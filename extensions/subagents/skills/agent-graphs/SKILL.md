@@ -90,9 +90,9 @@ Copy `run_id`, `gate_id`, and `revision` exactly. Submit the actual human respon
 
 ## 5. Read the result
 
-`get_agent_result` text is `Graph: <id>`, `Execution: <status>`, `Outcome: <json>` when declared, then the complete result JSON. `details` is `{kind:"graph", status, gate, output, outcome, error}`.
+`get_agent_result` text is `Graph: <id>`, `Execution: <status>`, `Outcome: <json>` when declared, then the result body. `details` is `{kind:"graph", status, gate, output, outcome, error}`; `details.output` is the full value.
 
-- **Shape.** Flat `{ <outputName>: value }`, or `{ outputs, feedback }` when the graph has a `bounded_feedback` node (both portfolio graphs). There, read `outputs.*`; `feedback.<nodeKey>.reason` says why gathering stopped ([reasons](references/bounded-feedback.md)).
+- **Shape.** Flat `{ <outputName>: value }` is the complete result JSON. A `bounded_feedback` graph (both portfolio graphs) returns compact `{ outputs, feedback }`: read `outputs.*`, and `feedback.<nodeKey>` keeps `reason`, `partial`, `counters`, `gaps`, and `exhaustedBounds` ([reasons](references/bounded-feedback.md)). When the full result was saved, `Full result with every round: <path>` links the file that still has every round. If that file could not be saved, the text appends the save warning instead.
 - **Outcome.** `$agentGraphOutcome` is stripped from outputs and shown as Outcome: `succeeded`, `partial: <reason>`, or `failed: <reason>`. Without one, a completed run shows `Completed`. Execution status and Outcome are independent; trust Outcome for objective success.
 - **Execution `failed`.** A node failed outside a fanout or `bounded_feedback` collection. The text body is only the `node: error` list; partial outputs remain in `details.output`. `killed` means stopped.
 - **Completion notification.** `<status>` carries the Outcome, `Error: <node errors>`, or `Stopped`. `<summary>` counts completed, failed, and skipped agents. `<result>` is a ~500-character preview. `<result-file>`, present only when the preview overflowed, holds the full text.
