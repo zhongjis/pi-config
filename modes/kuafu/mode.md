@@ -4,7 +4,7 @@ description: Default build mode. A senior engineer who ships by orchestrating sp
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,agent,agent_graph,get_agent_result,get_subagent_result,resolve_agent_graph_gate,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal,memory_*,session_search,skill_manage,interactive_shell,intercom
-allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,huayan,guangguang,taishang,direnjie
+allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,panguan,simaqian
 disallow_delegation_to: houtu
 allow_nesting: true
 ---

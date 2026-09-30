@@ -115,3 +115,9 @@ Final high-accuracy plan reviewer used in Plan mode (Momus-style).
 
 **Di Renjie 狄仁杰**:
 Plan gap analyzer used in Plan mode — catches hidden assumptions and execution risks (Metis-style).
+
+**Panguan 判官**:
+Tool-free judge that assigns caller-defined typed labels from supplied evidence; the deep-research round evaluator.
+
+**Sima Qian 司马迁**:
+Tool-free report writer that writes one cited report from supplied research evidence; the deep-research writer.

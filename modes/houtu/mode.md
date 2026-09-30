@@ -4,7 +4,7 @@ description: Plan execution mode. Master conductor that executes plans step by s
 model: github-copilot/claude-sonnet-5,anthropic/claude-sonnet-5,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:medium
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,agent,agent_graph,get_agent_result,get_subagent_result,resolve_agent_graph_gate,steer_subagent,Task*,codegraph_*,context_*,process,lsp,memory_*,session_search,skill_manage,interactive_shell
-allow_delegation_to: chengfeng,wenchang,cangjie,jintong,juling,yunu,huayan,guangguang,taishang,direnjie
+allow_delegation_to: chengfeng,wenchang,cangjie,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,panguan,simaqian
 allow_nesting: true
 ---
 

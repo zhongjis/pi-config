@@ -44,6 +44,8 @@ Orchestrators route to these leaf specialists. Only `xuannv` can itself delegate
 | `direnjie` | Gap analysis (assumptions, guardrails, scope) | no | no |
 | `yanluo` | High-accuracy finalized-plan review | no | no |
 | `xuannv` | Tactical planning advisor (returns plan text) | no | **yes** |
+| `panguan` | Tool-free judge: typed labels over supplied evidence (graph evaluators, agent gates) | no | no |
+| `simaqian` | Tool-free report writer: one cited report from supplied research evidence (graph writers) | no | no |
 | `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
 | `jintong` | Clear, standard-risk, low-to-moderate non-UI implementation | yes | no |
 | `juling` | Substantial cross-module or elevated-reasoning non-UI implementation | yes | no |

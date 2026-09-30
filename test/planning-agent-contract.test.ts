@@ -150,4 +150,41 @@ describe("agent routing contract", () => {
     expect(config?.allowDelegationTo).toContain("huayan");
   });
 
+  it("registers Panguan as the tool-free judge", () => {
+    const loaded = loadRepoAgents();
+    previousAgentDir = loaded.previousAgentDir;
+
+    const panguan = loaded.result.agents.get("panguan");
+
+    expect(panguan, "Panguan agent must be loadable from agents/panguan.md").toBeDefined();
+    expect(panguan?.model).toBe("github-copilot/gpt-6-luna:medium,cliproxyapi/gpt-6-luna:medium:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b");
+    expect(panguan?.description.toLowerCase()).toContain("tool-free judge");
+    expect(panguan?.builtinToolNames).toEqual([]);
+    expect(panguan?.extensions).toBe(false);
+    expect(panguan?.allowNesting).toBe(false);
+    expect(panguan?.maxTurns).toBe(6);
+    expect(loaded.result.diagnostics.filter((diagnostic) => diagnostic.agentName === "panguan")).toEqual([]);
+  });
+
+  it("registers Sima Qian as the tool-free research writer", () => {
+    const loaded = loadRepoAgents();
+    previousAgentDir = loaded.previousAgentDir;
+
+    const simaqian = loaded.result.agents.get("simaqian");
+
+    expect(simaqian, "Sima Qian agent must be loadable from agents/simaqian.md").toBeDefined();
+    expect(simaqian?.description.toLowerCase()).toContain("tool-free report writer");
+    expect(simaqian?.builtinToolNames).toEqual([]);
+    expect(simaqian?.extensions).toBe(false);
+    expect(simaqian?.allowNesting).toBe(false);
+    expect(simaqian?.maxTurns).toBe(6);
+    expect(loaded.result.diagnostics.filter((diagnostic) => diagnostic.agentName === "simaqian")).toEqual([]);
+  });
+
+  it.each(["kuafu", "houtu", "fuxi"])("allows %s to run graphs that use Panguan and Sima Qian", (mode) => {
+    const config = parseModeAgentConfig(readFileSync(`modes/${mode}/mode.md`, "utf8"));
+
+    expect(config?.allowDelegationTo).toEqual(expect.arrayContaining(["panguan", "simaqian"]));
+  });
+
 });
