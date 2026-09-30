@@ -27,6 +27,7 @@ Integration coverage exercising extensions inside the real Pi runtime.
 ## Verification
 
 - Integration project: `pnpm test:integration`.
+- `pnpm exec vitest run --project integration test/integration/pi-runtime-version.integration.test.ts` checks the Pi catalog matches the runtime `pi --version` and Pi's pinned typebox.
 - Focused mode coverage: `pnpm exec vitest run --project integration test/integration/modes.integration.test.ts`.
 - [Task continuation](tasks-continuation.integration.test.ts) covers settled-time follow-ups, stagnation, and Goal ownership with real Pi sessions and an isolated task store.
 - Project timeout is 30 seconds, as configured in Vitest.
