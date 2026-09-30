@@ -28,38 +28,11 @@ function formatTokens(count: number): string {
   return `${Math.round(count / 1000000)}M`;
 }
 
-// Tokens per second of the most recent completed assistant message.
-// Uses entry.timestamp (wall-clock when persisted) to approximate generation duration:
-//   duration = assistantEntry.timestamp - prevEntry.timestamp
-// The message.timestamp field is set at message *creation* (when agent starts the
-// response shell), not completion — so it underreports duration to 1-3ms. Entry
-// timestamps are ISO strings written when the entry is appended to the JSONL.
-function getLastMessageTps(ctx: Pick<ExtensionContext, "sessionManager">): number | null {
-  const entries = ctx.sessionManager.getEntries();
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-    const msg = entry.message as AssistantMessage;
-    if (msg.stopReason === "error" || msg.stopReason === "aborted") return null;
-    const output = msg.usage.output;
-    if (output <= 0) return null;
-    // Previous entry (any type) approximates request start.
-    if (i === 0) return null;
-    const prev = entries[i - 1];
-    const endMs = Date.parse((entry as { timestamp: string }).timestamp);
-    const startMs = Date.parse((prev as { timestamp: string }).timestamp);
-    if (!Number.isFinite(endMs) || !Number.isFinite(startMs)) return null;
-    const durationMs = endMs - startMs;
-    if (durationMs < 250) return null; // too short, noisy
-    return output / (durationMs / 1000);
-  }
-  return null;
-}
-
+// Format the most recent completed provider request's end-to-end output rate.
 function formatTps(tps: number): string {
-  if (tps >= 100) return `${Math.round(tps)} tok/s`;
-  if (tps >= 10) return `${tps.toFixed(1)} tok/s`;
-  return `${tps.toFixed(2)} tok/s`;
+  if (tps >= 100) return `${Math.round(tps)} effective tok/s`;
+  if (tps >= 10) return `${tps.toFixed(1)} effective tok/s`;
+  return `${tps.toFixed(2)} effective tok/s`;
 }
 
 function stripAnsi(text: string): string {
@@ -381,7 +354,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           statsSegments.push(getModelSegment(ctx, pi.getThinkingLevel(), multiProvider, theme));
           priorities.push(3);
 
-          const tps = getLastMessageTps(ctx);
+          const tps = lastEffectiveTps;
           if (tps !== null) {
             statsSegments.push(theme.fg("dim", formatTps(tps)));
             priorities.push(2);
@@ -482,10 +455,56 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
     });
   }
 
+  const resetRate = () => {
+    requestStartedAt = null;
+    lastEffectiveTps = null;
+  };
+
+  let requestStartedAt: number | null = null;
+  let lastEffectiveTps: number | null = null;
+
+  pi.on("turn_start", async () => {
+    requestStartedAt = null;
+  });
+
+  pi.on("before_provider_request", async () => {
+    if (requestStartedAt !== null) return;
+    const now = performance.now();
+    if (Number.isFinite(now)) requestStartedAt = now;
+  });
+
+  pi.on("message_end", async (event) => {
+    if (event.message.role !== "assistant") return;
+    const startedAt = requestStartedAt;
+    requestStartedAt = null;
+
+    const output = event.message.usage.output;
+    const endedAt = performance.now();
+    const durationMs = endedAt - (startedAt ?? NaN);
+    if (
+      event.message.stopReason === "error" ||
+      event.message.stopReason === "aborted" ||
+      !Number.isFinite(output) ||
+      output <= 0 ||
+      !Number.isFinite(durationMs) ||
+      durationMs < 250
+    ) {
+      lastEffectiveTps = null;
+      return;
+    }
+
+    const rate = output / (durationMs / 1000);
+    lastEffectiveTps = Number.isFinite(rate) ? rate : null;
+  });
+
   pi.on("session_start", async (_event, ctx) => {
+    resetRate();
     compactionPending = false;
     installFooter(ctx);
   });
+
+  pi.on("session_tree", resetRate);
+  pi.on("session_shutdown", resetRate);
 
   pi.on("model_select", async (_event, ctx) => {
     installFooter(ctx);
