@@ -38,13 +38,6 @@ export async function streamSimple() {
   };
 }
 
-export async function streamSimpleAnthropic() {
-  return {
-    content: [],
-    text: ""
-  };
-}
-
 export function isContextOverflow(message: { stopReason?: string; errorMessage?: string }): boolean {
   return message.stopReason === "error" && /prompt is too long|context window/i.test(message.errorMessage ?? "");
 }

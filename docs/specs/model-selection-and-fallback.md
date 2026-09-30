@@ -25,10 +25,9 @@ The shared library ([`model-selection.ts`](../../extensions/lib/model-selection.
 The profile filter sits under everything: every `getAvailable()` call the other
 surfaces make already returns a profile-filtered list.
 
-Resolution fallback happens before a request. Runtime behavior is separate:
-[`clauderock`](#runtime-provider-failover-clauderock) can switch an Anthropic
-stream's provider, while the shared extension coordinator can continue a settled
-quota/rate-limit/access-denied failure on the next configured model-chain candidate.
+Resolution fallback happens before a request. Runtime behavior is separate: the
+shared extension coordinator can continue a settled quota/rate-limit/access-denied
+failure on the next configured model-chain candidate.
 
 ---
 
@@ -200,10 +199,10 @@ the shared resolver:
 
 ---
 
-## Runtime fallback layers
+## Runtime fallback
 
-Resolution chooses an initial model. Two independent extension-level paths can
-then react to a request failure; neither changes Pi core.
+Resolution chooses an initial model. One extension-level path can then react to a
+request failure; it does not change Pi core.
 
 ### Post-native-retry chain continuation
 
@@ -227,39 +226,6 @@ The generic coordinator applies a selected candidate's thinking level with Pi's 
 the caller owns Fast policy and validates/applies it. This path is for configured
 chains only—parent-model inheritance is not a recovery chain. Subagent run/resume and
 structured-output repair wait for the recovery turn to become idle.
-
-### Runtime provider failover (clauderock)
-
-`clauderock` instead swaps the provider *during* an Anthropic stream after a request
-has failed. It installs by overriding the Anthropic provider's stream function —
-`pi.registerProvider("anthropic", { streamSimple: streamWithFallback })`
-([`index.ts`](../../extensions/clauderock/index.ts)) — so it wraps every Anthropic call
-without changing which model the session selected.
-
-**Trigger.** Inside the stream, an error switches to Bedrock only when all of these
-hold ([`index.ts`](../../extensions/clauderock/index.ts)):
-
-1. The error is a quota or rate-limit error (`isQuotaError` / `isRateLimitError`).
-2. No response content has streamed yet (`!hasResponseContent`) — a mid-stream failure is forwarded, never retried.
-3. The current model has a Bedrock mapping in `ANTHROPIC_TO_BEDROCK`.
-
-Without a mapping, the error passes through and fallback stays off.
-
-**Sticky state.** Once failover fires, `fallbackActive` flips true and a
-`clauderock-state.json` cache is written under the agent dir. While active, the
-wrapper routes every Bedrock-mapped call straight to Bedrock with no Anthropic
-attempt, and the flag **persists across sessions** — session start reads the
-cache back and re-arms failover ([`index.ts`](../../extensions/clauderock/index.ts)).
-Reset it with `/clauderock off`; force it on with `/clauderock on`.
-
-**ID normalization.** If a Bedrock-style id leaks into Pi state (for example after a
-mode switch), `normalizeModelId` recovers the clean Anthropic id before resolving the
-mapping, and outgoing events are patched back to the original id so the UI shows the
-model the user picked.
-
-**Scope.** This path activates only when the session model's provider is `anthropic`.
-The `opencode` and `local` profiles never reach it. It is orthogonal to profile
-filtering — it does not consult `getAvailable()` or `resolveModel` at all.
 
 ---
 

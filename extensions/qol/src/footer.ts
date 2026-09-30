@@ -12,7 +12,7 @@ const ANSI_ESCAPE_REGEX = /\u001B\[[0-9;]*m/g;
 // - caveman: noise; user opts in via /caveman
 const HIDDEN_STATUS_KEYS = new Set(["thinking-steps", "caveman"]);
 
-// Leading decorative glyphs to strip from status text (e.g. "● Clauderock" -> "Clauderock").
+// Leading decorative glyphs to strip from status text.
 const LEADING_GLYPH_REGEX = /^[\u25CF\u25CB\u2022\u2023\u2219\u26AB\u26AA\u25A0\u25A1\u25AA\u25AB\u2B24]\s*/;
 
 function shortenPath(path: string): string {
@@ -425,7 +425,6 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
             const styledEntries = extraEntries
               .map(([key, text]) => {
                 if (key === "agent-mode") return stripLeadingGlyph(text);
-                if (key === "clauderock") return stripLeadingGlyph(text);
                 return theme.fg("dim", simplifyStatusText(text));
               })
               .filter(Boolean);

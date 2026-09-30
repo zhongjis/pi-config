@@ -24,7 +24,6 @@ NIX_MANAGED_EXTENSIONS=(
 EXCLUDED_EXTENSION_ITEMS=(
   "AGENTS.md"
   "CONVENTIONS.md"
-  "clauderock"
 )
 
 # Top-level items to symlink into ~/.pi/agent (allowlist).
