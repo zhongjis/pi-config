@@ -7,11 +7,24 @@ export const decisionValueSchema = {
 };
 
 /** Private Subagent protocol; never exposed as a node's output. */
+/**
+ * Private Subagent protocol; never exposed as a node's output.
+ * One flat object, not a root `oneOf`: providers that ignore root combinators would
+ * otherwise advertise a StructuredOutput tool with no properties. `if`/`then` keeps
+ * exactly the two accepted shapes: decided + decision, or undecided + reason.
+ */
 export const agentDecisionSchema = {
   type: "object",
-  oneOf: [
-    { type: "object", properties: { status: { const: "decided" }, decision: decisionValueSchema }, required: ["status", "decision"], additionalProperties: false },
-    { type: "object", properties: { status: { const: "undecided" }, reason: { type: "string", pattern: "\\S" } }, required: ["status", "reason"], additionalProperties: false },
+  properties: {
+    status: { type: "string", enum: ["decided", "undecided"] },
+    decision: decisionValueSchema,
+    reason: { type: "string", pattern: "\\S" },
+  },
+  required: ["status"],
+  additionalProperties: false,
+  allOf: [
+    { if: { properties: { status: { const: "decided" } }, required: ["status"] }, then: { required: ["decision"], not: { required: ["reason"] } } },
+    { if: { properties: { status: { const: "undecided" } }, required: ["status"] }, then: { required: ["reason"], not: { required: ["decision"] } } },
   ],
 };
 export type AgentDecision =

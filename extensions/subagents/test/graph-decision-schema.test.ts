@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileDecisionSchema, decisionValueSchema, parseAgentDecision } from "../src/graph/decision-gate.js";
+import { compileDecisionSchema, compiledAgentDecisionSchema, decisionValueSchema, parseAgentDecision } from "../src/graph/decision-gate.js";
 import { validateGraph } from "../src/graph/validate.js";
 
 describe("decision gate contracts", () => {
@@ -21,5 +21,16 @@ describe("decision gate contracts", () => {
   });
   it.each([{}, { approved: true }, { status: "undecided", reason: " " }, { status: "undecided" }, { status: "unable", reason: "No tools" }, { status: "decided", decision: { approved: true, extra: 1 } }, { status: "decided", decision: { approved: "yes" } }])("rejects malformed private output %j", value => {
     expect(() => parseAgentDecision(JSON.stringify(value))).toThrow();
+  });
+  it.each([
+    { status: "decided", decision: { approved: true }, reason: "extra" },
+    { status: "undecided", reason: "Unclear", decision: { approved: false } },
+    { status: "decided", decision: "approve" },
+  ])("rejects mixed private output %j", value => {
+    expect(() => parseAgentDecision(JSON.stringify(value))).toThrow();
+  });
+  it("advertises top-level properties so providers that ignore root combinators still see the fields", () => {
+    expect(compiledAgentDecisionSchema.providerSchema).toMatchObject({ type: "object", properties: { status: {}, decision: {}, reason: {} } });
+    expect(compiledAgentDecisionSchema.providerSchema).not.toHaveProperty("oneOf");
   });
 });
