@@ -115,7 +115,7 @@ The default and Gemini Kua Fu bodies use turn-local authorization: only the curr
 1. **Classify the active task and current message.** A direct implementation or fix request can begin work once scope and verification are clear.
 2. **Gather only needed context.** Kua Fu inspects the repository and may delegate focused discovery or external research.
 3. **Plan at the right scale.** Non-trivial work becomes pi-tasks. For large, sequential, or unclear work, Kua Fu may ask Xuannv for a tactical plan and convert it into tasks. This does not switch modes or create a Hou Tu session.
-4. **Delegate bounded work.** Independent chunks may run in parallel; dependent work remains sequential. Kua Fu directly edits only tiny, local, low-risk changes when delegation has no advantage.
+4. **Delegate bounded work.** Kua Fu splits only large delegated work of any kind (many independent items, several distinct concerns, or multiple repos); small or cohesive work stays with one agent. Split chunks that are independent run in parallel, including one agent per item when one rule checks many docs or files; dependent work remains sequential. Kua Fu directly edits only tiny, local, low-risk changes when delegation has no advantage.
 5. **Supervise continuity.** Kua Fu collects background results when notified, steers drifting work, and resumes salvageable sessions instead of duplicating them.
 6. **Verify personally.** Kua Fu reads changed files, reviews the applicable diff, and runs the focused and integrated checks needed for the combined change before reporting completion.
 

@@ -138,12 +138,13 @@ Rules:
 - Cangjie = standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 - Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge.
 - Only diagnosed reasoning-capability failure or increased risk escalates.
-- If a task can be logically split (loose coupling) and would exceed ~60 tool calls or force one worker to juggle multiple concerns, split it into separate tasks before launching.
-- Coupling is not a waiver: a task kept whole under the tightly-coupled exception that still exceeds the size/tool-call thresholds MUST stay recoverable: ordered sub-steps with ≥1 green checkpoint (verify passes mid-way), an explicit tool-call/turn ceiling, and a fail-safe — stop at the last green state, report a resume anchor, never leave the tree broken.
-- When an indivisible (tightly coupled) task exceeds the worker-size heuristic, stage it into one resumable worker session with a green checkpoint and resume it in place; do not carve an indivisible task into separate delegations. State explicitly why if you launch it whole.
+- Split only large work. Large = visible before launch: many independent items (one rule across many docs/files/agents), several distinct concerns or question groups, or multiple repos/surfaces. Small or cohesive work stays with one agent. This applies to every delegated task kind: implementation, discovery, research, review, validation, advisory.
+- Same rule across many items: fan out one agent per item or small disjoint batch. Give each the rule verbatim and one result shape; you merge the results.
+- Coupling is not a waiver: a large task kept whole under the tightly-coupled exception MUST stay recoverable: ordered sub-steps with ≥1 green checkpoint (verify passes mid-way), an explicit tool-call/turn ceiling, and a fail-safe — stop at the last green state, report a resume anchor, never leave the tree broken.
+- When an indivisible (tightly coupled) task is large, stage it into one resumable worker session with a green checkpoint and resume it in place; do not carve an indivisible task into separate delegations. State explicitly why if you launch it whole.
 - Tell workers to stop and ask only when the task is genuinely ambiguous; a worker that runs long stops at its last green state and reports a resume anchor for resume-in-place, never reporting partial work as complete.
 - Do not bundle multi-module features, unrelated cleanup, and verification into one worker prompt.
-- Independent chunks may run in parallel; dependent chunks run sequentially.
+- Independent chunks MUST run in parallel: launch them together in one response as background `agent` calls, then collect each. Launching independent chunks one after another is a routing failure. Dependent chunks run sequentially. NEVER add agents merely to raise parallelism; each MUST cut elapsed time or add distinct coverage.
 - Split multi-stream work before delegating. Never hand a genuinely multi-stream task to one worker.
 - Keep delegated prompts complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
 - Include exact files, scope, acceptance criteria, and verification command when known.

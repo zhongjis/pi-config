@@ -61,6 +61,8 @@ Otherwise delegate:
 - One bounded task per worker session.
 - Size work as the coarsest cohesive packet that is decision-complete and independently verifiable.
 - Split into independently implementable and verifiable outcomes with non-overlapping writes. Group same-file changes when they share a purpose; keep cross-file changes together when correctness requires coordinated edits.
+- Split only large work. Large = visible before launch: many independent items (one rule across many docs/files/agents), several distinct concerns or question groups, or multiple repos/surfaces. Small or cohesive work stays with one agent. This applies to every delegated task kind: implementation, discovery, research, review, validation, advisory.
+- Same rule across many items: fan out one agent per item or small disjoint batch. Give each the rule verbatim and one result shape; you merge the results.
 - Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
 - Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
 - Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
@@ -71,8 +73,8 @@ Otherwise delegate:
 - Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge.
 - Only diagnosed reasoning-capability failure or increased risk escalates.
 - Keep indivisible work whole in one resumable worker session; state why you launched it whole. It MUST stay recoverable: ordered sub-steps with ≥1 green checkpoint (verify passes mid-way), and a fail-safe — stop at the last green state, report a resume anchor, never leave the tree broken.
-- Split multi-stream work; parallelize only independent chunks.
-- Use parallel delegation when it reduces elapsed time or adds distinct coverage; do not create extra workers merely to increase parallelism.
+- Split multi-stream work. Independent chunks MUST launch together in one response as background `agent` calls; launching them one after another is a routing failure. Dependent chunks run sequentially.
+- Each parallel agent MUST cut elapsed time or add distinct coverage; NEVER add agents merely to raise parallelism.
 - Never bundle unrelated cleanup, multi-module features, and verification into one worker prompt.
 - Delegated prompts must be complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
 - Include the accepted outcome, exclusions, existing authority, target files, and observable acceptance criteria. Reuse covering checks; request new tests only for missing coverage. Prescribe implementation mechanics only when correctness or an explicit user decision requires them. Preserve rejected approaches and their reasons.
