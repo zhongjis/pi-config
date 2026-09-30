@@ -16,7 +16,7 @@ function testContext() {
 
 function setup() {
   const registrations: [string, unknown][] = [];
-  const on: ExtensionAPI["on"] = (name: string, handler: unknown) => { registrations.push([name, handler]); };
+  const on: ExtensionAPI["on"] = (name: string, handler: unknown) => { registrations.push([name, handler]); return () => {}; };
   const sendMessage = vi.fn<ExtensionAPI["sendMessage"]>();
   const { events } = createMockPi().pi;
   const subscribe = vi.spyOn(events, "on");

@@ -1,8 +1,8 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export async function preflight(
   pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
+  ctx: ExtensionContext,
   options: { cwd?: string; requireGit?: boolean } = {},
 ): Promise<boolean> {
   const cwd = options.cwd ?? ctx.cwd;

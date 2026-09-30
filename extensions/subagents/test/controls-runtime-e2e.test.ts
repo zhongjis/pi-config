@@ -18,7 +18,7 @@ it.each([false, true])("reports native usage once across retrieval and resume (b
       respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "controlled", prompt: "Report.", description: "controls", run_in_background: background }),
         parentFinal: (ctx) => {
-          const results = ctx.messages.filter((message): message is ToolResultMessage<unknown> => message.role === "toolResult");
+          const results = ctx.messages.filter((message): message is ToolResultMessage => message.role === "toolResult");
           const details = results[0]?.details;
           if (!details || typeof details !== "object" || !("agentId" in details) || typeof details.agentId !== "string") throw new Error("Missing agent ID");
           if (results.length === 2) return agentCall({ subagent_type: "controlled", prompt: "Continue.", description: "resume", resume: details.agentId }, { id: "resume" });
@@ -28,7 +28,7 @@ it.each([false, true])("reports native usage once across retrieval and resume (b
         subagent: "Complete",
       }),
     });
-    const results = run.parentSession.messages.filter((message): message is ToolResultMessage<unknown> => message.role === "toolResult");
+    const results = run.parentSession.messages.filter((message): message is ToolResultMessage => message.role === "toolResult");
     expect(results).toHaveLength(5);
     const details = results[0]?.details;
     if (!details || typeof details !== "object" || !("agentId" in details) || typeof details.agentId !== "string") throw new Error("Missing agent ID");
@@ -91,7 +91,7 @@ it("returns complete inline results for queued foreground calls in the real host
         subagent: "Complete",
       }),
     });
-    const results = run.parentSession.messages.filter((message): message is ToolResultMessage<unknown> => message.role === "toolResult" && message.toolName === "agent");
+    const results = run.parentSession.messages.filter((message): message is ToolResultMessage => message.role === "toolResult" && message.toolName === "agent");
     expect(results).toHaveLength(3);
     for (const result of results) expect(result.details).toMatchObject({ status: "completed", result: "Complete", toolUses: 0 });
     expect(run.manager?.hasRunning()).toBe(false);

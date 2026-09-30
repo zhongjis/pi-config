@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { initLib } from "../lib/index.js";
 import { isTui } from "../lib/mode.js";
@@ -44,7 +44,7 @@ function formatReviewResults(results: Array<{ label: string; review: string }>):
 
 async function runReviewJobs(
   pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
+  ctx: ExtensionContext,
   jobs: CodexReviewJob[],
   cwd: string,
   labelPrefix = "",
@@ -229,7 +229,7 @@ function validateScopes(scopes: SessionReviewScope[]): string | null {
 
 async function runScopedSessionReview(
   pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
+  ctx: ExtensionContext,
   reason: string,
   scopes: SessionReviewScope[],
 ): Promise<ReviewRunResult> {
@@ -344,7 +344,7 @@ export default function secondOpinion(pi: ExtensionAPI) {
         const invalid = validateScopes(repos);
         if (invalid) return { content: [{ type: "text", text: invalid }] };
 
-        const result = await runScopedSessionReview(pi, ctx as ExtensionCommandContext, reason, repos);
+        const result = await runScopedSessionReview(pi, ctx, reason, repos);
         if (!result.ok) {
           return { content: [{ type: "text", text: `Codex review failed: ${result.review}` }] };
         }

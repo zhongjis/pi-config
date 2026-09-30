@@ -133,8 +133,8 @@ function buildSessionContext(ctx: ExtensionContext): { goal: string | null; roun
 	let current: Round | undefined;
 	let userCount = 0;
 	for (const entry of ctx.sessionManager.getBranch()) {
-		if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) continue;
-		const message = entry.message;
+		if (!isRecord(entry) || entry.type !== "message" || typeof entry.message !== "object" || !entry.message) continue;
+		const message = entry.message as { role?: unknown; content?: unknown };
 		if (message.role === "user") {
 			const text = extractText(message.content).trim();
 			if (!text) continue;

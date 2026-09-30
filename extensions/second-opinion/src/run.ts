@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isTui } from "../../lib/mode.js";
 import { formatDuration, headingIcon, SEPARATOR, spinnerGlyph, TREE } from "../../lib/widget-style.js";
 
@@ -10,7 +10,7 @@ const ANSI_REGEX = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
 export async function runCodexReview(
   _pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
+  ctx: ExtensionContext,
   argv: string[],
   cwd = ctx.cwd,
   widgetLabel = "codex review",
