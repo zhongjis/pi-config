@@ -208,6 +208,8 @@ function getCostSegment(
   let label = usingSubscription ? `${costText} (sub)` : costText;
   if (subagentCost > 0) label += ` (+$${subagentCost.toFixed(3)} agents)`;
 
+  // Subscription cost is notional, not actionable: never escalate its color.
+  if (usingSubscription) return theme.fg("dim", label);
   if (combined >= 10) return theme.fg("error", label);
   if (combined >= 1) return theme.fg("warning", label);
   return theme.fg("dim", label);
@@ -242,13 +244,15 @@ function getRepoName(cwd: string): string | null {
 
 function getModelSegment(
   ctx: Pick<ExtensionContext, "model">,
-  thinkingLevel: string,
+  thinkingLevel: ReturnType<ExtensionAPI["getThinkingLevel"]>,
   multiProvider: boolean,
+  theme: ExtensionContext["ui"]["theme"],
 ): string {
-  const modelName = ctx.model?.id ?? "no-model";
-  const name = multiProvider && ctx.model ? `(${ctx.model.provider}) ${modelName}` : modelName;
+  const model = theme.fg("muted", ctx.model?.id ?? "no-model");
+  const name = multiProvider && ctx.model ? `${theme.fg("dim", `(${ctx.model.provider})`)} ${model}` : model;
   if (!ctx.model?.reasoning) return name;
-  return `${name} · ${thinkingLevel}`;
+  // Same hue Pi uses for the editor border at this thinking level.
+  return `${name}${theme.fg("dim", " · ")}${theme.getThinkingBorderColor(thinkingLevel)(thinkingLevel)}`;
 }
 
 // Labeled token row: "in 10 · out 2.7k · cache 92%"
@@ -268,7 +272,8 @@ function formatTokenRow(
   const prompt = totals.input + totals.cacheRead + totals.cacheWrite;
   if (totals.cacheRead && prompt) {
     const pct = Math.round((totals.cacheRead / prompt) * 100);
-    segs.push(theme.fg("dim", "cache ") + theme.fg("muted", `${pct}%`));
+    // Turn 2 of a healthy session sits near 50% (turn 1 only writes), so warn below 30%.
+    segs.push(theme.fg("dim", "cache ") + theme.fg(pct < 30 ? "warning" : "muted", `${pct}%`));
   }
   return segs.join(sep);
 }
@@ -279,6 +284,7 @@ function fitSegmentsByPriority(
   segments: string[],
   priorities: number[],
   width: number,
+  sep: string,
 ): string {
   const items = segments.map((s, i) => ({ text: s, priority: priorities[i] ?? 0, order: i }));
   const render = () =>
@@ -289,7 +295,7 @@ function fitSegmentsByPriority(
       .join(" · ");
 
   const active = items.slice();
-  let line = active.map((x) => x.text).join(" · ");
+  let line = active.map((x) => x.text).join(sep);
   while (active.length > 1 && visibleWidth(line) > width) {
     // drop lowest-priority item (prefer later order on tie)
     let dropIdx = 0;
@@ -302,7 +308,7 @@ function fitSegmentsByPriority(
       }
     }
     active.splice(dropIdx, 1);
-    line = active.sort((a, b) => a.order - b.order).map((x) => x.text).join(" · ");
+    line = active.sort((a, b) => a.order - b.order).map((x) => x.text).join(sep);
   }
   return visibleWidth(line) > width ? truncateToWidth(line, width, "") : line;
 }
@@ -372,7 +378,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           priorities.push(4);
 
           const multiProvider = footerData.getAvailableProviderCount() > 1;
-          statsSegments.push(theme.fg("muted", getModelSegment(ctx, pi.getThinkingLevel(), multiProvider)));
+          statsSegments.push(getModelSegment(ctx, pi.getThinkingLevel(), multiProvider, theme));
           priorities.push(3);
 
           const tps = getLastMessageTps(ctx);
@@ -391,12 +397,12 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           const lines = [pathLine];
           const sessionName = ctx.sessionManager.getSessionName();
           if (sessionName) {
-            lines.push(truncateToWidth(theme.fg("accent", sessionName), width, theme.fg("dim", "...")));
+            lines.push(truncateToWidth(theme.fg("text", sessionName), width, theme.fg("dim", "...")));
           }
           const availableLeft = tokenRight
             ? Math.max(10, width - visibleWidth(tokenRight) - 2)
             : width;
-          const statsLeft = fitSegmentsByPriority(statsSegments, priorities, availableLeft);
+          const statsLeft = fitSegmentsByPriority(statsSegments, priorities, availableLeft, theme.fg("dim", " · "));
 
           if (tokenRight) {
             const leftWidth = visibleWidth(statsLeft);
