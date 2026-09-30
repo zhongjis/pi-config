@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -89,6 +89,7 @@ const plainTheme: PlainTheme = {
 };
 
 let testRoot: string;
+let outsideRoot: string;
 
 function registerTool(): ToolDefinition {
   let registered: ToolDefinition | undefined;
@@ -121,6 +122,7 @@ function renderText(component: RenderableText, width = 120): string {
 
 beforeEach(async () => {
   testRoot = await mkdtemp(join(tmpdir(), "look-at-contract-"));
+  outsideRoot = await mkdtemp(join(tmpdir(), "look-at-outside-"));
   await mkdir(join(testRoot, ".pi"));
   await writeFile(
     join(testRoot, ".pi", "tool_models.json"),
@@ -150,6 +152,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(testRoot, { recursive: true, force: true });
+  await rm(outsideRoot, { recursive: true, force: true });
   vi.clearAllMocks();
 });
 
@@ -196,6 +199,43 @@ describe("look_at result contract", () => {
     expect(collapsed).toContain(`findings: ${mocks.analysis}`);
     expect(expanded).toBe(mocks.analysis);
     expect(`${collapsed}\n${expanded}`).not.toContain(PNG_BASE64);
+  });
+
+  it("accepts cwd-relative, absolute, parent-relative, and @-prefixed file paths", async () => {
+    const imageBytes = Buffer.from(PNG_BASE64, "base64");
+    const insideFile = join(testRoot, "inside.png");
+    const outsideFile = join(outsideRoot, "outside.png");
+    await Promise.all([
+      writeFile(insideFile, imageBytes),
+      writeFile(outsideFile, imageBytes),
+    ]);
+    const tool = registerTool();
+    const filePaths = [
+      "inside.png",
+      outsideFile,
+      relative(testRoot, outsideFile),
+      "@inside.png",
+    ];
+
+    for (const filePath of filePaths) {
+      const result = await tool.execute(
+        "look-at-file-path",
+        { file_path: filePath, goal: "Inspect the image" },
+        undefined,
+        undefined,
+        createContext(),
+      );
+      expect(result.content).toContainEqual({
+        type: "image",
+        data: PNG_BASE64,
+        mimeType: "image/png",
+      });
+      expect(result.details).toMatchObject({
+        source: filePath,
+        mimeType: "image/png",
+        bytes: imageBytes.byteLength,
+      });
+    }
   });
 
   it("falls back only to an image-capable current model when the configured chain is unavailable", async () => {

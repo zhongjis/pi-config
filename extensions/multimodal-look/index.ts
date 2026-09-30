@@ -13,7 +13,7 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
-import { extname, isAbsolute, relative, resolve } from "node:path";
+import { extname, resolve } from "node:path";
 import {
   getToolModelSelection,
   loadToolModelsConfig,
@@ -126,23 +126,15 @@ function assertByteLimit(buffer: Buffer): void {
   }
 }
 
-function resolveUnderCwd(cwd: string, inputPath: string): string {
-  const stripped = inputPath.startsWith("@") ? inputPath.slice(1) : inputPath;
-  const absolute = resolve(cwd, stripped);
-  const rel = relative(cwd, absolute);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
-    throw new Error(
-      "look_at file_path must resolve under cwd. If the image is elsewhere, copy it into cwd first (e.g., cp /path ./img.png), then use the relative path.",
-    );
-  }
-  return absolute;
-}
 
 async function prepareFileImage(
   filePath: string,
   ctx: ExtensionContext,
 ): Promise<PreparedImage> {
-  const absolutePath = resolveUnderCwd(ctx.cwd, filePath);
+  const absolutePath = resolve(
+    ctx.cwd,
+    filePath.startsWith("@") ? filePath.slice(1) : filePath,
+  );
   const mimeType = assertSupportedMime(mimeFromPath(absolutePath) ?? "");
   const buffer = await readFile(absolutePath);
   assertByteLimit(buffer);
@@ -464,20 +456,20 @@ export default function multimodalLook(pi: ExtensionAPI): void {
     name: "look_at",
     label: "Look At",
     description:
-      "Inspect a local image or base64 image with a dedicated profile-aware vision model and return concise text findings.",
+      "Inspect a local image at an absolute or cwd-relative path, or a base64 image, with a dedicated profile-aware vision model and return concise text findings.",
     promptSnippet:
-      "Use look_at when image understanding needs reliable vision-model analysis instead of relying on the current main model. If the image is outside cwd, copy it into cwd first.",
+      "Use look_at when image understanding needs reliable vision-model analysis instead of relying on the current main model. file_path accepts absolute paths or paths relative to cwd; leading @ is stripped.",
     promptGuidelines: [
       "Use look_at for screenshots, diagrams, photos, UI captures, charts, or visual artifacts when the answer depends on image contents.",
       "Provide a specific goal; look_at returns text evidence for the main agent to use.",
       "Do not use look_at for rendering or converting visuals; use render-visual for preview/render tasks.",
-      "If the user references an image outside the current working directory, copy it into cwd first (e.g., cp /path ./img.png), then call look_at with the relative path.",
+      "Provide file_path as an absolute path or relative to cwd; a leading @ is stripped.",
     ],
     parameters: Type.Object({
       file_path: Type.Optional(
         Type.String({
           description:
-            "Path relative to the current working directory to an image file. Leading @ is stripped. If the image is elsewhere, copy it into cwd first.",
+            "Absolute path or path relative to the current working directory to an image file. Leading @ is stripped.",
         }),
       ),
       image_data: Type.Optional(

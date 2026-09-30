@@ -10,7 +10,7 @@ Inspect one image with an isolated, profile-aware vision model through `look_at`
 ## Local Contracts
 
 - Input MUST select exactly one local path or base64 image source.
-- Local paths MUST resolve beneath the current working directory.
+- Local paths MUST accept absolute paths and paths relative to the current working directory; a leading `@` is stripped.
 - Images MUST respect the 20 MiB limit and PNG/JPEG/WebP/GIF MIME allowlist.
 - Vision sessions MUST have no tools, extensions, skills, templates, or context files.
 - Routing MUST NOT change the main session model.

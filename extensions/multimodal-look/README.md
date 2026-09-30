@@ -21,5 +21,5 @@ Configure role `vision.inspect` or tool key `multimodal-look.inspect` through sh
 ## Safety
 
 - Input size and MIME type are limited; [index.ts](index.ts) defines the limits.
-- `file_path` must resolve under the current working directory.
+- `file_path` accepts absolute paths or paths relative to the current working directory; a leading `@` is stripped.
 - The child vision session runs with no tools, no extensions, no skills, no prompt templates, and no context files.
