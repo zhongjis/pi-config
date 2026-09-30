@@ -29,6 +29,7 @@ import {
 	SessionManager,
 	SettingsManager,
 	type AgentSessionEvent,
+	type ExtensionRunner,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createFauxModelRuntime, type FauxModelRuntime } from "./faux-runtime.js";
@@ -38,10 +39,12 @@ import { createMockUIContext } from "./mock-ui.js";
 import { createEventCollector } from "./events.js";
 import { formatPlaybookDiagnostic } from "./diagnostics.js";
 import type {
+	MockToolHandler,
 	TestSessionOptions,
 	TestSession,
-	Turn,
 	ToolCallRecord,
+	ToolResultRecord,
+	Turn,
 } from "./types.js";
 
 // Re-export the DSL builders + types so tests can import everything the upstream
@@ -60,6 +63,83 @@ export type {
 	PlaybookAction,
 } from "./types.js";
 export { ToolBlockedError } from "./mock-tools.js";
+
+// ponytail: mockTools wraps private session._toolRegistry because AgentSession
+// rebuilds agent.state.tools from it on every prompt. Ceiling: pi renames that
+// Map. Upgrade: the throws below, then retarget a public loadout seam if one appears.
+const TOOL_REGISTRY_WRAPPER = Symbol("faux-session.toolRegistryWrapper");
+
+function isAgentTool(value: unknown): value is AgentTool {
+	return typeof value === "object" && value !== null && "name" in value && "execute" in value;
+}
+
+function readToolRegistry(session: object): Map<unknown, unknown> {
+	const registry = Reflect.get(session, "_toolRegistry");
+	if (!(registry instanceof Map)) {
+		throw new Error(
+			"pi internals changed: session._toolRegistry is not a Map, so faux-session cannot install tool mocks",
+		);
+	}
+	return registry;
+}
+
+function unwrapRegistryTool(tool: AgentTool): AgentTool {
+	const original = Reflect.get(tool, TOOL_REGISTRY_WRAPPER);
+	return isAgentTool(original) ? original : tool;
+}
+
+function installToolRegistryWrappers(
+	session: object,
+	mockTools: Record<string, MockToolHandler>,
+	toolResults: ToolResultRecord[],
+	playbookState: PlaybookState,
+	propagateErrors: boolean,
+	extensionRunner?: ExtensionRunner,
+): void {
+	const registry = readToolRegistry(session);
+	const names: string[] = [];
+	const originals: AgentTool[] = [];
+	for (const [name, tool] of registry) {
+		if (typeof name !== "string" || !isAgentTool(tool)) {
+			throw new Error("pi internals changed: session._toolRegistry entry is not a named tool");
+		}
+		names.push(name);
+		originals.push(unwrapRegistryTool(tool));
+	}
+	const wrapped = interceptToolExecution(
+		originals,
+		mockTools,
+		toolResults,
+		playbookState,
+		propagateErrors,
+		extensionRunner,
+	);
+	for (let i = 0; i < names.length; i++) {
+		const tool = wrapped[i];
+		const original = originals[i];
+		if (!tool || !original) continue;
+		Object.defineProperty(tool, TOOL_REGISTRY_WRAPPER, {
+			value: original,
+			enumerable: false,
+			writable: false,
+			configurable: true,
+		});
+		registry.set(names[i], tool);
+	}
+}
+
+function assertMockWrappersIntact(session: object, mockTools: Record<string, MockToolHandler>): void {
+	const registry = readToolRegistry(session);
+	for (const name of Object.keys(mockTools)) {
+		if (!registry.has(name)) continue;
+		const tool = registry.get(name);
+		if (!isAgentTool(tool) || Reflect.get(tool, TOOL_REGISTRY_WRAPPER) === undefined) {
+			throw new Error(
+				`pi rebuilt the tool registry during the turn so mocks may have been bypassed (${name})`,
+			);
+		}
+	}
+}
 
 export async function createTestSession(options: TestSessionOptions = {}): Promise<TestSession> {
 	const propagateErrors = options.propagateErrors ?? true;
@@ -208,9 +288,6 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	modelRegistry.hasConfiguredAuth = () => true;
 	modelRegistry.isUsingOAuth = () => false;
 
-	// Capture original tools before any wrapping — used in run() to avoid double-wrap
-	const originalTools: AgentTool[] = [...((session.agent as any).state.tools as AgentTool[])];
-
 	const testSession: TestSession = {
 		session,
 		cwd,
@@ -235,29 +312,24 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 			faux.faux.setResponses(steps);
 			(session.agent as any).getApiKey = () => "test-key";
 
-			// Always wrap tools for event collection; if no mocks configured, pass empty map
+			// Wrap registry entries before each prompt; AgentSession rebuilds state.tools from it.
 			const effectiveMockTools = options.mockTools ?? {};
 			const runner = (session as any).extensionRunner;
-			const interceptedTools = interceptToolExecution(
-				originalTools,
-				effectiveMockTools,
-				events.toolResults,
-				state,
-				propagateErrors,
-				runner,
-			);
-			const agent = session.agent as any;
-			if (typeof agent.setTools === "function") {
-				agent.setTools(interceptedTools);
-			} else {
-				agent.state.tools = interceptedTools;
-			}
 
 			// Run each turn
 			for (const turn of turns) {
+				installToolRegistryWrappers(
+					session,
+					effectiveMockTools,
+					events.toolResults,
+					state,
+					propagateErrors,
+					runner,
+				);
 				currentStep = state.consumed;
 				await session.prompt(turn.prompt);
 				await (session.agent as any).waitForIdle?.();
+				assertMockWrappersIntact(session, effectiveMockTools);
 			}
 
 			// Auto-assert: playbook fully consumed

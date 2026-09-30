@@ -15,7 +15,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Context } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools, type TranscriptContext } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -134,7 +134,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
         // NON-circular: the parent's final answer echoes whatever the child's
         // result actually was in context. If the child output didn't reach the
         // parent, this returns CHILD_MISSING and the responseText assertion fails.
-        parentFinal: (ctx: Context) => {
+        parentFinal: (ctx: TranscriptContext) => {
           const childOut = [...ctx.messages]
             .reverse()
             .find((m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "agent");
@@ -168,8 +168,8 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
     //   - WITH the hold, the parent loop blocks in waitForAll() until the child
     //     finishes → the child's own model turn actually runs (≥3 calls).
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const respond = async (ctx: Context) => {
-      const isParent = (ctx.tools ?? []).some((t) => t.name === "agent");
+    const respond = async (ctx: TranscriptContext) => {
+      const isParent = getCurrentTools(ctx.messages).some((t) => t.name === "agent");
       if (!isParent) {
         await sleep(80); // child takes long enough that a non-held parent exits first
         return "CHILD_BG_RAN";
@@ -227,8 +227,8 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
         }),
         parentFinal: "Reported.",
         // The child reflects whether the frontmatter body reached its own prompt.
-        subagent: (ctx: Context) =>
-          `child saw: ${ctx.systemPrompt?.includes(MARKER) ? MARKER : "MISSING"}`,
+        subagent: (ctx: TranscriptContext) =>
+          `child saw: ${getCurrentSystemPrompt(ctx.messages).includes(MARKER) ? MARKER : "MISSING"}`,
       }),
     });
 
@@ -261,8 +261,8 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
           run_in_background: false,
         }),
         parentFinal: "Reported.",
-        subagent: (ctx: Context) =>
-          `child saw: ${ctx.systemPrompt?.includes(MARKER) ? MARKER : "MISSING"}`,
+        subagent: (ctx: TranscriptContext) =>
+          `child saw: ${getCurrentSystemPrompt(ctx.messages).includes(MARKER) ? MARKER : "MISSING"}`,
       }),
     });
 

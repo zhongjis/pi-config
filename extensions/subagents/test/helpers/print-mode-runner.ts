@@ -46,14 +46,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type AssistantMessage,
-  type Context,
   type FauxContentBlock,
   type FauxResponseStep,
   fauxAssistantMessage,
   fauxText,
   fauxToolCall,
+  getCurrentTools,
   type Model,
   type ToolCall,
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
@@ -85,11 +86,11 @@ export type FauxReply = string | FauxContentBlock | FauxContentBlock[] | Assista
 
 /**
  * A context-branching responder. Invoked once per model call (parent OR child)
- * with that call's own `Context`, so it can decide what to emit from the prompt
+ * with that call's own `TranscriptContext`, so it can decide what to emit from the prompt
  * it sees — order-independent, unlike a flat FIFO `steps` list.
  */
 export type FauxResponder = (
-  context: Context,
+  context: TranscriptContext,
   state: { callCount: number },
 ) => FauxReply | Promise<FauxReply>;
 
@@ -185,10 +186,10 @@ export function agentCall(
 }
 
 function resolveReply(
-  reply: FauxReply | ((ctx: Context) => FauxReply),
-  ctx: Context,
+  reply: FauxReply | ((ctx: TranscriptContext) => FauxReply),
+  ctx: TranscriptContext,
 ): FauxReply {
-  return typeof reply === "function" ? (reply as (c: Context) => FauxReply)(ctx) : reply;
+  return typeof reply === "function" ? (reply as (c: TranscriptContext) => FauxReply)(ctx) : reply;
 }
 
 /**
@@ -201,12 +202,12 @@ function resolveReply(
  * Each route may be a value or a `(ctx) => value` function.
  */
 export function routeBySession(routes: {
-  parentInitial: FauxReply | ((ctx: Context) => FauxReply);
-  parentFinal?: FauxReply | ((ctx: Context) => FauxReply);
-  subagent: FauxReply | ((ctx: Context) => FauxReply);
+  parentInitial: FauxReply | ((ctx: TranscriptContext) => FauxReply);
+  parentFinal?: FauxReply | ((ctx: TranscriptContext) => FauxReply);
+  subagent: FauxReply | ((ctx: TranscriptContext) => FauxReply);
 }): FauxResponder {
   return (context) => {
-    const isParent = (context.tools ?? []).some((t) => t.name === "agent");
+    const isParent = getCurrentTools(context.messages).some((t) => t.name === "agent");
     if (!isParent) return resolveReply(routes.subagent, context);
     const spawned = context.messages.some(
       (m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "agent",

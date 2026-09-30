@@ -4,8 +4,9 @@ import { join, resolve } from "node:path";
 import {
 	fauxAssistantMessage,
 	fauxText,
+	getCurrentSystemPrompt,
 	type AssistantMessage,
-	type Context,
+	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -23,10 +24,10 @@ const CLASSIFIER_PROMPT_PREFIX = "You are a strict policy classifier.";
 const ALLOW = '{"version":1,"decision":"allow"}';
 const BLOCK = '{"version":1,"decision":"block","reason":"classifier blocked"}';
 
-type Router = (context: Context) => AssistantMessage | Promise<AssistantMessage | undefined> | undefined;
+type Router = (context: TranscriptContext) => AssistantMessage | Promise<AssistantMessage | undefined> | undefined;
 
-function classifierPayload(context: Context): Record<string, unknown> | undefined {
-	if (!context.systemPrompt.startsWith(CLASSIFIER_PROMPT_PREFIX)) return undefined;
+function classifierPayload(context: TranscriptContext): Record<string, unknown> | undefined {
+	if (!getCurrentSystemPrompt(context.messages).startsWith(CLASSIFIER_PROMPT_PREFIX)) return undefined;
 	const message = context.messages.at(-1);
 	const content = message?.role === "user" && Array.isArray(message.content) ? message.content[0] : undefined;
 	if (!content || typeof content === "string" || content.type !== "text") {

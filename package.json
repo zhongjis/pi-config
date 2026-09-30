@@ -14,7 +14,6 @@
     "lint:typecheck": "node ./scripts/lint-typecheck.mjs"
   },
   "devDependencies": {
-    "@marcfargas/pi-test-harness": "git+https://github.com/marcfargas/pi-test-harness.git#v0.6.1",
     "@earendil-works/pi-agent-core": "catalog:",
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-coding-agent": "catalog:",

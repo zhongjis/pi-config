@@ -15,6 +15,7 @@ Integration coverage exercising extensions inside the real Pi runtime.
 - Playbooks replace model output; optional mocks intercept tools and UI boundaries.
 - You MUST retain real extension registration, hooks, and session behavior.
 - In-process harness sessions do not test actual process-switch boundaries.
+- The harness relies on private Pi internals (`_toolRegistry`) and MUST fail closed when they change.
 
 ## Work Guidance
 

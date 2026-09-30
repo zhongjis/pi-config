@@ -4,7 +4,7 @@ Shared test harness, smoke coverage, fixtures, stubs, and runtime integration te
 
 ## Ownership
 
-- This document owns root tests, `fixtures/`, `stubs/`, `types/`, and shared setup.
+- This document owns root tests, `fixtures/`, `stubs/`, and shared setup.
 - The integration child owns real-runtime tests and their helpers.
 - Extension-specific unit tests belong beside their extension, not here.
 - [../vitest.config.ts](../vitest.config.ts) owns project selection and aliases.

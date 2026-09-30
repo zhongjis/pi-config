@@ -15,11 +15,12 @@
 
 import {
 	type AssistantMessage,
-	type Context,
+	type TranscriptContext,
 	type FauxResponseStep,
 	fauxAssistantMessage,
 	fauxText,
 	fauxToolCall,
+	type JsonObject,
 	type StreamOptions,
 } from "@earendil-works/pi-ai";
 import type { PlaybookAction, ToolResultRecord, Turn } from "./types.js";
@@ -117,7 +118,7 @@ function actionToMessage(
 			state.pendingCallbacks.set(tcId, action.thenCallback);
 		}
 		return fauxAssistantMessage(
-			[fauxToolCall(action.toolName!, resolvedParams, { id: tcId })],
+			[fauxToolCall(action.toolName!, resolvedParams as JsonObject, { id: tcId })],
 			{ stopReason: "toolUse" },
 		);
 	}
@@ -167,7 +168,7 @@ export function buildFauxSteps(
 	state: PlaybookState,
 	parentSessionId: string | undefined,
 	fauxResponseRouter?: (
-		context: Context,
+		context: TranscriptContext,
 		options: StreamOptions | undefined,
 	) => AssistantMessage | Promise<AssistantMessage | undefined> | undefined,
 ): FauxResponseStep[] {
