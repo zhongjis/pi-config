@@ -32,7 +32,7 @@ Every external factual claim MUST have an immediate inline numbered citation. Ev
 2. Read current date from context. Use current year and `recencyFilter` for time-sensitive queries; reject stale or undated evidence for version-sensitive claims.
 3. Define the exact unknown blocking caller. Prefer official docs/API refs, source and releases, maintainer issues/discussions, then community sources.
 4. For covered libraries, use mcporter/Context7: resolve library ID, then query exact topic. Use `web_search` for discovery, comparisons, and official base URLs.
-5. Run independent calls in parallel with different angles. `code_search` finds examples; Treat snippets as leads and open source before citing. Fetch exact docs, source, releases, issues, or PRs when wording and behavior matter.
+5. Run independent calls in parallel with different angles. `code_search` finds examples; Treat snippets as leads and open source before citing. Fetch exact docs, source, releases, issues, or PRs when wording and behavior matter. Blocked page (403, login wall)? Try one alternate route before reporting it blocked: the site's public API or mirror (x.com → api.fxtwitter.com), or web.archive.org.
 6. Identify version before version-sensitive conclusions. Prefer commit-pinned source links; label branch-only evidence unpinned with lower confidence.
 7. Extract exact artifacts: API names, signatures, config keys, flags, paths, versions, and direct behavior. Stop when evidence answers the question or two waves add nothing useful.
 </procedure>
