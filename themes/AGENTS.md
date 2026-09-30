@@ -12,6 +12,7 @@ Local Pi theme assets.
 
 - The asset names the theme `github-diff`.
 - Its `$schema` points to the Pi theme schema.
+- `appearance` declares the dark background the palette targets.
 - `vars` holds reusable colors; `colors` assigns presentation roles.
 - `export` contains exported-page background colors.
 - You MUST preserve the asset's Pi theme JSON structure.
