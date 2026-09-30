@@ -49,6 +49,24 @@ describe("agent routing contract", () => {
     expect(loaded.result.diagnostics.filter((diagnostic) => diagnostic.agentName === "xuannv")).toEqual([]);
   });
 
+  it("registers Huayan as a read-only visual reviewer", () => {
+    const loaded = loadRepoAgents();
+    previousAgentDir = loaded.previousAgentDir;
+
+    const huayan = loaded.result.agents.get("huayan");
+
+    expect(huayan, "Huayan agent must be loadable from agents/huayan.md").toBeDefined();
+    expect(huayan?.description.toLowerCase()).toContain("screenshot-grounded");
+    expect(huayan?.model).toBeUndefined();
+    expect(huayan?.promptMode).toBe("system_instructions");
+    expect(huayan?.builtinToolNames).toEqual(["read", "bash"]);
+    expect(huayan?.extensionToolNames).toEqual(["look_at", "codegraph_*", "lsp"]);
+    expect(huayan?.allowNesting).toBe(false);
+    expect(huayan?.preloadSkills).toEqual(["impeccable"]);
+    expect(huayan?.persistSession).toBe(true);
+    expect(loaded.result.diagnostics.filter((diagnostic) => diagnostic.agentName === "huayan")).toEqual([]);
+  });
+
   it.each([
     ["yunu", "visual-engineering"],
     ["guangguang", "quick"],
@@ -124,6 +142,12 @@ describe("agent routing contract", () => {
     const config = parseModeAgentConfig(readFileSync(`modes/${mode}/mode.md`, "utf8"));
 
     expect(config?.allowDelegationTo?.includes("cangjie")).toBe(allowed);
+  });
+
+  it.each(["kuafu", "houtu", "fuxi"] as const)("allows Huayan delegation for %s", (mode) => {
+    const config = parseModeAgentConfig(readFileSync(`modes/${mode}/mode.md`, "utf8"));
+
+    expect(config?.allowDelegationTo).toContain("huayan");
   });
 
 });

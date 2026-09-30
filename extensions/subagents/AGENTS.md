@@ -30,6 +30,7 @@ Run isolated Agent sessions with foreground results and background supervision. 
 - `src/ui/agent-monitor.ts` owns the `/agent-monitor` overlay: agent-graph-run and independent-agent sections, session-history ordering, filter, routing, and the graph-only `o` detach. `src/ui/graph-run-panel-view.ts` hosts the observability panel as the in-Pi graph inspector.
 - `src/agent-history.ts` owns reload-surviving independent-agent monitor history: session-local capture, defensive decode, and read-only child-transcript loading. Activation owns when capture starts, stops, and merges into the monitor.
 - `src/agent-tool-scope.ts` owns subagent tool-scope narrowing (the live re-narrow on `turn_end` and `beforeToolCall` veto).
+- `src/agent-runner.ts` owns canonical read-only Bash guard selection; Huayan reuses its trusted hidden guard.
 - `src/structured-output.ts` owns session-keyed capture storage (`rememberStructuredCapture`/`takeStructuredCapture`), retry/repair (`repairStructuredOutput`), and failure formatting (`structuredFailure`).
 
 ## Local Contracts

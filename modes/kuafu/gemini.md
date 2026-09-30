@@ -18,6 +18,7 @@ Size work as the coarsest cohesive packet that is decision-complete, independent
 Split only for independent outcome/context/verification boundaries or worker-budget overflow; merge tiny tasks sharing writes/verification.
 Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
 Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
+Huayan = screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and general code-quality review remain delegated nowhere.
 Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
 Jintong = DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work.
 Juling = substantial cross-module/cross-system work OR elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after recon; cross-workstream integration; or diagnosed Jintong failure.

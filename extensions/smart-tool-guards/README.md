@@ -7,7 +7,7 @@ Guards selected built-in `bash` calls with deterministic policy checks and a fai
 | Caller | Built-in `bash` behavior |
 |---|---|
 | Fu Xi mode | Guarded when the latest active mode is `fuxi`; missing guard capability blocks execution. |
-| `chengfeng`, `direnjie`, `taishang`, `xuannv`, `yanluo` | Guarded by a trusted hidden subagent factory, including when ordinary extensions are disabled, isolated, or filtered. |
+| `chengfeng`, `direnjie`, `taishang`, `xuannv`, `yanluo`, `huayan` | Guarded by a trusted hidden subagent factory, including when ordinary extensions are disabled, isolated, or filtered. |
 | Other modes and agents | Scope providers abstain; smart-tool-guards does not alter the call. |
 | Non-`bash` tools | Always bypassed. |
 

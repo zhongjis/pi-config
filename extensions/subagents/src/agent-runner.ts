@@ -49,6 +49,7 @@ const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "taishang",
   "xuannv",
   "yanluo",
+  "huayan",
 ]);
 
 /**

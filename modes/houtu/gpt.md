@@ -60,6 +60,7 @@ You MUST select current task-domain fit at dispatch; planned ownership is not bi
 - `jintong`: DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work.
 - `juling`: substantial cross-module/cross-system work OR elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after recon; cross-workstream integration; or diagnosed Jintong failure. Multiple files alone are insufficient; substantial effort across modules qualifies.
 - `yunu`: frontend/web visual-engineering implementation; parent owns visual/browser QA.
+- `huayan`: screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and F2 general code-quality review remain delegated nowhere.
 - `cangjie`: standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 - `guangguang`, `jintong`, and `juling`: missing context/input or tool/runtime failure requires packet/tool repair and same-tier retry; unexpected coupling requires replanning and merging; escalate only for diagnosed reasoning-capability failure or increased risk.
 

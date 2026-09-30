@@ -48,6 +48,7 @@ Orchestrators route to these leaf specialists. Only `xuannv` can itself delegate
 | `jintong` | Clear, standard-risk, low-to-moderate non-UI implementation | yes | no |
 | `juling` | Substantial cross-module or elevated-reasoning non-UI implementation | yes | no |
 | `yunu` | Frontend/web visual-engineering implementation; orchestrator owns visual/browser QA | yes | no |
+| `huayan` | Screenshot-grounded visual review and optional UI-source critique; Yunu fixes, orchestrator owns browser QA and code quality | no | no |
 
 Roles and tool posture are defined in each `agents/<name>.md`; see
 [agent-frontmatter.md](agent-frontmatter.md).
@@ -61,8 +62,8 @@ which subagents it may delegate to: [`kuafu`](../../modes/kuafu/mode.md),
 [`fuxi`](../../modes/fuxi/mode.md), [`houtu`](../../modes/houtu/mode.md).
 
 Routing intent: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `yunu` only
-for UI feasibility input, not general implementation. `yanluo` is fuxi-only and
-`xuannv` is kuafu-only. **Hou Tu is never a delegation target** — it is reached
+for UI feasibility and `huayan` only for visual-review input, never implementation. `yanluo` is fuxi-only
+and `xuannv` is kuafu-only. **Hou Tu is never a delegation target** — it is reached
 through the approval → `/handoff:start-work` bridge, not by delegation.
 
 Delegation is **mode-scoped and fail-closed**: the allowlist sets candidates, the

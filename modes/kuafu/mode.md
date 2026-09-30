@@ -4,7 +4,7 @@ description: Default build mode. A senior engineer who ships by orchestrating sp
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,agent,agent_graph,get_agent_result,get_subagent_result,resolve_agent_graph_gate,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal,memory_*,session_search,skill_manage,interactive_shell,intercom
-allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
+allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,huayan,guangguang,taishang,direnjie
 disallow_delegation_to: houtu
 allow_nesting: true
 ---
@@ -95,6 +95,7 @@ Specialist routing:
 - `jintong`: DEFAULT clear, standard-risk, low-to-moderate non-UI implementation/debug/test/verification work, including cohesive multi-file work.
 - `juling`: substantial cross-module/cross-system work OR elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after recon; cross-workstream integration; or diagnosed Jintong failure. Multiple files alone are insufficient; substantial effort across modules qualifies.
 - `yunu`: frontend/web visual-engineering implementation; parent owns visual/browser QA.
+- `huayan`: screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and general code-quality review remain delegated nowhere.
 - `taishang`: consult under the policy below or on explicit user request; architecture/security/performance/hard-invariant/repeated-failure reasoning.
 - The orchestrator-owned code-quality gate stays with you: inspect the full applicable diff against requirements, own final integrated execution under the verification policy, and severity-rank findings before completion.
 

@@ -1172,7 +1172,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     }>;
   }
 
-  it.each(["chengfeng", "direnjie", "taishang", "xuannv", "yanluo"] as const)(
+  it.each(["chengfeng", "direnjie", "taishang", "xuannv", "yanluo", "huayan"] as const)(
     "guards canonical type %s through registry resolution with extensions:false",
     async (canonicalType) => {
       vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
@@ -1256,47 +1256,50 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     expect(lastToolsPassed()).not.toContain("unrelated_tool");
   });
 
-  it("coexists with repeated auto registration as one effective bash hook", async () => {
-    vi.mocked(resolveType).mockReturnValueOnce("chengfeng");
-    const { session } = createSession("OK");
-    createAgentSession.mockResolvedValue({ session });
-    await runAgent(ctx, "chengfeng", "go", { pi });
-    const inline = factories().find(({ name }) => name === "smart-tool-guards");
-    const eventListeners = new Map<string, Set<(data: unknown) => void>>();
-    const handlers: Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>> = [];
-    const hookPi = {
-      events: {
-        emit(channel: string, data: unknown) {
-          for (const listener of [...(eventListeners.get(channel) ?? [])]) listener(data);
+  it.each(["chengfeng", "huayan"] as const)(
+    "coexists with repeated auto registration as one effective bash hook for %s",
+    async (canonicalType) => {
+      vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
+      const { session } = createSession("OK");
+      createAgentSession.mockResolvedValue({ session });
+      await runAgent(ctx, canonicalType, "go", { pi });
+      const inline = factories().find(({ name }) => name === "smart-tool-guards");
+      const eventListeners = new Map<string, Set<(data: unknown) => void>>();
+      const handlers: Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>> = [];
+      const hookPi = {
+        events: {
+          emit(channel: string, data: unknown) {
+            for (const listener of [...(eventListeners.get(channel) ?? [])]) listener(data);
+          },
+          on(channel: string, listener: (data: unknown) => void) {
+            const listeners = eventListeners.get(channel) ?? new Set<(data: unknown) => void>();
+            listeners.add(listener);
+            eventListeners.set(channel, listeners);
+            return () => listeners.delete(listener);
+          },
         },
-        on(channel: string, listener: (data: unknown) => void) {
-          const listeners = eventListeners.get(channel) ?? new Set<(data: unknown) => void>();
-          listeners.add(listener);
-          eventListeners.set(channel, listeners);
-          return () => listeners.delete(listener);
-        },
-      },
-      on: vi.fn((event: string, handler: (event: unknown, ctx: unknown) => unknown | Promise<unknown>) => {
-        if (event === "tool_call") handlers.push(handler);
-      }),
-    };
+        on: vi.fn((event: string, handler: (event: unknown, ctx: unknown) => unknown | Promise<unknown>) => {
+          if (event === "tool_call") handlers.push(handler);
+        }),
+      };
 
-    smartToolGuards(hookPi as never);
-    await inline?.factory(hookPi);
-    await inline?.factory(hookPi);
+      smartToolGuards(hookPi as never);
+      await inline?.factory(hookPi);
+      await inline?.factory(hookPi);
 
-    expect(handlers).toHaveLength(1);
-    await expect(handlers[0](
-      { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "rm out" } },
-      { cwd: "/tmp" },
-    )).resolves.toEqual({
-      block: true,
-      reason: [
-        "[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=subagents:guarded]",
-        "Bash not run: Read-only policy matched: filesystem-mutation. Guard active: This guarded subagent requires read-only Bash.",
-      ].join("\n"),
-    });
-  });
+      expect(handlers).toHaveLength(1);
+      await expect(handlers[0](
+        { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "rm out" } },
+        { cwd: "/tmp" },
+      )).resolves.toEqual({
+        block: true,
+        reason: [
+          "[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=subagents:guarded]",
+          "Bash not run: Read-only policy matched: filesystem-mutation. Guard active: This guarded subagent requires read-only Bash.",
+        ].join("\n"),
+      });
+    },
+  );
 });
 
 describe("agent-runner master tool allowlist", () => {

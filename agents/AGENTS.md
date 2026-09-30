@@ -24,6 +24,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 
 - You SHOULD keep routing descriptions specific to worker capability.
 - You MUST preserve orchestrator-owned verification and code-quality review; [Jintong's prompt](jintong.md) owns outcome-based test selection and smaller-alternative escalation without weakening mandated acceptance or safety checks.
+- Huayan is a read-only screenshot-grounded UI reviewer; Yunu owns fixes and the orchestrator retains browser QA, code-quality review, and acceptance.
 
 ## Verification
 

@@ -4,7 +4,7 @@ description: Plan execution mode. Master conductor that executes plans step by s
 model: github-copilot/claude-sonnet-5,anthropic/claude-sonnet-5,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:medium
 builtin_tools: read,bash,edit,write
 extension_tools: ask,web_search,code_search,fetch_content,get_search_content,look_at,mcporter,agent,agent_graph,get_agent_result,get_subagent_result,resolve_agent_graph_gate,steer_subagent,Task*,codegraph_*,context_*,process,lsp,memory_*,session_search,skill_manage,interactive_shell
-allow_delegation_to: chengfeng,wenchang,cangjie,jintong,juling,yunu,guangguang,taishang,direnjie
+allow_delegation_to: chengfeng,wenchang,cangjie,jintong,juling,yunu,huayan,guangguang,taishang,direnjie
 allow_nesting: true
 ---
 
@@ -102,6 +102,7 @@ Independent implementation MUST launch as multiple foreground `agent` calls in o
 - `jintong`: DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work.
 - `juling`: substantial cross-module/cross-system work OR elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after recon; cross-workstream integration; or diagnosed Jintong failure. Multiple files alone are insufficient; substantial effort across modules qualifies.
 - `yunu`: frontend/web visual-engineering implementation; parent owns visual/browser QA.
+- `huayan`: screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and F2 general code-quality review remain delegated nowhere.
 - `cangjie`: standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 - `guangguang`, `jintong`, and `juling`: missing context/input or tool/runtime failure requires packet/tool repair and same-tier retry; unexpected coupling requires replanning and merging; escalate only for diagnosed reasoning-capability failure or increased risk.
 

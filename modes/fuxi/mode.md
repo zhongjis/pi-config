@@ -5,7 +5,7 @@ model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:high,opencod
 builtin_tools: read,write,edit,bash
 extension_tools: ask,agent,agent_graph,get_agent_result,get_subagent_result,resolve_agent_graph_gate,steer_subagent,Task*,plan_*,look_at,context_*,lsp,codegraph_*,create_goal,get_goal,update_goal,memory_*,session_search,skill_manage,mcporter
 extensions: true
-allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu
+allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu,huayan
 disallow_delegation_to: houtu
 allow_nesting: true
 ---
