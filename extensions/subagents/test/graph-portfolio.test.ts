@@ -21,6 +21,7 @@ const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PORTFOLIO = [
   "context-gather",
   "deep-research",
+  "deep-research/plan",
 ] as const;
 
 const TASK_FIELDS = {

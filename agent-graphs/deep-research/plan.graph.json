@@ -1,0 +1,97 @@
+{
+  "name": "deep-research/plan",
+  "description": "Seed broad searches, plan research parts and tasks from that evidence, and check the plan's scope autonomously.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "question": { "type": "string", "pattern": "\\S" },
+      "context": { "type": "string" }
+    },
+    "required": ["question"],
+    "additionalProperties": false
+  },
+  "nodes": {
+    "seedQueries": {
+      "type": "agent",
+      "name": "Write seed queries",
+      "agent": "wenchang",
+      "prompt": "Seed research for: ${question}\nOptional evidence context: ${context}\nWrite 2–4 short, broad search queries that map the topic before any plan exists: the topic itself, its origin or history, and the main sources or viewpoints that compete. Start wide; do not narrow to one source. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Do not search or answer; write queries only. Return only structured JSON {items:[{source,question,purpose}]}.",
+      "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" } },
+      "outputSchema": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "items": { "type": "array", "minItems": 1, "maxItems": 4, "items": {
+            "type": "object", "additionalProperties": false,
+            "properties": { "source": { "type": "string", "enum": ["local", "github", "web"] }, "question": { "type": "string", "minLength": 1 }, "purpose": { "type": "string", "minLength": 1 } },
+            "required": ["source", "question", "purpose"]
+          } }
+        }, "required": ["items"]
+      }
+    },
+    "seedSearch": {
+      "type": "fanout", "name": "Seed searches", "items": { "node": "seedQueries", "path": "$.items" },
+      "itemSchema": {
+        "type": "object", "additionalProperties": false,
+        "properties": { "source": { "type": "string", "enum": ["local", "github", "web"] }, "question": { "type": "string", "minLength": 1 }, "purpose": { "type": "string", "minLength": 1 } },
+        "required": ["source", "question", "purpose"]
+      },
+      "dispatch": { "path": "$.source", "cases": { "local": "chengfeng", "github": "wenchang", "web": "wenchang" } },
+      "prompt": "Topic: ${question}\nBroad seed query: ${item}\nRead only. Search broadly, open the 2–4 most relevant primary sources, and return individual one-fact claims with short verbatim excerpt, reference (local path/line or opened URL), and source identity including the publication date the source shows, or 'undated'; never supply a date yourself. Prefer claims that show who uses the topic's terms, when, and where sources disagree. Do not invent citations. Report inaccessible sources and unexplored leads as gaps. Return only structured JSON {claims:[{claim,excerpt,reference,source}],gaps:[string]}.",
+      "input": { "question": { "path": "$.question" } },
+      "outputSchema": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "claims": { "type": "array", "items": { "type": "object", "additionalProperties": false,
+            "properties": { "claim": { "type": "string", "minLength": 1 }, "excerpt": { "type": "string", "minLength": 1 }, "reference": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 } },
+            "required": ["claim", "excerpt", "reference", "source"] } },
+          "gaps": { "type": "array", "items": { "type": "string" } }
+        }, "required": ["claims", "gaps"]
+      }
+    },
+    "plan": {
+      "type": "agent",
+      "name": "Decompose question",
+      "agent": "wenchang",
+      "prompt": "Read-only research plan for: ${question}\nOptional evidence context: ${context}\nSeed evidence from broad searches (leads, not verified facts): ${seed}\nParts are ONLY the material parts of the user's question (ids p1..pN in order); extra evidence angles are tasks, not parts. Decompose into 1–6 distinct, verifiable tasks; each task lists the partIds it serves; every part needs at least one task. Use the seed evidence: name the real sources, people, dates and disagreements it shows, and add a task for each material lead it did not settle. Do not use overlapping summaries of the same docs. Prioritize the central product/scope question before ancillary setup, version pins or citation polish. When a part asks about origin, first use, history or dates, give it two tasks: discovery, and backward chaining (mentions dated before the earliest known one, and the sources that earliest source cites). For claims about whether a UI exists, inspect actual routes, assets or official product boundaries rather than relying on README silence; absence of evidence is not disproof. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Treat context and search snippets only as leads; open sources before treating claims as facts. If a source cannot be opened, make verification a task, not a fact. Before returning, check that every material part of the question has a part and every part has a task. No writing or delegation. Return only structured JSON {parts:[{id,question}],tasks:[{source,question,purpose,partIds}]} where purpose names the question part and distinct evidence to check.",
+      "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" }, "seed": { "node": "seedSearch", "path": "$" } },
+      "outputSchema": {
+        "type": "object", "additionalProperties": false,
+        "properties": {
+          "parts": { "type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": {
+            "type": "object", "additionalProperties": false,
+            "properties": { "id": { "type": "string", "pattern": "^p[1-6]$" }, "question": { "type": "string", "minLength": 1 } },
+            "required": ["id", "question"]
+          } },
+          "tasks": { "type": "array", "minItems": 1, "maxItems": 6, "items": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "source": { "type": "string", "enum": ["local", "github", "web"] }, "question": { "type": "string", "minLength": 1 }, "purpose": { "type": "string", "minLength": 1 },
+              "partIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^p[1-6]$" } }
+            },
+            "required": ["source", "question", "purpose", "partIds"]
+          } }
+        }, "required": ["parts", "tasks"]
+      }
+    },
+    "scope": {
+      "type": "agent_gate",
+      "name": "Check plan scope",
+      "agent": "panguan",
+      "prompt": "Autonomous scope check for a research plan. Question: ${question}\nOptional evidence context: ${context}\nPlan: ${plan}\nApprove when every material part of the question has a plan part, every plan part has at least one task, and no part is outside the question's scope. Reject only when a material part is missing, two material parts are merged so one cannot be judged alone, or a part is outside the scope. You MUST decide; undecided is not allowed. When unsure, approve.",
+      "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" }, "plan": { "node": "plan", "path": "$" } },
+      "outputSchema": { "type": "object", "properties": { "approved": { "type": "boolean" } }, "required": ["approved"], "additionalProperties": false }
+    }
+  },
+  "edges": [
+    { "from": "seedQueries", "to": "seedSearch" },
+    { "from": "seedSearch", "to": "plan" },
+    { "from": "plan", "to": "scope" },
+    { "from": "scope", "to": "plan", "when": { "eq": [{ "node": "scope", "path": "$.approved" }, false] }, "loop": { "maxIterations": 1 } }
+  ],
+  "outputs": {
+    "parts": { "node": "plan", "path": "$.parts" },
+    "tasks": { "node": "plan", "path": "$.tasks" },
+    "seed": { "node": "seedSearch", "path": "$" },
+    "approved": { "node": "scope", "path": "$.approved" }
+  }
+}

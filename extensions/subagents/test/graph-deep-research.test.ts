@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AgentGraph, GraphNode } from "../src/graph/ir.js";
 import { compileJsonSchema } from "../src/graph/json-schema.js";
-import type { NodeSpawnRequest } from "../src/graph/node-host.js";
+import type { NodeSpawnRequest, NodeSpawnResult } from "../src/graph/node-host.js";
 import { isGraphRunOutcome } from "../src/graph/outcome.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import { resolveSavedGraph } from "../src/graph/saved-graph.js";
@@ -33,79 +33,156 @@ const planFixture = { parts: [{ id: "p1", question: "What behavior is implemente
 const sourceFixture = { claims: [{ claim: "Example claim", excerpt: "Opened excerpt", reference: "https://example.org/source", source: "opened source" }], gaps: [] };
 const sufficientFixture = { decision: "sufficient", gaps: [], tasks: [] };
 const reportFixture = (status: "succeeded" | "partial") => ({
-  markdown: "# Research\nExample claim [1].\n\n[1] Opened source (https://example.org/source)",
-  acceptedFindings: [{ claim: "Example claim", citations: ["[1]"], verification: "independently-checked" }],
+  markdown: "# Research\nExample claim [r0-1-1].\n\n[r0-1-1] Opened source (https://example.org/source)",
+  acceptedFindings: [{ claim: "Example claim", claimIds: ["r0-1-1"], verification: "independently-checked" }],
   verifiedCoverage: status === "partial"
-    ? [{ id: "p1", status: "partial", citations: ["[1]"], reason: "Disputed claim and source offline" }]
-    : [{ id: "p1", status: "supported", citations: ["[1]"] }],
+    ? [{ id: "p1", status: "partial", claimIds: ["r0-1-1"], reason: "Disputed claim and source offline" }]
+    : [{ id: "p1", status: "supported", claimIds: ["r0-1-1"] }],
   rejectedClaims: status === "partial" ? ["Unverified claim"] : [],
   gaps: status === "partial" ? ["Disputed claim remains"] : [], failures: status === "partial" ? ["source offline"] : [],
   outcome: status === "partial" ? { status, reason: "Disputed claim and source offline" } : { status },
 });
 function accepts(request: NodeSpawnRequest, fixture: unknown): boolean { return request.schema?.check(fixture) === true; }
+const seedFixture = { items: [{ source: "web", question: "Broad topic scan", purpose: "Map the topic" }] };
+const gateDecision = (approved: boolean) => ({ status: "decided", decision: { approved } });
+const loadGraph = (name: string) => savedGraph(name);
+/** Reports a cost for every child so the research budget (spendLimit) stays accountable. */
+function priced(spawn: (request: NodeSpawnRequest) => Promise<NodeSpawnResult>) {
+  return { spawnAgent: async (request: NodeSpawnRequest) => ({ costUsd: 0.001, ...(await spawn(request)) }) };
+}
+/** Answers the planning subgraph: seed queries, seed searches, plan, and the scope agent_gate. */
+function planningReply(request: NodeSpawnRequest, plan: unknown = planFixture, gate: unknown = gateDecision(true)) {
+  if (request.prompt.includes("Broad seed query")) return { ok: true, output: JSON.stringify(sourceFixture) };
+  if (accepts(request, seedFixture)) return { ok: true, output: JSON.stringify(seedFixture) };
+  if (accepts(request, planFixture)) return { ok: true, output: JSON.stringify(plan) };
+  if (accepts(request, gateDecision(true))) return { ok: true, output: JSON.stringify(gate) };
+  return undefined;
+}
 function schemaCheck(schema: unknown): (value: unknown) => true | string {
   const compiled = compileJsonSchema(schema);
   expect(compiled.ok, compiled.ok ? "" : compiled.message).toBe(true);
   if (!compiled.ok) throw new Error(compiled.message);
   return value => compiled.compiled.check(value);
 }
-const typedFinding = (verification: "independently-checked" | "single-source" | "disputed" = "independently-checked") => ({ claim: "Example claim", citations: ["[1]"], verification });
+const typedFinding = (verification: "independently-checked" | "single-source" | "disputed" = "independently-checked") => ({ claim: "Example claim", claimIds: ["r0-1-1"], verification });
 const typedReport = (coverage: unknown, outcome: unknown, findings: unknown = [typedFinding()]) => ({
-  markdown: "# Research\nExample claim [1].\n\n[1] Opened source (https://example.org/source)",
+  markdown: "# Research\nExample claim [r0-1-1].\n\n[r0-1-1] Opened source (https://example.org/source)",
   acceptedFindings: findings, verifiedCoverage: coverage, rejectedClaims: [], gaps: [], failures: [], outcome,
 });
-const supportedPart = { id: "p1", status: "supported", citations: ["[1]"] };
-const partialPart = { id: "p1", status: "partial", citations: ["[1]"], reason: "Unresolved part" };
+const supportedPart = { id: "p1", status: "supported", claimIds: ["r0-1-1"] };
+const partialPart = { id: "p1", status: "partial", claimIds: ["r0-1-1"], reason: "Unresolved part" };
 const validSucceeded = typedReport([supportedPart], { status: "succeeded" });
 const validPartial = typedReport([partialPart], { status: "partial", reason: "p1 unresolved" });
-const validFailed = typedReport([{ id: "p1", status: "missing", citations: [], reason: "No reliable findings" }], { status: "failed", reason: "No reliable findings" }, []);
+const validFailed = typedReport([{ id: "p1", status: "missing", claimIds: [], reason: "No reliable findings" }], { status: "failed", reason: "No reliable findings" }, []);
 
 describe("deep-research portfolio", () => {
   it("validates deep research wiring", async () => {
     const graph = savedGraph("deep-research");
+    const planning = savedGraph("deep-research/plan");
     expect(validateGraph(savedGraph("context-gather")).ok).toBe(true);
+    expect(validateGraph(planning).ok).toBe(true);
     expect(graph.inputSchema).toMatchObject({ required: ["question"], properties: { question: { type: "string", pattern: "\\S" } } });
-    expect(agentNode(graph, "plan").outputSchema).toMatchObject({ required: ["parts", "tasks"], properties: { tasks: { minItems: 1, maxItems: 6 } } });
+    expect(graph.nodes.planning).toMatchObject({ type: "graph", graph: "deep-research/plan" });
+    expect(agentNode(planning, "plan").outputSchema).toMatchObject({ required: ["parts", "tasks"], properties: { tasks: { minItems: 1, maxItems: 6 } } });
+    expect(agentNode(planning, "plan").input?.seed).toEqual({ node: "seedSearch", path: "$" });
+    expect(planning.nodes.seedSearch).toMatchObject({ type: "fanout", items: { node: "seedQueries", path: "$.items" } });
+    expect(planning.nodes.scope).toMatchObject({ type: "agent_gate", agent: "panguan" });
+    expect(planning.edges).toContainEqual({ from: "scope", to: "plan", when: { eq: [{ node: "scope", path: "$.approved" }, false] }, loop: { maxIterations: 1 } });
+    expect(planning.outputs).toEqual({ parts: { node: "plan", path: "$.parts" }, tasks: { node: "plan", path: "$.tasks" }, seed: { node: "seedSearch", path: "$" }, approved: { node: "scope", path: "$.approved" } });
     const research = boundedFeedbackNode(graph, "research");
-    expect(research).toMatchObject({ maxIterations: 3, maxItemsPerIteration: 6, maxTotalItems: 18 });
-    expect(research.work.items).toEqual({ node: "plan", path: "$.tasks" });
+    expect(research).toMatchObject({ maxIterations: 3, maxItemsPerIteration: 30, maxTotalItems: 30, spendLimit: 2, deadline: 900000 });
+    expect(research.work.items).toEqual({ node: "planning", path: "$.tasks" });
     expect(research.work.dispatch).toEqual({ path: "$.source", cases: { local: "chengfeng", github: "wenchang", web: "wenchang" } });
     expect(research.evaluator.input).not.toHaveProperty("feedback");
     expect(research.evaluator.outputSchema).toBeUndefined();
-    expect(graph.edges).toEqual([{ from: "plan", to: "research" }, { from: "research", to: "synthesize" }]);
-    expect(agentNode(graph, "synthesize").input?.research).toEqual({ node: "research", path: "$" });
+    expect(graph.edges).toEqual([{ from: "planning", to: "research" }, { from: "research", to: "synthesize" }]);
+    expect(agentNode(graph, "synthesize").input).toMatchObject({ research: { node: "research", path: "$" }, scopeApproved: { node: "planning", path: "$.approved" } });
     for (const field of ["markdown", "acceptedFindings", "verifiedCoverage", "rejectedClaims", "gaps", "failures"]) expect(graph.outputs?.[field]).toEqual({ node: "synthesize", path: `$.${field}` });
     expect(graph.outputs?.$agentGraphOutcome).toEqual({ node: "synthesize", path: "$.outcome" });
-    expect([agentNode(graph, "plan").agent, research.evaluator.agent, agentNode(graph, "synthesize").agent]).toEqual(["wenchang", "wenchang", "wenchang"]);
+    expect([agentNode(planning, "seedQueries").agent, agentNode(planning, "plan").agent, research.evaluator.agent, agentNode(graph, "synthesize").agent]).toEqual(["wenchang", "wenchang", "panguan", "simaqian"]);
     expect(Object.values(research.work.dispatch.cases).every(name => ["chengfeng", "wenchang"].includes(name))).toBe(true);
-    expect(Object.values(graph.nodes).every(node => node.type !== "expand" && node.type !== "human_gate" && !("validation" in node && node.validation))).toBe(true);
+    for (const saved of [graph, planning]) expect(Object.values(saved.nodes).every(node => node.type !== "expand" && node.type !== "human_gate" && node.type !== "hybrid_gate" && !("validation" in node && node.validation))).toBe(true);
     const calls: string[] = [];
-    const result = await runGraph(graph, { question: "Inspect behavior" }, { onCheckpoint: () => {}, host: { spawnAgent: async request => {
+    const result = await runGraph(graph, { question: "Inspect behavior" }, { onCheckpoint: () => {}, loadGraph, host: priced(async request => {
       calls.push(request.agentType);
-      return { ok: true, output: JSON.stringify(accepts(request, planFixture) ? { tasks: [] } : sourceFixture) };
-    } } });
+      return { ok: true, output: JSON.stringify(sourceFixture) };
+    }) });
     expect(result.status).toBe("failed");
     expect(calls).toEqual(["wenchang"]);
     expect(result.nodes.research?.status).toBe("skipped");
   });
 
-  it("runs sufficient deep research", async () => {
+  it("re-plans once when the scope gate rejects, then researches", async () => {
+    const gates = [gateDecision(false), gateDecision(true)];
     const agents: string[] = [];
-    const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior", context: "Prior evidence disputed" }, {
-      onCheckpoint: () => {}, host: { spawnAgent: async request => {
+    const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior" }, {
+      onCheckpoint: () => {}, loadGraph, host: priced(async request => {
         agents.push(request.agentType);
-        if (accepts(request, planFixture)) return { ok: true, output: JSON.stringify(planFixture) };
+        if (accepts(request, gateDecision(true))) return { ok: true, output: JSON.stringify(gates.shift()) };
+        const planned = planningReply(request); if (planned) return planned;
         if (accepts(request, sufficientFixture)) return { ok: true, output: JSON.stringify(sufficientFixture) };
         if (accepts(request, reportFixture("succeeded"))) return { ok: true, output: JSON.stringify(reportFixture("succeeded")) };
         if (accepts(request, sourceFixture)) return { ok: true, output: JSON.stringify(sourceFixture) };
         throw new Error("Unexpected research schema");
-      } },
+      }),
     });
     expect(result.status, JSON.stringify(result.nodes)).toBe("completed");
+    expect(gates).toHaveLength(0);
+    expect(agents.filter(agent => agent === "panguan")).toHaveLength(3);
+    expect(result.feedback?.research).toMatchObject({ reason: "sufficient", counters: { iterations: 1, totalItems: 2 } });
+  });
+
+  it("proceeds with an unapproved plan after one re-plan and tells the writer", async () => {
+    let plans = 0; let writerPrompt = "";
+    const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior" }, {
+      onCheckpoint: () => {}, loadGraph, host: priced(async request => {
+        if (accepts(request, planFixture)) plans++;
+        const planned = planningReply(request, planFixture, gateDecision(false)); if (planned) return planned;
+        if (accepts(request, sufficientFixture)) return { ok: true, output: JSON.stringify(sufficientFixture) };
+        if (accepts(request, reportFixture("succeeded"))) { writerPrompt = request.prompt; return { ok: true, output: JSON.stringify(reportFixture("succeeded")) }; }
+        if (accepts(request, sourceFixture)) return { ok: true, output: JSON.stringify(sourceFixture) };
+        throw new Error("Unexpected research schema");
+      }),
+    });
+    expect(result.status, JSON.stringify(result.nodes)).toBe("completed");
+    expect(plans).toBe(2);
+    expect(writerPrompt).toContain("approved the plan: false");
+  });
+
+  it("fails before research when the scope gate is undecided", async () => {
+    const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior" }, {
+      onCheckpoint: () => {}, loadGraph, host: priced(async request => {
+        const planned = planningReply(request, planFixture, { status: "undecided", reason: "Cannot tell" }); if (planned) return planned;
+        throw new Error("Research must not start");
+      }),
+    });
+    expect(result.status).toBe("failed");
+    expect(result.nodes.planning?.status).toBe("failed");
+    expect(result.nodes.research?.status).toBe("skipped");
+  });
+
+  it("runs sufficient deep research", async () => {
+    const agents: string[] = []; const prompts: Record<string, string> = {};
+    const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior", context: "Prior evidence disputed" }, {
+      onCheckpoint: () => {}, loadGraph, host: priced(async request => {
+        agents.push(request.agentType);
+        const planned = planningReply(request); if (planned) return planned;
+        if (accepts(request, sufficientFixture)) { prompts.evaluator = request.prompt; return { ok: true, output: JSON.stringify(sufficientFixture) }; }
+        if (accepts(request, reportFixture("succeeded"))) { prompts.writer = request.prompt; return { ok: true, output: JSON.stringify(reportFixture("succeeded")) }; }
+        if (accepts(request, sourceFixture)) return { ok: true, output: JSON.stringify(sourceFixture) };
+        throw new Error("Unexpected research schema");
+      }),
+    });
+    expect(result.status, JSON.stringify(result.nodes)).toBe("completed");
+    expect(prompts.evaluator).toContain('"id":"r0-1-1","partIds":["p1"]');
+    expect(prompts.writer).toContain('"id":"r0-1-1"');
+    expect(prompts.writer).toContain('"terminal":{"reason":"sufficient"');
     expect(agents.filter(agent => agent === "chengfeng")).toHaveLength(1);
     expect(agents.filter(agent => agent === "wenchang")).toHaveLength(4);
+    expect(agents.filter(agent => agent === "panguan")).toHaveLength(2);
+    expect(agents.filter(agent => agent === "simaqian")).toHaveLength(1);
     expect(result.feedback?.research).toMatchObject({ reason: "sufficient", partial: false, counters: { iterations: 1, totalItems: 2 } });
-    expect(result.outputs).toMatchObject({ markdown: expect.stringContaining("[1]"), acceptedFindings: [{ claim: "Example claim", citations: ["[1]"], verification: "independently-checked" }], verifiedCoverage: [{ id: "p1", status: "supported", citations: ["[1]"] }], gaps: [], failures: [] });
+    expect(result.outputs).toMatchObject({ markdown: expect.stringContaining("[r0-1-1]"), acceptedFindings: [{ claim: "Example claim", claimIds: ["r0-1-1"], verification: "independently-checked" }], verifiedCoverage: [{ id: "p1", status: "supported", claimIds: ["r0-1-1"] }], gaps: [], failures: [] });
     expect(result.outputs.parts).toEqual(planFixture.parts);
     expect(isGraphRunOutcome(result.outputs.$agentGraphOutcome)).toBe(true);
     expect(result.outputs.$agentGraphOutcome).toEqual({ status: "succeeded" });
@@ -118,19 +195,20 @@ describe("deep-research portfolio", () => {
     const agents: string[] = [];
     let work = 0;
     const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior" }, {
-      onCheckpoint: () => {}, host: { spawnAgent: async request => {
+      onCheckpoint: () => {}, loadGraph, host: priced(async request => {
         agents.push(request.agentType);
-        if (accepts(request, planFixture)) return { ok: true, output: JSON.stringify(planFixture) };
+        const planned = planningReply(request); if (planned) return planned;
         if (accepts(request, sufficientFixture)) return { ok: true, output: JSON.stringify(decisions.shift()) };
         if (accepts(request, reportFixture("succeeded"))) return { ok: true, output: JSON.stringify(reportFixture("succeeded")) };
         if (accepts(request, sourceFixture)) return { ok: true, output: JSON.stringify({ ...sourceFixture, claims: sourceFixture.claims.map(claim => ({ ...claim, claim: `${claim.claim} ${++work}` })) }) };
         throw new Error("Unexpected research schema");
-      } },
+      }),
     });
     expect(result.status).toBe("completed");
     expect(decisions).toHaveLength(0);
     expect(agents.filter(agent => agent === "chengfeng")).toHaveLength(1);
-    expect(agents.filter(agent => agent === "wenchang")).toHaveLength(6);
+    expect(agents.filter(agent => agent === "wenchang")).toHaveLength(5);
+    expect(agents.filter(agent => agent === "panguan")).toHaveLength(3);
     expect(work).toBe(3);
     expect(result.feedback?.research).toMatchObject({ reason: "sufficient", partial: false, counters: { iterations: 2, totalItems: 3 }, exhaustedBounds: [] });
     expect(result.feedback?.research?.iterations.map(round => round.tasks)).toEqual([planFixture.tasks, [check]]);
@@ -142,13 +220,13 @@ describe("deep-research portfolio", () => {
     let evaluations = 0;
     let work = 0;
     const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior" }, {
-      onCheckpoint: () => {}, host: { spawnAgent: async request => {
-        if (accepts(request, planFixture)) return { ok: true, output: JSON.stringify(planFixture) };
+      onCheckpoint: () => {}, loadGraph, host: priced(async request => {
+        const planned = planningReply(request); if (planned) return planned;
         if (accepts(request, sufficientFixture)) { evaluations++; return { ok: true, output: JSON.stringify({ decision: "sufficient", gaps: [gap], tasks: [] }) }; }
         if (accepts(request, reportFixture("partial"))) return { ok: true, output: JSON.stringify(reportFixture("partial")) };
         if (accepts(request, sourceFixture)) { work++; return { ok: true, output: JSON.stringify(sourceFixture) }; }
         throw new Error("Unexpected research schema");
-      } },
+      }),
     });
     expect(result.status).toBe("completed");
     expect(evaluations).toBe(1);
@@ -161,8 +239,8 @@ describe("deep-research portfolio", () => {
     let evaluations = 0; let external = 0;
     const followup = () => ({ decision: "continue", gaps: [{ id: `gap-${evaluations}`, description: "Disputed claim" }], tasks: [{ gapId: `gap-${evaluations}`, item: researchTask("web", `Independent source ${evaluations}`, "verify") }] });
     const result = await runGraph(savedGraph("deep-research"), { question: "Inspect behavior" }, {
-      onCheckpoint: () => {}, host: { spawnAgent: async request => {
-        if (accepts(request, planFixture)) return { ok: true, output: JSON.stringify({ parts: planFixture.parts, tasks: [researchTask("github", "Inspect issue"), researchTask("local", "Inspect code")] }) };
+      onCheckpoint: () => {}, loadGraph, host: priced(async request => {
+        const planned = planningReply(request, { parts: planFixture.parts, tasks: [researchTask("github", "Inspect issue"), researchTask("local", "Inspect code")] }); if (planned) return planned;
         if (accepts(request, sufficientFixture)) { evaluations++; return { ok: true, output: JSON.stringify(followup()) }; }
         if (accepts(request, reportFixture("partial"))) return { ok: true, output: JSON.stringify(reportFixture("partial")) };
         if (accepts(request, sourceFixture)) {
@@ -170,7 +248,7 @@ describe("deep-research portfolio", () => {
           return { ok: true, output: JSON.stringify({ ...sourceFixture, claims: sourceFixture.claims.map(claim => ({ ...claim, claim: `${claim.claim} ${external}` })) }) };
         }
         throw new Error("Unexpected research schema");
-      } },
+      }),
     });
     expect(result.status, JSON.stringify(result.nodes)).toBe("completed");
     expect(evaluations).toBe(3);
@@ -183,7 +261,7 @@ describe("deep-research portfolio", () => {
 
   it("requires plan parts, task partIds, and parts output", () => {
     const graph = savedGraph("deep-research");
-    const plan = agentNode(graph, "plan").outputSchema;
+    const plan = agentNode(savedGraph("deep-research/plan"), "plan").outputSchema;
     expect(plan).toMatchObject({
       required: ["parts", "tasks"],
       properties: {
@@ -195,7 +273,7 @@ describe("deep-research portfolio", () => {
       required: ["source", "question", "purpose", "partIds"],
       properties: { partIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", pattern: "^p[1-6]$" } } },
     });
-    expect(graph.outputs?.parts).toEqual({ node: "plan", path: "$.parts" });
+    expect(graph.outputs?.parts).toEqual({ node: "planning", path: "$.parts" });
   });
 
   it.each([
