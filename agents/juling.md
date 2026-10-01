@@ -5,7 +5,7 @@ model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:medium,openc
 prompt_mode: system_instructions
 discover_skills: false
 builtin_tools: read,bash,edit,write
-extension_tools: codegraph_*,lsp
+extension_tools: codegraph_*,lsp,codemode
 exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
 persist_session: true
 ---

@@ -6,7 +6,7 @@ prompt_mode: system_instructions
 discover_skills: false
 preload_skills: ast-grep
 builtin_tools: read,bash
-extension_tools: codegraph_*,lsp
+extension_tools: codegraph_*,lsp,codemode
 extensions: true
 exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
 persist_session: true
