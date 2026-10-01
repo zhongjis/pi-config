@@ -171,10 +171,12 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    // UI-less subagent children share this module's state with their parent;
+    // session_start restores it for every session, so only UI sessions clear it.
     if (ctx.hasUI) {
       ctx.ui.setStatus("caveman", undefined);
+      clearCavemanState();
     }
-    clearCavemanState();
   });
 }
 
