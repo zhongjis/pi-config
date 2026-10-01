@@ -164,7 +164,7 @@ describe("AgentWidget", () => {
 
       expect(h.render(240)).toEqual([
         "● Agents",
-        "└─ ⠙ Agent (twin) run summary · sonnet · thinking: high · isolated · inherit context · background · max turns: 20 · ↻4≤20 · ⇲2 · 3 tools · 12.3k token (75%) · 1m5s",
+        "└─ ⠙ Agent (twin) run summary · sonnet:high · isolated · inherit context · background · ↻4≤20 · ⇲2 · 3 tools · 12.3k token (75%) · 1m5s",
         "   └─ searching…",
       ]);
     } finally {
@@ -193,6 +193,63 @@ describe("AgentWidget", () => {
     h.widget.update();
 
     expect(h.render()).toEqual(["○ Agents", `└─ ${expected}`]);
+  });
+
+  it.each([
+    ["running", "low", true, "background"],
+    ["running", "off", false, "all"],
+    ["running", "off", undefined, "background"],
+    ["completed", "off", true, "all"],
+    ["completed", "low", false, "background"],
+    ["completed", "low", undefined, "all"],
+  ] as const)("renders effective recipe (%s, %s, fast=%s, mode=%s)", (status, thinking, fast, mode) => {
+    const record = makeRecord({
+      status, completedAt: status === "completed" ? Date.now() : undefined,
+      isBackground: true,
+      invocation: {
+        modelName: "cliproxyapi/gpt-6-luna", thinking, fast, thinkingDefault: true,
+        requestedModel: "requested/model:high:fast", requestedThinking: "high",
+        isolated: true, inheritContext: true, runInBackground: true, maxTurns: 20,
+      },
+    });
+    const activity = makeActivity({ turnCount: 8, maxTurns: 20 });
+    const h = harness([record], new Map([[record.id, activity]]), () => mode);
+    h.widget.update();
+    const output = h.render(300).join("\n");
+    expect(output).toContain(`cliproxyapi/gpt-6-luna:${thinking}${fast === true ? ":fast" : ""}`);
+    expect(output.includes(":fast")).toBe(fast === true);
+    expect(output).not.toMatch(/thinking:|requested\/model/);
+    expect(output).toContain("Agent (twin) agent description");
+    expect(output).toContain("isolated · inherit context");
+    expect(output).not.toContain("max turns:");
+    expect(output).toContain("↻8≤20");
+    expect(output.includes(" · background")).toBe(mode === "all");
+    expect(buildInvocationTags(record.invocation).tags).toContain(`thinking: ${thinking}`);
+    expect(buildInvocationTags(record.invocation).tags).toContain("background");
+    expect(buildInvocationTags(record.invocation).tags).toContain("max turns: 20");
+  });
+
+  it("preserves pending default thinking without fabricating a model or Fast recipe", () => {
+    const h = harness([makeRecord({ invocation: { thinkingDefault: true, fast: true } })]);
+    h.widget.update();
+    const output = h.render().join("\n");
+    expect(output).toContain("thinking: default (pending)");
+    expect(output).not.toContain(":fast");
+  });
+
+  it.each(["running", "completed"] as const)("preserves %s limits without a displayed turn counter", (status) => {
+    const record = makeRecord({
+      status, completedAt: status === "completed" ? Date.now() : undefined,
+      invocation: { maxTurns: 25 },
+    });
+    for (const activity of [undefined, makeActivity({ turnCount: 0, maxTurns: 25 }), makeActivity({ turnCount: 8 })]) {
+      const activities = activity ? new Map([[record.id, activity]]) : new Map<string, AgentActivity>();
+      const h = harness([record], activities);
+      h.widget.update();
+      const output = h.render().join("\n");
+      expect(output).toContain("max turns: 25");
+      expect(output).not.toContain("≤25");
+    }
   });
 
   it("keeps queued count ahead of finished rows and caps overflow at 12 lines", () => {
@@ -253,7 +310,7 @@ describe("AgentWidget", () => {
     };
     const record = makeRecord({
       description: "修复界面🧪 e\u0301 " + "界".repeat(80),
-      invocation: { modelName: "模型", thinking: "xhigh" },
+      invocation: { modelName: "提供者/模型", thinking: "xhigh", fast: true },
       compactionCount: 3,
     });
     const activity = makeActivity({
@@ -263,10 +320,11 @@ describe("AgentWidget", () => {
       maxTurns: 30,
       lifetimeUsage: { input: 1_000_000, output: 200_000, cacheWrite: 34_567 },
     });
-    const h = harness([record], new Map([[record.id, activity]]));
+    const finished = makeRecord({ ...record, id: "finished", status: "completed", completedAt: Date.now() });
+    const h = harness([record, finished], new Map([[record.id, activity]]));
     h.widget.update();
 
-    for (const width of [8, 20, 40, 80, 120]) {
+    for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
       const lines = h.render(width, ansiTheme);
       expect(lines.length).toBeLessThanOrEqual(12);
       for (const line of lines) {

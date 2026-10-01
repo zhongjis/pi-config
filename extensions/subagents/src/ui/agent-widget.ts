@@ -8,6 +8,7 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { AgentManager } from "../agent-manager.js";
 import { getConfig } from "../agent-types.js";
+import { getSessionFast } from "../session-fast.js";
 import type { AgentInvocation, AgentRecord, SubagentType, WidgetMode } from "../types.js";
 import { getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, type SessionLike } from "../usage.js";
 import { renderSubagentSummary } from "./summary-renderer.js";
@@ -351,10 +352,34 @@ export class AgentWidget {
     };
   }
 
+  /** Widget-only model recipe; shared report tags keep their existing shape. */
+  private widgetInvocation(record: AgentRecord) {
+    const session = record.session;
+    const effective = session ? {
+      ...record.invocation,
+      modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
+      thinking: session.thinkingLevel,
+      fast: getSessionFast(session),
+    } : record.invocation;
+    const { modelName, tags } = buildInvocationTags(effective);
+    const hasThinking = !!modelName && effective?.thinking !== undefined;
+    const activity = this.agentActivity.get(record.id);
+    const hasTurnLimit = Number.isFinite(activity?.turnCount) && (activity?.turnCount ?? 0) > 0
+      && activity?.maxTurns != null;
+    return {
+      modelName: modelName
+        ? `${modelName}${hasThinking ? `:${effective.thinking}` : ""}${effective?.fast === true ? ":fast" : ""}`
+        : undefined,
+      tags: tags.filter(tag => !(hasThinking && tag.startsWith("thinking:"))
+        && !(hasTurnLimit && tag.startsWith("max turns:"))
+        && !(this.mode() === "background" && tag === "background")),
+    };
+  }
+
   /** Render a finished agent line through the shared summary vocabulary. */
   private renderFinishedLine(a: AgentRecord, theme: Theme): string {
     const activity = this.agentActivity.get(a.id);
-    const invocation = buildInvocationTags(a.invocation);
+    const invocation = this.widgetInvocation(a);
     const tokenFields = this.summaryTokens(a, activity, theme);
     return renderSubagentSummary({
       displayName: this.summaryDisplayName(a.type),
@@ -409,7 +434,7 @@ export class AgentWidget {
       const bg = this.agentActivity.get(a.id);
       const toolUses = bg?.toolUses ?? a.toolUses;
       const activity = bg ? describeActivity(bg.activeTools, bg.responseText) : "thinking…";
-      const invocation = buildInvocationTags(a.invocation);
+      const invocation = this.widgetInvocation(a);
       const summaryLines = renderSubagentSummary({
         displayName: this.summaryDisplayName(a.type),
         description: a.description,

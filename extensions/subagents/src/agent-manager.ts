@@ -14,6 +14,7 @@ import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-wor
 import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
+import { getSessionFast } from "./session-fast.js";
 import type { AgentInvocation, AgentRecord, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
 
@@ -269,7 +270,7 @@ export class AgentManager {
       // only filter excludes only explicit `false`, so undefined agents — which
       // have no inline surface — stay visible instead of vanishing.
       isBackground: options.isBackground,
-      invocation: { ...options.invocation, modelName: undefined, thinking: undefined },
+      invocation: { ...options.invocation, modelName: undefined, thinking: undefined, fast: undefined },
       maxTurns: options.maxTurns,
     };
     record.promise = new Promise<string>(resolve => {
@@ -376,6 +377,7 @@ export class AgentManager {
           ...record.invocation,
           modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
           thinking: session.thinkingLevel,
+          fast: getSessionFast(session),
         };
         // Flush any steers that arrived before the session was ready
         if (record.pendingSteers?.length) {
@@ -414,6 +416,7 @@ export class AgentManager {
           ...record.invocation,
           modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
           thinking: session.thinkingLevel,
+          fast: getSessionFast(session),
         };
         record.completedAt ??= Date.now();
 
@@ -557,6 +560,7 @@ export class AgentManager {
       ...record.invocation,
       modelName: record.session.model ? `${record.session.model.provider}/${record.session.model.id}` : undefined,
       thinking: record.session.thinkingLevel,
+      fast: getSessionFast(record.session),
     };
 
     parentSignal?.addEventListener("abort", onAbort, { once: true });

@@ -20,8 +20,8 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { DEFAULT_BUILTIN_TOOL_NAMES, isToolReachable } from "../../lib/active-tools.js";
+import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
 import { seedSessionLocalScope } from "../../session-local/storage.js";
@@ -34,6 +34,7 @@ import { detectEnv } from "./env.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
+import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
 import type { SubagentType, ThinkingLevel } from "./types.js";
@@ -808,6 +809,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     sessionOpts.tools?.push(STRUCTURED_OUTPUT_TOOL_NAME);
   }
   const { session } = await createAgentSession(sessionOpts);
+  sessionFastPolicies.set(session, fastPolicy);
   if (structuredCapture) rememberStructuredCapture(session, structuredCapture);
 
   const baseSessionName = agentConfig?.name ?? type;

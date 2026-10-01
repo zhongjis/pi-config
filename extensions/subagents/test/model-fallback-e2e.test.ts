@@ -9,6 +9,7 @@ import { ModeStateManager } from "../../modes/src/mode-state.js";
 import { resumeAgent, runAgent } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import { compileJsonSchema } from "../src/graph/json-schema.js";
+import { getSessionFast } from "../src/session-fast.js";
 
 const chain = "anthropic/claude-opus-4-8:fast,anthropic/claude-sonnet-4-6:high";
 
@@ -53,7 +54,7 @@ it("isolated child waits through native retries and gated fallback before final 
 		return success(input, init);
 	});
 	let settled = false;
-	const running = runAgent(t.ctx, "recover", "run once", { pi: t.pi, isolated: true, onSessionCreated: session => { children.push(session); } }).then(result => { settled = true; return result; });
+	const running = runAgent(t.ctx, "recover", "run once", { pi: t.pi, isolated: true, onSessionCreated: session => { children.push(session); expect(getSessionFast(session)).toBe(true); } }).then(result => { settled = true; return result; });
 	try {
 		await recovering;
 		expect(settled).toBe(false);
@@ -63,6 +64,7 @@ it("isolated child waits through native retries and gated fallback before final 
 		expect(result.failure).toBeUndefined();
 		expect(result.responseText).toBe("ok");
 		expect(result.session.model?.id).toBe("claude-sonnet-4-6");
+		expect(getSessionFast(result.session)).toBe(false);
 		expect(result.session.messages.filter(m => m.role === "user")).toHaveLength(1);
 		expect(t.requests[0].payload.speed).toBeUndefined();
 	} finally { release(); await running; for (const child of children) child.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
@@ -84,6 +86,7 @@ it("resume waits for a fast fallback and reports only the recovered turn", async
 	let calls = 0;
 	try {
 		const initial = await runAgent(t.ctx, "resume-recover", "first", { pi: t.pi, isolated: true, onSessionCreated: session => { children.push(session); } });
+		expect(getSessionFast(initial.session)).toBe(false);
 		t.fetchMock.mockImplementation(async (input, init) => {
 			calls++;
 			const payload = JSON.parse(String(init?.body));
@@ -104,6 +107,7 @@ it("resume waits for a fast fallback and reports only the recovered turn", async
 		expect(result.text).toBe("ok");
 		expect(initial.session.thinkingLevel).toBe("high");
 		expect(fallbackPayload?.speed).toBe("fast");
+		expect(getSessionFast(initial.session)).toBe(true);
 		expect(initial.session.messages.filter(m => m.role === "user")).toHaveLength(2);
 	} finally { release(); for (const child of children) child.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
 });

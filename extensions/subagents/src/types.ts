@@ -161,6 +161,8 @@ export interface AgentInvocation {
   /** Actual provider/model ID; absent until a session exists. */
   modelName?: string;
   thinking?: AgentSession["thinkingLevel"];
+  /** Captured runner Fast policy; absent before session creation. */
+  fast?: boolean;
   /** Configuration intent only: omitted thinking uses SDK defaults, not an actual level. */
   thinkingDefault?: boolean;
   maxTurns?: number;

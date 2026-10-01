@@ -57,6 +57,9 @@ Run isolated Agent sessions with foreground results and background supervision. 
 - Omitted thinking MUST use SDK selected-model defaults, NEVER parent thinking.
 - `thinkingDefault` MUST track configuration intent only; unknown intent stays unlabelled.
 - `thinking: default (pending)` MUST survive queued retrieval until session metadata replaces it; resume retains session thinking.
+- Persistent AgentWidget running/finished rows MUST show effective `provider/model:thinking`, appending `:fast` only for captured enabled child policy. Live session getters and the runner-owned session Fast reference take precedence over snapshots; other report surfaces retain their existing formatting.
+- AgentWidget MUST hide the background tag only in background-only mode; all mode retains it. Preserve pending default thinking, names, descriptions, other tags, and Unicode width clipping.
+- AgentWidget MUST omit `max turns:` only when its turn counter displays the limit; preserve zero-turn limits and aggregate queued rows. Shared invocation tags and reports remain unchanged.
 - Foreground, retrieval, and resume MUST share structured result/error, transcript, and diagnostic details.
 - `get_agent_result({run_id, wait?, verbose?})` routes independent agents and live-session `agr_*` graph runs without merging registries; details discriminate `agent` and `graph`. Graph waits use runtime signaling until a committed human request or terminal state; aborting retrieval MUST leave execution alive.
 - Human requests MUST publish only after their execution dispatch checkpoint commits, including every containing nested checkpoint. Requests expose an opaque execution-correlated `gate_id`, activation-local `revision`, gate kind, prompt and response schema; repeated retrieval NEVER consumes them. Persist no additional prompts or response history.
