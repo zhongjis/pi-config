@@ -2,7 +2,7 @@
 
 Enables provider Fast mode for the active model with a single `/fast` toggle. Detects the current model's provider and applies the matching mechanism:
 
-- **OpenAI Codex** (`gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`): injects `service_tier: "priority"` with OAuth/subscription auth. [1]
+- **OpenAI Codex** (`gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-6.1-sol`): injects `service_tier: "priority"` with OAuth/subscription auth. [1]
 - **CLIProxyAPI** (the same exact GPT IDs, provider `cliproxyapi`, API `openai-responses`): injects `service_tier: "priority"` with Pi local API-key auth; CLIProxyAPI handles downstream Codex auth. [2] [3]
 - **Anthropic Claude Opus** (`claude-opus-4-8`, `claude-opus-5`): injects `speed: "fast"` and the required `anthropic-beta` header. [4]
 
