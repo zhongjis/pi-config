@@ -12,10 +12,10 @@ The footer uses up to four compact lines for:
 
 - repository name and git branch (linked worktrees show the main repository name), or the working directory outside git;
 - session name, when set;
-- context usage, model/thinking level, latest effective output rate, cost, token totals, and session cache hit rate;
+- context usage, model/thinking level, latest generation TPS, cost, token totals, and session cache hit rate;
 - extension statuses, goal state, and active infrastructure status such as LSP.
 
-The effective rate measures from the first provider request in a turn through valid assistant completion; it is temporary, resets on session start/tree navigation/shutdown, and is absent until measured.
+Generation TPS in [src/footer.ts](src/footer.ts) divides provider-reported `usage.output` by elapsed seconds from the first nonempty text, thinking, or tool-call delta to assistant completion. It excludes pre-output waiting and failed retry attempts, retains the latest completed rate during the next stream, and hides error/aborted or invalid completions (including durations below 250 ms). It is temporary, resets on session start/tree navigation/shutdown, and is absent until measured. The dim `tok/s` segment keeps its existing position, precision, and width priority; it does not claim exact parity with OpenRouter's undocumented formula.
 
 QoL owns the single footer slot while preserving the existing bridge contracts:
 

@@ -15,7 +15,7 @@ Own the harness's consolidated session UI and built-in write presentation.
 - Only one manual compaction request may be pending; queued continuation work takes precedence.
 - Write presentation MUST preserve native metadata and all five execution arguments.
 - Expanded write output MUST show exact raw built-in output.
-- Footer effective output rate is ephemeral: measure first `before_provider_request` through assistant `message_end`, retain only valid completions, and reset it on session start, tree navigation, and shutdown.
+- Footer generation TPS is ephemeral: divide provider-reported `usage.output` by elapsed seconds from the first nonempty `text_delta`, `thinking_delta`, or `toolcall_delta` to assistant `message_end`. Exclude pre-output waiting and failed retry attempts; reset in-flight timing on turns, assistant message starts, and provider requests. Keep the latest completed rate while streaming, hide invalid/error/aborted completions or durations below 250 ms, and clear both rates on session start, tree navigation, and shutdown.
 
 ## Work Guidance
 

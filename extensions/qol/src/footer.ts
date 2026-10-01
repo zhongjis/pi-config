@@ -28,11 +28,11 @@ function formatTokens(count: number): string {
   return `${Math.round(count / 1000000)}M`;
 }
 
-// Format the most recent completed provider request's end-to-end output rate.
+// Format the most recent completed assistant message's generation rate.
 function formatTps(tps: number): string {
-  if (tps >= 100) return `${Math.round(tps)} effective tok/s`;
-  if (tps >= 10) return `${tps.toFixed(1)} effective tok/s`;
-  return `${tps.toFixed(2)} effective tok/s`;
+  if (tps >= 100) return `${Math.round(tps)} tok/s`;
+  if (tps >= 10) return `${tps.toFixed(1)} tok/s`;
+  return `${tps.toFixed(2)} tok/s`;
 }
 
 function stripAnsi(text: string): string {
@@ -354,7 +354,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           statsSegments.push(getModelSegment(ctx, pi.getThinkingLevel(), multiProvider, theme));
           priorities.push(3);
 
-          const tps = lastEffectiveTps;
+          const tps = lastGenerationTps;
           if (tps !== null) {
             statsSegments.push(theme.fg("dim", formatTps(tps)));
             priorities.push(2);
@@ -455,27 +455,40 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
   }
 
   const resetRate = () => {
-    requestStartedAt = null;
-    lastEffectiveTps = null;
+    generationStartedAt = null;
+    lastGenerationTps = null;
   };
 
-  let requestStartedAt: number | null = null;
-  let lastEffectiveTps: number | null = null;
+  let generationStartedAt: number | null = null;
+  let lastGenerationTps: number | null = null;
 
   pi.on("turn_start", async () => {
-    requestStartedAt = null;
+    generationStartedAt = null;
   });
 
   pi.on("before_provider_request", async () => {
-    if (requestStartedAt !== null) return;
+    generationStartedAt = null;
+  });
+
+  pi.on("message_start", async (event) => {
+    if (event.message.role === "assistant") generationStartedAt = null;
+  });
+
+  pi.on("message_update", async (event) => {
+    if (event.message.role !== "assistant" || generationStartedAt !== null) return;
+    const update = event.assistantMessageEvent;
+    if (
+      (update.type !== "text_delta" && update.type !== "thinking_delta" && update.type !== "toolcall_delta") ||
+      update.delta.length === 0
+    ) return;
     const now = performance.now();
-    if (Number.isFinite(now)) requestStartedAt = now;
+    if (Number.isFinite(now)) generationStartedAt = now;
   });
 
   pi.on("message_end", async (event) => {
     if (event.message.role !== "assistant") return;
-    const startedAt = requestStartedAt;
-    requestStartedAt = null;
+    const startedAt = generationStartedAt;
+    generationStartedAt = null;
 
     const output = event.message.usage.output;
     const endedAt = performance.now();
@@ -488,12 +501,12 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
       !Number.isFinite(durationMs) ||
       durationMs < 250
     ) {
-      lastEffectiveTps = null;
+      lastGenerationTps = null;
       return;
     }
 
     const rate = output / (durationMs / 1000);
-    lastEffectiveTps = Number.isFinite(rate) ? rate : null;
+    lastGenerationTps = Number.isFinite(rate) ? rate : null;
   });
 
   pi.on("session_start", async (_event, ctx) => {
