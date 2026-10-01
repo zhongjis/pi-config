@@ -51,11 +51,11 @@ describe("resolveModelFromStr", () => {
 });
 
 describe("ModeStateManager", () => {
-	function createMockPi(initialActiveTools = ["read", "write", "bash"]) {
+	function createMockPi(initialActiveTools = ["read", "write", "bash"], extraTools: Array<{ name: string; exposure?: string }> = []) {
 		let activeTools = initialActiveTools;
 		const pi = {
 			appendEntry: vi.fn(),
-			getAllTools: () => [
+			getAllTools: (): Array<{ name: string; exposure?: string }> => [
 				{ name: "read" },
 				{ name: "write" },
 				{ name: "edit" },
@@ -71,6 +71,7 @@ describe("ModeStateManager", () => {
 				{ name: "steer_subagent" },
 				{ name: "plan_approve" },
 				{ name: "plan_scaffold" },
+				...extraTools,
 			],
 			getActiveTools: () => activeTools,
 			setActiveTools: vi.fn((toolNames: string[]) => {
@@ -289,6 +290,20 @@ describe("ModeStateManager", () => {
 		expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
 	});
 
+
+	it("activates listed model-only codemode but never wildcard-activates codemode-exposure tools", async () => {
+		const pi = createMockPi(["read"], [{ name: "codemode", exposure: "model-only" }, { name: "lookup_symbols", exposure: "codemode" }]);
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs["kuafu:default"] = {
+			body: "prompt",
+			builtinToolNames: ["read"],
+			extensionToolNames: ["lookup_*", "codemode"],
+			extensions: true,
+		};
+
+		await state.applyMode({ hasUI: false, ui: { setStatus: vi.fn() }, modelRegistry: createMockRegistry([]) } as never);
+		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
+	});
 
 	it("does not change active tools when mode has no tool settings", async () => {
 		const pi = createMockPi(["read", "write", "bash", "web_search"]);

@@ -100,14 +100,11 @@ function hasField(fm: Record<string, unknown>, field: string): boolean {
   return Object.hasOwn(fm, field);
 }
 
-function onlyBuiltinTools(names: string[]): string[] {
-  const builtins = new Set<string>(DEFAULT_BUILTIN_TOOL_NAMES);
-  return names.filter((name) => builtins.has(name));
-}
-
+// Unknown names are kept so runtimes can diagnose them; policy only grants
+// names in the built-in universe.
 function parseBuiltinTools(fm: Record<string, unknown>): string[] {
   if (hasField(fm, "builtin_tools")) {
-    return onlyBuiltinTools(csvList(fm.builtin_tools, [...DEFAULT_BUILTIN_TOOL_NAMES]));
+    return csvList(fm.builtin_tools, [...DEFAULT_BUILTIN_TOOL_NAMES]);
   }
 
   return [...DEFAULT_BUILTIN_TOOL_NAMES];

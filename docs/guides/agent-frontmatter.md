@@ -63,7 +63,7 @@ differ from the default. Parsing rules worth knowing while authoring:
 Fields whose purpose the code does not make obvious:
 
 - `description` — shown in the Agent picker and used by orchestrators to route. **Write this well** — it is the routing signal.
-- `extensions` — master switch for extension/MCP tools. A CSV value counts as enabled; it does not scope tools to those sources. Use `extension_tools` for per-tool filtering and `exclude_extensions` for per-source exclusion.
+- `extensions` — which extensions load (`false` loads none). A CSV value counts as enabled and keeps only the named or path-listed extensions; it does not scope tools to those sources. Use `extension_tools` for per-tool reachability and `exclude_extensions` for per-source exclusion.
 - `discover_skills` — whether pi's skill **catalog** is discoverable on demand.
 - `preload_skills` — skill names whose full body is injected into the system prompt. Independent of `discover_skills`.
 - `isolated` — built-ins only; overrides `extensions`/`extension_tools`.
@@ -146,19 +146,33 @@ Guidance for subagents:
 Final active tools are computed by
 [`computeActiveToolNames`](../../extensions/lib/active-tools.ts) from four inputs:
 
-1. **`builtin_tools`** — filtered against the built-in universe
-   (`read, bash, edit, write, grep, find, ls`). Values outside it are dropped.
-2. **`extensions`** — master switch for extension/MCP tools. `false` disables all.
-3. **`extension_tools`** — post-load allowlist. `undefined` = all available;
-   `false`/`none` = none; a list = exact names or `prefix*` wildcards.
+1. **`builtin_tools`** — granted only within the built-in universe
+   (`read, bash, edit, write, grep, find, ls`). Subagents report other names as
+   unknown built-ins; they are never granted.
+2. **`extensions`** — `false` makes every extension tool unreachable.
+3. **`extension_tools`** — post-load allowlist deciding which extension tools are
+   reachable. `undefined` = all available; `false`/`none` = none; a list = exact
+   names or `prefix*` wildcards.
 4. **`allow_nesting`** — nested controls (`agent`, `get_agent_result`,
-   `resolve_agent_graph_gate`, `steer_subagent`) are removed unless this is `true`.
+   `resolve_agent_graph_gate`, `steer_subagent`) are unreachable unless this is `true`.
+
+Reachable tools activate by Pi tool exposure: `direct` and `model-only` tools
+activate; `codemode` and `deferred` tools stay reachable from codemode scripts but
+are never auto-activated (one already active stays active); `hidden` tools never
+activate. Nested calls from codemode scripts are blocked for unreachable tools in
+subagents and in modes with a tool policy; Fu Xi's plan tools stay reachable in `fuxi`.
 
 Precedence and rules:
 
 - `isolated: true` disables **all** extension tools regardless of
   `extensions`/`extension_tools`.
 - `extension_tools` can never grant built-ins.
+- Subagents load Pi's built-in codemode (`builtin:codemode`, with the script
+  `models` catalog disabled) only for an exact `codemode` entry in
+  `extension_tools`; omitted lists and wildcards never load it. It does not load
+  under `isolated: true` or `extensions: false` (a diagnostic reports the
+  listing). `exclude_extensions: builtin:codemode` or the Pi settings entry
+  `-builtin:codemode` disables it; a CSV `extensions` value does not.
 - Read-only recon agents may receive built-in `bash` only when a trusted runtime guard scopes it to read-only actions; they still receive no `edit`/`write`
   (see [`agents/AGENTS.md`](../../agents/AGENTS.md) and [`extensions/smart-tool-guards/README.md`](../../extensions/smart-tool-guards/README.md)).
 - Prefer `bash` with `rg`/`fd` over the `grep`/`find`/`ls` built-ins.

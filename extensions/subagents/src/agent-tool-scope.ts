@@ -49,15 +49,21 @@ export function installExtensionToolScope(
   // filters extension tools by `extensionTools` (exact names or trailing-`*`
   // wildcards), and drops the nested-subagent tools unless `allowNesting`. Its
   // output order follows the live available list, so this IS the final active set.
+  // Exposure-aware: `codemode`/`deferred` tools stay reachable from codemode
+  // scripts without activation, so only an already-active one stays active.
   const computeActive = (): string[] => {
+    const tools = session.getAllTools();
+    const exposure = new Map(tools.map((t) => [t.name, t.exposure]));
     const active = computeActiveToolNames({
-      availableToolNames: session.getAllTools().map((t) => t.name),
+      availableToolNames: tools.map((t) => t.name),
       builtinToolNames,
       builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
       extensions,
       extensionTools,
       allowNesting,
       isolated,
+      exposureOf: (name) => exposure.get(name),
+      currentActiveToolNames: session.getActiveToolNames(),
     });
     if (ctx.structuredOutput && !active.includes(STRUCTURED_OUTPUT_TOOL_NAME)) active.push(STRUCTURED_OUTPUT_TOOL_NAME);
     return active;

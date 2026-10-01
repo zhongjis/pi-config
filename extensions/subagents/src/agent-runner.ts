@@ -12,6 +12,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   createAgentSession,
+  createCodemodeExtension,
   DefaultResourceLoader,
   type ExtensionAPI,
   getAgentDir,
@@ -20,6 +21,7 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
+import { DEFAULT_BUILTIN_TOOL_NAMES, isToolReachable } from "../../lib/active-tools.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
 import { seedSessionLocalScope } from "../../session-local/storage.js";
@@ -43,6 +45,18 @@ const TRUSTED_SESSION_LOCAL_EXTENSION_NAME = "session-local";
 const TRUSTED_SESSION_LOCAL_EXTENSION_PATH = `<inline:${TRUSTED_SESSION_LOCAL_EXTENSION_NAME}>`;
 const TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME = "smart-tool-guards";
 const TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH = `<inline:${TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME}>`;
+const TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_NAME = "subagent-nested-tool-scope";
+const TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_PATH = `<inline:${TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_NAME}>`;
+const TRUSTED_EXTENSION_PATHS = new Set([
+  TRUSTED_SESSION_LOCAL_EXTENSION_PATH,
+  TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH,
+  TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_PATH,
+  TRUSTED_FAST_EXTENSION_PATH,
+  TRUSTED_FALLBACK_EXTENSION_PATH,
+]);
+/** Pi names built-in extension resources `builtin:<name>`. */
+const BUILTIN_EXTENSION_PATH_PREFIX = "builtin:";
+const CODEMODE_TOOL_NAME = "codemode";
 const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "chengfeng",
   "direnjie",
@@ -511,13 +525,21 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   const additionalExtensionPaths = extensionsSpec?.paths.length ? extensionsSpec.paths : undefined;
   const shouldFilterDiscovered = !noExtensions && (!loadAll || hasExcludes);
   let discoveredNames: Set<string> | undefined;
+  // Pi's built-in codemode loads only for an exact `codemode` extension_tools
+  // entry; wildcards never opt in. Settings `-builtin:codemode` and
+  // `exclude_extensions: builtin:codemode` still disable it.
+  const wantsCodemode = agentConfig?.extensionToolNames?.includes(CODEMODE_TOOL_NAME) === true;
+  const toolPolicy = {
+    builtinToolNames: toolNames,
+    builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
+    extensions,
+    extensionTools: agentConfig?.extensionToolNames,
+    allowNesting: agentConfig?.allowNesting,
+    isolated: options.isolated,
+  };
   const extensionsOverride = (base: LoadExtensionsResult): LoadExtensionsResult => {
     const discoveredExtensions = base.extensions.filter(
-      (extension) =>
-        extension.path !== TRUSTED_SESSION_LOCAL_EXTENSION_PATH &&
-        extension.path !== TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH &&
-        extension.path !== TRUSTED_FAST_EXTENSION_PATH &&
-        extension.path !== TRUSTED_FALLBACK_EXTENSION_PATH,
+      (extension) => !TRUSTED_EXTENSION_PATHS.has(extension.path) && !extension.path.startsWith(BUILTIN_EXTENSION_PATH_PREFIX),
     );
     if (shouldFilterDiscovered) {
       discoveredNames = new Set(discoveredExtensions.flatMap((e) => extensionCanonicalNames(e.path)));
@@ -526,12 +548,9 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     return {
       ...base,
       extensions: base.extensions.filter((extension) => {
-        if (
-          extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH ||
-          extension.path === TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH ||
-          extension.path === TRUSTED_FAST_EXTENSION_PATH ||
-          extension.path === TRUSTED_FALLBACK_EXTENSION_PATH
-        ) return true;
+        if (TRUSTED_EXTENSION_PATHS.has(extension.path)) return true;
+        // Requested Pi built-ins bypass the `extensions:` allowlist but honor excludes.
+        if (extension.path.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)) return !noExtensions && !excludeNames.has(extension.path.toLowerCase());
 
         const canons = extensionCanonicalNames(extension.path);
         if (canons.includes(TRUSTED_SESSION_LOCAL_EXTENSION_NAME) || canons.includes("fast")) return false;
@@ -551,6 +570,12 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     additionalExtensionPaths,
     extensionsOverride,
     extensionFactories: [
+      ...(wantsCodemode && !noExtensions ? [{
+        name: CODEMODE_TOOL_NAME,
+        factory: createCodemodeExtension({ models: false }),
+        builtin: true,
+        replaceable: true,
+      }] : []),
       {
         name: "subagent-model-fallback",
         hidden: true,
@@ -592,6 +617,19 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
         },
         hidden: true,
       }] : []),
+      // Codemode scripts call tools through ctx.executeTool(); those nested calls
+      // bypass the session.agent.beforeToolCall veto and reach only `tool_call`.
+      ...(noExtensions ? [] : [{
+        name: TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_NAME,
+        factory: (extensionPi: ExtensionAPI) => {
+          extensionPi.on("tool_call", (event) => {
+            if (event.parentToolCallId === undefined || event.toolName === STRUCTURED_OUTPUT_TOOL_NAME) return;
+            if (isToolReachable(toolPolicy, event.toolName)) return;
+            return { block: true, reason: `Tool "${event.toolName}" is not available to this subagent.` };
+          });
+        },
+        hidden: true,
+      }]),
     ],
     noSkills,
     noPromptTemplates: true,
@@ -625,6 +663,12 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   //     `keepNames`, so this covers them too).
   //   - `exclude_extensions:` alongside `extensions: false` is contradictory —
   //     nothing loads, so there is nothing to exclude.
+  if (wantsCodemode && noExtensions) {
+    options.onToolActivity?.({
+      type: "diagnostic",
+      toolName: `extension-error:extension_tools: "${CODEMODE_TOOL_NAME}" has no effect for agent "${type}" — ${options.isolated ? "isolated" : "extensions: false"} loads no extensions`,
+    });
+  }
   if (hasExcludes && noExtensions) {
     options.onToolActivity?.({
       type: "diagnostic",
@@ -636,7 +680,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   // flags path-like and "*" entries — excludes are plain names only.
   if (hasExcludes && discoveredNames) {
     for (const name of excludeNames) {
-      if (!discoveredNames.has(name)) {
+      if (!discoveredNames.has(name) && !name.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)) {
         options.onToolActivity?.({
           type: "diagnostic",
           toolName: `extension-error:exclude_extensions: "${name}" for agent "${type}" did not match any discovered extension`,
@@ -649,11 +693,13 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
       loader.getExtensions().extensions.flatMap((extension) =>
         extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH
           ? [TRUSTED_SESSION_LOCAL_EXTENSION_NAME]
-          : extensionCanonicalNames(extension.path),
+          : extension.path.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)
+            ? [extension.path.toLowerCase()]
+            : extensionCanonicalNames(extension.path),
       ),
     );
     for (const name of keepNames) {
-      if (!survivingNames.has(name)) {
+      if (!survivingNames.has(name) && !name.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)) {
         options.onToolActivity?.({
           type: "diagnostic",
           toolName: excludeNames.has(name)
@@ -686,8 +732,10 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   //     orchestration tools and built-ins the agent didn't ask for) as
   //     `excludeTools`, which pi re-applies on every registry refresh;
   //   - enforce `extension_tools:` tool-name filtering on the ACTIVE set via the
-  //     live `computeActiveToolNames` re-narrow installed after bind — the active
-  //     set is what the LLM sees, so a registry tool never activated is uncallable.
+  //     live `computeActiveToolNames` re-narrow installed after bind. Registry
+  //     tools with `codemode`/`deferred` exposure stay callable from codemode
+  //     scripts while inactive, so the hidden nested-tool-scope hook blocks
+  //     nested calls the agent's policy does not reach.
   //
   // `noExtensions`/`isolated` keeps the historical static allowlist: nothing
   // async can appear there, and a hard registry gate is the correct boundary.
@@ -696,7 +744,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   let sessionTools: string[] | undefined;
   let sessionExcludeTools: string[] | undefined;
   if (noExtensions) {
-    sessionTools = toolNames.filter((t) => !EXCLUDED_TOOL_NAMES.includes(t));
+    // Unknown `builtin_tools` names are diagnosed above, never allowlisted.
+    sessionTools = toolNames.filter((t) => BUILTIN_TOOL_NAMES.includes(t) && !EXCLUDED_TOOL_NAMES.includes(t));
   } else {
     const denyTools = new Set<string>(EXCLUDED_TOOL_NAMES);
     // Keep only the built-ins the agent asked for — deny the rest.

@@ -13,7 +13,7 @@ import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLo
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
-import type { ModeStateManager } from "./mode-state.js";
+import { hasToolPolicy, isModeToolReachable, type ModeStateManager } from "./mode-state.js";
 import type { Mode, ModeState } from "./types.js";
 
 
@@ -208,6 +208,16 @@ export function registerModeGuardScope(pi: ExtensionAPI, state: ModeStateManager
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
 	pi.on("tool_call", async (event, ctx) => {
+		// Codemode scripts reach inactive `codemode`/`deferred` tools; hold nested
+		// calls to the same policy that selects the mode's active tools. Subagents
+		// scope their own nested calls from their frontmatter.
+		if (event.parentToolCallId !== undefined && !isSubagentSession(ctx)) {
+			const config = state.loadConfig(state.currentMode);
+			const allToolNames = pi.getAllTools().map((t) => t.name);
+			if (hasToolPolicy(config) && !isModeToolReachable(state.currentMode, config, event.toolName, allToolNames)) {
+				return { block: true, reason: `Mode ${state.currentMode}: tool "${event.toolName}" is not available.` };
+			}
+		}
 
 		if (state.currentMode !== "fuxi") return;
 

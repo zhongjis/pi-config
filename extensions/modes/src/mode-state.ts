@@ -1,7 +1,7 @@
 import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
-import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
+import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES, isToolReachable, type ToolReachabilityInput } from "../../lib/active-tools.js";
 import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
 import { loadAgentConfig } from "./config-loader.js";
@@ -15,7 +15,7 @@ function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
 }
 
-function hasToolPolicy(config: ModeConfig): boolean {
+export function hasToolPolicy(config: ModeConfig): boolean {
   return Boolean(
     config.builtinToolNames
     || config.extensionToolNames !== undefined
@@ -34,6 +34,22 @@ function applyFuXiOnlyToolAccess(mode: Mode, toolNames: readonly string[], allTo
     ...withoutFuXiOnlyTools,
     ...FU_XI_ONLY_TOOL_NAMES.filter((toolName) => allToolNames.includes(toolName)),
   ];
+}
+
+function modeToolPolicy(config: ModeConfig): ToolReachabilityInput {
+  return {
+    builtinToolNames: config.builtinToolNames ?? [...DEFAULT_BUILTIN_TOOL_NAMES],
+    builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
+    extensions: config.extensions ?? true,
+    extensionTools: config.extensionToolNames,
+    allowNesting: config.allowNesting,
+  };
+}
+
+/** Whether a mode with a tool policy may call `toolName`, including Fu Xi-only plan tools. */
+export function isModeToolReachable(mode: Mode, config: ModeConfig, toolName: string, allToolNames: readonly string[]): boolean {
+  const reachable = isToolReachable(modeToolPolicy(config), toolName) ? [toolName] : [];
+  return applyFuXiOnlyToolAccess(mode, reachable, allToolNames).includes(toolName);
 }
 
 function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
@@ -127,18 +143,18 @@ export class ModeStateManager {
 	async applyMode(ctx: ExtensionContext, resetFast = false): Promise<void> {
 		const config = this.loadConfig(this.currentMode);
 		await this.applyModelFromConfig(config, ctx, resetFast);
-		const allToolNames = this.pi.getAllTools().map((t) => t.name);
+		const allTools = this.pi.getAllTools();
+		const allToolNames = allTools.map((t) => t.name);
+		const exposure = new Map(allTools.map((t) => [t.name, t.exposure]));
 		const activeToolNames = this.pi.getActiveTools().filter((t) => allToolNames.includes(t));
 
 		let nextActiveToolNames = activeToolNames;
 		if (hasToolPolicy(config)) {
 			nextActiveToolNames = computeActiveToolNames({
+				...modeToolPolicy(config),
 				availableToolNames: allToolNames,
-				builtinToolNames: config.builtinToolNames ?? [...DEFAULT_BUILTIN_TOOL_NAMES],
-				builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
-				extensions: config.extensions ?? true,
-				extensionTools: config.extensionToolNames,
-				allowNesting: config.allowNesting,
+				exposureOf: (name) => exposure.get(name),
+				currentActiveToolNames: activeToolNames,
 			});
 		}
 

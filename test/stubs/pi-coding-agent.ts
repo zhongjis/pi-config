@@ -68,6 +68,10 @@ export function createAgentSession() {
   return {};
 }
 
+export function createCodemodeExtension(_options?: unknown) {
+  return (_pi: unknown) => {};
+}
+
 export function createCodingTools() {
   return ["read", "bash", "edit", "write"].map((name) => ({ name }));
 }

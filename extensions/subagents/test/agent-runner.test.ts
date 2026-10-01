@@ -43,8 +43,11 @@ const {
   };
 });
 
+const createCodemodeExtension = vi.hoisted(() => vi.fn((_options?: unknown) => () => {}));
+
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession,
+  createCodemodeExtension,
   isToolCallEventType: (toolName: string, event: { toolName?: string }) => event.toolName === toolName,
   // Mock loader simulates pi-mono: reload() applies additionalExtensionPaths
   // (an unknown path becomes an error row, mirroring a failed load) and then
@@ -1118,6 +1121,7 @@ describe("agent-runner trusted session-local binding", () => {
       "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
+      "<inline:subagent-nested-tool-scope>",
     ]);
     expect(lastToolsPassed()).toContain("mcp_tool");
     expect(lastToolsPassed()).not.toContain("unrelated_tool");
@@ -1149,6 +1153,7 @@ describe("agent-runner trusted session-local binding", () => {
       "<inline:subagent-model-fallback>",
       "<inline:subagent-fast>",
       "<inline:session-local>",
+      "<inline:subagent-nested-tool-scope>",
     ]);
   });
 });
@@ -1241,6 +1246,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
       "<inline:subagent-fast>",
       "<inline:session-local>",
       "<inline:smart-tool-guards>",
+      "<inline:subagent-nested-tool-scope>",
     ]);
     expect(lastToolsPassed()).toContain("mcp_tool");
     expect(lastToolsPassed()).not.toContain("unrelated_tool");
@@ -2101,6 +2107,50 @@ describe("agent-runner extension_tools tool filter", () => {
     for (const b of BUILTINS_7) expect(tools).toContain(b);
     expect(tools).toContain("foo_tool");
     expect(tools).toContain("other_tool");
+  });
+
+  it("the hidden nested-tool-scope hook blocks nested calls outside the policy", async () => {
+    setupExtAgent({ extensions: ["foo"], builtinToolNames: ["read"], extensionToolNames: ["foo_*"] });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi });
+
+    const factory = (lastLoaderOpts().extensionFactories as Array<{ name: string; hidden?: boolean; factory(pi: unknown): void }>)
+      .find(({ name }) => name === "subagent-nested-tool-scope");
+    expect(factory).toMatchObject({ hidden: true });
+    const handlers: Array<(event: unknown) => unknown> = [];
+    factory?.factory({ on: (_event: string, handler: (event: unknown) => unknown) => handlers.push(handler) });
+    const call = (toolName: string, parentToolCallId?: string) => handlers[0]?.({ type: "tool_call", toolName, parentToolCallId, input: {} });
+
+    expect(call("other_tool", "parent")).toMatchObject({ block: true });
+    expect(call("bash", "parent")).toMatchObject({ block: true });
+    expect(call("foo_code", "parent")).toBeUndefined();
+    expect(call("read", "parent")).toBeUndefined();
+    expect(call("other_tool")).toBeUndefined();
+  });
+
+  it("loads Pi's built-in codemode with models disabled only for an exact codemode entry", async () => {
+    setupExtAgent({ extensions: true, builtinToolNames: ["read"], extensionToolNames: ["codemode"] });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi });
+
+    expect(createCodemodeExtension).toHaveBeenCalledWith({ models: false });
+    expect((lastLoaderOpts().extensionFactories as Array<Record<string, unknown>>)[0])
+      .toMatchObject({ name: "codemode", builtin: true, replaceable: true });
+  });
+
+  it("adds no nested-tool-scope hook when extensions do not load", async () => {
+    setupExtAgent({ extensions: false, builtinToolNames: ["read"], extensionToolNames: ["foo_*"] });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi });
+
+    expect((lastLoaderOpts().extensionFactories as Array<{ name: string }>).map(({ name }) => name))
+      .not.toContain("subagent-nested-tool-scope");
   });
 
   it("an empty extension_tools list surfaces no extension tools", async () => {

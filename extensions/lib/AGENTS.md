@@ -21,6 +21,7 @@ Provide shared extension utilities and integration primitives.
 - The CLIProxyAPI Fast profile is only `cliproxyapi` / `openai-responses` and accepts Pi local API-key auth; preserve the separate OpenAI Codex OAuth requirement.
 - `tool-output.ts` owns shared passive TUI helpers, including custom-message Box shells; callers retain content construction and delivery.
 - `active-tools.ts` MUST classify result retrieval and graph-gate resolution as nested controls; tool allowlists NEVER override `allowNesting: false`.
+- `isToolReachable` decides allowlist reachability; `computeActiveToolNames` activates reachable `direct`/`model-only` (or unknown-exposure) tools, keeps `codemode`/`deferred` tools only when already active, and never activates `hidden` tools.
 
 ## Work Guidance
 

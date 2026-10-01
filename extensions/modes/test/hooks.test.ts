@@ -711,3 +711,39 @@ describe("mode runtime model fallback", () => {
 		expect(mock.pi.sendMessage).not.toHaveBeenCalled();
 	});
 });
+
+describe("nested tool calls under a mode tool policy", () => {
+	function setup(mode: TestMode, sessionFile?: string) {
+		const mock = createMockPi();
+		mock.pi.getAllTools = () => [{ name: "read" }, { name: "lookup_symbols" }, { name: "secret_tool" }, { name: "plan_approve" }];
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = mode;
+		state.cachedConfigs[`${mode}:default`] = { body: "", builtinToolNames: ["read"], extensionToolNames: ["lookup_*"], extensions: true };
+		registerModeHooks(mock.pi as never, state);
+		const ctx = sessionFile ? { sessionManager: { getSessionFile: () => sessionFile } } : {};
+		return async (toolName: string, parentToolCallId?: string) => (await mock.fire(
+			"tool_call",
+			{ type: "tool_call", toolCallId: parentToolCallId ? `${parentToolCallId}/1` : "call-1", parentToolCallId, toolName, input: {} },
+			ctx,
+		))[0];
+	}
+
+	it("blocks nested calls the policy does not reach and leaves top-level calls unchanged", async () => {
+		const call = setup("kuafu");
+		await expect(call("secret_tool", "parent")).resolves.toMatchObject({ block: true });
+		await expect(call("plan_approve", "parent")).resolves.toMatchObject({ block: true });
+		await expect(call("lookup_symbols", "parent")).resolves.toBeUndefined();
+		await expect(call("secret_tool")).resolves.toBeUndefined();
+	});
+
+	it("reaches Fu Xi-only plan tools from nested calls only in fuxi", async () => {
+		const call = setup("fuxi");
+		await expect(call("plan_approve", "parent")).resolves.toBeUndefined();
+		await expect(call("secret_tool", "parent")).resolves.toMatchObject({ block: true });
+	});
+
+	it("leaves subagent sessions' nested calls to their own frontmatter scope", async () => {
+		const call = setup("kuafu", "/tmp/subagent-sessions/child.jsonl");
+		await expect(call("secret_tool", "parent")).resolves.toBeUndefined();
+	});
+});

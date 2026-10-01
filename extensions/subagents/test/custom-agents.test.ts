@@ -191,7 +191,7 @@ No tools.`);
     expect(result.get("notool")!.builtinToolNames).toEqual([]);
   });
 
-  it("keeps only canonical names from builtin_tools (unknown names dropped)", () => {
+  it("keeps unknown builtin_tools names for the runtime diagnostic", () => {
     writeAgent("custom-tools", `---
 builtin_tools: read, my_custom_tool, grep
 ---
@@ -199,8 +199,8 @@ builtin_tools: read, my_custom_tool, grep
 Custom tools.`);
 
     const result = loadCustomAgents(tmpDir);
-    // Non-canonical built-in names are filtered by the shared schema.
-    expect(result.get("custom-tools")!.builtinToolNames).toEqual(["read", "grep"]);
+    // Unknown names survive parsing; runAgent reports them and policy never grants them.
+    expect(result.get("custom-tools")!.builtinToolNames).toEqual(["read", "my_custom_tool", "grep"]);
   });
 
   it("handles extensions: false → no extensions", () => {
