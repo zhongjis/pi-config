@@ -181,8 +181,8 @@ export class ModeStateManager {
 	async applyModelFromConfig(config: ModeConfig, ctx: ExtensionContext, resetFast = false): Promise<void> {
 		const modelSpec = this.modelOverride ?? config.model;
 		const resolved = modelSpec ? resolveFirstAvailable(parseModelChain(modelSpec), ctx.modelRegistry) : undefined;
-		const previous = readFastPolicy(ctx.sessionManager?.getBranch?.() ?? []);
-		const initializeFast = resetFast || !previous || previous.mode !== this.currentMode;
+		const previous = readFastPolicy(ctx.sessionManager?.getBranch?.() ?? [], ctx.sessionManager?.getEntries?.());
+		const initializeFast = resetFast || !previous || (previous.source === "mode" && previous.mode !== this.currentMode);
 		if (!resolved) {
 			if (initializeFast) this.persistFastDefault(ctx, false);
 			return;

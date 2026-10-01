@@ -42,7 +42,7 @@ export default function myExtension(pi: ExtensionAPI) {
 - Profiles exactly cover OAuth Codex and local-API-key CLIProxyAPI (`cliproxyapi` / `openai-responses`) `gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-6.1-sol` [1] [2], and Anthropic `claude-opus-4-8`, `claude-opus-5` [4]. No aliases, wildcards, internal `codex-auto-review`, or other provider expansion. Runtime policy belongs to [modes](../modes/AGENTS.md) and [subagents](../subagents/AGENTS.md).
 - CLIProxyAPI's core translator preserves `service_tier: "priority"` (and normalizes `"fast"` to `"priority"`); proxy forwarding does not guarantee upstream scheduling. [2] [3]
 - `assertFastSupported` validates the selected explicit-on candidate before application. Strict transforms assume that validation and bypass later OAuth eligibility drift; they never silently downgrade. Provider/API/model recipes remain unchanged.
-- `readFastPolicy` reads typed `fast-policy` custom entries from a supplied session branch: `{ version: 1, mode, source: "mode" | "user", enabled }`. It stores no state. Empty mode names denote standalone interactive `/fast`.
+- `readFastPolicy(branch, entries)` resolves typed `fast-policy` custom entries: `{ version: 1, mode, source: "mode" | "user", enabled }`. The latest user entry in full session `entries` wins, including off; without one, the latest mode default in `branch` applies. The second argument defaults to `branch`. It stores no state. Empty mode names denote standalone interactive `/fast`.
 
 Sources:
 - [1] [Official Codex model catalog](https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json)

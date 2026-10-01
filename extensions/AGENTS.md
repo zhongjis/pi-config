@@ -16,6 +16,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - You MUST preserve behavior across localized refactors and extension boundaries.
 - You MUST follow [event/RPC conventions](CONVENTIONS.md) for channel names, envelopes, and listener cleanup.
 - [Fast](fast/README.md) owns interactive command/status telemetry; [lib](lib/README.md#fast-request-helpers), [modes](modes/AGENTS.md), and [subagents](subagents/AGENTS.md) own recipes and policy contracts.
+- Explicit `/fast` is session-wide: the latest user `fast-policy` entry, including off, survives history navigation, compaction, reload, and reopening the same session. Unsupported models leave it saved but inactive; mode/model/fallback defaults MUST NOT override it. New sessions use configured defaults.
 - Vendored changes MUST preserve provenance and LICENSE; local deltas belong with the owning extension's documentation.
 - Extension docs MUST follow the [README standard](../docs/specs/extensions.md): current state only, linking to registration code instead of copying inventories. `## Local Tweaks` sections list current upstream divergences, not change history.
 - `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display.

@@ -21,14 +21,14 @@ function setup() {
 	} as unknown as ExtensionAPI;
 	const ctx = {
 		model, modelRegistry: { getAvailable: () => [model], find: () => model, isUsingOAuth: () => false },
-		sessionManager: { getBranch: () => entries, getSessionId: () => "test" }, ui: { setStatus: vi.fn() },
+		sessionManager: { getBranch: () => entries, getEntries: () => entries, getSessionId: () => "test" }, ui: { setStatus: vi.fn() },
 	} as unknown as ExtensionContext;
 	const state = new ModeStateManager(pi);
 	vi.spyOn(state, "loadConfig").mockImplementation((mode: Mode) => configs[mode] ?? { body: "" });
 	return { state, ctx, entries, configs, pi };
 }
 
-it("mode defaults initialize once, user off survives repeated prompts and reload, actual same-model transitions reset", async () => {
+it("user off survives repeated prompts, reload and same-model mode transitions", async () => {
 	const { state, ctx, entries, pi } = setup();
 	await state.applyMode(ctx);
 	expect(readFastPolicy(entries)).toMatchObject({ mode: "kuafu", source: "mode", enabled: true });
@@ -40,9 +40,9 @@ it("mode defaults initialize once, user off survives repeated prompts and reload
 	await restored.applyModelFromConfig(state.loadConfig("kuafu"), ctx);
 	expect(readFastPolicy(entries)).toMatchObject({ source: "user", enabled: false });
 	await state.switchMode("houtu", ctx);
-	expect(readFastPolicy(entries)).toMatchObject({ mode: "houtu", source: "mode", enabled: false });
+	expect(readFastPolicy(entries)).toMatchObject({ source: "user", enabled: false });
 	await state.switchMode("kuafu", ctx);
-	expect(readFastPolicy(entries)).toMatchObject({ mode: "kuafu", source: "mode", enabled: true });
+	expect(readFastPolicy(entries)).toMatchObject({ source: "user", enabled: false });
 	expect(pi.setModel).not.toHaveBeenCalled();
 });
 
@@ -58,4 +58,30 @@ it("unsupported selected fast fails without fallback or corrupting current mode/
 	expect(entries).toHaveLength(before);
 	expect(pi.setModel).not.toHaveBeenCalled();
 	expect(pi.setActiveTools).not.toHaveBeenCalled();
+});
+
+it("without a user preference same-model transitions reset to each mode default", async () => {
+	const { state, ctx, entries } = setup();
+	await state.applyMode(ctx);
+	expect(readFastPolicy(entries)).toMatchObject({ mode: "kuafu", source: "mode", enabled: true });
+	await state.switchMode("houtu", ctx);
+	expect(readFastPolicy(entries)).toMatchObject({ mode: "houtu", source: "mode", enabled: false });
+	await state.switchMode("kuafu", ctx);
+	expect(readFastPolicy(entries)).toMatchObject({ mode: "kuafu", source: "mode", enabled: true });
+});
+
+it.each([false, true])("explicit %s survives model override/reset and runtime fallback defaults", async (enabled: boolean) => {
+	const { state, ctx, entries, pi } = setup();
+	await state.applyMode(ctx);
+	pi.appendEntry("fast-policy", { version: 1, mode: "kuafu", source: "user", enabled });
+	state.modelOverride = "anthropic/claude-opus-4-8";
+	await state.applyModelFromConfig(state.loadConfig("kuafu"), ctx, true);
+	expect(readFastPolicy(entries)).toMatchObject({ source: "user", enabled });
+	state.modelOverride = undefined;
+	await state.applyModelFromConfig(state.loadConfig("kuafu"), ctx, true);
+	expect(readFastPolicy(entries)).toMatchObject({ source: "user", enabled });
+	const model = ctx.model;
+	if (!model) throw new Error("Missing test model");
+	state.applyRuntimeModel({ model, fast: !enabled }, ctx);
+	expect(readFastPolicy(entries)).toMatchObject({ source: "user", enabled });
 });

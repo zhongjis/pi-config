@@ -1,4 +1,4 @@
-import { assertFastSupported, getFastEligibility, getFastProfile, transformFastHeaders, transformFastPayload } from "../fast.js";
+import { assertFastSupported, getFastEligibility, getFastProfile, readFastPolicy, transformFastHeaders, transformFastPayload } from "../fast.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import fastExtension from "../../fast/index.js";
@@ -18,7 +18,7 @@ function baseline(model: typeof codex & { headers?: Record<string, string> }, us
 	const ctx = {
 		model, modelRegistry: { isUsingOAuth: () => usingOAuth },
 		ui,
-		sessionManager: { getBranch: () => entries }, hasUI,
+		sessionManager: { getBranch: () => entries, getEntries: () => entries }, hasUI,
 	};
 	const command = registerCommand.mock.calls[0][1];
 	const request = on.mock.calls.find(([name]) => name === "before_provider_request")?.[1];
@@ -164,4 +164,14 @@ it("validated strict policy preserves fast metadata after OAuth eligibility drif
 it("masks every observed beta casing including empty removal without touching the model headers", () => {
 	const headers = Object.freeze({ "Anthropic-Beta": beta, "ANTHROPIC-BETA": beta });
 	expect(transformFastHeaders(headers, anthropic, { enabled: false, usingOAuth: true, strict: true })).toEqual({ "Anthropic-Beta": "", "ANTHROPIC-BETA": "", "anthropic-beta": "" });
+});
+
+it("session-wide latest user preference wins over branch defaults, including off", () => {
+	const entry = (source: "mode" | "user", enabled: boolean) => ({ customType: "fast-policy", data: { version: 1, mode: "kuafu", source, enabled } });
+	const branch = [entry("mode", true)];
+	const session = [...branch, entry("user", true), entry("mode", false), entry("user", false), entry("mode", true)];
+	expect(readFastPolicy(branch, session)).toMatchObject({ source: "user", enabled: false });
+	expect(readFastPolicy([], session)).toMatchObject({ source: "user", enabled: false });
+	expect(readFastPolicy(branch, [entry("mode", false)])).toMatchObject({ source: "mode", enabled: true });
+	expect(readFastPolicy([], [entry("mode", true)])).toBeUndefined();
 });

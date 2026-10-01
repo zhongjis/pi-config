@@ -10,7 +10,7 @@ import { createFastSession } from "./helpers/fast-session.js";
 
 const beta = "fast-mode-2026-02-01";
 
-it("real mode hooks: default fast, /fast off across prompts/reload, same-model transition resets and headers never mutate", async () => {
+it("real mode hooks: user off survives prompts/reload and same-model transitions; headers never mutate", async () => {
 	const modes: ExtensionFactory = (pi) => {
 		const state = new ModeStateManager(pi);
 		vi.spyOn(state, "loadConfig").mockImplementation((mode) => ({ body: "Test mode", model: `anthropic/claude-opus-4-8${mode === "kuafu" ? ":fast" : ""}` }));
@@ -38,8 +38,8 @@ it("real mode hooks: default fast, /fast off across prompts/reload, same-model t
 		await t.session.prompt("houtu off");
 		expect(t.requests.at(-1)?.payload.speed).toBeUndefined();
 		await t.session.prompt("/mode kuafu");
-		await t.session.prompt("reset on");
-		expect(t.requests.at(-1)?.payload.speed).toBe("fast");
+		await t.session.prompt("still off in kuafu");
+		expect(t.requests.at(-1)?.payload.speed).toBeUndefined();
 		for (const request of t.requests) {
 			const tokens = request.headers.get("anthropic-beta")?.split(",").map((part) => part.trim()) ?? [];
 			expect(tokens.includes(beta)).toBe(request.payload.speed === "fast");
@@ -66,6 +66,9 @@ it("real /fast retains inactive unsupported-model behavior and invalid-argument 
 		expect(t.requests).toHaveLength(0);
 		await t.session.prompt("inactive");
 		expect(t.requests[0].payload.speed).toBeUndefined();
+		await t.session.setModel(t.model);
+		await t.session.prompt("supported again");
+		expect(t.requests.at(-1)?.payload.speed).toBe("fast");
 	} finally { t.dispose(); }
 });
 
@@ -128,4 +131,77 @@ it("real CLIProxyAPI openai-responses transport sends priority only after /fast 
 		expect(t.requests.at(-1)?.payload.service_tier).toBe("priority");
 		expect(t.session.messages.at(-1)).toMatchObject({ role: "assistant", api: "openai-responses", provider: "cliproxyapi", stopReason: "stop" });
 	} finally { t.dispose(); }
+});
+
+it.each([false, true])("real branch bypass, backwards navigation and native file reopen retain explicit %s", async (enabled) => {
+	const modes: ExtensionFactory = (pi) => {
+		const state = new ModeStateManager(pi);
+		vi.spyOn(state, "loadConfig").mockReturnValue({ body: "Test mode", model: "anthropic/claude-opus-4-8" });
+		registerModeHooks(pi, state);
+	};
+	const t = await createFastSession([fastExtension, modes], {}, true);
+	const status = vi.fn();
+	const assertActive = () => {
+		expect(t.requests.at(-1)?.payload.speed).toBe(enabled ? "fast" : undefined);
+		expect(t.requests.at(-1)?.headers.get("anthropic-beta")?.split(",").includes(beta) ?? false).toBe(enabled);
+		expect(status).toHaveBeenLastCalledWith("fast", enabled ? "fast" : undefined);
+	};
+	try {
+		await t.session.bindExtensions({ uiContext: { ...t.ctx.ui, setStatus: status } });
+		await t.session.prompt("initial default");
+		expect(t.requests.at(-1)?.payload.speed).toBeUndefined();
+		const beforeToggle = t.session.sessionManager.getLeafId();
+		if (!beforeToggle) throw new Error("Missing initial leaf");
+		await t.session.prompt("/fast");
+		if (!enabled) await t.session.prompt("/fast");
+		// Native history navigation bypasses the custom entries, but not the user's session preference.
+		expect((await t.session.navigateTree(beforeToggle, { summarize: false })).cancelled).toBe(false);
+		expect(readFastPolicy(t.session.sessionManager.getBranch())?.source).not.toBe("user");
+		await t.session.prompt("branch bypass");
+		assertActive();
+		await t.session.prompt("ordinary next request");
+		assertActive();
+		await t.session.navigateTree(beforeToggle, { summarize: false });
+		await t.session.prompt("backwards again");
+		assertActive();
+		await t.session.reload();
+		await t.session.prompt("after reload");
+		assertActive();
+		const firstKept = t.session.sessionManager.getBranch().find((entry) => entry.type === "message");
+		if (!firstKept) throw new Error("Missing message for native compaction entry");
+		t.session.sessionManager.appendCompaction("Compacted test history", firstKept.id, 1);
+		await t.session.prompt("after compaction entry");
+		assertActive();
+		t.session.settingsManager.setRetryEnabled(true);
+		const retries: string[] = [];
+		const unsubscribe = t.session.subscribe((event) => { if (event.type === "auto_retry_start") retries.push(event.type); });
+		t.fetchMock.mockImplementationOnce(async (_input, init) => {
+			t.requests.push({ payload: JSON.parse(String(init?.body)), headers: new Headers(init?.headers) });
+			return new Response('event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n', { headers: { "content-type": "text/event-stream" } });
+		});
+		const beforeRetry = t.requests.length;
+		await t.session.prompt("retry after overload");
+		unsubscribe();
+		expect(retries).toHaveLength(1);
+		expect(t.requests.slice(beforeRetry).map((request) => request.payload.speed)).toEqual([enabled ? "fast" : undefined, enabled ? "fast" : undefined]);
+		assertActive();
+		await t.reopen();
+		await t.session.bindExtensions({ uiContext: { ...t.ctx.ui, setStatus: status } });
+		await t.session.prompt("reopened persisted session");
+		assertActive();
+		expect(readFastPolicy(t.session.sessionManager.getBranch(), t.session.sessionManager.getEntries())).toMatchObject({ source: "user", enabled });
+		await t.session.navigateTree(beforeToggle, { summarize: false });
+		expect(readFastPolicy(t.session.sessionManager.getBranch())?.source).not.toBe("user");
+		await t.session.prompt("/fast");
+		await t.session.prompt("toggle session preference from earlier branch");
+		expect(readFastPolicy(t.session.sessionManager.getBranch(), t.session.sessionManager.getEntries())).toMatchObject({ source: "user", enabled: !enabled });
+		expect(t.requests.at(-1)?.payload.speed).toBe(enabled ? undefined : "fast");
+		expect(status).toHaveBeenLastCalledWith("fast", enabled ? undefined : "fast");
+	} finally { t.dispose(); }
+	const fresh = await createFastSession([fastExtension, modes]);
+	try {
+		await fresh.session.prompt("new session configured default");
+		expect(fresh.requests.at(-1)?.payload.speed).toBeUndefined();
+		expect(readFastPolicy(fresh.session.sessionManager.getBranch(), fresh.session.sessionManager.getEntries())).toMatchObject({ source: "mode", enabled: false });
+	} finally { fresh.dispose(); }
 });

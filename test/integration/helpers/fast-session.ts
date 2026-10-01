@@ -5,7 +5,7 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import { vi } from "vitest";
 
 /** Real Anthropic provider/SDK hooks; only the HTTP boundary is replaced. */
-export async function createFastSession(factories: ExtensionFactory[] = [], headers: Record<string, string> = {}) {
+export async function createFastSession(factories: ExtensionFactory[] = [], headers: Record<string, string> = {}, persist = false) {
 	const cwd = mkdtempSync(join(tmpdir(), "pi-fast-"));
 	const requests: { payload: Record<string, unknown>; headers: Headers }[] = [];
 	const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
@@ -39,10 +39,28 @@ export async function createFastSession(factories: ExtensionFactory[] = [], head
 			},
 		] });
 		await loader.reload();
-		const { session } = await createAgentSession({ cwd, agentDir: cwd, model, modelRuntime: runtime, settingsManager, resourceLoader: loader, sessionManager: SessionManager.inMemory(cwd), tools: [], thinkingLevel: "off" });
+		const create = (sessionManager: SessionManager) => createAgentSession({ cwd, agentDir: cwd, model, modelRuntime: runtime, settingsManager, resourceLoader: loader, sessionManager, tools: [], thinkingLevel: "off" });
+		let { session } = await create(persist ? SessionManager.create(cwd, join(cwd, "sessions")) : SessionManager.inMemory(cwd));
 		await session.bindExtensions({});
 		if (!ctx || !pi) { session.dispose(); throw new Error("Context/API was not captured"); }
-		return { session, ctx, pi, model, runtime, requests, cwd, fetchMock, dispose: () => { session.dispose(); vi.unstubAllGlobals(); rmSync(cwd, { recursive: true, force: true }); } };
+		return {
+			get session() { return session; },
+			get ctx() {
+				if (!ctx) throw new Error("Context/API was not captured");
+				return ctx;
+			},
+			pi, model, runtime, requests, cwd, fetchMock,
+			reopen: async () => {
+				const file = session.sessionManager.getSessionFile();
+				if (!file) throw new Error("Session is not persisted");
+				session.dispose();
+				ctx = undefined;
+				await loader.reload();
+				({ session } = await create(SessionManager.open(file)));
+				await session.bindExtensions({});
+			},
+			dispose: () => { session.dispose(); vi.unstubAllGlobals(); rmSync(cwd, { recursive: true, force: true }); },
+		};
 	} catch (error) {
 		vi.unstubAllGlobals();
 		rmSync(cwd, { recursive: true, force: true });

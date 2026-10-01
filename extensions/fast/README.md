@@ -30,7 +30,7 @@ Because the two upstream packages are merged into one local extension behind a p
 
 ## Settings / Configuration
 
-No config files. `fast-policy` custom entries persist the session's mode default or `/fast` override across reload and branch navigation. Standalone sessions default off. See [mode defaults](../modes/README.md#fast-defaults) for transition rules.
+No config files. `fast-policy` custom entries persist mode defaults and explicit `/fast` preferences. The latest explicit user setting in the full session wins, including off, across ordinary messages, retries, compaction, history navigation, reload, and reopening the same persisted session. Mode/model changes and runtime fallback defaults never override it. Without an explicit preference, the current branch's mode default applies; new sessions use configured defaults, or off standalone. See [mode defaults](../modes/README.md#fast-defaults).
 
 ## Behavior
 
@@ -42,7 +42,7 @@ Interactive `/fast` activation requires all conditions below (unsupported models
 - OpenAI Codex requires OAuth/subscription auth; CLIProxyAPI accepts Pi local API-key auth because the proxy handles downstream Codex auth.
 - The request payload does not already include the injected field.
 
-When enabled and eligible, the footer shows `fast` and outbound payloads receive the provider-specific field. When enabled but the active model is ineligible, no footer is shown and `/fast` reports why. For Anthropic OAuth models, the `anthropic-beta` header retains the required Claude Code OAuth beta values alongside `fast-mode-2026-02-01`.
+When enabled and eligible, the footer shows `fast` and outbound payloads receive the provider-specific field. When enabled but the active model is ineligible, no footer is shown and `/fast` reports why; the preference remains saved and reactivates on a supported model. For Anthropic OAuth models, the `anthropic-beta` header retains the required Claude Code OAuth beta values alongside `fast-mode-2026-02-01`.
 
 CLIProxyAPI's verified core translator preserves `service_tier: "priority"` (and normalizes `"fast"` to `"priority"`), but it may only forward that tier: upstream scheduling is not guaranteed. [2] [3]
 

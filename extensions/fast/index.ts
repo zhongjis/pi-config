@@ -13,7 +13,7 @@ export default function fastExtension(pi: ExtensionAPI) {
 	let activeCtx: ExtensionContext | undefined;
 
 	function policy(ctx: ExtensionContext) {
-		const entry = readFastPolicy(ctx.sessionManager.getBranch());
+		const entry = readFastPolicy(ctx.sessionManager.getBranch(), ctx.sessionManager.getEntries());
 		return {
 			enabled: entry?.enabled ?? false,
 			usingOAuth: !!ctx.model && ctx.modelRegistry.isUsingOAuth(ctx.model),
@@ -77,7 +77,7 @@ export default function fastExtension(pi: ExtensionAPI) {
 		getArgumentCompletions: () => null,
 		handler: async (args, ctx) => {
 			if (args.trim()) { ctx.ui.notify("Usage: /fast", "warning"); return; }
-			const entry = readFastPolicy(ctx.sessionManager.getBranch());
+			const entry = readFastPolicy(ctx.sessionManager.getBranch(), ctx.sessionManager.getEntries());
 			pi.appendEntry<FastPolicyEntry>("fast-policy", { version: 1, mode: entry?.mode ?? "", source: "user", enabled: !entry?.enabled });
 			updateStatus(ctx);
 			ctx.ui.notify(getStatusMessage(ctx, getState(ctx)), "info");

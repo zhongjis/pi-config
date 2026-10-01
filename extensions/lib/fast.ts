@@ -116,14 +116,16 @@ export interface FastPolicyEntry {
 	enabled: boolean;
 }
 
-/** Read only the current branch; extensions retain lifecycle ownership. */
-export function readFastPolicy(entries: readonly unknown[]): FastPolicyEntry | undefined {
-	for (let i = entries.length - 1; i >= 0; i--) {
-		const entry = entries[i];
-		if (typeof entry !== "object" || entry === null || !("customType" in entry) || entry.customType !== "fast-policy" || !("data" in entry)) continue;
-		const data = entry.data;
-		if (typeof data === "object" && data !== null && "version" in data && data.version === 1 && "mode" in data && typeof data.mode === "string" && "source" in data && (data.source === "mode" || data.source === "user") && "enabled" in data && typeof data.enabled === "boolean") {
-			return { version: 1, mode: data.mode, source: data.source, enabled: data.enabled };
+/** Latest session-wide user preference wins; otherwise use the current branch's mode default. */
+export function readFastPolicy(branch: readonly unknown[], entries: readonly unknown[] = branch): FastPolicyEntry | undefined {
+	for (const [source, candidates] of [["user", entries], ["mode", branch]] as const) {
+		for (let i = candidates.length - 1; i >= 0; i--) {
+			const entry = candidates[i];
+			if (typeof entry !== "object" || entry === null || !("customType" in entry) || entry.customType !== "fast-policy" || !("data" in entry)) continue;
+			const data = entry.data;
+			if (typeof data === "object" && data !== null && "version" in data && data.version === 1 && "mode" in data && typeof data.mode === "string" && "source" in data && data.source === source && "enabled" in data && typeof data.enabled === "boolean") {
+				return { version: 1, mode: data.mode, source, enabled: data.enabled };
+			}
 		}
 	}
 	return undefined;
