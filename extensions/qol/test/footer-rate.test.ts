@@ -196,22 +196,37 @@ describe("qol footer generation TPS", () => {
     ["non-finite duration", assistant(100), Number.POSITIVE_INFINITY],
     ["negative duration", assistant(100), -1],
     ["overflow rate", assistant(Number.MAX_VALUE), 250],
-  ])("hides the rate after a %s completion", async (name, message, elapsed) => {
-    const { emit, update, footer } = createHarness();
-    await emit("session_start");
-    now = 0;
-    await update();
-    now = 1_000;
-    await emit("message_end", { message: assistant(100) });
-    expect(footer()).toContain("100 tok/s");
+  ])("retains the last valid rate, if any, after a %s completion and recovers", async (name, message, elapsed) => {
+    for (const measured of [false, true]) {
+      const { emit, update, footer } = createHarness();
+      await emit("session_start");
+      now = 0;
+      if (measured) {
+        await update();
+        now = 1_000;
+        await emit("message_end", { message: assistant(100) });
+        expect(footer()).toContain("100 tok/s");
+      }
 
-    now = 2_000;
-    await emit("turn_start");
-    await emit("before_provider_request");
-    if (name !== "missing generation start") await update();
-    now += elapsed;
-    await emit("message_end", { message });
-    expect(footer()).not.toContain("tok/s");
+      now = 2_000;
+      await emit("turn_start");
+      await emit("before_provider_request");
+      if (name !== "missing generation start") await update();
+      now += elapsed;
+      await emit("message_end", { message });
+      if (measured) expect(footer()).toContain("100 tok/s");
+      else expect(footer()).not.toContain("tok/s");
+
+      now = 4_000;
+      await emit("message_end", { message: assistant(50) });
+      if (measured) expect(footer()).toContain("100 tok/s");
+      else expect(footer()).not.toContain("tok/s");
+
+      await update();
+      now = 5_000;
+      await emit("message_end", { message: assistant(50) });
+      expect(footer()).toContain("50.0 tok/s");
+    }
   });
 
   it("ignores non-assistant boundaries and updates and consumes timing only once", async () => {
@@ -228,7 +243,7 @@ describe("qol footer generation TPS", () => {
     expect(footer()).toContain("100 tok/s");
     now = 3_000;
     await emit("message_end", { message: assistant(100) });
-    expect(footer()).not.toContain("tok/s");
+    expect(footer()).toContain("100 tok/s");
   });
 
   it("ignores non-finite start times", async () => {

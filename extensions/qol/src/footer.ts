@@ -501,12 +501,11 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
       !Number.isFinite(durationMs) ||
       durationMs < 250
     ) {
-      lastGenerationTps = null;
       return;
     }
 
     const rate = output / (durationMs / 1000);
-    lastGenerationTps = Number.isFinite(rate) ? rate : null;
+    if (Number.isFinite(rate)) lastGenerationTps = rate;
   });
 
   pi.on("session_start", async (_event, ctx) => {
