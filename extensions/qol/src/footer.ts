@@ -10,7 +10,7 @@ const ANSI_ESCAPE_REGEX = /\u001B\[[0-9;]*m/g;
 // Status keys to hide from the status line entirely.
 // - thinking-steps: duplicates thinking level already shown in the stats-line model segment
 // - caveman: noise; user opts in via /caveman
-const HIDDEN_STATUS_KEYS = new Set(["thinking-steps", "caveman"]);
+const HIDDEN_STATUS_KEYS = new Set(["thinking-steps", "caveman", "fast"]);
 
 // Leading decorative glyphs to strip from status text.
 const LEADING_GLYPH_REGEX = /^[\u25CF\u25CB\u2022\u2023\u2219\u26AB\u26AA\u25A0\u25A1\u25AA\u25AB\u2B24]\s*/;
@@ -219,13 +219,15 @@ function getModelSegment(
   ctx: Pick<ExtensionContext, "model">,
   thinkingLevel: ReturnType<ExtensionAPI["getThinkingLevel"]>,
   multiProvider: boolean,
+  fast: boolean,
   theme: ExtensionContext["ui"]["theme"],
 ): string {
   const model = theme.fg("muted", ctx.model?.id ?? "no-model");
   const name = multiProvider && ctx.model ? `${theme.fg("dim", `(${ctx.model.provider})`)} ${model}` : model;
-  if (!ctx.model?.reasoning) return name;
   // Same hue Pi uses for the editor border at this thinking level.
-  return `${name}${theme.fg("dim", " · ")}${theme.getThinkingBorderColor(thinkingLevel)(thinkingLevel)}`;
+  const effort = ctx.model?.reasoning ? theme.getThinkingBorderColor(thinkingLevel)(thinkingLevel) : "";
+  const mode = effort + (fast ? theme.fg("dim", effort ? ":fast" : "fast") : "");
+  return mode ? `${name}${theme.fg("dim", " · ")}${mode}` : name;
 }
 
 // Labeled token row: "in 10 · out 2.7k · cache 92%"
@@ -350,8 +352,9 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           statsSegments.push(getContextSegment(ctx, theme));
           priorities.push(4);
 
+          const statuses = footerData.getExtensionStatuses();
           const multiProvider = footerData.getAvailableProviderCount() > 1;
-          statsSegments.push(getModelSegment(ctx, pi.getThinkingLevel(), multiProvider, theme));
+          statsSegments.push(getModelSegment(ctx, pi.getThinkingLevel(), multiProvider, statuses.get("fast") === "fast", theme));
           priorities.push(3);
 
           const tps = lastGenerationTps;
@@ -393,7 +396,7 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           }
 
           // Status line: extension statuses, with hidden keys filtered out.
-          const statusEntries = Array.from(footerData.getExtensionStatuses().entries())
+          const statusEntries = Array.from(statuses.entries())
             .filter(([key]) => !HIDDEN_STATUS_KEYS.has(key))
             .sort(([a], [b]) => a.localeCompare(b));
 
