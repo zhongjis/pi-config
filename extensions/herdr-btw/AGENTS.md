@@ -29,6 +29,7 @@ Current divergences from upstream; re-apply each on upstream sync:
 
 - **Patched:** `index.ts`, `src/config.ts`, and `src/core.ts` add a `closeOnExit` config flag (default `false`)
   that auto-closes the child pane on quit, and set `PAYLOAD_VERSION` to 5 for that config field.
+- **Patched:** `index.ts` runs the child-side quit cleanup (payload removal, pane close) only in TUI sessions, so UI-less subagent children of a side-thread process leave the pane and payload alone.
 - **Vendored verbatim:** `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, `LICENSE`.
 - **Kept with changes:** `tsconfig.json`, with the `test/**` include removed.
 - **Not vendored:** `package.json`, `package-lock.json`, `.gitignore`, and the upstream `test/` suite

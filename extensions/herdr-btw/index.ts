@@ -333,12 +333,14 @@ async function configureChild(
 		}
 	});
 
-	pi.on("session_shutdown", async (event) => {
+	pi.on("session_shutdown", async (event, ctx) => {
 		if (ackTimer) {
 			clearInterval(ackTimer);
 			ackTimer = undefined;
 		}
-		if (event.reason === "quit") {
+		// Subagent children in the side-pane process inherit its payload env; only
+		// the TUI side thread owns the payload and pane (mirrors session_start).
+		if (event.reason === "quit" && ctx.mode === "tui") {
 			// Acknowledgement-aware cleanup: an unacknowledged merge outlives the
 			// child (until ack or the stale TTL), so the parent can still import it.
 			await store.removeIfNoPendingMerge(payloadPath).catch(() => undefined);

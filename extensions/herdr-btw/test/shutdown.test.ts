@@ -71,7 +71,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		const mod = await import("../index.ts");
 		await mod.default(mock.pi as never, { store });
 
-		await mock.fireLifecycle("session_shutdown", { reason: "quit" });
+		await mock.fireLifecycle("session_shutdown", { reason: "quit" }, { mode: "tui" });
 
 		expect(exec).toHaveBeenCalledWith("herdr", ["agent", "focus", "%pane-parent"], expect.objectContaining({ timeout: 5_000 }));
 		expect(exec).toHaveBeenCalledWith("herdr", ["pane", "close", "%pane-child"], expect.objectContaining({ timeout: 5_000 }));
@@ -93,7 +93,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		const mod = await import("../index.ts");
 		await mod.default(mock.pi as never, { store });
 
-		await mock.fireLifecycle("session_shutdown", { reason: "quit" });
+		await mock.fireLifecycle("session_shutdown", { reason: "quit" }, { mode: "tui" });
 
 		const closeCalls = exec.mock.calls.filter(
 			(call) => Array.isArray(call[1]) && call[1].includes("close"),
@@ -117,11 +117,34 @@ describe("child pane auto-close on session_shutdown", () => {
 		const mod = await import("../index.ts");
 		await mod.default(mock.pi as never, { store });
 
-		await mock.fireLifecycle("session_shutdown", { reason: "reload" });
+		await mock.fireLifecycle("session_shutdown", { reason: "reload" }, { mode: "tui" });
 
 		const closeCalls = exec.mock.calls.filter(
 			(call) => Array.isArray(call[1]) && call[1].includes("close"),
 		);
 		expect(closeCalls).toHaveLength(0);
+	});
+
+	it("does NOT close the pane or remove the payload when a UI-less subagent child quits", async () => {
+		const store = new ContextStore(tempDir);
+		const payload = createPayload(makePayloadOptions(true, "%pane-parent"));
+		const payloadPath = await store.create(payload);
+
+		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
+		process.env.HERDR_PANE_ID = "%pane-child";
+
+		vi.resetModules();
+		const mock = createMockPi();
+		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		(mock.pi as unknown as Record<string, unknown>).exec = exec;
+		const remove = vi.spyOn(store, "removeIfNoPendingMerge");
+
+		const mod = await import("../index.ts");
+		await mod.default(mock.pi as never, { store });
+
+		await mock.fireLifecycle("session_shutdown", { reason: "quit" }, { mode: "print" });
+
+		expect(exec).not.toHaveBeenCalled();
+		expect(remove).not.toHaveBeenCalled();
 	});
 });
