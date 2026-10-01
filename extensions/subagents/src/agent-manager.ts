@@ -119,6 +119,30 @@ function getParentSessionId(ctx: ExtensionContext): string | undefined {
   return typeof sm?.getSessionId === "function" ? sm.getSessionId() : undefined;
 }
 
+const childSessionShutdowns = new WeakMap<AgentSession, Promise<void>>();
+
+/**
+ * Dispose a child session like Pi's `AgentSessionRuntime.dispose()`: emit
+ * `session_shutdown` (reason "quit") at most once, then dispose even when a
+ * handler fails. Sessions without shutdown handlers dispose synchronously.
+ */
+export function disposeChildSession(session: AgentSession): Promise<void> {
+  const pending = childSessionShutdowns.get(session);
+  if (pending) return pending;
+  let shutdown: Promise<unknown> | undefined;
+  try {
+    const runner = session.extensionRunner;
+    if (runner?.hasHandlers("session_shutdown")) shutdown = runner.emit({ type: "session_shutdown", reason: "quit" });
+  } catch {
+    // A stale or partial runner must not prevent disposal.
+  }
+  const done = shutdown
+    ? shutdown.catch(() => undefined).then(() => session.dispose?.())
+    : Promise.resolve(session.dispose?.());
+  childSessionShutdowns.set(session, done);
+  return done;
+}
+
 export class AgentManager {
   private agents = new Map<string, AgentRecord>();
   private lifetimeCost = 0;
@@ -442,7 +466,7 @@ export class AgentManager {
     const run = this.runs.get(id);
     if (!run) return;
     this.runs.delete(id);
-    if (this.disposed) { record.outputCleanup?.(); record.session?.dispose(); }
+    if (this.disposed) { record.outputCleanup?.(); if (record.session) void disposeChildSession(record.session); }
     run.detach();
     if (run.active) {
       if (run.pool === "background") this.runningBackground--;
@@ -648,7 +672,7 @@ export class AgentManager {
   private removeRecord(id: string, record: AgentRecord): void {
     record.outputCleanup?.();
     record.outputCleanup = undefined;
-    record.session?.dispose?.();
+    if (record.session) void disposeChildSession(record.session);
     record.session = undefined;
     this.agents.delete(id);
   }
@@ -718,13 +742,16 @@ export class AgentManager {
     }
   }
 
-  dispose() {
+  /** Settles after every child session's `session_shutdown` handlers finish and it is disposed. */
+  dispose(): Promise<void> {
     clearInterval(this.cleanupInterval);
     this.disposed = true;
     this.abortAll();
+    const shutdowns: Promise<void>[] = [];
     for (const record of this.agents.values()) {
-      record.session?.dispose();
+      if (record.session) shutdowns.push(disposeChildSession(record.session));
     }
     this.agents.clear();
+    return Promise.all(shutdowns).then(() => undefined);
   }
 }

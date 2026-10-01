@@ -388,6 +388,22 @@ describe("AgentManager — Bug 3 clearCompleted", () => {
     expect(disposeSpy).toHaveBeenCalledOnce();
   });
 
+  it("emits child session_shutdown once and disposes after handlers on manager dispose", async () => {
+    manager = new AgentManager();
+    const order: string[] = [];
+    const emit = vi.fn(async (event: { type: string; reason: string }) => { order.push(`${event.type}:${event.reason}`); });
+    const sess = { dispose: vi.fn(() => order.push("dispose")), extensionRunner: { hasHandlers: () => true, emit } };
+    vi.mocked(runAgent).mockResolvedValue({ responseText: "done", session: sess as any, aborted: false, steered: false });
+
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", { description: "test", isBackground: true });
+    await manager.getRecord(id)!.promise;
+    await manager.dispose();
+    manager.clearCompleted();
+
+    expect(emit).toHaveBeenCalledOnce();
+    expect(order).toEqual(["session_shutdown:quit", "dispose"]);
+  });
+
   it("clearCompleted removes error and stopped records", async () => {
     manager = new AgentManager();
     vi.mocked(runAgent).mockRejectedValue(new Error("boom"));

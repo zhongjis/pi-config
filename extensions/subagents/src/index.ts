@@ -382,7 +382,7 @@ export default function (pi: ExtensionAPI) {
       notifications.clearPending();
       fleet.dispose();
       widget.dispose();
-      manager.dispose();
+      await manager.dispose();
       return;
     }
     agentHistory?.disableCapture();
@@ -408,7 +408,7 @@ export default function (pi: ExtensionAPI) {
     manager.abortAll();
     notifications.clearPending();
     fleet.dispose();
-    manager.dispose();
+    await manager.dispose();
   });
 
   // Live widget: show running agents above editor.

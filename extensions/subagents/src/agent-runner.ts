@@ -468,6 +468,12 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   const inheritContextFiles = !options.isolated && agentConfig?.promptMode === "system_instructions";
 
   const agentDir = getAgentDir();
+  // One settings manager for the loader and the session, created with the
+  // parent's project-trust decision so an untrusted parent's child never loads
+  // project settings or resources. Partial SDK/test contexts keep Pi's default.
+  const settingsManager = typeof ctx.isProjectTrusted === "function"
+    ? SettingsManager.create(configCwd, agentDir, { projectTrusted: ctx.isProjectTrusted() })
+    : SettingsManager.create(configCwd, agentDir);
 
   // Extension loading:
   // - true  → all default-discovered extensions
@@ -540,6 +546,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   const loader = new DefaultResourceLoader({
     cwd: configCwd,
     agentDir,
+    settingsManager,
     noExtensions,
     additionalExtensionPaths,
     extensionsOverride,
@@ -699,7 +706,6 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     sessionExcludeTools = [...denyTools];
   }
 
-  const settingsManager = SettingsManager.create(configCwd, agentDir);
   const configuredSessionDir = resolveConfiguredSessionDir(agentConfig?.sessionDir, effectiveCwd);
   const defaultSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR ?? settingsManager.getSessionDir?.();
   const subagentSessionsDir = options.parentSessionId
