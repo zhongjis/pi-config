@@ -4,7 +4,7 @@
     "summary.session": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
     "commit": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
     "guard.tool": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
-    "vision.inspect": "github-copilot/gpt-6-sol:low,anthropic/claude-sonnet-5:medium,cliproxyapi/gpt-6-sol:low,openai-codex/gpt-6-sol:low"
+    "vision.inspect": "github-copilot/gpt-6.1-sol:low,anthropic/claude-sonnet-5:medium,cliproxyapi/gpt-6.1-sol:low,openai-codex/gpt-6.1-sol:low"
   },
   "tools": {
     "smart-sessions.summary": { "role": "summary.session" },
