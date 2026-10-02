@@ -85,3 +85,18 @@ it.each([false, true])("explicit %s survives model override/reset and runtime fa
 	state.applyRuntimeModel({ model, fast: !enabled }, ctx);
 	expect(readFastPolicy(entries)).toMatchObject({ source: "user", enabled });
 });
+
+it.each([false, true])("reload replaces a stale same-ID API and retains native CLIProxyAPI Fast (saved policy: %s)", async (savedPolicy: boolean) => {
+	const { state, ctx, entries, pi } = setup();
+	if (!ctx.model) throw new Error("Missing test model");
+	const native = { ...ctx.model, provider: "cliproxyapi", id: "gpt-6.1-sol", api: "openai-codex-responses" };
+	const stale = { ...native, api: "openai-responses" };
+	vi.spyOn(ctx.modelRegistry, "find").mockReturnValue(native);
+	vi.spyOn(ctx.modelRegistry, "getAvailable").mockReturnValue([native]);
+	if (savedPolicy) pi.appendEntry("fast-policy", { version: 1, mode: "kuafu", source: "mode", enabled: true });
+
+	await state.applyModelFromConfig({ body: "", model: "cliproxyapi/gpt-6.1-sol:fast" }, { ...ctx, model: stale });
+
+	expect(pi.setModel).toHaveBeenCalledExactlyOnceWith(native);
+	expect(readFastPolicy(entries)).toMatchObject({ mode: "kuafu", source: "mode", enabled: true });
+});

@@ -18,6 +18,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 - Replacement MUST strip prior mode bodies; append mode stacks them.
 - `system_instructions` prompt mode is coerced to replacement here.
 - Session model and effort (thinking-level) overrides MUST NOT rewrite mode frontmatter; they are captured from `/mode-model` and manual mid-session model/effort picks, persist with mode state, and clear via `/mode-model --reset`.
+- Model reapplication MUST compare provider, ID, and API; reload replaces same-ID models when the registry transport changes.
 - Runtime quota/rate-limit/access-denied fallback MUST use the override or active mode chain after native settlement, with the shared lib coordinator; no chain means no recovery. Apply the next candidate's thinking/Fast defaults without replaying the prompt.
 - The selected effective model candidate defaults Fast on only with terminal `:fast`; otherwise off. Validate explicit on before applying/committing mode changes; unsupported capability MUST NOT select a fallback.
 - Persist defaults/user overrides as `fast-policy` entries. Shared resolution gives the latest session-wide user setting precedence over current-branch mode defaults. Mode transitions (even same-model), model override/reset, and runtime fallback update defaults only; they MUST NOT override explicit `/fast`, including off. Emit `fast:policy-changed` only for session-scoped UI refresh; requests read durable policy.

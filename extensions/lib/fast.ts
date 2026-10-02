@@ -38,6 +38,11 @@ const PROFILES: readonly FastProfile[] = [
 		injectionKey: "service_tier", injectionValue: "priority", describeInjection: "service_tier=priority",
 	},
 	{
+		id: "cliproxyapi", provider: "cliproxyapi", api: "openai-codex-responses",
+		models: OPENAI_PRIORITY_MODELS, requireOAuth: false,
+		injectionKey: "service_tier", injectionValue: "priority", describeInjection: "service_tier=priority",
+	},
+	{
 		id: "claude", provider: "anthropic", api: "anthropic-messages",
 		models: ["claude-opus-4-8", "claude-opus-5"], requireOAuth: false,
 		injectionKey: "speed", injectionValue: "fast", describeInjection: "speed=fast",
@@ -53,7 +58,8 @@ export interface FastEligibility {
 }
 
 export function getFastProfile(model: FastModel | undefined): FastProfile | undefined {
-	return PROFILES.find((profile) => profile.provider === model?.provider);
+	return PROFILES.find((profile) => profile.provider === model?.provider && profile.api === model.api)
+		?? PROFILES.find((profile) => profile.provider === model?.provider);
 }
 
 export function getFastEligibility(model: FastModel | undefined, usingOAuth: boolean): FastEligibility {

@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import fastExtension from "../../fast/index.js";
 
 const codex = { provider: "openai-codex", api: "openai-codex-responses", id: getFastProfile({ provider: "openai-codex", api: "openai-codex-responses", id: "" })!.models[0] };
-const cliproxy = { provider: "cliproxyapi", api: "openai-responses", id: getFastProfile({ provider: "cliproxyapi", api: "openai-responses", id: "" })!.models[0] };
+const cliproxy = { provider: "cliproxyapi", api: "openai-codex-responses", id: getFastProfile({ provider: "cliproxyapi", api: "openai-codex-responses", id: "" })!.models[0] };
+const cliproxyResponses = { ...cliproxy, api: "openai-responses" };
 const anthropic = { provider: "anthropic", api: "anthropic-messages", id: getFastProfile({ provider: "anthropic", api: "anthropic-messages", id: "" })!.models[0] };
 const beta = "fast-mode-2026-02-01";
 
@@ -48,9 +49,9 @@ describe("existing fast factory characterization", () => {
 		await apiKey.toggle();
 		expect(apiKey.request(payload)).toBeUndefined();
 	});
-	it("CLIProxyAPI defaults off, accepts local API-key auth, and injects priority through openai-responses", async () => {
-		const fast = baseline({ ...cliproxy }, false, true);
-		const payload = { model: cliproxy.id };
+	it.each([cliproxy, cliproxyResponses])("CLIProxyAPI defaults off, accepts local API-key auth, and injects priority through $api", async (model) => {
+		const fast = baseline({ ...model }, false, true);
+		const payload = { model: model.id };
 		expect(fast.request(payload)).toBeUndefined();
 		await fast.toggle();
 		expect(fast.request(payload)).toEqual({ ...payload, service_tier: "priority" });
@@ -74,7 +75,7 @@ describe("existing fast factory characterization", () => {
 
 describe("stateless fast primitives", () => {
 	it.each([
-		...[codex, cliproxy, anthropic].flatMap((fixture) => {
+		...[codex, cliproxy, cliproxyResponses, anthropic].flatMap((fixture) => {
 			const profile = getFastProfile(fixture)!;
 			return profile.models.map((id) => ({
 				model: { ...fixture, id },
@@ -107,7 +108,7 @@ describe("stateless fast primitives", () => {
 	});
 	it("accepts CLIProxyAPI API-key auth and rejects wrong provider or API", () => {
 		expect(getFastProfile(cliproxy)?.requireOAuth).toBe(false);
-		for (const model of [undefined, { ...codex, provider: "luna" }, { ...codex, api: "openai-responses" }, { ...codex, id: "gpt-5" }, { ...cliproxy, provider: "openai-codex" }, { ...cliproxy, api: "openai-codex-responses" }]) {
+		for (const model of [undefined, { ...codex, provider: "luna" }, { ...codex, api: "openai-responses" }, { ...codex, id: "gpt-5" }, { ...cliproxy, provider: "luna" }, { ...cliproxy, api: "unsupported-api" }]) {
 			expect(getFastEligibility(model, true).eligible).toBe(false);
 			expect(transformFastPayload({ model: model?.id }, model, { enabled: true, usingOAuth: true, strict: true })).toBeUndefined();
 		}
@@ -115,7 +116,7 @@ describe("stateless fast primitives", () => {
 		expect(getFastEligibility(cliproxy, false).eligible).toBe(true);
 		expect(() => assertFastSupported(cliproxy, false)).not.toThrow();
 		expect(() => assertFastSupported({ ...cliproxy, id: `${getFastProfile(cliproxy)!.models[0]}-latest` }, false)).toThrow("Explicit :fast is unsupported");
-		expect(() => assertFastSupported({ ...cliproxy, api: "openai-codex-responses" }, false)).toThrow("Explicit :fast is unsupported");
+		expect(() => assertFastSupported({ ...cliproxy, api: "unsupported-api" }, false)).toThrow("Explicit :fast is unsupported");
 		expect(() => assertFastSupported(codex, false)).toThrow("OAuth/subscription auth is required");
 		expect(getFastProfile(anthropic)?.describeInjection).toBe("speed=fast");
 	});

@@ -191,7 +191,7 @@ export class ModeStateManager {
 		// Guard 2: skip setModel if already the active model.
 		const current = ctx.model;
 		const sameModel =
-			current && current.provider === resolved.model.provider && current.id === resolved.model.id;
+			current && current.provider === resolved.model.provider && current.id === resolved.model.id && current.api === resolved.model.api;
 		if (resolved.fast && (initializeFast || !sameModel)) assertFastSupported(resolved.model, ctx.modelRegistry.isUsingOAuth(resolved.model));
 		const targetLevel = this.thinkingOverride ?? resolved.thinkingLevel;
 		this.appliedThinkingLevel = targetLevel;
