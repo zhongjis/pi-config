@@ -96,11 +96,25 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
   pi.on("session_start", async (_event: unknown, ctx: CavemanSessionContext) => {
     try {
       const restoredState = restoreCavemanState(ctx);
-      loadRuntimePrompt();
-      const effectiveLevel = getCavemanEffectiveLevel();
+      let promptReady = true;
+
+      try {
+        loadRuntimePrompt();
+      } catch (error) {
+        promptReady = false;
+        if (ctx.hasUI) {
+          const reason = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`Caveman inactive: ${reason}`, "warning");
+        }
+      }
 
       syncStatus(ctx);
 
+      if (!promptReady) {
+        return;
+      }
+
+      const effectiveLevel = getCavemanEffectiveLevel();
       if (ctx.hasUI && effectiveLevel) {
         if (restoredState.sessionLevel) {
           ctx.ui.notify(`Caveman restored for this session (${effectiveLevel}).`, "info");
@@ -162,12 +176,16 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
       return;
     }
 
-    const injectedPrompt = buildInjectedPrompt(level);
-    return {
-      systemPrompt: event.systemPrompt
-        ? `${event.systemPrompt}\n\n${injectedPrompt}`
-        : injectedPrompt,
-    };
+    try {
+      const injectedPrompt = buildInjectedPrompt(level);
+      return {
+        systemPrompt: event.systemPrompt
+          ? `${event.systemPrompt}\n\n${injectedPrompt}`
+          : injectedPrompt,
+      };
+    } catch {
+      return;
+    }
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {

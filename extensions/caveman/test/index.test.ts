@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
@@ -9,6 +9,33 @@ type BeforeAgentStartResult = { systemPrompt: string } | undefined;
 
 let originalHome: string | undefined;
 let tempHome = "";
+
+const SKILL_FIXTURE = `Prelude.
+
+## Rules
+
+rules
+
+## Intensity
+
+| **lite** | lite |
+| **full** | full |
+| **ultra** | ultra |
+
+## Auto-Clarity
+
+clarity
+
+## Boundaries
+
+boundaries
+`;
+
+async function writeSkillFixture(): Promise<void> {
+	const skillPath = join(tempHome, ".pi", "agent", "skills", "caveman", "SKILL.md");
+	await mkdir(dirname(skillPath), { recursive: true });
+	await writeFile(skillPath, SKILL_FIXTURE);
+}
 
 async function registerFreshExtension() {
 	vi.resetModules();
@@ -43,6 +70,7 @@ describe("caveman extension", () => {
 		originalHome = process.env.HOME;
 		tempHome = await mkdtemp(join(tmpdir(), "caveman-extension-home-"));
 		process.env.HOME = tempHome;
+		await writeSkillFixture();
 	});
 
 	afterEach(async () => {
@@ -89,6 +117,21 @@ describe("caveman extension", () => {
 		const ctx = createPersistedContext();
 		await mock.fireLifecycle("session_start", {}, ctx);
 
+		await expect(fireBeforeAgentStart(mock, ctx)).resolves.toBeUndefined();
+	});
+
+	it("stays inactive when the skill source is missing", async () => {
+		await rm(join(tempHome, ".pi", "agent", "skills", "caveman", "SKILL.md"));
+		const mock = await registerFreshExtension();
+		const ctx = createPersistedContext();
+		const skillPath = join(tempHome, ".pi", "agent", "skills", "caveman", "SKILL.md");
+
+		await expect(mock.fireLifecycle("session_start", {}, ctx)).resolves.toBeUndefined();
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			`Caveman inactive: Caveman prompt source not found: ${skillPath}`,
+			"warning",
+		);
 		await expect(fireBeforeAgentStart(mock, ctx)).resolves.toBeUndefined();
 	});
 

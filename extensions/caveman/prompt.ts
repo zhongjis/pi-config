@@ -6,8 +6,7 @@ declare const process: {
 };
 
 type FsBuiltinModule = {
-  existsSync: (path: string) => boolean;
-  readFileSync: (path: string | URL, encoding: string) => string;
+  readFileSync: (path: string, encoding: string) => string;
 };
 
 type OsBuiltinModule = {
@@ -20,14 +19,10 @@ if (!fsModule || !osModule) {
   throw new Error("Caveman prompt loader requires Node.js fs/os builtin access");
 }
 
-const { existsSync, readFileSync } = fsModule;
+const { readFileSync } = fsModule;
 const { homedir } = osModule;
 
-const BUNDLED_PROMPT_SOURCE_URL = new URL("./upstream-caveman.SKILL.md", import.meta.url);
 const GLOBAL_PROMPT_SOURCE_PATH = `${resolveHomeDirectory()}/.pi/agent/skills/caveman/SKILL.md`;
-const PROMPT_SOURCE = existsSync(GLOBAL_PROMPT_SOURCE_PATH)
-  ? GLOBAL_PROMPT_SOURCE_PATH
-  : BUNDLED_PROMPT_SOURCE_URL;
 const REQUIRED_SECTION_TITLES = ["Rules", "Intensity", "Auto-Clarity", "Boundaries"] as const;
 
 type RequiredSectionTitle = (typeof REQUIRED_SECTION_TITLES)[number];
@@ -56,7 +51,6 @@ export interface CavemanRuntimePromptFragments {
 export interface CavemanRuntimePrompt {
   source: CavemanPromptSourceDocument;
   fragments: CavemanRuntimePromptFragments;
-  text: string;
 }
 
 interface ParsedHeading {
@@ -70,7 +64,7 @@ let promptSourceCache: CavemanPromptSourceDocument | undefined;
 let runtimePromptCache: CavemanRuntimePrompt | undefined;
 
 export function getPromptSourcePath(): string {
-  return typeof PROMPT_SOURCE === "string" ? PROMPT_SOURCE : PROMPT_SOURCE.pathname;
+  return GLOBAL_PROMPT_SOURCE_PATH;
 }
 
 export function loadPromptSource(): CavemanPromptSourceDocument {
@@ -80,8 +74,7 @@ export function loadPromptSource(): CavemanPromptSourceDocument {
 
   const raw = readPromptSource();
   const withoutFrontmatter = stripYamlFrontmatter(raw);
-  const content = stripLeadingSyncNote(withoutFrontmatter);
-  const parsed = parsePromptSource(content);
+  const parsed = parsePromptSource(withoutFrontmatter);
 
   promptSourceCache = {
     raw,
@@ -98,19 +91,23 @@ export function loadRuntimePrompt(): CavemanRuntimePrompt {
   }
 
   const source = loadPromptSource();
-  const fragments = normalizeRuntimeFragments(source);
-
   runtimePromptCache = {
     source,
-    fragments,
-    text: renderRuntimePrompt(fragments),
+    fragments: normalizeRuntimeFragments(source),
   };
 
   return runtimePromptCache;
 }
 
 function readPromptSource(): string {
-  const source = readFileSync(PROMPT_SOURCE, "utf-8").replace(/\r\n/g, "\n").trim();
+  let raw: string;
+  try {
+    raw = readFileSync(GLOBAL_PROMPT_SOURCE_PATH, "utf-8");
+  } catch {
+    throw new Error(`Caveman prompt source not found: ${getPromptSourcePath()}`);
+  }
+
+  const source = raw.replace(/\r\n/g, "\n").trim();
 
   if (!source) {
     throw new Error(`Caveman prompt source is empty: ${getPromptSourcePath()}`);
@@ -131,21 +128,6 @@ function stripYamlFrontmatter(source: string): string {
   }
 
   return trimmedStart.slice(match[0].length).trim();
-}
-
-function stripLeadingSyncNote(source: string): string {
-  const trimmedStart = source.trimStart();
-
-  if (!trimmedStart.startsWith("<!--")) {
-    return source;
-  }
-
-  const commentEnd = trimmedStart.indexOf("-->");
-  if (commentEnd === -1) {
-    throw new Error(`Caveman prompt source has an unterminated sync note: ${getPromptSourcePath()}`);
-  }
-
-  return trimmedStart.slice(commentEnd + 3).trim();
 }
 
 function parsePromptSource(source: string): Omit<CavemanPromptSourceDocument, "raw"> {
@@ -208,23 +190,12 @@ function extractRequiredSection(source: string, headings: ParsedHeading[], title
 
 function normalizeRuntimeFragments(source: CavemanPromptSourceDocument): CavemanRuntimePromptFragments {
   return {
-    prelude: normalizePrelude(source.prelude),
+    prelude: cleanNormalizedText(source.prelude),
     rules: source.sections.Rules,
     intensity: source.sections.Intensity,
     autoClarity: source.sections["Auto-Clarity"],
     boundaries: normalizeBoundaries(source.sections.Boundaries),
   };
-}
-
-function normalizePrelude(prelude: string): string {
-  return cleanNormalizedText(
-    prelude
-      .replace(', until user say "stop caveman" or "normal mode"', "")
-      .replace(
-        "`/caveman lite|full|ultra|wenyan-lite|wenyan-full|wenyan-ultra|off`",
-        "`/caveman lite|full|ultra`",
-      ),
-  );
 }
 
 function normalizeBoundaries(boundaries: string): string {
@@ -242,35 +213,27 @@ function cleanNormalizedText(text: string): string {
     .trim();
 }
 
-function renderRuntimePrompt(fragments: CavemanRuntimePromptFragments): string {
-  return [
-    fragments.prelude,
-    renderSection("Rules", fragments.rules),
-    renderSection("Intensity", fragments.intensity),
-    renderSection("Auto-Clarity", fragments.autoClarity),
-    renderSection("Boundaries", fragments.boundaries),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-function renderSection(title: string, body: string): string {
-  return `## ${title}\n\n${body}`;
-}
-
 export function buildInjectedPrompt(level: CavemanLevel): string {
   const { fragments } = loadRuntimePrompt();
   const levelInstruction = getLevelInstruction(fragments.intensity, level);
+  const examples = getLevelExamples(fragments.intensity, level);
+  const lines = [
+    firstParagraph(fragments.prelude),
+    `Active level: ${level}. ${levelInstruction}`,
+    "Active level overrides Rules where they conflict.",
+    `Rules: ${collapseInline(fragments.rules)}`,
+  ];
 
-  return cleanNormalizedText(
-    [
-      firstParagraph(fragments.prelude),
-      `Active level: ${level}. ${levelInstruction}`,
-      `Rules: ${collapseInline(fragments.rules)}`,
-      `Auto-Clarity: ${collapseInline(beforeExampleBlock(fragments.autoClarity))}`,
-      `Boundaries: ${collapseInline(fragments.boundaries)}`,
-    ].join("\n"),
+  if (examples.length > 0) {
+    lines.push(`Examples (${level}): ${examples.join(" ")}`);
+  }
+
+  lines.push(
+    `Auto-Clarity: ${collapseInline(beforeExampleBlock(fragments.autoClarity))}`,
+    `Boundaries: ${collapseInline(fragments.boundaries)}`,
   );
+
+  return cleanNormalizedText(lines.join("\n"));
 }
 
 function getLevelInstruction(
@@ -285,6 +248,24 @@ function getLevelInstruction(
   }
 
   return instruction;
+}
+
+function getLevelExamples(intensitySection: string, level: CavemanLevel): string[] {
+  const examples: string[] = [];
+
+  for (const line of intensitySection.split("\n")) {
+    const match = line.match(/^- (lite|full|ultra):\s+(.+)$/i);
+    if (!match || match[1]?.toLowerCase() !== level) {
+      continue;
+    }
+
+    const example = collapseInline(match[2] ?? "");
+    if (example) {
+      examples.push(example);
+    }
+  }
+
+  return examples;
 }
 
 function parseIntensityLevels(
