@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
-const MAX_TOKENS_ERROR = "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete.";
+const TRUNCATED_NOTICE = "Response was truncated before completion.";
 const STATE_KEY = Symbol.for("pi-extensions.thinking-steps.state");
 
 type TestMessage = {
@@ -73,7 +73,7 @@ const mockState = vi.hoisted(() => {
 			if (message) this.updateContent(message);
 		}
 
-		updateContent(message: TestMessage): void {
+		updateContent(message: TestMessage, _isStreaming?: boolean): void {
 			this.lastMessage = message;
 			this.contentContainer.clear();
 			this.hasToolCalls = message.content.some((content) => content.type === "toolCall");
@@ -268,8 +268,8 @@ describe("Pi 0.80.7 hasToolCalls renderer contract", () => {
 	});
 });
 
-describe("Pi 0.80.7 length-stop renderer contract", () => {
-	it("renders Pi 0.80.7 length-stop error exactly", async () => {
+describe("Pi length-stop renderer contract", () => {
+	it("renders Pi's native length-stop notice exactly", async () => {
 		await retainPatch();
 
 		for (const content of [
@@ -282,8 +282,24 @@ describe("Pi 0.80.7 length-stop renderer contract", () => {
 			const component = newComponent(1);
 			component.updateContent(assistantMessage(content, { stopReason: "length" }));
 
-			expect(textLines(component)).toContain(MAX_TOKENS_ERROR);
+			expect(textLines(component)).toContain(TRUNCATED_NOTICE);
 		}
+	});
+});
+
+describe("Empty thinking panel contract", () => {
+	it("keeps a padded thinking panel labelled by streaming state", async () => {
+		await retainPatch();
+		const component = newComponent(1);
+		const message = assistantMessage([{ type: "text", text: "Answer" }]);
+
+		component.updateContent(message, true);
+		expect(component.render(80).join("\n")).toContain("Thinking · Waiting for thinking content");
+
+		component.updateContent(message, false);
+		expect(component.render(80).join("\n")).toContain("Thinking · No thinking content supplied");
+		expect(childrenOf(component).map((child) => child.constructor.name)).toEqual(["Spacer", "Box", "Spacer", "Markdown"]);
+		expect(childrenOf(component)[1]?.paddingX).toBe(1);
 	});
 });
 

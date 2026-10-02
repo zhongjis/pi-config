@@ -9,6 +9,7 @@ interface RenderOptions {
 	steps: DerivedThinkingStep[];
 	activeStepId?: string;
 	isActive: boolean;
+	isStreaming?: boolean;
 	nowMs?: number;
 }
 
@@ -363,7 +364,11 @@ function renderExpanded(theme: ThinkingThemeLike, width: number, steps: DerivedT
 }
 
 export function renderThinkingStepsLines(theme: ThinkingThemeLike, width: number, options: RenderOptions): string[] {
-	if (options.steps.length === 0) return [];
+	if (options.steps.length === 0) {
+		const status = options.isStreaming ? "Waiting for thinking content" : "No thinking content supplied";
+		return wrapTextWithAnsi(theme.fg("dim", `Thinking · ${status}`), Math.max(1, width))
+			.map((line) => truncateToWidth(line, width, ""));
+	}
 	if (options.mode === "collapsed") {
 		return renderCollapsed(theme, width, options.steps, options.activeStepId, options.isActive, options.nowMs);
 	}
@@ -384,6 +389,7 @@ export class ThinkingStepsComponent implements Component {
 		private readonly messageTimestamp: number,
 		blocks: ThinkingSourceBlock[],
 		scopeKey?: string,
+		private readonly isStreaming = false,
 	) {
 		this.steps = deriveThinkingSteps(blocks);
 		this.scopeKey = scopeKey ?? getCurrentThinkingScopeKey();
@@ -406,6 +412,7 @@ export class ThinkingStepsComponent implements Component {
 			steps: this.steps,
 			activeStepId,
 			isActive: active.active,
+			isStreaming: this.isStreaming,
 			nowMs: Date.now(),
 		});
 

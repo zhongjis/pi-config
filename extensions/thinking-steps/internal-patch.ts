@@ -208,9 +208,16 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 			this.contentContainer.clear();
 
 			const thinkingBlocks = collectThinkingBlocks(message);
-			const hasVisibleContent = hasVisibleTextContent(message) || thinkingBlocks.length > 0;
-			if (hasVisibleContent) {
-				this.contentContainer.addChild(new Spacer(1));
+			const addThinkingSteps = (blocks: ThinkingSourceBlock[]): void => {
+				const thinkingBox = new Box(this.outputPad, 0);
+				thinkingBox.addChild(new ThinkingStepsComponent(theme, message.timestamp, blocks, resolveThinkingMessageScope(message), isStreaming));
+				this.contentContainer.addChild(thinkingBox);
+			};
+			// Every assistant message keeps a thinking panel; it is labelled when no thinking was supplied.
+			this.contentContainer.addChild(new Spacer(1));
+			if (thinkingBlocks.length === 0) {
+				addThinkingSteps([]);
+				if (hasVisibleTextContent(message)) this.contentContainer.addChild(new Spacer(1));
 			}
 
 			let renderedThinking = false;
@@ -239,9 +246,7 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 				}
 
 				if (content.type === "thinking" && thinkingBlocks.length > 0 && !renderedThinking) {
-					const thinkingBox = new Box(this.outputPad, 0);
-					thinkingBox.addChild(new ThinkingStepsComponent(theme, message.timestamp, thinkingBlocks, resolveThinkingMessageScope(message)));
-					this.contentContainer.addChild(thinkingBox);
+					addThinkingSteps(thinkingBlocks);
 					renderedThinking = true;
 					if (hasVisibleTextAfterThinking) {
 						this.contentContainer.addChild(new Spacer(1));
@@ -253,7 +258,7 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 			this.hasToolCalls = hasToolCalls;
 			if (message.stopReason === "length") {
 				this.contentContainer.addChild(new Spacer(1));
-				this.contentContainer.addChild(new Text(theme.fg("error", "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete."), this.outputPad, 0));
+				this.contentContainer.addChild(new Text(theme.fg("error", "Response was truncated before completion."), this.outputPad, 0));
 			} else if (!hasToolCalls) {
 				if (message.stopReason === "aborted") {
 					const abortMessage =
