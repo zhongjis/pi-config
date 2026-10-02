@@ -309,7 +309,19 @@ async function configureChild(
 		},
 	});
 
+	let restoreToolsPending = false;
+	let restoreToolsEligible = true;
+	pi.on("resources_discover", () => {
+		if (!restoreToolsPending || !payload) return;
+		restoreToolsPending = false;
+		// After startup mode/web selection, before the first prompt. Never reset later activation.
+		pi.setActiveTools(payload.parentActiveTools);
+	});
+
 	pi.on("session_start", (event, ctx) => {
+		restoreToolsPending = restoreToolsEligible && ctx.mode === "tui" && event.reason === "startup" &&
+			payload?.config.tools === "inherit" && payload.parentAvailableTools !== undefined;
+		restoreToolsEligible = false;
 		if (ctx.mode !== "tui") return;
 		ctx.ui.setTitle("pi /btw — Herdr side thread");
 
@@ -505,6 +517,7 @@ export async function registerBtwExtension(
 				const sessionId = ctx.sessionManager.getSessionId();
 				const model = `${ctx.model.provider}/${ctx.model.id}`;
 				const activeTools = pi.getActiveTools();
+				const availableTools = pi.getAllTools().map((tool) => tool.name);
 				const thinkingLevel = pi.getThinkingLevel();
 				let parentSystemPrompt: string | null = null;
 				try {
@@ -525,6 +538,7 @@ export async function registerBtwExtension(
 						},
 						parentSystemPrompt,
 						parentActiveTools: activeTools,
+						parentAvailableTools: availableTools,
 						parentThinkingLevel: thinkingLevel,
 						messages: sessionContext.messages,
 						draftQuestion,
@@ -541,6 +555,7 @@ export async function registerBtwExtension(
 					thinkingLevel: config.thinking ?? thinkingLevel,
 					toolMode: config.tools,
 					activeTools,
+					availableTools,
 					split: config.split,
 					// Auto-submitted drafts go through pi's initial-message path
 					// (processed after initial render) to avoid the double-paint

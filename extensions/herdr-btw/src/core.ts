@@ -40,6 +40,8 @@ export type BtwPayload = {
 	parentSystemPrompt: string | null;
 	/** Exact active parent tool names, in order. */
 	parentActiveTools: string[];
+	/** Registered parent tool names; optional for existing version-5 payloads. */
+	parentAvailableTools?: string[];
 	/** Parent thinking level at launch. */
 	parentThinkingLevel: string;
 	/** Native, compaction-aware parent messages. */
@@ -55,6 +57,7 @@ export type CreatePayloadOptions = {
 	metadata: ParentContextMetadata;
 	parentSystemPrompt: string | null;
 	parentActiveTools: string[];
+	parentAvailableTools?: string[];
 	parentThinkingLevel: string;
 	messages: AgentMessage[];
 	draftQuestion: string;
@@ -79,8 +82,10 @@ export type HerdrLaunchOptions = {
 	model: string;
 	thinkingLevel: string;
 	toolMode: BtwToolMode;
-	/** Exact active parent tool names, used when toolMode is "inherit". */
+	/** Active parent names, used as the legacy inherit allowlist when availability is absent. */
 	activeTools: string[];
+	/** Registered parent names, used as the inherit CLI allowlist. */
+	availableTools?: string[];
 	split: BtwSplit;
 	/** Optional initial message for the child pi, processed after initial render. */
 	initialMessage?: string;
@@ -104,6 +109,9 @@ export function createPayload(options: CreatePayloadOptions): BtwPayload {
 		metadata: options.metadata,
 		parentSystemPrompt: options.parentSystemPrompt,
 		parentActiveTools: [...options.parentActiveTools],
+		...(options.parentAvailableTools !== undefined
+			? { parentAvailableTools: [...options.parentAvailableTools] }
+			: {}),
 		parentThinkingLevel: options.parentThinkingLevel,
 		messages: options.messages,
 		draftQuestion: options.draftQuestion,
@@ -133,6 +141,9 @@ export function isBtwPayload(value: unknown): value is BtwPayload {
 		(payload.parentSystemPrompt === null || typeof payload.parentSystemPrompt === "string") &&
 		Array.isArray(payload.parentActiveTools) &&
 		payload.parentActiveTools.every((tool) => typeof tool === "string") &&
+		(!("parentAvailableTools" in payload) ||
+			(Array.isArray(payload.parentAvailableTools) &&
+				payload.parentAvailableTools.every((tool) => typeof tool === "string"))) &&
 		typeof payload.parentThinkingLevel === "string" &&
 		Array.isArray(payload.messages) &&
 		payload.messages.every(
@@ -245,6 +256,7 @@ export function parsePaneSplitPaneId(stdout: string): string | null {
  * the canonical executable for `--kind pi`, so only pi's own args follow `--`.
  */
 export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string): string[] {
+	const inheritTools = options.availableTools ?? options.activeTools;
 	return [
 		"agent",
 		"start",
@@ -260,8 +272,8 @@ export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string)
 		"--thinking",
 		options.thinkingLevel,
 		...(options.toolMode === "inherit"
-			? options.activeTools.length > 0
-				? ["--tools", options.activeTools.join(",")]
+			? inheritTools.length > 0
+				? ["--tools", inheritTools.join(",")]
 				: ["--no-tools"]
 			: options.toolMode === "read-only"
 				? ["--tools", "read,grep,find,ls"]

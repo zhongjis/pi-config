@@ -8,6 +8,7 @@ separate Pi process and can merge its findings back into the parent.
 
 - Snapshots the parent's current, compaction-aware context.
 - Inherits the parent cwd, model, and thinking level by default.
+- Inherit tools preserve registered availability and the parent's exact initial active selection; inactive tools remain available for later lazy activation.
 - Prefills the question for review by default; leaves the parent session unchanged.
 - Stays usable while the parent is working.
 
@@ -70,9 +71,10 @@ delivered), and cleaned up after 24 hours if left stale.
 - Synced version: v0.3.1
 - Commit: `679916281e46d4930969183562b5d343df0e968c`
 - License: MIT — Copyright (c) 2026 Oscar Gabriel (see [LICENSE](LICENSE))
-- Local adaptation: `index.ts`, `src/config.ts`, and `src/core.ts` carry a local patch (closeOnExit config
-  flag and PAYLOAD\_VERSION 5); `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, and `LICENSE` are
-  vendored verbatim. The standalone toolchain and upstream test suite are not vendored.
+- Local adaptation: `index.ts`, `src/config.ts`, and `src/core.ts` carry local patches for closeOnExit,
+  PAYLOAD\_VERSION 5, and inherit tool availability with one-time initial active selection restoration;
+  `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, and `LICENSE` are vendored verbatim.
+  The standalone toolchain and upstream test suite are not vendored.
 - Repo-root `pi-herdr-btw.json` provides a committed portable default (autoSubmit+closeOnExit ON),
   symlinked to `~/.pi/agent/pi-herdr-btw.json` by `install.sh`.
   See [AGENTS.md](AGENTS.md) for the Local Tweaks re-apply checklist.
