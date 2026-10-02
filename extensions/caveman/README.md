@@ -11,7 +11,7 @@ Token-compression prompt injection for Pi. Appends terse-communication rules to 
 
 ## Entry Points
 
-- `/caveman [lite|full|ultra]` sets the level for this session; `/caveman config` sets persistent defaults. Commands and hooks are registered in [`index.ts`](index.ts).
+- `/caveman [lite|full|ultra|off]` sets or disables caveman for this session; `/caveman config` sets persistent defaults. Commands and hooks are registered in [`index.ts`](index.ts).
 
 ## Configuration
 

@@ -82,13 +82,14 @@ interface CavemanExtensionApi {
   appendEntry(customType: string, data: unknown): void;
 }
 
-const ACCEPTED_LEVELS_TEXT = CAVEMAN_LEVELS.join(" | ");
-const COMMAND_USAGE = "Usage: /caveman | /caveman <lite|full|ultra> | /caveman config";
+const ACCEPTED_LEVELS_TEXT = `${CAVEMAN_LEVELS.join(" | ")} | off`;
+const COMMAND_USAGE = "Usage: /caveman | /caveman <lite|full|ultra|off> | /caveman config";
 const COMMAND_ARGUMENTS: CommandArgumentCompletion[] = [
   ...CAVEMAN_LEVELS.map((level) => ({
     value: level,
     label: `${level} — enable caveman for this session at ${level}`,
   })),
+  { value: "off", label: "off — disable caveman for this session" },
   { value: "config", label: "config — open caveman settings dialog" },
 ];
 
@@ -135,7 +136,7 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
   });
 
   pi.registerCommand("caveman", {
-    description: "Show caveman status, set the current session level, or open config (/caveman | /caveman <lite|full|ultra> | /caveman config)",
+    description: "Show caveman status, set the current session level, or open config (/caveman | /caveman <lite|full|ultra|off> | /caveman config)",
     getArgumentCompletions: (prefix: string): CommandArgumentCompletion[] | null => {
       const normalizedPrefix = prefix.trim().toLowerCase();
       const filtered = COMMAND_ARGUMENTS.filter((item) => item.value.startsWith(normalizedPrefix));
@@ -161,6 +162,18 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
           result.changed
             ? `Caveman enabled for this session at ${result.level}.`
             : `Caveman already active for this session at ${result.level}.`,
+          "info",
+        );
+        return;
+      }
+
+      if (normalizedArgs === "off") {
+        const result = setCavemanSessionLevel(pi, "off");
+        syncStatus(ctx);
+        ctx.ui.notify(
+          result.changed
+            ? "Caveman disabled for this session."
+            : "Caveman already off for this session.",
           "info",
         );
         return;
@@ -291,11 +304,13 @@ function formatStatusMessage(): string {
   const sessionLevel = getCavemanSessionLevel();
   const effectiveLevel = getCavemanEffectiveLevel();
 
-  const currentStatus = effectiveLevel
-    ? sessionLevel
-      ? `${effectiveLevel} (session override)`
-      : `${effectiveLevel} (from default config)`
-    : "off";
+  const currentStatus = sessionLevel === "off"
+    ? "off (session override)"
+    : effectiveLevel
+      ? sessionLevel
+        ? `${effectiveLevel} (session override)`
+        : `${effectiveLevel} (from default config)`
+      : "off";
 
   return [
     `Current level: ${currentStatus}`,

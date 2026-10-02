@@ -1,10 +1,11 @@
 import {
   DEFAULT_CAVEMAN_CONFIG,
   ensureCavemanConfig,
-  isCavemanLevel,
+  isCavemanConfigDefaultLevel,
   resolveCavemanEffectiveLevel,
   updateCavemanConfig,
   type CavemanConfig,
+  type CavemanConfigDefaultLevel,
   type CavemanLevel,
 } from "./config.js";
 
@@ -26,7 +27,7 @@ export interface CavemanEntryWriter {
 
 export interface CavemanRuntimeState {
   config: CavemanConfig;
-  sessionLevel?: CavemanLevel;
+  sessionLevel?: CavemanConfigDefaultLevel;
 }
 
 const runtimeState: CavemanRuntimeState = {
@@ -52,7 +53,7 @@ export function getCavemanState(): CavemanRuntimeState {
   };
 }
 
-export function getCavemanSessionLevel(): CavemanLevel | undefined {
+export function getCavemanSessionLevel(): CavemanConfigDefaultLevel | undefined {
   return runtimeState.sessionLevel;
 }
 
@@ -73,8 +74,8 @@ export function updateRuntimeCavemanConfig(patch: Partial<CavemanConfig>): Cavem
 
 export function setCavemanSessionLevel(
   pi: CavemanEntryWriter,
-  level: CavemanLevel,
-): { changed: boolean; level: CavemanLevel } {
+  level: CavemanConfigDefaultLevel,
+): { changed: boolean; level: CavemanConfigDefaultLevel } {
   if (runtimeState.sessionLevel === level) {
     return { changed: false, level };
   }
@@ -84,8 +85,8 @@ export function setCavemanSessionLevel(
   return { changed: true, level };
 }
 
-function getLatestSessionLevel(ctx: CavemanSessionContextLike): CavemanLevel | undefined {
-  let latestLevel: CavemanLevel | undefined;
+function getLatestSessionLevel(ctx: CavemanSessionContextLike): CavemanConfigDefaultLevel | undefined {
+  let latestLevel: CavemanConfigDefaultLevel | undefined;
 
   for (const entry of ctx.sessionManager.getBranch()) {
     if (entry.type !== "custom" || entry.customType !== "caveman-level") {
@@ -101,11 +102,11 @@ function getLatestSessionLevel(ctx: CavemanSessionContextLike): CavemanLevel | u
   return latestLevel;
 }
 
-function readLevelFromEntry(data: unknown): CavemanLevel | undefined {
+function readLevelFromEntry(data: unknown): CavemanConfigDefaultLevel | undefined {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     return undefined;
   }
 
   const level = (data as { level?: unknown }).level;
-  return isCavemanLevel(level) ? level : undefined;
+  return isCavemanConfigDefaultLevel(level) ? level : undefined;
 }

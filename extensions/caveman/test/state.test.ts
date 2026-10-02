@@ -51,4 +51,19 @@ describe("caveman state", () => {
 		expect(state.setCavemanSessionLevel(writer, "full")).toEqual({ changed: false, level: "full" });
 		expect(writer.appendEntry).toHaveBeenCalledTimes(1);
 	});
+
+	it("restores session off over a configured default", async () => {
+		const state = await importFreshState();
+
+		const restored = state.restoreCavemanState({
+			sessionManager: {
+				getBranch: () => [{ type: "custom", customType: "caveman-level", data: { level: "off" } }],
+			},
+		});
+
+		expect(restored.config.defaultLevel).not.toBe("off");
+		expect(restored.sessionLevel).toBe("off");
+		expect(state.getCavemanSessionLevel()).toBe("off");
+		expect(state.getCavemanEffectiveLevel()).toBeUndefined();
+	});
 });

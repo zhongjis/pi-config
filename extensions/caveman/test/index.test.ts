@@ -65,6 +65,13 @@ async function fireBeforeAgentStart(
 	return (await handlers[0]({ systemPrompt }, ctx)) as BeforeAgentStartResult;
 }
 
+function getCavemanCommand(mock: ReturnType<typeof createMockPi>) {
+	return mock.commands.get("caveman") as {
+		getArgumentCompletions: (prefix: string) => Array<{ value: string; label: string }> | null;
+		handler: (args: string, ctx: ReturnType<typeof createPersistedContext>) => Promise<void>;
+	};
+}
+
 describe("caveman extension", () => {
 	beforeEach(async () => {
 		originalHome = process.env.HOME;
@@ -135,13 +142,56 @@ describe("caveman extension", () => {
 		await expect(fireBeforeAgentStart(mock, ctx)).resolves.toBeUndefined();
 	});
 
+	it("disables injection when /caveman off overrides a configured level", async () => {
+		await writeFile(
+			join(tempHome, ".pi", "agent", "caveman.json"),
+			JSON.stringify({ defaultLevel: "full", statusVisibility: "active" }),
+		);
+		const mock = await registerFreshExtension();
+		const appendEntry = vi.spyOn(mock.pi, "appendEntry");
+		const ctx = createPersistedContext();
+		await mock.fireLifecycle("session_start", {}, ctx);
+		const command = getCavemanCommand(mock);
+
+		const beforeOff = await fireBeforeAgentStart(mock, ctx);
+		expect(beforeOff?.systemPrompt.startsWith("Base prompt\n\n")).toBe(true);
+
+		await command.handler("off", ctx);
+
+		expect(appendEntry).toHaveBeenCalledWith("caveman-level", { level: "off" });
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Caveman disabled for this session.", "info");
+		expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("caveman", undefined);
+		await expect(fireBeforeAgentStart(mock, ctx)).resolves.toBeUndefined();
+
+		await command.handler("off", ctx);
+		expect(appendEntry).toHaveBeenCalledTimes(1);
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Caveman already off for this session.", "info");
+
+		await command.handler("", ctx);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("Current level: off (session override)"),
+			"info",
+		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("Accepted levels: lite | full | ultra | off"),
+			"info",
+		);
+	});
+
 	it("registers only supported command completions", async () => {
 		const mock = await registerFreshExtension();
-		const command = mock.commands.get("caveman") as {
-			getArgumentCompletions: (prefix: string) => Array<{ value: string }> | null;
-		};
+		const command = getCavemanCommand(mock);
 
-		expect(command.getArgumentCompletions("")?.map((item) => item.value)).toEqual(["lite", "full", "ultra", "config"]);
+		expect(command.getArgumentCompletions("")?.map((item) => item.value)).toEqual([
+			"lite",
+			"full",
+			"ultra",
+			"off",
+			"config",
+		]);
+		expect(command.getArgumentCompletions("off")).toEqual([
+			{ value: "off", label: "off — disable caveman for this session" },
+		]);
 		expect(command.getArgumentCompletions("w")).toBeNull();
 	});
 });
