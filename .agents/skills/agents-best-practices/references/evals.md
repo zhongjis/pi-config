@@ -127,6 +127,23 @@ single agent vs decomposed workers
 
 Track both lift and cost. A component that improves rare cases but harms common cases should stay off the MVP path until the product needs it.
 
+## Component diagnostics
+
+Use matched task outcomes to explain which limitation an intervention addresses, not only whether aggregate success changes. Cross representative context-window budgets with context policies while holding the model, tasks, and other components fixed. Separately ablate progress tracking and action profiles; if resource limits permit only selected combinations, state that scope instead of claiming a full factorial result or unmeasured interactions. Repeat runs where practical, report paired uncertainty, and keep tuning cases separate from held-out evaluation.
+
+| Intervention | Matched comparison | Measurements that distinguish the mechanism |
+|---|---|---|
+| Context reduction | No cross-turn management, elision, summarization, and staged elision-before-summary at each budget | Success, context-overflow terminations, peak next-call input, reduction-stage counts, summarization calls/cost, and preservation of required active state. Distinguish keeping runs alive from changing behavior. |
+| Historical-output recall | Elision with/without recall at identical thresholds; also test staged reduction with/without recall when proposing that combination | Invocation rate, fraction of tasks using recall, recoveries that affect a later decision, task lift, and total retrieval/re-read cost. Keep audit retention constant; lack of model usage does not justify deleting required records. |
+| Progress scaffold | Tracking on/off with the same permission mode, completion criteria, and required checks | Time/calls until an actual source edit, abandonment before useful work, unmet done conditions at stop, post-edit verification on unchanged state, long-tail trajectory cost, and verification coverage. |
+| Action interface | Explicit workspace tools versus a shell-centric or programmatic profile with equivalent host controls and diagnostics | Out-of-interface emissions, localization failures, actual mutations, repeated edits, action granularity, calls/tokens, success, and safety invariants. If controls or instructions differ, declare the bundled intervention. |
+
+Record runtime termination reasons separately: completed, model stopped without meeting the done condition, context overflow, step/time/cost limit, repeated failure, approval pause, and policy denial. Phase-level call, token, and time totals can locate redundant work, but fewer turns or lower mean cost may simply reflect earlier failure. Apply the same quality floor and [completed-task economics](#model-and-configuration-sweeps) to all profiles, including failed attempts.
+
+Derive physical writes and literal no-edit termination from runtime mutation evidence or observed file state, including shell-mediated changes. Semantic phase labels from a model judge are different measurements: a missing Fix label is not proof that no file was edited. When using judged phases or failure-stage attribution, publish their definitions and validate a sample against human labels; do not replace runtime permission, mutation, or completion evidence with judge agreement.
+
+The behavior contracts remain in [context reduction and recall](context-memory-compaction.md#staged-reduction-under-context-pressure), [progress scaffolds](planning-and-goals.md#execution-time-progress-scaffold), and [coding action interfaces](coding-agents.md#model--and-workload-dependent-action-interfaces). Keep their evaluation matrix here rather than duplicating it in those owners.
+
 ## Model and configuration sweeps
 
 Compare candidate models and effort settings against the same quality floor and task mix. First hold the harness and prompt fixed to isolate configuration effects; then allow comparable prompt calibration per candidate on separate tuning cases and report held-out results with each prompt version. Keep those two comparisons distinct so a prompt fitted to one model does not settle the selection unfairly.
@@ -245,6 +262,77 @@ discovery turns, catalogue tokens, latency, cost, and human intervention
 ```
 
 Ablate discovery retrieval, descriptor examples, safe probes, binding validation, drift checks, and programmatic composition separately. Retrieval can improve access to unfamiliar or changing APIs while also introducing irrelevant or misleading context; report both lift and new failure modes. Use [environment-adaptive tools](environment-adaptive-tools.md) for the contracts these cases exercise.
+
+## Hardware agent evals
+
+For [hardware agents](hardware-agents.md), extend the existing case/trace format with board/runtime revision, source/artifact hash, state schema, transport substitutions, clock basis, and physical observation duration. Separate native fixtures, component emulation, production-loop emulation, and physical commissioning; grade only paths each layer actually executes.
+
+| Probe | Required observed result |
+|---|---|
+| Existing launcher with another app; compiled device with a different selected slot | Installer follows measured boot/discovery behavior; no guessed offset, base reflash, or removal of unrelated apps. |
+| Image just beyond slot size; simulator image offered for upload | Deployment stops before writing. |
+| Mount failure after identity exists; interrupted checkpoint replacement | No silent formatting/reinitialization; old valid state remains recoverable or writes pause. |
+| Power cut before dispatch, after remote acceptance, and before receipt checkpoint | Pending action reconciles without blind replay; unknown outcome is explicit. |
+| Largest context/catalogue and repeated TLS handshakes | Target parser/string/depth and application/native memory limits hold, or return bounded errors without leaking sockets. |
+| Fragmented/chunked streams, long headers, narrow timeout overflow, missing completion | Exact deadline semantics hold; partial/ambiguous output cannot authorize an action. |
+| Multi-byte network names and escaped surrogate pairs | Target runtime preserves valid text or reports failure; identifiers/arguments are never cosmetically clipped. |
+| Token rotation followed by reset | New credentials persist under one refresh owner; secrets remain out of public traces/packages. |
+| Clock absent/corrected, background sync, due jobs, and saved wakes | Verified TLS and logical time follow policy; sleep ceiling and server minimum holds survive restart/migration. |
+| One successful turn followed by timeout; failed compaction | Retry policy does not accidentally suppress useful work indefinitely; context never exceeds its hard ceiling. |
+| Low-memory recovery with a pending effect or remaining sleep | Recovery occurs only at a safe recorded boundary and does not create an extra cycle or reboot loop. |
+| Concurrent serial reader, stale screen phase, queued wake keys | Missing logs are not mislabeled as reboot; status/input claims require the applicable physical evidence. |
+| Embedded calculator/compiler optimization bypass | Metering is exercised on-device; unsafe programs fail without gaining file/network/credential access. |
+| Wrong identifier type for inbox acknowledgement | Runtime reports the mismatch and does not claim unprocessed work acknowledged. |
+| Rollback after state-schema/token/receipt evolution | Compatible current authority/effect state is preserved, or rollback stops for an explicit recovery decision. |
+
+Launch gates additionally require physical boot and a cycle on the exact artifact, with remote resulting-state verification for authorized effects. Scheduled products also need sleep/wake evidence; resumable products need a safe reset/power-cycle recovery probe. Unattended or overnight reliability needs a declared, completed soak; a passing host-backed run or first hour is not a substitute.
+
+## Adaptive agent-team evals
+
+[Adaptive agent teams](adaptive-agent-teams.md) are an advanced, post-MVP profile. Evaluate the proposed coordination contracts and their measured contribution; published outcomes or team counts do not establish how a research system implemented them or which mechanism caused its gains.
+
+Compare at least these conditions with the same model/settings, task fixtures, tools, authority, acceptance criteria, and total resource budget:
+
+```text
+single-agent research loop
+ordinary parallel workers executing bounded packets
+adaptive teams retaining distinct approach charters
+```
+
+A fixed team portfolio is a useful intermediate comparison before allowing allocation changes. Match available concurrency where the comparison permits it and report differences explicitly. If budgets cannot be matched, report the quality/cost frontier rather than attributing additional compute to coordination. Use held-out investigations with plausible competing explanations, misleading early leads, and independently checkable acceptance evidence.
+
+Ablate these mechanisms separately; keep other team controls fixed and declare any coupled changes:
+
+| Mechanism | Matched comparison | Diagnostic measurement |
+|---|---|---|
+| Varied formulations | Distinct formulations, assumptions, or methods versus the same approach under different wording | Validated coverage of competing explanations, overlap in explored questions, and recovery from misleading leads. |
+| Work awareness | Work-intent visibility and overlap checks on/off with the same permitted replication policy | Unintended duplicate work, missed semantic overlap, false conflicts that block useful work, and registry/coordination cost. |
+| Cross-team communication | Finding exchange on/off while keeping team-local communication fixed | Useful finding adoption, time saved, message overhead, unsupported-claim propagation, and dependence among apparent corroborations. |
+| Adaptive allocation | Evidence-linked allocation changes versus a fixed portfolio with the same aggregate budget | Quality and cost to reach acceptance, abandoned approaches, retained challenge coverage, and failed or unnecessary transitions. |
+
+State which interactions were actually tested. Do not infer benefits from formulation diversity or larger team count when communication or available compute changed at the same time.
+
+Use controlled interleavings and restorable fixtures for these probes:
+
+| Probe | Required observed result |
+|---|---|
+| An unsupported finding is shared, echoed by several teams, and sent to a reviewer | Provenance and consumption dependencies survive; echoes cannot count as independent validation or convert the claim to verified status. |
+| A replication task receives the result it was meant to check before sealing its own artifact | The run reports the exposure and loses the claimed independence, or the declared visibility policy prevents it. |
+| A promising early lead conflicts with later evidence from a minority approach | Contradictions remain visible; allocation and acceptance follow the declared evidence policy rather than message volume or consensus. |
+| Different labels hide the same question/method/input scope; similar labels conceal distinct work | Semantic overlap and false-conflict rates are graded against fixture labels; useful distinct work is not suppressed merely by names. |
+| Unintended overlap and explicitly reserved independent replication occur together | The harness distinguishes waste from declared replication and applies the replication visibility policy. |
+| Two teams simultaneously claim overlapping work; one lease expires while its worker can still write | The ownership conflict is explicit and current fencing prevents conflicting writes; expiry alone cannot establish safe reassignment. |
+| Duplicate or stale create/split/merge/retire/retask decisions arrive | Accepted identity/version checks prevent additional teams, repeated allocation debits, or silent overwrite of a newer portfolio. |
+| A proposed change exceeds authority, changes the parent objective, or lacks capacity | The transition returns the applicable denial/conflict outcome without partially changing ownership or budget. |
+| A result arrives after retasking, merging, or retirement | Its producing charter and intent remain intact; relevance is reassessed before adoption and it is not credited to the new approach. |
+| A recipient is unavailable; a message arrives after its intended charter changes | Delivery has a bounded observable outcome; the late message cannot revive obsolete work or act as a current assignment. |
+| Restart occurs between transition acceptance, worker admission, and handoff | Reconciliation recovers the recorded decision and outstanding work without duplicate admission, lost ownership, or blind side-effect replay. |
+| Budget exhaustion occurs with reservations, in-flight work, and a pending transition | Aggregate accounting includes spent, reserved, and outstanding work under the existing budget contract; the run stops or degrades with an explicit incomplete outcome. |
+| All teams become idle or retire with unresolved questions; a rollback leaves external effects | Quiescence is not scored as acceptance; the run reports remaining work and effects rather than claiming completion or restored spent budget. |
+
+Measure task quality, validated coverage, false-success rate, cost to reach acceptance including failed approaches, elapsed time, unresolved/failure rate, and human intervention. Also measure unintended overlapping work separately from declared replication, coordination/message cost, allocation churn, stale-decision rejection, stale-result adoption, and independence-policy violations. Use runtime records for ownership, transitions, authority, and accounting; a model judge's interpretation of an approach is not evidence that these controls held.
+
+Launch only when the profile improves a declared outcome over the simpler baselines at the required quality floor and within the resource envelope. Authority, ownership, accounting, stale-state, and independent-acceptance probes must have no unresolved control failures; report the trials and observed failures rather than treating a passing suite as universal proof. Keep adaptive allocation disabled when it cannot justify its overhead or when these invariants regress. Acceptance still follows the parent goal and validation policy, not team consensus, scale, or inactivity.
 
 ## Self-refinement evals
 

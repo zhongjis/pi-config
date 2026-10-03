@@ -21,6 +21,23 @@
 - [ ] Traces and evals are defined before launch.
 - [ ] First rollout is limited, monitored, or shadow-mode.
 
+## Hardware agent and board deployment checklist
+
+- [ ] Inference location and dependencies on a running host are explicit.
+- [ ] Exact board/revision, runtime, flash/RAM, peripheral wiring, power, and stable USB identity are recorded.
+- [ ] Actual launcher or boot-selected application slot determines installation; other apps and persistent partitions are preserved.
+- [ ] Physical-device artifact, pinned source/dependencies, size/hash, and approved write ranges are recorded; simulator targets cannot be uploaded.
+- [ ] Private backups, boot-time mount/format behavior, migration, and state-compatible rollback are checked.
+- [ ] Request, wire-body, decoded-answer, parser/string/depth, context, event-log, and memory bounds are measured on the target runtime.
+- [ ] TLS trust/hostname verification, clock bootstrap/epoch, repeated native-heap allocations, and durable token refresh are exercised.
+- [ ] Connect/header/idle/total deadlines use supported widths and fit watchdog limits; incomplete streams cannot dispatch actions.
+- [ ] Reset before/after remote acceptance reconciles pending effects; failed storage pauses writes instead of formatting established state.
+- [ ] Sleep routes, saved wakes, clock changes, and fired-job identity obey policy without bypassing server rate-limit floors.
+- [ ] Embedded computation is evaluated on the actual interpreter; blacklist restrictions are not presented as proven isolation.
+- [ ] Observation has one serial owner and avoids reset/REPL side effects where supported.
+- [ ] Physical boot, retained identity, cycle, sleep/wake, power-cycle recovery, and approved remote read-back are recorded for the exact image.
+- [ ] Physical screen/input checks and soak duration are reported separately from logs, native tests, and host-backed emulation.
+
 ## Coding-agent MVP checklist
 
 Use the checklist in [coding-agents.md](coding-agents.md) for repository-facing coding agents. Keep this file as the general harness checklist index.
@@ -137,6 +154,8 @@ For each tool:
 - [ ] Retrieved content labeled by source and trust level.
 - [ ] Exact facts preserved when needed.
 - [ ] Large outputs summarized or stored externally.
+- [ ] Context-pressure reduction tries eligible observation elision before summarization, reserves next-call headroom, and preserves protocol-valid call/result structure.
+- [ ] Historical-output recall is justified separately from evidence retention and never replays side effects to recover old output.
 - [ ] Active plan and goal reattached after compaction.
 - [ ] Approval state reattached after compaction.
 - [ ] Loaded skills and connector state tracked.
@@ -156,7 +175,8 @@ For each tool:
 - [ ] Plan artifact is stored outside prompt.
 - [ ] Plan contains objective, scope, risks, steps, validation, rollback, and done condition.
 - [ ] Approval tied to exact plan version.
-- [ ] Execution uses todo/checkpoints after approval.
+- [ ] Execution records progress/checkpoints after approval; a todo scaffold is optional.
+- [ ] Execution-time progress tracking is distinct from permission-gated planning; status updates do not change approval scope or substitute for completion evidence.
 
 ## Goal checklist
 
@@ -187,6 +207,25 @@ For each tool:
 - [ ] Reproducibility state is captured: workflow version, model/runtime settings, tool calls, result references, source revision or data snapshot, and approval records.
 - [ ] Final output distinguishes verified findings, rejected findings, unresolved questions, partial coverage, and next safe actions.
 
+## Adaptive agent-team checklist
+
+Use [adaptive agent teams](adaptive-agent-teams.md) for the contracts and [adaptive agent-team evals](evals.md#adaptive-agent-team-evals) for their validation cases.
+
+- [ ] The profile is post-MVP and justified against measured single-agent and ordinary-worker baselines under matched budgets or a reported quality/cost frontier.
+- [ ] Versioned approach charters identify durable owners, distinct formulations/methods/assumptions, and the authorized parent goal and acceptance criteria.
+- [ ] Active work intents expose question, method, input/artifact scope, dependencies, current owner, and charter version before expensive execution.
+- [ ] Overlap checks distinguish unintended duplication, useful distinct work, and bounded declared replication.
+- [ ] Concurrent ownership claims use host-enforced atomic reservations/version checks; expired leases cannot bypass fencing of active writers.
+- [ ] Finding shares retain producing charter/intent, evidence, uncertainty, validation status, recipients, and consumed-finding dependencies.
+- [ ] Independent replication declares permitted exposure and sealing rules; shared claims cannot count as independent corroboration.
+- [ ] Create, split, merge, retire, and retask decisions cite evidence and record expected portfolio version, authorized decision-maker, changed charters, and outstanding-work disposition.
+- [ ] Host checks preserve goal scope, authority, aggregate capacity, and budget; duplicate/stale/denied transitions produce no partial mutation or repeated debit.
+- [ ] Allocation policy retains declared exploration/challenge coverage and records contradictions rather than accepting consensus as evidence.
+- [ ] Late messages/results preserve their producing generation and require relevance checks before adoption; unavailable recipients have bounded delivery outcomes.
+- [ ] Restart, handoff, cancellation, and rollback reconcile outstanding work without duplicate admission, silent ownership loss, restored spent budget, or blind replay.
+- [ ] Completion requires parent-goal acceptance evidence; quiescence, retired teams, exhausted budget, and promising leads retain explicit incomplete outcomes where applicable.
+- [ ] Independent mechanism ablations and dependence, overlap, transition, late-delivery, budget, and quiescence probes meet the declared launch gates.
+
 ## Skills checklist
 
 - [ ] Skill name matches directory name.
@@ -200,6 +239,7 @@ For each tool:
 - [ ] Skill activation eval exists.
 - [ ] Output quality eval exists.
 - [ ] Skill does not silently expand permissions.
+- [ ] Any self-update policy names its canonical source, keeps package revisions consistent, preserves local changes, respects installation permissions, and discloses unverified freshness.
 - [ ] Predictive loading is measured against on-demand loading and preserves version, scope, and cache ordering.
 
 ## Self-refining recursive harness checklist
@@ -244,6 +284,19 @@ For each tool:
 - [ ] Compaction and handoff preserve the public-audience label and host approval reference without promoting copied text into authority.
 - [ ] Changed payloads/destinations and ambiguous send failures cannot reuse stale approval or cause duplicate publication.
 
+## Troubleshooting checklist
+
+Use [troubleshooting](security-observability.md#troubleshooting) for diagnostic steps and symptom tables.
+
+- [ ] Expected outcome, observed state, and host termination reason are recorded separately.
+- [ ] Effective model/runtime configuration and the first failing boundary are linked to bounded, redacted evidence.
+- [ ] One isolated probe distinguishes the suspected cause from alternatives; missing evidence remains explicit.
+- [ ] Interrupted streams, missing observations, incomplete or cancelled work, and unknown side effects remain distinct from success; legitimate empty results remain typed completed observations.
+- [ ] Applicable restart, duplicate-delivery, and forced-interleaving cases preserve identity and resolve pending work without blind write replay.
+- [ ] Context and usage accounting are checked against the final serialized request and raw provider usage, including post-processing hooks.
+- [ ] Applicable payload limits, idle telemetry overhead, and cleanup failures have observable outcomes.
+- [ ] The fix has fresh execution evidence and regression coverage under the existing [eval process](evals.md#regression-loop).
+
 ## Evals checklist
 
 Use [evals.md](evals.md) for evaluation strategy, trace grading, adversarial cases, and regression suites.
@@ -261,6 +314,8 @@ Use [evals.md](evals.md) for evaluation strategy, trace grading, adversarial cas
 - [ ] Regression evals added for every production incident.
 - [ ] Fixtures reconstruct runtime state as well as messages; paired and cross-capability cases exercise required and forbidden behavior.
 - [ ] Quality, safety, completed-task cost, first useful UI, and end-to-end latency gate model/configuration selection.
+- [ ] Component comparisons state tested budget/configuration scope, distinguish overflow and early failure from efficiency, and use mutation evidence separately from judged phases.
+- [ ] Alternative action profiles meet equivalent host-control and verification requirements or are explicitly reported as bundled interventions.
 
 ## Minimal provider-neutral implementation path
 
