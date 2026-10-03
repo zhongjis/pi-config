@@ -287,19 +287,47 @@ describe("Pi length-stop renderer contract", () => {
 	});
 });
 
-describe("Empty thinking panel contract", () => {
-	it("keeps a padded thinking panel labelled by streaming state", async () => {
+describe("Silent empty thinking contract", () => {
+	it("omits thinking panels and extra spacing without visible thinking", async () => {
+		await retainPatch();
+		const cases: TestMessage["content"][] = [
+			[{ type: "text", text: "Answer" }],
+			[{ type: "toolCall", id: "tool-1", name: "read", args: {} }],
+			[],
+			[{ type: "thinking", thinking: "" }],
+			[{ type: "thinking", thinking: " \n\t " }],
+			[{ type: "thinking", thinking: " \n " }, { type: "text", text: "Answer" }],
+		];
+		for (const content of cases) {
+			const component = newComponent(1);
+			const hasText = content.some((block) => block.type === "text");
+			for (const isStreaming of [true, false]) {
+				component.updateContent(assistantMessage(content), isStreaming);
+				expect(firstChildNamed(component, "ThinkingStepsComponent")).toBeUndefined();
+				expect(childrenOf(component).filter((child) => child.constructor.name === "Spacer")).toHaveLength(hasText ? 1 : 0);
+				if (hasText) {
+					expect(childrenOf(component)[0]?.constructor.name).toBe("Spacer");
+					expect(firstChildNamed(component, "Markdown")?.text).toBe("Answer");
+				} else {
+					expect(childrenOf(component)).toHaveLength(0);
+				}
+			}
+		}
+	});
+
+	it.each(["collapsed", "summary", "expanded"] as const)("renders zero steps silently in %s mode", async (mode) => {
+		const { renderThinkingStepsLines } = await import("../render.js");
+		expect(renderThinkingStepsLines(theme(), 80, { mode, steps: [], isActive: false })).toEqual([]);
+	});
+
+	it("keeps redacted empty thinking visible", async () => {
 		await retainPatch();
 		const component = newComponent(1);
-		const message = assistantMessage([{ type: "text", text: "Answer" }]);
-
-		component.updateContent(message, true);
-		expect(component.render(80).join("\n")).toContain("Thinking · Waiting for thinking content");
-
-		component.updateContent(message, false);
-		expect(component.render(80).join("\n")).toContain("Thinking · No thinking content supplied");
-		expect(childrenOf(component).map((child) => child.constructor.name)).toEqual(["Spacer", "Box", "Spacer", "Markdown"]);
-		expect(childrenOf(component)[1]?.paddingX).toBe(1);
+		for (const isStreaming of [true, false]) {
+			component.updateContent(assistantMessage([{ type: "thinking", thinking: "", redacted: true }]), isStreaming);
+			expect(firstChildNamed(component, "ThinkingStepsComponent")).toBeDefined();
+			expect(component.render(80).join("\n")).toContain("Reasoning is hidden by the provider.");
+		}
 	});
 });
 

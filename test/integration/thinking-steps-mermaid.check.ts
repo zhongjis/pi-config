@@ -1,4 +1,4 @@
-// Run with native Pi 0.85.1 (not the repository's older npm renderer):
+// Run with native Pi to exercise its assistant Markdown transformers:
 // PI_CODING_AGENT_DIR=$(mktemp -d) pi --no-extensions -e ./test/integration/thinking-steps-mermaid.check.ts --list-models
 import assert from "node:assert/strict";
 import { stripVTControlCharacters } from "node:util";
@@ -11,7 +11,8 @@ type Transformer = (markdown: string, context: { messageType: string; isStreamin
 type RenderedAssistant = {
 	updateContent(message: AssistantMessage, isStreaming: boolean): void;
 	render(width: number): string[];
-	contentContainer: { children: Array<{ children?: unknown[] }> };
+	isStreaming?: boolean;
+	contentContainer: { children: Array<{ constructor: { name: string }; children?: unknown[] }> };
 };
 
 export default async function () {
@@ -30,7 +31,12 @@ export default async function () {
 		const theme = { fg: (_color: string, text: string) => text, bold: getMarkdownTheme().bold };
 		release = await retainThinkingStepsPatch(theme);
 		const NativeAssistant = AssistantMessageComponent as unknown as new (...args: unknown[]) => RenderedAssistant;
-		const component = new NativeAssistant(undefined, false, getMarkdownTheme(), "Thinking...", 1, [mode.mermaidMarkdownTransformer]);
+		const contexts: Parameters<Transformer>[1][] = [];
+		const recordContext: Transformer = (markdown, context) => {
+			contexts.push(context);
+			return markdown;
+		};
+		const component = new NativeAssistant(undefined, false, getMarkdownTheme(), "Thinking...", 1, [recordContext, mode.mermaidMarkdownTransformer]);
 		const message: AssistantMessage = {
 			role: "assistant", api: "anthropic-messages", provider: "check", model: "check", timestamp: 1, stopReason: "stop",
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -44,7 +50,43 @@ export default async function () {
 		assert.doesNotMatch(output, /graph TD|A\[Start\]|-->/, "must render the diagram, not Mermaid source");
 		assert.ok(component.contentContainer.children.some((child) => child.children?.some((nested) => nested instanceof ThinkingStepsComponent)), "custom thinking component retained");
 		console.log(output);
-		console.log("PASS: native Mermaid diagram with thinking-steps");
+		for (const content of [
+			[{ type: "text", text: "Answer" }],
+			[{ type: "toolCall", id: "tool-1", name: "read", arguments: {} }],
+			[],
+			[{ type: "thinking", thinking: "" }],
+			[{ type: "thinking", thinking: " \n\t " }],
+			[{ type: "thinking", thinking: " \n " }, { type: "text", text: "Answer" }],
+		] satisfies AssistantMessage["content"][]) {
+			const hasText = content.some((block) => block.type === "text");
+			for (const isStreaming of [true, false]) {
+				contexts.length = 0;
+				component.updateContent({ ...message, content }, isStreaming);
+				assert.equal(component.isStreaming, isStreaming, "native streaming state preserved");
+				const rendered = stripVTControlCharacters(component.render(80).join("\n"));
+				assert.doesNotMatch(rendered, /Thinking/, "empty thinking stays silent");
+				assert.ok(!component.contentContainer.children.some((child) => child.children?.some((nested) => nested instanceof ThinkingStepsComponent)));
+				assert.equal(component.contentContainer.children.filter((child) => child.constructor.name === "Spacer").length, hasText ? 1 : 0);
+				if (hasText) {
+					assert.equal(component.contentContainer.children[0]?.constructor.name, "Spacer");
+					assert.match(rendered, /^\s*\n +Answer/, "normal leading text spacing retained");
+					assert.ok(contexts.length > 0, "assistant transformer invoked");
+					for (const context of contexts) {
+						assert.equal(context.messageType, "assistant");
+						assert.equal(context.isStreaming, isStreaming);
+						assert.equal(context.availableWidth, 78);
+					}
+				} else {
+					assert.equal(rendered, "", "no empty-panel spacing");
+				}
+			}
+		}
+		component.updateContent(message, false);
+		const completed = stripVTControlCharacters(component.render(80).join("\n"));
+		assert.match(completed, /Start/);
+		assert.match(completed, /Done/);
+		assert.doesNotMatch(completed, /graph TD|A\[Start\]|-->/);
+		console.log("PASS: native Mermaid diagram, silent empty thinking, and streaming transformer context");
 		exitCode = 0;
 	} catch (error) {
 		console.error(error);

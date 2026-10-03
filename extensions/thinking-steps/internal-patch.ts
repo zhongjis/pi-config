@@ -208,16 +208,8 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 			this.contentContainer.clear();
 
 			const thinkingBlocks = collectThinkingBlocks(message);
-			const addThinkingSteps = (blocks: ThinkingSourceBlock[]): void => {
-				const thinkingBox = new Box(this.outputPad, 0);
-				thinkingBox.addChild(new ThinkingStepsComponent(theme, message.timestamp, blocks, resolveThinkingMessageScope(message), isStreaming));
-				this.contentContainer.addChild(thinkingBox);
-			};
-			// Every assistant message keeps a thinking panel; it is labelled when no thinking was supplied.
-			this.contentContainer.addChild(new Spacer(1));
-			if (thinkingBlocks.length === 0) {
-				addThinkingSteps([]);
-				if (hasVisibleTextContent(message)) this.contentContainer.addChild(new Spacer(1));
+			if (thinkingBlocks.length > 0 || hasVisibleTextContent(message)) {
+				this.contentContainer.addChild(new Spacer(1));
 			}
 
 			let renderedThinking = false;
@@ -246,7 +238,9 @@ async function installPatch(theme: ThinkingThemeLike): Promise<() => void> {
 				}
 
 				if (content.type === "thinking" && thinkingBlocks.length > 0 && !renderedThinking) {
-					addThinkingSteps(thinkingBlocks);
+					const thinkingBox = new Box(this.outputPad, 0);
+					thinkingBox.addChild(new ThinkingStepsComponent(theme, message.timestamp, thinkingBlocks, resolveThinkingMessageScope(message)));
+					this.contentContainer.addChild(thinkingBox);
 					renderedThinking = true;
 					if (hasVisibleTextAfterThinking) {
 						this.contentContainer.addChild(new Spacer(1));

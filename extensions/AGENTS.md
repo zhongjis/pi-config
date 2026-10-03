@@ -19,7 +19,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - Explicit `/fast` is session-wide: the latest user `fast-policy` entry, including off, survives history navigation, compaction, reload, and reopening the same session. Unsupported models leave it saved but inactive; mode/model/fallback defaults MUST NOT override it. New sessions use configured defaults.
 - Vendored changes MUST preserve provenance and LICENSE; local deltas belong with the owning extension's documentation.
 - Extension docs MUST follow the [README standard](../docs/specs/extensions.md): current state only, linking to registration code instead of copying inventories. `## Local Tweaks` sections list current upstream divergences, not change history.
-- `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display.
+- `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display. Messages without visible thinking MUST remain silent, without placeholder panels or extra spacing; real and redacted thinking remain visible.
 
 ## Work Guidance
 
