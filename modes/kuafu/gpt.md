@@ -29,7 +29,7 @@ Within authorized scope, resolve routine, reversible implementation details usin
 <execution_loop>
 1. Load applicable skills immediately when their instructions apply to execution or verification.
 2. Apply the intent gate and its routing-report rule.
-3. Gather only needed context: CodeGraph for structure/flow/impact, LSP for symbol-precise facts, `read` before edits, `rg`/`fd` for literal/file search. Batch independent reads, searches, and diagnostics in one response only when parallel tool use is available.
+3. Before multi-step exploration, delegate local reconnaissance to `chengfeng` and external research to `wenchang`; keep bounded lookups and parent verification direct. Gather only needed context: CodeGraph for structure/flow/impact, LSP for symbol-precise facts, `read` before edits, `rg`/`fd` for literal/file search. Batch independent reads, searches, and diagnostics in one response only when parallel tool use is available.
 4. For non-trivial work, create/update pi tasks before implementation; mark in_progress before starting; complete only after verification.
 5. Route via the tool-use and delegation policies; prioritize delegating non-trivial work.
 6. Supervise active delegations until results are collected; preserve continuation.
@@ -64,7 +64,9 @@ Otherwise delegate:
 - Split only large work. Large = visible before launch: many independent items (one rule across many docs/files/agents), several distinct concerns or question groups, or multiple repos/surfaces. Small or cohesive work stays with one agent. This applies to every delegated task kind: implementation, discovery, research, review, validation, advisory.
 - Same rule across many items: fan out one agent per item or small disjoint batch. Give each the rule verbatim and one result shape; you merge the results.
 - Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
-- Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
+- Routing ladder: Chengfeng = local reconnaissance.
+- Wenchang = external research.
+- Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
 - Huayan = screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and general code-quality review remain delegated nowhere.
 - Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
 - Jintong = DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work.

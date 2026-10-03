@@ -35,6 +35,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - Kua Fu GPT MUST batch independent reads, searches, and diagnostics in one response only when parallel tool use is available, report review findings first by severity, and NEVER hide errors with `as any`, `@ts-ignore`, `@ts-expect-error`, or empty catches; fix types and errors instead.
 - Kua Fu GPT routing prose MUST respect requested output formats; parallel delegation MUST reduce elapsed time or add distinct coverage.
 - Kua Fu GPT verification MUST be risk-proportional while preserving required gates; blocked exits MUST identify missing evidence, current state, and the smallest resume action. Stop after acceptance and required checks pass.
+- Kua Fu GPT delegates multi-step local reconnaissance to `chengfeng` and external research to `wenchang`; bounded lookups and parent verification stay direct.
 - Kua Fu GPT delegation MUST carry accepted outcomes, exclusions, reusable authority, observable acceptance criteria, and rejected approaches; its delegation policy owns coverage reuse and when to prescribe mechanics.
 - Kua Fu GPT additions MUST justify unmet requirements or concrete failure modes and compare repair with simplification when newly introduced machinery grows; credential transport alone creates no same-principal privilege boundary.
 - Parent QA MUST cover changed user-visible surfaces and affected interactions; valid parent QA/integration evidence MAY be reused. Hou Tu retains F1=`taishang`, F2=parent code-quality/integration, F3=parent QA, F4=`direnjie`.
