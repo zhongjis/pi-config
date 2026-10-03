@@ -281,6 +281,40 @@ link_agent_graphs() {
   echo "Linked agent-graphs"
 }
 
+link_repo_themes() {
+  local source_dir="$REPO_DIR/themes"
+  local target_dir="$TARGET/themes"
+  local item
+  local target_path
+
+  if [ -L "$target_dir" ]; then
+    if [ "$(readlink "$target_dir")" != "$source_dir" ]; then
+      printf 'Refusing to replace unknown themes symlink: %s\n' "$target_dir" >&2
+      return 1
+    fi
+    rm "$target_dir"
+  elif [ -e "$target_dir" ] && [ ! -d "$target_dir" ]; then
+    printf 'Refusing to replace non-directory themes destination: %s\n' "$target_dir" >&2
+    return 1
+  fi
+
+  mkdir -p "$target_dir"
+
+  for item in "$source_dir"/*.json; do
+    [ -f "$item" ] || continue
+    target_path="$target_dir/$(basename "$item")"
+    if [ -L "$target_path" ] && [ "$(readlink "$target_path")" = "$item" ]; then
+      continue
+    fi
+    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+      printf 'Refusing to replace conflicting theme destination: %s\n' "$target_path" >&2
+      return 1
+    fi
+    ln -s "$item" "$target_path"
+    echo "Linked theme $(basename "$item")"
+  done
+}
+
 # Symlink only allowlisted items from repo into ~/.pi/agent/
 for name in "${ALLOWED_ITEMS[@]}"; do
   local_path="$REPO_DIR/$name"
@@ -294,6 +328,11 @@ for name in "${ALLOWED_ITEMS[@]}"; do
   # Skip Nix-managed items
   if is_nix_managed "$name"; then
     echo "Skipping (Nix-managed): $name"
+    continue
+  fi
+
+  if [ "$name" = "themes" ]; then
+    link_repo_themes
     continue
   fi
 
