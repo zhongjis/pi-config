@@ -7,6 +7,12 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 - **Source:** https://github.com/code-yeongyu/oh-my-openagent
 - **Adapted:** Pi-native adaptation of upstream `ultrawork/default.md` (Claude) and `ultrawork/gpt.md` (OpenAI), using Pi agents and tools. Pi handles continuation, so there is no loop. Durable notepads use `local://ulw/<goal-slug>.md` (requires `session-local`).
 
+## Local Tweaks
+
+- Both variants selectively vendor uncertainty-sized planning, child GOAL/STOP WHEN/EVIDENCE, and evidence-bounded stopping from upstream [GPT](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/gpt.md). The test-reading instruction appears in both upstream GPT and [default](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/default.md).
+- Pi uses advisory xuannv planning under active-mode policy, evidence-checked workers, and orchestrator-owned acceptance. Stopping preserves required verification, manual QA, and approval/handoff gates.
+- Notepads use exact-replacement `edit` operations and Agent-tree-shared `local://` storage; requested deliverables retain their required destinations.
+
 ## What It Does
 
 - Detects "ultrawork" or "ulw" keyword in user messages (case-insensitive, word-boundary)
