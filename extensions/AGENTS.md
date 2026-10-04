@@ -50,6 +50,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - [qol](qol/AGENTS.md) — shared footer, session UI, and write presentation.
 - [profiles](profiles/AGENTS.md) — provider registry filtering and activation precedence.
 - [multimodal-look](multimodal-look/AGENTS.md) — isolated vision inspection.
+- [imagegen](imagegen/AGENTS.md) — vendored image generation, `/img` workflows and local browser studio.
 - [init](init/AGENTS.md) — documentation initialization prompts.
 - [herdr-btw](herdr-btw/AGENTS.md) — vendored `/btw` Herdr side-thread launch and merge.
 - [recap](recap/AGENTS.md) — vendored session-recap lifecycle and model-chain fallback.

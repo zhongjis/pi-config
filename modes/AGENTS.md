@@ -14,6 +14,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 
 - You MUST follow [frontmatter semantics](../docs/guides/agent-frontmatter.md).
 - `mode.md` supplies frontmatter and the default body.
+- Kua Fu/Hou Tu MUST allow `imagegen` in `extension_tools`; Fu Xi MUST NOT: generation writes files and spends subscription quota.
 - Every active mode MUST allow `agent_graph`, `get_agent_result`, and `resolve_agent_graph_gate` in `extension_tools`; existing delegation and role restrictions still apply.
 - Every active mode MUST allow `panguan` and `simaqian` delegation so saved agent graphs that use them pass graph delegation preflight.
 - Mode model fallback chains MUST use `cliproxyapi` instead of `openai-codex` for Codex models.
