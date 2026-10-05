@@ -25,3 +25,5 @@ export class UnsupportedGoalStoreVersionError extends Error {
 		this.name = "UnsupportedGoalStoreVersionError";
 	}
 }
+
+export class GoalChangedError extends Error {}

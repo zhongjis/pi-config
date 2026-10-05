@@ -1,8 +1,10 @@
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
 	GoalAlreadyExistsError,
+	GoalChangedError,
 	GoalNotFoundError,
 	InvalidGoalStoreError,
 	UnsupportedGoalStoreVersionError,
@@ -28,111 +30,177 @@ export async function readGoal(ref: GoalStoreRef): Promise<Goal | null> {
 	}
 }
 
-export async function writeGoal(ref: GoalStoreRef, goal: Goal | null): Promise<void> {
+async function writeGoal(ref: GoalStoreRef, goal: Goal | null): Promise<void> {
 	const filePath = goalFilePath(ref);
 	await mkdir(dirname(filePath), { recursive: true });
 	const file: GoalFile = { version: STORE_VERSION, goal };
-	await writeFile(filePath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+	const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+	const handle = await open(temporaryPath, "wx", 0o600);
+	try {
+		try {
+			await handle.writeFile(`${JSON.stringify(file, null, 2)}\n`, "utf8");
+		} finally {
+			await handle.close();
+		}
+		await rename(temporaryPath, filePath);
+	} finally {
+		await rm(temporaryPath, { force: true });
+	}
 }
 
-export async function createGoal(ref: GoalStoreRef, objective: string, tokenBudget?: number): Promise<Goal> {
-	const current = await readGoal(ref);
-	if (current !== null && current.status !== "complete") {
-		throw new GoalAlreadyExistsError(
-			"cannot create a new goal because this thread has an unfinished goal; complete the existing goal first",
-		);
-	}
+export async function createGoal(
+	ref: GoalStoreRef,
+	objective: string,
+	tokenBudget?: number,
+	isCurrent?: () => boolean,
+): Promise<Goal> {
+	return withFileMutationQueue(goalFilePath(ref), async () => {
+		const current = await readGoal(ref);
+		if (isCurrent?.() === false) throw new Error("goal control changed");
+		if (current !== null && current.status !== "complete") {
+			throw new GoalAlreadyExistsError(
+				"cannot create a new goal because this thread has an unfinished goal; complete the existing goal first",
+			);
+		}
 
-	const normalizedObjective = validateObjective(objective);
-	validateTokenBudget(tokenBudget);
-	const now = nowSeconds();
-	const goal: Goal = {
-		id: randomUUID(),
-		threadId: ref.threadId,
-		objective: normalizedObjective,
-		status: "active",
-		tokensUsed: 0,
-		timeUsedSeconds: 0,
-		createdAt: now,
-		updatedAt: now,
-		lastStartedAt: now,
-	};
-	if (tokenBudget !== undefined) {
-		goal.tokenBudget = tokenBudget;
-	}
-	await writeGoal(ref, goal);
-	return goal;
-}
-
-export async function updateGoal(ref: GoalStoreRef, update: GoalUpdate): Promise<Goal> {
-	const current = await readGoal(ref);
-	if (!current) throw new GoalNotFoundError("cannot update goal: no goal exists");
-
-	const tokenBudget = validateTokenBudget(update.tokenBudget);
-	const objective = update.objective === undefined ? current.objective : validateObjective(update.objective);
-	const now = nowSeconds();
-	const hasObjectiveUpdate = update.objective !== undefined;
-	const replacesGoal = hasObjectiveUpdate && (objective !== current.objective || current.status === "complete");
-	const requestedStatus = update.status ?? (hasObjectiveUpdate ? "active" : undefined);
-
-	if (replacesGoal) {
-		const replacementBudget = tokenBudget === null ? undefined : tokenBudget;
-		const status = statusAfterBudgetLimit(requestedStatus ?? "active", 0, replacementBudget);
-		const next: Goal = {
+		const normalizedObjective = validateObjective(objective);
+		validateTokenBudget(tokenBudget);
+		const now = nowSeconds();
+		const goal: Goal = {
 			id: randomUUID(),
 			threadId: ref.threadId,
-			objective,
-			status,
+			objective: normalizedObjective,
+			status: "active",
 			tokensUsed: 0,
 			timeUsedSeconds: 0,
 			createdAt: now,
 			updatedAt: now,
+			lastStartedAt: now,
 		};
-		if (replacementBudget !== undefined) next.tokenBudget = replacementBudget;
-		if (status === "active") next.lastStartedAt = now;
-		if (status === "complete") next.completedAt = now;
-		await writeGoal(ref, next);
-		return next;
-	}
-
-	const nextTokenBudget = tokenBudget === null ? undefined : (tokenBudget ?? current.tokenBudget);
-	const status =
-		requestedStatus === undefined
-			? statusAfterBudgetUpdate(current.status, current.tokensUsed, nextTokenBudget)
-			: statusAfterExplicitStatusUpdate(current.status, requestedStatus, current.tokensUsed, nextTokenBudget);
-	const next: Goal = {
-		...current,
-		objective,
-		status,
-		updatedAt: now,
-	};
-
-	if (tokenBudget === null) {
-		delete next.tokenBudget;
-	} else if (tokenBudget !== undefined) {
-		next.tokenBudget = tokenBudget;
-	}
-
-	if (status === "active" && current.status !== "active") {
-		next.lastStartedAt = now;
-	} else if (status !== "active") {
-		delete next.lastStartedAt;
-	}
-
-	if (status === "complete") {
-		next.completedAt = current.completedAt ?? now;
-	} else {
-		delete next.completedAt;
-	}
-
-	await writeGoal(ref, next);
-	return next;
+		if (tokenBudget !== undefined) {
+			goal.tokenBudget = tokenBudget;
+		}
+		await writeGoal(ref, goal);
+		return goal;
+	});
 }
 
-export async function clearGoal(ref: GoalStoreRef): Promise<boolean> {
-	const hadGoal = (await readGoal(ref)) !== null;
-	await writeGoal(ref, null);
-	return hadGoal;
+export async function updateGoal(
+	ref: GoalStoreRef,
+	update: GoalUpdate,
+	guard?: {
+		expectedGoalId: string;
+		expectedStatus?: Goal["status"];
+		actor: "model" | "user" | "abort";
+		isCurrent?: () => boolean;
+	},
+): Promise<Goal> {
+	return withFileMutationQueue(goalFilePath(ref), async () => {
+		const current = await readGoal(ref);
+		if (!current) throw new GoalNotFoundError("cannot update goal: no goal exists");
+
+		if (
+			guard &&
+			(current.id !== guard.expectedGoalId ||
+				(guard.expectedStatus !== undefined && current.status !== guard.expectedStatus) ||
+				guard.isCurrent?.() === false)
+		) {
+			throw new GoalChangedError("goal changed before update; read the current goal again");
+		}
+		if (
+			guard?.actor === "model" &&
+			((update.status !== "complete" && update.status !== "blocked") ||
+				update.objective !== undefined ||
+				update.tokenBudget !== undefined ||
+				(current.status !== "active" && !(current.status === "budgetLimited" && update.status === "complete")))
+		)
+			throw new Error("model may only complete or block an active goal, or complete a budget-limited goal");
+		const blockedReason = update.blockedReason?.trim();
+		const tokenBudget = validateTokenBudget(update.tokenBudget);
+		const objective = update.objective === undefined ? current.objective : validateObjective(update.objective);
+		const now = nowSeconds();
+		const hasObjectiveUpdate = update.objective !== undefined;
+		const replacesGoal = hasObjectiveUpdate && (objective !== current.objective || current.status === "complete");
+		const requestedStatus = update.status ?? (hasObjectiveUpdate ? "active" : undefined);
+
+		if (replacesGoal) {
+			const replacementBudget = tokenBudget === null ? undefined : tokenBudget;
+			const status = statusAfterBudgetLimit(requestedStatus ?? "active", 0, replacementBudget);
+			const next: Goal = {
+				id: randomUUID(),
+				threadId: ref.threadId,
+				objective,
+				status,
+				tokensUsed: 0,
+				timeUsedSeconds: 0,
+				createdAt: now,
+				updatedAt: now,
+			};
+			if (replacementBudget !== undefined) next.tokenBudget = replacementBudget;
+			if (status === "active") next.lastStartedAt = now;
+			if (status === "complete") next.completedAt = now;
+			if (status === "blocked") {
+				if (!blockedReason) throw new Error("blocking a goal requires a nonempty blockedReason");
+				next.blockedReason = blockedReason;
+				next.blockedAt = now;
+			}
+			await writeGoal(ref, next);
+			return next;
+		}
+
+		const nextTokenBudget = tokenBudget === null ? undefined : (tokenBudget ?? current.tokenBudget);
+		const status =
+			guard?.actor === "abort" && requestedStatus === "paused"
+				? "paused"
+				: requestedStatus === undefined
+					? statusAfterBudgetUpdate(current.status, current.tokensUsed, nextTokenBudget)
+					: statusAfterExplicitStatusUpdate(current.status, requestedStatus, current.tokensUsed, nextTokenBudget);
+		const next: Goal = {
+			...current,
+			objective,
+			status,
+			updatedAt: now,
+		};
+
+		if (tokenBudget === null) {
+			delete next.tokenBudget;
+		} else if (tokenBudget !== undefined) {
+			next.tokenBudget = tokenBudget;
+		}
+
+		if (status === "active" && current.status !== "active") {
+			next.lastStartedAt = now;
+		} else if (status !== "active") {
+			delete next.lastStartedAt;
+		}
+
+		if (status === "complete") {
+			next.completedAt = current.completedAt ?? now;
+		} else {
+			delete next.completedAt;
+		}
+
+		if (status === "blocked") {
+			if (current.status !== "blocked" && !blockedReason)
+				throw new Error("blocking a goal requires a nonempty blockedReason");
+			next.blockedReason = blockedReason ?? current.blockedReason;
+			next.blockedAt = current.blockedAt ?? now;
+		} else {
+			delete next.blockedReason;
+			delete next.blockedAt;
+		}
+		await writeGoal(ref, next);
+		return next;
+	});
+}
+
+export async function clearGoal(ref: GoalStoreRef, isCurrent?: () => boolean): Promise<boolean> {
+	return withFileMutationQueue(goalFilePath(ref), async () => {
+		const hadGoal = (await readGoal(ref)) !== null;
+		if (isCurrent?.() === false) throw new Error("goal control changed");
+		await writeGoal(ref, null);
+		return hadGoal;
+	});
 }
 
 export async function accountGoalUsage(
@@ -142,23 +210,25 @@ export async function accountGoalUsage(
 	mode: GoalAccountingMode = "active",
 	expectedGoalId?: string,
 ): Promise<Goal | null> {
-	const goal = await readGoal(ref);
-	if (!goal) return goal;
-	if (expectedGoalId !== undefined && goal.id !== expectedGoalId) return goal;
-	if (!canAccountGoalUsage(goal, mode)) return goal;
+	return withFileMutationQueue(goalFilePath(ref), async () => {
+		const goal = await readGoal(ref);
+		if (!goal) return goal;
+		if (expectedGoalId !== undefined && goal.id !== expectedGoalId) return goal;
+		if (!canAccountGoalUsage(goal, mode)) return goal;
 
-	const tokensUsed = goal.tokensUsed + goalTokenDeltaForUsage(usage);
-	const now = nowSeconds();
-	const next: Goal = {
-		...goal,
-		tokensUsed,
-		timeUsedSeconds: goal.timeUsedSeconds + Math.max(0, Math.trunc(elapsedSeconds)),
-		updatedAt: now,
-		status: statusAfterAccounting(goal.status, tokensUsed, goal.tokenBudget, mode),
-	};
-	if (next.status === "budgetLimited") delete next.lastStartedAt;
-	await writeGoal(ref, next);
-	return next;
+		const tokensUsed = goal.tokensUsed + goalTokenDeltaForUsage(usage);
+		const now = nowSeconds();
+		const next: Goal = {
+			...goal,
+			tokensUsed,
+			timeUsedSeconds: goal.timeUsedSeconds + Math.max(0, Math.trunc(elapsedSeconds)),
+			updatedAt: now,
+			status: statusAfterAccounting(goal.status, tokensUsed, goal.tokenBudget, mode),
+		};
+		if (next.status === "budgetLimited") delete next.lastStartedAt;
+		await writeGoal(ref, next);
+		return next;
+	});
 }
 
 function canAccountGoalUsage(goal: Goal, mode: GoalAccountingMode): boolean {
@@ -191,7 +261,7 @@ function statusAfterAccounting(
 		case "activeOrComplete":
 			return status === "active" ? "budgetLimited" : status;
 		case "activeOrStopped":
-			return status === "active" || status === "paused" || status === "budgetLimited" ? "budgetLimited" : status;
+			return status === "active" ? "budgetLimited" : status;
 	}
 }
 
@@ -227,14 +297,11 @@ function statusAfterBudgetLimit(
 function parseGoalFile(raw: string): GoalFile {
 	const parsed: unknown = JSON.parse(raw);
 	if (!isRecord(parsed)) throw new InvalidGoalStoreError("goal store must be a JSON object");
-	if (parsed["version"] !== STORE_VERSION)
-		throw new UnsupportedGoalStoreVersionError("unsupported goal store version");
+	if (parsed["version"] !== STORE_VERSION) throw new UnsupportedGoalStoreVersionError("unsupported goal store version");
 	const goal = parsed["goal"];
-	if (goal !== null && !isGoal(goal)) throw new InvalidGoalStoreError("goal store contains an invalid goal");
-	return {
-		version: STORE_VERSION,
-		goal,
-	};
+	if (goal === null) return { version: STORE_VERSION, goal: null };
+	if (!isGoal(goal)) throw new InvalidGoalStoreError("goal store contains an invalid goal");
+	return { version: STORE_VERSION, goal };
 }
 
 function isMissingFile(error: unknown): boolean {
@@ -252,6 +319,8 @@ function isGoal(value: unknown): value is Goal {
 		typeof value["threadId"] === "string" &&
 		typeof value["objective"] === "string" &&
 		isGoalStatus(value["status"]) &&
+		(value["blockedReason"] === undefined || typeof value["blockedReason"] === "string") &&
+		(value["blockedAt"] === undefined || isNonNegativeSafeInteger(value["blockedAt"])) &&
 		(value["tokenBudget"] === undefined || isPositiveSafeInteger(value["tokenBudget"])) &&
 		isNonNegativeSafeInteger(value["tokensUsed"]) &&
 		isNonNegativeSafeInteger(value["timeUsedSeconds"]) &&
@@ -264,11 +333,7 @@ function isGoal(value: unknown): value is Goal {
 
 function isGoalStatus(value: unknown): value is Goal["status"] {
 	return (
-		value === "active" ||
-		value === "paused" ||
-		value === "blocked" ||
-		value === "budgetLimited" ||
-		value === "complete"
+		value === "active" || value === "paused" || value === "blocked" || value === "budgetLimited" || value === "complete"
 	);
 }
 

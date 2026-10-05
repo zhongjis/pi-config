@@ -2,18 +2,14 @@
 
 Persistent `/goal` support for pi, porting Codex-style goal mode: a thread-scoped goal store, hidden continuation prompts that keep the agent working toward the objective, token/elapsed-time accounting with optional token budgets, a `blocked` escape hatch, and a Codex-style footer indicator.
 
-## Upstream
+## Origin and maintenance
 
-- Source: https://github.com/code-yeongyu/oh-my-openagent (monorepo path `packages/pi-goal`, branch `dev`)
-- Upstream package: `@oh-my-opencode/pi-goal` v4.15.1 (vendored in that monorepo from `code-yeongyu/pi-goal`)
-- Commit: `dec381ed201a1326883db9f42bdb3c2add91b299`
-- License: MIT (`LICENSE` vendored)
-- Local changes: vendors upstream `src/` and `test/`; pi peer imports use `@earendil-works/*`; tests run under `vitest` (with `vi` fake timers); a root `index.ts` re-export shim supports this repo's `extensions/<name>/index.ts` discovery; upstream `package.json`/tsconfig/biome/CI/`SKILL.md` are omitted because root catalog deps and tooling cover them.
+Independently maintained in Panda Harness. Origin: [code-yeongyu/pi-goal](https://github.com/code-yeongyu/pi-goal), distributed through [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent/tree/dev/packages/pi-goal). The original MIT copyright and permission notice remain in [LICENSE](LICENSE).
 
 ## Tools
 
-- `create_goal` — create an active goal with an `objective` and optional `token_budget`; fails if an active goal exists.
-- `update_goal` — set `status` to `complete` only when the objective is achieved, or `blocked` only after the same blocking condition recurs for ≥3 consecutive turns. Pause/resume are user-controlled.
+- `create_goal` — create an active goal with an `objective` and optional `token_budget`; fails if an unfinished goal exists.
+- `update_goal` — set `status` to `complete` only when the objective is achieved, or `blocked` with a specific nonempty `blockedReason` after an exhausted external-state or unanswered-user impasse recurs for ≥3 consecutive Goal turns. This is a floor, not an attempt cap; live background results and pending questions remain waits, not blockers. Pause/resume are user-controlled.
 - `get_goal` — return the current goal, usage, and budget.
 - `/goal [<objective>|pause|resume|clear]` — show, set, pause, resume, or clear the goal.
 
@@ -23,9 +19,16 @@ Tool schemas, the command, and lifecycle hooks are registered in [`src/index.ts`
 
 No config file. Goal state persists as JSON keyed by thread id, under the session directory or `$PI_CODING_AGENT_DIR` (default `~/.pi/agent`) when there is no session. Paths are resolved in [`src/goal/context.ts`](src/goal/context.ts); statuses are defined in [`src/goal/types.ts`](src/goal/types.ts).
 
-## Local Additions
+## Runtime contracts
 
-Local features on top of upstream:
+- User Stop persists `paused`, including in-flight provider/tool cancellation. Reopening and ordinary input do not resume it; use `/goal resume` (or explicitly set an objective). Provider errors suppress automatic continuation without pausing.
+- [Store](src/goal/store.ts) mutations serialize the entire read-modify-write through Pi's native file queue and publish via a private same-directory atomic rename. This is process-local serialization with one active Pi owner per session, not cross-process locking.
+- Delayed mutations check Goal identity, status, and control generation. Model updates cannot overwrite paused or replaced Goals, resume, or change budgets. Block metadata survives reads and clears on leaving blocked.
+- Accounting runs at `agent_end`; clean automatic continuation uses native actionable `agent_before_settle` entries. Restore and explicit commands share single-flight admission. Obsolete hidden Goal instructions are excluded from model context; Pi offers no selective dequeue for already-sent idle-start messages.
+- Token budgets remain a hard substantive-work ceiling, with one usage wrapup; completion finalizes in-flight usage. User cancellation remains paused even when its final usage exceeds budget.
+- [Prompts](src/goal/prompt.ts) treat the objective as untrusted data and require current evidence per requirement. Semantic completion, exhausted paths, and repeated blockers remain model audits, not runtime proofs or universal wake-source tracking.
+
+## Display and integration
 
 - **Compact tool-result rendering** (`src/goal/render.ts`): the `create_goal`/`get_goal`/`update_goal` tools show a collapsed `keyword: content` summary (objective, status, elapsed time, tokens) with an expand hint; expanding shows the raw JSON. Model-visible `result.content` is unchanged.
 - **Footer bridge:** the goal status indicator is published for the `qol` extension's footer instead of clobbering the shared footer slot; a standalone Codex-style footer is the fallback when `qol` is absent.

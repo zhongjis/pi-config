@@ -2,13 +2,12 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { Type } from "typebox";
 
 import { parseGoalCommand } from "./goal/command.js";
-import { shouldQueueGoalContinuationAfterAgentEnd, shouldQueueGoalContinuationWhenIdle } from "./goal/continuation.js";
+import { createGoalAdmission } from "./goal/continuation.js";
 import { formatGoalForTool, formatGoalToolResponse, goalStatusLabel } from "./goal/format.js";
-import { buildBudgetLimitedPrompt, buildContinuationPrompt } from "./goal/prompt.js";
 import { renderGoalCall, renderGoalResult } from "./goal/render.js";
-import { GoalAlreadyExistsError } from "./goal/errors.js";
+import { GoalAlreadyExistsError, GoalChangedError, GoalNotFoundError } from "./goal/errors.js";
 import { accountGoalUsage, clearGoal, createGoal, readGoal, updateGoal } from "./goal/store.js";
-import type { Goal, GoalAccountingMode, TokenUsageSnapshot } from "./goal/types.js";
+import type { Goal, GoalAccountingMode, GoalStoreRef, TokenUsageSnapshot } from "./goal/types.js";
 import { goalStoreRef } from "./goal/context.js";
 import { COMPLETABLE_GOAL_STATUS_VALUES, isRecord } from "./goal/types.js";
 import { updateGoalUi } from "./goal/ui.js";
@@ -19,8 +18,6 @@ const GOAL_CONTINUATION_MESSAGE_TYPE = "pi-goal-continuation";
 const GOAL_BUDGET_LIMIT_MESSAGE_TYPE = "pi-goal-budget-limit";
 const REPLACE_GOAL_CHOICE = "Replace current goal";
 const CANCEL_REPLACE_GOAL_CHOICE = "Cancel";
-const RESUME_GOAL_CHOICE = "Resume goal";
-const LEAVE_GOAL_PAUSED_CHOICE = "Leave paused";
 const EMPTY_USAGE: TokenUsageSnapshot = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
 const STALE_EXTENSION_CONTEXT_ERROR_PREFIX = "This extension ctx is stale after session replacement or reload.";
 
@@ -38,7 +35,19 @@ export default function (pi: ExtensionAPI): void {
 	let agentTurnInProgress = false;
 	let agentGoalAccounting: AgentGoalAccounting | null = null;
 	let completedThisTurnGoalId: string | null = null;
-	let budgetLimitReportedGoalId: string | null = null;
+	const admission = createGoalAdmission();
+	let run: { ref: GoalStoreRef; goalId: string; generation: number; signal?: AbortSignal; aborted: boolean } | null =
+		null;
+	let removeAbortListener: (() => void) | undefined;
+
+	async function queueGoalContinuation(ctx: ExtensionContext, goal: Goal): Promise<void> {
+		const generation = admission.generation;
+		const draft = await admission.admit(ctx, goal);
+		if (draft && generation === admission.generation) {
+			admission.committed(goal);
+			pi.sendMessage(draft, { triggerTurn: true, deliverAs: "followUp" });
+		}
+	}
 
 	pi.registerTool({
 		name: "create_goal",
@@ -60,13 +69,28 @@ export default function (pi: ExtensionAPI): void {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const ref = goalStoreRef(ctx);
 			let goal: Goal;
+			const generation = admission.generation;
 			try {
-				goal = await createGoal(ref, params.objective, params.token_budget);
+				goal = await createGoal(
+					ref,
+					params.objective,
+					params.token_budget,
+					() => generation === admission.generation && !ctx.signal?.aborted,
+				);
 			} catch (error) {
 				if (error instanceof GoalAlreadyExistsError) return toolText(error.message, true);
 				throw error;
 			}
+			if (generation !== admission.generation) return toolText("goal control changed", true);
 			beginAgentGoalAccounting(goal);
+			if (agentTurnInProgress)
+				run = {
+					ref,
+					goalId: goal.id,
+					generation: admission.generation,
+					signal: ctx.signal,
+					aborted: ctx.signal?.aborted ?? false,
+				};
 			updateGoalUi(ctx, goal);
 			return toolText(formatGoalToolResponse(goal, false));
 		},
@@ -82,9 +106,10 @@ export default function (pi: ExtensionAPI): void {
 		name: "update_goal",
 		label: "Update Goal",
 		description:
-			"Update the existing goal.\nUse this tool only to mark the goal achieved or genuinely blocked.\nSet status to `complete` only when the objective has actually been achieved and no required work remains.\nSet status to `blocked` only when the same blocking condition has repeated for at least three consecutive goal turns, counting the original/user-triggered turn and any automatic continuations, and the agent cannot make meaningful progress without user input or an external-state change.\nIf the user resumes a goal that was previously marked `blocked`, treat the resumed run as a fresh blocked audit. If the same blocking condition then repeats for at least three consecutive resumed goal turns, set status to `blocked` again.\nOnce the blocked threshold is satisfied, do not keep reporting that you are still blocked while leaving the goal active; set status to `blocked`.\nDo not use `blocked` merely because the work is hard, slow, uncertain, incomplete, or would benefit from clarification.\nDo not mark a goal complete merely because its budget is nearly exhausted or because you are stopping work.\nYou cannot use this tool to pause, resume, budget-limit, or usage-limit a goal; those status changes are controlled by the user or system.\nWhen marking a budgeted goal achieved with status `complete`, report the final token usage from the tool result to the user.",
+			"Update the existing goal.\nUse this tool only to mark the goal achieved or genuinely blocked.\nSet status to `complete` only when the objective has actually been achieved and no required work remains.\nSet status to `blocked` only when the same blocking condition has repeated for at least three consecutive goal turns, counting the original/user-triggered turn and any automatic continuations, and available authorized paths are exhausted: progress requires unavailable external state or a necessary unanswered user decision. Three turns are a floor, not an attempt cap. Do not block while a live background result, pending question, or available path can resolve the impasse. Supply a specific nonempty blockedReason.\nIf the user resumes a goal that was previously marked `blocked`, treat the resumed run as a fresh blocked audit. If the same blocking condition then repeats for at least three consecutive resumed goal turns, set status to `blocked` again.\nOnce the blocked threshold is satisfied, do not keep reporting that you are still blocked while leaving the goal active; set status to `blocked`.\nDo not use `blocked` merely because the work is hard, slow, uncertain, incomplete, or would benefit from clarification.\nDo not mark a goal complete merely because its budget is nearly exhausted or because you are stopping work.\nYou cannot use this tool to pause, resume, budget-limit, or usage-limit a goal; those status changes are controlled by the user or system.\nWhen marking a budgeted goal achieved with status `complete`, report the final token usage from the tool result to the user.",
 		parameters: Type.Object(
 			{
+				blockedReason: Type.Optional(Type.String({ description: "Specific exhausted impasse; required for blocked." })),
 				status: Type.Union(
 					COMPLETABLE_GOAL_STATUS_VALUES.map((status) => Type.Literal(status)),
 					{
@@ -102,8 +127,29 @@ export default function (pi: ExtensionAPI): void {
 					true,
 				);
 			}
+			const ref = goalStoreRef(ctx);
+			const generation = admission.generation;
+			const current = await readGoal(ref);
+			if (
+				!current ||
+				generation !== admission.generation ||
+				(run && (run.goalId !== current.id || run.generation !== generation))
+			) {
+				return toolText("goal changed before update; read the current goal again", true);
+			}
 			await accountCurrentAgentTurn(ctx, EMPTY_USAGE, "active");
-			const goal = await updateGoal(goalStoreRef(ctx), { status: params.status });
+			if (generation !== admission.generation || ctx.signal?.aborted) return toolText("goal control changed", true);
+			const goal = await updateGoal(
+				ref,
+				{ status: params.status, blockedReason: params.blockedReason },
+				{
+					expectedGoalId: current.id,
+					expectedStatus: current.status,
+					actor: "model",
+					isCurrent: () => generation === admission.generation && !ctx.signal?.aborted,
+				},
+			);
+			if (generation !== admission.generation) return toolText("goal control changed", true);
 			if (params.status === "complete") {
 				markGoalCompletedThisTurn(goal);
 			} else {
@@ -143,6 +189,9 @@ export default function (pi: ExtensionAPI): void {
 		description: "Set, inspect, pause, resume, or clear the persistent goal",
 		handler: async (rawArgs, ctx) => {
 			const command = parseGoalCommand(rawArgs);
+			if (command.kind !== "show") admission.invalidate();
+			const generation = admission.generation;
+			const ref = goalStoreRef(ctx);
 			try {
 				switch (command.kind) {
 					case "show": {
@@ -155,27 +204,38 @@ export default function (pi: ExtensionAPI): void {
 						return;
 					}
 					case "setObjective": {
-						await setGoalObjective(pi, ctx, command.objective);
+						await setGoalObjective(ctx, command.objective);
 						return;
 					}
 					case "setStatus": {
+						const current = await readGoal(ref);
+						if (generation !== admission.generation) return;
+						if (!current) throw new GoalNotFoundError("cannot update goal: no goal exists");
 						if (command.status === "paused") {
 							await accountCurrentAgentTurn(ctx, EMPTY_USAGE, "active");
 						}
-						const goal = await updateGoal(goalStoreRef(ctx), { status: command.status });
+						const goal = await updateGoal(
+							ref,
+							{ status: command.status },
+							{
+								expectedGoalId: current.id,
+								actor: "user",
+								isCurrent: () => generation === admission.generation,
+							},
+						);
 						if (goal.status === "active") {
 							beginAgentGoalAccounting(goal);
-						} else {
+						} else if (!agentTurnInProgress) {
 							stopAgentGoalAccounting(goal.id);
 						}
 						updateGoalUi(ctx, goal);
 						ctx.ui.notify(`Goal ${goalStatusLabel(goal.status)}\n${formatGoalForTool(goal)}`, "info");
-						queueGoalContinuation(pi, ctx, goal);
+						await queueGoalContinuation(ctx, goal);
 						return;
 					}
 					case "clear": {
 						await accountCurrentAgentTurn(ctx, EMPTY_USAGE, "active");
-						const cleared = await clearGoal(goalStoreRef(ctx));
+						const cleared = await clearGoal(ref, () => generation === admission.generation);
 						clearAgentGoalAccounting();
 						updateGoalUi(ctx, null);
 						ctx.ui.notify(
@@ -191,69 +251,147 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.on("session_start", async (event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
+		admission.invalidate();
+		removeAbortListener?.();
+		run = null;
+		clearAgentGoalAccounting();
+		const generation = admission.generation;
 		const goal = await readGoal(goalStoreRef(ctx));
-		if (goal?.status === "active") {
-			beginAgentGoalAccounting(goal);
-		} else {
-			clearAgentGoalAccounting();
-		}
+		if (generation !== admission.generation) return;
+		if (goal?.status === "active") beginAgentGoalAccounting(goal);
 		updateGoalUi(ctx, goal);
-		if (await maybePromptResumePausedGoal(pi, ctx, event.reason, goal)) {
-			return;
-		}
-		if (shouldQueueGoalContinuationWhenIdle(goal, ctx.isIdle(), ctx.hasPendingMessages())) {
-			queueHiddenGoalPrompt(pi, GOAL_CONTINUATION_MESSAGE_TYPE, buildContinuationPrompt(goal));
-		}
+		if (goal) await queueGoalContinuation(ctx, goal);
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
+		admission.started();
 		agentTurnInProgress = true;
 		completedThisTurnGoalId = null;
-		const goal = await readGoal(goalStoreRef(ctx));
-		if (goal?.status === "active") {
-			beginAgentGoalAccounting(goal);
-		} else {
-			agentGoalAccounting = null;
+		removeAbortListener?.();
+		const ref = goalStoreRef(ctx);
+		const generation = admission.generation;
+		const signal = ctx.signal;
+		const goal = await readGoal(ref);
+		if (generation !== admission.generation) return;
+		run =
+			goal && (goal.status === "active" || goal.status === "budgetLimited")
+				? { ref, goalId: goal.id, generation, signal, aborted: signal?.aborted ?? false }
+				: null;
+		const currentRun = run;
+		const onAbort = () => {
+			if (currentRun) currentRun.aborted = true;
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
+		removeAbortListener = () => signal?.removeEventListener("abort", onAbort);
+		if (goal?.status === "active") beginAgentGoalAccounting(goal);
+		else agentGoalAccounting = null;
+	});
+
+	async function pauseAbortedRun(ctx: ExtensionContext): Promise<void> {
+		const currentRun = run;
+		if (!currentRun?.aborted || currentRun.generation !== admission.generation) return;
+		const goal = await readGoal(currentRun.ref);
+		if (
+			currentRun.generation !== admission.generation ||
+			goal?.id !== currentRun.goalId ||
+			(goal.status !== "active" && goal.status !== "budgetLimited")
+		)
+			return;
+		let paused: Goal;
+		try {
+			paused = await updateGoal(
+				currentRun.ref,
+				{ status: "paused" },
+				{
+					expectedGoalId: currentRun.goalId,
+					expectedStatus: goal.status,
+					actor: "abort",
+					isCurrent: () => currentRun.generation === admission.generation,
+				},
+			);
+		} catch (error) {
+			if (error instanceof GoalChangedError || error instanceof GoalNotFoundError) return;
+			throw error;
 		}
+		admission.invalidate();
+		updateGoalUiBestEffort(ctx, paused);
+	}
+
+	pi.on("turn_end", async (event, ctx) => {
+		if (event.outcome === "aborted" && run) run.aborted = true;
+		await pauseAbortedRun(ctx);
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
-		const mode: GoalAccountingMode = completedThisTurnGoalId === null ? "active" : "activeOrComplete";
+		if (
+			run &&
+			(run.signal?.aborted ||
+				event.messages.some((message) => message.role === "assistant" && message.stopReason === "aborted"))
+		)
+			run.aborted = true;
+		await pauseAbortedRun(ctx);
+		const mode: GoalAccountingMode = completedThisTurnGoalId === null ? "activeOrStopped" : "activeOrComplete";
 		const goal = await accountCurrentAgentTurn(ctx, collectAssistantUsage(event.messages), mode);
 		agentTurnInProgress = false;
 		completedThisTurnGoalId = null;
-		if (goal?.status === "active") {
-			beginAgentGoalAccounting(goal);
-		} else {
-			clearAgentGoalAccounting();
-		}
+		if (goal?.status !== "active") clearAgentGoalAccounting();
 		updateGoalUiBestEffort(ctx, goal);
-		if (goal?.status === "budgetLimited") {
-			if (!ctx.hasPendingMessages() && budgetLimitReportedGoalId !== goal.id) {
-				budgetLimitReportedGoalId = goal.id;
-				queueHiddenGoalPrompt(pi, GOAL_BUDGET_LIMIT_MESSAGE_TYPE, buildBudgetLimitedPrompt(goal));
-			}
-			return;
-		}
-		if (
-			goal?.status === "active" &&
-			shouldQueueGoalContinuationAfterAgentEnd(goal, ctx.hasPendingMessages(), event.messages)
-		) {
-			queueHiddenGoalPrompt(pi, GOAL_CONTINUATION_MESSAGE_TYPE, buildContinuationPrompt(goal));
-		}
+	});
+
+	pi.on("agent_before_settle", async (event, ctx) => {
+		if (event.outcome !== "completed" || event.continue || run?.aborted) return;
+		const generation = admission.generation;
+		const ref = goalStoreRef(ctx);
+		const goal = await readGoal(ref);
+		if (!goal || generation !== admission.generation) return;
+		const draft = await admission.admit(ctx, goal, true);
+		if (!draft || generation !== admission.generation) return;
+		admission.committed(goal);
+		return { entries: [draft], continue: true };
+	});
+
+	pi.on("agent_settled", async (_event, ctx) => {
+		if (run?.signal?.aborted) run.aborted = true;
+		await pauseAbortedRun(ctx);
+		removeAbortListener?.();
+		run = null;
+	});
+
+	pi.on("context", async (event, ctx) => {
+		const goal = await readGoal(goalStoreRef(ctx));
+		return {
+			messages: event.messages.filter((message) => {
+				if (
+					message.role !== "custom" ||
+					(message.customType !== GOAL_CONTINUATION_MESSAGE_TYPE &&
+						message.customType !== GOAL_BUDGET_LIMIT_MESSAGE_TYPE)
+				)
+					return true;
+				return (
+					isRecord(message.details) &&
+					message.details.goalId === goal?.id &&
+					(goal?.status === "active"
+						? message.customType === GOAL_CONTINUATION_MESSAGE_TYPE
+						: goal?.status === "budgetLimited" && message.customType === GOAL_BUDGET_LIMIT_MESSAGE_TYPE)
+				);
+			}),
+		};
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		if (agentGoalAccounting !== null) {
-			await accountCurrentAgentTurn(ctx, EMPTY_USAGE, "active");
-		}
+		admission.invalidate();
+		removeAbortListener?.();
+		if (agentGoalAccounting !== null) await accountCurrentAgentTurn(ctx, EMPTY_USAGE, "active");
 		clearAgentGoalAccounting();
+		run = null;
 	});
 
-	async function setGoalObjective(pi: ExtensionAPI, ctx: ExtensionContext, objective: string): Promise<void> {
+	async function setGoalObjective(ctx: ExtensionContext, objective: string): Promise<void> {
 		const ref = goalStoreRef(ctx);
+		const generation = admission.generation;
 		const current = await readGoal(ref);
+		if (generation !== admission.generation) return;
 		if (current !== null) {
 			const shouldReplace = await confirmReplaceGoal(ctx, objective);
 			if (!shouldReplace) return;
@@ -262,11 +400,27 @@ export default function (pi: ExtensionAPI): void {
 		if (current?.status === "active") {
 			await accountCurrentAgentTurn(ctx, EMPTY_USAGE, "active");
 		}
-		const goal = current === null ? await createGoal(ref, objective) : await updateGoal(ref, { objective });
+		const goal =
+			current === null
+				? await createGoal(ref, objective, undefined, () => generation === admission.generation)
+				: await updateGoal(
+						ref,
+						{ objective },
+						{
+							expectedGoalId: current.id,
+							actor: "user",
+							isCurrent: () => generation === admission.generation,
+						},
+					);
 		if (goal.status === "active") beginAgentGoalAccounting(goal);
 		updateGoalUi(ctx, goal);
-		ctx.ui.notify(`Goal ${goalStatusLabel(goal.status)}\n${formatGoalForTool(goal)}`, "info");
-		queueGoalContinuation(pi, ctx, goal);
+		ctx.ui.notify(
+			current === null || goal.id !== current.id
+				? `Goal started\nObjective: ${goal.objective}`
+				: `Goal ${goalStatusLabel(goal.status)}\n${formatGoalForTool(goal)}`,
+			"info",
+		);
+		await queueGoalContinuation(ctx, goal);
 	}
 
 	async function confirmReplaceGoal(ctx: ExtensionContext, objective: string): Promise<boolean> {
@@ -278,32 +432,8 @@ export default function (pi: ExtensionAPI): void {
 		return choice === REPLACE_GOAL_CHOICE;
 	}
 
-	async function maybePromptResumePausedGoal(
-		pi: ExtensionAPI,
-		ctx: ExtensionContext,
-		sessionStartReason: string,
-		goal: Goal | null,
-	): Promise<boolean> {
-		if (!isResumeOfPausedGoal(ctx, sessionStartReason, goal)) {
-			return false;
-		}
-
-		const choice = await ctx.ui.select(`Resume paused goal?\nGoal: ${goal.objective}`, [
-			RESUME_GOAL_CHOICE,
-			LEAVE_GOAL_PAUSED_CHOICE,
-		]);
-		if (choice !== RESUME_GOAL_CHOICE) return true;
-
-		const resumed = await updateGoal(goalStoreRef(ctx), { status: "active" });
-		beginAgentGoalAccounting(resumed);
-		updateGoalUi(ctx, resumed);
-		ctx.ui.notify(`Goal ${goalStatusLabel(resumed.status)}\n${formatGoalForTool(resumed)}`, "info");
-		queueGoalContinuation(pi, ctx, resumed);
-		return true;
-	}
-
 	function beginAgentGoalAccounting(goal: Goal): void {
-		if (goal.status !== "active") return;
+		if (goal.status !== "active" || (agentTurnInProgress && run && run.goalId !== goal.id)) return;
 		if (agentGoalAccounting?.goalId === goal.id) return;
 		agentGoalAccounting = { goalId: goal.id, measuredFromMilliseconds: Date.now() };
 	}
@@ -334,17 +464,14 @@ export default function (pi: ExtensionAPI): void {
 		mode: GoalAccountingMode,
 	): Promise<Goal | null> {
 		const accounting = agentGoalAccounting;
-		const ref = goalStoreRef(ctx);
+		const ref = run?.ref ?? goalStoreRef(ctx);
 		if (accounting === null) return readGoal(ref);
 
 		const now = Date.now();
 		const elapsedSeconds = Math.max(0, Math.round((now - accounting.measuredFromMilliseconds) / 1000));
+		accounting.measuredFromMilliseconds = now;
 		const goal = await accountGoalUsage(ref, usage, elapsedSeconds, mode, accounting.goalId);
-		if (goal?.id === accounting.goalId) {
-			agentGoalAccounting = { goalId: accounting.goalId, measuredFromMilliseconds: now };
-		} else {
-			clearAgentGoalAccounting();
-		}
+		if (agentGoalAccounting === accounting && goal?.id !== accounting.goalId) clearAgentGoalAccounting();
 		return goal;
 	}
 }
@@ -358,26 +485,6 @@ function updateGoalUiBestEffort(ctx: ExtensionContext, goal: Goal | null): void 
 		}
 		throw error;
 	}
-}
-
-function isResumeOfPausedGoal(ctx: ExtensionContext, sessionStartReason: string, goal: Goal | null): goal is Goal {
-	return (
-		sessionStartReason === "resume" &&
-		goal?.status === "paused" &&
-		ctx.hasUI &&
-		ctx.isIdle() &&
-		!ctx.hasPendingMessages()
-	);
-}
-
-function queueGoalContinuation(pi: ExtensionAPI, ctx: ExtensionContext, goal: Goal): void {
-	if (shouldQueueGoalContinuationWhenIdle(goal, ctx.isIdle(), ctx.hasPendingMessages())) {
-		queueHiddenGoalPrompt(pi, GOAL_CONTINUATION_MESSAGE_TYPE, buildContinuationPrompt(goal));
-	}
-}
-
-function queueHiddenGoalPrompt(pi: ExtensionAPI, customType: string, content: string): void {
-	pi.sendMessage({ customType, content, display: false }, { triggerTurn: true, deliverAs: "followUp" });
 }
 
 function toolText(text: string, isError = false): GoalToolResult {

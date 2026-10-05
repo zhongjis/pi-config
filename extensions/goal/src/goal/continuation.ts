@@ -1,60 +1,52 @@
+import type { CustomMessageEntryDraft, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { goalStoreRef } from "./context.js";
+import { buildBudgetLimitedPrompt, buildContinuationPrompt } from "./prompt.js";
+import { readGoal } from "./store.js";
 import type { Goal } from "./types.js";
-import { isRecord } from "./types.js";
 
-export function shouldQueueGoalContinuationWhenIdle(
-	goal: Goal | null,
-	isIdle: boolean,
-	hasPendingMessages: boolean,
-): goal is Goal {
-	return goal?.status === "active" && isIdle && !hasPendingMessages;
-}
-
-export function shouldQueueGoalContinuationAfterAgentEnd(
-	goal: Goal | null,
-	hasPendingMessages: boolean,
-	messages: readonly unknown[],
-): goal is Goal {
-	return goal?.status === "active" && !hasPendingMessages && didAgentEndCleanly(messages);
-}
-
-function didAgentEndCleanly(messages: readonly unknown[]): boolean {
-	const lastAssistantIndex = findLastAssistantMessageIndex(messages);
-	if (lastAssistantIndex === undefined) return false;
-
-	const lastAssistant = messages[lastAssistantIndex];
-	if (!isAssistantMessage(lastAssistant) || !isContinuableStopReason(lastAssistant.stopReason)) return false;
-
-	for (let index = lastAssistantIndex + 1; index < messages.length; index++) {
-		const message = messages[index];
-		if (isAbortedToolResult(message)) return false;
-	}
-	return true;
-}
-
-function findLastAssistantMessageIndex(messages: readonly unknown[]): number | undefined {
-	for (let index = messages.length - 1; index >= 0; index--) {
-		if (isAssistantMessage(messages[index])) return index;
-	}
-	return undefined;
-}
-
-function isAssistantMessage(message: unknown): message is Record<string, unknown> {
-	return isRecord(message) && message.role === "assistant";
-}
-
-function isContinuableStopReason(stopReason: unknown): boolean {
-	return stopReason === "stop" || stopReason === "toolUse" || stopReason === "length";
-}
-
-function isAbortedToolResult(message: unknown): boolean {
-	if (!isRecord(message) || message.role !== "toolResult" || message.isError !== true) return false;
-	const content = message.content;
-	if (!Array.isArray(content)) return false;
-	return content.some(
-		(block) =>
-			isRecord(block) &&
-			block.type === "text" &&
-			typeof block.text === "string" &&
-			/\babort(?:ed)?\b/i.test(block.text),
-	);
+/** Process-local admission; native boundaries own in-run continuation. */
+export function createGoalAdmission() {
+	let generation = 0;
+	let reserved = false;
+	let budgetReportedId: string | null = null;
+	return {
+		get generation() {
+			return generation;
+		},
+		invalidate() {
+			generation++;
+			reserved = false;
+		},
+		started() {
+			reserved = false;
+		},
+		committed(goal: Goal) {
+			if (goal.status === "budgetLimited") budgetReportedId = goal.id;
+		},
+		async admit(ctx: ExtensionContext, goal: Goal, boundary = false): Promise<CustomMessageEntryDraft | undefined> {
+			if (reserved || (goal.status !== "active" && !(boundary && goal.status === "budgetLimited"))) return;
+			const ref = goalStoreRef(ctx);
+			const capturedGeneration = generation;
+			reserved = true;
+			let admitted = false;
+			try {
+				const current = await readGoal(ref);
+				if (capturedGeneration !== generation || current?.id !== goal.id || current.status !== goal.status) return;
+				if (ctx.signal?.aborted || ctx.hasPendingMessages() || (!boundary && !ctx.isIdle())) return;
+				if (current.status === "budgetLimited" && budgetReportedId === current.id) return;
+				admitted = true;
+				return {
+					type: "custom_message",
+					customType: current.status === "active" ? "pi-goal-continuation" : "pi-goal-budget-limit",
+					content: current.status === "active" ? buildContinuationPrompt(current) : buildBudgetLimitedPrompt(current),
+					display: false,
+					details: { goalId: current.id },
+				};
+			} finally {
+				// The caller commits synchronously after this promise resolves. Other
+				// candidates stay excluded until the next run or an explicit control.
+				if (!admitted && capturedGeneration === generation) reserved = false;
+			}
+		},
+	};
 }

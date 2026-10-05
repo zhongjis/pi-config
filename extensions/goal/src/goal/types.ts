@@ -16,6 +16,8 @@ export type Goal = {
 	threadId: string;
 	objective: string;
 	status: GoalStatus;
+	blockedReason?: string;
+	blockedAt?: number;
 	tokenBudget?: number;
 	tokensUsed: number;
 	timeUsedSeconds: number;
@@ -41,6 +43,7 @@ export type TokenUsageSnapshot = {
 export type GoalUpdate = {
 	objective?: string;
 	status?: GoalStatus;
+	blockedReason?: string;
 	tokenBudget?: number | null;
 };
 
@@ -48,6 +51,8 @@ export type GoalToolSnapshot = {
 	threadId: string;
 	objective: string;
 	status: GoalStatus;
+	blockedReason?: string;
+	blockedAt?: number;
 	tokenBudget?: number;
 	tokensUsed: number;
 	timeUsedSeconds: number;

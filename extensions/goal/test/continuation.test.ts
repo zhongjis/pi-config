@@ -1,74 +1,75 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { afterEach, describe, expect, it } from "vitest";
+import { createGoalAdmission } from "../src/goal/continuation.js";
+import { goalStoreRef } from "../src/goal/context.js";
+import { createGoal, updateGoal } from "../src/goal/store.js";
 
-import {
-	shouldQueueGoalContinuationAfterAgentEnd,
-	shouldQueueGoalContinuationWhenIdle,
-} from "../src/goal/continuation.js";
-import type { Goal } from "../src/goal/types.js";
+const dirs: string[] = [];
+afterEach(async () => {
+	await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+async function fixture() {
+	const dir = await mkdtemp(join(tmpdir(), "goal-admission-"));
+	dirs.push(dir);
+	const ctx = {
+		cwd: dir,
+		signal: undefined,
+		isIdle: () => true,
+		hasPendingMessages: () => false,
+		sessionManager: {
+			getSessionFile: () => join(dir, "session.jsonl"),
+			getSessionDir: () => dir,
+			getSessionId: () => "session",
+		},
+	} as unknown as ExtensionContext;
+	const ref = goalStoreRef(ctx);
+	const goal = await createGoal(ref, "Verify everything");
+	return { ctx, ref, goal, admission: createGoalAdmission() };
+}
 
-const cleanTurn = [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "done" }] }];
-
-describe("goal continuation policy", () => {
-	it("continues an active goal after a clean agent turn when no user work is pending", () => {
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "active" }), false, cleanTurn)).toBe(true);
+describe("Goal admission", () => {
+	it("admits one candidate across simultaneous callers and resets at a new run", async () => {
+		const { ctx, goal, admission } = await fixture();
+		const drafts = await Promise.all([admission.admit(ctx, goal), admission.admit(ctx, goal)]);
+		expect(drafts.filter(Boolean)).toHaveLength(1);
+		admission.started();
+		expect(await admission.admit(ctx, goal, true)).toMatchObject({ customType: "pi-goal-continuation" });
 	});
-
-	it("does not continue after an agent turn when another message is already pending", () => {
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "active" }), true, cleanTurn)).toBe(false);
+	it("invalidates awaited candidates on controls, session changes and shutdown", async () => {
+		const { ctx, goal, admission } = await fixture();
+		const pending = admission.admit(ctx, goal);
+		admission.invalidate();
+		expect(await pending).toBeUndefined();
+		expect(await admission.admit(ctx, goal)).toBeDefined();
 	});
-
-	it("only auto-continues active goals after an agent turn", () => {
-		expect(shouldQueueGoalContinuationAfterAgentEnd(null, false, cleanTurn)).toBe(false);
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "paused" }), false, cleanTurn)).toBe(false);
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "budgetLimited" }), false, cleanTurn)).toBe(
-			false,
-		);
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "complete" }), false, cleanTurn)).toBe(false);
+	it("rejects a replaced or paused identity", async () => {
+		const { ctx, ref, goal, admission } = await fixture();
+		await updateGoal(ref, { status: "paused" });
+		expect(await admission.admit(ctx, goal)).toBeUndefined();
+		await updateGoal(ref, { objective: "Replacement" });
+		expect(await admission.admit(ctx, goal)).toBeUndefined();
 	});
-
-	it("does not continue after a turn that ended with a provider error", () => {
-		const erroredTurn = [
-			{ role: "assistant", stopReason: "error", errorMessage: "boom", content: [] },
-		];
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "active" }), false, erroredTurn)).toBe(false);
+	it("rechecks pending work and idle state and permits later admission", async () => {
+		const { ctx, goal, admission } = await fixture();
+		const pending = admission.admit(ctx, goal);
+		ctx.hasPendingMessages = () => true;
+		expect(await pending).toBeUndefined();
+		ctx.hasPendingMessages = () => false;
+		ctx.isIdle = () => false;
+		expect(await admission.admit(ctx, goal)).toBeUndefined();
+		expect(await admission.admit(ctx, goal, true)).toBeDefined();
 	});
-
-	it("does not continue after a turn whose last tool result was aborted", () => {
-		const abortedTurn = [
-			{ role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "bash" }] },
-			{ role: "toolResult", isError: true, content: [{ type: "text", text: "Aborted by user" }] },
-		];
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "active" }), false, abortedTurn)).toBe(false);
-	});
-
-	it("continues after a turn whose tool failed for a non-abort reason", () => {
-		const toolFailureTurn = [
-			{ role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "bash" }] },
-			{ role: "toolResult", isError: true, content: [{ type: "text", text: "command not found" }] },
-			{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "recovered" }] },
-		];
-		expect(shouldQueueGoalContinuationAfterAgentEnd(testGoal({ status: "active" }), false, toolFailureTurn)).toBe(
-			true,
-		);
-	});
-
-	it("requires idle state for command and session-start continuation", () => {
-		expect(shouldQueueGoalContinuationWhenIdle(testGoal({ status: "active" }), true, false)).toBe(true);
-		expect(shouldQueueGoalContinuationWhenIdle(testGoal({ status: "active" }), false, false)).toBe(false);
-		expect(shouldQueueGoalContinuationWhenIdle(testGoal({ status: "active" }), true, true)).toBe(false);
+	it("admits only one budget wrapup and never an idle budget continuation", async () => {
+		const { ctx, ref, goal, admission } = await fixture();
+		const limited = await updateGoal(ref, { status: "budgetLimited" });
+		expect(await admission.admit(ctx, limited)).toBeUndefined();
+		expect(await admission.admit(ctx, limited, true)).toMatchObject({ customType: "pi-goal-budget-limit" });
+		admission.committed(limited);
+		admission.started();
+		expect(await admission.admit(ctx, limited, true)).toBeUndefined();
+		expect(await admission.admit(ctx, goal, true)).toBeUndefined();
 	});
 });
-
-function testGoal(overrides: Partial<Goal> = {}): Goal {
-	return {
-		id: "goal-1",
-		threadId: "thread-1",
-		objective: "Keep going until complete",
-		status: "active",
-		tokensUsed: 0,
-		timeUsedSeconds: 0,
-		createdAt: 1_777_766_400,
-		updatedAt: 1_777_766_400,
-		...overrides,
-	};
-}

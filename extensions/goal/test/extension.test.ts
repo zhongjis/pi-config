@@ -13,6 +13,7 @@ type ToolResult = AgentToolResult<unknown>;
 
 type GoalContext = {
 	hasUI: boolean;
+	signal?: AbortSignal;
 	ui: MockUi;
 	cwd: string;
 	sessionManager: {
@@ -138,6 +139,63 @@ describe("pi-goal extension accounting", () => {
 	afterEach(async () => {
 		resetClock();
 		await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+	});
+
+	it("requires blocked reasons and refuses model updates after explicit pause", async () => {
+		const harness = createHarness();
+		const ctx = await createContext("thread-model-guards");
+		await harness.tool("create_goal").execute("create", { objective: "Approval" }, undefined, undefined, ctx);
+		await expect(
+			harness.tool("update_goal").execute("block", { status: "blocked" }, undefined, undefined, ctx),
+		).rejects.toThrow("nonempty");
+		await harness
+			.tool("update_goal")
+			.execute("block", { status: "blocked", blockedReason: "  Approval unavailable  " }, undefined, undefined, ctx);
+		expect(toolResultText(await harness.tool("get_goal").execute("get", {}, undefined, undefined, ctx))).toContain(
+			'"blockedReason": "Approval unavailable"',
+		);
+		await harness.command("goal").handler("pause", ctx);
+		await expect(
+			harness.tool("update_goal").execute("complete", { status: "complete" }, undefined, undefined, ctx),
+		).rejects.toThrow("model may only");
+		expect(await readGoal(refForContext(ctx))).toMatchObject({ status: "paused" });
+	});
+
+	it("does not let an old model turn complete a user replacement", async () => {
+		const harness = createHarness();
+		const ctx = await createContext("thread-replaced-model");
+		await harness.tool("create_goal").execute("create", { objective: "Original" }, undefined, undefined, ctx);
+		await harness.emit("agent_start", { type: "agent_start" }, ctx);
+		await harness.command("goal").handler("Replacement", ctx);
+		const result = await harness
+			.tool("update_goal")
+			.execute("complete", { status: "complete" }, undefined, undefined, ctx);
+		expect(toolResultText(result)).toContain("goal changed");
+		await harness.emit("agent_end", { type: "agent_end", messages: [{ role: "assistant", usage: { input: 9 } }] }, ctx);
+		expect(await readGoal(refForContext(ctx))).toMatchObject({
+			objective: "Replacement",
+			status: "active",
+			tokensUsed: 0,
+		});
+	});
+
+	it("finalizes aborted usage without replacing pause with budgetLimited", async () => {
+		const harness = createHarness();
+		const ctx = await createContext("thread-aborted-budget");
+		const controller = new AbortController();
+		ctx.signal = controller.signal;
+		await harness
+			.tool("create_goal")
+			.execute("create", { objective: "Budget work", token_budget: 1 }, undefined, undefined, ctx);
+		await harness.emit("agent_start", { type: "agent_start" }, ctx);
+		controller.abort();
+		await harness.emit(
+			"agent_end",
+			{ type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted", usage: { input: 10, output: 2 } }] },
+			ctx,
+		);
+		expect(await readGoal(refForContext(ctx))).toMatchObject({ status: "paused", tokensUsed: 12 });
+		expect(harness.sentMessages).toHaveLength(0);
 	});
 
 	it("starts elapsed-time accounting when a goal is created during an active agent turn", async () => {
@@ -317,6 +375,51 @@ describe("pi-goal extension command UI parity", () => {
 		});
 	});
 
+	it("confirms a fresh goal minimally while keeping full inspection available", async () => {
+		const harness = createHarness();
+		const ui = createMockUi();
+		const ctx = await createContext("thread-start-confirmation", { hasUI: true, ui });
+
+		await harness.command("goal").handler("Fresh work", ctx);
+
+		expect(ui.notifyCalls).toEqual([{ message: "Goal started\nObjective: Fresh work", type: "info" }]);
+		await harness.command("goal").handler("", ctx);
+		expect(ui.notifyCalls.at(-1)?.message).toBe("Objective: Fresh work\nStatus: active\nTime used: 0s\nTokens used: 0");
+	});
+
+	it.each([
+		"Budget work",
+		"resume",
+	])("retains accumulated usage and budget when resuming via /goal %s", async (args) => {
+		setClock(0);
+		const harness = createHarness();
+		const ui = createMockUi({ selectResponses: ["Replace current goal"] });
+		const ctx = await createContext(`thread-usage-resume-${args}`, { hasUI: true, ui });
+		await harness
+			.tool("create_goal")
+			.execute("create-goal", { objective: "Budget work", token_budget: 1000 }, undefined, undefined, ctx);
+		const original = await readGoal(refForContext(ctx));
+		await harness.emit("agent_start", { type: "agent_start" }, ctx);
+		advanceClock(65_000);
+		await harness.emit(
+			"agent_end",
+			{ type: "agent_end", messages: [{ role: "assistant", usage: { input: 100, output: 20 } }] },
+			ctx,
+		);
+		await harness.command("goal").handler("pause", ctx);
+		expect(ui.notifyCalls.at(-1)?.message).toContain("Time used: 1m\nTokens used: 120/1K");
+
+		await harness.command("goal").handler(args, ctx);
+
+		expect(await readGoal(refForContext(ctx))).toMatchObject({ id: original?.id, status: "active" });
+		expect(ui.notifyCalls.at(-1)?.message).toContain("Goal active\nObjective: Budget work");
+		expect(ui.notifyCalls.at(-1)?.message).toContain("Status: active\nTime used: 1m\nTokens used: 120/1K");
+		await harness.command("goal").handler("", ctx);
+		expect(ui.notifyCalls.at(-1)?.message).toBe(
+			"Objective: Budget work\nStatus: active\nTime used: 1m\nTokens used: 120/1K",
+		);
+	});
+
 	it("shows Codex-style clear feedback when no goal exists", async () => {
 		const harness = createHarness();
 		const ui = createMockUi();
@@ -361,12 +464,12 @@ describe("pi-goal extension command UI parity", () => {
 			timeUsedSeconds: 0,
 		});
 		expect(ui.notifyCalls.at(-1)).toMatchObject({
-			message: expect.stringContaining("Goal active\nObjective: Replacement"),
+			message: "Goal started\nObjective: Replacement",
 			type: "info",
 		});
 	});
 
-	it("prompts to resume a paused goal when a session is resumed", async () => {
+	it("keeps a reopened goal paused without a resume dialog", async () => {
 		const harness = createHarness();
 		const ui = createMockUi({ selectResponses: ["Resume goal"] });
 		const ctx = await createContext("thread-resume-paused", { hasUI: true, ui });
@@ -375,13 +478,9 @@ describe("pi-goal extension command UI parity", () => {
 
 		await harness.emit("session_start", { type: "session_start", reason: "resume" }, ctx);
 
-		expect(ui.selectCalls).toContainEqual({
-			title: "Resume paused goal?\nGoal: Paused work",
-			options: ["Resume goal", "Leave paused"],
-		});
-		expect(await readGoal(refForContext(ctx))).toMatchObject({ objective: "Paused work", status: "active" });
-		expect(harness.sentMessages).toHaveLength(1);
-		expect(harness.sentMessages[0]?.message.customType).toBe("pi-goal-continuation");
+		expect(ui.selectCalls).toHaveLength(0);
+		expect(await readGoal(refForContext(ctx))).toMatchObject({ objective: "Paused work", status: "paused" });
+		expect(harness.sentMessages).toHaveLength(0);
 	});
 
 	it("does not prompt to resume a paused goal on non-resume session starts", async () => {
@@ -590,4 +689,3 @@ function toolResultText(result: ToolResult): string {
 	if (firstContent?.type !== "text") throw new Error("tool result had no text content");
 	return firstContent.text;
 }
-

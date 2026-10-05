@@ -30,7 +30,7 @@ describe("codex alignment: blocked status", () => {
 		const ref = await tempStore("thread-block");
 		await createGoal(ref, "Pursue the objective");
 
-		const blocked = await updateGoal(ref, { status: "blocked" });
+		const blocked = await updateGoal(ref, { status: "blocked", blockedReason: "External approval unavailable" });
 
 		expect(blocked.status).toBe("blocked");
 		expect(blocked.lastStartedAt).toBeUndefined();
@@ -44,7 +44,7 @@ describe("codex alignment: blocked status", () => {
 		const limited = await accountGoalUsage(ref, overBudget, 0, "active");
 		expect(limited?.status).toBe("budgetLimited");
 
-		const afterBlock = await updateGoal(ref, { status: "blocked" });
+		const afterBlock = await updateGoal(ref, { status: "blocked", blockedReason: "External approval unavailable" });
 
 		expect(afterBlock.status).toBe("budgetLimited");
 	});
@@ -80,7 +80,7 @@ describe("codex alignment: create replaces only a complete goal", () => {
 	it("rejects creating a goal while a blocked goal exists", async () => {
 		const ref = await tempStore("thread-blocked-exists");
 		await createGoal(ref, "Blocked objective");
-		await updateGoal(ref, { status: "blocked" });
+		await updateGoal(ref, { status: "blocked", blockedReason: "External approval unavailable" });
 
 		await expect(createGoal(ref, "New objective")).rejects.toThrow("has an unfinished goal");
 	});
