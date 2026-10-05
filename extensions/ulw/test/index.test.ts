@@ -111,6 +111,30 @@ describe("ulw extension — unit tests", () => {
 		expect((result as any).text).not.toContain("<ultrawork-mode>");
 	});
 
+	it.each([
+		"ulw", "ultrawork", "  ulw fix this", "UlW fix this",
+		"please use ulw mode", "fix this ulw", "ulw fix this",
+		"please\tULTRAWORK\nfix this",
+	])("injects for bare whitespace-delimited keyword in %j", async (text) => {
+		const result = await fireInput(mock, text);
+		expect(result?.action).toBe("transform");
+		if (text.trim() !== "ulw" && text.trim() !== "ultrawork") {
+			expect(result).toEqual({ action: "transform", text });
+		}
+		expect((await fireBeforeAgentStart(mock))?.message?.customType).toBe("ultrawork");
+	});
+
+	it.each([
+		"@extensions/ulw/", "ulw-loop", '"ulw"', "'ulw'", "/ulw", "\\ulw",
+		"extensions/ulw/index.ts", "extensions\\ulw\\index.ts",
+		"ulw, fix this", "please (ulw) fix this", "fix this ulw.",
+		"ultrawork-loop", '"UlTrAwOrK"', "ultrawork: fix this",
+		"prefixulw", "ulwsuffix",
+	])("does not inject for attached keyword in %j", async (text) => {
+		expect(await fireInput(mock, text)).toEqual({ action: "continue" });
+		expect(await fireBeforeAgentStart(mock)).toBeUndefined();
+	});
+
 	// ── Code-block protection ───────────────────────────────────
 
 	it("does NOT trigger on keyword inside fenced code block", async () => {

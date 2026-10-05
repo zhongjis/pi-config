@@ -44,7 +44,7 @@ describe("ulw extension — integration", () => {
 
 	// ── Keyword triggers injection ──────────────────────────────
 
-	it("ulw keyword prepends ultrawork prompt to user message", async () => {
+	it("ulw keyword injects a separate ultrawork message and preserves user text", async () => {
 		t = await createTestSession({
 			extensions: [ULW_EXTENSION],
 			mockTools: MOCK_TOOLS,
@@ -57,14 +57,34 @@ describe("ulw extension — integration", () => {
 			]),
 		);
 
-		// The model should have seen the ultrawork prompt in the user message
-		const messages = t.events.messages;
-		const userMsg = messages.find((m) => (m as any).role === "user");
-		// If the transform worked, the playbook matched "ulw list all files"
-		// which means the agent processed it (transform stripped keyword,
-		// prepended prompt). The model turn completed successfully.
+		expect(t.events.messages.filter((m) => "customType" in m && m.customType === "ultrawork")).toHaveLength(1);
+		expect(t.events.messages.find((m) => m.role === "user")).toMatchObject({
+			content: [{ type: "text", text: "ulw list all files" }],
+		});
 		const bashResults = t.events.toolResultsFor("bash");
 		expect(bashResults).toHaveLength(1);
+	});
+
+	it.each([
+		["ulw", true], ["ultrawork", true], ["  ulw fix this", true],
+		["UlW fix this", true], ["please use ulw mode", true],
+		["fix this ulw", true], ["ulw fix this", true],
+		["please\tULTRAWORK\nfix this", true],
+		["@extensions/ulw/", false], ["ulw-loop", false],
+		['"ulw"', false], ["'ulw'", false], ["/ulw", false], ["\\ulw", false],
+		["extensions/ulw/index.ts", false], ["extensions\\ulw\\index.ts", false],
+		["ulw, fix this", false], ["please (ulw) fix this", false],
+		["fix this ulw.", false], ["ultrawork-loop", false],
+		['"UlTrAwOrK"', false], ["ultrawork: fix this", false],
+	])("input %j has ultrawork activation %j", async (text, activates) => {
+		t = await createTestSession({ extensions: [ULW_EXTENSION] });
+		await t.run(when(text, [says("Done.")]));
+		expect(t.events.messages.filter((m) => "customType" in m && m.customType === "ultrawork"))
+			.toHaveLength(activates ? 1 : 0);
+		expect(t.events.messages.find((m) => m.role === "user")).toMatchObject({
+			content: [{ type: "text", text: text.trim() === "ulw" || text.trim() === "ultrawork"
+				? "Ultrawork mode is now active." : text }],
+		});
 	});
 
 	// ── Non-matching input passes through ───────────────────────
@@ -84,6 +104,7 @@ describe("ulw extension — integration", () => {
 
 		const bashResults = t.events.toolResultsFor("bash");
 		expect(bashResults).toHaveLength(1);
+		expect(t.events.messages.filter((m) => "customType" in m && m.customType === "ultrawork")).toHaveLength(0);
 	});
 
 	// ── Mode gating with modes extension ────────────────────────
@@ -106,6 +127,7 @@ describe("ulw extension — integration", () => {
 			]),
 		);
 
+		expect(t.events.messages.filter((m) => "customType" in m && m.customType === "ultrawork")).toHaveLength(0);
 		expect(t.events.blockedCalls()).toHaveLength(0);
 		expect(t.events.toolResultsFor("bash")).toHaveLength(1);
 	});
@@ -125,6 +147,7 @@ describe("ulw extension — integration", () => {
 			]),
 		);
 
+		expect(t.events.messages.filter((m) => "customType" in m && m.customType === "ultrawork")).toHaveLength(1);
 		const bashResults = t.events.toolResultsFor("bash");
 		expect(bashResults).toHaveLength(1);
 	});
@@ -146,6 +169,7 @@ describe("ulw extension — integration", () => {
 			]),
 		);
 
+		expect(t.events.messages.filter((m) => "customType" in m && m.customType === "ultrawork")).toHaveLength(1);
 		const bashResults = t.events.toolResultsFor("bash");
 		expect(bashResults).toHaveLength(1);
 	});

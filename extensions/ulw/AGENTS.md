@@ -1,6 +1,6 @@
 ## Purpose
 
-Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains `ultrawork` or `ulw`.
+Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains a bare `ultrawork` or `ulw` token.
 
 ## Ownership
 
@@ -8,6 +8,8 @@ Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains `ultra
 - [README](README.md) owns upstream adaptation; [index.ts](index.ts) owns hooks.
 
 ## Local Contracts
+
+- Explicit activation MUST require a bare `ulw` or `ultrawork` token anywhere in input, case-insensitive, bounded by whitespace or start/end. Task-prefixed and mid-message tokens activate; quoted, path, and punctuation-attached tokens do not. Preserve code/prompt/`@` reference sanitation, kuafu gating, pending-flag consumption, and separate custom-message injection; task-bearing user text remains unchanged.
 
 - Both prompt variants MUST preserve high-rigor opt-in under active mode policy: invoke advisory xuannv planning for design uncertainty remaining after relevant research, not step/file counts; require evidence-bearing workers while the orchestrator owns full-task acceptance.
 - Both variants MUST stop redundant work once useful evidence satisfies the request, without waiving required final-state checks, manual QA, or approval/handoff gates. Deep parallel research, strict verification, and scoped self-correction remain required.

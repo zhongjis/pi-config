@@ -5,7 +5,7 @@
  * Source: https://github.com/code-yeongyu/oh-my-openagent
  *
  * Behaviour:
- *   - User message contains "ultrawork" or "ulw" anywhere (case-insensitive)
+ *   - User message contains bare "ultrawork" or "ulw" tokens anywhere (case-insensitive)
  *   - Extension preserves the keyword in user text and injects the ultrawork
  *     prompt as a separate context message via before_agent_start (collapsed,
  *     not visible in user message — similar to how skills inject context)
@@ -45,8 +45,8 @@ const ULTRAWORK_BLOCK_RE = /<ultrawork-mode>[\s\S]*?<\/ultrawork-mode>/gi;
  */
 const AT_REF_RE = /@(?:extensions\/)?ulw\b[^\s]*/gi;
 
-/** Keyword anywhere in text (word-boundary, case-insensitive). */
-const ULW_KEYWORD_RE = /\b(ultrawork|ulw)\b/i;
+/** Bare keyword anywhere in text (whitespace-delimited, case-insensitive). */
+const ULW_KEYWORD_RE = /(?:^|\s)(?:ultrawork|ulw)(?=\s|$)/i;
 
 /**
  * Sanitize text before keyword detection: strip ultrawork prompt blocks,
