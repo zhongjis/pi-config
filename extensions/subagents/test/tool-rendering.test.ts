@@ -130,6 +130,12 @@ describe("subagent tool rendering migration", () => {
     expect(rawText(call)).toBe("▸ get_agent_result · d398d6ea-cbc8-4d8 · wait");
     expectWidthSafe(call);
   });
+
+  it("tags get_agent_result graph run calls", () => {
+    const call = requireTool("get_agent_result").renderCall({ run_id: "agr_0123456789ab", wait: true }, theme);
+    expect(rawText(call)).toBe("▸ get_agent_result [graph] · agr_0123456789ab · wait");
+    expectWidthSafe(call);
+  });
   const answer = "**Decisive answer**\n\n- 界面 🚀 é\n\n```ts\nconst complete = true;\n```\n\n" + "Complete retained line.\n".repeat(60);
   const base: AgentDetails = {
     displayName: "Explore", description: "Review", subagentType: "Explore",

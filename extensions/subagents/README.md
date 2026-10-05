@@ -247,7 +247,7 @@ A few rules the examples don't make obvious:
 [src/index.ts](src/index.ts) registers the tools; [src/agent-tool.ts](src/agent-tool.ts), [src/result-tools.ts](src/result-tools.ts) and [src/graph/graph-runtime.ts](src/graph/graph-runtime.ts) define their parameters.
 
 - `agent` launches a sub-agent in the foreground or background, or resumes one.
-- `get_agent_result` retrieves an independent Agent ID or an `agr_*` graph run ID; `wait: true` waits without polling for terminal output or an actionable human gate, and cancelling it stops only the wait, never the run. Continue non-overlapping work, then collect with `wait: true` rather than ending the turn.
+- `get_agent_result` retrieves an independent Agent ID or an `agr_*` graph run ID; `wait: true` waits without polling for terminal output or an actionable human gate, and cancelling it stops only the wait, never the run. Continue non-overlapping work, then collect with `wait: true` rather than ending the turn. Graph run calls show a `[graph]` tag in the call header.
 - `resolve_agent_graph_gate` submits the human choice for a returned graph gate.
 - `steer_subagent` sends a message to a running agent; it takes effect after the current tool execution.
 - `agent_graph` launches a typed graph.

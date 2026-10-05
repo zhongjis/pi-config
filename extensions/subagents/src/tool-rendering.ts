@@ -1,6 +1,7 @@
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { extractToolText, firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
+import { isGraphRunId } from "./graph/graph-snapshot-path.js";
 import type { AgentDetails } from "./ui/agent-widget.js";
 import { formatMs, getDisplayName } from "./ui/agent-widget.js";
 
@@ -145,7 +146,7 @@ export function renderAgentToolResult(
 
 export function renderGetAgentResultCall(args: { run_id?: string; wait?: boolean; verbose?: boolean }, theme: ToolTheme) {
   const flags = [args.run_id, args.wait ? "wait" : undefined, args.verbose ? "verbose" : undefined].filter(Boolean);
-  return renderToolCall("get_agent_result", flags.join(" · "), theme);
+  return renderToolCall(`get_agent_result${isGraphRunId(args.run_id) ? " [graph]" : ""}`, flags.join(" · "), theme);
 }
 
 export function renderGetAgentResult(result: TextToolResult, options: { expanded?: boolean; isPartial?: boolean }, theme: ToolTheme) {

@@ -59,16 +59,19 @@ not automatically a second application.
 
 A tool call keeps one identity and argument hierarchy across delivery modes. Foreground is the
 untagged default. Background adds a literal `[background]` tag beside the tool or Agent
-identity; it does not use a separate call layout.
+identity; it does not use a separate call layout. A tool retrieving more than one run kind tags
+the non-default kind beside its identity.
 
 ```text
 ▸ Jintong 金童 · Audit tool rendering
 ▸ Jintong 金童 [background] · Audit tool rendering
+▸ get_agent_result · <agent-id> · wait
+▸ get_agent_result [graph] · <graph-run-id> · wait
 ```
 
-`[background]` describes delivery only. Lifecycle remains queued, running, completed, stopped,
-or failed. Keep call arguments, ordering, styling, width behavior, and result vocabulary otherwise
-identical between foreground and background calls.
+`[background]` describes delivery only and `[graph]` describes run kind only. Lifecycle remains
+queued, running, completed, stopped, or failed. Keep call arguments, ordering, styling, width
+behavior, and result vocabulary otherwise identical between foreground and background calls.
 
 ### Collapsed mode
 
