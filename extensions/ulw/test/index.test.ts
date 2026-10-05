@@ -59,6 +59,19 @@ describe("ulw extension — unit tests", () => {
 		mod.default(mock.pi as never);
 	});
 
+	it("emits only accepted session-scoped activation and drops pending on session switch", async () => {
+		const signals: unknown[] = [];
+		mock.pi.events.on("ulw:activated", (event) => { signals.push(event); });
+		const ctx = createMockContext();
+		await fireInput(mock, "`ulw`", ctx);
+		await fireInput(mock, "ulw task", createCtxWithMode("fuxi"));
+		expect(signals).toEqual([]);
+		await fireInput(mock, "ulw task", ctx);
+		expect(signals).toEqual([{ sessionId: ctx.sessionManager.getSessionId() }]);
+		await mock.fireLifecycle("session_before_switch", {}, ctx);
+		expect(await fireBeforeAgentStart(mock, ctx)).toBeUndefined();
+	});
+
 	// ── Registration ────────────────────────────────────────────
 
 	it("registers an input handler and a before_agent_start handler", () => {

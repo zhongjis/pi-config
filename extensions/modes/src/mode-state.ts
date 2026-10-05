@@ -1,3 +1,4 @@
+import { GOAL_TOOL_NAMES, goalToolAccess } from "../../goal/src/goal/access.js";
 import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
@@ -143,27 +144,37 @@ export class ModeStateManager {
 	async applyMode(ctx: ExtensionContext, resetFast = false): Promise<void> {
 		const config = this.loadConfig(this.currentMode);
 		await this.applyModelFromConfig(config, ctx, resetFast);
+		await this.applyToolAccess(ctx);
+		this.updateStatus(ctx);
+	}
+
+	async applyToolAccess(ctx: ExtensionContext): Promise<void> {
+		const config = this.loadConfig(this.currentMode);
 		const allTools = this.pi.getAllTools();
 		const allToolNames = allTools.map((t) => t.name);
 		const exposure = new Map(allTools.map((t) => [t.name, t.exposure]));
 		const activeToolNames = this.pi.getActiveTools().filter((t) => allToolNames.includes(t));
 
-		let nextActiveToolNames = activeToolNames;
+		const goalNames = allToolNames.filter((name) => GOAL_TOOL_NAMES.some((goalName) => goalName === name));
+		const allowedGoals = goalNames.length ? await goalToolAccess(ctx) : [];
+		const accessToolNames = [...activeToolNames.filter((name) => !goalNames.includes(name)),
+			...goalNames.filter((name) => allowedGoals.includes(name))];
+		let nextActiveToolNames = accessToolNames;
 		if (hasToolPolicy(config)) {
 			nextActiveToolNames = computeActiveToolNames({
 				...modeToolPolicy(config),
 				availableToolNames: allToolNames,
 				exposureOf: (name) => exposure.get(name),
-				currentActiveToolNames: activeToolNames,
+				currentActiveToolNames: accessToolNames,
 			});
 		}
 
+		nextActiveToolNames = nextActiveToolNames.filter((name) => !goalNames.includes(name) || allowedGoals.includes(name));
 		nextActiveToolNames = applyFuXiOnlyToolAccess(this.currentMode, nextActiveToolNames, allToolNames);
 		if (!sameToolSet(nextActiveToolNames, activeToolNames)) {
 			this.pi.setActiveTools(nextActiveToolNames);
 		}
 
-		this.updateStatus(ctx);
 	}
 
 	/**

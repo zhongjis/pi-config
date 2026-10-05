@@ -28,6 +28,7 @@ describe("Goal in native Pi", () => {
 
 	it("continues once at the native boundary and round-trips the blocked reason", async () => {
 		test = await createTestSession({ extensions: [GOAL_EXTENSION] });
+		await test.session.prompt("/goal");
 		await test.run(
 			when("Explicitly create a Goal and pursue it.", [
 				calls("create_goal", { objective: "Obtain external approval" }),
@@ -75,6 +76,7 @@ describe("Goal in native Pi", () => {
 				return message;
 			},
 		});
+		await test.session.prompt("/goal");
 		await test.run(
 			when("Explicitly create a budgeted Goal.", [
 				calls("create_goal", { objective: "Budgeted work", token_budget: 1 }),
@@ -119,6 +121,7 @@ describe("Goal in native Pi", () => {
 			},
 		});
 		const session: AgentSession = test.session;
+		await session.prompt("/goal");
 		const running = test.run(
 			when("Create a Goal before the provider request.", [calls("create_goal", { objective: "Provider work" })]),
 		);
@@ -163,6 +166,7 @@ describe("Goal in native Pi", () => {
 		});
 		const session: AgentSession = test.session;
 		const ref = goalStoreRef({ cwd: test.cwd, sessionManager: session.sessionManager });
+		await session.prompt("/goal");
 		const running = test.run(
 			when("Create a goal and wait for the external tool.", [
 				calls("create_goal", { objective: "Finish cancellable work" }),

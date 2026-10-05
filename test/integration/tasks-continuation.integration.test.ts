@@ -79,6 +79,7 @@ describe("task finish continuation in real Pi", () => {
 
 	it("does not restart a completed Goal with unfinished tasks", async () => {
 		session = await createTestSession({ extensions: [TASKS_EXTENSION, GOAL_EXTENSION] });
+		await session.session.prompt("/goal");
 		await session.run(when("Create a goal and task; finish the goal.", [
 			calls("create_goal", { objective: "Check task continuation ownership" }),
 			createTask(),
@@ -88,6 +89,8 @@ describe("task finish continuation in real Pi", () => {
 		await session.session.waitForIdle();
 
 		expect(session.events.toolResultsFor("update_goal")).toHaveLength(1);
+		expect(session.events.toolResultsFor("create_goal")).toHaveLength(1);
+		expect(session.events.toolResults.every((result) => !result.isError)).toBe(true);
 		expect(customMessages(session)).toHaveLength(0);
 	});
 });

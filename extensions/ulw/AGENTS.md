@@ -19,6 +19,8 @@ Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains a bare
 - Refactors MUST compare relevant pre-change/post-change results to prove preservation, distinguishing pre-existing from new failures; characterization is only for uncovered behavior at an existing test seam. Missed necessary baselines MUST be recovered in isolation, NEVER discard user/concurrent changes or misrepresent chronology. Pre-existing failures do not waive preservation evidence; missing required evidence or unresolved change-caused failures block acceptance.
 - You MUST review prompt prose rather than assert it; tests MAY protect machine-consumed contracts with synthetic mechanism fixtures, NEVER pin live repository data. Reuse evidence until relevant changes invalidate it.
 
+- Accepted activation MUST emit one session-scoped `ulw:activated` signal; ULW NEVER reads or mutates Goal state. Goal owns the separate hidden bootstrap and lifecycle. Session switching MUST discard pending injection.
+
 ## Work Guidance
 
 ## Verification

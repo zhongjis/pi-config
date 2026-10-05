@@ -27,6 +27,8 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 - Approval/review flow MUST precede approved-plan handoff to execution.
 - Skill-resource transitions reload the terminal; prompt arguments do not auto-run afterward.
 
+- Modes MUST consume [Goal-owned access](../goal/src/goal/access.ts) before each first model request and intersect it with mode policy. ULW/manual activation NEVER widens allowlists; restored unfinished Goal management does not require ULW. Modes answers synchronous `modes:rpc:goal-tool-owner` discovery and remains the active-tool owner.
+
 ## Work Guidance
 
 - [README](README.md) owns mode aliases, frontmatter, and transition behavior; [commands](src/commands.ts) and [index](src/index.ts) own the command and tool sets.

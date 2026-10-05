@@ -97,7 +97,10 @@ function getCurrentMode(ctx: ExtensionContext): string {
 
 export default function ulwExtension(pi: ExtensionAPI): void {
   // Flag: ultrawork was triggered for the current input, pending injection
-  let pendingUltrawork = false;
+  let pendingUltrawork: string | undefined;
+
+  pi.on("session_before_switch", () => { pendingUltrawork = undefined; });
+  pi.on("session_start", () => { pendingUltrawork = undefined; });
 
   // Compact activation banner rendered in the transcript when ultrawork fires.
   // The injected prompt message (display: true) renders through this instead of
@@ -138,7 +141,8 @@ export default function ulwExtension(pi: ExtensionAPI): void {
     const keywordOnly = /^(ultrawork|ulw)$/i.test(raw.trim());
 
     // Set flag for before_agent_start to inject the prompt
-    pendingUltrawork = true;
+    pendingUltrawork = ctx.sessionManager.getSessionId();
+    pi.events.emit("ulw:activated", { sessionId: pendingUltrawork });
 
     if (keywordOnly) {
       // Keyword only, no task
@@ -152,8 +156,9 @@ export default function ulwExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", async (_event, ctx) => {
-    if (!pendingUltrawork) return;
-    pendingUltrawork = false;
+    const pendingSession = pendingUltrawork;
+    pendingUltrawork = undefined;
+    if (pendingSession === undefined || pendingSession !== ctx.sessionManager.getSessionId()) return;
     if (getCurrentMode(ctx) !== "kuafu") return;
 
     return {

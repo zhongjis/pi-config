@@ -25,6 +25,10 @@ Maintain thread-scoped goals, autonomous continuation, and usage accounting.
 - Compact rendering MUST preserve model-visible result content.
 - Fresh `/goal <objective>` identities MUST confirm with `Goal started` and the objective only, omitting duplicate status and zero usage. Inspection, completion, and same-identity objective-setting/resume MUST retain full usage and any existing budget; objective syntax does not set budgets.
 
+- Goal tools MUST remain undeclared in fresh sessions until accepted ULW or explicit `/goal` activation. Restored unfinished Goals retain policy-permitted `get_goal`/`update_goal`; activation entries MUST match the current session identity.
+- Goal owns the one-shot hidden ULW bootstrap: inspect first, use only the agreed task, preserve research/proposal scope, NEVER replace/resume unfinished Goals or infer budgets. Completed work requires a new task or explicit redo. Bootstrap context MUST expire after its run and NEVER replay from restored history.
+- Modes owns active tools when loaded; Goal MUST use live synchronous owner discovery, NEVER compete with mode allowlists. Standalone Goal owns its own declarations.
+
 ## Work Guidance
 
 - Independently maintain Goal; you MUST preserve [origin attribution](README.md#origin-and-maintenance) and [LICENSE](LICENSE).

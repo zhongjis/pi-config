@@ -84,6 +84,22 @@ describe("ModeStateManager", () => {
 		return pi;
 	}
 
+	it("activates deferred Goal tools only within the mode allowlist", async () => {
+		const goals = ["create_goal", "get_goal", "update_goal"];
+		const pi = createMockPi(["read"], goals.map((name) => ({ name, exposure: "deferred" })));
+		const state = new ModeStateManager(pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "fixture", builtinToolNames: ["read"], extensionToolNames: ["get_goal"] };
+		const ctx = {
+			ui: { setStatus: vi.fn() }, modelRegistry: createMockRegistry([]),
+			sessionManager: {
+				getSessionId: () => "fixture",
+				getEntries: () => [{ type: "custom", customType: "pi-goal-access", data: { sessionId: "fixture" } }],
+			},
+		};
+		await state.applyMode(ctx as never);
+		expect(pi.getActiveTools()).toEqual(["read", "get_goal"]);
+	});
+
 	it("persists normalized versioned delegation policy from mode config", () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);

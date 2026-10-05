@@ -75,4 +75,6 @@ Continuation contract:
 | `subagents:rpc:*` | Subagent ping / spawn / stop RPC | Request includes `requestId`; reply on `:reply:${requestId}` with success/error envelope | Public cross-extension |
 | `handoff:rpc:prepare` | Direct handoff bridge | Same scoped reply-channel RPC contract | Repo-internal unless explicitly reused |
 | `tasks:rpc:*` | Task-specific integration helpers | Same scoped reply-channel RPC contract | Internal |
+| `ulw:activated` | Accepted kuafu ULW input | `{ sessionId: string }`; emitted during input, before all `before_agent_start` hooks; Goal owns access/bootstrap, no Goal mutation | Session-scoped notification |
+| `modes:rpc:goal-tool-owner` | Live active-tool owner discovery | Standard request/reply envelope; modes replies synchronously with `data: true`; caller unsubscribes immediately after emit, absence means standalone Goal | Runtime-local discovery |
 | `fast:policy-changed` | Refresh Fast UI after a mode default changes | `{ sessionId: string }`; notification only, never policy transport | Session-scoped; requests read branch-local `fast-policy` entries |

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -11,6 +12,9 @@ import type { Goal, GoalAccountingMode, GoalStoreRef, TokenUsageSnapshot } from 
 import { goalStoreRef } from "./goal/context.js";
 import { COMPLETABLE_GOAL_STATUS_VALUES, isRecord } from "./goal/types.js";
 import { updateGoalUi } from "./goal/ui.js";
+
+import { GOAL_ACCESS_ENTRY, GOAL_TOOL_NAMES, goalToolAccess, modesOwnGoalTools } from "./goal/access.js";
+import { GOAL_BOOTSTRAP_MESSAGE_TYPE, GOAL_BOOTSTRAP_PROMPT } from "./goal/bootstrap.js";
 
 const GOAL_USAGE = "Usage: /goal <objective>";
 const GOAL_EMPTY_HINT = "No goal is currently set.";
@@ -32,6 +36,40 @@ type AgentGoalAccounting = {
 };
 
 export default function (pi: ExtensionAPI): void {
+	let activeCtx: ExtensionContext | undefined;
+	let pendingBootstrap: string | undefined;
+	let bootstrapId: string | undefined;
+	const unsubscribeActivation = pi.events.on("ulw:activated", (event: unknown) => {
+		if (!activeCtx || !isRecord(event) || typeof event.sessionId !== "string" || event.sessionId !== activeCtx.sessionManager.getSessionId()) return;
+		pi.appendEntry(GOAL_ACCESS_ENTRY, { sessionId: event.sessionId });
+		pendingBootstrap = event.sessionId;
+	});
+
+	async function refreshToolAccess(ctx: ExtensionContext): Promise<void> {
+		if (modesOwnGoalTools(pi)) return;
+		const allowed = await goalToolAccess(ctx);
+		const registered = new Set(pi.getAllTools().map((tool) => tool.name));
+		pi.setActiveTools([
+			...pi.getActiveTools().filter((name) => !GOAL_TOOL_NAMES.some((goalName) => goalName === name)),
+			...allowed.filter((name) => registered.has(name)),
+		]);
+	}
+
+	pi.on("before_agent_start", async (_event, ctx) => {
+		const pending = pendingBootstrap;
+		pendingBootstrap = undefined;
+		bootstrapId = undefined;
+		await refreshToolAccess(ctx);
+		if (pending !== undefined && pending === ctx.sessionManager.getSessionId()) {
+			bootstrapId = randomUUID();
+			return { message: { customType: GOAL_BOOTSTRAP_MESSAGE_TYPE, content: GOAL_BOOTSTRAP_PROMPT, display: false, details: { bootstrapId } } };
+		}
+	});
+	pi.on("session_before_switch", () => {
+		pendingBootstrap = undefined;
+		bootstrapId = undefined;
+	});
+
 	let agentTurnInProgress = false;
 	let agentGoalAccounting: AgentGoalAccounting | null = null;
 	let completedThisTurnGoalId: string | null = null;
@@ -51,6 +89,7 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "create_goal",
+		exposure: "deferred",
 		label: "Create Goal",
 		description:
 			"Create a goal only when explicitly requested by the user or system/developer instructions; do not infer goals from ordinary tasks.\nSet token_budget only when an explicit token budget is requested. Fails if an unfinished goal exists; use update_goal only for status.",
@@ -104,6 +143,7 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "update_goal",
+		exposure: "deferred",
 		label: "Update Goal",
 		description:
 			"Update the existing goal.\nUse this tool only to mark the goal achieved or genuinely blocked.\nSet status to `complete` only when the objective has actually been achieved and no required work remains.\nSet status to `blocked` only when the same blocking condition has repeated for at least three consecutive goal turns, counting the original/user-triggered turn and any automatic continuations, and available authorized paths are exhausted: progress requires unavailable external state or a necessary unanswered user decision. Three turns are a floor, not an attempt cap. Do not block while a live background result, pending question, or available path can resolve the impasse. Supply a specific nonempty blockedReason.\nIf the user resumes a goal that was previously marked `blocked`, treat the resumed run as a fresh blocked audit. If the same blocking condition then repeats for at least three consecutive resumed goal turns, set status to `blocked` again.\nOnce the blocked threshold is satisfied, do not keep reporting that you are still blocked while leaving the goal active; set status to `blocked`.\nDo not use `blocked` merely because the work is hard, slow, uncertain, incomplete, or would benefit from clarification.\nDo not mark a goal complete merely because its budget is nearly exhausted or because you are stopping work.\nYou cannot use this tool to pause, resume, budget-limit, or usage-limit a goal; those status changes are controlled by the user or system.\nWhen marking a budgeted goal achieved with status `complete`, report the final token usage from the tool result to the user.",
@@ -168,6 +208,7 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.registerTool({
 		name: "get_goal",
+		exposure: "deferred",
 		label: "Get Goal",
 		description:
 			"Get the current goal for this thread, including status, budgets, token and elapsed-time usage, and remaining token budget.",
@@ -188,6 +229,8 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerCommand("goal", {
 		description: "Set, inspect, pause, resume, or clear the persistent goal",
 		handler: async (rawArgs, ctx) => {
+			pi.appendEntry(GOAL_ACCESS_ENTRY, { sessionId: ctx.sessionManager.getSessionId() });
+			await refreshToolAccess(ctx);
 			const command = parseGoalCommand(rawArgs);
 			if (command.kind !== "show") admission.invalidate();
 			const generation = admission.generation;
@@ -252,6 +295,10 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		activeCtx = ctx;
+		pendingBootstrap = undefined;
+		bootstrapId = undefined;
+		await refreshToolAccess(ctx);
 		admission.invalidate();
 		removeAbortListener?.();
 		run = null;
@@ -324,6 +371,7 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
+		bootstrapId = undefined;
 		if (
 			run &&
 			(run.signal?.aborted ||
@@ -362,6 +410,9 @@ export default function (pi: ExtensionAPI): void {
 		const goal = await readGoal(goalStoreRef(ctx));
 		return {
 			messages: event.messages.filter((message) => {
+				if (message.role === "custom" && message.customType === GOAL_BOOTSTRAP_MESSAGE_TYPE) {
+					return bootstrapId !== undefined && isRecord(message.details) && message.details.bootstrapId === bootstrapId;
+				}
 				if (
 					message.role !== "custom" ||
 					(message.customType !== GOAL_CONTINUATION_MESSAGE_TYPE &&
@@ -380,6 +431,10 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
+		unsubscribeActivation();
+		activeCtx = undefined;
+		pendingBootstrap = undefined;
+		bootstrapId = undefined;
 		admission.invalidate();
 		removeAbortListener?.();
 		if (agentGoalAccounting !== null) await accountCurrentAgentTurn(ctx, EMPTY_USAGE, "active");

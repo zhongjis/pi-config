@@ -52,6 +52,7 @@ function registerTools(): Map<string, ToolDefinition> {
 			tools.set(tool.name, tool);
 		},
 		registerCommand() {},
+		events: { on: () => () => {} },
 		on() {},
 		sendMessage() {},
 	} as never);

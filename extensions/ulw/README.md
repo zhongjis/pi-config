@@ -24,4 +24,6 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 - Sanitizes detection: ignores keywords inside code blocks, inline code, `@file` references, and the ultrawork prompt block itself
 - Shows a compact inline activation banner in the transcript at the point of activation (via `pi.registerMessageRenderer`) — no global notification and no persistent footer status badge
 
+Accepted activation emits `ulw:activated` with the session identity. If [Goal](../goal/README.md) is loaded, it separately enables policy-permitted Goal tools and supplies its hidden task-bootstrap message; ULW never creates Goals itself.
+
 The prompt variants live in [prompts/](prompts/); [index.ts](index.ts) registers the detection hooks and banner renderer.

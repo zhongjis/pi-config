@@ -276,8 +276,9 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		// First pass: load default config to get model spec from frontmatter
 		const baseConfig = state.loadConfig(state.currentMode);
 
-		// Apply model from config — this sets state.resolvedFamily based on resolved model
+		// Apply model and policy-filtered tool access before the first request.
 		await state.applyModelFromConfig(baseConfig, ctx);
+		await state.applyToolAccess(ctx);
 
 		// Second pass: reload with resolved family (picks up gpt.md body or gemini.md overlays)
 		const config = state.loadConfig(state.currentMode, state.resolvedFamily);

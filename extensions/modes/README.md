@@ -33,6 +33,8 @@ Mode prompts live in `modes/<mode>/mode.md` and use the shared agent frontmatter
 - `allow_nesting` — permits nested subagent tools only when those tools are also allowlisted
 - `prompt_mode`, `model`, `allow_delegation_to`, `disallow_delegation_to` — same schema as custom subagents. Modes only honor `replace` (default; strips prior mode bodies before appending) and `append` (stacks); `system_instructions` is parsed but coerced to `replace` for modes.
 
+[Goal access](../goal/src/goal/access.ts) is applied before model requests, inside the mode allowlist. Fresh Goal declarations require ULW or explicit `/goal`; restored unfinished Goals keep permitted management tools. Modes remains the active-tool owner.
+
 Obsolete `tools`, `disallowed_tools`, and `disallow_tools` frontmatter is rejected.
 
 Configured model chains (or the active `/mode-model` override) use the shared
