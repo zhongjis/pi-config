@@ -250,7 +250,7 @@ A few rules the examples don't make obvious:
 - `get_agent_result` retrieves an independent Agent ID or an `agr_*` graph run ID; `wait: true` waits without polling for terminal output or an actionable human gate, and cancelling it stops only the wait, never the run. Continue non-overlapping work, then collect with `wait: true` rather than ending the turn.
 - `resolve_agent_graph_gate` submits the human choice for a returned graph gate.
 - `steer_subagent` sends a message to a running agent; it takes effect after the current tool execution.
-- `agent_graph` (opt-in) launches a typed graph.
+- `agent_graph` launches a typed graph.
 
 ### Graph gates
 
@@ -269,13 +269,11 @@ Unobserved gates use the existing held follow-up notification channel. Retrieval
 its gate nudge, not the gate; retrieving a terminal run consumes its completion notification.
 Graph hosts never open a UI prompt themselves.
 
-### `agent_graph` (opt-in)
+### `agent_graph`
 
 Typed graph orchestration — the multi-agent launch tool. It takes `graph` (a saved graph name or an inline `AgentGraph`) and `input`, validates before execution, and returns a background run ID. Invalid graphs are rejected in the initiating tool call; graph, agent, gate and condition failures are reported asynchronously. Collect with `get_agent_result({run_id, wait:true})`; handle returned human gates with `ask` and `resolve_agent_graph_gate`, then collect again. Completion notifications (for uncollected runs) and `/agents → Graph runs` supervision remain available.
 
-Set `agentGraphEnabled: true` in `subagents.json` or enable agent graphs in `/agents → Settings`, then reload Pi for tool registration. The default is `false`: disabled agent graphs add no tool schema or graph prompt cost. Registration changes, including disabling, require reload.
-
-The bundled [agent-graph skill](skills/agent-graphs/SKILL.md) covers running graphs: saved-graph selection, ad-hoc inline graphs, input, gates and results. Its [authoring reference](skills/agent-graphs/references/authoring.md) covers the typed API: saved and inline graphs, node types (`agent`, `human_gate`, `agent_gate`, `hybrid_gate`, `graph`, `expand`, `fanout`, `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill; disabled agent graphs discover no skill.
+The bundled [agent-graph skill](skills/agent-graphs/SKILL.md) covers running graphs: saved-graph selection, ad-hoc inline graphs, input, gates and results. Its [authoring reference](skills/agent-graphs/references/authoring.md) covers the typed API: saved and inline graphs, node types (`agent`, `human_gate`, `agent_gate`, `hybrid_gate`, `graph`, `expand`, `fanout`, `bounded_feedback`), edges, conditions, loops, subgraphs, and expansion. Installation of the whole extension includes the skill.
 
 Typed node `outputSchema` drives declarative edge conditions and bounded loops. An `agent` node may carry a `validation.gate` shell command and `retry` configuration; deterministic validation is not a decision gate.
 
@@ -295,7 +293,7 @@ Settled runs remain visible after same-session reload in `/agents → Graph runs
 
 Every run also writes `<runId>.trace.jsonl` (graph, input, per-node status/attempt/output/error, end) to the session task artifact area beside node transcripts, kept after settlement and capped at 8 MiB. With `graphRuntimeTrace` on, `<runId>.runtime.jsonl` beside it records XState event/microstep names without context or event payloads. Traces contain inputs and outputs, with the same privacy as node transcripts; graph history never records their paths. Write failures warn once per session and never fail the run.
 
-The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover` when agent graphs are enabled. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
+The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resources_discover`. Validate real behavior in a fresh interactive Pi session; see [verification requirements](AGENTS.md#verification).
 
 ## Commands
 
@@ -303,7 +301,7 @@ The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resour
 
 - `/agents` opens the management menu: running agents (open the conversation viewer, steer with `Enter`, stop with `x` twice), agent types (eject, edit, disable/enable, reset, delete), create a new agent (manual wizard or AI-generated), and settings. Agent type rows show source (`•` project, `◦` global, `✕` disabled) and model, flagging `(unavailable)` chains and `(→ provider/id)` resolutions.
 - `/agent-monitor` opens the Agent Monitor.
-- `/agent-graph-replay <runId> <graph>` (agent graphs only) replays a current-session run trace through a saved or file graph's planner without model calls and shows a display-only diff.
+- `/agent-graph-replay <runId> <graph>` replays a current-session run trace through a saved or file graph's planner without model calls and shows a display-only diff.
 
 ## Graceful Max Turns
 
@@ -369,7 +367,7 @@ Runtime settings changed via `/agents` → Settings persist across pi restarts. 
 
 **Precedence:** project overrides global on any field present in both. Missing fields fall back to the defaults in [src/settings.ts](src/settings.ts).
 
-[src/settings.ts](src/settings.ts) defines every key and default. Control settings apply live, except agent graph registration, which requires reload.
+[src/settings.ts](src/settings.ts) defines every key and default. Control settings apply live.
 
 Usage reporting includes cache reads because they are billed on every request. The existing display-token total still excludes cache reads. A final tool result drains only unreported deltas; repeated retrieval does not charge the same run again, and resume contributes only new usage. Background spend waits for the next qualifying tool result. Usage collected while reporting is disabled is not backfilled; disabling reporting or changing sessions clears pending deltas. Reporting does not trigger extra model turns. Only total estimated cost is reported; category-level cost breakdowns are not tracked.
 

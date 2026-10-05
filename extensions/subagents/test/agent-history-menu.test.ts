@@ -35,7 +35,6 @@ describe("agent history conversation", () => {
     { pi: {} as never, manager, reloadCustomAgents: () => {} },
     new Map(),
     {
-      agentGraphEnabled: false,
       graphRuns: { tasks: new Map(), getRecord: () => undefined, viewAgentConversation: async () => {}, getCtx: () => undefined },
       showSettings: async () => {},
     },

@@ -4,7 +4,7 @@ import { boot, mockRunAgent, required, session } from "./graph-run-registration.
 
 describe("registered result retrieval", () => {
   it("returns a durable human request before completion without opening UI", async () => {
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
       graph: { nodes: { gate: { type: "human_gate", prompt: "Approve release?", outputSchema: {
@@ -22,7 +22,7 @@ describe("registered result retrieval", () => {
     expect(again.details).toEqual(result.details);
   });
   it("waits for graph completion and returns its output", async () => {
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     let release: (() => void) | undefined;
     const parked = new Promise<void>(resolve => { release = resolve; });
@@ -61,7 +61,7 @@ describe("registered result retrieval", () => {
     expect(body).not.toContain("Full result with every round:");
   });
   it("returns compact bounded-feedback retrieval text and keeps rounds in the artifact and details", async () => {
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     const round = `round-secret-${"x".repeat(800)}`;
     const prompts: string[] = [];
@@ -153,7 +153,7 @@ describe("turn-boundary completion notifications", () => {
   });
 
   it("omits a collected graph completion notification after the final turn", async () => {
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     await host.lifecycle("turn_start", turnStart);
     let release: (() => void) | undefined;

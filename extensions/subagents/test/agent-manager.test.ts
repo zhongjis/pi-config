@@ -353,7 +353,7 @@ describe("AgentManager — execution-correlated retrieval", () => {
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true, signal: controller.signal });
     controller.abort();
     const details = createAgentResultBuilder(() => false);
-    const tools = createResultTools(mockPi, manager, { cancelNudge: vi.fn(), details: record => details({ displayName: "worker", description: "worker", subagentType: "general-purpose" }, record) });
+    const tools = createResultTools(mockPi, manager, { cancelNudge: vi.fn(), details: record => details({ displayName: "worker", description: "worker", subagentType: "general-purpose" }, record) }, { retrieve: vi.fn() });
     let settled = false;
     const result = tools.getAgentResult.execute("get", { run_id: id, wait: true }, undefined, undefined, mockCtx).then(value => { settled = true; return value; });
     try {
@@ -383,7 +383,7 @@ describe("AgentManager — execution-correlated retrieval", () => {
     const tools = createResultTools(mockPi, manager, {
       cancelNudge,
       details: value => buildDetails({ displayName: "worker", description: "worker", subagentType: "general-purpose" }, value),
-    });
+    }, { retrieve: vi.fn() });
     const pending = tools.getAgentResult.execute("get", { run_id: id, wait: true }, undefined, undefined, mockCtx);
     release();
     const result = await pending;

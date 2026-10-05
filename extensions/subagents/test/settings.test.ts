@@ -61,11 +61,6 @@ describe("settings persistence", () => {
     expect(loadSettings(projectDir)).toEqual({});
   });
 
-  it("accepts agentGraphEnabled", () => {
-    writeProject({ agentGraphEnabled: true });
-    expect(loadSettings(projectDir)).toEqual({ agentGraphEnabled: true });
-  });
-
   it("loads from global when no project file", () => {
     writeGlobal({ maxConcurrent: 16, graceTurns: 10 });
     expect(loadSettings(projectDir)).toEqual({ maxConcurrent: 16, graceTurns: 10 });

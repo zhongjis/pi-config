@@ -11,7 +11,7 @@ import { createSettingsMenu } from "./ui/settings-menu.js";
  * Tools:
  *   agent             — LLM-callable: spawn a sub-agent
  *   get_agent_result     — LLM-callable: collect agent/graph results or pending human gates
- *   resolve_agent_graph_gate — LLM-callable: submit a human gate response (graph opt-in)
+ *   resolve_agent_graph_gate — LLM-callable: submit a human gate response
  *   steer_subagent       — LLM-callable: send a steering message to a running agent
  *
  * Commands:
@@ -364,7 +364,7 @@ export default function (pi: ExtensionAPI) {
         console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
     });
     await graphRunPane.reconcile();
-    if (isAgentGraphEnabled()) resumeDurableGraphRuns(ctx);
+    resumeDurableGraphRuns(ctx);
   });
 
   pi.on("session_before_switch", async () => {
@@ -470,13 +470,6 @@ export default function (pi: ExtensionAPI) {
     reloadCustomAgents(); // re-register with new setting
   }
 
-  // Registration is fixed at activation; settings changes apply on reload.
-  let agentGraphEnabled = false;
-  function isAgentGraphEnabled(): boolean { return agentGraphSessionEnabled; }
-  function setAgentGraphEnabled(enabled: boolean): void {
-    agentGraphEnabled = enabled;
-  }
-
   // ---- agent tool description mode ----
   // "full" (default) keeps the rich Claude Code-style description; "compact"
   // swaps in a ~75% smaller one for small/local models (#91). Read once at
@@ -500,7 +493,6 @@ export default function (pi: ExtensionAPI) {
       setMaxConcurrent: (n) => manager.setMaxConcurrent(n),
       setMaxConcurrentForeground: (n) => manager.setMaxConcurrentForeground(n),
       setReportUsage,
-      setAgentGraphEnabled,
       setShowCost,
       setGraphRuntimeTrace,
       setDefaultMaxTurns,
@@ -515,8 +507,6 @@ export default function (pi: ExtensionAPI) {
     },
     (event, payload) => pi.events.emit(event, payload),
   );
-
-  let agentGraphSessionEnabled = agentGraphEnabled;
 
   pi.registerTool(createAgentTool(
     {
@@ -534,7 +524,7 @@ export default function (pi: ExtensionAPI) {
   ));
 
   const graphRuntime = createGraphRuntime(
-    { pi, manager, enabled: isAgentGraphEnabled, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial,
+    { pi, manager, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial,
       runtimeTrace: () => graphRuntimeTrace },
     { schedule: scheduleNudge, cancel: cancelNudge },
     surface => {
@@ -544,20 +534,16 @@ export default function (pi: ExtensionAPI) {
   );
   const { getRuns: getGraphRuns, resume: resumeDurableGraphRuns, stop: stopGraphRuns, fleetGraphRuns, monitorGraphRuns } = graphRuntime;
 
-  if (isAgentGraphEnabled()) {
-    pi.on("resources_discover", () => (isAgentGraphEnabled() ? { skillPaths: [graphSkillPath] } : undefined));
-  }
-  if (isAgentGraphEnabled()) {
-    pi.registerTool(graphRuntime.tool);
-    pi.registerTool(graphRuntime.resolveGateTool);
-    pi.registerCommand("agent-graph-replay", {
-      description: "Replay a recorded agent graph run trace against a candidate graph: /agent-graph-replay <runId> <graph>",
-      handler: async (args, ctx) => {
-        const notice = runReplayCommand(args, ctx.cwd, ctx.sessionManager.getSessionId());
-        ctx.ui.notify(notice.text, notice.level);
-      },
-    });
-  }
+  pi.on("resources_discover", () => ({ skillPaths: [graphSkillPath] }));
+  pi.registerTool(graphRuntime.tool);
+  pi.registerTool(graphRuntime.resolveGateTool);
+  pi.registerCommand("agent-graph-replay", {
+    description: "Replay a recorded agent graph run trace against a candidate graph: /agent-graph-replay <runId> <graph>",
+    handler: async (args, ctx) => {
+      const notice = runReplayCommand(args, ctx.cwd, ctx.sessionManager.getSessionId());
+      ctx.ui.notify(notice.text, notice.level);
+    },
+  });
 
   const resultTools = createResultTools(pi, manager, {
     details: record => buildDetails(
@@ -566,7 +552,7 @@ export default function (pi: ExtensionAPI) {
       { activity: agentActivity.get(record.id) },
     ),
     cancelNudge: notifications.consume,
-  }, isAgentGraphEnabled() ? graphRuntime : undefined);
+  }, graphRuntime);
   pi.registerTool(resultTools.getAgentResult);
   pi.registerTool(resultTools.steer);
 
@@ -575,7 +561,6 @@ export default function (pi: ExtensionAPI) {
     { pi, manager, reloadCustomAgents },
     agentActivity,
     {
-      get agentGraphEnabled() { return isAgentGraphEnabled(); },
       get graphRuns() { return graphRunMenuDeps; },
       showSettings,
     },
@@ -586,7 +571,6 @@ export default function (pi: ExtensionAPI) {
       maxConcurrent: manager.getMaxConcurrent(),
       maxConcurrentForeground: manager.getMaxConcurrentForeground(),
       reportUsage,
-      agentGraphEnabled,
       showCost,
       graphRuntimeTrace,
       // 0 = unlimited — per SubagentsSettings.defaultMaxTurns docstring and
@@ -604,10 +588,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   function applySettingValue(ctx: ExtensionCommandContext, id: string, value: string) {
-    if (id === "agentGraphEnabled") {
-      setAgentGraphEnabled(value === "on");
-      notifyApplied(ctx, `Agent graphs ${agentGraphEnabled ? "enabled" : "disabled"} for the next reload.`);
-    } else if (id === "maxConcurrent") {
+    if (id === "maxConcurrent") {
       const n = parseInt(value, 10);
       if (n >= 1) {
         manager.setMaxConcurrent(n);

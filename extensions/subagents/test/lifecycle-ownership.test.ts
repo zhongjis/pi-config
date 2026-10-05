@@ -16,11 +16,13 @@ const graphRun = vi.hoisted(() => ({
 vi.mock("../src/graph/graph-runtime.js", () => ({
   createGraphRuntime: vi.fn(() => ({
     tool: {},
+    resolveGateTool: {},
     loadHistory: vi.fn(),
     getRuns: () => [],
     resume: graphRun.resume,
     stop: graphRun.stop,
     fleetGraphRuns: () => [],
+    monitorGraphRuns: () => [],
   })),
 }));
 
@@ -88,7 +90,7 @@ describe("manager registry lifecycle ownership", () => {
     process.env.PI_CODING_AGENT_DIR = agentDir;
     process.env.HOME = agentDir;
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
-    writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false, agentGraphEnabled: false }));
+    writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false }));
     process.chdir(tmpDir);
     Reflect.deleteProperty(globalThis, MANAGER_KEY);
     graphRun.active = false;

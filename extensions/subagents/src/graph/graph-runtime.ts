@@ -33,7 +33,6 @@ import { validateGraph } from "./validate.js";
 
 /** Activation-owned execution policy, read live when a graph starts a child. */
 export interface GraphExecutionHost extends Readonly<Pick<NodeHostOptions, "pi" | "manager" | "scopeModels" | "outputTranscript">> {
-  readonly enabled: () => boolean;
   readonly delegationDenial: (ctx: ExtensionContext, type: string) => string | undefined;
   /** Opt-in XState inspection log; read when each run starts. */
   readonly runtimeTrace: () => boolean;
@@ -368,7 +367,7 @@ export function createGraphRuntime(
       );
     },
     execute: async (toolCallId, params, _signal, _onUpdate, ctx) => {
-      if (!execution.enabled() || !sessionActive) return {
+      if (!sessionActive) return {
         content: [{ type: "text" as const, text: "Agent graphs are unavailable in this session." }], details: undefined,
       };
       let graph: unknown;

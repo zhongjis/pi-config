@@ -3,7 +3,7 @@ import { boot, mockRunAgent, session } from "./graph-run-registration.fixture.js
 import { gateNode, launch, pendingGate, resolveGate, retrieve } from "./gate-tools.fixture.js";
 
 it("externalizes hybrid uncertainty only after the internal agent supplies a typed reason", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   let decisions = 0;
   mockRunAgent(async () => {
@@ -20,7 +20,7 @@ it("externalizes hybrid uncertainty only after the internal agent supplies a typ
 });
 
 it.each(["agent_gate", "hybrid_gate"])("keeps a decided %s internal", async type => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   mockRunAgent(async () => ({ responseText: '{"status":"decided","decision":{"approved":false}}', session, aborted: false, steered: false }));
   const id = await launch(host, { nodes: { gate: { ...gateNode, type, agent: "fixture" } }, edges: [], outputs: { decision: { node: "gate", path: "$" } } });
@@ -29,7 +29,7 @@ it.each(["agent_gate", "hybrid_gate"])("keeps a decided %s internal", async type
 });
 
 it.each(["malformed", "empty-reason", "error", "agent-undecided"])("fails closed without human fallback: %s", async kind => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   mockRunAgent(async () => {
     if (kind === "error") throw new Error("executor failed");
@@ -43,7 +43,7 @@ it.each(["malformed", "empty-reason", "error", "agent-undecided"])("fails closed
 });
 
 it("resumes a durable hybrid handoff without repeating its agent decision", async () => {
-  const first = boot({ agentGraphEnabled: true });
+  const first = boot();
   await first.lifecycle("session_start");
   let decisions = 0;
   mockRunAgent(async () => {
@@ -53,7 +53,7 @@ it("resumes a durable hybrid handoff without repeating its agent decision", asyn
   const id = await launch(first, { nodes: { gate: { ...gateNode, type: "hybrid_gate", agent: "fixture" } }, edges: [], outputs: { decision: { node: "gate", path: "$" } } });
   const old = await pendingGate(first, id);
   await first.lifecycle("session_shutdown");
-  const second = boot({ agentGraphEnabled: true });
+  const second = boot();
   await second.lifecycle("session_start");
   const gate = await pendingGate(second, id);
   expect(decisions).toBe(1);

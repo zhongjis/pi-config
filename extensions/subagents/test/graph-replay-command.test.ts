@@ -21,13 +21,12 @@ async function replay(host: Host, args: string): Promise<[string, string]> {
 }
 
 describe("/agent-graph-replay", () => {
-  it("registers only when agent graphs are enabled", () => {
-    expect(boot().commands.has("agent-graph-replay")).toBe(false);
-    expect(boot({ agentGraphEnabled: true }).commands.has("agent-graph-replay")).toBe(true);
+  it("registers the replay command", () => {
+    expect(boot().commands.has("agent-graph-replay")).toBe(true);
   });
 
   it("rejects bad arguments, traversal run IDs, missing traces, and invalid graphs without throwing", async () => {
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     expect(await replay(host, "")).toEqual([expect.stringContaining("Usage: /agent-graph-replay <runId> <graph>"), "error"]);
     expect(await replay(host, "../agr_abc123 demo")).toEqual([expect.stringContaining("Invalid graph run ID"), "error"]);
@@ -36,7 +35,7 @@ describe("/agent-graph-replay", () => {
 
   it("replays a recorded run against a saved candidate and a graph file path", async () => {
     artifactDirs.add(join(tmpdir(), `pi-subagents-${process.getuid?.() ?? 0}`, encodeCwd(dir)));
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     const result = await required(host.tools.get("agent_graph")).execute("call", { graph, input: {} }, undefined, undefined, host.ctx);
     const runId = required(result.details?.taskId);

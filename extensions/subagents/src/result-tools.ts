@@ -1,9 +1,10 @@
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { AgentManager } from "./agent-manager.js";
-import type { createGraphResultObserver } from "./graph/result-observer.js";
 import { formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
 import { getAgentConversation, SUBAGENT_TOOL_NAMES, steerAgent } from "./agent-runner.js";
+import { isGraphRunId } from "./graph/graph-snapshot-path.js";
+import type { createGraphResultObserver } from "./graph/result-observer.js";
 import { QUEUE_WAIT_POLL_MS } from "./notification-coordinator.js";
 import { getStatusNote } from "./status-note.js";
 import { renderGetAgentResult, renderGetAgentResultCall, renderSteerSubagentCall, renderSteerSubagentResult } from "./tool-rendering.js";
@@ -48,7 +49,7 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   });
 }
 
-export function createResultTools(pi: ExtensionAPI, manager: AgentManager, delivery: ResultDelivery, graphs?: Pick<ReturnType<typeof createGraphResultObserver>, "retrieve">) {
+export function createResultTools(pi: ExtensionAPI, manager: AgentManager, delivery: ResultDelivery, graphs: Pick<ReturnType<typeof createGraphResultObserver>, "retrieve">) {
   async function retrieveAgent(params: { agent_id: string; wait?: boolean; verbose?: boolean }, signal?: AbortSignal) {
     const record = manager.getRecord(params.agent_id);
     if (!record) {
@@ -168,18 +169,17 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
   const getAgentResult = defineTool({
     name: SUBAGENT_TOOL_NAMES.GET_AGENT_RESULT,
     label: "Get Agent Result",
-    description: "Retrieve a background run. Use wait:true when no non-overlapping work remains; never end the turn or poll while work runs. Cancellation stops only retrieval." +
-      (graphs ? " Accepts independent agent and agr_* graph run IDs. A graph wait returns on completion or human input: use ask, then resolve_agent_graph_gate." : " Use the ID returned by agent."),
+    description: "Retrieve a background run. Use wait:true when no non-overlapping work remains; never end the turn or poll while work runs. Cancellation stops only retrieval. Accepts independent agent and agr_* graph run IDs. A graph wait returns on completion or human input: use ask, then resolve_agent_graph_gate.",
     promptSnippet: "Collect background results; wait instead of polling",
     renderCall: renderGetAgentResultCall,
     renderResult: renderGetAgentResult,
     parameters: Type.Object({
-      run_id: Type.String({ description: graphs ? "Independent agent ID or agr_* graph run ID." : "Agent ID to retrieve." }),
-      wait: Type.Optional(Type.Boolean({ description: graphs ? "Wait for completion or actionable human input. Cancellation stops only this wait." : "Wait for completion. Cancellation stops only this wait." })),
+      run_id: Type.String({ description: "Independent agent ID or agr_* graph run ID." }),
+      wait: Type.Optional(Type.Boolean({ description: "Wait for completion or actionable human input. Cancellation stops only this wait." })),
       verbose: Type.Optional(Type.Boolean({ description: "Include an independent agent's conversation." })),
     }),
     execute: async (_id, params, signal) => {
-      if (/^agr_[0-9a-f]{12}$/.test(params.run_id) && graphs) return graphs.retrieve(params.run_id, params.wait === true, signal);
+      if (isGraphRunId(params.run_id)) return graphs.retrieve(params.run_id, params.wait === true, signal);
       const result = await retrieveAgent({ agent_id: params.run_id, wait: params.wait, verbose: params.verbose }, signal);
       const details = result.details;
       return { ...result, details: { ...(details && typeof details === "object" ? details : {}), kind: "agent" as const, run_id: params.run_id } };

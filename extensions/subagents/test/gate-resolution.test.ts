@@ -3,7 +3,7 @@ import { boot } from "./graph-run-registration.fixture.js";
 import { gateNode, launch, pendingGate, resolveGate, retrieve } from "./gate-tools.fixture.js";
 
 it("resolves matching human input through the registered tool and completes the graph", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const id = await launch(host);
   const gate = await pendingGate(host, id);
@@ -14,7 +14,7 @@ it("resolves matching human input through the registered tool and completes the 
 });
 
 it("accepts identical duplicate responses but rejects stale, conflicting and invalid responses", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const id = await launch(host);
   const gate = await pendingGate(host, id);
@@ -33,7 +33,7 @@ it("accepts identical duplicate responses but rejects stale, conflicting and inv
 });
 
 it("aborts only retrieval while leaving the pending gate alive", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const id = await launch(host);
   const gate = await pendingGate(host, id);
@@ -46,7 +46,7 @@ it("aborts only retrieval while leaving the pending gate alive", async () => {
 });
 
 it("notifies a human gate when no waiter exists and does not duplicate a retrieved gate", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const id = await launch(host);
   await vi.waitFor(() => expect(host.api.sendMessage.mock.calls.some(([message]) => message.content.includes("Human input required"))).toBe(true));
@@ -65,7 +65,7 @@ it("notifies a human gate when no waiter exists and does not duplicate a retriev
 });
 
 it("enforces the gate's authored response schema without consuming rejected input", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const id = await launch(host, { nodes: { gate: { ...gateNode, outputSchema: { ...gateNode.outputSchema, properties: { approved: { const: false } } } } }, edges: [], outputs: { decision: { node: "gate", path: "$" } } });
   const gate = await pendingGate(host, id);

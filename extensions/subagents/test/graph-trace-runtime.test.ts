@@ -17,7 +17,7 @@ const track = () => artifactDirs.add(join(tmpdir(), `pi-subagents-${process.getu
 describe("agent_graph trace artifact", () => {
   it("writes a settled trace for every run in the exact-session artifact area", async () => {
     track();
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     const result = await required(host.tools.get("agent_graph")).execute("call", { graph, input: { task: "t" } }, undefined, undefined, host.ctx);
     const runId = required(result.details?.taskId);
@@ -35,7 +35,7 @@ describe("agent_graph trace artifact", () => {
     const blocked = dirname(graphTracePath(dir, "parent", "agr_000000"));
     mkdirSync(dirname(blocked), { recursive: true });
     writeFileSync(blocked, "");
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));
     for (let i = 0; i < 2; i++) {
@@ -58,7 +58,7 @@ describe("graph runtime trace setting", () => {
 
   it("writes no runtime log by default and starts logging after a live settings toggle", async () => {
     track();
-    const host = boot({ agentGraphEnabled: true });
+    const host = boot();
     await host.lifecycle("session_start");
     const off = await run(host);
     expect(existsSync(graphTracePath(dir, "parent", off))).toBe(true);
@@ -82,7 +82,7 @@ describe("graph runtime trace setting", () => {
     const blocked = dirname(graphRuntimeLogPath(dir, "parent", "agr_000000"));
     mkdirSync(dirname(blocked), { recursive: true });
     writeFileSync(blocked, "");
-    const host = boot({ agentGraphEnabled: true, graphRuntimeTrace: true });
+    const host = boot({ graphRuntimeTrace: true });
     await host.lifecycle("session_start");
     for (let i = 0; i < 2; i++) await run(host);
     expect(host.ui.notify.mock.calls.filter(([text]) => text === "Graph runtime trace is unavailable; execution is unaffected.")).toHaveLength(1);

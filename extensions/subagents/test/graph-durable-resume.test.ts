@@ -29,7 +29,7 @@ const gateGraph = {
 describe("agent_graph durable human_gate resume", () => {
   it("resumes a drained human gate under a new graph attempt on restart", async () => {
     // Session 1 parks at the gate until shutdown requests cancellation.
-    const s1 = boot({ agentGraphEnabled: true });
+    const s1 = boot();
     await s1.lifecycle("session_start");
 
     const result = await required(s1.tools.get("agent_graph")).execute(
@@ -61,7 +61,7 @@ describe("agent_graph durable human_gate resume", () => {
     expect(dead.status).toBe(0);
     writeFileSync(join(persistence.graphRunsDir(s1.ctx.cwd), `${runId}.json.run.lock`), JSON.stringify(dead.pid));
     // Restart admits a new graph attempt, without repairing the cancelled execution.
-    const s2 = boot({ agentGraphEnabled: true });
+    const s2 = boot();
     await s2.lifecycle("session_start"); // resumeDurableGraphRuns re-launches the run
 
     const gate = await pendingGate(s2, runId);
@@ -77,7 +77,7 @@ describe("agent_graph durable human_gate resume", () => {
 });
 
 it("persists effective fanout topology through the graph runtime and resumes it once", async () => {
-  const s1 = boot({ agentGraphEnabled: true });
+  const s1 = boot();
   await s1.lifecycle("session_start");
 
   const graph = {
@@ -101,7 +101,7 @@ it("persists effective fanout topology through the graph runtime and resumes it 
   const shutdown = s1.lifecycle("session_shutdown");
 
   await shutdown;
-  const s2 = boot({ agentGraphEnabled: true });
+  const s2 = boot();
   await s2.lifecycle("session_start");
   await resolveGate(s2, await pendingGate(s2, runId));
   const message = await s2.notification(runId);
@@ -111,7 +111,7 @@ it("persists effective fanout topology through the graph runtime and resumes it 
 
 it.each(["foreign live", "foreign dead", "ownerless v2", "same-session live", "corrupt"] as const)(
   "checks recovery ownership before side effects: %s", async kind => {
-    const origin = boot({ agentGraphEnabled: true }, "origin");
+    const origin = boot({}, "origin");
     await origin.lifecycle("session_start");
 
     const result = await required(origin.tools.get("agent_graph")).execute(
@@ -141,7 +141,7 @@ it.each(["foreign live", "foreign dead", "ownerless v2", "same-session live", "c
     const release = live ? persistence.ownGraphRun(origin.ctx.cwd, runId) : undefined;
     const original = readFileSync(path, "utf8");
     const lockBefore = live || kind === "foreign dead" ? readFileSync(lock, "utf8") : undefined;
-    const next = boot({ agentGraphEnabled: true }, kind === "same-session live" || kind === "corrupt" ? "origin" : "foreign");
+    const next = boot({}, kind === "same-session live" || kind === "corrupt" ? "origin" : "foreign");
     const create = vi.spyOn(tasks, "createGraphRunTask");
     const lease = vi.spyOn(persistence, "ownGraphRun");
     const write = vi.spyOn(persistence, "writeGraphSnapshot");
@@ -169,7 +169,7 @@ it.each(["foreign live", "foreign dead", "ownerless v2", "same-session live", "c
 );
 
 it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async () => {
-  const origin = boot({ agentGraphEnabled: true }, "origin");
+  const origin = boot({}, "origin");
   await origin.lifecycle("session_start");
 
   const result = await required(origin.tools.get("agent_graph")).execute(
@@ -186,7 +186,7 @@ it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async
   // A live process still holds this run's lock across the resume.
   const release = persistence.ownGraphRun(origin.ctx.cwd, runId);
   const original = readFileSync(path, "utf8");
-  const next = boot({ agentGraphEnabled: true }, "origin");
+  const next = boot({}, "origin");
   const create = vi.spyOn(tasks, "createGraphRunTask");
   const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
   // Force the peek to LOSE the race, then the lease to refuse the live owner.
@@ -209,7 +209,7 @@ it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async
 });
 
 it("keeps checkpoint session ownership immutable under replacement", async () => {
-  const session = boot({ agentGraphEnabled: true });
+  const session = boot();
   await session.lifecycle("session_start");
 
   const result = await required(session.tools.get("agent_graph")).execute(

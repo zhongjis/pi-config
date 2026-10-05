@@ -7,7 +7,7 @@ import { boot, mockRunAgent, session } from "./graph-run-registration.fixture.js
 import { gateGraph, gateNode, launch, pendingGate, resolveGate, retrieve } from "./gate-tools.fixture.js";
 
 it("cancels one parked retrieval without affecting another waiter or a later gate", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const work = deferred<void>();
   mockRunAgent(async () => { await work.promise; return { responseText: "done", session, aborted: false, steered: false }; });
@@ -25,14 +25,14 @@ it("cancels one parked retrieval without affecting another waiter or a later gat
 });
 
 it("keeps sibling nested gates distinct and rejects pre-reload nested responses", async () => {
-  const first = boot({ agentGraphEnabled: true });
+  const first = boot();
   mkdirSync(join(first.ctx.cwd, ".pi", "agent-graphs"), { recursive: true });
   writeFileSync(join(first.ctx.cwd, ".pi", "agent-graphs", "child.graph.json"), JSON.stringify(gateGraph));
   await first.lifecycle("session_start");
   const id = await launch(first, { nodes: { left: { type: "graph", graph: "child" }, right: { type: "graph", graph: "child" } }, edges: [], outputs: { left: { node: "left", path: "$" }, right: { node: "right", path: "$" } } });
   const old = await pendingGate(first, id);
   await first.lifecycle("session_shutdown");
-  const second = boot({ agentGraphEnabled: true });
+  const second = boot();
   await second.lifecycle("session_start");
   const left = await pendingGate(second, id);
   await expect(resolveGate(second, old)).rejects.toThrow(/stale/i);
@@ -49,7 +49,7 @@ it("keeps sibling nested gates distinct and rejects pre-reload nested responses"
 });
 
 it("never publishes a human request when its durable dispatch checkpoint fails", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const write = persistence.writeGraphSnapshot;
   vi.spyOn(persistence, "writeGraphSnapshot").mockImplementation((cwd, snapshot) => {

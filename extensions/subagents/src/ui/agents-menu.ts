@@ -10,7 +10,6 @@ import { type AgentActivity, formatDuration, getDisplayName } from "./agent-widg
 import { type GraphRunMenuDeps, type GraphRunUIContext, showGraphRunsMenu } from "./graph-run-menu.js";
 
 interface AgentMenuNavigation {
-  readonly agentGraphEnabled: boolean;
   readonly graphRuns: GraphRunMenuDeps;
   readonly showSettings: (ctx: ExtensionCommandContext) => Promise<void>;
 }
@@ -69,7 +68,7 @@ export function createAgentsMenu(
     if (allNames.length > 0) options.push(`Agent types (${allNames.length})`);
     options.push("Create new agent");
     options.push("Settings");
-    if (navigation.agentGraphEnabled) options.push(`Graph runs (${navigation.graphRuns.tasks.size})`);
+    options.push(`Graph runs (${navigation.graphRuns.tasks.size})`);
     const noAgentsMsg = allNames.length === 0 && agents.length === 0
       ? "No agents found. Create specialized subagents that can be delegated to.\n\n" +
         "Each subagent has its own context window, custom system prompt, and specific tools.\n\n" +

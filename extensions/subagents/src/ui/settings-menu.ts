@@ -16,11 +16,6 @@ export function createSettingsMenu(
     const gt = settings.graceTurns;
     return [
       {
-        id: "agentGraphEnabled", label: "Agent graphs",
-        description: "Opt-in agent graph orchestration. Changes apply on next reload.",
-        currentValue: settings.agentGraphEnabled ? "on" : "off", values: ["on", "off"],
-      },
-      {
         id: "graphRuntimeTrace", label: "Graph runtime trace",
         description: "Write each graph run's XState event/state log (<runId>.runtime.jsonl) beside its trace. Applies to runs started afterwards.",
         currentValue: settings.graphRuntimeTrace ? "on" : "off", values: ["on", "off"],

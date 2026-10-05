@@ -9,7 +9,7 @@ vi.mock("@earendil-works/pi-coding-agent", async importOriginal => {
 });
 
 it("renders canonical calls and graph gates with bounded rows and complete expanded content", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   const prompt = "批准发布🙂é\n" + "a".repeat(200);
   const id = await launch(host, { nodes: { gate: { ...gateNode, prompt } }, edges: [] });
@@ -39,7 +39,7 @@ it("renders canonical calls and graph gates with bounded rows and complete expan
 });
 
 it("preserves a graph's declared outcome independently of successful execution", async () => {
-  const host = boot({ agentGraphEnabled: true });
+  const host = boot();
   await host.lifecycle("session_start");
   mockRunAgent(async () => ({ responseText: '{"status":"partial","reason":"Missing source"}', session, aborted: false, steered: false }));
   const id = await launch(host, { nodes: { result: { type: "agent", agent: "fixture", prompt: "work", outputSchema: { type: "object" } } }, edges: [], outputs: { $agentGraphOutcome: { node: "result", path: "$" } } });
