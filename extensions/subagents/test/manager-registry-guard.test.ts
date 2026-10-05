@@ -54,9 +54,12 @@ function ctx() {
 }
 
 const textOf = (r: any): string => r.content[0].text;
+const pendingRuns: (() => void)[] = [];
 
 async function spawnBackground(tools: Map<string, any>): Promise<string> {
-  vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}) as any); // never resolves
+  vi.mocked(runAgent).mockImplementation(() => new Promise<never>((_resolve, reject) => {
+    pendingRuns.push(() => reject(new Error("Fixture runner drained")));
+  }));
   const r = await tools.get("agent").execute(
     "tc-spawn",
     { prompt: "go", description: "registry test agent", subagent_type: "general-purpose", run_in_background: true },
@@ -101,8 +104,16 @@ describe("Symbol.for manager registry across activations", () => {
     await child.lifecycle.get("session_shutdown")?.();
     expect((globalThis as any)[MANAGER_KEY]).toBe(rootEntry);
 
-    // The root's own shutdown releases the slot.
-    await root.lifecycle.get("session_shutdown")?.();
+    // The root releases its slot but shutdown still waits for its physical runner.
+    let settled = false;
+    const shutdown = Promise.resolve(root.lifecycle.get("session_shutdown")?.()).then(() => { settled = true; });
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+    } finally {
+      for (const settle of pendingRuns.splice(0)) settle();
+      await shutdown;
+    }
     expect((globalThis as any)[MANAGER_KEY]).toBeUndefined();
   });
 });

@@ -3,12 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import type { AgentRecord } from "../src/types.js";
 
-vi.mock("../src/agent-runner.js", () => ({
+vi.mock("../src/agent-runner.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/agent-runner.js")>(),
   runAgent: vi.fn(),
   resumeAgent: vi.fn(),
 }));
 
-import { runAgent } from "../src/agent-runner.js";
+import { createAgentResultBuilder } from "../src/agent-result.js";
+import { resumeAgent, runAgent } from "../src/agent-runner.js";
+import { createResultTools } from "../src/result-tools.js";
+import { startBackgroundSupervision } from "../src/supervision-loop.js";
 
 const mockPi = {} as any;
 const mockCtx = { cwd: "/tmp" } as any;
@@ -104,6 +108,462 @@ describe("AgentManager — Bug 1 race condition (resultConsumed vs onComplete)",
     // resultConsumed is set by spawnAndWait so onComplete skips notifications
     expect(completedRecord!.resultConsumed).toBe(true);
     expect(record).toBe(completedRecord);
+  });
+});
+
+describe("AgentManager — execution activity", () => {
+  it("resets execution activity and supervision while retaining lifetime counters and session", async () => {
+    vi.useFakeTimers();
+    const manager = new AgentManager();
+    const session = { ...mockSession(), steer: vi.fn().mockResolvedValue(undefined) };
+    const observed = vi.fn();
+    const onTextDelta = vi.fn();
+    manager.setActivityListener(observed);
+    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
+      options.onSessionCreated?.(session);
+      options.onTextDelta?.("old", "old");
+      options.onToolActivity?.({ type: "end", toolName: "read" });
+      options.onTurnEnd?.(2);
+      options.onAssistantUsage?.({ input: 10, output: 20, cacheWrite: 3, cacheRead: 4, cost: 1 });
+      return { responseText: "old", session, aborted: false, steered: false };
+    });
+    const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "worker", onTextDelta });
+    const oldActivity = record.activity;
+    const oldExecutionId = record.executionId;
+    if (!oldActivity) throw new Error("No fresh activity");
+    oldActivity.activeTools.set("stale", "bash");
+    record.lastSupervisionSteerAt = Date.now();
+    record.lastSupervisionAbortAt = Date.now();
+    const lifetimeUsage = record.lifetimeUsage;
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "new" }; });
+    const pending = manager.resume(record.id, "continue");
+    const callbacks = vi.mocked(resumeAgent).mock.lastCall?.[2];
+    const activity = record.activity;
+    if (!callbacks || !activity || !release) throw new Error("Resume did not start");
+    try {
+      expect(activity).not.toBe(oldActivity);
+      expect(record.executionId).not.toBe(oldExecutionId);
+      expect(record.resultConsumed).toBe(false);
+      expect(activity.activeTools.size).toBe(0);
+      expect(activity.responseText).toBe("");
+      expect(record.lastSupervisionSteerAt).toBeUndefined();
+      expect(record.lastSupervisionAbortAt).toBeUndefined();
+      expect(activity.session).toBe(session);
+      expect(activity.lifetimeUsage).toBe(lifetimeUsage);
+      expect(activity.toolUses).toBe(1);
+      expect(activity.turnCount).toBe(2);
+      expect(onTextDelta).toHaveBeenCalledExactlyOnceWith("old", "old");
+      expect(observed).toHaveBeenCalledTimes(2);
+      for (const event of [
+        () => callbacks.onTextDelta?.("new", "new"),
+        () => callbacks.onToolActivity?.({ type: "start", toolName: "bash" }),
+        () => callbacks.onToolActivity?.({ type: "start", toolName: "bash" }),
+        () => callbacks.onTurnEnd?.(1),
+        () => callbacks.onAssistantUsage?.({ input: 1, output: 2, cacheWrite: 0, cacheRead: 0, cost: 0.5 }),
+      ]) {
+        vi.advanceTimersByTime(1);
+        event();
+        expect(activity.lastProgressAt).toBe(Date.now());
+      }
+      expect(activity.responseText).toBe("new");
+      expect(activity.activeTools.size).toBe(2);
+      callbacks.onToolActivity?.({ type: "end", toolName: "bash" });
+      expect(activity.activeTools.size).toBe(1);
+      const stop = startBackgroundSupervision(mockPi, { getRunning: () => [{ ...record, isBackground: true }], steer: manager.steer.bind(manager), abort: manager.abort.bind(manager) }, new Map());
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+      stop();
+      expect(record.status).toBe("running");
+      expect(session.steer).not.toHaveBeenCalled();
+      callbacks.onToolActivity?.({ type: "end", toolName: "bash" });
+      expect(activity.activeTools.size).toBe(0);
+      expect(record.toolUses).toBe(3);
+      expect(record.turnCount).toBe(3);
+      expect(record.lifetimeUsage).toMatchObject({ input: 11, output: 22, cacheWrite: 3, cacheRead: 4 });
+      expect(record.lifetimeCost).toBe(1.5);
+      expect(manager.getLifetimeCost()).toBe(1.5);
+    } finally {
+      release();
+      await pending;
+      await manager.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not treat a progressing resume as idle after five minutes", async () => {
+    vi.useFakeTimers();
+    const manager = new AgentManager();
+    const session = { ...mockSession(), steer: vi.fn().mockResolvedValue(undefined) };
+    vi.mocked(runAgent).mockResolvedValueOnce({ responseText: "prior", session, aborted: false, steered: false });
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "first", { description: "worker", isBackground: true });
+    const record = manager.getRecord(id);
+    if (!record) throw new Error("Missing record");
+    await record.promise;
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "resumed" }; });
+    const pending = manager.resume(id, "continue", undefined, undefined, { isBackground: true });
+    const callbacks = vi.mocked(resumeAgent).mock.lastCall?.[2];
+    if (!callbacks || !release) throw new Error("Resume did not start");
+    const stop = startBackgroundSupervision(mockPi, manager, new Map());
+    try {
+      for (let minute = 0; minute < 7; minute++) {
+        callbacks.onAssistantUsage?.({ input: 1, output: 1, cacheWrite: 0, cacheRead: 0, cost: 0 });
+        await vi.advanceTimersByTimeAsync(60_000);
+      }
+      expect(record.status).toBe("running");
+      expect(session.steer).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      release();
+      await pending;
+      await manager.dispose();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("AgentManager — interruption provenance", () => {
+  it.each(["user", "caller", "lifecycle", "supervisor-idle", "supervisor-ceiling", "unknown"] as const)("preserves %s through drain and clears it on resume", async (cause) => {
+    const manager = new AgentManager();
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "checkpoint", session: mockSession(), aborted: true, interruptionCause: "unknown", steered: false }; });
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true });
+    const record = manager.getRecord(id);
+    if (!record) throw new Error("Missing record");
+    if (cause === "unknown") manager.abort(id);
+    else manager.abort(id, cause);
+    release?.();
+    await record.promise;
+    expect(record).toMatchObject({ status: "stopped", interruptionCause: cause, result: "checkpoint" });
+    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "done" });
+    await manager.resume(id, "continue");
+    expect(record.interruptionCause).toBeUndefined();
+    expect(record.status).toBe("completed");
+    await manager.dispose();
+  });
+
+  it.each(["unknown"] as const)("does not complete a resumed SDK %s interruption", async (cause) => {
+    const manager = new AgentManager();
+    resolvedRun();
+    const { id, record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "go", { description: "worker" });
+    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "checkpoint", interruptionCause: cause });
+    await manager.resume(id, "continue");
+    expect(record).toMatchObject({ status: "aborted", interruptionCause: cause, result: "checkpoint" });
+    await manager.dispose();
+  });
+});
+
+describe("AgentManager — background resume admission", () => {
+  it.each([false, true])("settles cancellation without starting SDK resume (already aborted: %s)", async (alreadyAborted) => {
+    const manager = new AgentManager(undefined, 1);
+    resolvedRun();
+    const { id, record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" });
+    const session = record.session;
+    const activity = record.activity;
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "busy", session: mockSession(), aborted: false, steered: false }; });
+    manager.spawn(mockPi, mockCtx, "general-purpose", "busy", { description: "busy", isBackground: true });
+    vi.mocked(resumeAgent).mockClear();
+    const controller = new AbortController();
+    if (alreadyAborted) controller.abort();
+    try {
+      await manager.resume(id, "again", controller.signal, mockCtx, { isBackground: true });
+      if (!alreadyAborted) controller.abort();
+      await record.promise;
+      expect(record.status).toBe("stopped");
+      expect(record.activity).toBe(activity);
+      expect(record.session).toBe(session);
+      expect(resumeAgent).not.toHaveBeenCalled();
+    } finally { release?.(); await manager.waitForAll(); await manager.dispose(); }
+  });
+
+  it("keeps resume capacity and same-session exclusion until physical drain, independent of foreground and graph", async () => {
+    const manager = new AgentManager(undefined, 1);
+    manager.setMaxConcurrentForeground(1);
+    resolvedRun();
+    const { id, record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" });
+    let releaseForeground: (() => void) | undefined;
+    let releaseResume: (() => void) | undefined;
+    const foregroundDrain = new Promise<void>(resolve => { releaseForeground = resolve; });
+    const resumeDrain = new Promise<void>(resolve => { releaseResume = resolve; });
+    vi.mocked(runAgent).mockImplementationOnce(async () => { await foregroundDrain; return { responseText: "foreground", session: mockSession(), aborted: false, steered: false }; });
+    const foreground = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "busy", { description: "busy" });
+    vi.mocked(resumeAgent).mockImplementationOnce(async () => { await resumeDrain; return { text: "partial" }; });
+    try {
+      await manager.resume(id, "again", undefined, mockCtx, { isBackground: true });
+      expect(record.status).toBe("running");
+      const queued = manager.spawn(mockPi, mockCtx, "general-purpose", "queued", { description: "queued", isBackground: true });
+      expect(manager.getRecord(queued)?.status).toBe("queued");
+      const graph = manager.spawn(mockPi, mockCtx, "general-purpose", "graph", { description: "graph", graphRunId: "graph", isBackground: true });
+      await manager.getRecord(graph)?.promise;
+      expect(manager.getRecord(graph)?.status).toBe("completed");
+      manager.abort(id);
+      expect(manager.getRecord(queued)?.status).toBe("queued");
+      await expect(manager.resume(id, "overlap")).rejects.toThrow("already running");
+      releaseResume?.();
+      await record.promise;
+      await manager.getRecord(queued)?.promise;
+      expect(manager.getRecord(queued)?.status).toBe("completed");
+      vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "inline" });
+      await manager.resume(id, "inline");
+      expect(record.isBackground).toBe(false);
+      expect(record.resultConsumed).toBe(true);
+    } finally { releaseForeground?.(); releaseResume?.(); await foreground; await manager.dispose(); }
+  });
+  it("queues resume behind the background pool without resetting activity before start", async () => {
+    const complete = vi.fn();
+    const manager = new AgentManager(complete, 1);
+    resolvedRun();
+    const { id, record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" });
+    const prior = { activity: record.activity, startedAt: record.startedAt, executionId: record.executionId };
+    record.lastSupervisionSteerAt = 123;
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "busy", session: mockSession(), aborted: false, steered: false }; });
+    manager.spawn(mockPi, mockCtx, "general-purpose", "busy", { description: "busy", isBackground: true });
+    vi.mocked(resumeAgent).mockClear().mockResolvedValueOnce({ text: "resumed" });
+    const admission = manager.resume(id, "again", undefined, mockCtx, { isBackground: true });
+    try {
+      expect(record.status).toBe("queued");
+      expect(record.executionId).not.toBe(prior.executionId);
+      expect(record.activity).toBe(prior.activity);
+      expect(record.startedAt).toBe(prior.startedAt);
+      expect(record.lastSupervisionSteerAt).toBe(123);
+      expect(resumeAgent).not.toHaveBeenCalled();
+    } finally { release?.(); await admission; await manager.waitForAll(); }
+    expect(record.activity).not.toBe(prior.activity);
+    expect(record.lastSupervisionSteerAt).toBeUndefined();
+    expect(record.resultConsumed).toBe(false);
+    expect(complete.mock.calls.filter(([value]) => value.id === id)).toHaveLength(2);
+    await manager.dispose();
+  });
+});
+
+describe("AgentManager — execution-correlated retrieval", () => {
+  it("waiting retrieval includes partial output after a stopped execution physically drains", async () => {
+    const manager = new AgentManager();
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "drained checkpoint", session: mockSession(), aborted: false, steered: false }; });
+    const controller = new AbortController();
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true, signal: controller.signal });
+    controller.abort();
+    const details = createAgentResultBuilder(() => false);
+    const tools = createResultTools(mockPi, manager, { cancelNudge: vi.fn(), details: record => details({ displayName: "worker", description: "worker", subagentType: "general-purpose" }, record) });
+    let settled = false;
+    const result = tools.getAgentResult.execute("get", { run_id: id, wait: true }, undefined, undefined, mockCtx).then(value => { settled = true; return value; });
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      expect(settled).toBe(false);
+    } finally { release?.(); await result; await manager.dispose(); }
+    const value = await result;
+    expect(value.content).toEqual([{ type: "text", text: expect.stringContaining("drained checkpoint") }]);
+    expect(value.details).toMatchObject({ interruptionCause: "caller", status: "stopped" });
+  });
+  it("does not consume a newer execution when resume wins a completed wait", async () => {
+    const manager = new AgentManager();
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    const session = mockSession();
+    vi.mocked(runAgent).mockImplementationOnce(async () => {
+      await drain;
+      return { responseText: "old", session, aborted: false, steered: false };
+    });
+    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "new" });
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true });
+    const record = manager.getRecord(id);
+    if (!record?.promise || !release) throw new Error("Run did not start");
+    const next = record.promise.then(() => manager.resume(id, "again", undefined, undefined, { isBackground: true }));
+    const cancelNudge = vi.fn();
+    const buildDetails = createAgentResultBuilder(() => false);
+    const tools = createResultTools(mockPi, manager, {
+      cancelNudge,
+      details: value => buildDetails({ displayName: "worker", description: "worker", subagentType: "general-purpose" }, value),
+    });
+    const pending = tools.getAgentResult.execute("get", { run_id: id, wait: true }, undefined, undefined, mockCtx);
+    release();
+    const result = await pending;
+    await next;
+    expect(result.content).toEqual([{ type: "text", text: expect.stringContaining("started another execution") }]);
+    expect(record.resultConsumed).toBe(false);
+    expect(cancelNudge).not.toHaveBeenCalled();
+    await tools.getAgentResult.execute("get-new", { run_id: id }, undefined, undefined, mockCtx);
+    expect(cancelNudge).toHaveBeenCalledExactlyOnceWith(id, record.executionId);
+    await manager.dispose();
+  });
+});
+
+describe("AgentManager — physical settlement", () => {
+  describe.each(["fresh", "error", "resume"])("%s finalization", (kind) => {
+    it.each([new Error("transcript flush failed"), "transcript flush failed"])("retains cleanup failure before completion and releases ownership (%s)", async (failure) => {
+      const onComplete = vi.fn((record: AgentRecord) => ({ ...record, diagnostics: record.diagnostics?.slice() }));
+      const manager = new AgentManager(onComplete, 1);
+      resolvedRun();
+      let release: (() => void) | undefined;
+      const drain = new Promise<void>(resolve => { release = resolve; });
+      let id: string;
+      if (kind === "resume") {
+        ({ id } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" }));
+        vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "finished successfully" }; });
+        await manager.resume(id, "continue", undefined, mockCtx, { isBackground: true });
+      } else {
+        vi.mocked(runAgent).mockImplementationOnce(async () => {
+          await drain;
+          if (kind === "error") throw new Error("provider failed");
+          return { responseText: "finished successfully", session: mockSession(), aborted: false, steered: false };
+        });
+        id = manager.spawn(mockPi, mockCtx, "general-purpose", "first", { description: "first", isBackground: true });
+      }
+      const record = manager.getRecord(id);
+      if (!record) throw new Error("Missing record");
+      onComplete.mockClear();
+      const cleanup = vi.fn(() => { throw failure; });
+      record.outputCleanup = cleanup;
+      try {
+        const queued = manager.spawn(mockPi, mockCtx, "general-purpose", "next", { description: "next", isBackground: true });
+        expect(manager.getRecord(queued)?.status).toBe("queued");
+        expect(manager.hasPendingExecution(id)).toBe(true);
+        release?.();
+        await expect(record.promise).resolves.toBe(kind === "error" ? "" : "finished successfully");
+        await manager.getRecord(queued)?.promise;
+        expect(record).toMatchObject({ status: kind === "error" ? "error" : "completed" });
+        expect(record.result).toBe(kind === "error" ? undefined : "finished successfully");
+        expect(record.error).toBe(kind === "error" ? "provider failed" : undefined);
+        expect(cleanup).toHaveBeenCalledOnce();
+        expect(record.outputCleanup).toBeUndefined();
+        expect(manager.hasPendingExecution(id)).toBe(false);
+        expect(manager.getRecord(queued)?.status).toBe("completed");
+        expect(manager.hasRunning()).toBe(false);
+        expect(record.diagnostics).toContain("Output cleanup failed: transcript flush failed");
+        expect(onComplete).toHaveBeenCalledWith(record);
+        const snapshot = onComplete.mock.results[0]?.value;
+        expect(snapshot).toMatchObject({
+          status: record.status, outputCleanup: undefined,
+          diagnostics: ["Output cleanup failed: transcript flush failed"],
+        });
+        expect(snapshot?.error).toBe(record.error);
+        expect(snapshot?.result).toBe(record.result);
+      } finally { release?.(); await manager.waitForAll(); await manager.dispose(); }
+    });
+  });
+
+  it("finalizes queued cancellation cleanup before notification without releasing an active run", async () => {
+    const onComplete = vi.fn((record: AgentRecord) => ({ ...record, diagnostics: record.diagnostics?.slice() }));
+    const manager = new AgentManager(onComplete, 1);
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(runAgent).mockImplementationOnce(async () => {
+      await drain;
+      return { responseText: "done", session: mockSession(), aborted: false, steered: false };
+    });
+    const active = manager.spawn(mockPi, mockCtx, "general-purpose", "first", { description: "first", isBackground: true });
+    const queued = manager.spawn(mockPi, mockCtx, "general-purpose", "next", { description: "next", isBackground: true });
+    const record = manager.getRecord(queued);
+    if (!record) throw new Error("Missing record");
+    const cleanup = vi.fn(() => { throw new Error("queued flush failed"); });
+    record.outputCleanup = cleanup;
+    try {
+      expect(record.status).toBe("queued");
+      manager.abort(queued, "caller");
+      await expect(record.promise).resolves.toBe("");
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(record.outputCleanup).toBeUndefined();
+      expect(manager.hasPendingExecution(queued)).toBe(false);
+      expect(manager.hasPendingExecution(active)).toBe(true);
+      expect(onComplete.mock.results[0]?.value).toMatchObject({ status: "stopped", interruptionCause: "caller", diagnostics: ["Output cleanup failed: queued flush failed"], outputCleanup: undefined });
+    } finally { release?.(); await manager.waitForAll(); await manager.dispose(); }
+  });
+
+  it.each([false, true])("hasRunning retains stopped execution until physical release (resume: %s)", async (resume) => {
+    const manager = new AgentManager();
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    resolvedRun();
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true });
+    await manager.getRecord(id)?.promise;
+    expect(manager.hasRunning()).toBe(false);
+    let pendingId = id;
+    try {
+      if (resume) {
+        vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "checkpoint" }; });
+        await manager.resume(id, "continue", undefined, mockCtx, { isBackground: true });
+      } else {
+        vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "checkpoint", session: mockSession(), aborted: false, steered: false }; });
+        pendingId = manager.spawn(mockPi, mockCtx, "general-purpose", "next", { description: "worker", isBackground: true });
+      }
+      expect(manager.hasRunning()).toBe(true);
+      expect(manager.abort(pendingId)).toBe(true);
+      expect(manager.getRecord(pendingId)?.status).toBe("stopped");
+      expect(manager.hasRunning()).toBe(true);
+      release?.();
+      await manager.getRecord(pendingId)?.promise;
+      expect(manager.hasRunning()).toBe(false);
+    } finally { release?.(); await manager.waitForAll(); await manager.dispose(); }
+  });
+
+  it.each(["waitForAll", "dispose"] as const)("%s waits for stopped physical execution before disposal", async (action) => {
+    const manager = new AgentManager();
+    const session = mockSession();
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    if (!release) throw new Error("Missing drain resolver");
+    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
+      options.onSessionCreated?.(session);
+      await drain;
+      return { responseText: "partial", session, aborted: false, steered: false };
+    });
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "go" });
+    manager.abort(id);
+    let settled = false;
+    const pending = manager[action]().then(() => { settled = true; });
+    try {
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(session.dispose).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await pending;
+      await manager.dispose();
+    }
+    expect(session.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("retains stopped ownership, waiters and capacity until the runner drains", async () => {
+    const manager = new AgentManager();
+    manager.setMaxConcurrentForeground(1);
+    const session = mockSession();
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    if (!release) throw new Error("Missing drain resolver");
+    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
+      options.onSessionCreated?.(session);
+      await drain;
+      return { responseText: "PARTIAL", session, aborted: false, steered: false, failure: "prompt failed" };
+    }).mockResolvedValue({ responseText: "next", session: mockSession(), aborted: false, steered: false });
+    let id = "";
+    const first = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" }, value => { id = value; });
+    manager.abort(id);
+    const second = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "second", { description: "second" });
+    let allSettled = false;
+    const all = manager.waitForAll().then(() => { allSettled = true; });
+    try {
+      manager.clearCompleted();
+      expect(manager.getRecord(id)).toBeDefined();
+      expect(session.dispose).not.toHaveBeenCalled();
+      await expect(manager.resume(id, "overlap")).rejects.toThrow("already running");
+      await Promise.resolve();
+      expect(allSettled).toBe(false);
+      expect(manager.listAgents().filter(record => record.status === "queued")).toHaveLength(1);
+    } finally {
+      release();
+      await Promise.all([first, second, all]);
+      await manager.dispose();
+    }
+    expect((await first).record).toMatchObject({ status: "stopped", result: "PARTIAL", error: "prompt failed" });
   });
 });
 
@@ -700,7 +1160,7 @@ describe("AgentManager — abort() state machine", () => {
   it("removes a queued agent from the queue and marks it stopped", () => {
     // Concurrency=1: the second background spawn queues behind the first
     manager = new AgentManager(undefined, 1);
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    resolvedRun();
 
     manager.spawn(mockPi, mockCtx, "X", "blocker", { description: "block", isBackground: true });
     const queuedId = manager.spawn(mockPi, mockCtx, "Y", "queued", {
@@ -722,7 +1182,7 @@ describe("AgentManager — abort() state machine", () => {
     let receivedSignal: AbortSignal | undefined;
     vi.mocked(runAgent).mockImplementation((_ctx, _type, _prompt, opts) => {
       receivedSignal = (opts as { signal?: AbortSignal })?.signal;
-      return new Promise(() => {});
+      return Promise.resolve({ responseText: "done", session: mockSession(), aborted: false, steered: false });
     });
 
     const id = manager.spawn(mockPi, mockCtx, "X", "p", {
@@ -797,7 +1257,7 @@ describe("AgentManager — steer()", () => {
     let captured: ((s: any) => void) | undefined;
     vi.mocked(runAgent).mockImplementation((_ctx, _type, _prompt, opts) => {
       captured = (opts as any)?.onSessionCreated;
-      return new Promise(() => {});
+      return Promise.resolve({ responseText: "done", session: mockSession(), aborted: false, steered: false });
     });
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "r", isBackground: true });
     // Simulate the session becoming ready.
@@ -809,7 +1269,7 @@ describe("AgentManager — steer()", () => {
 
   it("queues onto pendingSteers when the session isn't ready yet", () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    resolvedRun();
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "r", isBackground: true });
     const record = manager.getRecord(id)!;
     record.session = undefined; // not ready
@@ -835,7 +1295,7 @@ describe("AgentManager — parent abort signal forwarding (#44)", () => {
 
   it("aborts the child when the parent signal aborts", () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    resolvedRun();
 
     const parent = new AbortController();
     const id = manager.spawn(mockPi, mockCtx, "X", "p", {
@@ -877,9 +1337,9 @@ describe("AgentManager — abortAll", () => {
   let manager: AgentManager;
   afterEach(() => manager?.dispose());
 
-  it("stops both queued and running agents and returns the total count", () => {
+  it("stops both queued and running agents and returns the total count", async () => {
     manager = new AgentManager(undefined, 1);
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    resolvedRun();
 
     const running = manager.spawn(mockPi, mockCtx, "X", "r", {
       description: "r",
@@ -895,6 +1355,11 @@ describe("AgentManager — abortAll", () => {
     expect(manager.abortAll()).toBe(2);
     expect(manager.getRecord(running)?.status).toBe("stopped");
     expect(manager.getRecord(queued)?.status).toBe("stopped");
+    expect(manager.hasPendingExecution(queued)).toBe(false);
+    expect(manager.hasPendingExecution(running)).toBe(true);
+    expect(manager.hasRunning()).toBe(true);
+    await manager.waitForAll();
+    expect(manager.hasPendingExecution(running)).toBe(false);
     expect(manager.hasRunning()).toBe(false);
   });
 
@@ -925,7 +1390,7 @@ describe("AgentManager — hasRunning", () => {
 
   it("is true when an agent is queued behind the concurrency limit", () => {
     manager = new AgentManager(undefined, 1);
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    resolvedRun();
 
     manager.spawn(mockPi, mockCtx, "X", "r", { description: "r", isBackground: true });
     manager.spawn(mockPi, mockCtx, "Y", "q", { description: "q", isBackground: true });
@@ -1005,20 +1470,25 @@ describe("AgentManager — resolved runs with a failed final turn map to error (
     expect(completed?.status).toBe("error");
   });
 
-  it("an external stop still wins over a late failure resolution", async () => {
-    manager = new AgentManager();
+  it.each(["stopped", "unknown", "turn-limit"] as const)("retains failure independently of %s outcome", async (cause) => {
+    const onComplete = vi.fn((record: AgentRecord) => ({ ...record }));
+    manager = new AgentManager(onComplete);
     let resolveRun: ((v: Awaited<ReturnType<typeof runAgent>>) => void) | undefined;
     const session = mockSession();
     vi.mocked(runAgent).mockImplementation(() => new Promise((r) => { resolveRun = r; }));
 
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "x", isBackground: true });
     const record = manager.getRecord(id)!;
-    record.status = "stopped"; // external abort() path
-    resolveRun!({ responseText: "", session, aborted: false, steered: false, failure: "late error" });
+    if (cause === "stopped") manager.abort(id, "caller");
+    resolveRun!({ responseText: "partial", session, aborted: cause !== "stopped", steered: false, failure: "late error", interruptionCause: cause === "stopped" ? undefined : cause });
     await record.promise;
 
-    expect(record.status).toBe("stopped");
-    expect(record.error).toBeUndefined();
+    expect(record.status).toBe(cause === "stopped" ? "stopped" : "aborted");
+    expect(record.interruptionCause).toBe(cause === "stopped" ? "caller" : cause);
+    expect(record.result).toBe("partial");
+    expect(record.error).toBe("late error");
+    expect(onComplete.mock.results[0]?.value).toMatchObject({ status: record.status, interruptionCause: record.interruptionCause, error: "late error", result: "partial" });
+    expect(manager.hasPendingExecution(id)).toBe(false);
   });
 
   it("resume(): a failed final turn on the resumed prompt maps to error too", async () => {

@@ -80,6 +80,7 @@ describe("status note reaches the parent through the real handlers", () => {
       responseText: "partial work so far",
       session: { dispose: vi.fn() } as any,
       aborted: true, // hard turn-limit abort
+      interruptionCause: "turn-limit",
       steered: false,
     });
     const { pi, tools } = makePi();
@@ -98,9 +99,6 @@ describe("status note reaches the parent through the real handlers", () => {
     expect(out).toContain("partial work so far");     // partial result still delivered
     expect(out).not.toContain("STOPPED BY THE USER"); // not mislabelled as a user stop
 
-    // The two answers a foreground parent needs: is this all of it, and is the
-    // task done. The first is what #174 turned on — the parent has no agent id,
-    // so it must not read "partial" as "go fetch the rest".
     expect(out).toContain("everything the agent produced is above");
     expect(out).toContain("the task is unfinished");
     // State only, never an instruction to act (see getForegroundOutcomeNote):
@@ -110,11 +108,7 @@ describe("status note reaches the parent through the real handlers", () => {
     expect(out).not.toContain("get_agent_result");
   });
 
-  it("foreground user-stop → tells the parent NOT to restart it unasked", async () => {
-    // Pi delivers a user ESC as an abort on the tool's signal; the manager wires
-    // that to abort(id) (#44), landing the record on "stopped" — deliberately
-    // distinct from a turn-limit "aborted", because the correct next action is
-    // the opposite one.
+  it("foreground generic parent cancellation is not a proven human stop", async () => {
     let finish: (v: any) => void = () => {};
     vi.mocked(runAgent).mockReturnValue(new Promise((r) => { finish = r; }) as any);
 
@@ -128,17 +122,13 @@ describe("status note reaches the parent through the real handlers", () => {
       parent.signal, undefined, ctx(),
     );
 
-    // The manager only wires addEventListener("abort", …) and never checks
-    // signal.aborted upfront (agent-manager.ts:240-243), so aborting before the
-    // listener is attached would silently land on "completed" instead. Flush
-    // first rather than relying on spawn() happening in execute()'s synchronous
-    // prefix, which any future await in that path would quietly break.
     await new Promise((r) => setImmediate(r));
-    parent.abort(); // the user hits ESC
+    parent.abort("user"); // arbitrary caller reason is not evidence of human action
     finish({ responseText: "partial work so far", session: { dispose: vi.fn() }, aborted: false, steered: false });
 
     const out = textOf(await call);
-    expect(out).toContain("STOPPED BY THE USER");
+    expect(out).not.toContain("STOPPED BY THE USER");
+    expect(out).toContain("caller");
     expect(out).toContain("everything the agent produced is above");
     // Same claim, same confidence, same words as the aborted case — only the
     // lead clause distinguishes them.
@@ -150,9 +140,11 @@ describe("status note reaches the parent through the real handlers", () => {
     expect(out).not.toContain("ask before");
   });
 
-  it("background user-stop → get_agent_result flags STOPPED BY THE USER (not completed)", async () => {
+  it("programmatic RPC stop is caller cancellation, not user action", async () => {
     // A background agent that never settles on its own — only a stop ends it.
-    vi.mocked(runAgent).mockReturnValue(new Promise(() => {}) as any);
+    let release: (() => void) | undefined;
+    const drain = new Promise<void>(resolve => { release = resolve; });
+    vi.mocked(runAgent).mockImplementation(async () => { await drain; throw new Error("cancelled"); });
     const { pi, tools, eventHandlers, lifecycle } = makePi();
     subagentsExtension(pi);
     await bind(lifecycle); // register RPC channels via session_start (#142)
@@ -165,7 +157,7 @@ describe("status note reaches the parent through the real handlers", () => {
     const id = textOf(spawn).match(/Agent ID: (\S+)/)?.[1];
     expect(id, "background spawn should surface an agent id").toBeTruthy();
 
-    // The user stops it — same path the viewer's stop key uses (manager.abort).
+    // RPC callers do not establish human provenance.
     eventHandlers.get("subagents:rpc:stop")?.({ requestId: "r1", agentId: id });
 
     const res = await tools.get("get_agent_result").execute(
@@ -173,7 +165,8 @@ describe("status note reaches the parent through the real handlers", () => {
     );
 
     const out = textOf(res);
-    expect(out).toContain("STOPPED BY THE USER");
+    expect(out).not.toContain("STOPPED BY THE USER");
+    expect(out).toContain("caller");
     expect(out).toContain("the task was NOT finished");
     expect(out).not.toContain("Done"); // not surfaced as a normal completion
 
@@ -182,5 +175,7 @@ describe("status note reaches the parent through the real handlers", () => {
     // "everything the agent produced is above" would be a lie here. Folding the
     // two functions back together is exactly the regression this guards.
     expect(out).not.toContain("everything the agent produced is above");
+    release?.();
+    await lifecycle.get("session_shutdown")?.({}, ctx());
   });
 });

@@ -170,7 +170,7 @@ describe("cross-extension RPC", () => {
 
       await vi.waitFor(() => expect(reply).toHaveBeenCalled());
       expect(reply).toHaveBeenCalledWith({ success: true });
-      expect(manager.abort).toHaveBeenCalledWith("agent-42");
+      expect(manager.abort).toHaveBeenCalledWith("agent-42", "caller");
     });
 
     it("returns error when agent not found", async () => {

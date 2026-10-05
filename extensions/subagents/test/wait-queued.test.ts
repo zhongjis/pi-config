@@ -118,9 +118,15 @@ describe("get_agent_result wait:true on a queued agent", () => {
         rmSync(agentCwd, { recursive: true, force: true });
       }
     } finally {
-      await lifecycle.get("session_shutdown")?.();
-      while (resolvers.length) resolvers.shift()?.(undefined);
-      await flush();
+      let settled = false;
+      const shutdown = Promise.resolve(lifecycle.get("session_shutdown")?.()).then(() => { settled = true; });
+      try {
+        await flush();
+        expect(settled).toBe(false); // shutdown must wait for the parked runners
+      } finally {
+        while (resolvers.length) resolvers.shift()?.(undefined);
+        await shutdown;
+      }
     }
   });
 

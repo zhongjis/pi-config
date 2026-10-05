@@ -86,12 +86,12 @@ export function writeResultEntry(path: string, agentId: string, result: string, 
  * Returns a cleanup function that does a final flush and unsubscribes.
  */
 export function streamToOutputFile(
-  session: AgentSession,
+  session: Pick<AgentSession, "messages" | "subscribe">,
   path: string,
   agentId: string,
   cwd: string,
+  writtenCount = 1, // initial user prompt already written; resume starts at the retained history boundary
 ): () => void {
-  let writtenCount = 1; // initial user prompt already written
 
   const flush = () => {
     const messages = session.messages;

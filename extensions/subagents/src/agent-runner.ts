@@ -37,7 +37,7 @@ import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
-import type { SubagentType, ThinkingLevel } from "./types.js";
+import type { InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
 
 const TRUSTED_FALLBACK_EXTENSION_PATH = "<inline:subagent-model-fallback>";
@@ -290,23 +290,16 @@ export interface RunOptions {
 }
 
 export interface RunResult {
+  interruptionCause?: InterruptionCause;
   structuredJson?: string;
   structuredRetried?: boolean;
   responseText: string;
   session: AgentSession;
-  /** True if the agent was hard-aborted (max_turns + grace exceeded). */
+  /** True when execution was interrupted rather than cleanly completed. */
   aborted: boolean;
   /** True if the agent was steered to wrap up (hit soft turn limit) but finished in time. */
   steered: boolean;
-  /**
-   * A failure message for the run's FINAL assistant turn, when that turn failed:
-   * a provider error (stopReason "error"), or a "length" stop that produced no
-   * text (a silent max-token death). pi resolves an exhausted-retries failure
-   * normally instead of rejecting, so without this the manager would report such
-   * a run as completed — with an empty result, or worse, an earlier turn's text
-   * presented as the answer (#144). Undefined for a clean stop, or a "length"
-   * stop that produced text (a legitimate truncated answer).
-   */
+  /** Final provider/runtime failure; partial output remains available separately. */
   failure?: string;
 }
 
@@ -314,20 +307,27 @@ export interface RunResult {
  * Subscribe to a session and collect the last assistant message text.
  * Returns an object with a `getText()` getter and an `unsubscribe` function.
  */
-function collectResponseText(session: AgentSession) {
+function collectResponseText(session: AgentSession, onTextDelta?: RunOptions["onTextDelta"]) {
   let text = "";
+  let lastText = "";
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
     // message_start also fires for user and toolResult messages — resetting on
     // those would wipe assistant text already collected. Reset only when a new
     // ASSISTANT message begins, so getText() is the last assistant message's text.
     if (event.type === "message_start" && event.message.role === "assistant") {
+      if (text.trim()) lastText = text;
       text = "";
     }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       text += event.assistantMessageEvent.delta;
+      onTextDelta?.(event.assistantMessageEvent.delta, text);
+    }
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      const completedText = extractText(event.message.content ?? []);
+      if (completedText.trim()) lastText = completedText;
     }
   });
-  return { getText: () => text, unsubscribe };
+  return { getText: () => text.trim() ? text : lastText, unsubscribe };
 }
 
 /**
@@ -371,6 +371,17 @@ function finalTurnError(session: AgentSession, startIndex = 0): string | undefin
     if (msg.stopReason === "length" && !extractText(msg.content).trim()) {
       return "run hit the output token limit before producing any text";
     }
+    return undefined;
+  }
+  return undefined;
+}
+
+/** SDK cancellation alone proves no human action; bound detection to this execution. */
+function finalInterruption(session: AgentSession, startIndex: number): InterruptionCause | undefined {
+  for (let i = session.messages.length - 1; i >= startIndex; i--) {
+    const message = session.messages[i];
+    if (message.role !== "assistant") continue;
+    if (message.stopReason === "aborted") return "unknown";
     return undefined;
   }
   return undefined;
@@ -854,6 +865,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   const maxTurns = normalizeMaxTurns(options.maxTurns ?? agentConfig?.maxTurns ?? defaultMaxTurns);
   let softLimitReached = false;
   let aborted = false;
+  let interruptionCause: InterruptionCause | undefined;
 
   let currentMessageText = "";
   let completedTools = 0;
@@ -874,6 +886,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
           session.steer("You have reached your turn limit. Wrap up immediately — provide your final answer now.");
         } else if (softLimitReached && turnCount >= maxTurns + graceTurns) {
           aborted = true;
+          interruptionCause = "turn-limit";
           session.abort();
         }
       }
@@ -924,25 +937,34 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   // on counts as this run's output (a fresh session, so usually 0).
   const startLen = session.messages.length;
   let structuredRetried = false;
+  let failure: string | undefined;
   try {
-    if (options.signal?.aborted) aborted = true;
+    if (options.signal?.aborted) { aborted = true; interruptionCause = "unknown"; }
     else {
       await session.prompt(effectivePrompt);
       await session.waitForIdle();
-      if (structuredCapture && !aborted && !options.signal?.aborted && !finalTurnError(session, startLen)) {
+      if (structuredCapture && !aborted && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
         structuredRetried = await repairStructuredOutput(session, structuredCapture);
       }
     }
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
   } finally {
-    unsubTurns();
-    collector.unsubscribe();
-    cleanupAbort();
+    // A rejected prompt or an abort request does not prove SDK settlement.
+    try {
+      await session.waitForIdle();
+    } finally {
+      unsubTurns();
+      collector.unsubscribe();
+      cleanupAbort();
+    }
   }
 
   const responseText = collector.getText().trim() || getLastAssistantText(session, startLen);
-  return { responseText, session, aborted, steered: softLimitReached,
+  interruptionCause ??= options.signal?.aborted ? "unknown" : finalInterruption(session, startLen);
+  return { responseText, session, aborted: interruptionCause !== undefined, interruptionCause, steered: softLimitReached,
     structuredJson: structuredCapture?.json, structuredRetried,
-    failure: finalTurnError(session, startLen) ?? structuredFailure(structuredCapture),
+    failure: failure ?? finalTurnError(session, startLen) ?? structuredFailure(structuredCapture),
   };
 }
 
@@ -954,17 +976,18 @@ export async function resumeAgent(
   prompt: string,
   options: {
     onToolActivity?: (activity: ToolActivity) => void;
+    onTextDelta?: RunOptions["onTextDelta"];
     onTurnEnd?: (turnCount: number) => void;
     onAssistantUsage?: (usage: LifetimeUsage) => void;
     onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
     signal?: AbortSignal;
   } = {},
-): Promise<{ text: string; failure?: string; structuredJson?: string; structuredRetried?: boolean }> {
+): Promise<{ text: string; failure?: string; interruptionCause?: InterruptionCause; structuredJson?: string; structuredRetried?: boolean }> {
   // Boundary for the history fallback: the session already holds prior turns,
   // so only assistant text produced by THIS resume prompt counts as its output
   // — a failed resume must not surface the previous turn's answer (#144).
   const startLen = session.messages.length;
-  const collector = collectResponseText(session);
+  const collector = collectResponseText(session, options.onTextDelta);
   const cleanupAbort = forwardAbortSignal(session, options.signal);
 
   let turnCount = 0;
@@ -992,23 +1015,31 @@ export async function resumeAgent(
   const capture = takeStructuredCapture(session);
   if (capture) { capture.json = undefined; capture.called = false; capture.lastError = undefined; }
   let structuredRetried = false;
+  let failure: string | undefined;
   try {
     if (!options.signal?.aborted) {
       await session.prompt(prompt);
       await session.waitForIdle();
-      if (capture && !options.signal?.aborted && !finalTurnError(session, startLen)) {
+      if (capture && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
         structuredRetried = await repairStructuredOutput(session, capture);
       }
     }
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error);
   } finally {
-    collector.unsubscribe();
-    unsubEvents();
-    cleanupAbort();
+    try {
+      await session.waitForIdle();
+    } finally {
+      collector.unsubscribe();
+      unsubEvents();
+      cleanupAbort();
+    }
   }
 
   return {
     text: collector.getText().trim() || getLastAssistantText(session, startLen),
-    failure: finalTurnError(session, startLen) ?? structuredFailure(capture),
+    interruptionCause: options.signal?.aborted ? "unknown" : finalInterruption(session, startLen),
+    failure: failure ?? finalTurnError(session, startLen) ?? structuredFailure(capture),
     structuredJson: capture?.json, structuredRetried,
   };
 }

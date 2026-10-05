@@ -10,6 +10,7 @@ vi.mock("../src/agent-runner.js", async () => {
   return { ...actual, runAgent: vi.fn(), resumeAgent: vi.fn() };
 });
 
+import { AgentManager } from "../src/agent-manager.js";
 import { resumeAgent, runAgent } from "../src/agent-runner.js";
 import extension from "../src/index.js";
 import * as settingsModule from "../src/settings.js";
@@ -76,9 +77,123 @@ function activate(settings: Record<string, unknown> = {}) {
     for (const hook of hooks.get("tool_result") ?? []) event = { ...event, ...await hook(event, ctx) };
     return event;
   };
-  const execute = (name = "agent", input = params, id = "call", update?: (result: Result) => void) => tools.get(name)!.execute(id, input, undefined, update, ctx);
-  return { execute, finish, lifecycle, appliers: appliers!, ctx };
+  const execute = (name = "agent", input: Record<string, unknown> = params, id = "call", update?: (result: Result) => void) => tools.get(name)!.execute(id, input, undefined, update, ctx);
+  return { execute, finish, lifecycle, appliers: appliers!, ctx, pi };
 }
+
+it.each([
+  { grouped: false, partial: undefined },
+  { grouped: true, partial: undefined },
+  { grouped: false, partial: "already retained partial checkpoint" },
+  { grouped: true, partial: "already retained partial checkpoint" },
+])("non-waiting retrieval preserves smart stopped notification through physical drain ($grouped, $partial)", async ({ grouped, partial }) => {
+  const records = vi.spyOn(AgentManager.prototype, "getRecord");
+  const { execute, lifecycle, pi } = activate({ defaultJoinMode: "smart", schedulingEnabled: false });
+  await lifecycle("session_start");
+  const stop = vi.mocked(pi.events.on).mock.calls.find(([name]) => name === "subagents:rpc:stop")?.[1];
+  if (!stop) throw new Error("Stop RPC was not registered");
+  vi.useFakeTimers();
+  let release: (() => void) | undefined;
+  const drain = new Promise<void>(resolve => { release = resolve; });
+  vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "retained stopped checkpoint", session, aborted: false, steered: false }; });
+  try {
+    const started = await execute("agent", { ...params, run_in_background: true });
+    if (grouped) await execute("agent", { ...params, run_in_background: true });
+    await stop({ requestId: "stop", agentId: started.details?.agentId });
+    const record = records.mock.results.map(result => result.value).find(value => value?.id === started.details?.agentId);
+    if (!record) throw new Error("Missing started record");
+    record.result = partial;
+    let snapshot: Result | undefined;
+    const retrieval = execute("get_agent_result", { run_id: started.details?.agentId, wait: false }).then(result => { snapshot = result; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(snapshot?.details).toMatchObject({ status: "stopped", interruptionCause: "caller", result: partial ?? "" });
+    const text = JSON.stringify(snapshot?.content);
+    expect(text).toContain("Agent execution is still pending.");
+    expect(text).toContain("get_agent_result");
+    expect(text).toContain("wait: true");
+    expect(text).toContain("do not resume");
+    expect(text).toContain("do not end your turn");
+    expect(text).not.toContain("No output.");
+    if (partial) expect(text).toContain(partial);
+    expect(record.resultConsumed).toBe(false);
+    await retrieval;
+    await vi.advanceTimersByTimeAsync(300);
+    expect(pi.sendMessage).not.toHaveBeenCalled();
+    release?.();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(pi.sendMessage).mock.calls[0]?.[0].content).toContain("retained stopped checkpoint");
+    const retrieved = await execute("get_agent_result", { run_id: started.details?.agentId, wait: true });
+    expect(retrieved.details).toMatchObject({ status: "stopped", result: "retained stopped checkpoint" });
+    expect(JSON.stringify(retrieved.content)).not.toContain("Agent execution is still pending.");
+    expect(record.resultConsumed).toBe(true);
+  } finally { release?.(); await vi.advanceTimersByTimeAsync(0); vi.useRealTimers(); }
+});
+
+it("async queued cancellation notifies once without starting its SDK runner", async () => {
+  const { execute, lifecycle, pi } = activate({ defaultJoinMode: "async", maxConcurrent: 1, schedulingEnabled: false });
+  await lifecycle("session_start");
+  const stop = vi.mocked(pi.events.on).mock.calls.find(([name]) => name === "subagents:rpc:stop")?.[1];
+  if (!stop) throw new Error("Stop RPC was not registered");
+  vi.useFakeTimers();
+  let release: (() => void) | undefined;
+  const drain = new Promise<void>(resolve => { release = resolve; });
+  vi.mocked(runAgent).mockClear().mockImplementationOnce(async () => { await drain; return { responseText: "busy", session, aborted: false, steered: false }; });
+  try {
+    await execute("agent", { ...params, run_in_background: true });
+    const queued = await execute("agent", { ...params, run_in_background: true });
+    expect(queued.details?.status).toBe("queued");
+    const pending = await execute("get_agent_result", { run_id: queued.details?.agentId, wait: false });
+    expect(pending.details?.status).toBe("queued");
+    expect(JSON.stringify(pending.content)).toContain("Agent execution is still pending.");
+    expect(JSON.stringify(pending.content)).toContain("wait: true");
+    expect(JSON.stringify(pending.content)).not.toContain("No output.");
+    await stop({ requestId: "stop-queued", agentId: queued.details?.agentId });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(pi.sendMessage).mock.calls[0]?.[0].content).toContain(`<task-id>${queued.details?.agentId}</task-id>`);
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    const retrieved = await execute("get_agent_result", { run_id: queued.details?.agentId, wait: true });
+    expect(retrieved.details).toMatchObject({ status: "stopped", interruptionCause: "caller" });
+  } finally { release?.(); await vi.advanceTimersByTimeAsync(0); vi.useRealTimers(); }
+});
+
+it("returns background resume immediately with the same ID and delivers once", async () => {
+  const { execute, pi } = activate({ defaultJoinMode: "async" });
+  const original = await execute();
+  const id = original.details?.agentId;
+  if (!id) throw new Error("Missing agent ID");
+  let release: (() => void) | undefined;
+  const drain = new Promise<void>(resolve => { release = resolve; });
+  vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "background continued" }; });
+  const pending = execute("agent", { ...params, resume: id, run_in_background: true });
+  try {
+    const early = await Promise.race([pending, new Promise<undefined>(resolve => setImmediate(() => resolve(undefined)))]);
+    expect(early?.details).toMatchObject({ agentId: id, status: "background" });
+  } finally { release?.(); await pending; }
+  await new Promise(resolve => setTimeout(resolve, 250));
+  expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(pi.sendMessage).mock.calls[0]?.[0].content).toContain("background continued");
+  const retrieved = await execute("get_agent_result", { run_id: id, wait: true });
+  expect(retrieved.details?.result).toBe("background continued");
+  const foreground = await execute("agent", { ...params, resume: id });
+  expect(foreground.details?.result).toBe("continued");
+  await new Promise(resolve => setTimeout(resolve, 250));
+  expect(pi.sendMessage).toHaveBeenCalledTimes(1);
+});
+
+it.each(["user", "unknown", "supervisor-idle"] as const)("foreground resume reports %s interruption rather than completion", async (cause) => {
+  const { execute } = activate();
+  const original = await execute();
+  const id = original.details?.agentId;
+  if (!id) throw new Error("Missing agent ID");
+  vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "retained checkpoint", interruptionCause: cause });
+  const resumed = await execute("agent", { ...params, resume: id });
+  expect(resumed.details).toMatchObject({ status: "aborted", interruptionCause: cause, result: "retained checkpoint" });
+  const content = JSON.stringify(resumed.content);
+  expect(content).toContain("task is unfinished");
+  expect(content.includes("STOPPED BY THE USER")).toBe(cause === "user");
+});
 
 it("reports final deltas once across retrieval and resume, never on partial results", async () => {
   const { execute, finish } = activate({ reportUsage: true, showCost: true });

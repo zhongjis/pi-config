@@ -13,6 +13,7 @@ import type { ModelRegistry } from "../../lib/model-selection.js";
 import { getAgentConfig, getAvailableTypes } from "./agent-types.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy } from "./delegation-policy.js";
 import { resolveAgentModel } from "./model-resolution.js";
+import type { InterruptionCause } from "./types.js";
 
 /** Minimal event bus interface needed by the RPC handlers. */
 export interface EventBus {
@@ -31,7 +32,7 @@ export const PROTOCOL_VERSION = 2;
 /** Minimal AgentManager interface needed by the spawn/stop RPCs. */
 export interface SpawnCapable {
   spawn(pi: unknown, ctx: unknown, type: string, prompt: string, options: any): string;
-  abort(id: string): boolean;
+  abort(id: string, cause?: InterruptionCause): boolean;
 }
 
 export interface RpcDeps {
@@ -137,7 +138,7 @@ export function registerRpcHandlers(deps: RpcDeps): RpcHandle {
 
   const unsubStop = handleRpc<{ requestId: string; agentId: string }>(
     events, "subagents:rpc:stop", ({ agentId }) => {
-      if (!manager.abort(agentId)) throw new Error("Agent not found");
+      if (!manager.abort(agentId, "caller")) throw new Error("Agent not found");
     },
   );
 

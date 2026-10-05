@@ -9,8 +9,8 @@ import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { AgentManager } from "../agent-manager.js";
 import { getConfig } from "../agent-types.js";
 import { getSessionFast } from "../session-fast.js";
-import type { AgentInvocation, AgentRecord, SubagentType, WidgetMode } from "../types.js";
-import { getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, type SessionLike } from "../usage.js";
+import type { AgentActivity, AgentInvocation, AgentRecord, SubagentType, WidgetMode } from "../types.js";
+import { getLifetimeTotal, getSessionContextPercent } from "../usage.js";
 import { renderSubagentSummary } from "./summary-renderer.js";
 
 // ---- Constants ----
@@ -51,25 +51,11 @@ export type UICtx = {
   ): void;
 };
 
-/** Per-agent live activity state. */
-export interface AgentActivity {
-  activeTools: Map<string, string>;
-  toolUses: number;
-  responseText: string;
-  session?: SessionLike;
-  /** Current turn count. */
-  turnCount: number;
-  /** Effective max turns for this agent (undefined = unlimited). */
-  maxTurns?: number;
-  /** Lifetime usage breakdown — see LifetimeUsage docs. */
-  lifetimeUsage: LifetimeUsage;
-  /** Wall-clock ms of the last observed progress signal (tool activity, text delta,
-   * turn end, or assistant usage). Consumed by background supervision to detect idle. */
-  lastProgressAt?: number;
-}
+export type { AgentActivity } from "../types.js";
 
 /** Metadata attached to `agent` tool results for custom rendering. */
 export interface AgentDetails {
+  interruptionCause?: AgentRecord["interruptionCause"];
   displayName: string;
   description: string;
   subagentType: string;

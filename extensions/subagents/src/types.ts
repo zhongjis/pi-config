@@ -4,7 +4,7 @@
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { GraphRunEntryData } from "./graph/entry.js";
-import type { LifetimeUsage } from "./usage.js";
+import type { LifetimeUsage, SessionLike } from "./usage.js";
 
 export type ThinkingLevel = AgentSession["thinkingLevel"];
 
@@ -90,7 +90,31 @@ export type JoinMode = 'async' | 'group' | 'smart';
  */
 export type WidgetMode = 'all' | 'background' | 'off';
 
+/** Per-agent live activity state. */
+export interface AgentActivity {
+  activeTools: Map<string, string>;
+  toolUses: number;
+  responseText: string;
+  session?: SessionLike;
+  /** Current turn count. */
+  turnCount: number;
+  /** Effective max turns for this agent (undefined = unlimited). */
+  maxTurns?: number;
+  /** Lifetime usage breakdown — see LifetimeUsage docs. */
+  lifetimeUsage: LifetimeUsage;
+  /** Wall-clock ms of the last observed progress signal (tool activity, text delta,
+   * turn end, or assistant usage). Consumed by background supervision to detect idle. */
+  lastProgressAt?: number;
+}
+
+export type InterruptionCause = "user" | "caller" | "lifecycle" | "supervisor-idle" | "supervisor-ceiling" | "turn-limit" | "unknown";
+
 export interface AgentRecord {
+  interruptionCause?: InterruptionCause;
+  /** Internal execution correlation; changes on resume, not the public agent ID. */
+  executionId?: string;
+  /** Manager-owned activity for the most recently started execution; queued resumes retain it. */
+  activity?: AgentActivity;
   /** Graph-run-owned children retain accounting but report through their graph run. */
   graphRunId?: string;
   cwd?: string;
@@ -154,6 +178,10 @@ export interface AgentRecord {
   lastSupervisionAbortAt?: number;
 }
 
+export function agentExecutionKey(record: Pick<AgentRecord, "id" | "executionId">): string {
+  return record.executionId ? `${record.id}:${record.executionId}` : record.id;
+}
+
 export interface AgentInvocation {
   /** Original caller/configuration intent, retained across resume. */
   requestedModel?: string;
@@ -173,6 +201,7 @@ export interface AgentInvocation {
 
 /** Details attached to custom notification messages for visual rendering. */
 export interface NotificationDetails {
+  interruptionCause?: InterruptionCause;
   id: string;
   description: string;
   status: string;

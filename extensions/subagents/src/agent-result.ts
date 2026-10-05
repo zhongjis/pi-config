@@ -65,6 +65,7 @@ export function createAgentResultBuilder(showCost: () => boolean) {
       agentId: record.id,
       activity: activity ? describeActivity(activity.activeTools, activity.responseText) : undefined,
       error: record.error,
+      interruptionCause: record.interruptionCause,
       ...overrides,
     };
   };

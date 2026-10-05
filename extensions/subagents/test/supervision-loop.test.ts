@@ -71,6 +71,19 @@ describe("startBackgroundSupervision", () => {
     stop();
   });
 
+  it.each(["idle", "ceiling"] as const)("supplies a typed %s cause when supervision aborts", (reason) => {
+    const now = Date.now();
+    const record = makeRecord(now - (reason === "idle" ? 10 : 60) * 60_000);
+    record.lastSupervisionSteerAt = now;
+    const activity = makeActivity(reason === "idle" ? now - 10 * 60_000 : now);
+    const abort = vi.fn(() => true);
+    const stop = startBackgroundSupervision(mockPi, { getRunning: () => [record], steer: () => true, abort }, new Map([[record.id, activity]]));
+    try {
+      vi.advanceTimersByTime(BACKGROUND_SUPERVISION_INTERVAL_MS);
+      expect(abort).toHaveBeenCalledWith(record.id, `supervisor-${reason}`);
+    } finally { stop(); }
+  });
+
   it("does nothing when the agent recently made progress", () => {
     const base = Date.now();
     const record = makeRecord(base - 10_000);

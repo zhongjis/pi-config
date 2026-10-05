@@ -230,6 +230,14 @@ export default function (pi: ExtensionAPI) {
     });
   });
 
+  manager.setActivityListener(record => {
+    if (record.activity) agentActivity.set(record.id, record.activity);
+    widget.ensureTimer();
+    widget.update();
+    fleet.ensureTimer();
+    fleet.update();
+  });
+
   const collectManagerUsage = (usage: LifetimeUsage) => { if (reportUsage) pendingUsage.add(usage); };
   manager.setUsageListener(collectManagerUsage);
   manager.setSessionListener(record => {
@@ -405,7 +413,7 @@ export default function (pi: ExtensionAPI) {
     if (ownsManagerRegistry && (globalThis as any)[MANAGER_KEY] === registryEntry) {
       delete (globalThis as any)[MANAGER_KEY];
     }
-    manager.abortAll();
+    manager.abortAll("lifecycle");
     notifications.clearPending();
     fleet.dispose();
     await manager.dispose();
@@ -557,7 +565,7 @@ export default function (pi: ExtensionAPI) {
       record,
       { activity: agentActivity.get(record.id) },
     ),
-    cancelNudge,
+    cancelNudge: notifications.consume,
   }, isAgentGraphEnabled() ? graphRuntime : undefined);
   pi.registerTool(resultTools.getAgentResult);
   pi.registerTool(resultTools.steer);

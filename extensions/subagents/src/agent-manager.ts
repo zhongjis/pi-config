@@ -15,7 +15,7 @@ import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
 import { getSessionFast } from "./session-fast.js";
-import type { AgentInvocation, AgentRecord, SubagentType, ThinkingLevel } from "./types.js";
+import type { AgentActivity, AgentInvocation, AgentRecord, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
@@ -157,9 +157,10 @@ export class AgentManager {
   private runningForeground = 0;
   private usageListener?: (usage: LifetimeUsage) => void;
   private sessionListener?: (record: AgentRecord) => void;
+  private activityListener?: (record: AgentRecord) => void;
   private disposed = false;
   /** Independent FIFO pools share a queue; detached spawns have no foreground slot. */
-  private queue: { id: string; args: SpawnArgs; foreground: boolean }[] = [];
+  private queue: { id: string; foreground: boolean; background?: boolean; start: () => void }[] = [];
   private runs = new Map<string, {
     resolve: (result: string) => void;
     detach: () => void;
@@ -254,6 +255,8 @@ export class AgentManager {
     const abortController = new AbortController();
     const record: AgentRecord = {
       id,
+      executionId: randomUUID(),
+      resultConsumed: false,
       graphRunId: options.graphRunId,
       cwd: options.cwd ?? ctx.cwd,
       type,
@@ -287,14 +290,14 @@ export class AgentManager {
       const signal = options.signal;
       const run = this.runs.get(id);
       if (signal && run) {
-        const onAbort = () => this.abort(id);
+        const onAbort = () => this.abort(id, "caller");
         signal.addEventListener("abort", onAbort, { once: true });
         run.detach = () => signal.removeEventListener("abort", onAbort);
-        if (signal.aborted) this.abort(id);
+        if (signal.aborted) this.abort(id, "caller");
       }
       if (record.status === "stopped") return id;
       if (options.graphRunId === undefined && !options.bypassQueue && !this.poolHasRoom(foreground, options.isBackground)) {
-        this.queue.push({ id, args, foreground });
+        this.queue.push({ id, foreground, background: options.isBackground, start: () => this.startAgent(id, record, args) });
         return id;
       }
       this.startAgent(id, record, args);
@@ -304,6 +307,65 @@ export class AgentManager {
       throw err;
     }
     return id;
+  }
+
+  setActivityListener(listener: ((record: AgentRecord) => void) | undefined): void {
+    this.activityListener = listener;
+  }
+
+  /** Start a fresh execution view without resetting lifetime accounting. */
+  private trackExecution(record: AgentRecord, options: Pick<SpawnOptions, "onToolActivity" | "onTextDelta" | "onTurnEnd" | "onAssistantUsage"> = {}) {
+    const previousTurns = record.turnCount ?? 0;
+    const state: AgentActivity = {
+      activeTools: new Map(),
+      responseText: "",
+      lastProgressAt: record.startedAt,
+      maxTurns: record.maxTurns,
+      get toolUses() { return record.toolUses; },
+      get turnCount() { return record.turnCount ?? 1; },
+      get session() { return record.session; },
+      lifetimeUsage: record.lifetimeUsage,
+    };
+    record.activity = state;
+    record.lastSupervisionSteerAt = undefined;
+    record.lastSupervisionAbortAt = undefined;
+    if (record.graphRunId === undefined) this.activityListener?.(record);
+    let toolSequence = 0;
+    return {
+      onToolActivity: (activity: ToolActivity) => {
+        if (activity.type === "start") state.activeTools.set(String(++toolSequence), activity.toolName);
+        if (activity.type === "end") {
+          for (const [key, name] of state.activeTools) {
+            if (name === activity.toolName) { state.activeTools.delete(key); break; }
+          }
+          record.toolUses++;
+        }
+        if (activity.type === "diagnostic") {
+          record.diagnostics ??= [];
+          record.diagnostics.push(activity.toolName);
+        }
+        state.lastProgressAt = Date.now();
+        options.onToolActivity?.(activity);
+      },
+      onTextDelta: (delta: string, fullText: string) => {
+        state.responseText = fullText;
+        state.lastProgressAt = Date.now();
+        options.onTextDelta?.(delta, fullText);
+      },
+      onTurnEnd: (turnCount: number) => {
+        record.turnCount = previousTurns + turnCount;
+        state.lastProgressAt = Date.now();
+        options.onTurnEnd?.(turnCount);
+      },
+      onAssistantUsage: (usage: LifetimeUsage) => {
+        addUsage(record.lifetimeUsage, usage);
+        record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
+        this.lifetimeCost += usage.cost ?? 0;
+        state.lastProgressAt = Date.now();
+        this.usageListener?.(usage);
+        options.onAssistantUsage?.(usage);
+      },
+    };
   }
 
   /** Actually start an agent (called immediately or from queue drain). */
@@ -324,6 +386,7 @@ export class AgentManager {
       if (run.pool === "background") this.runningBackground++;
       if (run.pool === "foreground") this.runningForeground++;
     }
+    const activityCallbacks = this.trackExecution(record, options);
     if (record.graphRunId === undefined) this.onStart?.(record);
 
     void runAgent(ctx, type, prompt, {
@@ -346,26 +409,7 @@ export class AgentManager {
       signal: record.abortController!.signal,
       skills: options.skills,
       parentSessionId: getParentSessionId(ctx),
-      onToolActivity: (activity) => {
-        if (activity.type === "end") record.toolUses++;
-        if (activity.type === "diagnostic") {
-          record.diagnostics ??= [];
-          record.diagnostics.push(activity.toolName);
-        }
-        options.onToolActivity?.(activity);
-      },
-      onTurnEnd: (turnCount) => {
-        record.turnCount = turnCount;
-        options.onTurnEnd?.(turnCount);
-      },
-      onTextDelta: options.onTextDelta,
-      onAssistantUsage: (usage) => {
-        addUsage(record.lifetimeUsage, usage);
-        record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
-        this.lifetimeCost += usage.cost ?? 0;
-        this.usageListener?.(usage);
-        options.onAssistantUsage?.(usage);
-      },
+      ...activityCallbacks,
       onCompaction: (info) => {
         record.compactionCount++;
         if (record.graphRunId === undefined) this.onCompact?.(record, info);
@@ -393,19 +437,20 @@ export class AgentManager {
         options.onSessionCreated?.(session);
       },
     })
-      .then(({ responseText, session, aborted, steered, failure, structuredJson, structuredRetried }) => {
+      .then(({ responseText, session, aborted, steered, failure, interruptionCause, structuredJson, structuredRetried }) => {
+        record.interruptionCause ??= interruptionCause ?? (aborted ? "unknown" : undefined);
         record.structuredJson = structuredJson;
         record.structuredRetried = structuredRetried;
+        if (failure) record.error = failure;
         // Don't overwrite status if externally stopped via abort()
         if (record.status !== "stopped") {
           // Precedence: a hard abort keeps "aborted"; then a failed final turn
           // (provider error that pi resolved instead of rejecting, #144) is an
           // honest "error" — not a completion with an empty or stale result.
-          if (aborted) {
+          if (record.interruptionCause) {
             record.status = "aborted";
           } else if (failure) {
             record.status = "error";
-            record.error = failure;
           } else {
             record.status = steered ? "steered" : "completed";
           }
@@ -420,12 +465,6 @@ export class AgentManager {
         };
         record.completedAt ??= Date.now();
 
-        // Final flush of streaming output file
-        if (record.outputCleanup) {
-          try { record.outputCleanup(); } catch { /* ignore */ }
-          record.outputCleanup = undefined;
-        }
-
         return responseText;
       })
       .catch((err) => {
@@ -435,12 +474,6 @@ export class AgentManager {
         }
         record.error = err instanceof Error ? err.message : String(err);
         record.completedAt ??= Date.now();
-
-        // Final flush of streaming output file on error
-        if (record.outputCleanup) {
-          try { record.outputCleanup(); } catch { /* ignore */ }
-          record.outputCleanup = undefined;
-        }
 
         return "";
       })
@@ -455,6 +488,12 @@ export class AgentManager {
   private completeRun(record: AgentRecord): void {
     if (!record.isBackground || record.graphRunId !== undefined) record.resultConsumed = true;
     try {
+      try { record.outputCleanup?.(); } catch (error) {
+        record.diagnostics ??= [];
+        record.diagnostics.push(`Output cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        record.outputCleanup = undefined;
+      }
       if (record.graphRunId === undefined) this.onComplete?.(record);
     } catch (error) {
       // Notification failures are diagnostics, never failures of the child run.
@@ -483,14 +522,14 @@ export class AgentManager {
   private drainQueue(): void {
     if (this.disposed) return;
     for (;;) {
-      const index = this.queue.findIndex(entry => this.poolHasRoom(entry.foreground, entry.args.options.isBackground));
+      const index = this.queue.findIndex(entry => this.poolHasRoom(entry.foreground, entry.background));
       if (index === -1) return;
       const [next] = this.queue.splice(index, 1);
       if (!next) return;
       const record = this.agents.get(next.id);
       if (record?.status !== "queued") continue;
       try {
-        this.startAgent(next.id, record, next.args);
+        next.start();
       } catch (err) {
         record.status = "error";
         record.error = err instanceof Error ? err.message : String(err);
@@ -531,6 +570,7 @@ export class AgentManager {
     prompt: string,
     signal?: AbortSignal,
     ctx?: ExtensionContext,
+    options: Pick<SpawnOptions, "isBackground" | "onSessionCreated" | "onTextDelta" | "onToolActivity" | "onTurnEnd" | "onAssistantUsage"> = {},
   ): Promise<AgentRecord | undefined> {
     const record = this.agents.get(id);
     if (!record?.session || this.disposed) return undefined;
@@ -540,14 +580,44 @@ export class AgentManager {
       if (denial) throw new Error(denial);
     }
     const controller = new AbortController();
+    record.executionId = randomUUID();
+    record.interruptionCause = undefined;
+    record.resultConsumed = false;
+    record.isBackground = options.isBackground === true;
+    record.invocation = { ...record.invocation, runInBackground: record.isBackground };
     record.abortController = controller;
-    const parentSignal = signal;
-    const onAbort = () => this.abort(id);
+    record.status = "queued";
+    record.result = undefined;
+    record.error = undefined;
+    const onAbort = () => this.abort(id, "caller");
     record.promise = new Promise<string>(resolve => {
-      this.runs.set(id, { resolve, active: true, pool: undefined,
-        detach: () => parentSignal?.removeEventListener("abort", onAbort) });
+      this.runs.set(id, { resolve, active: false,
+        pool: record.isBackground && record.graphRunId === undefined ? "background" : undefined,
+        detach: () => signal?.removeEventListener("abort", onAbort) });
     });
-    signal = controller.signal;
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+    if (record.status === "queued") {
+      const start = () => { void this.startResume(record, prompt, options); };
+      if (record.graphRunId === undefined && !this.poolHasRoom(false, record.isBackground)) {
+        this.queue.push({ id, foreground: false, background: record.isBackground, start });
+      } else start();
+    }
+    if (!options.isBackground) await record.promise;
+    return record;
+  }
+
+  private async startResume(
+    record: AgentRecord,
+    prompt: string,
+    options: Pick<SpawnOptions, "onSessionCreated" | "onTextDelta" | "onToolActivity" | "onTurnEnd" | "onAssistantUsage">,
+  ): Promise<void> {
+    const session = record.session;
+    const signal = record.abortController?.signal;
+    const run = this.runs.get(record.id);
+    if (!session || !run) return;
+    run.active = true;
+    if (run.pool === "background") this.runningBackground++;
     record.structuredJson = undefined;
     record.structuredRetried = undefined;
 
@@ -558,30 +628,17 @@ export class AgentManager {
     record.error = undefined;
     record.invocation = {
       ...record.invocation,
-      modelName: record.session.model ? `${record.session.model.provider}/${record.session.model.id}` : undefined,
-      thinking: record.session.thinkingLevel,
-      fast: getSessionFast(record.session),
+      modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
+      thinking: session.thinkingLevel,
+      fast: getSessionFast(session),
     };
 
-    parentSignal?.addEventListener("abort", onAbort, { once: true });
-    if (parentSignal?.aborted) onAbort();
-    const previousTurns = record.turnCount ?? 0;
     try {
-      const { text, failure, structuredJson, structuredRetried } = await resumeAgent(record.session, prompt, {
-        onTurnEnd: (turnCount) => { record.turnCount = previousTurns + turnCount; },
-        onToolActivity: (activity) => {
-          if (activity.type === "end") record.toolUses++;
-          if (activity.type === "diagnostic") {
-            record.diagnostics ??= [];
-            record.diagnostics.push(activity.toolName);
-          }
-        },
-        onAssistantUsage: (usage) => {
-          addUsage(record.lifetimeUsage, usage);
-          record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
-          this.lifetimeCost += usage.cost ?? 0;
-          this.usageListener?.(usage);
-        },
+      const activityCallbacks = this.trackExecution(record, options);
+      if (record.graphRunId === undefined) this.onStart?.(record);
+      options.onSessionCreated?.(session);
+      const { text, failure, interruptionCause, structuredJson, structuredRetried } = await resumeAgent(session, prompt, {
+        ...activityCallbacks,
         onCompaction: (info) => {
           record.compactionCount++;
           if (record.graphRunId === undefined) this.onCompact?.(record, info);
@@ -590,21 +647,20 @@ export class AgentManager {
       });
       // Same contract as the spawn path (#144): a failed final turn is an
       // error, not a completion — but the resumed text stays available.
+      record.interruptionCause ??= interruptionCause;
       record.structuredJson = structuredJson;
       record.structuredRetried = structuredRetried;
-      record.status = signal.aborted ? "stopped" : failure ? "error" : "completed";
+      record.status = signal?.aborted ? "stopped" : record.interruptionCause ? "aborted" : failure ? "error" : "completed";
       if (failure) record.error = failure;
       record.result = text;
       record.completedAt = Date.now();
     } catch (err) {
-      record.status = signal.aborted ? "stopped" : "error";
+      record.status = signal?.aborted ? "stopped" : "error";
       record.error = err instanceof Error ? err.message : String(err);
       record.completedAt = Date.now();
     } finally {
-      this.releaseRun(id, record);
+      this.completeRun(record);
     }
-
-    return record;
   }
 
   /**
@@ -651,7 +707,7 @@ export class AgentManager {
     return [...this.agents.values()].filter((r) => r.graphRunId === undefined && r.status === "running");
   }
 
-  abort(id: string): boolean {
+  abort(id: string, cause: InterruptionCause = "unknown"): boolean {
     const record = this.agents.get(id);
     if (!record) return false;
 
@@ -660,13 +716,15 @@ export class AgentManager {
       this.queue = this.queue.filter(q => q.id !== id);
       record.status = "stopped";
       record.completedAt = Date.now();
-      record.abortController?.abort();
-      this.releaseRun(id, record);
+      record.interruptionCause = cause;
+      record.abortController?.abort(cause);
+      this.completeRun(record);
       return true;
     }
 
     if (record.status !== "running") return false;
-    record.abortController?.abort();
+    record.interruptionCause = cause;
+    record.abortController?.abort(cause);
     record.status = "stopped";
     record.completedAt = Date.now();
     return true;
@@ -684,7 +742,7 @@ export class AgentManager {
   private cleanup() {
     const cutoff = Date.now() - COMPLETED_AGENT_RETENTION_MS;
     for (const [id, record] of this.agents) {
-      if (record.status === "running" || record.status === "queued") continue;
+      if (this.runs.has(id)) continue;
       if ((record.completedAt ?? 0) >= cutoff) continue;
       this.removeRecord(id, record);
     }
@@ -698,35 +756,29 @@ export class AgentManager {
    */
   clearCompleted(skipUnconsumed = false): void {
     for (const [id, record] of this.agents) {
-      if (record.status === "running" || record.status === "queued") continue;
+      if (this.runs.has(id)) continue;
       if (skipUnconsumed && !record.resultConsumed) continue;
       this.removeRecord(id, record);
     }
   }
 
-  /** Whether any agents are still running or queued. */
+  /** Whether the manager still owns this execution, including queued or stopped work. */
+  hasPendingExecution(id: string): boolean {
+    return this.runs.has(id);
+  }
+
+  /** Whether any executions remain owned, including stopped work awaiting physical drain. */
   hasRunning(): boolean {
-    return [...this.agents.values()].some(
-      r => r.status === "running" || r.status === "queued",
-    );
+    return this.runs.size > 0;
   }
 
   /** Abort all running and queued agents immediately. */
-  abortAll(): number {
+  abortAll(cause: InterruptionCause = "unknown"): number {
     let count = 0;
     // Remove the whole queue before settling any entry, so release cannot start a sibling.
     this.queue = [];
     for (const record of this.agents.values()) {
-      if (record.status === "queued" && this.abort(record.id)) count++;
-    }
-    // Abort running agents
-    for (const record of this.agents.values()) {
-      if (record.status === "running") {
-        record.abortController?.abort();
-        record.status = "stopped";
-        record.completedAt = Date.now();
-        count++;
-      }
+      if (this.abort(record.id, cause)) count++;
     }
     return count;
   }
@@ -738,7 +790,7 @@ export class AgentManager {
     while (true) {
       this.drainQueue();
       const pending = [...this.agents.values()]
-        .filter(r => r.status === "running" || r.status === "queued")
+        .filter(r => this.runs.has(r.id))
         .map(r => r.promise)
         .filter(Boolean);
       if (pending.length === 0) break;
@@ -750,10 +802,12 @@ export class AgentManager {
   dispose(): Promise<void> {
     clearInterval(this.cleanupInterval);
     this.disposed = true;
-    this.abortAll();
+    this.abortAll("lifecycle");
     const shutdowns: Promise<void>[] = [];
     for (const record of this.agents.values()) {
-      if (record.session) shutdowns.push(disposeChildSession(record.session));
+      if (this.runs.has(record.id)) {
+        shutdowns.push(Promise.resolve(record.promise).then(() => record.session ? disposeChildSession(record.session) : undefined));
+      } else if (record.session) shutdowns.push(disposeChildSession(record.session));
     }
     this.agents.clear();
     return Promise.all(shutdowns).then(() => undefined);

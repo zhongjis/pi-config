@@ -14,8 +14,7 @@ import type { SubagentsSettings } from "./settings.js";
 import { getForegroundOutcomeNote } from "./status-note.js";
 import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
 import type { AgentConfig, AgentInvocation, AgentRecord, SubagentType } from "./types.js";
-import { type AgentActivity, type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel, SPINNER, type UICtx } from "./ui/agent-widget.js";
-import { addUsage } from "./usage.js";
+import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel, SPINNER, type UICtx } from "./ui/agent-widget.js";
 
 /** Shared by the tool description and agent-authoring menus. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -27,53 +26,6 @@ export interface AgentToolHost {
   readonly settings: Readonly<Required<Pick<SubagentsSettings, "defaultJoinMode" | "scopeModels" | "outputTranscript" | "toolDescriptionMode" | "showCost">>>;
   readonly reloadCustomAgents: () => void;
   readonly resolveDelegation: (ctx: ExtensionContext, type: string) => ResolvedDelegationPolicy;
-}
-
-/** Track the same live activity for foreground and background execution. */
-function createActivityTracker(maxTurns?: number, onStreamUpdate?: () => void) {
-  const state: AgentActivity = {
-    activeTools: new Map(),
-    toolUses: 0,
-    turnCount: 1,
-    maxTurns,
-    responseText: "",
-    session: undefined,
-    lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 },
-    lastProgressAt: Date.now(),
-  };
-  const callbacks = {
-    onToolActivity: (activity: { type: "start" | "end" | "diagnostic"; toolName: string }) => {
-      if (activity.type === "start") {
-        state.activeTools.set(activity.toolName + "_" + Date.now(), activity.toolName);
-      } else if (activity.type === "end") {
-        for (const [key, name] of state.activeTools) {
-          if (name === activity.toolName) { state.activeTools.delete(key); break; }
-        }
-        state.toolUses++;
-      }
-      state.lastProgressAt = Date.now();
-      onStreamUpdate?.();
-    },
-    onTextDelta: (_delta: string, fullText: string) => {
-      state.responseText = fullText;
-      state.lastProgressAt = Date.now();
-      onStreamUpdate?.();
-    },
-    onTurnEnd: (turnCount: number) => {
-      state.turnCount = turnCount;
-      state.lastProgressAt = Date.now();
-      onStreamUpdate?.();
-    },
-    onSessionCreated: (session: AgentSession) => {
-      state.session = session;
-    },
-    onAssistantUsage: (usage: { input: number; output: number; cacheWrite: number }) => {
-      addUsage(state.lifetimeUsage, usage);
-      state.lastProgressAt = Date.now();
-      onStreamUpdate?.();
-    },
-  };
-  return { state, callbacks };
 }
 
 function buildDelegationPolicyDenialDetails(
@@ -133,7 +85,7 @@ export function createAgentTool(
   notifications: Pick<ReturnType<typeof createNotificationCoordinator>, "track">,
 ) {
   const { pi, manager, settings, reloadCustomAgents, resolveDelegation } = host;
-  const { activity: agentActivity, widget, fleet } = presentation;
+  const { widget, fleet } = presentation;
   const buildDetails = createAgentResultBuilder(() => settings.showCost);
 
   const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Configured agent types (current mode may permit only a subset):
@@ -306,15 +258,40 @@ Terse command-style prompts produce shallow, generic work.
         const existing = manager.getRecord(params.resume);
         if (!existing) return textResult(`Agent not found: "${params.resume}". It may have been cleaned up.`);
         if (!existing.session) return textResult(`Agent "${params.resume}" has no active session to resume.`);
-        const record = await manager.resume(params.resume, params.prompt, signal);
+        const background = params.run_in_background === true;
+        const executionId = existing.executionId;
+        const pending = manager.resume(params.resume, params.prompt, signal, ctx, {
+          isBackground: background,
+          onSessionCreated: session => {
+            if (existing.outputFile) existing.outputCleanup = streamToOutputFile(session, existing.outputFile, existing.id, existing.cwd ?? ctx.cwd, session.messages.length);
+          },
+          onTextDelta: (_delta, text) => {
+            if (!background) onUpdate?.(textResult(text, buildDetails({ displayName: getDisplayName(existing.type), description: existing.description, subagentType: existing.type }, existing, { activity: existing.activity })));
+          },
+        });
+        if (background && existing.executionId !== executionId) {
+          existing.joinMode = resolveJoinMode(settings.defaultJoinMode, true);
+          existing.toolCallId = toolCallId;
+          notifications.track(existing.id, existing.joinMode);
+          widget.ensureTimer();
+          widget.update();
+          fleet.ensureTimer();
+          fleet.update();
+        }
+        const record = await pending;
         if (!record) return textResult(`Failed to resume agent "${params.resume}".`);
         const details = buildDetails({
           displayName: getDisplayName(record.type),
           description: record.description,
           subagentType: record.type,
-        }, record);
+        }, record, background ? { overrides: { status: record.status === "queued" ? "queued" : record.status === "running" ? "background" : record.status } } : undefined);
+        if (background) return textResult(
+          `Agent ${record.status === "queued" ? "queued" : "resumed"} in background.\nAgent ID: ${record.id}\n` +
+          (record.outputFile ? `Output file: ${record.outputFile}\n` : "") +
+          "Continue non-overlapping work, then call get_agent_result with run_id and wait: true. Do not end your turn while this agent runs.", details,
+        );
         if (record.status === "error") return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
-        return textResult(record.result?.trim() || "No output.", details);
+        return textResult((record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause), details);
       }
       const prepared = prepareAgentInvocation({
         agentType: subagentType,
@@ -366,11 +343,8 @@ Terse command-style prompts produce shallow, generic work.
       };
 
       if (runInBackground) {
-        const { state: bgState, callbacks: bgCallbacks } = createActivityTracker(effectiveMaxTurns);
         let id: string;
-        const origBgOnSession = bgCallbacks.onSessionCreated;
-        bgCallbacks.onSessionCreated = (session: AgentSession) => {
-          origBgOnSession(session);
+        const onSessionCreated = (session: AgentSession) => {
           const rec = manager.getRecord(id);
           if (rec?.outputFile) rec.outputCleanup = streamToOutputFile(session, rec.outputFile, id, ctx.cwd);
         };
@@ -386,7 +360,7 @@ Terse command-style prompts produce shallow, generic work.
             isBackground: true,
             invocation: agentInvocation,
             skills: params.skills,
-            ...bgCallbacks,
+            onSessionCreated,
           });
         } catch (err) {
           return textResult(err instanceof Error ? err.message : String(err));
@@ -400,7 +374,6 @@ Terse command-style prompts produce shallow, generic work.
           attachTranscript(record, id);
         }
         notifications.track(id, joinMode);
-        agentActivity.set(id, bgState);
         widget.ensureTimer();
         widget.update();
         fleet.ensureTimer();
@@ -422,7 +395,7 @@ Terse command-style prompts produce shallow, generic work.
           `\nDo not end your turn while this agent runs: continue non-overlapping work, then call get_agent_result with run_id and wait: true.\n` +
           `Use get_agent_result to retrieve full results, or steer_subagent to send it messages.\n` +
           `Do not duplicate this agent's work.`,
-          record ? buildDetails(detailBase, record, { activity: bgState, overrides: { status: isQueued ? "queued" : "background" } }) : undefined,
+          record ? buildDetails(detailBase, record, { activity: record.activity, overrides: { status: isQueued ? "queued" : "background" } }) : undefined,
         );
       }
 
@@ -431,6 +404,8 @@ Terse command-style prompts produce shallow, generic work.
       let fgId: string | undefined;
       const streamUpdate = () => {
         const liveRecord = fgId ? manager.getRecord(fgId) : undefined;
+        const fgState = liveRecord?.activity;
+        if (!fgState) return;
         const details: AgentDetails = {
           ...detailBase,
           ...(liveRecord ? buildDetails(detailBase, liveRecord, { activity: fgState }) : {}),
@@ -449,24 +424,20 @@ Terse command-style prompts produce shallow, generic work.
           details,
         });
       };
-      const { state: fgState, callbacks: fgCallbacks } = createActivityTracker(effectiveMaxTurns, streamUpdate);
-      const origOnSession = fgCallbacks.onSessionCreated;
-      fgCallbacks.onSessionCreated = (session: AgentSession) => {
-        origOnSession(session);
-        for (const a of manager.listAgents()) {
-          if (a.session === session) {
-            fgId = a.id;
-            agentActivity.set(a.id, fgState);
-            widget.ensureTimer();
-            fleet.ensureTimer();
-            fleet.update();
-            break;
+      const fgCallbacks = {
+        onToolActivity: streamUpdate,
+        onTextDelta: streamUpdate,
+        onTurnEnd: streamUpdate,
+        onAssistantUsage: streamUpdate,
+        onSessionCreated: (session: AgentSession) => {
+          widget.ensureTimer();
+          fleet.ensureTimer();
+          fleet.update();
+          if (fgId) {
+            const rec = manager.getRecord(fgId);
+            if (rec?.outputFile) rec.outputCleanup = streamToOutputFile(session, rec.outputFile, fgId, ctx.cwd);
           }
-        }
-        if (fgId) {
-          const rec = manager.getRecord(fgId);
-          if (rec?.outputFile) rec.outputCleanup = streamToOutputFile(session, rec.outputFile, fgId, ctx.cwd);
-        }
+        },
       };
       const spinnerInterval = setInterval(() => {
         spinnerFrame++;
@@ -488,6 +459,7 @@ Terse command-style prompts produce shallow, generic work.
           signal,
           ...fgCallbacks,
         }, (fgAgentId) => {
+          fgId = fgAgentId;
           const fgRec = manager.getRecord(fgAgentId);
           attachTranscript(fgRec, fgAgentId);
         });
@@ -498,12 +470,11 @@ Terse command-style prompts produce shallow, generic work.
       }
       clearInterval(spinnerInterval);
       if (fgId) {
-        agentActivity.delete(fgId);
         widget.markFinished(fgId);
         fleet.onAgentFinished(fgId);
       }
-      const tokenText = formatLifetimeTokens(fgState);
-      const details = buildDetails(detailBase, record, { activity: fgState, overrides: { tokens: tokenText } });
+      const tokenText = formatLifetimeTokens(record);
+      const details = buildDetails(detailBase, record, { activity: record.activity, overrides: { tokens: tokenText } });
       const fallbackNote = fellBack
         ? `Note: Unknown agent type "${rawType}" — using ${resolveType("general-purpose") ? "general-purpose" : "the fallback agent config"}.\n\n`
         : "";
@@ -515,8 +486,8 @@ Terse command-style prompts produce shallow, generic work.
       const statsParts = [`${record.toolUses} tool uses`];
       if (tokenText) statsParts.push(tokenText);
       return textResult(
-        `${fallbackNote}${foregroundAgentId}Agent completed in ${formatMs(durationMs)} (${statsParts.join(", ")})${getForegroundOutcomeNote(record.status)}.\n\n` +
-        (record.result?.trim() || "No output."),
+        `${fallbackNote}${foregroundAgentId}Agent ${record.status === "completed" || record.status === "steered" ? "completed" : "interrupted"} in ${formatMs(durationMs)} (${statsParts.join(", ")}).\n\n` +
+        (record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause),
         details,
       );
     },

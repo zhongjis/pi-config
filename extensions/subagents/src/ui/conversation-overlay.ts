@@ -15,7 +15,7 @@ import type { GraphRunUIContext } from "./graph-run-menu.js";
 type MenuUI = Pick<GraphRunUIContext["ui"], "custom" | "notify">;
 type FleetUI = Pick<FleetUICtx, "custom" | "notify">;
 type OverlayDeps = {
-  manager: { abort(id: string): boolean; steer(id: string, message: string): unknown };
+  manager: { abort(id: string, cause?: AgentRecord["interruptionCause"]): boolean; steer(id: string, message: string): unknown };
   agentActivity: ReadonlyMap<string, AgentActivity>;
 };
 type OverlayOptions = { onOpen?(close: () => void): void };
@@ -100,7 +100,7 @@ export function openConversationOverlay(
     record.session,
     deps.agentActivity.get(record.id),
     () => {
-      if (deps.manager.abort(record.id)) ui.notify(`Stopped "${record.description}".`, "info");
+      if (deps.manager.abort(record.id, "user")) ui.notify(`Stopped "${record.description}".`, "info");
     },
     message => { deps.manager.steer(record.id, message); },
     options,

@@ -217,6 +217,63 @@ beforeEach(() => {
 });
 
 describe("agent-runner final output capture", () => {
+  it.each([
+    ["spawn", false], ["spawn", true], ["resume", false], ["resume", true],
+  ] as const)("%s drains rejected prompts and retains only execution-local partial text (abort=%s)", async (kind, abort) => {
+    const controller = new AbortController();
+    const { session, listeners } = createSession("unused");
+    createAgentSession.mockResolvedValue({ session });
+    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
+    session.prompt.mockClear();
+    session.messages.push({ role: "assistant", content: [{ type: "text", text: "PRIOR" }] });
+    let releaseIdle: (() => void) | undefined;
+    const idle = new Promise<void>(resolve => { releaseIdle = resolve; });
+    if (!releaseIdle) throw new Error("Missing idle resolver");
+    session.waitForIdle.mockImplementation(() => idle);
+    session.prompt.mockImplementation(async () => {
+      for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "PARTIAL" } });
+      if (abort) controller.abort();
+      throw new Error("prompt failed");
+    });
+    createAgentSession.mockResolvedValue({ session });
+    const onTextDelta = vi.fn();
+    const pending = kind === "spawn"
+      ? runAgent(ctx, "Explore", "go", { pi, signal: controller.signal, onTextDelta }).then(result => ({ text: result.responseText, failure: result.failure }))
+      : resumeAgent(sdkSession, "go", { signal: controller.signal, onTextDelta });
+    let settled = false;
+    void pending.then(() => { settled = true; }, () => { settled = true; });
+    await vi.waitFor(() => expect(session.prompt).toHaveBeenCalled());
+    try {
+      expect(settled).toBe(false);
+      expect(session.waitForIdle).toHaveBeenCalled();
+      for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " DRAIN" } });
+    } finally {
+      releaseIdle();
+    }
+    await expect(pending).resolves.toMatchObject({ text: "PARTIAL DRAIN", failure: "prompt failed" });
+    expect(onTextDelta.mock.calls).toEqual([["PARTIAL", "PARTIAL"], [" DRAIN", "PARTIAL DRAIN"]]);
+    if (abort) expect(session.abort).toHaveBeenCalledOnce();
+    session.prompt.mockRejectedValueOnce(new Error("empty failure"));
+    await expect(resumeAgent(sdkSession, "again"))
+      .resolves.toMatchObject({ text: "", failure: "empty failure" });
+  });
+
+  it("retains execution-local completed text across compaction and an empty aborted message", async () => {
+    const { session, listeners } = createSession("unused");
+    createAgentSession.mockResolvedValue({ session });
+    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
+    session.prompt.mockClear();
+    session.messages.push({ role: "assistant", content: [{ type: "text", text: "PRIOR" }] });
+    session.prompt.mockImplementation(async () => {
+      for (const listener of listeners) listener({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "PARTIAL" }] } });
+      session.messages.length = 0;
+      for (const listener of listeners) listener({ type: "message_start", message: { role: "assistant", content: [] } });
+      throw new Error("aborted");
+    });
+    await expect(resumeAgent(sdkSession, "go"))
+      .resolves.toMatchObject({ text: "PARTIAL", failure: "aborted" });
+  });
+
   it("returns the final assistant text even when no text_delta events were streamed", async () => {
     const { session } = createSession("LOCKED");
     createAgentSession.mockResolvedValue({ session });
@@ -459,6 +516,15 @@ describe("agent-runner failed-final-turn detection (#144)", () => {
     errorMessage: "retries exhausted: 529 overloaded",
   };
 
+  it("propagates SDK abort without a controller as unknown on fresh and resumed runs", async () => {
+    const session = sessionEnding({ role: "assistant", content: [{ type: "text", text: "checkpoint" }], stopReason: "aborted" });
+    createAgentSession.mockResolvedValue({ session });
+    const result = await runAgent(ctx, "Explore", "go", { pi });
+    expect(result).toMatchObject({ interruptionCause: "unknown", aborted: true, responseText: "checkpoint" });
+    const resumed = await resumeAgent(result.session, "continue");
+    expect(resumed).toMatchObject({ interruptionCause: "unknown", text: "checkpoint" });
+  });
+
   it("flags a run whose final turn is an empty provider error", async () => {
     const session = sessionEnding(errorFinal);
     createAgentSession.mockResolvedValue({ session });
@@ -498,18 +564,26 @@ describe("agent-runner failed-final-turn detection (#144)", () => {
     expect(result.responseText).toBe("truncated answ");
   });
 
-  it("flags a run whose final turn hit the token limit with no text (#144 residual)", async () => {
+  it.each([undefined, "", " \n\t"])("flags empty length output %j on fresh and resumed runs (#144)", async (text) => {
     // stopReason "length" with empty content is a silent max-token death — it
     // reproduces the #144 "completed with No output." symptom, so it must fail.
-    const session = sessionEnding({ role: "assistant", content: [], stopReason: "length" });
+    const session = sessionEnding({ role: "assistant", content: text === undefined ? [] : [{ type: "text", text }], stopReason: "length" });
     createAgentSession.mockResolvedValue({ session });
 
     const result = await runAgent(ctx, "Explore", "go", { pi });
 
     expect(result.failure).toBe("run hit the output token limit before producing any text");
+    expect(result.responseText).toBe("");
+    expect(result.aborted).toBe(false);
+    expect(result.interruptionCause).toBeUndefined();
+    session.messages.push({ role: "assistant", content: [{ type: "text", text: "PRIOR ANSWER" }] });
+    const resumed = await resumeAgent(result.session, "continue");
+    expect(resumed.failure).toBe(result.failure);
+    expect(resumed.text).toBe("");
+    expect(resumed.interruptionCause).toBeUndefined();
   });
 
-  it("does NOT flag a length stop that produced text (truncated answer completes)", async () => {
+  it("completes fresh and resumed length stops that produced text", async () => {
     const session = sessionEnding({
       role: "assistant",
       content: [{ type: "text", text: "truncated but useful answer" }],
@@ -521,6 +595,12 @@ describe("agent-runner failed-final-turn detection (#144)", () => {
 
     expect(result.failure).toBeUndefined();
     expect(result.responseText).toBe("truncated but useful answer");
+    expect(result.interruptionCause).toBeUndefined();
+    expect(result.aborted).toBe(false);
+    const resumed = await resumeAgent(result.session, "continue");
+    expect(resumed.text).toBe("truncated but useful answer");
+    expect(resumed.failure).toBeUndefined();
+    expect(resumed.interruptionCause).toBeUndefined();
   });
 
   it("does NOT flag an empty final turn that stopped cleanly (no false failures)", async () => {
@@ -2281,39 +2361,57 @@ it("does not prompt when the parent aborted during session startup", async () =>
 describe("graph run structured output", () => {
   const schema = {
     schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+    providerSchema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
     check(value: unknown): true | string {
       return typeof value === "object" && value !== null && "answer" in value && typeof value.answer === "string"
         ? true : "answer must be a string";
     },
   };
 
-  it("injects before session creation, repairs prose once, and resets capture on resume", async () => {
+  it.each(["stop", "length"])("injects before session creation, repairs %s prose once, and resets capture on resume", async (stopReason) => {
     const { session } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
     let calls = 0;
     session.prompt.mockImplementation(async () => {
       calls++;
+      session.messages.push({ role: "assistant", content: [{ type: "text", text: "prose" }], stopReason });
       const tool = createAgentSession.mock.calls[0][0].customTools[0];
       if (calls === 2 || calls === 4) await tool.execute("result", { answer: `answer-${calls}` });
     });
     const result = await runAgent(ctx, "Explore", "answer", { pi, graphRun: true, structuredOutput: schema });
     expect(createAgentSession.mock.calls[0][0].tools).toContain("StructuredOutput");
+    expect(result.aborted).toBe(false);
+    expect(result.interruptionCause).toBeUndefined();
     expect(result.structuredJson).toBe('{"answer":"answer-2"}');
     expect(result.structuredRetried).toBe(true);
     expect(result.failure).toBeUndefined();
     const resumed = await resumeAgent(result.session, "again");
+    expect(resumed.failure).toBeUndefined();
+    expect(resumed.interruptionCause).toBeUndefined();
     expect(resumed.structuredJson).toBe('{"answer":"answer-4"}');
     expect(resumed.structuredRetried).toBe(true);
     expect(session.prompt).toHaveBeenCalledTimes(4);
   });
 
-  it("fails after a single prose repair and does not reuse a prior answer", async () => {
+  it.each(["stop", "length"])("fails after a single %s prose repair and does not reuse a prior answer", async (stopReason) => {
     const { session } = createSession("prose");
+    session.prompt.mockImplementation(async () => {
+      session.messages.push({ role: "assistant", content: [{ type: "text", text: "prose" }], stopReason });
+    });
     createAgentSession.mockResolvedValue({ session });
     const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema });
     expect(result.failure).toContain("StructuredOutput was not produced");
     expect(result.structuredJson).toBeUndefined();
+    expect(result.aborted).toBe(false);
+    expect(result.interruptionCause).toBeUndefined();
+    expect(result.structuredRetried).toBe(true);
     expect(session.prompt).toHaveBeenCalledTimes(2);
+    const resumed = await resumeAgent(result.session, "again");
+    expect(resumed.failure).toContain("StructuredOutput was not produced");
+    expect(resumed.structuredJson).toBeUndefined();
+    expect(resumed.interruptionCause).toBeUndefined();
+    expect(resumed.structuredRetried).toBe(true);
+    expect(session.prompt).toHaveBeenCalledTimes(4);
   });
 
   it("validates payloads with a model-visible tool error", async () => {
@@ -2344,6 +2442,32 @@ describe("graph run structured output", () => {
     await resumeAgent(result.session, "again");
     expect(session.getActiveToolNames()).toContain("StructuredOutput");
     expect(session.getActiveToolNames()).not.toContain("agent_graph");
+  });
+
+  it.each(["sdk", "signal", "turn-limit"])("suppresses structured repair after %s interruption", async (kind) => {
+    const { session, listeners } = createSession("checkpoint");
+    const controller = new AbortController();
+    createAgentSession.mockResolvedValue({ session });
+    session.prompt.mockImplementation(async () => {
+      session.messages.push({ role: "assistant", content: [{ type: "text", text: "checkpoint" }], stopReason: kind === "sdk" ? "aborted" : "length" });
+      if (kind === "signal") controller.abort();
+      if (kind === "turn-limit") {
+        for (let turn = 0; turn < 10 && !session.abort.mock.calls.length; turn++) {
+          for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
+        }
+      }
+    });
+    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema, signal: controller.signal, maxTurns: kind === "turn-limit" ? 1 : undefined });
+    expect(result.aborted).toBe(true);
+    expect(result.interruptionCause).toBe(kind === "turn-limit" ? "turn-limit" : "unknown");
+    expect(result.structuredRetried).toBe(false);
+    expect(session.prompt).toHaveBeenCalledTimes(1);
+    if (kind !== "turn-limit") {
+      const resumed = await resumeAgent(result.session, "again", { signal: controller.signal });
+      expect(resumed.interruptionCause).toBe("unknown");
+      expect(resumed.structuredRetried).toBe(false);
+      expect(session.prompt).toHaveBeenCalledTimes(kind === "sdk" ? 2 : 1);
+    }
   });
 
   it("never prompts a pre-aborted structured session", async () => {

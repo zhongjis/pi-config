@@ -14,7 +14,7 @@ import { getSessionContextPercent } from "./usage.js";
 /** Retrieval reads live report state and suppresses held completion delivery. */
 interface ResultDelivery {
   readonly details: (record: AgentRecord) => AgentDetails;
-  readonly cancelNudge: (id: string) => void;
+  readonly cancelNudge: (id: string, executionId?: string) => void;
 }
 
 /** Await a promise until it settles or the caller cancels, without aborting the underlying work. */
@@ -55,9 +55,10 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
     }
 
+    const executionId = record.executionId;
     // Cancellation stops only this wait, not the background agent or its notification.
     // Queued agents acquire their promise only when the queue starts them.
-    if (params.wait && (record.status === "running" || record.status === "queued")) {
+    if (params.wait) {
       while (record.status === "queued") {
         await abortable(
           new Promise<void>((resolve) => setTimeout(resolve, QUEUE_WAIT_POLL_MS)),
@@ -65,6 +66,10 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
         );
       }
       if (record.promise) await abortable(record.promise, signal);
+    }
+
+    if (record.executionId !== executionId) {
+      return textResult(`Agent "${record.id}" started another execution while this retrieval waited. Retrieve its current result again.`);
     }
 
     const displayName = getDisplayName(record.type);
@@ -79,20 +84,23 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
 
     let output =
       `Agent: ${record.id}\n` +
-      `Type: ${displayName} | Status: ${record.status}${getStatusNote(record.status)} | ${statsParts.join(" | ")}\n` +
+      `Type: ${displayName} | Status: ${record.status}${getStatusNote(record.status, record.interruptionCause)} | ${statsParts.join(" | ")}\n` +
       `Description: ${record.description}\n\n`;
 
-    if (record.status === "running") {
-      output += "Agent is still running. When no other work remains, call again with wait: true; do not end your turn.";
+    const pending = manager.hasPendingExecution(params.agent_id);
+    if (pending) {
+      output += "Agent execution is still pending. When no other work remains, call get_agent_result with wait: true; do not resume this agent and do not end your turn.";
+      const partial = record.result?.trim();
+      if (partial) output += `\n\nRetained partial output:\n${partial}`;
     } else if (record.status === "error") {
       output += `Error: ${record.error}${partialOutputSuffix(record)}`;
     } else {
       output += record.result?.trim() || "No output.";
     }
 
-    if (record.status !== "running" && record.status !== "queued") {
+    if (!pending) {
       record.resultConsumed = true;
-      delivery.cancelNudge(params.agent_id);
+      delivery.cancelNudge(params.agent_id, executionId);
     }
     const details = delivery.details(record);
     if (params.verbose && record.session) {

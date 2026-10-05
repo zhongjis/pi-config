@@ -102,6 +102,19 @@ describe("streamToOutputFile", () => {
       .map((line) => JSON.parse(line));
   }
 
+  it("appends only resumed messages to the retained transcript path", () => {
+    const messages: { role: "user"; content: string; timestamp: number }[] = [
+      { role: "user", content: "prior prompt", timestamp: 0 },
+    ];
+    const session = { messages, subscribe: () => () => {} };
+    const cleanup = streamToOutputFile(session, outPath, "agent-1", "/work", messages.length);
+    messages.push({ role: "user", content: "resumed prompt", timestamp: 1 });
+    cleanup();
+    expect(readEntries()).toHaveLength(2);
+    expect(readFileSync(outPath, "utf-8")).not.toContain("prior prompt");
+    expect(readFileSync(outPath, "utf-8")).toContain("resumed prompt");
+  });
+
   it("writes nothing past the initial entry until turn_end fires", () => {
     const session = makeFakeSession([{ role: "user", content: "do the thing" }]);
     streamToOutputFile(session as never, outPath, "agent-1", "/work");

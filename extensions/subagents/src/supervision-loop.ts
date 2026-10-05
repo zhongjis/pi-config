@@ -30,7 +30,7 @@ export const AUTO_STEER_MESSAGE =
 export interface SupervisionManager {
   getRunning(): AgentRecord[];
   steer(id: string, message: string): boolean;
-  abort(id: string): boolean;
+  abort(id: string, cause: AgentRecord["interruptionCause"]): boolean;
 }
 
 export interface StartBackgroundSupervisionOptions {
@@ -58,7 +58,7 @@ export function startBackgroundSupervision(
     const mode = parseBackgroundSupervisionMode();
     const ceilingMs = parseSubagentSupervisionCeilingMs();
     for (const record of manager.getRunning()) {
-      const activity = agentActivity.get(record.id);
+      const activity = record.activity ?? agentActivity.get(record.id);
       const { action, idleMs, reasonClass } = getBackgroundSupervisionAction({
         record,
         activity,
@@ -75,7 +75,7 @@ export function startBackgroundSupervision(
       }
 
       // action === "abort"
-      manager.abort(record.id);
+      manager.abort(record.id, reasonClass === "ceiling" ? "supervisor-ceiling" : "supervisor-idle");
       record.lastSupervisionAbortAt = now;
       if (reasonClass === "ceiling") {
         emitSupervisionCeilingHitWarning({ agentId: record.id, idleMs, ceilingMs });
