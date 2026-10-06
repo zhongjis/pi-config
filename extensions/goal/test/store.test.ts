@@ -4,7 +4,15 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { accountGoalUsage, clearGoal, createGoal, goalFilePath, readGoal, updateGoal } from "../src/goal/store.js";
+import {
+	accountGoalUsage,
+	amendGoal,
+	clearGoal,
+	createGoal,
+	goalFilePath,
+	readGoal,
+	updateGoal,
+} from "../src/goal/store.js";
 import type { GoalStoreRef } from "../src/goal/types.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -17,6 +25,104 @@ const tempDirs: string[] = [];
 describe("goal store", () => {
 	afterEach(async () => {
 		await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+	});
+
+	it("atomically resumes cancellation with verbatim amendments and unchanged accounting", async () => {
+		const ref = await tempStore();
+		const original = await createGoal(ref, "Original", 100);
+		await accountGoalUsage(ref, { input: 3, output: 2, cacheRead: 9, cacheWrite: 0, totalTokens: 14 }, 7);
+		const paused = await updateGoal(ref, { status: "paused" }, { expectedGoalId: original.id, actor: "abort" });
+		const guard = { expectedGoalId: original.id, cancellationOffer: paused.cancellationOffer, isCurrent: () => true };
+		const resumed = await amendGoal(ref, "  <amendment>\nA & B  ", guard);
+		expect(resumed).toMatchObject({
+			id: original.id,
+			objective: original.objective,
+			createdAt: original.createdAt,
+			tokenBudget: 100,
+			tokensUsed: 5,
+			timeUsedSeconds: 7,
+			status: "active",
+			amendments: ["  <amendment>\nA & B  "],
+		});
+		expect(resumed.cancellationOffer).toBeUndefined();
+		await expect(amendGoal(ref, "stale", guard)).rejects.toThrow("goal changed");
+		await amendGoal(ref, "second", { expectedGoalId: original.id, isCurrent: () => true });
+		expect((await readGoal(ref))?.amendments).toEqual(["  <amendment>\nA & B  ", "second"]);
+	});
+
+	it("consumes a declined offer durably, rearms cancellation and honors exhausted budgets", async () => {
+		const ref = await tempStore();
+		const goal = await createGoal(ref, "Original", 1);
+		const guard = { expectedGoalId: goal.id, actor: "abort" as const };
+		const paused = await updateGoal(ref, { status: "paused" }, guard);
+		await amendGoal(ref, undefined, {
+			expectedGoalId: goal.id,
+			cancellationOffer: paused.cancellationOffer,
+			isCurrent: () => true,
+		});
+		expect(await readGoal(ref)).toMatchObject({ status: "paused" });
+		expect((await readGoal(ref))?.cancellationOffer).toBeUndefined();
+		await updateGoal(ref, { status: "active" });
+		const again = await updateGoal(ref, { status: "paused" }, guard);
+		expect(again.cancellationOffer).not.toBe(paused.cancellationOffer);
+		await accountGoalUsage(
+			ref,
+			{ input: 2, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 3 },
+			4,
+			"activeOrStopped",
+		);
+		const resumed = await amendGoal(ref, "new scope", {
+			expectedGoalId: goal.id,
+			cancellationOffer: again.cancellationOffer,
+			isCurrent: () => true,
+		});
+		expect(resumed).toMatchObject({ status: "budgetLimited", tokenBudget: 1, tokensUsed: 3, timeUsedSeconds: 4 });
+	});
+
+	it("rejects obsolete offers after explicit controls, replacement and clearing", async () => {
+		const ref = await tempStore();
+		const goal = await createGoal(ref, "Original");
+		const paused = await updateGoal(ref, { status: "paused" }, { expectedGoalId: goal.id, actor: "abort" });
+		const guard = { expectedGoalId: goal.id, cancellationOffer: paused.cancellationOffer, isCurrent: () => true };
+		await expect(amendGoal(ref, "stale", { ...guard, isCurrent: () => false })).rejects.toThrow("goal changed");
+		await updateGoal(ref, { status: "paused" });
+		await expect(amendGoal(ref, "stale", guard)).rejects.toThrow("goal changed");
+		await updateGoal(ref, { objective: "Replacement" });
+		await expect(amendGoal(ref, "stale", guard)).rejects.toThrow("goal changed");
+		expect((await readGoal(ref))?.amendments).toBeUndefined();
+		await clearGoal(ref);
+		await expect(amendGoal(ref, "stale", guard)).rejects.toThrow("goal changed");
+	});
+
+	it.each(["complete", "blocked"] as const)("rejects queued model %s after an amendment commits", async (status) => {
+		const ref = await tempStore();
+		const goal = await createGoal(ref, "Original");
+		const amendment = amendGoal(ref, "New scope", { expectedGoalId: goal.id, isCurrent: () => true });
+		const mutation = updateGoal(
+			ref,
+			{ status, blockedReason: "External approval" },
+			{
+				expectedGoalId: goal.id,
+				expectedStatus: "active",
+				expectedAmendmentVersion: 0,
+				actor: "model",
+			},
+		);
+		await expect(mutation).rejects.toThrow("goal changed");
+		await amendment;
+		expect(await readGoal(ref)).toMatchObject({ status: "active", amendments: ["New scope"] });
+		await expect(
+			updateGoal(
+				ref,
+				{ status, blockedReason: "External approval" },
+				{
+					expectedGoalId: goal.id,
+					expectedStatus: "active",
+					expectedAmendmentVersion: 1,
+					actor: "model",
+				},
+			),
+		).resolves.toMatchObject({ status, amendments: ["New scope"] });
 	});
 
 	it("serializes concurrent creates and every accounting delta", async () => {

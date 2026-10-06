@@ -31,7 +31,13 @@ export function createGoalAdmission() {
 			let admitted = false;
 			try {
 				const current = await readGoal(ref);
-				if (capturedGeneration !== generation || current?.id !== goal.id || current.status !== goal.status) return;
+				if (
+					capturedGeneration !== generation ||
+					current?.id !== goal.id ||
+					current.status !== goal.status ||
+					(current.amendments?.length ?? 0) !== (goal.amendments?.length ?? 0)
+				)
+					return;
 				if (ctx.signal?.aborted || ctx.hasPendingMessages() || (!boundary && !ctx.isIdle())) return;
 				if (current.status === "budgetLimited" && budgetReportedId === current.id) return;
 				admitted = true;
@@ -40,7 +46,7 @@ export function createGoalAdmission() {
 					customType: current.status === "active" ? "pi-goal-continuation" : "pi-goal-budget-limit",
 					content: current.status === "active" ? buildContinuationPrompt(current) : buildBudgetLimitedPrompt(current),
 					display: false,
-					details: { goalId: current.id },
+					details: { goalId: current.id, amendmentVersion: current.amendments?.length ?? 0 },
 				};
 			} finally {
 				// The caller commits synchronously after this promise resolves. Other

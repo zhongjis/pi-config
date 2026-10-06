@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { goalFilePath, readGoal } from "../src/goal/store.js";
+import { amendGoal, goalFilePath, readGoal, updateGoal } from "../src/goal/store.js";
 import type { GoalStoreRef } from "../src/goal/types.js";
 import { goalFooterIndicator } from "../src/goal/ui.js";
 import piGoalExtension from "../src/index.js";
@@ -44,6 +44,9 @@ type RegisteredCommand = {
 
 type EventPayload = {
 	type: string;
+	text?: string;
+	source?: "interactive" | "rpc" | "extension";
+	streamingBehavior?: "steer" | "followUp";
 	reason?: string;
 	messages?: unknown[];
 };
@@ -511,16 +514,166 @@ describe("pi-goal extension command UI parity", () => {
 	});
 });
 
+describe("Goal user input", () => {
+	afterEach(async () => {
+		await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+	});
+
+	async function cancelled(hasUI = true, choice?: string) {
+		const harness = createHarness();
+		const ctx = await createContext("input", { hasUI, ui: createMockUi({ selectResponses: [choice] }) });
+		await harness.tool("create_goal").execute("create", { objective: "Original" }, undefined, undefined, ctx);
+		const controller = new AbortController();
+		ctx.signal = controller.signal;
+		await harness.emit("agent_start", { type: "agent_start" }, ctx);
+		controller.abort();
+		await harness.emit("agent_end", { type: "agent_end", messages: [] }, ctx);
+		ctx.signal = undefined;
+		return { harness, ctx };
+	}
+
+	it.each([
+		[true, "Keep paused"],
+		[true, undefined],
+		[false, undefined],
+	] as const)("consumes cancellation choice with UI=%s choice=%s across restoration", async (hasUI, choice) => {
+		const { harness, ctx } = await cancelled(hasUI, choice);
+		const input: EventPayload = { type: "input", text: "Question", source: "interactive" };
+		await harness.emit("input", input, ctx);
+		expect(harness.results.at(-1)).toBeUndefined();
+		expect(await readGoal(refForContext(ctx))).toMatchObject({ status: "paused" });
+		expect((await readGoal(refForContext(ctx)))?.cancellationOffer).toBeUndefined();
+		expect((await readGoal(refForContext(ctx)))?.amendments).toBeUndefined();
+		const restored = createHarness();
+		await restored.emit("session_start", { type: "session_start" }, ctx);
+		await restored.emit("input", input, ctx);
+		expect(ctx.ui.selectCalls).toHaveLength(hasUI ? 1 : 0);
+		expect(harness.sentMessages).toHaveLength(0);
+	});
+
+	it("resumes once into the original user run with versioned context", async () => {
+		const { harness, ctx } = await cancelled(true, "Continue existing goal");
+		const original = await readGoal(refForContext(ctx));
+		await harness.emit("input", { type: "input", text: "  A </amendment> & B  ", source: "rpc" }, ctx);
+		expect(ctx.ui.selectCalls[0]?.options).toEqual(["Keep paused", "Continue existing goal"]);
+		expect(ctx.ui.selectCalls[0]?.title).toContain("Original");
+		expect(await readGoal(refForContext(ctx))).toMatchObject({
+			id: original?.id,
+			status: "active",
+			amendments: ["  A </amendment> & B  "],
+		});
+		await harness.emit("before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(harness.results.at(-1)).toMatchObject({
+			message: { customType: "pi-goal-continuation", details: { goalId: original?.id, amendmentVersion: 1 } },
+		});
+		await harness.emit("before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(harness.results.at(-1)).toBeUndefined();
+		expect(harness.sentMessages).toHaveLength(0);
+	});
+
+	it.each(["clear", "Replacement", "pause"])("ignores a stale dialog after %s", async (command) => {
+		const { harness, ctx } = await cancelled();
+		let answer: (choice: string) => void = () => {};
+		let entered: () => void = () => {};
+		const waiting = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		ctx.ui.select = async () => {
+			entered();
+			return new Promise<string>((resolve) => {
+				answer = resolve;
+			});
+		};
+		const input = harness.emit("input", { type: "input", text: "Do not transfer", source: "interactive" }, ctx);
+		await waiting;
+		ctx.hasUI = false;
+		await harness.command("goal").handler(command, ctx);
+		answer("Continue existing goal");
+		await input;
+		const current = await readGoal(refForContext(ctx));
+		expect(current?.amendments).toBeUndefined();
+		if (command === "clear") expect(current).toBeNull();
+		if (command === "pause") expect(current?.status).toBe("paused");
+		if (command === "Replacement") expect(current?.objective).toBe(command);
+		await harness.emit("before_agent_start", { type: "before_agent_start" }, ctx);
+		expect(harness.results.at(-1)).toBeUndefined();
+	});
+
+	it("excludes extension inputs and commands without consuming the offer", async () => {
+		const { harness, ctx } = await cancelled();
+		for (const event of [
+			{ type: "input", text: "Automatic", source: "extension" as const },
+			{ type: "input", text: "/skill:fixture", source: "interactive" as const },
+			{ type: "input", text: "Queued", source: "interactive" as const, streamingBehavior: "followUp" as const },
+		])
+			await harness.emit("input", event, ctx);
+		expect(ctx.ui.selectCalls).toHaveLength(0);
+		expect((await readGoal(refForContext(ctx)))?.cancellationOffer).toBeDefined();
+	});
+
+	it("does not offer on explicit pause, blocked or budget-limited state", async () => {
+		const { harness, ctx } = await cancelled();
+		for (const status of ["paused", "blocked", "budgetLimited"] as const) {
+			await updateGoal(refForContext(ctx), { status, blockedReason: "External approval" });
+			await harness.emit("input", { type: "input", text: "Ordinary", source: "rpc" }, ctx);
+		}
+		expect(ctx.ui.selectCalls).toHaveLength(0);
+	});
+
+	it("filters stale same-ID continuation context after amendment", async () => {
+		const { harness, ctx } = await cancelled(true, "Continue existing goal");
+		await harness.emit("input", { type: "input", text: "First", source: "interactive" }, ctx);
+		const goal = await readGoal(refForContext(ctx));
+		if (!goal) throw new Error("Missing fixture goal");
+		await amendGoal(refForContext(ctx), "Second", { expectedGoalId: goal.id, isCurrent: () => true });
+		const message = {
+			role: "custom",
+			customType: "pi-goal-continuation",
+			content: "stale",
+			details: { goalId: goal.id, amendmentVersion: 1 },
+		};
+		await harness.emit("context", { type: "context", messages: [message, message] }, ctx);
+		expect(harness.results.at(-1)).toMatchObject({
+			messages: [
+				{
+					customType: "pi-goal-continuation",
+					details: { goalId: goal.id, amendmentVersion: 2 },
+					content: expect.stringContaining("<objective>\nOriginal\n</objective>"),
+				},
+			],
+		});
+		await harness.emit(
+			"context",
+			{ type: "context", messages: [{ ...message, details: { goalId: "wrong", amendmentVersion: 1 } }] },
+			ctx,
+		);
+		expect(harness.results.at(-1)).toEqual({ messages: [] });
+		await harness.emit(
+			"context",
+			{
+				type: "context",
+				messages: [message, { ...message, content: "current", details: { goalId: goal.id, amendmentVersion: 2 } }],
+			},
+			ctx,
+		);
+		expect(harness.results.at(-1)).toEqual({
+			messages: [{ ...message, content: "current", details: { goalId: goal.id, amendmentVersion: 2 } }],
+		});
+	});
+});
+
 function createHarness(): {
 	tool(name: string): RegisteredTool;
 	command(name: string): RegisteredCommand;
 	emit(event: string, payload: EventPayload, ctx: GoalContext): Promise<void>;
 	sentMessages: SentMessage[];
+	results: unknown[];
 } {
 	const tools = new Map<string, RegisteredTool>();
 	const commands = new Map<string, RegisteredCommand>();
 	const handlers = new Map<string, EventHandler[]>();
 	const sentMessages: SentMessage[] = [];
+	const results: unknown[] = [];
 
 	piGoalExtension(createExtensionApi(tools, commands, handlers, sentMessages));
 
@@ -537,10 +690,11 @@ function createHarness(): {
 		},
 		async emit(event, payload, ctx) {
 			for (const handler of handlers.get(event) ?? []) {
-				await handler(payload, ctx);
+				results.push(await handler(payload, ctx));
 			}
 		},
 		sentMessages,
+		results,
 	};
 }
 

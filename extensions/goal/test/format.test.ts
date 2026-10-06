@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { formatGoalElapsedSeconds, goalToolResponse, goalUsageSummary } from "../src/goal/format.js";
+import { formatGoalForTool, formatGoalElapsedSeconds, goalToolResponse, goalUsageSummary } from "../src/goal/format.js";
 import type { Goal } from "../src/goal/types.js";
 
 describe("goal display formatting", () => {
+	it("exposes ordered amendments without rewriting the objective", () => {
+		const goal = testGoal({ amendments: ["  First  ", "Second"] });
+		expect(goalToolResponse(goal, false).goal).toMatchObject({
+			objective: goal.objective,
+			amendments: goal.amendments,
+		});
+		expect(formatGoalForTool(goal)).toContain("Amendment 1:   First  \nAmendment 2: Second");
+	});
 	it("formats elapsed seconds like Codex TUI", () => {
 		expect(formatGoalElapsedSeconds(0)).toBe("0s");
 		expect(formatGoalElapsedSeconds(59)).toBe("59s");

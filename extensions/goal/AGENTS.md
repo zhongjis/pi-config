@@ -13,8 +13,11 @@ Maintain thread-scoped goals, autonomous continuation, and usage accounting.
 - Accounting MUST survive session restoration and flush on shutdown.
 - Active continuation MUST respect goal status and optional token budgets.
 - Any existing Goal record, including stopped/complete states, suppresses Tasks-owned continuation; this boundary NEVER changes Goal scheduling.
-- User Stop MUST persist paused across reopening and ordinary input; only explicit `/goal resume` or objective-setting may reactivate it. Provider errors NEVER imply user Stop.
-- Model mutations MUST be identity/status/control-generation guarded and NEVER mutate paused Goals or change budgets.
+- Native cancellation MUST persist paused and arm one durable offer for fresh ordinary interactive/RPC input. Keep paused is first/default; dismissal or no UI consumes the offer without resuming. Provider errors NEVER arm it.
+- Confirmed input MUST atomically append verbatim text and resume the same Goal in the original user run, preserving objective, identity, creation time, usage, time and budget. Explicit controls clear obsolete offers; stale consent NEVER mutates a replacement or re-paused Goal.
+- Active interactive/RPC steer MUST append at submission without dialogs or cancellation-generation invalidation. Acceptance survives abort, belongs only to the accepting Goal, and NEVER claims native delivery. Extension inputs and commands are excluded; native text, images, expansion and scheduling remain untouched.
+- Amendments MUST remain ordered, separately persisted and escaped as untrusted prompt data. Hidden continuation context MUST match the current amendment version; refresh stale same-ID active context before the next provider request without duplicating current context. Confirmation/amendment decisions use session custom entries without full input text or inferred cancellation actors.
+- Model mutations MUST be identity/status/control-generation guarded and check the amendment version supplied to their provider context, including inside the queued store mutation and NEVER mutate paused Goals or change budgets.
 - Blocking MUST persist a trimmed nonempty reason and timestamp; leaving blocked MUST clear metadata. Legacy records without metadata remain readable.
 - The blocked audit MUST exhaust authorized paths and repeat the same external-state or necessary unanswered-user impasse for ≥3 consecutive Goal turns. This is a floor, NEVER an attempt cap; live results/questions remain waits. Runtime MUST NOT claim semantic proof or universal wake-source observation.
 - Storage MUST serialize whole mutations with Pi's native queue and publish atomically; one active Pi owner per session is the process-local concurrency boundary.

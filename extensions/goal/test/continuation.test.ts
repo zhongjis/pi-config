@@ -5,7 +5,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGoalAdmission } from "../src/goal/continuation.js";
 import { goalStoreRef } from "../src/goal/context.js";
-import { createGoal, updateGoal } from "../src/goal/store.js";
+import { amendGoal, createGoal, updateGoal } from "../src/goal/store.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -52,6 +52,16 @@ describe("Goal admission", () => {
 		await updateGoal(ref, { objective: "Replacement" });
 		expect(await admission.admit(ctx, goal)).toBeUndefined();
 	});
+	it("rejects stale same-ID amendment versions without changing cancellation generation", async () => {
+		const { ctx, ref, goal, admission } = await fixture();
+		const amended = await amendGoal(ref, "New constraint", { expectedGoalId: goal.id, isCurrent: () => true });
+		expect(await admission.admit(ctx, goal, true)).toBeUndefined();
+		expect(admission.generation).toBe(0);
+		expect(await admission.admit(ctx, amended, true)).toMatchObject({
+			details: { goalId: goal.id, amendmentVersion: 1 },
+		});
+	});
+
 	it("rechecks pending work and idle state and permits later admission", async () => {
 		const { ctx, goal, admission } = await fixture();
 		const pending = admission.admit(ctx, goal);

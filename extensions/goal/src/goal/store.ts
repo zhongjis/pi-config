@@ -91,6 +91,7 @@ export async function updateGoal(
 	guard?: {
 		expectedGoalId: string;
 		expectedStatus?: Goal["status"];
+		expectedAmendmentVersion?: number;
 		actor: "model" | "user" | "abort";
 		isCurrent?: () => boolean;
 	},
@@ -103,6 +104,8 @@ export async function updateGoal(
 			guard &&
 			(current.id !== guard.expectedGoalId ||
 				(guard.expectedStatus !== undefined && current.status !== guard.expectedStatus) ||
+				(guard.expectedAmendmentVersion !== undefined &&
+					(current.amendments?.length ?? 0) !== guard.expectedAmendmentVersion) ||
 				guard.isCurrent?.() === false)
 		) {
 			throw new GoalChangedError("goal changed before update; read the current goal again");
@@ -162,6 +165,9 @@ export async function updateGoal(
 			updatedAt: now,
 		};
 
+		if (guard?.actor === "abort" && status === "paused") next.cancellationOffer = randomUUID();
+		else if (requestedStatus !== undefined) delete next.cancellationOffer;
+
 		if (tokenBudget === null) {
 			delete next.tokenBudget;
 		} else if (tokenBudget !== undefined) {
@@ -188,6 +194,38 @@ export async function updateGoal(
 		} else {
 			delete next.blockedReason;
 			delete next.blockedAt;
+		}
+		await writeGoal(ref, next);
+		return next;
+	});
+}
+
+/** Accept user scope without replacing identity or resetting accounting. */
+export async function amendGoal(
+	ref: GoalStoreRef,
+	text: string | undefined,
+	guard: { expectedGoalId: string; cancellationOffer?: string; isCurrent: () => boolean },
+): Promise<Goal> {
+	return withFileMutationQueue(goalFilePath(ref), async () => {
+		const current = await readGoal(ref);
+		const resuming = guard.cancellationOffer !== undefined;
+		if (
+			!current ||
+			current.id !== guard.expectedGoalId ||
+			!guard.isCurrent() ||
+			current.status !== (resuming ? "paused" : "active") ||
+			(resuming && current.cancellationOffer !== guard.cancellationOffer)
+		) {
+			throw new GoalChangedError("goal changed before amendment");
+		}
+		const next: Goal = { ...current, updatedAt: nowSeconds() };
+		if (text !== undefined) next.amendments = [...(current.amendments ?? []), text];
+		if (resuming) {
+			delete next.cancellationOffer;
+			if (text !== undefined) {
+				next.status = statusAfterBudgetLimit("active", current.tokensUsed, current.tokenBudget);
+				if (next.status === "active") next.lastStartedAt = next.updatedAt;
+			}
 		}
 		await writeGoal(ref, next);
 		return next;
@@ -318,6 +356,9 @@ function isGoal(value: unknown): value is Goal {
 		typeof value["id"] === "string" &&
 		typeof value["threadId"] === "string" &&
 		typeof value["objective"] === "string" &&
+		(value["amendments"] === undefined ||
+			(Array.isArray(value["amendments"]) && value["amendments"].every((text: unknown) => typeof text === "string"))) &&
+		(value["cancellationOffer"] === undefined || typeof value["cancellationOffer"] === "string") &&
 		isGoalStatus(value["status"]) &&
 		(value["blockedReason"] === undefined || typeof value["blockedReason"] === "string") &&
 		(value["blockedAt"] === undefined || isNonNegativeSafeInteger(value["blockedAt"])) &&

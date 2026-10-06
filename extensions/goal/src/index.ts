@@ -3,11 +3,12 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { Type } from "typebox";
 
 import { parseGoalCommand } from "./goal/command.js";
+import { buildBudgetLimitedPrompt, buildContinuationPrompt } from "./goal/prompt.js";
 import { createGoalAdmission } from "./goal/continuation.js";
 import { formatGoalForTool, formatGoalToolResponse, goalStatusLabel } from "./goal/format.js";
 import { renderGoalCall, renderGoalResult } from "./goal/render.js";
 import { GoalAlreadyExistsError, GoalChangedError, GoalNotFoundError } from "./goal/errors.js";
-import { accountGoalUsage, clearGoal, createGoal, readGoal, updateGoal } from "./goal/store.js";
+import { accountGoalUsage, amendGoal, clearGoal, createGoal, readGoal, updateGoal } from "./goal/store.js";
 import type { Goal, GoalAccountingMode, GoalStoreRef, TokenUsageSnapshot } from "./goal/types.js";
 import { goalStoreRef } from "./goal/context.js";
 import { COMPLETABLE_GOAL_STATUS_VALUES, isRecord } from "./goal/types.js";
@@ -66,6 +67,8 @@ export default function (pi: ExtensionAPI): void {
 		}
 	});
 	pi.on("session_before_switch", () => {
+		admission.invalidate();
+		resumedInput = undefined;
 		pendingBootstrap = undefined;
 		bootstrapId = undefined;
 	});
@@ -74,9 +77,102 @@ export default function (pi: ExtensionAPI): void {
 	let agentGoalAccounting: AgentGoalAccounting | null = null;
 	let completedThisTurnGoalId: string | null = null;
 	const admission = createGoalAdmission();
-	let run: { ref: GoalStoreRef; goalId: string; generation: number; signal?: AbortSignal; aborted: boolean } | null =
-		null;
+	let run: {
+		ref: GoalStoreRef;
+		goalId: string;
+		generation: number;
+		amendmentVersion: number;
+		signal?: AbortSignal;
+		aborted: boolean;
+	} | null = null;
 	let removeAbortListener: (() => void) | undefined;
+
+	let confirmingOffer: string | undefined;
+	let resumedInput: { ref: GoalStoreRef; goalId: string; generation: number } | undefined;
+
+	pi.on("input", async (event, ctx) => {
+		if ((event.source !== "interactive" && event.source !== "rpc") || event.text.trimStart().startsWith("/")) return;
+		const ref = goalStoreRef(ctx);
+		const generation = admission.generation;
+		const isCurrent = () => {
+			if (generation !== admission.generation) return false;
+			const live = goalStoreRef(ctx);
+			return live.baseDir === ref.baseDir && live.threadId === ref.threadId;
+		};
+		const goal = await readGoal(ref);
+		if (!goal || !isCurrent()) return;
+		const steer = goal.status === "active" && event.streamingBehavior === "steer";
+		const offer =
+			goal.status === "paused" && event.streamingBehavior === undefined ? goal.cancellationOffer : undefined;
+		if (!steer && (!offer || confirmingOffer === offer)) return;
+		let decision = "steer-accepted";
+		let accepted = steer;
+		try {
+			if (!steer) {
+				confirmingOffer = offer;
+				const hasUI = ctx.hasUI;
+				const choice = hasUI
+					? await ctx.ui.select(
+							`Continue existing goal?\nOriginal objective: ${goal.objective}\nContinue adds this message as an amendment and resumes the same Goal.`,
+							["Keep paused", "Continue existing goal"],
+						)
+					: undefined;
+				accepted = choice === "Continue existing goal";
+				decision = accepted ? "continue" : !hasUI ? "no-ui" : choice === "Keep paused" ? "keep-paused" : "dismissed";
+			}
+			const next = await amendGoal(ref, accepted ? event.text : undefined, {
+				expectedGoalId: goal.id,
+				cancellationOffer: steer ? undefined : offer,
+				isCurrent,
+			});
+			pi.appendEntry("pi-goal-input-decision", {
+				goalId: next.id,
+				decision,
+				source: event.source,
+				amendmentVersion: next.amendments?.length ?? 0,
+			});
+			if (accepted && !steer && isCurrent()) resumedInput = { ref, goalId: next.id, generation };
+			updateGoalUiBestEffort(ctx, next);
+		} catch (error) {
+			if (!(error instanceof GoalChangedError)) throw error;
+			const liveRef = activeCtx ? goalStoreRef(activeCtx) : undefined;
+			if (liveRef?.baseDir === ref.baseDir && liveRef.threadId === ref.threadId)
+				pi.appendEntry("pi-goal-input-decision", {
+					goalId: goal.id,
+					decision: "stale",
+					source: event.source,
+					amendmentVersion: goal.amendments?.length ?? 0,
+				});
+		} finally {
+			if (confirmingOffer === offer) confirmingOffer = undefined;
+		}
+		// Native input, attachments, expansion and scheduling remain untouched.
+	});
+
+	pi.on("before_agent_start", async (_event, ctx) => {
+		const pending = resumedInput;
+		resumedInput = undefined;
+		if (!pending || pending.generation !== admission.generation) return;
+		const ref = goalStoreRef(ctx);
+		if (ref.baseDir !== pending.ref.baseDir || ref.threadId !== pending.ref.threadId) return;
+		const goal = await readGoal(ref);
+		if (
+			!goal ||
+			goal.id !== pending.goalId ||
+			pending.generation !== admission.generation ||
+			(goal.status !== "active" && goal.status !== "budgetLimited")
+		)
+			return;
+		admission.committed(goal);
+		return {
+			message: {
+				customType: goal.status === "active" ? GOAL_CONTINUATION_MESSAGE_TYPE : GOAL_BUDGET_LIMIT_MESSAGE_TYPE,
+				content: goal.status === "active" ? buildContinuationPrompt(goal) : buildBudgetLimitedPrompt(goal),
+				display: false,
+				details: { goalId: goal.id, amendmentVersion: goal.amendments?.length ?? 0 },
+			},
+		};
+	});
 
 	async function queueGoalContinuation(ctx: ExtensionContext, goal: Goal): Promise<void> {
 		const generation = admission.generation;
@@ -126,6 +222,7 @@ export default function (pi: ExtensionAPI): void {
 				run = {
 					ref,
 					goalId: goal.id,
+					amendmentVersion: goal.amendments?.length ?? 0,
 					generation: admission.generation,
 					signal: ctx.signal,
 					aborted: ctx.signal?.aborted ?? false,
@@ -169,9 +266,11 @@ export default function (pi: ExtensionAPI): void {
 			}
 			const ref = goalStoreRef(ctx);
 			const generation = admission.generation;
+			const amendmentVersion = run?.amendmentVersion;
 			const current = await readGoal(ref);
 			if (
 				!current ||
+				(amendmentVersion !== undefined && amendmentVersion !== (current.amendments?.length ?? 0)) ||
 				generation !== admission.generation ||
 				(run && (run.goalId !== current.id || run.generation !== generation))
 			) {
@@ -185,6 +284,7 @@ export default function (pi: ExtensionAPI): void {
 				{
 					expectedGoalId: current.id,
 					expectedStatus: current.status,
+					expectedAmendmentVersion: amendmentVersion ?? (current.amendments?.length ?? 0),
 					actor: "model",
 					isCurrent: () => generation === admission.generation && !ctx.signal?.aborted,
 				},
@@ -323,7 +423,7 @@ export default function (pi: ExtensionAPI): void {
 		if (generation !== admission.generation) return;
 		run =
 			goal && (goal.status === "active" || goal.status === "budgetLimited")
-				? { ref, goalId: goal.id, generation, signal, aborted: signal?.aborted ?? false }
+				? { ref, goalId: goal.id, generation, amendmentVersion: goal.amendments?.length ?? 0, signal, aborted: signal?.aborted ?? false }
 				: null;
 		const currentRun = run;
 		const onAbort = () => {
@@ -408,26 +508,66 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("context", async (event, ctx) => {
 		const goal = await readGoal(goalStoreRef(ctx));
-		return {
-			messages: event.messages.filter((message) => {
-				if (message.role === "custom" && message.customType === GOAL_BOOTSTRAP_MESSAGE_TYPE) {
-					return bootstrapId !== undefined && isRecord(message.details) && message.details.bootstrapId === bootstrapId;
-				}
+		const messages = event.messages.filter((message) => {
+			if (message.role === "custom" && message.customType === GOAL_BOOTSTRAP_MESSAGE_TYPE) {
+				return bootstrapId !== undefined && isRecord(message.details) && message.details.bootstrapId === bootstrapId;
+			}
+			if (
+				message.role !== "custom" ||
+				(message.customType !== GOAL_CONTINUATION_MESSAGE_TYPE && message.customType !== GOAL_BUDGET_LIMIT_MESSAGE_TYPE)
+			)
+				return true;
+			return (
+				isRecord(message.details) &&
+				message.details.goalId === goal?.id &&
+				(message.details.amendmentVersion ?? 0) === (goal?.amendments?.length ?? 0) &&
+				(goal?.status === "active"
+					? message.customType === GOAL_CONTINUATION_MESSAGE_TYPE
+					: goal?.status === "budgetLimited" && message.customType === GOAL_BUDGET_LIMIT_MESSAGE_TYPE)
+			);
+		});
+		if (
+			goal?.status === "active" &&
+			!messages.some((message) => message.role === "custom" && message.customType === GOAL_CONTINUATION_MESSAGE_TYPE)
+		) {
+			for (const message of event.messages) {
 				if (
 					message.role !== "custom" ||
-					(message.customType !== GOAL_CONTINUATION_MESSAGE_TYPE &&
-						message.customType !== GOAL_BUDGET_LIMIT_MESSAGE_TYPE)
+					message.customType !== GOAL_CONTINUATION_MESSAGE_TYPE ||
+					!isRecord(message.details) ||
+					message.details.goalId !== goal.id
 				)
-					return true;
-				return (
-					isRecord(message.details) &&
-					message.details.goalId === goal?.id &&
-					(goal?.status === "active"
-						? message.customType === GOAL_CONTINUATION_MESSAGE_TYPE
-						: goal?.status === "budgetLimited" && message.customType === GOAL_BUDGET_LIMIT_MESSAGE_TYPE)
-				);
-			}),
-		};
+					continue;
+				const version = message.details.amendmentVersion ?? 0;
+				if (typeof version !== "number" || version >= (goal.amendments?.length ?? 0)) continue;
+				messages.push({
+					...message,
+					content: buildContinuationPrompt(goal),
+					details: { goalId: goal.id, amendmentVersion: goal.amendments?.length ?? 0 },
+				});
+				break;
+			}
+		}
+		if (goal && run?.goalId === goal.id && run.generation === admission.generation) {
+			const amendmentVersion = goal.amendments?.length ?? 0;
+			// A model-created Goal may have no earlier hidden continuation to refresh.
+			if (
+				goal.status === "active" &&
+				amendmentVersion > 0 &&
+				!messages.some((message) => message.role === "custom" && message.customType === GOAL_CONTINUATION_MESSAGE_TYPE)
+			) {
+				messages.push({
+					role: "custom",
+					customType: GOAL_CONTINUATION_MESSAGE_TYPE,
+					content: buildContinuationPrompt(goal),
+					display: false,
+					timestamp: Date.now(),
+					details: { goalId: goal.id, amendmentVersion },
+				});
+			}
+			run.amendmentVersion = amendmentVersion;
+		}
+		return { messages };
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

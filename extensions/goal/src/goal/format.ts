@@ -58,6 +58,7 @@ export function formatGoalForTool(goal: Goal | null): string {
 		`Time used: ${formatGoalElapsedSeconds(goal.timeUsedSeconds)}`,
 		`Tokens used: ${formatTokensCompact(goal.tokensUsed)}${goal.tokenBudget === undefined ? "" : `/${formatTokensCompact(goal.tokenBudget)}`}`,
 	];
+	for (const [index, text] of (goal.amendments ?? []).entries()) lines.push(`Amendment ${index + 1}: ${text}`);
 	if (goal.blockedReason) lines.push(`Blocked: ${goal.blockedReason}`);
 	if (goal.completedAt) lines.push(`Completed at: ${new Date(goal.completedAt * 1000).toISOString()}`);
 	return lines.join("\n");
@@ -88,6 +89,7 @@ function goalToolSnapshot(goal: Goal): GoalToolSnapshot {
 	if (goal.blockedReason !== undefined) snapshot.blockedReason = goal.blockedReason;
 	if (goal.blockedAt !== undefined) snapshot.blockedAt = goal.blockedAt;
 	if (goal.tokenBudget !== undefined) snapshot.tokenBudget = goal.tokenBudget;
+	if (goal.amendments?.length) snapshot.amendments = [...goal.amendments];
 	return snapshot;
 }
 

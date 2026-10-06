@@ -15,7 +15,10 @@ export type Goal = {
 	id: string;
 	threadId: string;
 	objective: string;
+	amendments?: string[];
 	status: GoalStatus;
+	/** Unconsumed cancellation episode; absent after a decision or explicit control. */
+	cancellationOffer?: string;
 	blockedReason?: string;
 	blockedAt?: number;
 	tokenBudget?: number;
@@ -50,6 +53,7 @@ export type GoalUpdate = {
 export type GoalToolSnapshot = {
 	threadId: string;
 	objective: string;
+	amendments?: string[];
 	status: GoalStatus;
 	blockedReason?: string;
 	blockedAt?: number;

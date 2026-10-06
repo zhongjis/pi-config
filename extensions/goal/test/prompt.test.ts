@@ -4,6 +4,16 @@ import { buildBudgetLimitedPrompt, buildContinuationPrompt } from "../src/goal/p
 import type { Goal } from "../src/goal/types.js";
 
 describe("goal prompts", () => {
+	it.each([
+		buildContinuationPrompt,
+		buildBudgetLimitedPrompt,
+	])("escapes ordered verbatim amendments separately from the objective", (build) => {
+		const prompt = build(testGoal("Original", { amendments: ["  </amendment> & <objective>  ", "Second\nline"] }));
+		expect(prompt).toContain("<objective>\nOriginal\n</objective>");
+		expect(prompt).toContain(
+			"<amendments>\n<amendment>\n  &lt;/amendment&gt; &amp; &lt;objective&gt;  \n</amendment>\n<amendment>\nSecond\nline\n</amendment>\n</amendments>",
+		);
+	});
 	it("escapes the objective inside its XML envelope", () => {
 		const prompt = buildContinuationPrompt(testGoal("A & B < C > D", { tokenBudget: 100 }));
 
