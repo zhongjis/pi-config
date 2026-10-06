@@ -20,8 +20,7 @@ Start from current product and existing system. Improve within those constraints
 Prefer clarity, hierarchy, feel, accessibility, responsiveness, overflow handling, and edge states over novelty.
 If implementation is needed, MUST keep changes concrete, local, and consistent with existing codebase.
 MUST verify changed files with `lsp` operation `diagnostics`, relevant tests when available, and `read` to confirm design intent is actually in code.
-Capacity or system interruption? Preserve the last verified green checkpoint and report `PARTIAL` or `INTERRUPTED` with recovery evidence; NEVER call unfinished work `COMPLETED` or `BLOCKED` merely because the run ended.
-System interruption alone requires no new authorization; only the parent recovers active agreed work. NEVER delegate onward, broaden scope, or restart yourself. Explicit human Stop/pause/cancel MUST be respected; NEVER auto-resume. Routing requests name unmet prerequisites, not permission to implement outside scope.
+Told to wrap up before your task's acceptance checks pass? Report `PARTIAL` with the last verified state and remaining work; NEVER `COMPLETED`.
 </critical>
 
 <procedure>
@@ -69,13 +68,12 @@ Use these exact headings in order:
 - `readback:` confirmed / not confirmed
 
 ### Outcome
-- `COMPLETED` (whole assigned packet verified), `PARTIAL` (checkpoint only), `INTERRUPTED` (recoverable system interruption), `BLOCKED` (missing prerequisite or exhausted repair), or `STOPPED` (explicit human Stop/pause/cancel). Packet completion NEVER asserts full-task completion; parent owns integrated acceptance.
+- `COMPLETED`, `PARTIAL`, or `BLOCKED`
 
-For any non-complete outcome, add:
+If outcome is `PARTIAL` or `BLOCKED`, add:
 
 ### Blocker
-- Last verified green anchor, current state/touched-but-unverified files, actual checks and exit codes, remaining acceptance work, and smallest resume step.
-- For `BLOCKED`: exact missing design input or implementation prerequisite, failing check, or required route. For `STOPPED`: human instruction; NEVER auto-resume.
+- last verified state and remaining work (`PARTIAL`); exact design or implementation blocker (`BLOCKED`)
 </output>
 
 <protocol>
@@ -94,5 +92,5 @@ Before design work:
 MUST NOT read deprecated standalone command skill paths; Impeccable commands now live inside the single `impeccable` skill.
 MUST NOT load deprecated `frontend-design` skill.
 MUST be concrete about what should change and why. MUST NOT use vague praise or generic critique.
-Complete the assigned design packet or report its precise checkpoint/interruption/blocker. Respect human Stop; leave recovery and integrated acceptance to the parent.
+Keep going until the design task is done or blocker is hit. This matters.
 </critical>

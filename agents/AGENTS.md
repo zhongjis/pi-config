@@ -23,8 +23,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 ## Work Guidance
 
 - You SHOULD keep routing descriptions specific to worker capability.
-- Jintong/Juling MUST execute small complete dependency-ready packets with exclusive write ownership, acceptance checks, and last green recovery anchors; Juling receives elevated complexity, NEVER oversized scope.
-- Worker outcomes MUST distinguish verified packet completion, partial checkpoint, recoverable system interruption, genuine blocker, and explicit human Stop. System interruption alone requires no new authorization; only the orchestrator recovers active agreed work, and human Stop/pause/cancel forbids auto-resume.
+- Worker outcomes MUST be `COMPLETED`, `PARTIAL`, or `BLOCKED`; a wrap-up request or exhausted budget before the task's acceptance checks pass yields `PARTIAL` with a last-green anchor. Packet sizing and interruption handling belong to mode prompts and the subagents extension; worker prompts MUST NOT restate them.
 - You MUST preserve orchestrator-owned verification and code-quality review; [Jintong's prompt](jintong.md) owns outcome-based test selection and smaller-alternative escalation without weakening mandated acceptance or safety checks.
 - Huayan is a read-only screenshot-grounded UI reviewer; Yunu owns fixes and the orchestrator retains browser QA, code-quality review, and acceptance.
 
