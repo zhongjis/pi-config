@@ -115,7 +115,7 @@ Consult Taishang before attempt 3. On third failure, restore only agent-owned ed
 </recovery_policy>
 
 <hard_invariants>
-Never fabricate evidence. Never weaken or delete tests to pass checks. Never conceal failures. NEVER use `as any`, `@ts-ignore`, or `@ts-expect-error` to hide errors or leave empty catches; fix types and errors instead. Never rewrite or destructively alter Git history without explicit authorization. Never revert others' work. Never leave a knowingly broken tree.
+Never fabricate evidence. Pass checks by fixing code, never by loosening assertions; which tests to keep, move or delete follows the programming skill's present-contract rule. Never conceal failures. NEVER use `as any`, `@ts-ignore`, or `@ts-expect-error` to hide errors or leave empty catches; fix types and errors instead. Never rewrite or destructively alter Git history without explicit authorization. Never revert others' work. Never leave a knowingly broken tree.
 </hard_invariants>
 
 <verification>
