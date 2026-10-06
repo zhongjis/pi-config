@@ -77,4 +77,21 @@ delivered), and cleaned up after 24 hours if left stale.
   The standalone toolchain and upstream test suite are not vendored.
 - Repo-root `pi-herdr-btw.json` provides a committed portable default (autoSubmit+closeOnExit ON),
   symlinked to `~/.pi/agent/pi-herdr-btw.json` by `install.sh`.
-  See [AGENTS.md](AGENTS.md) for the Local Tweaks re-apply checklist.
+  See [Local Tweaks](#local-tweaks) for the re-apply checklist and [AGENTS.md](AGENTS.md) for maintenance requirements.
+
+## Local Tweaks
+
+Current divergences from upstream; re-apply each on upstream sync:
+
+- **Patched:** `index.ts`, `src/config.ts`, and `src/core.ts` add a `closeOnExit` config flag (default `false`)
+  that auto-closes the child pane on quit, and set `PAYLOAD_VERSION` to 5 for that config field.
+- **Patched:** `index.ts` runs the child-side quit cleanup (payload removal, pane close) only in TUI sessions, so UI-less subagent children of a side-thread process leave the pane and payload alone.
+- **Patched:** `index.ts` and `src/core.ts` separate registered availability from ordered active names in an optional version-5 `parentAvailableTools` field. Inherit launches allow the registered names through CLI filtering and restore the exact active selection once at startup `resources_discover`, only for TUI children. Reload/resume/new/fork and UI-less descendants do not restore; later activation persists. Legacy payloads retain active-name CLI fallback; cache comparisons remain active-name based.
+- **Vendored verbatim:** `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, `LICENSE`.
+- **Kept with changes:** `tsconfig.json`, with the `test/**` include removed.
+- **Not vendored:** `package.json`, `package-lock.json`, `.gitignore`, and the upstream `test/` suite
+  (`node:test` via `tsx --test`). This repo relies on root tooling and runs extension tests under
+  Vitest with `@earendil-works/*` aliased to stubs.
+- **Local tests:** [test/config.test.ts](test/config.test.ts), [test/shutdown.test.ts](test/shutdown.test.ts), and [test/inherit.test.ts](test/inherit.test.ts) cover config, payload validation, shutdown, and inherit launch/lifecycle behavior.
+- **Portable default:** repo-root `pi-herdr-btw.json` (autoSubmit and closeOnExit on) is symlinked to
+  `~/.pi/agent/pi-herdr-btw.json` by `install.sh`.

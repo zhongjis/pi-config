@@ -27,7 +27,7 @@ If the extension is vendored or adapted from an external source, include an **Up
 - **Adapted:** Current local differences, stated as present-tense facts
 ```
 
-Omit this section for original (non-vendored) extensions. When local divergences need a re-apply checklist for upstream syncs, keep it in the extension's `AGENTS.md` under `## Local Tweaks`, stated as current differences, not as a change history.
+Omit this section for original (non-vendored) extensions. When local divergences need a re-apply checklist for upstream syncs, keep it in the extension's `README.md` under `## Local Tweaks`, stated as current differences, not as a change history, and require a mandatory upstream-sync reading pointer from the extension's `AGENTS.md`.
 
 ### 3. Features / What It Does
 

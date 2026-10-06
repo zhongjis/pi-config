@@ -87,7 +87,19 @@ When the user requests a durable behavior change, record it here or in the relev
 - Keep global subagent defaults in root `subagents.json`: `maxConcurrentForeground: 4`, `reportUsage: true`, `showCost: true`, `graphRuntimeTrace: true`; `install.sh` symlinks it to `~/.pi/agent/subagents.json`. Agent graphs stay available in all modes while preserving their delegation restrictions.
 - Install repository-owned `agent-graphs/` (the reusable agent-graph portfolio) through `install.sh`; correct global symlinks are idempotent, wrong or dangling symlinks may be replaced, and non-symlink conflicts must remain untouched.
 - Use [CONTEXT-MAP.md](CONTEXT-MAP.md) for terminology — the root [CONTEXT.md](CONTEXT.md) plus the [subagents context](extensions/subagents/CONTEXT.md) — and [README.md](README.md) for repository entrypoints.
-- Docs describe current state only: no dates, commit narratives, migration notes, implementation records, or retired docs (git keeps history). Code is the source of truth, so docs link to owning code instead of copying inventories. ADRs and `CHANGELOG.md` files are exempt; [docs/README.md](docs/README.md) owns the writing rules.
+
+## Documentation Rules
+
+- Docs MUST describe current state only: no dates, commit narratives, "previously" or "no longer" prose, migration notes, before/after stories, or implementation records. ADRs and `CHANGELOG.md` files are exempt.
+- Code is the source of truth. Docs MUST link to owning code instead of copying tools, parameters, commands, hooks, events, config keys, defaults, model chains, type definitions, or file maps.
+- You MUST delete specs, guides, and ideas that are shipped, superseded, or abandoned and no longer describe current or proposed behavior; git keeps history.
+- When authoring docs, you MUST follow [docs/README.md](docs/README.md) for buckets, statuses, ADR lifecycle, and authority.
+
+## Installer Contracts
+
+- Theme installation preserves real directories and unrelated entries, including Home Manager links. It replaces only the exact directory symlink to this repo's `themes/`; unknown directory symlinks and non-directory destinations are refused.
+- Correct per-file theme links are idempotent; absent destinations are linked. Existing conflicts, including dangling symlinks, are refused without overwrite.
+- Keep `themes` allowlisted and handle it before generic directory replacement in the installer.
 
 ## Child DOX Index
 

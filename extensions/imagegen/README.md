@@ -7,7 +7,7 @@ Generate images through Pi's configured CLIProxyAPI provider, with a local brows
 - **Source:** [Jon-Vii/pi-imagegen](https://github.com/Jon-Vii/pi-imagegen)
 - **Version:** 0.2.0, pinned commit `2ca63486547fdf780e84b105548783bc9de1e5c3`
 - **License:** MIT declaration; see [UPSTREAM-LICENSE.md](UPSTREAM-LICENSE.md) for exact evidence and absent license artifact.
-- **Adapted:** `index.ts` discovery, `@earendil-works/*` imports, supported notifications, studio access checks, direct Images API transport and provider/model selection. [AGENTS.md](AGENTS.md#local-tweaks) owns the sync checklist.
+- **Adapted:** `index.ts` discovery, `@earendil-works/*` imports, supported notifications, studio access checks, direct Images API transport and provider/model selection. [Local Tweaks](#local-tweaks) owns the sync checklist; [AGENTS.md](AGENTS.md) owns maintenance and safety requirements.
 
 ## What It Does
 
@@ -56,3 +56,15 @@ Each generation makes one request, without automatic retries, redirects or fallb
 ## Studio Access
 
 The studio binds to loopback. HTML (`/`, `/studio`), `/api/*` and `/events` require the studio URL token. Any present Origin must match the request origin exactly, including rejection of `null`; absent Origin is allowed. These checks prevent browser cross-origin access, not access by local same-user processes. The studio is not a sandbox; keep its token-bearing URL private.
+
+## Local Tweaks
+
+- Upstream `imagegen.ts` lives as `index.ts`; imports use `@earendil-works/*`.
+- Studio requests enforce URL-token and same-origin checks centrally before route handling.
+- Model-facing visibility follows local configured-chain eligibility and monotonic hidden exposure; manual commands remain independent.
+- Generation uses direct Images generation/edit routes, selectable provider/model parameters and Pi-resolved request authentication. Proxy API-base normalization, official OAuth isolation, bounded/redacted errors and image-format checks live in `index.ts`.
+- Studio provider/model controls replace dispatcher thinking and retain selection for reruns and variations; the remaining upstream layout and workflows stay intact.
+- Four `ui.notify` calls use supported `info` severity instead of `success`.
+- Studio reference IDs have an explicit `string[]` annotation for strict compilation.
+- Automated checks mock provider authentication and network responses. Separately authorized manual Pi checks MAY spend subscription quota; report actual upstream authorization failures as unmet capabilities.
+- Repository README, provenance note and tests replace standalone packaging; no dependencies are added.

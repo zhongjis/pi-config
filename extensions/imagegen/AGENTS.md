@@ -20,20 +20,9 @@ Provide the complete vendored imagegen tool, `/img` workflows and local browser 
 
 ## Work Guidance
 
+- On upstream sync, you MUST preserve every divergence in the [README Local Tweaks checklist](README.md#local-tweaks).
 - You SHOULD preserve upstream style; restrict patches to provider/model support, runtime compatibility and studio access checks.
 - You MUST isolate tests in a temporary agent directory and restore mocks.
-
-## Local Tweaks
-
-- Upstream `imagegen.ts` lives as `index.ts`; imports use `@earendil-works/*`.
-- Studio requests enforce URL-token and same-origin checks centrally before route handling.
-- Model-facing visibility follows local configured-chain eligibility and monotonic hidden exposure; manual commands remain independent.
-- Generation uses direct Images generation/edit routes, selectable provider/model parameters and Pi-resolved request authentication. Proxy API-base normalization, official OAuth isolation, bounded/redacted errors and image-format checks live in `index.ts`.
-- Studio provider/model controls replace dispatcher thinking and retain selection for reruns and variations; the remaining upstream layout and workflows stay intact.
-- Four `ui.notify` calls use supported `info` severity instead of `success`.
-- Studio reference IDs have an explicit `string[]` annotation for strict compilation.
-- Automated checks mock provider authentication and network responses. Separately authorized manual Pi checks MAY spend subscription quota; report actual upstream authorization failures as unmet capabilities.
-- Repository README, provenance note and tests replace standalone packaging; no dependencies are added.
 
 ## Verification
 

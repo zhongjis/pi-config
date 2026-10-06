@@ -11,13 +11,9 @@ Human-facing contracts, decisions, guides, ideas, and supporting evidence.
 
 ## Local Contracts
 
-- You MUST use README bucket, status, writing, and authority rules when authoring docs.
-- Docs MUST describe current state only. Dates, commit narratives, migration notes, and implementation records are forbidden outside ADRs and `CHANGELOG.md` files.
-- Code is the source of truth. Docs MUST link to the owning code instead of copying volatile inventories.
-- You MUST delete specs, guides, and ideas that no longer describe current or proposed behavior; never keep retired records.
-- Ideas MUST carry exact `Status: idea`; they are non-binding.
-- You MUST supersede ADRs with new decisions and reciprocal links.
-- References are evidence, never execution policy.
+- When authoring docs, you MUST follow [root documentation rules](../AGENTS.md#documentation-rules) and [README buckets](README.md#documentation-buckets).
+- When assigning spec or idea status or superseding ADRs, you MUST follow [README lifecycle rules](README.md#lifecycle-statuses).
+- When resolving behavioral conflicts or using references, you MUST follow [README authority order](README.md#authority-order).
 
 ## Work Guidance
 
