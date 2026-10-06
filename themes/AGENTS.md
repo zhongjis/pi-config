@@ -10,15 +10,7 @@ Local Pi theme assets.
 
 ## Local Contracts
 
-- The asset names the theme `github-diff`.
-- Its `$schema` points to the Pi theme schema.
-- `appearance` declares the dark background the palette targets.
-- `vars` holds reusable colors; `colors` assigns presentation roles.
-- `export` contains exported-page background colors.
 - You MUST preserve the asset's Pi theme JSON structure.
-- Installation preserves real directories and unrelated entries, including Home Manager links. It replaces only the exact directory symlink to this repo's `themes/`; unknown directory symlinks and non-directory destinations are refused.
-- Correct per-file links are idempotent; absent destinations are linked. Existing conflicts, including dangling symlinks, are refused without overwrite.
-- Keep `themes` allowlisted and handle it before generic directory replacement in the installer.
 
 ## Work Guidance
 

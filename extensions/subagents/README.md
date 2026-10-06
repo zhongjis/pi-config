@@ -199,7 +199,7 @@ All fields are optional. [src/types.ts](src/types.ts) defines the fields and [..
 
 Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, or `isolated`, those values are locked for that agent. `agent` tool parameters only fill fields the agent config leaves unspecified.
 
-Model candidates accept `provider/model[:thinking]:fast`; no suffix means fixed off, never the parent's `/fast` toggle. Resume retains the selected setting. See [child policy contracts](AGENTS.md#local-contracts) for validation/isolation and [shared helpers](../lib/README.md#fast-request-helpers) for strict request mechanics.
+Model candidates accept `provider/model[:thinking]:fast`; no suffix means fixed off, never the parent's `/fast` toggle. Resume retains the selected setting. See [child policy contracts](MAINTENANCE.md#invocation-and-model-policy) for validation/isolation and [shared helpers](../lib/README.md#fast-request-helpers) for strict request mechanics.
 
 Thinking precedence: agent frontmatter → selected model-chain suffix → SDK selected-model default. Omission never inherits parent thinking, even when the model is inherited, and `agent` tool calls carry no thinking value. The installed SDK resolves its native per-model/global/Pi defaults (per-model support depends on SDK version). Before session creation, Agent reports and queued retrieval display `thinking: default (pending)` only when the invocation retains omitted-thinking intent; unknown RPC intent stays unlabelled. Runtime reports replace the pending tag with the session's actual level. Resume retains the existing session level.
 

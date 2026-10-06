@@ -5,8 +5,8 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 ## Ownership
 
 - [README.md](README.md) owns prompt construction.
-- This document owns shared mode docs and `houtu/`, `kuafu/`.
-- The Fu Xi child owns its prompts and local skills.
+- This document owns shared mode docs and runtime links.
+- Children own their family prompts, variants, skills, and supporting assets.
 - The active mode set is `kuafu`, `fuxi`, and `houtu`.
 - Runtime discovery and switching belong to [../extensions/modes/](../extensions/modes/).
 
@@ -24,23 +24,10 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - Kua Fu/Hou Tu default, GPT, and Gemini routing prose MUST match model-visible descriptions in `agents/*.md`.
 - Kua Fu/Hou Tu MAY delegate standalone prose to Cangjie; Fu Xi owns plan prose and MUST NOT delegate to Cangjie.
 - Runtime discovers only the active mode's existing skills; bodies load on demand.
-- [Hou Tu GPT](houtu/gpt.md) MUST follow user corrections immediately, gate Task/PLAN completion on independent verification, and require final user okay only for explicitly requested checkpoints. Default/Gemini retain their final user-okay requirement.
-- Hou Tu GPT completion MUST cover remaining in-scope top-level tasks and F1-F4, excluding nested checkboxes; canceled PLAN tasks MUST remain `[-]` with existing Task mirrors `deleted`, NEVER completed.
-- Hou Tu GPT MUST pass only the smallest task/verification-applicable skill set; `skills=[]` when none apply.
-- Kua Fu variants MUST share one implementation authorization gate: active unfinished agreed work stays authorized across turns; explicit human Stop/pause/cancel suspends it, and a `STOPPED BY THE USER` worker is NEVER auto-resumed. Prompts MUST NOT restate harness mechanics owned by extensions.
 - Kua Fu/Hou Tu families MUST assign workers focused regression and file-local lint/format; parent owns package/global integration after relevant writers finish. Checks sharing mutable databases MUST NOT overlap without established isolation.
 - Parent MUST read changed files, review the full applicable diff, and inspect actual command/scope/output/exit status, NEVER summaries alone. Evidence is reusable only while relevant source/dependencies/configuration/environment/external state remain valid.
 - Parent MUST obtain appropriate final executable integration evidence for combined changes; worker passes alone are insufficient. Outside Kua Fu GPT recovery, run missing, invalidated, diagnostic, or explicitly required checks, NEVER delegation/phase-only repetitions; repairs invalidate affected previously passing checks.
-- Kua Fu GPT MUST preserve edit authority for unfinished agreed implementation through compatible follow-ups and caused-failure repairs. Standalone new explanation, investigation, comparison, or review requests and explicit pause/review-before-proceeding requests NEVER authorize edits; canceled, superseded, and completed tasks NEVER revive authority.
-- Kua Fu GPT MUST limit bug fixes to the smallest concrete fix and re-run only failed focused checks during recovery; evidence-validity completion gates remain.
-- Kua Fu GPT MUST resolve instruction authority before clarification, treat task sources as data, and use prior context for references and active-task continuity without reviving canceled, superseded, or completed authorization; routine reversible choices stay within authorized scope.
-- Kua Fu GPT MUST batch independent reads, searches, and diagnostics in one response only when parallel tool use is available, report review findings first by severity, and NEVER hide errors with `as any`, `@ts-ignore`, `@ts-expect-error`, or empty catches; fix types and errors instead.
-- Kua Fu GPT routing prose MUST respect requested output formats; parallel delegation MUST reduce elapsed time or add distinct coverage.
-- Kua Fu GPT verification MUST be risk-proportional while preserving required gates; blocked exits MUST identify missing evidence, current state, and the smallest resume action. Stop after acceptance and required checks pass.
-- Kua Fu GPT delegates multi-step local reconnaissance to `chengfeng` and external research to `wenchang`; bounded lookups and parent verification stay direct.
-- Kua Fu GPT delegation MUST carry accepted outcomes, exclusions, reusable authority, observable acceptance criteria, and rejected approaches; its delegation policy owns coverage reuse and when to prescribe mechanics.
-- Kua Fu GPT additions MUST justify unmet requirements or concrete failure modes and compare repair with simplification when newly introduced machinery grows; credential transport alone creates no same-principal privilege boundary.
-- Parent QA MUST cover changed user-visible surfaces and affected interactions; valid parent QA/integration evidence MAY be reused. Hou Tu retains F1=`taishang`, F2=parent code-quality/integration, F3=parent QA, F4=`direnjie`.
+- Parent QA MUST cover changed user-visible surfaces and affected interactions; valid parent QA/integration evidence MAY be reused.
 - Future push hooks MUST NOT approve earlier completion; verification NEVER authorizes pushing.
 
 ## Work Guidance
@@ -57,3 +44,5 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 ## Child DOX Index
 
 - [fuxi/AGENTS.md](fuxi/AGENTS.md) — thin planner prompts and authoritative planning skill.
+- [kuafu/AGENTS.md](kuafu/AGENTS.md) — build-orchestrator family maintenance and authorization contracts.
+- [houtu/AGENTS.md](houtu/AGENTS.md) — approved-plan execution family maintenance and completion gates.

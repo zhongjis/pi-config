@@ -13,9 +13,7 @@ Design contracts, guides, and reference material for this Pi harness.
 
 ## Writing Rules
 
-- **Current state only.** No dates, commit narratives, "previously" or "no longer" prose, migration notes, before/after stories, or implementation records. ADRs and `CHANGELOG.md` files are exempt.
-- **Code is the source of truth.** Link to the owning code instead of copying tools, parameters, commands, hooks, events, config keys, defaults, model chains, type definitions, or file maps.
-- **Delete, do not retire.** When a spec, guide, or idea is shipped, superseded, or abandoned and no longer describes current or proposed behavior, delete it; git keeps the history.
+When authoring docs, you MUST follow [root documentation rules](../AGENTS.md#documentation-rules). This README owns buckets, statuses, ADR lifecycle, and authority.
 
 ## Canonical Vocabulary
 
