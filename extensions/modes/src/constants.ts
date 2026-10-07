@@ -23,6 +23,9 @@ export const MODE_COLORS: Record<Mode, string> = {
 
 export const RESET = "\x1b[0m";
 
+/** Modes-owned, always-active policy tool that hides ungranted tool declarations. */
+export const MODE_TOOL_CEILING_NAME = "mode_tool_ceiling";
+
 // Plan file constants
 export const PLAN_FILE_NAME = "PLAN.md";
 export const LOCAL_PLAN_URI = `local://${PLAN_FILE_NAME}`;

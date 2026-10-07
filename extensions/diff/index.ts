@@ -434,11 +434,10 @@ export default function (pi: ExtensionAPI) {
         if (sub === "pr-walkthrough") {
           // Phase A: hand off to the agent to analyze the diff and write the
           // agent-context sidecar; it opens the review via open_pr_walkthrough.
-          // Force-enable the agent-only tool for this session. It is registered
-          // but intentionally NOT in any mode's extension_tools allowlist, so the
-          // agent can only reach it once this command runs. pi.setActiveTools can
-          // activate any registered tool, and the modes allowlist is re-applied
-          // only on session_start / mode switch — so this survives the next turn.
+          // Activate the agent-only tool for this session. It is reachable only
+          // when the active mode's `tools:` rules grant it: the mode ceiling
+          // hides and vetoes ungranted tools, and modes re-apply their rules on
+          // every prompt.
           const active = pi.getActiveTools();
           if (!active.includes("open_pr_walkthrough")) {
             pi.setActiveTools([...active, "open_pr_walkthrough"]);

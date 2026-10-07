@@ -1,3 +1,4 @@
+import { createToolCeilingTool } from "../../lib/active-tools.js";
 import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.js";
 import { assertFastSupported } from "../../lib/fast.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -11,9 +12,9 @@ import {
 } from "../../lib/guard-registration.js";
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
-import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES } from "./constants.js";
+import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES, MODE_TOOL_CEILING_NAME } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
-import { hasToolPolicy, isModeToolReachable, type ModeStateManager } from "./mode-state.js";
+import type { ModeStateManager } from "./mode-state.js";
 import type { Mode, ModeState } from "./types.js";
 
 
@@ -207,16 +208,14 @@ export function registerModeGuardScope(pi: ExtensionAPI, state: ModeStateManager
 }
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
+	const hasToolCeiling = () => pi.getAllTools().some((tool) => tool.name === MODE_TOOL_CEILING_NAME);
+
 	pi.on("tool_call", async (event, ctx) => {
-		// Codemode scripts reach inactive `codemode`/`deferred` tools; hold nested
-		// calls to the same policy that selects the mode's active tools. Subagents
-		// scope their own nested calls from their frontmatter.
-		if (event.parentToolCallId !== undefined && !isSubagentSession(ctx)) {
-			const config = state.loadConfig(state.currentMode);
-			const allToolNames = pi.getAllTools().map((t) => t.name);
-			if (hasToolPolicy(config) && !isModeToolReachable(state.currentMode, config, event.toolName, allToolNames)) {
-				return { block: true, reason: `Mode ${state.currentMode}: tool "${event.toolName}" is not available.` };
-			}
+		// Late registrations, tool_search activations, re-added loaders, and
+		// codemode-nested calls all reach tools outside the active set; hold every
+		// call to the mode's rules. Subagents scope their own calls from frontmatter.
+		if (!isSubagentSession(ctx) && !(await state.isToolCallAllowed(ctx, event.toolName))) {
+			return { block: true, reason: `Mode ${state.currentMode}: tool "${event.toolName}" is not available.` };
 		}
 
 		if (state.currentMode !== "fuxi") return;
@@ -292,6 +291,13 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		bindActiveSessionContext(ctx);
 	});
 
+	// Another extension may replace the active set mid-run; keep the ceiling active.
+	pi.on("turn_end", async (_event, ctx) => {
+		if (isSubagentSession(ctx) || !hasToolCeiling()) return;
+		const active = pi.getActiveTools();
+		if (!active.includes(MODE_TOOL_CEILING_NAME)) pi.setActiveTools([...active, MODE_TOOL_CEILING_NAME]);
+	});
+
 	pi.on("model_select", async (event, ctx) => {
 		if (event.source === "restore") {
 			const config = state.loadConfig(state.currentMode);
@@ -330,6 +336,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		resolveInitialMode(pi, state, ctx);
 
 		await hydratePlanState(ctx as any, state);
+		if (!hasToolCeiling()) pi.registerTool(createToolCeilingTool(MODE_TOOL_CEILING_NAME, () => state.allowedToolNames()));
 		await state.applyMode(ctx);
 		await recoverPlanReview(pi, state, ctx);
 		state.persistState();

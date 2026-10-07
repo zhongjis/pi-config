@@ -10,12 +10,10 @@ import { loadAgentConfig, parseModeAgentConfig } from "../src/config-loader.js";
 import { derivePlanTitleFromMarkdown } from "../src/plan-storage.js";
 
 describe("parseModeAgentConfig", () => {
-	it("parses builtin and extension tool frontmatter", () => {
+	it("parses signed tools rules", () => {
 		const config = parseModeAgentConfig(`---
 prompt_mode: replace
-builtin_tools: read,write,edit
-extension_tools: ask,agent,look_at
-extensions: clauderock
+tools: +@all, -edit, +@codegraph
 allow_delegation_to: chengfeng,yanluo
 disallow_delegation_to: houtu
 allow_nesting: true
@@ -27,9 +25,11 @@ Mode prompt.`);
 		expect(config).toMatchObject({
 			body: "Mode prompt.",
 			promptMode: "replace",
-			builtinToolNames: ["read", "write", "edit"],
-			extensionToolNames: ["ask", "agent", "look_at"],
-			extensions: ["clauderock"],
+			toolRules: [
+				{ sign: "+", selector: "@all" },
+				{ sign: "-", selector: "edit" },
+				{ sign: "+", selector: "@codegraph" },
+			],
 			allowDelegationTo: ["chengfeng", "yanluo"],
 			disallowDelegationTo: ["houtu"],
 			allowNesting: true,
@@ -37,7 +37,7 @@ Mode prompt.`);
 		});
 	});
 
-	it("leaves tool policy unset when tool frontmatter is absent", () => {
+	it("grants no tools when tools frontmatter is omitted", () => {
 		const config = parseModeAgentConfig(`---
 prompt_mode: append
 ---
@@ -47,18 +47,16 @@ Prompt only.`);
 		expect(config).toMatchObject({
 			body: "Prompt only.",
 			promptMode: "append",
+			toolRules: [],
 		});
-		expect(config?.builtinToolNames).toBeUndefined();
-		expect(config?.extensionToolNames).toBeUndefined();
-		expect(config?.extensions).toBeUndefined();
 	});
 
-	it("returns null for invalid frontmatter fields", () => {
+	it("returns null for an unsigned tools entry", () => {
 		expect(parseModeAgentConfig(`---
 tools: read,bash
 ---
 
-Legacy prompt.`)).toBeNull();
+Unsigned prompt.`)).toBeNull();
 	});
 });
 
